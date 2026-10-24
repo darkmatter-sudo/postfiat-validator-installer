@@ -1,0 +1,182 @@
+pft-confine validator live apply - 2026-10-24T23:10:20Z - Ubuntu 22.04.5 LTS - container postfiatd
+script sha256: pft-confine.sh a2c126d2650eab3b03d06bd1f0bc5bb2d75655e586f27c32235baeaf4e0ff435 | drill-validator.sh c35bb9f11f943b76bd313361c427836ca5c964643abfa314c1b8b2de3cb47371
+
+== 0. preflight
+no maintenance window (alerting is live)
+no data-collection locks
+  notifier timers on this host: pft-backup.timer pft-heartbeat.timer pft-integrity.timer pft-maint-tick.timer pft-retention-sample.timer postfiat-monitor.timer 
+  alert containers on this host: pft-prometheus pft-alertmanager pft-alert-bridge 
+
+== 1. redirect every notifier to a throwaway topic + Alertmanager silence
+  /etc/postfiat-monitor.env -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/postfiat-monitor.env.pre-confine-drill
+  /etc/pft-integrity.env -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-integrity.env.pre-confine-drill
+  /etc/pft-maint/ntfy.env created for the drill only -> https://ntfy.sh/<redacted> (throwaway)
+  sentry /etc/pft-watchdog/ntfy.env -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-watchdog/ntfy.env.pre-confine-drill
+  Alertmanager silence 1683cb43 alertname=~.+ for 40m
+
+== 2. live guard proof: no maintenance window
+$ pft-confine apply --container postfiatd
+pft-confine: apply recreates the container; re-run with --yes
+exit 4 (expect 4)
+$ pft-confine apply --yes --container postfiatd
+pft-confine: REFUSED: no active pft-maint window (window=none); run: sudo pft-maint start --ttl 30m --reason ...
+exit 4 (expect 4)
+
+== 3. discover -> plan -> probe -> window -> apply -> verify
+$ pft-confine discover --container postfiatd
+container:        postfiatd (compose) image agtipft/postfiatd:testnet-light-latest
+user:             0:0
+cap_add/cap_drop: [] / []
+readonly_rootfs:  false
+pids_limit:       0   memory: 0   nano_cpus: 0
+tmpfs:            []
+security_opt:     ["no-new-privileges:true"]
+mounts:           /etc/postfiatd(volume) /var/lib/postfiatd/db(volume) /var/log/postfiatd(bind)
+processes:        cron postfiatd sh
+pid1:             rss 697 MiB, threads 30; tasks in container 35; host memory 7937 MiB
+written outside mounts (docker diff):
+  C /var
+  C /var/opt
+  A /var/opt/postfiat
+  C /var/backups
+  A /var/backups/dpkg.statoverride.0
+  A /var/backups/dpkg.status.0
+  A /var/backups/alternatives.tar.0
+  A /var/backups/apt.extended_states.0
+  A /var/backups/dpkg.arch.0
+  A /var/backups/dpkg.diversions.0
+  C /var/lib
+  C /var/lib/apt
+  A /var/lib/apt/daily_lock
+  C /var/lib/logrotate
+  A /var/lib/logrotate/status
+  C /run
+  A /run/crond.pid
+  A /run/crond.reboot
+open for writing outside mounts:
+  /run/crond.pid
+$ pft-confine plan --container postfiatd
+proposed profile for postfiatd (compose):
+  cap_drop:     ALL
+  cap_add:      SETGID SETUID   (cron runs in the container; it calls setgid/initgroups/setuid before every job)
+  read_only:    true
+  tmpfs:        /run /tmp /var/backups /var/lib/apt /var/lib/logrotate /var/opt/postfiat [rw,noexec,nosuid,size=64m]   (/tmp + directories written outside the mounts (docker diff A entries, files open for writing))
+  pids_limit:   256   (max(256, 4 x 34 tasks))
+  memory:       2304 MiB, no swap   (max(2048 MiB, 3 x PID1 RSS 697 MiB) rounded up to 256 MiB)
+  security_opt: no-new-privileges
+apply would write /opt/postfiatd/docker-compose.confine.yml:
+  | # written by pft-confine apply (least-privilege profile); remove with: sudo pft-confine rollback --yes
+  | services:
+  |   postfiatd:
+  |     cap_drop:
+  |       - ALL
+  |     cap_add:
+  |       - SETGID
+  |       - SETUID
+  |     read_only: true
+  |     tmpfs:
+  |       - "/run:rw,noexec,nosuid,size=64m"
+  |       - "/tmp:rw,noexec,nosuid,size=64m"
+  |       - "/var/backups:rw,noexec,nosuid,size=64m"
+  |       - "/var/lib/apt:rw,noexec,nosuid,size=64m"
+  |       - "/var/lib/logrotate:rw,noexec,nosuid,size=64m"
+  |       - "/var/opt/postfiat:rw,noexec,nosuid,size=64m"
+  |     pids_limit: 256
+  |     mem_limit: 2415919104
+  |     memswap_limit: 2415919104
+$ pft-confine probe --container postfiatd
+[2026-10-24T23:10:41Z] probe: throwaway container pft-confine-probe-275260, image agtipft/postfiatd:testnet-light-latest, --network none, fresh anonymous volumes
+[2026-10-24T23:10:41Z] probe profile: {"cap_add":["SETGID","SETUID"],"tmpfs":["/run","/tmp","/var/backups","/var/lib/apt","/var/lib/logrotate","/var/opt/postfiat"],"pids_limit":256,"memory_bytes":2415919104}
+  [PASS] container running, 0 restarts (true 0)
+  [PASS] capabilities in effect: 00000000000000c0
+  [PASS] cron job identity switch (setpriv --init-groups, as cron does before each job)
+  [PASS] write /run
+  [PASS] write /tmp
+  [PASS] write /var/backups
+  [PASS] write /var/lib/apt
+  [PASS] write /var/lib/logrotate
+  [PASS] write /var/opt/postfiat
+  [PASS] write /var/lib/postfiatd/db
+  [PASS] write /var/log/postfiatd
+  [PASS] write /etc/postfiatd
+  [SKIP] cron.daily/apt-compat (sleeps a random time up to 30 min; its only write, /var/lib/apt/daily_lock, is covered above if planned)
+  [PASS] cron.daily/dpkg
+  [PASS] cron.daily/logrotate
+  [PASS] crontab job: /usr/sbin/logrotate -s /var/log/postfiatd/.logrotate.status /etc/logrotate.d/postfiatd
+  [PASS] postfiatd still PID 1: /usr/local/bin/postfiatd --conf /etc/postfiatd/postfiatd.cfg 
+[2026-10-24T23:11:05Z] probe RESULT: PASS
+$ pft-maint start --ttl 30m --reason "[DRILL] pft-confine live apply"
+window started: id m1792883465-276219 until 2026-10-24T23:41:05Z | sentry copy: pushed
+window ACTIVE on validator: [DRILL] pft-confine live apply | until 2026-10-24T23:41:05Z (1797s left) | origin local | suppressed: watchdog=0 monitor=0 integrity=0
+no data-collection locks
+$ pft-confine apply --yes --container postfiatd
+[2026-10-24T23:11:16Z] apply 20261024T231116Z on postfiatd (compose); maintenance gate: ok 1797; pre: server_state=full peers=11
+[2026-10-24T23:11:16Z] before HostConfig: {"Id":"67cf5fcbc576","CapAdd":null,"CapDrop":null,"ReadonlyRootfs":false,"Tmpfs":null,"PidsLimit":null,"Memory":0,"MemorySwap":0,"SecurityOpt":["no-new-privileges:true"],"User":"0:0","Restart":"unless-stopped"}
+[2026-10-24T23:11:16Z] profile: {"container":"postfiatd","mode":"compose","image":"agtipft/postfiatd:testnet-light-latest","cap_drop":["ALL"],"cap_add":["SETGID","SETUID"],"read_only":true,"tmpfs":["/run","/tmp","/var/backups","/var/lib/apt","/var/lib/logrotate","/var/opt/postfiat"],"tmpfs_opts":"rw,noexec,nosuid,size=64m","pids_limit":256,"memory_bytes":2415919104,"security_opt":["no-new-privileges"],"unresolved":[],"warnings":[]}
+[2026-10-24T23:11:16Z] wrote /opt/postfiatd/docker-compose.confine.yml; .env backed up to /opt/postfiatd/.env.pre-confine-20261024T231116Z, COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.confine.yml
+time="<redacted-local-time>" level=warning msg="/opt/postfiatd/docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+time="<redacted-local-time>" level=warning msg="/opt/postfiatd/docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+ Container postfiatd  Recreate
+ Container postfiatd  Recreated
+ Container postfiatd  Starting
+ Container postfiatd  Started
+[2026-10-24T23:11:24Z] poll +0s server_state=down peers=0
+[2026-10-24T23:11:34Z] poll +10s server_state=connected peers=11
+[2026-10-24T23:11:45Z] poll +21s server_state=connected peers=11
+[2026-10-24T23:11:55Z] poll +31s server_state=connected peers=11
+[2026-10-24T23:12:05Z] poll +41s server_state=connected peers=11
+[2026-10-24T23:12:15Z] poll +51s server_state=full peers=11
+[2026-10-24T23:12:15Z] after HostConfig: {"Id":"407cf9b6ffa6","CapAdd":["CAP_SETGID","CAP_SETUID"],"CapDrop":["ALL"],"ReadonlyRootfs":true,"Tmpfs":{"/run":"rw,noexec,nosuid,size=64m","/tmp":"rw,noexec,nosuid,size=64m","/var/backups":"rw,noexec,nosuid,size=64m","/var/lib/apt":"rw,noexec,nosuid,size=64m","/var/lib/logrotate":"rw,noexec,nosuid,size=64m","/var/opt/postfiat":"rw,noexec,nosuid,size=64m"},"PidsLimit":256,"Memory":2415919104,"MemorySwap":2415919104,"SecurityOpt":["no-new-privileges:true"],"User":"0:0","Restart":"unless-stopped"}
+[2026-10-24T23:12:16Z] apply RESULT: PASS - profile active, node full (state /var/lib/pft-confine/postfiatd.json)
+apply exit 0
+$ pft-confine verify --container postfiatd
+pft-confine verify postfiatd - 2026-10-24T23:12:16Z
+  [PASS] cap_drop ALL (got ["ALL"])
+  [PASS] cap_add = ["SETGID","SETUID"] (got ["SETGID","SETUID"])
+  [PASS] read-only root filesystem
+  [PASS] tmpfs = ["/run","/tmp","/var/backups","/var/lib/apt","/var/lib/logrotate","/var/opt/postfiat"] (got ["/run","/tmp","/var/backups","/var/lib/apt","/var/lib/logrotate","/var/opt/postfiat"])
+  [PASS] pids_limit 256 (got 256)
+  [PASS] memory limit 2415919104 (got 2415919104)
+  [PASS] no-new-privileges
+  [PASS] running, OOMKilled=false
+  [PASS] restart count 0
+  [PASS] uptime 54s >= 0s (started 2026-10-24T23:11:23.63192283Z)
+  [PASS] PID1 RSS 732 MiB < limit 2304 MiB (31%)
+  [PASS] tasks 35 < pids_limit 256
+  [PASS] server_state full
+  [PASS] peers 11 >= 1
+RESULT: PASS
+verify exit 0
+$ pft-maint end
+window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+
+== 4. pft-integrity rebaseline
+$ pft-integrity verify
+pft-integrity verify - 2026-10-24T23:12:25Z
+OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-10-24T01:10:18Z
+  [FAIL] compose:.env                                 changed  mtime, sha256
+  [WARN] compose:docker-compose.confine.yml           added    new file
+  [FAIL] container:postfiatd                          changed  cap_add, cap_drop, labels, readonly_rootfs
+RESULT: FAIL - 46 unchanged, 1 warn, 2 fail -> exit 2
+$ pft-integrity accept --reason "task_f27d6b16b9f674af0a9e8f18a65d6596: pft-confine least-privilege profile on postfiatd"
+pft-integrity accept - 2026-10-24T23:12:28Z: re-baselined 49 items by <user>
+manifest sha256: 46168c78967eab7f59bef8e8e677af4cbbb27e073f72c9dfd3c6958734d108ee -> 8152c275f6dd34d904d58d5c363fb713b54d7620e1b432915ae6a9a6b8f2f466 (logged to accept.log)
+$ pft-integrity verify
+pft-integrity verify - 2026-10-24T23:12:32Z
+OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-10-24T23:12:25Z
+RESULT: PASS - 49 unchanged, 0 warn, 0 fail -> exit 0
+
+== 5. after
+postfiatd Up About a minute
+no maintenance window (alerting is live)
+no data-collection locks
+restored /etc/postfiat-monitor.env: sha256 matches pre-drill copy: yes (root 600)
+restored /etc/pft-integrity.env: sha256 matches pre-drill copy: yes (root 600)
+removed drill-only /etc/pft-maint/ntfy.env: yes
+restored sentry /etc/pft-watchdog/ntfy.env: sha256 matches pre-drill copy: yes
+Alertmanager alerts (any state, incl. silenced): PFTContainerRestarted
+Alertmanager silence 1683cb43 left to run out at its end time
+throwaway topic read back from ntfy.sh (since drill start):
+{"time":"2026-10-24T23:11:07Z","title":"[MAINT] start validator","message":"[DRILL] pft-confine live apply | until 2026-10-24T23:41:05Z (ttl 1800s) | sentry copy: pushed"}
+{"time":"2026-10-24T23:12:20Z","title":"[MAINT] end validator","message":"[DRILL] pft-confine live apply | pft-confine live apply done after 74s | suppressed here: watchdog=0 monitor=0 integrity=0 | sentry copy: pushed"}
+drill-validator done 2026-10-24T23:12:39Z: apply exit 0, verify exit 0

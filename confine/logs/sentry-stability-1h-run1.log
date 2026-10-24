@@ -1,0 +1,28 @@
+pft-confine sentry 1-hour stability - 2026-10-24T23:27:15Z - sentry host: Ubuntu 22.04.5 LTS
+script sha256 on sentry: 
+$ pft-confine verify --container postfiatd-sentry --min-uptime 3600
+pft-confine verify postfiatd-sentry - 2026-10-24T23:27:18Z
+  [PASS] cap_drop ALL (got ["ALL"])
+  [PASS] cap_add = ["SETGID","SETUID"] (got ["SETGID","SETUID"])
+  [PASS] read-only root filesystem
+  [PASS] tmpfs = ["/run","/tmp","/var/backups","/var/lib/apt","/var/lib/logrotate"] (got ["/run","/tmp","/var/backups","/var/lib/apt","/var/lib/logrotate"])
+  [PASS] pids_limit 256 (got 256)
+  [PASS] memory limit 2147483648 (got 2147483648)
+  [PASS] no-new-privileges
+  [PASS] running, OOMKilled=false
+  [PASS] restart count 0
+  [PASS] uptime 3713s >= 3600s (started 2026-10-24T22:25:26.906681347Z)
+  [PASS] PID1 RSS 782 MiB < limit 2048 MiB (38%)
+  [PASS] tasks 35 < pids_limit 256
+  [PASS] server_state full
+  [PASS] peers 11 >= 1
+RESULT: PASS
+exit 0
+$ docker inspect postfiatd-sentry (State/RestartCount)
+{"StartedAt":"2026-10-24T22:25:26.906681347Z","Running":true,"OOMKilled":false,"RestartCount":0}
+$ docker stats --no-stream postfiatd-sentry
+postfiatd-sentry mem 758.2MiB / 2GiB (37.02%) pids 31
+$ pft-integrity verify (sentry)
+pft-integrity verify - 2026-10-24T23:27:25Z
+OS: Ubuntu 22.04.5 LTS | container: postfiatd-sentry | baseline: 2026-10-24T22:26:26Z
+RESULT: PASS - 25 unchanged, 0 warn, 0 fail -> exit 0

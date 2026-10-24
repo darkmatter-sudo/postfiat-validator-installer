@@ -1,10 +1,6 @@
-# Ubuntu 22.04.5 LTS | 2026-10-24T22:27:14Z
-$ shellcheck -V | head -2; shellcheck confine/pft-confine.sh confine/drill-sentry.sh confine/tests/run-tests.sh; echo "shellcheck exit $?"
-ShellCheck - shell script analysis tool
-version: 0.8.0
-shellcheck exit 0
-$ bash confine/tests/run-tests.sh
-# pft-confine offline tests - 2026-10-24T22:27:15Z - script sha256 a2c126d2650eab3b
+$ shellcheck confine/*.sh confine/tests/*.sh && bash confine/tests/run-tests.sh   (2026-10-24T23:24:23Z, Ubuntu 22.04.5 LTS)
+shellcheck: clean (exit 0)
+# pft-confine offline tests - 2026-10-24T23:24:25Z - script sha256 a2c126d2650eab3b
 ok   - 1a plan exits 0
 ok   - 1b tmpfs = /tmp + written dirs outside mounts (file -> parent, added dir -> itself, mounts ignored)
 ok   - 1c cap_drop ALL, cap_add SETGID SETUID because cron runs

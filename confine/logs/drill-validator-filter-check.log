@@ -1,0 +1,8 @@
+$ bash tests/drill-validator-filter-check.sh   (2026-10-24T23:14:00Z, Ubuntu 22.04.5 LTS)
+filter under test (drill-validator.sh line 112, eval'd as-is):
+other="$(grep -E '^\s+\[(WARN|FAIL)\]' <<<"$IV" | grep -vE "\] +(compose:[^ ]+|container:$CONTAINER) " || true)"
+[PASS] only compose + own container (accept): expect empty, got empty
+[PASS] unrelated binary changed (refuse): expect nonempty, got nonempty ->   [WARN] bin:pft-agent   changed sha256
+[PASS] other container with same prefix (refuse): expect nonempty, got nonempty ->   [FAIL] container:postfiatd-sentry   changed cap_add
+[PASS] sshd change (refuse): expect nonempty, got nonempty ->   [WARN] sshd:sshd_config   changed mtime
+[PASS] PASS output, nothing changed: expect empty, got empty

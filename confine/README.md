@@ -39,7 +39,8 @@ the process names and every file that a process holds open for writing (`/proc/*
   directory, else its parent; plus the parent of each file open for writing outside the volumes. Nested entries
   collapse into their parent. A write directly in `/` or a top-level directory (`/var`, `/etc` ...) is never
   mounted over (that would hide the image's files); it is listed as `UNRESOLVED` and `apply` refuses.
-  On the stock image this gives `/run /tmp /var/backups /var/lib/apt /var/lib/logrotate`.
+  On the stock image this gives `/run /tmp /var/backups /var/lib/apt /var/lib/logrotate`; the live validator
+  container had also created `/var/opt/postfiat`, so its plan has that tmpfs too (see `validator-live-apply.log`).
 - **capabilities**: if `cron` runs in the container (the stock entrypoint starts it for log rotation), add
   `SETGID SETUID`: cron calls `setgid`/`initgroups`/`setuid` before every job, even for root jobs, and
   `logrotate` from `cron.daily` switches its egid the same way. Nothing else is needed: postfiatd binds 2559 and
@@ -111,13 +112,25 @@ peers >= `MIN_PEERS` (1). `verify --min-uptime 3600` an hour after `apply` is th
 | [`logs/validator-probe-1.log`](logs/validator-probe-1.log), [`logs/validator-probe-2.log`](logs/validator-probe-2.log) | probe on the validator host's image: failed attempts and their fixes (above) |
 | [`logs/sentry-live-apply.log`](logs/sentry-live-apply.log) | sentry: notifiers to a throwaway topic, guard proof without a window (exit 4 x2), discover, plan, probe, pft-maint window, apply (full after 52 s, before/after HostConfig), verify PASS, pft-integrity verify (FAIL on exactly the changed fields) -> accept -> PASS, notifier configs restored (sha256 match), throwaway topic read back (only `[MAINT]` start/end) |
 | [`logs/unit-tests.log`](logs/unit-tests.log) | shellcheck + offline test suite |
-| (next) | sentry 1-hour stability `verify --min-uptime 3600`; validator live apply + 1-hour stability |
+| [`logs/validator-live-apply.log`](logs/validator-live-apply.log) | validator (compose): notifiers on both hosts to a throwaway topic + Alertmanager silence, guard proof (exit 4 x2), discover, plan, probe PASS, pft-maint window (flag pushed to the sentry), apply (full after 51 s, before/after HostConfig), verify 14/14 PASS, pft-integrity verify (exactly `compose:.env`, `compose:docker-compose.confine.yml`, `container:postfiatd`) -> accept -> PASS, notifier configs restored (sha256 match), throwaway topic read back (only `[MAINT]` start/end) |
+| [`logs/sentry-stability-1h.log`](logs/sentry-stability-1h.log) | sentry 1-hour stability with [`stability-check.sh`](stability-check.sh): `verify --min-uptime 3600` PASS (uptime 3745 s, restart count 0, OOMKilled false, RSS under the 2048 MiB limit), docker stats, pft-integrity PASS |
+| [`logs/sentry-stability-1h-run1.log`](logs/sentry-stability-1h-run1.log) | the same check about 30 s earlier from an ad-hoc command: PASS, but its `script sha256 on sentry:` line is empty because the script was piped over ssh from the local checkout and no copy exists on the sentry; `stability-check.sh` prints the sha of the piped file instead |
+| (next) | validator `verify --min-uptime 3600` one hour after apply |
 
 In `sentry-live-apply.log` section 2 the two refusal messages appear out of order (the `--yes` message after the
 second command, the `REFUSED` message after the next `$` line): stderr and stdout travel separately over ssh and
 the drill script did not merge them. Both exit codes are 4 as expected.
 
-[`drill-sentry.sh`](drill-sentry.sh) is the wrapper used for the sentry run.
+[`drill-sentry.sh`](drill-sentry.sh) is the wrapper used for the sentry run, [`drill-validator.sh`](drill-validator.sh) the one for
+the validator. The validator also runs Prometheus/Alertmanager, whose bridge has no maintenance hook, so the validator
+wrapper adds an Alertmanager silence and redirects the sentry's watchdog target too. It accepts the integrity baseline
+only if every changed item is `compose:*` or `container:<name>`. Before the live run an ad-hoc check against synthetic
+input showed that the first version of that filter (`container:NAME:` with a trailing colon) did not match the real
+`pft-integrity` line format, so it would have refused a correct run; it was fixed before the run. The recorded test
+([`tests/drill-validator-filter-check.sh`](tests/drill-validator-filter-check.sh),
+[`logs/drill-validator-filter-check.log`](logs/drill-validator-filter-check.log)) evals the script's actual line and was
+written after the run. In `validator-live-apply.log` the
+two `docker compose` warning timestamps (host local time) are shown as `<redacted-local-time>`; nothing else is edited.
 
 ## Tests
 
