@@ -251,6 +251,19 @@ sudo bash resync/pft-resync.sh plan --container postfiatd-sentry
 cd resync && sudo bash drill-sentry.sh      # window + drill + notifiers on a throwaway topic
 ```
 
+## Least-privilege container profile add-on
+
+[`confine/`](confine/README.md): `pft-confine` drops every capability the postfiatd container does not need
+(stock image: keeps only `SETGID SETUID` for cron), makes the root filesystem read-only with tmpfs for the five
+directories it writes, and sets pids and memory limits sized from observed usage. `discover`/`plan` are read-only,
+`probe` tests the profile in a throwaway container first, `apply --yes` runs only inside a pft-maint window and
+rolls back if the node is not `full` within 15 minutes, `verify` checks every item. Run it on the sentry first.
+
+```bash
+sudo bash confine/pft-confine.sh plan --container postfiatd-sentry
+sudo bash confine/pft-confine.sh probe --container postfiatd-sentry
+```
+
 ## Alert rules add-on
 
 [`alerts/`](alerts/README.md): 16 Prometheus alert rules for the exporter's metrics. They cover node/RPC down,

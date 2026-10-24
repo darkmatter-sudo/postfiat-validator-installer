@@ -1,0 +1,66 @@
+# Ubuntu 22.04.5 LTS | 2026-10-24T22:18:25Z | validator-host | pft-confine.sh sha256 3faa4b558497fbdd
+$ sudo CONFINE_CAP_ADD=none CONFINE_TMPFS=/tmp bash pft-confine.sh probe   # attempt 1: cap_drop ALL, read-only, /tmp only
+[2026-10-24T22:18:32Z] probe: throwaway container pft-confine-probe-246634, image agtipft/postfiatd:testnet-light-latest, --network none, fresh anonymous volumes
+[2026-10-24T22:18:32Z] probe profile: {"cap_add":[],"tmpfs":["/tmp"],"pids_limit":256,"memory_bytes":2415919104}
+  [FAIL] container running, 0 restarts (false 0)
+  log: Starting cron daemon for log rotation...
+  log: cron: can't open or create /var/run/crond.pid: Read-only file system
+[2026-10-24T22:18:53Z] probe RESULT: FAIL (container not running)
+exit=1
+
+$ sudo CONFINE_CAP_ADD=none bash pft-confine.sh probe   # attempt 2: derived tmpfs list, still no capabilities
+[2026-10-24T22:19:00Z] probe: throwaway container pft-confine-probe-246997, image agtipft/postfiatd:testnet-light-latest, --network none, fresh anonymous volumes
+[2026-10-24T22:19:00Z] probe profile: {"cap_add":[],"tmpfs":["/run","/tmp","/var/backups","/var/lib/apt","/var/lib/logrotate","/var/opt/postfiat"],"pids_limit":256,"memory_bytes":2415919104}
+  [PASS] container running, 0 restarts (true 0)
+  [PASS] capabilities in effect: 0000000000000000
+  [FAIL] cron job identity switch (setpriv --init-groups, as cron does before each job)
+         | setpriv: initgroups failed: Operation not permitted
+  [PASS] write /run
+  [PASS] write /tmp
+  [PASS] write /var/backups
+  [PASS] write /var/lib/apt
+  [PASS] write /var/lib/logrotate
+  [PASS] write /var/opt/postfiat
+  [PASS] write /etc/postfiatd
+  [PASS] write /var/lib/postfiatd/db
+  [PASS] write /var/log/postfiatd
+  [SKIP] cron.daily/apt-compat (sleeps a random time up to 30 min; its only write, /var/lib/apt/daily_lock, is covered above if planned)
+  [PASS] cron.daily/dpkg
+  [FAIL] cron.daily/logrotate
+         | error: error switching euid from 0 to 0 and egid from 0 to 4 (pid 196): Operation not permitted
+         | error: error switching euid from 0 to 0 and egid from 0 to 4 (pid 196): Operation not permitted
+         | error: error switching euid from 0 to 0 and egid from 0 to 4 (pid 196): Operation not permitted
+         | error: error switching euid from 0 to 0 and egid from 0 to 4 (pid 196): Operation not permitted
+         | error: error switching euid from 0 to 0 and egid from 0 to 4 (pid 196): Operation not permitted
+         | error: error switching euid from 0 to 0 and egid from 0 to 4 (pid 196): Operation not permitted
+         | error: error switching euid from 0 to 0 and egid from 0 to 4 (pid 196): Operation not permitted
+  [PASS] crontab job: /usr/sbin/logrotate -s /var/log/postfiatd/.logrotate.status /etc/logrotate.d/postfiatd
+  [PASS] postfiatd still PID 1: /usr/local/bin/postfiatd --conf /etc/postfiatd/postfiatd.cfg 
+[2026-10-24T22:19:24Z] probe RESULT: FAIL (2 check(s))
+exit=1
+
+$ sudo bash pft-confine.sh probe   # attempt 3: derived plan (tmpfs list + SETGID SETUID)
+[2026-10-24T22:19:30Z] probe: throwaway container pft-confine-probe-247930, image agtipft/postfiatd:testnet-light-latest, --network none, fresh anonymous volumes
+[2026-10-24T22:19:30Z] probe profile: {"cap_add":["SETGID","SETUID"],"tmpfs":["/run","/tmp","/var/backups","/var/lib/apt","/var/lib/logrotate","/var/opt/postfiat"],"pids_limit":256,"memory_bytes":2415919104}
+  [PASS] container running, 0 restarts (true 0)
+  [PASS] capabilities in effect: 00000000000000c0
+  [PASS] cron job identity switch (setpriv --init-groups, as cron does before each job)
+  [PASS] write /run
+  [PASS] write /tmp
+  [PASS] write /var/backups
+  [PASS] write /var/lib/apt
+  [PASS] write /var/lib/logrotate
+  [PASS] write /var/opt/postfiat
+  [PASS] write /etc/postfiatd
+  [PASS] write /var/lib/postfiatd/db
+  [PASS] write /var/log/postfiatd
+  [SKIP] cron.daily/apt-compat (sleeps a random time up to 30 min; its only write, /var/lib/apt/daily_lock, is covered above if planned)
+  [PASS] cron.daily/dpkg
+  [PASS] cron.daily/logrotate
+  [PASS] crontab job: /usr/sbin/logrotate -s /var/log/postfiatd/.logrotate.status /etc/logrotate.d/postfiatd
+  [PASS] postfiatd still PID 1: /usr/local/bin/postfiatd --conf /etc/postfiatd/postfiatd.cfg 
+[2026-10-24T22:19:52Z] probe RESULT: PASS
+exit=0
+
+$ sudo docker ps -a --filter name=pft-confine-probe --format "{{.Names}}" | wc -l   # probe containers left
+0

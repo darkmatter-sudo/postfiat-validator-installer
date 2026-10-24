@@ -1,0 +1,61 @@
+# Ubuntu 22.04.5 LTS | 2026-10-24T22:16:28Z | validator-host | pft-confine.sh sha256 ab83db9b6434fdd8
+$ sudo CONFINE_CAP_ADD=none CONFINE_TMPFS=/tmp bash pft-confine.sh probe   # naive attempt: cap_drop ALL, read-only, /tmp only
+[2026-10-24T22:16:35Z] probe: throwaway container pft-confine-probe-244582, image agtipft/postfiatd:testnet-light-latest, --network none, fresh anonymous volumes
+[2026-10-24T22:16:35Z] probe profile: {"cap_add":[],"tmpfs":["/tmp"],"pids_limit":256,"memory_bytes":2415919104}
+  [FAIL] container running, 0 restarts (false 0)
+  [PASS] capabilities in effect: Error response from daemon: container 9292c3dd27fa8e3351881df8be54b8fbd674bf90407de9d26921158af6fc6a26 is not running
+  [FAIL] cron job identity switch (setpriv --init-groups, as cron does before each job)
+         | Error response from daemon: container 9292c3dd27fa8e3351881df8be54b8fbd674bf90407de9d26921158af6fc6a26 is not running
+  [FAIL] write /tmp
+         | Error response from daemon: container 9292c3dd27fa8e3351881df8be54b8fbd674bf90407de9d26921158af6fc6a26 is not running
+  [FAIL] write /etc/postfiatd
+         | Error response from daemon: container 9292c3dd27fa8e3351881df8be54b8fbd674bf90407de9d26921158af6fc6a26 is not running
+  [FAIL] write /var/lib/postfiatd/db
+         | Error response from daemon: container 9292c3dd27fa8e3351881df8be54b8fbd674bf90407de9d26921158af6fc6a26 is not running
+  [FAIL] write /var/log/postfiatd
+         | Error response from daemon: container 9292c3dd27fa8e3351881df8be54b8fbd674bf90407de9d26921158af6fc6a26 is not running
+Error response from daemon: container 9292c3dd27fa8e3351881df8be54b8fbd674bf90407de9d26921158af6fc6a26 is not running
+Error response from daemon: container 9292c3dd27fa8e3351881df8be54b8fbd674bf90407de9d26921158af6fc6a26 is not running
+  [FAIL] postfiatd still PID 1
+         | Error response from daemon: container 9292c3dd27fa8e3351881df8be54b8fbd674bf90407de9d26921158af6fc6a26 is not running
+  log: cron: can't open or create /var/run/crond.pid: Read-only file system
+[2026-10-24T22:16:56Z] probe RESULT: FAIL (7 check(s))
+exit=1
+
+$ sudo bash pft-confine.sh plan
+proposed profile for postfiatd (compose):
+  cap_drop:     ALL
+  cap_add:      SETGID SETUID   (cron runs in the container; it calls setgid/initgroups/setuid before every job)
+  read_only:    true
+  tmpfs:        /run /tmp /var/backups /var/lib/apt /var/lib/logrotate /var/opt/postfiat [rw,noexec,nosuid,size=64m]   (/tmp + directories written outside the mounts (docker diff A entries, files open for writing))
+  pids_limit:   256   (max(256, 4 x 35 tasks))
+  memory:       2304 MiB, no swap   (max(2048 MiB, 3 x PID1 RSS 691 MiB) rounded up to 256 MiB)
+  security_opt: no-new-privileges
+apply would write /opt/postfiatd/docker-compose.confine.yml:
+exit=0
+
+$ sudo bash pft-confine.sh probe   # derived plan
+[2026-10-24T22:17:37Z] probe: throwaway container pft-confine-probe-245600, image agtipft/postfiatd:testnet-light-latest, --network none, fresh anonymous volumes
+[2026-10-24T22:17:37Z] probe profile: {"cap_add":["SETGID","SETUID"],"tmpfs":["/run","/tmp","/var/backups","/var/lib/apt","/var/lib/logrotate","/var/opt/postfiat"],"pids_limit":256,"memory_bytes":2415919104}
+  [PASS] container running, 0 restarts (true 0)
+  [PASS] capabilities in effect: 00000000000000c0
+  [PASS] cron job identity switch (setpriv --init-groups, as cron does before each job)
+  [PASS] write /run
+  [PASS] write /tmp
+  [PASS] write /var/backups
+  [PASS] write /var/lib/apt
+  [PASS] write /var/lib/logrotate
+  [PASS] write /var/opt/postfiat
+  [PASS] write /var/lib/postfiatd/db
+  [PASS] write /var/log/postfiatd
+  [PASS] write /etc/postfiatd
+  [SKIP] cron.daily/apt-compat (sleeps a random time up to 30 min; its only write, /var/lib/apt/daily_lock, is covered above if planned)
+  [PASS] cron.daily/dpkg
+  [PASS] cron.daily/logrotate
+  [PASS] crontab job: /usr/sbin/logrotate -s /var/log/postfiatd/.logrotate.status /etc/logrotate.d/postfiatd
+  [PASS] postfiatd still PID 1: /usr/local/bin/postfiatd --conf /etc/postfiatd/postfiatd.cfg 
+[2026-10-24T22:18:05Z] probe RESULT: PASS
+exit=0
+
+$ sudo docker ps -a --filter name=pft-confine-probe --format "{{.Names}}" | wc -l
+0

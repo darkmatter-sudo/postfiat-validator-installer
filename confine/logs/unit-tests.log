@@ -1,0 +1,37 @@
+# Ubuntu 22.04.5 LTS | 2026-10-24T22:27:14Z
+$ shellcheck -V | head -2; shellcheck confine/pft-confine.sh confine/drill-sentry.sh confine/tests/run-tests.sh; echo "shellcheck exit $?"
+ShellCheck - shell script analysis tool
+version: 0.8.0
+shellcheck exit 0
+$ bash confine/tests/run-tests.sh
+# pft-confine offline tests - 2026-10-24T22:27:15Z - script sha256 a2c126d2650eab3b
+ok   - 1a plan exits 0
+ok   - 1b tmpfs = /tmp + written dirs outside mounts (file -> parent, added dir -> itself, mounts ignored)
+ok   - 1c cap_drop ALL, cap_add SETGID SETUID because cron runs
+ok   - 1d memory = 3 x RSS 707 MiB -> 2304 MiB (256 MiB steps)
+ok   - 1e pids_limit = max(256, 4 x 35)
+ok   - 1f read_only + no-new-privileges kept
+ok   - 1g small RSS -> 2048 MiB floor; no cron -> no capabilities
+ok   - 1h a write directly in /var is never mounted over - listed as unresolved
+ok   - 1i CONFINE_CAP_ADD=none / CONFINE_TMPFS overrides
+ok   - 1j run-mode plan shows the recreate command (profile + mounts, ports, restart, non-image env only)
+ok   - 2a apply without --yes refused (exit 4), nothing changed
+ok   - 2b apply without a maintenance window refused (exit 4), nothing changed
+ok   - 2c window shorter than TIMEOUT+300s refused
+ok   - 2d data-collection lock refused
+ok   - 2e node not full refused
+ok   - 3a compose apply: confine file written, .env keeps vars + mode 600, COMPOSE_FILE added, config checked, up -d
+ok   - 3b .env backup is the original; state file records the apply
+ok   - 3c run-mode apply: stop, keep old as NAME-preconfine-<id> (restart=no), recreate with profile
+ok   - 4a compose: never full -> rollback after 900 s (.env restored byte-identical, confine file removed, up -d again), exit 1
+ok   - 4b rollback started at the 900 s timeout, not before
+ok   - 4c run mode: never full -> new container removed, old renamed back, restart policy restored, started
+ok   - 4d docker run fails -> immediate rollback
+ok   - 4e manual rollback needs --yes
+ok   - 4f manual rollback --yes restores the previous compose config
+ok   - 5a verify PASS on a confined container (all items, 1 h uptime)
+ok   - 5b verify FAILs when uptime < --min-uptime
+ok   - 5c verify on an unconfined container FAILs the 6 profile items + RSS/tasks (no limits)
+ok   - 5d verify FAILs on OOMKilled, restarts, RSS over limit, not full
+# 28 passed, 0 failed
+exit 0

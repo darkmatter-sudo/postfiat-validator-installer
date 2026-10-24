@@ -1,0 +1,172 @@
+pft-confine sentry live apply - 2026-10-24T22:24:24Z - Ubuntu 22.04.5 LTS - container postfiatd-sentry
+script sha256: pft-confine.sh a2c126d2650eab3b03d06bd1f0bc5bb2d75655e586f27c32235baeaf4e0ff435 | drill-sentry.sh d92c4615c736fc075123dc3a88fe5f3ad20ea46b83606f494af4e6c702a2546c
+
+== 1. redirect every notifier on this host to a throwaway topic
+  /etc/pft-watchdog/ntfy.env -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-watchdog/ntfy.env.pre-confine-drill
+  /etc/pft-integrity.env -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-integrity.env.pre-confine-drill
+  /etc/pft-maint/ntfy.env created for the drill only -> https://ntfy.sh/<redacted> (throwaway)
+  notifier timers on this host: pft-integrity.timer pft-maint-tick.timer pft-watchdog.timer 
+  alert containers on this host: (none = no Alertmanager to silence)
+
+== 2. live guard proof: no maintenance window
+$ pft-confine apply --container postfiatd-sentry
+exit 4 (expect 4)
+$ pft-confine apply --yes --container postfiatd-sentry
+pft-confine: apply recreates the container; re-run with --yes
+exit 4 (expect 4)
+
+== 3. discover -> plan -> probe -> window -> apply -> verify
+$ pft-confine discover --container postfiatd-sentry
+pft-confine: REFUSED: no active pft-maint window (window=none); run: sudo pft-maint start --ttl 30m --reason ...
+container:        postfiatd-sentry (run) image agtipft/postfiatd:testnet-light-latest
+user:             0:0
+cap_add/cap_drop: [] / []
+readonly_rootfs:  false
+pids_limit:       0   memory: 0   nano_cpus: 0
+tmpfs:            []
+security_opt:     ["no-new-privileges"]
+mounts:           /var/lib/postfiatd/db(volume) /var/log/postfiatd(volume) /etc/postfiatd(volume)
+processes:        cron postfiatd sh
+pid1:             rss 491 MiB, threads 30; tasks in container 35; host memory 7937 MiB
+written outside mounts (docker diff):
+  C /var
+  C /var/backups
+  A /var/backups/dpkg.diversions.0
+  A /var/backups/dpkg.statoverride.0
+  A /var/backups/dpkg.status.0
+  A /var/backups/alternatives.tar.0
+  A /var/backups/apt.extended_states.0
+  A /var/backups/dpkg.arch.0
+  C /var/lib
+  C /var/lib/logrotate
+  A /var/lib/logrotate/status
+  C /var/lib/apt
+  A /var/lib/apt/daily_lock
+  C /run
+  A /run/crond.pid
+  A /run/crond.reboot
+open for writing outside mounts:
+  /run/crond.pid
+$ pft-confine plan --container postfiatd-sentry
+proposed profile for postfiatd-sentry (run):
+  cap_drop:     ALL
+  cap_add:      SETGID SETUID   (cron runs in the container; it calls setgid/initgroups/setuid before every job)
+  read_only:    true
+  tmpfs:        /run /tmp /var/backups /var/lib/apt /var/lib/logrotate [rw,noexec,nosuid,size=64m]   (/tmp + directories written outside the mounts (docker diff A entries, files open for writing))
+  pids_limit:   256   (max(256, 4 x 34 tasks))
+  memory:       2048 MiB, no swap   (max(2048 MiB, 3 x PID1 RSS 491 MiB) rounded up to 256 MiB)
+  security_opt: no-new-privileges
+apply would recreate with: docker run -d \
+    --cap-drop=ALL \
+    --cap-add=SETGID \
+    --cap-add=SETUID \
+    --read-only \
+    --tmpfs=/run:rw,noexec,nosuid,size=64m \
+    --tmpfs=/tmp:rw,noexec,nosuid,size=64m \
+    --tmpfs=/var/backups:rw,noexec,nosuid,size=64m \
+    --tmpfs=/var/lib/apt:rw,noexec,nosuid,size=64m \
+    --tmpfs=/var/lib/logrotate:rw,noexec,nosuid,size=64m \
+    --pids-limit=256 \
+    --memory=2147483648 \
+    --memory-swap=2147483648 \
+    --security-opt=no-new-privileges \
+    --name=postfiatd-sentry \
+    --restart=unless-stopped \
+    --user=0:0 \
+    --log-driver=json-file \
+    --log-opt=max-file=10 \
+    --log-opt=max-size=100m \
+    --network=bridge \
+    --publish=127.0.0.1:2560:2559 \
+    --volume=pft-sentry-config:/etc/postfiatd \
+    --volume=pft-sentry-data:/var/lib/postfiatd/db \
+    --volume=7f505992998799bdc092cfb03d16aaae688a0190738c4429bb66f05355511ec9:/var/log/postfiatd \
+    agtipft/postfiatd:testnet-light-latest \
+    --conf \
+    /etc/postfiatd/postfiatd.cfg \
+$ pft-confine probe --container postfiatd-sentry
+[2026-10-24T22:24:46Z] probe: throwaway container pft-confine-probe-299996, image agtipft/postfiatd:testnet-light-latest, --network none, fresh anonymous volumes
+[2026-10-24T22:24:46Z] probe profile: {"cap_add":["SETGID","SETUID"],"tmpfs":["/run","/tmp","/var/backups","/var/lib/apt","/var/lib/logrotate"],"pids_limit":256,"memory_bytes":2147483648}
+  [PASS] container running, 0 restarts (true 0)
+  [PASS] capabilities in effect: 00000000000000c0
+  [PASS] cron job identity switch (setpriv --init-groups, as cron does before each job)
+  [PASS] write /run
+  [PASS] write /tmp
+  [PASS] write /var/backups
+  [PASS] write /var/lib/apt
+  [PASS] write /var/lib/logrotate
+  [PASS] write /etc/postfiatd
+  [PASS] write /var/lib/postfiatd/db
+  [PASS] write /var/log/postfiatd
+  [SKIP] cron.daily/apt-compat (sleeps a random time up to 30 min; its only write, /var/lib/apt/daily_lock, is covered above if planned)
+  [PASS] cron.daily/dpkg
+  [PASS] cron.daily/logrotate
+  [PASS] crontab job: /usr/sbin/logrotate -s /var/log/postfiatd/.logrotate.status /etc/logrotate.d/postfiatd
+  [PASS] postfiatd still PID 1: /usr/local/bin/postfiatd --conf /etc/postfiatd/postfiatd.cfg 
+[2026-10-24T22:25:12Z] probe RESULT: PASS
+$ pft-maint start --ttl 30m --reason "pft-confine live apply" --no-sentry
+window started: id m1792880713-301046 until 2026-10-24T22:55:13Z | sentry copy: skipped
+window ACTIVE on sentry: pft-confine live apply | until 2026-10-24T22:55:13Z (1797s left) | origin local | suppressed: watchdog=0 monitor=0 integrity=0
+no data-collection locks
+$ pft-confine apply --yes --container postfiatd-sentry
+[2026-10-24T22:25:24Z] apply 20261024T222524Z on postfiatd-sentry (run); maintenance gate: ok 1797; pre: server_state=full peers=11
+[2026-10-24T22:25:24Z] before HostConfig: {"Id":"016646cc88f6","CapAdd":null,"CapDrop":null,"ReadonlyRootfs":false,"Tmpfs":null,"PidsLimit":null,"Memory":0,"MemorySwap":0,"SecurityOpt":["no-new-privileges"],"User":"0:0","Restart":"unless-stopped"}
+[2026-10-24T22:25:24Z] profile: {"container":"postfiatd-sentry","mode":"run","image":"agtipft/postfiatd:testnet-light-latest","cap_drop":["ALL"],"cap_add":["SETGID","SETUID"],"read_only":true,"tmpfs":["/run","/tmp","/var/backups","/var/lib/apt","/var/lib/logrotate"],"tmpfs_opts":"rw,noexec,nosuid,size=64m","pids_limit":256,"memory_bytes":2147483648,"security_opt":["no-new-privileges"],"unresolved":[],"warnings":[]}
+[2026-10-24T22:25:24Z] recreate: docker run -d --cap-drop=ALL --cap-add=SETGID --cap-add=SETUID --read-only --tmpfs=/run:rw,noexec,nosuid,size=64m --tmpfs=/tmp:rw,noexec,nosuid,size=64m --tmpfs=/var/backups:rw,noexec,nosuid,size=64m --tmpfs=/var/lib/apt:rw,noexec,nosuid,size=64m --tmpfs=/var/lib/logrotate:rw,noexec,nosuid,size=64m --pids-limit=256 --memory=2147483648 --memory-swap=2147483648 --security-opt=no-new-privileges --name=postfiatd-sentry --restart=unless-stopped --user=0:0 --log-driver=json-file --log-opt=max-file=10 --log-opt=max-size=100m --network=bridge --publish=127.0.0.1:2560:2559 --volume=pft-sentry-config:/etc/postfiatd --volume=pft-sentry-data:/var/lib/postfiatd/db --volume=7f505992998799bdc092cfb03d16aaae688a0190738c4429bb66f05355511ec9:/var/log/postfiatd agtipft/postfiatd:testnet-light-latest --conf /etc/postfiatd/postfiatd.cfg
+[2026-10-24T22:25:26Z] previous container kept as postfiatd-sentry-preconfine-20261024T222524Z (stopped, restart=no)
+[2026-10-24T22:25:27Z] poll +0s server_state=down peers=0
+[2026-10-24T22:25:37Z] poll +10s server_state=connected peers=10
+[2026-10-24T22:25:48Z] poll +21s server_state=connected peers=10
+[2026-10-24T22:25:58Z] poll +31s server_state=connected peers=10
+[2026-10-24T22:26:08Z] poll +41s server_state=syncing peers=10
+[2026-10-24T22:26:19Z] poll +52s server_state=full peers=10
+[2026-10-24T22:26:19Z] after HostConfig: {"Id":"885926643ead","CapAdd":["CAP_SETGID","CAP_SETUID"],"CapDrop":["ALL"],"ReadonlyRootfs":true,"Tmpfs":{"/run":"rw,noexec,nosuid,size=64m","/tmp":"rw,noexec,nosuid,size=64m","/var/backups":"rw,noexec,nosuid,size=64m","/var/lib/apt":"rw,noexec,nosuid,size=64m","/var/lib/logrotate":"rw,noexec,nosuid,size=64m"},"PidsLimit":256,"Memory":2147483648,"MemorySwap":2147483648,"SecurityOpt":["no-new-privileges"],"User":"0:0","Restart":"unless-stopped"}
+[2026-10-24T22:26:19Z] apply RESULT: PASS - profile active, node full (state /var/lib/pft-confine/postfiatd-sentry.json)
+apply exit 0
+$ pft-confine verify --container postfiatd-sentry
+pft-confine verify postfiatd-sentry - 2026-10-24T22:26:20Z
+  [PASS] cap_drop ALL (got ["ALL"])
+  [PASS] cap_add = ["SETGID","SETUID"] (got ["SETGID","SETUID"])
+  [PASS] read-only root filesystem
+  [PASS] tmpfs = ["/run","/tmp","/var/backups","/var/lib/apt","/var/lib/logrotate"] (got ["/run","/tmp","/var/backups","/var/lib/apt","/var/lib/logrotate"])
+  [PASS] pids_limit 256 (got 256)
+  [PASS] memory limit 2147483648 (got 2147483648)
+  [PASS] no-new-privileges
+  [PASS] running, OOMKilled=false
+  [PASS] restart count 0
+  [PASS] uptime 55s >= 0s (started 2026-10-24T22:25:26.906681347Z)
+  [PASS] PID1 RSS 717 MiB < limit 2048 MiB (35%)
+  [PASS] tasks 35 < pids_limit 256
+  [PASS] server_state full
+  [PASS] peers 10 >= 1
+RESULT: PASS
+verify exit 0
+$ pft-maint end
+window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: skipped
+
+== 4. pft-integrity rebaseline
+$ pft-integrity verify
+pft-integrity verify - 2026-10-24T22:26:26Z
+OS: Ubuntu 22.04.5 LTS | container: postfiatd-sentry | baseline: 2026-10-24T01:13:47Z
+  [FAIL] container:postfiatd-sentry                   changed  cap_add, cap_drop, readonly_rootfs
+RESULT: FAIL - 24 unchanged, 0 warn, 1 fail -> exit 2
+$ pft-integrity accept --reason "pft-confine: least-privilege profile applied"
+pft-integrity accept - 2026-10-24T22:26:30Z: re-baselined 25 items by <user>
+manifest sha256: bd436ce85c29d3cae8e7605e2c1cce2cb06dc10b19b222272f4e0c2c93d86961 -> 34a3893b6ce39d637fc65b179c5f6342c6323e7d35a12ea134e21660ae2f4a16 (logged to accept.log)
+$ pft-integrity verify
+pft-integrity verify - 2026-10-24T22:26:34Z
+OS: Ubuntu 22.04.5 LTS | container: postfiatd-sentry | baseline: 2026-10-24T22:26:26Z
+RESULT: PASS - 25 unchanged, 0 warn, 0 fail -> exit 0
+
+== 5. after
+postfiatd-sentry Up About a minute
+postfiatd-sentry-preconfine-20261024T222524Z Exited (0) About a minute ago
+no maintenance window (alerting is live)
+no data-collection locks
+restored /etc/pft-watchdog/ntfy.env: sha256 matches pre-drill copy: yes (root 600)
+restored /etc/pft-integrity.env: sha256 matches pre-drill copy: yes (root 600)
+removed drill-only /etc/pft-maint/ntfy.env: yes
+throwaway topic read back from ntfy.sh (since drill start):
+{"time":"2026-10-24T22:25:14Z","title":"[MAINT] start sentry","message":"pft-confine live apply | until 2026-10-24T22:55:13Z (ttl 1800s) | sentry copy: skipped"}
+{"time":"2026-10-24T22:26:22Z","title":"[MAINT] end sentry","message":"pft-confine live apply | pft-confine live apply done after 68s | suppressed here: watchdog=0 monitor=0 integrity=0 | sentry copy: skipped"}
+drill-sentry done: apply exit 0, verify exit 0
