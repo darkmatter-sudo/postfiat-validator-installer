@@ -1,0 +1,57 @@
+OS: Ubuntu 22.04.5 LTS | host: validator-host | 2026-10-25T01:20:58Z
+$ cat slo/install.sh  (sha256 3d9c22b8493a)
+$ NTFY_ENV_FILE=<operator ntfy.env> bash slo/install.sh
+2026-10-25T01:20:58Z slo install: repo 3ac20dd
+2026-10-25T01:20:58Z 1/3 exporter: install pft_exporter.py (sha256 c8239881c8b7)
+pft_maint_active 0
+pft_maint_flag_malformed 0
+pft_up 1
+2026-10-25T01:21:00Z 2/3 alert stack: run-stack.sh up (SLO rules mounted)
+2026-10-25T01:21:03Z promtool check rules
+Checking postfiat.rules.yml
+  SUCCESS: 16 rules found
+
+2026-10-25T01:21:05Z promtool test rules
+  SUCCESS
+
+2026-10-25T01:21:08Z promtool check config (prometheus.yml + slo rules at /etc/pft-slo)
+Checking /etc/pft-alerts/prometheus.yml
+  SUCCESS: 2 rule files found
+ SUCCESS: /etc/pft-alerts/prometheus.yml is valid prometheus config file syntax
+
+Checking /etc/pft-alerts/postfiat.rules.yml
+  SUCCESS: 16 rules found
+
+Checking /etc/pft-slo/slo.rules.yml
+  SUCCESS: 17 rules found
+
+2026-10-25T01:21:09Z amtool check-config
+Checking '/w/alertmanager.yml'  SUCCESS
+Found:
+ - global config
+ - route
+ - 2 inhibit rules
+ - 1 receivers
+ - 0 templates
+
+2026-10-25T01:21:12Z starting pft-alert-bridge (ntfy: on)
+2026-10-25T01:21:13Z starting pft-alertmanager
+2026-10-25T01:21:14Z starting pft-prometheus
+  listen :9090 -> 127.0.0.1:9090
+  listen :9093 -> 127.0.0.1:9093
+  listen :9095 -> 127.0.0.1:9095
+2026-10-25T01:21:17Z all stack listeners are loopback-only
+pft-prometheus  Up 2 seconds  prom/prometheus:v3.5.0
+pft-alertmanager  Up 3 seconds  prom/alertmanager:v0.28.1
+pft-alert-bridge  Up 4 seconds  python:3.12-alpine
+2026-10-25T01:21:17Z scrape targets:
+2026-10-25T01:21:17Z Prometheus alerts (pending/firing):
+2026-10-25T01:21:17Z Alertmanager alerts:
+2026-10-25T01:21:17Z 3/3 rules loaded + recorded samples
+  group pft-slo-alerts: 2 rules, health unknown
+  group pft-slo-budget: 2 rules, health unknown
+  group pft-slo-sli: 9 rules, health unknown
+  group pft-slo-windows: 4 rules, health unknown
+2026-10-25T01:21:32Z pft:sli_good:bool latest = 1 (1 = good)
+2026-10-25T01:21:32Z slo install: done
+exit=0

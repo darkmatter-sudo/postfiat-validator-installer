@@ -1,0 +1,67 @@
+OS: Ubuntu 22.04.5 LTS | host: validator-host | repo 3ac20dd | check.sh sha256 18680b2353bd
+$ DOCKER="sudo docker" bash slo/check.sh
+
+== tests.yml is up to date with gen_tests.py
+tests.yml matches
+
+== promtool check rules slo.rules.yml
+Checking slo.rules.yml
+  SUCCESS: 17 rules found
+
+
+== promtool test rules tests.yml
+  SUCCESS
+
+
+== unit tests (python3 -m unittest)
+test_absent_is_inactive_not_malformed (test_exporter_maint.MaintFlag) ... ok
+test_expired_window_is_inactive (test_exporter_maint.MaintFlag) ... ok
+test_malformed_flags_never_count_as_maintenance (test_exporter_maint.MaintFlag) ... ok
+test_metric_lines (test_exporter_maint.MaintFlag) ... ok
+test_owner_check_rejects_non_root_file (test_exporter_maint.MaintFlag) ... ok
+test_symlink_and_garbage_are_malformed (test_exporter_maint.MaintFlag) ... ok
+test_valid_open_window_is_active (test_exporter_maint.MaintFlag) ... ok
+test_age_boundary_is_strictly_below_10s (test_report.Classification) ... ok
+test_cause_order_exporter_state_stale (test_report.Classification) ... ok
+test_maint_history_span_excludes_outage_without_metric (test_report.Classification) ... ok
+test_maint_metric_excludes_outage (test_report.Classification) ... ok
+test_missing_prometheus_data_is_unmeasured_and_splits_intervals (test_report.Classification) ... ok
+test_proposing_is_good (test_report.Classification) ... ok
+test_recording_rule_crosscheck_counts_disagreement (test_report.Classification) ... ok
+test_rpc_outage_is_one_interval_with_restart (test_report.Classification) ... ok
+test_steady_good (test_report.Classification) ... ok
+test_budget_math (test_report.Cli) ... ok
+test_chunks_cover_window_without_overlap (test_report.Cli) ... ok
+test_objective_from_metric_then_default (test_report.Cli) ... ok
+test_only_range_queries_and_chunking (test_report.Cli) ... ok
+test_real_fixture_shape (test_report.Cli) ... ok
+test_record_then_replay_roundtrip (test_report.Cli) ... ok
+test_usage_errors_exit_2 (test_report.Cli) ... ok
+test_replay_matches_recorded_report (test_report.RealFixtures) ... ok
+test_replay_with_maint_history_excludes_the_two_drill_windows (test_report.RealFixtures) ... ok
+
+----------------------------------------------------------------------
+Ran 25 tests in 0.075s
+
+OK
+
+== ruff check (slo/)
+All checks passed!
+
+== shellcheck
+shellcheck clean: ./check.sh ./install.sh
+
+== M1 mutation: pft:sli_bad:bool without the maintenance exclusion (promtool must FAIL)
+name: maintenance-window: same 20m RPC outage inside an open pft-maint window does not burn	alertname: PFTSLOFastBurn, time: 2h10m
+name: maintenance-window: same 20m RPC outage inside an open pft-maint window does not burn	alertname: PFTSLOFastBurn, time: 2h20m
+name: maintenance-window: same 20m RPC outage inside an open pft-maint window does not burn	alertname: PFTSLOSlowBurn, time: 2h20m
+name: maintenance-window: same 20m RPC outage inside an open pft-maint window does not burn	alertname: PFTSLOSlowBurn, time: 2h38m
+caught: maintenance-window test failed on the mutant
+
+== M2 mutation: CLI classify() ignores maintenance (unit tests must FAIL)
+FAIL: test_maint_history_span_excludes_outage_without_metric
+FAIL: test_maint_metric_excludes_outage
+FAIL: test_replay_with_maint_history_excludes_the_two_drill_windows
+caught: assertion failures only
+
+RESULT: PASS
