@@ -1,0 +1,30 @@
+$ bash stability-check.sh --container postfiatd
+pft-confine 1-hour stability (validator, postfiatd) - 2026-10-25T00:11:49Z - Ubuntu 22.04.5 LTS
+pft-confine.sh run: sha256 a2c126d2650eab3b03d06bd1f0bc5bb2d75655e586f27c32235baeaf4e0ff435 (local checkout)
+$ pft-confine verify --container postfiatd --min-uptime 3600
+pft-confine verify postfiatd - 2026-10-25T00:11:50Z
+  [PASS] cap_drop ALL (got ["ALL"])
+  [PASS] cap_add = ["SETGID","SETUID"] (got ["SETGID","SETUID"])
+  [PASS] read-only root filesystem
+  [PASS] tmpfs = ["/run","/tmp","/var/backups","/var/lib/apt","/var/lib/logrotate","/var/opt/postfiat"] (got ["/run","/tmp","/var/backups","/var/lib/apt","/var/lib/logrotate","/var/opt/postfiat"])
+  [PASS] pids_limit 256 (got 256)
+  [PASS] memory limit 2415919104 (got 2415919104)
+  [PASS] no-new-privileges
+  [PASS] running, OOMKilled=false
+  [PASS] restart count 0
+  [PASS] uptime 3627s >= 3600s (started 2026-10-24T23:11:23.63192283Z)
+  [PASS] PID1 RSS 799 MiB < limit 2304 MiB (34%)
+  [PASS] tasks 35 < pids_limit 256
+  [PASS] server_state full
+  [PASS] peers 11 >= 1
+RESULT: PASS
+exit 0
+$ docker inspect postfiatd (State/RestartCount)
+{"StartedAt":"2026-10-24T23:11:23.63192283Z","Running":true,"OOMKilled":false,"RestartCount":0}
+$ docker stats --no-stream postfiatd
+postfiatd mem 790.5MiB / 2.25GiB (34.31%) pids 31
+$ pft-integrity verify
+pft-integrity verify - 2026-10-25T00:11:57Z
+OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-10-24T23:12:25Z
+RESULT: PASS - 49 unchanged, 0 warn, 0 fail -> exit 0
+exit 0
