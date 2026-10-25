@@ -1,0 +1,72 @@
+unit-test run - 2026-10-25T04:23:42Z - Ubuntu 22.04.5 LTS
+sha256 pft-egress.sh 272f8809bb1f9ac04ba348efd7b243d9571725f0ab6460e9cf882b77bf9961d4 | drill-sentry.sh 65d5705d71236eb80d254ebf00004a5fd85d71f3cacffbaa58d289f50275ee8f
+$ shellcheck --version | sed -n 2p
+version: 0.8.0
+$ shellcheck egress/pft-egress.sh egress/drill-sentry.sh egress/tests/run-tests.sh egress/tests/netns-test.sh
+shellcheck exit 0
+$ ruff check egress/tests/fake_iptables.py
+EXE001 Shebang is present but file is not executable
+ --> egress/tests/fake_iptables.py:1:1
+  |
+1 | #!/usr/bin/env python3
+  | ^^^^^^^^^^^^^^^^^^^^^^
+2 | """Minimal stateful iptables / iptables-restore stand-in for the pft-egress offline tests.
+  |
+
+Found 1 error.
+ruff exit 1
+$ bash egress/tests/run-tests.sh
+# plan
+ok   - plan: resolvers from the container resolv.conf
+ok   - plan: tcp ports = 2559 + [ips] port 51235 + outbound ss port 51235 + VL https 443
+ok   - plan: ss parsing (6 established, 1 inbound on 2559, outbound remote ports 2559 51235)
+ok   - plan: validator_list_sites from validators.txt
+ok   - plan: prints restore input and jump
+ok   - plan: host network mode refused (exit 3)
+ok   - plan: embedded-DNS resolver warned and not allowlisted
+# apply guards (each must leave DOCKER-USER untouched)
+ok   - guard: no --yes -> exit 4, firewall unchanged
+ok   - guard: no maintenance window -> exit 4, firewall unchanged
+ok   - guard: window shorter than dead-man + margin -> exit 4, firewall unchanged
+ok   - guard: data-collection lock -> exit 4, firewall unchanged
+ok   - guard: node not full -> exit 4, firewall unchanged
+ok   - guard: peers below MIN_PEERS -> exit 4, firewall unchanged
+ok   - guard: no nameserver at all -> exit 4, firewall unchanged
+# dry run
+ok   - dry-run: diff printed, nothing changed
+# apply, idempotence, check
+ok   - apply: chain loaded, one jump at DOCKER-USER 1, dead-man PASS after 10 min (fake clock)
+ok   - apply: 8 rules (replies, 2 resolvers x udp/tcp 53, peers+vl, LOG, DROP last)
+ok   - apply: the existing DOCKER-USER rate-limit rules are kept, in order, after the jump
+ok   - apply: reapply service + timer written and enabled
+ok   - apply: baseline peers 11 recorded
+ok   - apply again: no change, firewall byte-identical
+ok   - check: PASS after apply
+ok   - check: reports DROP counter and drop log lines by port
+ok   - check: FAIL when peers < baseline
+# drift and reapply
+ok   - check: FAIL after container IP change
+ok   - reapply: stale jump replaced by one for the new IP at position 1
+ok   - check: PASS after reapply
+ok   - reapply: silent no-op without drift
+ok   - reapply: flushed chain + removed jump restored (boot / dockerd case)
+ok   - reapply: duplicate jump further down removed
+# rollback
+ok   - rollback without --yes refused
+ok   - rollback: chain + jump gone, timer disabled, DOCKER-USER identical to the original
+ok   - reapply after rollback: does nothing (no state)
+ok   - rollback twice: still clean, exit 0
+# dead-man
+ok   - dead-man: 3 consecutive bad polls (peers 9, 8 < 10; syncing) -> rolled back, exit 1
+ok   - dead-man: rollback PASS and it does not try to stop its own unit
+ok   - dead-man: 2 bad polls then ok (and peers 10 = baseline-slack is ok) -> kept
+ok   - dead-man: 20 polls in 10 min at POLL_SEC=30 (fake clock)
+ok   - apply: iptables-restore failure -> rolled back, no jump
+# non-test mode starts the dead-man as a transient unit
+ok   - apply outside test mode needs root
+# probe
+ok   - probe: connected
+ok   - probe: blocked, runs inside the container with a 5 s timeout
+
+unit tests: 42 passed, 0 failed
+exit 0

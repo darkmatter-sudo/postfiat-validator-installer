@@ -264,6 +264,20 @@ sudo bash confine/pft-confine.sh plan --container postfiatd-sentry
 sudo bash confine/pft-confine.sh probe --container postfiatd-sentry
 ```
 
+## Default-deny container egress add-on
+
+[`egress/`](egress/README.md): `pft-egress` blocks every new outbound connection from the postfiatd container
+except DNS to its own resolvers, peer ports (2559 + `[ips]`/`[ips_fixed]` + ports seen in use) and the
+validator-list site (443). Everything else is logged (rate-limited) and dropped. The rules live in a `PFT-EGRESS`
+chain with one jump at `DOCKER-USER` position 1, so no restart is needed. `apply --yes` runs only inside a
+pft-maint window, and a dead-man rolls back if the node leaves `full` or loses peers within 10 minutes.
+A reapply timer restores the rules after a reboot or a container IP change. Run it on the sentry first.
+
+```bash
+sudo bash egress/pft-egress.sh plan --container postfiatd-sentry
+sudo bash egress/pft-egress.sh apply --dry-run --container postfiatd-sentry
+```
+
 ## Alert rules add-on
 
 [`alerts/`](alerts/README.md): 16 Prometheus alert rules for the exporter's metrics. They cover node/RPC down,

@@ -1,0 +1,99 @@
+netns-test - 2026-10-25T04:18:46Z - Ubuntu 22.04.5 LTS - iptables v1.8.7 (nf_tables)
+egr filter table before apply:
+    -P INPUT ACCEPT
+    -P FORWARD ACCEPT
+    -P OUTPUT ACCEPT
+    -N DOCKER-USER
+    -A FORWARD -j DOCKER-USER
+    -A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state RELATED,ESTABLISHED -j ACCEPT
+    -A DOCKER-USER -p tcp -m tcp --dport 2559 -m connlimit --connlimit-above 50 --connlimit-mask 32 --connlimit-saddr -j DROP
+    -A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -m limit --limit 100/sec --limit-burst 50 -j ACCEPT
+    -A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -j DROP
+    -A DOCKER-USER -j RETURN
+
+# before apply
+  postfiatd-sentry -> 198.18.0.2:80 CONNECTED (0s)
+ok   - before: container -> :80 connects (no policy)
+  postfiatd-sentry -> 198.18.0.3:53 CONNECTED (0s)
+ok   - before: container -> non-resolver :53 connects
+
+# apply
+    [2026-10-25T04:18:48Z] apply on postfiatd-sentry; maintenance gate: ok 1800; pre: server_state=full peers=11
+    [2026-10-25T04:18:48Z] policy: {"container":"postfiatd-sentry","ip":"172.17.0.2","bridge":"docker0","network":"bridge","resolvers":["198.18.0.2"],"tcp_ports":[443,2559,51235]}
+    [2026-10-25T04:18:48Z] chain PFT-EGRESS loaded (6 rules), jump at DOCKER-USER 1; state /tmp/tmp.YEViKFVmoR/state/postfiatd-sentry.json
+    [2026-10-25T04:18:48Z] persistence: pft-egress-reapply@postfiatd-sentry.timer enabled (<repo>/egress/tests/../pft-egress.sh reapply)
+    [2026-10-25T04:18:48Z] dead-man: until 2026-10-25T04:19:48Z, rollback after 3 consecutive polls with state != full or peers < 10 (baseline 11 - slack 1)
+    [2026-10-25T04:19:18Z] dead-man poll: full peers 11 ok
+    [2026-10-25T04:19:48Z] dead-man poll: full peers 11 ok
+    [2026-10-25T04:19:48Z] dead-man: PASS - policy kept
+ok   - apply exit 0 (dead-man 1 min on the fake clock: PASS)
+egr DOCKER-USER + PFT-EGRESS after apply (real iptables -S):
+    -N DOCKER-USER
+    -A DOCKER-USER -s 172.17.0.2/32 -i docker0 ! -o docker0 -m comment --comment "pft-egress:postfiatd-sentry" -j PFT-EGRESS
+    -A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state RELATED,ESTABLISHED -j ACCEPT
+    -A DOCKER-USER -p tcp -m tcp --dport 2559 -m connlimit --connlimit-above 50 --connlimit-mask 32 --connlimit-saddr -j DROP
+    -A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -m limit --limit 100/sec --limit-burst 50 -j ACCEPT
+    -A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -j DROP
+    -A DOCKER-USER -j RETURN
+    -N PFT-EGRESS
+    -A PFT-EGRESS -m conntrack --ctstate RELATED,ESTABLISHED -m comment --comment "pft-egress replies" -j RETURN
+    -A PFT-EGRESS -d 198.18.0.2/32 -p udp -m udp --dport 53 -m comment --comment "pft-egress dns" -j RETURN
+    -A PFT-EGRESS -d 198.18.0.2/32 -p tcp -m tcp --dport 53 -m comment --comment "pft-egress dns" -j RETURN
+    -A PFT-EGRESS -p tcp -m multiport --dports 443,2559,51235 -m comment --comment "pft-egress peers+vl" -j RETURN
+    -A PFT-EGRESS -m limit --limit 6/min --limit-burst 10 -j LOG --log-prefix "pft-egress-drop: "
+    -A PFT-EGRESS -m comment --comment "pft-egress default deny" -j DROP
+
+# after apply
+  postfiatd-sentry -> 198.18.0.2:80 BLOCKED_OR_FAILED (0s)
+ok   - after: :80 blocked
+  postfiatd-sentry -> 198.18.0.2:8080 BLOCKED_OR_FAILED (0s)
+ok   - after: :8080 blocked
+  postfiatd-sentry -> 198.18.0.3:53 BLOCKED_OR_FAILED (0s)
+ok   - after: :53 to a NON-resolver blocked
+  postfiatd-sentry -> 198.18.0.2:53 CONNECTED (0s)
+ok   - after: :53/tcp to the resolver allowed
+  postfiatd-sentry -> 198.18.0.2:2559 CONNECTED (0s)
+ok   - after: peer port 2559 allowed
+  postfiatd-sentry -> 198.18.0.2:51235 CONNECTED (0s)
+ok   - after: [ips] peer port 51235 allowed
+  postfiatd-sentry -> 198.18.0.2:443 CONNECTED (0s)
+ok   - after: validator-list 443 allowed
+ok   - after: INBOUND peer -> container:2559 works and the reply comes back (ESTABLISHED)
+PFT-EGRESS counters:
+    Chain PFT-EGRESS (1 references)
+        pkts      bytes target     prot opt in     out     source               destination         
+          16      798 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0            ctstate RELATED,ESTABLISHED /* pft-egress replies */
+           0        0 RETURN     udp  --  *      *       0.0.0.0/0            198.18.0.2           udp dpt:53 /* pft-egress dns */
+           1       60 RETURN     tcp  --  *      *       0.0.0.0/0            198.18.0.2           tcp dpt:53 /* pft-egress dns */
+           3      180 RETURN     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            multiport dports 443,2559,51235 /* pft-egress peers+vl */
+           9      540 LOG        all  --  *      *       0.0.0.0/0            0.0.0.0/0            limit: avg 6/min burst 10 LOG flags 0 level 4 prefix "pft-egress-drop: "
+           9      540 DROP       all  --  *      *       0.0.0.0/0            0.0.0.0/0            /* pft-egress default deny */
+    pft-egress check postfiatd-sentry - 2026-10-25T04:19:48Z
+      [PASS] state file present
+      [PASS] chain PFT-EGRESS matches the applied snapshot (6 rules)
+      [PASS] container IP unchanged since apply
+    PFT-EGRESS  all opt -- in docker0 out !docker0  172.17.0.2  -> 0.0.0.0/0   /* pft-egress:postfiatd-sentry */
+      [PASS] exactly one jump, at DOCKER-USER position 1
+      [PASS] reapply timer enabled
+      [INFO] default-deny DROP counter: 9 pkts 540 bytes
+      [INFO] drop log lines in the last hour: 0
+      [PASS] server_state full
+      [PASS] peers 11 >= baseline 11
+    RESULT: PASS
+ok   - check PASS, real DROP counter > 0
+    [2026-10-25T04:19:48Z] apply: no change (policy, chain and jump already match /tmp/tmp.YEViKFVmoR/state/postfiatd-sentry.json)
+ok   - apply again: no change, iptables -S identical
+    [2026-10-25T04:19:48Z] reapply: drift found (chain changed, jump missing/moved/duplicated, or container IP now 172.17.0.2) - reloading
+    [2026-10-25T04:19:48Z] reapply: done
+ok   - reapply after DOCKER-USER was flushed: firewall back to the applied state
+  postfiatd-sentry -> 198.18.0.2:80 BLOCKED_OR_FAILED (0s)
+ok   - after reapply: :80 blocked again
+
+# rollback
+    [2026-10-25T04:19:48Z] rollback: removing jump(s) and chain PFT-EGRESS
+    [2026-10-25T04:19:48Z] rollback RESULT: PASS - no PFT-EGRESS chain, no DOCKER-USER jump, reapply timer disabled
+ok   - rollback: filter table identical to before apply
+  postfiatd-sentry -> 198.18.0.2:80 CONNECTED (0s)
+ok   - after rollback: :80 connects again
+
+netns tests: 17 passed, 0 failed

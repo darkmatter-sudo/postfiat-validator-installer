@@ -1,0 +1,6 @@
+-N DOCKER-USER
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state RELATED,ESTABLISHED -j ACCEPT
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m connlimit --connlimit-above 50 --connlimit-mask 32 --connlimit-saddr -j DROP
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -m limit --limit 100/sec --limit-burst 50 -j ACCEPT
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -j DROP
+-A DOCKER-USER -j RETURN
