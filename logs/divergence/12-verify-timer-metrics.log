@@ -1,0 +1,50 @@
+=== validator-host 2026-10-25T15:08:07Z | Ubuntu 22.04.5 LTS
+$ systemctl list-timers --no-pager | grep -i divergence
+Sun 2026-10-25 16:08:37 CET 29s left          Sun 2026-10-25 16:07:37 CET  30s ago      pft-divergence.timer           pft-divergence.service
+$ cat /var/lib/pft-exporter/textfile/pft_divergence.prom
+# HELP pft_divergence_state Per-source result of the last divergence check: 0 AGREE, 1 DIVERGED, 2 UNKNOWN
+# TYPE pft_divergence_state gauge
+pft_divergence_state{source="validator"} 0
+pft_divergence_state{source="sentry"} 0
+pft_divergence_state{source="public"} 0
+# HELP pft_divergence_overall_state Worst state over all sources: 0 AGREE, 1 DIVERGED, 2 UNKNOWN
+# TYPE pft_divergence_overall_state gauge
+pft_divergence_overall_state 0
+# HELP pft_divergence_last_agree_ledger Newest tip index at which all sources agreed
+# TYPE pft_divergence_last_agree_ledger gauge
+pft_divergence_last_agree_ledger 7473631
+# HELP pft_divergence_checked_ledger Ledger indexes compared in the last check
+# TYPE pft_divergence_checked_ledger gauge
+pft_divergence_checked_ledger{depth="tip"} 7473631
+pft_divergence_checked_ledger{depth="deep"} 7473431
+# HELP pft_divergence_retries RPC retries needed in the last check
+# TYPE pft_divergence_retries gauge
+pft_divergence_retries 0
+# HELP pft_divergence_check_timestamp Unix time of the last completed check
+# TYPE pft_divergence_check_timestamp gauge
+pft_divergence_check_timestamp 1792940863
+=== sentry-host
+date: 2026-10-25T15:08:08Z | Ubuntu 22.04.5 LTS
+$ systemctl list-timers --no-pager | grep -i divergence
+Sun 2026-10-25 16:08:14 CET 6s left       Sun 2026-10-25 16:07:14 CET  53s ago    pft-divergence.timer                      pft-divergence.service
+$ cat /var/lib/pft-exporter/textfile/pft_divergence.prom
+# HELP pft_divergence_state Per-source result of the last divergence check: 0 AGREE, 1 DIVERGED, 2 UNKNOWN
+# TYPE pft_divergence_state gauge
+pft_divergence_state{source="sentry"} 0
+pft_divergence_state{source="public"} 0
+# HELP pft_divergence_overall_state Worst state over all sources: 0 AGREE, 1 DIVERGED, 2 UNKNOWN
+# TYPE pft_divergence_overall_state gauge
+pft_divergence_overall_state 0
+# HELP pft_divergence_last_agree_ledger Newest tip index at which all sources agreed
+# TYPE pft_divergence_last_agree_ledger gauge
+pft_divergence_last_agree_ledger 7473624
+# HELP pft_divergence_checked_ledger Ledger indexes compared in the last check
+# TYPE pft_divergence_checked_ledger gauge
+pft_divergence_checked_ledger{depth="tip"} 7473624
+pft_divergence_checked_ledger{depth="deep"} 7473424
+# HELP pft_divergence_retries RPC retries needed in the last check
+# TYPE pft_divergence_retries gauge
+pft_divergence_retries 0
+# HELP pft_divergence_check_timestamp Unix time of the last completed check
+# TYPE pft_divergence_check_timestamp gauge
+pft_divergence_check_timestamp 1792940838
