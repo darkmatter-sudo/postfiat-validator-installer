@@ -1,0 +1,16 @@
+alerts fixture capture 2026-10-25T02:09:42Z - Ubuntu 22.04.5 LTS - throwaway prom/prometheus:v3.5.0, --network none
+groups:
+  - name: fx
+    rules:
+      - alert: PFTSLOFastBurn
+        expr: vector(1) > 0
+        for: 20s
+        labels: {severity: critical}
+      - alert: PFTContainerRestarted
+        expr: vector(1) > 0
+        labels: {severity: warning}
+== t+12s
+{"status":"success","data":{"alerts":[{"labels":{"alertname":"PFTSLOFastBurn","severity":"critical"},"annotations":{},"state":"pending","activeAt":"2026-10-25T02:09:44.796314288Z","value":"1e+00"},{"labels":{"alertname":"PFTContainerRestarted","severity":"warning"},"annotations":{},"state":"firing","activeAt":"2026-10-25T02:09:44.796314288Z","value":"1e+00"}]}}
+== t+37s
+{"status":"success","data":{"alerts":[{"labels":{"alertname":"PFTSLOFastBurn","severity":"critical"},"annotations":{},"state":"firing","activeAt":"2026-10-25T02:09:44.796314288Z","value":"1e+00"},{"labels":{"alertname":"PFTContainerRestarted","severity":"warning"},"annotations":{},"state":"firing","activeAt":"2026-10-25T02:09:44.796314288Z","value":"1e+00"}]}}
+removed slo-fx

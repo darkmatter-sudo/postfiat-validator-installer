@@ -1,0 +1,91 @@
+slo check.sh - 2026-10-25T02:15:22Z - Ubuntu 22.04.5 LTS
+$ DOCKER="sudo docker" bash slo/check.sh
+
+== tests.yml is up to date with gen_tests.py
+tests.yml matches
+
+== promtool check rules slo.rules.yml
+Checking slo.rules.yml
+  SUCCESS: 17 rules found
+
+
+== promtool test rules tests.yml
+  SUCCESS
+
+
+== unit tests (python3 -m unittest)
+test_failed_polls_excluded_but_limited (test_drill_check.Checker) ... ok
+test_firing_without_pending_fails (test_drill_check.Checker) ... ok
+test_good_capture_passes (test_drill_check.Checker) ... ok
+test_maintenance_not_excluded_fails_b (test_drill_check.Checker) ... ok
+test_missing_drill_a_fails (test_drill_check.Checker) ... ok
+test_no_bad_while_down_fails (test_drill_check.Checker) ... ok
+test_non_slo_alert_during_b_is_info_only (test_drill_check.Checker) ... ok
+test_not_resolved_fails (test_drill_check.Checker) ... ok
+test_resolved_message_not_required (test_drill_check.Checker) ... ok
+test_resolved_title_is_not_firing (test_drill_check.Checker) ... ok
+test_slo_alert_during_b_fails (test_drill_check.Checker) ... ok
+test_slo_message_during_b_fails (test_drill_check.Checker) ... ok
+test_stale_firing_message_does_not_count (test_drill_check.Checker) ... ok
+test_exit_codes (test_drill_check.Main) ... ok
+test_alert_states_from_real_responses (test_drill_check.Sampler) ... ok
+test_build_sample_from_real_responses (test_drill_check.Sampler) ... ok
+test_firing_wins_over_pending (test_drill_check.Sampler) ... ok
+test_missing_series_is_none_not_zero (test_drill_check.Sampler) ... ok
+test_ntfy_reduce_keeps_messages_drops_topic (test_drill_check.Sampler) ... ok
+test_absent_is_inactive_not_malformed (test_exporter_maint.MaintFlag) ... ok
+test_expired_window_is_inactive (test_exporter_maint.MaintFlag) ... ok
+test_malformed_flags_never_count_as_maintenance (test_exporter_maint.MaintFlag) ... ok
+test_metric_lines (test_exporter_maint.MaintFlag) ... ok
+test_owner_check_rejects_non_root_file (test_exporter_maint.MaintFlag) ... ok
+test_symlink_and_garbage_are_malformed (test_exporter_maint.MaintFlag) ... ok
+test_valid_open_window_is_active (test_exporter_maint.MaintFlag) ... ok
+test_age_boundary_is_strictly_below_10s (test_report.Classification) ... ok
+test_cause_order_exporter_state_stale (test_report.Classification) ... ok
+test_maint_history_span_excludes_outage_without_metric (test_report.Classification) ... ok
+test_maint_metric_excludes_outage (test_report.Classification) ... ok
+test_missing_prometheus_data_is_unmeasured_and_splits_intervals (test_report.Classification) ... ok
+test_proposing_is_good (test_report.Classification) ... ok
+test_recording_rule_crosscheck_counts_disagreement (test_report.Classification) ... ok
+test_rpc_outage_is_one_interval_with_restart (test_report.Classification) ... ok
+test_steady_good (test_report.Classification) ... ok
+test_budget_math (test_report.Cli) ... ok
+test_chunks_cover_window_without_overlap (test_report.Cli) ... ok
+test_objective_from_metric_then_default (test_report.Cli) ... ok
+test_only_range_queries_and_chunking (test_report.Cli) ... ok
+test_real_fixture_shape (test_report.Cli) ... ok
+test_record_then_replay_roundtrip (test_report.Cli) ... ok
+test_usage_errors_exit_2 (test_report.Cli) ... ok
+test_replay_matches_recorded_report (test_report.RealFixtures) ... ok
+test_replay_with_maint_history_excludes_the_two_drill_windows (test_report.RealFixtures) ... ok
+
+----------------------------------------------------------------------
+Ran 44 tests in 0.083s
+
+OK
+
+== ruff check (slo/)
+All checks passed!
+
+== shellcheck
+shellcheck clean: ./check.sh ./drill.sh ./install.sh
+
+== M1 mutation: pft:sli_bad:bool without the maintenance exclusion (promtool must FAIL)
+name: maintenance-window: same 20m RPC outage inside an open pft-maint window does not burn	alertname: PFTSLOFastBurn, time: 2h10m
+name: maintenance-window: same 20m RPC outage inside an open pft-maint window does not burn	alertname: PFTSLOFastBurn, time: 2h20m
+name: maintenance-window: same 20m RPC outage inside an open pft-maint window does not burn	alertname: PFTSLOSlowBurn, time: 2h20m
+name: maintenance-window: same 20m RPC outage inside an open pft-maint window does not burn	alertname: PFTSLOSlowBurn, time: 2h38m
+caught: maintenance-window test failed on the mutant
+
+== M2 mutation: CLI classify() ignores maintenance (unit tests must FAIL)
+FAIL: test_maint_history_span_excludes_outage_without_metric
+FAIL: test_maint_metric_excludes_outage
+FAIL: test_replay_with_maint_history_excludes_the_two_drill_windows
+caught: assertion failures only
+
+== M3 mutation: drill checker accepts a [FIRING] message from before the alert fired (tests must FAIL)
+FAIL: test_stale_firing_message_does_not_count
+caught: assertion failures only
+
+RESULT: PASS
+exit 0

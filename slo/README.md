@@ -93,6 +93,37 @@ This runs: `tests.yml` is regenerated and must match; `promtool check rules` and
 `ruff check` (config `slo/ruff.toml`, py310 = Ubuntu 22.04); `shellcheck`. Then two **mutation controls** that
 must fail. M1 removes the maintenance exclusion from `pft:sli_bad:bool`, and promtool's maintenance-window test
 has to fail. M2 makes the CLI ignore maintenance, and the unit tests have to fail with assertions, not errors.
+M3 makes the drill checker accept a `[FIRING]` message sent before the alert fired, and its tests have to fail.
+
+## Live drill
+
+```bash
+sudo bash slo/drill.sh [--stop-min 7] [--out DIR]
+```
+
+Stops `postfiatd` twice on the validator host. **B** is a planned stop inside `pft-maint start`: the SLI must
+record maintenance (`pft:sli_maint:bool` 1, `pft:sli_bad:bool` 0) and no `PFTSLO*` alert may go pending or send a
+message. **A** is an unplanned stop with no window: `pft:sli_bad:bool` must go to 1, `PFTSLOFastBurn` must go
+pending, then firing, and its `[FIRING]` message must arrive. After the node is back to `full`, the alert must
+resolve. A 7 min stop is about 8 bad minutes with the restart. That is above the fast-burn threshold (4.3 min in 1 h,
+`for: 2m`) and below the slow-burn one (10.8 min in 6 h), so `PFTSLOSlowBurn` should stay quiet. The checker
+reports it either way.
+
+The script does not page anyone. Before the first stop it points every notifier on both hosts at one random
+throwaway ntfy topic: `postfiat-monitor`, `pft-integrity`, `pft-maint`, the sentry's `pft-watchdog`, and the
+alert bridge (re-created by `run-stack.sh up` with a throwaway `NTFY_ENV_FILE`). It then silences every non-SLO
+alert in Alertmanager for 90 min. The SLO alerts are deliberately not silenced, because their delivery is part of
+the test. The bridge goes back to the real topic only after no `PFTSLO*` alert is active in Prometheus or
+Alertmanager, and after `[RESOLVED] PFTSLOFastBurn` reached the throwaway topic (or 3 min passed). If an SLO
+alert is still active then, it is silenced for 60 min. Every file is restored on any exit (trap) and compared by
+sha256. The script refuses to start if a `pft-maint` data-collection lock or window is active, if the node is
+not `full`, or if a `PFTSLO*` alert is already active.
+
+`drill_check.py` decides pass/fail from `samples.jsonl` (one Prometheus poll every 15 s: `pft:sli_maint:bool`,
+`pft:sli_bad:bool`, 5m/1h ratios, `/api/v1/alerts`) and `ntfy.jsonl` (the topic read back, titles only). It is
+tested offline in `tests/test_drill_check.py`. The samplers are tested against real API responses, and the
+checker against a synthetic timeline with one fault injected per test (maintenance not excluded, SLO alert or
+message during B, firing without pending, stale or missing `[FIRING]`, never resolved, too many failed polls).
 
 ## Deploy
 

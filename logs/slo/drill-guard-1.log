@@ -1,0 +1,9 @@
+$ sudo bash slo/drill.sh --out /tmp/slo-guard-test   (txflow lock held -> expect exit 4, no change)
+pft SLO drill (validator) - 2026-10-25T02:13:40Z - Ubuntu 22.04.5 LTS - container postfiatd, stop 7m x2
+script sha256: drill.sh d036a873798d25a18c79d7574dea5ed6a51d9194d585105087f57b47c1abc60a | drill_check.py 2c4c31e1ff42290432271b8ec61f004380117223649648806295314a66b61349 | slo.rules.yml f326d66ac05eddfd294257fdc2972a3b220ee94bd5b0f7134650ecfe101c6e5e
+
+== 0. preflight
+  pft-maint: window=none locks=1
+  data-collection lock held - no node stops:
+    txflow-24h 2026-10-26T00:30:00Z task_6538b4717690a7b5ad16848b19701d5a txflow 24h collection (no node restarts)
+exit 4

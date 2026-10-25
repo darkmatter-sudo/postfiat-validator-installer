@@ -1,0 +1,444 @@
+slo check.sh - 2026-10-25T02:14:16Z - Ubuntu 22.04.5 LTS
+$ DOCKER="sudo docker" bash slo/check.sh
+
+== tests.yml is up to date with gen_tests.py
+tests.yml matches
+
+== promtool check rules slo.rules.yml
+Checking slo.rules.yml
+  SUCCESS: 17 rules found
+
+
+== promtool test rules tests.yml
+  SUCCESS
+
+
+== unit tests (python3 -m unittest)
+test_failed_polls_excluded_but_limited (test_drill_check.Checker) ... ok
+test_firing_without_pending_fails (test_drill_check.Checker) ... ok
+test_good_capture_passes (test_drill_check.Checker) ... ok
+test_maintenance_not_excluded_fails_b (test_drill_check.Checker) ... ok
+test_missing_drill_a_fails (test_drill_check.Checker) ... ok
+test_no_bad_while_down_fails (test_drill_check.Checker) ... ok
+test_non_slo_alert_during_b_is_info_only (test_drill_check.Checker) ... ok
+test_not_resolved_fails (test_drill_check.Checker) ... ok
+test_resolved_message_not_required (test_drill_check.Checker) ... ok
+test_resolved_title_is_not_firing (test_drill_check.Checker) ... ok
+test_slo_alert_during_b_fails (test_drill_check.Checker) ... ok
+test_slo_message_during_b_fails (test_drill_check.Checker) ... ok
+test_stale_firing_message_does_not_count (test_drill_check.Checker) ... ok
+test_exit_codes (test_drill_check.Main) ... ok
+test_alert_states_from_real_responses (test_drill_check.Sampler) ... ok
+test_build_sample_from_real_responses (test_drill_check.Sampler) ... ok
+test_firing_wins_over_pending (test_drill_check.Sampler) ... ok
+test_missing_series_is_none_not_zero (test_drill_check.Sampler) ... ok
+test_ntfy_reduce_keeps_messages_drops_topic (test_drill_check.Sampler) ... ok
+test_absent_is_inactive_not_malformed (test_exporter_maint.MaintFlag) ... ok
+test_expired_window_is_inactive (test_exporter_maint.MaintFlag) ... ok
+test_malformed_flags_never_count_as_maintenance (test_exporter_maint.MaintFlag) ... ok
+test_metric_lines (test_exporter_maint.MaintFlag) ... ok
+test_owner_check_rejects_non_root_file (test_exporter_maint.MaintFlag) ... ok
+test_symlink_and_garbage_are_malformed (test_exporter_maint.MaintFlag) ... ok
+test_valid_open_window_is_active (test_exporter_maint.MaintFlag) ... ok
+test_age_boundary_is_strictly_below_10s (test_report.Classification) ... ok
+test_cause_order_exporter_state_stale (test_report.Classification) ... ok
+test_maint_history_span_excludes_outage_without_metric (test_report.Classification) ... ok
+test_maint_metric_excludes_outage (test_report.Classification) ... ok
+test_missing_prometheus_data_is_unmeasured_and_splits_intervals (test_report.Classification) ... ok
+test_proposing_is_good (test_report.Classification) ... ok
+test_recording_rule_crosscheck_counts_disagreement (test_report.Classification) ... ok
+test_rpc_outage_is_one_interval_with_restart (test_report.Classification) ... ok
+test_steady_good (test_report.Classification) ... ok
+test_budget_math (test_report.Cli) ... ok
+test_chunks_cover_window_without_overlap (test_report.Cli) ... ok
+test_objective_from_metric_then_default (test_report.Cli) ... ok
+test_only_range_queries_and_chunking (test_report.Cli) ... ok
+test_real_fixture_shape (test_report.Cli) ... ok
+test_record_then_replay_roundtrip (test_report.Cli) ... ok
+test_usage_errors_exit_2 (test_report.Cli) ... ok
+test_replay_matches_recorded_report (test_report.RealFixtures) ... ok
+test_replay_with_maint_history_excludes_the_two_drill_windows (test_report.RealFixtures) ... ok
+
+----------------------------------------------------------------------
+Ran 44 tests in 0.128s
+
+OK
+
+== ruff check (slo/)
+EXE001 Shebang is present but file is not executable
+ --> drill_check.py:1:1
+  |
+1 | #!/usr/bin/env python3
+  | ^^^^^^^^^^^^^^^^^^^^^^
+2 | """Pass/fail checker for slo/drill.sh captures (kept separate so it can be tested on synthetic captures).
+  |
+
+UP031 Use format specifiers instead of percent format
+  --> drill_check.py:42:34
+   |
+40 |                 out.append(json.loads(line))
+41 |             except json.JSONDecodeError as exc:
+42 |                 raise ValueError("%s:%d: %s" % (path, n, exc)) from exc
+   |                                  ^^^^^^^^^^^
+43 |     return out
+   |
+help: Replace with format specifiers
+
+UP031 Use format specifiers instead of percent format
+  --> drill_check.py:81:28
+   |
+80 | def sample(prom, phase, node):
+81 |     vectors = {k: get_json("%s/api/v1/query?%s" % (prom, urllib.parse.urlencode({"query": q})))
+   |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+82 |                for k, q in QUERIES.items()}
+83 |     return build_sample(time.time(), phase, node, vectors, get_json(prom + "/api/v1/alerts"))
+   |
+help: Replace with format specifiers
+   |
+80 | def sample(prom, phase, node):
+   -     vectors = {k: get_json("%s/api/v1/query?%s" % (prom, urllib.parse.urlencode({"query": q})))
+81 +     vectors = {k: get_json("{}/api/v1/query?{}".format(prom, urllib.parse.urlencode({"query": q})))
+82 |                for k, q in QUERIES.items()}
+   |
+note: This is an unsafe fix and may change runtime behavior
+
+UP031 Use format specifiers instead of percent format
+   --> drill_check.py:110:17
+    |
+108 |     total = len(samples) + len(errs)
+109 |     res.append(("polls answered >= 90%", total > 0 and len(samples) >= 0.9 * total,
+110 |                 "%d/%d answered" % (len(samples), total)))
+    |                 ^^^^^^^^^^^^^^^^
+111 |     b = [s for s in samples if s.get("phase") == "B"]
+112 |     a = [s for s in samples if str(s.get("phase", "")).startswith("A-")]
+    |
+help: Replace with format specifiers
+
+UP031 Use format specifiers instead of percent format
+   --> drill_check.py:117:52
+    |
+116 |     # --- drill B
+117 |     res.append(("B: samples recorded", len(b) > 0, "%d samples" % len(b)))
+    |                                                    ^^^^^^^^^^^^
+118 |     if b:
+119 |         notmaint = [s for s in b if s.get("maint") != 1]
+    |
+help: Replace with format specifiers
+
+UP031 Use format specifiers instead of percent format
+   --> drill_check.py:121:21
+    |
+119 |         notmaint = [s for s in b if s.get("maint") != 1]
+120 |         res.append(("B: pft:sli_maint:bool == 1 in every sample", not notmaint,
+121 |                     "%d/%d samples not maint" % (len(notmaint), len(b))))
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+122 |         badb = [s for s in b if s.get("bad") != 0]
+123 |         res.append(("B: pft:sli_bad:bool == 0 in every sample", not badb,
+    |
+help: Replace with format specifiers
+
+UP031 Use format specifiers instead of percent format
+   --> drill_check.py:124:21
+    |
+122 |         badb = [s for s in b if s.get("bad") != 0]
+123 |         res.append(("B: pft:sli_bad:bool == 0 in every sample", not badb,
+124 |                     "%d/%d samples bad or missing" % (len(badb), len(b))))
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+125 |         ab = sorted({"%s=%s" % kv for s in b for kv in slo_alerts(s).items()})
+126 |         res.append(("B: no PFTSLO* alert pending/firing", not ab, ", ".join(ab) or "none"))
+    |
+help: Replace with format specifiers
+
+UP031 Use format specifiers instead of percent format
+   --> drill_check.py:125:22
+    |
+123 |         res.append(("B: pft:sli_bad:bool == 0 in every sample", not badb,
+124 |                     "%d/%d samples bad or missing" % (len(badb), len(b))))
+125 |         ab = sorted({"%s=%s" % kv for s in b for kv in slo_alerts(s).items()})
+    |                      ^^^^^^^^^^^^
+126 |         res.append(("B: no PFTSLO* alert pending/firing", not ab, ", ".join(ab) or "none"))
+127 |         b0 = b[0]["t"]
+    |
+help: Replace with format specifiers
+    |
+124 |                     "%d/%d samples bad or missing" % (len(badb), len(b))))
+    -         ab = sorted({"%s=%s" % kv for s in b for kv in slo_alerts(s).items()})
+125 +         ab = sorted({"{}={}".format(*kv) for s in b for kv in slo_alerts(s).items()})
+126 |         res.append(("B: no PFTSLO* alert pending/firing", not ab, ", ".join(ab) or "none"))
+    |
+note: This is an unsafe fix and may change runtime behavior
+
+UP031 Use format specifiers instead of percent format
+   --> drill_check.py:130:67
+    |
+128 |         b1 = down[0]["t"] if down else b[-1]["t"] + 300
+129 |         mb = [m for m in msgs if b0 <= m.get("time", 0) < b1 and "PFTSLO" in m.get("title", "")]
+130 |         res.append(("B: no PFTSLO* message on the topic", not mb, "%d messages" % len(mb)))
+    |                                                                   ^^^^^^^^^^^^^
+131 |         info.append("B: node states seen: %s" % ",".join(sorted({str(s.get("node")) for s in b})))
+    |
+help: Replace with format specifiers
+
+UP031 Use format specifiers instead of percent format
+   --> drill_check.py:131:21
+    |
+129 |         mb = [m for m in msgs if b0 <= m.get("time", 0) < b1 and "PFTSLO" in m.get("title", "")]
+130 |         res.append(("B: no PFTSLO* message on the topic", not mb, "%d messages" % len(mb)))
+131 |         info.append("B: node states seen: %s" % ",".join(sorted({str(s.get("node")) for s in b})))
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+132 |
+133 |     # --- drill A
+    |
+help: Replace with format specifiers
+    |
+130 |         res.append(("B: no PFTSLO* message on the topic", not mb, "%d messages" % len(mb)))
+    -         info.append("B: node states seen: %s" % ",".join(sorted({str(s.get("node")) for s in b})))
+131 +         info.append("B: node states seen: {}".format(",".join(sorted({str(s.get("node")) for s in b}))))
+132 |
+    |
+note: This is an unsafe fix and may change runtime behavior
+
+UP031 Use format specifiers instead of percent format
+   --> drill_check.py:134:60
+    |
+133 |     # --- drill A
+134 |     res.append(("A: down samples recorded", len(down) > 0, "%d samples" % len(down)))
+    |                                                            ^^^^^^^^^^^^
+135 |     badd = [s for s in down if s.get("bad") == 1]
+136 |     res.append(("A: pft:sli_bad:bool == 1 while down", len(badd) > 0, "%d/%d down samples bad" % (len(badd), len(down))))
+    |
+help: Replace with format specifiers
+
+UP031 Use format specifiers instead of percent format
+   --> drill_check.py:136:71
+    |
+134 |     res.append(("A: down samples recorded", len(down) > 0, "%d samples" % len(down)))
+135 |     badd = [s for s in down if s.get("bad") == 1]
+136 |     res.append(("A: pft:sli_bad:bool == 1 while down", len(badd) > 0, "%d/%d down samples bad" % (len(badd), len(down))))
+    |                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^
+137 |     pend = first(a, lambda s: s.get("alerts", {}).get(FAST) == "pending")
+138 |     fire = first(a, lambda s: s.get("alerts", {}).get(FAST) == "firing")
+    |
+help: Replace with format specifiers
+
+UP031 Use format specifiers instead of percent format
+   --> drill_check.py:139:63
+    |
+137 |     pend = first(a, lambda s: s.get("alerts", {}).get(FAST) == "pending")
+138 |     fire = first(a, lambda s: s.get("alerts", {}).get(FAST) == "firing")
+139 |     res.append(("A: FastBurn pending seen", pend is not None, "t=%s" % (pend or {}).get("t")))
+    |                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+140 |     res.append(("A: FastBurn firing seen", fire is not None, "t=%s" % (fire or {}).get("t")))
+141 |     if pend and fire:
+    |
+help: Replace with format specifiers
+    |
+138 |     fire = first(a, lambda s: s.get("alerts", {}).get(FAST) == "firing")
+    -     res.append(("A: FastBurn pending seen", pend is not None, "t=%s" % (pend or {}).get("t")))
+139 +     res.append(("A: FastBurn pending seen", pend is not None, "t={}".format((pend or {}).get("t"))))
+140 |     res.append(("A: FastBurn firing seen", fire is not None, "t=%s" % (fire or {}).get("t")))
+    |
+note: This is an unsafe fix and may change runtime behavior
+
+UP031 Use format specifiers instead of percent format
+   --> drill_check.py:140:62
+    |
+138 |     fire = first(a, lambda s: s.get("alerts", {}).get(FAST) == "firing")
+139 |     res.append(("A: FastBurn pending seen", pend is not None, "t=%s" % (pend or {}).get("t")))
+140 |     res.append(("A: FastBurn firing seen", fire is not None, "t=%s" % (fire or {}).get("t")))
+    |                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+141 |     if pend and fire:
+142 |         res.append(("A: pending before firing", pend["t"] < fire["t"], "%ds apart" % (fire["t"] - pend["t"])))
+    |
+help: Replace with format specifiers
+    |
+139 |     res.append(("A: FastBurn pending seen", pend is not None, "t=%s" % (pend or {}).get("t")))
+    -     res.append(("A: FastBurn firing seen", fire is not None, "t=%s" % (fire or {}).get("t")))
+140 +     res.append(("A: FastBurn firing seen", fire is not None, "t={}".format((fire or {}).get("t"))))
+141 |     if pend and fire:
+    |
+note: This is an unsafe fix and may change runtime behavior
+
+UP031 Use format specifiers instead of percent format
+   --> drill_check.py:142:72
+    |
+140 |     res.append(("A: FastBurn firing seen", fire is not None, "t=%s" % (fire or {}).get("t")))
+141 |     if pend and fire:
+142 |         res.append(("A: pending before firing", pend["t"] < fire["t"], "%ds apart" % (fire["t"] - pend["t"])))
+    |                                                                        ^^^^^^^^^^^
+143 |     fm = [m for m in msgs if m.get("title", "") == "[FIRING] %s" % FAST]
+144 |     ok = bool(fire) and any(m["time"] >= fire["t"] - 60 for m in fm)
+    |
+help: Replace with format specifiers
+
+UP031 Use format specifiers instead of percent format
+   --> drill_check.py:143:52
+    |
+141 |     if pend and fire:
+142 |         res.append(("A: pending before firing", pend["t"] < fire["t"], "%ds apart" % (fire["t"] - pend["t"])))
+143 |     fm = [m for m in msgs if m.get("title", "") == "[FIRING] %s" % FAST]
+    |                                                    ^^^^^^^^^^^^^^^^^^^^
+144 |     ok = bool(fire) and any(m["time"] >= fire["t"] - 60 for m in fm)
+145 |     res.append(("A: [FIRING] PFTSLOFastBurn message delivered", ok, "%d firing messages" % len(fm)))
+    |
+help: Replace with format specifiers
+    |
+142 |         res.append(("A: pending before firing", pend["t"] < fire["t"], "%ds apart" % (fire["t"] - pend["t"])))
+    -     fm = [m for m in msgs if m.get("title", "") == "[FIRING] %s" % FAST]
+143 +     fm = [m for m in msgs if m.get("title", "") == "[FIRING] {}".format(FAST)]
+144 |     ok = bool(fire) and any(m["time"] >= fire["t"] - 60 for m in fm)
+    |
+note: This is an unsafe fix and may change runtime behavior
+
+UP031 Use format specifiers instead of percent format
+   --> drill_check.py:145:69
+    |
+143 |     fm = [m for m in msgs if m.get("title", "") == "[FIRING] %s" % FAST]
+144 |     ok = bool(fire) and any(m["time"] >= fire["t"] - 60 for m in fm)
+145 |     res.append(("A: [FIRING] PFTSLOFastBurn message delivered", ok, "%d firing messages" % len(fm)))
+    |                                                                     ^^^^^^^^^^^^^^^^^^^^
+146 |     last = resolve[-1] if resolve else None
+147 |     res.append(("A: FastBurn resolved by the last sample", last is not None and FAST not in (last.get("alerts") or {}),
+    |
+help: Replace with format specifiers
+
+UP031 Use format specifiers instead of percent format
+   --> drill_check.py:151:17
+    |
+149 |     slow = sorted({v for s in a for k, v in (s.get("alerts") or {}).items() if k == "PFTSLOSlowBurn"})
+150 |     info.append("A: PFTSLOSlowBurn states seen: %s" % (",".join(slow) or "none"))
+151 |     info.append("A: resolved messages: %d" % sum(1 for m in msgs if m.get("title", "").startswith("[RESOLVED] PFTSLO")))
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
+152 |     other = sorted({k for s in samples for k in (s.get("alerts") or {}) if not k.startswith("PFTSLO")})
+153 |     info.append("non-SLO alerts seen (silenced in Alertmanager): %s" % (",".join(other) or "none"))
+    |
+help: Replace with format specifiers
+
+UP031 Use format specifiers instead of percent format
+   --> drill_check.py:174:15
+    |
+172 |         samples, msgs = load(argv[1]), load(argv[2])
+173 |     except (OSError, ValueError) as exc:
+174 |         print("unusable input: %s" % exc, file=sys.stderr)
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+175 |         return 2
+176 |     res, info = check(samples, msgs)
+    |
+help: Replace with format specifiers
+    |
+173 |     except (OSError, ValueError) as exc:
+    -         print("unusable input: %s" % exc, file=sys.stderr)
+174 +         print("unusable input: {}".format(exc), file=sys.stderr)
+175 |         return 2
+    |
+note: This is an unsafe fix and may change runtime behavior
+
+UP031 Use format specifiers instead of percent format
+   --> drill_check.py:178:15
+    |
+176 |     res, info = check(samples, msgs)
+177 |     for name, ok, detail in res:
+178 |         print("[%s] %s (%s)" % ("PASS" if ok else "FAIL", name, detail))
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+179 |     for line in info:
+180 |         print("[INFO] %s" % line)
+    |
+help: Replace with format specifiers
+    |
+177 |     for name, ok, detail in res:
+    -         print("[%s] %s (%s)" % ("PASS" if ok else "FAIL", name, detail))
+178 +         print("[{}] {} ({})".format("PASS" if ok else "FAIL", name, detail))
+179 |     for line in info:
+    |
+note: This is an unsafe fix and may change runtime behavior
+
+UP031 Use format specifiers instead of percent format
+   --> drill_check.py:180:15
+    |
+178 |         print("[%s] %s (%s)" % ("PASS" if ok else "FAIL", name, detail))
+179 |     for line in info:
+180 |         print("[INFO] %s" % line)
+    |               ^^^^^^^^^^^^^^^^^^
+181 |     bad = sum(1 for _, ok, _ in res if not ok)
+182 |     print("RESULT: %s - %d/%d checks passed" % ("PASS" if not bad else "FAIL", len(res) - bad, len(res)))
+    |
+help: Replace with format specifiers
+    |
+179 |     for line in info:
+    -         print("[INFO] %s" % line)
+180 +         print("[INFO] {}".format(line))
+181 |     bad = sum(1 for _, ok, _ in res if not ok)
+    |
+note: This is an unsafe fix and may change runtime behavior
+
+UP031 Use format specifiers instead of percent format
+   --> drill_check.py:182:11
+    |
+180 |         print("[INFO] %s" % line)
+181 |     bad = sum(1 for _, ok, _ in res if not ok)
+182 |     print("RESULT: %s - %d/%d checks passed" % ("PASS" if not bad else "FAIL", len(res) - bad, len(res)))
+    |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+183 |     return 0 if not bad else 1
+    |
+help: Replace with format specifiers
+
+UP031 Use format specifiers instead of percent format
+  --> tests/test_drill_check.py:64:20
+   |
+62 | class Sampler(unittest.TestCase):
+63 |     def test_build_sample_from_real_responses(self):
+64 |         v = {k: fx("query-%s.json" % k) for k in d.QUERIES}
+   |                    ^^^^^^^^^^^^^^^^^^^
+65 |         s = d.build_sample(T0 + 0.7, "B", "full", v, fx("alerts-none.json"))
+66 |         self.assertEqual(s, {"t": T0, "phase": "B", "node": "full", "maint": 0, "bad": 0,
+   |
+help: Replace with format specifiers
+   |
+63 |     def test_build_sample_from_real_responses(self):
+   -         v = {k: fx("query-%s.json" % k) for k in d.QUERIES}
+64 +         v = {k: fx("query-{}.json".format(k)) for k in d.QUERIES}
+65 |         s = d.build_sample(T0 + 0.7, "B", "full", v, fx("alerts-none.json"))
+   |
+note: This is an unsafe fix and may change runtime behavior
+
+RUF100 [*] Unused `noqa` directive (non-enabled: `E731`)
+   --> tests/test_drill_check.py:187:72
+    |
+185 |     def test_exit_codes(self):
+186 |         s, m = capture()
+187 |         js = lambda rows: "".join(json.dumps(r) + "\n" for r in rows)  # noqa: E731
+    |                                                                        ^^^^^^^^^^^^
+188 |         rc, out = self.run_main(js(s), js(m))
+189 |         self.assertEqual(rc, 0)
+    |
+help: Remove unused `noqa` directive
+    |
+186 |         s, m = capture()
+    -         js = lambda rows: "".join(json.dumps(r) + "\n" for r in rows)  # noqa: E731
+187 +         js = lambda rows: "".join(json.dumps(r) + "\n" for r in rows)
+188 |         rc, out = self.run_main(js(s), js(m))
+    |
+
+Found 24 errors.
+[*] 1 fixable with `--fix` (10 unsafe fixes available with `--fix --unsafe-fixes`).
+
+== shellcheck
+shellcheck clean: ./check.sh ./drill.sh ./install.sh
+
+== M1 mutation: pft:sli_bad:bool without the maintenance exclusion (promtool must FAIL)
+name: maintenance-window: same 20m RPC outage inside an open pft-maint window does not burn	alertname: PFTSLOFastBurn, time: 2h10m
+name: maintenance-window: same 20m RPC outage inside an open pft-maint window does not burn	alertname: PFTSLOFastBurn, time: 2h20m
+name: maintenance-window: same 20m RPC outage inside an open pft-maint window does not burn	alertname: PFTSLOSlowBurn, time: 2h20m
+name: maintenance-window: same 20m RPC outage inside an open pft-maint window does not burn	alertname: PFTSLOSlowBurn, time: 2h38m
+caught: maintenance-window test failed on the mutant
+
+== M2 mutation: CLI classify() ignores maintenance (unit tests must FAIL)
+FAIL: mutant errored (not an assertion):
+ERROR: test_drill_check (unittest.loader._FailedTest)
+
+== M3 mutation: drill checker accepts a [FIRING] message from before the alert fired (tests must FAIL)
+FAIL: test_stale_firing_message_does_not_count
+caught: assertion failures only
+
+RESULT: FAIL
+exit 1
