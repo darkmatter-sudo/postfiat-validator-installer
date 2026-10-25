@@ -14,6 +14,8 @@ LISTEN_PORT = int(os.environ.get("PFT_EXPORTER_PORT", "9877"))
 DISK_PATH = os.environ.get("PFT_DISK_PATH", "/")
 MAINT_FLAG = os.environ.get("PFT_MAINT_FLAG", "/var/lib/pft-maint/flag.json")
 MAINT_MAX_TTL = int(os.environ.get("PFT_MAINT_MAX_TTL", "14400"))
+TEXTFILE_DIR = os.environ.get("PFT_TEXTFILE_DIR", "/var/lib/pft-exporter/textfile")
+SAMPLE_RE = re.compile(r"^[a-zA-Z_:][a-zA-Z0-9_:]*(\{[^{}]*\})? [-+0-9.eE]+$|^[a-zA-Z_:][a-zA-Z0-9_:]* [-+]?(Inf|NaN)$")
 STATES = ["disconnected", "connected", "syncing", "tracking", "full", "validating", "proposing"]
 
 
@@ -71,8 +73,41 @@ def maint_lines():
             "# TYPE pft_maint_flag_malformed gauge", "pft_maint_flag_malformed %d" % malformed]
 
 
+def textfile_lines(d=None):
+    """Append *.prom files from TEXTFILE_DIR (written atomically by add-ons such as ../divergence).
+    A file is skipped whole (and counted in pft_textfile_errors) if it is not a regular file, is over 64 KiB, or
+    has any line that is not a comment or a plain `name{labels} value` sample. Dotfiles are temp files: ignored."""
+    d = TEXTFILE_DIR if d is None else d
+    out, mtimes, errors = [], [], 0
+    try:
+        names = sorted(n for n in os.listdir(d) if n.endswith(".prom") and not n.startswith("."))
+    except FileNotFoundError:
+        names = []
+    except OSError:
+        names, errors = [], 1
+    for n in names:
+        p = os.path.join(d, n)
+        try:
+            st = os.lstat(p)
+            if not stat.S_ISREG(st.st_mode) or st.st_size > 65536:
+                raise ValueError(n)
+            with open(p) as f:
+                lines = [ln for ln in f.read().splitlines() if ln.strip()]
+            if not all(ln.startswith("#") or SAMPLE_RE.match(ln) for ln in lines):
+                raise ValueError(n)
+        except (OSError, ValueError, UnicodeDecodeError):
+            errors += 1
+            continue
+        out += lines
+        mtimes.append('pft_textfile_mtime_seconds{file="%s"} %d' % (esc(n), int(st.st_mtime)))
+    return out + ["# HELP pft_textfile_mtime_seconds mtime of each textfile read from PFT_TEXTFILE_DIR",
+                  "# TYPE pft_textfile_mtime_seconds gauge"] + mtimes + [
+        "# HELP pft_textfile_errors Textfiles skipped (unreadable, too big or malformed)",
+        "# TYPE pft_textfile_errors gauge", "pft_textfile_errors %d" % errors]
+
+
 def render():
-    out = disk_lines() + maint_lines()
+    out = disk_lines() + maint_lines() + textfile_lines()
     try:
         info = fetch_info()
     except Exception:

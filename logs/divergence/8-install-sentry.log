@@ -1,0 +1,24 @@
+OS: Ubuntu 22.04.5 LTS | 2026-10-25T13:28:33Z | host: sentry-host
+$ sudo bash divergence/install.sh --sources "sentry=docker:postfiatd-sentry public=http:https://rpc.testnet.postfiat.org/" --no-exporter
+source sentry: docker postfiatd-sentry
+source public: http https://rpc.testnet.postfiat.org/
+depth 200, backoff '2 5 10', confirm 2, timeout 10s, textfile /var/lib/pft-exporter/textfile/pft_divergence.prom, state /var/lib/pft-divergence/state.json
+2026-10-25T13:28:33Z installed /usr/local/bin/pft-divergence (sha256 063b097f1f8a)
+2026-10-25T13:28:33Z wrote /etc/pft-divergence/divergence.env
+2026-10-25T13:28:33Z no exporter on this host: the textfile is written but not scraped
+2026-10-25T13:28:33Z first check:
+2026-10-25T13:28:37Z AGREE tip=7471664 deep=7471464 retries=0 sentry=AGREE public=AGREE hash=867772716C8C304B
+2026-10-25T13:28:37Z first check exit 0 (0 AGREE, 1 UNKNOWN, 2 DIVERGED)
+Created symlink /etc/systemd/system/timers.target.wants/pft-divergence.timer → /etc/systemd/system/pft-divergence.timer.
+2026-10-25T13:28:37Z enabled pft-divergence.timer (every 60 s)
+2026-10-25T13:28:37Z remember: sudo pft-integrity accept --reason 'pft-divergence installed'
+exit 0
+$ sudo pft-integrity verify
+  [WARN] bin:pft-divergence                           added    new file
+  [WARN] unit:pft-divergence.service                  added    new file
+  [WARN] unit:pft-divergence.timer                    added    new file
+RESULT: WARN - 27 unchanged, 3 warn, 0 fail -> exit 1
+$ sudo pft-integrity accept --reason "task_3437201c: pft-divergence installed (binary, units)"
+pft-integrity accept - 2026-10-25T13:28:44Z: re-baselined 30 items by root
+manifest sha256: bb19593e6fea46ce7d191f0fc6fdc59cee12d85c6b479fc92ad69b7eb748c676 -> f82230e1219f78257dc72338395a53c8dc8424dd964783b8f90117008ddda391 (logged to accept.log)
+RESULT: PASS - 30 unchanged, 0 warn, 0 fail -> exit 0

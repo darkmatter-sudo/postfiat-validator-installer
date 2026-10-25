@@ -1,0 +1,25 @@
+OS: Ubuntu 22.04.5 LTS | 2026-10-25T13:27:41Z | host: validator-host
+$ sudo pft-integrity verify
+  [WARN] bin:pft-divergence                           added    new file
+  [WARN] unit:pft-divergence.service                  added    new file
+  [WARN] unit:pft-divergence.timer                    added    new file
+RESULT: WARN - 50 unchanged, 3 warn, 0 fail -> exit 1
+$ sudo pft-integrity accept --reason "task_3437201c: pft-divergence installed (binary, units, exporter textfile support)"
+pft-integrity accept - 2026-10-25T13:27:51Z: re-baselined 53 items by <operator-user>
+manifest sha256: 88ef6a346bf9e432cdf1d35155e93fc70ca5d7d80a20127b77aefa34080dd494 -> 3a65482abca6e1e130180fac26a9c365d3b7cb489df5c2e984cf7a818ae455d4 (logged to accept.log)
+RESULT: PASS - 53 unchanged, 0 warn, 0 fail -> exit 0
+$ sudo docker kill -s HUP pft-prometheus   # reload prometheus.yml + rule files (alerts/ is bind-mounted)
+pft-prometheus
+$ curl -s 127.0.0.1:9090/api/v1/rules | jq (divergence group)
+  PFTLedgerDiverged health=ok state=inactive
+  PFTDivergenceCheckStale health=ok state=inactive
+rule_files:
+- /etc/pft-alerts/postfiat.rules.yml
+- /etc/pft-alerts/divergence.rules.yml
+- /etc/pft-slo/*.rules.yml
+$ query pft_divergence_state
+{"s":"validator","v":"0"}
+{"s":"sentry","v":"0"}
+{"s":"public","v":"0"}
+$ active alerts
+[]

@@ -1,0 +1,48 @@
+OS: Ubuntu 22.04.5 LTS | 2026-10-25T13:18:09Z | host: validator-host | script sha256 ac03d93c3d0e
+# run 1 gave sentry UNKNOWN because SSH_RUNAS expanded to an empty $USER (ssh ran as root, no key); fixed in the command line
+$ sudo SSH_RUNAS=<operator-user> bash divergence/pft-divergence.sh --sources "validator=docker:postfiatd sentry=ssh:relay:postfiatd-sentry public=http:https://rpc.testnet.postfiat.org/" --no-textfile --no-state
+retry sentry server_info 1/3 in 2s: no answer
+retry sentry server_info 2/3 in 5s: no answer
+retry sentry server_info 3/3 in 10s: no answer
+giving up sentry server_info after 4 attempts: no answer
+2026-10-25T13:18:31Z UNKNOWN tip=7471457 deep=7471257 retries=3 validator=AGREE sentry=UNKNOWN(server_info: no answer) public=AGREE
+exit 1
+$ ... --json
+retry sentry server_info 1/3 in 2s: no answer
+retry sentry server_info 2/3 in 5s: no answer
+retry sentry server_info 3/3 in 10s: no answer
+giving up sentry server_info after 4 attempts: no answer
+{
+  "ts": 1792934332,
+  "state": "UNKNOWN",
+  "tip": 7471464,
+  "deep": 7471264,
+  "last_agree_ledger": 0,
+  "retries": 3,
+  "sources": [
+    {
+      "name": "validator",
+      "state": "AGREE",
+      "reason": "",
+      "validated_seq": 7471464,
+      "tip_ledger_hash": "97F68CCB771B80ACC676B4C6985F813E1EC7E3B7904A67B459E899203AEF27B1",
+      "deep_ledger_hash": "D5DF3DED880B4EA0591ACC0F244AA25AAEE8FC7875EB2E5ED2D1E79A8055D2D9"
+    },
+    {
+      "name": "sentry",
+      "state": "UNKNOWN",
+      "reason": "server_info: no answer",
+      "validated_seq": null,
+      "tip_ledger_hash": null,
+      "deep_ledger_hash": null
+    },
+    {
+      "name": "public",
+      "state": "AGREE",
+      "reason": "",
+      "validated_seq": 7471470,
+      "tip_ledger_hash": "97F68CCB771B80ACC676B4C6985F813E1EC7E3B7904A67B459E899203AEF27B1",
+      "deep_ledger_hash": "D5DF3DED880B4EA0591ACC0F244AA25AAEE8FC7875EB2E5ED2D1E79A8055D2D9"
+    }
+  ]
+}

@@ -1,0 +1,191 @@
+OS: Ubuntu 22.04.5 LTS | 2026-10-25T13:24:23Z | host: validator-host | shellcheck 0.8.0 | ruff 0.17.1
+$ DOCKER="sudo docker" bash divergence/check.sh
+
+== shellcheck
+shellcheck clean: ./check.sh ./install.sh ./pft-divergence.sh tests/run-tests.sh
+
+== fake-RPC suite (tests/run-tests.sh)
+
+== 1 AGREE: three sources, same hashes at tip and deep
+  stdout: 2026-10-25T13:24:25Z AGREE tip=1000 deep=800 retries=0 validator=AGREE sentry=AGREE public=AGREE hash=AAAAAAAAAAAAAAAA
+  ok   exit 0
+  ok   AGREE tip=1000 deep=800 retries=0
+  ok   ssh source went through ssh to relayhost
+  ok   metric validator 0
+  ok   metric sentry 0
+  ok   metric overall 0
+  ok   last_agree_ledger 1000
+  ok   checked deep 800
+  ok   no stderr
+
+== 2 DIVERGED: sentry has another ledger_hash at tip, confirmed after 2 re-queries
+  stdout: 2026-10-25T13:24:28Z DIVERGED tip=1000 deep=800 retries=0 validator=AGREE sentry=DIVERGED(tip 1000 ledger_hash BBBBBBBBBBBBBBBB != majority AAAAAAAAAAAAAAAA) public=AGREE
+  stderr: mismatch at tip 1000 (2 distinct hash sets), re-query 1/2 in 0s
+  stderr: mismatch at tip 1000 (2 distinct hash sets), re-query 2/2 in 0s
+  ok   exit 2
+  ok   sentry DIVERGED with field + both hashes
+  ok   validator AGREE
+  ok   public AGREE
+  ok   overall DIVERGED
+  ok   re-query 1/2 printed
+  ok   re-query 2/2 printed
+  ok   sentry asked 3 times for 1000
+  ok   metric sentry 1
+  ok   metric validator 0
+  ok   metric overall 1
+  ok   last_agree_ledger kept at 990
+
+== 3 transient public-RPC error that recovers -> AGREE, not DIVERGED
+  stdout: 2026-10-25T13:24:30Z AGREE tip=1000 deep=800 retries=1 validator=AGREE sentry=AGREE public=AGREE hash=AAAAAAAAAAAAAAAA
+  stderr: retry public ledger 1000 1/3 in 0s: lgrNotFound
+  ok   exit 0
+  ok   AGREE, retries=1
+  ok   retry printed
+  ok   metric public 0
+  ok   metric retries 1
+
+== 4 persistent public-RPC error -> UNKNOWN (public), others still AGREE
+  stdout: 2026-10-25T13:24:32Z UNKNOWN tip=1000 deep=800 retries=3 validator=AGREE sentry=AGREE public=UNKNOWN(tip ledger 1000: internal)
+  stderr: retry public ledger 1000 1/3 in 0s: internal
+  stderr: retry public ledger 1000 2/3 in 0s: internal
+  stderr: retry public ledger 1000 3/3 in 0s: internal
+  stderr: giving up public ledger 1000 after 4 attempts: internal
+  ok   exit 1
+  ok   public UNKNOWN with reason
+  ok   overall UNKNOWN
+  ok   validator, sentry AGREE
+  ok   three retries then give up
+  ok   retry 3/3 printed
+  ok   metric public 2
+  ok   metric overall 2
+
+== 5 index outside complete_ledgers -> UNKNOWN for that source, no ledger query sent
+  stdout: 2026-10-25T13:24:33Z UNKNOWN tip=1000 deep=800 retries=0 validator=AGREE sentry=UNKNOWN(deep 800 outside complete_ledgers 900-1001) public=AGREE
+  ok   exit 1
+  ok   sentry UNKNOWN outside complete_ledgers
+  ok   sentry never asked for 800
+  ok   validator, public AGREE
+  ok   public AGREE
+  ok   metric sentry 2
+
+== 6 transient hash mismatch (wrong answer once) -> AGREE after re-query
+  stdout: 2026-10-25T13:24:35Z AGREE tip=1000 deep=800 retries=0 validator=AGREE sentry=AGREE public=AGREE hash=AAAAAAAAAAAAAAAA
+  stderr: mismatch at deep 800 (2 distinct hash sets), re-query 1/2 in 0s
+  stderr: mismatch at deep 800 resolved on re-query 1
+  ok   exit 0
+  ok   AGREE
+  ok   resolved on re-query 1
+
+== 7 two sources disagree, no majority -> both DIVERGED
+  stdout: 2026-10-25T13:24:37Z DIVERGED tip=1000 deep=800 retries=0 validator=DIVERGED(deep 800 account_hash CCCCCCCCCCCCCCCC != BBBBBBBBBBBBBBBB) public=DIVERGED(deep 800 account_hash BBBBBBBBBBBBBBBB != CCCCCCCCCCCCCCCC)
+  stderr: mismatch at deep 800 (2 distinct hash sets), re-query 1/2 in 0s
+  stderr: mismatch at deep 800 (2 distinct hash sets), re-query 2/2 in 0s
+  ok   exit 2
+  ok   validator DIVERGED on account_hash (no majority)
+  ok   public DIVERGED too
+
+== 8 public server_info times out on every try -> public UNKNOWN, the other two compared
+  stdout: 2026-10-25T13:24:38Z UNKNOWN tip=1000 deep=800 retries=3 validator=AGREE sentry=AGREE public=UNKNOWN(server_info: no answer)
+  stderr: retry public server_info 1/3 in 0s: no answer
+  stderr: retry public server_info 2/3 in 0s: no answer
+  stderr: retry public server_info 3/3 in 0s: no answer
+  stderr: giving up public server_info after 4 attempts: no answer
+  ok   exit 1
+  ok   public UNKNOWN no answer
+  ok   tip from the two that answered
+
+== 9 only one source answers -> all UNKNOWN, nothing compared
+  stdout: 2026-10-25T13:24:39Z UNKNOWN tip=0 deep=0 retries=6 validator=UNKNOWN(fewer than 2 sources answered server_info) sentry=UNKNOWN(server_info: no answer) public=UNKNOWN(server_info: no answer)
+  stderr: retry sentry server_info 1/3 in 0s: no answer
+  stderr: retry sentry server_info 2/3 in 0s: no answer
+  stderr: retry sentry server_info 3/3 in 0s: no answer
+  stderr: giving up sentry server_info after 4 attempts: no answer
+  stderr: retry public server_info 1/3 in 0s: no answer
+  stderr: retry public server_info 2/3 in 0s: no answer
+  stderr: retry public server_info 3/3 in 0s: no answer
+  stderr: giving up public server_info after 4 attempts: no answer
+  ok   exit 1
+  ok   validator UNKNOWN fewer than 2
+  ok   no ledger queries
+  ok   metric overall 2
+
+== 10 not-validated / wrong-index answers are errors, not hashes
+  stdout: 2026-10-25T13:24:42Z UNKNOWN tip=1000 deep=800 retries=6 validator=AGREE sentry=UNKNOWN(tip ledger 1000: ledger 1000 not validated) public=UNKNOWN(deep ledger 800: answered ledger 799 for 800)
+  stderr: retry sentry ledger 1000 1/3 in 0s: ledger 1000 not validated
+  stderr: retry sentry ledger 1000 2/3 in 0s: ledger 1000 not validated
+  stderr: retry sentry ledger 1000 3/3 in 0s: ledger 1000 not validated
+  stderr: giving up sentry ledger 1000 after 4 attempts: ledger 1000 not validated
+  stderr: retry public ledger 800 1/3 in 0s: answered ledger 799 for 800
+  stderr: retry public ledger 800 2/3 in 0s: answered ledger 799 for 800
+  stderr: retry public ledger 800 3/3 in 0s: answered ledger 799 for 800
+  stderr: giving up public ledger 800 after 4 attempts: answered ledger 799 for 800
+  ok   sentry UNKNOWN not validated
+  ok   public UNKNOWN wrong index
+  ok   no DIVERGED
+
+== 11 --json output
+  stdout: {"ts":1792934684,"state":"DIVERGED","tip":1000,"deep":800,"last_agree_ledger":0,"retries":0,"sources":[{"name":"validator","state":"AGREE","reason":"","validated_seq":1000,"tip_ledger_hash":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","deep_ledger_hash":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"},{"name":"sentry","state":"DIVERGED","reason":"tip 1000 ledger_hash BBBBBBBBBBBBBBBB != majority AAAAAAAAAAAAAAAA","validated_seq":1001,"tip_ledger_hash":"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB","deep_ledger_hash":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"},{"name":"public","state":"AGREE","reason":"","validated_seq":1002,"tip_ledger_hash":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","deep_ledger_hash":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}]}
+  stderr: mismatch at tip 1000 (2 distinct hash sets), re-query 1/2 in 0s
+  stderr: mismatch at tip 1000 (2 distinct hash sets), re-query 2/2 in 0s
+  ok   valid JSON, state DIVERGED
+  ok   3 sources, sentry DIVERGED
+  ok   sentry tip hash in JSON
+
+== 12 usage errors -> exit 3
+  ok   one source
+  ok   unknown kind
+  ok   duplicate name
+  ok   shell metachar in container
+  ok   ssh without container
+  ok   non-numeric depth
+  ok   --check-config exits 0 and queries nothing
+  ok   --check-config lists the ssh source
+
+suite: 67 passed, 0 failed (pft-divergence.sh, sha256 063b097f1f8a)
+
+== mutation controls (the suite must FAIL on each)
+caught mutant no-requery: 6 failing checks, incl. case '6 transient hash mismatch':
+      FAIL re-query 1/2 printed [2 DIVERGED: sentry has another ledger_hash at tip, confirmed after 2 re-queries]
+      FAIL re-query 2/2 printed [2 DIVERGED: sentry has another ledger_hash at tip, confirmed after 2 re-queries]
+      FAIL sentry asked 3 times for 1000 [2 DIVERGED: sentry has another ledger_hash at tip, confirmed after 2 re-queries]
+      FAIL exit 0 [6 transient hash mismatch (wrong answer once) -> AGREE after re-query]
+caught mutant no-retry: 8 failing checks, incl. case '3 transient public-RPC error':
+      FAIL exit 0 [3 transient public-RPC error that recovers -> AGREE, not DIVERGED]
+      FAIL AGREE, retries=1 [3 transient public-RPC error that recovers -> AGREE, not DIVERGED]
+      FAIL retry printed [3 transient public-RPC error that recovers -> AGREE, not DIVERGED]
+      FAIL metric public 0 [3 transient public-RPC error that recovers -> AGREE, not DIVERGED]
+ALL PASS
+
+== exporter textfile unit tests
+test_good_file_is_exported (test_exporter_textfile.Textfile) ... ok
+test_malformed_file_skipped_whole (test_exporter_textfile.Textfile) ... ok
+test_missing_dir_is_not_an_error (test_exporter_textfile.Textfile) ... ok
+test_render_includes_textfiles (test_exporter_textfile.Textfile) ... ok
+test_symlink_and_oversize_rejected (test_exporter_textfile.Textfile) ... ok
+test_temp_and_non_prom_files_ignored (test_exporter_textfile.Textfile) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.009s
+
+OK
+
+== ruff check (divergence/)
+All checks passed!
+
+== promtool check rules + test rules (../alerts/divergence.*)
+Checking divergence.rules.yml
+  SUCCESS: 2 rules found
+
+  SUCCESS
+
+
+== M3 mutation: PFTLedgerDiverged without for: 2m (promtool must FAIL)
+FAIL: mutant failed for another reason:
+
+
+  FAILED:
+    name: PFTLedgerDiverged fires after 2m of confirmed DIVERGED, only for that source,
+    alertname: PFTLedgerDiverged, time: 3m, 
+
+CHECK FAIL
+exit 1

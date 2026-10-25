@@ -1,0 +1,77 @@
+pft-divergence alert drill (validator) - 2026-10-25T13:33:35Z - Ubuntu 22.04.5 LTS
+sha256: drill.sh 3781cc8b94d7 | drill_stub.py 60e44e799c19 | drill_verdict.py 46ab8a46a29a | pft-divergence 063b097f1f8a | divergence.rules.yml 275586b41473
+
+== 1. preflight
+  Prometheus alerts now: []
+  real check: 2026-10-25T13:33:41Z AGREE tip=7471764 deep=7471564 retries=0 validator=AGREE sentry=AGREE public=AGREE hash=1B4E2FDDA2FE68BE
+  drill sources: validator=docker:postfiatd sentry=ssh:relay:postfiatd-sentry stub=http:http://127.0.0.1:18559/
+
+== 2. bridge -> throwaway topic, timer stopped, stub started
+  pft-alert-bridge  Up 4 seconds  python:3.12-alpine
+  2026-10-25T13:33:53Z scrape targets:
+  2026-10-25T13:33:53Z Prometheus alerts (pending/firing):
+  2026-10-25T13:33:53Z Alertmanager alerts:
+  pft-alert-bridge -> https://ntfy.sh/<redacted> (throwaway; mount source checked)
+  pft-divergence.timer: inactive
+  stub on 127.0.0.1:18559 (pid 551031), passthrough
+
+== 3. wrong: the stub rewrites ledger_hash (2026-10-25T13:33:55Z)
+  [wrong] mismatch at tip 7471771 (2 distinct hash sets), re-query 1/2 in 1s
+  [wrong] mismatch at tip 7471771 (2 distinct hash sets), re-query 2/2 in 2s
+  [wrong] mismatch at deep 7471571 (2 distinct hash sets), re-query 1/2 in 1s
+  [wrong] mismatch at deep 7471571 (2 distinct hash sets), re-query 2/2 in 2s
+  [wrong] 2026-10-25T13:34:15Z DIVERGED tip=7471771 deep=7471571 retries=0 validator=AGREE sentry=AGREE stub=DIVERGED(deep 7471571 ledger_hash 94AD72E7D0D750CE != majority 839C61D6CFC64FBD)
+  2026-10-25T13:34:35Z phase=wrong prom pft_divergence_state={"validator":0,"sentry":0,"stub":1} PFTLedgerDiverged=pending
+  [wrong] mismatch at tip 7471785 (2 distinct hash sets), re-query 1/2 in 1s
+  [wrong] mismatch at tip 7471785 (2 distinct hash sets), re-query 2/2 in 2s
+  [wrong] mismatch at deep 7471585 (2 distinct hash sets), re-query 1/2 in 1s
+  [wrong] mismatch at deep 7471585 (2 distinct hash sets), re-query 2/2 in 2s
+  [wrong] 2026-10-25T13:34:56Z DIVERGED tip=7471785 deep=7471585 retries=0 validator=AGREE sentry=AGREE stub=DIVERGED(deep 7471585 ledger_hash A7B11F0BD580C769 != majority 96A00EFAC47FB658)
+  2026-10-25T13:35:16Z phase=wrong prom pft_divergence_state={"validator":0,"sentry":0,"stub":1} PFTLedgerDiverged=pending
+  [wrong] mismatch at tip 7471798 (2 distinct hash sets), re-query 1/2 in 1s
+  [wrong] mismatch at tip 7471798 (2 distinct hash sets), re-query 2/2 in 2s
+  [wrong] mismatch at deep 7471598 (2 distinct hash sets), re-query 1/2 in 1s
+  [wrong] mismatch at deep 7471598 (2 distinct hash sets), re-query 2/2 in 2s
+  [wrong] 2026-10-25T13:35:36Z DIVERGED tip=7471798 deep=7471598 retries=0 validator=AGREE sentry=AGREE stub=DIVERGED(deep 7471598 ledger_hash 2B347DEE0B0E42FA != majority 1A236CDDFAFD31E9)
+  2026-10-25T13:35:56Z phase=wrong prom pft_divergence_state={"validator":0,"sentry":0,"stub":1} PFTLedgerDiverged=pending
+  [wrong] mismatch at tip 7471811 (2 distinct hash sets), re-query 1/2 in 1s
+  [wrong] mismatch at tip 7471811 (2 distinct hash sets), re-query 2/2 in 2s
+  [wrong] mismatch at deep 7471611 (2 distinct hash sets), re-query 1/2 in 1s
+  [wrong] mismatch at deep 7471611 (2 distinct hash sets), re-query 2/2 in 2s
+  [wrong] 2026-10-25T13:36:19Z DIVERGED tip=7471811 deep=7471611 retries=0 validator=AGREE sentry=AGREE stub=DIVERGED(deep 7471611 ledger_hash 02D6B3052F13E82C != majority F1C5A2F41E02D71B)
+  2026-10-25T13:36:39Z phase=wrong prom pft_divergence_state={"validator":0,"sentry":0,"stub":1} PFTLedgerDiverged=firing
+  2026-10-25T13:36:40Z PFTLedgerDiverged firing and [FIRING] seen on the topic
+
+== 4. fixed: the stub passes answers through (2026-10-25T13:36:40Z)
+  [fixed] 2026-10-25T13:36:46Z AGREE tip=7471826 deep=7471626 retries=0 validator=AGREE sentry=AGREE stub=AGREE hash=7B77045933F03FF3
+  2026-10-25T13:37:06Z phase=fixed prom pft_divergence_state={"validator":0,"sentry":0,"stub":0} PFTLedgerDiverged=none
+  [fixed] 2026-10-25T13:37:13Z AGREE tip=7471835 deep=7471635 retries=0 validator=AGREE sentry=AGREE stub=AGREE hash=0E531D7AFA1AF6A4
+  2026-10-25T13:37:33Z phase=fixed prom pft_divergence_state={"validator":0,"sentry":0,"stub":0} PFTLedgerDiverged=none
+  [fixed] 2026-10-25T13:37:40Z AGREE tip=7471844 deep=7471644 retries=0 validator=AGREE sentry=AGREE stub=AGREE hash=3489492D20F7E54D
+  2026-10-25T13:38:00Z phase=fixed prom pft_divergence_state={"validator":0,"sentry":0,"stub":0} PFTLedgerDiverged=none
+  2026-10-25T13:38:01Z alert gone from Prometheus + Alertmanager and [RESOLVED] seen on the topic
+
+== 5. restore
+  stub stopped
+  $ NTFY_ENV_FILE=<real bridge env> alerts/run-stack.sh up
+  pft-alert-bridge  Up 3 seconds  python:3.12-alpine
+  2026-10-25T13:38:16Z scrape targets:
+  2026-10-25T13:38:17Z Prometheus alerts (pending/firing):
+  2026-10-25T13:38:17Z Alertmanager alerts:
+  pft-alert-bridge mount source is the real env file: yes
+  pft-divergence.timer: active; one real check:
+  2026-10-25T13:38:28Z AGREE tip=7471859 deep=7471659 retries=0 validator=AGREE sentry=AGREE public=AGREE hash=FF06F6469D6ED145
+
+== 6. throwaway topic read back (titles only)
+  2026-10-25T13:36:39Z [FIRING] PFTLedgerDiverged
+  2026-10-25T13:37:39Z [RESOLVED] PFTLedgerDiverged
+$ python3 divergence/drill_verdict.py samples.jsonl ntfy.jsonl
+PASS stub source DIVERGED (metric 1) while the stub lies
+PASS PFTLedgerDiverged firing in Prometheus while the stub lies
+PASS [FIRING] PFTLedgerDiverged on the throwaway topic
+PASS [RESOLVED] PFTLedgerDiverged on the topic after the FIRING
+PASS after the fix: stub AGREE (0) and no alert
+PASS real sources stayed AGREE (0) in every sample
+DRILL PASS
+drill done 2026-10-25T13:38:29Z: verdict exit 0
+exit 0

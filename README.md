@@ -319,6 +319,22 @@ sudo bash bundle/pft-bundle.sh collect --container postfiatd-sentry --label sent
 bash bundle/pft-bundle.sh verify /var/tmp/pft-bundle-sentry-host-<UTC>.tar.gz
 ```
 
+## Consensus-divergence monitor add-on
+
+[`divergence/`](divergence/README.md): `pft-divergence` is a read-only, 1-minute timer check. It compares
+`ledger_hash`, `account_hash` and `transaction_hash` at the newest common validated index, and at the index 200
+below it, across the validator, the sentry (over ssh) and the public RPC. A node that is `full` but on another
+chain shows up as `DIVERGED`. A mismatch only counts if it is still there after 2 re-queries, and RPC errors are
+retried with backoff, so they end up as `UNKNOWN`, never `DIVERGED`. It writes a Prometheus textfile, which the
+exporter now reads (`PFT_TEXTFILE_DIR`). `PFTLedgerDiverged` and `PFTDivergenceCheckStale` are in
+`alerts/divergence.rules.yml`.
+
+```bash
+DOCKER="sudo docker" bash divergence/check.sh                 # shellcheck, fake-RPC suite + mutants, promtool
+sudo bash divergence/install.sh --sources "validator=docker:postfiatd public=http:https://rpc.testnet.postfiat.org/"
+sudo pft-divergence --json
+```
+
 ## Upgrade
 
 ```bash

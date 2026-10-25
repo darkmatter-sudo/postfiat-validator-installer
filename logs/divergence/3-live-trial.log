@@ -1,0 +1,11 @@
+OS: Ubuntu 22.04.5 LTS | 2026-10-25T13:20:26Z | host: validator-host | script sha256 12a728456108
+# runs 1-2: sentry UNKNOWN because the script only read SSH_RUNAS from its conf file (the env var was ignored, ssh ran as root without a key); added --ssh-runas
+$ sudo bash divergence/pft-divergence.sh --sources "validator=docker:postfiatd sentry=ssh:relay:postfiatd-sentry public=http:https://rpc.testnet.postfiat.org/" --ssh-runas <operator-user> --no-textfile --no-state
+2026-10-25T13:20:35Z AGREE tip=7471503 deep=7471303 retries=0 validator=AGREE sentry=AGREE public=AGREE hash=7979580875CA9AA6
+exit 0
+$ sudo bash divergence/pft-divergence.sh --sources "validator=docker:postfiatd sentry=ssh:relay:postfiatd-sentry public=http:https://rpc.testnet.postfiat.org/" --ssh-runas <operator-user> --no-textfile --no-state
+2026-10-25T13:20:42Z AGREE tip=7471506 deep=7471306 retries=0 validator=AGREE sentry=AGREE public=AGREE hash=7CBA1AE6B5196C4E
+exit 0
+$ sudo bash divergence/pft-divergence.sh --sources "validator=docker:postfiatd sentry=ssh:relay:postfiatd-sentry public=http:https://rpc.testnet.postfiat.org/" --ssh-runas <operator-user> --no-textfile --no-state
+2026-10-25T13:20:48Z AGREE tip=7471508 deep=7471308 retries=0 validator=AGREE sentry=AGREE public=AGREE hash=1F3CC0FC80ECD580
+exit 0

@@ -1,0 +1,12 @@
+[Unit]
+Description=pft-divergence: read-only ledger-hash agreement check (validator / sentry / public RPC)
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/divergence
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# exit 1/2 (UNKNOWN/DIVERGED) is a result, reported through the textfile metrics, not a unit failure
+SuccessExitStatus=1 2
+ExecStart=/usr/local/bin/pft-divergence
+TimeoutStartSec=170

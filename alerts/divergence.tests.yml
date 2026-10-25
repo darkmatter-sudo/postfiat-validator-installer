@@ -1,0 +1,89 @@
+# promtool unit tests for divergence.rules.yml (1m sample interval, see ../divergence/README.md).
+# Run: promtool test rules divergence.tests.yml
+rule_files:
+  - divergence.rules.yml
+evaluation_interval: 1m
+tests:
+  - name: PFTLedgerDiverged fires after 2m of confirmed DIVERGED, only for that source
+    interval: 1m
+    input_series:
+      - series: 'pft_divergence_state{job="postfiat", instance="node:9877", source="sentry"}'
+        values: "0 0 1 1 1 1 1"
+      - series: 'pft_divergence_state{job="postfiat", instance="node:9877", source="validator"}'
+        values: "0 0 0 0 0 0 0"
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: PFTLedgerDiverged
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: PFTLedgerDiverged
+        exp_alerts:
+          - exp_labels: {job: postfiat, instance: "node:9877", source: sentry, severity: critical}
+            exp_annotations:
+              summary: "sentry disagrees on ledger hashes (seen by node:9877)"
+              description: "pft-divergence found a ledger_hash/account_hash/transaction_hash at a common validated index that differs from the other sources, confirmed on re-query, for 2m. A node on another chain can be up and full; check `pft-divergence --json`."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/divergence/README.md#states"
+  - name: PFTLedgerDiverged stays quiet for a 1-check blip
+    interval: 1m
+    input_series:
+      - series: 'pft_divergence_state{job="postfiat", instance="node:9877", source="public"}'
+        values: "0 1 0 1 0 0 0"
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: PFTLedgerDiverged
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: PFTLedgerDiverged
+        exp_alerts: []
+  - name: PFTLedgerDiverged stays quiet on UNKNOWN (2), however long
+    interval: 1m
+    input_series:
+      - series: 'pft_divergence_state{job="postfiat", instance="node:9877", source="public"}'
+        values: "2x30"
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: PFTLedgerDiverged
+        exp_alerts: []
+  - name: PFTLedgerDiverged resolves when the source agrees again
+    interval: 1m
+    input_series:
+      - series: 'pft_divergence_state{job="postfiat", instance="node:9877", source="sentry"}'
+        values: "1 1 1 1 1 0 0 0"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: PFTLedgerDiverged
+        exp_alerts:
+          - exp_labels: {job: postfiat, instance: "node:9877", source: sentry, severity: critical}
+            exp_annotations:
+              summary: "sentry disagrees on ledger hashes (seen by node:9877)"
+              description: "pft-divergence found a ledger_hash/account_hash/transaction_hash at a common validated index that differs from the other sources, confirmed on re-query, for 2m. A node on another chain can be up and full; check `pft-divergence --json`."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/divergence/README.md#states"
+      - eval_time: 6m
+        alertname: PFTLedgerDiverged
+        exp_alerts: []
+  - name: PFTDivergenceCheckStale fires when the timestamp stops moving
+    interval: 1m
+    input_series:
+      - series: 'pft_divergence_check_timestamp{job="postfiat", instance="node:9877"}'
+        values: "0x20"
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: PFTDivergenceCheckStale
+        exp_alerts: []
+      - eval_time: 17m
+        alertname: PFTDivergenceCheckStale
+        exp_alerts:
+          - exp_labels: {job: postfiat, instance: "node:9877", severity: warning}
+            exp_annotations:
+              summary: "pft-divergence has not completed a check for 10m on node:9877"
+              description: "The textfile is old: the timer is stopped or failing, so PFTLedgerDiverged cannot fire. Check `systemctl status pft-divergence.timer`."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/divergence/README.md#install"
+  - name: PFTDivergenceCheckStale stays quiet while checks run every minute
+    interval: 1m
+    input_series:
+      - series: 'pft_divergence_check_timestamp{job="postfiat", instance="node:9877"}'
+        values: "0+60x30"
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: PFTDivergenceCheckStale
+        exp_alerts: []

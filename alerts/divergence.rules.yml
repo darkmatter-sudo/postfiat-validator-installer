@@ -1,0 +1,24 @@
+# Alerts for ../divergence (pft-divergence textfile metrics, scraped through ../exporter).
+# pft_divergence_state: 0 AGREE, 1 DIVERGED (confirmed after re-queries), 2 UNKNOWN.
+groups:
+  - name: pft-divergence
+    rules:
+      - alert: PFTLedgerDiverged
+        expr: pft_divergence_state{job="postfiat"} == 1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.source }} disagrees on ledger hashes (seen by {{ $labels.instance }})"
+          description: "pft-divergence found a ledger_hash/account_hash/transaction_hash at a common validated index that differs from the other sources, confirmed on re-query, for 2m. A node on another chain can be up and full; check `pft-divergence --json`."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/divergence/README.md#states"
+
+      - alert: PFTDivergenceCheckStale
+        expr: time() - pft_divergence_check_timestamp{job="postfiat"} > 600
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pft-divergence has not completed a check for 10m on {{ $labels.instance }}"
+          description: "The textfile is old: the timer is stopped or failing, so PFTLedgerDiverged cannot fire. Check `systemctl status pft-divergence.timer`."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/divergence/README.md#install"
