@@ -1,0 +1,88 @@
+# Availability SLO for a Post Fiat node monitored by ../exporter (job "postfiat"). Definitions: README.md.
+# SLI per evaluation (15s, same as the scrape interval):
+#   good = scrape up AND pft_up == 1 AND server_state >= full (full/validating/proposing)
+#          AND validated ledger age < 10s
+#   eligible = no pft-maint window open (pft_maint_active == 0); maintenance never burns budget.
+#   bad = eligible AND NOT good. A missing component series (e.g. exporter down) counts as not good.
+# Objective: pft:slo_objective:ratio (default 0.995 over 30 days). To change it, edit the one
+# expr below; every alert threshold and pft-slo-report read it from there.
+groups:
+  - name: pft-slo-sli
+    interval: 15s
+    rules:
+      - record: pft:slo_objective:ratio
+        expr: vector(0.995)
+      - record: pft:sli_scrape_up:bool
+        expr: max by (job, instance) (up{job="postfiat"})
+      - record: pft:sli_rpc_up:bool
+        expr: >-
+          (max by (job, instance) (pft_up{job="postfiat"}) == bool 1)
+          or on (job, instance) (0 * pft:sli_scrape_up:bool)
+      - record: pft:sli_state_ok:bool
+        expr: >-
+          (max by (job, instance) (pft_server_state{job="postfiat"}) >= bool 4)
+          or on (job, instance) (0 * pft:sli_scrape_up:bool)
+      - record: pft:sli_ledger_fresh:bool
+        expr: >-
+          (max by (job, instance) (pft_validated_ledger_age_seconds{job="postfiat"}) < bool 10)
+          or on (job, instance) (0 * pft:sli_scrape_up:bool)
+      - record: pft:sli_good:bool
+        expr: >-
+          pft:sli_scrape_up:bool * pft:sli_rpc_up:bool * pft:sli_state_ok:bool * pft:sli_ledger_fresh:bool
+      - record: pft:sli_maint:bool
+        expr: >-
+          (max by (job, instance) (pft_maint_active{job="postfiat"}) == bool 1)
+          or on (job, instance) (0 * pft:sli_scrape_up:bool)
+      - record: pft:sli_eligible:bool
+        expr: 1 - pft:sli_maint:bool
+      - record: pft:sli_bad:bool
+        expr: (1 - pft:sli_good:bool) * pft:sli_eligible:bool
+
+  # error ratio over a window = bad evaluations / eligible evaluations (0 when the whole window is maintenance)
+  - name: pft-slo-windows
+    interval: 15s
+    rules:
+      - record: pft:sli_error:ratio_rate5m
+        expr: sum_over_time(pft:sli_bad:bool[5m]) / clamp_min(sum_over_time(pft:sli_eligible:bool[5m]), 1)
+      - record: pft:sli_error:ratio_rate30m
+        expr: sum_over_time(pft:sli_bad:bool[30m]) / clamp_min(sum_over_time(pft:sli_eligible:bool[30m]), 1)
+      - record: pft:sli_error:ratio_rate1h
+        expr: sum_over_time(pft:sli_bad:bool[1h]) / clamp_min(sum_over_time(pft:sli_eligible:bool[1h]), 1)
+      - record: pft:sli_error:ratio_rate6h
+        expr: sum_over_time(pft:sli_bad:bool[6h]) / clamp_min(sum_over_time(pft:sli_eligible:bool[6h]), 1)
+
+  - name: pft-slo-budget
+    interval: 1m
+    rules:
+      - record: pft:sli_error:ratio_rate30d
+        expr: sum_over_time(pft:sli_bad:bool[30d]) / clamp_min(sum_over_time(pft:sli_eligible:bool[30d]), 1)
+      - record: pft:slo_budget_remaining:ratio
+        expr: >-
+          1 - pft:sli_error:ratio_rate30d / on () group_left () (1 - pft:slo_objective:ratio)
+
+  # Multi-window multi-burn-rate alerts (Google SRE workbook, ch. 5). Burn rate 1 = budget gone in 30 days.
+  # fast: 14.4x over 1h AND 5m (2% of a 30d budget in 1h); slow: 6x over 6h AND 30m (5% in 6h).
+  - name: pft-slo-alerts
+    rules:
+      - alert: PFTSLOFastBurn
+        expr: >-
+          pft:sli_error:ratio_rate1h > on () group_left () (14.4 * (1 - pft:slo_objective:ratio))
+          and pft:sli_error:ratio_rate5m > on () group_left () (14.4 * (1 - pft:slo_objective:ratio))
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Availability error budget burning 14.4x+ on {{ $labels.instance }}"
+          description: "1h and 5m error ratios are both above 14.4x the budget. At this rate the 30-day budget is gone in ~2 days. Run pft-slo-report for the bad intervals."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/slo/README.md#pftslofastburn"
+      - alert: PFTSLOSlowBurn
+        expr: >-
+          pft:sli_error:ratio_rate6h > on () group_left () (6 * (1 - pft:slo_objective:ratio))
+          and pft:sli_error:ratio_rate30m > on () group_left () (6 * (1 - pft:slo_objective:ratio))
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Availability error budget burning 6x+ on {{ $labels.instance }}"
+          description: "6h and 30m error ratios are both above 6x the budget. At this rate the 30-day budget is gone in ~5 days."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/slo/README.md#pftsloslowburn"

@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# Offline checks for slo/: promtool check + test rules, CLI/exporter unit tests, ruff, shellcheck,
+# plus two mutation controls that must FAIL (tests that cannot fail prove nothing):
+#   M1 rules: drop the maintenance exclusion from pft:sli_bad:bool -> promtool maintenance test fails
+#   M2 CLI:   classify() ignores maintenance                     -> unit tests fail
+# Usage: check.sh        Env: DOCKER (default "docker", e.g. DOCKER="sudo docker"), PROM_IMAGE
+# Exit 0 only if every check passes and both mutations are caught.
+set -uo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+read -r -a DOCKER <<< "${DOCKER:-docker}"
+PROM_IMAGE="${PROM_IMAGE:-prom/prometheus:v3.5.0}"
+fail=0
+step() { printf '\n== %s\n' "$*"; }
+promtool() { "${DOCKER[@]}" run --rm -v "$1:/w:ro" -w /w --entrypoint promtool "$PROM_IMAGE" "${@:2}"; }
+
+cd "$HERE" || exit 2
+step "tests.yml is up to date with gen_tests.py"
+if python3 gen_tests.py | cmp -s - tests.yml; then echo "tests.yml matches"; else echo "FAIL: regenerate tests.yml"; fail=1; fi
+
+step "promtool check rules slo.rules.yml"
+promtool "$HERE" check rules slo.rules.yml || fail=1
+
+step "promtool test rules tests.yml"
+promtool "$HERE" test rules tests.yml || fail=1
+
+step "unit tests (python3 -m unittest)"
+python3 -m unittest discover -s tests -v 2>&1 || fail=1
+
+step "ruff check (slo/)"
+ruff check . || fail=1
+
+step "shellcheck"
+if shellcheck ./*.sh; then echo "shellcheck clean:" ./*.sh; else fail=1; fi
+
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+chmod 755 "$tmp"   # promtool runs as nobody in the container; a 700 dir would "fail" for the wrong reason
+
+step "M1 mutation: pft:sli_bad:bool without the maintenance exclusion (promtool must FAIL)"
+cp slo.rules.yml tests.yml "$tmp/"
+sed -i 's|expr: (1 - pft:sli_good:bool) \* pft:sli_eligible:bool|expr: (1 - pft:sli_good:bool)|' "$tmp/slo.rules.yml"
+if cmp -s slo.rules.yml "$tmp/slo.rules.yml"; then echo "FAIL: mutation did not apply"; fail=1
+elif promtool "$tmp" test rules tests.yml > "$tmp/m1.out" 2>&1; then echo "FAIL: mutant passed"; fail=1
+elif grep -q 'name: maintenance-window' "$tmp/m1.out"; then
+  grep -E '^ +(name|alertname): ' "$tmp/m1.out" | sed 's/^ *//; s/, *$//' | paste - - | sort -u
+  echo "caught: maintenance-window test failed on the mutant"
+else echo "FAIL: mutant failed for another reason:"; head -5 "$tmp/m1.out"; fail=1; fi
+
+step "M2 mutation: CLI classify() ignores maintenance (unit tests must FAIL)"
+mkdir -p "$tmp/m2"
+cp -r tests pft_slo_report.py "$tmp/m2/"
+sed -i 's|    if comp\["maint"\].get(t) == 1 or any(s <= t < e for s, e in maint_spans):|    if False:|' \
+  "$tmp/m2/pft_slo_report.py"
+sed -i 's|"\.\.", "\.\.", "exporter"|"'"$HERE"'", "..", "exporter"|' "$tmp/m2/tests/test_exporter_maint.py"
+if cmp -s pft_slo_report.py "$tmp/m2/pft_slo_report.py"; then echo "FAIL: mutation did not apply"; fail=1
+elif (cd "$tmp/m2" && python3 -m unittest discover -s tests > "$tmp/m2.out" 2>&1); then echo "FAIL: mutant passed"; fail=1
+elif grep -q '^ERROR:' "$tmp/m2.out"; then echo "FAIL: mutant errored (not an assertion):"; grep '^ERROR:' "$tmp/m2.out"; fail=1
+else grep -E '^FAIL:' "$tmp/m2.out" | sed 's/ (.*//'; echo "caught: assertion failures only"; fi
+
+printf '\nRESULT: %s\n' "$([ "$fail" -eq 0 ] && echo PASS || echo FAIL)"
+exit "$fail"

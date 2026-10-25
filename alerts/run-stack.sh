@@ -13,9 +13,12 @@
 #                   unprivileged user; it is mounted read-only into the bridge (which runs as that user),
 #                   so the topic never appears in `docker inspect`. Without it the bridge only logs.
 #   EXPORTER        exporter address to preflight (default 127.0.0.1:9877)
+#   SLO_DIR         folder with *.rules.yml mounted at /etc/pft-slo (default ../slo; empty = none)
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SLO_DIR="${SLO_DIR-$HERE/../slo}"
+[ -n "$SLO_DIR" ] && [ -d "$SLO_DIR" ] && SLO_DIR="$(readlink -f "$SLO_DIR")" || SLO_DIR=""
 read -r -a DOCKER <<< "${DOCKER:-docker}"
 PROM_IMAGE="${PROM_IMAGE:-prom/prometheus:v3.5.0}"
 AM_IMAGE="${AM_IMAGE:-prom/alertmanager:v0.28.1}"
@@ -23,6 +26,8 @@ PY_IMAGE="${PY_IMAGE:-python:3.12-alpine}"
 EXPORTER="${EXPORTER:-127.0.0.1:9877}"
 PORTS="9090 9093 9094 9095"
 
+slo_mount=()
+[ -n "$SLO_DIR" ] && slo_mount=(-v "$SLO_DIR:/etc/pft-slo:ro")
 log() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*"; }
 die() { log "ERROR: $*"; exit 1; }
 
@@ -31,8 +36,8 @@ check() {
   "${DOCKER[@]}" run --rm -v "$HERE:/w:ro" -w /w --entrypoint promtool "$PROM_IMAGE" check rules postfiat.rules.yml
   log "promtool test rules"
   "${DOCKER[@]}" run --rm -v "$HERE:/w:ro" -w /w --entrypoint promtool "$PROM_IMAGE" test rules tests.yml
-  log "promtool check config (prometheus.yml)"
-  "${DOCKER[@]}" run --rm -v "$HERE:/etc/pft-alerts:ro" --entrypoint promtool "$PROM_IMAGE" \
+  log "promtool check config (prometheus.yml${SLO_DIR:+ + slo rules at /etc/pft-slo})"
+  "${DOCKER[@]}" run --rm -v "$HERE:/etc/pft-alerts:ro" "${slo_mount[@]}" --entrypoint promtool "$PROM_IMAGE" \
     check config /etc/pft-alerts/prometheus.yml
   log "amtool check-config"
   "${DOCKER[@]}" run --rm -v "$HERE:/w:ro" --entrypoint amtool "$AM_IMAGE" check-config /w/alertmanager.yml
@@ -91,7 +96,8 @@ up() {
     --cluster.listen-address= --storage.path=/alertmanager >/dev/null
   log "starting pft-prometheus"
   "${DOCKER[@]}" run -d --name pft-prometheus --restart unless-stopped --network host \
-    --security-opt no-new-privileges --cap-drop ALL -v "$HERE:/etc/pft-alerts:ro" -v pft-prometheus-data:/prometheus \
+    --security-opt no-new-privileges --cap-drop ALL -v "$HERE:/etc/pft-alerts:ro" "${slo_mount[@]}" \
+    -v pft-prometheus-data:/prometheus \
     "$PROM_IMAGE" --config.file=/etc/pft-alerts/prometheus.yml --web.listen-address=127.0.0.1:9090 \
     --storage.tsdb.path=/prometheus --storage.tsdb.retention.time=15d >/dev/null
   local i ready=0

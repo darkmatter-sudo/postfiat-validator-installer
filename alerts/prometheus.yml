@@ -4,6 +4,7 @@ global:
   evaluation_interval: 15s
 rule_files:
   - /etc/pft-alerts/postfiat.rules.yml
+  - /etc/pft-slo/*.rules.yml    # ../slo (availability SLO + burn-rate alerts); run-stack.sh mounts it
 alerting:
   alertmanagers:
     - static_configs:

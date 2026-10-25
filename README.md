@@ -277,6 +277,20 @@ Live stop-the-node drill: [`logs/alerts/`](logs/alerts/).
 cd alerts && DOCKER="sudo docker" ./run-stack.sh up   # optional: NTFY_ENV_FILE=~/.pft-ntfy.env
 ```
 
+## SLO and error-budget add-on
+
+[`slo/`](slo/README.md): an availability SLI (scrape up, RPC up, `server_state` full or better, validated
+ledger younger than 10 s) recorded every 15 s, a 30-day objective (default 99.5 %) and multi-window burn-rate
+alerts (`PFTSLOFastBurn` 14.4x over 1h and 5m, `PFTSLOSlowBurn` 6x over 6h and 30m) through the existing ntfy
+bridge. Time inside a `pft-maint` window does not burn budget (`pft_maint_active` from the exporter).
+`pft-slo-report` writes a Markdown report from Prometheus range queries: SLI, budget used, bad intervals with a
+likely cause, maintenance excluded.
+
+```bash
+DOCKER="sudo docker" bash slo/check.sh                        # promtool + unit tests + mutation controls
+python3 slo/pft_slo_report.py --window 7d --step 60s -o slo-report.md
+```
+
 ## Upgrade
 
 ```bash

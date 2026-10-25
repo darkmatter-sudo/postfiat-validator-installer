@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import stat
 import time
 import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -11,6 +12,8 @@ RPC_URL = os.environ.get("PFT_RPC_URL", "http://127.0.0.1:5005")
 LISTEN_ADDR = os.environ.get("PFT_EXPORTER_ADDR", "127.0.0.1")
 LISTEN_PORT = int(os.environ.get("PFT_EXPORTER_PORT", "9877"))
 DISK_PATH = os.environ.get("PFT_DISK_PATH", "/")
+MAINT_FLAG = os.environ.get("PFT_MAINT_FLAG", "/var/lib/pft-maint/flag.json")
+MAINT_MAX_TTL = int(os.environ.get("PFT_MAINT_MAX_TTL", "14400"))
 STATES = ["disconnected", "connected", "syncing", "tracking", "full", "validating", "proposing"]
 
 
@@ -36,8 +39,40 @@ def disk_lines():
             "# TYPE pft_disk_avail_bytes gauge", "pft_disk_avail_bytes %d" % (st.f_bavail * st.f_frsize)]
 
 
+def maint_state(path=MAINT_FLAG, now=None, check_owner=True):
+    """Return (active, malformed) for a pft-maint flag, using the same checks as `pft-maint active`."""
+    now = time.time() if now is None else now
+    try:
+        st = os.lstat(path)
+    except FileNotFoundError:
+        return 0, 0
+    except OSError:
+        return 0, 1
+    if not stat.S_ISREG(st.st_mode) or (check_owner and st.st_uid != 0) or st.st_mode & 0o022 or st.st_size > 4096:
+        return 0, 1
+    try:
+        with open(path) as f:
+            j = json.load(f)
+        ok = (j.get("v") == 1 and all(isinstance(j.get(k), str) for k in ("id", "reason", "host"))
+              and all(isinstance(j.get(k), (int, float)) and not isinstance(j.get(k), bool) for k in ("start", "expiry"))
+              and j["start"] < j["expiry"] and j["expiry"] - j["start"] <= MAINT_MAX_TTL and j["start"] <= now + 60)
+    except (OSError, ValueError, AttributeError):
+        ok = False
+    if not ok:
+        return 0, 1
+    return (1 if now < j["expiry"] else 0), 0
+
+
+def maint_lines():
+    active, malformed = maint_state()
+    return ["# HELP pft_maint_active 1 while a valid pft-maint window is open (excluded from the SLO budget)",
+            "# TYPE pft_maint_active gauge", "pft_maint_active %d" % active,
+            "# HELP pft_maint_flag_malformed 1 if a pft-maint flag exists but fails validation (not a window)",
+            "# TYPE pft_maint_flag_malformed gauge", "pft_maint_flag_malformed %d" % malformed]
+
+
 def render():
-    out = disk_lines()
+    out = disk_lines() + maint_lines()
     try:
         info = fetch_info()
     except Exception:
