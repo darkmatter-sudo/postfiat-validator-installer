@@ -1,0 +1,50 @@
+== pft-bundle live proof 2026-10-25T07:17:54Z | OS: Ubuntu 22.04.5 LTS | container: postfiatd | label: validator-host
+== script sha256: pft-bundle.sh 5a6c4272376d7378 sanitize.py 4e158fe5b8512526 live-proof.sh c719293007afa0de
+-- before
+server_state=full status=running started=2026-10-24T23:11:23.63192283Z restarts=0
+pft-integrity: RESULT: PASS - 50 unchanged, 0 warn, 0 fail -> exit 0
++ bash bundle/pft-bundle.sh collect --container postfiatd --label validator-host --out /var/tmp/pft-bundle-proof.087fyW --keep-raw /var/tmp/pft-bundle-proof.087fyW/raw
+items: 16 (0 non-zero rc)
+  meta/os.txt                  rc=0   bytes=237
+  docker/container.json        rc=0   bytes=1682
+  docker/image.txt             rc=0   bytes=368
+  rpc/server_info.json         rc=0   bytes=4062
+  rpc/server_state.json        rc=0   bytes=4145
+  rpc/peers.json               rc=0   bytes=7482
+  rpc/validator_list_sites.json rc=0   bytes=365
+  rpc/feature.json             rc=0   bytes=18393
+  config/postfiatd.cfg         rc=0   bytes=56813
+  logs/debug.log.tail          rc=0   bytes=507087
+  system/df.txt                rc=0   bytes=152
+  system/df-inodes.txt         rc=0   bytes=161
+  system/memory.txt            rc=0   bytes=207
+  system/ufw.txt               rc=0   bytes=558
+  system/units.txt             rc=0   bytes=2844
+  system/addons.txt            rc=0   bytes=282
+redactions: {"cfg_comment":1485,"cfg_section":0,"cfg_value":0,"distinct_hosts":2,"distinct_ips":14,"host":3,"ipv4":18,"ipv6":0,"ntfy_url":0,"topic":0}
+scan: 0 hit(s) after sanitizing
+manifest: 18 files
+bundle: /var/tmp/pft-bundle-proof.087fyW/pft-bundle-validator-host-20261025T071759Z.tar.gz sha256=c1eeb690d0af4b7cbf854c4147f42f105bc2f5c0a12ba54284dffca3d94393d0
+collect exit=0
++ bash bundle/pft-bundle.sh verify /var/tmp/pft-bundle-proof.087fyW/pft-bundle-validator-host-20261025T071759Z.tar.gz
+PASS manifest: 18 files, member list matches
+PASS hashes: all sha256 match
+INFO literals: host=4 ip=2 topic=2 (values not shown)
+  scan: 0 hit(s)
+PASS scan: no seed, token block, token or identity literal
+RESULT: PASS pft-bundle-validator-host-20261025T071759Z.tar.gz
+verify exit=0
+-- identity hit counts (case-insensitive fixed-string grep -o over every file; values never printed)
+  hostname       raw_hits=1    bundle_hits=0   control_hits=1
+  public-ip-1    raw_hits=0    bundle_hits=0   control_hits=1
+  public-ip-2    raw_hits=0    bundle_hits=0   control_hits=1
+  ntfy-value-1   raw_hits=0    bundle_hits=0   control_hits=1
+  ntfy-value-2   raw_hits=0    bundle_hits=0   control_hits=1
+-- bundle files: 19, size 48550 bytes
+-- after
+server_state=full status=running started=2026-10-24T23:11:23.63192283Z restarts=0
+pft-integrity: RESULT: PASS - 50 unchanged, 0 warn, 0 fail -> exit 0
+PASS node state unchanged
+PASS integrity PASS before and after
+RESULT: PASS live proof on validator-host
+exit=0

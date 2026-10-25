@@ -1,0 +1,49 @@
+== pft-bundle live proof 2026-10-25T07:17:36Z | OS: Ubuntu 22.04.5 LTS | container: postfiatd-sentry | label: sentry-host
+== script sha256: pft-bundle.sh 5a6c4272376d7378 sanitize.py 4e158fe5b8512526 live-proof.sh c719293007afa0de
+-- before
+server_state=full status=running started=2026-10-24T22:25:26.906681347Z restarts=0
+pft-integrity: RESULT: PASS - 27 unchanged, 0 warn, 0 fail -> exit 0
++ bash bundle/pft-bundle.sh collect --container postfiatd-sentry --label sentry-host --out /var/tmp/pft-bundle-proof.nS3OH6 --keep-raw /var/tmp/pft-bundle-proof.nS3OH6/raw
+items: 16 (0 non-zero rc)
+  meta/os.txt                  rc=0   bytes=234
+  docker/container.json        rc=0   bytes=1239
+  docker/image.txt             rc=0   bytes=368
+  rpc/server_info.json         rc=0   bytes=3775
+  rpc/server_state.json        rc=0   bytes=3830
+  rpc/peers.json               rc=0   bytes=6910
+  rpc/validator_list_sites.json rc=0   bytes=365
+  rpc/feature.json             rc=0   bytes=18393
+  config/postfiatd.cfg         rc=0   bytes=56781
+  logs/debug.log.tail          rc=0   bytes=502466
+  system/df.txt                rc=0   bytes=152
+  system/df-inodes.txt         rc=0   bytes=161
+  system/memory.txt            rc=0   bytes=207
+  system/ufw.txt               rc=0   bytes=556
+  system/units.txt             rc=0   bytes=1807
+  system/addons.txt            rc=0   bytes=149
+redactions: {"cfg_comment":1485,"cfg_section":0,"cfg_value":0,"distinct_hosts":2,"distinct_ips":12,"host":3,"ipv4":15,"ipv6":0,"ntfy_url":0,"topic":0}
+scan: 0 hit(s) after sanitizing
+manifest: 18 files
+bundle: /var/tmp/pft-bundle-proof.nS3OH6/pft-bundle-sentry-host-20261025T071741Z.tar.gz sha256=9bf70d71bb3e3b1e0d8a72d86a4fa0f5aad4ffb56f8691a99c4e7512d100c350
+collect exit=0
++ bash bundle/pft-bundle.sh verify /var/tmp/pft-bundle-proof.nS3OH6/pft-bundle-sentry-host-20261025T071741Z.tar.gz
+PASS manifest: 18 files, member list matches
+PASS hashes: all sha256 match
+INFO literals: host=3 ip=2 topic=2 (values not shown)
+  scan: 0 hit(s)
+PASS scan: no seed, token block, token or identity literal
+RESULT: PASS pft-bundle-sentry-host-20261025T071741Z.tar.gz
+verify exit=0
+-- identity hit counts (case-insensitive fixed-string grep -o over every file; values never printed)
+  hostname       raw_hits=1    bundle_hits=0   control_hits=1
+  public-ip-1    raw_hits=0    bundle_hits=0   control_hits=1
+  public-ip-2    raw_hits=0    bundle_hits=0   control_hits=1
+  ntfy-value-1   raw_hits=0    bundle_hits=0   control_hits=1
+-- bundle files: 19, size 47515 bytes
+-- after
+server_state=full status=running started=2026-10-24T22:25:26.906681347Z restarts=0
+pft-integrity: RESULT: PASS - 27 unchanged, 0 warn, 0 fail -> exit 0
+PASS node state unchanged
+PASS integrity PASS before and after
+RESULT: PASS live proof on sentry-host
+exit=0

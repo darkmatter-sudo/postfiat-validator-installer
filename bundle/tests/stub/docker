@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Fake docker for tests: serves files from $STUB_DIR. Only the calls pft-bundle.sh makes are implemented.
+F="${STUB_DIR:?}"
+case "$1" in
+  inspect)
+    if [ "$2" = -f ]; then case "$3" in *Hostname*) echo "c0ffee123456" ;; *) echo "sha256:feedface" ;; esac
+    else cat "$F/inspect.json"; fi ;;
+  image) echo '[{"Id":"sha256:feedface","RepoTags":["example/postfiatd:test"],"RepoDigests":["example/postfiatd@sha256:00"],"Created":"2026-10-01T00:00:00Z","Architecture":"amd64"}]' ;;
+  version) echo "docker server: 0.0-stub" ;;
+  exec)
+    shift 2
+    case "$1" in
+      curl) m="$(printf '%s ' "$@" | sed -n 's/.*"method":"\([a-z_]*\)".*/\1/p')"; cat "$F/rpc-$m.json" ;;
+      cat) cat "$F/postfiatd.cfg" ;;
+      tail) cat "$F/${STUB_DEBUG:-debug.log}" ;;
+    esac ;;
+esac

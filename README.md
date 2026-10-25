@@ -305,6 +305,20 @@ DOCKER="sudo docker" bash slo/check.sh                        # promtool + unit 
 python3 slo/pft_slo_report.py --window 7d --step 60s -o slo-report.md
 ```
 
+## Diagnostics bundle add-on
+
+[`bundle/`](bundle/README.md): `pft-bundle.sh collect` gathers what a helper asks for first (OS, image digest,
+container state, `server_info`/`server_state`/`peers`/`validator_list_sites`/`feature`, the config, the last
+2000 `debug.log` lines, disk/memory, UFW, `pft-*` units) into one 0600 `tar.gz` with a sha256 manifest. It is
+read-only. Secret config sections are dropped, and IPs, hostnames and ntfy topics become stable tokens
+(`<ip-N>`, `<host-N>`). If any seed, token or identity survives, no bundle is written. `verify` re-checks the
+manifest, the optional ssh signature and the scan.
+
+```bash
+sudo bash bundle/pft-bundle.sh collect --container postfiatd-sentry --label sentry-host
+bash bundle/pft-bundle.sh verify /var/tmp/pft-bundle-sentry-host-<UTC>.tar.gz
+```
+
 ## Upgrade
 
 ```bash

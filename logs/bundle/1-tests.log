@@ -1,0 +1,75 @@
+== 2026-10-25T07:16:27Z OS: Ubuntu 22.04.5 LTS | host: validator-host
++ bash bundle/tests/run-tests.sh
+== unit tests (sanitize.py)
+Ran 19 tests in 0.251s
+
+OK
+ok   unit tests
+== shellcheck
+ok   shellcheck clean
+== collect, clean fixtures
+items: 16 (0 non-zero rc)
+redactions: {"cfg_comment":1,"cfg_section":1,"cfg_value":1,"distinct_hosts":3,"distinct_ips":4,"host":5,"ipv4":5,"ipv6":1,"ntfy_url":1,"topic":0}
+scan: 0 hit(s) after sanitizing
+manifest: 18 files
+ok   collect exit 0
+ok   bundle mode 0600
+ok   all 16 items collected with rc=0
+ok   bundle has no 'stub-host-9'
+ok   bundle has no 'c0ffee123456'
+ok   bundle has no 'stub-topic-xyz'
+ok   bundle has no '198.51.100.23'
+ok   bundle has no '203.0.113.10'
+ok   bundle has no '203.0.113.77'
+ok   bundle has no '2001:db8::7'
+ok   bundle has no 'eyJtYW5pZmVzdCI6'
+ok   bundle has no 'ZmFrZS10b2tlbi'
+ok   bundle has no 'not-a-real-password'
+ok   bundle has no 'shfArahZT9Q9ckTf3s1psJ7C7qzVN'
+ok   bundle keeps/has 'admin = 127.0.0.1'
+ok   bundle keeps/has 'admin_password = <redacted>'
+ok   bundle keeps/has '# [validator_token] section removed'
+ok   bundle keeps/has '<ntfy-url>'
+ok   bundle keeps/has 'ConsensusPhase::accepted'
+ok   bundle keeps/has '<host-'
+ok   peer IPv4 tokenized
+ok   peer IPv6 tokenized
+ok   [ips_fixed] address tokenized
+ok   same address -> same token across files (<ip-2>)
+ok   manifest lists every file
+== verify, clean bundle
+ok   verify exit 0
+   | PASS manifest: 18 files, member list matches
+   | PASS hashes: all sha256 match
+   | INFO literals: topic=1 (values not shown)
+   |   scan: 0 hit(s)
+   | PASS scan: no seed, token block, token or identity literal
+   | RESULT: PASS pft-bundle-test-20261025T071628Z.tar.gz
+== fail closed: planted fake seed in debug.log
+   |   HIT logs/debug.log.tail:3 seed
+   |   scan: 1 hit(s)
+   | FAIL: secret or identity survived sanitizing; no bundle written (fail closed)
+ok   collect exit 2
+ok   no bundle written
+ok   hit reported as file:line class
+ok   seed value not printed
+== verify negatives
+ok   tampered file -> exit 2
+ok   FAIL hashes
+ok   unlisted file -> exit 2
+ok   FAIL manifest
+ok   seed in re-hashed bundle -> exit 2
+ok   scan names class seed
+ok   seed value not printed by verify
+ok   topic literal -> exit 2
+ok   scan names literal_topic
+ok   .. member -> exit 2
+ok   FAIL tar
+== signature
+ok   signed collect exit 0
+ok   verify signed, right signer
+ok   PASS signature
+ok   wrong signer -> exit 2
+ok   unsigned bundle with --signers -> exit 2
+RESULT: 48 passed, 0 failed
+exit=0
