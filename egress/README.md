@@ -130,5 +130,20 @@ lines to spot a legitimate destination you forgot (see below).
 - `drill-sentry.sh`: the live found -> fixed -> verified drill. It points every notifier on the host at a
   throwaway topic, proves the guard, probes before, applies in a pft-maint window with an inline dead-man, probes
   after, checks the drop log and the validator-list fetch, runs check, and rebaselines pft-integrity.
+- `stability.sh` (read-only): evidence that the node stayed healthy under the policy. It reports the container's
+  start time and restart count, every `NetworkOPs` heartbeat line in `debug.log` since `applied_at` (one a second)
+  in 10-minute buckets with the mode each reports, and N `server_info` samples (state, peers, ledger range, DROP
+  counter). PASS = no container start in the window, every heartbeat `full`, no empty bucket, every sample `full`
+  with peers >= the apply-time baseline. A heartbeat line without a `mode: x.` field (for example
+  `set mode to DISCONNECTED`) counts as not full; it is never skipped. Timestamps are read as UTC whatever the host
+  time zone is (the sentry runs on UTC+1). `tests/stability-test.sh` (11 cases, one fault each) runs it against real
+  sentry heartbeat lines (`tests/fixtures/heartbeat.log`) with stubbed docker/iptables and a fake clock.
+- `drill-rollback.sh`: the live rollback drill, run on a host that already has the policy. Notifiers go to a
+  throwaway topic. It checks PASS and probes blocked first. Then `rollback` without `--yes` must refuse with the
+  table unchanged, and `rollback --yes` must leave `DOCKER-USER` byte-identical both to the live rules minus the
+  jump and to the pre-apply listing in `logs/sentry-live-drill.log`. The whole filter table must equal the
+  before-snapshot minus the pft-egress lines, with no `PFT-EGRESS` chain, the timer disabled, the probe connecting
+  again and the validator list still 200. Then it rebaselines pft-integrity, re-applies in a pft-maint window with
+  the inline dead-man (the policy stays on), checks PASS and probes blocked, and rebaselines again.
 
 Logs: [`logs/`](logs/).

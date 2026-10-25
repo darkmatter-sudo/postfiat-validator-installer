@@ -1,0 +1,172 @@
+$ bash drill-rollback.sh --container postfiatd-sentry --task task_7b66de6cea08f25c368647bb49fa7914   (root shell on the sentry host)
+pft-egress sentry rollback + re-apply drill - 2026-10-25T05:23:19Z - Ubuntu 22.04.5 LTS - iptables v1.8.7 (nf_tables) - container postfiatd-sentry
+script sha256: pft-egress.sh 272f8809bb1f9ac04ba348efd7b243d9571725f0ab6460e9cf882b77bf9961d4 | drill-rollback.sh 132e01f3ba5219fb59b9351e8a07f1b053b1c1bc763a9a249cec1694180829a1
+installed /usr/local/sbin/pft-egress sha256 272f8809bb1f9ac04ba348efd7b243d9571725f0ab6460e9cf882b77bf9961d4
+
+== 1. redirect every notifier on this host to a throwaway topic
+  /etc/pft-watchdog/ntfy.env -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-watchdog/ntfy.env.pre-egress-drill
+  /etc/pft-integrity.env -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-integrity.env.pre-egress-drill
+  /etc/pft-maint/ntfy.env created for the drill only -> https://ntfy.sh/<redacted> (throwaway)
+
+== 2. BEFORE: policy on
+$ pft-egress check --container postfiatd-sentry
+pft-egress check postfiatd-sentry - 2026-10-25T05:23:19Z
+  [PASS] state file present
+  [PASS] chain PFT-EGRESS matches the applied snapshot (8 rules)
+  [PASS] container IP unchanged since apply
+  [PASS] exactly one jump, at DOCKER-USER position 1
+  [PASS] reapply timer enabled
+  [INFO] default-deny DROP counter: 3 pkts 180 bytes
+  [INFO] drop log lines in the last hour: 3; by DPT: DPT=80(3) 
+  [PASS] server_state full
+  [PASS] peers 11 >= baseline 11
+RESULT: PASS
+check exit 0
+$ pft-egress probe --container postfiatd-sentry --target example.com:80
+probe 2026-10-25T05:23:21Z postfiatd-sentry -> example.com:80 BLOCKED_OR_FAILED (5s)
+$ iptables -S DOCKER-USER
+-N DOCKER-USER
+-A DOCKER-USER -s 172.17.0.2/32 -i docker0 ! -o docker0 -m comment --comment "pft-egress:postfiatd-sentry" -j PFT-EGRESS
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state RELATED,ESTABLISHED -j ACCEPT
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m connlimit --connlimit-above 50 --connlimit-mask 32 --connlimit-saddr -j DROP
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -m limit --limit 100/sec --limit-burst 50 -j ACCEPT
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -j DROP
+-A DOCKER-USER -j RETURN
+expected after rollback = live DOCKER-USER minus pft-egress jump (6 rules);
+pre-apply listing from logs/sentry-live-drill.log: 6 lines
+pft-egress state: {"applied_at":"2026-10-25T04:22:20Z","deadman_passed_at":"2026-10-25T04:32:28Z","baseline_peers":11}
+timer: enabled/active
+node before: {"server_state":"full","peers":11}
+
+== 3. ROLLBACK
+$ pft-egress rollback --container postfiatd-sentry   (no --yes)
+pft-egress: rollback changes the firewall; re-run with --yes
+exit 4 (expect 4); filter table unchanged: yes
+$ pft-egress rollback --yes --container postfiatd-sentry
+[2026-10-25T05:23:27Z] rollback: removing jump(s) and chain PFT-EGRESS
+[2026-10-25T05:23:27Z] rollback RESULT: PASS - no PFT-EGRESS chain, no DOCKER-USER jump, reapply timer disabled
+rollback exit 0
+$ iptables -S DOCKER-USER
+-N DOCKER-USER
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state RELATED,ESTABLISHED -j ACCEPT
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m connlimit --connlimit-above 50 --connlimit-mask 32 --connlimit-saddr -j DROP
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -m limit --limit 100/sec --limit-burst 50 -j ACCEPT
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -j DROP
+-A DOCKER-USER -j RETURN
+DOCKER-USER identical to expected (live minus jump): yes
+DOCKER-USER identical to the pre-apply listing in logs/sentry-live-drill.log: yes
+$ iptables -S PFT-EGRESS
+iptables v1.8.7 (nf_tables): chain `PFT-EGRESS' in table `filter' is incompatible, use 'nft' tool.
+
+exit 1 (expect 1: no such chain)
+whole filter table = before minus pft-egress lines (125 rules): yes
+timer: disabled/inactive (expect disabled/inactive)
+state file: postfiatd-sentry.json.rolled-back 
+$ pft-egress probe --container postfiatd-sentry --target example.com:80
+probe 2026-10-25T05:23:27Z postfiatd-sentry -> example.com:80 CONNECTED (1s)
+validator-list fetch from the container (https://postfiat.org/testnet_vl.json): HTTP 200
+node after rollback: {"server_state":"full","peers":11}
+$ pft-egress check --container postfiatd-sentry   (expect FAIL: no policy)
+pft-egress check postfiatd-sentry - 2026-10-25T05:23:29Z
+  [FAIL] state file present
+RESULT: FAIL (not applied)
+check exit 1
+
+== 4. pft-integrity after rollback
+$ pft-integrity verify
+pft-integrity verify - 2026-10-25T05:23:34Z
+OS: Ubuntu 22.04.5 LTS | container: postfiatd-sentry | baseline: 2026-10-25T04:32:42Z
+  [FAIL] fw:docker-user                               changed  rules 6->5, sha256
+RESULT: FAIL - 26 unchanged, 0 warn, 1 fail -> exit 2
+$ pft-integrity accept --reason "task_7b66de6cea08f25c368647bb49fa7914: pft-egress rollback drill (chain + jump removed, reapply timer disabled)"
+pft-integrity accept - 2026-10-25T05:23:39Z: re-baselined 27 items by <user>
+manifest sha256: fbee341e1e0959532c1e6be99a1985e432a0405bd964acdd839bea87c9fe5785 -> 01d2128c201a4d94a9e9301ba61a6650b1b7530bfaaa77915ccbf4f79aa7b40a (logged to accept.log)
+$ pft-integrity verify
+pft-integrity verify - 2026-10-25T05:23:44Z
+OS: Ubuntu 22.04.5 LTS | container: postfiatd-sentry | baseline: 2026-10-25T05:23:35Z
+RESULT: PASS - 27 unchanged, 0 warn, 0 fail -> exit 0
+
+== 5. RE-APPLY (policy stays on after the drill)
+$ pft-maint start --ttl 30m --reason "pft-egress re-apply after rollback drill" --no-sentry
+window started: id m1792905824-411693 until 2026-10-25T05:53:44Z | sentry copy: skipped
+$ pft-egress apply --yes --foreground --deadman 10 --container postfiatd-sentry
+[2026-10-25T05:23:48Z] apply on postfiatd-sentry; maintenance gate: ok 1797; pre: server_state=full peers=11
+[2026-10-25T05:23:48Z] policy: {"container":"postfiatd-sentry","ip":"172.17.0.2","bridge":"docker0","network":"bridge","resolvers":["<redacted-ip>","<redacted-ip>"],"tcp_ports":[443,2559]}
+[2026-10-25T05:23:48Z] chain PFT-EGRESS loaded (8 rules), jump at DOCKER-USER 1; state /var/lib/pft-egress/postfiatd-sentry.json
+[2026-10-25T05:23:49Z] persistence: pft-egress-reapply@postfiatd-sentry.timer enabled (/usr/local/sbin/pft-egress reapply)
+[2026-10-25T05:23:49Z] dead-man: until 2026-10-25T05:33:48Z, rollback after 3 consecutive polls with state != full or peers < 10 (baseline 11 - slack 1)
+[2026-10-25T05:24:20Z] dead-man poll: full peers 11 ok
+[2026-10-25T05:24:51Z] dead-man poll: full peers 11 ok
+[2026-10-25T05:25:21Z] dead-man poll: full peers 11 ok
+[2026-10-25T05:25:52Z] dead-man poll: full peers 11 ok
+[2026-10-25T05:26:22Z] dead-man poll: full peers 11 ok
+[2026-10-25T05:26:52Z] dead-man poll: full peers 11 ok
+[2026-10-25T05:27:22Z] dead-man poll: full peers 11 ok
+[2026-10-25T05:27:53Z] dead-man poll: full peers 11 ok
+[2026-10-25T05:28:23Z] dead-man poll: full peers 11 ok
+[2026-10-25T05:28:54Z] dead-man poll: full peers 11 ok
+[2026-10-25T05:29:24Z] dead-man poll: full peers 11 ok
+[2026-10-25T05:29:55Z] dead-man poll: full peers 11 ok
+[2026-10-25T05:30:25Z] dead-man poll: full peers 11 ok
+[2026-10-25T05:30:55Z] dead-man poll: full peers 11 ok
+[2026-10-25T05:31:26Z] dead-man poll: full peers 11 ok
+[2026-10-25T05:31:56Z] dead-man poll: full peers 11 ok
+[2026-10-25T05:32:26Z] dead-man poll: full peers 11 ok
+[2026-10-25T05:32:57Z] dead-man poll: full peers 11 ok
+[2026-10-25T05:33:27Z] dead-man poll: full peers 11 ok
+[2026-10-25T05:33:57Z] dead-man poll: full peers 11 ok
+[2026-10-25T05:33:58Z] dead-man: PASS - policy kept
+apply exit 0
+$ pft-maint end
+window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: skipped
+$ iptables -S DOCKER-USER
+-N DOCKER-USER
+-A DOCKER-USER -s 172.17.0.2/32 -i docker0 ! -o docker0 -m comment --comment "pft-egress:postfiatd-sentry" -j PFT-EGRESS
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state RELATED,ESTABLISHED -j ACCEPT
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m connlimit --connlimit-above 50 --connlimit-mask 32 --connlimit-saddr -j DROP
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -m limit --limit 100/sec --limit-burst 50 -j ACCEPT
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -j DROP
+-A DOCKER-USER -j RETURN
+DOCKER-USER identical to the before-rollback listing: yes
+$ pft-egress probe --container postfiatd-sentry --target example.com:80
+probe 2026-10-25T05:33:59Z postfiatd-sentry -> example.com:80 BLOCKED_OR_FAILED (5s)
+validator-list fetch from the container (https://postfiat.org/testnet_vl.json): HTTP 200
+$ pft-egress check --container postfiatd-sentry
+pft-egress check postfiatd-sentry - 2026-10-25T05:34:05Z
+  [PASS] state file present
+  [PASS] chain PFT-EGRESS matches the applied snapshot (8 rules)
+  [PASS] container IP unchanged since apply
+  [PASS] exactly one jump, at DOCKER-USER position 1
+  [PASS] reapply timer enabled
+  [INFO] default-deny DROP counter: 3 pkts 180 bytes
+  [INFO] drop log lines in the last hour: 6; by DPT: DPT=80(6) 
+  [PASS] server_state full
+  [PASS] peers 11 >= baseline 11
+RESULT: PASS
+check exit 0
+$ pft-integrity verify
+pft-integrity verify - 2026-10-25T05:34:10Z
+OS: Ubuntu 22.04.5 LTS | container: postfiatd-sentry | baseline: 2026-10-25T05:23:35Z
+  [FAIL] fw:docker-user                               changed  rules 5->6, sha256
+  [WARN] unit:pft-egress-reapply@.service             changed  mtime
+  [WARN] unit:pft-egress-reapply@.timer               changed  mtime
+RESULT: FAIL - 24 unchanged, 2 warn, 1 fail -> exit 2
+$ pft-integrity accept --reason "task_7b66de6cea08f25c368647bb49fa7914: pft-egress re-applied after rollback drill"
+pft-integrity accept - 2026-10-25T05:34:14Z: re-baselined 27 items by <user>
+manifest sha256: 01d2128c201a4d94a9e9301ba61a6650b1b7530bfaaa77915ccbf4f79aa7b40a -> bb19593e6fea46ce7d191f0fc6fdc59cee12d85c6b479fc92ad69b7eb748c676 (logged to accept.log)
+$ pft-integrity verify
+pft-integrity verify - 2026-10-25T05:34:19Z
+OS: Ubuntu 22.04.5 LTS | container: postfiatd-sentry | baseline: 2026-10-25T05:34:11Z
+RESULT: PASS - 27 unchanged, 0 warn, 0 fail -> exit 0
+
+== 6. after
+no maintenance window (alerting is live)
+no data-collection locks
+restored /etc/pft-watchdog/ntfy.env: sha256 matches pre-drill copy: yes (root 600)
+restored /etc/pft-integrity.env: sha256 matches pre-drill copy: yes (root 600)
+removed drill-only /etc/pft-maint/ntfy.env: yes
+throwaway topic read back from ntfy.sh (since drill start):
+{"time":"2026-10-25T05:23:45Z","title":"[MAINT] start sentry","message":"pft-egress re-apply after rollback drill | until 2026-10-25T05:53:44Z (ttl 1800s) | sentry copy: skipped"}
+{"time":"2026-10-25T05:33:59Z","title":"[MAINT] end sentry","message":"pft-egress re-apply after rollback drill | pft-egress re-apply done after 614s | suppressed here: watchdog=0 monitor=0 integrity=0 | sentry copy: skipped"}
+drill-rollback done: rollback exit 0, re-apply exit 0, check exit 0
+exit 0

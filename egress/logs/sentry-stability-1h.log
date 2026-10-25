@@ -1,0 +1,32 @@
+$ sudo bash stability.sh --container postfiatd-sentry --samples 11 --interval 60
+pft-egress stability - 2026-10-25T05:12:59Z - Ubuntu 22.04.5 LTS - container postfiatd-sentry
+policy applied_at 2026-10-25T04:22:20Z, dead-man passed 2026-10-25T04:32:28Z, baseline_peers 11
+
+== 1. container
+StartedAt 2026-10-24T22:25:26.906681347Z  RestartCount 0
+  ok   no container start since 2026-10-25T04:22:20Z
+
+== 2. node heartbeat modes in debug.log since 2026-10-25T04:22:20Z (10-min buckets)
+  +  0..+ 10 min  heartbeats  597  full=597
+  + 10..+ 20 min  heartbeats  598  full=598
+  + 20..+ 30 min  heartbeats  598  full=598
+  + 30..+ 40 min  heartbeats  598  full=598
+  + 40..+ 50 min  heartbeats  596  full=596
+  + 50..+ 60 min  heartbeats   41  full=41
+  total 3028 heartbeats, 0 not full, 0 empty buckets, first 2026-10-25T04:22:20Z, last 2026-10-25T05:13:00Z
+  ok   every heartbeat since 2026-10-25T04:22:20Z reports mode full
+
+== 3. server_info samples (11 x 60s), pass = full and peers >= 11
+  2026-10-25T05:13:01Z  ok   state full     peers  11  ledgers 7460991-7461830  egress DROP pkts 3
+  2026-10-25T05:14:02Z  ok   state full     peers  11  ledgers 7460991-7461850  egress DROP pkts 3
+  2026-10-25T05:15:02Z  ok   state full     peers  11  ledgers 7460991-7461870  egress DROP pkts 3
+  2026-10-25T05:16:03Z  ok   state full     peers  11  ledgers 7460991-7461890  egress DROP pkts 3
+  2026-10-25T05:17:07Z  ok   state full     peers  11  ledgers 7460991-7461912  egress DROP pkts 3
+  2026-10-25T05:18:07Z  ok   state full     peers  11  ledgers 7460991-7461931  egress DROP pkts 3
+  2026-10-25T05:19:08Z  ok   state full     peers  11  ledgers 7460991-7461951  egress DROP pkts 3
+  2026-10-25T05:20:08Z  ok   state full     peers  11  ledgers 7460991-7461971  egress DROP pkts 3
+  2026-10-25T05:21:08Z  ok   state full     peers  11  ledgers 7460991-7461991  egress DROP pkts 3
+  2026-10-25T05:22:09Z  ok   state full     peers  11  ledgers 7460991-7462011  egress DROP pkts 3
+  2026-10-25T05:23:10Z  ok   state full     peers  11  ledgers 7461503-7462031  egress DROP pkts 3
+
+RESULT: PASS
