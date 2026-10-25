@@ -169,3 +169,8 @@ restarted, and a silence scoped to `source="stub"` is added if the alert is some
 [`../logs/divergence/`](../logs/divergence/): offline checks, live trials, install on both hosts, rules reload,
 the 60-check run log per host and the drill. Public IPs and the topic are redacted, and the operator user is shown
 as `<operator-user>`.
+
+60-check runs (2026-10-25 13:29-14:28Z, 60 s cadence, the installed binary, `live-run.sh`):
+[`9-live60-validator.log`](../logs/divergence/9-live60-validator.log) (validator + sentry + public, 3-way) 60/60
+AGREE, and [`9-live60-sentry.log`](../logs/divergence/9-live60-sentry.log) (sentry + public, 2-way) 60/60 AGREE.
+Both runs had 0 UNKNOWN, 0 DIVERGED and 0 retries.
