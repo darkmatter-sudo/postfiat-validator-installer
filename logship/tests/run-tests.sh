@@ -228,6 +228,28 @@ printf 'SELF_NAME=a\nPEER_NAME=b\nSELF_ADDR=192.0.2.10\nPEER_ADDR=198.51.100.7\n
 out="$(PFT_LS_CONF="$WORK/dlbad.env" bash "$LS" apply --dry-run 2>&1)"; rc=$?
 [ "$rc" -eq 3 ] && grep -q 'bad container name ../x' <<<"$out" && ok "apply: bad container name -> exit 3" || bad "dl badname: rc=$rc"
 
+# ---- apply (real, under the temp root): the new host.key is created under umask 077 --------------------------------
+# PATH stubs: dpkg-query says installed (apt-get must never run: its stub fails), openssl records the umask it runs under
+SB="$WORK/keybin"; mkdir -p "$SB"
+printf '#!/bin/sh\necho "install ok installed"\n' > "$SB/dpkg-query"
+for b in apt-get ufw systemctl; do printf '#!/bin/sh\necho "%s must not run in this test" >&2; exit 99\n' "$b" > "$SB/$b"; done
+cat > "$SB/openssl" <<STUB
+#!/usr/bin/env bash
+umask > "$WORK/umask.\$1"
+out=""; while [ \$# -gt 0 ]; do [ "\$1" = -out ] && out="\$2"; shift; done
+[ -n "\$out" ] && echo stub > "\$out"
+exit 0
+STUB
+chmod +x "$SB"/*
+mv "$WORK/root/etc/pft-logship" "$WORK/pft-logship.saved"   # earlier tests left a valid cert pair: start with no key
+printf 'SELF_NAME=validator-host\nPEER_NAME=sentry-host\nSELF_ADDR=192.0.2.10\nPEER_ADDR=198.51.100.7\n' > "$WORK/key.env"
+out="$(PATH="$SB:$PATH" PFT_LS_SYSTEMCTL="$SB/systemctl" PFT_LS_CONF="$WORK/key.env" bash "$LS" apply 2>&1)"; rc=$?
+[ "$rc" -eq 4 ] && grep -q '^PENDING: host.crt or ca.crt missing' <<<"$out" && [ "$(cat "$WORK/umask.genpkey" 2>/dev/null)" = 0077 ] \
+  && grep -qx '+ (umask 077) openssl genpkey .*/etc/pft-logship/tls/host.key' <<<"$out" \
+  && ok "apply: new host.key is created under umask 077, then exit 4 (waiting for the cert)" \
+  || bad "key umask: rc=$rc umask=$(cat "$WORK/umask.genpkey" 2>/dev/null) $out"
+rm -rf "$WORK/root/etc/pft-logship"; mv "$WORK/pft-logship.saved" "$WORK/root/etc/pft-logship"
+
 # usage errors
 bash "$LS" bogus >/dev/null 2>&1; [ $? -eq 3 ] && ok "unknown command -> exit 3" || bad "unknown command"
 bash "$LS" lag --nope >/dev/null 2>&1; [ $? -eq 3 ] && ok "unknown option -> exit 3" || bad "unknown option"

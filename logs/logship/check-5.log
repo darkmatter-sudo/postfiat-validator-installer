@@ -1,0 +1,102 @@
+# OS: Ubuntu 22.04.5 LTS | 2026-10-26T12:11:22Z | validator-host | check.sh sha256 eecdad9f89a51676474d4c176528f5323f4069226ed34ba5c4d365ee360c2a91 | pft-logship.sh sha256 ca8ba5b2d084ac372a20a272ef1c94be32917067879b21d449aa5e7911a0dd41
+$ bash logship/check.sh
+$ shellcheck logship/pft-logship.sh logship/tests/run-tests.sh logship/tests/test-dockerlog.sh logship/smoke-bridge.sh logship/check.sh
+shellcheck clean
+$ ruff check logship/
+All checks passed!
+$ bash logship/tests/run-tests.sh
+ok   - real cursor at the newest entry -> lag 0, exit 0
+ok   - textfile up 1 lag 0
+ok   - 95.5 s behind -> 95, within MAX_LAG 120
+ok   - 121 s behind -> exit 1, metric still written
+ok   - cursor newer than newest local entry (clock step) -> clamped to 0
+ok   - last LAST_CURSOR line wins
+ok   - no cursor -> exit 1, up 0, no lag series
+ok   - presence control: textfile has the up series header
+ok   - cursor without t= -> exit 1, up 0
+ok   - no temp files left in the textfile dir
+ok   - plan shows the upload URL with <peer> and the peer label
+ok   - plan never prints PEER_ADDR (rule shown with <peer>)
+ok   - both drop-ins pin the pft-logship CA
+ok   - sign: creates the pair CA, cert verifies against it
+ok   - sign: SAN from the CSR, serverAuth+clientAuth, CA:FALSE, CN kept
+ok   - sign: ca.key 0600 in a 0700 dir
+ok   - sign again: same CA key reused, no new CA
+ok   - sign without CA_HERE=1 -> exit 3 (wrong host)
+ok   - sign: CSR without IP SAN -> exit 3
+ok   - presence control: tampered CSR parses (subject changed)
+ok   - sign: CSR with a bad self-signature -> exit 3
+ok   - sign: unparsable CSR -> exit 3
+ok   - check: all good -> PASS exit 0 (presence control for the FAIL cases below)
+ok   - check output carries no addresses
+ok   - check: receiver socket down -> exit 1
+ok   - check: TLS handshake fails (curl 000) -> exit 1
+ok   - check: send lag 300s > 120 -> exit 1
+ok   - check: nothing received from the peer -> exit 1
+ok   - check: peer's newest entry 420s old -> exit 1
+ok   - check: cursor unchanged 130s with lag 30s -> STALLED exit 1 (0 at 0s and 60s)
+ok   - check: cursor moved -> stall timer resets
+ok   - check: cert/key mismatch -> exit 1
+ok   - check: cert from another CA -> exit 1
+ok   - check without conf -> exit 3
+ok   - apply --dry-run: prints UFW rule, upload URL, credential and vacuum cap
+ok   - apply --dry-run: no file under the root changed
+ok   - apply --dry-run: addresses masked (<peer>/<self>)
+ok   - rollback --dry-run: deletes the same UFW rule, keeps received journals, changes nothing
+ok   - apply without conf -> exit 3
+ok   - apply: non-label SELF_NAME -> exit 3
+ok   - plan: bridge unit for postfiatd, python -I, no journald rate limit
+ok   - check: bridge active + postfiatd entry 5s old -> PASS (presence control)
+ok   - check: bridge unit down -> exit 1
+ok   - check: no postfiatd entries in the journal -> exit 1
+ok   - check: newest postfiatd entry 320s old (bridge stuck) -> exit 1
+ok   - apply --dry-run: installs the bridge and enables pft-logship-dockerlog@postfiatd, changes nothing
+ok   - apply: bridge source missing -> exit 3
+ok   - rollback --dry-run: stops + removes the bridge, keeps its state
+ok   - apply: bad container name -> exit 3
+ok   - apply: new host.key is created under umask 077, then exit 4 (waiting for the cert)
+ok   - unknown command -> exit 3
+ok   - unknown option -> exit 3
+
+52 passed, 0 failed
+$ bash logship/tests/test-dockerlog.sh
+ok   - fresh start: 12 real lines written, docker timestamp stripped
+ok   - fresh start asks docker for --tail 0 (now, no history scan)
+ok   - state = last line's timestamp in ns + count 1
+ok   - resume after line 8: exactly lines 9-12, no repeats
+ok   - resume asks --since <line 8 timestamp> (9-digit ns)
+ok   - stderr counts 4 written, 8 skipped
+ok   - two lines at one timestamp -> state count 2
+ok   - same-timestamp resume: c and d written, a and b skipped
+ok   - trimmed fractions: only f (27.50001 > 27.5 > 27) written
+ok   - docker error -> exit 1, stderr only, no state
+ok   - SIGTERM mid-stream: exit 0, state saved at line 12
+ok   - no docker process left after SIGTERM
+ok   - SIGKILL + restart: all 12 lines present (no gap)
+ok   - SIGKILL + restart: 0 repeats (bound: the 6 lines since the last save)
+ok   - corrupt state -> from now, exit 0
+ok   - bad container name -> exit 3
+16 passed, 0 failed
+
+== M1 mutant: sign trusts 'openssl req -verify' exit code (diff vs logship/pft-logship.sh)
+<   "$OPENSSL" req -verify -noout -in "$csr" 2>&1 | grep -q 'self-signature verify OK' || die "CSR signature does not verify" 3
+>   "$OPENSSL" req -verify -noout -in "$csr" >/dev/null 2>&1 || die "CSR signature does not verify" 3
+FAIL - bad sig csr: rc=1 pft-logship: signing failed
+51 passed, 1 failed
+M1 caught (only the bad-self-signature test fails)
+
+== M2 mutant: bridge resume skips every line at the saved timestamp (diff vs logship/pft-logship-dockerlog.py)
+<             if ns < skip_ns or (ns == skip_ns and skip_n > 0):
+>             if ns <= skip_ns:
+FAIL - same-ts: d
+15 passed, 1 failed
+M2 caught (only the same-timestamp resume test fails)
+
+== M3 mutant: host key created under the default umask (diff vs logship/pft-logship.sh)
+<   else run_private "$OPENSSL" genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "$R$TLS_DIR/host.key"; fi
+>   else run "$OPENSSL" genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "$R$TLS_DIR/host.key"; fi
+FAIL - key umask: rc=4 umask=0022 pft-logship apply - 2026-10-26T12:12:17Z - this host validator-host -> peer sentry-host
+51 passed, 1 failed
+M3 caught (only the key-umask test fails)
+RESULT: PASS
+exit 0

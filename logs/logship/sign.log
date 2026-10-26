@@ -1,0 +1,31 @@
+# OS: Ubuntu 22.04.5 LTS | 2026-10-26T12:12:56Z | validator-host (CA host) | pft-logship.sh sha256 ca8ba5b2d084ac372a20a272ef1c94be32917067879b21d449aa5e7911a0dd41
+$ scp sentry-host:/etc/pft-logship/tls/host.csr ./sentry.csr   (CSR only; the sentry key stays on the sentry)
+copied CSR (436 bytes)
+$ sudo bash pft-logship.sh sign /etc/pft-logship/tls/host.csr | sudo tee /etc/pft-logship/tls/host.crt
+pft-logship: new pair CA in /etc/pft-logship/ca
+exit 0
+$ sudo bash pft-logship.sh sign ./sentry.csr > sentry.crt
+exit 0
+$ scp sentry.crt ca.crt sentry-host:/etc/pft-logship/tls/{host.crt,ca.crt}
+copied
+$ certificate subjects/usage (SAN addresses not printed) + chain check on each host
+subject=CN = validator-host, O = pft-logship
+issuer=CN = pft-logship pair CA, O = pft-logship
+notAfter=Jan 28 12:12:57 2029 GMT
+X509v3 Basic Constraints: critical
+    CA:FALSE
+X509v3 Extended Key Usage: 
+    TLS Web Server Authentication, TLS Web Client Authentication
+subject=CN = sentry-host, O = pft-logship
+issuer=CN = pft-logship pair CA, O = pft-logship
+notAfter=Jan 28 12:12:58 2029 GMT
+X509v3 Basic Constraints: critical
+    CA:FALSE
+X509v3 Extended Key Usage: 
+    TLS Web Server Authentication, TLS Web Client Authentication
+validator: host.crt: OK
+sentry:    host.crt: OK
+$ ls -l /etc/pft-logship/ca (CA key stays on the CA host)
+700 root /etc/pft-logship/ca
+600 root /etc/pft-logship/ca/ca.key
+sentry has a ca.key: no

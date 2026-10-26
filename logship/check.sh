@@ -2,7 +2,7 @@
 # Offline checks for logship/: shellcheck, ruff, both stub suites, and two mutation controls. M1: sign trusts the
 # exit code of 'openssl req -verify', which is 0 on a bad self-signature in OpenSSL 3.0.2. M2: the docker log bridge
 # skips every line at the saved timestamp on resume (drops same-timestamp lines). Each mutant must FAIL its suite on
-# exactly the one test written for it. No root, no network, no host change.
+# exactly the one test written for it. M3: the host key is created under the default umask (world-readable until chmod). No root, no network, no host change.
 # Usage: bash logship/check.sh
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 3
@@ -17,7 +17,7 @@ echo "\$ bash logship/tests/run-tests.sh"
 bash logship/tests/run-tests.sh || rc=1
 echo "\$ bash logship/tests/test-dockerlog.sh"
 bash logship/tests/test-dockerlog.sh || rc=1
-M="$(mktemp)"; M2="$(mktemp)"; trap 'rm -f "$M" "$M2"' EXIT
+M="$(mktemp)"; M2="$(mktemp)"; M3="$(mktemp)"; trap 'rm -f "$M" "$M2" "$M3"' EXIT
 sed "s#2>&1 | grep -q 'self-signature verify OK' || die \"CSR signature#>/dev/null 2>\&1 || die \"CSR signature#" "$S" > "$M"
 echo
 echo "== M1 mutant: sign trusts 'openssl req -verify' exit code (diff vs $S)"
@@ -36,5 +36,15 @@ grep -E '^FAIL|passed,' <<<"$out"
 if [ "$mrc" -ne 0 ] && [ "$(grep -c '^FAIL' <<<"$out")" -eq 1 ] && grep -q '^FAIL - same-ts: ' <<<"$out"; then
   echo "M2 caught (only the same-timestamp resume test fails)"
 else echo "M2 NOT caught as expected"; rc=1; fi
+# shellcheck disable=SC2016  # literal $OPENSSL in the pattern is intended
+sed 's#else run_private "$OPENSSL" genpkey#else run "$OPENSSL" genpkey#' "$S" > "$M3"
+echo
+echo "== M3 mutant: host key created under the default umask (diff vs $S)"
+diff "$S" "$M3" | grep '^[<>]'
+out="$(PFT_LS_SCRIPT="$M3" bash logship/tests/run-tests.sh 2>&1)"; mrc=$?
+grep -E '^FAIL|passed,' <<<"$out" | cut -c1-160
+if [ "$mrc" -ne 0 ] && [ "$(grep -c '^FAIL' <<<"$out")" -eq 1 ] && grep -q '^FAIL - key umask: rc=4 umask=0022' <<<"$out"; then
+  echo "M3 caught (only the key-umask test fails)"
+else echo "M3 NOT caught as expected"; rc=1; fi
 echo "RESULT: $([ "$rc" -eq 0 ] && echo PASS || echo FAIL)"
 exit "$rc"

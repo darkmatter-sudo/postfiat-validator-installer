@@ -1,0 +1,52 @@
+# OS: Ubuntu 22.04.5 LTS | 2026-10-26T12:12:24Z | validator-host | pft-logship.sh sha256 ca8ba5b2d084ac372a20a272ef1c94be32917067879b21d449aa5e7911a0dd41
+$ sudo bash pft-logship.sh apply
+pft-logship apply - 2026-10-26T12:12:24Z - this host validator-host -> peer sentry-host
++ env DEBIAN_FRONTEND=noninteractive apt-get install -y -q systemd-journal-remote
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following additional packages will be installed:
+  libmicrohttpd12
+The following NEW packages will be installed:
+  libmicrohttpd12 systemd-journal-remote
+0 upgraded, 2 newly installed, 0 to remove and 7 not upgraded.
+Need to get 146 kB of archives.
+After this operation, 602 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu jammy/universe amd64 libmicrohttpd12 amd64 0.9.75-3ubuntu1 [77.6 kB]
+Get:2 http://archive.ubuntu.com/ubuntu jammy-updates/universe amd64 systemd-journal-remote amd64 249.11-0ubuntu3.23 [68.3 kB]
+Fetched 146 kB in 2s (83.1 kB/s)
+Selecting previously unselected package libmicrohttpd12:amd64.
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 101767 files and directories currently installed.)
+Preparing to unpack .../libmicrohttpd12_0.9.75-3ubuntu1_amd64.deb ...
+Unpacking libmicrohttpd12:amd64 (0.9.75-3ubuntu1) ...
+Selecting previously unselected package systemd-journal-remote.
+Preparing to unpack .../systemd-journal-remote_249.11-0ubuntu3.23_amd64.deb ...
+Unpacking systemd-journal-remote (249.11-0ubuntu3.23) ...
+Setting up libmicrohttpd12:amd64 (0.9.75-3ubuntu1) ...
+Setting up systemd-journal-remote (249.11-0ubuntu3.23) ...
+Processing triggers for man-db (2.10.2-1) ...
+Processing triggers for libc-bin (2.35-0ubuntu3.15) ...
+
+Running kernel seems to be up-to-date.
+
+No services need to be restarted.
+
+No containers need to be restarted.
+
+No user sessions are running outdated binaries.
+
+No VM guests are running outdated hypervisor (qemu) binaries on this host.
++ mkdir -p /etc/pft-logship/tls
++ chmod 755 /etc/pft-logship/tls
++ (umask 077) openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out /etc/pft-logship/tls/host.key
++ openssl req -new -key /etc/pft-logship/tls/host.key -subj /CN=validator-host/O=pft-logship -addext subjectAltName=IP:<self> -out /etc/pft-logship/tls/host.csr
++ chown root:systemd-journal-remote /etc/pft-logship/tls/host.key
++ chmod 640 /etc/pft-logship/tls/host.key
+PENDING: host.crt or ca.crt missing. Sign /etc/pft-logship/tls/host.csr on the CA host (pft-logship sign FILE), install the result
+         as /etc/pft-logship/tls/host.crt and the CA cert as /etc/pft-logship/tls/ca.crt, then run apply again.
+exit 4
+$ stat -c "%a %U:%G %n" /etc/pft-logship/tls/host.key
+640 root:systemd-journal-remote /etc/pft-logship/tls/host.key
+systemd-journal-remote.socket disabled inactive
+systemd-journal-remote.service indirect inactive
+systemd-journal-upload.service disabled inactive

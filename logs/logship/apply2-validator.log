@@ -1,0 +1,45 @@
+# OS: Ubuntu 22.04.5 LTS | 2026-10-26T12:14:06Z | validator-host | pft-logship.sh sha256 ca8ba5b2d084ac372a20a272ef1c94be32917067879b21d449aa5e7911a0dd41
+$ sudo bash pft-logship.sh apply
+pft-logship apply - 2026-10-26T12:14:06Z - this host validator-host -> peer sentry-host
+= systemd-journal-remote installed
++ mkdir -p /etc/pft-logship/tls
++ chmod 755 /etc/pft-logship/tls
+= /etc/pft-logship/tls/host.key + host.csr exist (kept)
++ chown root:systemd-journal-remote /etc/pft-logship/tls/host.key
++ chmod 640 /etc/pft-logship/tls/host.key
++ write /etc/systemd/journal-upload.conf.d/pft-logship.conf (644)
++ write /etc/systemd/journal-remote.conf.d/pft-logship.conf (644)
++ write /etc/systemd/system/systemd-journal-upload.service.d/pft-logship.conf (644)
++ write /etc/systemd/system/pft-logship-vacuum.service (644)
++ write /etc/systemd/system/pft-logship-vacuum.timer (644)
++ ufw allow proto tcp from <peer> to any port 19532 comment pft-logship
+Rule added
++ systemctl daemon-reload
++ systemctl enable --now systemd-journal-remote.socket pft-logship-vacuum.timer
+Created symlink /etc/systemd/system/sockets.target.wants/systemd-journal-remote.socket → /lib/systemd/system/systemd-journal-remote.socket.
+Created symlink /etc/systemd/system/timers.target.wants/pft-logship-vacuum.timer → /etc/systemd/system/pft-logship-vacuum.timer.
++ systemctl enable systemd-journal-upload.service
+Created symlink /etc/systemd/system/multi-user.target.wants/systemd-journal-upload.service → /lib/systemd/system/systemd-journal-upload.service.
++ systemctl restart systemd-journal-upload.service
++ install -m 755 ./pft-logship-dockerlog.py /usr/local/sbin/pft-logship-dockerlog
++ write /etc/systemd/system/pft-logship-dockerlog@.service (644)
++ systemctl daemon-reload
++ systemctl enable --now pft-logship-dockerlog@postfiatd.service
+Created symlink /etc/systemd/system/multi-user.target.wants/pft-logship-dockerlog@postfiatd.service → /etc/systemd/system/pft-logship-dockerlog@.service.
+applied. Next: sudo pft-integrity accept --reason 'pft-logship apply', then pft-logship check
+exit 0
+$ systemctl is-active
+systemd-journal-remote.socket active
+systemd-journal-upload.service active
+pft-logship-vacuum.timer active
+pft-logship-dockerlog@postfiatd.service active
+$ sudo pft-integrity verify
+  [FAIL] fw:ufw                                       changed  rules 2->3, sha256
+  [WARN] unit:pft-logship-dockerlog@.service          added    new file
+  [WARN] unit:pft-logship-vacuum.service              added    new file
+  [WARN] unit:pft-logship-vacuum.timer                added    new file
+RESULT: FAIL - 53 unchanged, 3 warn, 1 fail -> exit 2
+$ sudo pft-integrity accept --reason "task_5ad83103: pft-logship apply (ufw peer rule 19532, vacuum timer, dockerlog bridge unit)"
+pft-integrity accept - 2026-10-26T12:14:45Z: re-baselined 57 items by <redacted-user>
+manifest sha256: edc01e98bf1d2a6fe627133285732b78477726fb4138aa3fd25bf56dbd056ed1 -> 1d9b2b1f6c6ff2bedcfe35123c317449779c3b09bbf91a49a5b076132a341760 (logged to accept.log)
+RESULT: PASS - 57 unchanged, 0 warn, 0 fail -> exit 0

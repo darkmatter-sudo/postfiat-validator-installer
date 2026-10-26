@@ -173,6 +173,11 @@ run() { # CMD... : print (addresses masked), and run unless --dry-run
   [ "$DRY" -eq 1 ] && return 0
   "$@"
 }
+run_private() { # CMD... : as run, under umask 077 (a new key is never readable by others, not even until chmod)
+  mask "+ (umask 077) $*"
+  [ "$DRY" -eq 1 ] && return 0
+  (umask 077; "$@")
+}
 put() { # PATH MODE BODY : write a file (dry-run: only show it)
   echo "+ write $1 ($2)"
   if [ "$DRY" -eq 1 ]; then mask "$3" | sed 's/^/    /'; return 0; fi
@@ -190,7 +195,7 @@ need_conf() {
 }
 make_csr() { # this host's key (never leaves it) + CSR: CN = SELF_NAME, SAN = IP:SELF_ADDR (the peer's upload URL host)
   if [ -f "$R$TLS_DIR/host.key" ]; then echo "= $TLS_DIR/host.key exists (kept)"
-  else run "$OPENSSL" genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "$R$TLS_DIR/host.key"; fi
+  else run_private "$OPENSSL" genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "$R$TLS_DIR/host.key"; fi
   run "$OPENSSL" req -new -key "$R$TLS_DIR/host.key" -subj "/CN=$SELF_NAME/O=pft-logship" \
     -addext "subjectAltName=IP:$SELF_ADDR" -out "$R$TLS_DIR/host.csr"
 }

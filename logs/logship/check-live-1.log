@@ -1,0 +1,25 @@
+# OS: Ubuntu 22.04.5 LTS | 2026-10-26T12:15:45Z | both hosts | pft-logship.sh sha256 ca8ba5b2d084ac372a20a272ef1c94be32917067879b21d449aa5e7911a0dd41
+== validator-host: $ sudo bash pft-logship.sh check --textfile
+pft-logship check - 2026-10-26T12:15:45Z - validator-host -> sentry-host (max lag 120s)
+unit: systemd-journal-upload.service active
+unit: systemd-journal-remote.socket active
+unit: pft-logship-vacuum.timer active
+bridge: pft-logship-dockerlog@postfiatd active, newest postfiatd journal entry 0s old
+cert: host.crt chains to ca.crt, matches host.key, valid > 24h
+tls: mutual-TLS handshake with sentry-host journal-remote ok (HTTP 406)
+send: lag: 0s (last uploaded entry 2026-10-26T12:15:45Z, max 120 s)
+receive: newest entry from sentry-host is 0s old
+RESULT: PASS -> exit 0
+exit 0
+== sentry-host: $ sudo bash pft-logship.sh check --textfile
+pft-logship check - 2026-10-26T12:15:46Z - sentry-host -> validator-host (max lag 120s)
+unit: systemd-journal-upload.service active
+unit: systemd-journal-remote.socket active
+unit: pft-logship-vacuum.timer active
+bridge: pft-logship-dockerlog@postfiatd-sentry active, newest postfiatd-sentry journal entry 1s old
+cert: host.crt chains to ca.crt, matches host.key, valid > 24h
+tls: mutual-TLS handshake with validator-host journal-remote ok (HTTP 406)
+send: lag: 0s (last uploaded entry 2026-10-26T12:15:46Z, max 120 s)
+receive: newest entry from validator-host is 1s old
+RESULT: PASS -> exit 0
+exit 0
