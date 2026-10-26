@@ -4,8 +4,10 @@
 #   M1 rules: drop the maintenance exclusion from pft:sli_bad:bool -> promtool maintenance test fails
 #   M2 CLI:   classify() ignores maintenance                     -> unit tests fail
 #   M3 drill: drill_check.py accepts a stale [FIRING] message    -> drill checker tests fail
+#   M4 drill: restore expires the non-SLO silence when Prometheus lists no alerts (the run-2 leak, pre-5dd2f5f)
+#                                                                -> drill restore tests fail
 # Usage: check.sh        Env: DOCKER (default "docker", e.g. DOCKER="sudo docker"), PROM_IMAGE
-# Exit 0 only if every check passes and all three mutations are caught.
+# Exit 0 only if every check passes and all four mutations are caught.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -67,6 +69,16 @@ if cmp -s drill_check.py "$tmp/m3/drill_check.py"; then echo "FAIL: mutation did
 elif (cd "$tmp/m3" && python3 -m unittest discover -s tests -p 'test_drill_check.py' > "$tmp/m3.out" 2>&1); then echo "FAIL: mutant passed"; fail=1
 elif grep -q '^ERROR:' "$tmp/m3.out"; then echo "FAIL: mutant errored (not an assertion):"; grep '^ERROR:' "$tmp/m3.out"; fail=1
 else grep -E '^FAIL:' "$tmp/m3.out" | sed 's/ (.*//'; echo "caught: assertion failures only"; fi
+
+step "M4 mutation: restore expires the non-SLO silence on an empty Prometheus alert list (tests must FAIL)"
+mkdir -p "$tmp/m4"
+cp -r tests drill_lib.sh "$tmp/m4/"
+sed -i 's|^  else echo "Alertmanager silence ${1:0:8} kept until its end time (60m; never expired early)"; fi$|  elif [ -z "$active" ]; then curl -s -X DELETE "$AM/api/v2/silence/$1" -o /dev/null -w "expired (HTTP %{http_code})\\n"\n  else echo "left to run out (60m)"; fi|' \
+  "$tmp/m4/drill_lib.sh"
+if cmp -s drill_lib.sh "$tmp/m4/drill_lib.sh"; then echo "FAIL: mutation did not apply"; fail=1
+elif (cd "$tmp/m4" && python3 -m unittest discover -s tests -p 'test_drill_restore.py' > "$tmp/m4.out" 2>&1); then echo "FAIL: mutant passed"; fail=1
+elif grep -q '^ERROR:' "$tmp/m4.out"; then echo "FAIL: mutant errored (not an assertion):"; grep '^ERROR:' "$tmp/m4.out"; fail=1
+else grep -E '^FAIL:' "$tmp/m4.out" | sed 's/ (.*//'; grep -m1 -o 'silence expired early: .*' "$tmp/m4.out"; echo "caught: assertion failures only"; fi
 
 printf '\nRESULT: %s\n' "$([ "$fail" -eq 0 ] && echo PASS || echo FAIL)"
 exit "$fail"

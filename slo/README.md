@@ -11,7 +11,8 @@ ntfy bridge). Planned work announced with [`../maint`](../maint) (`pft-maint sta
 | `gen_tests.py` → `tests.yml` | promtool unit tests (steady-good, fast-burn, exporter-down, slow-burn, maintenance-window, state) |
 | `pft_slo_report.py` | `pft-slo-report` CLI (Prometheus `/api/v1/query_range` only) |
 | `tests/` | offline CLI tests against recorded API fixtures + exporter `pft_maint_active` tests |
-| `check.sh` | every offline check + three mutation controls (M1–M3) that must fail |
+| `drill.sh`, `drill_lib.sh` | live drill; `drill_lib.sh` holds the Alertmanager silence helpers so they can be tested offline |
+| `check.sh` | every offline check + four mutation controls (M1–M4) that must fail |
 | `install.sh` | deploy: exporter with `pft_maint_active`, alert stack with these rules mounted |
 
 ## SLI definition
@@ -178,8 +179,12 @@ seconds earlier and had not evaluated any rule yet, so the empty list meant "not
 It was silenced by hand at 07:38:33Z; nothing else was sent.
 **Fixed** in commit `5dd2f5f`: the silence is never expired early and runs out after 60 min, which is past the last
 node start + 15 min + 10 min. The preflight timer list also stopped cutting `pft-egress-reapply@postfiatd.timer`
-down to `postfiatd.timer`. **Verified** offline only: `logs/slo/check-5.log` (PASS, M1–M3 caught). The fix was not
-exercised by a third live drill, because the SLO claims above don't need another node stop.
+down to `postfiatd.timer`. **Verified** offline only. `logs/slo/check-5.log` (PASS, M1–M3) only showed that the
+suite still passed after the change; no test covered the restore step itself. A follow-up commit moved the silence
+helpers into `drill_lib.sh` and added `tests/test_drill_restore.py`: with curl stubbed, `finish_silence` is fed the
+real empty `/api/v1/alerts` answer (the run-2 condition) and must send no `DELETE`, and the re-posted silence must
+last >= 25 min. Mutation M4 puts the pre-`5dd2f5f` expiry back and must fail those tests (`logs/slo/check-6.log`).
+The fix was not exercised by a third live drill, because the SLO claims above don't need another node stop.
 
 ## Deploy
 

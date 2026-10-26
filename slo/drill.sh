@@ -48,7 +48,8 @@ R() { sudo -u "$RUSER" ssh -o LogLevel=ERROR -o ConnectTimeout=10 -o BatchMode=y
 topic="slodrill-$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 TDIR="$(mktemp -d /run/slo-drill.XXXXXX)"; TBRIDGE="$TDIR/ntfy.env"
 since="$(date -u +%s)"; WINDOW=0; RESTORED=0; SIL=""; SIL_SLO=""; WREDIR=0; MENV_CREATED=0; BRIDGE_REDIR=0
-ts() { date -u +%FT%TZ; }
+# shellcheck source=drill_lib.sh
+. "$HERE/drill_lib.sh"   # ts, silence_slo, silence_nonslo, finish_silence
 shafile() { echo "$TDIR/$(basename "$1").sha"; }
 red() { sed -E "s/by [a-z_][a-z0-9_-]*/by <user>/g; s/$topic/<redacted>/g"; }
 node_state() {
@@ -69,14 +70,6 @@ poll() { # poll PHASE SECONDS [until-full|until-maint]: one sample every 15 s; s
   done
   [ -z "${3:-}" ]
 }
-silence_slo() { # silence_slo false|true MINUTES COMMENT -> silence id (empty on failure)
-  # false = every alert EXCEPT PFTSLO* (the drill's main silence), true = only PFTSLO* (drill tail)
-  curl -fsS -X POST -H 'Content-Type: application/json' "$AM/api/v2/silences" -d "$(jq -nc --arg s "$(ts)" \
-    --arg e "$(date -u -d "+$2 min" +%FT%TZ)" --arg c "$3" --argjson eq "$1" '{matchers:[{name:"alertname",
-    value:"PFTSLO.*",isRegex:true,isEqual:$eq}], startsAt:$s, endsAt:$e, createdBy:"slo drill.sh", comment:$c}')" \
-    | jq -r '.silenceID // empty'
-}
-silence_nonslo() { silence_slo false "$@"; }
 slo_active() { # count of PFTSLO* pending/firing in Prometheus or active in Alertmanager; 99 if either API fails
   local p a
   p="$(curl -fsS --max-time 10 "$PROM/api/v1/alerts" | jq -r '.data.alerts[].labels.alertname')" || { echo 99; return; }
@@ -216,13 +209,7 @@ fi
 
 echo; echo "== 5. restore + check"
 restore
-# run-stack.sh recreated Prometheus too: an empty alert list right after it means "not evaluated yet", not "clear"
-# (run 2: expiring here let PFTContainerRestarted, a 15 min window after the node start, reach the real topic).
-# So the non-SLO silence is never expired early: it runs out at its own end time, > last node start + 15 min + 10 min.
-active="$(curl -fsS "$PROM/api/v1/alerts" | jq -r '[.data.alerts[].labels.alertname | select(startswith("PFTSLO") | not)] | unique | join(",")')" || active="unknown (Prometheus API failed)"
-echo "non-SLO alerts pending/firing in Prometheus (informational, fresh instance): ${active:-none}"
-if [ -z "$SIL" ]; then echo "no Alertmanager silence to keep"
-else echo "Alertmanager silence ${SIL:0:8} kept until its end time (60m; never expired early)"; fi
+finish_silence "$SIL"   # never expires the non-SLO silence early (drill_lib.sh, tests/test_drill_restore.py)
 echo "node: $(node_state) | pft-maint: $(pft-maint status --json | jq -r .window)"
 sleep 5; read_topic
 echo "throwaway topic read back (titles only):"; jq -rc '"  \(.time|todate) \(.title)"' "$NTFY"
