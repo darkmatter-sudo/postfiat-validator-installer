@@ -1,0 +1,10 @@
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+validator-host 2026-10-26T13:17:25Z
+$ curl -s 127.0.0.1:9090/api/v1/rules | jq (group pft-logship)
+{"name":"PFTLogshipBroken","health":"ok","state":"inactive","lastEvaluation":"2026-10-26T13:17:15.113563374Z","query":"pft_logship_up == 0 or pft_logship_lag_seconds > 120 or time() - pft_textfile_mtime_seconds{file=\"pft_logship.prom\"} > 300 or absent(pft_logship_up{job=\"postfiat\"})"}
+$ curl -s 127.0.0.1:9090/api/v1/query?query=pft_logship_up / pft_logship_lag_seconds / textfile age
+{"metric":{"__name__":"pft_logship_up","instance":"127.0.0.1:9877","job":"postfiat"},"value":"1"}
+{"metric":{"__name__":"pft_logship_lag_seconds","instance":"127.0.0.1:9877","job":"postfiat"},"value":"0"}
+{"metric":{"file":"pft_logship.prom","instance":"127.0.0.1:9877","job":"postfiat"},"value":"65.40199995040894"}
+$ curl -s 127.0.0.1:9090/api/v1/alerts | jq alertname/state
+[]

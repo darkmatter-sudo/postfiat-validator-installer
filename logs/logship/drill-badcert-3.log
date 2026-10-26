@@ -1,0 +1,29 @@
+$ ssh sentry-host 'sudo bash -s' < logship/drill-badcert.sh   (sha256 794991c4ce3495d304806a2574986e46cff91da3e72cfd9f5f4d1f3cccef382f)
+pft-logship bad-cert drill - 2026-10-26T13:19:13Z - Ubuntu 22.04.5 LTS
+client sentry-host -> receiver validator-host:19532 (server cert verified against the pair CA in every case)
+rogue client cert: CN=sentry-host (same CN as the real one), issuer CN = rogue-ca
+DRILL_ID prefix: badcert-20261026T131913-1479979
+main: line 43: warning: command substitution: ignored null byte in input
+1. no client certificate          curl exit 0   HTTP 401 body "zIiýá¿!áDƒ." -> refused (expected refused) 
+  PASS
+main: line 43: warning: command substitution: ignored null byte in input
+2. rogue-CA cert, same CN         curl exit 0   HTTP 401 body "zIiýá¿!áDƒ6 ÁYú(V" -> refused (expected refused) 
+  PASS
+3. control: real pft-logship cert curl exit 0   HTTP 202 body " ÁYú" -> stored (expected stored) 
+  PASS
+receiver check: journalctl --directory=/var/log/journal/remote DRILL_ID=badcert-20261026T131913-1479979-1|2|3 (expect 0, 0, 1)
+RESULT: PASS -> exit 0
+drill-exit=0
+
+== receiver side (validator-host) 2026-10-26T13:19:18Z - Ubuntu 22.04.5 LTS
+$ journalctl --directory=/var/log/journal/remote DRILL_ID=badcert-20261026T131913-1479979-1 | wc -l -> 0 (expect 0)
+$ journalctl --directory=/var/log/journal/remote DRILL_ID=badcert-20261026T131913-1479979-2 | wc -l -> 0 (expect 0)
+$ journalctl --directory=/var/log/journal/remote DRILL_ID=badcert-20261026T131913-1479979-3 | wc -l -> 1 (expect 1)
+$ journalctl --directory=/var/log/journal/remote DRILL_ID=badcert-20261026T131913-1479979-3 -o verbose (selected fields)
+    SYSLOG_IDENTIFIER=pft-logship-drill
+    MESSAGE=pft-logship bad-cert drill badcert-20261026T131913-1479979 case 3
+    DRILL_ID=badcert-20261026T131913-1479979-3
+== systemd-journal-remote messages since 2026-10-26 13:19:12 UTC (addresses masked)
+Failed to retrieve certificate chain
+Client is not authorized
+receiver RESULT: PASS

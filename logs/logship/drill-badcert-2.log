@@ -1,0 +1,33 @@
+$ ssh sentry-host 'sudo bash -s' < logship/drill-badcert.sh   (sha256 b4a9b26ae1468f8016fa2107fd3b64cd5d98b1c738384dec386174e1aefe386a)
+pft-logship bad-cert drill - 2026-10-26T13:18:55Z - Ubuntu 22.04.5 LTS
+client sentry-host -> receiver validator-host:19532 (server cert verified against the pair CA in every case)
+rogue client cert: CN=sentry-host (same CN as the real one), issuer CN = rogue-ca
+DRILL_ID prefix: badcert-20261026T131855-1479355
+main: line 43: warning: command substitution: ignored null byte in input
+1. no client certificate          curl exit 0   HTTP 401 body "zIiýá¿!áDƒ." -> refused (expected refused) 
+  PASS
+main: line 43: warning: command substitution: ignored null byte in input
+2. rogue-CA cert, same CN         curl exit 0   HTTP 401 body "zIiýá¿!áDƒ6 ÁYú(V" -> refused (expected refused) 
+  PASS
+3. control: real pft-logship cert curl exit 0   HTTP 202 body " ÁYú" -> stored (expected stored) 
+  PASS
+receiver check: journalctl --directory=/var/log/journal/remote DRILL_ID=badcert-20261026T131855-1479355-1|2|3 (expect 0, 0, 1)
+RESULT: PASS -> exit 0
+drill-exit=0
+
+== receiver side (validator-host) 2026-10-26T13:18:59Z - Ubuntu 22.04.5 LTS
+$ journalctl --directory=/var/log/journal/remote DRILL_ID=badcert-20261026T131855-1479355-1 | wc -l -> 0 (expect 0)
+$ journalctl --directory=/var/log/journal/remote DRILL_ID=badcert-20261026T131855-1479355-2 | wc -l -> 0 (expect 0)
+$ journalctl --directory=/var/log/journal/remote DRILL_ID=badcert-20261026T131855-1479355-3 | wc -l -> 1 (expect 1)
+$ journalctl --directory=/var/log/journal/remote DRILL_ID=badcert-20261026T131855-1479355-3 -o verbose (selected fields)
+Mon 2026-10-26 14:18:56.207542 CET [s=2e9c063d412b40e6accb9a3c25722d27;i=a0cdd;b=00000000000000000000000000000000;m=0;t=65ebe2c0e7ab6;x=20ff3375fc3f9baa]
+    SYSLOG_IDENTIFIER=pft-logship-drill
+    MESSAGE=pft-logship bad-cert drill badcert-20261026T131855-1479355 case 3
+    DRILL_ID=badcert-20261026T131855-1479355-3
+$ ls /var/log/journal/remote (sender files)
+      7 remote-CN=sentry-host,O=pft-logship
+      1 remote-CN=sentry-host,O=pft-logship.journal
+== systemd-journal-remote messages since 2026-10-26 13:18:54 UTC (addresses masked)
+Failed to retrieve certificate chain
+Client is not authorized
+receiver RESULT: PASS

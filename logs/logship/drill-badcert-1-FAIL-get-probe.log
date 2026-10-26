@@ -1,0 +1,16 @@
+$ ssh sentry-host 'sudo bash -s' < logship/drill-badcert.sh   (sha256 c0b24d8b4733c88877c96d46e528b5765a9268492c9c6e377b49e9429708d5a6)
+pft-logship bad-cert drill - 2026-10-26T13:18:01Z - Ubuntu 22.04.5 LTS
+client sentry-host -> receiver validator-host:19532 (server cert verified against the pair CA in every case)
+rogue client cert: CN=sentry-host (same CN as the real one), issuer CN = rogue-ca
+1. no client certificate           curl exit 0   HTTP 406 -> accept (expected reject) 
+  FAIL
+2. rogue-CA cert, same CN          curl exit 0   HTTP 406 -> accept (expected reject) 
+  FAIL
+3. control: real pft-logship cert  curl exit 0   HTTP 406 -> accept (expected accept) 
+  PASS
+RESULT: FAIL -> exit 1
+drill-exit=1
+
+== receiver side (validator-host): systemd-journal-remote journal since 2026-10-26 13:17:59 UTC, peer address masked
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+-- No entries --
