@@ -1,0 +1,39 @@
+# OS: Ubuntu 22.04.5 LTS | 2026-10-26T09:17:57Z | sentry-host
+$ bash pft-logship.sh plan
+pft-logship plan - 2026-10-26T09:17:57Z - Ubuntu 22.04.5 LTS
+peer: <unset: PEER_NAME in /etc/pft-logship.env> | peer address: <unset>
+systemd-journal-remote package: not installed
+
+== /etc/systemd/journal-upload.conf.d/pft-logship.conf
+# pft-logship: upload this host's journal to <peer> over mutual TLS
+[Upload]
+URL=https://<peer>:19532
+ServerKeyFile=/etc/pft-logship/tls/upload.key
+ServerCertificateFile=/etc/pft-logship/tls/upload.crt
+TrustedCertificateFile=/etc/pft-logship/tls/ca.crt
+
+== /etc/systemd/journal-remote.conf.d/pft-logship.conf
+# pft-logship: receive the peer's journal; clients must present a cert from the pft-logship CA
+[Remote]
+Seal=false
+SplitMode=host
+ServerKeyFile=/etc/pft-logship/tls/remote.key
+ServerCertificateFile=/etc/pft-logship/tls/remote.crt
+TrustedCertificateFile=/etc/pft-logship/tls/ca.crt
+
+== firewall
+ufw allow proto tcp from <peer> to any port 19532 comment pft-logship
+
+== steps apply will take
+1. apt-get install systemd-journal-remote (receiver + uploader units, disabled until configured)
+2. /etc/pft-logship/tls: this host makes its own key + CSR (keys never leave the host); the CA on the validator signs both CSRs
+   (CSR and certificate travel over ssh, keys do not); 0640 root:systemd-journal-remote for remote.key
+3. write the two drop-ins above + /etc/systemd/system/systemd-journal-upload.service.d/pft-logship.conf (LoadCredential for upload.key: journal-upload runs as a DynamicUser)
+4. UFW rule above (peer address only), then enable --now systemd-journal-remote.socket and systemd-journal-upload
+5. storage cap 2G per sender: pft-logship-vacuum.timer runs journalctl --directory=/var/log/journal/remote
+   --vacuum-size (journal-remote.conf in systemd 249 has no MaxUse=)
+6. pft-integrity accept for the new package/units/config (no postfiatd restart at any step)
+exit 0
+$ sudo bash pft-logship.sh lag
+journal-upload: no saved cursor in /var/lib/private/systemd/journal-upload/state
+exit 1 (expected 1: not installed yet = FAIL before)

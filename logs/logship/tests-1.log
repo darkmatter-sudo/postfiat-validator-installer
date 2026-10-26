@@ -1,0 +1,22 @@
+# OS: Ubuntu 22.04.5 LTS | 2026-10-26T09:17:54Z | validator-host | pft-logship.sh sha256 c084f9a77e3d338866685c441262cfeca0fdec6a95ec4afc1468047a7a58095a
+$ shellcheck logship/pft-logship.sh logship/tests/run-tests.sh
+shellcheck clean
+$ bash logship/tests/run-tests.sh
+ok   - real cursor at the newest entry -> lag 0, exit 0
+ok   - textfile up 1 lag 0
+ok   - 95.5 s behind -> 95, within MAX_LAG 120
+ok   - 121 s behind -> exit 1, metric still written
+ok   - cursor newer than newest local entry (clock step) -> clamped to 0
+ok   - last LAST_CURSOR line wins
+ok   - no cursor -> exit 1, up 0, no lag series
+ok   - presence control: textfile has the up series header
+ok   - cursor without t= -> exit 1, up 0
+ok   - no temp files left in the textfile dir
+ok   - plan renders the upload URL from PEER_NAME
+ok   - plan never prints PEER_ADDR (rule shown with <peer>)
+ok   - both drop-ins pin the pft-logship CA
+ok   - unknown command -> exit 3
+ok   - unknown option -> exit 3
+
+15 passed, 0 failed
+exit 0
