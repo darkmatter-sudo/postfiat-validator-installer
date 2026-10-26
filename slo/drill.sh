@@ -16,8 +16,8 @@
 #    and the "[RESOLVED] PFTSLOFastBurn" message seen on the topic (or 3 min after Alertmanager dropped it).
 # 4  restore. run-stack.sh recreates Alertmanager, which drops every silence, so the non-SLO silence is created
 #    again on the new Alertmanager straight away (before Prometheus re-sends a still-firing alert such as
-#    PFTContainerRestarted). It is expired only if Prometheus has no non-SLO alert pending/firing, else left to run
-#    out (60 min). Then read the topic back and run drill_check.py.
+#    PFTContainerRestarted). It is never expired early: it runs out after 60 min, which covers the 15 min
+#    PFTContainerRestarted window after the last node start. Then read the topic back and run drill_check.py.
 # B waits until pft:sli_maint is 1 (phase B-arm, not checked) before the B samples start: the exporter needs one
 # scrape to see a new window.
 # Refuses to start while a pft-maint data-collection lock or window is active, the node is not full, or earlier burn in
@@ -153,7 +153,7 @@ if ! awk -v r="$R6" -v o="$OBJ" -v m="$STOP_MIN" 'BEGIN { exit !(r + (m + 2) / 3
   exit 4
 fi
 echo "  slow-burn headroom: 6h ratio $R6 + $((STOP_MIN + 2))/360 < $(awk -v o="$OBJ" 'BEGIN { printf "%.4f", 6 * (1 - o) }')"
-echo "  notifier timers: $(systemctl list-timers --all --no-legend 2>/dev/null | grep -oE '(pft|postfiat)[a-z-]*\.timer' | sort -u | tr '\n' ' ')"
+echo "  notifier timers: $(systemctl list-units --type=timer --all --no-legend --plain 2>/dev/null | awk '$1 ~ /^(pft|postfiat)/ {print $1}' | sort -u | tr '\n' ' ')"
 echo "  containers: $(docker ps --format '{{.Names}}' | tr '\n' ' ')"
 
 echo; echo "== 1. every notifier -> throwaway topic, Alertmanager silence for non-SLO alerts"
@@ -216,12 +216,13 @@ fi
 
 echo; echo "== 5. restore + check"
 restore
-# a fresh Alertmanager holds no alerts yet, so ask Prometheus what is still pending/firing
+# run-stack.sh recreated Prometheus too: an empty alert list right after it means "not evaluated yet", not "clear"
+# (run 2: expiring here let PFTContainerRestarted, a 15 min window after the node start, reach the real topic).
+# So the non-SLO silence is never expired early: it runs out at its own end time, > last node start + 15 min + 10 min.
 active="$(curl -fsS "$PROM/api/v1/alerts" | jq -r '[.data.alerts[].labels.alertname | select(startswith("PFTSLO") | not)] | unique | join(",")')" || active="unknown (Prometheus API failed)"
-echo "non-SLO alerts pending/firing in Prometheus: ${active:-none}"
-if [ -z "$SIL" ]; then echo "no Alertmanager silence to expire"
-elif [ -z "$active" ]; then curl -s -X DELETE "$AM/api/v2/silence/$SIL" -o /dev/null -w "Alertmanager silence ${SIL:0:8} expired (HTTP %{http_code})\n"
-else echo "Alertmanager silence ${SIL:0:8} left to run out at its end time (60m)"; fi
+echo "non-SLO alerts pending/firing in Prometheus (informational, fresh instance): ${active:-none}"
+if [ -z "$SIL" ]; then echo "no Alertmanager silence to keep"
+else echo "Alertmanager silence ${SIL:0:8} kept until its end time (60m; never expired early)"; fi
 echo "node: $(node_state) | pft-maint: $(pft-maint status --json | jq -r .window)"
 sleep 5; read_topic
 echo "throwaway topic read back (titles only):"; jq -rc '"  \(.time|todate) \(.title)"' "$NTFY"
