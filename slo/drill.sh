@@ -48,7 +48,7 @@ R() { sudo -u "$RUSER" ssh -o LogLevel=ERROR -o ConnectTimeout=10 -o BatchMode=y
 topic="slodrill-$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 TDIR="$(mktemp -d /run/slo-drill.XXXXXX)"; TBRIDGE="$TDIR/ntfy.env"
 since="$(date -u +%s)"; WINDOW=0; RESTORED=0; SIL=""; SIL_SLO=""; WREDIR=0; MENV_CREATED=0; BRIDGE_REDIR=0
-# shellcheck source=drill_lib.sh
+# shellcheck source=SCRIPTDIR/drill_lib.sh
 . "$HERE/drill_lib.sh"   # ts, silence_slo, silence_nonslo, finish_silence
 shafile() { echo "$TDIR/$(basename "$1").sha"; }
 red() { sed -E "s/by [a-z_][a-z0-9_-]*/by <user>/g; s/$topic/<redacted>/g"; }
