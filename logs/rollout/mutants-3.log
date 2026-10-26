@@ -1,0 +1,44 @@
+OS: Ubuntu 22.04.5 LTS | 2026-10-26T19:11:50Z | pft-rollout.sh sha256 2a3b23396c7065df
+$ bash tests/test-rollout.sh --mutants
+PASS gate pass: both hosts promoted, canary first, config kept, window+silence per host
+PASS gate timeout on canary: rolled back to recorded image, validator untouched
+PASS second-host failure: validator rolled back, sentry stays promoted
+PASS rollback re-gate failure: exit 5, validator untouched
+PASS lock contention: second run refused, nothing touched
+PASS missing previous digest: refused before any change
+PASS no-op rollout (target == running image): restart + gate on both
+PASS soak failure after gate pass: rolled back
+PASS pft-maint data-collection lock: refused
+PASS config drift after docker run recreate: rolled back to the original container
+PASS build_version != foundation: gate fails
+PASS peers < min_peers: gate fails
+PASS validated ledger age > MAX_LEDGER_AGE: gate fails
+PASS drill path: --no-pull --target local bad image on sentry only
+PASS manual rollback after a promoted run restores both hosts
+PASS plan --json and status --json change nothing
+PASS post command: runs on its host after deploy, before the gate; shown by plan
+PASS post command: runs again after a rollback restore
+PASS post command failure after deploy: rolled back, validator untouched
+PASS post line for an unknown host: config error, nothing touched
+TOTAL: 20 passed, 0 failed
+
+== mutation controls ==
+MUTANT M1 build check off: CAUGHT by 1 test(s): build_version != foundation
+MUTANT M2 continue to next host after a failure: CAUGHT by 11 test(s): gate timeout on canary;second-host failure;rollback re-gate failure;soak failure after gate pass;config drift after docker run recreate;build_version != foundation;peers < min_peers;validated ledger age > MAX_LEDGER_AGE;drill path;post command;post command failure after deploy
+MUTANT M3 no lock: CAUGHT by 1 test(s): lock contention
+MUTANT M4 no recorded-image check: CAUGHT by 1 test(s): missing previous digest
+jq: error: Could not open file /tmp/tmp.itExF7bTct/state/last-run.json: No such file or directory
+MUTANT M5 rollback without re-gate: CAUGHT by 2 test(s): rollback re-gate failure;post command failure after deploy
+MUTANT M6 no soak: CAUGHT by 2 test(s): gate pass;soak failure after gate pass
+MUTANT M7 no config drift check: CAUGHT by 1 test(s): config drift after docker run recreate
+MUTANT M8 peers check off: CAUGHT by 1 test(s): peers < min_peers
+MUTANT M9 ledger age check off: CAUGHT by 1 test(s): validated ledger age > MAX_LEDGER_AGE
+MUTANT M10 no data-collection lock check: CAUGHT by 1 test(s): pft-maint data-collection lock
+MUTANT M11 restore forces restart=unless-stopped: CAUGHT by 1 test(s): config drift after docker run recreate
+MUTANT M12 post command failure ignored: CAUGHT by 1 test(s): post command failure after deploy
+MUTANT M13 no post command after deploy: CAUGHT by 3 test(s): post command;post command;post command failure after deploy
+MUTANT M14 no post command after restore: CAUGHT by 1 test(s): post command
+MUTANT M15 post lines not parsed: CAUGHT by 4 test(s): post command;post command;post command failure after deploy;post line for an unknown host
+mutants not caught/invalid: 0
+exit 0
+end 2026-10-26T19:48:32Z

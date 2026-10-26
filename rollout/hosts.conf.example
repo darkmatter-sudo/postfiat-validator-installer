@@ -3,3 +3,7 @@
 # MODE local = commands run here through `sudo -n`; ssh = through `ssh SSH_TARGET sudo -n` (BatchMode).
 host sentry    ssh   sentry-host  postfiatd-sentry  5
 host validator local -            postfiatd         5
+# Optional, after the host lines: commands run as root on that host each time its container was (re)started on a new
+# or restored image. A recreated sentry gets a new container IP, so re-apply its egress policy right away instead of
+# waiting for the 5-minute pft-egress reapply timer:
+#post sentry pft-egress reapply --container postfiatd-sentry

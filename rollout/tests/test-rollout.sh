@@ -270,8 +270,55 @@ t_readonly_cmds() {
   end
 }
 
+t_post_hook() {
+  begin "post command: runs on its host after deploy, before the gate; shown by plan"
+  printf 'post sentry echo sentry-post >> %s/post.log\n' "$T" >> "$T/hosts.conf"
+  ro run --yes
+  check "rc=0 (got $RC)" eq "$RC" 0
+  check "1 post run" eq "$(cnt "$T/post.log" sentry-post)" 1
+  check "post before deployed/gate" eq "$(events | grep -o 'post_hook:sentry deployed:sentry gate_pass:sentry' | wc -l)" 1
+  check "no post for validator" eq "$(events | grep -c 'post_hook:validator')" 0
+  ro plan --json
+  check "plan shows post" eq "$(jq -r '[.hosts[].post]|join("|")' "$T/out" | grep -c '^echo sentry-post >> .*/post.log|$')" 1
+  end
+}
+t_post_rollback() {
+  begin "post command: runs again after a rollback restore"
+  printf 'post sentry echo sentry-post >> %s/post.log\n' "$T" >> "$T/hosts.conf"
+  gens relay good connected good
+  ro run --yes
+  check "rc=1 (got $RC)" eq "$RC" 1
+  check "2 post runs (deploy + restore)" eq "$(cnt "$T/post.log" sentry-post)" 2
+  check "post after rollback_start" eq "$(events | grep -o 'rollback_start:sentry post_hook:sentry' | wc -l)" 1
+  check "sentry on OLD" eq "$(img relay postfiatd-sentry)" "$OLD"
+  end
+}
+t_post_fail() {
+  begin "post command failure after deploy: rolled back, validator untouched"
+  printf 'post sentry [ -e %s/post.once ] || { touch %s/post.once; echo boom; exit 7; }\n' "$T" "$T" >> "$T/hosts.conf"
+  ro run --yes
+  check "rc=1 (got $RC)" eq "$RC" 1
+  check "failure logged" has "post command FAILED (exit 7)"
+  check "command output shown" has "  post: boom"
+  check "no gate on the bad deploy" eq "$(events | grep -c 'gate_pass:sentry')" 0
+  check "sentry on OLD" eq "$(img relay postfiatd-sentry)" "$OLD"
+  check "validator untouched" eq "$(mutating local)" 0
+  check "result" eq "$(jq -r .result "$T/state/last-run.json")" "failed_rolled_back:sentry"
+  end
+}
+t_post_conf() {
+  begin "post line for an unknown host: config error, nothing touched"
+  echo 'post nosuchhost true' >> "$T/hosts.conf"
+  ro run --yes
+  check "rc=3 (got $RC)" eq "$RC" 3
+  check "message" has "post nosuchhost: no host line for nosuchhost"
+  check "0 mutating calls" eq "$(( $(mutating relay) + $(mutating local) ))" 0
+  end
+}
+
 ALL=(t_gate_pass t_gate_timeout t_second_host_failure t_regate_failure t_lock t_missing_prev t_noop t_soak_fail
-     t_collect_lock t_drift t_oldbuild t_fewpeers t_stale t_drill_target t_manual_rollback t_readonly_cmds)
+     t_collect_lock t_drift t_oldbuild t_fewpeers t_stale t_drill_target t_manual_rollback t_readonly_cmds
+     t_post_hook t_post_rollback t_post_fail t_post_conf)
 suite() { PASSN=0; FAILN=0; FAILED=(); for t in "${ALL[@]}"; do "$t"; done; echo "TOTAL: $PASSN passed, $FAILN failed"; }
 
 # name | sed expression applied to a copy of pft-rollout.sh | test(s) expected to catch it
@@ -289,6 +336,10 @@ MUTANTS=(
   'M9 ledger age check off|s/\[ "\$age" -le "\$MAX_LEDGER_AGE" \] ||/true ||/'
   'M10 no data-collection lock check|s/\[ "\$locks" = "no data-collection locks" \] ||/true ||/'
   'M11 restore forces restart=unless-stopped|s/--restart="\${R_RP\[\$h\]:-unless-stopped}"/--restart=unless-stopped/'
+  'M12 post command failure ignored|s/\[ "\$rc" -eq 0 \] || { log "  post command FAILED/true || { log "  post command FAILED/'
+  'M13 no post command after deploy|/container runs \${new:7:12}/{n;d;}'
+  'M14 no post command after restore|/after restore \$c runs/{n;d;}'
+  'M15 post lines not parsed|s/H_POST\[\$l\]="\${H_POST\[\$l\]:+\${H_POST\[\$l\]} \&\& }\$rest"/:/'
 )
 
 suite; RES=$FAILN

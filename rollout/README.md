@@ -23,8 +23,8 @@ for host in hosts.conf order (sentry, then validator):
 | File | What |
 |---|---|
 | `pft-rollout.sh` | `plan [--json]`, `run --yes [--target REF --no-pull]`, `status [--json]`, `rollback --yes [--host L]` |
-| `hosts.conf.example` | host list in rollout order: `host LABEL local\|ssh SSH_TARGET\|- CONTAINER MIN_PEERS` |
-| `tests/test-rollout.sh` | 16 offline cases with fake docker/ssh/sudo/curl/pft-maint and a fake clock; `--mutants` runs 11 mutation controls |
+| `hosts.conf.example` | host list in rollout order: `host LABEL local\|ssh SSH_TARGET\|- CONTAINER MIN_PEERS`, optional `post LABEL COMMAND...` |
+| `tests/test-rollout.sh` | 20 offline cases with fake docker/ssh/sudo/curl/pft-maint and a fake clock; `--mutants` runs 15 mutation controls |
 | `tests/stubs/` | the fakes (the docker fake keeps per-host JSON state and parses `docker run` flags back into inspect output) |
 
 ## Usage
@@ -39,6 +39,22 @@ rollout/pft-rollout.sh rollback --yes            # put back the recorded image o
 
 Run it as a user with passwordless `sudo` on the validator host and `ssh SSH_TARGET sudo -n` access to the sentry
 (or as root with an ssh config for the sentry). Every command on a host goes through `sudo -n` / `ssh ... sudo -n`.
+
+### Post commands
+
+A `docker run` recreate gives the sentry a new container and usually a new bridge IP. Add-ons keyed to the container
+need a nudge: [pft-egress](../egress/README.md) renders its default-deny rules for the container's IP and would
+otherwise wait up to 5 minutes for its reapply timer. A `post` line in `hosts.conf` runs a command as root on that host
+(`bash -c`, through the same `sudo -n` / ssh path) every time the container has been started on a new or restored image:
+after deploy (before the health gate), after a no-op restart, and after a rollback restore.
+
+```
+post sentry pft-egress reapply --container postfiatd-sentry
+```
+
+Several `post` lines for one host run in order, joined with `&&`. A failing post command counts as a failed deploy
+(restore + re-gate, stop) or, after a restore, as a failed rollback (exit 5). Its output is printed with a `post:`
+prefix, and each run is a `post_hook` audit event with its exit code. `plan` shows the post command per host.
 
 ## Health gate and thresholds
 
@@ -74,6 +90,7 @@ The gate timeout is long on purpose: a restarted node can take 15+ minutes to re
 | pull fails / `--target` missing on a host | that host is not changed, stop | later hosts untouched | 1 |
 | pft-maint start or the silence fails | that host is not changed, stop | later hosts untouched | 1 |
 | recreate drifts from the old container's config | restore + re-gate, stop | later hosts untouched | 1 |
+| post command fails after deploy | restore (post runs again) + re-gate, stop | later hosts untouched | 1 |
 | gate timeout, wrong build, too few peers, stale ledger | restore + re-gate, stop | later hosts untouched | 1 |
 | soak: 3 failing polls in a row or ledger not advancing | restore + re-gate, stop | later hosts untouched | 1 |
 | second host (validator) fails | validator restored; sentry stays on the new image (it passed) | promoted | 1 |
@@ -87,7 +104,7 @@ old container). Then the container's image ID is compared with the recorded one 
 ## Audit log and state
 
 `$STATE_DIR` (default `~/.local/state/pft-rollout`): `audit.jsonl` gets one JSON line per event (`run_start`,
-`preflight_ok`, `host_start`, `target`, `window_open`, `deployed`, `gate_pass`/`gate_fail`, `soak_pass`/`soak_fail`,
+`preflight_ok`, `host_start`, `target`, `window_open`, `post_hook`, `deployed`, `gate_pass`/`gate_fail`, `soak_pass`/`soak_fail`,
 `rollback_start`, `rollback_done`/`rollback_fail`, `window_close`, `host_done`, `run_end`), each with `ts`, `run` and
 `host`. `last-run.json` holds the recorded image ID + repo digest, target, mode and result per host, which
 `rollback` and `status` read. `rollout.lock` is an `flock` lock.
@@ -106,15 +123,18 @@ an early expiry would page. pft-maint itself sends one `[MAINT]` start and one e
 preserved, canary first, one window + silence per host), gate timeout on the canary, second-host failure, rollback
 re-gate failure, lock contention, missing previous image, no-op rollout, soak failure, data-collection lock, config
 drift, wrong build, too few peers, stale ledger, drill path (`--target` image on the sentry only), manual rollback,
-read-only `plan`/`status`. `--mutants` applies 11 one-line mutations to a copy of the script (build check off, continue
+read-only `plan`/`status`, post command (runs after deploy and before the gate, runs again after a rollback restore,
+a failing post command rolls back, a post line for an unknown host is a config error). `--mutants` applies 15 one-line mutations to a copy of the script (build check off, continue
 after a failed host, no lock, no recorded-image check, rollback without re-gate, no soak, no drift check, peers check
-off, ledger-age check off, data-collection lock check off, restore forcing restart=unless-stopped); each must make at least one case FAIL.
+off, ledger-age check off, data-collection lock check off, restore forcing restart=unless-stopped, post failure ignored, no post after deploy, no post after restore, post lines not
+parsed); each must make at least one case FAIL.
 
 Published runs (Ubuntu 22.04, no host touched): `logs/rollout/test-1.log` and `test-2.log` (16/16 each; test-2 is after the
 CapDrop assertion was made null-safe), `mutants-1-timeout.log` (M1-M8 caught, then stopped by a 1200 s outer `timeout`, exit 124,
 M9-M10 not reached), `mutants-2.log` (full run, M1-M11 all caught, 0 not caught). The `jq: error ... Cannot iterate over null`
 line in mutants-2 comes from the CapDrop assertion running against M7's drifted container (CapDrop missing); the case still FAILed
-as intended, and the assertion now reads `CapDrop // []`.
+as intended, and the assertion now reads `CapDrop // []`. `test-3.log` (20/20) and `mutants-3.log` (M1-M15 all caught, 0 not caught) are after the post-command
+change (cases 17-20, mutants M12-M15).
 
 ## Limits
 

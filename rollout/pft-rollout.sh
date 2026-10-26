@@ -33,6 +33,9 @@
 #   6 interrupted (current host rolled back).
 # Config: CONF (/etc/pft-rollout/hosts.conf), lines `host LABEL local|ssh SSH_TARGET|- CONTAINER MIN_PEERS`,
 #   in rollout order. Commands on a host run through `sudo -n` (local) or `ssh SSH_TARGET sudo -n` (ssh).
+#   Optional `post LABEL COMMAND...` lines: run as root on that host (bash -c) every time its container has been
+#   started on a new or restored image (after deploy and after a rollback), e.g. re-applying pft-egress rules to the
+#   recreated container. A failing post command fails the deploy (-> rollback) or the rollback (-> exit 5).
 # Env: IMAGE_TAG (agtipft/postfiatd:testnet-light-latest)  FOUNDATION_RPC (https://rpc.testnet.postfiat.org)
 #      GATE_TIMEOUT (1800)  SOAK_SEC (300)  SOAK_BAD_POLLS (3)  MIN_ADVANCE (10)  MAX_LEDGER_AGE (20)  POLL_SEC (10)
 #      ROLLBACK_TIMEOUT (1800)  AM (http://127.0.0.1:9093, "none" = no silence)  SILENCE_MATCHER (alertname=~.+)
@@ -80,17 +83,24 @@ audit() { # EVENT HOST [jq --arg/--argjson pairs as k=v strings: key=value]
 
 # ---------- hosts ----------
 declare -a HOSTS=()
-declare -A H_MODE=() H_SSH=() H_CONT=() H_PEERS=()
+declare -A H_MODE=() H_SSH=() H_CONT=() H_PEERS=() H_POST=()
 load_conf() {
   [ -r "$CONF" ] || die "no hosts config $CONF (see hosts.conf.example)" 3
-  local kw l m s c p
-  while read -r kw l m s c p _; do
-    [ "$kw" = host ] || continue
-    case "$m" in local|ssh) ;; *) die "$CONF: host $l: mode must be local or ssh" 3 ;; esac
-    [[ "$p" =~ ^[0-9]+$ ]] || die "$CONF: host $l: min_peers must be a number" 3
-    HOSTS+=("$l"); H_MODE[$l]="$m"; H_SSH[$l]="$s"; H_CONT[$l]="$c"; H_PEERS[$l]="$p"
+  local kw l m s c p rest
+  while read -r kw l rest; do
+    case "$kw" in
+      host)
+        read -r m s c p _ <<<"$rest"
+        case "$m" in local|ssh) ;; *) die "$CONF: host $l: mode must be local or ssh" 3 ;; esac
+        [[ "$p" =~ ^[0-9]+$ ]] || die "$CONF: host $l: min_peers must be a number" 3
+        HOSTS+=("$l"); H_MODE[$l]="$m"; H_SSH[$l]="$s"; H_CONT[$l]="$c"; H_PEERS[$l]="$p" ;;
+      post)
+        [ -n "$rest" ] || die "$CONF: post $l: no command" 3
+        H_POST[$l]="${H_POST[$l]:+${H_POST[$l]} && }$rest" ;;
+    esac
   done < <(grep -v '^[[:space:]]*#' "$CONF")
   [ "${#HOSTS[@]}" -ge 1 ] || die "$CONF lists no hosts" 3
+  for l in "${!H_POST[@]}"; do [ -n "${H_MODE[$l]:-}" ] || die "$CONF: post $l: no host line for $l" 3; done
   if [ -z "${MAINT_HOST:-}" ]; then
     for l in "${HOSTS[@]}"; do [ "${H_MODE[$l]}" = local ] && { MAINT_HOST="$l"; break; }; done
   fi
@@ -197,12 +207,20 @@ compose_up() { # LABEL
   hx "$1" bash -c "cd $(printf '%q' "${R_WD[$1]}") && docker compose up -d 2>&1" | sed 's/^/  compose: /'
   return "${PIPESTATUS[0]}"
 }
+post_hook() { # LABEL -> 0 when the host has no post command or it succeeded
+  [ -n "${H_POST[$1]:-}" ] || return 0
+  log "  post: ${H_POST[$1]}"
+  hx "$1" bash -c "${H_POST[$1]}" 2>&1 | sed 's/^/  post: /'
+  local rc="${PIPESTATUS[0]}"
+  audit post_hook "$1" rc="$rc"
+  [ "$rc" -eq 0 ] || { log "  post command FAILED (exit $rc)"; return 1; }
+}
 deploy() { # LABEL -> 0 deployed (container running the target), 1 failed before/while deploying
   local h="$1" c="${H_CONT[$1]}" i ienv args new
   if [ "${R_TGT[$h]}" = "${R_PREV[$h]}" ]; then
     log "  no-op: target is the running image ${R_PREV[$h]:7:12}; docker restart"
     hx "$h" docker restart -t 60 "$c" >/dev/null || return 1
-    return 0
+    post_hook "$h"; return
   fi
   hx "$h" docker tag "${R_TGT[$h]}" "$IMAGE_TAG" || return 1
   log "  $IMAGE_TAG -> ${R_TGT[$h]:7:12}"
@@ -227,6 +245,7 @@ deploy() { # LABEL -> 0 deployed (container running the target), 1 failed before
   fi
   new="$(inspect "$h" | jq -r '.Image // empty')"
   [ "$new" = "${R_TGT[$h]}" ] || { log "  container runs ${new:7:12}, expected ${R_TGT[$h]:7:12}"; return 1; }
+  post_hook "$h"
 }
 restore() { # LABEL -> 0 container back on the recorded image
   local h="$1" c="${H_CONT[$1]}" img
@@ -249,6 +268,7 @@ restore() { # LABEL -> 0 container back on the recorded image
   fi
   img="$(inspect "$h" | jq -r '.Image // empty')"
   [ "$img" = "${R_PREV[$h]}" ] || { log "  after restore $c runs ${img:7:12}, expected ${R_PREV[$h]:7:12}"; return 1; }
+  post_hook "$h"
 }
 
 # ---------- window + silence ----------
@@ -424,8 +444,8 @@ cmd_plan() {
     dig="$(image_digest "$h" "$id")"; p_ok=no; [ -n "$(image_id "$h" "$id")" ] && p_ok=yes
     if poll_ok "$h"; then hl="ok $POLL_LINE"; else hl="$POLL_LINE"; fi
     rows="$(jq -c --arg l "$h" --arg c "${H_CONT[$h]}" --arg m "$(jq -r 'if .Config.Labels["com.docker.compose.project"] then "compose" else "run" end' <<<"${i:-{\}}")" \
-      --arg id "$id" --arg d "$dig" --arg p "$p_ok" --arg hl "$hl" --arg mp "${H_PEERS[$h]}" \
-      '. + [{host:$l,container:$c,mode:$m,image:$id,digest:$d,rollback_image_present:$p,health:$hl,min_peers:($mp|tonumber)}]' <<<"$rows")"
+      --arg id "$id" --arg d "$dig" --arg p "$p_ok" --arg hl "$hl" --arg mp "${H_PEERS[$h]}" --arg po "${H_POST[$h]:-}" \
+      '. + [{host:$l,container:$c,mode:$m,image:$id,digest:$d,rollback_image_present:$p,health:$hl,min_peers:($mp|tonumber),post:$po}]' <<<"$rows")"
   done
   if [ "$JSON" = 1 ]; then
     jq -n --argjson h "$rows" --arg b "$REF_BUILD" --arg l "$locks" --arg tag "$IMAGE_TAG" \
@@ -434,7 +454,7 @@ cmd_plan() {
   else
     echo "order: ${HOSTS[*]} | tag $IMAGE_TAG | foundation build ${REF_BUILD:-unknown} | locks: $locks"
     echo "gate: full|proposing, build == foundation, peers >= min, ledger age <= ${MAX_LEDGER_AGE}s within ${GATE_TIMEOUT}s; soak ${SOAK_SEC}s"
-    jq -r '.[] | "\(.host): \(.container) mode=\(.mode) image=\(.image[7:19]) digest=\(.digest) rollback_image_present=\(.rollback_image_present) min_peers=\(.min_peers) health: \(.health)"' <<<"$rows"
+    jq -r '.[] | "\(.host): \(.container) mode=\(.mode) image=\(.image[7:19]) digest=\(.digest) rollback_image_present=\(.rollback_image_present) min_peers=\(.min_peers) health: \(.health)\(if .post != "" then " | post: \(.post)" else "" end)"' <<<"$rows"
   fi
 }
 
