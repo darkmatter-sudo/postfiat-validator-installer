@@ -1,0 +1,5 @@
+validator-host 2026-10-26T13:29:43Z - Ubuntu 22.04.5 LTS - during the peer-outage drill
+$ curl -s 127.0.0.1:9093/api/v2/alerts | jq (alertname, state, silencedBy, startsAt)
+{"alertname":"PFTLogshipBroken","state":"suppressed","silencedBy":["1a3a35d9-cd3b-4244-8d3c-7fd6a8b12651"],"startsAt":"2026-10-26T13:29:00.108Z"}
+$ sudo docker logs --since 15m pft-alert-bridge | wc -l   (lines the ntfy bridge logged in the last 15 min)
+0

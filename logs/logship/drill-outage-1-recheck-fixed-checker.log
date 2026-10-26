@@ -1,0 +1,13 @@
+== re-judging drill-outage run 1's live receiver data with the fixed checker - 2026-10-26T13:40:05Z - Ubuntu 22.04.5 LTS
+$ diff of the checker fix (run 1 build vs fixed build)
+-    for(k in c) if(k<1 || k>n) bad=bad " extra:" k; print (bad=="" ? "ok" : "bad" bad)}'
++    for(k in c) if(k+0<1 || k+0>n+0) bad=bad " extra:" k; print (bad=="" ? "ok" : "bad" bad)}'
+-check "checker self-test (1 2 3 | 1 3 3 | 1 2 3 4)" "$t1|$t2|$t3" "ok|bad 2x0 3x2|bad extra:4"
++# two-digit N: keys must compare as numbers ("2" > "10" as strings: drill run 1 read 2..9 as extra)
++t4="$(seq 1 10 | sed 's/^/outage x /' | markers_ok 10)"; t5="$(seq 1 11 | sed 's/^/outage x /' | markers_ok 10)"
++check "checker self-test (1 2 3 | 1 3 3 | 1 2 3 4 | 1..10 | 1..11)" "$t1|$t2|$t3|$t4|$t5" "ok|bad 2x0 3x2|bad extra:4|ok|bad extra:11"
+$ self-test of the fixed checker
+1..10 -> ok | 1..11 -> bad extra:11 | 1 2 3 -> ok | 1 3 3 -> bad 2x0 3x2
+$ ssh sentry-host journalctl --directory=/var/log/journal/remote -t pft-logship-outage-drill -o cat | grep '^outage outage-20261026T132326-1256352 ' | markers_ok 10
+lines: 10
+verdict: ok

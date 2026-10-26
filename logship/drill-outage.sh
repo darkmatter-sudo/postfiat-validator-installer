@@ -21,7 +21,7 @@ check() { if [ "$2" = "$3" ]; then step "  PASS $1: $2"; else step "  FAIL $1: g
 # markers_ok N < "outage <id> <n>" lines: "ok" if each of 1..N appears exactly once, else what is wrong
 markers_ok() {
   awk -v n="$1" '{c[$3]++} END{bad=""; for(i=1;i<=n;i++){ if(c[i]!=1) bad=bad " " i "x" (c[i]+0) }
-    for(k in c) if(k<1 || k>n) bad=bad " extra:" k; print (bad=="" ? "ok" : "bad" bad)}'
+    for(k in c) if(k+0<1 || k+0>n+0) bad=bad " extra:" k; print (bad=="" ? "ok" : "bad" bad)}'
 }
 peer_markers() { ssh relay "sudo journalctl --directory=/var/log/journal/remote -t $TAG -o cat --no-pager" | grep "^outage $ID "; }
 alert_state() { curl -s "$PROM/api/v1/rules" | jq -r '[.data.groups[].rules[] | select(.name=="PFTLogshipBroken") | .state][0] // "missing"'; }
@@ -35,7 +35,9 @@ echo "sender OS: $(. /etc/os-release; echo "$PRETTY_NAME") | receiver OS: $(ssh 
 # self-test of the marker checker on synthetic input (positive + negatives) before it judges the live run
 t1="$(printf 'outage x %s\n' 1 2 3 | markers_ok 3)"; t2="$(printf 'outage x %s\n' 1 3 3 | markers_ok 3)"
 t3="$(printf 'outage x %s\n' 1 2 3 4 | markers_ok 3)"
-check "checker self-test (1 2 3 | 1 3 3 | 1 2 3 4)" "$t1|$t2|$t3" "ok|bad 2x0 3x2|bad extra:4"
+# two-digit N: keys must compare as numbers ("2" > "10" as strings: drill run 1 read 2..9 as extra)
+t4="$(seq 1 10 | sed 's/^/outage x /' | markers_ok 10)"; t5="$(seq 1 11 | sed 's/^/outage x /' | markers_ok 10)"
+check "checker self-test (1 2 3 | 1 3 3 | 1 2 3 4 | 1..10 | 1..11)" "$t1|$t2|$t3|$t4|$t5" "ok|bad 2x0 3x2|bad extra:4|ok|bad extra:11"
 step "0. Alertmanager silence alertname=PFTLogshipBroken for $((N + 35)) min"
 sil="$(curl -s -X POST -H 'Content-Type: application/json' "$AM/api/v2/silences" -d "$(jq -nc --arg s "$(date -u +%FT%TZ)" \
   --arg e "$(date -u -d "+$((N + 35)) min" +%FT%TZ)" '{matchers:[{name:"alertname",value:"PFTLogshipBroken",isRegex:false}],
