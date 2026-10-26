@@ -1,0 +1,191 @@
+pft SLO drill (validator) - 2026-10-26T07:10:35Z - Ubuntu 22.04.5 LTS - container postfiatd, stop 7m x2
+script sha256: drill.sh 129d53d033fa222c2855e946d8f7b998a9e34cc09ede89be4ba138673bf641bc | drill_check.py 51611c539a37621fbf49505fbdc89569e0bb13f5bb80828e9922ef6ca1a31346 | slo.rules.yml f326d66ac05eddfd294257fdc2972a3b220ee94bd5b0f7134650ecfe101c6e5e
+
+== 0. preflight
+  pft-maint: window=none locks=0
+  r1h=0 r6h=0
+  slow-burn headroom: 6h ratio 0 + 9/360 < 0.0300
+  notifier timers: pft-backup.timer pft-divergence.timer pft-heartbeat.timer pft-integrity.timer pft-maint-tick.timer pft-retention-sample.timer postfiat-monitor.timer postfiatd.timer 
+  containers: pft-prometheus pft-alertmanager pft-alert-bridge postfiatd 
+
+== 1. every notifier -> throwaway topic, Alertmanager silence for non-SLO alerts
+  /etc/postfiat-monitor.env -> https://ntfy.sh/<redacted> (throwaway)
+  /etc/pft-integrity.env -> https://ntfy.sh/<redacted> (throwaway)
+  /etc/pft-maint/ntfy.env created for the drill only -> throwaway
+  sentry /etc/pft-watchdog/ntfy.env -> throwaway
+pft-prometheus  Up 2 seconds  prom/prometheus:v3.5.0
+pft-alertmanager  Up 3 seconds  prom/alertmanager:v0.28.1
+pft-alert-bridge  Up 3 seconds  python:3.12-alpine
+2026-10-26T07:10:58Z scrape targets:
+2026-10-26T07:10:58Z Prometheus alerts (pending/firing):
+2026-10-26T07:10:58Z Alertmanager alerts:
+  pft-alert-bridge -> throwaway (mount source checked)
+  Alertmanager silence 925ac51e alertname!~PFTSLO.* for 90m
+
+== 2. drill B: planned stop inside a maintenance window
+$ pft-maint start --ttl 25m --reason "[DRILL] slo planned stop"
+window started: id m1792998658-1058092 until 2026-10-26T07:35:58Z | sentry copy: pushed
+  2026-10-26T07:11:01Z B-arm node=full maint=0 bad=0 r5m=0 r1h=0 alerts={}
+  2026-10-26T07:11:17Z B-arm node=full maint=1 bad=0 r5m=0 r1h=0 alerts={}
+  2026-10-26T07:11:17Z B node=full maint=1 bad=0 r5m=0 r1h=0 alerts={}
+  2026-10-26T07:11:33Z B node=full maint=1 bad=0 r5m=0 r1h=0 alerts={}
+2026-10-26T07:11:48Z $ docker stop postfiatd
+  2026-10-26T07:11:50Z B node=unreachable maint=1 bad=0 r5m=0 r1h=0 alerts={}
+  2026-10-26T07:12:05Z B node=unreachable maint=1 bad=0 r5m=0 r1h=0 alerts={}
+  2026-10-26T07:12:20Z B node=unreachable maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTNodeRPCDown":"pending"}
+  2026-10-26T07:12:36Z B node=unreachable maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTNodeRPCDown":"pending"}
+  2026-10-26T07:12:51Z B node=unreachable maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTNodeRPCDown":"pending"}
+  2026-10-26T07:13:06Z B node=unreachable maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTNodeRPCDown":"pending"}
+  2026-10-26T07:13:21Z B node=unreachable maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTNodeRPCDown":"firing"}
+  2026-10-26T07:13:36Z B node=unreachable maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTNodeRPCDown":"firing"}
+  2026-10-26T07:13:52Z B node=unreachable maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTNodeRPCDown":"firing"}
+  2026-10-26T07:14:07Z B node=unreachable maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTNodeRPCDown":"firing"}
+  2026-10-26T07:14:23Z B node=unreachable maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTNodeRPCDown":"firing"}
+  2026-10-26T07:14:38Z B node=unreachable maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTNodeRPCDown":"firing"}
+  2026-10-26T07:14:54Z B node=unreachable maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTNodeRPCDown":"firing"}
+  2026-10-26T07:15:10Z B node=unreachable maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTNodeRPCDown":"firing"}
+  2026-10-26T07:15:25Z B node=unreachable maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTNodeRPCDown":"firing"}
+  2026-10-26T07:15:41Z B node=unreachable maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTNodeRPCDown":"firing"}
+  2026-10-26T07:15:56Z B node=unreachable maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTNodeRPCDown":"firing"}
+  2026-10-26T07:16:11Z B node=unreachable maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTNodeRPCDown":"firing"}
+  2026-10-26T07:16:27Z B node=unreachable maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTNodeRPCDown":"firing"}
+  2026-10-26T07:16:42Z B node=unreachable maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTNodeRPCDown":"firing"}
+  2026-10-26T07:16:57Z B node=unreachable maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTNodeRPCDown":"firing"}
+  2026-10-26T07:17:14Z B node=unreachable maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTNodeRPCDown":"firing"}
+  2026-10-26T07:17:30Z B node=unreachable maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTNodeRPCDown":"firing"}
+  2026-10-26T07:17:45Z B node=unreachable maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTNodeRPCDown":"firing"}
+  2026-10-26T07:18:00Z B node=unreachable maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTNodeRPCDown":"firing"}
+  2026-10-26T07:18:16Z B node=unreachable maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTNodeRPCDown":"firing"}
+  2026-10-26T07:18:31Z B node=unreachable maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTNodeRPCDown":"firing"}
+  2026-10-26T07:18:46Z B node=unreachable maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTNodeRPCDown":"firing"}
+2026-10-26T07:19:01Z $ docker start postfiatd
+  2026-10-26T07:19:05Z B node=unreachable maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTNodeRPCDown":"firing"}
+  2026-10-26T07:19:21Z B node=connected maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTNodeRPCDown":"firing"}
+  2026-10-26T07:19:36Z B node=connected maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTContainerRestarted":"firing","PFTNodeNotFull":"pending"}
+  2026-10-26T07:19:51Z B node=full maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTContainerRestarted":"firing","PFTNodeNotFull":"pending"}
+  2026-10-26T07:19:52Z B node=full maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTContainerRestarted":"firing","PFTNodeNotFull":"pending"}
+  2026-10-26T07:20:08Z B node=full maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTContainerRestarted":"firing","PFTValidatedLedgerStalled":"pending"}
+  2026-10-26T07:20:24Z B node=full maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTContainerRestarted":"firing"}
+  2026-10-26T07:20:39Z B node=full maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTContainerRestarted":"firing"}
+  2026-10-26T07:20:55Z B node=full maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTContainerRestarted":"firing"}
+  2026-10-26T07:21:10Z B node=full maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTContainerRestarted":"firing"}
+  2026-10-26T07:21:26Z B node=full maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTContainerRestarted":"firing"}
+  2026-10-26T07:21:41Z B node=full maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTContainerRestarted":"firing"}
+$ pft-maint end
+window ended (end): suppressed watchdog=0 monitor=2 integrity=0 | sentry copy: pushed
+  2026-10-26T07:21:59Z gap node=full maint=1 bad=0 r5m=0 r1h=0 alerts={"PFTContainerRestarted":"firing"}
+  2026-10-26T07:22:15Z gap node=full maint=0 bad=0 r5m=0 r1h=0 alerts={"PFTContainerRestarted":"firing"}
+  2026-10-26T07:22:30Z gap node=full maint=0 bad=0 r5m=0 r1h=0 alerts={"PFTContainerRestarted":"firing"}
+  2026-10-26T07:22:46Z gap node=full maint=0 bad=0 r5m=0 r1h=0 alerts={"PFTContainerRestarted":"firing"}
+  2026-10-26T07:23:03Z gap node=full maint=0 bad=0 r5m=0 r1h=0 alerts={"PFTContainerRestarted":"firing"}
+  2026-10-26T07:23:18Z gap node=full maint=0 bad=0 r5m=0 r1h=0 alerts={"PFTContainerRestarted":"firing"}
+  2026-10-26T07:23:34Z gap node=full maint=0 bad=0 r5m=0 r1h=0 alerts={"PFTContainerRestarted":"firing"}
+  2026-10-26T07:23:49Z gap node=full maint=0 bad=0 r5m=0 r1h=0 alerts={"PFTContainerRestarted":"firing"}
+
+== 3. drill A: unplanned stop, no window
+2026-10-26T07:24:04Z $ docker stop postfiatd
+  2026-10-26T07:24:07Z A-down node=unreachable maint=0 bad=0 r5m=0 r1h=0 alerts={"PFTContainerRestarted":"firing"}
+  2026-10-26T07:24:22Z A-down node=unreachable maint=0 bad=0 r5m=0 r1h=0 alerts={"PFTContainerRestarted":"firing","PFTNodeRPCDown":"pending"}
+  2026-10-26T07:24:37Z A-down node=unreachable maint=0 bad=1 r5m=0 r1h=0 alerts={"PFTContainerRestarted":"firing","PFTNodeRPCDown":"pending"}
+  2026-10-26T07:24:53Z A-down node=unreachable maint=0 bad=1 r5m=0.1 r1h=0.00510204081632653 alerts={"PFTContainerRestarted":"firing","PFTNodeRPCDown":"pending"}
+  2026-10-26T07:25:08Z A-down node=unreachable maint=0 bad=1 r5m=0.18181818181818182 r1h=0.01020408163265306 alerts={"PFTContainerRestarted":"firing","PFTNodeRPCDown":"pending"}
+  2026-10-26T07:25:23Z A-down node=unreachable maint=0 bad=1 r5m=0.25 r1h=0.015306122448979591 alerts={"PFTContainerRestarted":"firing","PFTNodeRPCDown":"firing"}
+  2026-10-26T07:25:39Z A-down node=unreachable maint=0 bad=1 r5m=0.35714285714285715 r1h=0.025510204081632654 alerts={"PFTContainerRestarted":"firing","PFTNodeRPCDown":"firing"}
+  2026-10-26T07:25:54Z A-down node=unreachable maint=0 bad=1 r5m=0.4 r1h=0.030612244897959183 alerts={"PFTContainerRestarted":"firing","PFTNodeRPCDown":"firing"}
+  2026-10-26T07:26:09Z A-down node=unreachable maint=0 bad=1 r5m=0.4375 r1h=0.03571428571428571 alerts={"PFTContainerRestarted":"firing","PFTNodeRPCDown":"firing"}
+  2026-10-26T07:26:24Z A-down node=unreachable maint=0 bad=1 r5m=0.47058823529411764 r1h=0.04081632653061224 alerts={"PFTContainerRestarted":"firing","PFTNodeRPCDown":"firing"}
+  2026-10-26T07:26:40Z A-down node=unreachable maint=0 bad=1 r5m=0.5 r1h=0.04591836734693878 alerts={"PFTContainerRestarted":"firing","PFTNodeRPCDown":"firing"}
+  2026-10-26T07:26:55Z A-down node=unreachable maint=0 bad=1 r5m=0.5263157894736842 r1h=0.05102040816326531 alerts={"PFTContainerRestarted":"firing","PFTNodeRPCDown":"firing"}
+  2026-10-26T07:27:10Z A-down node=unreachable maint=0 bad=1 r5m=0.55 r1h=0.05612244897959184 alerts={"PFTNodeRPCDown":"firing"}
+  2026-10-26T07:27:26Z A-down node=unreachable maint=0 bad=1 r5m=0.6 r1h=0.061224489795918366 alerts={"PFTNodeRPCDown":"firing"}
+  2026-10-26T07:27:41Z A-down node=unreachable maint=0 bad=1 r5m=0.65 r1h=0.0663265306122449 alerts={"PFTNodeRPCDown":"firing"}
+  2026-10-26T07:27:56Z A-down node=unreachable maint=0 bad=1 r5m=0.7 r1h=0.07142857142857142 alerts={"PFTNodeRPCDown":"firing"}
+  2026-10-26T07:28:12Z A-down node=unreachable maint=0 bad=1 r5m=0.75 r1h=0.07653061224489796 alerts={"PFTNodeRPCDown":"firing"}
+  2026-10-26T07:28:27Z A-down node=unreachable maint=0 bad=1 r5m=0.8 r1h=0.08163265306122448 alerts={"PFTNodeRPCDown":"firing","PFTSLOFastBurn":"pending"}
+  2026-10-26T07:28:42Z A-down node=unreachable maint=0 bad=1 r5m=0.85 r1h=0.08673469387755102 alerts={"PFTNodeRPCDown":"firing","PFTSLOFastBurn":"pending"}
+  2026-10-26T07:28:58Z A-down node=unreachable maint=0 bad=1 r5m=0.9 r1h=0.09183673469387756 alerts={"PFTNodeRPCDown":"firing","PFTSLOFastBurn":"pending"}
+  2026-10-26T07:29:13Z A-down node=unreachable maint=0 bad=1 r5m=0.95 r1h=0.09693877551020408 alerts={"PFTNodeRPCDown":"firing","PFTSLOFastBurn":"pending"}
+  2026-10-26T07:29:28Z A-down node=unreachable maint=0 bad=1 r5m=1 r1h=0.10204081632653061 alerts={"PFTNodeRPCDown":"firing","PFTSLOFastBurn":"pending"}
+  2026-10-26T07:29:43Z A-down node=unreachable maint=0 bad=1 r5m=1 r1h=0.10714285714285714 alerts={"PFTNodeRPCDown":"firing","PFTSLOFastBurn":"pending"}
+  2026-10-26T07:29:59Z A-down node=unreachable maint=0 bad=1 r5m=1 r1h=0.11224489795918367 alerts={"PFTNodeRPCDown":"firing","PFTSLOFastBurn":"pending"}
+  2026-10-26T07:30:14Z A-down node=unreachable maint=0 bad=1 r5m=1 r1h=0.11734693877551021 alerts={"PFTNodeRPCDown":"firing","PFTSLOFastBurn":"pending"}
+  2026-10-26T07:30:30Z A-down node=unreachable maint=0 bad=1 r5m=1 r1h=0.12244897959183673 alerts={"PFTNodeRPCDown":"firing","PFTSLOFastBurn":"firing"}
+  2026-10-26T07:30:45Z A-down node=unreachable maint=0 bad=1 r5m=1 r1h=0.12755102040816327 alerts={"PFTNodeRPCDown":"firing","PFTSLOFastBurn":"firing"}
+  2026-10-26T07:31:01Z A-down node=unreachable maint=0 bad=1 r5m=1 r1h=0.1326530612244898 alerts={"PFTNodeRPCDown":"firing","PFTSLOFastBurn":"firing"}
+2026-10-26T07:31:17Z $ docker start postfiatd
+  2026-10-26T07:31:19Z A-recover node=unreachable maint=0 bad=1 r5m=1 r1h=0.1377551020408163 alerts={"PFTNodeRPCDown":"firing","PFTSLOFastBurn":"firing"}
+  2026-10-26T07:31:35Z A-recover node=connected maint=0 bad=1 r5m=1 r1h=0.14285714285714285 alerts={"PFTNodeRPCDown":"firing","PFTSLOFastBurn":"firing"}
+  2026-10-26T07:31:50Z A-recover node=connected maint=0 bad=1 r5m=1 r1h=0.14795918367346939 alerts={"PFTContainerRestarted":"firing","PFTNodeNotFull":"pending","PFTSLOFastBurn":"firing"}
+  2026-10-26T07:32:06Z A-recover node=full maint=0 bad=1 r5m=1 r1h=0.15306122448979592 alerts={"PFTContainerRestarted":"firing","PFTNodeNotFull":"pending","PFTSLOFastBurn":"firing"}
+  2026-10-26T07:32:07Z A-resolve node=full maint=0 bad=1 r5m=1 r1h=0.15306122448979592 alerts={"PFTContainerRestarted":"firing","PFTSLOFastBurn":"firing"}
+  2026-10-26T07:32:23Z A-resolve node=full maint=0 bad=0 r5m=1 r1h=0.15816326530612246 alerts={"PFTContainerRestarted":"firing","PFTSLOFastBurn":"firing","PFTValidatedLedgerStalled":"pending"}
+  2026-10-26T07:32:39Z A-resolve node=full maint=0 bad=0 r5m=0.9 r1h=0.15816326530612246 alerts={"PFTContainerRestarted":"firing","PFTSLOFastBurn":"firing"}
+  2026-10-26T07:32:55Z A-resolve node=full maint=0 bad=0 r5m=0.85 r1h=0.15816326530612246 alerts={"PFTContainerRestarted":"firing","PFTSLOFastBurn":"firing"}
+  2026-10-26T07:33:10Z A-resolve node=full maint=0 bad=0 r5m=0.8 r1h=0.15816326530612246 alerts={"PFTContainerRestarted":"firing","PFTSLOFastBurn":"firing"}
+  2026-10-26T07:33:25Z A-resolve node=full maint=0 bad=0 r5m=0.75 r1h=0.15816326530612246 alerts={"PFTContainerRestarted":"firing","PFTSLOFastBurn":"firing"}
+  2026-10-26T07:33:41Z A-resolve node=full maint=0 bad=0 r5m=0.7 r1h=0.15816326530612246 alerts={"PFTContainerRestarted":"firing","PFTSLOFastBurn":"firing"}
+  2026-10-26T07:33:57Z A-resolve node=full maint=0 bad=0 r5m=0.65 r1h=0.15816326530612246 alerts={"PFTContainerRestarted":"firing","PFTSLOFastBurn":"firing"}
+  2026-10-26T07:34:12Z A-resolve node=full maint=0 bad=0 r5m=0.6 r1h=0.15816326530612246 alerts={"PFTContainerRestarted":"firing","PFTSLOFastBurn":"firing"}
+  2026-10-26T07:34:28Z A-resolve node=full maint=0 bad=0 r5m=0.55 r1h=0.15816326530612246 alerts={"PFTContainerRestarted":"firing","PFTSLOFastBurn":"firing"}
+  2026-10-26T07:34:43Z A-resolve node=full maint=0 bad=0 r5m=0.5 r1h=0.15816326530612246 alerts={"PFTContainerRestarted":"firing","PFTSLOFastBurn":"firing"}
+  2026-10-26T07:35:00Z A-resolve node=full maint=0 bad=0 r5m=0.45 r1h=0.15816326530612246 alerts={"PFTContainerRestarted":"firing","PFTSLOFastBurn":"firing"}
+  2026-10-26T07:35:15Z A-resolve node=full maint=0 bad=0 r5m=0.4 r1h=0.15816326530612246 alerts={"PFTContainerRestarted":"firing","PFTSLOFastBurn":"firing"}
+  2026-10-26T07:35:31Z A-resolve node=full maint=0 bad=0 r5m=0.35 r1h=0.15816326530612246 alerts={"PFTContainerRestarted":"firing","PFTSLOFastBurn":"firing"}
+  2026-10-26T07:35:48Z A-resolve node=full maint=0 bad=0 r5m=0.3 r1h=0.15816326530612246 alerts={"PFTContainerRestarted":"firing","PFTSLOFastBurn":"firing"}
+  2026-10-26T07:36:04Z A-resolve node=full maint=0 bad=0 r5m=0.25 r1h=0.15816326530612246 alerts={"PFTContainerRestarted":"firing","PFTSLOFastBurn":"firing"}
+  2026-10-26T07:36:19Z A-resolve node=full maint=0 bad=0 r5m=0.2 r1h=0.15816326530612246 alerts={"PFTContainerRestarted":"firing","PFTSLOFastBurn":"firing"}
+  2026-10-26T07:36:35Z A-resolve node=full maint=0 bad=0 r5m=0.15 r1h=0.15816326530612246 alerts={"PFTContainerRestarted":"firing","PFTSLOFastBurn":"firing"}
+  2026-10-26T07:36:51Z A-resolve node=full maint=0 bad=0 r5m=0.1 r1h=0.15816326530612246 alerts={"PFTContainerRestarted":"firing","PFTSLOFastBurn":"firing"}
+  2026-10-26T07:37:06Z A-resolve node=full maint=0 bad=0 r5m=0.05 r1h=0.15816326530612246 alerts={"PFTContainerRestarted":"firing"}
+  2026-10-26T07:37:22Z A-resolve node=full maint=0 bad=0 r5m=0 r1h=0.15816326530612246 alerts={"PFTContainerRestarted":"firing"}
+2026-10-26T07:37:37Z PFTSLO* active after A: 0
+
+== 4. wait for the resolved webhook before the bridge goes back to the real topic
+  2026-10-26T07:37:37Z [RESOLVED] PFTSLOFastBurn seen on the topic
+
+== 5. restore + check
+$ NTFY_ENV_FILE=<real bridge env> alerts/run-stack.sh up
+pft-prometheus  Up 2 seconds  prom/prometheus:v3.5.0
+pft-alertmanager  Up 3 seconds  prom/alertmanager:v0.28.1
+pft-alert-bridge  Up 3 seconds  python:3.12-alpine
+2026-10-26T07:37:51Z scrape targets:
+2026-10-26T07:37:51Z Prometheus alerts (pending/firing):
+2026-10-26T07:37:51Z Alertmanager alerts:
+restored pft-alert-bridge: mount source is the real env file: yes
+Alertmanager recreated by run-stack.sh: non-SLO silence created again: a48ecbdd for 60ma48ecbdd-20d9-4d91-b2fd-133fa18d7463
+restored /etc/postfiat-monitor.env: sha256 matches pre-drill copy: yes (root 600)
+restored /etc/pft-integrity.env: sha256 matches pre-drill copy: yes (root 600)
+removed drill-only /etc/pft-maint/ntfy.env: yes
+restored sentry /etc/pft-watchdog/ntfy.env: sha256 matches pre-drill copy: yes
+non-SLO alerts pending/firing in Prometheus: none
+Alertmanager silence a48ecbdd expired (HTTP 200)
+node: full | pft-maint: none
+throwaway topic read back (titles only):
+  2026-10-26T07:11:00Z [MAINT] start validator
+  2026-10-26T07:21:58Z [MAINT] end validator
+  2026-10-26T07:25:39Z pft-watchdog LAGGING
+  2026-10-26T07:28:33Z [<node-label>] Post Fiat node UNHEALTHY
+  2026-10-26T07:30:31Z [FIRING] PFTSLOFastBurn
+  2026-10-26T07:33:38Z [<node-label>] Post Fiat node RECOVERED
+  2026-10-26T07:33:40Z pft-watchdog RECOVERED
+  2026-10-26T07:37:31Z [RESOLVED] PFTSLOFastBurn
+$ python3 slo/drill_check.py samples.jsonl ntfy.jsonl
+[PASS] polls answered >= 90% (105/105 answered)
+[PASS] B: samples recorded (42 samples)
+[PASS] B: pft:sli_maint:bool == 1 in every sample (0/42 samples not maint)
+[PASS] B: pft:sli_bad:bool == 0 in every sample (0/42 samples bad or missing)
+[PASS] B: no PFTSLO* alert pending/firing (none)
+[PASS] B: no PFTSLO* message on the topic (0 messages)
+[PASS] A: down samples recorded (28 samples)
+[PASS] A: pft:sli_bad:bool == 1 while down (26/28 down samples bad)
+[PASS] A: FastBurn pending seen (t=1792999707)
+[PASS] A: FastBurn firing seen (t=1792999830)
+[PASS] A: pending before firing (123s apart)
+[PASS] A: [FIRING] PFTSLOFastBurn message delivered (1 firing messages)
+[PASS] A: FastBurn resolved by the last sample (last alerts: {"PFTContainerRestarted": "firing"})
+[INFO] B: node states seen: connected,full,unreachable
+[INFO] A: PFTSLOSlowBurn states seen: none
+[INFO] A: resolved messages: 1
+[INFO] non-SLO alerts seen (silenced in Alertmanager): PFTContainerRestarted,PFTNodeNotFull,PFTNodeRPCDown,PFTValidatedLedgerStalled
+RESULT: PASS - 13/13 checks passed
+slo drill done 2026-10-26T07:37:59Z: checker exit 0

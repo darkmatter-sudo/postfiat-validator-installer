@@ -1,0 +1,9 @@
+$ docker logs pft-alert-bridge (since 07:37Z), topic redacted   # 2026-10-26T08:08:50Z, Ubuntu 22.04.5 LTS
+2026-10-26T07:37:49.182168920Z bridge listening on 127.0.0.1:9095 ntfy=on
+2026-10-26T07:38:12.442756153Z webhook status=firing alertname=PFTContainerRestarted severity=warning startsAt=2026-10-26T07:38:02.42Z endsAt=0001-01-01T00:00:00Z
+2026-10-26T07:38:13.113370840Z ntfy firing PFTContainerRestarted -> HTTP 200
+$ docker inspect pft-alert-bridge StartedAt
+2026-10-26T07:37:47.808283919Z
+$ amtool-equivalent: GET /api/v2/silences (id, state, matchers, start, end, comment)
+a48ecbdd	expired	alertname!~PFTSLO.*	2026-10-26T07:37:51.836Z	2026-10-26T07:37:53.465Z	planned: SLO drill tail after restore (non-SLO alerts only)
+5aca6dc4	expired	alertname=PFTContainerRestarted	2026-10-26T07:38:33.177Z	2026-10-26T08:08:33.000Z	task_61c766 SLO drill run 2 restore: post-drill silence expired too early (fresh Prometheus not yet evaluated)

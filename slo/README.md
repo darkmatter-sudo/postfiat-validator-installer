@@ -11,7 +11,7 @@ ntfy bridge). Planned work announced with [`../maint`](../maint) (`pft-maint sta
 | `gen_tests.py` → `tests.yml` | promtool unit tests (steady-good, fast-burn, exporter-down, slow-burn, maintenance-window, state) |
 | `pft_slo_report.py` | `pft-slo-report` CLI (Prometheus `/api/v1/query_range` only) |
 | `tests/` | offline CLI tests against recorded API fixtures + exporter `pft_maint_active` tests |
-| `check.sh` | every offline check + two mutation controls that must fail |
+| `check.sh` | every offline check + three mutation controls (M1–M3) that must fail |
 | `install.sh` | deploy: exporter with `pft_maint_active`, alert stack with these rules mounted |
 
 ## SLI definition
@@ -153,6 +153,33 @@ The new pieces were tested before any further live run: `logs/slo/drill-fix-test
 silence variants against the live Alertmanager, a dead Alertmanager giving an empty id, the Prometheus filter on
 synthetic answers, the `until-maint` stop condition, and the checker on run 1's samples with the pre-arm sample
 relabelled, which gives 13/13).
+
+### Run 2 (2026-10-26, PASS 13/13) and one notification that leaked on restore
+
+Log: [`logs/slo/drill-2.log`](../logs/slo/drill-2.log), with `drill-2-samples.jsonl`, `drill-2-ntfy.jsonl` and
+`drill-2-check.txt` (`drill.sh` sha256 `129d53d0…` = commit `06d922a`). Run as a detached unit
+(`systemd-run --unit slo-drill`), 07:10:35Z → 07:37:59Z.
+
+- **B (planned stop in a window):** `B-arm` saw `pft:sli_maint:bool` go 0 → 1 at 07:11:17Z, then the node was
+  stopped 07:11:48Z–07:19:01Z. 42/42 B samples had maint 1 and bad 0, no `PFTSLO*` alert, no `PFTSLO*` message.
+- **A (unplanned stop):** stopped 07:24:04Z. `PFTSLOFastBurn` pending at 07:28:27Z, firing at 07:30:30Z (123 s),
+  `[FIRING]` on the throwaway topic at 07:30:31Z, `[RESOLVED]` at 07:37:31Z. `PFTSLOSlowBurn` never went pending
+  (the run-1 headroom guard passed with a 6 h ratio of 0).
+- **24 h report afterwards** ([`logs/slo/report-drill-24h.md`](../logs/slo/report-drill-24h.md), command in
+  `report-drill-24h.log`): two bad intervals of 7m45s (drill A of run 1 and run 2, cause "node RPC down; node
+  restarted"), three maintenance windows excluded (both B stops and one other planned window), recording-rule
+  cross-check 5761 steps agree, 0 disagree.
+
+**Found:** the restore step re-created the non-SLO silence on the new Alertmanager (`a48ecbdd`), then expired it
+2 s later because Prometheus listed no non-SLO alerts. That Prometheus had been recreated by `run-stack.sh up`
+seconds earlier and had not evaluated any rule yet, so the empty list meant "not evaluated", not "clear". At
+07:38:12Z `PFTContainerRestarted` (a 15 min window after a node start) reached the **real** topic once
+([`logs/slo/drill-2-restore-incident.log`](../logs/slo/drill-2-restore-incident.log): bridge log + silence list).
+It was silenced by hand at 07:38:33Z; nothing else was sent.
+**Fixed** in commit `5dd2f5f`: the silence is never expired early and runs out after 60 min, which is past the last
+node start + 15 min + 10 min. The preflight timer list also stopped cutting `pft-egress-reapply@postfiatd.timer`
+down to `postfiatd.timer`. **Verified** offline only: `logs/slo/check-5.log` (PASS, M1–M3 caught). The fix was not
+exercised by a third live drill, because the SLO claims above don't need another node stop.
 
 ## Deploy
 
