@@ -1,0 +1,32 @@
+# 2026-10-26T06:11:57Z Ubuntu 22.04.5 LTS | validator-host | pft-audittrail sha256 0ddb08ce4075
+$ sudo pft-audittrail check
+pft-audittrail check - 2026-10-26T06:11:57Z
+  [PASS] auditd active
+  [PASS] audit enabled=1 (expected 1)
+  [INFO] lost events: 0
+  [PASS] loaded pft-* rules = rules file (48)
+  [PASS] loaded rules identical to apply snapshot
+  [PASS] journald drop-in Storage=persistent Seal=yes
+  [PASS] FSS sealing key present
+  [PASS] journalctl --verify: 14 files PASS, 2 sealed file(s) need the off-host key (--verify-key-file) for seal verification
+RESULT: PASS -> exit 0
+exit 0
+$ sudo pft-audittrail report --since today
+# pft-audittrail report - 2026-10-26T06:12:31Z - since: today
+
+Usernames other than root/unset are hashed (u-<sha256(salt+name)[:8]>); objects under pft-keys/pft-agent are redacted.
+
+| key | events | by auid | by command | objects |
+|---|---:|---|---|---|
+| pft-cfg | 5 | u-d7bbb9be (5) | auditctl (5) | (rule change) (5) |
+| pft-keys | 2 | u-d7bbb9be (2) | auditctl (2) | (rule change) (2) |
+| pft-ssh | 3 | u-d7bbb9be (3) | auditctl (3) | (rule change) (3) |
+| pft-sudo | 2 | u-d7bbb9be (2) | auditctl (2) | (rule change) (2) |
+| pft-docker | 4 | u-d7bbb9be (4) | auditctl (4) | (rule change) (4) |
+| pft-units | 22 | u-d7bbb9be (22) | auditctl (18), install (4) | (rule change) (18), /usr/local/sbin/pft-audittrail (3), (no path: changed-file-attributes-of) (1) |
+| pft-agent | 21 | u-d7bbb9be (21) | bash (18), mkdir (2), auditctl (1) | <redacted> (20), (rule change) (1) |
+| pft-exec | 166 | u-d7bbb9be (166) | xtables-nft-multi (120), docker (33), systemctl (7), auditctl (6) | /usr/sbin/iptables (72), /usr/sbin/ip6tables (48), /usr/bin/docker (33), /usr/bin/systemctl (7), (rule change) (6) |
+| pft-time | 3 | u-d7bbb9be (3) | auditctl (3) | (rule change) (3) |
+| pft-modules | 3 | u-d7bbb9be (3) | auditctl (3) | (rule change) (3) |
+| pft-canary | 3 | u-d7bbb9be (3) | tee (2), auditctl (1) | /var/lib/pft-audittrail/canary (2), (rule change) (1) |
+exit 0

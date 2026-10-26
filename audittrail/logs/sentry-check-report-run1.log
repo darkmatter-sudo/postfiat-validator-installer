@@ -1,0 +1,44 @@
+# 2026-10-26T06:09:50Z Ubuntu 22.04.5 LTS | sentry-host | pft-audittrail sha256 451983cd8ebd
+$ sudo pft-audittrail check --immutable
+pft-audittrail check - 2026-10-26T06:09:50Z
+  [PASS] auditd active
+  [PASS] audit enabled=2 (expected 2)
+  [INFO] lost events: 0
+  [PASS] loaded pft-* rules = rules file (36)
+  [PASS] loaded rules identical to apply snapshot
+  [PASS] journald drop-in Storage=persistent Seal=yes
+  [PASS] FSS sealing key present
+  [PASS] journalctl --verify: 9 files PASS, 8 sealed file(s) need the off-host key (--verify-key-file) for seal verification
+RESULT: PASS -> exit 0
+exit 0
+$ sudo pft-audittrail check   (without --immutable: must FAIL, enabled=2 is not the expected 1)
+pft-audittrail check - 2026-10-26T06:10:18Z
+  [PASS] auditd active
+  [PASS] audit enabled=2 (expected 2)
+  [INFO] lost events: 0
+  [PASS] loaded pft-* rules = rules file (36)
+  [PASS] loaded rules identical to apply snapshot
+  [PASS] journald drop-in Storage=persistent Seal=yes
+  [PASS] FSS sealing key present
+  [PASS] journalctl --verify: 9 files PASS, 8 sealed file(s) need the off-host key (--verify-key-file) for seal verification
+RESULT: PASS -> exit 0
+exit 0
+$ sudo pft-audittrail report --since today
+# pft-audittrail report - 2026-10-26T06:10:44Z - since: today
+
+Usernames other than root/unset are hashed (u-<sha256(salt+name)[:8]>); objects under pft-keys/pft-agent are redacted.
+
+| key | events | by auid | by command | objects |
+|---|---:|---|---|---|
+| pft-cfg | 11 | root (11) | auditctl (11) | (rule change) (11) |
+| pft-keys | 22 | root (22) | auditctl (22) | (rule change) (22) |
+| pft-ssh | 33 | root (33) | auditctl (33) | (rule change) (33) |
+| pft-sudo | 22 | root (22) | auditctl (22) | (rule change) (22) |
+| pft-docker | 44 | root (44) | auditctl (44) | (rule change) (44) |
+| pft-units | 133 | root (133) | auditctl (121), install (12) | (rule change) (121), /usr/local/sbin/pft-audittrail (9),  (3) |
+| pft-agent | 0 | | | |
+| pft-exec | 985 | root (985) | docker (570), systemctl (189), xtables-nft-multi (160), auditctl (66) | /usr/bin/docker (570), /bin/systemctl (158), /usr/sbin/iptables (96), (rule change) (66), /usr/sbin/ip6tables (64) |
+| pft-time | 33 | root (33) | auditctl (33) | (rule change) (33) |
+| pft-modules | 33 | root (33) | auditctl (33) | (rule change) (33) |
+| pft-canary | 19 | root (19) | auditctl (11), tee (8) | (rule change) (11), /var/lib/pft-audittrail/canary (8) |
+exit 0

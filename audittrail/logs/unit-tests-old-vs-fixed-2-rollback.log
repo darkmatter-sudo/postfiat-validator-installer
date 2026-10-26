@@ -1,0 +1,17 @@
+# OS: Ubuntu 22.04.5 LTS | 2026-10-26T03:31:31Z
+old build (sentry rollback drill run 21): 6939f45fb4e334a249f14b72ea8fd18277028c3fbf5ba55fea317a85d8f43a19
+fixed build: 2b0a41ccb26a647a686537750c0f0fc5f66dd4ed87e817dfec89911e2903872f | tests 506ca57e088e5991b55afc96bf01793b28e70fc7888a89e0a0fb95a6717c9f0c
+$ PFT_AT_SCRIPT=<old build> bash audittrail/tests/run-tests.sh | grep -v "^ok"
+# pft-audittrail unit tests - 2026-10-26T03:31:31Z - Ubuntu 22.04.5 LTS - bash 5.1.16(1)-release
+FAIL - rollback left auditing off (enabled=0)
+    [2026-10-26T03:31:40Z] removed rules files, journald drop-in, FSS key
+    [2026-10-26T03:31:41Z] rollback done: no pft-* rules loaded, journald drop-in and FSS key removed
+FAIL - prod rollback rc=1
+    [2026-10-26T03:31:42Z] removed rules files, journald drop-in, FSS key
+    /tmp/pft-audittrail.old2.sh: line 277: R: parameter null or not set
+
+RESULT: 45 passed, 2 failed
+exit 1 (expect 1)
+$ bash audittrail/tests/run-tests.sh | tail -1
+RESULT: 47 passed, 0 failed
+exit 0

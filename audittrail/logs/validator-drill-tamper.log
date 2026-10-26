@@ -1,0 +1,52 @@
+# OS (verifier, verifier host): Ubuntu 22.04.5 LTS | 2026-10-26T05:13:25Z | target validator-host: Ubuntu 22.04.5 LTS
+script sha256: drill-tamper.sh 93c3825f3704156f62a78f6900a8ab054a7310b0b570fd2491872b4f17b7c105 | target pft-audittrail 451983cd8ebd36eafabd49f25ae4923100744d8ed02bfd6724236403d7a5036e
+mode: run on the target, journal copies streamed to the verifier over ssh
+key: off-host copy on the verifier, sha256 prefix ec43b56f6bc1 (current) (content never printed)
+
+== 1. watched test file: canary write -> ausearch -k pft-canary (with auid)
+$ [validator-host] echo "<marker>" | sudo tee -a /var/lib/pft-audittrail/canary   (login user: <user, auid>=1000>)
+$ [validator-host] sudo ausearch --input-logs -k pft-canary -i -ts recent | grep -E 'type=(SYSCALL|PATH)' (last event)
+type=PATH msg=audit(<local-time-redacted>:1852) : item=1 name=/var/lib/pft-audittrail/canary mode=file,644 ouid=root ogid=root rdev=00:00 nametype=NORMAL cap_fp=none cap_fi=none cap_fe=0 cap_fver=0 cap_frootid=0 
+type=PATH msg=audit(<local-time-redacted>:1852) : item=0 name=/var/lib/pft-audittrail/ mode=dir,700 ouid=root ogid=root rdev=00:00 nametype=PARENT cap_fp=none cap_fi=none cap_fe=0 cap_fver=0 cap_frootid=0 
+type=SYSCALL msg=audit(<local-time-redacted>:1852) : arch=x86_64 syscall=openat success=yes exit=3 items=2 auid=<user> uid=root gid=root euid=root suid=root fsuid=root egid=root sgid=root fsgid=root tty=(none) comm=tee exe=/usr/bin/tee subj=unconfined key=pft-canary 
+  -> PASS: canary write logged under key pft-canary with a real auid
+$ [validator-host] sudo pft-audittrail report --since recent | grep pft-canary
+| key | events | by auid | by command | objects |
+| pft-canary | 2 | u-d7bbb9be (2) | tee (2) | /var/lib/pft-audittrail/canary (2) |
+  -> PASS: report counts the canary event
+
+== 2. sealed journal: off-host verify, byte-flip a COPY, live stays PASS
+validator-host has 8 system journal files, 1 sealed (header 'Compatible flags: SEALED'); copied the sealed ones to the verifier
+  -> PASS: target has sealed journal files
+$ journalctl --verify --verify-key=<off-host key> --file=validator-host:system.journal
+   copy 1/3 of the active file FAIL with every key given: File corruption detected at system.journal:7a7820 (of 8388608 bytes, 95%). FAIL: system.journal (Bad message) 
+   copy 2/3 of the active file: PASS
+=> Validated from <local-time-redacted> to <local-time-redacted>, final 13min 52.225555s entries not sealed.
+   (key ec43b56f6bc1)
+  -> PASS: every sealed file PASSes off-host verification with one of the keys
+flipped 1 byte (0x6e -> 0x91) at offset 4194304 of 8388608 in a COPY of system.journal
+$ journalctl --verify --verify-key=<off-host key> --file=flipped.journal
+3ffea0: Invalid hash (1bfc0f2596efcfef vs. 90bbb00c4acb73c2)
+3ffea0: Invalid object contents: Bad message
+File corruption detected at flipped.journal:3ffea0 (of 8388608 bytes, 49%).
+FAIL: flipped.journal (Bad message)
+exit 1 (expect non-zero)
+  -> PASS: byte-flipped copy FAILs verification (corruption verdict on the flipped file)
+$ re-copy + verify the live sealed files of validator-host
+  system.journal: copy 1/3 FAIL with every key given: File corruption detected at system.journal.again:7d6ad8 (of 8388608 bytes, 97%). FAIL: system.journal.again (Bad message) 
+  system.journal: PASS (key ec43b56f6bc1), copy 2
+  -> PASS: live sealed journal files still PASS
+$ [validator-host] sudo pft-audittrail check
+  pft-audittrail check - 2026-10-26T05:13:42Z
+    [PASS] auditd active
+    [PASS] audit enabled=1 (expected 1)
+    [INFO] lost events: 0
+    [PASS] loaded pft-* rules = rules file (48)
+    [PASS] loaded rules identical to apply snapshot
+    [PASS] journald drop-in Storage=persistent Seal=yes
+    [PASS] FSS sealing key present
+    [PASS] journalctl --verify: 14 files PASS, 2 sealed file(s) need the off-host key (--verify-key-file) for seal verification
+  RESULT: PASS -> exit 0
+  -> PASS: pft-audittrail check PASS on validator-host after the drills
+
+drill-tamper: 7 passed, 0 failed

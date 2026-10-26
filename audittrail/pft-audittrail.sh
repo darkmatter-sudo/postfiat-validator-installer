@@ -339,7 +339,9 @@ do_report() { # SINCE SALTFILE
     # without them ausearch reads stdin whenever stdin is not a tty (it swallowed the rest of a heredoc once)
     rows="$("$AUSEARCH" --input-logs -k "$k" --start "$1" --format csv </dev/null 2>/dev/null | tail -n +2 |
       awk -F, -v k="$k" '{ n = split($16, x, "/"); o = ($2 == "CONFIG_CHANGE") ? "(rule change)" :
-        ((k == "pft-keys" || k == "pft-agent") ? "<redacted>" : $13); print $8 "\t" x[n] "\t" o }')"
+        ((k == "pft-keys" || k == "pft-agent") ? "<redacted>" : $13)
+        # fd-based syscalls (fchmod/fchown on an open file) carry no path: name the action instead of printing ""
+        if (o == "") o = "(no path: " $11 ")"; print $8 "\t" x[n] "\t" o }')"
     n="$(grep -c . <<<"$rows")"
     if [ "$n" -eq 0 ]; then echo "| $k | 0 | | | |"; continue; fi
     printf '| %s | %d | %s | %s | %s |\n' "$k" "$n" \

@@ -1,0 +1,54 @@
+# OS: Ubuntu 22.04.5 LTS | 2026-10-26T03:20:51Z | sentry-host: pft-audittrail live apply | container postfiatd-sentry
+script sha256: pft-audittrail.sh 3d1330be5f3b38fe9af8c0576950e03f38be57009a3d133d85f7a7f0c9569a0e | live-apply.sh 547102fbc3dbd7b74a7fbdd77c7fa70d11d7b6274f3793d20e948b9554693600
+container before: 2026-10-24T22:25:26.906681347Z restarts=0
+
+== 1. BEFORE: check (expect FAIL: nothing applied)
+$ pft-audittrail check
+pft-audittrail check - 2026-10-26T03:20:51Z
+  [FAIL] not applied (no /var/lib/pft-audittrail/state.json)
+  [PASS] auditd active
+  [PASS] audit enabled=1 (expected 1)
+  [INFO] lost events: 0
+  [FAIL] rules file /etc/audit/rules.d/pft-audittrail.rules missing
+  [FAIL] loaded rules differ from apply snapshot:
+      > 
+  [FAIL] journald drop-in missing or changed
+  [FAIL] FSS sealing key missing
+  [PASS] journalctl --verify 7 files PASS
+RESULT: FAIL (5) -> exit 1
+exit 1 (expect 1)
+$ journalctl --disk-usage; seal key present?
+Archived and active journals take up 520.0M in the file system.
+FSS key: absent
+
+== 2. install + apply
+installed /usr/local/sbin/pft-audittrail
+$ pft-audittrail apply --yes --container postfiatd-sentry --key-out <root-only file, moved off-host after this run>
+[2026-10-26T03:21:17Z] loading rules (36 in /etc/audit/rules.d/pft-audittrail.rules, immutable=off)
+[2026-10-26T03:21:17Z] FSS keys generated (interval 15min); verification key written to --key-out file only (0600), sha256 prefix 70a5de1f169a: move it off-host and delete it here
+[2026-10-26T03:21:18Z] apply done: 36 rules loaded, journald sealed (Seal=yes, Storage=persistent)
+apply exit 0
+
+== 3. AFTER: check (expect PASS)
+$ pft-audittrail check
+pft-audittrail check - 2026-10-26T03:21:18Z
+  [PASS] auditd active
+  [FAIL] audit enabled=0 (expected 1)
+  [INFO] lost events: 0
+  [PASS] loaded pft-* rules = rules file (36)
+  [PASS] loaded rules identical to apply snapshot
+  [PASS] journald drop-in Storage=persistent Seal=yes
+  [PASS] FSS sealing key present
+  [FAIL] journalctl --verify:
+      Journal file /var/log/journal/<machine-id>/system.journal has sealing enabled but verification key has not been passed using --verify-key=.
+      FAIL: system.journal (Required key not available)
+RESULT: FAIL (2) -> exit 1
+exit 1 (expect 0)
+$ auditctl -s | grep -E '^(enabled|lost|backlog_limit)'
+enabled 0
+backlog_limit 8192
+lost 0
+$ auditctl -l | grep -c 'pft-'
+36
+container after: 2026-10-24T22:25:26.906681347Z restarts=0 (unchanged: no node restart)
+live-apply done: apply exit 0, check exit 1

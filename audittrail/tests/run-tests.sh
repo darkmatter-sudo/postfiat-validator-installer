@@ -71,7 +71,7 @@ case "$1" in
   --header) f="${2#--file=}"; [ -e "$f" ] || exit 1
             echo "Sequential number ID: $MID"; echo "State: ONLINE"
             grep -q '^sealed:' "$f" && echo "Compatible flags: SEALED" || echo "Compatible flags:"
-            q="$(sed -n 's/^seq://p' "$f")"; q="${q:-10}"; echo "Head sequential number: $q ($(printf %x "$q"))"; echo "Head realtime timestamp: Mon 2026-10-26 04:29:24 CET (65eb5efbbaefd)" ;;
+            q="$(sed -n 's/^seq://p' "$f")"; q="${q:-10}"; echo "Head sequential number: $q ($(printf %x "$q"))"; echo "Head realtime timestamp: Mon 2026-10-26 03:29:24 UTC (65eb5efbbaefd)" ;;
   --verify) out="$(sed "s#<machine-id>#$MID#" "$FX/journalctl-verify-unsealed.txt")"; key=no
             case " $* " in *" --verify-key="*) key=yes ;; esac
             if [ -e "$STUB/verify_flipped" ]; then printf '%s\n' "$out"; sed "s#copy.journal#$j/system@flipped.journal#" "$FX/journalctl-verify-flipped.txt"; exit 1; fi
@@ -253,6 +253,10 @@ grep -q "| pft-keys | 5 | root (4), $hu (1) |" <<<"$out" && ! grep -q -e alice -
   && ok "report: username hashed ($hu), pft-keys object redacted" || { bad "report hashing/redaction"; ind <<<"$out"; }
 grep -q "^| pft-ssh | 0 | | | |$" <<<"$out" && ! grep -q "without --input-logs" <<<"$out" \
   && ok "report: keys with no events listed as 0; ausearch always run with --input-logs" || bad "report zero rows"
+cp "$FX/ausearch-units-nopath.csv" "$STUB/ausearch-pft-units.csv"   # real sentry rows: install's fchmod, no OBJ_PRIME
+out="$(run report --since recent 2>&1)"
+grep -q '^| pft-units | 2 | root (2) | install (2) | (no path: changed-file-attributes-of) (2) |$' <<<"$out" \
+  && ok "report: path-less (fd) events named by action, never an empty object" || { bad "report path-less rows"; ind <<<"$out"; }
 
 # --- 6. immutable + rollback ---
 out="$(run apply --yes --immutable 2>&1)"; rc=$?

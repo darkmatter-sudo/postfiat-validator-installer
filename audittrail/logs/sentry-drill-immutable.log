@@ -1,0 +1,50 @@
+# OS: Ubuntu 22.04.5 LTS | 2026-10-26T05:19:06Z | sentry-host: pft-audittrail immutable drill (-e 2)
+script sha256: drill-immutable.sh d5ebbd28c8aa16835dc92f5623c3219df36482c12b103d5b8c61d354637cb5c0 | target pft-audittrail 451983cd8ebd36eafabd49f25ae4923100744d8ed02bfd6724236403d7a5036e
+container before: /postfiatd-sentry 2026-10-24T22:25:26.906681347Z restarts=0
+
+== before
+auditctl -s enabled=2 | loaded pft-* rules: 36
+  -> PASS: already immutable (enabled 2) from an earlier run (--already-immutable: apply skipped)
+$ sudo pft-audittrail check
+  pft-audittrail check - 2026-10-26T05:19:11Z
+    [PASS] auditd active
+    [PASS] audit enabled=2 (expected 2)
+    [INFO] lost events: 0
+    [PASS] loaded pft-* rules = rules file (36)
+    [PASS] loaded rules identical to apply snapshot
+    [PASS] journald drop-in Storage=persistent Seal=yes
+    [PASS] FSS sealing key present
+    [PASS] journalctl --verify: 9 files PASS, 8 sealed file(s) need the off-host key (--verify-key-file) for seal verification
+  RESULT: PASS -> exit 0
+  -> PASS: check PASS (expects enabled 2 after --immutable)
+
+== tamper attempts (must be refused)
+$ sudo auditctl -D
+  Error deleting rule (Operation not permitted)
+  exit 255
+loaded pft-* rules after: 36
+  -> PASS: auditctl -D refused (all 36 pft-* rules still loaded)
+loaded canary rule (the -W below matches it exactly): -w /var/lib/pft-audittrail/canary -p wa -k pft-canary
+$ sudo auditctl -W /var/lib/pft-audittrail/canary -p wa -k pft-canary   (remove one watch)
+  The audit system is in immutable mode, no rule changes allowed
+  exit 0
+loaded pft-* rules after: 36
+  -> PASS: removing a single watch refused (canary watch still loaded, whatever the exit code)
+$ sudo auditctl -e 0   (disable auditing)
+  Error sending enable request (Operation not permitted)
+  exit 255
+auditctl -s enabled=2
+  -> PASS: disabling auditing refused (still enabled 2)
+
+== audit pipeline still records (canary write after the refused attempts)
+| key | events | by auid | by command | objects |
+| pft-canary | 6 | root (6) | tee (4), auditctl (2) | /var/lib/pft-audittrail/canary (4), (rule change) (2) |
+  -> PASS: canary event recorded
+$ sudo ausearch --input-logs -m CONFIG_CHANGE -ts recent -i | grep -c 'res=no'   (refused changes are audited too)
+5
+
+container after: /postfiatd-sentry 2026-10-24T22:25:26.906681347Z restarts=0 (unchanged: no node restart)
+  -> PASS: no postfiatd restart
+state: sentry-host left IMMUTABLE (enabled 2) until its next reboot; rollback before then exits 2 (rollback pending reboot)
+
+drill-immutable: 7 passed, 0 failed

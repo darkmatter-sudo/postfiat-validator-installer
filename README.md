@@ -278,6 +278,19 @@ sudo bash egress/pft-egress.sh plan --container postfiatd-sentry
 sudo bash egress/pft-egress.sh apply --dry-run --container postfiatd-sentry
 ```
 
+## Tamper-evident audit trail add-on
+
+[`audittrail/`](audittrail/README.md): `pft-audittrail` adds real-time auditd watches (keyed: node config, validator
+keys, sshd, sudoers, Docker, add-on units; execve of docker/systemctl/iptables with the login uid; time and module
+changes) and persistent journald with Forward Secure Sealing, verification key kept off-host. `check` exits 1 on rule
+or seal drift; `report` writes a Markdown summary with usernames hashed. Complements pft-integrity's hourly hash
+compare with *when / who / which command*. No node restart. Run it on the sentry first.
+
+```bash
+sudo bash audittrail/pft-audittrail.sh plan
+sudo bash audittrail/pft-audittrail.sh apply --dry-run
+```
+
 ## Alert rules add-on
 
 [`alerts/`](alerts/README.md): 16 Prometheus alert rules for the exporter's metrics. They cover node/RPC down,

@@ -1,0 +1,54 @@
+# OS: Ubuntu 22.04.5 LTS | 2026-10-26T04:22:50Z | validator-host: pft-audittrail live apply | container postfiatd
+script sha256: pft-audittrail.sh 451983cd8ebd36eafabd49f25ae4923100744d8ed02bfd6724236403d7a5036e | live-apply.sh 547102fbc3dbd7b74a7fbdd77c7fa70d11d7b6274f3793d20e948b9554693600
+container before: 2026-10-26T00:42:22.355010151Z restarts=0
+
+== 1. BEFORE: check (expect FAIL: nothing applied)
+$ pft-audittrail check
+pft-audittrail check - 2026-10-26T04:22:50Z
+  [FAIL] not applied (no /var/lib/pft-audittrail/state.json)
+  [FAIL] auditd not active
+  [FAIL] audit enabled=? (expected 1)
+  [INFO] lost events: ?
+  [FAIL] rules file /etc/audit/rules.d/pft-audittrail.rules missing
+  [FAIL] loaded rules differ from apply snapshot:
+      > 
+  [FAIL] journald drop-in missing or changed
+  [FAIL] FSS sealing key missing
+  [PASS] journalctl --verify: 14 files PASS
+RESULT: FAIL (7) -> exit 1
+exit 1 (expect 1)
+$ journalctl --disk-usage; seal key present?
+Archived and active journals take up 792.0M in the file system.
+FSS key: absent
+
+== 2. install + apply
+installed /usr/local/sbin/pft-audittrail
+$ pft-audittrail apply --yes --container postfiatd --key-out <root-only file, moved off-host after this run>
+[2026-10-26T04:23:27Z] installing auditd
+[2026-10-26T04:23:42Z] loading rules (48 in /etc/audit/rules.d/pft-audittrail.rules, immutable=off)
+[2026-10-26T04:23:42Z] journald relinquished /var/log/journal; archived 0 sealed active journal file(s) before the key change
+[2026-10-26T04:23:42Z] FSS keys generated (interval 15min); verification key written to --key-out file only (0600), sha256 prefix ec43b56f6bc1: move it off-host and delete it here
+[2026-10-26T04:23:42Z] apply done: 48 rules loaded, journald sealed (Seal=yes, Storage=persistent)
+apply exit 0
+
+== 3. AFTER: check (expect PASS)
+$ pft-audittrail check
+pft-audittrail check - 2026-10-26T04:23:42Z
+  [PASS] auditd active
+  [PASS] audit enabled=1 (expected 1)
+  [INFO] lost events: 0
+  [PASS] loaded pft-* rules = rules file (48)
+  [PASS] loaded rules identical to apply snapshot
+  [PASS] journald drop-in Storage=persistent Seal=yes
+  [PASS] FSS sealing key present
+  [PASS] journalctl --verify: 14 files PASS, 1 sealed file(s) need the off-host key (--verify-key-file) for seal verification
+RESULT: PASS -> exit 0
+exit 0 (expect 0)
+$ auditctl -s | grep -E '^(enabled|lost|backlog_limit)'
+enabled 1
+backlog_limit 8192
+lost 0
+$ auditctl -l | grep -c 'pft-'
+48
+container after: 2026-10-26T00:42:22.355010151Z restarts=0 (unchanged: no node restart)
+live-apply done: apply exit 0, check exit 0

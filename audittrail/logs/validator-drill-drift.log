@@ -1,0 +1,85 @@
+$ cat audittrail/drill-drift.sh
+#!/usr/bin/env bash
+# Live ruleset-drift drill (run as root on an applied, NON-immutable host): silently drop one pft-* watch the way an
+# intruder would (auditctl -W), prove `check` exits 1 and names the missing rule, prove the removal itself was
+# audited (CONFIG_CHANGE remove_rule with its auid), then restore with augenrules --load and prove check PASS.
+# Usage: sudo bash audittrail/drill-drift.sh [RULE]   (default: the /etc/localtime pft-time watch). No node restart.
+set -uo pipefail
+RULE="${1:--w /etc/localtime -p wa -k pft-time}"
+AT="${PFT_AT_BIN:-/usr/local/sbin/pft-audittrail}"
+pass=0; fail=0
+res() { if [ "$1" = 0 ]; then pass=$((pass + 1)); echo "  -> PASS: $2"; else fail=$((fail + 1)); echo "  -> FAIL: $2"; fi; }
+echo "# pft-audittrail drift drill - $(date -u +%FT%TZ) - $(lsb_release -ds) - $AT sha256 $(sha256sum "$AT" | cut -c1-12)"
+[ "$(auditctl -s | awk '$1 == "enabled" {print $2}')" = 1 ] || { echo "refused: needs enabled=1 (immutable hosts cannot drop rules)"; exit 4; }
+echo "\$ pft-audittrail check   (before)"; "$AT" check; rc=$?; echo "exit $rc"; res $((rc != 0)) "check exit 0 before"
+n0="$(auditctl -l | grep -c -- '-k pft-')"
+auditctl -l | grep -qxF -- "$RULE" || { echo "rule not loaded: $RULE"; exit 3; }
+echo "\$ auditctl ${RULE/-w/-W}"; read -ra a <<<"${RULE/-w/-W}"; auditctl "${a[@]}"; echo "exit $?"
+n1="$(auditctl -l | grep -c -- '-k pft-')"; echo "loaded pft-* rules: $n0 -> $n1"; res $(( n1 != n0 - 1 )) "one rule dropped"
+echo "\$ pft-audittrail check   (drift)"; out="$("$AT" check 2>&1)"; rc=$?; echo "$out"; echo "exit $rc"
+res $(( rc != 1 )) "check exit 1 on drift"
+grep -qF -- "${RULE}" <<<"$out"; res $? "check output names the missing rule"
+echo "\$ ausearch --input-logs -m CONFIG_CHANGE --start recent -i | grep remove_rule"
+ev="$(ausearch --input-logs -m CONFIG_CHANGE --start recent -i </dev/null 2>/dev/null | grep 'op=remove_rule' | grep -F "key=${RULE##* }")"
+sed -E 's/auid=[a-z_][a-z0-9_-]*/auid=<user>/; s/ses=[0-9]+/ses=<n>/' <<<"$ev"
+grep -q 'op=remove_rule' <<<"$ev"; res $? "the removal itself was audited (CONFIG_CHANGE remove_rule)"
+echo "\$ augenrules --load"; augenrules --load >/dev/null 2>&1; echo "exit $?"
+echo "\$ pft-audittrail check   (restored)"; "$AT" check; rc=$?; echo "exit $rc"; res "$rc" "check exit 0 after restore"
+n2="$(auditctl -l | grep -c -- '-k pft-')"; echo "loaded pft-* rules: $n2"; res $(( n2 != n0 )) "rule count back to $n0"
+echo "DRILL RESULT: $pass passed, $fail failed"; [ "$fail" = 0 ]
+$ sudo bash audittrail/drill-drift.sh
+# pft-audittrail drift drill - 2026-10-26T06:13:55Z - Ubuntu 22.04.5 LTS - /usr/local/sbin/pft-audittrail sha256 0ddb08ce4075
+$ pft-audittrail check   (before)
+pft-audittrail check - 2026-10-26T06:13:55Z
+  [PASS] auditd active
+  [PASS] audit enabled=1 (expected 1)
+  [INFO] lost events: 0
+  [PASS] loaded pft-* rules = rules file (48)
+  [PASS] loaded rules identical to apply snapshot
+  [PASS] journald drop-in Storage=persistent Seal=yes
+  [PASS] FSS sealing key present
+  [PASS] journalctl --verify: 14 files PASS, 2 sealed file(s) need the off-host key (--verify-key-file) for seal verification
+RESULT: PASS -> exit 0
+exit 0
+  -> PASS: check exit 0 before
+$ auditctl -W /etc/localtime -p wa -k pft-time
+exit 0
+loaded pft-* rules: 38 -> 37
+  -> PASS: one rule dropped
+$ pft-audittrail check   (drift)
+pft-audittrail check - 2026-10-26T06:14:29Z
+  [PASS] auditd active
+  [PASS] audit enabled=1 (expected 1)
+  [INFO] lost events: 0
+  [FAIL] loaded pft-* rules 47 != rules file 48
+  [FAIL] loaded rules differ from apply snapshot:
+      < -w /etc/localtime -p wa -k pft-time
+  [PASS] journald drop-in Storage=persistent Seal=yes
+  [PASS] FSS sealing key present
+  [PASS] journalctl --verify: 14 files PASS, 2 sealed file(s) need the off-host key (--verify-key-file) for seal verification
+RESULT: FAIL (2) -> exit 1
+exit 1
+  -> PASS: check exit 1 on drift
+  -> PASS: check output names the missing rule
+$ ausearch --input-logs -m CONFIG_CHANGE --start recent -i | grep remove_rule
+type=CONFIG_CHANGE msg=audit(<local-time-redacted>:3711) : auid=<user> ses=<n> subj=unconfined op=remove_rule key=pft-time list=exit res=yes 
+  -> PASS: the removal itself was audited (CONFIG_CHANGE remove_rule)
+$ augenrules --load
+exit 0
+$ pft-audittrail check   (restored)
+pft-audittrail check - 2026-10-26T06:15:10Z
+  [PASS] auditd active
+  [PASS] audit enabled=1 (expected 1)
+  [INFO] lost events: 0
+  [PASS] loaded pft-* rules = rules file (48)
+  [PASS] loaded rules identical to apply snapshot
+  [PASS] journald drop-in Storage=persistent Seal=yes
+  [PASS] FSS sealing key present
+  [PASS] journalctl --verify: 14 files PASS, 2 sealed file(s) need the off-host key (--verify-key-file) for seal verification
+RESULT: PASS -> exit 0
+exit 0
+  -> PASS: check exit 0 after restore
+loaded pft-* rules: 38
+  -> PASS: rule count back to 38
+DRILL RESULT: 7 passed, 0 failed
+drill exit 0

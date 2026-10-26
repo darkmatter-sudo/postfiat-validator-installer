@@ -1,0 +1,61 @@
+# OS: Ubuntu 22.04.5 LTS | 2026-10-26T03:28:25Z | sentry-host: pft-audittrail rollback-and-re-apply drill | container postfiatd-sentry
+script sha256: pft-audittrail 6939f45fb4e334a249f14b72ea8fd18277028c3fbf5ba55fea317a85d8f43a19 | drill-rollback.sh 5337bfc150df98fd83f2a693c7b15d5e36dc50bd4b8760924a615a9ce9e75bce
+container before: 2026-10-24T22:25:26.906681347Z restarts=0
+
+== 0. applied state
+RESULT: PASS -> exit 0
+  /etc/audit/rules.d/pft-audittrail.rules                    present
+  /etc/audit/rules.d/zz-pft-audittrail-immutable.rules       absent
+  /etc/systemd/journald.conf.d/pft-audittrail.conf           present
+  /var/log/journal/<machine-id>/fss                          present
+  /var/lib/pft-audittrail                                    present
+
+== 1. rollback --dry-run (expect no change)
+rollback would remove: /etc/audit/rules.d/pft-audittrail.rules /etc/audit/rules.d/zz-pft-audittrail-immutable.rules /etc/systemd/journald.conf.d/pft-audittrail.conf /var/log/journal/<machine-id>/fss /var/lib/pft-audittrail
+auditd: kept (was installed before apply)
+dry-run: nothing changed
+  -> PASS: dry-run changed nothing
+
+== 2. rollback --yes
+$ pft-audittrail rollback --yes
+[2026-10-26T03:28:53Z] removed rules files, journald drop-in, FSS key
+exit 1
+  -> FAIL: rollback exit 0
+pft-* rules loaded: 0
+  -> PASS: no pft-* audit rules loaded
+/usr/local/sbin/pft-audittrail: line 277: R: parameter null or not set
+  /etc/audit/rules.d/pft-audittrail.rules                    absent
+  /etc/audit/rules.d/zz-pft-audittrail-immutable.rules       absent
+  /etc/systemd/journald.conf.d/pft-audittrail.conf           absent
+  /var/log/journal/<machine-id>/fss                          absent
+  /var/lib/pft-audittrail                                    present
+  -> FAIL: rules files, journald drop-in, FSS key, state removed
+audit enabled=0, auditd active
+  -> FAIL: kernel auditing still enabled after the journald restart
+$ pft-audittrail check (expect FAIL: not applied)
+RESULT: FAIL (5) -> exit 1
+  -> PASS: check exit 1 after rollback
+
+== 3. re-apply (new FSS keys)
+$ pft-audittrail apply --yes --container postfiatd-sentry --key-out <root-only file, moved off-host after this run>
+[2026-10-26T03:29:24Z] loading rules (36 in /etc/audit/rules.d/pft-audittrail.rules, immutable=off)
+[2026-10-26T03:29:24Z] FSS keys generated (interval 15min); verification key written to --key-out file only (0600), sha256 prefix 0eeaa3b764a0: move it off-host and delete it here
+[2026-10-26T03:29:24Z] apply done: 36 rules loaded, journald sealed (Seal=yes, Storage=persistent)
+exit 0
+  -> PASS: re-apply exit 0
+$ pft-audittrail check
+pft-audittrail check - 2026-10-26T03:29:24Z
+  [PASS] auditd active
+  [PASS] audit enabled=1 (expected 1)
+  [INFO] lost events: 0
+  [PASS] loaded pft-* rules = rules file (36)
+  [PASS] loaded rules identical to apply snapshot
+  [PASS] journald drop-in Storage=persistent Seal=yes
+  [PASS] FSS sealing key present
+  [PASS] journalctl --verify: 7 files PASS, 3 sealed file(s) need the off-host key (--verify-key-file) for seal verification
+RESULT: PASS -> exit 0
+  -> PASS: check PASS after re-apply
+container after: 2026-10-24T22:25:26.906681347Z restarts=0
+  -> PASS: no node restart (StartedAt + RestartCount unchanged)
+
+drill-rollback: 6 passed, 3 failed

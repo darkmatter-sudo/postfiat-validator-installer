@@ -1,0 +1,64 @@
+# OS (verifier): Ubuntu 22.04.5 LTS | 2026-10-26T04:08:47Z | target sentry-host: Ubuntu 22.04.5 LTS
+script sha256: drill-tamper.sh 225b2aeef8e281dc48c9c282a1114f0a215014b7f1fd70079b62dfeb71e92ef5 | target pft-audittrail 95d99c7f49b8513633716be33d354bc8740e5272683390d1bee1bb713d3a94d7
+key: off-host copy, sha256 prefix 57ef84994b63 (content never printed)
+
+== 1. watched test file: canary write -> ausearch -k pft-canary (with auid)
+$ ssh sentry-host 'echo "<marker>" | sudo tee -a /var/lib/pft-audittrail/canary'   (ssh login user: root)
+$ ssh sentry-host 'sudo ausearch --input-logs -k pft-canary -i -ts recent' | grep -E 'type=(SYSCALL|PATH)' (last event)
+type=PATH msg=audit(<local-time-redacted>:5525) : item=1 name=/var/lib/pft-audittrail/canary mode=file,644 ouid=root ogid=root rdev=00:00 nametype=NORMAL cap_fp=none cap_fi=none cap_fe=0 cap_fver=0 cap_frootid=0 
+type=PATH msg=audit(<local-time-redacted>:5525) : item=0 name=/var/lib/pft-audittrail/ mode=dir,700 ouid=root ogid=root rdev=00:00 nametype=PARENT cap_fp=none cap_fi=none cap_fe=0 cap_fver=0 cap_frootid=0 
+type=SYSCALL msg=audit(<local-time-redacted>:5525) : arch=x86_64 syscall=openat success=yes exit=3 items=2 auid=root uid=root gid=root euid=root suid=root fsuid=root egid=root sgid=root fsgid=root tty=(none) comm=tee exe=/usr/bin/tee subj=unconfined key=pft-canary 
+  -> PASS: canary write logged under key pft-canary with a real auid
+$ ssh sentry-host 'sudo pft-audittrail report --since recent' | grep pft-canary
+| key | events | by auid | by command | objects |
+| pft-canary | 3 | root (3) | auditctl (2), tee (1) | (rule change) (2), /var/lib/pft-audittrail/canary (1) |
+  -> PASS: report counts the canary event
+
+== 2. sealed journal: off-host verify, byte-flip a COPY, live stays PASS
+sentry-host has 12 system journal files, 5 sealed (header 'Compatible flags: SEALED'); copied the sealed ones
+  -> PASS: target has sealed journal files
+$ journalctl --verify --verify-key=<off-host key> --file=sentry-host:system.journal
+PASS: system.journal
+=> No sealing yet, 44.009877s of entries not sealed.
+$ journalctl --verify --verify-key=<off-host key> --file=sentry-host:system@25c7092bf5494e7f86b73cc5721913f7-000000000006878c-00065eb5d2bfbc5b.journal
+File corruption detected at system@25c7092bf5494e7f86b73cc5721913f7-000000000006878c-00065eb5d2bfbc5b.journal:38f970 (of 8388608 bytes, 44%).
+FAIL: system@25c7092bf5494e7f86b73cc5721913f7-000000000006878c-00065eb5d2bfbc5b.journal (Bad message)
+$ journalctl --verify --verify-key=<off-host key> --file=sentry-host:system@25c7092bf5494e7f86b73cc5721913f7-0000000000068abe-00065eb5dfd27d6d.journal
+File corruption detected at system@25c7092bf5494e7f86b73cc5721913f7-0000000000068abe-00065eb5dfd27d6d.journal:38f970 (of 8388608 bytes, 44%).
+FAIL: system@25c7092bf5494e7f86b73cc5721913f7-0000000000068abe-00065eb5dfd27d6d.journal (Bad message)
+$ journalctl --verify --verify-key=<off-host key> --file=sentry-host:system@25c7092bf5494e7f86b73cc5721913f7-00000000000693d8-00065eb5efbbaefd.journal
+File corruption detected at system@25c7092bf5494e7f86b73cc5721913f7-00000000000693d8-00065eb5efbbaefd.journal:38f970 (of 8388608 bytes, 44%).
+FAIL: system@25c7092bf5494e7f86b73cc5721913f7-00000000000693d8-00065eb5efbbaefd.journal (Bad message)
+$ journalctl --verify --verify-key=<off-host key> --file=sentry-host:system@25c7092bf5494e7f86b73cc5721913f7-0000000000069a6b-00065eb5fcc46acd.journal
+PASS: system@25c7092bf5494e7f86b73cc5721913f7-0000000000069a6b-00065eb5fcc46acd.journal
+=> Validated from <local-time-redacted> to <local-time-redacted>, final 78.632ms entries not sealed.
+  -> FAIL: every sealed file PASSes off-host verification with the key
+flipped 1 byte (0x7b -> 0x84) at offset 8388608 of 16777216 in a COPY of system@25c7092bf5494e7f86b73cc5721913f7-0000000000069a6b-00065eb5fcc46acd.journal
+$ journalctl --verify --verify-key=<off-host key> --file=flipped.journal
+7ffff8: Invalid hash (a58e5eb8a7d56db5 vs. b3b19bb1741fdf2e)
+7ffff8: Invalid object contents: Bad message
+File corruption detected at flipped.journal:7ffff8 (of 16777216 bytes, 49%).
+FAIL: flipped.journal (Bad message)
+exit 1 (expect non-zero)
+  -> PASS: byte-flipped copy FAILs verification
+$ re-copy + verify the live sealed files of sentry-host
+  system.journal: => No sealing yet, 57.008257s of entries not sealed.
+  system@25c7092bf5494e7f86b73cc5721913f7-000000000006878c-00065eb5d2bfbc5b.journal: FAIL: system@25c7092bf5494e7f86b73cc5721913f7-000000000006878c-00065eb5d2bfbc5b.journal.again (Bad message)
+  system@25c7092bf5494e7f86b73cc5721913f7-0000000000068abe-00065eb5dfd27d6d.journal: FAIL: system@25c7092bf5494e7f86b73cc5721913f7-0000000000068abe-00065eb5dfd27d6d.journal.again (Bad message)
+  system@25c7092bf5494e7f86b73cc5721913f7-00000000000693d8-00065eb5efbbaefd.journal: FAIL: system@25c7092bf5494e7f86b73cc5721913f7-00000000000693d8-00065eb5efbbaefd.journal.again (Bad message)
+  system@25c7092bf5494e7f86b73cc5721913f7-0000000000069a6b-00065eb5fcc46acd.journal: => Validated from <local-time-redacted> to <local-time-redacted>, final 78.632ms entries not sealed.
+  -> FAIL: live sealed journal files still PASS
+$ ssh sentry-host 'sudo pft-audittrail check'
+  pft-audittrail check - 2026-10-26T04:09:13Z
+    [PASS] auditd active
+    [PASS] audit enabled=1 (expected 1)
+    [INFO] lost events: 0
+    [PASS] loaded pft-* rules = rules file (36)
+    [PASS] loaded rules identical to apply snapshot
+    [PASS] journald drop-in Storage=persistent Seal=yes
+    [PASS] FSS sealing key present
+    [PASS] journalctl --verify: 7 files PASS, 5 sealed file(s) need the off-host key (--verify-key-file) for seal verification
+  RESULT: PASS -> exit 0
+  -> PASS: pft-audittrail check PASS on sentry-host after the drills
+
+drill-tamper: 5 passed, 2 failed

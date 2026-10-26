@@ -1,0 +1,19 @@
+$ sha256sum (old = commit a7a5d40, fixed = working tree)
+95d99c7f49b8513633716be33d354bc8740e5272683390d1bee1bb713d3a94d7  old:pft-audittrail.sh
+451983cd8ebd36eafabd49f25ae4923100744d8ed02bfd6724236403d7a5036e  audittrail/pft-audittrail.sh
+$ PFT_AT_SCRIPT=<old> bash audittrail/tests/run-tests.sh
+# pft-audittrail unit tests - 2026-10-26T04:14:24Z - Ubuntu 22.04.5 LTS - bash 5.1.16(1)-release
+FAIL - rollback left journald on runtime rc=0
+FAIL - no archive
+FAIL - re-apply rc=0 mixed: mixed: file sealed:fake-sealing-key-836115013
+FAIL - re-key rc=0 mixed: mixed: file sealed:fake-sealing-key-2352556
+RESULT: 47 passed, 4 failed
+exit 1
+$ bash audittrail/tests/run-tests.sh   (fixed, 5 runs)
+RESULT: 51 passed, 0 failed
+RESULT: 51 passed, 0 failed
+RESULT: 51 passed, 0 failed
+RESULT: 51 passed, 0 failed
+RESULT: 51 passed, 0 failed
+$ shellcheck audittrail/*.sh audittrail/tests/run-tests.sh
+shellcheck: clean
