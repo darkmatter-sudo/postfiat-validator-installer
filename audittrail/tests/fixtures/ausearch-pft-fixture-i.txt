@@ -1,0 +1,19 @@
+----
+type=PROCTITLE msg=audit(10/26/26 04:11:19.027:90) : proctitle=auditctl -w /tmp/pft-at-fixture.Pb5W/watched -p wa -k pft-fixture 
+type=SYSCALL msg=audit(10/26/26 04:11:19.027:90) : arch=x86_64 syscall=sendto success=yes exit=1100 a0=0x4 a1=0x7ffcb73070c0 a2=0x44c a3=0x0 items=0 ppid=1062448 pid=1062449 auid=root uid=root gid=root euid=root suid=root fsuid=root egid=root sgid=root fsgid=root tty=(none) ses=9454 comm=auditctl exe=/usr/sbin/auditctl subj=unconfined key=(null) 
+type=CONFIG_CHANGE msg=audit(10/26/26 04:11:19.027:90) : auid=root ses=9454 subj=unconfined op=add_rule key=pft-fixture list=exit res=yes 
+----
+type=PROCTITLE msg=audit(10/26/26 04:11:32.063:133) : proctitle=auditctl -W /tmp/pft-at-fixture.Pb5W/watched -p wa -k pft-fixture 
+type=SOCKADDR msg=audit(10/26/26 04:11:32.063:133) : saddr={ saddr_fam=netlink nlnk-fam=16 nlnk-pid=0 } 
+type=SYSCALL msg=audit(10/26/26 04:11:32.063:133) : arch=x86_64 syscall=sendto success=yes exit=1100 a0=0x4 a1=0x7fff7631f5a0 a2=0x44c a3=0x0 items=0 ppid=1062554 pid=1062555 auid=root uid=root gid=root euid=root suid=root fsuid=root egid=root sgid=root fsgid=root tty=(none) ses=9461 comm=auditctl exe=/usr/sbin/auditctl subj=unconfined key=(null) 
+type=CONFIG_CHANGE msg=audit(10/26/26 04:11:32.063:133) : auid=root ses=9461 subj=unconfined op=remove_rule key=pft-fixture list=exit res=yes 
+----
+type=PROCTITLE msg=audit(10/26/26 04:11:32.119:146) : proctitle=auditctl -w /tmp/pft-at-fixture.Zyju/watched -p wa -k pft-fixture 
+type=SYSCALL msg=audit(10/26/26 04:11:32.119:146) : arch=x86_64 syscall=sendto success=yes exit=1100 a0=0x4 a1=0x7ffcfd681c10 a2=0x44c a3=0x0 items=0 ppid=1062562 pid=1062563 auid=root uid=root gid=root euid=root suid=root fsuid=root egid=root sgid=root fsgid=root tty=(none) ses=9461 comm=auditctl exe=/usr/sbin/auditctl subj=unconfined key=(null) 
+type=CONFIG_CHANGE msg=audit(10/26/26 04:11:32.119:146) : auid=root ses=9461 subj=unconfined op=add_rule key=pft-fixture list=exit res=yes 
+----
+type=PROCTITLE msg=audit(10/26/26 04:11:32.123:149) : proctitle=bash -s 
+type=PATH msg=audit(10/26/26 04:11:32.123:149) : item=1 name=/tmp/pft-at-fixture.Zyju/watched inode=1290697 dev=08:01 mode=file,644 ouid=root ogid=root rdev=00:00 nametype=NORMAL cap_fp=none cap_fi=none cap_fe=0 cap_fver=0 cap_frootid=0 
+type=PATH msg=audit(10/26/26 04:11:32.123:149) : item=0 name=/tmp/pft-at-fixture.Zyju/ inode=1290696 dev=08:01 mode=dir,700 ouid=root ogid=root rdev=00:00 nametype=PARENT cap_fp=none cap_fi=none cap_fe=0 cap_fver=0 cap_frootid=0 
+type=CWD msg=audit(10/26/26 04:11:32.123:149) : cwd=/root 
+type=SYSCALL msg=audit(10/26/26 04:11:32.123:149) : arch=x86_64 syscall=openat success=yes exit=3 a0=AT_FDCWD a1=0x55f0afad9860 a2=O_WRONLY|O_CREAT|O_APPEND a3=0x1b6 items=2 ppid=1062497 pid=1062551 auid=root uid=root gid=root euid=root suid=root fsuid=root egid=root sgid=root fsgid=root tty=(none) ses=9461 comm=bash exe=/usr/bin/bash subj=unconfined key=pft-fixture 
