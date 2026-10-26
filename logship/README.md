@@ -83,6 +83,7 @@ missing. Mutant M5 drops the stale branch, and the suite must catch it. To fix t
 | Local archived journal file with the marker removed: local query 0, peer copy 1, restored byte-identical (sha256), both directions | `drill-delete-sentry-1.log`, `drill-delete-validator-1.log` |
 | No client cert and a rogue-CA cert with the same CN: HTTP 401, nothing stored; real cert: 202, stored | `drill-badcert-1-FAIL-get-probe.log`, `drill-badcert-2..4.log` |
 | 1h lag, 60 samples per host: validator median 0 s, p95 1 s, max 2 s; sentry median 0 s, p95 1 s, max 1 s | `lag-1h.log` |
+| 10-minute peer outage (sentry's journal-remote stopped, nodes untouched): `check` exits 1 during it, `PFTLogshipBroken` goes pending, then firing (suppressed by the drill's silence, 0 ntfy bridge lines). After the receiver is back, markers 1..10 each arrive exactly once, `check` PASS, rule back to inactive | `drill-outage-2.log` (548 s outage, catch-up 22 s), `drill-outage-2-uploader.log`. Run 1 (`drill-outage-1-*.log`, 544 s outage, catch-up 351 s) passed every live check but its marker checker compared as strings and printed FAIL; fixed (two-digit self-test case), re-checked on the run 1 data, then run 2 |
 
 Found while building, then fixed and verified:
 
@@ -101,7 +102,9 @@ Found while building, then fixed and verified:
 - **Root before catch-up.** Anything written in the seconds between a log line and its upload (median lag 0 s,
   p95 1 s here) can be removed by an attacker who already has root, before it leaves the host. During a peer outage
   that window is the whole outage: entries stay queued locally until the peer is back. `PFTLogshipBroken` fires
-  after 5 minutes of that.
+  after 5 minutes of that. Catch-up after a ~9-minute outage took 351 s in run 1 and 22 s in run 2. In both runs
+  journal-upload reconnected within seconds (`drill-outage-2-uploader.log`), and the logs do not show why the
+  backlog upload took so much longer in run 1. Plan for minutes, not seconds.
 - **Peer compromise.** The peer holds a full copy of this host's journal (config paths, auditd events, node logs),
   so root on either host can read both journals. The pair CA key lives on one host. Whoever holds it can issue a
   client cert and upload forged entries under the other host's name. Received files sit in

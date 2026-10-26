@@ -1,0 +1,56 @@
+$ TZ=UTC systemctl show systemd-journal-upload -p NRestarts -p ActiveEnterTimestamp; journalctl -u systemd-journal-upload --utc, windows run 1 (13:32-13:39Z) and run 2 (14:17-14:19Z)
+OS: Ubuntu 22.04.5 LTS
+NRestarts=104
+ActiveEnterTimestamp=Mon 2026-10-26 14:17:42 UTC
+== window 2026-10-26 13:32:00 .. 2026-10-26 13:39:00 UTC
+2026-10-26T13:32:01+0000 <host> systemd[1]: systemd-journal-upload.service: Scheduled restart job, restart counter is at 48.
+2026-10-26T13:32:01+0000 <host> systemd[1]: Stopped Journal Remote Upload Service.
+2026-10-26T13:32:01+0000 <host> systemd[1]: Started Journal Remote Upload Service.
+2026-10-26T13:32:01+0000 <host> systemd-journal-upload[1267713]: Upload to https://<redacted-ip>:19532/upload failed: Failed to connect to <redacted-ip> port 19532 after 5 ms: Connection refused
+2026-10-26T13:32:01+0000 <host> systemd[1]: systemd-journal-upload.service: Main process exited, code=exited, status=1/FAILURE
+2026-10-26T13:32:01+0000 <host> systemd[1]: systemd-journal-upload.service: Failed with result 'exit-code'.
+2026-10-26T13:32:12+0000 <host> systemd[1]: systemd-journal-upload.service: Scheduled restart job, restart counter is at 49.
+2026-10-26T13:32:12+0000 <host> systemd[1]: Stopped Journal Remote Upload Service.
+2026-10-26T13:32:12+0000 <host> systemd[1]: Started Journal Remote Upload Service.
+2026-10-26T13:32:13+0000 <host> systemd-journal-upload[1267793]: Upload to https://<redacted-ip>:19532/upload failed: Failed to connect to <redacted-ip> port 19532 after 7 ms: Connection refused
+2026-10-26T13:32:13+0000 <host> systemd[1]: systemd-journal-upload.service: Main process exited, code=exited, status=1/FAILURE
+2026-10-26T13:32:13+0000 <host> systemd[1]: systemd-journal-upload.service: Failed with result 'exit-code'.
+2026-10-26T13:32:23+0000 <host> systemd[1]: systemd-journal-upload.service: Scheduled restart job, restart counter is at 50.
+2026-10-26T13:32:23+0000 <host> systemd[1]: Stopped Journal Remote Upload Service.
+2026-10-26T13:32:23+0000 <host> systemd[1]: Started Journal Remote Upload Service.
+2026-10-26T13:32:23+0000 <host> systemd-journal-upload[1267801]: Upload to https://<redacted-ip>:19532/upload failed: Failed to connect to <redacted-ip> port 19532 after 2 ms: Connection refused
+2026-10-26T13:32:23+0000 <host> systemd[1]: systemd-journal-upload.service: Main process exited, code=exited, status=1/FAILURE
+2026-10-26T13:32:23+0000 <host> systemd[1]: systemd-journal-upload.service: Failed with result 'exit-code'.
+2026-10-26T13:32:33+0000 <host> systemd[1]: systemd-journal-upload.service: Scheduled restart job, restart counter is at 51.
+2026-10-26T13:32:33+0000 <host> systemd[1]: Stopped Journal Remote Upload Service.
+2026-10-26T13:32:33+0000 <host> systemd[1]: Started Journal Remote Upload Service.
+2026-10-26T13:32:34+0000 <host> systemd-journal-upload[1267877]: Upload to https://<redacted-ip>:19532/upload failed: Failed to connect to <redacted-ip> port 19532 after 2 ms: Connection refused
+2026-10-26T13:32:34+0000 <host> systemd[1]: systemd-journal-upload.service: Main process exited, code=exited, status=1/FAILURE
+2026-10-26T13:32:34+0000 <host> systemd[1]: systemd-journal-upload.service: Failed with result 'exit-code'.
+2026-10-26T13:32:44+0000 <host> systemd[1]: systemd-journal-upload.service: Scheduled restart job, restart counter is at 52.
+2026-10-26T13:32:44+0000 <host> systemd[1]: Stopped Journal Remote Upload Service.
+2026-10-26T13:32:44+0000 <host> systemd[1]: Started Journal Remote Upload Service.
+== window 2026-10-26 14:17:00 .. 2026-10-26 14:19:00 UTC
+2026-10-26T14:17:06+0000 <host> systemd[1]: systemd-journal-upload.service: Scheduled restart job, restart counter is at 101.
+2026-10-26T14:17:06+0000 <host> systemd[1]: Stopped Journal Remote Upload Service.
+2026-10-26T14:17:06+0000 <host> systemd[1]: Started Journal Remote Upload Service.
+2026-10-26T14:17:10+0000 <host> systemd-journal-upload[1289884]: Upload to https://<redacted-ip>:19532/upload failed: Failed to connect to <redacted-ip> port 19532 after 3 ms: Connection refused
+2026-10-26T14:17:10+0000 <host> systemd[1]: systemd-journal-upload.service: Main process exited, code=exited, status=1/FAILURE
+2026-10-26T14:17:10+0000 <host> systemd[1]: systemd-journal-upload.service: Failed with result 'exit-code'.
+2026-10-26T14:17:10+0000 <host> systemd[1]: systemd-journal-upload.service: Consumed 1.546s CPU time.
+2026-10-26T14:17:20+0000 <host> systemd[1]: systemd-journal-upload.service: Scheduled restart job, restart counter is at 102.
+2026-10-26T14:17:20+0000 <host> systemd[1]: Stopped Journal Remote Upload Service.
+2026-10-26T14:17:20+0000 <host> systemd[1]: systemd-journal-upload.service: Consumed 1.546s CPU time.
+2026-10-26T14:17:20+0000 <host> systemd[1]: Started Journal Remote Upload Service.
+2026-10-26T14:17:21+0000 <host> systemd-journal-upload[1289931]: Upload to https://<redacted-ip>:19532/upload failed: Failed to connect to <redacted-ip> port 19532 after 111 ms: Connection refused
+2026-10-26T14:17:21+0000 <host> systemd[1]: systemd-journal-upload.service: Main process exited, code=exited, status=1/FAILURE
+2026-10-26T14:17:21+0000 <host> systemd[1]: systemd-journal-upload.service: Failed with result 'exit-code'.
+2026-10-26T14:17:31+0000 <host> systemd[1]: systemd-journal-upload.service: Scheduled restart job, restart counter is at 103.
+2026-10-26T14:17:31+0000 <host> systemd[1]: Stopped Journal Remote Upload Service.
+2026-10-26T14:17:31+0000 <host> systemd[1]: Started Journal Remote Upload Service.
+2026-10-26T14:17:31+0000 <host> systemd-journal-upload[1290039]: Upload to https://<redacted-ip>:19532/upload failed: Failed to connect to <redacted-ip> port 19532 after 27 ms: Connection refused
+2026-10-26T14:17:32+0000 <host> systemd[1]: systemd-journal-upload.service: Main process exited, code=exited, status=1/FAILURE
+2026-10-26T14:17:32+0000 <host> systemd[1]: systemd-journal-upload.service: Failed with result 'exit-code'.
+2026-10-26T14:17:42+0000 <host> systemd[1]: systemd-journal-upload.service: Scheduled restart job, restart counter is at 104.
+2026-10-26T14:17:42+0000 <host> systemd[1]: Stopped Journal Remote Upload Service.
+2026-10-26T14:17:42+0000 <host> systemd[1]: Started Journal Remote Upload Service.
