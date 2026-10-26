@@ -1,0 +1,9 @@
+pft SLO drill (validator) - 2026-10-26T00:53:09Z - Ubuntu 22.04.5 LTS - container postfiatd, stop 7m x2
+script sha256: drill.sh 129d53d033fa222c2855e946d8f7b998a9e34cc09ede89be4ba138673bf641bc | drill_check.py 51611c539a37621fbf49505fbdc89569e0bb13f5bb80828e9922ef6ca1a31346 | slo.rules.yml f326d66ac05eddfd294257fdc2972a3b220ee94bd5b0f7134650ecfe101c6e5e
+
+== 0. preflight
+  pft-maint: window=none locks=0
+  r1h=0.15736040609137056 r6h=0.02219040801717967
+  6h error ratio 0.02219040801717967 + about 9 bad minutes from drill A would reach the slow-burn line
+  (0.0300): wait until earlier burn leaves the 6 h window - stopping
+exit 4

@@ -1,0 +1,21 @@
+# OS: Ubuntu 22.04.5 LTS | 2026-10-26T00:51:21Z | slo/drill.sh 0562489c598f8be4011aaacb92fffb8566f7442f4249e475f41ec81d9b808d84
+== T1 silence_nonslo 1 -> id, matcher, end ~ +1 min, then DELETE
+id=02f7cc91 (non-empty: yes)
+{"state":"active","matchers":[{"isEqual":false,"isRegex":true,"name":"alertname","value":"PFTSLO.*"}],"startsAt":"2026-10-26T00:51:22.016Z","endsAt":"2026-10-26T00:52:21.000Z"}
+DELETE HTTP 200
+state after delete: expired
+== T2 silence_nonslo against a dead Alertmanager -> empty id
+id='' (empty: yes)
+== T3 Prometheus non-SLO active list (live; PFTContainerRestarted expected while it fires)
+
+== T4 same jq on a synthetic answer with SLO + non-SLO + empty
+PFTNodeNotFull
+[] (expect [])
+== T5 until-maint test on synthetic sample lines
+maint=0 -> stop early: no
+maint=1 -> stop early: yes
+error sample -> stop early: no
+== T6 checker ignores B-arm: real samples.jsonl with the first B sample relabelled B-arm
+{"t":1792974148,"phase":"B-arm","maint":0}
+[PASS] B: pft:sli_maint:bool == 1 in every sample (0/41 samples not maint)
+RESULT: PASS - 13/13 checks passed

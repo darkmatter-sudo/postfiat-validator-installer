@@ -14,8 +14,14 @@
 # 2  B, then 2 min of normal samples, then A. drill_check.py samples Prometheus every 15 s (read-only).
 # 3  before the bridge goes back to the real topic: no PFTSLO* alert pending/firing in Prometheus or Alertmanager,
 #    and the "[RESOLVED] PFTSLOFastBurn" message seen on the topic (or 3 min after Alertmanager dropped it).
-# 4  restore, expire the silence if no non-SLO alert is active, read the topic back, run drill_check.py.
-# Refuses to start while a pft-maint data-collection lock or window is active, or the node is not full.
+# 4  restore. run-stack.sh recreates Alertmanager, which drops every silence, so the non-SLO silence is created
+#    again on the new Alertmanager straight away (before Prometheus re-sends a still-firing alert such as
+#    PFTContainerRestarted). It is expired only if Prometheus has no non-SLO alert pending/firing, else left to run
+#    out (60 min). Then read the topic back and run drill_check.py.
+# B waits until pft:sli_maint is 1 (phase B-arm, not checked) before the B samples start: the exporter needs one
+# scrape to see a new window.
+# Refuses to start while a pft-maint data-collection lock or window is active, the node is not full, or earlier burn in
+# the 6 h window plus drill A would reach the slow-burn line.
 # Output: DIR/samples.jsonl, DIR/ntfy.jsonl (titles only), DIR/check.txt. Topic printed as <redacted>.
 set -euo pipefail
 CONTAINER=postfiatd; STOP_MIN=7; OUT=""
@@ -41,7 +47,7 @@ SAMPLES="$OUT/samples.jsonl"; NTFY="$OUT/ntfy.jsonl"
 R() { sudo -u "$RUSER" ssh -o LogLevel=ERROR -o ConnectTimeout=10 -o BatchMode=yes relay "$@"; }
 topic="slodrill-$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 TDIR="$(mktemp -d /run/slo-drill.XXXXXX)"; TBRIDGE="$TDIR/ntfy.env"
-since="$(date -u +%s)"; WINDOW=0; RESTORED=0; SIL=""; WREDIR=0; MENV_CREATED=0; BRIDGE_REDIR=0
+since="$(date -u +%s)"; WINDOW=0; RESTORED=0; SIL=""; SIL_SLO=""; WREDIR=0; MENV_CREATED=0; BRIDGE_REDIR=0
 ts() { date -u +%FT%TZ; }
 shafile() { echo "$TDIR/$(basename "$1").sha"; }
 red() { sed -E "s/by [a-z_][a-z0-9_-]*/by <user>/g; s/$topic/<redacted>/g"; }
@@ -50,17 +56,27 @@ node_state() {
     -d '{"method":"server_info","params":[{}]}' http://127.0.0.1:5005/ 2>/dev/null \
     | jq -r '.result.info.server_state // "unreachable"' 2>/dev/null || echo unreachable
 }
-poll() { # poll PHASE SECONDS [until-full]: one sample every 15 s; with until-full stop early once the node is full
+poll() { # poll PHASE SECONDS [until-full|until-maint]: one sample every 15 s; stop early once the node is full /
+          # pft:sli_maint is 1 (and then return 0; return 1 if that never happened)
   local phase="$1" end=$(( $(date +%s) + $2 )) st
   while [ "$(date +%s)" -lt "$end" ]; do
     st="$(node_state)"
     python3 "$CHECK" sample "$PROM" "$phase" "$st" >> "$SAMPLES"
     tail -n 1 "$SAMPLES" | jq -rc '"  \(.t|todate) \(.phase) node=\(.node) maint=\(.maint) bad=\(.bad) r5m=\(.r5m) r1h=\(.r1h) alerts=\(.alerts // .error)"'
     [ "${3:-}" = until-full ] && [ "$st" = full ] && return 0
+    [ "${3:-}" = until-maint ] && [ "$(tail -n 1 "$SAMPLES" | jq -r '.maint')" = 1 ] && return 0
     sleep 15
   done
-  [ "${3:-}" != until-full ]
+  [ -z "${3:-}" ]
 }
+silence_slo() { # silence_slo false|true MINUTES COMMENT -> silence id (empty on failure)
+  # false = every alert EXCEPT PFTSLO* (the drill's main silence), true = only PFTSLO* (drill tail)
+  curl -fsS -X POST -H 'Content-Type: application/json' "$AM/api/v2/silences" -d "$(jq -nc --arg s "$(ts)" \
+    --arg e "$(date -u -d "+$2 min" +%FT%TZ)" --arg c "$3" --argjson eq "$1" '{matchers:[{name:"alertname",
+    value:"PFTSLO.*",isRegex:true,isEqual:$eq}], startsAt:$s, endsAt:$e, createdBy:"slo drill.sh", comment:$c}')" \
+    | jq -r '.silenceID // empty'
+}
+silence_nonslo() { silence_slo false "$@"; }
 slo_active() { # count of PFTSLO* pending/firing in Prometheus or active in Alertmanager; 99 if either API fails
   local p a
   p="$(curl -fsS --max-time 10 "$PROM/api/v1/alerts" | jq -r '.data.alerts[].labels.alertname')" || { echo 99; return; }
@@ -83,6 +99,15 @@ restore() {
     echo "\$ NTFY_ENV_FILE=<real bridge env> alerts/run-stack.sh up"
     NTFY_ENV_FILE="$REAL_BRIDGE_ENV" DOCKER=docker bash "$ROOT/alerts/run-stack.sh" up 2>&1 | sed -E 's|/home/[^ ]*|<home>|g' | tail -n 6 || true
     echo "restored pft-alert-bridge: mount source is the real env file: $([ "$(bridge_src)" = "$(readlink -f "$REAL_BRIDGE_ENV")" ] && echo yes || echo NO)"
+    if [ -n "$SIL" ]; then  # run-stack.sh recreated Alertmanager: the drill's silence is gone with it
+      local _; for _ in $(seq 1 30); do curl -fsS --max-time 2 -o /dev/null "$AM/-/ready" 2>/dev/null && break; sleep 1; done
+      SIL="$(silence_nonslo 60 "planned: SLO drill tail after restore (non-SLO alerts only)")"
+      echo "Alertmanager recreated by run-stack.sh: non-SLO silence created again: ${SIL:+${SIL:0:8} for 60m}${SIL:-FAILED}"
+    fi
+    if [ -n "$SIL_SLO" ] || [ "$(slo_active)" -ne 0 ]; then  # a PFTSLO* alert would page the real topic now
+      SIL_SLO="$(silence_slo true 60 "SLO drill tail after restore (PFTSLO* still active)")"
+      echo "PFTSLO* still active or tail silence existed: SLO silence created again: ${SIL_SLO:+${SIL_SLO:0:8} for 60m}${SIL_SLO:-FAILED}"
+    fi
   fi
   local f
   for f in $ENVS; do
@@ -117,6 +142,17 @@ if ! curl -fsS --max-time 5 -o /dev/null "$AM/-/ready" || ! curl -fsS --max-time
 fi
 [ "$(slo_active)" -eq 0 ] || { echo "  a PFTSLO* alert is already active - stopping"; exit 4; }
 echo "  r1h=$(curl -fsS "$PROM/api/v1/query?query=pft:sli_error:ratio_rate1h" | jq -r '.data.result[0].value[1]') r6h=$(curl -fsS "$PROM/api/v1/query?query=pft:sli_error:ratio_rate6h" | jq -r '.data.result[0].value[1]')"
+# Drill A adds about STOP_MIN + 1 bad minutes. On top of earlier burn still inside the 6 h window that can cross the
+# slow-burn line (6x budget over 6 h), and PFTSLOSlowBurn then stays active long after the drill. Refuse instead.
+q() { curl -fsS --max-time 10 "$PROM/api/v1/query" --data-urlencode "query=$1" | jq -r '.data.result[0].value[1] // empty'; }
+R6="$(q pft:sli_error:ratio_rate6h)"; OBJ="$(q pft:slo_objective:ratio)"
+if [ -z "$R6" ] || [ -z "$OBJ" ]; then echo "  could not read the 6h ratio / objective - stopping" >&2; exit 3; fi
+if ! awk -v r="$R6" -v o="$OBJ" -v m="$STOP_MIN" 'BEGIN { exit !(r + (m + 2) / 360 < 6 * (1 - o)) }'; then
+  echo "  6h error ratio $R6 + about $((STOP_MIN + 2)) bad minutes from drill A would reach the slow-burn line"
+  echo "  ($(awk -v o="$OBJ" 'BEGIN { printf "%.4f", 6 * (1 - o) }')): wait until earlier burn leaves the 6 h window - stopping"
+  exit 4
+fi
+echo "  slow-burn headroom: 6h ratio $R6 + $((STOP_MIN + 2))/360 < $(awk -v o="$OBJ" 'BEGIN { printf "%.4f", 6 * (1 - o) }')"
 echo "  notifier timers: $(systemctl list-timers --all --no-legend 2>/dev/null | grep -oE '(pft|postfiat)[a-z-]*\.timer' | sort -u | tr '\n' ' ')"
 echo "  containers: $(docker ps --format '{{.Names}}' | tr '\n' ' ')"
 
@@ -139,15 +175,14 @@ BRIDGE_REDIR=1
 NTFY_ENV_FILE="$TBRIDGE" DOCKER=docker bash "$ROOT/alerts/run-stack.sh" up 2>&1 | red | sed -E 's|/home/[^ ]*|<home>|g' | tail -n 6
 [ "$(bridge_src)" = "$TBRIDGE" ] || { echo "  bridge not on the throwaway file - stopping"; exit 1; }
 echo "  pft-alert-bridge -> throwaway (mount source checked)"
-SIL="$(curl -fsS -X POST -H 'Content-Type: application/json' "$AM/api/v2/silences" -d "$(jq -nc --arg s "$(ts)" \
-  --arg e "$(date -u -d '+90 min' +%FT%TZ)" '{matchers:[{name:"alertname",value:"PFTSLO.*",isRegex:true,isEqual:false}],
-  startsAt:$s, endsAt:$e, createdBy:"slo drill.sh", comment:"planned: SLO drill node stops (non-SLO alerts only)"}')" | jq -r '.silenceID // empty')"
+SIL="$(silence_nonslo 90 "planned: SLO drill node stops (non-SLO alerts only)")"
 [ -n "$SIL" ] || { echo "  Alertmanager silence not created - stopping"; exit 3; }
 echo "  Alertmanager silence ${SIL:0:8} alertname!~PFTSLO.* for 90m"
 
 echo; echo "== 2. drill B: planned stop inside a maintenance window"
 echo "\$ pft-maint start --ttl 25m --reason \"[DRILL] slo planned stop\""
 pft-maint start --ttl 25m --reason "[DRILL] slo planned stop" 2>&1 | red; WINDOW=1
+poll B-arm 120 until-maint || { echo "pft:sli_maint not 1 within 120 s of pft-maint start - stopping"; exit 1; }
 poll B 30
 echo "$(ts) \$ docker stop $CONTAINER"; docker stop "$CONTAINER" >/dev/null
 poll B $((STOP_MIN * 60))
@@ -174,17 +209,19 @@ until [ "$(date +%s)" -ge "$end" ]; do
   grep -q '"\[RESOLVED\] PFTSLOFastBurn"' "$NTFY" && { echo "  $(ts) [RESOLVED] PFTSLOFastBurn seen on the topic"; break; }
   sleep 20
 done
-[ "$(slo_active)" -eq 0 ] || { echo "  PFTSLO* still active - extending silence to all SLO alerts for 60m"
-  curl -fsS -X POST -H 'Content-Type: application/json' "$AM/api/v2/silences" -d "$(jq -nc --arg s "$(ts)" \
-    --arg e "$(date -u -d '+60 min' +%FT%TZ)" '{matchers:[{name:"alertname",value:"PFTSLO.*",isRegex:true,isEqual:true}],
-    startsAt:$s, endsAt:$e, createdBy:"slo drill.sh", comment:"SLO drill tail"}')" | jq -r '"  silence \(.silenceID[0:8])"'; }
+if [ "$(slo_active)" -ne 0 ]; then
+  SIL_SLO="$(silence_slo true 60 "SLO drill tail")"
+  echo "  PFTSLO* still active - SLO silence ${SIL_SLO:0:8} for 60m (created again after restore)"
+fi
 
 echo; echo "== 5. restore + check"
 restore
-active="$(curl -fsS "$AM/api/v2/alerts" | jq -r '[.[] | .labels.alertname] | unique | join(",")')"
-echo "Alertmanager alerts (any state): ${active:-none}"
-if [ -z "$active" ]; then curl -s -X DELETE "$AM/api/v2/silence/$SIL" -o /dev/null -w "Alertmanager silence ${SIL:0:8} expired (HTTP %{http_code})\n"
-else echo "Alertmanager silence ${SIL:0:8} left to run out at its end time"; fi
+# a fresh Alertmanager holds no alerts yet, so ask Prometheus what is still pending/firing
+active="$(curl -fsS "$PROM/api/v1/alerts" | jq -r '[.data.alerts[].labels.alertname | select(startswith("PFTSLO") | not)] | unique | join(",")')" || active="unknown (Prometheus API failed)"
+echo "non-SLO alerts pending/firing in Prometheus: ${active:-none}"
+if [ -z "$SIL" ]; then echo "no Alertmanager silence to expire"
+elif [ -z "$active" ]; then curl -s -X DELETE "$AM/api/v2/silence/$SIL" -o /dev/null -w "Alertmanager silence ${SIL:0:8} expired (HTTP %{http_code})\n"
+else echo "Alertmanager silence ${SIL:0:8} left to run out at its end time (60m)"; fi
 echo "node: $(node_state) | pft-maint: $(pft-maint status --json | jq -r .window)"
 sleep 5; read_topic
 echo "throwaway topic read back (titles only):"; jq -rc '"  \(.time|todate) \(.title)"' "$NTFY"

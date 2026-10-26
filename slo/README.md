@@ -125,6 +125,35 @@ tested offline in `tests/test_drill_check.py`. The samplers are tested against r
 checker against a synthetic timeline with one fault injected per test (maintenance not excluded, SLO alert or
 message during B, firing without pending, stale or missing `[FIRING]`, never resolved, too many failed polls).
 
+### Run 1 (2026-10-26, FAIL 12/13) and what it changed
+
+Log: [`logs/slo/drill-1-fail.log`](../logs/slo/drill-1-fail.log), with `drill-1-samples.jsonl`, `drill-1-ntfy.jsonl`
+and `drill-1-check.txt`. Drill A worked as designed: `pft:sli_bad:bool` was 1 in 27/28 down samples,
+`PFTSLOFastBurn` went pending at 00:39:34Z, firing at 00:41:21Z (107 s later), `[FIRING]` reached the throwaway
+topic at 00:41:32Z and `[RESOLVED]` at 00:48:31Z. Drill B recorded `pft:sli_bad:bool` 0 in all 42 samples, with no
+`PFTSLO*` alert and no message. Three problems surfaced, and all three are fixed in `drill.sh`:
+
+1. **The checker FAIL.** The first B sample (00:22:28Z, 3 s after `pft-maint start`, the node still `full`) had
+   `pft:sli_maint:bool` 0, because the exporter needs one scrape to see a new window. B now starts with a `B-arm`
+   phase that waits for `pft:sli_maint:bool` 1 (up to 120 s) before the node is stopped. The checker ignores
+   `B-arm` and stays strict for `B`.
+2. **The silence was lost on restore.** `run-stack.sh up` recreates Alertmanager, and every silence goes with it
+   (the expiry at the end returned HTTP 404). `PFTContainerRestarted` was still firing in Prometheus at that
+   moment, so the fresh Alertmanager would have routed it to the real topic. It was caught by hand within
+   about 40 s: a silence was posted before Alertmanager received the alert, the alert showed as `suppressed`, and
+   the bridge sent nothing. `restore` now creates the non-SLO silence again on the new Alertmanager, and also an
+   SLO silence if a `PFTSLO*` alert is still active or a tail silence existed. Whether to expire it at the end is
+   decided from Prometheus, because a fresh Alertmanager holds no alerts yet.
+3. **No slow-burn headroom check.** Run 1 left about 8 bad minutes in the 6 h window (`ratio_rate6h` 0.0222). A
+   second run inside 6 h would add about 9 more and cross the slow-burn line (0.03), and `PFTSLOSlowBurn` would
+   then stay active past the drill. The preflight now refuses (exit 4) when `ratio_rate6h + (stop-min + 2)/360`
+   reaches `6 * (1 - objective)`: see `logs/slo/drill-guard-3-slowburn.log`.
+
+The new pieces were tested before any further live run: `logs/slo/drill-fix-tests-1.log` and `-2.log`, and the offline suite again after the change (`logs/slo/check-4.log`, PASS incl. M1-M3) (both
+silence variants against the live Alertmanager, a dead Alertmanager giving an empty id, the Prometheus filter on
+synthetic answers, the `until-maint` stop condition, and the checker on run 1's samples with the pre-arm sample
+relabelled, which gives 13/13).
+
 ## Deploy
 
 ```bash

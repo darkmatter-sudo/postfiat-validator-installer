@@ -1,0 +1,164 @@
+# OS: Ubuntu 22.04.5 LTS | 2026-10-26T00:53:42Z
+$ cat slo/check.sh
+#!/usr/bin/env bash
+# Offline checks for slo/: promtool check + test rules, CLI/exporter unit tests, ruff, shellcheck,
+# plus three mutation controls that must FAIL (tests that cannot fail prove nothing):
+#   M1 rules: drop the maintenance exclusion from pft:sli_bad:bool -> promtool maintenance test fails
+#   M2 CLI:   classify() ignores maintenance                     -> unit tests fail
+#   M3 drill: drill_check.py accepts a stale [FIRING] message    -> drill checker tests fail
+# Usage: check.sh        Env: DOCKER (default "docker", e.g. DOCKER="sudo docker"), PROM_IMAGE
+# Exit 0 only if every check passes and all three mutations are caught.
+set -uo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+read -r -a DOCKER <<< "${DOCKER:-docker}"
+PROM_IMAGE="${PROM_IMAGE:-prom/prometheus:v3.5.0}"
+fail=0
+step() { printf '\n== %s\n' "$*"; }
+promtool() { "${DOCKER[@]}" run --rm -v "$1:/w:ro" -w /w --entrypoint promtool "$PROM_IMAGE" "${@:2}"; }
+
+cd "$HERE" || exit 2
+step "tests.yml is up to date with gen_tests.py"
+if python3 gen_tests.py | cmp -s - tests.yml; then echo "tests.yml matches"; else echo "FAIL: regenerate tests.yml"; fail=1; fi
+
+step "promtool check rules slo.rules.yml"
+promtool "$HERE" check rules slo.rules.yml || fail=1
+
+step "promtool test rules tests.yml"
+promtool "$HERE" test rules tests.yml || fail=1
+
+step "unit tests (python3 -m unittest)"
+python3 -m unittest discover -s tests -v 2>&1 || fail=1
+
+step "ruff check (slo/)"
+ruff check . || fail=1
+
+step "shellcheck"
+if shellcheck ./*.sh; then echo "shellcheck clean:" ./*.sh; else fail=1; fi
+
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+chmod 755 "$tmp"   # promtool runs as nobody in the container; a 700 dir would "fail" for the wrong reason
+
+step "M1 mutation: pft:sli_bad:bool without the maintenance exclusion (promtool must FAIL)"
+cp slo.rules.yml tests.yml "$tmp/"
+sed -i 's|expr: (1 - pft:sli_good:bool) \* pft:sli_eligible:bool|expr: (1 - pft:sli_good:bool)|' "$tmp/slo.rules.yml"
+if cmp -s slo.rules.yml "$tmp/slo.rules.yml"; then echo "FAIL: mutation did not apply"; fail=1
+elif promtool "$tmp" test rules tests.yml > "$tmp/m1.out" 2>&1; then echo "FAIL: mutant passed"; fail=1
+elif grep -q 'name: maintenance-window' "$tmp/m1.out"; then
+  grep -E '^ +(name|alertname): ' "$tmp/m1.out" | sed 's/^ *//; s/, *$//' | paste - - | sort -u
+  echo "caught: maintenance-window test failed on the mutant"
+else echo "FAIL: mutant failed for another reason:"; head -5 "$tmp/m1.out"; fail=1; fi
+
+step "M2 mutation: CLI classify() ignores maintenance (unit tests must FAIL)"
+mkdir -p "$tmp/m2"
+cp -r tests pft_slo_report.py drill_check.py "$tmp/m2/"
+sed -i 's|    if comp\["maint"\].get(t) == 1 or any(s <= t < e for s, e in maint_spans):|    if False:|' \
+  "$tmp/m2/pft_slo_report.py"
+sed -i 's|"\.\.", "\.\.", "exporter"|"'"$HERE"'", "..", "exporter"|' "$tmp/m2/tests/test_exporter_maint.py"
+if cmp -s pft_slo_report.py "$tmp/m2/pft_slo_report.py"; then echo "FAIL: mutation did not apply"; fail=1
+elif (cd "$tmp/m2" && python3 -m unittest discover -s tests > "$tmp/m2.out" 2>&1); then echo "FAIL: mutant passed"; fail=1
+elif grep -q '^ERROR:' "$tmp/m2.out"; then echo "FAIL: mutant errored (not an assertion):"; grep '^ERROR:' "$tmp/m2.out"; fail=1
+else grep -E '^FAIL:' "$tmp/m2.out" | sed 's/ (.*//'; echo "caught: assertion failures only"; fi
+
+step "M3 mutation: drill checker accepts a [FIRING] message from before the alert fired (tests must FAIL)"
+mkdir -p "$tmp/m3"
+cp -r tests drill_check.py "$tmp/m3/"
+sed -i 's|any(m\["time"\] >= fire\["t"\] - 60 for m in fm)|bool(fm)|' "$tmp/m3/drill_check.py"
+if cmp -s drill_check.py "$tmp/m3/drill_check.py"; then echo "FAIL: mutation did not apply"; fail=1
+elif (cd "$tmp/m3" && python3 -m unittest discover -s tests -p 'test_drill_check.py' > "$tmp/m3.out" 2>&1); then echo "FAIL: mutant passed"; fail=1
+elif grep -q '^ERROR:' "$tmp/m3.out"; then echo "FAIL: mutant errored (not an assertion):"; grep '^ERROR:' "$tmp/m3.out"; fail=1
+else grep -E '^FAIL:' "$tmp/m3.out" | sed 's/ (.*//'; echo "caught: assertion failures only"; fi
+
+printf '\nRESULT: %s\n' "$([ "$fail" -eq 0 ] && echo PASS || echo FAIL)"
+exit "$fail"
+$ DOCKER="sudo docker" bash slo/check.sh
+
+== tests.yml is up to date with gen_tests.py
+tests.yml matches
+
+== promtool check rules slo.rules.yml
+Checking slo.rules.yml
+  SUCCESS: 17 rules found
+
+
+== promtool test rules tests.yml
+  SUCCESS
+
+
+== unit tests (python3 -m unittest)
+test_failed_polls_excluded_but_limited (test_drill_check.Checker) ... ok
+test_firing_without_pending_fails (test_drill_check.Checker) ... ok
+test_good_capture_passes (test_drill_check.Checker) ... ok
+test_maintenance_not_excluded_fails_b (test_drill_check.Checker) ... ok
+test_missing_drill_a_fails (test_drill_check.Checker) ... ok
+test_no_bad_while_down_fails (test_drill_check.Checker) ... ok
+test_non_slo_alert_during_b_is_info_only (test_drill_check.Checker) ... ok
+test_not_resolved_fails (test_drill_check.Checker) ... ok
+test_resolved_message_not_required (test_drill_check.Checker) ... ok
+test_resolved_title_is_not_firing (test_drill_check.Checker) ... ok
+test_slo_alert_during_b_fails (test_drill_check.Checker) ... ok
+test_slo_message_during_b_fails (test_drill_check.Checker) ... ok
+test_stale_firing_message_does_not_count (test_drill_check.Checker) ... ok
+test_exit_codes (test_drill_check.Main) ... ok
+test_alert_states_from_real_responses (test_drill_check.Sampler) ... ok
+test_build_sample_from_real_responses (test_drill_check.Sampler) ... ok
+test_firing_wins_over_pending (test_drill_check.Sampler) ... ok
+test_missing_series_is_none_not_zero (test_drill_check.Sampler) ... ok
+test_ntfy_reduce_keeps_messages_drops_topic (test_drill_check.Sampler) ... ok
+test_absent_is_inactive_not_malformed (test_exporter_maint.MaintFlag) ... ok
+test_expired_window_is_inactive (test_exporter_maint.MaintFlag) ... ok
+test_malformed_flags_never_count_as_maintenance (test_exporter_maint.MaintFlag) ... ok
+test_metric_lines (test_exporter_maint.MaintFlag) ... ok
+test_owner_check_rejects_non_root_file (test_exporter_maint.MaintFlag) ... ok
+test_symlink_and_garbage_are_malformed (test_exporter_maint.MaintFlag) ... ok
+test_valid_open_window_is_active (test_exporter_maint.MaintFlag) ... ok
+test_age_boundary_is_strictly_below_10s (test_report.Classification) ... ok
+test_cause_order_exporter_state_stale (test_report.Classification) ... ok
+test_maint_history_span_excludes_outage_without_metric (test_report.Classification) ... ok
+test_maint_metric_excludes_outage (test_report.Classification) ... ok
+test_missing_prometheus_data_is_unmeasured_and_splits_intervals (test_report.Classification) ... ok
+test_proposing_is_good (test_report.Classification) ... ok
+test_recording_rule_crosscheck_counts_disagreement (test_report.Classification) ... ok
+test_rpc_outage_is_one_interval_with_restart (test_report.Classification) ... ok
+test_steady_good (test_report.Classification) ... ok
+test_budget_math (test_report.Cli) ... ok
+test_chunks_cover_window_without_overlap (test_report.Cli) ... ok
+test_objective_from_metric_then_default (test_report.Cli) ... ok
+test_only_range_queries_and_chunking (test_report.Cli) ... ok
+test_real_fixture_shape (test_report.Cli) ... ok
+test_record_then_replay_roundtrip (test_report.Cli) ... ok
+test_usage_errors_exit_2 (test_report.Cli) ... ok
+test_replay_matches_recorded_report (test_report.RealFixtures) ... ok
+test_replay_with_maint_history_excludes_the_two_drill_windows (test_report.RealFixtures) ... ok
+
+----------------------------------------------------------------------
+Ran 44 tests in 0.146s
+
+OK
+
+== ruff check (slo/)
+All checks passed!
+
+== shellcheck
+shellcheck clean: ./check.sh ./drill.sh ./install.sh
+
+== M1 mutation: pft:sli_bad:bool without the maintenance exclusion (promtool must FAIL)
+name: maintenance-window: same 20m RPC outage inside an open pft-maint window does not burn	alertname: PFTSLOFastBurn, time: 2h10m
+name: maintenance-window: same 20m RPC outage inside an open pft-maint window does not burn	alertname: PFTSLOFastBurn, time: 2h20m
+name: maintenance-window: same 20m RPC outage inside an open pft-maint window does not burn	alertname: PFTSLOSlowBurn, time: 2h20m
+name: maintenance-window: same 20m RPC outage inside an open pft-maint window does not burn	alertname: PFTSLOSlowBurn, time: 2h38m
+caught: maintenance-window test failed on the mutant
+
+== M2 mutation: CLI classify() ignores maintenance (unit tests must FAIL)
+FAIL: test_maint_history_span_excludes_outage_without_metric
+FAIL: test_maint_metric_excludes_outage
+FAIL: test_replay_with_maint_history_excludes_the_two_drill_windows
+caught: assertion failures only
+
+== M3 mutation: drill checker accepts a [FIRING] message from before the alert fired (tests must FAIL)
+FAIL: test_stale_firing_message_does_not_count
+caught: assertion failures only
+
+RESULT: PASS
+exit 0

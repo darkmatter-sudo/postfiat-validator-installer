@@ -1,0 +1,18 @@
+[PASS] polls answered >= 90% (103/103 answered)
+[PASS] B: samples recorded (42 samples)
+[FAIL] B: pft:sli_maint:bool == 1 in every sample (1/42 samples not maint)
+[PASS] B: pft:sli_bad:bool == 0 in every sample (0/42 samples bad or missing)
+[PASS] B: no PFTSLO* alert pending/firing (none)
+[PASS] B: no PFTSLO* message on the topic (0 messages)
+[PASS] A: down samples recorded (28 samples)
+[PASS] A: pft:sli_bad:bool == 1 while down (27/28 down samples bad)
+[PASS] A: FastBurn pending seen (t=1792975174)
+[PASS] A: FastBurn firing seen (t=1792975281)
+[PASS] A: pending before firing (107s apart)
+[PASS] A: [FIRING] PFTSLOFastBurn message delivered (1 firing messages)
+[PASS] A: FastBurn resolved by the last sample (last alerts: {"PFTContainerRestarted": "firing"})
+[INFO] B: node states seen: connected,full,unreachable
+[INFO] A: PFTSLOSlowBurn states seen: none
+[INFO] A: resolved messages: 1
+[INFO] non-SLO alerts seen (silenced in Alertmanager): PFTContainerRestarted,PFTNodeNotFull,PFTNodeRPCDown,PFTValidatedLedgerStalled
+RESULT: FAIL - 12/13 checks passed
