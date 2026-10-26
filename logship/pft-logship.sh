@@ -15,11 +15,13 @@
 #           drop-ins, the vacuum timer and the UFW rule and starts the units. --dry-run prints every action only.
 #  sign     CA host: creates the pair CA once (its key stays on this host) and signs a CSR from either host.
 #  check    units active, cert valid, mutual-TLS handshake with the peer, send lag <= MAX_LAG, cursor not stalled,
-#           newest entry received from the peer <= MAX_LAG old. Exit 1 on any failure. --textfile as for lag.
+#           newest entry received from the peer <= MAX_LAG old. Exit 1 on any failure. With --textfile also writes
+#           pft_logship_up (1 only if every check passed) + pft_logship_lag_seconds; apply runs this every minute
+#           from pft-logship-check.timer, and alerts/logship.rules.yml alerts on it.
 #  lag      reads journal-upload's saved cursor and the newest local journal entry and prints the forwarding lag
 #           (newest local entry time - time of the last uploaded entry, from the cursor's t= field). With
 #           --textfile also writes pft_logship_up / pft_logship_lag_seconds for the pft exporter (atomic rename).
-#  rollback disables the units, removes drop-ins/timer/UFW rule; keeps received journals (and keys unless --purge-keys).
+#  rollback disables the units, removes drop-ins/timers/UFW rule; keeps received journals (and keys unless --purge-keys).
 #
 # Exit codes: 0 ok, 1 lag/check failure, 3 usage/config error, 4 apply waiting for a signed certificate.
 # Conf: PFT_LS_CONF (/etc/pft-logship.env, root-owned, sourced first): SELF_NAME, PEER_NAME (labels such as
@@ -55,6 +57,9 @@ UPLOAD_DROPIN=/etc/systemd/journal-upload.conf.d/pft-logship.conf
 REMOTE_DROPIN=/etc/systemd/journal-remote.conf.d/pft-logship.conf
 UNIT_DROPIN=/etc/systemd/system/systemd-journal-upload.service.d/pft-logship.conf
 VAC_UNIT=/etc/systemd/system/pft-logship-vacuum
+CHK_UNIT=/etc/systemd/system/pft-logship-check
+SELF_BIN=/usr/local/sbin/pft-logship
+SELF_SRC="${PFT_LS_SELF_SRC:-${BASH_SOURCE[0]}}"
 CHECK_STATE=/var/lib/pft-logship/check.state
 DL_BIN=/usr/local/sbin/pft-logship-dockerlog
 DL_UNIT=/etc/systemd/system/pft-logship-dockerlog@.service
@@ -85,7 +90,7 @@ saved_cursor() { sed -nE 's/^LAST_CURSOR=(.+)$/\1/p' "$R$UPLOAD_STATE" 2>/dev/nu
 newest_local_usec() { "$JOURNALCTL" -n 1 -o json --no-pager 2>/dev/null | jq -r '.__REALTIME_TIMESTAMP // empty'; }
 
 render_metrics() { # UP LAG -> textfile body (LAG may be empty when up=0)
-  printf '# HELP pft_logship_up 1 if journal-upload has a saved cursor that could be read\n'
+  printf '# HELP pft_logship_up 1 if the last pft-logship check passed (lag --textfile: 1 if the upload cursor could be read)\n'
   printf '# TYPE pft_logship_up gauge\npft_logship_up %d\n' "$1"
   if [ -n "$2" ]; then
     printf '# HELP pft_logship_lag_seconds Newest local journal entry minus last uploaded entry\n'
@@ -123,6 +128,16 @@ render_vacuum_timer() {
   printf '[Unit]\nDescription=pft-logship: hourly cap of received peer journals\n[Timer]\nOnCalendar=hourly\n'
   printf 'Persistent=true\n[Install]\nWantedBy=timers.target\n'
 }
+render_check_service() { # -> the per-minute check that keeps the textfile metrics fresh
+  printf '# pft-logship: check both directions and refresh pft_logship_up / pft_logship_lag_seconds\n'
+  printf '[Unit]\nDescription=pft-logship: check forwarding + write textfile metrics\n[Service]\nType=oneshot\n'
+  printf '# exit 1 = a failed check: it is reported through pft_logship_up 0, the unit itself did its job\n'
+  printf 'SuccessExitStatus=1\nExecStart=%s check --textfile\n' "$SELF_BIN"
+}
+render_check_timer() {
+  printf '[Unit]\nDescription=pft-logship: check every minute\n[Timer]\nOnBootSec=2min\nOnUnitActiveSec=1min\n'
+  printf 'AccuracySec=5s\n[Install]\nWantedBy=timers.target\n'
+}
 render_dockerlog_unit() { # -> pft-logship-dockerlog@.service: one bridge per container, its stdout is the journal
   printf '# pft-logship: copy container %%i'"'"'s docker json-file log into the journal (SyslogIdentifier=%%i)\n'
   printf '[Unit]\nDescription=pft-logship: container %%i logs -> journal\nAfter=docker.service\nWants=docker.service\n'
@@ -145,6 +160,8 @@ print_plan() {
   echo; echo "== $UNIT_DROPIN"; render_unit_dropin
   echo; echo "== $VAC_UNIT.service"; render_vacuum_service
   echo; echo "== $VAC_UNIT.timer"; render_vacuum_timer
+  echo; echo "== $CHK_UNIT.service"; render_check_service
+  echo; echo "== $CHK_UNIT.timer"; render_check_timer
   echo; echo "== $DL_UNIT (containers: ${DOCKER_CONTAINERS:-none})"; render_dockerlog_unit
   echo; echo "== firewall"; render_ufw ""
   echo; echo "== steps apply will take"
@@ -158,7 +175,9 @@ print_plan() {
   echo "5. containers log through docker's json-file driver, not journald: install $DL_BIN and start"
   echo "   pft-logship-dockerlog@NAME for each of DOCKER_CONTAINERS (${DOCKER_CONTAINERS:-none}); resumes from its saved"
   echo "   docker timestamp, so the container is never touched (no log-driver change, no restart)"
-  echo "6. pft-integrity accept for the new package/units/config (no postfiatd restart at any step)"
+  echo "6. install this script as $SELF_BIN and start pft-logship-check.timer: 'check --textfile' every minute"
+  echo "   keeps pft_logship_up / pft_logship_lag_seconds fresh for the exporter and alerts/logship.rules.yml"
+  echo "7. pft-integrity accept for the new package/units/config (no postfiatd restart at any step)"
 }
 
 # --- apply / sign / check / rollback ---------------------------------------------------------------------------
@@ -266,6 +285,12 @@ do_apply() {
       run "$SYSTEMCTL" enable --now "pft-logship-dockerlog@$c.service" || die "bridge for $c did not start" 1
     done
   fi
+  if [ "$(realpath "$SELF_SRC" 2>/dev/null)" = "$(realpath "$R$SELF_BIN" 2>/dev/null)" ]; then echo "= $SELF_BIN is this script"
+  else run install -m 755 "$SELF_SRC" "$R$SELF_BIN" || die "install of $SELF_BIN failed" 1; fi
+  put "$CHK_UNIT.service" 644 "$(render_check_service)"
+  put "$CHK_UNIT.timer" 644 "$(render_check_timer)"
+  run "$SYSTEMCTL" daemon-reload
+  run "$SYSTEMCTL" enable --now pft-logship-check.timer || die "check timer did not start" 1
   if [ "$DRY" -eq 1 ]; then echo "dry-run: nothing changed"
   else echo "applied. Next: sudo pft-integrity accept --reason 'pft-logship apply', then pft-logship check"; fi
 }
@@ -302,7 +327,7 @@ do_check() { # TEXTFILE(0|1)
   local rc=0 out lag age u why c
   need_conf
   echo "pft-logship check - $(date -u +%FT%TZ) - $SELF_NAME -> $PEER_NAME (max lag ${MAX_LAG}s)"
-  for u in systemd-journal-upload.service systemd-journal-remote.socket pft-logship-vacuum.timer; do
+  for u in systemd-journal-upload.service systemd-journal-remote.socket pft-logship-vacuum.timer pft-logship-check.timer; do
     if [ "$("$SYSTEMCTL" is-active "$u" 2>/dev/null)" = active ]; then echo "unit: $u active"
     else echo "unit: $u NOT active"; rc=1; fi
   done
@@ -318,7 +343,7 @@ do_check() { # TEXTFILE(0|1)
   if why="$(cert_ok)"; then echo "cert: host.crt chains to ca.crt, matches host.key, valid > 24h"
   else echo "cert: $why"; rc=1; fi
   tls_probe || rc=1
-  out="$(do_lag "$1")" || rc=1
+  out="$(do_lag 0)" || rc=1
   echo "send: $out"
   lag="$(sed -nE 's/^lag: ([0-9]+)s.*/\1/p' <<<"$out")"
   if [ -n "$lag" ] && stalled "$(saved_cursor)" "$lag"; then
@@ -329,15 +354,17 @@ do_check() { # TEXTFILE(0|1)
     [ "$age" -le "$MAX_LAG" ] || { echo "receive: older than ${MAX_LAG}s"; rc=1; }
   else echo "receive: no entries from $PEER_NAME in $REMOTE_DIR"; rc=1; fi
   echo "RESULT: $([ "$rc" -eq 0 ] && echo PASS || echo FAIL) -> exit $rc"
+  [ "$1" -eq 1 ] && write_textfile "$(render_metrics "$((rc == 0))" "${lag:-}")"
   return "$rc"
 }
 do_rollback() { # removes config, units and the UFW rule; keeps received journals (evidence) and the package
   local c
   echo "pft-logship rollback$([ "$DRY" -eq 1 ] && echo ' --dry-run') - $(date -u +%FT%TZ)"
-  run "$SYSTEMCTL" disable --now systemd-journal-upload.service systemd-journal-remote.socket pft-logship-vacuum.timer
+  run "$SYSTEMCTL" disable --now systemd-journal-upload.service systemd-journal-remote.socket pft-logship-vacuum.timer \
+    pft-logship-check.timer
   run "$SYSTEMCTL" stop systemd-journal-remote.service
   for c in $DOCKER_CONTAINERS; do run "$SYSTEMCTL" disable --now "pft-logship-dockerlog@$c.service"; done
-  run rm -f "$R$DL_UNIT" "$R$DL_BIN"
+  run rm -f "$R$DL_UNIT" "$R$DL_BIN" "$R$CHK_UNIT.service" "$R$CHK_UNIT.timer" "$R$SELF_BIN" "$R$TEXTFILE_DIR/pft_logship.prom"
   run rm -f "$R$UPLOAD_DROPIN" "$R$REMOTE_DROPIN" "$R$UNIT_DROPIN" "$R$VAC_UNIT.service" "$R$VAC_UNIT.timer" "$R$CHECK_STATE"
   if [ -n "$PEER_ADDR" ]; then
     # shellcheck disable=SC2046  # word splitting of the rendered rule is intended

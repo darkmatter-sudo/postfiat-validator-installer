@@ -141,6 +141,12 @@ out="$(NEWEST="$RT" PFT_LS_NOW=$NOW0 chk --textfile)"; rc=$?
   && grep -q '^tls: mutual-TLS handshake with sentry-host journal-remote ok (HTTP 404)$' <<<"$out" && grep -qx 'pft_logship_up 1' "$PROM" \
   && ok "check: all good -> PASS exit 0 (presence control for the FAIL cases below)" || bad "check pass: rc=$rc $out"
 ! grep -q -e '198\.51\.100\.7' -e '192\.0\.2\.10' <<<"$out" && ok "check output carries no addresses" || bad "check leaked an address"
+# check --textfile: up is the whole check's verdict, not just "cursor readable" (the lag itself is fine here)
+out="$(CODE=000 NEWEST="$RT" PFT_LS_NOW=$NOW0 chk --textfile)"; rc=$?
+[ "$rc" -eq 1 ] && grep -qx 'pft_logship_up 0' "$PROM" && grep -qx 'pft_logship_lag_seconds 0' "$PROM" \
+  && ok "check --textfile: TLS fails, lag 0 -> pft_logship_up 0 (lag still written)" || bad "up on failed check: rc=$rc $(cat "$PROM")"
+out="$(DOWN=pft-logship-check.timer NEWEST="$RT" PFT_LS_NOW=$NOW0 chk)"; rc=$?
+[ "$rc" -eq 1 ] && grep -q '^unit: pft-logship-check.timer NOT active$' <<<"$out" && ok "check: metrics timer down -> exit 1" || bad "timer down: rc=$rc"
 out="$(DOWN=systemd-journal-remote.socket NEWEST="$RT" PFT_LS_NOW=$NOW0 chk)"; rc=$?
 [ "$rc" -eq 1 ] && grep -q '^unit: systemd-journal-remote.socket NOT active$' <<<"$out" && ok "check: receiver socket down -> exit 1" || bad "unit down: rc=$rc"
 out="$(CODE=000 NEWEST="$RT" PFT_LS_NOW=$NOW0 chk)"; rc=$?
@@ -181,6 +187,10 @@ out="$(PFT_LS_CONF="$WORK/pair.env" bash "$LS" apply --dry-run 2>&1)"; rc=$?
   && grep -qx '    URL=https://<peer>:19532' <<<"$out" && grep -qx '    LoadCredential=host.key:/etc/pft-logship/tls/host.key' <<<"$out" \
   && grep -qx '    ExecStart=journalctl --directory=/var/log/journal/remote --vacuum-size=2G' <<<"$out" \
   && ok "apply --dry-run: prints UFW rule, upload URL, credential and vacuum cap" || bad "apply dry: rc=$rc $out"
+grep -q '^+ install -m 755 [^ ]* .*/usr/local/sbin/pft-logship$' <<<"$out" \
+  && grep -qx '    ExecStart=/usr/local/sbin/pft-logship check --textfile' <<<"$out" && grep -qx '    OnUnitActiveSec=1min' <<<"$out" \
+  && grep -qx '+ .*systemctl enable --now pft-logship-check.timer' <<<"$out" \
+  && ok "apply --dry-run: installs itself + pft-logship-check.timer (check --textfile every minute)" || bad "apply check timer: $out"
 [ "$(find "$WORK/root" -type f | sort | xargs sha256sum)" = "$before" ] && ok "apply --dry-run: no file under the root changed" || bad "apply dry-run wrote files"
 ! grep -q -e '198\.51\.100\.7' -e '192\.0\.2\.10' <<<"$out" && grep -q 'subjectAltName=IP:<self>' <<<"$out" \
   && ok "apply --dry-run: addresses masked (<peer>/<self>)" || bad "apply leaked an address"
@@ -189,6 +199,8 @@ out="$(PFT_LS_CONF="$WORK/pair.env" bash "$LS" rollback --dry-run 2>&1)"; rc=$?
   && grep -q '^kept: received journals in /var/log/journal/remote' <<<"$out" && ! grep -q '198\.51\.100\.7' <<<"$out" \
   && [ "$(find "$WORK/root" -type f | sort | xargs sha256sum)" = "$before" ] \
   && ok "rollback --dry-run: deletes the same UFW rule, keeps received journals, changes nothing" || bad "rollback dry: rc=$rc $out"
+grep -q 'pft-logship-check.timer' <<<"$out" && grep -q '^+ rm -f .*pft-logship-check.timer .*/usr/local/sbin/pft-logship .*pft_logship.prom$' <<<"$out" \
+  && ok "rollback --dry-run: stops the check timer, removes it, the installed script and the metrics file" || bad "rollback timer: $out"
 out="$(PFT_LS_CONF="$WORK/none.env" bash "$LS" apply --dry-run 2>&1)"; rc=$?
 [ "$rc" -eq 3 ] && ok "apply without conf -> exit 3" || bad "apply no conf: rc=$rc"
 printf 'SELF_NAME=Bad_Name\nPEER_NAME=sentry-host\nSELF_ADDR=192.0.2.10\nPEER_ADDR=198.51.100.7\n' > "$WORK/badname.env"
@@ -222,7 +234,7 @@ out="$(PFT_LS_CONF="$WORK/dl.env" PFT_LS_DL_SRC="$WORK/missing.py" bash "$LS" ap
 [ "$rc" -eq 3 ] && grep -q 'bridge source .* missing' <<<"$out" && ok "apply: bridge source missing -> exit 3" || bad "src missing: rc=$rc"
 out="$(PFT_LS_CONF="$WORK/dl.env" bash "$LS" rollback --dry-run 2>&1)"; rc=$?
 [ "$rc" -eq 0 ] && grep -qx '+ .*systemctl disable --now pft-logship-dockerlog@postfiatd.service' <<<"$out" \
-  && grep -q '^+ rm -f .*pft-logship-dockerlog@.service .*/usr/local/sbin/pft-logship-dockerlog$' <<<"$out" \
+  && grep -q '^+ rm -f .*pft-logship-dockerlog@.service .*/usr/local/sbin/pft-logship-dockerlog ' <<<"$out" \
   && ok "rollback --dry-run: stops + removes the bridge, keeps its state" || bad "rollback bridge: rc=$rc $out"
 printf 'SELF_NAME=a\nPEER_NAME=b\nSELF_ADDR=192.0.2.10\nPEER_ADDR=198.51.100.7\nDOCKER_CONTAINERS="postfiatd ../x"\n' > "$WORK/dlbad.env"
 out="$(PFT_LS_CONF="$WORK/dlbad.env" bash "$LS" apply --dry-run 2>&1)"; rc=$?

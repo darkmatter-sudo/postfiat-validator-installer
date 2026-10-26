@@ -1,0 +1,23 @@
+# Alert rule for pft-logship (../logship). pft-logship-check.timer runs `pft-logship check --textfile` every minute;
+# the pft exporter serves the textfile as pft_logship_up (1 = every check passed), pft_logship_lag_seconds and
+# pft_textfile_mtime_seconds{file="pft_logship.prom"}. One rule, four ways forwarding can be broken:
+#   check failing (unit down, TLS, stalled cursor, nothing received), upload lag above MAX_LAG (120 s),
+#   metrics stale for > 5 min (the check timer stopped), metrics missing (file deleted).
+# Tests: logship.tests.yml (promtool test rules logship.tests.yml). After `pft-logship rollback`, remove this file
+# from prometheus.yml rule_files, or the "missing" branch fires.
+groups:
+  - name: pft-logship
+    rules:
+      - alert: PFTLogshipBroken
+        expr: |
+          pft_logship_up == 0
+          or pft_logship_lag_seconds > 120
+          or time() - pft_textfile_mtime_seconds{file="pft_logship.prom"} > 300
+          or absent(pft_logship_up{job="postfiat"})
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Journal forwarding to the peer host is broken"
+          description: "For 5m pft-logship has reported a failed check, an upload lag above 120 s, stale metrics (pft-logship-check.timer not running) or no metrics at all. Until it is fixed, a wipe of this host's journal is not covered by the peer copy. Run `sudo pft-logship check`."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/logship/README.md#alert"
