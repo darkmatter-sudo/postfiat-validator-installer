@@ -1,0 +1,5 @@
+# pft-rollout hosts, in rollout order (first = canary). One line per host:
+#   host LABEL MODE SSH_TARGET CONTAINER MIN_PEERS
+# MODE local = commands run here through `sudo -n`; ssh = through `ssh SSH_TARGET sudo -n` (BatchMode).
+host sentry    ssh   sentry-host  postfiatd-sentry  5
+host validator local -            postfiatd         5

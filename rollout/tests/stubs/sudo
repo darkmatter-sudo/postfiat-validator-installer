@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Fake sudo: drops -n and runs the command as the calling user (the stubs need no root).
+[ "${1:-}" = -n ] && shift
+exec "$@"

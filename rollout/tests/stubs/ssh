@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Fake ssh: skips -o options, takes the target as the fake host name, runs the command string locally.
+while [ $# -gt 0 ]; do case "$1" in -o) shift 2 ;; -*) shift ;; *) break ;; esac; done
+t="$1"; shift
+[ -e "$STUB/ssh_down" ] && { echo "ssh: connect to host $t: Connection timed out" >&2; exit 255; }
+STUB_HOST="$t" exec bash -c "$*"

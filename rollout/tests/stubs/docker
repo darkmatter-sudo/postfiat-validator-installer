@@ -1,0 +1,220 @@
+#!/usr/bin/env python3
+"""Fake docker for pft-rollout tests. State per host in $STUB/hosts/$STUB_HOST/state.json:
+  containers{name: inspect-object}, images{id: {Id, RepoDigests, Config}}, tags{ref: id},
+  gens[] (health behaviour per container generation; the last one repeats), gen, seq.
+Every call is appended to $STUB/calls.log as "<host> docker <args>".
+Behaviours: good | down (exec fails) | connected | oldbuild | fewpeers | stale | slowN (connected for N polls, then good)
+            | flapN (good for N polls, then down)."""
+import json, os, sys, copy
+
+STUB = os.environ["STUB"]
+HOST = os.environ.get("STUB_HOST", "local")
+D = os.path.join(STUB, "hosts", HOST)
+SF = os.path.join(D, "state.json")
+args = sys.argv[1:]
+with open(os.path.join(STUB, "calls.log"), "a") as f:
+    f.write(HOST + " docker " + " ".join(args) + "\n")
+st = json.load(open(SF))
+
+
+def save():
+    json.dump(st, open(SF + ".tmp", "w"), indent=1)
+    os.replace(SF + ".tmp", SF)
+
+
+def resolve(ref):
+    if ref in st["images"]:
+        return ref
+    return st["tags"].get(ref)
+
+
+def bump(c):
+    st["gen"] += 1
+    st["polls"] = 0
+    c["State"] = {"Running": True, "StartedAt": "gen-%d" % st["gen"]}
+
+
+def out(o):
+    print(json.dumps(o))
+
+
+def health():
+    gens = st["gens"]
+    b = gens[min(st["gen"], len(gens) - 1)]
+    st["polls"] = st.get("polls", 0) + 1
+    if b.startswith("slow"):
+        b = "connected" if st["polls"] <= int(b[4:]) else "good"
+    if b.startswith("flap"):
+        b = "good" if st["polls"] <= int(b[4:]) else "down"
+    if b == "down":
+        save()
+        sys.exit(1)
+    if b != "stale":
+        st["seq"] += 3
+    info = {"server_state": "full", "build_version": "1.0.9", "peers": 10,
+            "validated_ledger": {"seq": st["seq"], "age": 2}}
+    if b == "connected":
+        info["server_state"] = "connected"
+    if b == "oldbuild":
+        info["build_version"] = "1.0.8"
+    if b == "fewpeers":
+        info["peers"] = 1
+    if b == "stale":
+        info["validated_ledger"]["age"] = 120
+    save()
+    out({"result": {"info": info}})
+
+
+def parse_run(a):
+    o = {"Name": "", "Image": "", "Config": {"User": "", "Env": [], "Cmd": [], "Labels": {}, "Image": ""},
+         "HostConfig": {"RestartPolicy": {"Name": "no", "MaximumRetryCount": 0}, "LogConfig": {"Type": "json-file", "Config": {}},
+                        "NetworkMode": "default", "PortBindings": {}, "SecurityOpt": None, "CapAdd": None, "CapDrop": None,
+                        "ReadonlyRootfs": False, "Tmpfs": None, "PidsLimit": None, "Memory": 0, "MemorySwap": 0,
+                        "Ulimits": None, "Dns": None, "ExtraHosts": None, "Privileged": False},
+         "Mounts": []}
+    hc = o["HostConfig"]
+    i = 0
+    while i < len(a) and a[i].startswith("-"):
+        k, _, v = a[i].partition("=")
+        if k == "-d":
+            pass
+        elif k == "--name":
+            o["Name"] = "/" + v
+        elif k == "--restart":
+            hc["RestartPolicy"]["Name"] = v
+        elif k == "--user":
+            o["Config"]["User"] = v
+        elif k == "--log-driver":
+            hc["LogConfig"]["Type"] = v
+        elif k == "--log-opt":
+            lk, _, lv = v.partition("=")
+            hc["LogConfig"]["Config"][lk] = lv
+        elif k == "--network":
+            hc["NetworkMode"] = v
+        elif k == "--publish":
+            p = v.split(":")
+            hc["PortBindings"].setdefault(p[-1] + "/tcp", []).append({"HostIp": p[0] if len(p) == 3 else "", "HostPort": p[-2]})
+        elif k == "--volume":
+            p = v.split(":")
+            typ = "bind" if p[0].startswith("/") else "volume"
+            m = {"Type": typ, "Destination": p[1], "RW": not (len(p) > 2 and p[2] == "ro")}
+            m["Source" if typ == "bind" else "Name"] = p[0]
+            if typ == "volume":
+                m["Source"] = "/var/lib/docker/volumes/%s/_data" % p[0]
+            o["Mounts"].append(m)
+        elif k == "--env":
+            o["Config"]["Env"].append(v)
+        elif k == "--security-opt":
+            hc["SecurityOpt"] = (hc["SecurityOpt"] or []) + [v]
+        elif k == "--cap-drop":
+            hc["CapDrop"] = (hc["CapDrop"] or []) + [v]
+        elif k == "--cap-add":
+            hc["CapAdd"] = (hc["CapAdd"] or []) + [v]
+        elif k == "--read-only":
+            hc["ReadonlyRootfs"] = True
+        elif k == "--tmpfs":
+            tp, _, to = v.partition(":")
+            hc["Tmpfs"] = dict(hc["Tmpfs"] or {}, **{tp: to})
+        elif k == "--pids-limit":
+            hc["PidsLimit"] = int(v)
+        elif k == "--memory":
+            hc["Memory"] = int(v)
+        elif k == "--memory-swap":
+            hc["MemorySwap"] = int(v)
+        else:
+            print("fake docker run: unknown option " + k, file=sys.stderr)
+            sys.exit(125)
+        i += 1
+    ref = a[i]
+    iid = resolve(ref)
+    if not iid:
+        print("Unable to find image " + ref, file=sys.stderr)
+        sys.exit(125)
+    img = st["images"][iid]
+    o["Image"] = iid
+    o["Config"]["Image"] = ref
+    o["Config"]["Cmd"] = a[i + 1:] or img.get("Config", {}).get("Cmd", [])
+    o["Config"]["Env"] = img.get("Config", {}).get("Env", []) + o["Config"]["Env"]
+    return o
+
+
+cmd = args[0] if args else ""
+if cmd == "inspect":
+    c = st["containers"].get(args[1])
+    if not c:
+        print("[]")
+        print("Error: No such object: " + args[1], file=sys.stderr)
+        sys.exit(1)
+    out([c])
+elif cmd == "image" and args[1] == "inspect":
+    iid = resolve(args[2])
+    if not iid:
+        print("[]")
+        sys.exit(1)
+    out([st["images"][iid]])
+elif cmd == "pull":
+    ref = [x for x in args[1:] if not x.startswith("-")][0]
+    if os.path.exists(os.path.join(D, "pull_fail")):
+        sys.exit(1)
+    nid = open(os.path.join(D, "pull_to")).read().strip() if os.path.exists(os.path.join(D, "pull_to")) else st["tags"][ref]
+    st["tags"][ref] = nid
+    save()
+    print(st["images"][nid]["RepoDigests"][0])
+elif cmd == "tag":
+    st["tags"][args[2]] = resolve(args[1])
+    save()
+elif cmd in ("restart", "start"):
+    name = args[-1]
+    c = st["containers"].get(name)
+    if not c:
+        sys.exit(1)
+    bump(c)
+    save()
+    print(name)
+elif cmd == "stop":
+    st["containers"][args[-1]]["State"]["Running"] = False
+    save()
+elif cmd == "rename":
+    c = st["containers"].pop(args[1])
+    c["Name"] = "/" + args[2]
+    st["containers"][args[2]] = c
+    save()
+elif cmd == "update":
+    pol = [x for x in args if x.startswith("--restart=")][0].split("=", 1)[1]
+    st["containers"][args[-1]]["HostConfig"]["RestartPolicy"]["Name"] = pol
+    save()
+elif cmd == "rm":
+    st["containers"].pop(args[-1], None)
+    save()
+elif cmd == "run":
+    if os.path.exists(os.path.join(D, "run_drop_capdrop")):
+        args = [x for x in args if not x.startswith("--cap-drop")]
+    o = parse_run(args[1:])
+    name = o["Name"][1:]
+    if name in st["containers"]:
+        print("Conflict: name in use", file=sys.stderr)
+        sys.exit(125)
+    st["containers"][name] = o
+    bump(o)
+    save()
+    print("newid")
+elif cmd == "compose":
+    # `docker compose up -d`: recreate the compose container if its tag now points at another image
+    for name, c in st["containers"].items():
+        if "com.docker.compose.project" in c["Config"]["Labels"]:
+            nid = st["tags"][c["Config"]["Image"]]
+            if nid != c["Image"]:
+                c["Image"] = nid
+                bump(c)
+                print("Container %s Recreated" % name)
+            else:
+                print("Container %s Running" % name)
+    save()
+elif cmd == "exec":
+    c = st["containers"].get(args[1])
+    if not c or not c["State"]["Running"]:
+        sys.exit(1)
+    health()
+else:
+    print("fake docker: unsupported " + " ".join(args), file=sys.stderr)
+    sys.exit(2)

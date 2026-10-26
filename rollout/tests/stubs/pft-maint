@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Fake pft-maint: records calls; `lock list` prints $STUB/locks if present.
+echo "${STUB_HOST:-local} pft-maint $*" >> "$STUB/maint.log"
+case "$1 ${2:-}" in
+  "lock list") if [ -s "$STUB/locks" ]; then cat "$STUB/locks"; else echo "no data-collection locks"; fi ;;
+  "start "*) [ -e "$STUB/maint_fail" ] && { echo "refused: window already active" >&2; exit 4; }; echo "window started" ;;
+  "end "*) echo "window ended" ;;
+esac
