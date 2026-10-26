@@ -291,6 +291,21 @@ sudo bash audittrail/pft-audittrail.sh plan
 sudo bash audittrail/pft-audittrail.sh apply --dry-run
 ```
 
+## Cross-host journal forwarding add-on
+
+[`logship/`](logship/README.md): `pft-logship` forwards each host's systemd journal (auditd, journald and the
+postfiatd container logs, copied from Docker's json-file log by a resumable bridge) to the other host of the
+pair within seconds. It uses `systemd-journal-upload`/`-remote` with mutual TLS from a private two-host CA, where
+keys never leave their host, plus a peer-only UFW rule and capped storage per sender. Deleting a host's local
+journal then no longer deletes the evidence. `check` exits 1 on lag, a stalled cursor or a TLS failure. A
+per-minute timer writes `pft_logship_up` / `pft_logship_lag_seconds`, and `PFTLogshipBroken` alerts on them
+(promtool-tested). No node restart. Run it on the sentry first.
+
+```bash
+bash logship/pft-logship.sh plan
+sudo bash logship/pft-logship.sh apply --dry-run
+```
+
 ## Alert rules add-on
 
 [`alerts/`](alerts/README.md): 16 Prometheus alert rules for the exporter's metrics. They cover node/RPC down,

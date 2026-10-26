@@ -1,0 +1,34 @@
+== validator-host 2026-10-26T13:24:26Z
+OS: Ubuntu 22.04.5 LTS
+$ timedatectl show -p NTPSynchronized -p NTP
+NTP=yes
+NTPSynchronized=yes
+$ sizes of received files in /var/log/journal/remote (MiB, sender label only)
+   80.0 remote-CN=sentry-host,O=pft-logship
+   96.0 remote-CN=sentry-host,O=pft-logship
+   96.0 remote-CN=sentry-host,O=pft-logship
+   96.0 remote-CN=sentry-host,O=pft-logship
+  104.0 remote-CN=sentry-host,O=pft-logship
+  104.0 remote-CN=sentry-host,O=pft-logship
+  104.0 remote-CN=sentry-host,O=pft-logship
+  104.0 remote-CN=sentry-host,O=pft-logship
+$ du -sh /var/log/journal/remote
+785M
+
+== sentry-host
+OS: Ubuntu 22.04.5 LTS
+$ timedatectl show -p NTPSynchronized -p NTP
+NTP=yes
+NTPSynchronized=yes
+$ sizes of received files in /var/log/journal/remote (MiB, sender label only)
+   56.0 remote-CN=validator-host,O=pft-logship
+   80.0 remote-CN=validator-host,O=pft-logship
+   88.0 remote-CN=validator-host,O=pft-logship
+   88.0 remote-CN=validator-host,O=pft-logship
+   96.0 remote-CN=validator-host,O=pft-logship
+   96.0 remote-CN=validator-host,O=pft-logship
+   96.0 remote-CN=validator-host,O=pft-logship
+   96.0 remote-CN=validator-host,O=pft-logship
+  104.0 remote-CN=validator-host,O=pft-logship
+$ du -sh /var/log/journal/remote
+801M
