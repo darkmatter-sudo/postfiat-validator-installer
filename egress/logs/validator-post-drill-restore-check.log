@@ -1,0 +1,9 @@
+post-drill notifier restore check (validator) - 2026-10-26T01:20:54Z - Ubuntu 22.04.5 LTS
+reason: drill log section 7 printed 'sha256 matches pre-drill copy: NO' for both /etc/*.env files plus 'cat: /run/egress-drill.etc.sha: No such file';
+        shafile() keyed the sha file on the parent dir name, so both /etc files shared /run/egress-drill.etc.sha (2nd overwrote 1st; 1st restore deleted it).
+/etc/pft-integrity.env: keys: NTFY_SERVER= NTFY_TOPIC= NODE_LABEL= | throwaway-topic lines: 0 | mtime (cp -p kept original): 2026-10-22 <local-time-redacted> | owner/mode root 600
+/etc/postfiat-monitor.env: keys: NTFY_TOPIC= NTFY_SERVER= NTFY_TOKEN= NODE_LABEL= HEALTHY_STATES= REMIND_MINUTES= | throwaway-topic lines: 0 | mtime (cp -p kept original): 2026-10-21 <local-time-redacted> | owner/mode root 600
+pft-integrity.env NTFY_TOPIC == operator topic (sha256 compare, same pipeline): yes
+leftovers: ls: cannot access '/etc/pft-integrity.env.pre-egress-drill': No such file or directory
+leftovers: ls: cannot access '/etc/postfiat-monitor.env.pre-egress-drill': No such file or directory
+leftovers: ls: cannot access '/run/egress-drill.*': No such file or directory

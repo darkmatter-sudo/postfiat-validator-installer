@@ -129,7 +129,13 @@ lines to spot a legitimate destination you forgot (see below).
   Rollback leaves the filter table identical to before.
 - `drill-sentry.sh`: the live found -> fixed -> verified drill. It points every notifier on the host at a
   throwaway topic, proves the guard, probes before, applies in a pft-maint window with an inline dead-man, probes
-  after, checks the drop log and the validator-list fetch, runs check, and rebaselines pft-integrity.
+  after, checks the drop log and the validator-list fetch, runs check, and rebaselines pft-integrity. The
+  redirect keeps each env file's other settings (for example postfiat-monitor's `NODE_LABEL`/`REMIND_MINUTES`). On
+  a host that runs the `alerts/` stack (the validator) it also posts an Alertmanager silence for every alert for
+  60 min and expires it in the restore step.
+  `tests/drill-shafile-test.sh` (10 cases, no root) covers the backup bookkeeping of both drill scripts: one
+  checksum file per notifier env path, and a redirect + restore of three env files under a temp dir that must come
+  back byte-identical with a per-file `yes`. It was added after the validator drill (see `logs/README.md`).
 - `stability.sh` (read-only): evidence that the node stayed healthy under the policy. It reports the container's
   start time and restart count, every `NetworkOPs` heartbeat line in `debug.log` since `applied_at` (one a second)
   in 10-minute buckets with the mode each reports, and N `server_info` samples (state, peers, ledger range, DROP

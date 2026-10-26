@@ -28,9 +28,9 @@ ENVS="/etc/pft-watchdog/ntfy.env /etc/pft-integrity.env"
 MENV=/etc/pft-maint/ntfy.env
 topic="egressdrill-$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 since="$(date -u +%s)"; WINDOW=0; RESTORED=0; TMP="$(mktemp -d)"
-shafile() { echo "/run/egress-drill.$(basename "$(dirname "$1")").sha"; }
+shafile() { echo "/run/egress-drill.$(printf %s "$1" | tr -c "A-Za-z0-9._-" _).sha"; }  # one file per path (dir name alone collided for /etc/*.env)
 red() {
-  sed -E "s/by [a-z_][a-z0-9_-]*/by <user>/g; s/$topic/<redacted>/g; s/MAC=[0-9a-f:]+/MAC=<redacted-mac>/g" \
+  sed -uE "s/by [a-z_][a-z0-9_-]*/by <user>/g; s/$topic/<redacted>/g; s/MAC=[0-9a-f:]+/MAC=<redacted-mac>/g" \
   | python3 -c '
 import ipaddress, re, sys
 def sub(m):

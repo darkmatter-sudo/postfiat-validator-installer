@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Live pft-egress found -> fixed -> verified drill on a SENTRY host, with every notifier on the host pointed at a
-# throwaway ntfy topic (restored on ANY exit, then compared by sha256 against the backup).
+# Live pft-egress found -> fixed -> verified drill on a sentry or validator host, with every notifier on the host pointed
+# at a throwaway ntfy topic (restored on ANY exit, then compared by sha256 against the backup). On a host that runs
+# the alerts/ stack (validator), an Alertmanager silence for every alert covers the drill and is expired afterwards.
 #   sudo bash drill-sentry.sh [--container NAME] [--target HOST:PORT] [--deadman MIN]   (run from egress/)
-# 1  redirect notifiers (pft-watchdog, pft-integrity, pft-maint) to a random throwaway topic
+# 1  redirect notifiers (pft-watchdog, pft-integrity, postfiat-monitor, pft-maint) to a random throwaway topic,
+#    Alertmanager silence (all alerts, 60 min) when Alertmanager answers on 127.0.0.1:9093
 # 2  guard proof without a maintenance window: apply --yes must exit 4 and change nothing
 # 3  FOUND: plan + before-probe (non-allowlisted TARGET connects) + validator-list fetch
 # 4  FIXED: pft-maint start -> apply --yes --foreground (dead-man runs inline) -> pft-maint end
@@ -20,13 +22,14 @@ done
 [ "$(id -u)" -eq 0 ] || { echo "run as root" >&2; exit 3; }
 [ -f ./pft-egress.sh ] || { echo "run from the egress/ directory" >&2; exit 3; }
 PE=./pft-egress.sh
-ENVS="/etc/pft-watchdog/ntfy.env /etc/pft-integrity.env"
+ENVS="/etc/pft-watchdog/ntfy.env /etc/pft-integrity.env /etc/postfiat-monitor.env"
+AM=http://127.0.0.1:9093; SIL=""
 MENV=/etc/pft-maint/ntfy.env
 topic="egressdrill-$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 since="$(date -u +%s)"; WINDOW=0; RESTORED=0
-shafile() { echo "/run/egress-drill.$(basename "$(dirname "$1")").sha"; }
+shafile() { echo "/run/egress-drill.$(printf %s "$1" | tr -c "A-Za-z0-9._-" _).sha"; }  # one file per path (dir name alone collided for /etc/*.env)
 red() {
-  sed -E "s/by [a-z_][a-z0-9_-]*/by <user>/g; s/$topic/<redacted>/g; s/MAC=[0-9a-f:]+/MAC=<redacted-mac>/g" \
+  sed -uE "s/by [a-z_][a-z0-9_-]*/by <user>/g; s/$topic/<redacted>/g; s/MAC=[0-9a-f:]+/MAC=<redacted-mac>/g" \
   | python3 -c '
 import ipaddress, re, sys
 def sub(m):
@@ -52,6 +55,9 @@ restore() {
     rm -f "$(shafile "$f")"
   done
   if [ "${MENV_CREATED:-0}" -eq 1 ]; then rm -f "$MENV"; echo "removed drill-only $MENV: $([ -e "$MENV" ] && echo NO || echo yes)"; fi
+  if [ -n "$SIL" ]; then
+    curl -s -X DELETE "$AM/api/v2/silence/$SIL" -o /dev/null -w "Alertmanager silence ${SIL:0:8} expired (HTTP %{http_code})\n" || true
+  fi
 }
 trap restore EXIT
 
@@ -65,8 +71,10 @@ for f in $ENVS; do
   [ -f "$f" ] || { echo "  $f: absent (nothing to redirect)"; continue; }
   sf="$(shafile "$f")"; sha256sum < "$f" > "$sf"
   cp -p "$f" "$f.pre-egress-drill"
-  printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' "$topic" > "$f"; chmod 600 "$f"
-  echo "  $f -> https://ntfy.sh/<redacted> (throwaway), original kept as $f.pre-egress-drill"
+  { grep -vE '^(NTFY_TOPIC|NTFY_TOKEN|NTFY_SERVER|NTFY_URL)=' "$f.pre-egress-drill" || true  # keep NODE_LABEL etc.
+    printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' "$topic"; } > "$f.new"
+  chmod 600 "$f.new"; mv -f "$f.new" "$f"
+  echo "  $f -> https://ntfy.sh/<redacted> (throwaway, other settings kept), original kept as $f.pre-egress-drill"
 done
 if [ -e "$MENV" ]; then echo "  $MENV already exists - refusing to overwrite it" >&2; exit 3; fi
 MENV_CREATED=1
@@ -74,6 +82,14 @@ printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' "$topic" > "$MENV"; chmod 
 echo "  $MENV created for the drill only -> https://ntfy.sh/<redacted> (throwaway)"
 echo "  notifier timers on this host: $(systemctl list-timers --all --no-legend 2>/dev/null | grep -oE '(pft|postfiat)[a-z-]*\.timer' | sort -u | tr '\n' ' ')"
 echo "  alert containers on this host: $(docker ps --format '{{.Names}}' | grep -v "^$CONTAINER\$" | tr '\n' ' ')(none = no Alertmanager to silence)"
+if curl -fsS --max-time 5 -o /dev/null "$AM/-/ready" 2>/dev/null; then
+  SIL="$(curl -fsS -X POST -H 'Content-Type: application/json' "$AM/api/v2/silences" -d "$(jq -nc \
+    --arg s "$(date -u +%FT%TZ)" --arg e "$(date -u -d '+60 min' +%FT%TZ)" '{matchers:[{name:"alertname",value:".+",
+    isRegex:true,isEqual:true}], startsAt:$s, endsAt:$e, createdBy:"egress drill-sentry.sh",
+    comment:"planned: pft-egress live apply"}')" | jq -r '.silenceID // empty')"
+  [ -n "$SIL" ] || { echo "  Alertmanager is up but the silence was not created - stopping"; exit 3; }
+  echo "  Alertmanager silence ${SIL:0:8} alertname=~.+ for 60m (expired again in restore)"
+else echo "  Alertmanager: not running on this host (nothing to silence)"; fi
 
 echo; echo "== 2. live guard proof: no maintenance window"
 pft-maint status

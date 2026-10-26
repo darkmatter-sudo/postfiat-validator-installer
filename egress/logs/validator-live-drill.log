@@ -1,0 +1,168 @@
+pft-egress sentry live drill - 2026-10-26T01:09:07Z - Ubuntu 22.04.5 LTS - iptables v1.8.7 (nf_tables) - container postfiatd
+script sha256: pft-egress.sh 272f8809bb1f9ac04ba348efd7b243d9571725f0ab6460e9cf882b77bf9961d4 | drill-sentry.sh eda72d85e64b95f0087983cd4f1eb43a5f227e20a44d998e542d10e00c2b937c
+
+== 1. redirect every notifier on this host to a throwaway topic
+  /etc/pft-watchdog/ntfy.env: absent (nothing to redirect)
+  /etc/pft-integrity.env -> https://ntfy.sh/<redacted> (throwaway, other settings kept), original kept as /etc/pft-integrity.env.pre-egress-drill
+  /etc/postfiat-monitor.env -> https://ntfy.sh/<redacted> (throwaway, other settings kept), original kept as /etc/postfiat-monitor.env.pre-egress-drill
+  /etc/pft-maint/ntfy.env created for the drill only -> https://ntfy.sh/<redacted> (throwaway)
+  notifier timers on this host: pft-backup.timer pft-divergence.timer pft-heartbeat.timer pft-integrity.timer pft-maint-tick.timer pft-retention-sample.timer postfiat-monitor.timer 
+  alert containers on this host: pft-prometheus pft-alertmanager pft-alert-bridge (none = no Alertmanager to silence)
+  Alertmanager silence b9e885ca alertname=~.+ for 60m (expired again in restore)
+
+== 2. live guard proof: no maintenance window
+no maintenance window (alerting is live)
+no data-collection locks
+$ pft-egress apply --yes --container postfiatd
+pft-egress: REFUSED: no active pft-maint window (window=none); run: sudo pft-maint start --ttl 30m --reason ...
+exit 4 (expect 4); filter table unchanged: yes
+
+== 3. FOUND: the container can open connections anywhere
+$ iptables -S DOCKER-USER
+-N DOCKER-USER
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state RELATED,ESTABLISHED -j ACCEPT
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m connlimit --connlimit-above 50 --connlimit-mask 32 --connlimit-saddr -j DROP
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -m limit --limit 100/sec --limit-burst 50 -j ACCEPT
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -j DROP
+-A DOCKER-USER -j RETURN
+$ pft-egress plan --container postfiatd
+container:   postfiatd network postfiatd_default (bridge br-8cedebf23a84) ip 172.18.0.2
+resolvers:   127.0.0.11
+cfg peers:   ports 2559 ([ips]/[ips_fixed])
+vl sites:    https://postfiat.org/testnet_vl.json -> ports 443
+connections: 11 established, 0 inbound, outbound remote ports 2559
+allowlist:   replies (ESTABLISHED,RELATED); DNS 53/udp+tcp to ; tcp 443,2559
+everything else: LOG (rate-limited) + DROP
+WARNING: resolver 127.0.0.11 is loopback (Docker embedded DNS): lookups leave via dockerd on the host, not this chain
+iptables-restore --noflush input:
+  | *filter
+  | :PFT-EGRESS - [0:0]
+  | -F PFT-EGRESS
+  | -A PFT-EGRESS -m conntrack --ctstate RELATED,ESTABLISHED -m comment --comment "pft-egress replies" -j RETURN
+  | -A PFT-EGRESS -p tcp -m multiport --dports 443,2559 -m comment --comment "pft-egress peers+vl" -j RETURN
+  | -A PFT-EGRESS -m limit --limit 6/min --limit-burst 10 -j LOG --log-prefix "pft-egress-drop: " --log-level 4
+  | -A PFT-EGRESS -m comment --comment "pft-egress default deny" -j DROP
+  | COMMIT
+DOCKER-USER jump (position 1): -s 172.18.0.2/32 -i br-8cedebf23a84 ! -o br-8cedebf23a84 -m comment --comment pft-egress:postfiatd -j PFT-EGRESS 
+$ pft-egress apply --dry-run --container postfiatd
+container:   postfiatd network postfiatd_default (bridge br-8cedebf23a84) ip 172.18.0.2
+resolvers:   127.0.0.11
+cfg peers:   ports 2559 ([ips]/[ips_fixed])
+vl sites:    https://postfiat.org/testnet_vl.json -> ports 443
+connections: 11 established, 0 inbound, outbound remote ports 2559
+allowlist:   replies (ESTABLISHED,RELATED); DNS 53/udp+tcp to ; tcp 443,2559
+everything else: LOG (rate-limited) + DROP
+WARNING: resolver 127.0.0.11 is loopback (Docker embedded DNS): lookups leave via dockerd on the host, not this chain
+dry run - nothing changed. diff live chain (-) vs rendered (+):
+  + -A PFT-EGRESS -m conntrack --ctstate RELATED,ESTABLISHED -m comment --comment "pft-egress replies" -j RETURN
+  + -A PFT-EGRESS -p tcp -m multiport --dports 443,2559 -m comment --comment "pft-egress peers+vl" -j RETURN
+  + -A PFT-EGRESS -m limit --limit 6/min --limit-burst 10 -j LOG --log-prefix "pft-egress-drop: " --log-level 4
+  + -A PFT-EGRESS -m comment --comment "pft-egress default deny" -j DROP
+  jump: + -I DOCKER-USER 1 -s 172.18.0.2/32 -i br-8cedebf23a84 ! -o br-8cedebf23a84 -m comment --comment pft-egress:postfiatd -j PFT-EGRESS 
+$ pft-egress probe --container postfiatd --target example.com:80
+probe 2026-10-26T01:09:13Z postfiatd -> example.com:80 CONNECTED (0s)
+validator-list fetch from the container (https://postfiat.org/testnet_vl.json): HTTP 200
+node before: {"server_state":"full","peers":11}
+
+== 4. FIXED: maintenance window -> apply (dead-man 10 min, inline) -> end
+$ pft-maint start --ttl 30m --reason "pft-egress live apply" --no-sentry
+window started: id m1792976953-831261 until 2026-10-26T01:39:13Z | sentry copy: skipped
+window ACTIVE on validator: pft-egress live apply | until 2026-10-26T01:39:13Z (1798s left) | origin local | suppressed: watchdog=0 monitor=0 integrity=0
+no data-collection locks
+$ pft-egress apply --yes --foreground --deadman 10 --container postfiatd
+[2026-10-26T01:09:17Z] apply on postfiatd; maintenance gate: ok 1796; pre: server_state=full peers=11
+[2026-10-26T01:09:17Z] policy: {"container":"postfiatd","ip":"172.18.0.2","bridge":"br-8cedebf23a84","network":"postfiatd_default","resolvers":[],"tcp_ports":[443,2559]}
+WARNING: resolver 127.0.0.11 is loopback (Docker embedded DNS): lookups leave via dockerd on the host, not this chain
+[2026-10-26T01:09:18Z] chain PFT-EGRESS loaded (4 rules), jump at DOCKER-USER 1; state /var/lib/pft-egress/postfiatd.json
+[2026-10-26T01:09:19Z] persistence: pft-egress-reapply@postfiatd.timer enabled (/usr/local/sbin/pft-egress reapply)
+[2026-10-26T01:09:19Z] dead-man: until 2026-10-26T01:19:18Z, rollback after 3 consecutive polls with state != full or peers < 10 (baseline 11 - slack 1)
+[2026-10-26T01:09:49Z] dead-man poll: full peers 11 ok
+[2026-10-26T01:10:19Z] dead-man poll: full peers 11 ok
+[2026-10-26T01:10:50Z] dead-man poll: full peers 11 ok
+[2026-10-26T01:11:20Z] dead-man poll: full peers 11 ok
+[2026-10-26T01:11:51Z] dead-man poll: full peers 11 ok
+[2026-10-26T01:12:21Z] dead-man poll: full peers 11 ok
+[2026-10-26T01:12:51Z] dead-man poll: full peers 11 ok
+[2026-10-26T01:13:22Z] dead-man poll: full peers 11 ok
+[2026-10-26T01:13:52Z] dead-man poll: full peers 11 ok
+[2026-10-26T01:14:23Z] dead-man poll: full peers 11 ok
+[2026-10-26T01:14:53Z] dead-man poll: full peers 11 ok
+[2026-10-26T01:15:23Z] dead-man poll: full peers 11 ok
+[2026-10-26T01:15:54Z] dead-man poll: full peers 11 ok
+[2026-10-26T01:16:24Z] dead-man poll: full peers 11 ok
+[2026-10-26T01:16:54Z] dead-man poll: full peers 11 ok
+[2026-10-26T01:17:25Z] dead-man poll: full peers 11 ok
+[2026-10-26T01:17:56Z] dead-man poll: full peers 11 ok
+[2026-10-26T01:18:26Z] dead-man poll: full peers 11 ok
+[2026-10-26T01:18:57Z] dead-man poll: full peers 11 ok
+[2026-10-26T01:19:27Z] dead-man poll: full peers 11 ok
+[2026-10-26T01:19:28Z] dead-man: PASS - policy kept
+apply exit 0
+$ pft-maint end
+window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+
+== 5. VERIFIED
+$ iptables -S DOCKER-USER
+-N DOCKER-USER
+-A DOCKER-USER -s 172.18.0.2/32 -i br-8cedebf23a84 ! -o br-8cedebf23a84 -m comment --comment "pft-egress:postfiatd" -j PFT-EGRESS
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state RELATED,ESTABLISHED -j ACCEPT
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m connlimit --connlimit-above 50 --connlimit-mask 32 --connlimit-saddr -j DROP
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -m limit --limit 100/sec --limit-burst 50 -j ACCEPT
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -j DROP
+-A DOCKER-USER -j RETURN
+$ iptables -S PFT-EGRESS
+-N PFT-EGRESS
+-A PFT-EGRESS -m conntrack --ctstate RELATED,ESTABLISHED -m comment --comment "pft-egress replies" -j RETURN
+-A PFT-EGRESS -p tcp -m multiport --dports 443,2559 -m comment --comment "pft-egress peers+vl" -j RETURN
+-A PFT-EGRESS -m limit --limit 6/min --limit-burst 10 -j LOG --log-prefix "pft-egress-drop: "
+-A PFT-EGRESS -m comment --comment "pft-egress default deny" -j DROP
+$ pft-egress probe --container postfiatd --target example.com:80
+probe 2026-10-26T01:19:31Z postfiatd -> example.com:80 BLOCKED_OR_FAILED (6s)
+kernel drop log since drill start:
+<local-time-redacted> <host> kernel: pft-egress-drop: IN=br-8cedebf23a84 OUT=eth0 MAC=<redacted-mac> SRC=172.18.0.2 DST=<redacted-ip> LEN=60 TOS=0x00 PREC=0x00 TTL=63 ID=51726 DF PROTO=TCP SPT=41268 DPT=80 WINDOW=64240 RES=0x00 SYN URGP=0 
+<local-time-redacted> <host> kernel: pft-egress-drop: IN=br-8cedebf23a84 OUT=eth0 MAC=<redacted-mac> SRC=172.18.0.2 DST=<redacted-ip> LEN=60 TOS=0x00 PREC=0x00 TTL=63 ID=51727 DF PROTO=TCP SPT=41268 DPT=80 WINDOW=64240 RES=0x00 SYN URGP=0 
+<local-time-redacted> <host> kernel: pft-egress-drop: IN=br-8cedebf23a84 OUT=eth0 MAC=<redacted-mac> SRC=172.18.0.2 DST=<redacted-ip> LEN=60 TOS=0x00 PREC=0x00 TTL=63 ID=51728 DF PROTO=TCP SPT=41268 DPT=80 WINDOW=64240 RES=0x00 SYN URGP=0 
+validator-list fetch from the container (https://postfiat.org/testnet_vl.json): HTTP 200
+$ pft-egress check --container postfiatd
+pft-egress check postfiatd - 2026-10-26T01:19:40Z
+  [PASS] state file present
+  [PASS] chain PFT-EGRESS matches the applied snapshot (4 rules)
+  [PASS] container IP unchanged since apply
+  [PASS] exactly one jump, at DOCKER-USER position 1
+  [PASS] reapply timer enabled
+  [INFO] default-deny DROP counter: 3 pkts 180 bytes
+  [INFO] drop log lines in the last hour: 3; by DPT: DPT=80(3) 
+  [PASS] server_state full
+  [PASS] peers 11 >= baseline 11
+RESULT: PASS
+check exit 0
+$ systemctl is-enabled pft-egress-reapply@postfiatd.timer: enabled
+
+== 6. pft-integrity rebaseline
+$ pft-integrity verify
+pft-integrity verify - 2026-10-26T01:19:48Z
+OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-10-26T00:20:33Z
+  [FAIL] fw:docker-user                               changed  rules 5->6, sha256
+  [WARN] unit:pft-egress-reapply@.service             added    new file
+  [WARN] unit:pft-egress-reapply@.timer               added    new file
+RESULT: FAIL - 51 unchanged, 2 warn, 1 fail -> exit 2
+$ pft-integrity accept --reason "pft-egress: default-deny egress policy applied"
+pft-integrity accept - 2026-10-26T01:19:52Z: re-baselined 54 items by <user>
+manifest sha256: b3d8a86a6a13cd66d6121b3ab0bfb0dffde5bdc3d99ca78c05d6626d4d4c7199 -> d26116858867de84fa3fe1bcc06e51a4bdf17fad854056af9f09edda9c09b583 (logged to accept.log)
+$ pft-integrity verify
+pft-integrity verify - 2026-10-26T01:19:59Z
+OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-10-26T01:19:48Z
+RESULT: PASS - 54 unchanged, 0 warn, 0 fail -> exit 0
+
+== 7. after
+no maintenance window (alerting is live)
+no data-collection locks
+restored /etc/pft-integrity.env: sha256 matches pre-drill copy: NO (root 600)
+cat: /run/egress-drill.etc.sha: No such file or directory
+restored /etc/postfiat-monitor.env: sha256 matches pre-drill copy: NO (root 600)
+removed drill-only /etc/pft-maint/ntfy.env: yes
+Alertmanager silence b9e885ca expired (HTTP 200)
+throwaway topic read back from ntfy.sh (since drill start):
+{"time":"2026-10-26T01:09:14Z","title":"[MAINT] start validator","message":"pft-egress live apply | until 2026-10-26T01:39:13Z (ttl 1800s) | sentry copy: skipped"}
+{"time":"2026-10-26T01:19:31Z","title":"[MAINT] end validator","message":"pft-egress live apply | pft-egress live apply done after 617s | suppressed here: watchdog=0 monitor=0 integrity=0 | sentry copy: pushed"}
+drill-sentry done: apply exit 0, check exit 0
