@@ -1,0 +1,90 @@
+== 2026-10-26T21:16:28Z Ubuntu 22.04.5 LTS | git 0004a43 + working tree
+2a3b23396c7065df82f2f4bdb34ced1a857179c66898dc8ddfb939f6f35ba504  rollout/pft-rollout.sh
+91fbe0606ab85e4f13a1a805a02e3c7e057d733fcc5c4514e451a8442a7e277b  rollout/drill/check-drill.sh
+8513d67ab79623c69a13876e81f956aa1bf8e65ffb4c9fb259e51de560c12f24  rollout/drill/live-run.sh
+996224bb498af6fd609ae612065ded12c540d1e6125ee5383810f359223e6479  rollout/tests/mutants-check-drill.sh
+a75cec7464dbc9cb78440db53292c20b94555a5a23c6d01baf01d7890a93ad64  rollout/tests/mutants-live-run.sh
+df9f4a481786d24162bda073716962d3c49c0e1b7f424258528773d5d27afb52  rollout/tests/test-check-drill.sh
+f24aa94c97e295d177ce52d5789b34a513b41fe3872e279ce9324ccb2c0cb02e  rollout/tests/test-live-run.sh
+c010671d9adce4859a79f2661474b916a74d7731b35a7d02683f584290e59bce  rollout/tests/test-rollout.sh
+e573daa8ed3c97aa17e037b618d0b6cbce2b0ad2ac0b3196bf5872ca9b2172d5  rollout/tests/stubs/curl
+36082f1048386dac9d9f66c2d2cc532a4af936f46e12676d16b090b348df0314  rollout/tests/stubs/docker
+82efca3434310972f097ac13e7d4ab0295a2622f1a2f60c8b658ceec80c21671  rollout/tests/stubs/pft-maint
+9094496a99ac9f471fb19bcff0513e1ab24778e5f009d8017c0fa540e2acde01  rollout/tests/stubs/ssh
+8dfddd91fc7fcd2e851b0c0069bcee467c908ac1c2302687b151ed1b7095f659  rollout/tests/stubs/sudo
+$ shellcheck -x rollout/pft-rollout.sh rollout/drill/*.sh rollout/tests/*.sh rollout/tests/stubs/{curl,ssh,sudo,pft-maint}
+shellcheck exit 0
+$ bash rollout/tests/test-live-run.sh
+PASS noop: both hosts restarted on the same image, verdict PASS, notifiers redirected then restored
+PASS badimage: drill image fails the sentry gate, rollback, validator untouched, drill tag removed, PASS
+PASS badimage: a message on the throwaway ALERT topic -> FAIL
+PASS badimage: ntfy unreadable -> alert count null -> FAIL (never read as 0)
+PASS pft-maint data-collection lock -> exit 4 before anything is changed
+PASS relay pft-maint/ntfy.env already exists -> exit 3, nothing changed, file kept
+PASS badimage: drill tag already on the relay -> exit 3, nothing changed
+PASS badimage: drill build fails after the redirect -> exit 3, trap restores every notifier
+live-run tests: 8 passed, 0 failed
+exit 0
+$ bash rollout/tests/test-check-drill.sh
+== no-op run (target == running image) ==
+PASS noop run checked as noop -> PASS
+PASS noop run checked as badimage -> FAIL
+PASS noop: validator not restarted -> FAIL
+PASS noop: sentry image changed -> FAIL
+PASS noop: exit 1 -> FAIL
+PASS noop: wrong run id -> FAIL
+PASS noop: validator soak_pass missing -> FAIL
+== real upgrade (new image promoted) is not a no-op ==
+PASS upgrade run checked as noop -> FAIL
+== bad-image drill on the sentry canary ==
+PASS drill checked as badimage -> PASS
+PASS drill checked as noop -> FAIL
+PASS drill: alert topic got a message -> FAIL
+PASS drill: alert topic unread (null) -> FAIL
+PASS drill: validator restarted -> FAIL
+PASS drill: validator StartedAt empty on both sides -> FAIL
+PASS drill: sentry left on bad image -> FAIL
+PASS drill: rollback_done missing -> FAIL
+PASS drill: validator has an audit event -> FAIL
+== bad-image drill whose rollback re-gate also fails ==
+PASS drill with failed rollback (exit 5) -> FAIL
+== usage errors ==
+PASS unknown mode -> exit 3
+PASS facts not JSON -> exit 3
+TOTAL: 20 passed, 0 failed
+exit 0
+$ bash rollout/tests/test-rollout.sh
+PASS gate pass: both hosts promoted, canary first, config kept, window+silence per host
+PASS gate timeout on canary: rolled back to recorded image, validator untouched
+PASS second-host failure: validator rolled back, sentry stays promoted
+PASS rollback re-gate failure: exit 5, validator untouched
+PASS lock contention: second run refused, nothing touched
+PASS missing previous digest: refused before any change
+PASS no-op rollout (target == running image): restart + gate on both
+PASS soak failure after gate pass: rolled back
+PASS pft-maint data-collection lock: refused
+PASS config drift after docker run recreate: rolled back to the original container
+PASS build_version != foundation: gate fails
+PASS peers < min_peers: gate fails
+PASS validated ledger age > MAX_LEDGER_AGE: gate fails
+PASS drill path: --no-pull --target local bad image on sentry only
+PASS manual rollback after a promoted run restores both hosts
+PASS plan --json and status --json change nothing
+PASS post command: runs on its host after deploy, before the gate; shown by plan
+PASS post command: runs again after a rollback restore
+PASS post command failure after deploy: rolled back, validator untouched
+PASS post line for an unknown host: config error, nothing touched
+TOTAL: 20 passed, 0 failed
+exit 0
+$ bash rollout/tests/mutants-live-run.sh
+MUTANT W1 restore skips the backed-up env files: CAUGHT by 4 test(s): noop;badimage;badimage;badimage
+MUTANT W2 no EXIT trap (early stop leaves notifiers redirected): CAUGHT by 1 test(s): badimage
+MUTANT W3 unreadable ntfy counted as 0 alerts: CAUGHT by 1 test(s): badimage
+MUTANT W4 pft-maint lock not checked: CAUGHT by 1 test(s): pft-maint data-collection lock -> exit 4 before anything is changed
+MUTANT W5 NTFY_TOKEN kept in redirected files: CAUGHT by 2 test(s): noop;badimage
+MUTANT W6 drill image not removed: CAUGHT by 1 test(s): badimage
+MUTANT W7 drill-only maint files on the ALERT topic: CAUGHT by 2 test(s): noop;badimage
+MUTANT W8 existing relay pft-maint ntfy.env overwritten: CAUGHT by 1 test(s): relay pft-maint/ntfy.env already exists -> exit 3, nothing changed, file kept
+mutants not caught/invalid: 0
+exit 0
+== end 2026-10-26T21:25:59Z

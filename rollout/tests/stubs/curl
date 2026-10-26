@@ -1,13 +1,20 @@
 #!/usr/bin/env bash
-# Fake curl: foundation server_info and the Alertmanager silences API. Requests go to $STUB/curl.log.
+# Fake curl: foundation server_info, the Alertmanager silences API and ntfy topic polls. Requests go to $STUB/curl.log.
 echo "curl $*" >> "$STUB/curl.log"
-url=""; data=""
-while [ $# -gt 0 ]; do case "$1" in -d) data="$2"; shift 2 ;; -X|-H|--max-time) shift 2 ;; -*) shift ;; *) url="$1"; shift ;; esac; done
+url=""; data=""; of=""
+while [ $# -gt 0 ]; do case "$1" in -d) data="$2"; shift 2 ;; -o) of="$2"; shift 2 ;; -X|-H|--max-time) shift 2 ;; -*) shift ;; *) url="$1"; shift ;; esac; done
+[ -n "$of" ] && exec > "$of"
 case "$url" in
+  */-/ready) [ -e "$STUB/am_down" ] && exit 7; echo "OK" ;;
   */api/v2/silences)
     [ -e "$STUB/am_down" ] && exit 7
-    n=$(( $(wc -l < "$STUB/silences.log" 2>/dev/null || echo 0) + 1 ))
+    n=$(( $(wc -l 2>/dev/null < "$STUB/silences.log" || echo 0) + 1 ))
     echo "$data" >> "$STUB/silences.log"; echo "{\"silenceID\":\"sil$n-0000\"}" ;;
+  */json\?poll=1*)
+    # ntfy read-back: $STUB/ntfy_<alert|maint> holds the JSON lines the topic would return
+    [ -e "$STUB/ntfy_down" ] && exit 6
+    case "$url" in *rolloutdrill-*) k=alert ;; *) k=maint ;; esac
+    cat "$STUB/ntfy_$k" 2>/dev/null; exit 0 ;;
   *)
     [ -e "$STUB/foundation_down" ] && exit 28
     echo '{"result":{"info":{"build_version":"1.0.9","server_state":"full"}}}' ;;

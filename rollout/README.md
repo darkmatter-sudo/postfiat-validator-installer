@@ -156,6 +156,35 @@ fails), builds the facts from the stub containers, and checks each positive verd
 test-check-drill.sh to fail on each mutant. Published run: `logs/rollout/checker-1.log` (shellcheck clean, 20/20,
 C1-C8 all caught, test-rollout.sh still 20/20 after the sourcing guard was added).
 
+### Live drill wrapper
+
+`sudo bash drill/live-run.sh noop|badimage` (from `rollout/`, output tee'd) runs one live drill end to end:
+
+1. Preflight, before anything changes: relay reachable, Alertmanager ready, no pft-maint data-collection lock, every
+   notifier env file present, no leftover drill files, and (badimage) no drill tag on the relay yet.
+2. Notifiers: `/etc/postfiat-monitor.env` and `/etc/pft-integrity.env` here, `/etc/pft-watchdog/ntfy.env` and
+   `/etc/pft-integrity.env` on the relay get a random throwaway ALERT topic (`NTFY_TOKEN` dropped). A drill-only
+   `/etc/pft-maint/ntfy.env` on both hosts points at a second throwaway MAINT topic, so the expected `[MAINT]`
+   start/end messages are kept apart from real alerts. Each file's sha256 is recorded under its full `host:path` key,
+   and an EXIT trap restores every file and prints the sha256 compare, also when the drill stops early. The
+   Alertmanager bridge is silenced by pft-rollout's own per-host silence, which is part of what is under test.
+3. badimage: on the relay, `pft-rollout-drill:bad` is built `FROM` the sentry's running image ID with
+   `ENTRYPOINT ["/bin/sh","-c","exec sleep infinity"]`. The container starts and stays up, but the node never
+   answers, so the sentry gate fails and pft-rollout must roll it back. Nothing is pulled from a registry.
+4. Image ID + `StartedAt` of both containers before and after `pft-rollout.sh run --yes --no-pull --target T`
+   (noop: T = the running tag; badimage: T = the drill tag). The drill tag is removed afterwards.
+5. Both throwaway topics are read back from ntfy (an unreadable topic gives a `null` count, which the checker fails),
+   the facts JSON is written next to the audit log, and `check-drill.sh` gives the verdict (the wrapper's exit code).
+
+`tests/test-live-run.sh` runs the wrapper against the same stubs with notifier files in temp dirs: a no-op and a
+bad-image drill (verdict PASS, every notifier on the throwaway topics while each pft-maint window was open, files
+restored byte-identical, no topic or token in the output), an alert message on the throwaway topic and an unreadable
+topic (both FAIL), and four early stops (data-collection lock, existing relay `pft-maint/ntfy.env`, drill tag already
+present, drill build failing after the redirect: trap restores everything). `tests/mutants-live-run.sh` W1-W8 removes
+one safety property at a time (restore, trap, null count, lock check, token drop, rmi, MAINT topic, overwrite
+guard), and the suite must fail on each one. Published run: `logs/rollout/live-run-tests-1.log` (shellcheck clean,
+live-run 8/8, W1-W8 all caught, test-check-drill.sh 20/20 and test-rollout.sh 20/20 with the extended stubs).
+
 ## Limits
 
 - Two-host design tested with one compose host and one `docker run` host. The `docker run` recreate keeps user, env,

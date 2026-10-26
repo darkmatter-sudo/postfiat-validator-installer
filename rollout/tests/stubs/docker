@@ -215,6 +215,32 @@ elif cmd == "exec":
     if not c or not c["State"]["Running"]:
         sys.exit(1)
     health()
+elif cmd == "build":
+    # `docker build -q -t TAG -`: Dockerfile on stdin; new image = base image with the Entrypoint given there
+    tag = args[args.index("-t") + 1]
+    df = sys.stdin.read()
+    if os.path.exists(os.path.join(D, "build_fail")):
+        sys.exit(1)
+    base = resolve(df.split("FROM ", 1)[1].split()[0])
+    if not base:
+        print("fake docker build: base not found", file=sys.stderr)
+        sys.exit(1)
+    nid = "sha256:" + "e" * 64
+    img = copy.deepcopy(st["images"][base])
+    img["Id"] = nid
+    img["RepoDigests"] = []
+    st["images"][nid] = img
+    st["tags"][tag] = nid
+    save()
+    print(nid)
+elif cmd == "rmi":
+    ref = args[-1]
+    if ref not in st["tags"]:
+        print("Error: No such image: " + ref, file=sys.stderr)
+        sys.exit(1)
+    st["tags"].pop(ref)
+    print("Untagged: " + ref)
+    save()
 else:
     print("fake docker: unsupported " + " ".join(args), file=sys.stderr)
     sys.exit(2)
