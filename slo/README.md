@@ -183,7 +183,7 @@ down to `postfiatd.timer`. **Verified** offline only. `logs/slo/check-5.log` (PA
 suite still passed after the change; no test covered the restore step itself. A follow-up commit moved the silence
 helpers into `drill_lib.sh` and added `tests/test_drill_restore.py`: with curl stubbed, `finish_silence` is fed the
 real empty `/api/v1/alerts` answer (the run-2 condition) and must send no `DELETE`, and the re-posted silence must
-last >= 25 min. Mutation M4 puts the pre-`5dd2f5f` expiry back and must fail those tests (`logs/slo/check-6.log`).
+last >= 25 min. Mutation M4 puts the pre-`5dd2f5f` expiry back and must fail those tests (`logs/slo/check-7.log`; the first run, `check-6-fail.log`, failed on ruff style in the new test and on M2 not copying `drill_lib.sh`).
 The fix was not exercised by a third live drill, because the SLO claims above don't need another node stop.
 
 ## Deploy

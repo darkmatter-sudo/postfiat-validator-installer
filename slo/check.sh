@@ -52,7 +52,7 @@ else echo "FAIL: mutant failed for another reason:"; head -5 "$tmp/m1.out"; fail
 
 step "M2 mutation: CLI classify() ignores maintenance (unit tests must FAIL)"
 mkdir -p "$tmp/m2"
-cp -r tests pft_slo_report.py drill_check.py "$tmp/m2/"
+cp -r tests pft_slo_report.py drill_check.py drill_lib.sh "$tmp/m2/"
 sed -i 's|    if comp\["maint"\].get(t) == 1 or any(s <= t < e for s, e in maint_spans):|    if False:|' \
   "$tmp/m2/pft_slo_report.py"
 sed -i 's|"\.\.", "\.\.", "exporter"|"'"$HERE"'", "..", "exporter"|' "$tmp/m2/tests/test_exporter_maint.py"
@@ -78,7 +78,7 @@ sed -i 's|^  else echo "Alertmanager silence ${1:0:8} kept until its end time (6
 if cmp -s drill_lib.sh "$tmp/m4/drill_lib.sh"; then echo "FAIL: mutation did not apply"; fail=1
 elif (cd "$tmp/m4" && python3 -m unittest discover -s tests -p 'test_drill_restore.py' > "$tmp/m4.out" 2>&1); then echo "FAIL: mutant passed"; fail=1
 elif grep -q '^ERROR:' "$tmp/m4.out"; then echo "FAIL: mutant errored (not an assertion):"; grep '^ERROR:' "$tmp/m4.out"; fail=1
-else grep -E '^FAIL:' "$tmp/m4.out" | sed 's/ (.*//'; grep -m1 -o 'silence expired early: .*' "$tmp/m4.out"; echo "caught: assertion failures only"; fi
+else grep -E '^FAIL:' "$tmp/m4.out" | sed 's/ (.*//'; grep -m1 -oE 'AssertionError: silence expired early: .*' "$tmp/m4.out"; echo "caught: assertion failures only"; fi
 
 printf '\nRESULT: %s\n' "$([ "$fail" -eq 0 ] && echo PASS || echo FAIL)"
 exit "$fail"
