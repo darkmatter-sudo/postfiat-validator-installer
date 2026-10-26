@@ -1,0 +1,33 @@
++ sudo bash stability.sh --container postfiatd --samples 11 --interval 60
+pft-egress stability - 2026-10-26T02:08:06Z - Ubuntu 22.04.5 LTS - container postfiatd
+policy applied_at 2026-10-26T01:09:18Z, dead-man passed 2026-10-26T01:19:27Z, baseline_peers 11
+
+== 1. container
+StartedAt 2026-10-26T00:42:22.355010151Z  RestartCount 0
+  ok   no container start since 2026-10-26T01:09:18Z
+
+== 2. node heartbeat modes in debug.log since 2026-10-26T01:09:18Z (10-min buckets)
+  +  0..+ 10 min  heartbeats  592  full=592
+  + 10..+ 20 min  heartbeats  593  full=593
+  + 20..+ 30 min  heartbeats  595  full=595
+  + 30..+ 40 min  heartbeats  593  full=593
+  + 40..+ 50 min  heartbeats  595  full=595
+  + 50..+ 60 min  heartbeats  523  full=523
+  total 3491 heartbeats, 0 not full, 0 empty buckets, first 2026-10-26T01:09:18Z, last 2026-10-26T02:08:05Z
+  ok   every heartbeat since 2026-10-26T01:09:18Z reports mode full
+
+== 3. server_info samples (11 x 60s), pass = full and peers >= 11
+  2026-10-26T02:08:07Z  ok   state full     peers  11  ledgers 7486081-7486737  egress DROP pkts 3
+  2026-10-26T02:09:07Z  ok   state full     peers  11  ledgers 7486081-7486757  egress DROP pkts 3
+  2026-10-26T02:10:08Z  ok   state full     peers  11  ledgers 7486081-7486777  egress DROP pkts 3
+  2026-10-26T02:11:08Z  ok   state full     peers  11  ledgers 7486081-7486797  egress DROP pkts 3
+  2026-10-26T02:12:09Z  ok   state full     peers  11  ledgers 7486081-7486817  egress DROP pkts 3
+  2026-10-26T02:13:09Z  ok   state full     peers  11  ledgers 7486081-7486837  egress DROP pkts 3
+  2026-10-26T02:14:09Z  ok   state full     peers  11  ledgers 7486081-7486857  egress DROP pkts 3
+  2026-10-26T02:15:10Z  ok   state full     peers  11  ledgers 7486081-7486877  egress DROP pkts 3
+  2026-10-26T02:16:11Z  ok   state full     peers  11  ledgers 7486081-7486897  egress DROP pkts 3
+  2026-10-26T02:17:14Z  ok   state full     peers  11  ledgers 7486081-7486917  egress DROP pkts 3
+  2026-10-26T02:18:14Z  ok   state full     peers  11  ledgers 7486081-7486938  egress DROP pkts 3
+
+RESULT: PASS
+exit 0
