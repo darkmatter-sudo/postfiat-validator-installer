@@ -34,6 +34,16 @@ n="$(auditctl -l </dev/null | grep -c 'pft-')"; echo "pft-* rules loaded: $n"; [
 files; ! files | grep -q present; res $? "rules files, journald drop-in, FSS key, state removed"
 en="$(auditctl -s </dev/null | awk '$1=="enabled"{print $2}')"; echo "audit enabled=$en, auditd $(systemctl is-active auditd)"
 [ "$en" = 1 ]; res $? "kernel auditing still enabled after the journald restart"
+A="/var/log/journal/$(cat /etc/machine-id)/system.journal"
+echo "\$ journalctl --header --file=<machine-id>/system.journal | grep -E '^(State|Compatible flags)'"
+journalctl --header --file="$A" </dev/null 2>&1 | grep -E '^(State|Compatible flags)'
+echo "\$ journalctl -u systemd-journald -n 3 -o cat (journald's own last messages)"; journalctl -u systemd-journald -n 3 -o cat </dev/null | sed -E 's#/[0-9a-f]{32}\)#/<machine-id>)#'
+# journald always starts on /run and logs "Runtime Journal" until its flush; it is on /var when the LAST of those
+# lines is "System Journal" (the old bug left "Runtime Journal" last: the sealed file could not be reopened)
+on_var() { grep -E '^(Runtime|System) Journal' | tail -1 | grep -q '^System Journal'; }
+[ -e "$A" ] && ! journalctl --header --file="$A" </dev/null 2>/dev/null | grep -qE '^Compatible flags:.*SEALED' \
+  && journalctl -u systemd-journald -n 3 -o cat </dev/null | on_var
+res $? "journald back on /var/log/journal with a fresh UNSEALED system.journal (no fallback to the volatile /run journal)"
 echo "\$ pft-audittrail check (expect FAIL: not applied)"; "$TOOL" check </dev/null | grep -E 'not applied|RESULT'; c=${PIPESTATUS[0]}; [ "$c" = 1 ]; res $? "check exit 1 after rollback"
 echo; echo "== 3. re-apply (new FSS keys)"
 echo "\$ pft-audittrail apply --yes --container $CONTAINER --key-out <root-only file, moved off-host after this run>"

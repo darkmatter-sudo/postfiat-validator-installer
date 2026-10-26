@@ -80,6 +80,36 @@ log() { echo "[$(date -u +%FT%TZ)] $*"; }
 need_root() { [ -n "$TEST" ] || [ "$(id -u)" -eq 0 ] || die "$CMD needs root (sudo)" 3; }
 machine_id() { if [ -n "${PFT_AT_MACHINE_ID:-}" ]; then echo "$PFT_AT_MACHINE_ID"; else cat /etc/machine-id; fi; }
 fss_file() { echo "$R$JOURNAL_DIR/$(machine_id)/fss"; }
+# An FSS key change (apply generating keys, rollback) must not reach a journal file that is still being written:
+# journald reopens the active system.journal / user-*.journal after a restart. Tags from a new key appended to a file
+# sealed under the old one fail verification ("Epoch sequence out of synchronization"), and with no key loaded a
+# sealed active file cannot be reopened at all, so journald silently falls back to the volatile /run journal (both
+# found live on the sentry). So: stop writing to /var (--relinquish-var), archive every sealed active file under
+# journald's own archive name, change the key, restart, --flush back to /var (a fresh file is created).
+archive_sealed_active() {
+  local d a h sid hs hr base n=0
+  d="$R$JOURNAL_DIR/$(machine_id)"
+  "$JOURNALCTL" --relinquish-var >/dev/null 2>&1 || die "journalctl --relinquish-var failed (journald still writing to $JOURNAL_DIR)" 1
+  for a in "$d"/system.journal "$d"/user-*.journal; do
+    [ -e "$a" ] || continue
+    h="$("$JOURNALCTL" --header --file="$a" 2>/dev/null)"
+    grep -qE '^Compatible flags:.*SEALED' <<<"$h" || continue
+    sid="$(sed -nE 's/^Sequential number ID: ([0-9a-f]{32})$/\1/p' <<<"$h")"
+    hs="$(sed -nE 's/^Head sequential number: [0-9]+ \(([0-9a-f]+)\)$/\1/p' <<<"$h")"
+    hr="$(sed -nE 's/^Head realtime timestamp: .*\(([0-9a-f]+)\)$/\1/p' <<<"$h")"
+    [ -n "$sid" ] || die "cannot read the sequential number ID of $(basename "$a") (not archived)" 1
+    base="$(basename "$a" .journal)"
+    mv -n "$a" "$d/$base@$sid-$(printf %016x "0x${hs:-0}")-$(printf %016x "0x${hr:-0}").journal" || die "cannot archive $(basename "$a")" 1
+    [ -e "$a" ] && die "$(basename "$a") still present after archiving (name collision?)" 1
+    n=$((n + 1))
+  done
+  log "journald relinquished $JOURNAL_DIR; archived $n sealed active journal file(s) before the key change"
+}
+journald_restart_persistent() { # restart journald and bring it back to /var; FAIL if it stays on the volatile /run journal
+  "$SYSTEMCTL" restart systemd-journald || return 1
+  "$JOURNALCTL" --flush >/dev/null 2>&1 || return 1
+  [ -e "$R$JOURNAL_DIR/$(machine_id)/system.journal" ]
+}
 
 pick_container() {
   [ -n "$CONTAINER" ] && return
@@ -200,12 +230,13 @@ do_apply() { # YES DRY IMMUTABLE KEYOUT
   [ "$n_loaded" -eq "$n_file" ] || die "loaded $n_loaded pft-* rules, rules file has $n_file" 1
   if [ ! -e "$R$DROPIN" ] || [ "$(cat "$R$DROPIN")" != "$dropin" ]; then echo "$dropin" > "$R$DROPIN"; fi
   if [ ! -e "$(fss_file)" ]; then
+    archive_sealed_active
     ( umask 077; "$JOURNALCTL" --setup-keys --interval="$SEAL_INTERVAL" 2>/dev/null > "$4" ) || { rm -f "$4"; die "journalctl --setup-keys failed" 1; }
     [ -s "$4" ] || die "journalctl --setup-keys printed no verification key" 1
     gen=true
     log "FSS keys generated (interval $SEAL_INTERVAL); verification key written to --key-out file only (0600), sha256 prefix $(sha256sum "$4" | cut -c1-12): move it off-host and delete it here"
   fi
-  "$SYSTEMCTL" restart systemd-journald && "$JOURNALCTL" --rotate >/dev/null 2>&1 || die "journald restart/rotate failed" 1
+  journald_restart_persistent && "$JOURNALCTL" --rotate >/dev/null 2>&1 || die "journald restart/flush/rotate failed (system journal not back on $JOURNAL_DIR?)" 1
   en="$(audit_enabled)"
   case "$en" in 1|2) ;; *) die "kernel auditing is enabled=${en:-?} after the journald restart (expected 1 or 2)" 1 ;; esac
   jq -n --arg t "$(date -u +%FT%TZ)" --argjson inst "$installed" --argjson imm "$([ "$3" = 1 ] && echo true || echo false)" \
@@ -265,10 +296,12 @@ do_rollback() { # YES DRY
     echo "dry-run: nothing changed"; return 0
   fi
   [ "$1" = 1 ] || die "rollback changes audit + journald config; re-run with --yes (or --dry-run)" 4
+  en0="$(audit_enabled)"
+  if [ -e "$(fss_file)" ]; then archive_sealed_active; fi
   rm -f "$R$RULES_FILE" "$R$IMMUTABLE_FILE" "$R$DROPIN" "$(fss_file)"
   log "removed rules files, journald drop-in, FSS key"
-  en0="$(audit_enabled)"
-  "$SYSTEMCTL" restart systemd-journald && "$JOURNALCTL" --rotate >/dev/null 2>&1 || log "WARN: journald restart/rotate failed"
+  if journald_restart_persistent; then log "journald restarted, writing to $JOURNAL_DIR (unsealed)"
+  else log "WARN: journald restart/flush failed or no system.journal on $JOURNAL_DIR: check 'journalctl --header' and run 'journalctl --flush'"; fi
   en="$(audit_enabled)"
   # without our Audit=yes drop-in the restarted journald (Audit=no default) has just switched kernel auditing off
   if [ "$en0" = 1 ] && [ "$en" = 0 ]; then "$AUDITCTL" -e 1 >/dev/null 2>&1; en="$(audit_enabled)"; log "journald restart disabled kernel auditing; re-enabled: enabled=$en"; fi

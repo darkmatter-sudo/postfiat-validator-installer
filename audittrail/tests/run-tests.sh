@@ -50,14 +50,28 @@ exit 0
 EOF
 cat > "$WORK/bin/journalctl" <<'EOF'
 #!/usr/bin/env bash
+# journald model (enough for the key-change bugs found live): the active file system.journal holds "sealed:<key>"
+# or "unsealed"; journald loads the fss key at restart ($STUB/jd_key). Reopening a file sealed under another key
+# appends mixed tags (-> $STUB/mixed), reopening it with no key fails and journald stays on /run ($STUB/mode).
 echo "journalctl $*" >> "$STUB/calls.log"
-j="$PFT_AT_ROOT/var/log/journal/$MID"
+j="${JOURNAL_DIR_ABS:-$PFT_AT_ROOT/var/log/journal}/$MID"; a="$j/system.journal"
+jd="$(cat "$STUB/jd_key" 2>/dev/null || echo none)"
 case "$1" in
   --setup-keys) [ -e "$j/fss" ] && { echo "Sealing key file $j/fss exists already." >&2; exit 1; }
-                mkdir -p "$j"; echo fake-sealing-key > "$j/fss"
+                mkdir -p "$j"; echo "fake-sealing-key-$RANDOM$RANDOM" > "$j/fss"
                 echo "New keys have been generated (human text goes to stderr when stdout is not a tty)" >&2
                 echo "8f2b7c-1d3e5a-9c4b0f-2e6d8a/1b2c3d-35a4e900" ;;
-  --rotate) : ;;
+  --relinquish-var) echo runtime > "$STUB/mode"; touch "$STUB/relinquished" ;;
+  --flush) rm -f "$STUB/relinquished"; bash "$STUB/../bin/jd-open" || exit 1 ;;
+  --rotate) if [ "$(cat "$STUB/mode" 2>/dev/null)" = var ] && [ -e "$a" ]; then
+              n=$(( $(cat "$STUB/seq" 2>/dev/null || echo 0) + 1 )); echo $n > "$STUB/seq"
+              mv "$a" "$j/system@${MID}-$(printf %016x $n)-00065eb5efbbaefd.journal"
+              if [ "$jd" = none ]; then echo unsealed > "$a"; else echo "sealed:$jd" > "$a"; fi; echo "seq:$RANDOM" >> "$a"
+            fi ;;
+  --header) f="${2#--file=}"; [ -e "$f" ] || exit 1
+            echo "Sequential number ID: $MID"; echo "State: ONLINE"
+            grep -q '^sealed:' "$f" && echo "Compatible flags: SEALED" || echo "Compatible flags:"
+            q="$(sed -n 's/^seq://p' "$f")"; q="${q:-10}"; echo "Head sequential number: $q ($(printf %x "$q"))"; echo "Head realtime timestamp: Mon 2026-10-26 04:29:24 CET (65eb5efbbaefd)" ;;
   --verify) out="$(sed "s#<machine-id>#$MID#" "$FX/journalctl-verify-unsealed.txt")"; key=no
             case " $* " in *" --verify-key="*) key=yes ;; esac
             if [ -e "$STUB/verify_flipped" ]; then printf '%s\n' "$out"; sed "s#copy.journal#$j/system@flipped.journal#" "$FX/journalctl-verify-flipped.txt"; exit 1; fi
@@ -67,11 +81,30 @@ case "$1" in
             [ -e "$j/fss" ] && echo "PASS: $j/system.journal" ;;
 esac
 EOF
+cat > "$WORK/bin/jd-open" <<'EOF'
+#!/usr/bin/env bash
+# journald (re)opening /var: called at restart (unless relinquished) and by --flush
+j="${JOURNAL_DIR_ABS:-$PFT_AT_ROOT/var/log/journal}/$MID"; a="$j/system.journal"
+jd="$(cat "$STUB/jd_key" 2>/dev/null || echo none)"
+[ -e "$STUB/relinquished" ] && exit 0
+mkdir -p "$j"
+if [ ! -e "$a" ]; then
+  if [ "$jd" = none ]; then echo unsealed > "$a"; else echo "sealed:$jd" > "$a"; fi; echo "seq:$RANDOM" >> "$a"
+elif grep -q '^sealed:' "$a"; then
+  k="$(sed 's/^sealed://' "$a")"
+  if [ "$jd" = none ]; then echo runtime > "$STUB/mode"; echo "open $a: Required key not available" >&2; exit 1; fi
+  [ "$k" = "$jd" ] || echo "mixed: file sealed:$k reopened with key $jd" >> "$STUB/mixed"
+fi
+echo var > "$STUB/mode"
+EOF
 cat > "$WORK/bin/systemctl" <<'EOF'
 #!/usr/bin/env bash
 echo "systemctl $*" >> "$STUB/calls.log"
 case "$1 ${2:-}" in
   "restart systemd-journald") # journald Audit= (default no) sets kernel auditing at start; immutable (2) cannot change
+    f="${JOURNAL_DIR_ABS:-$PFT_AT_ROOT/var/log/journal}/$MID/fss"
+    if [ -e "$f" ]; then cat "$f" > "$STUB/jd_key"; else echo none > "$STUB/jd_key"; fi
+    bash "$STUB/../bin/jd-open" 2>/dev/null
     en="$(cat "$STUB/enabled")"
     if [ "$en" != 2 ]; then
       if grep -qx 'Audit=yes' "${JOURNALD_DIR_ABS:-$PFT_AT_ROOT/etc/systemd/journald.conf.d}"/*.conf 2>/dev/null; then echo 1 > "$STUB/enabled"; else echo 0 > "$STUB/enabled"; fi
@@ -120,6 +153,7 @@ reset_host() { # fresh fake root: installer defaults, no auditd, unsealed persis
         "$r/etc/ssh/sshd_config" "$r/etc/sudoers" "$r/usr/bin/docker" "$r/usr/bin/dockerd" "$r/usr/bin/kmod" \
         "$r/etc/localtime" "$r/usr/local/bin/pft-integrity" "$r/etc/pft-integrity.env"
   echo 1 > "$STUB/enabled"; echo inactive > "$STUB/auditd_active"; : > "$STUB/rules"
+  echo unsealed > "$r/var/log/journal/$MID/system.journal"; echo none > "$STUB/jd_key"; echo var > "$STUB/mode"
 }
 run() { env PATH="$WORK/bin:$PATH" AGENT_DIRS=/srv/agent PFT_AT_TEST=1 PFT_AT_MACHINE_ID="$MID" STATE_DIR=/var/lib/pft-audittrail bash "$AT" "$@"; }
 R() { echo "$WORK/root$1"; }
@@ -251,11 +285,32 @@ out="$(run check 2>&1)"; rc=$?
 reset_host; touch "$STUB/installed"; echo active > "$STUB/auditd_active"
 P="$WORK/prod"; rm -rf "$P"; mkdir -p "$P/rules.d" "$P/journald.conf.d" "$P/journal/$MID"
 prun() { env PATH="$WORK/bin:$PATH" AGENT_DIRS=/srv/agent PFT_AT_TEST=1 PFT_AT_ROOT= PFT_AT_MACHINE_ID="$MID" RULES_DIR="$P/rules.d" JOURNALD_DIR="$P/journald.conf.d" \
-  JOURNAL_DIR="$P/journal" STATE_DIR="$P/state" RULES_DIR_ABS="$P/rules.d" JOURNALD_DIR_ABS="$P/journald.conf.d" CONTAINER=none bash "$AT" "$@"; }
+  JOURNAL_DIR="$P/journal" JOURNAL_DIR_ABS="$P/journal" STATE_DIR="$P/state" RULES_DIR_ABS="$P/rules.d" JOURNALD_DIR_ABS="$P/journald.conf.d" CONTAINER=none bash "$AT" "$@"; }
 out="$(prun apply --yes --key-out "$WORK/vkey3" 2>&1)"; rc=$?
 [ $rc -eq 0 ] && [ -e "$P/state/state.json" ] && ok "empty PFT_AT_ROOT: apply ok" || { bad "prod apply rc=$rc"; ind <<<"$out"; }
 out="$(prun rollback --yes 2>&1)"; rc=$?
 [ $rc -eq 0 ] && [ ! -e "$P/state" ] && ! grep -q "parameter null" <<<"$out" && ok "empty PFT_AT_ROOT: rollback removes the state dir, exit 0" || { bad "prod rollback rc=$rc"; ind <<<"$out"; }
+
+# --- 8. FSS key change: rollback + re-apply must not mix keys in one file or leave journald on /run ---
+# (found live on the sentry: a re-apply sealed one file under two keys -> "Epoch sequence out of synchronization",
+#  and after rollback journald could not reopen the sealed active file and logged to the volatile /run journal)
+reset_host; touch "$STUB/installed"; echo active > "$STUB/auditd_active"
+J="$(R /var/log/journal/$MID)"
+run apply --yes --key-out "$WORK/k1" >/dev/null 2>&1; k1="$(sed 's/^sealed://' "$J/system.journal")"
+out="$(run rollback --yes 2>&1)"; rc=$?
+[ $rc -eq 0 ] && [ "$(cat "$STUB/mode")" = var ] && grep -qx unsealed "$J/system.journal" \
+  && ok "rollback: journald back on /var with a fresh unsealed system.journal" || { bad "rollback left journald on $(cat "$STUB/mode") rc=$rc"; ind <<<"$out"; }
+arch=""; for f in "$J"/system@"$MID"-*-00065eb5efbbaefd.journal; do grep -qx "sealed:$k1" "$f" 2>/dev/null && arch="$f"; done
+[ -n "$arch" ] && [[ "$(basename "$arch")" =~ ^system@${MID}-[0-9a-f]{16}-00065eb5efbbaefd\.journal$ ]] \
+  && ok "rollback: the sealed active file was archived under journald's name (system@<seqnum id>-<head seq>-<head rt>)" || { bad "no archive"; find "$J" -type f | ind; }
+out="$(run apply --yes --key-out "$WORK/k2" 2>&1)"; rc=$?
+[ $rc -eq 0 ] && [ ! -s "$STUB/mixed" ] && ! grep -qx "sealed:$k1" "$J/system.journal" \
+  && ok "re-apply with new keys: no file sealed under two keys" || { bad "re-apply rc=$rc mixed: $(cat "$STUB/mixed" 2>/dev/null)"; ind <<<"$out"; }
+# key change with the old key still loaded (fss deleted by hand, journald not restarted)
+rm -f "$J/fss"; : > "$STUB/mixed"
+out="$(run apply --yes --key-out "$WORK/k3" 2>&1)"; rc=$?
+[ $rc -eq 0 ] && [ ! -s "$STUB/mixed" ] && [ "$(cat "$STUB/mode")" = var ] && grep -q '^sealed:' "$J/system.journal" \
+  && ok "re-key while the old key is loaded: old file archived, new file sealed, no mixing" || { bad "re-key rc=$rc mixed: $(cat "$STUB/mixed" 2>/dev/null)"; ind <<<"$out"; }
 
 echo
 echo "RESULT: $pass passed, $fail failed"
