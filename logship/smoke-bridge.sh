@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Output files are meant to be owned by the calling user (only the bridge needs root, for the docker socket).
+# shellcheck disable=SC2024
+# Live resume smoke test of pft-logship-dockerlog against the real postfiatd container (read-only: docker logs only;
+# output to a temp dir, nothing written to the journal, no unit installed). Usage: bash logship/smoke-bridge.sh
+set -uo pipefail
+D=logship/pft-logship-dockerlog.py; T="$(mktemp -d)"; S="$T/state"
+grep PRETTY_NAME /etc/os-release
+echo "sha256 $(sha256sum < "$D" | cut -c1-16) $D"
+since="$(date -u -d '-5 sec' +%FT%TZ)"
+echo "== run 1 (no state, from now), SIGTERM after 40s"
+sudo PFT_LS_DL_STATE="$S" timeout -s TERM 40 python3 -I "$D" postfiatd > "$T/o1" 2> "$T/e1"; echo "rc=$?"; sed 's/^/  stderr: /' "$T/e1"
+echo "state after run 1: $(sudo cat "$S/postfiatd.state")"
+sleep 10
+echo "== run 2 (resume, 10s of new log lines waiting + ~19s --since scan), SIGTERM after 40s"
+sudo PFT_LS_DL_STATE="$S" timeout -s TERM 40 python3 -I "$D" postfiatd > "$T/o2" 2> "$T/e2"; echo "rc=$?"; sed 's/^/  stderr: /' "$T/e2"
+echo "lines: run1=$(wc -l < "$T/o1") run2=$(wc -l < "$T/o2")"
+# postfiatd lines carry their own ns timestamp in fields 1-3: use them as line identities
+cat "$T/o1" "$T/o2" | cut -d' ' -f1-3 | sort | uniq -d > "$T/dups"; echo "lines in both runs (repeats): $(wc -l < "$T/dups")"
+# docker's own view of the same span: from the first line of run 1 to the last line of run 2
+first="$(head -n 1 "$T/o1")"; last="$(tail -n 1 "$T/o2")"
+sudo docker logs --timestamps --since "$since" postfiatd 2>&1 | cut -d' ' -f2- > "$T/ref"
+awk -v a="$first" -v b="$last" '$0==a{on=1} on{print} $0==b{exit}' "$T/ref" > "$T/span"
+echo "docker lines in the same span: $(wc -l < "$T/span")"
+if cmp -s "$T/span" <(cat "$T/o1" "$T/o2"); then echo "RESULT: PASS - run1+run2 == docker's lines for the span (no gap, no repeat, same order)"
+else echo "RESULT: FAIL"; diff <(cat "$T/o1" "$T/o2") "$T/span" | head -5; fi
+sudo rm -rf "$T"

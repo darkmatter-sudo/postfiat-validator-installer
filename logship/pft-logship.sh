@@ -25,7 +25,8 @@
 # Conf: PFT_LS_CONF (/etc/pft-logship.env, root-owned, sourced first): SELF_NAME, PEER_NAME (labels such as
 #       validator-host; the receiver names stored files after the sender's cert CN), SELF_ADDR, PEER_ADDR (IPs, kept
 #       out of the repo), CA_HERE (1 on the CA host), MAX_LAG (120 s), STORE_CAP (2G per sender),
-#       TEXTFILE_DIR (/var/lib/pft-exporter/textfile)
+#       TEXTFILE_DIR (/var/lib/pft-exporter/textfile), DOCKER_CONTAINERS (names, space-separated: containers whose
+#       docker json-file logs are copied into the journal by pft-logship-dockerlog@NAME so they are shipped too)
 # Test hooks: PFT_LS_TEST=1 (no root)  PFT_LS_ROOT (prefix for host paths)  PFT_LS_JOURNALCTL  PFT_LS_NEWEST_USEC
 #             PFT_LS_SYSTEMCTL  PFT_LS_CURL  PFT_LS_NOW
 
@@ -46,6 +47,7 @@ PORT=19532
 MAX_LAG="${MAX_LAG:-120}"
 STORE_CAP="${STORE_CAP:-2G}"
 TEXTFILE_DIR="${TEXTFILE_DIR:-/var/lib/pft-exporter/textfile}"
+DOCKER_CONTAINERS="${DOCKER_CONTAINERS:-}"
 TLS_DIR=/etc/pft-logship/tls
 CA_DIR=/etc/pft-logship/ca
 REMOTE_DIR=/var/log/journal/remote
@@ -54,6 +56,9 @@ REMOTE_DROPIN=/etc/systemd/journal-remote.conf.d/pft-logship.conf
 UNIT_DROPIN=/etc/systemd/system/systemd-journal-upload.service.d/pft-logship.conf
 VAC_UNIT=/etc/systemd/system/pft-logship-vacuum
 CHECK_STATE=/var/lib/pft-logship/check.state
+DL_BIN=/usr/local/sbin/pft-logship-dockerlog
+DL_UNIT=/etc/systemd/system/pft-logship-dockerlog@.service
+DL_SRC="${PFT_LS_DL_SRC:-$(dirname "${BASH_SOURCE[0]}")/pft-logship-dockerlog.py}"
 # journal-upload runs with DynamicUser=yes: it gets the root-only key as a credential at this fixed path
 UPLOAD_CRED=/run/credentials/systemd-journal-upload.service
 # ... and StateDirectory=systemd/journal-upload, so the real state dir is under private/
@@ -118,6 +123,14 @@ render_vacuum_timer() {
   printf '[Unit]\nDescription=pft-logship: hourly cap of received peer journals\n[Timer]\nOnCalendar=hourly\n'
   printf 'Persistent=true\n[Install]\nWantedBy=timers.target\n'
 }
+render_dockerlog_unit() { # -> pft-logship-dockerlog@.service: one bridge per container, its stdout is the journal
+  printf '# pft-logship: copy container %%i'"'"'s docker json-file log into the journal (SyslogIdentifier=%%i)\n'
+  printf '[Unit]\nDescription=pft-logship: container %%i logs -> journal\nAfter=docker.service\nWants=docker.service\n'
+  printf 'StartLimitIntervalSec=0\n[Service]\nExecStart=/usr/bin/python3 -I %s %%i\nSyslogIdentifier=%%i\n' "$DL_BIN"
+  printf 'StandardOutput=journal\nStandardError=journal\n'
+  printf '# ~800 lines/min steady, more while catching up after a restart: no journald rate limit for this unit\n'
+  printf 'LogRateLimitIntervalSec=0\nRestart=always\nRestartSec=5\n[Install]\nWantedBy=multi-user.target\n'
+}
 render_ufw() { # [ADDR] [allow|delete allow] -> the one UFW rule apply adds (peer address only; <peer> when printed)
   printf 'ufw %s proto tcp from %s to any port %d comment pft-logship\n' "${2:-allow}" "${1:-<peer>}" "$PORT"
 }
@@ -132,6 +145,7 @@ print_plan() {
   echo; echo "== $UNIT_DROPIN"; render_unit_dropin
   echo; echo "== $VAC_UNIT.service"; render_vacuum_service
   echo; echo "== $VAC_UNIT.timer"; render_vacuum_timer
+  echo; echo "== $DL_UNIT (containers: ${DOCKER_CONTAINERS:-none})"; render_dockerlog_unit
   echo; echo "== firewall"; render_ufw ""
   echo; echo "== steps apply will take"
   echo "1. apt-get install systemd-journal-remote (receiver + uploader units, disabled until configured)"
@@ -141,7 +155,10 @@ print_plan() {
   echo "4. write the drop-ins and timer above and the UFW rule (peer address only), then enable --now"
   echo "   systemd-journal-remote.socket, systemd-journal-upload and pft-logship-vacuum.timer (cap $STORE_CAP per"
   echo "   sender: journal-remote in systemd 249 has no MaxUse=)"
-  echo "5. pft-integrity accept for the new package/units/config (no postfiatd restart at any step)"
+  echo "5. containers log through docker's json-file driver, not journald: install $DL_BIN and start"
+  echo "   pft-logship-dockerlog@NAME for each of DOCKER_CONTAINERS (${DOCKER_CONTAINERS:-none}); resumes from its saved"
+  echo "   docker timestamp, so the container is never touched (no log-driver change, no restart)"
+  echo "6. pft-integrity accept for the new package/units/config (no postfiatd restart at any step)"
 }
 
 # --- apply / sign / check / rollback ---------------------------------------------------------------------------
@@ -167,6 +184,9 @@ need_conf() {
     [ -n "${!v}" ] || die "$v is not set in $CONF" 3
   done
   [[ "$SELF_NAME" =~ ^[a-z0-9-]+$ && "$PEER_NAME" =~ ^[a-z0-9-]+$ ]] || die "SELF_NAME/PEER_NAME must be [a-z0-9-] labels" 3
+  for v in $DOCKER_CONTAINERS; do
+    [[ "$v" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || die "DOCKER_CONTAINERS: bad container name $v" 3
+  done
 }
 make_csr() { # this host's key (never leaves it) + CSR: CN = SELF_NAME, SAN = IP:SELF_ADDR (the peer's upload URL host)
   if [ -f "$R$TLS_DIR/host.key" ]; then echo "= $TLS_DIR/host.key exists (kept)"
@@ -206,6 +226,7 @@ do_sign() { # CSR_FILE -> certificate PEM on stdout (CA host only). The CA key i
   rm -f "$ext"; [ "$rc" -eq 0 ] || die "signing failed" 1
 }
 do_apply() {
+  local c
   need_conf
   echo "pft-logship apply$([ "$DRY" -eq 1 ] && echo ' --dry-run') - $(date -u +%FT%TZ) - this host $SELF_NAME -> peer $PEER_NAME"
   if dpkg-query -W -f '${Status}' systemd-journal-remote 2>/dev/null | grep -q 'ok installed'; then
@@ -231,6 +252,15 @@ do_apply() {
   run "$SYSTEMCTL" enable --now systemd-journal-remote.socket pft-logship-vacuum.timer || die "enable failed" 1
   run "$SYSTEMCTL" enable systemd-journal-upload.service
   run "$SYSTEMCTL" restart systemd-journal-upload.service || die "journal-upload did not start" 1
+  if [ -n "$DOCKER_CONTAINERS" ]; then
+    [ -f "$DL_SRC" ] || die "bridge source $DL_SRC missing (run apply from the logship/ folder)" 3
+    run install -m 755 "$DL_SRC" "$R$DL_BIN" || die "bridge install failed" 1
+    put "$DL_UNIT" 644 "$(render_dockerlog_unit)"
+    run "$SYSTEMCTL" daemon-reload
+    for c in $DOCKER_CONTAINERS; do
+      run "$SYSTEMCTL" enable --now "pft-logship-dockerlog@$c.service" || die "bridge for $c did not start" 1
+    done
+  fi
   if [ "$DRY" -eq 1 ]; then echo "dry-run: nothing changed"
   else echo "applied. Next: sudo pft-integrity accept --reason 'pft-logship apply', then pft-logship check"; fi
 }
@@ -248,6 +278,12 @@ peer_rx_age() { # seconds since the newest entry received FROM the peer; rc 1 if
   [ -n "$nu" ] || return 1
   echo $(( ${PFT_LS_NOW:-$(date +%s)} - nu / 1000000 ))
 }
+ident_age() { # NAME -> seconds since the newest LOCAL journal entry with SyslogIdentifier NAME; rc 1 if none
+  local nu
+  nu="$("$JOURNALCTL" -t "$1" -n 1 -o json --no-pager 2>/dev/null | jq -r '.__REALTIME_TIMESTAMP // empty')"
+  [ -n "$nu" ] || return 1
+  echo $(( ${PFT_LS_NOW:-$(date +%s)} - nu / 1000000 ))
+}
 stalled() { # CURSOR LAG: 0 (stalled) if the cursor has not moved for >= MAX_LAG while the local journal is ahead of it
   local f="$R$CHECK_STATE" now prev prevt
   now="${PFT_LS_NOW:-$(date +%s)}"
@@ -258,12 +294,21 @@ stalled() { # CURSOR LAG: 0 (stalled) if the cursor has not moved for >= MAX_LAG
   [ "$2" -gt 0 ] && [ $((now - prevt)) -ge "$MAX_LAG" ]
 }
 do_check() { # TEXTFILE(0|1)
-  local rc=0 out lag age u why
+  local rc=0 out lag age u why c
   need_conf
   echo "pft-logship check - $(date -u +%FT%TZ) - $SELF_NAME -> $PEER_NAME (max lag ${MAX_LAG}s)"
   for u in systemd-journal-upload.service systemd-journal-remote.socket pft-logship-vacuum.timer; do
     if [ "$("$SYSTEMCTL" is-active "$u" 2>/dev/null)" = active ]; then echo "unit: $u active"
     else echo "unit: $u NOT active"; rc=1; fi
+  done
+  for c in $DOCKER_CONTAINERS; do
+    if [ "$("$SYSTEMCTL" is-active "pft-logship-dockerlog@$c.service" 2>/dev/null)" != active ]; then
+      echo "unit: pft-logship-dockerlog@$c.service NOT active"; rc=1
+    elif ! age="$(ident_age "$c")"; then echo "bridge: no journal entries from $c"; rc=1
+    else
+      echo "bridge: pft-logship-dockerlog@$c active, newest $c journal entry ${age}s old"
+      [ "$age" -le "$MAX_LAG" ] || { echo "bridge: older than ${MAX_LAG}s"; rc=1; }
+    fi
   done
   if why="$(cert_ok)"; then echo "cert: host.crt chains to ca.crt, matches host.key, valid > 24h"
   else echo "cert: $why"; rc=1; fi
@@ -282,9 +327,12 @@ do_check() { # TEXTFILE(0|1)
   return "$rc"
 }
 do_rollback() { # removes config, units and the UFW rule; keeps received journals (evidence) and the package
+  local c
   echo "pft-logship rollback$([ "$DRY" -eq 1 ] && echo ' --dry-run') - $(date -u +%FT%TZ)"
   run "$SYSTEMCTL" disable --now systemd-journal-upload.service systemd-journal-remote.socket pft-logship-vacuum.timer
   run "$SYSTEMCTL" stop systemd-journal-remote.service
+  for c in $DOCKER_CONTAINERS; do run "$SYSTEMCTL" disable --now "pft-logship-dockerlog@$c.service"; done
+  run rm -f "$R$DL_UNIT" "$R$DL_BIN"
   run rm -f "$R$UPLOAD_DROPIN" "$R$REMOTE_DROPIN" "$R$UNIT_DROPIN" "$R$VAC_UNIT.service" "$R$VAC_UNIT.timer" "$R$CHECK_STATE"
   if [ -n "$PEER_ADDR" ]; then
     # shellcheck disable=SC2046  # word splitting of the rendered rule is intended
@@ -292,7 +340,7 @@ do_rollback() { # removes config, units and the UFW rule; keeps received journal
   else echo "= PEER_ADDR unset: remove the pft-logship UFW rule by hand (ufw status numbered)"; fi
   run "$SYSTEMCTL" daemon-reload
   [ "$PURGE_KEYS" -eq 1 ] && run rm -rf "$R$TLS_DIR"
-  echo "kept: received journals in $REMOTE_DIR, the systemd-journal-remote package$([ "$PURGE_KEYS" -eq 1 ] || echo ", $TLS_DIR (--purge-keys removes it)")"
+  echo "kept: received journals in $REMOTE_DIR, bridge resume state in /var/lib/pft-logship/dockerlog, the systemd-journal-remote package$([ "$PURGE_KEYS" -eq 1 ] || echo ", $TLS_DIR (--purge-keys removes it)")"
 }
 
 do_lag() { # TEXTFILE(0|1)

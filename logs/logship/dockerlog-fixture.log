@@ -1,0 +1,8 @@
+$ grep PRETTY_NAME /etc/os-release
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+$ sudo docker logs --timestamps --since 2m postfiatd 2>&1 | wc -l
+1610
+$ sudo docker logs --timestamps --since 2m postfiatd 2>&1 | awk '{print length($1)}' | sort | uniq -c
+   1610 30
+$ duplicate timestamps in last 2m:
+0

@@ -1,0 +1,19 @@
+$ bash smoke.sh
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+sha256 5bfcb1d25d53dee7 logship/pft-logship-dockerlog.py
+== run 1 (no state, from now), SIGTERM after 8s
+rc=124
+  stderr: pft-logship-dockerlog: postfiatd since 1793013245 (no state: from now)
+  stderr: pft-logship-dockerlog: postfiatd stream ended: 0 written, 0 skipped (resume overlap)
+cat: /tmp/tmp.4yyC8KoeUz/state/postfiatd.state: No such file or directory
+state after run 1: 
+== run 2 (resume, 6s of new log lines waiting), SIGTERM after 8s
+rc=124
+  stderr: pft-logship-dockerlog: postfiatd since 1793013259 (no state: from now)
+  stderr: pft-logship-dockerlog: postfiatd stream ended: 0 written, 0 skipped (resume overlap)
+lines: run1=0 run2=0
+lines in both runs (repeats): 0
+docker lines in the same span: 1
+RESULT: FAIL
+0a1
+> 

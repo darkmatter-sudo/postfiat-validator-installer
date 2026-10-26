@@ -24,6 +24,11 @@ printf 'PRETTY_NAME="Ubuntu 22.04.5 LTS"\n' > "$WORK/root/etc/os-release"
 cat > "$WORK/bin/journalctl" <<STUB
 #!/usr/bin/env bash
 # --directory=... is the receive side (peer's journal); RX=none -> no entries
+# -t NAME is the bridge's local entries (pft-logship-dockerlog@NAME); DLRX=none -> no entries
+if [[ " \$* " == *" -t "* ]]; then
+  [ "\${DLRX:-}" = none ] && exit 0
+  echo "{\"__REALTIME_TIMESTAMP\":\"\${DLRX:-$RT}\",\"MESSAGE\":\"bridge\"}"; exit 0
+fi
 if [[ "\$*" == *--directory=* ]]; then
   [ "\${RX:-}" = none ] && exit 0
   echo "{\"__REALTIME_TIMESTAMP\":\"\${RX:-$RT}\",\"MESSAGE\":\"rx\"}"; exit 0
@@ -189,6 +194,39 @@ out="$(PFT_LS_CONF="$WORK/none.env" bash "$LS" apply --dry-run 2>&1)"; rc=$?
 printf 'SELF_NAME=Bad_Name\nPEER_NAME=sentry-host\nSELF_ADDR=192.0.2.10\nPEER_ADDR=198.51.100.7\n' > "$WORK/badname.env"
 out="$(PFT_LS_CONF="$WORK/badname.env" bash "$LS" apply --dry-run 2>&1)"; rc=$?
 [ "$rc" -eq 3 ] && grep -q 'must be \[a-z0-9-\] labels' <<<"$out" && ok "apply: non-label SELF_NAME -> exit 3" || bad "badname: rc=$rc"
+
+# ---- docker log bridge (pft-logship-dockerlog@NAME) in plan / check / apply / rollback ---------------------------
+printf 'SELF_NAME=validator-host\nPEER_NAME=sentry-host\nSELF_ADDR=192.0.2.10\nPEER_ADDR=198.51.100.7\nDOCKER_CONTAINERS=postfiatd\n' > "$WORK/dl.env"
+out="$(PFT_LS_CONF="$WORK/dl.env" bash "$LS" plan 2>&1)"
+grep -qx '== /etc/systemd/system/pft-logship-dockerlog@.service (containers: postfiatd)' <<<"$out" \
+  && grep -qx 'ExecStart=/usr/bin/python3 -I /usr/local/sbin/pft-logship-dockerlog %i' <<<"$out" && grep -qx 'LogRateLimitIntervalSec=0' <<<"$out" \
+  && ok "plan: bridge unit for postfiatd, python -I, no journald rate limit" || bad "plan bridge: $out"
+dchk() { PFT_LS_CONF="$WORK/dl.env" bash "$LS" check 2>&1; }
+rm -f "$WORK/root/var/lib/pft-logship/check.state"
+out="$(NEWEST="$RT" DLRX=$((RT + 15000000)) PFT_LS_NOW=$NOW0 dchk)"; rc=$?
+[ "$rc" -eq 0 ] && grep -qx 'bridge: pft-logship-dockerlog@postfiatd active, newest postfiatd journal entry 5s old' <<<"$out" \
+  && ok "check: bridge active + postfiatd entry 5s old -> PASS (presence control)" || bad "bridge pass: rc=$rc $out"
+out="$(DOWN=pft-logship-dockerlog@postfiatd.service NEWEST="$RT" PFT_LS_NOW=$NOW0 dchk)"; rc=$?
+[ "$rc" -eq 1 ] && grep -qx 'unit: pft-logship-dockerlog@postfiatd.service NOT active' <<<"$out" && ok "check: bridge unit down -> exit 1" || bad "bridge down: rc=$rc"
+out="$(DLRX=none NEWEST="$RT" PFT_LS_NOW=$NOW0 dchk)"; rc=$?
+[ "$rc" -eq 1 ] && grep -qx 'bridge: no journal entries from postfiatd' <<<"$out" && ok "check: no postfiatd entries in the journal -> exit 1" || bad "bridge none: rc=$rc"
+out="$(DLRX=$((RT - 300000000)) NEWEST="$RT" PFT_LS_NOW=$NOW0 dchk)"; rc=$?
+[ "$rc" -eq 1 ] && grep -q 'newest postfiatd journal entry 320s old' <<<"$out" && grep -qx 'bridge: older than 120s' <<<"$out" \
+  && ok "check: newest postfiatd entry 320s old (bridge stuck) -> exit 1" || bad "bridge old: rc=$rc $out"
+out="$(PFT_LS_CONF="$WORK/dl.env" PFT_LS_DL_SRC="$HERE/../pft-logship-dockerlog.py" bash "$LS" apply --dry-run 2>&1)"; rc=$?
+[ "$rc" -eq 0 ] && grep -q '^+ install -m 755 .*pft-logship-dockerlog.py .*/usr/local/sbin/pft-logship-dockerlog$' <<<"$out" \
+  && grep -qx '+ .*systemctl enable --now pft-logship-dockerlog@postfiatd.service' <<<"$out" \
+  && [ "$(find "$WORK/root" -type f | sort | xargs sha256sum)" = "$before" ] \
+  && ok "apply --dry-run: installs the bridge and enables pft-logship-dockerlog@postfiatd, changes nothing" || bad "apply bridge: rc=$rc $out"
+out="$(PFT_LS_CONF="$WORK/dl.env" PFT_LS_DL_SRC="$WORK/missing.py" bash "$LS" apply --dry-run 2>&1)"; rc=$?
+[ "$rc" -eq 3 ] && grep -q 'bridge source .* missing' <<<"$out" && ok "apply: bridge source missing -> exit 3" || bad "src missing: rc=$rc"
+out="$(PFT_LS_CONF="$WORK/dl.env" bash "$LS" rollback --dry-run 2>&1)"; rc=$?
+[ "$rc" -eq 0 ] && grep -qx '+ .*systemctl disable --now pft-logship-dockerlog@postfiatd.service' <<<"$out" \
+  && grep -q '^+ rm -f .*pft-logship-dockerlog@.service .*/usr/local/sbin/pft-logship-dockerlog$' <<<"$out" \
+  && ok "rollback --dry-run: stops + removes the bridge, keeps its state" || bad "rollback bridge: rc=$rc $out"
+printf 'SELF_NAME=a\nPEER_NAME=b\nSELF_ADDR=192.0.2.10\nPEER_ADDR=198.51.100.7\nDOCKER_CONTAINERS="postfiatd ../x"\n' > "$WORK/dlbad.env"
+out="$(PFT_LS_CONF="$WORK/dlbad.env" bash "$LS" apply --dry-run 2>&1)"; rc=$?
+[ "$rc" -eq 3 ] && grep -q 'bad container name ../x' <<<"$out" && ok "apply: bad container name -> exit 3" || bad "dl badname: rc=$rc"
 
 # usage errors
 bash "$LS" bogus >/dev/null 2>&1; [ $? -eq 3 ] && ok "unknown command -> exit 3" || bad "unknown command"
