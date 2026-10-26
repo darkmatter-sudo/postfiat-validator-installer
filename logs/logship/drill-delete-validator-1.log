@@ -1,0 +1,18 @@
+$ bash logship/drill-delete.sh validator   (sha256 5db8ff62ddd0611d20ebf8b3c96570803a7f8c87edff8ef1e5be8a55814fa178)
+pft-logship delete-evidence drill - 2026-10-26T13:21:41Z - sender validator-host, receiver sentry-host - id delete-20261026T132141-1255402
+sender OS: Ubuntu 22.04.5 LTS | receiver OS: Ubuntu 22.04.5 LTS
+13:21:41 1. sender: logger -t pft-logship-delete-drill 'drill delete-20261026T132141-1255402'
+13:21:42   PASS receiver has the marker before the delete: 1
+13:21:42 2. sender: journalctl --rotate; find the archived file with the marker
+13:21:43   marker is in archived file system@<...>.journal (100663296 bytes)
+13:21:43   PASS local query finds the marker before the delete: 1
+13:21:43 3. sender: move the file aside (simulated delete; kept in a root-only dir)
+13:21:44   PASS local query after the delete: 0
+13:21:44 4. receiver: journalctl --directory=/var/log/journal/remote -t pft-logship-delete-drill
+13:21:44   PASS peer copy after the local delete: 1
+{"time":"2026-10-26T13:21:41Z","SYSLOG_IDENTIFIER":"pft-logship-delete-drill","MESSAGE":"drill delete-20261026T132141-1255402"}
+13:21:45 5. sender: restore the file
+13:21:46   PASS sha256 after restore equals before: 01f0e064aba1e0ff50bbdd9595a3f089750bda23eb70d4a2cb8ba12844fc9dfc
+13:21:46   PASS local query after the restore: 1
+RESULT: PASS -> exit 0
+drill-exit=0

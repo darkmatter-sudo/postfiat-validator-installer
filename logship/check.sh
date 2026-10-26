@@ -11,8 +11,8 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 3
 S=logship/pft-logship.sh
 rc=0
 D=logship/pft-logship-dockerlog.py
-echo "\$ shellcheck $S logship/tests/run-tests.sh logship/tests/test-dockerlog.sh logship/smoke-bridge.sh logship/check.sh"
-shellcheck "$S" logship/tests/run-tests.sh logship/tests/test-dockerlog.sh logship/smoke-bridge.sh logship/check.sh && echo "shellcheck clean" || rc=1
+echo "\$ shellcheck $S logship/tests/run-tests.sh logship/tests/test-dockerlog.sh logship/smoke-bridge.sh logship/check.sh logship/drill-*.sh logship/lag-sample.sh"
+shellcheck "$S" logship/tests/run-tests.sh logship/tests/test-dockerlog.sh logship/smoke-bridge.sh logship/check.sh logship/drill-*.sh logship/lag-sample.sh && echo "shellcheck clean" || rc=1
 echo "\$ ruff check logship/"
 ruff check logship/ || rc=1
 echo "\$ bash logship/tests/run-tests.sh"
