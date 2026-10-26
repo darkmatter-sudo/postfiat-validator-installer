@@ -342,6 +342,8 @@ MUTANTS=(
   'M15 post lines not parsed|s/H_POST\[\$l\]="\${H_POST\[\$l\]:+\${H_POST\[\$l\]} \&\& }\$rest"/:/'
 )
 
+# sourced (e.g. by test-check-drill.sh) -> fixtures and helpers only
+[ "${BASH_SOURCE[0]}" = "$0" ] || return 0
 suite; RES=$FAILN
 if [ "${1:-}" = --mutants ]; then
   echo; echo "== mutation controls =="

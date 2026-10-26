@@ -1,0 +1,65 @@
+== Ubuntu 22.04.5 LTS | 2026-10-26T20:22:57Z | commit base bfb373bfbdda51d4e0f94db0721272ab5b35828d + working tree
+$ shellcheck -x rollout/drill/check-drill.sh rollout/tests/test-check-drill.sh rollout/tests/mutants-check-drill.sh rollout/tests/test-rollout.sh rollout/pft-rollout.sh
+shellcheck: clean
+$ rollout/tests/test-check-drill.sh
+== no-op run (target == running image) ==
+PASS noop run checked as noop -> PASS
+PASS noop run checked as badimage -> FAIL
+PASS noop: validator not restarted -> FAIL
+PASS noop: sentry image changed -> FAIL
+PASS noop: exit 1 -> FAIL
+PASS noop: wrong run id -> FAIL
+PASS noop: validator soak_pass missing -> FAIL
+== real upgrade (new image promoted) is not a no-op ==
+PASS upgrade run checked as noop -> FAIL
+== bad-image drill on the sentry canary ==
+PASS drill checked as badimage -> PASS
+PASS drill checked as noop -> FAIL
+PASS drill: alert topic got a message -> FAIL
+PASS drill: alert topic unread (null) -> FAIL
+PASS drill: validator restarted -> FAIL
+PASS drill: validator StartedAt empty on both sides -> FAIL
+PASS drill: sentry left on bad image -> FAIL
+PASS drill: rollback_done missing -> FAIL
+PASS drill: validator has an audit event -> FAIL
+== bad-image drill whose rollback re-gate also fails ==
+PASS drill with failed rollback (exit 5) -> FAIL
+== usage errors ==
+PASS unknown mode -> exit 3
+PASS facts not JSON -> exit 3
+TOTAL: 20 passed, 0 failed
+exit 0
+$ rollout/tests/mutants-check-drill.sh
+MUTANT C1 validator StartedAt check always true: CAUGHT by 2 test(s): drill: validator restarted -> FAIL;drill: validator StartedAt empty on both sides -> FAIL
+MUTANT C2 alert topic check always true: CAUGHT by 2 test(s): drill: alert topic got a message -> FAIL;drill: alert topic unread (null) -> FAIL
+MUTANT C3 validator audit-event check always true: CAUGHT by 1 test(s): drill: validator has an audit event -> FAIL
+MUTANT C4 exit code ignored (badimage): CAUGHT by 1 test(s): drill with failed rollback (exit 5) -> FAIL
+MUTANT C5 no-op target check always true: CAUGHT by 1 test(s): upgrade run checked as noop -> FAIL
+MUTANT C6 run id filter dropped: CAUGHT by 1 test(s): noop: wrong run id -> FAIL
+MUTANT C7 sentry final image check always true: CAUGHT by 1 test(s): drill: sentry left on bad image -> FAIL
+MUTANT C8 RESULT always PASS: CAUGHT by 16 test(s): noop run checked as badimage -> FAIL;noop: validator not restarted -> FAIL;noop: sentry image changed -> FAIL;noop: exit 1 -> FAIL;noop: wrong run id -> FAIL;noop: validator soak_pass missing -> FAIL;upgrade run checked as noop -> FAIL;drill checked as noop -> FAIL;drill: alert topic got a message -> FAIL;drill: alert topic unread (null) -> FAIL;drill: validator restarted -> FAIL;drill: validator StartedAt empty on both sides -> FAIL;drill: sentry left on bad image -> FAIL;drill: rollback_done missing -> FAIL;drill: validator has an audit event -> FAIL;drill with failed rollback (exit 5) -> FAIL
+mutants not caught/invalid: 0
+exit 0
+$ rollout/tests/test-rollout.sh
+PASS gate pass: both hosts promoted, canary first, config kept, window+silence per host
+PASS gate timeout on canary: rolled back to recorded image, validator untouched
+PASS second-host failure: validator rolled back, sentry stays promoted
+PASS rollback re-gate failure: exit 5, validator untouched
+PASS lock contention: second run refused, nothing touched
+PASS missing previous digest: refused before any change
+PASS no-op rollout (target == running image): restart + gate on both
+PASS soak failure after gate pass: rolled back
+PASS pft-maint data-collection lock: refused
+PASS config drift after docker run recreate: rolled back to the original container
+PASS build_version != foundation: gate fails
+PASS peers < min_peers: gate fails
+PASS validated ledger age > MAX_LEDGER_AGE: gate fails
+PASS drill path: --no-pull --target local bad image on sentry only
+PASS manual rollback after a promoted run restores both hosts
+PASS plan --json and status --json change nothing
+PASS post command: runs on its host after deploy, before the gate; shown by plan
+PASS post command: runs again after a rollback restore
+PASS post command failure after deploy: rolled back, validator untouched
+PASS post line for an unknown host: config error, nothing touched
+TOTAL: 20 passed, 0 failed
+exit 0

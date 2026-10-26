@@ -136,6 +136,26 @@ line in mutants-2 comes from the CapDrop assertion running against M7's drifted 
 as intended, and the assertion now reads `CapDrop // []`. `test-3.log` (20/20) and `mutants-3.log` (M1-M15 all caught, 0 not caught) are after the post-command
 change (cases 17-20, mutants M12-M15).
 
+### Live drill checker
+
+`drill/check-drill.sh noop|badimage AUDIT_JSONL RUN_ID FACTS_JSON` gives the PASS/FAIL verdict for the live no-op run
+and the bad-image drill. It reads only what a run leaves behind: the audit lines of that run ID, plus a facts file
+that the drill wrapper writes (exit code, sentry and validator container image ID and `StartedAt` before and after,
+number of messages on the throwaway alert topic). `noop` needs exit 0 and, on both hosts in canary order, a target
+equal to the recorded image, gate and soak PASS, promotion, no rollback, a restart (`StartedAt` changed) and the same
+image ID. `badimage` needs exit 1, a sentry deploy, gate FAIL and rollback re-gate PASS, the sentry back on its
+recorded image, no validator audit event, the validator's image ID and `StartedAt` unchanged, and 0 alert-topic
+messages (a missing count is a FAIL, not 0).
+
+The checker is tested before any live run. `tests/test-check-drill.sh` runs pft-rollout.sh against the
+test-rollout.sh stubs (a no-op run, a real upgrade, a bad-image drill, and a bad-image drill whose rollback also
+fails), builds the facts from the stub containers, and checks each positive verdict. It then runs 16 negatives (plus 2 usage-error cases)
+(e.g. validator restarted, alert message received, alert count missing, sentry left on the bad image,
+`rollback_done` removed, wrong run ID, an upgrade passed off as a no-op), each of which must print one exact
+`FAIL <check>` line. `tests/mutants-check-drill.sh` weakens one check at a time (C1-C8) and requires
+test-check-drill.sh to fail on each mutant. Published run: `logs/rollout/checker-1.log` (shellcheck clean, 20/20,
+C1-C8 all caught, test-rollout.sh still 20/20 after the sourcing guard was added).
+
 ## Limits
 
 - Two-host design tested with one compose host and one `docker run` host. The `docker run` recreate keeps user, env,
