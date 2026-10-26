@@ -1,0 +1,31 @@
+pft-logship bridge restart drill - 2026-10-26T15:17:12Z - validator-host - unit pft-logship-dockerlog@postfiatd.service - stopped 60s
+OS: Ubuntu 22.04.5 LTS | docker 29.1.3
+installed bridge sha256 064d79e7878c7bd7 | repo logship/pft-logship-dockerlog.py sha256 064d79e7878c7bd7
+15:17:14   PASS compare self-test (exact|repeat|missing|swapped): missed=0 repeated=0 order=same|missed=0 repeated=1 order=differs|missed=1 repeated=0 order=differs|missed=0 repeated=0 order=differs
+15:17:14   PASS bridge unit active before the drill: active
+15:17:14 0. Alertmanager silence alertname=PFTLogshipBroken for 20 min
+15:17:14   silence 971e9bbf-eee1-4e0b-ba75-4afe7b92ac1d
+15:17:14    (comparison span starts at journal time 2026-10-26T15:17:14Z; 60s of normal bridging first)
+15:18:14 1. systemctl stop pft-logship-dockerlog@postfiatd.service
+15:18:14   PASS bridge unit after stop: inactive
+15:18:14   saved state at stop: ns=1793027894479832094 (15:18:14.479832094) same-timestamp count=1
+15:18:14 2. bridge stopped; postfiatd keeps logging for 60s
+15:19:14 3. systemctl start pft-logship-dockerlog@postfiatd.service
+15:19:14   PASS bridge unit after start: active
+15:19:37   saved state now: ns=1793027976218103200 (15:19:36); past restart time + 10 s: yes
+15:19:37   PASS bridge caught up after restart: yes
+15:19:40 4. journal vs docker logs
+  bridge stderr (journal): pft-logship-dockerlog: postfiatd stream ended: 3206 written, 1 skipped (resume overlap)
+  bridge stderr (journal): pft-logship-dockerlog: postfiatd --since 2026-10-26T15:18:14.479832094Z (resume)
+15:19:55   docker lines ending in whitespace (journald stores them without it): 272
+15:19:56   lines postfiatd wrote while the bridge was down (docker timestamps): 811; found in journal: 811
+15:19:56   PASS every line written during the stop is in the journal: 811
+15:19:56   journal=1975 docker_span=1975 missed=0 repeated=0 order=same
+15:19:56   PASS journal span > STOP_S lines and same length as docker span: yes
+15:19:56   PASS journal == docker span (missed, repeated, order): missed=0 repeated=0 order=same
+15:19:56   same-ns docker timestamps in the span: 0 (the count>1 resume case is covered by tests/test-dockerlog.sh)
+15:19:56 5. PFTLogshipBroken state: pending; waiting for inactive (max 5 min)
+15:20:36   PASS PFTLogshipBroken after the drill: inactive
+15:20:36   silence 971e9bbf-eee1-4e0b-ba75-4afe7b92ac1d expired: HTTP 200
+15:20:36   PASS Alertmanager active alerts: 0
+RESULT: PASS -> exit 0

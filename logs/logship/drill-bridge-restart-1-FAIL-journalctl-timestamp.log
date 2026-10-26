@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+pft-logship bridge restart drill - 2026-10-26T15:09:40Z - validator-host - unit pft-logship-dockerlog@postfiatd.service - stopped 60s
+OS: Ubuntu 22.04.5 LTS | docker 29.1.3
+installed bridge sha256 064d79e7878c7bd7 | repo logship/pft-logship-dockerlog.py sha256 064d79e7878c7bd7
+15:09:41   PASS compare self-test (exact|repeat|missing|swapped): missed=0 repeated=0 order=same|missed=0 repeated=1 order=differs|missed=1 repeated=0 order=differs|missed=0 repeated=0 order=differs
+15:09:41   PASS bridge unit active before the drill: active
+15:09:41 0. Alertmanager silence alertname=PFTLogshipBroken for 20 min
+15:09:41   silence 9c62f3d5-e270-4f96-b4e0-fa6e4e47fe02
+15:09:41    (comparison span starts at journal time 2026-10-26T15:09:41Z; 60s of normal bridging first)
+15:10:41 1. systemctl stop pft-logship-dockerlog@postfiatd.service
+15:10:41   PASS bridge unit after stop: inactive
+15:10:41   saved state at stop: ns=1793027441354998993 (15:10:41.354998993) same-timestamp count=1
+15:10:41 2. bridge stopped; postfiatd keeps logging for 60s
+15:11:41 3. systemctl start pft-logship-dockerlog@postfiatd.service
+15:11:41   PASS bridge unit after start: active
+15:12:08   saved state now: ns=1793027528272916725 (15:12:08); past restart time + 10 s: yes
+15:12:08   PASS bridge caught up after restart: yes
+15:12:11 4. journal vs docker logs
+Failed to parse timestamp: 2026-10-26T15:09:41Z
+15:12:30   lines postfiatd wrote while the bridge was down (docker timestamps): 790; found in journal: 0
+15:12:30   FAIL every line written during the stop is in the journal: got '0', want '790'
+15:12:30   journal=0 docker_span=0 missed=0 repeated=0 order=same
+15:12:30   PASS journal == docker span (missed, repeated, order): missed=0 repeated=0 order=same
+15:12:31   same-ns docker timestamps in the span: 0 (the count>1 resume case is covered by tests/test-dockerlog.sh)
+15:12:31 5. PFTLogshipBroken state: pending; waiting for inactive (max 5 min)
+15:13:01   PASS PFTLogshipBroken after the drill: inactive
+15:13:01   silence 9c62f3d5-e270-4f96-b4e0-fa6e4e47fe02 expired: HTTP 200
+15:13:01   PASS Alertmanager active alerts: 0
+RESULT: FAIL -> exit 1

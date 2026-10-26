@@ -21,6 +21,7 @@ in journald at all. Switching the driver means recreating the container, which t
 | `check.sh` | offline checks: shellcheck, ruff, both stub suites, mutation controls M1-M5, promtool |
 | `tests/run-tests.sh`, `tests/test-dockerlog.sh` | stub-based unit tests (fake journalctl/systemctl/curl/openssl/docker) with captured real fixtures |
 | `drill-marker.sh`, `drill-delete.sh`, `drill-badcert.sh`, `drill-outage.sh` | the four live drills |
+| `drill-bridge-restart.sh` | live resume drill of the installed bridge unit (stop, 60 s of node logging, start, journal vs `docker logs`) |
 | `lag-sample.sh` | 1h forwarding-lag sampler (median / p95 / max per host) |
 | `../alerts/logship.rules.yml`, `../alerts/logship.tests.yml` | the `PFTLogshipBroken` alert rule and its promtool tests |
 
@@ -75,7 +76,7 @@ missing. Mutant M5 drops the stale branch, and the suite must catch it. To fix t
 
 | Claim | Evidence |
 |-------|----------|
-| Unit tests 56/56, bridge tests 16/16, shellcheck + ruff clean, M1-M5 each caught by exactly its test, promtool check + test PASS | `check-8.log` (also shellchecks the drill scripts; check-6 failed on two test regexes of mine, published; check-7 PASS) |
+| Unit tests 56/56, bridge tests 16/16, shellcheck + ruff clean, M1-M5 each caught by exactly its test, promtool check + test PASS | `check-8.log` (also shellchecks the drill scripts; check-6 failed on two test regexes of mine, published; check-7 PASS; `check-9.log` PASS again after adding `drill-bridge-restart.sh`) |
 | FAIL before apply on both hosts (no cursor) | `plan-sentry-1.log`, `plan-validator-1.log` |
 | Apply sentry first, then validator; check PASS both directions | `apply1-*`, `sign.log`, `apply2-*`, `check-live-1.log`, `apply3-*-check-timer.log` |
 | Rule loaded live, metrics fresh, no alert | `alert-rule-live-1.log` |
@@ -84,6 +85,7 @@ missing. Mutant M5 drops the stale branch, and the suite must catch it. To fix t
 | No client cert and a rogue-CA cert with the same CN: HTTP 401, nothing stored; real cert: 202, stored | `drill-badcert-1-FAIL-get-probe.log`, `drill-badcert-2..4.log` |
 | 1h lag, 60 samples per host: validator median 0 s, p95 1 s, max 2 s; sentry median 0 s, p95 1 s, max 1 s | `lag-1h.log` |
 | 10-minute peer outage (sentry's journal-remote stopped, nodes untouched): `check` exits 1 during it, `PFTLogshipBroken` goes pending, then firing (suppressed by the drill's silence, 0 ntfy bridge lines). After the receiver is back, markers 1..10 each arrive exactly once, `check` PASS, rule back to inactive | `drill-outage-2.log` (548 s outage, catch-up 22 s), `drill-outage-2-uploader.log`. Run 1 (`drill-outage-1-*.log`, 544 s outage, catch-up 351 s) passed every live check but its marker checker compared as strings and printed FAIL; fixed (two-digit self-test case), re-checked on the run 1 data, then run 2 |
+| Bridge restart (validator, `pft-logship-dockerlog@postfiatd` stopped 60 s, node untouched): the 811 lines postfiatd wrote while it was down are all in the journal after the restart; journal == `docker logs` for the whole 1975-line span (0 missed, 0 repeated, same order); the resumed stream skipped exactly 1 line (the saved same-timestamp count) | `drill-bridge-restart-3.log`. Run 1 (`drill-bridge-restart-1-FAIL-journalctl-timestamp.log`): journalctl 249 rejected the RFC3339 `--since`, so 0 lines were compared and the empty compare printed PASS; fixed (epoch `--since`, non-empty guard). Run 2 (`drill-bridge-restart-2-FAIL-trailing-whitespace.log`): 187 missed + 187 repeated, all heartbeat lines whose trailing space journald drops; fixed by stripping trailing whitespace on docker's side. Live timestamps never collided (0 same-ns pairs), so the count > 1 resume case is covered only by `tests/test-dockerlog.sh` |
 
 Found while building, then fixed and verified:
 
@@ -92,6 +94,8 @@ Found while building, then fixed and verified:
   sentry's key was made by the old build, in a window of milliseconds, and is now 0640.
 - `docker logs --since` reads every rotated json file first (19 s for 543 MB). A fresh bridge starts with
   `--tail 0` instead (`bridge-smoke-1-FAIL-8s-window.log` -> `bridge-smoke-2.log`).
+- journald's stdout transport drops trailing whitespace from each line, so a bridged line can differ from
+  `docker logs` by trailing spaces (postfiatd's heartbeat lines end in one). Compare with trailing whitespace stripped.
 - The first bad-cert probe used `GET /`. journal-remote completes the TLS handshake without a client cert and
   answers 406 to anyone, because it checks the client cert per request on `POST /upload`. So the drill now
   uploads. The same limit applies to `check`'s TLS probe: it proves the peer's server cert and the handshake.
