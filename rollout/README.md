@@ -110,6 +110,12 @@ read-only `plan`/`status`. `--mutants` applies 11 one-line mutations to a copy o
 after a failed host, no lock, no recorded-image check, rollback without re-gate, no soak, no drift check, peers check
 off, ledger-age check off, data-collection lock check off, restore forcing restart=unless-stopped); each must make at least one case FAIL.
 
+Published runs (Ubuntu 22.04, no host touched): `logs/rollout/test-1.log` and `test-2.log` (16/16 each; test-2 is after the
+CapDrop assertion was made null-safe), `mutants-1-timeout.log` (M1-M8 caught, then stopped by a 1200 s outer `timeout`, exit 124,
+M9-M10 not reached), `mutants-2.log` (full run, M1-M11 all caught, 0 not caught). The `jq: error ... Cannot iterate over null`
+line in mutants-2 comes from the CapDrop assertion running against M7's drifted container (CapDrop missing); the case still FAILed
+as intended, and the assertion now reads `CapDrop // []`.
+
 ## Limits
 
 - Two-host design tested with one compose host and one `docker run` host. The `docker run` recreate keeps user, env,

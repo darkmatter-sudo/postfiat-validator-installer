@@ -202,7 +202,7 @@ t_drift() {
   ro run --yes
   check "rc=1 (got $RC)" eq "$RC" 1
   check "drift logged" has "config DRIFT after recreate"
-  check "original container back with CapDrop ALL" eq "$(jq -r '.containers["postfiatd-sentry"].HostConfig.CapDrop|join(",")' "$T/hosts/relay/state.json")" ALL
+  check "original container back with CapDrop ALL" eq "$(jq -r '.containers["postfiatd-sentry"].HostConfig.CapDrop // [] | join(",")' "$T/hosts/relay/state.json")" ALL
   check "sentry on OLD" eq "$(img relay postfiatd-sentry)" "$OLD"
   check "original restart policy (always) restored" eq "$(jq -r '.containers["postfiatd-sentry"].HostConfig.RestartPolicy.Name' "$T/hosts/relay/state.json")" always
   check "validator untouched" eq "$(mutating local)" 0

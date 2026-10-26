@@ -1,0 +1,22 @@
+# 2026-10-26T18:09:20Z PRETTY_NAME="Ubuntu 22.04.5 LTS"
+$ shellcheck pft-rollout.sh tests/test-rollout.sh tests/stubs/curl tests/stubs/pft-maint tests/stubs/ssh tests/stubs/sudo
+shellcheck exit=0
+$ ./tests/test-rollout.sh
+PASS gate pass: both hosts promoted, canary first, config kept, window+silence per host
+PASS gate timeout on canary: rolled back to recorded image, validator untouched
+PASS second-host failure: validator rolled back, sentry stays promoted
+PASS rollback re-gate failure: exit 5, validator untouched
+PASS lock contention: second run refused, nothing touched
+PASS missing previous digest: refused before any change
+PASS no-op rollout (target == running image): restart + gate on both
+PASS soak failure after gate pass: rolled back
+PASS pft-maint data-collection lock: refused
+PASS config drift after docker run recreate: rolled back to the original container
+PASS build_version != foundation: gate fails
+PASS peers < min_peers: gate fails
+PASS validated ledger age > MAX_LEDGER_AGE: gate fails
+PASS drill path: --no-pull --target local bad image on sentry only
+PASS manual rollback after a promoted run restores both hosts
+PASS plan --json and status --json change nothing
+TOTAL: 16 passed, 0 failed
+exit=0
