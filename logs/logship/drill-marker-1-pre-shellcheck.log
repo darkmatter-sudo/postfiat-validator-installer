@@ -1,0 +1,26 @@
+# OS: Ubuntu 22.04.5 LTS | 2026-10-26T12:16:26Z | both hosts | drill script sha256 524d4995f3add7180880733b9c64026f339fff2ac5920f6905ea9bdd3050bc4f
+$ cat drill-marker.sh
+#!/usr/bin/env bash
+# marker drill: write a unique marker on SRC, time its arrival in DST's received journal (poll 1 s, give up after 120 s)
+set -uo pipefail
+src="$1" dst="$2"; m="pft-logship-marker-$(date -u +%Y%m%dT%H%M%SZ)-$RANDOM"
+on() { if [ "$1" = sentry-host ]; then ssh relay "$2"; else sudo bash -c "$2"; fi; }
+t0=$(date +%s.%N); on "$src" "logger -t pft-logship-drill '$m'"
+echo "$(date -u +%T) wrote on $src: $m"
+for i in $(seq 1 120); do
+  if on "$dst" "journalctl --directory=/var/log/journal/remote -t pft-logship-drill --since -10min -o cat --no-pager" | grep -qx "$m"; then
+    echo "$(date -u +%T) arrived on $dst after $(echo "$(date +%s.%N) - $t0" | bc | cut -c1-5) s (poll 1 s)"; exit 0; fi
+  sleep 1
+done
+echo "NOT arrived on $dst within 120 s"; exit 1
+$ bash drill-marker.sh validator-host sentry-host
+12:16:26 wrote on validator-host: pft-logship-marker-20261026T121626Z-12085
+12:16:27 arrived on sentry-host after 1.009 s (poll 1 s)
+exit 0
+$ bash drill-marker.sh sentry-host validator-host
+12:16:28 wrote on sentry-host: pft-logship-marker-20261026T121627Z-29369
+12:16:28 arrived on validator-host after .7217 s (poll 1 s)
+exit 0
+== container log lines (dockerlog bridge) present on the peer: newest postfiatd entry in the RECEIVED journal
+sentry-host has validator's postfiatd: 2026-10-26T13:16:28+0100  (now 2026-10-26T12:16:29)
+validator-host has sentry's postfiatd-sentry: 2026-10-26T13:16:28+0100 

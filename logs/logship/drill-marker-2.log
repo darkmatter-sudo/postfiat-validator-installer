@@ -1,0 +1,11 @@
+# OS: Ubuntu 22.04.5 LTS | 2026-10-26T12:16:59Z | both hosts | drill-marker.sh sha256 88be81d931a24a6beba0902c1435cedca1dad9b49a83ec7d72e6458e56f96f46 (run 1 used the pre-shellcheck copy, sha 524d4995...)
+$ shellcheck logship/drill-marker.sh
+clean
+$ bash logship/drill-marker.sh validator-host sentry-host
+12:16:59 wrote on validator-host: pft-logship-marker-20261026T121659Z-3111
+12:17:03 arrived on sentry-host after 4.354 s (poll 1 s)
+exit 0
+$ bash logship/drill-marker.sh sentry-host validator-host
+12:17:08 wrote on sentry-host: pft-logship-marker-20261026T121705Z-30998
+12:17:09 arrived on validator-host after 4.803 s (poll 1 s)
+exit 0
