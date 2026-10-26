@@ -23,6 +23,11 @@ mkdir -p "$WORK/bin" "$WORK/root/var/lib/private/systemd/journal-upload" "$WORK/
 printf 'PRETTY_NAME="Ubuntu 22.04.5 LTS"\n' > "$WORK/root/etc/os-release"
 cat > "$WORK/bin/journalctl" <<STUB
 #!/usr/bin/env bash
+# --directory=... is the receive side (peer's journal); RX=none -> no entries
+if [[ "\$*" == *--directory=* ]]; then
+  [ "\${RX:-}" = none ] && exit 0
+  echo "{\"__REALTIME_TIMESTAMP\":\"\${RX:-$RT}\",\"MESSAGE\":\"rx\"}"; exit 0
+fi
 echo "{\"__REALTIME_TIMESTAMP\":\"\${NEWEST:-$RT}\",\"MESSAGE\":\"x\"}"
 STUB
 chmod +x "$WORK/bin/journalctl"
@@ -66,11 +71,124 @@ out="$(lag --textfile)"; rc=$?
 # plan: read-only, never prints the peer address even when it is set
 printf 'PEER_NAME=sentry-host\nPEER_ADDR=198.51.100.7\n' > "$WORK/peer.env"
 out="$(PFT_LS_CONF="$WORK/peer.env" bash "$LS" plan 2>&1)"; rc=$?
-[ "$rc" -eq 0 ] && grep -q '^URL=https://sentry-host:19532$' <<<"$out" && ok "plan renders the upload URL from PEER_NAME" || bad "plan URL: rc=$rc"
+[ "$rc" -eq 0 ] && grep -q '^URL=https://<peer>:19532$' <<<"$out" && grep -q '| peer: sentry-host |' <<<"$out" && ok "plan shows the upload URL with <peer> and the peer label" || bad "plan URL: rc=$rc"
 ! grep -q '198\.51\.100\.7' <<<"$out" && grep -q 'peer address: <set, not printed>' <<<"$out" && grep -q '^ufw allow proto tcp from <peer> to any port 19532 comment pft-logship$' <<<"$out" \
   && ok "plan never prints PEER_ADDR (rule shown with <peer>)" || bad "plan leaked the peer address"
 grep -q '^TrustedCertificateFile=/etc/pft-logship/tls/ca.crt$' <<<"$out" && [ "$(grep -c '^TrustedCertificateFile=' <<<"$out")" -eq 2 ] \
   && ok "both drop-ins pin the pft-logship CA" || bad "CA pin"
+
+# ---- sign (real openssl, temp root): CA made once, key stays, cert = SAN from CSR + fixed extensions -------------
+TLS="$WORK/root/etc/pft-logship/tls"; CA="$WORK/root/etc/pft-logship/ca"
+mkdir -p "$TLS"
+printf 'CA_HERE=1\n' > "$WORK/ca.env"
+openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "$TLS/host.key" 2>/dev/null
+openssl req -new -key "$TLS/host.key" -subj "/CN=validator-host/O=pft-logship" -addext "subjectAltName=IP:192.0.2.10" -out "$WORK/v.csr" 2>/dev/null
+out="$(PFT_LS_CONF="$WORK/ca.env" bash "$LS" sign "$WORK/v.csr" 2>"$WORK/sign.err")"; rc=$?
+printf '%s\n' "$out" > "$TLS/host.crt"; cp "$CA/ca.crt" "$TLS/ca.crt" 2>/dev/null
+[ "$rc" -eq 0 ] && openssl verify -CAfile "$CA/ca.crt" "$TLS/host.crt" >/dev/null 2>&1 && grep -q 'new pair CA' "$WORK/sign.err" \
+  && ok "sign: creates the pair CA, cert verifies against it" || bad "sign: rc=$rc $(cat "$WORK/sign.err")"
+txt="$(openssl x509 -noout -text -in "$TLS/host.crt" 2>/dev/null)"
+grep -q 'IP Address:192.0.2.10' <<<"$txt" && grep -q 'TLS Web Server Authentication, TLS Web Client Authentication' <<<"$txt" \
+  && grep -q 'CA:FALSE' <<<"$txt" && grep -q 'Subject: CN = validator-host' <<<"$txt" \
+  && ok "sign: SAN from the CSR, serverAuth+clientAuth, CA:FALSE, CN kept" || bad "sign extensions"
+[ "$(stat -c %a "$CA/ca.key")" = 600 ] && [ "$(stat -c %a "$CA")" = 700 ] && ok "sign: ca.key 0600 in a 0700 dir" || bad "ca.key mode $(stat -c %a "$CA/ca.key")"
+k1="$(sha256sum < "$CA/ca.key")"
+PFT_LS_CONF="$WORK/ca.env" bash "$LS" sign "$WORK/v.csr" >/dev/null 2>"$WORK/sign2.err"; rc=$?
+[ "$rc" -eq 0 ] && [ "$(sha256sum < "$CA/ca.key")" = "$k1" ] && ! grep -q 'new pair CA' "$WORK/sign2.err" \
+  && ok "sign again: same CA key reused, no new CA" || bad "sign reuse rc=$rc"
+out="$(PFT_LS_CONF="$WORK/none.env" bash "$LS" sign "$WORK/v.csr" 2>&1)"; rc=$?
+[ "$rc" -eq 3 ] && grep -q 'CA_HERE=1 is not set' <<<"$out" && ok "sign without CA_HERE=1 -> exit 3 (wrong host)" || bad "sign no CA_HERE: rc=$rc $out"
+openssl req -new -key "$TLS/host.key" -subj "/CN=x" -out "$WORK/nosan.csr" 2>/dev/null
+out="$(PFT_LS_CONF="$WORK/ca.env" bash "$LS" sign "$WORK/nosan.csr" 2>&1)"; rc=$?
+[ "$rc" -eq 3 ] && grep -q 'no IP subjectAltName' <<<"$out" && ok "sign: CSR without IP SAN -> exit 3" || bad "nosan: rc=$rc $out"
+# CN validator-host -> validator-hosu in the DER: still parses, self-signature no longer matches. OpenSSL 3.0.2
+# 'req -verify' exits 0 on that, so this case fails unless sign checks the "verify OK" line.
+openssl req -in "$WORK/v.csr" -outform DER -out "$WORK/v.der" 2>/dev/null
+python3 -c 'import sys; b = open(sys.argv[1], "rb").read(); open(sys.argv[2], "wb").write(b.replace(b"validator-host", b"validator-hosu", 1))' \
+  "$WORK/v.der" "$WORK/bad.der"
+openssl req -inform DER -in "$WORK/bad.der" -out "$WORK/bad.csr" 2>/dev/null
+openssl req -noout -subject -in "$WORK/bad.csr" 2>/dev/null | grep -q 'validator-hosu' && ok "presence control: tampered CSR parses (subject changed)" || bad "tampered CSR did not parse"
+out="$(PFT_LS_CONF="$WORK/ca.env" bash "$LS" sign "$WORK/bad.csr" 2>&1)"; rc=$?
+[ "$rc" -eq 3 ] && grep -q 'CSR signature does not verify' <<<"$out" && ok "sign: CSR with a bad self-signature -> exit 3" || bad "bad sig csr: rc=$rc $out"
+printf 'not a csr\n' > "$WORK/junk.csr"
+out="$(PFT_LS_CONF="$WORK/ca.env" bash "$LS" sign "$WORK/junk.csr" 2>&1)"; rc=$?
+[ "$rc" -eq 3 ] && grep -q 'CSR signature does not verify' <<<"$out" && ok "sign: unparsable CSR -> exit 3" || bad "junk csr: rc=$rc $out"
+
+# ---- check (stub systemctl/curl/journalctl, real certs from above) ---------------------------------------------
+printf 'SELF_NAME=validator-host\nPEER_NAME=sentry-host\nSELF_ADDR=192.0.2.10\nPEER_ADDR=198.51.100.7\n' > "$WORK/pair.env"
+cat > "$WORK/bin/systemctl" <<'STUB'
+#!/usr/bin/env bash
+[ "$1" = is-active ] || exit 0
+[[ " ${DOWN:-} " == *" $2 "* ]] && { echo inactive; exit 3; }
+echo active
+STUB
+cat > "$WORK/bin/curl" <<'STUB'
+#!/usr/bin/env bash
+printf '%s' "${CODE:-404}"
+STUB
+chmod +x "$WORK/bin/systemctl" "$WORK/bin/curl"
+export PFT_LS_SYSTEMCTL="$WORK/bin/systemctl" PFT_LS_CURL="$WORK/bin/curl"
+NOW0=$((RT / 1000000 + 20))
+chk() { PFT_LS_CONF="$WORK/pair.env" bash "$LS" check "$@" 2>&1; }
+printf 'LAST_CURSOR=%s\n' "$CUR" > "$STATE"; rm -f "$WORK/root/var/lib/pft-logship/check.state"
+out="$(NEWEST="$RT" PFT_LS_NOW=$NOW0 chk --textfile)"; rc=$?
+[ "$rc" -eq 0 ] && grep -q '^RESULT: PASS -> exit 0$' <<<"$out" && grep -q '^receive: newest entry from sentry-host is 20s old$' <<<"$out" \
+  && grep -q '^tls: mutual-TLS handshake with sentry-host journal-remote ok (HTTP 404)$' <<<"$out" && grep -qx 'pft_logship_up 1' "$PROM" \
+  && ok "check: all good -> PASS exit 0 (presence control for the FAIL cases below)" || bad "check pass: rc=$rc $out"
+! grep -q -e '198\.51\.100\.7' -e '192\.0\.2\.10' <<<"$out" && ok "check output carries no addresses" || bad "check leaked an address"
+out="$(DOWN=systemd-journal-remote.socket NEWEST="$RT" PFT_LS_NOW=$NOW0 chk)"; rc=$?
+[ "$rc" -eq 1 ] && grep -q '^unit: systemd-journal-remote.socket NOT active$' <<<"$out" && ok "check: receiver socket down -> exit 1" || bad "unit down: rc=$rc"
+out="$(CODE=000 NEWEST="$RT" PFT_LS_NOW=$NOW0 chk)"; rc=$?
+[ "$rc" -eq 1 ] && grep -q 'journal-remote FAILED$' <<<"$out" && ok "check: TLS handshake fails (curl 000) -> exit 1" || bad "tls: rc=$rc"
+out="$(NEWEST=$((RT + 300000000)) PFT_LS_NOW=$NOW0 chk)"; rc=$?
+[ "$rc" -eq 1 ] && grep -q '^send: lag: 300s' <<<"$out" && ok "check: send lag 300s > 120 -> exit 1" || bad "lag: rc=$rc $out"
+out="$(RX=none NEWEST="$RT" PFT_LS_NOW=$NOW0 chk)"; rc=$?
+[ "$rc" -eq 1 ] && grep -q '^receive: no entries from sentry-host' <<<"$out" && ok "check: nothing received from the peer -> exit 1" || bad "rx none: rc=$rc"
+out="$(NEWEST="$RT" PFT_LS_NOW=$((NOW0 + 400)) chk)"; rc=$?
+[ "$rc" -eq 1 ] && grep -q '^receive: newest entry from sentry-host is 420s old$' <<<"$out" && ok "check: peer's newest entry 420s old -> exit 1" || bad "rx old: rc=$rc"
+# stall: same cursor, local journal 30 s ahead, seen at t0 and t0+130 (>= MAX_LAG) -> stalled; a moving cursor resets it
+rm -f "$WORK/root/var/lib/pft-logship/check.state"
+out="$(NEWEST=$((RT + 30000000)) PFT_LS_NOW=$NOW0 RX=$((RT + 20000000)) chk)"; rc1=$?
+out="$(NEWEST=$((RT + 30000000)) PFT_LS_NOW=$((NOW0 + 60)) RX=$((RT + 60000000)) chk)"; rc2=$?
+out3="$(NEWEST=$((RT + 30000000)) PFT_LS_NOW=$((NOW0 + 130)) RX=$((RT + 130000000)) chk)"; rc3=$?
+[ "$rc1" -eq 0 ] && [ "$rc2" -eq 0 ] && [ "$rc3" -eq 1 ] && grep -q 'cursor STALLED' <<<"$out3" \
+  && ok "check: cursor unchanged 130s with lag 30s -> STALLED exit 1 (0 at 0s and 60s)" || bad "stall: $rc1 $rc2 $rc3 $out3"
+printf 'LAST_CURSOR=%s\n' "${CUR/t=/t=0}" > "$STATE"   # same instant, different cursor text = the cursor moved
+out="$(NEWEST=$((RT + 30000000)) PFT_LS_NOW=$((NOW0 + 200)) RX=$((RT + 200000000)) chk)"; rc=$?
+[ "$rc" -eq 0 ] && ! grep -q STALLED <<<"$out" && ok "check: cursor moved -> stall timer resets" || bad "stall reset: rc=$rc $out"
+printf 'LAST_CURSOR=%s\n' "$CUR" > "$STATE"
+openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "$WORK/other.key" 2>/dev/null
+cp "$TLS/host.key" "$WORK/host.key.good"; cp "$WORK/other.key" "$TLS/host.key"
+out="$(NEWEST="$RT" PFT_LS_NOW=$NOW0 chk)"; rc=$?
+[ "$rc" -eq 1 ] && grep -q '^cert: host.crt does not match host.key$' <<<"$out" && ok "check: cert/key mismatch -> exit 1" || bad "mismatch: rc=$rc $out"
+cp "$WORK/host.key.good" "$TLS/host.key"
+cp "$TLS/ca.crt" "$WORK/ca.good"; openssl req -x509 -new -key "$WORK/other.key" -subj /CN=rogue -days 1 -out "$TLS/ca.crt" 2>/dev/null
+out="$(NEWEST="$RT" PFT_LS_NOW=$NOW0 chk)"; rc=$?
+[ "$rc" -eq 1 ] && grep -q '^cert: host.crt does not chain to ca.crt$' <<<"$out" && ok "check: cert from another CA -> exit 1" || bad "chain: rc=$rc $out"
+cp "$WORK/ca.good" "$TLS/ca.crt"
+out="$(PFT_LS_CONF="$WORK/none.env" bash "$LS" check 2>&1)"; rc=$?
+[ "$rc" -eq 3 ] && grep -q 'SELF_NAME is not set' <<<"$out" && ok "check without conf -> exit 3" || bad "check no conf: rc=$rc"
+
+# ---- apply / rollback --dry-run: change nothing, never print an address ----------------------------------------
+before="$(find "$WORK/root" -type f | sort | xargs sha256sum)"
+out="$(PFT_LS_CONF="$WORK/pair.env" bash "$LS" apply --dry-run 2>&1)"; rc=$?
+[ "$rc" -eq 0 ] && grep -q '^dry-run: nothing changed$' <<<"$out" && grep -qx '+ ufw allow proto tcp from <peer> to any port 19532 comment pft-logship' <<<"$out" \
+  && grep -qx '    URL=https://<peer>:19532' <<<"$out" && grep -qx '    LoadCredential=host.key:/etc/pft-logship/tls/host.key' <<<"$out" \
+  && grep -qx '    ExecStart=journalctl --directory=/var/log/journal/remote --vacuum-size=2G' <<<"$out" \
+  && ok "apply --dry-run: prints UFW rule, upload URL, credential and vacuum cap" || bad "apply dry: rc=$rc $out"
+[ "$(find "$WORK/root" -type f | sort | xargs sha256sum)" = "$before" ] && ok "apply --dry-run: no file under the root changed" || bad "apply dry-run wrote files"
+! grep -q -e '198\.51\.100\.7' -e '192\.0\.2\.10' <<<"$out" && grep -q 'subjectAltName=IP:<self>' <<<"$out" \
+  && ok "apply --dry-run: addresses masked (<peer>/<self>)" || bad "apply leaked an address"
+out="$(PFT_LS_CONF="$WORK/pair.env" bash "$LS" rollback --dry-run 2>&1)"; rc=$?
+[ "$rc" -eq 0 ] && grep -qx '+ ufw delete allow proto tcp from <peer> to any port 19532 comment pft-logship' <<<"$out" \
+  && grep -q '^kept: received journals in /var/log/journal/remote' <<<"$out" && ! grep -q '198\.51\.100\.7' <<<"$out" \
+  && [ "$(find "$WORK/root" -type f | sort | xargs sha256sum)" = "$before" ] \
+  && ok "rollback --dry-run: deletes the same UFW rule, keeps received journals, changes nothing" || bad "rollback dry: rc=$rc $out"
+out="$(PFT_LS_CONF="$WORK/none.env" bash "$LS" apply --dry-run 2>&1)"; rc=$?
+[ "$rc" -eq 3 ] && ok "apply without conf -> exit 3" || bad "apply no conf: rc=$rc"
+printf 'SELF_NAME=Bad_Name\nPEER_NAME=sentry-host\nSELF_ADDR=192.0.2.10\nPEER_ADDR=198.51.100.7\n' > "$WORK/badname.env"
+out="$(PFT_LS_CONF="$WORK/badname.env" bash "$LS" apply --dry-run 2>&1)"; rc=$?
+[ "$rc" -eq 3 ] && grep -q 'must be \[a-z0-9-\] labels' <<<"$out" && ok "apply: non-label SELF_NAME -> exit 3" || bad "badname: rc=$rc"
 
 # usage errors
 bash "$LS" bogus >/dev/null 2>&1; [ $? -eq 3 ] && ok "unknown command -> exit 3" || bad "unknown command"
