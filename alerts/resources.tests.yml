@@ -1,0 +1,295 @@
+# promtool unit tests for resources.rules.yml (1m sample interval = the collector timer's period). Inputs, timings and the
+# expected $value of each firing case are hand-written; exp_annotations are the rule templates rendered with those values.
+# Run: promtool test rules resources.tests.yml
+# Every alert has a firing case and a non-firing control on nearby data.
+rule_files:
+  - resources.rules.yml
+evaluation_interval: 1m
+tests:
+  - name: healthy postfiatd (real-looking baseline values) fires nothing
+    interval: 1m
+    input_series:
+      - series: 'pft_resources_up{job="postfiat", instance="node:9877", container="postfiatd"}'
+        values: "1x120"
+      - series: 'pft_resources_collect_timestamp_seconds{job="postfiat", instance="node:9877", container="postfiatd"}'
+        values: "0+60x120"
+      - series: 'pft_resources_memory_current_bytes{job="postfiat", instance="node:9877", container="postfiatd"}'
+        values: "850000000+10000x120"
+      - series: 'pft_resources_memory_max_bytes{job="postfiat", instance="node:9877", container="postfiatd"}'
+        values: "2415919104x120"
+      - series: 'pft_resources_memory_events_total{job="postfiat", instance="node:9877", container="postfiatd", event="oom_kill"}'
+        values: "0x120"
+      - series: 'pft_resources_container_oom_killed{job="postfiat", instance="node:9877", container="postfiatd"}'
+        values: "0x120"
+      - series: 'pft_resources_fd_open{job="postfiat", instance="node:9877", container="postfiatd"}'
+        values: "43x120"
+      - series: 'pft_resources_fd_limit_soft{job="postfiat", instance="node:9877", container="postfiatd"}'
+        values: "1024x120"
+      - series: 'pft_resources_pids_current{job="postfiat", instance="node:9877", container="postfiatd"}'
+        values: "31x120"
+      - series: 'pft_resources_pids_max{job="postfiat", instance="node:9877", container="postfiatd"}'
+        values: "256x120"
+      - series: 'pft_resources_cpu_periods_total{job="postfiat", instance="node:9877", container="postfiatd"}'
+        values: "0x120"
+      - series: 'pft_resources_cpu_throttled_periods_total{job="postfiat", instance="node:9877", container="postfiatd"}'
+        values: "0x120"
+      - series: 'pft_resources_pressure_avg60_ratio{job="postfiat", instance="node:9877", container="postfiatd", resource="memory", kind="some"}'
+        values: "0x120"
+      - series: 'pft_resources_pressure_avg60_ratio{job="postfiat", instance="node:9877", container="postfiatd", resource="io", kind="some"}'
+        values: "0.001x120"
+    alert_rule_test:
+      - {eval_time: 30m, alertname: PFTResourcesCollectorFailing, exp_alerts: []}
+      - {eval_time: 30m, alertname: PFTResourcesStale, exp_alerts: []}
+      - {eval_time: 30m, alertname: PFTMemoryNearLimit, exp_alerts: []}
+      - {eval_time: 120m, alertname: PFTMemoryGrowthToLimit, exp_alerts: []}
+      - {eval_time: 30m, alertname: PFTContainerOOMKill, exp_alerts: []}
+      - {eval_time: 30m, alertname: PFTFdNearLimit, exp_alerts: []}
+      - {eval_time: 30m, alertname: PFTPidsNearLimit, exp_alerts: []}
+      - {eval_time: 30m, alertname: PFTCPUThrottled, exp_alerts: []}
+      - {eval_time: 30m, alertname: PFTMemoryPressure, exp_alerts: []}
+      - {eval_time: 30m, alertname: PFTIOPressure, exp_alerts: []}
+
+  - name: collector up 0 fires after 5m, not before
+    interval: 1m
+    input_series:
+      - series: 'pft_resources_up{job="postfiat", instance="node:9877", container="postfiatd"}'
+        values: "1 1 0x18"
+    alert_rule_test:
+      - {eval_time: 6m, alertname: PFTResourcesCollectorFailing, exp_alerts: []}
+      - eval_time: 7m
+        alertname: PFTResourcesCollectorFailing
+        exp_alerts:
+          - exp_labels: {job: postfiat, instance: "node:9877", container: postfiatd, severity: warning}
+            exp_annotations:
+              summary: "pft-resources cannot read the cgroup of postfiatd"
+              description: "For 5m the collector reported up 0 (container stopped, cgroup or /proc file unreadable or malformed). Resource alerts for this container are blind until it is fixed. Run `sudo pft-resources collect --container postfiatd --stdout`."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/resources/README.md#alerts"
+
+  - name: stale timestamp (timer stopped at 3m) fires once older than 5 min for 2m
+    interval: 1m
+    input_series:
+      - series: 'pft_resources_collect_timestamp_seconds{job="postfiat", instance="node:9877", container="postfiatd"}'
+        values: "0 60 120 180x20"
+    alert_rule_test:
+      - {eval_time: 9m, alertname: PFTResourcesStale, exp_alerts: []}
+      - eval_time: 11m
+        alertname: PFTResourcesStale
+        exp_alerts:
+          - exp_labels: {job: postfiat, instance: "node:9877", container: postfiatd, severity: warning}
+            exp_annotations:
+              summary: "pft-resources metrics for postfiatd are stale"
+              description: "The last collection is older than 5 min: pft-resources@postfiatd.timer is not running. Check `systemctl status pft-resources@postfiatd.timer`."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/resources/README.md#alerts"
+
+  - name: memory 95% of limit fires after 5m; 85% control does not; up 0 suppresses it
+    interval: 1m
+    input_series:
+      - series: 'pft_resources_up{job="postfiat", instance="node:9877", container="hot"}'
+        values: "1x20"
+      - series: 'pft_resources_memory_current_bytes{job="postfiat", instance="node:9877", container="hot"}'
+        values: "950x20"
+      - series: 'pft_resources_memory_max_bytes{job="postfiat", instance="node:9877", container="hot"}'
+        values: "1000x20"
+      - series: 'pft_resources_up{job="postfiat", instance="node:9877", container="warm"}'
+        values: "1x20"
+      - series: 'pft_resources_memory_current_bytes{job="postfiat", instance="node:9877", container="warm"}'
+        values: "850x20"
+      - series: 'pft_resources_memory_max_bytes{job="postfiat", instance="node:9877", container="warm"}'
+        values: "1000x20"
+      - series: 'pft_resources_up{job="postfiat", instance="node:9877", container="blind"}'
+        values: "0x20"
+      - series: 'pft_resources_memory_current_bytes{job="postfiat", instance="node:9877", container="blind"}'
+        values: "990x20"
+      - series: 'pft_resources_memory_max_bytes{job="postfiat", instance="node:9877", container="blind"}'
+        values: "1000x20"
+    alert_rule_test:
+      - {eval_time: 4m, alertname: PFTMemoryNearLimit, exp_alerts: []}
+      - eval_time: 6m
+        alertname: PFTMemoryNearLimit
+        exp_alerts:
+          - exp_labels: {job: postfiat, instance: "node:9877", container: hot, severity: critical}
+            exp_annotations:
+              summary: "hot memory above 90% of its limit"
+              description: "memory.current has been above 90% of memory.max (or of host RAM without a limit) for 5m (95% at the last check). The kernel OOM-kills the container at 100%."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/resources/README.md#alerts"
+
+  - name: memory growing toward the limit within 6h fires after 30m; same growth with 10x the limit and a fast startup ramp below 50% do not
+    interval: 1m
+    input_series:
+      # 600 MB -> +2 MB/min: reaches 1000 MB in 200 min (< 6h), above 50% of the limit
+      - series: 'pft_resources_up{job="postfiat", instance="node:9877", container="leak"}'
+        values: "1x150"
+      - series: 'pft_resources_memory_current_bytes{job="postfiat", instance="node:9877", container="leak"}'
+        values: "600000000+2000000x150"
+      - series: 'pft_resources_memory_max_bytes{job="postfiat", instance="node:9877", container="leak"}'
+        values: "1000000000x150"
+      # same slope, 10x larger limit: predict_linear stays below the limit and usage is far below 50%
+      - series: 'pft_resources_up{job="postfiat", instance="node:9877", container="roomy"}'
+        values: "1x150"
+      - series: 'pft_resources_memory_current_bytes{job="postfiat", instance="node:9877", container="roomy"}'
+        values: "600000000+2000000x150"
+      - series: 'pft_resources_memory_max_bytes{job="postfiat", instance="node:9877", container="roomy"}'
+        values: "10000000000x150"
+      # startup ramp: 100 MB +3 MB/min also predicts past the limit within 6h, but stays below 50% until ~134 min;
+      # the 50% floor keeps a restarting node that refills its caches from paging
+      - series: 'pft_resources_up{job="postfiat", instance="node:9877", container="ramp"}'
+        values: "1x150"
+      - series: 'pft_resources_memory_current_bytes{job="postfiat", instance="node:9877", container="ramp"}'
+        values: "100000000+3000000x150"
+      - series: 'pft_resources_memory_max_bytes{job="postfiat", instance="node:9877", container="ramp"}'
+        values: "1000000000x150"
+    alert_rule_test:
+      - {eval_time: 20m, alertname: PFTMemoryGrowthToLimit, exp_alerts: []}
+      - eval_time: 40m
+        alertname: PFTMemoryGrowthToLimit
+        exp_alerts:
+          - exp_labels: {job: postfiat, instance: "node:9877", container: leak, severity: warning}
+            exp_annotations:
+              summary: "leak memory on course to reach its limit within 6h"
+              description: "A linear fit over the last hour reaches memory.max within 6h, and usage is already above 50% of the limit (steady for 30m). Look for a leak or a cache that keeps growing before it ends in an OOM kill."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/resources/README.md#alerts"
+
+  - name: oom_kill counter increase fires at once and clears 10m later
+    interval: 1m
+    input_series:
+      - series: 'pft_resources_memory_events_total{job="postfiat", instance="node:9877", container="drill", event="oom_kill"}'
+        values: "0 0 0 1x20"
+      - series: 'pft_resources_container_oom_killed{job="postfiat", instance="node:9877", container="drill"}'
+        values: "0x23"
+    alert_rule_test:
+      - {eval_time: 2m, alertname: PFTContainerOOMKill, exp_alerts: []}
+      - eval_time: 3m
+        alertname: PFTContainerOOMKill
+        exp_alerts:
+          - exp_labels: {job: postfiat, instance: "node:9877", container: drill, severity: critical}
+            exp_annotations:
+              summary: "OOM kill in drill"
+              description: "The kernel OOM-killed a process in the container's cgroup within the last 10 min (memory.events oom_kill), or docker reports the main process was OOM-killed (State.OOMKilled). An OOM kill of postfiatd restarts it into a new cgroup whose counter starts at 0, which is why both are checked."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/resources/README.md#alerts"
+      - {eval_time: 15m, alertname: PFTContainerOOMKill, exp_alerts: []}
+
+  - name: main process OOM-killed -> new cgroup (counter back at 0) still fires through docker OOMKilled
+    interval: 1m
+    input_series:
+      - series: 'pft_resources_memory_events_total{job="postfiat", instance="node:9877", container="postfiatd", event="oom_kill"}'
+        values: "0x5"
+      - series: 'pft_resources_container_oom_killed{job="postfiat", instance="node:9877", container="postfiatd"}'
+        values: "0 0 1 1 0 0"
+    alert_rule_test:
+      - {eval_time: 1m, alertname: PFTContainerOOMKill, exp_alerts: []}
+      - eval_time: 2m
+        alertname: PFTContainerOOMKill
+        exp_alerts:
+          - exp_labels: {job: postfiat, instance: "node:9877", container: postfiatd, severity: critical}
+            exp_annotations:
+              summary: "OOM kill in postfiatd"
+              description: "The kernel OOM-killed a process in the container's cgroup within the last 10 min (memory.events oom_kill), or docker reports the main process was OOM-killed (State.OOMKilled). An OOM kill of postfiatd restarts it into a new cgroup whose counter starts at 0, which is why both are checked."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/resources/README.md#alerts"
+      - {eval_time: 5m, alertname: PFTContainerOOMKill, exp_alerts: []}
+
+  - name: fds 85% of the soft limit fire after 5m; 75% and an unlimited (0) limit do not
+    interval: 1m
+    input_series:
+      - series: 'pft_resources_fd_open{job="postfiat", instance="node:9877", container="hot"}'
+        values: "870x20"
+      - series: 'pft_resources_fd_limit_soft{job="postfiat", instance="node:9877", container="hot"}'
+        values: "1024x20"
+      - series: 'pft_resources_fd_open{job="postfiat", instance="node:9877", container="ok"}'
+        values: "768x20"
+      - series: 'pft_resources_fd_limit_soft{job="postfiat", instance="node:9877", container="ok"}'
+        values: "1024x20"
+      - series: 'pft_resources_fd_open{job="postfiat", instance="node:9877", container="unlimited"}'
+        values: "5000x20"
+      - series: 'pft_resources_fd_limit_soft{job="postfiat", instance="node:9877", container="unlimited"}'
+        values: "0x20"
+    alert_rule_test:
+      - {eval_time: 4m, alertname: PFTFdNearLimit, exp_alerts: []}
+      - eval_time: 6m
+        alertname: PFTFdNearLimit
+        exp_alerts:
+          - exp_labels: {job: postfiat, instance: "node:9877", container: hot, severity: warning}
+            exp_annotations:
+              summary: "hot uses over 80% of its open-file limit"
+              description: "Open fds of the main process have been above 80% of its soft RLIMIT_NOFILE for 5m (84.96%). At the limit postfiatd can no longer accept peers or open database files."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/resources/README.md#alerts"
+
+  - name: pids 95% of pids.max fire after 5m; 80% does not
+    interval: 1m
+    input_series:
+      - series: 'pft_resources_pids_current{job="postfiat", instance="node:9877", container="hot"}'
+        values: "244x20"
+      - series: 'pft_resources_pids_max{job="postfiat", instance="node:9877", container="hot"}'
+        values: "256x20"
+      - series: 'pft_resources_pids_current{job="postfiat", instance="node:9877", container="ok"}'
+        values: "205x20"
+      - series: 'pft_resources_pids_max{job="postfiat", instance="node:9877", container="ok"}'
+        values: "256x20"
+    alert_rule_test:
+      - {eval_time: 4m, alertname: PFTPidsNearLimit, exp_alerts: []}
+      - eval_time: 6m
+        alertname: PFTPidsNearLimit
+        exp_alerts:
+          - exp_labels: {job: postfiat, instance: "node:9877", container: hot, severity: warning}
+            exp_annotations:
+              summary: "hot uses over 90% of pids.max"
+              description: "Tasks (processes + threads) in the cgroup have been above 90% of pids.max for 5m (95.31%). At the limit fork/clone fail and postfiatd cannot start new threads."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/resources/README.md#alerts"
+
+  - name: 50% of periods throttled fires after 15m (+10m rate window); 10% does not; no quota (0 periods) does not
+    interval: 1m
+    input_series:
+      - series: 'pft_resources_cpu_periods_total{job="postfiat", instance="node:9877", container="hot"}'
+        values: "0+600x60"
+      - series: 'pft_resources_cpu_throttled_periods_total{job="postfiat", instance="node:9877", container="hot"}'
+        values: "0+300x60"
+      - series: 'pft_resources_cpu_periods_total{job="postfiat", instance="node:9877", container="mild"}'
+        values: "0+600x60"
+      - series: 'pft_resources_cpu_throttled_periods_total{job="postfiat", instance="node:9877", container="mild"}'
+        values: "0+60x60"
+      - series: 'pft_resources_cpu_periods_total{job="postfiat", instance="node:9877", container="noquota"}'
+        values: "0x60"
+      - series: 'pft_resources_cpu_throttled_periods_total{job="postfiat", instance="node:9877", container="noquota"}'
+        values: "0x60"
+    alert_rule_test:
+      - {eval_time: 10m, alertname: PFTCPUThrottled, exp_alerts: []}
+      - eval_time: 30m
+        alertname: PFTCPUThrottled
+        exp_alerts:
+          - exp_labels: {job: postfiat, instance: "node:9877", container: hot, severity: warning}
+            exp_annotations:
+              summary: "hot is CPU-throttled in over 25% of periods"
+              description: "With a CPU quota set, over 25% of enforcement periods were throttled for 15m (50% over the last 10m). A throttled validator closes and validates ledgers late."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/resources/README.md#alerts"
+
+  - name: memory PSI 20% fires after 10m, 5% does not; io PSI 40% fires after 15m, 20% does not
+    interval: 1m
+    input_series:
+      - series: 'pft_resources_pressure_avg60_ratio{job="postfiat", instance="node:9877", container="hot", resource="memory", kind="some"}'
+        values: "0.20x30"
+      - series: 'pft_resources_pressure_avg60_ratio{job="postfiat", instance="node:9877", container="ok", resource="memory", kind="some"}'
+        values: "0.05x30"
+      - series: 'pft_resources_pressure_avg60_ratio{job="postfiat", instance="node:9877", container="hot", resource="memory", kind="full"}'
+        values: "0.20x30"
+      - series: 'pft_resources_pressure_avg60_ratio{job="postfiat", instance="node:9877", container="hot", resource="io", kind="some"}'
+        values: "0.40x30"
+      - series: 'pft_resources_pressure_avg60_ratio{job="postfiat", instance="node:9877", container="ok", resource="io", kind="some"}'
+        values: "0.20x30"
+    alert_rule_test:
+      - {eval_time: 9m, alertname: PFTMemoryPressure, exp_alerts: []}
+      - eval_time: 11m
+        alertname: PFTMemoryPressure
+        exp_alerts:
+          - exp_labels: {job: postfiat, instance: "node:9877", container: hot, resource: memory, kind: some, severity: warning}
+            exp_annotations:
+              summary: "hot stalls on memory (PSI some avg60 > 10%)"
+              description: "For 10m tasks in the container spent over 10% of the time waiting for memory (reclaim, swap-in). The baseline is 0%."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/resources/README.md#alerts"
+      - {eval_time: 14m, alertname: PFTIOPressure, exp_alerts: []}
+      - eval_time: 16m
+        alertname: PFTIOPressure
+        exp_alerts:
+          - exp_labels: {job: postfiat, instance: "node:9877", container: hot, resource: io, kind: some, severity: warning}
+            exp_annotations:
+              summary: "hot stalls on I/O (PSI some avg60 > 30%)"
+              description: "For 15m tasks in the container spent over 30% of the time waiting for I/O. Ledger writes and database rotation slow down; check disk health and other I/O on the host."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/resources/README.md#alerts"

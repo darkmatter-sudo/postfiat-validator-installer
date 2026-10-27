@@ -1,0 +1,104 @@
+# Alert rules for pft-resources (../resources). pft-resources@<container>.timer writes the textfile every minute;
+# the pft exporter serves it as pft_resources_*{container="..."}. Thresholds are checked against the 24h baseline
+# in ../resources/report. In every `A and B` expression the measured ratio is on the LEFT: the alert's $value is
+# taken from the left operand (first draft had the guard on the left and reported fd 1024 as "1.024e+05%").
+# Tests: resources.tests.yml (promtool test rules resources.tests.yml), 1m sample interval = the timer's period.
+# After `resources/install.sh --uninstall`, remove this file from prometheus.yml rule_files.
+groups:
+  - name: pft-resources
+    rules:
+      - alert: PFTResourcesCollectorFailing
+        expr: pft_resources_up == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pft-resources cannot read the cgroup of {{ $labels.container }}"
+          description: "For 5m the collector reported up 0 (container stopped, cgroup or /proc file unreadable or malformed). Resource alerts for this container are blind until it is fixed. Run `sudo pft-resources collect --container {{ $labels.container }} --stdout`."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/resources/README.md#alerts"
+      - alert: PFTResourcesStale
+        expr: time() - pft_resources_collect_timestamp_seconds > 300
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pft-resources metrics for {{ $labels.container }} are stale"
+          description: "The last collection is older than 5 min: pft-resources@{{ $labels.container }}.timer is not running. Check `systemctl status pft-resources@{{ $labels.container }}.timer`."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/resources/README.md#alerts"
+      - alert: PFTMemoryNearLimit
+        expr: pft_resources_memory_current_bytes / pft_resources_memory_max_bytes > 0.90 and pft_resources_up == 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.container }} memory above 90% of its limit"
+          description: "memory.current has been above 90% of memory.max (or of host RAM without a limit) for 5m ({{ $value | humanizePercentage }} at the last check). The kernel OOM-kills the container at 100%."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/resources/README.md#alerts"
+      - alert: PFTMemoryGrowthToLimit
+        expr: |
+          predict_linear(pft_resources_memory_current_bytes[1h], 6 * 3600) > pft_resources_memory_max_bytes
+          and pft_resources_memory_current_bytes / pft_resources_memory_max_bytes > 0.50
+          and pft_resources_up == 1
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.container }} memory on course to reach its limit within 6h"
+          description: "A linear fit over the last hour reaches memory.max within 6h, and usage is already above 50% of the limit (steady for 30m). Look for a leak or a cache that keeps growing before it ends in an OOM kill."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/resources/README.md#alerts"
+      - alert: PFTContainerOOMKill
+        expr: |
+          sum by (instance, job, container) (increase(pft_resources_memory_events_total{event="oom_kill"}[10m])) > 0
+          or max by (instance, job, container) (pft_resources_container_oom_killed) == 1
+        labels:
+          severity: critical
+        annotations:
+          summary: "OOM kill in {{ $labels.container }}"
+          description: "The kernel OOM-killed a process in the container's cgroup within the last 10 min (memory.events oom_kill), or docker reports the main process was OOM-killed (State.OOMKilled). An OOM kill of postfiatd restarts it into a new cgroup whose counter starts at 0, which is why both are checked."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/resources/README.md#alerts"
+      - alert: PFTFdNearLimit
+        expr: pft_resources_fd_open / pft_resources_fd_limit_soft > 0.80 and pft_resources_fd_limit_soft > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.container }} uses over 80% of its open-file limit"
+          description: "Open fds of the main process have been above 80% of its soft RLIMIT_NOFILE for 5m ({{ $value | humanizePercentage }}). At the limit postfiatd can no longer accept peers or open database files."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/resources/README.md#alerts"
+      - alert: PFTPidsNearLimit
+        expr: pft_resources_pids_current / pft_resources_pids_max > 0.90 and pft_resources_pids_max > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.container }} uses over 90% of pids.max"
+          description: "Tasks (processes + threads) in the cgroup have been above 90% of pids.max for 5m ({{ $value | humanizePercentage }}). At the limit fork/clone fail and postfiatd cannot start new threads."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/resources/README.md#alerts"
+      - alert: PFTCPUThrottled
+        # without a quota both rates are 0 and 0/0 = NaN, which compares false: no guard needed (rule mutant R9 run 1)
+        expr: rate(pft_resources_cpu_throttled_periods_total[10m]) / rate(pft_resources_cpu_periods_total[10m]) > 0.25
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.container }} is CPU-throttled in over 25% of periods"
+          description: "With a CPU quota set, over 25% of enforcement periods were throttled for 15m ({{ $value | humanizePercentage }} over the last 10m). A throttled validator closes and validates ledgers late."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/resources/README.md#alerts"
+      - alert: PFTMemoryPressure
+        expr: pft_resources_pressure_avg60_ratio{resource="memory", kind="some"} > 0.10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.container }} stalls on memory (PSI some avg60 > 10%)"
+          description: "For 10m tasks in the container spent over 10% of the time waiting for memory (reclaim, swap-in). The baseline is 0%."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/resources/README.md#alerts"
+      - alert: PFTIOPressure
+        expr: pft_resources_pressure_avg60_ratio{resource="io", kind="some"} > 0.30
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.container }} stalls on I/O (PSI some avg60 > 30%)"
+          description: "For 15m tasks in the container spent over 30% of the time waiting for I/O. Ledger writes and database rotation slow down; check disk health and other I/O on the host."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/resources/README.md#alerts"

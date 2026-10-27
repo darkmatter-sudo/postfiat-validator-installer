@@ -1,0 +1,33 @@
+[Unit]
+Description=pft-resources: cgroup v2 resource metrics for container %i
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/resources
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# root: needs the docker socket (inspect) and /proc/<pid>/fd of the container's root process. Read-only otherwise.
+ExecStart=/usr/local/bin/pft-resources collect --container %i --history /var/lib/pft-resources/history-%i.jsonl
+ProtectSystem=strict
+ReadWritePaths=/var/lib/pft-exporter/textfile /var/lib/pft-resources
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE
+UMask=0022
