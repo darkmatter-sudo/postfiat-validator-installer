@@ -3,7 +3,7 @@
 # script; the offline suite must FAIL on it. A mutant counts as caught only if it was applied (copy differs) and
 # the suite printed at least one FAIL line and a RESULT line. Usage: bash tests/mutate.sh
 # Mutant texts are literal script lines, so they are single-quoted on purpose.
-# shellcheck disable=SC2016
+# shellcheck disable=SC2016,SC1003
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SRC="$HERE/../pft-peerexpose.sh"
@@ -20,6 +20,12 @@ MUTANTS=(
   'M6@@errors do not set exit 2@@  if [ "$ERRORS" -gt 0 ]; then return 2; fi@@  :'
   'M7@@non-200 crawl treated as disclosed@@    record crawl.endpoint restricted 0 "http $code"@@    record crawl.endpoint disclosed 1 "http $code"'
   'M8@@peer IPs not inspected@@crawl.overlay.peer_ip|.overlay.active[]?.ip // empty@@crawl.overlay.peer_ip|.overlay.nothing[]?.ip // empty'
+  'M9@@sentry block keeps overlay public@@    sentry) printf '"'"'[crawl]\noverlay=0@@    sentry) printf '"'"'[crawl]\noverlay=1'
+  'M10@@render leaves old [vl] sections in place@@    /^[[:space:]]*\[/ { skip = (tolower($0) ~ /^[[:space:]]*\[(crawl|vl)\][[:space:]]*$/) }@@    /^[[:space:]]*\[/ { skip = (tolower($0) ~ /^[[:space:]]*\[(crawl)\][[:space:]]*$/) }'
+  'M11@@effective default counts=1@@v["counts"] = 0;@@v["counts"] = 1;'
+  'M12@@validate ignores changes outside the block@@  cmp -s <(strip_managed < "$2") <(strip_managed < "$3") \@@  true \'
+  'M13@@bare [crawl] 0 not parsed@@if (sec == "crawl") v["crawl"] = (line == "1" || tolower(line) == "true") ? 1 : 0; next@@next'
+  'M14@@[vl] count not checked@@  [ "$n" -eq 1 ] || { echo "validate: expected exactly one [vl] section, found $n"; return 1; }@@  :'
 )
 
 caught=0; total=0

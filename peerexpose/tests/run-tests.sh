@@ -33,9 +33,18 @@ exec "$@"
 EOF
 cat > "$STUBS/docker" <<'EOF'
 #!/usr/bin/env bash
-# stub: docker exec CONTAINER curl ... -> validators.json of the case
+# stub: docker exec CONTAINER cat CFG -> postfiatd.cfg of the case (missing = exit 1);
+#       docker exec CONTAINER curl ... -> validators.json of the case
 echo "docker $*" >> "$STUB_LOG"
-[ "$1" = exec ] && cat "$CASE_DIR/validators.json"
+[ "$1" = exec ] || exit 0
+if [ "$3" = cat ]; then cat "$CASE_DIR/postfiatd.cfg" 2>/dev/null; exit; fi
+cat "$CASE_DIR/validators.json"
+EOF
+cat > "$STUBS/ssh" <<'EOF'
+#!/usr/bin/env bash
+# stub: record the full ssh command line, then run the remote command string locally
+echo "ssh $*" >> "$STUB_LOG"
+eval "${*: -1}"
 EOF
 chmod +x "$STUBS"/*
 
@@ -125,6 +134,67 @@ run open12 audit
 check "missing --role exit 3" '[ "$RC" -eq 3 ]'
 run open12 audit --role relay
 check "bad role exit 3" '[ "$RC" -eq 3 ]'
+
+# --- render / effective / plan
+R="$STUBS/rendered.cfg"
+want_v="crawl=0 overlay=1 server=1 counts=0 unl=1 vl=0"
+want_s="crawl=1 overlay=0 server=1 counts=0 unl=1 vl=1"
+run cfg_stock plan --role validator
+check "plan stock validator: CHANGE NEEDED, exit 0" '[ "$RC" -eq 0 ] && grep -q "^RESULT: CHANGE NEEDED" "$OUT"'
+check "plan stock validator: effective now = defaults" 'grep -q "effective now:   crawl=1 overlay=1 server=1 counts=0 unl=1 vl=1$" "$OUT"'
+check "plan stock validator: effective after = policy" 'grep -q "effective after: $want_v$" "$OUT"'
+check "plan stock validator: validate OK" 'grep -q "validate: OK" "$OUT"'
+check "plan output has no address" '! grep -q "192\.0\.2" "$OUT"'
+run cfg_stock plan --role sentry
+check "plan stock sentry: effective after = policy" 'grep -q "effective after: $want_s$" "$OUT" && [ "$RC" -eq 0 ]'
+check "plan reads the cfg through docker exec" 'grep -q "^docker exec postfiatd cat /etc/postfiatd/postfiatd.cfg$" "$STUB_LOG"'
+
+PATH="$STUBS:$PATH" bash "$SCRIPT" render --role validator < "$FIX/cfg_stock/postfiatd.cfg" > "$R"
+check "render keeps every non-blank line outside the block" '[ "$(diff <(grep -v "^$" "$FIX/cfg_stock/postfiatd.cfg") <(grep -v "^$" "$R") | grep -c "^<")" = 0 ]'
+check "render keeps the commented # [crawl] docs" '[ "$(grep -c "^#.*\[crawl\]" "$R")" = 2 ]'
+check "render validator: one [crawl] with bare 0, [vl] enable=0" '[ "$(grep -c "^\[crawl\]$" "$R")" = 1 ] && grep -A1 "^\[crawl\]$" "$R" | grep -qx 0 && grep -A1 "^\[vl\]$" "$R" | grep -qx "enable=0"'
+check "render is idempotent" 'PATH="$STUBS:$PATH" bash "$SCRIPT" render --role validator < "$R" | cmp -s - "$R"'
+check "render sentry then validator = validator" 'PATH="$STUBS:$PATH" bash "$SCRIPT" render --role sentry < "$R" | PATH="$STUBS:$PATH" bash "$SCRIPT" render --role validator | cmp -s - "$R"'
+
+# a cfg that is already rendered: plan says NO CHANGE (case dir built on the fly)
+mkdir -p "$STUBS/cfg_done"; cp "$R" "$STUBS/cfg_done/postfiatd.cfg"
+: > "$STUB_LOG"; CASE_DIR="$STUBS/cfg_done" PATH="$STUBS:$PATH" bash "$SCRIPT" plan --role validator > "$OUT" 2>&1; RC=$?
+check "plan on rendered cfg: NO CHANGE" '[ "$RC" -eq 0 ] && grep -q "^RESULT: NO CHANGE" "$OUT"'
+: > "$STUB_LOG"; CASE_DIR="$STUBS/cfg_done" PATH="$STUBS:$PATH" bash "$SCRIPT" plan --role sentry > "$OUT" 2>&1; RC=$?
+check "plan validator-rendered cfg as sentry: CHANGE NEEDED" '[ "$RC" -eq 0 ] && grep -q "^RESULT: CHANGE NEEDED" "$OUT"'
+
+# operator-made [Crawl]/[VL] sections (mixed case, mid-file) are replaced, not duplicated
+run cfg_existing plan --role validator
+check "existing sections: effective now parsed (counts = 1 with spaces)" 'grep -q "effective now:   crawl=1 overlay=1 server=1 counts=1 unl=1 vl=1$" "$OUT"'
+check "existing sections: validate OK, after = policy" 'grep -q "validate: OK" "$OUT" && grep -q "effective after: $want_v$" "$OUT"'
+check "existing sections: diff removes the old lines" 'grep -q "^    < counts = 1$" "$OUT"'
+PATH="$STUBS:$PATH" bash "$SCRIPT" render --role sentry < "$FIX/cfg_existing/postfiatd.cfg" > "$R"
+check "existing sections: exactly one [crawl] and one [vl] after render" '[ "$(grep -ciE "^\[crawl\]$" "$R")" = 1 ] && [ "$(grep -ciE "^\[vl\]$" "$R")" = 1 ]'
+check "existing sections: [ips_fixed] kept" 'grep -A1 "^\[ips_fixed\]$" "$R" | grep -q "^192.0.2.20 2559$"'
+
+run cfg_unreadable plan --role validator
+check "plan with unreadable cfg exit 2" '[ "$RC" -eq 2 ] && grep -q "cannot read" "$OUT"'
+
+# validate: positive (rendered stock) and one negative per rule, each asserting its own reason
+V="$FIX/cfg_validate"
+vrun() { PATH="$STUBS:$PATH" bash "$SCRIPT" validate "$@" > "$OUT" 2>&1; RC=$?; }
+PATH="$STUBS:$PATH" bash "$SCRIPT" render --role validator < "$V/old.cfg" > "$R"
+vrun --role validator --old "$V/old.cfg" --new "$R"
+check "validate rendered cfg: exit 0, OK" '[ "$RC" -eq 0 ] && grep -q "^validate: OK" "$OUT"'
+vrun --role validator --old "$V/old.cfg" --new "$V/extra-change.cfg"
+check "validate rejects a change outside [crawl]/[vl]" '[ "$RC" -eq 1 ] && grep -q "lines outside \[crawl\]/\[vl\] would change" "$OUT"'
+vrun --role validator --old "$V/old.cfg" --new "$V/two-crawl.cfg"
+check "validate rejects two [crawl] sections" '[ "$RC" -eq 1 ] && grep -q "exactly one \[crawl\] section, found 2" "$OUT"'
+vrun --role validator --old "$V/old.cfg" --new "$V/no-vl.cfg"
+check "validate rejects a missing [vl] section" '[ "$RC" -eq 1 ] && grep -q "exactly one \[vl\] section, found 0" "$OUT"'
+vrun --role sentry --old "$V/old.cfg" --new "$R"
+check "validate rejects the validator block for a sentry" '[ "$RC" -eq 1 ] && grep -q "effective settings crawl=0 .* != wanted crawl=1 overlay=0" "$OUT"'
+vrun --role validator --old "$V/old.cfg"
+check "validate without --new exit 3" '[ "$RC" -eq 3 ]'
+
+# remote target through ssh
+run cfg_stock plan --role sentry --ssh relayhost --container postfiatd-sentry
+check "plan --ssh uses ssh BatchMode + sudo -n docker exec" 'grep -q "^ssh -o BatchMode=yes -o ConnectTimeout=10 relayhost sudo -n docker exec postfiatd-sentry cat /etc/postfiatd/postfiatd.cfg" "$STUB_LOG" && [ "$RC" -eq 0 ]'
 
 echo "RESULT: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
