@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Start/stop a loopback-only Prometheus + Alertmanager (+ webhook->ntfy bridge) for a Post Fiat node.
 #
-# Usage: run-stack.sh up|down|status|check
+# Usage: run-stack.sh up|down|status|check|bridge
 #   up      validate configs with promtool/amtool, start 3 containers, verify loopback-only listeners
 #   down    stop and remove the containers (Prometheus data volume is kept)
 #   status  container state, target health, active alerts
 #   check   promtool check rules + promtool test rules + amtool check-config only
+#   bridge  recreate only pft-alert-bridge (new NTFY_ENV_FILE); Prometheus + Alertmanager keep running
 #
 # Env:
 #   DOCKER          docker command (default "docker"; e.g. DOCKER="sudo docker")
@@ -73,9 +74,7 @@ verify_loopback() {
   log "all stack listeners are loopback-only"
 }
 
-up() {
-  preflight
-  check
+start_bridge() {
   local ntfy_args=(--user 65534:65534)
   local ntfy_state=off
   if [ -n "${NTFY_ENV_FILE:-}" ]; then
@@ -84,11 +83,32 @@ up() {
       -v "$(readlink -f "$NTFY_ENV_FILE"):/run/secrets/ntfy.env:ro")
     ntfy_state=on
   fi
-  down quiet
   log "starting pft-alert-bridge (ntfy: $ntfy_state)"
   "${DOCKER[@]}" run -d --name pft-alert-bridge --restart unless-stopped --network host --read-only \
     --security-opt no-new-privileges --cap-drop ALL "${ntfy_args[@]}" \
     -v "$HERE/ntfy_bridge.py:/app/ntfy_bridge.py:ro" "$PY_IMAGE" python3 -u /app/ntfy_bridge.py >/dev/null
+}
+
+# Recreate ONLY the bridge (e.g. to point it at a throwaway topic for a drill and back). Prometheus and
+# Alertmanager keep running, so silences, alert state and `for:` timers survive; Alertmanager retries the webhook
+# while the bridge is down (~2 s).
+bridge() {
+  preflight
+  "${DOCKER[@]}" rm -f pft-alert-bridge >/dev/null 2>&1 || true
+  start_bridge
+  local i
+  for i in $(seq 1 10); do
+    ss -Htln "sport = :9095" | grep -q . && { log "pft-alert-bridge listening"; return 0; }
+    sleep 1
+  done
+  die "pft-alert-bridge not listening on :9095 after ${i}s"
+}
+
+up() {
+  preflight
+  check
+  down quiet
+  start_bridge
   log "starting pft-alertmanager"
   "${DOCKER[@]}" run -d --name pft-alertmanager --restart unless-stopped --network host \
     --security-opt no-new-privileges --cap-drop ALL -v "$HERE/alertmanager.yml:/etc/pft-alerts/alertmanager.yml:ro" \
@@ -140,5 +160,6 @@ case "${1:-}" in
   down) down ;;
   status) status ;;
   check) check ;;
+  bridge) bridge ;;
   *) sed -n '2,15p' "$0"; exit 2 ;;
 esac

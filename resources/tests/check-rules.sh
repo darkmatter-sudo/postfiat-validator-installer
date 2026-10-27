@@ -25,7 +25,7 @@ mutant() { # ID DESCRIPTION SED-EXPR
 }
 mutant R1 "memory threshold 0.90 -> 0.99" 's/pft_resources_memory_max_bytes > 0.90/pft_resources_memory_max_bytes > 0.99/'
 mutant R2 "memory alert ignores up (blind collector still alerts)" 's/ > 0.90 and pft_resources_up == 1/ > 0.90/'
-mutant R3 "OOM alert without the docker OOMKilled branch" '/or max by (instance, job, container) (pft_resources_container_oom_killed) == 1/d'
+mutant R3 "OOM alert without the docker OOMKilled branch" '/or max by (instance, job, container) (pft_resources_container_oom_killed == 1/d'
 mutant R4 "OOM alert window 10m -> 1m (kill missed between scrapes)" 's/event="oom_kill"}\[10m\]/event="oom_kill"}[1m]/'
 mutant R5 "fd alert guard on the left again (\$value = the limit)" 's/expr: pft_resources_fd_open \/ pft_resources_fd_limit_soft > 0.80 and pft_resources_fd_limit_soft > 0/expr: pft_resources_fd_limit_soft > 0 and pft_resources_fd_open \/ pft_resources_fd_limit_soft > 0.80/'
 mutant R6 "fd alert without the unlimited-limit guard" 's/ > 0.80 and pft_resources_fd_limit_soft > 0/ > 0.80/'
@@ -35,5 +35,6 @@ mutant R9 "throttling threshold 0.25 -> 0.60 (50% case missed)" 's/rate(pft_reso
 mutant R10 "growth alert without the 50% floor" '/and pft_resources_memory_current_bytes \/ pft_resources_memory_max_bytes > 0.50/d'
 mutant R11 "memory PSI uses kind full too (any kind)" 's/{resource="memory", kind="some"}/{resource="memory"}/'
 mutant R12 "collector-failing for: 5m -> 1m" '/alert: PFTResourcesCollectorFailing/,/for:/ s/for: 5m/for: 1m/'
+mutant R13 "docker OOMKilled branch without the change check (stays firing forever)" 's/(pft_resources_container_oom_killed == 1 and changes(pft_resources_container_oom_killed\[10m\]) > 0)/(pft_resources_container_oom_killed) == 1/'
 echo "RULE MUTANTS: $caught/$n caught"
 [ "$caught" = "$n" ]

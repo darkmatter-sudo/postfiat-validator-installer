@@ -149,13 +149,13 @@ tests:
               description: "A linear fit over the last hour reaches memory.max within 6h, and usage is already above 50% of the limit (steady for 30m). Look for a leak or a cache that keeps growing before it ends in an OOM kill."
               runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/resources/README.md#alerts"
 
-  - name: oom_kill counter increase fires at once and clears 10m later
+  - name: oom_kill counter increase fires at once and clears 10m later (main process lives, docker OOMKilled stays 1)
     interval: 1m
     input_series:
       - series: 'pft_resources_memory_events_total{job="postfiat", instance="node:9877", container="drill", event="oom_kill"}'
         values: "0 0 0 1x20"
       - series: 'pft_resources_container_oom_killed{job="postfiat", instance="node:9877", container="drill"}'
-        values: "0x23"
+        values: "0 0 0 1x20"
     alert_rule_test:
       - {eval_time: 2m, alertname: PFTContainerOOMKill, exp_alerts: []}
       - eval_time: 3m
@@ -164,7 +164,7 @@ tests:
           - exp_labels: {job: postfiat, instance: "node:9877", container: drill, severity: critical}
             exp_annotations:
               summary: "OOM kill in drill"
-              description: "The kernel OOM-killed a process in the container's cgroup within the last 10 min (memory.events oom_kill), or docker reports the main process was OOM-killed (State.OOMKilled). An OOM kill of postfiatd restarts it into a new cgroup whose counter starts at 0, which is why both are checked."
+              description: "The kernel OOM-killed a process in the container's cgroup within the last 10 min (memory.events oom_kill), or docker's State.OOMKilled turned true within the last 10 min. An OOM kill of postfiatd restarts it into a new cgroup whose counter starts at 0, which is why both are checked. Docker sets OOMKilled for ANY OOM kill in the container and keeps it until the next start, so only its change counts."
               runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/resources/README.md#alerts"
       - {eval_time: 15m, alertname: PFTContainerOOMKill, exp_alerts: []}
 
@@ -183,10 +183,47 @@ tests:
           - exp_labels: {job: postfiat, instance: "node:9877", container: postfiatd, severity: critical}
             exp_annotations:
               summary: "OOM kill in postfiatd"
-              description: "The kernel OOM-killed a process in the container's cgroup within the last 10 min (memory.events oom_kill), or docker reports the main process was OOM-killed (State.OOMKilled). An OOM kill of postfiatd restarts it into a new cgroup whose counter starts at 0, which is why both are checked."
+              description: "The kernel OOM-killed a process in the container's cgroup within the last 10 min (memory.events oom_kill), or docker's State.OOMKilled turned true within the last 10 min. An OOM kill of postfiatd restarts it into a new cgroup whose counter starts at 0, which is why both are checked. Docker sets OOMKilled for ANY OOM kill in the container and keeps it until the next start, so only its change counts."
               runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/resources/README.md#alerts"
       - {eval_time: 5m, alertname: PFTContainerOOMKill, exp_alerts: []}
 
+  - name: a second OOM kill while docker OOMKilled is already stuck at 1 fires through the counter alone, for 10m
+    interval: 1m
+    input_series:
+      - series: 'pft_resources_memory_events_total{job="postfiat", instance="node:9877", container="drill", event="oom_kill"}'
+        values: "1 1 1 2x20"
+      - series: 'pft_resources_container_oom_killed{job="postfiat", instance="node:9877", container="drill"}'
+        values: "1x23"
+    alert_rule_test:
+      - {eval_time: 2m, alertname: PFTContainerOOMKill, exp_alerts: []}
+      - eval_time: 8m
+        alertname: PFTContainerOOMKill
+        exp_alerts:
+          - exp_labels: {job: postfiat, instance: "node:9877", container: drill, severity: critical}
+            exp_annotations:
+              summary: "OOM kill in drill"
+              description: "The kernel OOM-killed a process in the container's cgroup within the last 10 min (memory.events oom_kill), or docker's State.OOMKilled turned true within the last 10 min. An OOM kill of postfiatd restarts it into a new cgroup whose counter starts at 0, which is why both are checked. Docker sets OOMKilled for ANY OOM kill in the container and keeps it until the next start, so only its change counts."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/resources/README.md#alerts"
+      - {eval_time: 15m, alertname: PFTContainerOOMKill, exp_alerts: []}
+
+  - name: docker OOMKilled stuck at 1 (no restart) fires once and clears 10m after the change
+    interval: 1m
+    input_series:
+      - series: 'pft_resources_memory_events_total{job="postfiat", instance="node:9877", container="postfiatd", event="oom_kill"}'
+        values: "0x20"
+      - series: 'pft_resources_container_oom_killed{job="postfiat", instance="node:9877", container="postfiatd"}'
+        values: "0 0 1x18"
+    alert_rule_test:
+      - {eval_time: 1m, alertname: PFTContainerOOMKill, exp_alerts: []}
+      - eval_time: 2m
+        alertname: PFTContainerOOMKill
+        exp_alerts:
+          - exp_labels: {job: postfiat, instance: "node:9877", container: postfiatd, severity: critical}
+            exp_annotations:
+              summary: "OOM kill in postfiatd"
+              description: "The kernel OOM-killed a process in the container's cgroup within the last 10 min (memory.events oom_kill), or docker's State.OOMKilled turned true within the last 10 min. An OOM kill of postfiatd restarts it into a new cgroup whose counter starts at 0, which is why both are checked. Docker sets OOMKilled for ANY OOM kill in the container and keeps it until the next start, so only its change counts."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/resources/README.md#alerts"
+      - {eval_time: 13m, alertname: PFTContainerOOMKill, exp_alerts: []}
   - name: fds 85% of the soft limit fire after 5m; 75% and an unlimited (0) limit do not
     interval: 1m
     input_series:

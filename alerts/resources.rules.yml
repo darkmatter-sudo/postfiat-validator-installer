@@ -47,14 +47,16 @@ groups:
           description: "A linear fit over the last hour reaches memory.max within 6h, and usage is already above 50% of the limit (steady for 30m). Look for a leak or a cache that keeps growing before it ends in an OOM kill."
           runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/resources/README.md#alerts"
       - alert: PFTContainerOOMKill
+        # docker State.OOMKilled stays true until the container starts again, also when only a child process was
+        # killed and the main process lives on (live drill smoke test, runlog 22): `== 1` alone never resolved.
         expr: |
           sum by (instance, job, container) (increase(pft_resources_memory_events_total{event="oom_kill"}[10m])) > 0
-          or max by (instance, job, container) (pft_resources_container_oom_killed) == 1
+          or max by (instance, job, container) (pft_resources_container_oom_killed == 1 and changes(pft_resources_container_oom_killed[10m]) > 0)
         labels:
           severity: critical
         annotations:
           summary: "OOM kill in {{ $labels.container }}"
-          description: "The kernel OOM-killed a process in the container's cgroup within the last 10 min (memory.events oom_kill), or docker reports the main process was OOM-killed (State.OOMKilled). An OOM kill of postfiatd restarts it into a new cgroup whose counter starts at 0, which is why both are checked."
+          description: "The kernel OOM-killed a process in the container's cgroup within the last 10 min (memory.events oom_kill), or docker's State.OOMKilled turned true within the last 10 min. An OOM kill of postfiatd restarts it into a new cgroup whose counter starts at 0, which is why both are checked. Docker sets OOMKilled for ANY OOM kill in the container and keeps it until the next start, so only its change counts."
           runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/resources/README.md#alerts"
       - alert: PFTFdNearLimit
         expr: pft_resources_fd_open / pft_resources_fd_limit_soft > 0.80 and pft_resources_fd_limit_soft > 0
