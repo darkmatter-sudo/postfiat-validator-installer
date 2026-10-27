@@ -1,0 +1,11 @@
+[Unit]
+Description=Pull peer container %i's pft-resources textfile every minute
+
+[Timer]
+# :30, half a minute after the peer's pft-resources@ run at :00
+OnCalendar=*-*-* *:*:30
+AccuracySec=1s
+Persistent=false
+
+[Install]
+WantedBy=timers.target
