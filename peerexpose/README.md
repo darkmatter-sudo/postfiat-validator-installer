@@ -1,7 +1,7 @@
 # peerexpose/ — what does your public peer port tell the internet?
 
 `pft-peerexpose.sh` audits the HTTP handlers that postfiatd serves on its **public peer port (2559)** to anyone who
-can reach it, and restricts them per host role (plan/render/validate now; guarded apply/rollback next).
+can reach it, and restricts them per host role with a guarded apply/rollback.
 
 | Handler | What it can disclose | Controlled by |
 |---|---|---|
@@ -83,5 +83,49 @@ counts 0, unl 1, vl 1) match the role, `[port_peer]` is present, and **no line o
 `plan` prints effective settings before and after and the diff of the two sections only (no addresses or keys live
 there). Exit 0 with `CHANGE NEEDED` or `NO CHANGE`, 2 on error. The change takes effect on the next container restart.
 
-_apply/rollback (backups, maintenance window + Alertmanager silence, health gate, automatic rollback), the two-host
-drill and the found → fixed → verified results are added in the next commits._
+## Apply / rollback (writes)
+
+```bash
+pft-peerexpose apply --role validator --dry-run                     # everything up to the write: diff, lock + health check
+pft-peerexpose apply --role validator                               # this host; required peers default to its [ips_fixed]
+pft-peerexpose apply --role sentry --ssh <sentry-ssh-alias> --container postfiatd-sentry \
+    --url https://<sentry-address>:2559 --require-peer <validator-address>
+pft-peerexpose rollback --role sentry --ssh <sentry-ssh-alias> --container postfiatd-sentry --url https://<sentry-address>:2559
+```
+
+`apply`, in order:
+
+1. read and render the config, `validate` it (same rules as above); `NO CHANGE` exits 0 without a restart;
+2. **refuse (exit 4)** if a `pft-maint` data-collection lock is held, another apply/rollback holds the run lock, or
+   the node fails the health gate *now* (so a node that is already unhealthy or missing its sentry is never touched);
+3. `--dry-run` stops here (diff printed, nothing written);
+4. timestamped backup (`0600` in a `0700` dir, `$STATE_DIR/backups/<target>/`, `LATEST` pointer per target);
+5. open a `pft-maint` window (on the host running the tool, which also covers the sentry) and an Alertmanager silence
+   for `2 x gate timeout + 10 min`; if either fails, nothing is changed;
+6. install the config (same mode, atomic rename, sha256 check), restart the container **once**;
+7. **gate** within `--gate-timeout` (900 s): `server_state` full or proposing, peers >= `--min-peers`, every required
+   peer connected (validator default: the addresses in its `[ips_fixed]`, i.e. the sentry; matched against the
+   `peers` admin RPC, never printed), and the role audit (local port, or `--url` for a remote target) shows
+   0 violations;
+8. gate failed: restore the backup, restart, gate again without the audit (exit 2 `ROLLED BACK`; exit 5 if that also
+   fails). The window is closed in every case; the silence runs out on its own (container-restart alerts stay true for
+   15 min after a start).
+
+`rollback` restores `LATEST` (or `--from FILE`) for that target with the same lock check, window, silence and gate
+(without the audit). It refuses if any line outside `[crawl]`/`[vl]` changed since the backup, keeps a `pre-rollback`
+copy that does not move `LATEST` (so a second rollback is a `NO CHANGE`), and exits 0 `NO CHANGE` when the running
+config already equals the backup. Exit codes: 0 applied / rolled back / no change, 2 error or automatic rollback,
+3 usage, 4 refused (nothing changed), 5 rollback failed.
+
+Env: `STATE_DIR` (`~/.local/state/pft-peerexpose`), `AM` (`http://127.0.0.1:9093`, `none` = no silence),
+`SILENCE_MATCHER` (`alertname=~.+`), `MAINT_CMD` (`pft-maint`, `none` = no window), `POLL_SEC` (10).
+
+The tests stub docker (config reads/writes, restart, admin RPC), `pft-maint` and Alertmanager. A restart makes the
+config "take effect", so the gate sees the after-state: applied, idempotent re-apply, rollback byte-identical and
+idempotent, drift refusal, automatic rollback when the block does not take effect, missing fixed peer, write failure
+(exit 5), lock held, node syncing, too few peers, dry run, `AM=none`, remote sentry through ssh. `mutate.sh` adds
+mutants for the lock check, required peers, the audit in the gate, the automatic rollback, the `LATEST` pointer, dry
+run, the silence and the rollback drift check.
+
+_The two-host live drill (after the data-collection lock ends 2026-10-28T06:20Z) and the found → fixed → verified
+results are added in the next commit._

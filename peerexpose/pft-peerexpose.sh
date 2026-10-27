@@ -29,6 +29,16 @@
 #        pft-peerexpose render --role validator|sentry < postfiatd.cfg      (stdout: the rendered config)
 #        pft-peerexpose validate --role validator|sentry --old FILE --new FILE
 #   Checks a (hand-)edited config against the role: exit 0 OK, 1 rejected (reason printed), 3 usage.
+#        pft-peerexpose apply|rollback --role validator|sentry [--ssh TARGET --url https://ADDR:2559] [--container NAME]
+#                             [--dry-run] [--gate-timeout SEC (900)] [--min-peers N (1)] [--require-peer ADDR]... [--from FILE]
+#   WRITES (unless --dry-run). Refuses (exit 4) while a pft-maint data-collection lock is held, another run holds the
+#   lock, or the node is not healthy now. apply: validate the rendered config, timestamped 0600 backup, pft-maint window +
+#   Alertmanager silence, install, ONE restart, gate (full|proposing, peers >= N, every --require-peer connected (validator
+#   default: its [ips_fixed] peers), role audit 0 violations). A failed gate restores the backup automatically (exit 2;
+#   5 if that also fails). rollback: restore the LATEST (or --from) backup for that target, same window/silence/gate
+#   without the audit. Only [crawl]/[vl] may differ from the backup. Exit 0 applied / rolled back / no change.
+#   Env: STATE_DIR (~/.local/state/pft-peerexpose)  AM (http://127.0.0.1:9093, none)  SILENCE_MATCHER (alertname=~.+)
+#        MAINT_CMD (pft-maint, none)  POLL_SEC (10)
 set -euo pipefail
 
 ROLE=""
@@ -43,7 +53,7 @@ OLD_FILE=""
 NEW_FILE=""
 CFG=/etc/postfiatd/postfiatd.cfg
 
-usage() { sed -n '2,34p' "$0" | sed 's/^# \{0,1\}//'; exit 3; }
+usage() { sed -n '2,44p' "$0" | sed 's/^# \{0,1\}//'; exit 3; }
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -262,6 +272,188 @@ plan() {
   echo "RESULT: CHANGE NEEDED (container restart required to take effect)"
 }
 
+# ---------- apply / rollback ----------
+STATE_DIR="${STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/pft-peerexpose}"
+AM="${AM:-http://127.0.0.1:9093}"
+SILENCE_MATCHER="${SILENCE_MATCHER:-alertname=~.+}"
+MAINT_CMD="${MAINT_CMD:-pft-maint}"
+POLL_SEC="${POLL_SEC:-10}"
+GATE_TIMEOUT=900
+MIN_PEERS=1
+REQ_PEERS=()
+DRY_RUN=false
+FROM=""
+SIL=""
+RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)"
+
+log() { echo "$(date -u +%FT%TZ) $*"; }
+target_label() { local t="${SSH_TARGET:-local}"; echo "${t//[^A-Za-z0-9._-]/_}"; }
+rpc() { # METHOD -> JSON answer of the target node's admin RPC
+  hx docker exec "$CONTAINER" curl -s -m "$TIMEOUT" -d "{\"method\":\"$1\"}" "$RPC_URL" 2>/dev/null
+}
+fixed_peers() { # cfg file -> addresses from [ips_fixed], one per line
+  awk '/^[[:space:]]*\[/ { on = (tolower($0) ~ /^[[:space:]]*\[ips_fixed\][[:space:]]*$/); next }
+       on && !/^[[:space:]]*(#|$)/ { print $1 }' "$1"
+}
+
+# gate WITH_AUDIT -> 0 once (within GATE_TIMEOUT) server_state is full|proposing, peers >= MIN_PEERS, every
+# required peer address is connected and, if WITH_AUDIT, the role audit shows 0 violations and 0 errors.
+# Prints one line per change of the observed state. Peer addresses are never printed, only counts.
+gate() {
+  local deadline st p req=0 a addrs viol line last=""
+  deadline=$(( $(date +%s) + GATE_TIMEOUT ))
+  while :; do
+    read -r st p < <(rpc server_info | jq -r '[.result.info.server_state // "down", .result.info.peers // 0] | @tsv' 2>/dev/null \
+      || echo "down 0")
+    [ -n "${st:-}" ] || { st=down; p=0; }
+    addrs="$(rpc peers | jq -r '.result.peers[]?.address // empty' 2>/dev/null || true)"
+    req=0
+    for a in "${REQ_PEERS[@]}"; do
+      if grep -Eq "(^|[^0-9.])${a//./\\.}([]:]|$)" <<<"$addrs"; then req=$((req + 1)); fi
+    done
+    viol="-"
+    if [ "$1" = audit ] && { [ "$st" = full ] || [ "$st" = proposing ]; }; then
+      ERRORS=0; audit 2>/dev/null
+      viol="$(awk -F'\t' '$4 == "VIOLATION"' "$RESULTS" | wc -l)"
+      [ "$ERRORS" -eq 0 ] || viol="error"
+    fi
+    line="state=$st peers=$p required_peers=$req/${#REQ_PEERS[@]} audit_violations=$viol"
+    [ "$line" = "$last" ] || { log "  gate: $line"; last="$line"; }
+    if { [ "$st" = full ] || [ "$st" = proposing ]; } && [ "$p" -ge "$MIN_PEERS" ] && [ "$req" -eq "${#REQ_PEERS[@]}" ] \
+       && { [ "$1" != audit ] || [ "$viol" = 0 ]; }; then
+      return 0
+    fi
+    [ "$(date +%s)" -lt "$deadline" ] || return 1
+    sleep "$POLL_SEC"
+  done
+}
+
+window_open() { # TTL_SEC: pft-maint window (runs on THIS host, pushes to the sentry) + Alertmanager silence
+  local ttl="$1" n v re=false s e
+  if [ "$MAINT_CMD" != none ]; then
+    sudo -n "$MAINT_CMD" start --ttl "$ttl" --reason "pft-peerexpose $RUN_ID $ROLE $(target_label)" 2>&1 | sed 's/^/  maint: /'
+    [ "${PIPESTATUS[0]}" -eq 0 ] || { log "  pft-maint start failed"; return 1; }
+  fi
+  if [ "$AM" != none ]; then
+    n="${SILENCE_MATCHER%%[=!]*}"; v="${SILENCE_MATCHER#"$n"}"
+    case "$v" in =~*) re=true; v="${v#=~}" ;; *) v="${v#=}" ;; esac
+    s="$(date -u +%FT%TZ)"; e="$(date -u -d "@$(( $(date +%s) + ttl + 600 ))" +%FT%TZ)"
+    SIL="$(curl -s --max-time 10 -X POST -H 'Content-Type: application/json' "$AM/api/v2/silences" -d "$(jq -nc \
+      --arg n "$n" --arg v "$v" --argjson re "$re" --arg s "$s" --arg e "$e" \
+      --arg c "pft-peerexpose $RUN_ID $ROLE $(target_label) planned restart" \
+      '{matchers:[{name:$n,value:$v,isRegex:$re,isEqual:true}],startsAt:$s,endsAt:$e,createdBy:"pft-peerexpose",comment:$c}')" \
+      | jq -r '.silenceID // empty' 2>/dev/null)" || true
+    [ -n "$SIL" ] || { log "  Alertmanager silence failed: not restarting"; window_close; return 1; }
+    log "  Alertmanager silence ${SIL:0:8} ($SILENCE_MATCHER) until $e"
+  fi
+}
+window_close() { # ends the pft-maint window; the silence runs out at its own end on purpose
+  # (PFTContainerRestarted stays true for 15 min after a start, expiring it early would page)
+  [ "$MAINT_CMD" = none ] || sudo -n "$MAINT_CMD" end --reason "pft-peerexpose $RUN_ID done" 2>&1 | sed 's/^/  maint: /'
+}
+
+install_cfg() { # FILE -> installed as $CFG in the container (same mode, atomic rename, sha256 checked)
+  local mode
+  mode="$(hx docker exec "$CONTAINER" stat -c %a "$CFG")" || { log "  cannot stat $CFG"; return 1; }
+  # shellcheck disable=SC2016  # $1/$2 expand inside the container shell
+  hx docker exec -i "$CONTAINER" sh -c 'cat > "$1.pft-peerexpose.new" && chmod "$2" "$1.pft-peerexpose.new" && mv -f "$1.pft-peerexpose.new" "$1"' \
+    sh "$CFG" "$mode" < "$1" || { log "  writing $CFG failed"; return 1; }
+  [ "$(read_cfg | sha256sum | cut -c1-64)" = "$(sha256sum < "$1" | cut -c1-64)" ] \
+    || { log "  installed config does not match (sha256)"; return 1; }
+  log "  installed $CFG in $CONTAINER (mode $mode, sha256 $(sha256sum < "$1" | cut -c1-16)...)"
+}
+restart_node() { log "  restarting container $CONTAINER"; hx docker restart "$CONTAINER" > /dev/null; }
+
+backup_cfg() { # KIND FILE -> prints the backup path (0600 in a 0700 dir). Only pre-apply copies move the
+  # per-target LATEST pointer, so a second rollback finds the same pre-apply config (NO CHANGE), not the undo copy.
+  local d dst
+  d="$STATE_DIR/backups/$(target_label)"
+  ( umask 077; mkdir -p "$d"; chmod 700 "$STATE_DIR" "$STATE_DIR/backups" "$d"
+    dst="$d/postfiatd.cfg.$RUN_ID.$1"; cp "$2" "$dst"; chmod 600 "$dst"
+    [ "$1" != pre-apply ] || echo "$dst" > "$d/LATEST"
+    echo "$dst" )
+}
+
+preflight() { # node full now and no data-collection lock; else refuse (exit 4)
+  local locks
+  exec 9>> "$STATE_DIR/run.lock"
+  flock -n 9 || { echo "REFUSED: another pft-peerexpose apply/rollback is running" >&2; exit 4; }
+  if [ "$MAINT_CMD" != none ]; then
+    locks="$(sudo -n "$MAINT_CMD" lock list 2>&1)" || true
+    [ "$locks" = "no data-collection locks" ] || { echo "REFUSED: pft-maint data-collection lock held: $locks"; exit 4; }
+  fi
+  local keep="$GATE_TIMEOUT"; GATE_TIMEOUT=0
+  if ! gate basic; then echo "REFUSED: node is not healthy now (gate above), nothing changed"; exit 4; fi
+  GATE_TIMEOUT="$keep"
+}
+
+audit_target_note() {
+  if [ -n "$SSH_TARGET" ] && [ "$URL" = https://127.0.0.1:2559 ]; then
+    echo "ERROR: remote target needs --url https://<its public address>:2559 for the audit gate" >&2; exit 3
+  fi
+}
+
+apply_cmd() {
+  local old="$TMP/old.cfg" new="$TMP/new.cfg" bak ttl
+  audit_target_note
+  mkdir -p "$STATE_DIR"; chmod 700 "$STATE_DIR"
+  if ! read_cfg > "$old" 2>/dev/null || [ ! -s "$old" ]; then echo "ERROR: cannot read $CFG from $CONTAINER" >&2; exit 2; fi
+  [ "${#REQ_PEERS[@]}" -gt 0 ] || [ "$ROLE" != validator ] || mapfile -t REQ_PEERS < <(fixed_peers "$old")
+  log "pft-peerexpose apply - role $ROLE, target $(target_label), container $CONTAINER, run $RUN_ID"
+  log "  gate: full|proposing, peers >= $MIN_PEERS, required peers ${#REQ_PEERS[@]}, audit 0 violations, within ${GATE_TIMEOUT}s"
+  render "$ROLE" < "$old" > "$new"
+  if [ "$(effective < "$old")" = "$(want_effective "$ROLE")" ] && [ "$(managed_view "$old")" = "$(managed_view "$new")" ]; then
+    log "RESULT: NO CHANGE (managed block already in place, no restart)"; return 0
+  fi
+  validate_cfg "$ROLE" "$old" "$new" | sed 's/^/  /'
+  [ "${PIPESTATUS[0]}" -eq 0 ] || { log "RESULT: ERROR (rendered config failed validation, nothing changed)"; exit 2; }
+  log "  effective: $(effective < "$old") -> $(effective < "$new")"
+  log "  diff ([crawl]/[vl] sections only):"
+  diff <(managed_view "$old") <(managed_view "$new") | sed 's/^/    /' || true
+  preflight
+  if $DRY_RUN; then log "RESULT: DRY RUN (nothing written, no restart)"; return 0; fi
+  bak="$(backup_cfg pre-apply "$old")"
+  log "  backup: $bak ($(stat -c %a "$bak"), sha256 $(sha256sum < "$bak" | cut -c1-16)...)"
+  ttl=$(( 2 * GATE_TIMEOUT + 600 ))
+  window_open "$ttl" || { log "RESULT: REFUSED (no maintenance window/silence, nothing changed)"; exit 4; }
+  if install_cfg "$new" && restart_node && gate audit; then
+    window_close
+    log "RESULT: APPLIED (role $ROLE policy live, audit 0 violations, gate passed)"; return 0
+  fi
+  log "  apply gate FAILED: automatic rollback to $bak"
+  if install_cfg "$bak" && restart_node && gate basic; then
+    window_close
+    log "RESULT: ROLLED BACK (apply failed its gate; previous config restored and healthy)"; exit 2
+  fi
+  window_close
+  log "RESULT: ROLLBACK FAILED (node needs attention; backup $bak)"; exit 5
+}
+
+rollback_cmd() {
+  local cur="$TMP/cur.cfg" pre
+  mkdir -p "$STATE_DIR"; chmod 700 "$STATE_DIR"
+  [ -n "$FROM" ] || FROM="$(cat "$STATE_DIR/backups/$(target_label)/LATEST" 2>/dev/null || true)"
+  [ -s "$FROM" ] || { echo "ERROR: no backup to roll back to (${FROM:-no LATEST for $(target_label)})" >&2; exit 2; }
+  if ! read_cfg > "$cur" 2>/dev/null || [ ! -s "$cur" ]; then echo "ERROR: cannot read $CFG from $CONTAINER" >&2; exit 2; fi
+  [ "${#REQ_PEERS[@]}" -gt 0 ] || [ "$ROLE" != validator ] || mapfile -t REQ_PEERS < <(fixed_peers "$cur")
+  log "pft-peerexpose rollback - role $ROLE, target $(target_label), container $CONTAINER, run $RUN_ID"
+  if cmp -s "$cur" "$FROM"; then log "RESULT: NO CHANGE (running config already equals the backup, no restart)"; return 0; fi
+  cmp -s <(strip_managed < "$cur") <(strip_managed < "$FROM") \
+    || { log "RESULT: REFUSED (lines outside [crawl]/[vl] changed since the backup; restore by hand)"; exit 4; }
+  log "  restore: $FROM"
+  log "  effective: $(effective < "$cur") -> $(effective < "$FROM")"
+  diff <(managed_view "$cur") <(managed_view "$FROM") | sed 's/^/    /' || true
+  preflight
+  if $DRY_RUN; then log "RESULT: DRY RUN (nothing written, no restart)"; return 0; fi
+  pre="$(backup_cfg pre-rollback "$cur")"
+  log "  pre-rollback copy: $pre ($(stat -c %a "$pre"))"
+  window_open $(( GATE_TIMEOUT + 600 )) || { log "RESULT: REFUSED (no maintenance window/silence, nothing changed)"; exit 4; }
+  if install_cfg "$FROM" && restart_node && gate basic; then
+    window_close; log "RESULT: ROLLED BACK (backup restored, gate passed)"; return 0
+  fi
+  window_close; log "RESULT: ROLLBACK FAILED (node not healthy within ${GATE_TIMEOUT}s)"; exit 5
+}
+
 [ $# -gt 0 ] || usage
 CMD="$1"; shift
 while [ $# -gt 0 ]; do
@@ -275,6 +467,11 @@ while [ $# -gt 0 ]; do
     --old) OLD_FILE="${2:-}"; shift ;;
     --new) NEW_FILE="${2:-}"; shift ;;
     --timeout) TIMEOUT="${2:-}"; shift ;;
+    --gate-timeout) GATE_TIMEOUT="${2:-}"; shift ;;
+    --min-peers) MIN_PEERS="${2:-}"; shift ;;
+    --require-peer) REQ_PEERS+=("${2:-}"); shift ;;
+    --from) FROM="${2:-}"; shift ;;
+    --dry-run) DRY_RUN=true ;;
     -h|--help) usage ;;
     *) echo "unknown argument: $1" >&2; usage ;;
   esac
@@ -282,6 +479,8 @@ while [ $# -gt 0 ]; do
 done
 case "$ROLE" in validator|sentry) ;; *) echo "--role validator|sentry is required" >&2; exit 3 ;; esac
 [[ "$TIMEOUT" =~ ^[0-9]+$ ]] || { echo "--timeout must be an integer" >&2; exit 3; }
+if ! [[ "$GATE_TIMEOUT" =~ ^[0-9]+$ ]] || [ "$GATE_TIMEOUT" -gt 6600 ]; then echo "--gate-timeout must be an integer <= 6600" >&2; exit 3; fi
+[[ "$MIN_PEERS" =~ ^[0-9]+$ ]] || { echo "--min-peers must be an integer" >&2; exit 3; }
 
 case "$CMD" in
   render) render "$ROLE" ;;
@@ -289,6 +488,8 @@ case "$CMD" in
     if [ ! -r "$OLD_FILE" ] || [ ! -r "$NEW_FILE" ]; then echo "validate needs readable --old FILE and --new FILE" >&2; exit 3; fi
     validate_cfg "$ROLE" "$OLD_FILE" "$NEW_FILE" || exit 1 ;;
   plan) plan ;;
+  apply) apply_cmd ;;
+  rollback) rollback_cmd ;;
   audit)
     audit
     rc=0; report || rc=$?

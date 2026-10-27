@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Mutation check for the pft-peerexpose classifier: each mutant is an exact one-line replacement in a copy of the
+# Mutation check for pft-peerexpose (classifier, config, apply/rollback): each mutant is an exact one-line replacement in a copy of the
 # script; the offline suite must FAIL on it. A mutant counts as caught only if it was applied (copy differs) and
 # the suite printed at least one FAIL line and a RESULT line. Usage: bash tests/mutate.sh
-# Mutant texts are literal script lines, so they are single-quoted on purpose.
+# Mutant texts are literal script lines, so they are single-quoted on purpose (a mutant may span two lines).
 # shellcheck disable=SC2016,SC1003
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -26,6 +26,17 @@ MUTANTS=(
   'M12@@validate ignores changes outside the block@@  cmp -s <(strip_managed < "$2") <(strip_managed < "$3") \@@  true \'
   'M13@@bare [crawl] 0 not parsed@@if (sec == "crawl") v["crawl"] = (line == "1" || tolower(line) == "true") ? 1 : 0; next@@next'
   'M14@@[vl] count not checked@@  [ "$n" -eq 1 ] || { echo "validate: expected exactly one [vl] section, found $n"; return 1; }@@  :'
+  'M15@@lock list ignored@@    [ "$locks" = "no data-collection locks" ] || { echo@@    true || { echo'
+  'M16@@required peers not checked@@[ "$req" -eq "${#REQ_PEERS[@]}" ] \@@true \'
+  'M17@@audit not part of the gate@@       && { [ "$1" != audit ] || [ "$viol" = 0 ]; }; then@@       ; then'
+  'M18@@no automatic rollback after a failed gate@@  log "  apply gate FAILED: automatic rollback to $bak"@@  window_close; log "RESULT: APPLIED"; return 0'
+  'M19@@pre-rollback copy moves LATEST@@    [ "$1" != pre-apply ] || echo "$dst" > "$d/LATEST"@@    echo "$dst" > "$d/LATEST"'
+  'M20@@dry run writes@@  if $DRY_RUN; then log "RESULT: DRY RUN (nothing written, no restart)"; return 0; fi
+  bak=@@  bak='
+  'M21@@no silence before the restart@@  if [ "$AM" != none ]; then
+    n=@@  if false; then
+    n='
+  'M22@@rollback skips the outside-block drift check@@  cmp -s <(strip_managed < "$cur") <(strip_managed < "$FROM") \@@  true \'
 )
 
 caught=0; total=0

@@ -13,17 +13,22 @@ trap 'rm -rf "$STUBS"' EXIT
 cat > "$STUBS/curl" <<'EOF'
 #!/usr/bin/env bash
 # stub: -o FILE, -w FMT (only %{http_code}), last arg = URL (or admin RPC POST through docker exec)
-out=""; url=""
+#       Alertmanager POST /api/v2/silences -> a silence id. After a restart with the managed block in the running
+#       config, answers come from $CASE_DIR/after/ (if present): the block "takes effect" only on restart.
+out=""; url=""; data=""
 while [ $# -gt 0 ]; do
-  case "$1" in -o) out="$2"; shift ;; -w|-m|-d) shift ;; -*) ;; *) url="$1" ;; esac
+  case "$1" in -o) out="$2"; shift ;; -d) data="$2"; shift ;; -w|-m|-X|-H|--max-time) shift ;; -*) ;; *) url="$1" ;; esac
   shift
 done
 echo "$url" >> "$STUB_LOG"
+case "$url" in */api/v2/silences) echo "silence $data" >> "$STUB_LOG"; echo '{"silenceID":"sil-0123456789"}'; exit 0 ;; esac
+d="$CASE_DIR"
+if [ -d "$CASE_DIR/after" ] && grep -q "pft-peerexpose managed block" "$STUB_STATE/running.cfg" 2>/dev/null; then d="$CASE_DIR/after"; fi
 path="/${url#*://*/}"
 case "$path" in /crawl) ep=crawl ;; /vl/*) ep=vl ;; /health) ep=health ;; *) ep=none ;; esac
-code="$(cat "$CASE_DIR/$ep.code" 2>/dev/null || echo 404)"
+code="$(cat "$d/$ep.code" 2>/dev/null || echo 404)"
 if [ "$code" = 000 ]; then printf '000'; exit 7; fi
-if [ -n "$out" ]; then cat "$CASE_DIR/$ep.body" > "$out"; else cat "$CASE_DIR/$ep.body"; fi
+if [ -n "$out" ]; then cat "$d/$ep.body" > "$out"; else cat "$d/$ep.body"; fi
 printf '%s' "$code"
 EOF
 cat > "$STUBS/sudo" <<'EOF'
@@ -33,12 +38,38 @@ exec "$@"
 EOF
 cat > "$STUBS/docker" <<'EOF'
 #!/usr/bin/env bash
-# stub: docker exec CONTAINER cat CFG -> postfiatd.cfg of the case (missing = exit 1);
-#       docker exec CONTAINER curl ... -> validators.json of the case
+# stub: docker exec [-i] CONTAINER cat CFG  -> $CFG_FILE (default: postfiatd.cfg of the case; missing = exit 1)
+#       docker exec CONTAINER stat ...      -> 640
+#       docker exec -i CONTAINER sh -c ...  -> stdin replaces $CFG_FILE (FAIL_WRITE=1: exit 1)
+#       docker exec CONTAINER curl -d '{"method":"M"}' -> $SI_JSON / $PEERS_JSON / validators.json of the case
+#       docker restart CONTAINER            -> copies $CFG_FILE to $STUB_STATE/running.cfg
 echo "docker $*" >> "$STUB_LOG"
+cfg="${CFG_FILE:-$CASE_DIR/postfiatd.cfg}"
+if [ "$1" = restart ]; then cp "$cfg" "$STUB_STATE/running.cfg"; exit 0; fi
 [ "$1" = exec ] || exit 0
-if [ "$3" = cat ]; then cat "$CASE_DIR/postfiatd.cfg" 2>/dev/null; exit; fi
-cat "$CASE_DIR/validators.json"
+shift; [ "$1" = -i ] && shift
+shift
+case "$1" in
+  cat) cat "$cfg" 2>/dev/null ;;
+  stat) echo 640 ;;
+  sh) [ "${FAIL_WRITE:-0}" = 1 ] && exit 1; cat > "$cfg" ;;
+  curl)
+    m="$(printf '%s ' "$@" | grep -o '"method":"[a-z_]*"' | cut -d'"' -f4)"
+    case "$m" in
+      server_info) cat "${SI_JSON:-$CASE_DIR/server_info.json}" ;;
+      peers) cat "${PEERS_JSON:-$CASE_DIR/peers.json}" ;;
+      *) cat "$CASE_DIR/validators.json" ;;
+    esac ;;
+esac
+EOF
+cat > "$STUBS/pft-maint" <<'EOF'
+#!/usr/bin/env bash
+# stub: records the call; `lock list` prints $LOCKS_FILE or "no data-collection locks"
+echo "pft-maint $*" >> "$STUB_LOG"
+if [ "$1 $2" = "lock list" ]; then
+  if [ -n "${LOCKS_FILE:-}" ]; then cat "$LOCKS_FILE"; else echo "no data-collection locks"; fi
+fi
+exit 0
 EOF
 cat > "$STUBS/ssh" <<'EOF'
 #!/usr/bin/env bash
@@ -49,7 +80,8 @@ EOF
 chmod +x "$STUBS"/*
 
 PASS=0; FAIL=0
-OUT="$STUBS/out"; export STUB_LOG="$STUBS/calls"
+OUT="$STUBS/out"; export STUB_LOG="$STUBS/calls" STUB_STATE="$STUBS/state" POLL_SEC=0
+mkdir -p "$STUB_STATE"
 
 # run CASE ARGS... -> sets RC, output in $OUT
 run() {
@@ -195,6 +227,94 @@ check "validate without --new exit 3" '[ "$RC" -eq 3 ]'
 # remote target through ssh
 run cfg_stock plan --role sentry --ssh relayhost --container postfiatd-sentry
 check "plan --ssh uses ssh BatchMode + sudo -n docker exec" 'grep -q "^ssh -o BatchMode=yes -o ConnectTimeout=10 relayhost sudo -n docker exec postfiatd-sentry cat /etc/postfiatd/postfiatd.cfg" "$STUB_LOG" && [ "$RC" -eq 0 ]'
+
+# ---------- apply / rollback (writes go to a per-test copy of the case cfg) ----------
+LIVE="$STUBS/live.cfg"; ST="$STUBS/pestate"
+# arun CASE ARGS... : fresh live cfg + state dir, then run with CFG_FILE/STATE_DIR set (extra env: VAR=x arun ...)
+arun() {
+  local c="$1"; shift
+  cp "$FIX/$c/postfiatd.cfg" "$LIVE"; rm -rf "$ST" "$STUB_STATE/running.cfg"; : > "$STUB_LOG"
+  CASE_DIR="$FIX/$c" CFG_FILE="$LIVE" STATE_DIR="$ST" PATH="$STUBS:$PATH" bash "$SCRIPT" "$@" > "$OUT" 2>&1
+  RC=$?
+}
+# brun ARGS... : run against the CURRENT live cfg and state (no reset), answers from $STUBS/applied
+brun() {
+  cp "$LIVE" "$STUBS/applied/postfiatd.cfg"; : > "$STUB_LOG"
+  CASE_DIR="$STUBS/applied" CFG_FILE="$LIVE" STATE_DIR="$ST" PATH="$STUBS:$PATH" bash "$SCRIPT" "$@" > "$OUT" 2>&1
+  RC=$?
+}
+AV=apply_validator; ORIG="$FIX/$AV/postfiatd.cfg"
+mkdir -p "$STUBS/applied"; cp -r "$FIX/$AV"/. "$STUBS/applied/"
+
+arun $AV apply --role validator --gate-timeout 0
+check "apply validator: exit 0, APPLIED" '[ "$RC" -eq 0 ] && grep -q "RESULT: APPLIED" "$OUT"'
+check "apply validator: live cfg = rendered validator block" 'PATH="$STUBS:$PATH" bash "$SCRIPT" render --role validator < "$ORIG" | cmp -s - "$LIVE"'
+check "apply validator: exactly one restart" '[ "$(grep -c "^docker restart postfiatd$" "$STUB_LOG")" = 1 ]'
+check "apply validator: window opened before the write, closed after the restart" 'a=$(grep -n "^pft-maint start --ttl 600 " "$STUB_LOG" | cut -d: -f1); w=$(grep -n "^docker exec -i postfiatd sh -c" "$STUB_LOG" | head -1 | cut -d: -f1); r=$(grep -n "^docker restart" "$STUB_LOG" | cut -d: -f1); e=$(grep -n "^pft-maint end" "$STUB_LOG" | cut -d: -f1); [ -n "$a" ] && [ "$a" -lt "$w" ] && [ "$w" -lt "$r" ] && [ "$r" -lt "$e" ]'
+check "apply validator: AM silence posted before the restart" 's=$(grep -n "^silence " "$STUB_LOG" | cut -d: -f1); r=$(grep -n "^docker restart" "$STUB_LOG" | cut -d: -f1); [ -n "$s" ] && [ "$s" -lt "$r" ] && grep -q "Alertmanager silence sil-0123" "$OUT"'
+check "apply validator: silence matcher + comment" 'grep "^silence " "$STUB_LOG" | sed "s/^silence //" | jq -e ".matchers[0] == {name:\"alertname\",value:\".+\",isRegex:true,isEqual:true} and (.comment | test(\"pft-peerexpose .* validator local planned restart\"))"'
+check "apply validator: fixed peer required by default and found (1/1), audit 0" 'grep -q "required_peers=1/1 audit_violations=0" "$OUT"'
+check "apply validator: backup = original, 0600 in 0700 dirs, LATEST" 'b=$(cat "$ST/backups/local/LATEST"); cmp -s "$b" "$ORIG" && [ "$(stat -c %a "$b")" = 600 ] && [ "$(stat -c %a "$ST/backups/local")" = 700 ] && [ "$(stat -c %a "$ST")" = 700 ]'
+check "apply validator: effective before -> after printed" 'grep -q "effective: crawl=1 overlay=1 server=1 counts=0 unl=1 vl=1 -> $want_v" "$OUT"'
+check "apply validator: no peer address in output" '! grep -qE "192\.0\.2|198\.51\.100" "$OUT"'
+
+# second apply on the applied cfg: NO CHANGE, no restart, no window
+brun apply --role validator --gate-timeout 0
+check "apply again: NO CHANGE, no restart, no window" '[ "$RC" -eq 0 ] && grep -q "RESULT: NO CHANGE" "$OUT" && ! grep -qE "^docker restart|^pft-maint start" "$STUB_LOG"'
+
+# rollback after apply: restores the backup byte-identically, one restart, own window + silence
+brun rollback --role validator --gate-timeout 0
+check "rollback: exit 0, ROLLED BACK" '[ "$RC" -eq 0 ] && grep -q "RESULT: ROLLED BACK (backup restored" "$OUT"'
+check "rollback: live cfg byte-identical to the original" 'cmp -s "$LIVE" "$ORIG"'
+check "rollback: one restart inside a window, silence posted" '[ "$(grep -c "^docker restart" "$STUB_LOG")" = 1 ] && grep -q "^pft-maint start --ttl 600 " "$STUB_LOG" && grep -q "^pft-maint end" "$STUB_LOG" && grep -q "^silence " "$STUB_LOG"'
+check "rollback: pre-rollback copy kept (0600)" 'p=$(ls "$ST"/backups/local/postfiatd.cfg.*.pre-rollback); [ "$(stat -c %a "$p")" = 600 ]'
+brun rollback --role validator --gate-timeout 0
+check "rollback twice: NO CHANGE, no restart" '[ "$RC" -eq 0 ] && grep -q "RESULT: NO CHANGE" "$OUT" && ! grep -q "^docker restart" "$STUB_LOG"'
+
+# rollback refuses when lines outside [crawl]/[vl] changed since the backup
+arun $AV apply --role validator --gate-timeout 0
+printf '\n[extra_section]\n1\n' >> "$LIVE"; cp "$LIVE" "$STUBS/live.edited"
+brun rollback --role validator --gate-timeout 0
+check "rollback refuses outside-block drift (exit 4, nothing written)" '[ "$RC" -eq 4 ] && grep -q "lines outside \[crawl\]/\[vl\] changed" "$OUT" && cmp -s "$LIVE" "$STUBS/live.edited" && ! grep -q "^docker restart" "$STUB_LOG"'
+arun $AV rollback --role validator
+check "rollback without a backup: exit 2" '[ "$RC" -eq 2 ] && grep -q "no backup to roll back to" "$OUT"'
+
+# automatic rollback: the block does not take effect (audit still finds violations after the restart)
+arun apply_badgate apply --role validator --gate-timeout 0
+check "badgate: exit 2, ROLLED BACK" '[ "$RC" -eq 2 ] && grep -q "RESULT: ROLLED BACK (apply failed its gate" "$OUT"'
+check "badgate: audit violations seen in the gate" 'grep -q "audit_violations=11" "$OUT"'
+check "badgate: live cfg restored byte-identical" 'cmp -s "$LIVE" "$FIX/apply_badgate/postfiatd.cfg"'
+check "badgate: two restarts (apply + rollback), window closed once" '[ "$(grep -c "^docker restart" "$STUB_LOG")" = 2 ] && [ "$(grep -c "^pft-maint end" "$STUB_LOG")" = 1 ]'
+# the validator's fixed peer (the sentry) is not connected: refused before anything is written
+PEERS_JSON="$FIX/$AV/peers-nofixed.json" arun $AV apply --role validator --gate-timeout 0
+check "fixed peer missing: refused before any write" '[ "$RC" -eq 4 ] && grep -q "required_peers=0/1" "$OUT" && cmp -s "$LIVE" "$ORIG" && ! grep -q "^pft-maint start" "$STUB_LOG"'
+# write failure mid-apply -> rollback path; the restore write fails too -> exit 5
+FAIL_WRITE=1 arun $AV apply --role validator --gate-timeout 0
+check "write failure: ROLLBACK FAILED exit 5, window closed, no restart" '[ "$RC" -eq 5 ] && grep -q "writing /etc/postfiatd/postfiatd.cfg failed" "$OUT" && grep -q "^pft-maint end" "$STUB_LOG" && ! grep -q "^docker restart" "$STUB_LOG"'
+
+# refusals: lock held, node not healthy, too few peers; dry run; AM=none
+LOCKS_FILE="$FIX/$AV/locks-held" arun $AV apply --role validator --gate-timeout 0
+check "lock held: exit 4, nothing written, no window" '[ "$RC" -eq 4 ] && grep -q "REFUSED: pft-maint data-collection lock held: resources-24h" "$OUT" && cmp -s "$LIVE" "$ORIG" && ! grep -qE "^pft-maint start|^docker restart" "$STUB_LOG"'
+SI_JSON="$FIX/$AV/server_info-syncing.json" arun $AV apply --role validator --gate-timeout 0
+check "node syncing: exit 4, nothing written" '[ "$RC" -eq 4 ] && grep -q "state=syncing" "$OUT" && grep -q "REFUSED: node is not healthy" "$OUT" && cmp -s "$LIVE" "$ORIG"'
+arun $AV apply --role validator --min-peers 12 --gate-timeout 0
+check "--min-peers 12 with 11 peers: refused" '[ "$RC" -eq 4 ] && grep -q "peers=11 " "$OUT"'
+arun $AV apply --role validator --dry-run
+check "dry run: diff shown, nothing written, no backup, no restart" '[ "$RC" -eq 0 ] && grep -q "RESULT: DRY RUN" "$OUT" && grep -q "^    > \[crawl\]$" "$OUT" && cmp -s "$LIVE" "$ORIG" && [ ! -e "$ST/backups" ] && ! grep -qE "^docker restart|^pft-maint start|^silence" "$STUB_LOG"'
+AM=none arun $AV apply --role validator --gate-timeout 0
+check "AM=none: applied without a silence" '[ "$RC" -eq 0 ] && grep -q "RESULT: APPLIED" "$OUT" && ! grep -q "^silence " "$STUB_LOG"'
+
+# remote sentry: ssh target, --url for the audit gate, explicit --require-peer, backups per target label
+arun apply_sentry apply --role sentry --ssh relayhost --container postfiatd-sentry --url https://203.0.113.9:2559 --require-peer 192.0.2.20 --gate-timeout 0
+check "apply sentry remote: APPLIED, sentry block live" '[ "$RC" -eq 0 ] && grep -q "RESULT: APPLIED" "$OUT" && PATH="$STUBS:$PATH" bash "$SCRIPT" render --role sentry < "$FIX/apply_sentry/postfiatd.cfg" | cmp -s - "$LIVE"'
+check "apply sentry remote: restart + write through ssh sudo -n" 'grep -q "^ssh -o BatchMode=yes -o ConnectTimeout=10 relayhost sudo -n docker restart postfiatd-sentry" "$STUB_LOG" && grep -q "relayhost sudo -n docker exec -i postfiatd-sentry sh -c" "$STUB_LOG"'
+check "apply sentry remote: audit probed the given URL, required peer 1/1" 'grep -q "^https://203.0.113.9:2559/crawl$" "$STUB_LOG" && grep -q "required_peers=1/1" "$OUT"'
+check "apply sentry remote: backup under the target label" '[ -s "$ST/backups/relayhost/LATEST" ]'
+check "apply sentry remote: window + silence run locally (not via ssh)" 'grep -q "^pft-maint start" "$STUB_LOG" && ! grep -q "relayhost sudo -n pft-maint" "$STUB_LOG"'
+arun apply_sentry apply --role sentry --ssh relayhost --container postfiatd-sentry
+check "remote apply without --url: exit 3" '[ "$RC" -eq 3 ] && grep -q "needs --url" "$OUT"'
+arun $AV apply --role validator --gate-timeout 99999
+check "--gate-timeout over the window limit: exit 3" '[ "$RC" -eq 3 ]'
 
 echo "RESULT: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
