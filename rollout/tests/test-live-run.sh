@@ -26,7 +26,7 @@ setup() { # fixture + notifier env files on both fake hosts (originals copied to
 lr() { # MODE -> output in $T/out, exit code in RC
   PATH="$STUBS:$PATH" STUB="$T" CONF="$T/hosts.conf" STATE_DIR="$T/state" HOME="$T/home" PFT_ROLLOUT_NOW_FILE="$T/now" \
     GATE_TIMEOUT=300 SOAK_SEC=60 POLL_SEC=10 MIN_ADVANCE=10 ROLLBACK_TIMEOUT=300 AM=http://am.test:9093 \
-    FOUNDATION_RPC=https://foundation.test NTFY=https://ntfy.test RELAY=relay NEED_ROOT=0 NTFY_WAIT=0 INTEGRITY_CMD=none \
+    FOUNDATION_RPC=https://foundation.test NTFY=https://ntfy.test RELAY=relay NEED_ROOT=0 NTFY_WAIT=0 INTEGRITY_CMD=none LOGSHIP_WAIT=0 \
     LOCAL_ENVS="$T/etc-l/postfiat-monitor.env $T/etc-l/pft-integrity.env" \
     REMOTE_ENVS="$T/etc-r/pft-watchdog/ntfy.env $T/etc-r/pft-integrity.env" \
     MAINT_DIR_L="$T/etc-l/pft-maint" MAINT_DIR_R="$T/etc-r/pft-maint" \
@@ -56,13 +56,16 @@ t_noop() {
   setup "noop: both hosts restarted on the same image, verdict PASS, notifiers redirected then restored"
   lr noop
   check "rc=0 (got $RC)" eq "$RC" 0
-  check "checker RESULT: PASS (20/20)" grep -qx "RESULT: PASS (20/20)" "$T/out"
+  check "checker RESULT: PASS (21/21)" grep -qx "RESULT: PASS (21/21)" "$T/out"
   check "pft-rollout exit 0" has "pft-rollout exit 0"
   check "redirected during both windows" watched_all 2
   check "env files restored byte-identical + drill files removed" restored
   check "restore lines say yes x4" eq "$(grep -c 'sha256 matches pre-drill copy: yes' "$T/out")" 4
   check "no topic/token in output" nolp
   check "facts file written" eq "$(jq -r '.validator.before.started != .validator.after.started' "$T"/state/facts-*.json)" true
+  check "facts logship: unit active, newest > after" eq "$(jq -r '.logship | "\(.unit) \(.nrestarts) \(.newest_us > .after_us)"' "$T"/state/facts-*.json)" "active 2 true"
+  check "remote journal queried newest-first for the sentry" eq "$(cnt "$T/calls.log" -c '^local journalctl -D /var/log/journal/remote -t postfiatd-sentry -r -n 1 -o json')" 1
+  check "bridge unit read on the relay" eq "$(cnt "$T/calls.log" -c '^relay systemctl show -p ActiveState -p NRestarts pft-logship-dockerlog@postfiatd-sentry$')" 1
   end
 }
 t_badimage() {
@@ -71,7 +74,7 @@ t_badimage() {
   printf '%s\n' "$(msg '[MAINT] start sentry')" > "$T/ntfy_maint"
   lr badimage
   check "rc=0 (got $RC)" eq "$RC" 0
-  check "checker RESULT: PASS (14/14)" grep -qx "RESULT: PASS (14/14)" "$T/out"
+  check "checker RESULT: PASS (15/15)" grep -qx "RESULT: PASS (15/15)" "$T/out"
   check "pft-rollout exit 1" has "pft-rollout exit 1"
   check "Dockerfile FROM the running sentry image" has "Dockerfile: FROM $OLD"
   check "drill image built on relay" eq "$(grep -c '^relay docker build' "$T/calls.log")" 1
@@ -104,6 +107,38 @@ t_ntfy_down() {
   check "could not be read" has "ALERT topic: could not be read from ntfy"
   check "exact FAIL line" grep -qx "FAIL throwaway alert topic received nothing" "$T/out"
   check "facts alert_msgs null" eq "$(jq -r '.alert_msgs' "$T"/state/facts-*.json)" null
+  end
+}
+t_logship_stale() {
+  setup "noop: newest forwarded sentry line older than the run end -> FAIL (forwarding not re-attached)"
+  touch "$T/journal_stale"
+  lr noop
+  check "rc=1 (got $RC)" eq "$RC" 1
+  check "exact FAIL line" grep -qx "FAIL sentry log forwarded after the run (logship re-attached)" "$T/out"
+  check "only that check failed" grep -qx "RESULT: FAIL (20/21)" "$T/out"
+  check "stale time printed" has "newest forwarded postfiatd-sentry line: 2001-09-09T01:46:40Z"
+  check "env files restored" restored
+  end
+}
+t_logship_empty() {
+  setup "noop: no forwarded sentry line at all -> newest null -> FAIL"
+  touch "$T/journal_empty"
+  lr noop
+  check "rc=1 (got $RC)" eq "$RC" 1
+  check "exact FAIL line" grep -qx "FAIL sentry log forwarded after the run (logship re-attached)" "$T/out"
+  check "printed none" has "newest forwarded postfiatd-sentry line: none"
+  check "facts newest_us null" eq "$(jq -r '.logship.newest_us' "$T"/state/facts-*.json)" null
+  end
+}
+t_logship_inactive() {
+  setup "badimage: relay bridge unit not active -> FAIL even with a fresh line"
+  gens relay good down good
+  touch "$T/logship_inactive"
+  lr badimage
+  check "rc=1 (got $RC)" eq "$RC" 1
+  check "exact FAIL line" grep -qx "FAIL sentry log forwarded after the run (logship re-attached)" "$T/out"
+  check "only that check failed" grep -qx "RESULT: FAIL (14/15)" "$T/out"
+  check "state printed" has "ActiveState=failed NRestarts=2"
   end
 }
 t_lock() {
@@ -145,6 +180,6 @@ t_build_fail() {
   end
 }
 
-t_noop; t_badimage; t_alert_seen; t_ntfy_down; t_lock; t_leftover; t_drill_tag_present; t_build_fail
+t_noop; t_badimage; t_alert_seen; t_ntfy_down; t_logship_stale; t_logship_empty; t_logship_inactive; t_lock; t_leftover; t_drill_tag_present; t_build_fail
 echo "live-run tests: $PASSN passed, $FAILN failed${FAILED[*]:+ (${FAILED[*]})}"
 [ "$FAILN" -eq 0 ]

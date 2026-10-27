@@ -13,6 +13,10 @@
 #    ENTRYPOINT sh -c "exec sleep infinity": it starts and keeps running, but rippled never answers -> gate fails.
 # 3  facts before (image ID + StartedAt of both containers), pft-rollout run --yes --no-pull --target T
 #    (noop: T = IMAGE_TAG, already the running image on both hosts; badimage: T = the drill tag), facts after.
+# 3b log forwarding re-attached: wait up to LOGSHIP_WAIT s for a sentry container line in the validator's remote
+#    journal that is newer than the moment pft-rollout returned (by then the old container is gone or, after a
+#    rollback, the original one runs again, so such a line can only come from the container now running), and read
+#    the relay's bridge unit state. Recorded as facts .logship; check-drill.sh requires both in either mode.
 # 4  badimage: rmi the drill tag on the relay. Restore notifiers, read both throwaway topics back from ntfy, write
 #    facts JSON next to the audit log, run check-drill.sh on this run's audit lines. Exit = checker exit (0 PASS).
 # Topics print as <redacted>, user names in pft-integrity output as <user>.
@@ -20,6 +24,7 @@
 #      AM (http://127.0.0.1:9093)  SENTRY_C (postfiatd-sentry)  VALIDATOR_C (postfiatd)  IMAGE_TAG (as pft-rollout)
 #      LOCAL_ENVS  REMOTE_ENVS  MAINT_DIR_L / MAINT_DIR_R (/etc/pft-maint)  INTEGRITY_CMD (pft-integrity, none = skip)
 #      NEED_ROOT (1)  NTFY_WAIT (15 s before reading the topics back)  PFT_ROLLOUT / CHECK_DRILL (the scripts next to this one)
+#      LOGSHIP_DIR (/var/log/journal/remote)  LOGSHIP_UNIT (pft-logship-dockerlog@SENTRY_C)  LOGSHIP_WAIT (120)
 #      pft-rollout env (GATE_TIMEOUT, ...) passes through.
 set -uo pipefail
 MODE="${1:-}"
@@ -34,6 +39,8 @@ LOCAL_ENVS="${LOCAL_ENVS:-/etc/postfiat-monitor.env /etc/pft-integrity.env}"
 REMOTE_ENVS="${REMOTE_ENVS:-/etc/pft-watchdog/ntfy.env /etc/pft-integrity.env}"
 MAINT_DIR_L="${MAINT_DIR_L:-/etc/pft-maint}"; MAINT_DIR_R="${MAINT_DIR_R:-/etc/pft-maint}"
 INTEGRITY_CMD="${INTEGRITY_CMD:-pft-integrity}"; NEED_ROOT="${NEED_ROOT:-1}"; NTFY_WAIT="${NTFY_WAIT:-15}"
+LOGSHIP_DIR="${LOGSHIP_DIR:-/var/log/journal/remote}"; LOGSHIP_UNIT="${LOGSHIP_UNIT:-pft-logship-dockerlog@$SENTRY_C}"
+LOGSHIP_WAIT="${LOGSHIP_WAIT:-120}"
 DRILL_TAG=pft-rollout-drill:bad
 SUF=.pre-rollout-drill
 
@@ -142,6 +149,28 @@ SA="$(cfact relay "$SENTRY_C")"; VA="$(cfact local "$VALIDATOR_C")"
 echo "  after:  sentry $SA"; echo "  after:  validator $VA"
 RUN="$(jq -r '.run // empty' "$STATE_DIR/last-run.json" 2>/dev/null)"
 
+echo; echo "== 3b. log forwarding re-attached (sentry container log -> validator remote journal)"
+newest_us() { # realtime (us) of the newest $SENTRY_C entry in the remote journal, empty if none/unreadable
+  local n
+  n="$(L "sudo -n journalctl -D $LOGSHIP_DIR -t $SENTRY_C -r -n 1 -o json --no-pager" 2>/dev/null | jq -r '.__REALTIME_TIMESTAMP // empty' 2>/dev/null)"
+  case "$n" in ''|*[!0-9]*) n="" ;; esac
+  echo "$n"
+}
+T1="$(date -u +%s)"; AFTER_US=$((T1 * 1000000)); NEWEST=""
+while :; do
+  NEWEST="$(newest_us)"
+  [ -n "$NEWEST" ] && [ "$NEWEST" -gt "$AFTER_US" ] && break
+  [ "$(date -u +%s)" -ge $((T1 + LOGSHIP_WAIT)) ] && break
+  sleep 5
+done
+US="$(R "systemctl show -p ActiveState -p NRestarts $LOGSHIP_UNIT" 2>/dev/null)"
+UA="$(sed -n 's/^ActiveState=//p' <<<"$US")"; NR="$(sed -n 's/^NRestarts=//p' <<<"$US")"
+case "$NR" in ''|*[!0-9]*) NR=null ;; esac
+LS="$(jq -nc --arg u "$UA" --argjson nr "$NR" --arg n "$NEWEST" --argjson a "$AFTER_US" \
+  '{unit: (if $u == "" then null else $u end), nrestarts: $nr, newest_us: (if $n == "" then null else ($n | tonumber) end), after_us: $a}')"
+echo "  pft-rollout returned $(date -u -d "@$T1" +%FT%TZ); newest forwarded $SENTRY_C line: $([ -n "$NEWEST" ] && date -u -d "@$((NEWEST / 1000000))" +%FT%TZ || echo none) (waited $(($(date -u +%s) - T1)) s, max $LOGSHIP_WAIT)"
+echo "  relay $LOGSHIP_UNIT: ActiveState=${UA:-unknown} NRestarts=$NR"
+
 echo; echo "== 4. clean up, restore, read back, verdict"
 if [ "$DRILL_BUILT" -eq 1 ]; then
   R "sudo -n docker rmi $DRILL_TAG" 2>&1 | sed 's/^/  rmi: /'
@@ -166,8 +195,8 @@ if [ "$INTEGRITY_CMD" != none ]; then
   echo "  \$ $INTEGRITY_CMD verify (relay)"; R "sudo -n $INTEGRITY_CMD verify" 2>&1 | red | tail -12 | sed 's/^/    /'
 fi
 FACTS="$STATE_DIR/facts-${RUN:-none}.json"
-jq -n --argjson e "$RC" --argjson a "$ALERTS" --argjson sb "$SB" --argjson sa "$SA" --argjson vb "$VB" --argjson va "$VA" \
-  '{exit: $e, alert_msgs: $a, sentry: {before: $sb, after: $sa}, validator: {before: $vb, after: $va}}' > "$FACTS"
+jq -n --argjson e "$RC" --argjson a "$ALERTS" --argjson sb "$SB" --argjson sa "$SA" --argjson vb "$VB" --argjson va "$VA" --argjson ls "$LS" \
+  '{exit: $e, alert_msgs: $a, sentry: {before: $sb, after: $sa}, validator: {before: $vb, after: $va}, logship: $ls}' > "$FACTS"
 echo "  facts: $(jq -c . "$FACTS")"
 echo "\$ check-drill.sh $MODE <audit> ${RUN:-<none>} <facts>"
 bash "$CHECK" "$MODE" "$STATE_DIR/audit.jsonl" "${RUN:-none}" "$FACTS"; CRC=$?

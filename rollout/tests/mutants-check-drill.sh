@@ -13,6 +13,9 @@ MUTANTS=(
   'C5 no-op target check always true|s/ck "\$h target == recorded prev (no-op)" .*/ck "$h target == recorded prev (no-op)" true/'
   'C6 run id filter dropped|s/select(.run == \$r)/select(true)/'
   'C7 sentry final image check always true|s/ck "sentry ends on recorded image" .*/ck "sentry ends on recorded image" true/'
+  'C9 logship check always true|s/^ck "sentry log forwarded after the run (logship re-attached)" .*/ck "sentry log forwarded after the run (logship re-attached)" true/'
+  'C10 logship: a line at the run end counts as newer|s/\$f.logship.newest_us > \$f.logship.after_us/$f.logship.newest_us >= $f.logship.after_us/'
+  'C11 logship: bridge unit state ignored|s/\$f.logship.unit == "active"/true/'
   'C8 RESULT always PASS|s/^echo "RESULT: FAIL (\$P\/\$N)"; exit 1$/echo "RESULT: PASS ($P\/$N)"; exit 0/'
 )
 MC=0

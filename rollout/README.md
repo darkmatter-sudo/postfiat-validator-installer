@@ -145,14 +145,16 @@ number of messages on the throwaway alert topic). `noop` needs exit 0 and, on bo
 equal to the recorded image, gate and soak PASS, promotion, no rollback, a restart (`StartedAt` changed) and the same
 image ID. `badimage` needs exit 1, a sentry deploy, gate FAIL and rollback re-gate PASS, the sentry back on its
 recorded image, no validator audit event, the validator's image ID and `StartedAt` unchanged, and 0 alert-topic
-messages (a missing count is a FAIL, not 0).
+messages (a missing count is a FAIL, not 0). Both modes also need log forwarding (pft-logship) to have re-attached:
+the relay's `pft-logship-dockerlog@postfiatd-sentry` unit active, and a sentry line in the validator's remote journal
+newer than the moment pft-rollout returned (a missing or equal timestamp is a FAIL).
 
 The checker is tested before any live run. `tests/test-check-drill.sh` runs pft-rollout.sh against the
 test-rollout.sh stubs (a no-op run, a real upgrade, a bad-image drill, and a bad-image drill whose rollback also
 fails), builds the facts from the stub containers, and checks each positive verdict. It then runs 16 negatives (plus 2 usage-error cases)
 (e.g. validator restarted, alert message received, alert count missing, sentry left on the bad image,
 `rollback_done` removed, wrong run ID, an upgrade passed off as a no-op), each of which must print one exact
-`FAIL <check>` line. `tests/mutants-check-drill.sh` weakens one check at a time (C1-C8) and requires
+`FAIL <check>` line. `tests/mutants-check-drill.sh` weakens one check at a time (C1-C11) and requires
 test-check-drill.sh to fail on each mutant. Published run: `logs/rollout/checker-1.log` (shellcheck clean, 20/20,
 C1-C8 all caught, test-rollout.sh still 20/20 after the sourcing guard was added).
 
@@ -173,7 +175,11 @@ C1-C8 all caught, test-rollout.sh still 20/20 after the sourcing guard was added
    answers, so the sentry gate fails and pft-rollout must roll it back. Nothing is pulled from a registry.
 4. Image ID + `StartedAt` of both containers before and after `pft-rollout.sh run --yes --no-pull --target T`
    (noop: T = the running tag; badimage: T = the drill tag). The drill tag is removed afterwards.
-5. Both throwaway topics are read back from ntfy (an unreadable topic gives a `null` count, which the checker fails),
+5. Log forwarding: wait up to `LOGSHIP_WAIT` (120 s) for a `postfiatd-sentry` entry in `/var/log/journal/remote`
+   (read newest-first, `journalctl -r -n 1`) that is newer than the moment pft-rollout returned, and read the relay's
+   bridge unit state. By then the old container is gone (noop) or the original runs again (badimage), so that line
+   can only come from the container now running.
+6. Both throwaway topics are read back from ntfy (an unreadable topic gives a `null` count, which the checker fails),
    the facts JSON is written next to the audit log, and `check-drill.sh` gives the verdict (the wrapper's exit code).
 
 `tests/test-live-run.sh` runs the wrapper against the same stubs with notifier files in temp dirs: a no-op and a
@@ -182,7 +188,10 @@ restored byte-identical, no topic or token in the output), an alert message on t
 topic (both FAIL), and four early stops (data-collection lock, existing relay `pft-maint/ntfy.env`, drill tag already
 present, drill build failing after the redirect: trap restores everything). `tests/mutants-live-run.sh` W1-W8 removes
 one safety property at a time (restore, trap, null count, lock check, token drop, rmi, MAINT topic, overwrite
-guard), and the suite must fail on each one. Published run: `logs/rollout/live-run-tests-1.log` (shellcheck clean,
+guard; W9 journal read without `-r`, W10 logship facts dropped), and the suite must fail on each one. The
+logship check added three cases (stale line, no line, bridge unit failed; each must print the exact FAIL line) and
+fake `journalctl`/`systemctl` stubs. Latest run: `logs/rollout/live-run-tests-2.log` (shellcheck clean, test-rollout 20/20,
+test-check-drill 25/25, live-run 11/11, C1-C11 and W1-W10 all caught). Earlier published run: `logs/rollout/live-run-tests-1.log` (shellcheck clean,
 live-run 8/8, W1-W8 all caught, test-check-drill.sh 20/20 and test-rollout.sh 20/20 with the extended stubs).
 
 ## Limits

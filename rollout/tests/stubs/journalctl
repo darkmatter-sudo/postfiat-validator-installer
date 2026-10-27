@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Fake journalctl for the validator's remote journal: answers only the newest-entry query live-run.sh makes
+# (-D DIR -t NAME -r -n 1 -o json) with one entry 1 s in the future. $STUB/journal_stale -> the newest entry is from
+# 2001; $STUB/journal_empty -> no entries. Any other query (e.g. without -r) prints nothing.
+# Every call is appended to $STUB/calls.log as "<host> journalctl <args>".
+echo "${STUB_HOST:-local} journalctl $*" >> "$STUB/calls.log"
+case " $* " in *" -t postfiatd-sentry "*) ;; *) exit 0 ;; esac
+case " $* " in *" -r "*) ;; *) exit 0 ;; esac
+case " $* " in *" -n 1 "*) ;; *) exit 0 ;; esac
+[ -e "$STUB/journal_empty" ] && exit 0
+if [ -e "$STUB/journal_stale" ]; then us=1000000000000000; else us="$(( ($(date +%s) + 1) * 1000000 ))"; fi
+printf '{"__REALTIME_TIMESTAMP":"%s","SYSLOG_IDENTIFIER":"postfiatd-sentry","MESSAGE":"Validations:NFO stub"}\n' "$us"

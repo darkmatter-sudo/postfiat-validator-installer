@@ -5,9 +5,13 @@
 # FACTS_JSON   written by the drill wrapper around the run:
 #   {"exit":N, "alert_msgs":N,
 #    "sentry":   {"before":{"id":"sha256:..","started":".."}, "after":{...}},
-#    "validator":{"before":{...}, "after":{...}}}
+#    "validator":{"before":{...}, "after":{...}},
+#    "logship":  {"unit":"active", "nrestarts":N, "newest_us":N, "after_us":N}}
 #   id = container .Image (image ID), started = .State.StartedAt, alert_msgs = messages on the throwaway ALERT topic
-#   (the pft-maint [MAINT] topic is a separate throwaway and not counted).
+#   (the pft-maint [MAINT] topic is a separate throwaway and not counted); logship = the relay's container-log bridge
+#   unit state and the newest forwarded sentry line in the validator's remote journal vs the time pft-rollout returned.
+# both:     the bridge unit is active and a sentry line newer than after_us reached the validator (log forwarding
+#           re-attached to the container that runs now).
 # noop:     exit 0; both hosts host_start, target == recorded prev, gate_pass, soak_pass, host_done promoted, in
 #           order sentry then validator; no rollback event; both containers restarted (StartedAt changed) on the
 #           same image ID.
@@ -37,6 +41,7 @@ has() { printf '([$ev[] | select(.host == "%s" and .event == "%s")] | length) %s
 
 ck "audit has events for run $RUN" '($ev | length) > 0'
 ck "audit run_start and run_end present" '([$ev[] | .event] | index("run_start") != null and index("run_end") != null)'
+ck "sentry log forwarded after the run (logship re-attached)" '($f.logship | type) == "object" and $f.logship.unit == "active" and ($f.logship.newest_us | type) == "number" and ($f.logship.after_us | type) == "number" and $f.logship.newest_us > $f.logship.after_us'
 if [ "$MODE" = noop ]; then
   ck "exit code 0" '$f.exit == 0'
   for h in sentry validator; do

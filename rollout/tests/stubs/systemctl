@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Fake systemctl: only `show -p ActiveState -p NRestarts UNIT`, printed like systemd 249 does (key=value lines).
+# $STUB/logship_inactive -> ActiveState=failed. Every call is appended to $STUB/calls.log as "<host> systemctl <args>".
+echo "${STUB_HOST:-local} systemctl $*" >> "$STUB/calls.log"
+[ "${1:-}" = show ] || exit 1
+st=active; [ -e "$STUB/logship_inactive" ] && st=failed
+printf 'NRestarts=2\nActiveState=%s\n' "$st"

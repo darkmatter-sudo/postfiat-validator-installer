@@ -13,6 +13,8 @@ MUTANTS=(
   'W5 NTFY_TOKEN kept in redirected files|s/(NTFY_TOPIC|NTFY_TOKEN|NTFY_SERVER)/(NTFY_TOPIC|NTFY_SERVER)/'
   'W6 drill image not removed|s/R "sudo -n docker rmi $DRILL_TAG"/true/'
   'W7 drill-only maint files on the ALERT topic|s/$NTFY $MAINT > $d/$NTFY $ALERT > $d/'
+  'W9 remote journal read oldest-first (no -r)|s/-t $SENTRY_C -r -n 1/-t $SENTRY_C -n 1/'
+  'W10 logship facts not recorded|s/--argjson ls "$LS"/--argjson ls null/'
   'W8 existing relay pft-maint ntfy.env overwritten|s/^! R "sudo -n test -e $MAINT_DIR_R\/ntfy.env" ||/true ||/'
 )
 MC=0
