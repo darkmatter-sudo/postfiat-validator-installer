@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Mutation check for the pft-peerexpose classifier: each mutant is an exact one-line replacement in a copy of the
+# script; the offline suite must FAIL on it. A mutant counts as caught only if it was applied (copy differs) and
+# the suite printed at least one FAIL line and a RESULT line. Usage: bash tests/mutate.sh
+# Mutant texts are literal script lines, so they are single-quoted on purpose.
+# shellcheck disable=SC2016
+set -uo pipefail
+HERE="$(cd "$(dirname "$0")" && pwd)"
+SRC="$HERE/../pft-peerexpose.sh"
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
+
+# id@@description@@exact old text (must occur exactly once)@@new text
+MUTANTS=(
+  'M1@@sentry overlay allowed@@    sentry:crawl.overlay.*|sentry:crawl.counts) echo restrict ;;@@    sentry:crawl.counts) echo restrict ;;'
+  'M2@@validator health restricted@@    validator:health.*) echo allow ;;@@    validator:health.*) echo restrict ;;'
+  'M3@@disclosed needs 2+ matches@@    if [ "$n" -gt 0 ]; then record@@    if [ "$n" -gt 1 ]; then record'
+  'M4@@vl 200 counts without blob@@    if [ "$code" = 200 ] && jq -e '"'"'has("blob")'"'"' "$TMP/vl.body" >/dev/null 2>&1; then@@    if [ "$code" = 200 ]; then'
+  'M5@@violation ignores role policy@@  if [ "$2" = disclosed ] && [ "$(policy "$ROLE" "$1")" = restrict ]; then verdict=VIOLATION@@  if [ "$2" = disclosed ]; then verdict=VIOLATION'
+  'M6@@errors do not set exit 2@@  if [ "$ERRORS" -gt 0 ]; then return 2; fi@@  :'
+  'M7@@non-200 crawl treated as disclosed@@    record crawl.endpoint restricted 0 "http $code"@@    record crawl.endpoint disclosed 1 "http $code"'
+  'M8@@peer IPs not inspected@@crawl.overlay.peer_ip|.overlay.active[]?.ip // empty@@crawl.overlay.peer_ip|.overlay.nothing[]?.ip // empty'
+)
+
+caught=0; total=0
+for m in "${MUTANTS[@]}"; do
+  id="${m%%@@*}"; rest="${m#*@@}"; desc="${rest%%@@*}"
+  total=$((total + 1))
+  cp "$SRC" "$WORK/m.sh"
+  applied=true
+  python3 - "$WORK/m.sh" "$m" <<'EOF' || applied=false
+import sys
+path, spec = sys.argv[1], sys.argv[2]
+_, _, old, new = spec.split("@@")
+src = open(path).read()
+if src.count(old) != 1:
+    sys.exit(1)
+open(path, "w").write(src.replace(old, new, 1))
+EOF
+  if ! $applied || cmp -s "$SRC" "$WORK/m.sh"; then
+    echo "$id NOT APPLIED ($desc)"; continue
+  fi
+  bash "$HERE/run-tests.sh" "$WORK/m.sh" > "$WORK/out" 2>&1
+  fails="$(grep -c '^FAIL ' "$WORK/out")"
+  if grep -q '^RESULT: ' "$WORK/out" && [ "$fails" -gt 0 ]; then
+    caught=$((caught + 1))
+    echo "$id CAUGHT ($desc) by $fails test(s): $(grep '^FAIL ' "$WORK/out" | sed 's/^FAIL //' | paste -sd ';' -)"
+  else
+    echo "$id SURVIVED ($desc)"
+  fi
+done
+echo "MUTANTS: $caught/$total caught"
+[ "$caught" -eq "$total" ]
