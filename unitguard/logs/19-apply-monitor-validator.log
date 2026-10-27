@@ -1,0 +1,16 @@
+OS: Ubuntu 22.04.5 LTS | validator-host | 2026-10-27T02:09:28Z | pft-unitguard.sh sha256 fadc7034332bc89a6bdcec0ac05a68a17683d95e5ee20919682fb0a55cac27b9
+=== drill guard: temporary drop-in 99-ugdrill.conf sets NTFY_OUTBOX (alerts go to a file, never ntfy) for the apply
+$ sudo bash pft-unitguard.sh apply postfiat-monitor
+[2026-10-27T02:09:28Z] APPLY postfiat-monitor.service class=iptables target<=<before -> /etc/systemd/system/postfiat-monitor.service.d/50-unitguard.conf
+[2026-10-27T02:09:28Z]   exposure before: 9.6
+[2026-10-27T02:09:31Z]   run postfiat-monitor.service (oneshot): Result=success ExecMainStatus=0
+[2026-10-27T02:09:31Z]   check: test "$(systemctl show -p Result --value postfiat-monitor.service)" = success && tail -n 1 /var/log/postfiat-monitor.log | grep -q '] OK: '
+[2026-10-27T02:09:31Z]   check exit 0
+[2026-10-27T02:09:31Z] PASS postfiat-monitor.service exposure now: 2.2 OK 15
+exit 0
+=== drill guard removed
+outbox lines during apply: 0
+drop-ins now: 50-unitguard.conf
+$ sudo systemctl start postfiat-monitor (real config, guard removed)
+Result=success ExecMainStatus=0
+[2026-10-27T02:09:34Z] OK: server_state=full

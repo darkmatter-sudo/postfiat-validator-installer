@@ -1,0 +1,573 @@
+$ bash drill/audit-host.sh . validator-host   (local)  +  ssh sentry-host bash /tmp/ug/drill/audit-host.sh /tmp/ug sentry-host   (run 7: re-run with the final tool before the first apply; run 1 used an earlier tool sha)
+===== validator-host
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+systemd 249 (249.11-0ubuntu3.23)
+2026-10-27T00:16:27Z
+pft-unitguard.sh sha256 5ae1677e2e51f3ad0b823ea24df7a62f10f995001c672225830fc67f3975ccdf
+profiles sha256 fa113c290d8d105ad7f2a83101aeb62760eb9f136fb3cb8c93c62d4fcb54c9fa (14 files)
+--- add-on unit files on this host (systemctl list-unit-files 'pft-*' 'postfiat*')
+pft-backup.service static
+pft-divergence.service static
+pft-egress-reapply@.service static
+pft-exporter.service enabled
+pft-govern-collect.service transient
+pft-heartbeat.service static
+pft-integrity.service static
+pft-ledger-stats.service disabled
+pft-logship-check.service static
+pft-logship-dockerlog@.service indirect
+pft-logship-vacuum.service static
+pft-maint-tick.service static
+pft-retention-sample.service static
+pft-txmix-collect.service enabled
+pft-validators-record.service enabled
+postfiat-docker-user.service enabled
+postfiat-monitor.service static
+pft-backup.timer enabled
+pft-divergence.timer enabled
+pft-egress-reapply@.timer indirect
+pft-heartbeat.timer enabled
+pft-integrity.timer enabled
+pft-logship-check.timer enabled
+pft-logship-vacuum.timer enabled
+pft-maint-tick.timer enabled
+pft-retention-sample.timer enabled
+postfiat-monitor.timer enabled
+--- $ pft-unitguard audit --detail
+UNIT                                     EXPOS  RATING   FAILED USER      CLASS    TARGET DROPIN VERDICT
+pft-backup.service                       9.6    UNSAFE   74     root      docker   <before no    not-applied
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_SET(UID|GID|PCAP) 
+    missing: CapabilityBoundingSet=~CAP_SYS_ADMIN CapabilityBoundingSet=~CAP_SYS_PTRACE RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: RestrictNamespaces=~CLONE_NEWUSER RestrictAddressFamilies=~… CapabilityBoundingSet=~CAP_(CHOWN|FSETID|SETFCAP) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) CapabilityBoundingSet=~CAP_NET_ADMIN 
+    missing: CapabilityBoundingSet=~CAP_SYS_MODULE CapabilityBoundingSet=~CAP_SYS_RAWIO CapabilityBoundingSet=~CAP_SYS_TIME 
+    missing: DeviceAllow= IPAddressDeny= NoNewPrivileges= PrivateDevices= PrivateMounts= PrivateTmp= PrivateUsers= ProtectClock= 
+    missing: ProtectControlGroups= ProtectHome= ProtectKernelLogs= ProtectKernelModules= ProtectKernelTunables= ProtectProc= 
+    missing: ProtectSystem= RestrictAddressFamilies=~AF_PACKET RestrictSUIDSGID= SystemCallArchitectures= 
+    missing: SystemCallFilter=~@clock SystemCallFilter=~@debug SystemCallFilter=~@module SystemCallFilter=~@mount 
+    missing: SystemCallFilter=~@raw-io SystemCallFilter=~@reboot SystemCallFilter=~@swap SystemCallFilter=~@privileged 
+    missing: SystemCallFilter=~@resources CapabilityBoundingSet=~CAP_AUDIT_* CapabilityBoundingSet=~CAP_KILL 
+    missing: CapabilityBoundingSet=~CAP_MKNOD CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) 
+    missing: CapabilityBoundingSet=~CAP_SYSLOG CapabilityBoundingSet=~CAP_SYS_(NICE|RESOURCE) 
+    missing: RestrictNamespaces=~CLONE_NEWCGROUP RestrictNamespaces=~CLONE_NEWIPC RestrictNamespaces=~CLONE_NEWNET 
+    missing: RestrictNamespaces=~CLONE_NEWNS RestrictNamespaces=~CLONE_NEWPID RestrictRealtime= SystemCallFilter=~@cpu-emulation 
+    missing: SystemCallFilter=~@obsolete RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= 
+    missing: CapabilityBoundingSet=~CAP_MAC_* CapabilityBoundingSet=~CAP_SYS_BOOT LockPersonality= MemoryDenyWriteExecute= 
+    missing: RestrictNamespaces=~CLONE_NEWUTS UMask= CapabilityBoundingSet=~CAP_LINUX_IMMUTABLE 
+    missing: CapabilityBoundingSet=~CAP_IPC_LOCK CapabilityBoundingSet=~CAP_SYS_CHROOT ProtectHostname= 
+    missing: CapabilityBoundingSet=~CAP_BLOCK_SUSPEND CapabilityBoundingSet=~CAP_LEASE CapabilityBoundingSet=~CAP_SYS_PACCT 
+    missing: CapabilityBoundingSet=~CAP_SYS_TTY_CONFIG CapabilityBoundingSet=~CAP_WAKE_ALARM RestrictAddressFamilies=~AF_UNIX 
+    missing: ProcSubset=
+pft-divergence.service                   9.6    UNSAFE   74     root      docker   <before no    not-applied
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_SET(UID|GID|PCAP) 
+    missing: CapabilityBoundingSet=~CAP_SYS_ADMIN CapabilityBoundingSet=~CAP_SYS_PTRACE RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: RestrictNamespaces=~CLONE_NEWUSER RestrictAddressFamilies=~… CapabilityBoundingSet=~CAP_(CHOWN|FSETID|SETFCAP) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) CapabilityBoundingSet=~CAP_NET_ADMIN 
+    missing: CapabilityBoundingSet=~CAP_SYS_MODULE CapabilityBoundingSet=~CAP_SYS_RAWIO CapabilityBoundingSet=~CAP_SYS_TIME 
+    missing: DeviceAllow= IPAddressDeny= NoNewPrivileges= PrivateDevices= PrivateMounts= PrivateTmp= PrivateUsers= ProtectClock= 
+    missing: ProtectControlGroups= ProtectHome= ProtectKernelLogs= ProtectKernelModules= ProtectKernelTunables= ProtectProc= 
+    missing: ProtectSystem= RestrictAddressFamilies=~AF_PACKET RestrictSUIDSGID= SystemCallArchitectures= 
+    missing: SystemCallFilter=~@clock SystemCallFilter=~@debug SystemCallFilter=~@module SystemCallFilter=~@mount 
+    missing: SystemCallFilter=~@raw-io SystemCallFilter=~@reboot SystemCallFilter=~@swap SystemCallFilter=~@privileged 
+    missing: SystemCallFilter=~@resources CapabilityBoundingSet=~CAP_AUDIT_* CapabilityBoundingSet=~CAP_KILL 
+    missing: CapabilityBoundingSet=~CAP_MKNOD CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) 
+    missing: CapabilityBoundingSet=~CAP_SYSLOG CapabilityBoundingSet=~CAP_SYS_(NICE|RESOURCE) 
+    missing: RestrictNamespaces=~CLONE_NEWCGROUP RestrictNamespaces=~CLONE_NEWIPC RestrictNamespaces=~CLONE_NEWNET 
+    missing: RestrictNamespaces=~CLONE_NEWNS RestrictNamespaces=~CLONE_NEWPID RestrictRealtime= SystemCallFilter=~@cpu-emulation 
+    missing: SystemCallFilter=~@obsolete RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= 
+    missing: CapabilityBoundingSet=~CAP_MAC_* CapabilityBoundingSet=~CAP_SYS_BOOT LockPersonality= MemoryDenyWriteExecute= 
+    missing: RestrictNamespaces=~CLONE_NEWUTS UMask= CapabilityBoundingSet=~CAP_LINUX_IMMUTABLE 
+    missing: CapabilityBoundingSet=~CAP_IPC_LOCK CapabilityBoundingSet=~CAP_SYS_CHROOT ProtectHostname= 
+    missing: CapabilityBoundingSet=~CAP_BLOCK_SUSPEND CapabilityBoundingSet=~CAP_LEASE CapabilityBoundingSet=~CAP_SYS_PACCT 
+    missing: CapabilityBoundingSet=~CAP_SYS_TTY_CONFIG CapabilityBoundingSet=~CAP_WAKE_ALARM RestrictAddressFamilies=~AF_UNIX 
+    missing: ProcSubset=
+pft-egress-reapply@postfiatd.service     9.6    UNSAFE   74     root      iptables <before no    not-applied
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_SET(UID|GID|PCAP) 
+    missing: CapabilityBoundingSet=~CAP_SYS_ADMIN CapabilityBoundingSet=~CAP_SYS_PTRACE RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: RestrictNamespaces=~CLONE_NEWUSER RestrictAddressFamilies=~… CapabilityBoundingSet=~CAP_(CHOWN|FSETID|SETFCAP) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) CapabilityBoundingSet=~CAP_NET_ADMIN 
+    missing: CapabilityBoundingSet=~CAP_SYS_MODULE CapabilityBoundingSet=~CAP_SYS_RAWIO CapabilityBoundingSet=~CAP_SYS_TIME 
+    missing: DeviceAllow= IPAddressDeny= NoNewPrivileges= PrivateDevices= PrivateMounts= PrivateTmp= PrivateUsers= ProtectClock= 
+    missing: ProtectControlGroups= ProtectHome= ProtectKernelLogs= ProtectKernelModules= ProtectKernelTunables= ProtectProc= 
+    missing: ProtectSystem= RestrictAddressFamilies=~AF_PACKET RestrictSUIDSGID= SystemCallArchitectures= 
+    missing: SystemCallFilter=~@clock SystemCallFilter=~@debug SystemCallFilter=~@module SystemCallFilter=~@mount 
+    missing: SystemCallFilter=~@raw-io SystemCallFilter=~@reboot SystemCallFilter=~@swap SystemCallFilter=~@privileged 
+    missing: SystemCallFilter=~@resources CapabilityBoundingSet=~CAP_AUDIT_* CapabilityBoundingSet=~CAP_KILL 
+    missing: CapabilityBoundingSet=~CAP_MKNOD CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) 
+    missing: CapabilityBoundingSet=~CAP_SYSLOG CapabilityBoundingSet=~CAP_SYS_(NICE|RESOURCE) 
+    missing: RestrictNamespaces=~CLONE_NEWCGROUP RestrictNamespaces=~CLONE_NEWIPC RestrictNamespaces=~CLONE_NEWNET 
+    missing: RestrictNamespaces=~CLONE_NEWNS RestrictNamespaces=~CLONE_NEWPID RestrictRealtime= SystemCallFilter=~@cpu-emulation 
+    missing: SystemCallFilter=~@obsolete RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= 
+    missing: CapabilityBoundingSet=~CAP_MAC_* CapabilityBoundingSet=~CAP_SYS_BOOT LockPersonality= MemoryDenyWriteExecute= 
+    missing: RestrictNamespaces=~CLONE_NEWUTS UMask= CapabilityBoundingSet=~CAP_LINUX_IMMUTABLE 
+    missing: CapabilityBoundingSet=~CAP_IPC_LOCK CapabilityBoundingSet=~CAP_SYS_CHROOT ProtectHostname= 
+    missing: CapabilityBoundingSet=~CAP_BLOCK_SUSPEND CapabilityBoundingSet=~CAP_LEASE CapabilityBoundingSet=~CAP_SYS_PACCT 
+    missing: CapabilityBoundingSet=~CAP_SYS_TTY_CONFIG CapabilityBoundingSet=~CAP_WAKE_ALARM RestrictAddressFamilies=~AF_UNIX 
+    missing: ProcSubset=
+pft-exporter.service                     8.1    EXPOSED  67     dynamic   standard 5.0    no    not-applied
+    missing: PrivateNetwork= CapabilityBoundingSet=~CAP_SET(UID|GID|PCAP) CapabilityBoundingSet=~CAP_SYS_ADMIN 
+    missing: CapabilityBoundingSet=~CAP_SYS_PTRACE RestrictAddressFamilies=~AF_(INET|INET6) RestrictNamespaces=~CLONE_NEWUSER 
+    missing: RestrictAddressFamilies=~… CapabilityBoundingSet=~CAP_(CHOWN|FSETID|SETFCAP) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) CapabilityBoundingSet=~CAP_NET_ADMIN 
+    missing: CapabilityBoundingSet=~CAP_SYS_MODULE CapabilityBoundingSet=~CAP_SYS_RAWIO CapabilityBoundingSet=~CAP_SYS_TIME 
+    missing: DeviceAllow= IPAddressDeny= PrivateDevices= PrivateUsers= ProtectClock= ProtectControlGroups= ProtectKernelLogs= 
+    missing: ProtectKernelModules= ProtectKernelTunables= ProtectProc= RestrictAddressFamilies=~AF_PACKET 
+    missing: SystemCallArchitectures= SystemCallFilter=~@clock SystemCallFilter=~@debug SystemCallFilter=~@module 
+    missing: SystemCallFilter=~@mount SystemCallFilter=~@raw-io SystemCallFilter=~@reboot SystemCallFilter=~@swap 
+    missing: SystemCallFilter=~@privileged SystemCallFilter=~@resources CapabilityBoundingSet=~CAP_AUDIT_* 
+    missing: CapabilityBoundingSet=~CAP_KILL CapabilityBoundingSet=~CAP_MKNOD 
+    missing: CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) CapabilityBoundingSet=~CAP_SYSLOG 
+    missing: CapabilityBoundingSet=~CAP_SYS_(NICE|RESOURCE) RestrictNamespaces=~CLONE_NEWCGROUP RestrictNamespaces=~CLONE_NEWIPC 
+    missing: RestrictNamespaces=~CLONE_NEWNET RestrictNamespaces=~CLONE_NEWNS RestrictNamespaces=~CLONE_NEWPID RestrictRealtime= 
+    missing: SystemCallFilter=~@cpu-emulation SystemCallFilter=~@obsolete RestrictAddressFamilies=~AF_NETLINK 
+    missing: RootDirectory=/RootImage= CapabilityBoundingSet=~CAP_MAC_* CapabilityBoundingSet=~CAP_SYS_BOOT LockPersonality= 
+    missing: MemoryDenyWriteExecute= RestrictNamespaces=~CLONE_NEWUTS UMask= CapabilityBoundingSet=~CAP_LINUX_IMMUTABLE 
+    missing: CapabilityBoundingSet=~CAP_IPC_LOCK CapabilityBoundingSet=~CAP_SYS_CHROOT ProtectHostname= 
+    missing: CapabilityBoundingSet=~CAP_BLOCK_SUSPEND CapabilityBoundingSet=~CAP_LEASE CapabilityBoundingSet=~CAP_SYS_PACCT 
+    missing: CapabilityBoundingSet=~CAP_SYS_TTY_CONFIG CapabilityBoundingSet=~CAP_WAKE_ALARM RestrictAddressFamilies=~AF_UNIX 
+    missing: ProcSubset=
+pft-heartbeat.service                    9.6    UNSAFE   74     root      standard 5.0    no    not-applied
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_SET(UID|GID|PCAP) 
+    missing: CapabilityBoundingSet=~CAP_SYS_ADMIN CapabilityBoundingSet=~CAP_SYS_PTRACE RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: RestrictNamespaces=~CLONE_NEWUSER RestrictAddressFamilies=~… CapabilityBoundingSet=~CAP_(CHOWN|FSETID|SETFCAP) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) CapabilityBoundingSet=~CAP_NET_ADMIN 
+    missing: CapabilityBoundingSet=~CAP_SYS_MODULE CapabilityBoundingSet=~CAP_SYS_RAWIO CapabilityBoundingSet=~CAP_SYS_TIME 
+    missing: DeviceAllow= IPAddressDeny= NoNewPrivileges= PrivateDevices= PrivateMounts= PrivateTmp= PrivateUsers= ProtectClock= 
+    missing: ProtectControlGroups= ProtectHome= ProtectKernelLogs= ProtectKernelModules= ProtectKernelTunables= ProtectProc= 
+    missing: ProtectSystem= RestrictAddressFamilies=~AF_PACKET RestrictSUIDSGID= SystemCallArchitectures= 
+    missing: SystemCallFilter=~@clock SystemCallFilter=~@debug SystemCallFilter=~@module SystemCallFilter=~@mount 
+    missing: SystemCallFilter=~@raw-io SystemCallFilter=~@reboot SystemCallFilter=~@swap SystemCallFilter=~@privileged 
+    missing: SystemCallFilter=~@resources CapabilityBoundingSet=~CAP_AUDIT_* CapabilityBoundingSet=~CAP_KILL 
+    missing: CapabilityBoundingSet=~CAP_MKNOD CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) 
+    missing: CapabilityBoundingSet=~CAP_SYSLOG CapabilityBoundingSet=~CAP_SYS_(NICE|RESOURCE) 
+    missing: RestrictNamespaces=~CLONE_NEWCGROUP RestrictNamespaces=~CLONE_NEWIPC RestrictNamespaces=~CLONE_NEWNET 
+    missing: RestrictNamespaces=~CLONE_NEWNS RestrictNamespaces=~CLONE_NEWPID RestrictRealtime= SystemCallFilter=~@cpu-emulation 
+    missing: SystemCallFilter=~@obsolete RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= 
+    missing: CapabilityBoundingSet=~CAP_MAC_* CapabilityBoundingSet=~CAP_SYS_BOOT LockPersonality= MemoryDenyWriteExecute= 
+    missing: RestrictNamespaces=~CLONE_NEWUTS UMask= CapabilityBoundingSet=~CAP_LINUX_IMMUTABLE 
+    missing: CapabilityBoundingSet=~CAP_IPC_LOCK CapabilityBoundingSet=~CAP_SYS_CHROOT ProtectHostname= 
+    missing: CapabilityBoundingSet=~CAP_BLOCK_SUSPEND CapabilityBoundingSet=~CAP_LEASE CapabilityBoundingSet=~CAP_SYS_PACCT 
+    missing: CapabilityBoundingSet=~CAP_SYS_TTY_CONFIG CapabilityBoundingSet=~CAP_WAKE_ALARM RestrictAddressFamilies=~AF_UNIX 
+    missing: ProcSubset=
+pft-integrity.service                    9.6    UNSAFE   74     root      docker   <before no    not-applied
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_SET(UID|GID|PCAP) 
+    missing: CapabilityBoundingSet=~CAP_SYS_ADMIN CapabilityBoundingSet=~CAP_SYS_PTRACE RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: RestrictNamespaces=~CLONE_NEWUSER RestrictAddressFamilies=~… CapabilityBoundingSet=~CAP_(CHOWN|FSETID|SETFCAP) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) CapabilityBoundingSet=~CAP_NET_ADMIN 
+    missing: CapabilityBoundingSet=~CAP_SYS_MODULE CapabilityBoundingSet=~CAP_SYS_RAWIO CapabilityBoundingSet=~CAP_SYS_TIME 
+    missing: DeviceAllow= IPAddressDeny= NoNewPrivileges= PrivateDevices= PrivateMounts= PrivateTmp= PrivateUsers= ProtectClock= 
+    missing: ProtectControlGroups= ProtectHome= ProtectKernelLogs= ProtectKernelModules= ProtectKernelTunables= ProtectProc= 
+    missing: ProtectSystem= RestrictAddressFamilies=~AF_PACKET RestrictSUIDSGID= SystemCallArchitectures= 
+    missing: SystemCallFilter=~@clock SystemCallFilter=~@debug SystemCallFilter=~@module SystemCallFilter=~@mount 
+    missing: SystemCallFilter=~@raw-io SystemCallFilter=~@reboot SystemCallFilter=~@swap SystemCallFilter=~@privileged 
+    missing: SystemCallFilter=~@resources CapabilityBoundingSet=~CAP_AUDIT_* CapabilityBoundingSet=~CAP_KILL 
+    missing: CapabilityBoundingSet=~CAP_MKNOD CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) 
+    missing: CapabilityBoundingSet=~CAP_SYSLOG CapabilityBoundingSet=~CAP_SYS_(NICE|RESOURCE) 
+    missing: RestrictNamespaces=~CLONE_NEWCGROUP RestrictNamespaces=~CLONE_NEWIPC RestrictNamespaces=~CLONE_NEWNET 
+    missing: RestrictNamespaces=~CLONE_NEWNS RestrictNamespaces=~CLONE_NEWPID RestrictRealtime= SystemCallFilter=~@cpu-emulation 
+    missing: SystemCallFilter=~@obsolete RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= 
+    missing: CapabilityBoundingSet=~CAP_MAC_* CapabilityBoundingSet=~CAP_SYS_BOOT LockPersonality= MemoryDenyWriteExecute= 
+    missing: RestrictNamespaces=~CLONE_NEWUTS UMask= CapabilityBoundingSet=~CAP_LINUX_IMMUTABLE 
+    missing: CapabilityBoundingSet=~CAP_IPC_LOCK CapabilityBoundingSet=~CAP_SYS_CHROOT ProtectHostname= 
+    missing: CapabilityBoundingSet=~CAP_BLOCK_SUSPEND CapabilityBoundingSet=~CAP_LEASE CapabilityBoundingSet=~CAP_SYS_PACCT 
+    missing: CapabilityBoundingSet=~CAP_SYS_TTY_CONFIG CapabilityBoundingSet=~CAP_WAKE_ALARM RestrictAddressFamilies=~AF_UNIX 
+    missing: ProcSubset=
+pft-logship-check.service                9.6    UNSAFE   74     root      docker   <before no    not-applied
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_SET(UID|GID|PCAP) 
+    missing: CapabilityBoundingSet=~CAP_SYS_ADMIN CapabilityBoundingSet=~CAP_SYS_PTRACE RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: RestrictNamespaces=~CLONE_NEWUSER RestrictAddressFamilies=~… CapabilityBoundingSet=~CAP_(CHOWN|FSETID|SETFCAP) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) CapabilityBoundingSet=~CAP_NET_ADMIN 
+    missing: CapabilityBoundingSet=~CAP_SYS_MODULE CapabilityBoundingSet=~CAP_SYS_RAWIO CapabilityBoundingSet=~CAP_SYS_TIME 
+    missing: DeviceAllow= IPAddressDeny= NoNewPrivileges= PrivateDevices= PrivateMounts= PrivateTmp= PrivateUsers= ProtectClock= 
+    missing: ProtectControlGroups= ProtectHome= ProtectKernelLogs= ProtectKernelModules= ProtectKernelTunables= ProtectProc= 
+    missing: ProtectSystem= RestrictAddressFamilies=~AF_PACKET RestrictSUIDSGID= SystemCallArchitectures= 
+    missing: SystemCallFilter=~@clock SystemCallFilter=~@debug SystemCallFilter=~@module SystemCallFilter=~@mount 
+    missing: SystemCallFilter=~@raw-io SystemCallFilter=~@reboot SystemCallFilter=~@swap SystemCallFilter=~@privileged 
+    missing: SystemCallFilter=~@resources CapabilityBoundingSet=~CAP_AUDIT_* CapabilityBoundingSet=~CAP_KILL 
+    missing: CapabilityBoundingSet=~CAP_MKNOD CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) 
+    missing: CapabilityBoundingSet=~CAP_SYSLOG CapabilityBoundingSet=~CAP_SYS_(NICE|RESOURCE) 
+    missing: RestrictNamespaces=~CLONE_NEWCGROUP RestrictNamespaces=~CLONE_NEWIPC RestrictNamespaces=~CLONE_NEWNET 
+    missing: RestrictNamespaces=~CLONE_NEWNS RestrictNamespaces=~CLONE_NEWPID RestrictRealtime= SystemCallFilter=~@cpu-emulation 
+    missing: SystemCallFilter=~@obsolete RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= 
+    missing: CapabilityBoundingSet=~CAP_MAC_* CapabilityBoundingSet=~CAP_SYS_BOOT LockPersonality= MemoryDenyWriteExecute= 
+    missing: RestrictNamespaces=~CLONE_NEWUTS UMask= CapabilityBoundingSet=~CAP_LINUX_IMMUTABLE 
+    missing: CapabilityBoundingSet=~CAP_IPC_LOCK CapabilityBoundingSet=~CAP_SYS_CHROOT ProtectHostname= 
+    missing: CapabilityBoundingSet=~CAP_BLOCK_SUSPEND CapabilityBoundingSet=~CAP_LEASE CapabilityBoundingSet=~CAP_SYS_PACCT 
+    missing: CapabilityBoundingSet=~CAP_SYS_TTY_CONFIG CapabilityBoundingSet=~CAP_WAKE_ALARM RestrictAddressFamilies=~AF_UNIX 
+    missing: ProcSubset=
+pft-logship-dockerlog@postfiatd.service  9.6    UNSAFE   74     root      docker   <before no    not-applied
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_SET(UID|GID|PCAP) 
+    missing: CapabilityBoundingSet=~CAP_SYS_ADMIN CapabilityBoundingSet=~CAP_SYS_PTRACE RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: RestrictNamespaces=~CLONE_NEWUSER RestrictAddressFamilies=~… CapabilityBoundingSet=~CAP_(CHOWN|FSETID|SETFCAP) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) CapabilityBoundingSet=~CAP_NET_ADMIN 
+    missing: CapabilityBoundingSet=~CAP_SYS_MODULE CapabilityBoundingSet=~CAP_SYS_RAWIO CapabilityBoundingSet=~CAP_SYS_TIME 
+    missing: DeviceAllow= IPAddressDeny= NoNewPrivileges= PrivateDevices= PrivateMounts= PrivateTmp= PrivateUsers= ProtectClock= 
+    missing: ProtectControlGroups= ProtectHome= ProtectKernelLogs= ProtectKernelModules= ProtectKernelTunables= ProtectProc= 
+    missing: ProtectSystem= RestrictAddressFamilies=~AF_PACKET RestrictSUIDSGID= SystemCallArchitectures= 
+    missing: SystemCallFilter=~@clock SystemCallFilter=~@debug SystemCallFilter=~@module SystemCallFilter=~@mount 
+    missing: SystemCallFilter=~@raw-io SystemCallFilter=~@reboot SystemCallFilter=~@swap SystemCallFilter=~@privileged 
+    missing: SystemCallFilter=~@resources CapabilityBoundingSet=~CAP_AUDIT_* CapabilityBoundingSet=~CAP_KILL 
+    missing: CapabilityBoundingSet=~CAP_MKNOD CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) 
+    missing: CapabilityBoundingSet=~CAP_SYSLOG CapabilityBoundingSet=~CAP_SYS_(NICE|RESOURCE) 
+    missing: RestrictNamespaces=~CLONE_NEWCGROUP RestrictNamespaces=~CLONE_NEWIPC RestrictNamespaces=~CLONE_NEWNET 
+    missing: RestrictNamespaces=~CLONE_NEWNS RestrictNamespaces=~CLONE_NEWPID RestrictRealtime= SystemCallFilter=~@cpu-emulation 
+    missing: SystemCallFilter=~@obsolete RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= 
+    missing: CapabilityBoundingSet=~CAP_MAC_* CapabilityBoundingSet=~CAP_SYS_BOOT LockPersonality= MemoryDenyWriteExecute= 
+    missing: RestrictNamespaces=~CLONE_NEWUTS UMask= CapabilityBoundingSet=~CAP_LINUX_IMMUTABLE 
+    missing: CapabilityBoundingSet=~CAP_IPC_LOCK CapabilityBoundingSet=~CAP_SYS_CHROOT ProtectHostname= 
+    missing: CapabilityBoundingSet=~CAP_BLOCK_SUSPEND CapabilityBoundingSet=~CAP_LEASE CapabilityBoundingSet=~CAP_SYS_PACCT 
+    missing: CapabilityBoundingSet=~CAP_SYS_TTY_CONFIG CapabilityBoundingSet=~CAP_WAKE_ALARM RestrictAddressFamilies=~AF_UNIX 
+    missing: ProcSubset=
+pft-logship-vacuum.service               9.6    UNSAFE   74     root      standard 5.0    no    not-applied
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_SET(UID|GID|PCAP) 
+    missing: CapabilityBoundingSet=~CAP_SYS_ADMIN CapabilityBoundingSet=~CAP_SYS_PTRACE RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: RestrictNamespaces=~CLONE_NEWUSER RestrictAddressFamilies=~… CapabilityBoundingSet=~CAP_(CHOWN|FSETID|SETFCAP) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) CapabilityBoundingSet=~CAP_NET_ADMIN 
+    missing: CapabilityBoundingSet=~CAP_SYS_MODULE CapabilityBoundingSet=~CAP_SYS_RAWIO CapabilityBoundingSet=~CAP_SYS_TIME 
+    missing: DeviceAllow= IPAddressDeny= NoNewPrivileges= PrivateDevices= PrivateMounts= PrivateTmp= PrivateUsers= ProtectClock= 
+    missing: ProtectControlGroups= ProtectHome= ProtectKernelLogs= ProtectKernelModules= ProtectKernelTunables= ProtectProc= 
+    missing: ProtectSystem= RestrictAddressFamilies=~AF_PACKET RestrictSUIDSGID= SystemCallArchitectures= 
+    missing: SystemCallFilter=~@clock SystemCallFilter=~@debug SystemCallFilter=~@module SystemCallFilter=~@mount 
+    missing: SystemCallFilter=~@raw-io SystemCallFilter=~@reboot SystemCallFilter=~@swap SystemCallFilter=~@privileged 
+    missing: SystemCallFilter=~@resources CapabilityBoundingSet=~CAP_AUDIT_* CapabilityBoundingSet=~CAP_KILL 
+    missing: CapabilityBoundingSet=~CAP_MKNOD CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) 
+    missing: CapabilityBoundingSet=~CAP_SYSLOG CapabilityBoundingSet=~CAP_SYS_(NICE|RESOURCE) 
+    missing: RestrictNamespaces=~CLONE_NEWCGROUP RestrictNamespaces=~CLONE_NEWIPC RestrictNamespaces=~CLONE_NEWNET 
+    missing: RestrictNamespaces=~CLONE_NEWNS RestrictNamespaces=~CLONE_NEWPID RestrictRealtime= SystemCallFilter=~@cpu-emulation 
+    missing: SystemCallFilter=~@obsolete RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= 
+    missing: CapabilityBoundingSet=~CAP_MAC_* CapabilityBoundingSet=~CAP_SYS_BOOT LockPersonality= MemoryDenyWriteExecute= 
+    missing: RestrictNamespaces=~CLONE_NEWUTS UMask= CapabilityBoundingSet=~CAP_LINUX_IMMUTABLE 
+    missing: CapabilityBoundingSet=~CAP_IPC_LOCK CapabilityBoundingSet=~CAP_SYS_CHROOT ProtectHostname= 
+    missing: CapabilityBoundingSet=~CAP_BLOCK_SUSPEND CapabilityBoundingSet=~CAP_LEASE CapabilityBoundingSet=~CAP_SYS_PACCT 
+    missing: CapabilityBoundingSet=~CAP_SYS_TTY_CONFIG CapabilityBoundingSet=~CAP_WAKE_ALARM RestrictAddressFamilies=~AF_UNIX 
+    missing: ProcSubset=
+pft-maint-tick.service                   9.6    UNSAFE   74     root      docker   <before no    not-applied
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_SET(UID|GID|PCAP) 
+    missing: CapabilityBoundingSet=~CAP_SYS_ADMIN CapabilityBoundingSet=~CAP_SYS_PTRACE RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: RestrictNamespaces=~CLONE_NEWUSER RestrictAddressFamilies=~… CapabilityBoundingSet=~CAP_(CHOWN|FSETID|SETFCAP) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) CapabilityBoundingSet=~CAP_NET_ADMIN 
+    missing: CapabilityBoundingSet=~CAP_SYS_MODULE CapabilityBoundingSet=~CAP_SYS_RAWIO CapabilityBoundingSet=~CAP_SYS_TIME 
+    missing: DeviceAllow= IPAddressDeny= NoNewPrivileges= PrivateDevices= PrivateMounts= PrivateTmp= PrivateUsers= ProtectClock= 
+    missing: ProtectControlGroups= ProtectHome= ProtectKernelLogs= ProtectKernelModules= ProtectKernelTunables= ProtectProc= 
+    missing: ProtectSystem= RestrictAddressFamilies=~AF_PACKET RestrictSUIDSGID= SystemCallArchitectures= 
+    missing: SystemCallFilter=~@clock SystemCallFilter=~@debug SystemCallFilter=~@module SystemCallFilter=~@mount 
+    missing: SystemCallFilter=~@raw-io SystemCallFilter=~@reboot SystemCallFilter=~@swap SystemCallFilter=~@privileged 
+    missing: SystemCallFilter=~@resources CapabilityBoundingSet=~CAP_AUDIT_* CapabilityBoundingSet=~CAP_KILL 
+    missing: CapabilityBoundingSet=~CAP_MKNOD CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) 
+    missing: CapabilityBoundingSet=~CAP_SYSLOG CapabilityBoundingSet=~CAP_SYS_(NICE|RESOURCE) 
+    missing: RestrictNamespaces=~CLONE_NEWCGROUP RestrictNamespaces=~CLONE_NEWIPC RestrictNamespaces=~CLONE_NEWNET 
+    missing: RestrictNamespaces=~CLONE_NEWNS RestrictNamespaces=~CLONE_NEWPID RestrictRealtime= SystemCallFilter=~@cpu-emulation 
+    missing: SystemCallFilter=~@obsolete RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= 
+    missing: CapabilityBoundingSet=~CAP_MAC_* CapabilityBoundingSet=~CAP_SYS_BOOT LockPersonality= MemoryDenyWriteExecute= 
+    missing: RestrictNamespaces=~CLONE_NEWUTS UMask= CapabilityBoundingSet=~CAP_LINUX_IMMUTABLE 
+    missing: CapabilityBoundingSet=~CAP_IPC_LOCK CapabilityBoundingSet=~CAP_SYS_CHROOT ProtectHostname= 
+    missing: CapabilityBoundingSet=~CAP_BLOCK_SUSPEND CapabilityBoundingSet=~CAP_LEASE CapabilityBoundingSet=~CAP_SYS_PACCT 
+    missing: CapabilityBoundingSet=~CAP_SYS_TTY_CONFIG CapabilityBoundingSet=~CAP_WAKE_ALARM RestrictAddressFamilies=~AF_UNIX 
+    missing: ProcSubset=
+pft-retention-sample.service             9.6    UNSAFE   74     root      docker   <before no    not-applied
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_SET(UID|GID|PCAP) 
+    missing: CapabilityBoundingSet=~CAP_SYS_ADMIN CapabilityBoundingSet=~CAP_SYS_PTRACE RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: RestrictNamespaces=~CLONE_NEWUSER RestrictAddressFamilies=~… CapabilityBoundingSet=~CAP_(CHOWN|FSETID|SETFCAP) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) CapabilityBoundingSet=~CAP_NET_ADMIN 
+    missing: CapabilityBoundingSet=~CAP_SYS_MODULE CapabilityBoundingSet=~CAP_SYS_RAWIO CapabilityBoundingSet=~CAP_SYS_TIME 
+    missing: DeviceAllow= IPAddressDeny= NoNewPrivileges= PrivateDevices= PrivateMounts= PrivateTmp= PrivateUsers= ProtectClock= 
+    missing: ProtectControlGroups= ProtectHome= ProtectKernelLogs= ProtectKernelModules= ProtectKernelTunables= ProtectProc= 
+    missing: ProtectSystem= RestrictAddressFamilies=~AF_PACKET RestrictSUIDSGID= SystemCallArchitectures= 
+    missing: SystemCallFilter=~@clock SystemCallFilter=~@debug SystemCallFilter=~@module SystemCallFilter=~@mount 
+    missing: SystemCallFilter=~@raw-io SystemCallFilter=~@reboot SystemCallFilter=~@swap SystemCallFilter=~@privileged 
+    missing: SystemCallFilter=~@resources CapabilityBoundingSet=~CAP_AUDIT_* CapabilityBoundingSet=~CAP_KILL 
+    missing: CapabilityBoundingSet=~CAP_MKNOD CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) 
+    missing: CapabilityBoundingSet=~CAP_SYSLOG CapabilityBoundingSet=~CAP_SYS_(NICE|RESOURCE) 
+    missing: RestrictNamespaces=~CLONE_NEWCGROUP RestrictNamespaces=~CLONE_NEWIPC RestrictNamespaces=~CLONE_NEWNET 
+    missing: RestrictNamespaces=~CLONE_NEWNS RestrictNamespaces=~CLONE_NEWPID RestrictRealtime= SystemCallFilter=~@cpu-emulation 
+    missing: SystemCallFilter=~@obsolete RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= 
+    missing: CapabilityBoundingSet=~CAP_MAC_* CapabilityBoundingSet=~CAP_SYS_BOOT LockPersonality= MemoryDenyWriteExecute= 
+    missing: RestrictNamespaces=~CLONE_NEWUTS UMask= CapabilityBoundingSet=~CAP_LINUX_IMMUTABLE 
+    missing: CapabilityBoundingSet=~CAP_IPC_LOCK CapabilityBoundingSet=~CAP_SYS_CHROOT ProtectHostname= 
+    missing: CapabilityBoundingSet=~CAP_BLOCK_SUSPEND CapabilityBoundingSet=~CAP_LEASE CapabilityBoundingSet=~CAP_SYS_PACCT 
+    missing: CapabilityBoundingSet=~CAP_SYS_TTY_CONFIG CapabilityBoundingSet=~CAP_WAKE_ALARM RestrictAddressFamilies=~AF_UNIX 
+    missing: ProcSubset=
+postfiat-docker-user.service             9.6    UNSAFE   74     root      iptables <before no    not-applied
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_SET(UID|GID|PCAP) 
+    missing: CapabilityBoundingSet=~CAP_SYS_ADMIN CapabilityBoundingSet=~CAP_SYS_PTRACE RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: RestrictNamespaces=~CLONE_NEWUSER RestrictAddressFamilies=~… CapabilityBoundingSet=~CAP_(CHOWN|FSETID|SETFCAP) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) CapabilityBoundingSet=~CAP_NET_ADMIN 
+    missing: CapabilityBoundingSet=~CAP_SYS_MODULE CapabilityBoundingSet=~CAP_SYS_RAWIO CapabilityBoundingSet=~CAP_SYS_TIME 
+    missing: DeviceAllow= IPAddressDeny= NoNewPrivileges= PrivateDevices= PrivateMounts= PrivateTmp= PrivateUsers= ProtectClock= 
+    missing: ProtectControlGroups= ProtectHome= ProtectKernelLogs= ProtectKernelModules= ProtectKernelTunables= ProtectProc= 
+    missing: ProtectSystem= RestrictAddressFamilies=~AF_PACKET RestrictSUIDSGID= SystemCallArchitectures= 
+    missing: SystemCallFilter=~@clock SystemCallFilter=~@debug SystemCallFilter=~@module SystemCallFilter=~@mount 
+    missing: SystemCallFilter=~@raw-io SystemCallFilter=~@reboot SystemCallFilter=~@swap SystemCallFilter=~@privileged 
+    missing: SystemCallFilter=~@resources CapabilityBoundingSet=~CAP_AUDIT_* CapabilityBoundingSet=~CAP_KILL 
+    missing: CapabilityBoundingSet=~CAP_MKNOD CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) 
+    missing: CapabilityBoundingSet=~CAP_SYSLOG CapabilityBoundingSet=~CAP_SYS_(NICE|RESOURCE) 
+    missing: RestrictNamespaces=~CLONE_NEWCGROUP RestrictNamespaces=~CLONE_NEWIPC RestrictNamespaces=~CLONE_NEWNET 
+    missing: RestrictNamespaces=~CLONE_NEWNS RestrictNamespaces=~CLONE_NEWPID RestrictRealtime= SystemCallFilter=~@cpu-emulation 
+    missing: SystemCallFilter=~@obsolete RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= 
+    missing: CapabilityBoundingSet=~CAP_MAC_* CapabilityBoundingSet=~CAP_SYS_BOOT LockPersonality= MemoryDenyWriteExecute= 
+    missing: RestrictNamespaces=~CLONE_NEWUTS UMask= CapabilityBoundingSet=~CAP_LINUX_IMMUTABLE 
+    missing: CapabilityBoundingSet=~CAP_IPC_LOCK CapabilityBoundingSet=~CAP_SYS_CHROOT ProtectHostname= 
+    missing: CapabilityBoundingSet=~CAP_BLOCK_SUSPEND CapabilityBoundingSet=~CAP_LEASE CapabilityBoundingSet=~CAP_SYS_PACCT 
+    missing: CapabilityBoundingSet=~CAP_SYS_TTY_CONFIG CapabilityBoundingSet=~CAP_WAKE_ALARM RestrictAddressFamilies=~AF_UNIX 
+    missing: ProcSubset=
+postfiat-monitor.service                 9.6    UNSAFE   74     root      standard 5.0    no    not-applied
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_SET(UID|GID|PCAP) 
+    missing: CapabilityBoundingSet=~CAP_SYS_ADMIN CapabilityBoundingSet=~CAP_SYS_PTRACE RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: RestrictNamespaces=~CLONE_NEWUSER RestrictAddressFamilies=~… CapabilityBoundingSet=~CAP_(CHOWN|FSETID|SETFCAP) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) CapabilityBoundingSet=~CAP_NET_ADMIN 
+    missing: CapabilityBoundingSet=~CAP_SYS_MODULE CapabilityBoundingSet=~CAP_SYS_RAWIO CapabilityBoundingSet=~CAP_SYS_TIME 
+    missing: DeviceAllow= IPAddressDeny= NoNewPrivileges= PrivateDevices= PrivateMounts= PrivateTmp= PrivateUsers= ProtectClock= 
+    missing: ProtectControlGroups= ProtectHome= ProtectKernelLogs= ProtectKernelModules= ProtectKernelTunables= ProtectProc= 
+    missing: ProtectSystem= RestrictAddressFamilies=~AF_PACKET RestrictSUIDSGID= SystemCallArchitectures= 
+    missing: SystemCallFilter=~@clock SystemCallFilter=~@debug SystemCallFilter=~@module SystemCallFilter=~@mount 
+    missing: SystemCallFilter=~@raw-io SystemCallFilter=~@reboot SystemCallFilter=~@swap SystemCallFilter=~@privileged 
+    missing: SystemCallFilter=~@resources CapabilityBoundingSet=~CAP_AUDIT_* CapabilityBoundingSet=~CAP_KILL 
+    missing: CapabilityBoundingSet=~CAP_MKNOD CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) 
+    missing: CapabilityBoundingSet=~CAP_SYSLOG CapabilityBoundingSet=~CAP_SYS_(NICE|RESOURCE) 
+    missing: RestrictNamespaces=~CLONE_NEWCGROUP RestrictNamespaces=~CLONE_NEWIPC RestrictNamespaces=~CLONE_NEWNET 
+    missing: RestrictNamespaces=~CLONE_NEWNS RestrictNamespaces=~CLONE_NEWPID RestrictRealtime= SystemCallFilter=~@cpu-emulation 
+    missing: SystemCallFilter=~@obsolete RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= 
+    missing: CapabilityBoundingSet=~CAP_MAC_* CapabilityBoundingSet=~CAP_SYS_BOOT LockPersonality= MemoryDenyWriteExecute= 
+    missing: RestrictNamespaces=~CLONE_NEWUTS UMask= CapabilityBoundingSet=~CAP_LINUX_IMMUTABLE 
+    missing: CapabilityBoundingSet=~CAP_IPC_LOCK CapabilityBoundingSet=~CAP_SYS_CHROOT ProtectHostname= 
+    missing: CapabilityBoundingSet=~CAP_BLOCK_SUSPEND CapabilityBoundingSet=~CAP_LEASE CapabilityBoundingSet=~CAP_SYS_PACCT 
+    missing: CapabilityBoundingSet=~CAP_SYS_TTY_CONFIG CapabilityBoundingSet=~CAP_WAKE_ALARM RestrictAddressFamilies=~AF_UNIX 
+    missing: ProcSubset=
+audit exit 0
+--- unitguard drop-ins present
+  (none)
+===== sentry-host
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+systemd 249 (249.11-0ubuntu3.23)
+2026-10-27T00:16:31Z
+pft-unitguard.sh sha256 5ae1677e2e51f3ad0b823ea24df7a62f10f995001c672225830fc67f3975ccdf
+profiles sha256 fa113c290d8d105ad7f2a83101aeb62760eb9f136fb3cb8c93c62d4fcb54c9fa (14 files)
+--- add-on unit files on this host (systemctl list-unit-files 'pft-*' 'postfiat*')
+pft-divergence.service static
+pft-egress-reapply@.service static
+pft-integrity.service static
+pft-logship-check.service static
+pft-logship-dockerlog@.service indirect
+pft-logship-vacuum.service static
+pft-maint-tick.service static
+pft-watchdog.service static
+postfiat-docker-user.service enabled
+pft-divergence.timer enabled
+pft-egress-reapply@.timer indirect
+pft-integrity.timer enabled
+pft-logship-check.timer enabled
+pft-logship-vacuum.timer enabled
+pft-maint-tick.timer enabled
+pft-watchdog.timer enabled
+--- $ pft-unitguard audit --detail
+UNIT                                     EXPOS  RATING   FAILED USER      CLASS    TARGET DROPIN VERDICT
+pft-divergence.service                   9.6    UNSAFE   74     root      docker   <before no    not-applied
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_SET(UID|GID|PCAP) 
+    missing: CapabilityBoundingSet=~CAP_SYS_ADMIN CapabilityBoundingSet=~CAP_SYS_PTRACE RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: RestrictNamespaces=~CLONE_NEWUSER RestrictAddressFamilies=~… CapabilityBoundingSet=~CAP_(CHOWN|FSETID|SETFCAP) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) CapabilityBoundingSet=~CAP_NET_ADMIN 
+    missing: CapabilityBoundingSet=~CAP_SYS_MODULE CapabilityBoundingSet=~CAP_SYS_RAWIO CapabilityBoundingSet=~CAP_SYS_TIME 
+    missing: DeviceAllow= IPAddressDeny= NoNewPrivileges= PrivateDevices= PrivateMounts= PrivateTmp= PrivateUsers= ProtectClock= 
+    missing: ProtectControlGroups= ProtectHome= ProtectKernelLogs= ProtectKernelModules= ProtectKernelTunables= ProtectProc= 
+    missing: ProtectSystem= RestrictAddressFamilies=~AF_PACKET RestrictSUIDSGID= SystemCallArchitectures= 
+    missing: SystemCallFilter=~@clock SystemCallFilter=~@debug SystemCallFilter=~@module SystemCallFilter=~@mount 
+    missing: SystemCallFilter=~@raw-io SystemCallFilter=~@reboot SystemCallFilter=~@swap SystemCallFilter=~@privileged 
+    missing: SystemCallFilter=~@resources CapabilityBoundingSet=~CAP_AUDIT_* CapabilityBoundingSet=~CAP_KILL 
+    missing: CapabilityBoundingSet=~CAP_MKNOD CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) 
+    missing: CapabilityBoundingSet=~CAP_SYSLOG CapabilityBoundingSet=~CAP_SYS_(NICE|RESOURCE) 
+    missing: RestrictNamespaces=~CLONE_NEWCGROUP RestrictNamespaces=~CLONE_NEWIPC RestrictNamespaces=~CLONE_NEWNET 
+    missing: RestrictNamespaces=~CLONE_NEWNS RestrictNamespaces=~CLONE_NEWPID RestrictRealtime= SystemCallFilter=~@cpu-emulation 
+    missing: SystemCallFilter=~@obsolete RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= 
+    missing: CapabilityBoundingSet=~CAP_MAC_* CapabilityBoundingSet=~CAP_SYS_BOOT LockPersonality= MemoryDenyWriteExecute= 
+    missing: RestrictNamespaces=~CLONE_NEWUTS UMask= CapabilityBoundingSet=~CAP_LINUX_IMMUTABLE 
+    missing: CapabilityBoundingSet=~CAP_IPC_LOCK CapabilityBoundingSet=~CAP_SYS_CHROOT ProtectHostname= 
+    missing: CapabilityBoundingSet=~CAP_BLOCK_SUSPEND CapabilityBoundingSet=~CAP_LEASE CapabilityBoundingSet=~CAP_SYS_PACCT 
+    missing: CapabilityBoundingSet=~CAP_SYS_TTY_CONFIG CapabilityBoundingSet=~CAP_WAKE_ALARM RestrictAddressFamilies=~AF_UNIX 
+    missing: ProcSubset=
+pft-egress-reapply@postfiatd-sentry.service 9.6    UNSAFE   74     root      iptables <before no    not-applied
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_SET(UID|GID|PCAP) 
+    missing: CapabilityBoundingSet=~CAP_SYS_ADMIN CapabilityBoundingSet=~CAP_SYS_PTRACE RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: RestrictNamespaces=~CLONE_NEWUSER RestrictAddressFamilies=~… CapabilityBoundingSet=~CAP_(CHOWN|FSETID|SETFCAP) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) CapabilityBoundingSet=~CAP_NET_ADMIN 
+    missing: CapabilityBoundingSet=~CAP_SYS_MODULE CapabilityBoundingSet=~CAP_SYS_RAWIO CapabilityBoundingSet=~CAP_SYS_TIME 
+    missing: DeviceAllow= IPAddressDeny= NoNewPrivileges= PrivateDevices= PrivateMounts= PrivateTmp= PrivateUsers= ProtectClock= 
+    missing: ProtectControlGroups= ProtectHome= ProtectKernelLogs= ProtectKernelModules= ProtectKernelTunables= ProtectProc= 
+    missing: ProtectSystem= RestrictAddressFamilies=~AF_PACKET RestrictSUIDSGID= SystemCallArchitectures= 
+    missing: SystemCallFilter=~@clock SystemCallFilter=~@debug SystemCallFilter=~@module SystemCallFilter=~@mount 
+    missing: SystemCallFilter=~@raw-io SystemCallFilter=~@reboot SystemCallFilter=~@swap SystemCallFilter=~@privileged 
+    missing: SystemCallFilter=~@resources CapabilityBoundingSet=~CAP_AUDIT_* CapabilityBoundingSet=~CAP_KILL 
+    missing: CapabilityBoundingSet=~CAP_MKNOD CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) 
+    missing: CapabilityBoundingSet=~CAP_SYSLOG CapabilityBoundingSet=~CAP_SYS_(NICE|RESOURCE) 
+    missing: RestrictNamespaces=~CLONE_NEWCGROUP RestrictNamespaces=~CLONE_NEWIPC RestrictNamespaces=~CLONE_NEWNET 
+    missing: RestrictNamespaces=~CLONE_NEWNS RestrictNamespaces=~CLONE_NEWPID RestrictRealtime= SystemCallFilter=~@cpu-emulation 
+    missing: SystemCallFilter=~@obsolete RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= 
+    missing: CapabilityBoundingSet=~CAP_MAC_* CapabilityBoundingSet=~CAP_SYS_BOOT LockPersonality= MemoryDenyWriteExecute= 
+    missing: RestrictNamespaces=~CLONE_NEWUTS UMask= CapabilityBoundingSet=~CAP_LINUX_IMMUTABLE 
+    missing: CapabilityBoundingSet=~CAP_IPC_LOCK CapabilityBoundingSet=~CAP_SYS_CHROOT ProtectHostname= 
+    missing: CapabilityBoundingSet=~CAP_BLOCK_SUSPEND CapabilityBoundingSet=~CAP_LEASE CapabilityBoundingSet=~CAP_SYS_PACCT 
+    missing: CapabilityBoundingSet=~CAP_SYS_TTY_CONFIG CapabilityBoundingSet=~CAP_WAKE_ALARM RestrictAddressFamilies=~AF_UNIX 
+    missing: ProcSubset=
+pft-integrity.service                    9.6    UNSAFE   74     root      docker   <before no    not-applied
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_SET(UID|GID|PCAP) 
+    missing: CapabilityBoundingSet=~CAP_SYS_ADMIN CapabilityBoundingSet=~CAP_SYS_PTRACE RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: RestrictNamespaces=~CLONE_NEWUSER RestrictAddressFamilies=~… CapabilityBoundingSet=~CAP_(CHOWN|FSETID|SETFCAP) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) CapabilityBoundingSet=~CAP_NET_ADMIN 
+    missing: CapabilityBoundingSet=~CAP_SYS_MODULE CapabilityBoundingSet=~CAP_SYS_RAWIO CapabilityBoundingSet=~CAP_SYS_TIME 
+    missing: DeviceAllow= IPAddressDeny= NoNewPrivileges= PrivateDevices= PrivateMounts= PrivateTmp= PrivateUsers= ProtectClock= 
+    missing: ProtectControlGroups= ProtectHome= ProtectKernelLogs= ProtectKernelModules= ProtectKernelTunables= ProtectProc= 
+    missing: ProtectSystem= RestrictAddressFamilies=~AF_PACKET RestrictSUIDSGID= SystemCallArchitectures= 
+    missing: SystemCallFilter=~@clock SystemCallFilter=~@debug SystemCallFilter=~@module SystemCallFilter=~@mount 
+    missing: SystemCallFilter=~@raw-io SystemCallFilter=~@reboot SystemCallFilter=~@swap SystemCallFilter=~@privileged 
+    missing: SystemCallFilter=~@resources CapabilityBoundingSet=~CAP_AUDIT_* CapabilityBoundingSet=~CAP_KILL 
+    missing: CapabilityBoundingSet=~CAP_MKNOD CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) 
+    missing: CapabilityBoundingSet=~CAP_SYSLOG CapabilityBoundingSet=~CAP_SYS_(NICE|RESOURCE) 
+    missing: RestrictNamespaces=~CLONE_NEWCGROUP RestrictNamespaces=~CLONE_NEWIPC RestrictNamespaces=~CLONE_NEWNET 
+    missing: RestrictNamespaces=~CLONE_NEWNS RestrictNamespaces=~CLONE_NEWPID RestrictRealtime= SystemCallFilter=~@cpu-emulation 
+    missing: SystemCallFilter=~@obsolete RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= 
+    missing: CapabilityBoundingSet=~CAP_MAC_* CapabilityBoundingSet=~CAP_SYS_BOOT LockPersonality= MemoryDenyWriteExecute= 
+    missing: RestrictNamespaces=~CLONE_NEWUTS UMask= CapabilityBoundingSet=~CAP_LINUX_IMMUTABLE 
+    missing: CapabilityBoundingSet=~CAP_IPC_LOCK CapabilityBoundingSet=~CAP_SYS_CHROOT ProtectHostname= 
+    missing: CapabilityBoundingSet=~CAP_BLOCK_SUSPEND CapabilityBoundingSet=~CAP_LEASE CapabilityBoundingSet=~CAP_SYS_PACCT 
+    missing: CapabilityBoundingSet=~CAP_SYS_TTY_CONFIG CapabilityBoundingSet=~CAP_WAKE_ALARM RestrictAddressFamilies=~AF_UNIX 
+    missing: ProcSubset=
+pft-logship-check.service                9.6    UNSAFE   74     root      docker   <before no    not-applied
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_SET(UID|GID|PCAP) 
+    missing: CapabilityBoundingSet=~CAP_SYS_ADMIN CapabilityBoundingSet=~CAP_SYS_PTRACE RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: RestrictNamespaces=~CLONE_NEWUSER RestrictAddressFamilies=~… CapabilityBoundingSet=~CAP_(CHOWN|FSETID|SETFCAP) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) CapabilityBoundingSet=~CAP_NET_ADMIN 
+    missing: CapabilityBoundingSet=~CAP_SYS_MODULE CapabilityBoundingSet=~CAP_SYS_RAWIO CapabilityBoundingSet=~CAP_SYS_TIME 
+    missing: DeviceAllow= IPAddressDeny= NoNewPrivileges= PrivateDevices= PrivateMounts= PrivateTmp= PrivateUsers= ProtectClock= 
+    missing: ProtectControlGroups= ProtectHome= ProtectKernelLogs= ProtectKernelModules= ProtectKernelTunables= ProtectProc= 
+    missing: ProtectSystem= RestrictAddressFamilies=~AF_PACKET RestrictSUIDSGID= SystemCallArchitectures= 
+    missing: SystemCallFilter=~@clock SystemCallFilter=~@debug SystemCallFilter=~@module SystemCallFilter=~@mount 
+    missing: SystemCallFilter=~@raw-io SystemCallFilter=~@reboot SystemCallFilter=~@swap SystemCallFilter=~@privileged 
+    missing: SystemCallFilter=~@resources CapabilityBoundingSet=~CAP_AUDIT_* CapabilityBoundingSet=~CAP_KILL 
+    missing: CapabilityBoundingSet=~CAP_MKNOD CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) 
+    missing: CapabilityBoundingSet=~CAP_SYSLOG CapabilityBoundingSet=~CAP_SYS_(NICE|RESOURCE) 
+    missing: RestrictNamespaces=~CLONE_NEWCGROUP RestrictNamespaces=~CLONE_NEWIPC RestrictNamespaces=~CLONE_NEWNET 
+    missing: RestrictNamespaces=~CLONE_NEWNS RestrictNamespaces=~CLONE_NEWPID RestrictRealtime= SystemCallFilter=~@cpu-emulation 
+    missing: SystemCallFilter=~@obsolete RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= 
+    missing: CapabilityBoundingSet=~CAP_MAC_* CapabilityBoundingSet=~CAP_SYS_BOOT LockPersonality= MemoryDenyWriteExecute= 
+    missing: RestrictNamespaces=~CLONE_NEWUTS UMask= CapabilityBoundingSet=~CAP_LINUX_IMMUTABLE 
+    missing: CapabilityBoundingSet=~CAP_IPC_LOCK CapabilityBoundingSet=~CAP_SYS_CHROOT ProtectHostname= 
+    missing: CapabilityBoundingSet=~CAP_BLOCK_SUSPEND CapabilityBoundingSet=~CAP_LEASE CapabilityBoundingSet=~CAP_SYS_PACCT 
+    missing: CapabilityBoundingSet=~CAP_SYS_TTY_CONFIG CapabilityBoundingSet=~CAP_WAKE_ALARM RestrictAddressFamilies=~AF_UNIX 
+    missing: ProcSubset=
+pft-logship-dockerlog@postfiatd-sentry.service 9.6    UNSAFE   74     root      docker   <before no    not-applied
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_SET(UID|GID|PCAP) 
+    missing: CapabilityBoundingSet=~CAP_SYS_ADMIN CapabilityBoundingSet=~CAP_SYS_PTRACE RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: RestrictNamespaces=~CLONE_NEWUSER RestrictAddressFamilies=~… CapabilityBoundingSet=~CAP_(CHOWN|FSETID|SETFCAP) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) CapabilityBoundingSet=~CAP_NET_ADMIN 
+    missing: CapabilityBoundingSet=~CAP_SYS_MODULE CapabilityBoundingSet=~CAP_SYS_RAWIO CapabilityBoundingSet=~CAP_SYS_TIME 
+    missing: DeviceAllow= IPAddressDeny= NoNewPrivileges= PrivateDevices= PrivateMounts= PrivateTmp= PrivateUsers= ProtectClock= 
+    missing: ProtectControlGroups= ProtectHome= ProtectKernelLogs= ProtectKernelModules= ProtectKernelTunables= ProtectProc= 
+    missing: ProtectSystem= RestrictAddressFamilies=~AF_PACKET RestrictSUIDSGID= SystemCallArchitectures= 
+    missing: SystemCallFilter=~@clock SystemCallFilter=~@debug SystemCallFilter=~@module SystemCallFilter=~@mount 
+    missing: SystemCallFilter=~@raw-io SystemCallFilter=~@reboot SystemCallFilter=~@swap SystemCallFilter=~@privileged 
+    missing: SystemCallFilter=~@resources CapabilityBoundingSet=~CAP_AUDIT_* CapabilityBoundingSet=~CAP_KILL 
+    missing: CapabilityBoundingSet=~CAP_MKNOD CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) 
+    missing: CapabilityBoundingSet=~CAP_SYSLOG CapabilityBoundingSet=~CAP_SYS_(NICE|RESOURCE) 
+    missing: RestrictNamespaces=~CLONE_NEWCGROUP RestrictNamespaces=~CLONE_NEWIPC RestrictNamespaces=~CLONE_NEWNET 
+    missing: RestrictNamespaces=~CLONE_NEWNS RestrictNamespaces=~CLONE_NEWPID RestrictRealtime= SystemCallFilter=~@cpu-emulation 
+    missing: SystemCallFilter=~@obsolete RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= 
+    missing: CapabilityBoundingSet=~CAP_MAC_* CapabilityBoundingSet=~CAP_SYS_BOOT LockPersonality= MemoryDenyWriteExecute= 
+    missing: RestrictNamespaces=~CLONE_NEWUTS UMask= CapabilityBoundingSet=~CAP_LINUX_IMMUTABLE 
+    missing: CapabilityBoundingSet=~CAP_IPC_LOCK CapabilityBoundingSet=~CAP_SYS_CHROOT ProtectHostname= 
+    missing: CapabilityBoundingSet=~CAP_BLOCK_SUSPEND CapabilityBoundingSet=~CAP_LEASE CapabilityBoundingSet=~CAP_SYS_PACCT 
+    missing: CapabilityBoundingSet=~CAP_SYS_TTY_CONFIG CapabilityBoundingSet=~CAP_WAKE_ALARM RestrictAddressFamilies=~AF_UNIX 
+    missing: ProcSubset=
+pft-logship-vacuum.service               9.6    UNSAFE   74     root      standard 5.0    no    not-applied
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_SET(UID|GID|PCAP) 
+    missing: CapabilityBoundingSet=~CAP_SYS_ADMIN CapabilityBoundingSet=~CAP_SYS_PTRACE RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: RestrictNamespaces=~CLONE_NEWUSER RestrictAddressFamilies=~… CapabilityBoundingSet=~CAP_(CHOWN|FSETID|SETFCAP) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) CapabilityBoundingSet=~CAP_NET_ADMIN 
+    missing: CapabilityBoundingSet=~CAP_SYS_MODULE CapabilityBoundingSet=~CAP_SYS_RAWIO CapabilityBoundingSet=~CAP_SYS_TIME 
+    missing: DeviceAllow= IPAddressDeny= NoNewPrivileges= PrivateDevices= PrivateMounts= PrivateTmp= PrivateUsers= ProtectClock= 
+    missing: ProtectControlGroups= ProtectHome= ProtectKernelLogs= ProtectKernelModules= ProtectKernelTunables= ProtectProc= 
+    missing: ProtectSystem= RestrictAddressFamilies=~AF_PACKET RestrictSUIDSGID= SystemCallArchitectures= 
+    missing: SystemCallFilter=~@clock SystemCallFilter=~@debug SystemCallFilter=~@module SystemCallFilter=~@mount 
+    missing: SystemCallFilter=~@raw-io SystemCallFilter=~@reboot SystemCallFilter=~@swap SystemCallFilter=~@privileged 
+    missing: SystemCallFilter=~@resources CapabilityBoundingSet=~CAP_AUDIT_* CapabilityBoundingSet=~CAP_KILL 
+    missing: CapabilityBoundingSet=~CAP_MKNOD CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) 
+    missing: CapabilityBoundingSet=~CAP_SYSLOG CapabilityBoundingSet=~CAP_SYS_(NICE|RESOURCE) 
+    missing: RestrictNamespaces=~CLONE_NEWCGROUP RestrictNamespaces=~CLONE_NEWIPC RestrictNamespaces=~CLONE_NEWNET 
+    missing: RestrictNamespaces=~CLONE_NEWNS RestrictNamespaces=~CLONE_NEWPID RestrictRealtime= SystemCallFilter=~@cpu-emulation 
+    missing: SystemCallFilter=~@obsolete RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= 
+    missing: CapabilityBoundingSet=~CAP_MAC_* CapabilityBoundingSet=~CAP_SYS_BOOT LockPersonality= MemoryDenyWriteExecute= 
+    missing: RestrictNamespaces=~CLONE_NEWUTS UMask= CapabilityBoundingSet=~CAP_LINUX_IMMUTABLE 
+    missing: CapabilityBoundingSet=~CAP_IPC_LOCK CapabilityBoundingSet=~CAP_SYS_CHROOT ProtectHostname= 
+    missing: CapabilityBoundingSet=~CAP_BLOCK_SUSPEND CapabilityBoundingSet=~CAP_LEASE CapabilityBoundingSet=~CAP_SYS_PACCT 
+    missing: CapabilityBoundingSet=~CAP_SYS_TTY_CONFIG CapabilityBoundingSet=~CAP_WAKE_ALARM RestrictAddressFamilies=~AF_UNIX 
+    missing: ProcSubset=
+pft-maint-tick.service                   9.6    UNSAFE   74     root      docker   <before no    not-applied
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_SET(UID|GID|PCAP) 
+    missing: CapabilityBoundingSet=~CAP_SYS_ADMIN CapabilityBoundingSet=~CAP_SYS_PTRACE RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: RestrictNamespaces=~CLONE_NEWUSER RestrictAddressFamilies=~… CapabilityBoundingSet=~CAP_(CHOWN|FSETID|SETFCAP) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) CapabilityBoundingSet=~CAP_NET_ADMIN 
+    missing: CapabilityBoundingSet=~CAP_SYS_MODULE CapabilityBoundingSet=~CAP_SYS_RAWIO CapabilityBoundingSet=~CAP_SYS_TIME 
+    missing: DeviceAllow= IPAddressDeny= NoNewPrivileges= PrivateDevices= PrivateMounts= PrivateTmp= PrivateUsers= ProtectClock= 
+    missing: ProtectControlGroups= ProtectHome= ProtectKernelLogs= ProtectKernelModules= ProtectKernelTunables= ProtectProc= 
+    missing: ProtectSystem= RestrictAddressFamilies=~AF_PACKET RestrictSUIDSGID= SystemCallArchitectures= 
+    missing: SystemCallFilter=~@clock SystemCallFilter=~@debug SystemCallFilter=~@module SystemCallFilter=~@mount 
+    missing: SystemCallFilter=~@raw-io SystemCallFilter=~@reboot SystemCallFilter=~@swap SystemCallFilter=~@privileged 
+    missing: SystemCallFilter=~@resources CapabilityBoundingSet=~CAP_AUDIT_* CapabilityBoundingSet=~CAP_KILL 
+    missing: CapabilityBoundingSet=~CAP_MKNOD CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) 
+    missing: CapabilityBoundingSet=~CAP_SYSLOG CapabilityBoundingSet=~CAP_SYS_(NICE|RESOURCE) 
+    missing: RestrictNamespaces=~CLONE_NEWCGROUP RestrictNamespaces=~CLONE_NEWIPC RestrictNamespaces=~CLONE_NEWNET 
+    missing: RestrictNamespaces=~CLONE_NEWNS RestrictNamespaces=~CLONE_NEWPID RestrictRealtime= SystemCallFilter=~@cpu-emulation 
+    missing: SystemCallFilter=~@obsolete RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= 
+    missing: CapabilityBoundingSet=~CAP_MAC_* CapabilityBoundingSet=~CAP_SYS_BOOT LockPersonality= MemoryDenyWriteExecute= 
+    missing: RestrictNamespaces=~CLONE_NEWUTS UMask= CapabilityBoundingSet=~CAP_LINUX_IMMUTABLE 
+    missing: CapabilityBoundingSet=~CAP_IPC_LOCK CapabilityBoundingSet=~CAP_SYS_CHROOT ProtectHostname= 
+    missing: CapabilityBoundingSet=~CAP_BLOCK_SUSPEND CapabilityBoundingSet=~CAP_LEASE CapabilityBoundingSet=~CAP_SYS_PACCT 
+    missing: CapabilityBoundingSet=~CAP_SYS_TTY_CONFIG CapabilityBoundingSet=~CAP_WAKE_ALARM RestrictAddressFamilies=~AF_UNIX 
+    missing: ProcSubset=
+pft-watchdog.service                     9.6    UNSAFE   74     root      standard 5.0    no    not-applied
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_SET(UID|GID|PCAP) 
+    missing: CapabilityBoundingSet=~CAP_SYS_ADMIN CapabilityBoundingSet=~CAP_SYS_PTRACE RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: RestrictNamespaces=~CLONE_NEWUSER RestrictAddressFamilies=~… CapabilityBoundingSet=~CAP_(CHOWN|FSETID|SETFCAP) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) CapabilityBoundingSet=~CAP_NET_ADMIN 
+    missing: CapabilityBoundingSet=~CAP_SYS_MODULE CapabilityBoundingSet=~CAP_SYS_RAWIO CapabilityBoundingSet=~CAP_SYS_TIME 
+    missing: DeviceAllow= IPAddressDeny= NoNewPrivileges= PrivateDevices= PrivateMounts= PrivateTmp= PrivateUsers= ProtectClock= 
+    missing: ProtectControlGroups= ProtectHome= ProtectKernelLogs= ProtectKernelModules= ProtectKernelTunables= ProtectProc= 
+    missing: ProtectSystem= RestrictAddressFamilies=~AF_PACKET RestrictSUIDSGID= SystemCallArchitectures= 
+    missing: SystemCallFilter=~@clock SystemCallFilter=~@debug SystemCallFilter=~@module SystemCallFilter=~@mount 
+    missing: SystemCallFilter=~@raw-io SystemCallFilter=~@reboot SystemCallFilter=~@swap SystemCallFilter=~@privileged 
+    missing: SystemCallFilter=~@resources CapabilityBoundingSet=~CAP_AUDIT_* CapabilityBoundingSet=~CAP_KILL 
+    missing: CapabilityBoundingSet=~CAP_MKNOD CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) 
+    missing: CapabilityBoundingSet=~CAP_SYSLOG CapabilityBoundingSet=~CAP_SYS_(NICE|RESOURCE) 
+    missing: RestrictNamespaces=~CLONE_NEWCGROUP RestrictNamespaces=~CLONE_NEWIPC RestrictNamespaces=~CLONE_NEWNET 
+    missing: RestrictNamespaces=~CLONE_NEWNS RestrictNamespaces=~CLONE_NEWPID RestrictRealtime= SystemCallFilter=~@cpu-emulation 
+    missing: SystemCallFilter=~@obsolete RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= 
+    missing: CapabilityBoundingSet=~CAP_MAC_* CapabilityBoundingSet=~CAP_SYS_BOOT LockPersonality= MemoryDenyWriteExecute= 
+    missing: RestrictNamespaces=~CLONE_NEWUTS UMask= CapabilityBoundingSet=~CAP_LINUX_IMMUTABLE 
+    missing: CapabilityBoundingSet=~CAP_IPC_LOCK CapabilityBoundingSet=~CAP_SYS_CHROOT ProtectHostname= 
+    missing: CapabilityBoundingSet=~CAP_BLOCK_SUSPEND CapabilityBoundingSet=~CAP_LEASE CapabilityBoundingSet=~CAP_SYS_PACCT 
+    missing: CapabilityBoundingSet=~CAP_SYS_TTY_CONFIG CapabilityBoundingSet=~CAP_WAKE_ALARM RestrictAddressFamilies=~AF_UNIX 
+    missing: ProcSubset=
+postfiat-docker-user.service             9.6    UNSAFE   74     root      iptables <before no    not-applied
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_SET(UID|GID|PCAP) 
+    missing: CapabilityBoundingSet=~CAP_SYS_ADMIN CapabilityBoundingSet=~CAP_SYS_PTRACE RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: RestrictNamespaces=~CLONE_NEWUSER RestrictAddressFamilies=~… CapabilityBoundingSet=~CAP_(CHOWN|FSETID|SETFCAP) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) CapabilityBoundingSet=~CAP_NET_ADMIN 
+    missing: CapabilityBoundingSet=~CAP_SYS_MODULE CapabilityBoundingSet=~CAP_SYS_RAWIO CapabilityBoundingSet=~CAP_SYS_TIME 
+    missing: DeviceAllow= IPAddressDeny= NoNewPrivileges= PrivateDevices= PrivateMounts= PrivateTmp= PrivateUsers= ProtectClock= 
+    missing: ProtectControlGroups= ProtectHome= ProtectKernelLogs= ProtectKernelModules= ProtectKernelTunables= ProtectProc= 
+    missing: ProtectSystem= RestrictAddressFamilies=~AF_PACKET RestrictSUIDSGID= SystemCallArchitectures= 
+    missing: SystemCallFilter=~@clock SystemCallFilter=~@debug SystemCallFilter=~@module SystemCallFilter=~@mount 
+    missing: SystemCallFilter=~@raw-io SystemCallFilter=~@reboot SystemCallFilter=~@swap SystemCallFilter=~@privileged 
+    missing: SystemCallFilter=~@resources CapabilityBoundingSet=~CAP_AUDIT_* CapabilityBoundingSet=~CAP_KILL 
+    missing: CapabilityBoundingSet=~CAP_MKNOD CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) 
+    missing: CapabilityBoundingSet=~CAP_SYSLOG CapabilityBoundingSet=~CAP_SYS_(NICE|RESOURCE) 
+    missing: RestrictNamespaces=~CLONE_NEWCGROUP RestrictNamespaces=~CLONE_NEWIPC RestrictNamespaces=~CLONE_NEWNET 
+    missing: RestrictNamespaces=~CLONE_NEWNS RestrictNamespaces=~CLONE_NEWPID RestrictRealtime= SystemCallFilter=~@cpu-emulation 
+    missing: SystemCallFilter=~@obsolete RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= 
+    missing: CapabilityBoundingSet=~CAP_MAC_* CapabilityBoundingSet=~CAP_SYS_BOOT LockPersonality= MemoryDenyWriteExecute= 
+    missing: RestrictNamespaces=~CLONE_NEWUTS UMask= CapabilityBoundingSet=~CAP_LINUX_IMMUTABLE 
+    missing: CapabilityBoundingSet=~CAP_IPC_LOCK CapabilityBoundingSet=~CAP_SYS_CHROOT ProtectHostname= 
+    missing: CapabilityBoundingSet=~CAP_BLOCK_SUSPEND CapabilityBoundingSet=~CAP_LEASE CapabilityBoundingSet=~CAP_SYS_PACCT 
+    missing: CapabilityBoundingSet=~CAP_SYS_TTY_CONFIG CapabilityBoundingSet=~CAP_WAKE_ALARM RestrictAddressFamilies=~AF_UNIX 
+    missing: ProcSubset=
+audit exit 0
+--- unitguard drop-ins present
+  (none)

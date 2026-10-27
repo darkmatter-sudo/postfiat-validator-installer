@@ -1,0 +1,81 @@
+OS: Ubuntu 22.04.5 LTS | validator-host | 2026-10-27T00:16:51Z | pft-unitguard.sh sha256 5ae1677e2e51f3ad0b823ea24df7a62f10f995001c672225830fc67f3975ccdf
+$ sudo bash pft-unitguard.sh plan pft-logship-vacuum
+unit:      pft-logship-vacuum.service
+profile:   ./profiles/pft-logship-vacuum.service.conf
+drop-in:   /etc/systemd/system/pft-logship-vacuum.service.d/50-unitguard.conf
+class:     standard   target: <= 5.0
+check:     journalctl --directory=/var/log/journal/remote --disk-usage
+--- drop-in content
+# written by pft-unitguard from pft-logship-vacuum.service.conf - remove with: pft-unitguard rollback <unit>
+[Service]
+User=systemd-journal-remote
+Group=systemd-journal-remote
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077
+PrivateNetwork=yes
+RestrictAddressFamilies=AF_UNIX
+ReadWritePaths=/var/log/journal/remote
+$ sudo bash pft-unitguard.sh apply pft-logship-vacuum
+[2026-10-27T00:16:51Z] APPLY pft-logship-vacuum.service class=standard target<=5.0 -> /etc/systemd/system/pft-logship-vacuum.service.d/50-unitguard.conf
+[2026-10-27T00:16:51Z]   exposure before: 9.6
+[2026-10-27T00:16:52Z]   run pft-logship-vacuum.service (oneshot): Result=success ExecMainStatus=0
+[2026-10-27T00:16:52Z]   check: journalctl --directory=/var/log/journal/remote --disk-usage
+    | Archived and active journals take up 1.5G in the file system.
+[2026-10-27T00:16:52Z]   check exit 0
+[2026-10-27T00:16:52Z] PASS pft-logship-vacuum.service exposure now: 0.5 SAFE 5
+exit 0
+$ sudo bash pft-unitguard.sh audit --units pft-logship-vacuum
+UNIT                                     EXPOS  RATING   FAILED USER      CLASS    TARGET DROPIN VERDICT
+pft-logship-vacuum.service               0.5    SAFE     5      systemd-journal-remote standard 5.0    yes   OK
+exit 0
+$ journalctl --utc -u pft-logship-vacuum.service -n 3 -o short-iso --no-pager
+2026-10-27T00:16:52+0000 validator-host journalctl[2303793]: Vacuuming done, freed 0B of archived journals from /var/log/journal/remote.
+2026-10-27T00:16:52+0000 validator-host systemd[1]: pft-logship-vacuum.service: Deactivated successfully.
+2026-10-27T00:16:52+0000 validator-host systemd[1]: Finished pft-logship: cap received peer journals.
+$ sudo pft-integrity verify
+pft-integrity verify - 2026-10-27T00:17:16Z
+OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-10-26T20:36:45Z
+RESULT: PASS - 59 unchanged, 0 warn, 0 fail -> exit 0
+exit 0
+=== 2026-10-27T00:18:12Z AM silence b77e191e (alertname=~PFTExporterDown|PFTNodeRPCDown, 15m) posted before the restart
+$ sudo bash pft-unitguard.sh apply pft-exporter
+[2026-10-27T00:18:12Z] APPLY pft-exporter.service class=standard target<=5.0 -> /etc/systemd/system/pft-exporter.service.d/50-unitguard.conf
+[2026-10-27T00:18:12Z]   exposure before: 8.1
+[2026-10-27T00:18:23Z]   run pft-exporter.service (long-running): active=active NRestarts 0 -> 0 after 10s
+[2026-10-27T00:18:23Z]   check: curl -sf --max-time 10 http://127.0.0.1:9877/metrics | grep -q '^pft_server_state'
+[2026-10-27T00:18:23Z]   check exit 0
+[2026-10-27T00:18:23Z] PASS pft-exporter.service exposure now: 1.1 OK 6
+exit 0
+$ sudo bash pft-unitguard.sh audit --units pft-exporter
+UNIT                                     EXPOS  RATING   FAILED USER      CLASS    TARGET DROPIN VERDICT
+pft-exporter.service                     1.1    OK       6      dynamic   standard 5.0    yes   OK
+exit 0
+$ curl -s 127.0.0.1:9877/metrics | grep -E "^pft_(up|server_state)"
+pft_up 1
+pft_server_state{state="full"} 4
+pft_uptime_seconds 60423
+=== 2026-10-27T00:18:43Z Prometheus target postfiat up (lastScrape 00:18:33Z), 0 Prometheus alerts (pending or firing); silence b77e191e expired (HTTP 200), 0 active silences, 0 AM alerts

@@ -1,0 +1,53 @@
+OS: Ubuntu 22.04.5 LTS | validator-host | 2026-10-27T01:17:28Z | pft-unitguard.sh sha256 fadc7034332bc89a6bdcec0ac05a68a17683d95e5ee20919682fb0a55cac27b9
+$ shellcheck pft-unitguard.sh drill/*.sh tests/*.sh
+exit 0
+$ bash tests/test-unitguard.sh
+PASS audit-before: rc 0, a not-applied at 9.6
+PASS audit-before: template instance listed
+PASS audit --detail lists missing checks
+PASS apply-a: rc 0 + PASS line
+PASS apply-a: drop-in content from profile, metadata stripped
+PASS apply-a: drop-in mode 0644, dir 0755
+PASS apply-a: daemon-reload before start
+PASS apply-a: before score recorded 9.6
+PASS audit-after: OK verdict
+PASS fail-unit: rc 1, rolled back, drop-in gone
+PASS fail-unit: unit re-run after rollback
+PASS re-apply broken: rc 1, previous unitguard drop-in restored byte-identical
+PASS re-apply broken: no leftover .prev, re-run after restore
+PASS fail-check: rc 1, check exit 7 logged, rolled back
+PASS fail-target: rc 1, misses target 5.0, rolled back
+PASS docker-lower: rc 0
+PASS docker-equal: rc 1 (not reduced)
+PASS daemon-restarts: rc 1, NRestarts change logged, rolled back
+PASS daemon-ok: restart used, rc 0
+PASS rollback: drop-in removed, rc 0
+PASS rollback: earlier drop-in restored byte-identical
+PASS skip: d left alone, others applied
+PASS template: drop-in on t@.service.d
+PASS perms: group-writable dir flagged
+PASS perms: world-writable parent dir of ExecStart binary flagged
+PASS usage: apply without unit -> 3
+PASS plan: unknown unit -> 3
+PASS plan: shows exception + drop-in
+PASS root: apply as non-root refused (4)
+RESULT: 29 passed, 0 failed
+exit 0
+$ bash tests/mutants-unitguard.sh
+MUTANT U1 no automatic rollback on failure: CAUGHT by 6 test(s): fail-unit;re-apply broken;re-apply broken;fail-check;fail-target;daemon-restarts
+MUTANT U2 no daemon-reload after writing the drop-in: CAUGHT by 1 test(s): apply-a
+MUTANT U3 functional check skipped: CAUGHT by 3 test(s): re-apply broken;re-apply broken;fail-check
+MUTANT U4 exposure target not enforced: CAUGHT by 2 test(s): fail-target;docker-equal
+MUTANT U5 parent dir not permission-checked: CAUGHT by 1 test(s): perms
+MUTANT U6 HOLD_UNITS/--skip ignored: CAUGHT by 1 test(s): skip
+MUTANT U7 docker/iptables target accepts an unchanged score: CAUGHT by 1 test(s): docker-equal
+MUTANT U8 earlier foreign drop-in not backed up: CAUGHT by 1 test(s): rollback
+MUTANT U9 profile metadata copied into the drop-in: CAUGHT by 1 test(s): apply-a
+MUTANT U10 oneshot Result not checked: CAUGHT by 2 test(s): fail-unit;fail-unit
+MUTANT U11 NRestarts change not checked: CAUGHT by 1 test(s): daemon-restarts
+MUTANT U12 drop-in written group-writable: CAUGHT by 2 test(s): apply-a;audit-after
+MUTANT U13 unit not re-run after rollback: CAUGHT by 1 test(s): fail-unit
+MUTANT U14 root check bypassed: CAUGHT by 1 test(s): root
+MUTANT U15 rollback deletes an earlier unitguard drop-in instead of restoring it: CAUGHT by 2 test(s): re-apply broken;re-apply broken
+mutants not caught/invalid: 0
+exit 0

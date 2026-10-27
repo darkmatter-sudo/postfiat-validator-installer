@@ -1,0 +1,56 @@
+OS: Ubuntu 22.04.5 LTS | sentry-host | 2026-10-27T01:12:32Z | pft-unitguard.sh sha256 5ae1677e2e51f3ad0b823ea24df7a62f10f995001c672225830fc67f3975ccdf
+$ sudo bash drill/probe.sh profiles/pft-logship-check.service.conf -- /usr/local/sbin/pft-logship check --textfile
+probe profile: pft-logship-check.service.conf (25 properties) sha256 dbea240251d4ee55
+probe command: /usr/local/sbin/pft-logship check --textfile
+pft-logship check - 2026-10-27T01:12:33Z - sentry-host -> validator-host (max lag 120s)
+unit: systemd-journal-upload.service active
+unit: systemd-journal-remote.socket active
+unit: pft-logship-vacuum.timer active
+unit: pft-logship-check.timer active
+bridge: pft-logship-dockerlog@postfiatd-sentry active, newest postfiatd-sentry journal entry 1s old
+cert: host.crt chains to ca.crt, matches host.key, valid > 24h
+tls: mutual-TLS handshake with validator-host journal-remote ok (HTTP 406)
+send: lag: 0s (last uploaded entry 2026-10-27T01:12:33Z, max 120 s)
+receive: newest entry from validator-host is 1s old
+RESULT: PASS -> exit 0
+probe exit 0
+PROBE PASS
+$ sudo bash pft-unitguard.sh apply pft-logship-check
+[2026-10-27T01:12:34Z] APPLY pft-logship-check.service class=docker target<=<before -> /etc/systemd/system/pft-logship-check.service.d/50-unitguard.conf
+[2026-10-27T01:12:34Z]   exposure before: 9.6
+[2026-10-27T01:12:36Z]   run pft-logship-check.service (oneshot): Result=success ExecMainStatus=0
+[2026-10-27T01:12:36Z]   check: f=/var/lib/pft-exporter/textfile/pft_logship.prom; [ $(( $(date +%s) - $(stat -c %Y $f) )) -lt 120 ] && grep -qx "pft_logship_up 1" $f
+[2026-10-27T01:12:36Z]   check exit 0
+[2026-10-27T01:12:36Z] PASS pft-logship-check.service exposure now: 2.1 OK 13
+exit 0
+$ sudo bash drill/probe.sh profiles/pft-divergence.service.conf -- /usr/local/bin/pft-divergence
+probe profile: pft-divergence.service.conf (25 properties) sha256 1887e69a4e75df2e
+probe command: /usr/local/bin/pft-divergence
+2026-10-27T01:12:40Z AGREE tip=7514199 deep=7513999 retries=0 sentry=AGREE public=AGREE hash=6C873EDF05F60643
+probe exit 0
+PROBE PASS
+$ sudo bash pft-unitguard.sh apply pft-divergence
+[2026-10-27T01:12:40Z] APPLY pft-divergence.service class=docker target<=<before -> /etc/systemd/system/pft-divergence.service.d/50-unitguard.conf
+[2026-10-27T01:12:40Z]   exposure before: 9.6
+[2026-10-27T01:12:45Z]   run pft-divergence.service (oneshot): Result=success ExecMainStatus=0
+[2026-10-27T01:12:45Z]   check: f=/var/lib/pft-exporter/textfile/pft_divergence.prom; [ $(( $(date +%s) - $(stat -c %Y $f) )) -lt 300 ] && grep -qx "pft_divergence_overall_state 0" $f
+[2026-10-27T01:12:45Z]   check exit 0
+[2026-10-27T01:12:45Z] PASS pft-divergence.service exposure now: 2.6 OK 18
+exit 0
+$ sudo bash pft-unitguard.sh audit
+UNIT                                     EXPOS  RATING   FAILED USER      CLASS    TARGET DROPIN VERDICT
+pft-divergence.service                   2.6    OK       18     root      docker   <before yes   OK
+pft-egress-reapply@postfiatd-sentry.service 9.6    UNSAFE   74     root      iptables <before no    not-applied
+pft-integrity.service                    9.6    UNSAFE   74     root      docker   <before no    not-applied
+pft-logship-check.service                2.1    OK       13     root      docker   <before yes   OK
+pft-logship-dockerlog@postfiatd-sentry.service 9.6    UNSAFE   74     root      docker   <before no    not-applied
+pft-logship-vacuum.service               0.5    SAFE     5      systemd-journal-remote standard 5.0    yes   OK
+pft-maint-tick.service                   9.6    UNSAFE   74     root      docker   <before no    not-applied
+pft-watchdog.service                     9.6    UNSAFE   74     root      standard 5.0    no    not-applied
+postfiat-docker-user.service             9.6    UNSAFE   74     root      iptables <before no    not-applied
+exit 0
+$ sudo pft-integrity verify
+pft-integrity verify - 2026-10-27T01:12:53Z
+OS: Ubuntu 22.04.5 LTS | container: postfiatd-sentry | baseline: 2026-10-26T13:14:59Z
+RESULT: PASS - 35 unchanged, 0 warn, 0 fail -> exit 0
+exit 0

@@ -1,0 +1,94 @@
+OS: Ubuntu 22.04.5 LTS | validator-host | 2026-10-27T04:10:22Z
+$ cat probe-egress.sh
+#!/usr/bin/env bash
+# unitguard probes for pft-egress-reapply@ on this host (run from the unitguard dir): tuned profile against the
+# real reapply (no drift), a forced-drift reload (scratch STATE_DIR whose saved live_rules differ, so reapply
+# re-loads the SAME policy into the live chain in one iptables-restore transaction), a control profile without
+# AF_NETLINK that must fail visibly, and negatives. Live chain must still match its snapshot afterwards.
+set -uo pipefail
+C="${1:?container}"; P=profiles/pft-egress-reapply@.service.conf; S=/var/lib/ug-probe-egress
+echo "tool sha256 $(sha256sum pft-unitguard.sh | cut -d' ' -f1)  profile sha256 $(sha256sum "$P" | cut -d' ' -f1)"
+sudo pft-egress check --container "$C" | grep -E 'RESULT|chain|jump'
+rules_before="$(sudo iptables -S PFT-EGRESS | sha256sum | cut -c1-16)"; echo "live PFT-EGRESS rules sha $rules_before"
+fails=0; r() { if [ "$1" = 0 ]; then echo "  [PASS] $2"; else echo "  [FAIL] $2"; fails=$((fails+1)); fi; }
+mkscratch() { sudo rm -rf "$S"; sudo install -d -m 700 "$S"; sudo cp -p "/var/lib/pft-egress/$C.json" "$S/"; }
+withstate() { cp "$P" "$1"; printf '%s\n' "Environment=STATE_DIR=$S" "ReadWritePaths=$S" >> "$1"; }
+echo "=== probe 1: real reapply, no drift, tuned profile (live state dir)"
+sudo bash drill/probe.sh "$P" -- /usr/local/sbin/pft-egress reapply --container "$C"; r $? "no-drift reapply exits 0 under the profile"
+echo "=== probe 2: forced drift (scratch state, saved live_rules altered) -> reload of the same policy, tuned profile"
+mkscratch; sudo jq '.live_rules += ["-A PFT-EGRESS -m comment --comment ug-probe-drift -j RETURN"]' "$S/$C.json" | sudo tee "$S/x" >/dev/null && sudo mv "$S/x" "$S/$C.json"
+withstate /tmp/ug-egress-probe.conf
+sudo bash drill/probe.sh /tmp/ug-egress-probe.conf -- /usr/local/sbin/pft-egress reapply --container "$C"; r $? "forced-drift reload exits 0 under the profile"
+sudo jq -r '.live_rules | join("\n")' "$S/$C.json" | diff <(sudo iptables -S PFT-EGRESS) - >/dev/null; r $? "scratch state rewritten with the live rules (ug-probe-drift line gone)"
+echo "scratch state mode after reload: $(sudo stat -c %a "$S/$C.json") (UMask=0077)"
+echo "=== probe 3: control = tuned profile minus AF_NETLINK, forced drift (must fail visibly, live chain untouched)"
+mkscratch; sudo jq '.live_rules += ["-A PFT-EGRESS -m comment --comment ug-probe-drift -j RETURN"]' "$S/$C.json" | sudo tee "$S/x" >/dev/null && sudo mv "$S/x" "$S/$C.json"
+withstate /tmp/ug-egress-ctl.conf; sed -i 's/^RestrictAddressFamilies=.*/RestrictAddressFamilies=AF_UNIX/' /tmp/ug-egress-ctl.conf
+sudo bash drill/probe.sh /tmp/ug-egress-ctl.conf --expect-fail -- /usr/local/sbin/pft-egress reapply --container "$C"; r $? "control without AF_NETLINK fails"
+echo "=== negatives under the tuned profile"
+sudo bash drill/probe.sh "$P" --expect-fail -- /bin/sh -c 'touch /etc/ug-probe-write'; r $? "write to /etc blocked (ProtectSystem=strict)"
+sudo bash drill/probe.sh "$P" --expect-fail -- /bin/bash -c 'exec 3<>/dev/tcp/127.0.0.1/5005'; r $? "AF_INET socket blocked (RestrictAddressFamilies)"
+sudo bash drill/probe.sh "$P" --expect-fail -- /bin/sh -c 'ls /root'; r $? "/root hidden (ProtectHome)"
+sudo rm -rf "$S" /tmp/ug-egress-probe.conf /tmp/ug-egress-ctl.conf; sudo rm -f /etc/ug-probe-write
+echo "=== after"
+rules_after="$(sudo iptables -S PFT-EGRESS | sha256sum | cut -c1-16)"; echo "live PFT-EGRESS rules sha $rules_after"
+[ "$rules_before" = "$rules_after" ]; r $? "live chain rules identical before/after"
+sudo pft-egress check --container "$C" >/dev/null; r $? "pft-egress check PASS after probes"
+echo "PROBES RESULT: $([ $fails = 0 ] && echo PASS || echo "FAIL ($fails)")"; [ $fails = 0 ]
+$ bash probe-egress.sh postfiatd
+tool sha256 fadc7034332bc89a6bdcec0ac05a68a17683d95e5ee20919682fb0a55cac27b9  profile sha256 3cdf28e754ca97cae2296662472abda1fc81cad990f60e69fd22eff999b7ee7b
+  [PASS] chain PFT-EGRESS matches the applied snapshot (4 rules)
+  [PASS] exactly one jump, at DOCKER-USER position 1
+RESULT: PASS
+live PFT-EGRESS rules sha 75526c00c7ac71ca
+=== probe 1: real reapply, no drift, tuned profile (live state dir)
+probe profile: pft-egress-reapply@.service.conf (26 properties) sha256 3cdf28e754ca97ca
+probe command: /usr/local/sbin/pft-egress reapply --container postfiatd
+probe exit 0
+PROBE PASS
+  [PASS] no-drift reapply exits 0 under the profile
+=== probe 2: forced drift (scratch state, saved live_rules altered) -> reload of the same policy, tuned profile
+probe profile: ug-egress-probe.conf (28 properties) sha256 f1ef762a2068e20e
+probe command: /usr/local/sbin/pft-egress reapply --container postfiatd
+[2026-10-27T04:10:24Z] reapply: drift found (chain changed, jump missing/moved/duplicated, or container IP now 172.18.0.2) - reloading
+[2026-10-27T04:10:24Z] reapply: done
+probe exit 0
+PROBE PASS
+  [PASS] forced-drift reload exits 0 under the profile
+  [PASS] scratch state rewritten with the live rules (ug-probe-drift line gone)
+scratch state mode after reload: 644 (UMask=0077)
+=== probe 3: control = tuned profile minus AF_NETLINK, forced drift (must fail visibly, live chain untouched)
+probe profile: ug-egress-ctl.conf (28 properties) sha256 4b9f6d20fc313e7b
+probe command: /usr/local/sbin/pft-egress reapply --container postfiatd
+[2026-10-27T04:10:25Z] reapply: drift found (chain changed, jump missing/moved/duplicated, or container IP now 172.18.0.2) - reloading
+iptables-restore/1.8.7 Failed to initialize nft: Address family not supported by protocol
+Error: writing output failed: Broken pipe
+probe exit 1
+PROBE PASS (blocked as expected)
+  [PASS] control without AF_NETLINK fails
+=== negatives under the tuned profile
+probe profile: pft-egress-reapply@.service.conf (26 properties) sha256 3cdf28e754ca97ca
+probe command: /bin/sh -c touch /etc/ug-probe-write
+touch: cannot touch '/etc/ug-probe-write': Read-only file system
+probe exit 1
+PROBE PASS (blocked as expected)
+  [PASS] write to /etc blocked (ProtectSystem=strict)
+probe profile: pft-egress-reapply@.service.conf (26 properties) sha256 3cdf28e754ca97ca
+probe command: /bin/bash -c exec 3<>/dev/tcp/127.0.0.1/5005
+/bin/bash: socket: Address family not supported by protocol
+/bin/bash: line 1: /dev/tcp/127.0.0.1/5005: Address family not supported by protocol
+probe exit 1
+PROBE PASS (blocked as expected)
+  [PASS] AF_INET socket blocked (RestrictAddressFamilies)
+probe profile: pft-egress-reapply@.service.conf (26 properties) sha256 3cdf28e754ca97ca
+probe command: /bin/sh -c ls /root
+ls: cannot open directory '/root': Permission denied
+probe exit 2
+PROBE PASS (blocked as expected)
+  [PASS] /root hidden (ProtectHome)
+=== after
+live PFT-EGRESS rules sha 75526c00c7ac71ca
+  [PASS] live chain rules identical before/after
+  [PASS] pft-egress check PASS after probes
+PROBES RESULT: PASS
+exit 0

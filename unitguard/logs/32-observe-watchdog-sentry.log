@@ -1,0 +1,35 @@
+OS: Ubuntu 22.04.5 LTS | sentry-host | 2026-10-27T03:21:06Z
+$ cat sentry-32.sh
+#!/usr/bin/env bash
+# unitguard on sentry-host: observe live pft-watchdog timer runs under the applied 50-unitguard.conf (real config).
+# Run 31's loop counted exit-timestamp changes (2 per run: reset at start, set at exit); this one counts only
+# completed runs (non-zero InvocationID change after exit) and needs a newer last_good.ts within 3 runs.
+set -uo pipefail
+echo "drop-ins: $(ls /etc/systemd/system/pft-watchdog.service.d/)"
+lg0=$(sudo jq -r '.last_good.ts' /var/lib/pft-watchdog/state.json); echo "last_good.ts at start: $lg0"
+inv0=$(systemctl show -p InvocationID --value pft-watchdog); n=0; adv=no
+for _ in $(seq 1 80); do
+  sleep 3
+  [ "$(systemctl show -p ActiveState --value pft-watchdog)" = activating ] && continue
+  inv=$(systemctl show -p InvocationID --value pft-watchdog)
+  [ "$inv" = "$inv0" ] && continue
+  inv0=$inv; n=$((n+1))
+  lg=$(sudo jq -r '.last_good.ts' /var/lib/pft-watchdog/state.json)
+  echo "run $n: ExecMainStatus=$(systemctl show -p ExecMainStatus --value pft-watchdog) state=$(sudo jq -r .state /var/lib/pft-watchdog/state.json) last_good.ts=$lg old msgs in spool=$(sudo find /var/lib/pft-watchdog-spool -maxdepth 1 -name '*.msg' -mmin +2 | wc -l)"
+  sudo journalctl --utc -u pft-watchdog _SYSTEMD_INVOCATION_ID="$inv" --no-pager -o cat | grep 'state=' | tail -1
+  [ "$lg" -gt "$lg0" ] && adv=yes
+  [ "$n" -ge 3 ] && break
+done
+v=FAIL; [ "$n" -ge 2 ] && [ "$adv" = yes ] && v=PASS
+echo "summary: completed runs $n | last_good advanced: $adv | $v"
+$ ssh sentry-host bash -s < sentry-32.sh
+drop-ins: 50-unitguard.conf
+last_good.ts at start: 1793071170
+run 1: ExecMainStatus=0 state=OK last_good.ts=1793071235 old msgs in spool=0
+2026-10-27T03:21:37Z state=OK prev=OK good=1 bad=0 maint=false notified=none | heartbeat age 62s, lag 3s
+run 2: ExecMainStatus=0 state=OK last_good.ts=1793071298 old msgs in spool=0
+2026-10-27T03:22:38Z state=OK prev=OK good=1 bad=0 maint=false notified=none | heartbeat age 60s, lag 5s
+run 3: ExecMainStatus=0 state=OK last_good.ts=1793071360 old msgs in spool=0
+2026-10-27T03:23:38Z state=OK prev=OK good=1 bad=0 maint=false notified=none | heartbeat age 58s, lag 0s
+summary: completed runs 3 | last_good advanced: yes | PASS
+exit 0

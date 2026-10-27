@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Fake systemctl for pft-unitguard tests. State in $STUB_DIR: units (one per line, "name type [remain]"; remain =
+# RemainAfterExit=yes: such a unit is already active, so `start` runs nothing, like real systemd),
+# fail-with-dropin (units that fail while their unitguard drop-in exists), restarts-with-dropin, calls.log.
+set -u
+S="$STUB_DIR"; echo "systemctl $*" >> "$S/calls.log"
+dropin() { local t; t="$(sed -E 's/@[^.]+\.service$/@.service/' <<<"$1")"; [ -f "$DROPIN_ROOT/$t.d/50-unitguard.conf" ]; }
+listed() { grep -q "^$1 " "$S/units"; }
+utype() { awk -v u="$1" '$1==u {print $2}' "$S/units"; }
+remain() { awk -v u="$1" '$1==u && $3=="remain" {f=1} END {exit !f}' "$S/units"; }
+fails() { dropin "$1" && grep -qx "$1" "$S/fail-with-dropin" 2>/dev/null; }
+case "$1" in
+  cat) listed "$2" || listed "$(sed -E 's/@\.service$/@x.service/' <<<"$2")" ;;
+  daemon-reload) echo reload >> "$S/reloads" ;;
+  start|restart) [ "$1" = start ] && remain "$2" && exit 0
+    fails "$2" && echo failed > "$S/$2.result" || echo success > "$S/$2.result" ;;
+  is-active) fails "$2" && { echo failed; exit 3; }; echo active ;;
+  list-units) pat="${*: -1}"; pat="${pat%\*.service}"; awk -v p="$pat" 'index($1,p)==1 {print $1" loaded active running x"}' "$S/units" ;;
+  show)
+    p="$3"; u="$5"
+    case "$p" in
+      Type) t="$(utype "$u")"; echo "${t:-oneshot}" ;;
+      Result) cat "$S/$u.result" 2>/dev/null || echo success ;;
+      ExecMainStatus) [ "$(cat "$S/$u.result" 2>/dev/null)" = failed ] && echo 1 || echo 0 ;;
+      NRestarts) n=0; dropin "$u" && grep -qx "$u" "$S/restarts-with-dropin" 2>/dev/null && { n=$(( $(cat "$S/$u.nr" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$S/$u.nr"; }; echo "$n" ;;
+      RemainAfterExit) remain "$u" && echo yes || echo no ;;
+      DynamicUser) echo no ;;
+      User) echo "" ;;
+      ExecStart) echo "{ path=$S/bin/tool ; argv[]=tool ; }" ;;
+    esac ;;
+esac
+exit 0

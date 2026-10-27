@@ -1,0 +1,39 @@
+OS: Ubuntu 22.04.5 LTS | validator-host | 2026-10-27T01:16:58Z | pft-unitguard.sh sha256 6359d6987b1ebfac2173af0a544d70e090137311f03ef3fbdf710d6b843c2e54 | rollback-drill.sh sha256 6a2ec19f6177aa5f74c20ac2ede3a5f1ca1db9ac71bb98d1112ae2223cd6cbc8
+$ sudo bash drill/rollback-drill.sh pft-logship-vacuum.service
+broken profile: pft-logship-vacuum.service.conf with sed '/^\(User\|Group\)=/d' (diff vs the real profile):
+5,6d4
+< User=systemd-journal-remote
+< Group=systemd-journal-remote
+working drop-in sha256 before: 1ea3b048cbfe6349c384f4b702a77540f0f639e84b39380b0cca441065d1ee42
+pft-logship-vacuum.service               0.5    SAFE     5      systemd-journal-remote standard 5.0    yes   OK
+$ PROFILE_DIR=<tmp broken copy> pft-unitguard.sh apply pft-logship-vacuum.service
+[2026-10-27T01:16:58Z] APPLY pft-logship-vacuum.service class=standard target<=5.0 -> /etc/systemd/system/pft-logship-vacuum.service.d/50-unitguard.conf
+[2026-10-27T01:16:58Z]   exposure before: 9.6
+[2026-10-27T01:16:59Z]   run pft-logship-vacuum.service (oneshot): Result=exit-code ExecMainStatus=1
+[2026-10-27T01:16:59Z] FAIL pft-logship-vacuum.service under the profile -> automatic rollback
+[2026-10-27T01:16:59Z]   restored previous /etc/systemd/system/pft-logship-vacuum.service.d/50-unitguard.conf
+[2026-10-27T01:17:01Z]   run pft-logship-vacuum.service (oneshot): Result=success ExecMainStatus=0
+[2026-10-27T01:17:01Z] ROLLED-BACK pft-logship-vacuum.service (runs again without the profile) exposure: 0.5 SAFE 5
+apply exit 1
+working drop-in sha256 after:  1ea3b048cbfe6349c384f4b702a77540f0f639e84b39380b0cca441065d1ee42
+PASS apply refused the broken profile (exit 1)
+PASS working drop-in restored byte-identical
+PASS no broken directives left in the drop-in
+PASS unit re-run after rollback ends Result=success
+PASS no leftover .prev backup
+$ pft-unitguard.sh audit --units pft-logship-vacuum
+UNIT                                     EXPOS  RATING   FAILED USER      CLASS    TARGET DROPIN VERDICT
+pft-logship-vacuum.service               0.5    SAFE     5      systemd-journal-remote standard 5.0    yes   OK
+PASS audit after: drop-in installed and meets its target (exit 0)
+RESULT: PASS
+exit 0
+$ sudo journalctl --utc -u pft-logship-vacuum.service --since -2min -o short-iso
+2026-10-27T01:16:59+0000 validator-host systemd[1]: Starting pft-logship: cap received peer journals...
+2026-10-27T01:16:59+0000 validator-host journalctl[2379538]: No journal files were opened due to insufficient permissions.
+2026-10-27T01:16:59+0000 validator-host systemd[1]: pft-logship-vacuum.service: Main process exited, code=exited, status=1/FAILURE
+2026-10-27T01:16:59+0000 validator-host systemd[1]: pft-logship-vacuum.service: Failed with result 'exit-code'.
+2026-10-27T01:16:59+0000 validator-host systemd[1]: Failed to start pft-logship: cap received peer journals.
+2026-10-27T01:17:00+0000 validator-host systemd[1]: Starting pft-logship: cap received peer journals...
+2026-10-27T01:17:00+0000 validator-host journalctl[2379607]: Vacuuming done, freed 0B of archived journals from /var/log/journal/remote.
+2026-10-27T01:17:00+0000 validator-host systemd[1]: pft-logship-vacuum.service: Deactivated successfully.
+2026-10-27T01:17:00+0000 validator-host systemd[1]: Finished pft-logship: cap received peer journals.

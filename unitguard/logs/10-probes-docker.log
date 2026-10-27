@@ -1,0 +1,105 @@
+OS: Ubuntu 22.04.5 LTS | validator-host | 2026-10-27T01:09:33Z | probe.sh sha256 52dcba6321f99a0d
+$ sudo bash drill/probe.sh profiles/pft-retention-sample.service.conf -- /usr/local/bin/pft-retention sample
+probe profile: pft-retention-sample.service.conf (25 properties) sha256 34224763c085e9e2
+probe command: /usr/local/bin/pft-retention sample
+WARNING: Error loading config file: open /root/.docker/config.json: permission denied
+WARNING: Error loading config file: open /root/.docker/config.json: permission denied
+WARNING: Error loading config file: open /root/.docker/config.json: permission denied
+WARNING: Error loading config file: open /root/.docker/config.json: permission denied
+WARNING: Error loading config file: open /root/.docker/config.json: permission denied
+WARNING: Error loading config file: open /root/.docker/config.json: permission denied
+WARNING: Error loading config file: open /root/.docker/config.json: permission denied
+1793063374,2026-10-27T01:09:34Z,full,7514139,7513217,7514139,13580911,5282928,82809757696,103865303040,postfiatdb.942d+postfiatdb.ca67
+probe exit 0
+PROBE PASS
+$ check (pft-retention-sample): t="$(tail -1 /var/lib/pft-retention/samples.csv | cut -d, -f1)"; [ $(( $(date +%s) - t )) -lt 120 ]
+check exit 0
+$ sudo bash drill/probe.sh profiles/pft-logship-check.service.conf -- /usr/local/sbin/pft-logship check --textfile
+probe profile: pft-logship-check.service.conf (25 properties) sha256 dbea240251d4ee55
+probe command: /usr/local/sbin/pft-logship check --textfile
+pft-logship check - 2026-10-27T01:09:35Z - validator-host -> sentry-host (max lag 120s)
+unit: systemd-journal-upload.service active
+unit: systemd-journal-remote.socket active
+unit: pft-logship-vacuum.timer active
+unit: pft-logship-check.timer active
+bridge: pft-logship-dockerlog@postfiatd active, newest postfiatd journal entry 1s old
+cert: host.crt chains to ca.crt, matches host.key, valid > 24h
+tls: mutual-TLS handshake with sentry-host journal-remote ok (HTTP 406)
+send: lag: 0s (last uploaded entry 2026-10-27T01:09:35Z, max 120 s)
+receive: newest entry from sentry-host is 0s old
+RESULT: PASS -> exit 0
+probe exit 0
+PROBE PASS
+$ check (pft-logship-check): f=/var/lib/pft-exporter/textfile/pft_logship.prom; [ $(( $(date +%s) - $(stat -c %Y $f) )) -lt 120 ] && grep -qx "pft_logship_up 1" $f
+check exit 0
+$ sudo bash drill/probe.sh profiles/pft-divergence.service.conf -- /usr/local/bin/pft-divergence
+probe profile: pft-divergence.service.conf (25 properties) sha256 055d0ee5b6437c93
+probe command: /usr/local/bin/pft-divergence
+retry sentry server_info 1/3 in 2s: no answer
+retry sentry server_info 2/3 in 5s: no answer
+retry sentry server_info 3/3 in 10s: no answer
+giving up sentry server_info after 4 attempts: no answer
+2026-10-27T01:09:57Z UNKNOWN tip=7514140 deep=7513940 retries=3 validator=AGREE sentry=UNKNOWN(server_info: no answer) public=AGREE
+probe exit 1
+PROBE FAIL
+$ check (pft-divergence): f=/var/lib/pft-exporter/textfile/pft_divergence.prom; [ $(( $(date +%s) - $(stat -c %Y $f) )) -lt 300 ] && grep -qx "pft_divergence_overall_state 0" $f
+check exit 1
+$ sudo bash drill/probe.sh profiles/pft-backup.service.conf -- /usr/local/sbin/pft-backup.sh
+probe profile: pft-backup.service.conf (26 properties) sha256 e557cba9cf61fa75
+probe command: /usr/local/sbin/pft-backup.sh
+[2026-10-27T01:09:57Z] OS: Ubuntu 22.04.5 LTS
+[2026-10-27T01:09:57Z] collecting node config from container 'postfiatd'
+[2026-10-27T01:09:57Z]   + /etc/postfiatd/validators.txt (container)
+[2026-10-27T01:09:57Z]   + /etc/postfiatd/postfiatd.cfg (container, stripped sections: none present)
+[2026-10-27T01:09:57Z] collecting compose files from /opt/postfiatd
+[2026-10-27T01:09:57Z]   + /opt/postfiatd/docker-compose.yml
+[2026-10-27T01:09:57Z]   + /opt/postfiatd/.env
+[2026-10-27T01:09:57Z] collecting add-on systemd units and helper scripts
+[2026-10-27T01:09:57Z]   + /etc/systemd/system/postfiat-monitor.service
+[2026-10-27T01:09:57Z]   + /etc/systemd/system/postfiat-monitor.timer
+[2026-10-27T01:09:57Z]   + /etc/systemd/system/postfiat-docker-user.service
+[2026-10-27T01:09:57Z]   + /etc/systemd/system/pft-exporter.service
+[2026-10-27T01:09:57Z]   + /usr/local/bin/postfiat-health
+[2026-10-27T01:09:57Z]   + /usr/local/bin/postfiat-monitor
+[2026-10-27T01:09:57Z]   + /usr/local/sbin/postfiat-docker-user.sh
+[2026-10-27T01:09:57Z]   + /opt/pft-exporter/pft_exporter.py
+[2026-10-27T01:09:57Z]   - /etc/postfiat-monitor.env (secret, excluded)
+[2026-10-27T01:09:57Z] collecting firewall rules
+[2026-10-27T01:09:57Z]   + /etc/ufw/user.rules
+[2026-10-27T01:09:57Z]   + /etc/ufw/user6.rules
+[2026-10-27T01:09:58Z]   + ufw status verbose
+[2026-10-27T01:09:58Z] manifest: 17 files
+[2026-10-27T01:09:58Z] archive: /var/backups/postfiat/pft-backup-20261027T010957Z.tar.gz (28427 bytes)
+[2026-10-27T01:09:58Z] sha256 : 35b74401ef361588f4bfaf1278d80535dc5fd776832750d447e8a5295321a79d
+[2026-10-27T01:09:58Z] retention: keep newest 14
+[2026-10-27T01:09:58Z] retention: 11 kept, 0 pruned
+[2026-10-27T01:09:58Z] done
+probe exit 0
+PROBE PASS
+$ check (pft-backup): cd /var/backups/postfiat && f="$(ls -t pft-backup-*.tar.gz | head -1)" && [ $(( $(date +%s) - $(stat -c %Y "$f") )) -lt 600 ] && sha256sum -c "$f.sha256" && tar -tzf "$f" >/dev/null
+check exit 0
+=== 2026-10-27T01:10:09Z restore: the failed probe wrote overall_state UNKNOWN to the live textfile -> re-run the real (unsandboxed) unit now
+$ sudo systemctl start pft-divergence.service
+exit 0
+pft_divergence_overall_state 0
+=== debug: ssh leg alone under the same profile
+$ sudo bash drill/probe.sh profiles/pft-divergence.service.conf -- runuser -u <agent-user> -- ssh -v -o BatchMode=yes relay true
+probe profile: pft-divergence.service.conf (25 properties) sha256 055d0ee5b6437c93
+probe command: runuser -u <agent-user> -- ssh -v -o BatchMode=yes relay true
+runuser: cannot open session: Permission denied
+probe exit 1
+PROBE FAIL
+=== 2026-10-27T01:10:35Z fix: divergence profile keeps @resources + CAP_SYS_RESOURCE CAP_SYS_NICE for runuser's pam_limits (journal: pam_limits 'Could not set limit ... Operation not permitted')
+$ sudo bash drill/probe.sh profiles/pft-divergence.service.conf -- runuser -u <agent-user> -- ssh -o BatchMode=yes relay true
+probe profile: pft-divergence.service.conf (25 properties) sha256 1887e69a4e75df2e
+probe command: runuser -u <agent-user> -- ssh -o BatchMode=yes relay true
+probe exit 0
+PROBE PASS
+$ sudo bash drill/probe.sh profiles/pft-divergence.service.conf -- /usr/local/bin/pft-divergence
+probe profile: pft-divergence.service.conf (25 properties) sha256 1887e69a4e75df2e
+probe command: /usr/local/bin/pft-divergence
+2026-10-27T01:10:44Z AGREE tip=7514160 deep=7513960 retries=0 validator=AGREE sentry=AGREE public=AGREE hash=F0668736DEBE194F
+probe exit 0
+PROBE PASS
+$ check (pft-divergence): f=/var/lib/pft-exporter/textfile/pft_divergence.prom; [ $(( $(date +%s) - $(stat -c %Y $f) )) -lt 300 ] && grep -qx "pft_divergence_overall_state 0" $f
+check exit 0

@@ -1,0 +1,140 @@
+OS: Ubuntu 22.04.5 LTS | validator-host | 2026-10-27T04:11:51Z
+$ cat apply-egress.sh
+#!/usr/bin/env bash
+# unitguard apply of pft-egress-reapply@CONTAINER with the fixed check (run 36's check unescaped the instance name),
+# plus a control that the check command itself fails when the unit Result does not match. Run from the unitguard dir.
+set -uo pipefail
+C="${1:?container}"; U="pft-egress-reapply@$C.service"; P=profiles/pft-egress-reapply@.service.conf
+echo "tool sha256 $(sha256sum pft-unitguard.sh | cut -d' ' -f1)  profile sha256 $(sha256sum "$P" | cut -d' ' -f1)"
+c="$(sed -n 's/^#@ check: //p' "$P")"
+echo "=== check-command control: same command with Result compared to a value it never has (must exit non-zero)"
+sudo bash -c "${c//= success/= nosuchresult}"; rc=$?; echo "control exit $rc -> $([ $rc != 0 ] && echo PASS || echo FAIL)"
+echo "\$ sudo bash pft-unitguard.sh apply $U"
+sudo bash pft-unitguard.sh apply "$U"; ra=$?; echo "exit $ra"
+echo "\$ sudo pft-egress check --container $C"; sudo pft-egress check --container "$C"
+echo "\$ sudo bash pft-unitguard.sh audit --detail"; sudo bash pft-unitguard.sh audit --detail; echo "exit $?"
+echo "\$ sudo cat /etc/systemd/system/pft-egress-reapply@.service.d/50-unitguard.conf | sha256sum; profile directives sha256"
+sudo cat /etc/systemd/system/pft-egress-reapply@.service.d/50-unitguard.conf | sha256sum | cut -c1-64
+grep -v '^#@' "$P" | sha256sum | cut -c1-64
+[ $rc != 0 ] && [ $ra = 0 ] && echo "APPLY RESULT: PASS" || { echo "APPLY RESULT: FAIL"; exit 1; }
+$ bash apply-egress.sh postfiatd
+tool sha256 fadc7034332bc89a6bdcec0ac05a68a17683d95e5ee20919682fb0a55cac27b9  profile sha256 a16c4ecfdc3bf556afa65fdf60f974e8bf20aad2f3be377d6a03676760e41a11
+=== check-command control: same command with Result compared to a value it never has (must exit non-zero)
+control exit 1 -> PASS
+$ sudo bash pft-unitguard.sh apply pft-egress-reapply@postfiatd.service
+[2026-10-27T04:11:51Z] APPLY pft-egress-reapply@postfiatd.service class=iptables target<=<before -> /etc/systemd/system/pft-egress-reapply@.service.d/50-unitguard.conf
+[2026-10-27T04:11:51Z]   exposure before: 9.6
+[2026-10-27T04:11:53Z]   run pft-egress-reapply@postfiatd.service (oneshot): Result=success ExecMainStatus=0
+[2026-10-27T04:11:53Z]   check: u=$(systemctl list-units --all --plain --no-legend 'pft-egress-reapply@*.service' | awk '{print $1}' | head -1); c=${u#pft-egress-reapply@}; c=${c%.service}; test "$(systemctl show -p Result --value "$u")" = success && pft-egress check --container "$c" >/dev/null
+[2026-10-27T04:11:54Z]   check exit 0
+[2026-10-27T04:11:54Z] PASS pft-egress-reapply@postfiatd.service exposure now: 1.9 OK 13
+exit 0
+$ sudo pft-egress check --container postfiatd
+pft-egress check postfiatd - 2026-10-27T04:11:54Z
+  [PASS] state file present
+  [PASS] chain PFT-EGRESS matches the applied snapshot (4 rules)
+  [PASS] container IP unchanged since apply
+  [PASS] exactly one jump, at DOCKER-USER position 1
+  [PASS] reapply timer enabled
+  [INFO] default-deny DROP counter: 0 pkts 0 bytes
+  [INFO] drop log lines in the last hour: 0
+  [PASS] server_state full
+  [PASS] peers 11 >= baseline 11
+RESULT: PASS
+$ sudo bash pft-unitguard.sh audit --detail
+UNIT                                     EXPOS  RATING   FAILED USER      CLASS    TARGET DROPIN VERDICT
+pft-backup.service                       2.0    OK       12     root      docker   <before yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_(CHOWN|FSETID|SETFCAP) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) DeviceAllow= IPAddressDeny= PrivateUsers= ProtectProc= 
+    missing: SystemCallFilter=~@privileged RootDirectory=/RootImage= RestrictAddressFamilies=~AF_UNIX ProcSubset=
+pft-divergence.service                   2.6    OK       18     root      docker   <before yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_SET(UID|GID|PCAP) 
+    missing: RestrictAddressFamilies=~AF_(INET|INET6) DeviceAllow= IPAddressDeny= PrivateUsers= ProtectHome= ProtectProc= 
+    missing: SystemCallFilter=~@privileged SystemCallFilter=~@resources CapabilityBoundingSet=~CAP_AUDIT_* 
+    missing: CapabilityBoundingSet=~CAP_SYS_(NICE|RESOURCE) RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= UMask= 
+    missing: RestrictAddressFamilies=~AF_UNIX ProcSubset=
+pft-egress-reapply@postfiatd.service     1.9    OK       13     root      iptables <before yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_NET_ADMIN DeviceAllow= IPAddressDeny= PrivateUsers= 
+    missing: ProtectProc= SystemCallFilter=~@privileged CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) 
+    missing: RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= RestrictAddressFamilies=~AF_UNIX ProcSubset=
+pft-exporter.service                     1.1    OK       6      dynamic   standard 5.0    yes   OK
+    missing: PrivateNetwork= RestrictAddressFamilies=~AF_(INET|INET6) DeviceAllow= IPAddressDeny= PrivateUsers= 
+    missing: RootDirectory=/RootImage=
+pft-heartbeat.service                    1.6    OK       8      root      standard 5.0    yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= RestrictAddressFamilies=~AF_(INET|INET6) DeviceAllow= IPAddressDeny= 
+    missing: PrivateUsers= RootDirectory=/RootImage= RestrictAddressFamilies=~AF_UNIX
+pft-integrity.service                    2.4    OK       15     root      iptables <before yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) CapabilityBoundingSet=~CAP_NET_ADMIN DeviceAllow= 
+    missing: IPAddressDeny= PrivateUsers= ProtectProc= SystemCallFilter=~@privileged 
+    missing: CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) RestrictAddressFamilies=~AF_NETLINK 
+    missing: RootDirectory=/RootImage= RestrictAddressFamilies=~AF_UNIX ProcSubset=
+pft-logship-check.service                2.1    OK       13     root      docker   <before yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) DeviceAllow= IPAddressDeny= PrivateUsers= ProtectProc= 
+    missing: SystemCallFilter=~@privileged RootDirectory=/RootImage= UMask= RestrictAddressFamilies=~AF_UNIX ProcSubset=
+pft-logship-dockerlog@postfiatd.service  9.6    UNSAFE   74     root      docker   <before no    not-applied
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_SET(UID|GID|PCAP) 
+    missing: CapabilityBoundingSet=~CAP_SYS_ADMIN CapabilityBoundingSet=~CAP_SYS_PTRACE RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: RestrictNamespaces=~CLONE_NEWUSER RestrictAddressFamilies=~… CapabilityBoundingSet=~CAP_(CHOWN|FSETID|SETFCAP) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) CapabilityBoundingSet=~CAP_NET_ADMIN 
+    missing: CapabilityBoundingSet=~CAP_SYS_MODULE CapabilityBoundingSet=~CAP_SYS_RAWIO CapabilityBoundingSet=~CAP_SYS_TIME 
+    missing: DeviceAllow= IPAddressDeny= NoNewPrivileges= PrivateDevices= PrivateMounts= PrivateTmp= PrivateUsers= ProtectClock= 
+    missing: ProtectControlGroups= ProtectHome= ProtectKernelLogs= ProtectKernelModules= ProtectKernelTunables= ProtectProc= 
+    missing: ProtectSystem= RestrictAddressFamilies=~AF_PACKET RestrictSUIDSGID= SystemCallArchitectures= 
+    missing: SystemCallFilter=~@clock SystemCallFilter=~@debug SystemCallFilter=~@module SystemCallFilter=~@mount 
+    missing: SystemCallFilter=~@raw-io SystemCallFilter=~@reboot SystemCallFilter=~@swap SystemCallFilter=~@privileged 
+    missing: SystemCallFilter=~@resources CapabilityBoundingSet=~CAP_AUDIT_* CapabilityBoundingSet=~CAP_KILL 
+    missing: CapabilityBoundingSet=~CAP_MKNOD CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) 
+    missing: CapabilityBoundingSet=~CAP_SYSLOG CapabilityBoundingSet=~CAP_SYS_(NICE|RESOURCE) 
+    missing: RestrictNamespaces=~CLONE_NEWCGROUP RestrictNamespaces=~CLONE_NEWIPC RestrictNamespaces=~CLONE_NEWNET 
+    missing: RestrictNamespaces=~CLONE_NEWNS RestrictNamespaces=~CLONE_NEWPID RestrictRealtime= SystemCallFilter=~@cpu-emulation 
+    missing: SystemCallFilter=~@obsolete RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= 
+    missing: CapabilityBoundingSet=~CAP_MAC_* CapabilityBoundingSet=~CAP_SYS_BOOT LockPersonality= MemoryDenyWriteExecute= 
+    missing: RestrictNamespaces=~CLONE_NEWUTS UMask= CapabilityBoundingSet=~CAP_LINUX_IMMUTABLE 
+    missing: CapabilityBoundingSet=~CAP_IPC_LOCK CapabilityBoundingSet=~CAP_SYS_CHROOT ProtectHostname= 
+    missing: CapabilityBoundingSet=~CAP_BLOCK_SUSPEND CapabilityBoundingSet=~CAP_LEASE CapabilityBoundingSet=~CAP_SYS_PACCT 
+    missing: CapabilityBoundingSet=~CAP_SYS_TTY_CONFIG CapabilityBoundingSet=~CAP_WAKE_ALARM RestrictAddressFamilies=~AF_UNIX 
+    missing: ProcSubset=
+pft-logship-vacuum.service               0.5    SAFE     5      systemd-journal-remote standard 5.0    yes   OK
+    missing: DeviceAllow= IPAddressDeny= PrivateUsers= RootDirectory=/RootImage= RestrictAddressFamilies=~AF_UNIX
+pft-maint-tick.service                   1.6    OK       9      root      standard 5.0    yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= RestrictAddressFamilies=~AF_(INET|INET6) DeviceAllow= IPAddressDeny= 
+    missing: PrivateUsers= RootDirectory=/RootImage= UMask= RestrictAddressFamilies=~AF_UNIX
+pft-retention-sample.service             1.6    OK       11     root      docker   <before yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= DeviceAllow= IPAddressDeny= PrivateUsers= ProtectProc= 
+    missing: SystemCallFilter=~@privileged RootDirectory=/RootImage= UMask= RestrictAddressFamilies=~AF_UNIX ProcSubset=
+postfiat-docker-user.service             9.6    UNSAFE   74     root      iptables <before no    not-applied
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_SET(UID|GID|PCAP) 
+    missing: CapabilityBoundingSet=~CAP_SYS_ADMIN CapabilityBoundingSet=~CAP_SYS_PTRACE RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: RestrictNamespaces=~CLONE_NEWUSER RestrictAddressFamilies=~… CapabilityBoundingSet=~CAP_(CHOWN|FSETID|SETFCAP) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) CapabilityBoundingSet=~CAP_NET_ADMIN 
+    missing: CapabilityBoundingSet=~CAP_SYS_MODULE CapabilityBoundingSet=~CAP_SYS_RAWIO CapabilityBoundingSet=~CAP_SYS_TIME 
+    missing: DeviceAllow= IPAddressDeny= NoNewPrivileges= PrivateDevices= PrivateMounts= PrivateTmp= PrivateUsers= ProtectClock= 
+    missing: ProtectControlGroups= ProtectHome= ProtectKernelLogs= ProtectKernelModules= ProtectKernelTunables= ProtectProc= 
+    missing: ProtectSystem= RestrictAddressFamilies=~AF_PACKET RestrictSUIDSGID= SystemCallArchitectures= 
+    missing: SystemCallFilter=~@clock SystemCallFilter=~@debug SystemCallFilter=~@module SystemCallFilter=~@mount 
+    missing: SystemCallFilter=~@raw-io SystemCallFilter=~@reboot SystemCallFilter=~@swap SystemCallFilter=~@privileged 
+    missing: SystemCallFilter=~@resources CapabilityBoundingSet=~CAP_AUDIT_* CapabilityBoundingSet=~CAP_KILL 
+    missing: CapabilityBoundingSet=~CAP_MKNOD CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) 
+    missing: CapabilityBoundingSet=~CAP_SYSLOG CapabilityBoundingSet=~CAP_SYS_(NICE|RESOURCE) 
+    missing: RestrictNamespaces=~CLONE_NEWCGROUP RestrictNamespaces=~CLONE_NEWIPC RestrictNamespaces=~CLONE_NEWNET 
+    missing: RestrictNamespaces=~CLONE_NEWNS RestrictNamespaces=~CLONE_NEWPID RestrictRealtime= SystemCallFilter=~@cpu-emulation 
+    missing: SystemCallFilter=~@obsolete RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= 
+    missing: CapabilityBoundingSet=~CAP_MAC_* CapabilityBoundingSet=~CAP_SYS_BOOT LockPersonality= MemoryDenyWriteExecute= 
+    missing: RestrictNamespaces=~CLONE_NEWUTS UMask= CapabilityBoundingSet=~CAP_LINUX_IMMUTABLE 
+    missing: CapabilityBoundingSet=~CAP_IPC_LOCK CapabilityBoundingSet=~CAP_SYS_CHROOT ProtectHostname= 
+    missing: CapabilityBoundingSet=~CAP_BLOCK_SUSPEND CapabilityBoundingSet=~CAP_LEASE CapabilityBoundingSet=~CAP_SYS_PACCT 
+    missing: CapabilityBoundingSet=~CAP_SYS_TTY_CONFIG CapabilityBoundingSet=~CAP_WAKE_ALARM RestrictAddressFamilies=~AF_UNIX 
+    missing: ProcSubset=
+postfiat-monitor.service                 2.2    OK       15     root      iptables <before yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= RestrictAddressFamilies=~AF_(INET|INET6) CapabilityBoundingSet=~CAP_NET_ADMIN 
+    missing: DeviceAllow= IPAddressDeny= PrivateUsers= ProtectProc= SystemCallFilter=~@privileged 
+    missing: CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) RestrictAddressFamilies=~AF_NETLINK 
+    missing: RootDirectory=/RootImage= MemoryDenyWriteExecute= RestrictAddressFamilies=~AF_UNIX ProcSubset=
+exit 0
+$ sudo cat /etc/systemd/system/pft-egress-reapply@.service.d/50-unitguard.conf | sha256sum; profile directives sha256
+7bff7faff0ab7dc0293fb8765929844a26c4ce45f603b7e6a45d4e2571636f61
+642747219eda749cc642294350383525622c749fe795bb8e1ef20aab324ab12b
+APPLY RESULT: PASS
+exit 0

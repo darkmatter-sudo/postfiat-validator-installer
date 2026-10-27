@@ -1,0 +1,62 @@
+OS: Ubuntu 22.04.5 LTS | validator-host | 2026-10-27T03:11:57Z | pft-unitguard.sh sha256 fadc7034332bc89a6bdcec0ac05a68a17683d95e5ee20919682fb0a55cac27b9
+$ cat apply-26.sh
+#!/usr/bin/env bash
+# unitguard live apply on validator-host: pft-maint-tick (standard) and pft-integrity (iptables class)
+set -uo pipefail
+cd "$(dirname "$0")/../postfiat-validator-installer/unitguard" || exit 3
+G=/etc/systemd/system/pft-integrity.service.d/99-ugdrill.conf
+echo "=== pre: maint window state (tick sends ntfy only for an expired local window)"
+sudo pft-maint status 2>&1 | head -1
+echo '$ sudo bash pft-unitguard.sh apply pft-maint-tick'
+sudo bash pft-unitguard.sh apply pft-maint-tick; r1=$?; echo "exit $r1"
+echo "=== drill guard: temporary drop-in 99-ugdrill.conf sets NTFY_OUTBOX (integrity alerts go to a file, never ntfy) for the apply"
+sudo install -d -m 755 "$(dirname "$G")"
+printf '[Service]\nEnvironment=NTFY_OUTBOX=/var/lib/pft-integrity/ugdrill-outbox\n' | sudo tee "$G" >/dev/null
+sudo systemctl daemon-reload
+echo '$ sudo bash pft-unitguard.sh apply pft-integrity'
+sudo bash pft-unitguard.sh apply pft-integrity; r2=$?; echo "exit $r2"
+sudo rm -f "$G"; sudo systemctl daemon-reload
+echo "=== drill guard removed"
+echo "outbox lines during apply: $(sudo cat /var/lib/pft-integrity/ugdrill-outbox 2>/dev/null | grep -c .)"
+sudo rm -f /var/lib/pft-integrity/ugdrill-outbox
+echo "drop-ins now: $(ls /etc/systemd/system/pft-integrity.service.d/) | $(ls /etc/systemd/system/pft-maint-tick.service.d/)"
+echo '$ sudo systemctl start pft-integrity (real config, guard removed)'
+sudo systemctl start pft-integrity
+echo "Result=$(systemctl show -p Result --value pft-integrity) ExecMainStatus=$(systemctl show -p ExecMainStatus --value pft-integrity)"
+sudo journalctl --utc -u pft-integrity -n 30 --no-pager -o cat | grep -E '^RESULT|^ntfy' | tail -2
+echo "=== next timer-driven pft-maint-tick run under the drop-in"
+t0=$(systemctl show -p ExecMainExitTimestampMonotonic --value pft-maint-tick)
+for _ in $(seq 1 15); do sleep 5; t1=$(systemctl show -p ExecMainExitTimestampMonotonic --value pft-maint-tick); [ "$t1" != "$t0" ] && break; done
+echo "timer run seen: $([ "$t1" != "$t0" ] && echo yes || echo no) Result=$(systemctl show -p Result --value pft-maint-tick) ExecMainStatus=$(systemctl show -p ExecMainStatus --value pft-maint-tick)"
+echo "=== summary: maint-tick apply exit $r1 | integrity apply exit $r2"
+$ bash apply-26.sh
+=== pre: maint window state (tick sends ntfy only for an expired local window)
+no maintenance window (alerting is live)
+$ sudo bash pft-unitguard.sh apply pft-maint-tick
+[2026-10-27T03:11:58Z] APPLY pft-maint-tick.service class=standard target<=5.0 -> /etc/systemd/system/pft-maint-tick.service.d/50-unitguard.conf
+[2026-10-27T03:11:58Z]   exposure before: 9.6
+[2026-10-27T03:11:59Z]   run pft-maint-tick.service (oneshot): Result=success ExecMainStatus=0
+[2026-10-27T03:11:59Z]   check: test "$(systemctl show -p Result --value pft-maint-tick.service)" = success && test "$(systemctl show -p ExecMainStatus --value pft-maint-tick.service)" = 0
+[2026-10-27T03:11:59Z]   check exit 0
+[2026-10-27T03:11:59Z] PASS pft-maint-tick.service exposure now: 1.6 OK 9
+exit 0
+=== drill guard: temporary drop-in 99-ugdrill.conf sets NTFY_OUTBOX (integrity alerts go to a file, never ntfy) for the apply
+$ sudo bash pft-unitguard.sh apply pft-integrity
+[2026-10-27T03:12:00Z] APPLY pft-integrity.service class=iptables target<=<before -> /etc/systemd/system/pft-integrity.service.d/50-unitguard.conf
+[2026-10-27T03:12:00Z]   exposure before: 9.6
+[2026-10-27T03:12:14Z]   run pft-integrity.service (oneshot): Result=success ExecMainStatus=0
+[2026-10-27T03:12:14Z]   check: test "$(systemctl show -p Result --value pft-integrity.service)" = success && test "$(systemctl show -p ExecMainStatus --value pft-integrity.service)" = 0
+[2026-10-27T03:12:14Z]   check exit 0
+[2026-10-27T03:12:14Z] PASS pft-integrity.service exposure now: 2.4 OK 15
+exit 0
+=== drill guard removed
+outbox lines during apply: 0
+drop-ins now: 50-unitguard.conf | 50-unitguard.conf
+$ sudo systemctl start pft-integrity (real config, guard removed)
+Result=success ExecMainStatus=0
+RESULT: PASS - 59 unchanged, 0 warn, 0 fail -> exit 0
+ntfy: findings unchanged since last run (PASS) - not sent
+=== next timer-driven pft-maint-tick run under the drop-in
+timer run seen: yes Result=success ExecMainStatus=0
+=== summary: maint-tick apply exit 0 | integrity apply exit 0
+exit 0

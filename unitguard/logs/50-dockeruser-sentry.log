@@ -1,0 +1,111 @@
+$ cat dockeruser-49.sh  (copied to the sentry, run from the synced unitguard copy)
+#!/usr/bin/env bash
+# unitguard postfiat-docker-user (iptables class) on one host: probes on a scratch chain, then live apply.
+# Usage: bash dockeruser-49.sh UNITGUARD_DIR LABEL
+# Probes never touch DOCKER-USER: the real script is copied with DOCKER-USER renamed to UG-PROBE (unreferenced chain).
+set -uo pipefail
+cd "${1:?dir}" || exit 3
+echo "OS: $(grep -oP '^PRETTY_NAME="\K[^"]+' /etc/os-release) | ${2:?label} | $(date -u +%FT%TZ)"
+echo "tool sha256 $(sha256sum pft-unitguard.sh | cut -d' ' -f1) profile sha256 $(sha256sum profiles/postfiat-docker-user.service.conf | cut -d' ' -f1)"
+echo "real script sha256 $(sha256sum /usr/local/sbin/postfiat-docker-user.sh | cut -d' ' -f1)"
+P=profiles/postfiat-docker-user.service.conf
+D=/run/ug-probe
+sudo install -d -m 700 "$D"
+sed 's/DOCKER-USER/UG-PROBE/g' /usr/local/sbin/postfiat-docker-user.sh | sudo tee "$D/du.sh" >/dev/null; sudo chmod 700 "$D/du.sh"
+echo "=== probe 1: real script logic (scratch chain UG-PROBE) under the profile"
+sudo bash drill/probe.sh "$P" -- /bin/bash "$D/du.sh"; p1=$?
+exp=$(sudo iptables -S DOCKER-USER | grep -v -- '-j PFT-EGRESS' | sed 's/DOCKER-USER/UG-PROBE/g')
+got=$(sudo iptables -S UG-PROBE)
+if [ "$exp" = "$got" ]; then echo "scratch chain == live DOCKER-USER rules (minus egress jump): MATCH"; m1=0
+else echo "scratch chain MISMATCH"; diff <(echo "$exp") <(echo "$got"); m1=1; fi
+echo "=== probe 2 (control, must fail): same script under the profile without AF_NETLINK"
+grep -v '^RestrictAddressFamilies=' "$P" | sudo tee "$D/ctl.conf" >/dev/null; echo 'RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6' | sudo tee -a "$D/ctl.conf" >/dev/null
+sudo bash drill/probe.sh "$D/ctl.conf" --expect-fail -- /bin/bash "$D/du.sh" 2>&1 | tail -4; p2=${PIPESTATUS[0]}
+echo "=== probe 3: module autoload under ProtectKernelModules (xt_time not loaded before)"
+lsmod | grep -q '^xt_time ' && echo "xt_time already loaded (probe not meaningful)" || echo "xt_time loaded before: no"
+sudo bash drill/probe.sh "$P" -- /bin/sh -c 'iptables -N UG-PROBE2 && iptables -A UG-PROBE2 -m time --timestart 00:00 --timestop 23:59 -j RETURN && iptables -S UG-PROBE2'; p3=$?
+if lsmod | grep -q '^xt_time '; then echo "xt_time loaded after: yes"; else echo "xt_time loaded after: no"; p3=1; fi
+sudo iptables -F UG-PROBE2 2>/dev/null; sudo iptables -X UG-PROBE2 2>/dev/null; sudo modprobe -r xt_time 2>/dev/null; echo "cleanup: UG-PROBE2 removed, xt_time unloaded: $(lsmod | grep -q '^xt_time ' && echo no || echo yes)"
+echo "=== probe 4 (negative): write to /etc blocked under the profile"
+sudo bash drill/probe.sh "$P" --expect-fail -- /bin/sh -c 'touch /etc/ug-probe-write'; p4=$?
+sudo iptables -F UG-PROBE; sudo iptables -X UG-PROBE; sudo rm -rf "$D"
+echo "cleanup: UG-PROBE removed ($(sudo iptables -S UG-PROBE >/dev/null 2>&1 && echo still-there || echo gone))"
+echo "probes: p1=$p1 match=$m1 control=$p2 autoload=$p3 neg=$p4"
+if [ "$p1$m1$p2$p3$p4" != 00000 ]; then echo "probe failed - no apply"; exit 1; fi
+echo "=== pre-apply DOCKER-USER"; sudo iptables -S DOCKER-USER
+echo '$ sudo bash pft-unitguard.sh apply postfiat-docker-user'
+sudo bash pft-unitguard.sh apply postfiat-docker-user; r=$?; echo "exit $r"
+echo "=== post-apply DOCKER-USER"; sudo iptables -S DOCKER-USER
+echo "drop-ins: $(ls /etc/systemd/system/postfiat-docker-user.service.d/ 2>/dev/null)"
+echo "Result=$(systemctl show -p Result --value postfiat-docker-user) ActiveState=$(systemctl show -p ActiveState --value postfiat-docker-user)"
+sudo postfiat-health 2>&1 | grep -E 'rate limit|RESULT'
+sudo pft-integrity verify 2>&1 | grep '^RESULT'
+echo "=== check control (must fail): the profile check with one expected rule changed (--limit 99/second, not in the chain)"
+chk=$(sed -n 's/^#@ check: //p' "$P" | head -1 | sed 's#--limit 100/second#--limit 99/second#')
+sudo bash -c "$chk"; cc=$?
+if [ "$cc" -ne 0 ]; then echo "check control exit $cc: FAILS as expected"; else echo "check control exit 0: CHECK IS BLIND"; r=1; fi
+echo "=== summary: apply exit $r"
+$ ssh relay bash /tmp/dockeruser-49.sh /tmp/ug sentry-host
+OS: Ubuntu 22.04.5 LTS | sentry-host | 2026-10-27T05:10:44Z
+tool sha256 cd40833d1cfc0c9fc3f8c483bd95fc71f1e72be339b838691a57830e17de47f6 profile sha256 d704995e6778cd9269d3c274c010ac2e9d2b175b665528ab0806d1b4ee1ad243
+real script sha256 b60cf6474e3d53b2a55f77cb4035767d33d324d8fab51288fba828dde39acdca
+=== probe 1: real script logic (scratch chain UG-PROBE) under the profile
+probe profile: postfiat-docker-user.service.conf (26 properties) sha256 d704995e6778cd92
+probe command: /bin/bash /run/ug-probe/du.sh
+probe exit 0
+PROBE PASS
+scratch chain == live DOCKER-USER rules (minus egress jump): MATCH
+=== probe 2 (control, must fail): same script under the profile without AF_NETLINK
+probe command: /bin/bash /run/ug-probe/du.sh
+iptables/1.8.7 Failed to initialize nft: Address family not supported by protocol
+probe exit 1
+PROBE PASS (blocked as expected)
+=== probe 3: module autoload under ProtectKernelModules (xt_time not loaded before)
+xt_time loaded before: no
+probe profile: postfiat-docker-user.service.conf (26 properties) sha256 d704995e6778cd92
+probe command: /bin/sh -c iptables -N UG-PROBE2 && iptables -A UG-PROBE2 -m time --timestart 00:00 --timestop 23:59 -j RETURN && iptables -S UG-PROBE2
+-N UG-PROBE2
+-A UG-PROBE2 -m time --timestart 00:00:00 --timestop 23:59:00 --datestop 2038-01-19T03:14:07 -j RETURN
+probe exit 0
+PROBE PASS
+xt_time loaded after: yes
+cleanup: UG-PROBE2 removed, xt_time unloaded: yes
+=== probe 4 (negative): write to /etc blocked under the profile
+probe profile: postfiat-docker-user.service.conf (26 properties) sha256 d704995e6778cd92
+probe command: /bin/sh -c touch /etc/ug-probe-write
+probe exit 1
+PROBE PASS (blocked as expected)
+touch: cannot touch '/etc/ug-probe-write': Read-only file system
+cleanup: UG-PROBE removed (gone)
+probes: p1=0 match=0 control=0 autoload=0 neg=0
+=== pre-apply DOCKER-USER
+-N DOCKER-USER
+-A DOCKER-USER -s 172.17.0.2/32 -i docker0 ! -o docker0 -m comment --comment "pft-egress:postfiatd-sentry" -j PFT-EGRESS
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state RELATED,ESTABLISHED -j ACCEPT
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m connlimit --connlimit-above 50 --connlimit-mask 32 --connlimit-saddr -j DROP
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -m limit --limit 100/sec --limit-burst 50 -j ACCEPT
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -j DROP
+-A DOCKER-USER -j RETURN
+$ sudo bash pft-unitguard.sh apply postfiat-docker-user
+[2026-10-27T05:10:46Z] APPLY postfiat-docker-user.service class=iptables target<=<before -> /etc/systemd/system/postfiat-docker-user.service.d/50-unitguard.conf
+[2026-10-27T05:10:46Z]   exposure before: 9.6
+[2026-10-27T05:10:46Z]   run postfiat-docker-user.service (oneshot, restart): Result=success ExecMainStatus=0
+[2026-10-27T05:10:46Z]   check: test "$(systemctl show -p Result --value postfiat-docker-user)" = success && iptables -C DOCKER-USER -p tcp --dport 2559 -m state --state ESTABLISHED,RELATED -j ACCEPT >/dev/null && iptables -C DOCKER-USER -p tcp --dport 2559 -m connlimit --connlimit-above 50 -j DROP >/dev/null && iptables -C DOCKER-USER -p tcp --dport 2559 -m state --state NEW -m limit --limit 100/second --limit-burst 50 -j ACCEPT >/dev/null && iptables -C DOCKER-USER -p tcp --dport 2559 -m state --state NEW -j DROP >/dev/null && iptables -C DOCKER-USER -j RETURN >/dev/null && for u in $(systemctl list-units --all --plain --no-legend 'pft-egress-reapply@*.service' | awk '{print $1}'); do c=${u#pft-egress-reapply@}; c=${c%.service}; systemctl restart "$u" && pft-egress check --container "$c" >/dev/null || exit 1; done
+[2026-10-27T05:10:48Z]   check exit 0
+[2026-10-27T05:10:48Z] PASS postfiat-docker-user.service exposure now: 1.9 OK 13
+exit 0
+=== post-apply DOCKER-USER
+-N DOCKER-USER
+-A DOCKER-USER -s 172.17.0.2/32 -i docker0 ! -o docker0 -m comment --comment "pft-egress:postfiatd-sentry" -j PFT-EGRESS
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state RELATED,ESTABLISHED -j ACCEPT
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m connlimit --connlimit-above 50 --connlimit-mask 32 --connlimit-saddr -j DROP
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -m limit --limit 100/sec --limit-burst 50 -j ACCEPT
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -j DROP
+-A DOCKER-USER -j RETURN
+drop-ins: 50-unitguard.conf
+Result=success ActiveState=active
+RESULT: PASS - 35 unchanged, 0 warn, 0 fail -> exit 0
+=== check control (must fail): the profile check with one expected rule changed (--limit 99/second, not in the chain)
+check control exit 1: FAILS as expected
+=== summary: apply exit 0
+iptables: Bad rule (does a matching rule exist in that chain?).

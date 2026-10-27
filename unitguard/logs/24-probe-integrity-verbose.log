@@ -1,0 +1,42 @@
+OS: Ubuntu 22.04.5 LTS | validator-host | 2026-10-27T03:11:08Z
+$ cat probe-24.sh
+#!/usr/bin/env bash
+# unitguard: show that pft-integrity's Docker Hub registry check really runs inside the iptables-class profile
+# (registry "unknown" is skipped by design, so a blocked curl would still read PASS without this check)
+set -uo pipefail
+cd "$(dirname "$0")/../postfiat-validator-installer/unitguard" || exit 3
+SI=/var/lib/ug-probe-integrity
+sudo rm -rf "$SI"; sudo install -d -m 700 "$SI"; sudo cp -p /var/lib/pft-integrity/manifest.tsv /var/lib/pft-integrity/last-notify "$SI/"
+cp profiles/pft-integrity.service.conf /tmp/ug-int-probe.conf
+printf '%s\n' "Environment=STATE_DIR=$SI NTFY_OUTBOX=$SI/outbox" "ReadWritePaths=$SI" >> /tmp/ug-int-probe.conf
+# shellcheck disable=SC2024  # output file belongs to the caller on purpose
+sudo bash drill/probe.sh /tmp/ug-int-probe.conf -- /usr/local/bin/pft-integrity verify --verbose > /tmp/ug-int-v.out 2>&1; r=$?
+grep -E '^probe|^RESULT|image:|fw:|sshd:effective|cfgvol' /tmp/ug-int-v.out | head -30
+reg="$(grep -E 'image:registry' /tmp/ug-int-v.out)"
+echo "registry line: $reg"
+v=FAIL; [ "$r" = 0 ] && grep -q 'matches_local' <<<"$reg" && ! grep -q unknown <<<"$reg" && grep -q '^RESULT: PASS' /tmp/ug-int-v.out && v=PASS
+echo "sandboxed registry check reached Docker Hub (not unknown): $v"
+sudo rm -rf "$SI" /tmp/ug-int-probe.conf
+$ bash probe-24.sh
+probe profile: ug-int-probe.conf (28 properties) sha256 cb43244e81e04340
+probe command: /usr/local/bin/pft-integrity verify --verbose
+  [PASS] cfgvol:postfiatd.cfg                         unchanged 
+  [PASS] cfgvol:postfiatd.cfg.pre-fixed               unchanged 
+  [PASS] cfgvol:postfiatd.cfg.pre-sentry              unchanged 
+  [PASS] cfgvol:validators.txt                        unchanged 
+  [PASS] fw:docker-user                               unchanged 
+  [PASS] fw:ufw                                       unchanged 
+  [PASS] image:local:agtipft/postfiatd:testnet-light-latest unchanged 
+  [PASS] image:local:pft-exporter:latest              unchanged 
+  [PASS] image:local:prom/alertmanager:v0.28.1        unchanged 
+  [PASS] image:local:prom/prometheus:v3.5.0           unchanged 
+  [PASS] image:local:python:3.12-alpine               unchanged 
+  [PASS] image:local:python:3.12-slim                 unchanged 
+  [PASS] image:registry                               unchanged 
+  [PASS] image:running                                unchanged 
+  [PASS] sshd:effective                               unchanged 
+RESULT: PASS - 59 unchanged, 0 warn, 0 fail -> exit 0
+probe exit 0
+registry line:   [PASS] image:registry                               unchanged 
+sandboxed registry check reached Docker Hub (not unknown): FAIL
+exit 0

@@ -1,0 +1,84 @@
+OS: Ubuntu 22.04.5 LTS | validator-host | 2026-10-27T03:10:22Z | profiles sha256: pft-maint-tick.service.conf=01cd6c344c03ed9e pft-integrity.service.conf=7ede62378635a3bc 
+$ cat probe-23.sh
+#!/usr/bin/env bash
+# unitguard probes for pft-maint-tick (standard) and pft-integrity (iptables class) - scratch state, no ntfy to the operator
+set -uo pipefail
+cd "$(dirname "$0")/../postfiat-validator-installer/unitguard" || exit 3
+T="ugdrill-$(openssl rand -hex 6)"   # throwaway ntfy topic for this run only
+SM=/var/lib/ug-probe-maint SI=/var/lib/ug-probe-integrity
+mk_profile() { # base out extra-lines...
+  local b="$1" o="$2"; shift 2; cp "$b" "$o"; printf '%s\n' "$@" >> "$o"; }
+echo "=== 1. pft-maint-tick: real tick under the profile (no window open -> exit 0, takes the lock in /var/lib/pft-maint)"
+sudo pft-maint status 2>&1 | head -3
+sudo bash drill/probe.sh profiles/pft-maint-tick.service.conf -- /usr/local/bin/pft-maint tick; r1=$?
+echo "=== 2. pft-maint-tick: expired window in scratch MAINT_DIR, ntfy.env -> throwaway topic; tick must archive it and send exactly one [MAINT] end"
+sudo rm -rf "$SM"; sudo install -d -m 755 "$SM" "$SM/locks"; sudo install -d -m 700 "$SM/conf"
+now=$(date -u +%s)
+printf '{"v":1,"id":"m%s-ugprobe","reason":"unitguard probe","start":%s,"expiry":%s,"host":"validator-host","origin":"local"}\n' \
+  $((now-600)) $((now-600)) $((now-60)) | sudo tee "$SM/flag.json" >/dev/null; sudo chmod 644 "$SM/flag.json"
+printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' "$T" | sudo tee "$SM/conf/ntfy.env" >/dev/null; sudo chmod 600 "$SM/conf/ntfy.env"
+printf 'NODE_LABEL=validator-host\n' | sudo tee "$SM/conf/maint.conf" >/dev/null
+mk_profile profiles/pft-maint-tick.service.conf /tmp/ug-maint-probe.conf \
+  "Environment=MAINT_DIR=$SM CONF_DIR=$SM/conf WD_CONF_DIR=$SM/none" "ReadWritePaths=$SM"
+sudo bash drill/probe.sh /tmp/ug-maint-probe.conf -- /usr/local/bin/pft-maint tick; r2=$?
+echo "flag left: $(sudo test -e "$SM/flag.json" && echo yes || echo no)"
+echo "history: $(sudo tail -n 1 "$SM/history.jsonl" | jq -c '{id,how,note}')"
+sleep 3
+msgs="$(curl -fsS -m 15 "https://ntfy.sh/$T/json?poll=1" | jq -r 'select(.event=="message") | .title')"
+echo "throwaway topic messages: $(grep -c . <<<"$msgs")"; while IFS= read -r m; do echo "  title: $m"; done <<<"$msgs"
+c2=FAIL; [ "$r2" = 0 ] && ! sudo test -e "$SM/flag.json" && [ "$(grep -c . <<<"$msgs")" = 1 ] && grep -q '^\[MAINT\] end validator-host' <<<"$msgs" && c2=PASS
+echo "maint scratch close: $c2"
+echo "=== 3. pft-integrity verify --notify under the profile, scratch STATE_DIR copy, NTFY_OUTBOX (never ntfy)"
+sudo rm -rf "$SI"; sudo install -d -m 700 "$SI"; sudo cp -p /var/lib/pft-integrity/manifest.tsv /var/lib/pft-integrity/last-notify "$SI/"
+echo "--- control (no sandbox, same scratch state)"
+# shellcheck disable=SC2024  # output file belongs to the caller on purpose
+sudo env STATE_DIR="$SI" NTFY_OUTBOX="$SI/outbox" /usr/local/bin/pft-integrity verify --notify > /tmp/ug-int-control.out 2>&1; rc0=$?
+grep -E '^RESULT|^ntfy' /tmp/ug-int-control.out; echo "control exit $rc0"
+mk_profile profiles/pft-integrity.service.conf /tmp/ug-int-probe.conf \
+  "Environment=STATE_DIR=$SI NTFY_OUTBOX=$SI/outbox" "ReadWritePaths=$SI"
+echo "--- sandboxed"
+# shellcheck disable=SC2024
+sudo bash drill/probe.sh /tmp/ug-int-probe.conf -- /usr/local/bin/pft-integrity verify --notify > /tmp/ug-int-probe.out 2>&1; r3=$?
+grep -vE '^\s+PASS' /tmp/ug-int-probe.out | grep -vE '^$' | head -30
+echo "outbox lines: $(sudo cat "$SI/outbox" 2>/dev/null | grep -c .)"
+echo "=== summary"
+echo "maint real tick: $([ "$r1" = 0 ] && echo PASS || echo FAIL) | maint scratch close: $c2 | integrity sandboxed: $([ "$r3" = 0 ] && grep -q '^RESULT: PASS' /tmp/ug-int-probe.out && echo PASS || echo FAIL)"
+sudo rm -rf "$SM" "$SI" /tmp/ug-maint-probe.conf /tmp/ug-int-probe.conf
+$ bash probe-23.sh
+=== 1. pft-maint-tick: real tick under the profile (no window open -> exit 0, takes the lock in /var/lib/pft-maint)
+no maintenance window (alerting is live)
+data-collection locks held:
+  govern-24h 2026-10-27T16:20:00Z task_acfa883c govern 24h read-only collector window (no node restart)
+probe profile: pft-maint-tick.service.conf (27 properties) sha256 01cd6c344c03ed9e
+probe command: /usr/local/bin/pft-maint tick
+probe exit 0
+PROBE PASS
+=== 2. pft-maint-tick: expired window in scratch MAINT_DIR, ntfy.env -> throwaway topic; tick must archive it and send exactly one [MAINT] end
+probe profile: ug-maint-probe.conf (29 properties) sha256 628ee344eaffa8ec
+probe command: /usr/local/bin/pft-maint tick
+window expired and closed: suppressed watchdog=0 monitor=0 integrity=0
+probe exit 0
+PROBE PASS
+flag left: no
+history: {"id":"m1793070023-ugprobe","how":null,"note":"TTL reached"}
+throwaway topic messages: 1
+  title: [MAINT] end validator-host
+maint scratch close: PASS
+=== 3. pft-integrity verify --notify under the profile, scratch STATE_DIR copy, NTFY_OUTBOX (never ntfy)
+--- control (no sandbox, same scratch state)
+RESULT: PASS - 59 unchanged, 0 warn, 0 fail -> exit 0
+ntfy: findings unchanged since last run (PASS) - not sent
+control exit 0
+--- sandboxed
+probe profile: ug-int-probe.conf (28 properties) sha256 cb43244e81e04340
+probe command: /usr/local/bin/pft-integrity verify --notify
+pft-integrity verify - 2026-10-27T03:10:42Z
+OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-10-26T20:36:45Z
+RESULT: PASS - 59 unchanged, 0 warn, 0 fail -> exit 0
+ntfy: findings unchanged since last run (PASS) - not sent
+probe exit 0
+PROBE PASS
+outbox lines: 0
+=== summary
+maint real tick: PASS | maint scratch close: PASS | integrity sandboxed: PASS
+exit 0

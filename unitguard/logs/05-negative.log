@@ -1,0 +1,136 @@
+OS: Ubuntu 22.04.5 LTS | validator-host | 2026-10-27T00:15:36Z
+8e94236f2f47260cd55aa754c33318facb12843ddd8beb44749d2583337a44ba  drill/negative.sh
+52dcba6321f99a0d7ba068e6caa36eea3cfec95704f8b25f52507c4207f7f06c  drill/probe.sh
+dbc70408951ec39067fcbbdb74960cc353e9c5559e69918b8e8eb5c812fa1163  profiles/pft-logship-vacuum.service.conf
+e26812cfc4eaaf7c44978a5fb15e43e933514a181d09fc9e61f01d69147956d5  profiles/pft-exporter.service.conf
+22f9cc8e4a679263e34959b8877eeca1c9c785bba3093bd6537c0eea879be075  profiles/pft-heartbeat.service.conf
+e4f64162da21e0cb5ef5f0af4fd7f423a8d019c7a38b0ebf4c8a8a71e1d66efb  profiles/pft-integrity.service.conf
+$ cat drill/negative.sh
+#!/usr/bin/env bash
+# Negative sandbox proofs: for several profiles, an action the profile must block is run in a transient unit with
+# the profile's properties (probe.sh --expect-fail), and the same action is run with NO properties as a positive
+# control (must succeed), so "blocked" cannot come from a broken command. Read-only apart from one probe file
+# /etc/unitguard-probe.tmp that the unsandboxed control creates and removes. Network probes only open a TCP
+# connection to this host's own ports: 127.0.0.1:5005 (admin RPC) and the docker0 address :2559 (peer port).
+# Usage: sudo bash negative.sh DIR   (DIR holds profiles/ and drill/probe.sh)
+set -uo pipefail
+d="$1"; P="$d/drill/probe.sh"; pass=0; fail=0
+run_mode() { # PROFILE MODE CMD...
+  local prof="$1" mode="$2"; shift 2
+  case "$mode" in
+    block) bash "$P" "$d/profiles/$prof" --expect-fail -- "$@" ;;
+    allow) bash "$P" "$d/profiles/$prof" -- "$@" ;;
+    *) bash "$P" /dev/null -- "$@" ;;
+  esac
+}
+step() { # NAME PROFILE MODE EXPECT -- CMD...   EXPECT: text the output must contain ("-" = none), so a negative
+  local n="$1" prof="$2" mode="$3" want="$4" out rc; shift 5  # fails for the reason it claims
+  echo "--- $n"
+  out="$(run_mode "$prof" "$mode" "$@" 2>&1)"; rc=$?
+  echo "$out"
+  if [ "$rc" -eq 0 ] && { [ "$want" = - ] || grep -qF -- "$want" <<<"$out"; }; then pass=$((pass+1)); echo "STEP PASS $n"
+  else fail=$((fail+1)); echo "STEP FAIL $n (rc $rc, wanted: $want)"; fi
+}
+W='touch /etc/unitguard-probe.tmp && rm -f /etc/unitguard-probe.tmp'
+D="$(ip -4 -o addr show docker0 | awk '{print $4}' | cut -d/ -f1)"
+T="timeout 5 bash -c 'exec 3<>/dev/tcp/$D/2559'"
+L="timeout 5 bash -c 'exec 3<>/dev/tcp/127.0.0.1/5005'"
+H='ls /root/.profile'
+step "control: /etc write without sandbox succeeds" none control - -- bash -c "$W"
+step "logship-vacuum: /etc write blocked (ProtectSystem=strict)" pft-logship-vacuum.service.conf block "Read-only file system" -- bash -c "$W"
+step "control: TCP to 127.0.0.1:5005 without sandbox succeeds" none control - -- bash -c "$L"
+step "logship-vacuum: TCP to 127.0.0.1:5005 blocked (PrivateNetwork + AF_UNIX only)" pft-logship-vacuum.service.conf block "Address family not supported" -- bash -c "$L"
+step "control: TCP to docker0:2559 without sandbox succeeds" none control - -- bash -c "$T"
+step "exporter: TCP to 127.0.0.1:5005 allowed (same profile)" pft-exporter.service.conf allow - -- bash -c "$L"
+step "exporter: TCP to non-loopback docker0:2559 blocked (IPAddressDeny=any, IPAddressAllow=localhost)" pft-exporter.service.conf block "Operation not permitted" -- bash -c "$T"
+step "exporter: /etc write blocked" pft-exporter.service.conf block "Read-only file system" -- bash -c "$W"
+step "control: ls /root/.profile without sandbox succeeds" none control - -- bash -c "$H"
+step "heartbeat: /root unreadable (ProtectHome=yes)" pft-heartbeat.service.conf block "Permission denied" -- bash -c "$H"
+step "heartbeat: /etc write blocked" pft-heartbeat.service.conf block "Read-only file system" -- bash -c "$W"
+step "integrity (docker class, keeps caps): /root is an empty mount (ProtectHome=yes)" pft-integrity.service.conf block "No such file or directory" -- bash -c "$H"
+echo "NEGATIVE RESULT: $pass passed, $fail failed"
+[ "$fail" = 0 ]
+$ sudo bash drill/negative.sh .
+--- control: /etc write without sandbox succeeds
+probe profile: null (0 properties) sha256 e3b0c44298fc1c14
+probe command: bash -c touch /etc/unitguard-probe.tmp && rm -f /etc/unitguard-probe.tmp
+probe exit 0
+PROBE PASS
+STEP PASS control: /etc write without sandbox succeeds
+--- logship-vacuum: /etc write blocked (ProtectSystem=strict)
+probe profile: pft-logship-vacuum.service.conf (31 properties) sha256 dbc70408951ec390
+probe command: bash -c touch /etc/unitguard-probe.tmp && rm -f /etc/unitguard-probe.tmp
+touch: cannot touch '/etc/unitguard-probe.tmp': Read-only file system
+probe exit 1
+PROBE PASS (blocked as expected)
+STEP PASS logship-vacuum: /etc write blocked (ProtectSystem=strict)
+--- control: TCP to 127.0.0.1:5005 without sandbox succeeds
+probe profile: null (0 properties) sha256 e3b0c44298fc1c14
+probe command: bash -c timeout 5 bash -c 'exec 3<>/dev/tcp/127.0.0.1/5005'
+probe exit 0
+PROBE PASS
+STEP PASS control: TCP to 127.0.0.1:5005 without sandbox succeeds
+--- logship-vacuum: TCP to 127.0.0.1:5005 blocked (PrivateNetwork + AF_UNIX only)
+probe profile: pft-logship-vacuum.service.conf (31 properties) sha256 dbc70408951ec390
+probe command: bash -c timeout 5 bash -c 'exec 3<>/dev/tcp/127.0.0.1/5005'
+bash: socket: Address family not supported by protocol
+bash: line 1: /dev/tcp/127.0.0.1/5005: Address family not supported by protocol
+probe exit 1
+PROBE PASS (blocked as expected)
+STEP PASS logship-vacuum: TCP to 127.0.0.1:5005 blocked (PrivateNetwork + AF_UNIX only)
+--- control: TCP to docker0:2559 without sandbox succeeds
+probe profile: null (0 properties) sha256 e3b0c44298fc1c14
+probe command: bash -c timeout 5 bash -c 'exec 3<>/dev/tcp/172.17.0.1/2559'
+probe exit 0
+PROBE PASS
+STEP PASS control: TCP to docker0:2559 without sandbox succeeds
+--- exporter: TCP to 127.0.0.1:5005 allowed (same profile)
+probe profile: pft-exporter.service.conf (29 properties) sha256 e26812cfc4eaaf7c
+probe command: bash -c timeout 5 bash -c 'exec 3<>/dev/tcp/127.0.0.1/5005'
+probe exit 0
+PROBE PASS
+STEP PASS exporter: TCP to 127.0.0.1:5005 allowed (same profile)
+--- exporter: TCP to non-loopback docker0:2559 blocked (IPAddressDeny=any, IPAddressAllow=localhost)
+probe profile: pft-exporter.service.conf (29 properties) sha256 e26812cfc4eaaf7c
+probe command: bash -c timeout 5 bash -c 'exec 3<>/dev/tcp/172.17.0.1/2559'
+probe exit 124
+PROBE PASS (blocked as expected)
+STEP FAIL exporter: TCP to non-loopback docker0:2559 blocked (IPAddressDeny=any, IPAddressAllow=localhost) (rc 0, wanted: Operation not permitted)
+--- exporter: /etc write blocked
+probe profile: pft-exporter.service.conf (29 properties) sha256 e26812cfc4eaaf7c
+probe command: bash -c touch /etc/unitguard-probe.tmp && rm -f /etc/unitguard-probe.tmp
+touch: cannot touch '/etc/unitguard-probe.tmp': Read-only file system
+probe exit 1
+PROBE PASS (blocked as expected)
+STEP PASS exporter: /etc write blocked
+--- control: ls /root/.profile without sandbox succeeds
+probe profile: null (0 properties) sha256 e3b0c44298fc1c14
+probe command: bash -c ls /root/.profile
+/root/.profile
+probe exit 0
+PROBE PASS
+STEP PASS control: ls /root/.profile without sandbox succeeds
+--- heartbeat: /root unreadable (ProtectHome=yes)
+probe profile: pft-heartbeat.service.conf (28 properties) sha256 22f9cc8e4a679263
+probe command: bash -c ls /root/.profile
+ls: cannot access '/root/.profile': Permission denied
+probe exit 2
+PROBE PASS (blocked as expected)
+STEP PASS heartbeat: /root unreadable (ProtectHome=yes)
+--- heartbeat: /etc write blocked
+probe profile: pft-heartbeat.service.conf (28 properties) sha256 22f9cc8e4a679263
+probe command: bash -c touch /etc/unitguard-probe.tmp && rm -f /etc/unitguard-probe.tmp
+touch: cannot touch '/etc/unitguard-probe.tmp': Read-only file system
+probe exit 1
+PROBE PASS (blocked as expected)
+STEP PASS heartbeat: /etc write blocked
+--- integrity (docker class, keeps caps): /root is an empty mount (ProtectHome=yes)
+probe profile: pft-integrity.service.conf (15 properties) sha256 e4f64162da21e0cb
+probe command: bash -c ls /root/.profile
+ls: cannot access '/root/.profile': No such file or directory
+probe exit 2
+PROBE PASS (blocked as expected)
+STEP PASS integrity (docker class, keeps caps): /root is an empty mount (ProtectHome=yes)
+NEGATIVE RESULT: 11 passed, 1 failed
+exit 1
+no /etc/unitguard-probe.tmp left

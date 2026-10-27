@@ -1,0 +1,52 @@
+OS: Ubuntu 22.04.5 LTS | sentry-host | 2026-10-27T03:19:32Z
+$ cat sentry-31.sh
+#!/usr/bin/env bash
+# unitguard live apply on sentry-host: pft-watchdog (standard). A temporary 99-ugdrill.conf drop-in sets NTFY_OUTBOX
+# for the apply and the next two timer runs (alerts go to a file, never ntfy); then it is removed.
+set -uo pipefail
+cd /tmp/ug || exit 3
+G=/etc/systemd/system/pft-watchdog.service.d/99-ugdrill.conf O=/var/lib/pft-watchdog/ugdrill-outbox
+echo "tool sha256 $(sha256sum pft-unitguard.sh | cut -d' ' -f1) | profile sha256 $(sha256sum profiles/pft-watchdog.service.conf | cut -c1-16)"
+sudo install -d -m 755 "$(dirname "$G")"
+printf '[Service]\nEnvironment=NTFY_OUTBOX=%s\n' "$O" | sudo tee "$G" >/dev/null; sudo systemctl daemon-reload
+echo "=== drill guard 99-ugdrill.conf installed"
+echo '$ sudo bash pft-unitguard.sh apply pft-watchdog'
+sudo bash pft-unitguard.sh apply pft-watchdog; r=$?; echo "exit $r"
+echo "=== next two timer runs under the drop-in"
+lg0=$(sudo jq -r '.last_good.ts' /var/lib/pft-watchdog/state.json); n=0
+t0=$(systemctl show -p ExecMainExitTimestampMonotonic --value pft-watchdog)
+for _ in $(seq 1 60); do
+  sleep 5; t1=$(systemctl show -p ExecMainExitTimestampMonotonic --value pft-watchdog)
+  if [ "$t1" != "$t0" ]; then n=$((n+1)); t0=$t1
+    echo "timer run $n: ExecMainStatus=$(systemctl show -p ExecMainStatus --value pft-watchdog) $(sudo jq -c '{state, last_good_ts: .last_good.ts}' /var/lib/pft-watchdog/state.json) old msgs in spool: $(sudo find /var/lib/pft-watchdog-spool -maxdepth 1 -name '*.msg' -mmin +2 | wc -l)"
+    sudo journalctl --utc -u pft-watchdog -n 5 --no-pager -o cat | grep -E 'state=' | tail -1
+    [ "$n" -ge 2 ] && break
+  fi
+done
+lg1=$(sudo jq -r '.last_good.ts' /var/lib/pft-watchdog/state.json)
+sudo rm -f "$G"; sudo systemctl daemon-reload
+echo "=== drill guard removed; outbox lines: $(sudo cat "$O" 2>/dev/null | grep -c .)"; sudo rm -f "$O"
+echo "drop-ins now: $(ls /etc/systemd/system/pft-watchdog.service.d/)"
+v=FAIL; [ "$r" = 0 ] && [ "$n" -ge 2 ] && [ "$lg1" -gt "$lg0" ] && v=PASS
+echo "summary: apply exit $r | timer runs observed $n | last_good.ts $lg0 -> $lg1 | $v"
+$ ssh sentry-host bash -s < sentry-31.sh
+tool sha256 fadc7034332bc89a6bdcec0ac05a68a17683d95e5ee20919682fb0a55cac27b9 | profile sha256 a7b0145d35e0317f
+=== drill guard 99-ugdrill.conf installed
+$ sudo bash pft-unitguard.sh apply pft-watchdog
+[2026-10-27T03:19:34Z] APPLY pft-watchdog.service class=standard target<=5.0 -> /etc/systemd/system/pft-watchdog.service.d/50-unitguard.conf
+[2026-10-27T03:19:34Z]   exposure before: 9.6
+[2026-10-27T03:19:36Z]   run pft-watchdog.service (oneshot): Result=success ExecMainStatus=0
+[2026-10-27T03:19:36Z]   check: test "$(systemctl show -p ExecMainStatus --value pft-watchdog.service)" = 0 && pft-watchdog status | jq -e '.state == "OK"' >/dev/null && ! find /var/lib/pft-watchdog-spool -maxdepth 1 -name '*.msg' -mmin +2 | grep -q .
+[2026-10-27T03:19:36Z]   check exit 0
+[2026-10-27T03:19:36Z] PASS pft-watchdog.service exposure now: 1.8 OK 9
+exit 0
+=== next two timer runs under the drop-in
+timer run 1: ExecMainStatus=0 {"state":"OK","last_good_ts":1793071170} old msgs in spool: 0
+2026-10-27T03:20:36Z state=OK prev=OK good=0 bad=0 maint=false notified=none | heartbeat age 66s, lag 0s
+timer run 2: ExecMainStatus=0 {"state":"OK","last_good_ts":1793071170} old msgs in spool: 0
+2026-10-27T03:20:36Z state=OK prev=OK good=0 bad=0 maint=false notified=none | heartbeat age 66s, lag 0s
+=== drill guard removed; outbox lines: 0
+drop-ins now: 50-unitguard.conf
+summary: apply exit 0 | timer runs observed 2 | last_good.ts 1793071170 -> 1793071170 | FAIL
+exit 0
+# CHECKER BUG (annotated after the run): the observation loop counted ExecMainExitTimestampMonotonic changes, which change twice per run (reset to 0 at start, set at exit), so 'timer run 1' and '2' are the same 03:20:36 run (no new heartbeat in it: age 66 s). last_good.ts 1793071170 = the heartbeat consumed by the apply run under the new profile. Verdict FAIL is the checker's; re-observed with a fixed loop in run 32.

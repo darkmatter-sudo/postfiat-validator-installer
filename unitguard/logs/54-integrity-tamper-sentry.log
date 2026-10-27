@@ -1,0 +1,27 @@
+# -53 tamper section targeted pft-exporter (validator-only) and did nothing on the sentry; this re-runs only the tamper demo there
+$ cat integrity-54.sh
+#!/usr/bin/env bash
+# pft-integrity drop-in tamper demo only (integrity-52.sh hard-coded pft-exporter, which is not on the sentry). Usage: bash integrity-54.sh DROPIN LABEL
+set -uo pipefail
+F="${1:?dropin}" label="${2:?label}"
+B=/run/ug-int-tamper.bak
+echo "OS: $(grep -oP '^PRETTY_NAME="\K[^"]+' /etc/os-release) | $label | $(date -u +%FT%TZ)"
+[ -f "$F" ] || { echo "no such drop-in: $F"; exit 3; }
+sudo pft-integrity verify 2>&1 | grep "^RESULT"
+echo "=== tamper demo on $F (sha256 $(sha256sum "$F" | cut -c1-16)); no daemon-reload, unit not affected"
+sudo cp -p "$F" "$B"
+echo '# tamper drill' | sudo tee -a "$F" >/dev/null
+sudo pft-integrity verify 2>&1 | grep -E 'dropin:|^RESULT'
+sudo cp -p "$B" "$F"; sudo rm -f "$B"
+echo "restored: sha256 $(sha256sum "$F" | cut -c1-16) mode $(stat -c %a "$F") owner $(stat -c %U "$F")"
+sudo pft-integrity verify 2>&1 | grep '^RESULT'
+echo "systemd sees no pending reload: NeedDaemonReload=$(systemctl show -p NeedDaemonReload --value "$(basename "$(dirname "$F")" .d)")"
+$ ssh relay bash /tmp/integrity-54.sh /etc/systemd/system/postfiat-docker-user.service.d/50-unitguard.conf sentry-host
+OS: Ubuntu 22.04.5 LTS | sentry-host | 2026-10-27T05:18:10Z
+RESULT: PASS - 44 unchanged, 0 warn, 0 fail -> exit 0
+=== tamper demo on /etc/systemd/system/postfiat-docker-user.service.d/50-unitguard.conf (sha256 e6488b630cb27b95); no daemon-reload, unit not affected
+  [FAIL] dropin:postfiat-docker-user.service.d/50-unitguard.conf changed  mtime, sha256
+RESULT: FAIL - 43 unchanged, 0 warn, 1 fail -> exit 2
+restored: sha256 e6488b630cb27b95 mode 644 owner root
+RESULT: PASS - 44 unchanged, 0 warn, 0 fail -> exit 0
+systemd sees no pending reload: NeedDaemonReload=no

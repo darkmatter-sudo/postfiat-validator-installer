@@ -1,0 +1,24 @@
+OS: Ubuntu 22.04.5 LTS | validator-host | 2026-10-27T02:09:54Z | pft-unitguard.sh sha256 fadc7034332bc89a6bdcec0ac05a68a17683d95e5ee20919682fb0a55cac27b9
+$ sudo bash pft-unitguard.sh apply pft-heartbeat
+[2026-10-27T02:09:54Z] APPLY pft-heartbeat.service class=standard target<=5.0 -> /etc/systemd/system/pft-heartbeat.service.d/50-unitguard.conf
+[2026-10-27T02:09:54Z]   exposure before: 9.6
+[2026-10-27T02:09:56Z]   run pft-heartbeat.service (oneshot): Result=success ExecMainStatus=0
+[2026-10-27T02:09:56Z]   check: test "$(systemctl show -p ExecMainStatus --value pft-heartbeat.service)" = 0
+[2026-10-27T02:09:56Z]   check exit 0
+[2026-10-27T02:09:56Z] PASS pft-heartbeat.service exposure now: 1.6 OK 8
+exit 0
+=== receipt on sentry-host watchdog spool (newest 2 entries: name, size; heartbeat ts in body)
+1793066996078738389.msg 192 "ts":1793066995
+1793066981863010824.msg 192 "ts":1793066981
+validator journal (last heartbeat-unit run under the drop-in):
+Hint: You are currently not seeing messages from other users and the system.
+      Users in groups 'adm', 'systemd-journal' can see all messages.
+      Pass -q to turn off this notice.
+  -- No entries --
+=== follow-up 2026-10-27T02:10:03Z: the journalctl above ran without sudo (no entries); re-run with sudo
+  2026-10-27T02:09:55+0000 systemd[1]: Starting pft-heartbeat: push a signed heartbeat to the watchdog host...
+  2026-10-27T02:09:56+0000 pft-heartbeat[2446680]: heartbeat sent: {"v":1,"node":"validator","ts":1793066995,"server_state":"full","validated_ledger":7515336,"peers":11,"build_version":"1.0.9"}
+  2026-10-27T02:09:56+0000 systemd[1]: pft-heartbeat.service: Deactivated successfully.
+  2026-10-27T02:09:56+0000 systemd[1]: Finished pft-heartbeat: push a signed heartbeat to the watchdog host.
+=== sentry-host watchdog state after its next tick (2026-10-27T02:10:12Z):
+{"state":"OK","last_good_ts":1793066995}

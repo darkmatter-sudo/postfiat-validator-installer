@@ -1,0 +1,55 @@
+OS: Ubuntu 22.04.5 LTS | 2026-10-27T00:11:07Z
+5ae1677e2e51f3ad0b823ea24df7a62f10f995001c672225830fc67f3975ccdf  pft-unitguard.sh
+e87eb1801700c4de143bd88e1b576b3f47073fe05856cc222127057718ce8e52  tests/test-unitguard.sh
+220836e7e926e33ca41484ff10431ff07d0b0a21116be4a99ccb0240e4df51dc  tests/mutants-unitguard.sh
+3f863d9739015fcd893942da4963cea49cb5e2187d2a9223e32a38f55a6e6f58  tests/stubs/systemctl
+7e124f3f2a696c12bedf58f238a1899424a42ef171870257ab0341c995eb830b  tests/stubs/systemd-analyze
+$ shellcheck pft-unitguard.sh drill/audit-host.sh tests/test-unitguard.sh tests/mutants-unitguard.sh tests/stubs/*
+shellcheck: clean (exit 0)
+$ bash tests/test-unitguard.sh
+PASS audit-before: rc 0, a not-applied at 9.6
+PASS audit-before: template instance listed
+PASS audit --detail lists missing checks
+PASS apply-a: rc 0 + PASS line
+PASS apply-a: drop-in content from profile, metadata stripped
+PASS apply-a: drop-in mode 0644, dir 0755
+PASS apply-a: daemon-reload before start
+PASS apply-a: before score recorded 9.6
+PASS audit-after: OK verdict
+PASS fail-unit: rc 1, rolled back, drop-in gone
+PASS fail-unit: unit re-run after rollback
+PASS fail-check: rc 1, check exit 7 logged, rolled back
+PASS fail-target: rc 1, misses target 5.0, rolled back
+PASS docker-lower: rc 0
+PASS docker-equal: rc 1 (not reduced)
+PASS daemon-restarts: rc 1, NRestarts change logged, rolled back
+PASS daemon-ok: restart used, rc 0
+PASS rollback: drop-in removed, rc 0
+PASS rollback: earlier drop-in restored byte-identical
+PASS skip: d left alone, others applied
+PASS template: drop-in on t@.service.d
+PASS perms: group-writable dir flagged
+PASS perms: world-writable parent dir of ExecStart binary flagged
+PASS usage: apply without unit -> 3
+PASS plan: unknown unit -> 3
+PASS plan: shows exception + drop-in
+PASS root: apply as non-root refused (4)
+RESULT: 27 passed, 0 failed
+exit 0
+$ bash tests/mutants-unitguard.sh
+MUTANT U1 no automatic rollback on failure: CAUGHT by 4 test(s): fail-unit;fail-check;fail-target;daemon-restarts
+MUTANT U2 no daemon-reload after writing the drop-in: CAUGHT by 1 test(s): apply-a
+MUTANT U3 functional check skipped: CAUGHT by 1 test(s): fail-check
+MUTANT U4 exposure target not enforced: CAUGHT by 2 test(s): fail-target;docker-equal
+MUTANT U5 parent dir not permission-checked: CAUGHT by 1 test(s): perms
+MUTANT U6 HOLD_UNITS/--skip ignored: CAUGHT by 1 test(s): skip
+MUTANT U7 docker/iptables target accepts an unchanged score: CAUGHT by 1 test(s): docker-equal
+MUTANT U8 earlier foreign drop-in not backed up: CAUGHT by 1 test(s): rollback
+MUTANT U9 profile metadata copied into the drop-in: CAUGHT by 1 test(s): apply-a
+MUTANT U10 oneshot Result not checked: CAUGHT by 2 test(s): fail-unit;fail-unit
+MUTANT U11 NRestarts change not checked: CAUGHT by 1 test(s): daemon-restarts
+MUTANT U12 drop-in written group-writable: CAUGHT by 2 test(s): apply-a;audit-after
+MUTANT U13 unit not re-run after rollback: CAUGHT by 1 test(s): fail-unit
+MUTANT U14 root check bypassed: CAUGHT by 1 test(s): root
+mutants not caught/invalid: 0
+exit 0

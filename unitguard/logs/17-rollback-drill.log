@@ -1,0 +1,80 @@
+OS: Ubuntu 22.04.5 LTS | validator-host | 2026-10-27T01:20:43Z | pft-unitguard.sh sha256 fadc7034332bc89a6bdcec0ac05a68a17683d95e5ee20919682fb0a55cac27b9 | rollback-drill.sh sha256 3c79e7e205085e5b16f847859ce580fc2e530ba99a409594d187e2457957fc55
+$ cat drill/rollback-drill.sh
+#!/usr/bin/env bash
+# Live auto-rollback drill: re-apply UNIT with a deliberately broken copy of its profile over the working unitguard
+# drop-in, and prove pft-unitguard puts the working drop-in back (byte-identical) and the unit runs again.
+# Default break: drop the User=/Group= lines (the mistake probe run 1 caught for pft-logship-vacuum: root with an
+# empty CapabilityBoundingSet cannot read the 0640 journal files, so the unit fails).
+# Usage: sudo bash drill/rollback-drill.sh [UNIT (pft-logship-vacuum.service)] [SED_BREAK ('/^\(User\|Group\)=/d')]
+# Exit 0 = every assertion PASS. Needs the working drop-in already applied. Changes nothing on success.
+# assert expressions are single-quoted on purpose (eval'd later); arc is read inside one of them.
+# shellcheck disable=SC2016,SC2034
+set -uo pipefail
+HERE="$(cd "$(dirname "$0")/.." && pwd)"
+U="${1:-pft-logship-vacuum.service}"
+BREAK="${2:-/^\(User\|Group\)=/d}"
+DP="/etc/systemd/system/$U.d/50-unitguard.conf"
+fails=0
+assert() { if eval "$2"; then echo "PASS $1"; else echo "FAIL $1"; fails=$((fails + 1)); fi; }
+[ -f "$DP" ] || { echo "no working drop-in at $DP - apply first"; exit 3; }
+W="$(mktemp -d)"; trap 'rm -rf "$W"' EXIT
+cp "$HERE/profiles/$U.conf" "$W/"
+sed -i "$BREAK" "$W/$U.conf"
+echo "broken profile: $U.conf with sed '$BREAK' (diff vs the real profile):"
+diff "$HERE/profiles/$U.conf" "$W/$U.conf"
+before="$(sha256sum "$DP" | cut -d' ' -f1)"
+echo "working drop-in sha256 before: $before"
+bash "$HERE/pft-unitguard.sh" audit --units "${U%.service}" | tail -1
+echo "\$ PROFILE_DIR=<tmp broken copy> pft-unitguard.sh apply $U"
+PROFILE_DIR="$W" bash "$HERE/pft-unitguard.sh" apply "$U"; rc=$?
+echo "apply exit $rc"
+after="$(sha256sum "$DP" 2>/dev/null | cut -d' ' -f1)"
+echo "working drop-in sha256 after:  ${after:-<missing>}"
+assert "apply refused the broken profile (exit 1)" '[ "$rc" = 1 ]'
+assert "working drop-in restored byte-identical" '[ "$before" = "$after" ]'
+assert "no broken directives left in the drop-in" 'grep -q "^User=" "$DP" || ! grep -q "^User=" "$HERE/profiles/$U.conf"'
+assert "unit re-run after rollback ends Result=success" '[ "$(systemctl show -p Result --value "$U")" = success ]'
+assert "no leftover .prev backup" '[ -z "$(ls /var/lib/pft-unitguard/*.prev 2>/dev/null)" ]'
+echo "\$ pft-unitguard.sh audit --units ${U%.service}"
+bash "$HERE/pft-unitguard.sh" audit --units "${U%.service}"; arc=$?
+assert "audit after: drop-in installed and meets its target (exit 0)" '[ "$arc" = 0 ]'
+echo "RESULT: $([ "$fails" = 0 ] && echo PASS || echo "FAIL ($fails)")"
+[ "$fails" = 0 ]
+$ sudo bash drill/rollback-drill.sh pft-logship-vacuum.service
+broken profile: pft-logship-vacuum.service.conf with sed '/^\(User\|Group\)=/d' (diff vs the real profile):
+5,6d4
+< User=systemd-journal-remote
+< Group=systemd-journal-remote
+working drop-in sha256 before: 1ea3b048cbfe6349c384f4b702a77540f0f639e84b39380b0cca441065d1ee42
+pft-logship-vacuum.service               0.5    SAFE     5      systemd-journal-remote standard 5.0    yes   OK
+$ PROFILE_DIR=<tmp broken copy> pft-unitguard.sh apply pft-logship-vacuum.service
+[2026-10-27T01:20:43Z] APPLY pft-logship-vacuum.service class=standard target<=5.0 -> /etc/systemd/system/pft-logship-vacuum.service.d/50-unitguard.conf
+[2026-10-27T01:20:43Z]   exposure before: 9.6
+[2026-10-27T01:20:45Z]   run pft-logship-vacuum.service (oneshot): Result=exit-code ExecMainStatus=1
+[2026-10-27T01:20:45Z] FAIL pft-logship-vacuum.service under the profile -> automatic rollback
+[2026-10-27T01:20:45Z]   restored previous /etc/systemd/system/pft-logship-vacuum.service.d/50-unitguard.conf
+[2026-10-27T01:20:47Z]   run pft-logship-vacuum.service (oneshot): Result=success ExecMainStatus=0
+[2026-10-27T01:20:47Z] ROLLED-BACK pft-logship-vacuum.service (runs again on the previous drop-in) exposure: 0.5 SAFE 5
+apply exit 1
+working drop-in sha256 after:  1ea3b048cbfe6349c384f4b702a77540f0f639e84b39380b0cca441065d1ee42
+PASS apply refused the broken profile (exit 1)
+PASS working drop-in restored byte-identical
+PASS no broken directives left in the drop-in
+PASS unit re-run after rollback ends Result=success
+PASS no leftover .prev backup
+$ pft-unitguard.sh audit --units pft-logship-vacuum
+UNIT                                     EXPOS  RATING   FAILED USER      CLASS    TARGET DROPIN VERDICT
+pft-logship-vacuum.service               0.5    SAFE     5      systemd-journal-remote standard 5.0    yes   OK
+PASS audit after: drop-in installed and meets its target (exit 0)
+RESULT: PASS
+exit 0
+$ sudo journalctl --utc -u pft-logship-vacuum.service --since -1min -o short-iso
+2026-10-27T01:20:45+0000 validator-host systemd[1]: Starting pft-logship: cap received peer journals...
+2026-10-27T01:20:45+0000 validator-host journalctl[2423358]: No journal files were opened due to insufficient permissions.
+2026-10-27T01:20:45+0000 validator-host systemd[1]: pft-logship-vacuum.service: Main process exited, code=exited, status=1/FAILURE
+2026-10-27T01:20:45+0000 validator-host systemd[1]: pft-logship-vacuum.service: Failed with result 'exit-code'.
+2026-10-27T01:20:45+0000 validator-host systemd[1]: Failed to start pft-logship: cap received peer journals.
+2026-10-27T01:20:46+0000 validator-host systemd[1]: Starting pft-logship: cap received peer journals...
+2026-10-27T01:20:47+0000 validator-host journalctl[2423408]: Vacuuming done, freed 0B of archived journals from /var/log/journal/remote.
+2026-10-27T01:20:47+0000 validator-host systemd[1]: pft-logship-vacuum.service: Deactivated successfully.
+2026-10-27T01:20:47+0000 validator-host systemd[1]: Finished pft-logship: cap received peer journals.

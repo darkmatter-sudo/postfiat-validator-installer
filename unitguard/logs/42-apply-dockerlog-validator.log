@@ -1,0 +1,135 @@
+OS: Ubuntu 22.04.5 LTS | validator-host | 2026-10-27T04:19:20Z
+$ cat apply-dockerlog.sh
+#!/usr/bin/env bash
+# unitguard live apply of pft-logship-dockerlog@CONTAINER (long-running follower, restarted by apply). Run from the
+# unitguard dir. Where Alertmanager runs on this host, a silence for PFTLogshipBroken (20 m) is posted first and
+# expired after the apply. Also: a control that the check command fails for an identifier with no lines, and a
+# continuity check that the journal has the container's lines on both sides of the restart.
+set -uo pipefail
+C="${1:?container}"; U="pft-logship-dockerlog@$C.service"; P=profiles/pft-logship-dockerlog@.service.conf
+AM=http://127.0.0.1:9093; sid=""
+echo "tool sha256 $(sha256sum pft-unitguard.sh | cut -d' ' -f1)  profile sha256 $(sha256sum "$P" | cut -d' ' -f1)"
+if curl -s -o /dev/null -m 3 "$AM/-/ready"; then
+  now=$(date -u +%FT%TZ); end=$(date -u -d '+20 min' +%FT%TZ)
+  sid=$(curl -s -m 5 -X POST -H 'Content-Type: application/json' "$AM/api/v2/silences" -d "{\"matchers\":[{\"name\":\"alertname\",\"value\":\"PFTLogshipBroken\",\"isRegex\":false,\"isEqual\":true}],\"startsAt\":\"$now\",\"endsAt\":\"$end\",\"createdBy\":\"unitguard\",\"comment\":\"task_504e4c3f unitguard apply $U (planned follower restart)\"}" | jq -r '.silenceID // empty')
+  [ -n "$sid" ] || { echo "could not post the AM silence - no apply"; exit 1; }
+  echo "=== AM silence ${sid:0:8} (alertname=PFTLogshipBroken, until $end) posted"
+else echo "=== no Alertmanager on this host - no silence needed"; fi
+c="$(sed -n 's/^#@ check: //p' "$P")"
+echo "=== check-command control: same command with an identifier that has no lines (must exit non-zero after 90 s)"
+sudo bash -c "${c//SYSLOG_IDENTIFIER=\"\$c\"/SYSLOG_IDENTIFIER=ug-no-such-ident}"; rc=$?; echo "control exit $rc -> $([ "$rc" != 0 ] && echo PASS || echo FAIL)"
+t0=$(date -u +%s)
+echo "\$ sudo bash pft-unitguard.sh apply $U"
+sudo bash pft-unitguard.sh apply "$U"; ra=$?; echo "exit $ra"
+sleep 30
+t1=$(date -u +%s)
+echo "=== continuity: journal lines from SYSLOG_IDENTIFIER=$C per invocation in [apply-60s, now]"
+sudo journalctl -q --since "@$((t0 - 60))" --until "@$t1" SYSLOG_IDENTIFIER="$C" -o json | jq -r '._SYSTEMD_INVOCATION_ID' | uniq -c
+dups=$(sudo journalctl -q --since "@$((t0 - 60))" --until "@$t1" SYSLOG_IDENTIFIER="$C" -o cat | grep -E '^[0-9]{4}-' | sort | uniq -d | wc -l)
+echo "duplicate timestamped lines across the restart: $dups"
+echo "\$ sudo bash pft-unitguard.sh audit --detail"; sudo bash pft-unitguard.sh audit --detail; echo "exit $?"
+echo "\$ diff <(sudo cat drop-in) <(profile directives)   (only the generated header line may differ)"
+diff <(sudo cat /etc/systemd/system/pft-logship-dockerlog@.service.d/50-unitguard.conf) <(grep -v '^#@' "$P")
+if [ -n "$sid" ]; then
+  curl -s -m 5 -X DELETE "$AM/api/v2/silence/$sid" -o /dev/null -w "=== AM silence ${sid:0:8} expired: HTTP %{http_code}\n"
+  echo "firing alerts now: $(curl -s -m 5 "$AM/api/v2/alerts?active=true&silenced=false" | jq -r '[.[].labels.alertname] | join(",")')"
+fi
+if [ "$rc" != 0 ] && [ "$ra" = 0 ] && [ "$dups" = 0 ]; then echo "APPLY RESULT: PASS"; else echo "APPLY RESULT: FAIL"; exit 1; fi
+$ bash apply-dockerlog.sh postfiatd
+tool sha256 fadc7034332bc89a6bdcec0ac05a68a17683d95e5ee20919682fb0a55cac27b9  profile sha256 fc3faeb8b16351116d2b36abdd6e5bc78d7b1cfbc4ba41b5e3e8d2e58315ee25
+=== AM silence 6d74611c (alertname=PFTLogshipBroken, until 2026-10-27T04:39:20Z) posted
+=== check-command control: same command with an identifier that has no lines (must exit non-zero after 90 s)
+no journal line from invocation fd4802a381ff4507827898740f28f7d0 after 90 s
+control exit 1 -> PASS
+$ sudo bash pft-unitguard.sh apply pft-logship-dockerlog@postfiatd.service
+[2026-10-27T04:20:54Z] APPLY pft-logship-dockerlog@postfiatd.service class=docker target<=<before -> /etc/systemd/system/pft-logship-dockerlog@.service.d/50-unitguard.conf
+[2026-10-27T04:20:54Z]   exposure before: 9.6
+[2026-10-27T04:21:05Z]   run pft-logship-dockerlog@postfiatd.service (long-running): active=active NRestarts 0 -> 0 after 10s
+[2026-10-27T04:21:05Z]   check: u=$(systemctl list-units --all --plain --no-legend 'pft-logship-dockerlog@*.service' | awk '{print $1}' | head -1); c=${u#pft-logship-dockerlog@}; c=${c%.service}; i=$(systemctl show -p InvocationID --value "$u"); for _ in $(seq 45); do n=$(journalctl -q -o cat -n 1 _SYSTEMD_INVOCATION_ID="$i" SYSLOG_IDENTIFIER="$c" | wc -l); [ "$n" -gt 0 ] && { echo "journal has lines from invocation $i"; exit 0; }; sleep 2; done; echo "no journal line from invocation $i after 90 s"; exit 1
+    | journal has lines from invocation 165a10d9b3914264b2bf3e9d61d2b3ba
+[2026-10-27T04:21:05Z]   check exit 0
+[2026-10-27T04:21:05Z] PASS pft-logship-dockerlog@postfiatd.service exposure now: 1.5 OK 9
+exit 0
+=== continuity: journal lines from SYSLOG_IDENTIFIER=postfiatd per invocation in [apply-60s, now]
+    862 fd4802a381ff4507827898740f28f7d0
+    536 165a10d9b3914264b2bf3e9d61d2b3ba
+duplicate timestamped lines across the restart: 0
+$ sudo bash pft-unitguard.sh audit --detail
+UNIT                                     EXPOS  RATING   FAILED USER      CLASS    TARGET DROPIN VERDICT
+pft-backup.service                       2.0    OK       12     root      docker   <before yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_(CHOWN|FSETID|SETFCAP) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) DeviceAllow= IPAddressDeny= PrivateUsers= ProtectProc= 
+    missing: SystemCallFilter=~@privileged RootDirectory=/RootImage= RestrictAddressFamilies=~AF_UNIX ProcSubset=
+pft-divergence.service                   2.6    OK       18     root      docker   <before yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_SET(UID|GID|PCAP) 
+    missing: RestrictAddressFamilies=~AF_(INET|INET6) DeviceAllow= IPAddressDeny= PrivateUsers= ProtectHome= ProtectProc= 
+    missing: SystemCallFilter=~@privileged SystemCallFilter=~@resources CapabilityBoundingSet=~CAP_AUDIT_* 
+    missing: CapabilityBoundingSet=~CAP_SYS_(NICE|RESOURCE) RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= UMask= 
+    missing: RestrictAddressFamilies=~AF_UNIX ProcSubset=
+pft-egress-reapply@postfiatd.service     1.9    OK       13     root      iptables <before yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_NET_ADMIN DeviceAllow= IPAddressDeny= PrivateUsers= 
+    missing: ProtectProc= SystemCallFilter=~@privileged CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) 
+    missing: RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= RestrictAddressFamilies=~AF_UNIX ProcSubset=
+pft-exporter.service                     1.1    OK       6      dynamic   standard 5.0    yes   OK
+    missing: PrivateNetwork= RestrictAddressFamilies=~AF_(INET|INET6) DeviceAllow= IPAddressDeny= PrivateUsers= 
+    missing: RootDirectory=/RootImage=
+pft-heartbeat.service                    1.6    OK       8      root      standard 5.0    yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= RestrictAddressFamilies=~AF_(INET|INET6) DeviceAllow= IPAddressDeny= 
+    missing: PrivateUsers= RootDirectory=/RootImage= RestrictAddressFamilies=~AF_UNIX
+pft-integrity.service                    2.4    OK       15     root      iptables <before yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) CapabilityBoundingSet=~CAP_NET_ADMIN DeviceAllow= 
+    missing: IPAddressDeny= PrivateUsers= ProtectProc= SystemCallFilter=~@privileged 
+    missing: CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) RestrictAddressFamilies=~AF_NETLINK 
+    missing: RootDirectory=/RootImage= RestrictAddressFamilies=~AF_UNIX ProcSubset=
+pft-logship-check.service                2.1    OK       13     root      docker   <before yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) DeviceAllow= IPAddressDeny= PrivateUsers= ProtectProc= 
+    missing: SystemCallFilter=~@privileged RootDirectory=/RootImage= UMask= RestrictAddressFamilies=~AF_UNIX ProcSubset=
+pft-logship-dockerlog@postfiatd.service  1.5    OK       9      root      docker   <before yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= DeviceAllow= IPAddressDeny= PrivateUsers= ProtectProc= RootDirectory=/RootImage= 
+    missing: RestrictAddressFamilies=~AF_UNIX ProcSubset=
+pft-logship-vacuum.service               0.5    SAFE     5      systemd-journal-remote standard 5.0    yes   OK
+    missing: DeviceAllow= IPAddressDeny= PrivateUsers= RootDirectory=/RootImage= RestrictAddressFamilies=~AF_UNIX
+pft-maint-tick.service                   1.6    OK       9      root      standard 5.0    yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= RestrictAddressFamilies=~AF_(INET|INET6) DeviceAllow= IPAddressDeny= 
+    missing: PrivateUsers= RootDirectory=/RootImage= UMask= RestrictAddressFamilies=~AF_UNIX
+pft-retention-sample.service             1.6    OK       11     root      docker   <before yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= DeviceAllow= IPAddressDeny= PrivateUsers= ProtectProc= 
+    missing: SystemCallFilter=~@privileged RootDirectory=/RootImage= UMask= RestrictAddressFamilies=~AF_UNIX ProcSubset=
+postfiat-docker-user.service             9.6    UNSAFE   74     root      iptables <before no    not-applied
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_SET(UID|GID|PCAP) 
+    missing: CapabilityBoundingSet=~CAP_SYS_ADMIN CapabilityBoundingSet=~CAP_SYS_PTRACE RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: RestrictNamespaces=~CLONE_NEWUSER RestrictAddressFamilies=~… CapabilityBoundingSet=~CAP_(CHOWN|FSETID|SETFCAP) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) CapabilityBoundingSet=~CAP_NET_ADMIN 
+    missing: CapabilityBoundingSet=~CAP_SYS_MODULE CapabilityBoundingSet=~CAP_SYS_RAWIO CapabilityBoundingSet=~CAP_SYS_TIME 
+    missing: DeviceAllow= IPAddressDeny= NoNewPrivileges= PrivateDevices= PrivateMounts= PrivateTmp= PrivateUsers= ProtectClock= 
+    missing: ProtectControlGroups= ProtectHome= ProtectKernelLogs= ProtectKernelModules= ProtectKernelTunables= ProtectProc= 
+    missing: ProtectSystem= RestrictAddressFamilies=~AF_PACKET RestrictSUIDSGID= SystemCallArchitectures= 
+    missing: SystemCallFilter=~@clock SystemCallFilter=~@debug SystemCallFilter=~@module SystemCallFilter=~@mount 
+    missing: SystemCallFilter=~@raw-io SystemCallFilter=~@reboot SystemCallFilter=~@swap SystemCallFilter=~@privileged 
+    missing: SystemCallFilter=~@resources CapabilityBoundingSet=~CAP_AUDIT_* CapabilityBoundingSet=~CAP_KILL 
+    missing: CapabilityBoundingSet=~CAP_MKNOD CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) 
+    missing: CapabilityBoundingSet=~CAP_SYSLOG CapabilityBoundingSet=~CAP_SYS_(NICE|RESOURCE) 
+    missing: RestrictNamespaces=~CLONE_NEWCGROUP RestrictNamespaces=~CLONE_NEWIPC RestrictNamespaces=~CLONE_NEWNET 
+    missing: RestrictNamespaces=~CLONE_NEWNS RestrictNamespaces=~CLONE_NEWPID RestrictRealtime= SystemCallFilter=~@cpu-emulation 
+    missing: SystemCallFilter=~@obsolete RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= 
+    missing: CapabilityBoundingSet=~CAP_MAC_* CapabilityBoundingSet=~CAP_SYS_BOOT LockPersonality= MemoryDenyWriteExecute= 
+    missing: RestrictNamespaces=~CLONE_NEWUTS UMask= CapabilityBoundingSet=~CAP_LINUX_IMMUTABLE 
+    missing: CapabilityBoundingSet=~CAP_IPC_LOCK CapabilityBoundingSet=~CAP_SYS_CHROOT ProtectHostname= 
+    missing: CapabilityBoundingSet=~CAP_BLOCK_SUSPEND CapabilityBoundingSet=~CAP_LEASE CapabilityBoundingSet=~CAP_SYS_PACCT 
+    missing: CapabilityBoundingSet=~CAP_SYS_TTY_CONFIG CapabilityBoundingSet=~CAP_WAKE_ALARM RestrictAddressFamilies=~AF_UNIX 
+    missing: ProcSubset=
+postfiat-monitor.service                 2.2    OK       15     root      iptables <before yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= RestrictAddressFamilies=~AF_(INET|INET6) CapabilityBoundingSet=~CAP_NET_ADMIN 
+    missing: DeviceAllow= IPAddressDeny= PrivateUsers= ProtectProc= SystemCallFilter=~@privileged 
+    missing: CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) RestrictAddressFamilies=~AF_NETLINK 
+    missing: RootDirectory=/RootImage= MemoryDenyWriteExecute= RestrictAddressFamilies=~AF_UNIX ProcSubset=
+exit 0
+$ diff <(sudo cat drop-in) <(profile directives)   (only the generated header line may differ)
+1d0
+< # written by pft-unitguard from pft-logship-dockerlog@.service.conf - remove with: pft-unitguard rollback <unit>
+=== AM silence 6d74611c expired: HTTP 200
+firing alerts now: 
+APPLY RESULT: PASS
+exit 0

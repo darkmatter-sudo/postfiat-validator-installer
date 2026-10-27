@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Fake systemd-analyze security: 9.6 without the unitguard drop-in, $STUB_DIR/<unit>.score (default 3.1) with it.
+set -u
+u="${*: -1}"; t="$(sed -E 's/@[^.]+\.service$/@.service/' <<<"$u")"
+echo "systemd-analyze $*" >> "$STUB_DIR/calls.log"
+if [ -f "$DROPIN_ROOT/$t.d/50-unitguard.conf" ]; then s="$(cat "$STUB_DIR/$u.score" 2>/dev/null || echo 3.1)"; n=20
+else s=9.6; n=74; fi
+echo "  NAME   DESCRIPTION   EXPOSURE"
+for i in $(seq "$n"); do echo "✗ Check$i=   stub check   0.1"; done
+echo "✓ Other=   fine"
+echo ""
+echo "→ Overall exposure level for $u: $s UNSAFE 😨"

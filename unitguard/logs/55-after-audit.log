@@ -1,0 +1,196 @@
+# AFTER audit, both hosts, final tool + profiles (read-only)
+$ cat drill/audit-host.sh
+#!/usr/bin/env bash
+# Read-only audit capture for one host: OS, systemd, tool/profile hashes, add-on unit inventory,
+# `pft-unitguard audit --detail`, existing drop-ins. Usage: bash audit-host.sh DIR LABEL   (DIR holds pft-unitguard.sh + profiles/)
+set -uo pipefail
+d="$1"; label="$2"
+echo "===== $label"
+grep PRETTY_NAME /etc/os-release
+systemd --version | head -1
+date -u +%FT%TZ
+echo "pft-unitguard.sh sha256 $(sha256sum "$d/pft-unitguard.sh" | cut -c1-64)"
+echo "profiles sha256 $(cat "$d"/profiles/*.conf | sha256sum | cut -c1-64) ($(find "$d/profiles" -name '*.conf' | wc -l) files)"
+echo "--- add-on unit files on this host (systemctl list-unit-files 'pft-*' 'postfiat*')"
+systemctl list-unit-files 'pft-*' 'postfiat*' --no-legend | awk '{print $1, $2}'
+echo "--- \$ pft-unitguard audit --detail"
+PROFILE_DIR="$d/profiles" bash "$d/pft-unitguard.sh" audit --detail
+echo "audit exit $?"
+echo "--- unitguard drop-ins present"
+find /etc/systemd/system -path '*.d/50-unitguard.conf' 2>/dev/null | sort | sed 's/^/  /'
+find /etc/systemd/system -path '*.d/50-unitguard.conf' 2>/dev/null | grep -q . || echo "  (none)"
+$ sudo bash drill/audit-host.sh . validator-host
+===== validator-host
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+systemd 249 (249.11-0ubuntu3.23)
+2026-10-27T05:18:43Z
+pft-unitguard.sh sha256 cd40833d1cfc0c9fc3f8c483bd95fc71f1e72be339b838691a57830e17de47f6
+profiles sha256 04afff1c4051c29d7e439826fa5944e8829e449106b84c6ae1e633a72828dadd (14 files)
+--- add-on unit files on this host (systemctl list-unit-files 'pft-*' 'postfiat*')
+pft-backup.service static
+pft-divergence.service static
+pft-egress-reapply@.service static
+pft-exporter.service enabled
+pft-govern-collect.service transient
+pft-heartbeat.service static
+pft-integrity.service static
+pft-ledger-stats.service disabled
+pft-logship-check.service static
+pft-logship-dockerlog@.service indirect
+pft-logship-vacuum.service static
+pft-maint-tick.service static
+pft-retention-sample.service static
+pft-txmix-collect.service enabled
+pft-validators-record.service enabled
+postfiat-docker-user.service enabled
+postfiat-monitor.service static
+pft-backup.timer enabled
+pft-divergence.timer enabled
+pft-egress-reapply@.timer indirect
+pft-heartbeat.timer enabled
+pft-integrity.timer enabled
+pft-logship-check.timer enabled
+pft-logship-vacuum.timer enabled
+pft-maint-tick.timer enabled
+pft-retention-sample.timer enabled
+postfiat-monitor.timer enabled
+--- $ pft-unitguard audit --detail
+UNIT                                     EXPOS  RATING   FAILED USER      CLASS    TARGET DROPIN VERDICT
+pft-backup.service                       2.0    OK       12     root      docker   <before yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_(CHOWN|FSETID|SETFCAP) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) DeviceAllow= IPAddressDeny= PrivateUsers= ProtectProc= 
+    missing: SystemCallFilter=~@privileged RootDirectory=/RootImage= RestrictAddressFamilies=~AF_UNIX ProcSubset=
+pft-divergence.service                   2.6    OK       18     root      docker   <before yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_SET(UID|GID|PCAP) 
+    missing: RestrictAddressFamilies=~AF_(INET|INET6) DeviceAllow= IPAddressDeny= PrivateUsers= ProtectHome= ProtectProc= 
+    missing: SystemCallFilter=~@privileged SystemCallFilter=~@resources CapabilityBoundingSet=~CAP_AUDIT_* 
+    missing: CapabilityBoundingSet=~CAP_SYS_(NICE|RESOURCE) RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= UMask= 
+    missing: RestrictAddressFamilies=~AF_UNIX ProcSubset=
+pft-egress-reapply@postfiatd.service     1.9    OK       13     root      iptables <before yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_NET_ADMIN DeviceAllow= IPAddressDeny= PrivateUsers= 
+    missing: ProtectProc= SystemCallFilter=~@privileged CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) 
+    missing: RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= RestrictAddressFamilies=~AF_UNIX ProcSubset=
+pft-exporter.service                     1.1    OK       6      dynamic   standard 5.0    yes   OK
+    missing: PrivateNetwork= RestrictAddressFamilies=~AF_(INET|INET6) DeviceAllow= IPAddressDeny= PrivateUsers= 
+    missing: RootDirectory=/RootImage=
+pft-heartbeat.service                    1.6    OK       8      root      standard 5.0    yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= RestrictAddressFamilies=~AF_(INET|INET6) DeviceAllow= IPAddressDeny= 
+    missing: PrivateUsers= RootDirectory=/RootImage= RestrictAddressFamilies=~AF_UNIX
+pft-integrity.service                    2.4    OK       15     root      iptables <before yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) CapabilityBoundingSet=~CAP_NET_ADMIN DeviceAllow= 
+    missing: IPAddressDeny= PrivateUsers= ProtectProc= SystemCallFilter=~@privileged 
+    missing: CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) RestrictAddressFamilies=~AF_NETLINK 
+    missing: RootDirectory=/RootImage= RestrictAddressFamilies=~AF_UNIX ProcSubset=
+pft-logship-check.service                2.1    OK       13     root      docker   <before yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) DeviceAllow= IPAddressDeny= PrivateUsers= ProtectProc= 
+    missing: SystemCallFilter=~@privileged RootDirectory=/RootImage= UMask= RestrictAddressFamilies=~AF_UNIX ProcSubset=
+pft-logship-dockerlog@postfiatd.service  1.5    OK       9      root      docker   <before yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= DeviceAllow= IPAddressDeny= PrivateUsers= ProtectProc= RootDirectory=/RootImage= 
+    missing: RestrictAddressFamilies=~AF_UNIX ProcSubset=
+pft-logship-vacuum.service               0.5    SAFE     5      systemd-journal-remote standard 5.0    yes   OK
+    missing: DeviceAllow= IPAddressDeny= PrivateUsers= RootDirectory=/RootImage= RestrictAddressFamilies=~AF_UNIX
+pft-maint-tick.service                   1.6    OK       9      root      standard 5.0    yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= RestrictAddressFamilies=~AF_(INET|INET6) DeviceAllow= IPAddressDeny= 
+    missing: PrivateUsers= RootDirectory=/RootImage= UMask= RestrictAddressFamilies=~AF_UNIX
+pft-retention-sample.service             1.6    OK       11     root      docker   <before yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= DeviceAllow= IPAddressDeny= PrivateUsers= ProtectProc= 
+    missing: SystemCallFilter=~@privileged RootDirectory=/RootImage= UMask= RestrictAddressFamilies=~AF_UNIX ProcSubset=
+postfiat-docker-user.service             1.9    OK       13     root      iptables <before yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_NET_ADMIN DeviceAllow= IPAddressDeny= PrivateUsers= 
+    missing: ProtectProc= SystemCallFilter=~@privileged CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) 
+    missing: RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= RestrictAddressFamilies=~AF_UNIX ProcSubset=
+postfiat-monitor.service                 2.2    OK       15     root      iptables <before yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= RestrictAddressFamilies=~AF_(INET|INET6) CapabilityBoundingSet=~CAP_NET_ADMIN 
+    missing: DeviceAllow= IPAddressDeny= PrivateUsers= ProtectProc= SystemCallFilter=~@privileged 
+    missing: CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) RestrictAddressFamilies=~AF_NETLINK 
+    missing: RootDirectory=/RootImage= MemoryDenyWriteExecute= RestrictAddressFamilies=~AF_UNIX ProcSubset=
+audit exit 0
+--- unitguard drop-ins present
+  /etc/systemd/system/pft-backup.service.d/50-unitguard.conf
+  /etc/systemd/system/pft-divergence.service.d/50-unitguard.conf
+  /etc/systemd/system/pft-egress-reapply@.service.d/50-unitguard.conf
+  /etc/systemd/system/pft-exporter.service.d/50-unitguard.conf
+  /etc/systemd/system/pft-heartbeat.service.d/50-unitguard.conf
+  /etc/systemd/system/pft-integrity.service.d/50-unitguard.conf
+  /etc/systemd/system/pft-logship-check.service.d/50-unitguard.conf
+  /etc/systemd/system/pft-logship-dockerlog@.service.d/50-unitguard.conf
+  /etc/systemd/system/pft-logship-vacuum.service.d/50-unitguard.conf
+  /etc/systemd/system/pft-maint-tick.service.d/50-unitguard.conf
+  /etc/systemd/system/pft-retention-sample.service.d/50-unitguard.conf
+  /etc/systemd/system/postfiat-docker-user.service.d/50-unitguard.conf
+  /etc/systemd/system/postfiat-monitor.service.d/50-unitguard.conf
+$ ssh relay sudo bash /tmp/ug/drill/audit-host.sh /tmp/ug sentry-host
+===== sentry-host
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+systemd 249 (249.11-0ubuntu3.23)
+2026-10-27T05:18:49Z
+pft-unitguard.sh sha256 cd40833d1cfc0c9fc3f8c483bd95fc71f1e72be339b838691a57830e17de47f6
+profiles sha256 04afff1c4051c29d7e439826fa5944e8829e449106b84c6ae1e633a72828dadd (14 files)
+--- add-on unit files on this host (systemctl list-unit-files 'pft-*' 'postfiat*')
+pft-divergence.service static
+pft-egress-reapply@.service static
+pft-integrity.service static
+pft-logship-check.service static
+pft-logship-dockerlog@.service indirect
+pft-logship-vacuum.service static
+pft-maint-tick.service static
+pft-watchdog.service static
+postfiat-docker-user.service enabled
+pft-divergence.timer enabled
+pft-egress-reapply@.timer indirect
+pft-integrity.timer enabled
+pft-logship-check.timer enabled
+pft-logship-vacuum.timer enabled
+pft-maint-tick.timer enabled
+pft-watchdog.timer enabled
+--- $ pft-unitguard audit --detail
+UNIT                                     EXPOS  RATING   FAILED USER      CLASS    TARGET DROPIN VERDICT
+pft-divergence.service                   2.6    OK       18     root      docker   <before yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_SET(UID|GID|PCAP) 
+    missing: RestrictAddressFamilies=~AF_(INET|INET6) DeviceAllow= IPAddressDeny= PrivateUsers= ProtectHome= ProtectProc= 
+    missing: SystemCallFilter=~@privileged SystemCallFilter=~@resources CapabilityBoundingSet=~CAP_AUDIT_* 
+    missing: CapabilityBoundingSet=~CAP_SYS_(NICE|RESOURCE) RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= UMask= 
+    missing: RestrictAddressFamilies=~AF_UNIX ProcSubset=
+pft-egress-reapply@postfiatd-sentry.service 1.9    OK       13     root      iptables <before yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_NET_ADMIN DeviceAllow= IPAddressDeny= PrivateUsers= 
+    missing: ProtectProc= SystemCallFilter=~@privileged CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) 
+    missing: RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= RestrictAddressFamilies=~AF_UNIX ProcSubset=
+pft-integrity.service                    2.4    OK       15     root      iptables <before yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) CapabilityBoundingSet=~CAP_NET_ADMIN DeviceAllow= 
+    missing: IPAddressDeny= PrivateUsers= ProtectProc= SystemCallFilter=~@privileged 
+    missing: CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) RestrictAddressFamilies=~AF_NETLINK 
+    missing: RootDirectory=/RootImage= RestrictAddressFamilies=~AF_UNIX ProcSubset=
+pft-logship-check.service                2.1    OK       13     root      docker   <before yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) DeviceAllow= IPAddressDeny= PrivateUsers= ProtectProc= 
+    missing: SystemCallFilter=~@privileged RootDirectory=/RootImage= UMask= RestrictAddressFamilies=~AF_UNIX ProcSubset=
+pft-logship-dockerlog@postfiatd-sentry.service 1.5    OK       9      root      docker   <before yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= DeviceAllow= IPAddressDeny= PrivateUsers= ProtectProc= RootDirectory=/RootImage= 
+    missing: RestrictAddressFamilies=~AF_UNIX ProcSubset=
+pft-logship-vacuum.service               0.5    SAFE     5      systemd-journal-remote standard 5.0    yes   OK
+    missing: DeviceAllow= IPAddressDeny= PrivateUsers= RootDirectory=/RootImage= RestrictAddressFamilies=~AF_UNIX
+pft-maint-tick.service                   1.6    OK       9      root      standard 5.0    yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= RestrictAddressFamilies=~AF_(INET|INET6) DeviceAllow= IPAddressDeny= 
+    missing: PrivateUsers= RootDirectory=/RootImage= UMask= RestrictAddressFamilies=~AF_UNIX
+pft-watchdog.service                     1.8    OK       9      root      standard 5.0    yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) DeviceAllow= IPAddressDeny= PrivateUsers= 
+    missing: RootDirectory=/RootImage= RestrictAddressFamilies=~AF_UNIX
+postfiat-docker-user.service             1.9    OK       13     root      iptables <before yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_NET_ADMIN DeviceAllow= IPAddressDeny= PrivateUsers= 
+    missing: ProtectProc= SystemCallFilter=~@privileged CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) 
+    missing: RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= RestrictAddressFamilies=~AF_UNIX ProcSubset=
+audit exit 0
+--- unitguard drop-ins present
+  /etc/systemd/system/pft-divergence.service.d/50-unitguard.conf
+  /etc/systemd/system/pft-egress-reapply@.service.d/50-unitguard.conf
+  /etc/systemd/system/pft-integrity.service.d/50-unitguard.conf
+  /etc/systemd/system/pft-logship-check.service.d/50-unitguard.conf
+  /etc/systemd/system/pft-logship-dockerlog@.service.d/50-unitguard.conf
+  /etc/systemd/system/pft-logship-vacuum.service.d/50-unitguard.conf
+  /etc/systemd/system/pft-maint-tick.service.d/50-unitguard.conf
+  /etc/systemd/system/pft-watchdog.service.d/50-unitguard.conf
+  /etc/systemd/system/postfiat-docker-user.service.d/50-unitguard.conf

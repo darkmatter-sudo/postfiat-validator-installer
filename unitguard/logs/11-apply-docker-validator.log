@@ -1,0 +1,56 @@
+OS: Ubuntu 22.04.5 LTS | validator-host | 2026-10-27T01:11:01Z | pft-unitguard.sh sha256 5ae1677e2e51f3ad0b823ea24df7a62f10f995001c672225830fc67f3975ccdf
+=== AM silence 7ec5e3b4 (alertname=~PFTLedgerDiverged|PFTDivergenceCheckStale|PFTLogshipBroken, 20m) posted before the apply
+$ sudo bash pft-unitguard.sh apply pft-retention-sample
+[2026-10-27T01:11:01Z] APPLY pft-retention-sample.service class=docker target<=<before -> /etc/systemd/system/pft-retention-sample.service.d/50-unitguard.conf
+[2026-10-27T01:11:02Z]   exposure before: 9.6
+[2026-10-27T01:11:05Z]   run pft-retention-sample.service (oneshot): Result=success ExecMainStatus=0
+[2026-10-27T01:11:06Z]   check: t="$(tail -1 /var/lib/pft-retention/samples.csv | cut -d, -f1)"; [ $(( $(date +%s) - t )) -lt 120 ]
+[2026-10-27T01:11:06Z]   check exit 0
+[2026-10-27T01:11:06Z] PASS pft-retention-sample.service exposure now: 1.6 OK 11
+exit 0
+$ sudo bash pft-unitguard.sh apply pft-logship-check
+[2026-10-27T01:11:06Z] APPLY pft-logship-check.service class=docker target<=<before -> /etc/systemd/system/pft-logship-check.service.d/50-unitguard.conf
+[2026-10-27T01:11:06Z]   exposure before: 9.6
+[2026-10-27T01:11:07Z]   run pft-logship-check.service (oneshot): Result=success ExecMainStatus=0
+[2026-10-27T01:11:07Z]   check: f=/var/lib/pft-exporter/textfile/pft_logship.prom; [ $(( $(date +%s) - $(stat -c %Y $f) )) -lt 120 ] && grep -qx "pft_logship_up 1" $f
+[2026-10-27T01:11:07Z]   check exit 0
+[2026-10-27T01:11:08Z] PASS pft-logship-check.service exposure now: 2.1 OK 13
+exit 0
+$ sudo bash pft-unitguard.sh apply pft-divergence
+[2026-10-27T01:11:08Z] APPLY pft-divergence.service class=docker target<=<before -> /etc/systemd/system/pft-divergence.service.d/50-unitguard.conf
+[2026-10-27T01:11:08Z]   exposure before: 9.6
+[2026-10-27T01:11:17Z]   run pft-divergence.service (oneshot): Result=success ExecMainStatus=0
+[2026-10-27T01:11:17Z]   check: f=/var/lib/pft-exporter/textfile/pft_divergence.prom; [ $(( $(date +%s) - $(stat -c %Y $f) )) -lt 300 ] && grep -qx "pft_divergence_overall_state 0" $f
+[2026-10-27T01:11:17Z]   check exit 0
+[2026-10-27T01:11:17Z] PASS pft-divergence.service exposure now: 2.6 OK 18
+exit 0
+$ sudo bash pft-unitguard.sh apply pft-backup
+[2026-10-27T01:11:17Z] APPLY pft-backup.service class=docker target<=<before -> /etc/systemd/system/pft-backup.service.d/50-unitguard.conf
+[2026-10-27T01:11:17Z]   exposure before: 9.6
+[2026-10-27T01:11:19Z]   run pft-backup.service (oneshot): Result=success ExecMainStatus=0
+[2026-10-27T01:11:19Z]   check: cd /var/backups/postfiat && f="$(ls -t pft-backup-*.tar.gz | head -1)" && [ $(( $(date +%s) - $(stat -c %Y "$f") )) -lt 600 ] && sha256sum -c "$f.sha256" && tar -tzf "$f" >/dev/null
+    | pft-backup-20261027T011118Z.tar.gz: OK
+[2026-10-27T01:11:19Z]   check exit 0
+[2026-10-27T01:11:19Z] PASS pft-backup.service exposure now: 2.0 OK 12
+exit 0
+$ sudo bash pft-unitguard.sh audit
+UNIT                                     EXPOS  RATING   FAILED USER      CLASS    TARGET DROPIN VERDICT
+pft-backup.service                       2.0    OK       12     root      docker   <before yes   OK
+pft-divergence.service                   2.6    OK       18     root      docker   <before yes   OK
+pft-egress-reapply@postfiatd.service     9.6    UNSAFE   74     root      iptables <before no    not-applied
+pft-exporter.service                     1.1    OK       6      dynamic   standard 5.0    yes   OK
+pft-heartbeat.service                    9.6    UNSAFE   74     root      standard 5.0    no    not-applied
+pft-integrity.service                    9.6    UNSAFE   74     root      docker   <before no    not-applied
+pft-logship-check.service                2.1    OK       13     root      docker   <before yes   OK
+pft-logship-dockerlog@postfiatd.service  9.6    UNSAFE   74     root      docker   <before no    not-applied
+pft-logship-vacuum.service               0.5    SAFE     5      systemd-journal-remote standard 5.0    yes   OK
+pft-maint-tick.service                   9.6    UNSAFE   74     root      docker   <before no    not-applied
+pft-retention-sample.service             1.6    OK       11     root      docker   <before yes   OK
+postfiat-docker-user.service             9.6    UNSAFE   74     root      iptables <before no    not-applied
+postfiat-monitor.service                 9.6    UNSAFE   74     root      standard 5.0    no    not-applied
+exit 0
+$ sudo pft-integrity verify
+pft-integrity verify - 2026-10-27T01:11:28Z
+OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-10-26T20:36:45Z
+RESULT: PASS - 59 unchanged, 0 warn, 0 fail -> exit 0
+exit 0

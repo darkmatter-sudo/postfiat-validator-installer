@@ -3,7 +3,7 @@
 #
 # Closes the tamper/drift gap left by ../audit (one-off hardening checks) and ../secrets (exposure checks):
 # `baseline` records a root-only 0600 manifest, `verify` compares the host against it item by item.
-# Covered: compose files (+ .env), config-volume files (sha256 only, never contents), add-on systemd units,
+# Covered: compose files (+ .env), config-volume files (sha256 only, never contents), add-on systemd units and their drop-ins,
 # /usr/local/bin scripts, sshd_config(.d) + effective `sshd -T`, normalized UFW and DOCKER-USER rules,
 # running image id/digest vs the registry manifest, local image tags, and the container's effective config.
 # The manifest stores hashes, modes, owners and mtimes only. Output names changed items and fields only.
@@ -102,6 +102,10 @@ collect_files() {
   for f in /etc/systemd/system/pft-*.service /etc/systemd/system/pft-*.timer \
            /etc/systemd/system/postfiat-*.service /etc/systemd/system/postfiat-*.timer; do
     [ -f "$f" ] && file_item "unit:$(basename "$f")" "$f"
+  done
+  # drop-ins of those units (unitguard sandboxes and any other override): a changed drop-in can undo a sandbox
+  for f in /etc/systemd/system/pft-*.d/*.conf /etc/systemd/system/postfiat-*.d/*.conf; do
+    [ -f "$f" ] && file_item "dropin:$(basename "$(dirname "$f")")/$(basename "$f")" "$f"
   done
   for f in /usr/local/bin/*; do [ -f "$f" ] && file_item "bin:$(basename "$f")" "$f"; done
   file_item sshd:sshd_config /etc/ssh/sshd_config
@@ -227,7 +231,7 @@ while IFS= read -r it; do
   b="$(awk -F'\t' -v i="$it" '$1==i {print $2"\t"$3}' <<<"$BASE")"
   c="$(awk -F'\t' -v i="$it" '$1==i {print $2"\t"$3}' <<<"$CUR")"
   if [ -z "$b" ]; then
-    case "$it" in compose:*|cfgvol:*|unit:*|bin:*|sshd:*) add WARN "$it" added "new file" ;; *) add WARN "$it" added "new item" ;; esac
+    case "$it" in compose:*|cfgvol:*|unit:*|dropin:*|bin:*|sshd:*) add WARN "$it" added "new file" ;; *) add WARN "$it" added "new item" ;; esac
     continue
   fi
   if [ -z "$c" ]; then add FAIL "$it" removed "missing since baseline"; continue; fi

@@ -1,0 +1,63 @@
+$ cat integrity-52.sh  (copied to the sentry)
+#!/usr/bin/env bash
+# pft-integrity drop-in coverage on one host: install the updated script, verify (expect WARN: bin changed + new dropin items),
+# accept, verify PASS, then a short tamper demo on one unitguard drop-in (comment appended, no daemon-reload) -> verify FAIL,
+# restore byte-identical with mode/owner/mtime -> verify PASS. Plain `verify` (no --notify): nothing is sent.
+# Usage: bash integrity-52.sh NEW_SCRIPT LABEL TASK_ID
+set -uo pipefail
+new="${1:?script}" label="${2:?label}" task="${3:?task}"
+echo "OS: $(grep -oP '^PRETTY_NAME="\K[^"]+' /etc/os-release) | $label | $(date -u +%FT%TZ)"
+echo "installed sha256 $(sha256sum /usr/local/bin/pft-integrity | cut -d' ' -f1) -> new $(sha256sum "$new" | cut -d' ' -f1)"
+echo "next hourly run: $(systemctl show -p NextElapseUSecRealtime --value pft-integrity.timer)"
+sudo install -m 755 -o root -g root "$new" /usr/local/bin/pft-integrity
+echo '$ sudo pft-integrity verify   (after install, before accept)'
+sudo pft-integrity verify 2>&1 | grep -vE '^\s+\[PASS\]' | sed -n '3,$p'
+echo '$ sudo pft-integrity accept --reason "..."'
+sudo pft-integrity accept --reason "$task: pft-integrity tracks unit drop-ins (dropin:) + unitguard sandbox drop-ins on add-on units" 2>&1 | grep -v '^OS:'
+echo '$ sudo pft-integrity verify'
+sudo pft-integrity verify 2>&1 | grep '^RESULT'
+echo "dropin items in manifest: $(sudo grep -c '^dropin:' /var/lib/pft-integrity/manifest.tsv 2>/dev/null || echo '?')"
+F=/etc/systemd/system/pft-exporter.service.d/50-unitguard.conf
+B=/run/ug-int-tamper.bak
+echo "=== tamper demo on $F (sha256 $(sha256sum "$F" | cut -c1-16)); no daemon-reload, unit not affected"
+sudo cp -p "$F" "$B"
+echo '# tamper drill' | sudo tee -a "$F" >/dev/null
+sudo pft-integrity verify 2>&1 | grep -E 'dropin:|^RESULT'
+sudo cp -p "$B" "$F"; sudo rm -f "$B"
+echo "restored: sha256 $(sha256sum "$F" | cut -c1-16) mode $(stat -c %a "$F") owner $(stat -c %U "$F")"
+sudo pft-integrity verify 2>&1 | grep '^RESULT'
+echo "systemd sees no pending reload: NeedDaemonReload=$(systemctl show -p NeedDaemonReload --value pft-exporter)"
+$ ssh relay bash /tmp/integrity-52.sh /tmp/pft-integrity.new sentry-host task_504e4c3f625a7681e40a4d15c55b0a13
+OS: Ubuntu 22.04.5 LTS | sentry-host | 2026-10-27T05:16:56Z
+installed sha256 a97d14e1614634ba3c5d35062857b73930ea1f3f5d6bf105b114373e54abb31a -> new 1e8813be3c15d58cf5bd4a2b007fec61ee91ef69d0dec351c05bed873805249a
+next hourly run: Tue 2026-10-27 07:02:45 CET
+$ sudo pft-integrity verify   (after install, before accept)
+  [FAIL] bin:pft-integrity                            changed  mtime, sha256
+  [WARN] dropin:pft-divergence.service.d/50-unitguard.conf added    new file
+  [WARN] dropin:pft-egress-reapply@.service.d/50-unitguard.conf added    new file
+  [WARN] dropin:pft-integrity.service.d/50-unitguard.conf added    new file
+  [WARN] dropin:pft-logship-check.service.d/50-unitguard.conf added    new file
+  [WARN] dropin:pft-logship-dockerlog@.service.d/50-unitguard.conf added    new file
+  [WARN] dropin:pft-logship-vacuum.service.d/50-unitguard.conf added    new file
+  [WARN] dropin:pft-maint-tick.service.d/50-unitguard.conf added    new file
+  [WARN] dropin:pft-watchdog.service.d/50-unitguard.conf added    new file
+  [WARN] dropin:postfiat-docker-user.service.d/50-unitguard.conf added    new file
+RESULT: FAIL - 34 unchanged, 9 warn, 1 fail -> exit 2
+$ sudo pft-integrity accept --reason "..."
+pft-integrity accept - 2026-10-27T05:17:20Z: re-baselined 44 items by root
+manifest sha256: 1b8e68251840e67b89e1a7e4e3e04a6345a96a297d32d9c781b7b25d9384114b -> d57d72038eb5117ced0030eb6729420cc6682dcf0ee4223eff494a230498883b (logged to accept.log)
+$ sudo pft-integrity verify
+RESULT: PASS - 44 unchanged, 0 warn, 0 fail -> exit 0
+dropin items in manifest: 36
+sha256sum: /etc/systemd/system/pft-exporter.service.d/50-unitguard.conf: No such file or directory
+=== tamper demo on /etc/systemd/system/pft-exporter.service.d/50-unitguard.conf (sha256 ); no daemon-reload, unit not affected
+cp: cannot stat '/etc/systemd/system/pft-exporter.service.d/50-unitguard.conf': No such file or directory
+tee: /etc/systemd/system/pft-exporter.service.d/50-unitguard.conf: No such file or directory
+RESULT: PASS - 44 unchanged, 0 warn, 0 fail -> exit 0
+cp: cannot stat '/run/ug-int-tamper.bak': No such file or directory
+sha256sum: /etc/systemd/system/pft-exporter.service.d/50-unitguard.conf: No such file or directory
+stat: cannot statx '/etc/systemd/system/pft-exporter.service.d/50-unitguard.conf': No such file or directory
+restored: sha256  mode  owner 
+stat: cannot statx '/etc/systemd/system/pft-exporter.service.d/50-unitguard.conf': No such file or directory
+RESULT: PASS - 44 unchanged, 0 warn, 0 fail -> exit 0
+systemd sees no pending reload: NeedDaemonReload=no

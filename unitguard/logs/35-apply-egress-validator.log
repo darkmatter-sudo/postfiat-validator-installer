@@ -1,0 +1,64 @@
+OS: Ubuntu 22.04.5 LTS | validator-host | 2026-10-27T04:10:41Z | pft-unitguard.sh sha256 fadc7034332bc89a6bdcec0ac05a68a17683d95e5ee20919682fb0a55cac27b9
+$ sudo bash pft-unitguard.sh plan pft-egress-reapply@postfiatd.service
+unit:      pft-egress-reapply@postfiatd.service
+profile:   <repo>/unitguard/profiles/pft-egress-reapply@.service.conf
+drop-in:   /etc/systemd/system/pft-egress-reapply@.service.d/50-unitguard.conf
+class:     iptables   target: <= <before
+check:     u=$(systemctl list-units --all --plain --no-legend 'pft-egress-reapply@*.service' | awk '{print $1}' | head -1); test "$(systemctl show -p Result --value "$u")" = success && pft-egress check --container "$(systemd-escape -u --instance "$u")" >/dev/null
+exception: edits netfilter rules (iptables-restore --noflush of its own chain, iptables -C/-D/-I on DOCKER-USER): CAP_NET_ADMIN/CAP_NET_RAW, AF_NETLINK, the host network namespace and /run for the xtables lock; reads the container's IP over /var/run/docker.sock (root-equivalent); runs as root
+--- drop-in content
+# written by pft-unitguard from pft-egress-reapply@.service.conf - remove with: pft-unitguard rollback <unit>
+[Service]
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@resources @mount @swap @reboot @module @raw-io @clock @cpu-emulation @debug @obsolete
+SystemCallErrorNumber=EPERM
+AmbientCapabilities=
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+UMask=0077
+ReadWritePaths=/var/lib/pft-egress /run
+$ sudo bash pft-unitguard.sh apply pft-egress-reapply@postfiatd.service
+[2026-10-27T04:10:41Z] APPLY pft-egress-reapply@postfiatd.service class=iptables target<=<before -> /etc/systemd/system/pft-egress-reapply@.service.d/50-unitguard.conf
+[2026-10-27T04:10:41Z]   exposure before: 9.6
+[2026-10-27T04:10:42Z]   run pft-egress-reapply@postfiatd.service (oneshot): Result=success ExecMainStatus=0
+[2026-10-27T04:10:42Z]   check: u=$(systemctl list-units --all --plain --no-legend 'pft-egress-reapply@*.service' | awk '{print $1}' | head -1); test "$(systemctl show -p Result --value "$u")" = success && pft-egress check --container "$(systemd-escape -u --instance "$u")" >/dev/null
+[2026-10-27T04:10:43Z]   check exit 0
+[2026-10-27T04:10:43Z] PASS pft-egress-reapply@postfiatd.service exposure now: 1.9 OK 13
+exit 0
+$ sudo pft-egress check --container postfiatd
+pft-egress check postfiatd - 2026-10-27T04:10:43Z
+  [PASS] state file present
+  [PASS] chain PFT-EGRESS matches the applied snapshot (4 rules)
+  [PASS] container IP unchanged since apply
+  [PASS] exactly one jump, at DOCKER-USER position 1
+  [PASS] reapply timer enabled
+  [INFO] default-deny DROP counter: 0 pkts 0 bytes
+  [INFO] drop log lines in the last hour: 0
+  [PASS] server_state full
+  [PASS] peers 11 >= baseline 11
+RESULT: PASS
+$ sudo bash pft-unitguard.sh audit --units pft-egress-reapply@postfiatd.service --detail
+UNIT                                     EXPOS  RATING   FAILED USER      CLASS    TARGET DROPIN VERDICT
+pft-egress-reapply@postfiatd.service     1.9    OK       13     root      iptables <before yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_NET_ADMIN DeviceAllow= IPAddressDeny= PrivateUsers= 
+    missing: ProtectProc= SystemCallFilter=~@privileged CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) 
+    missing: RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= RestrictAddressFamilies=~AF_UNIX ProcSubset=
+exit 0

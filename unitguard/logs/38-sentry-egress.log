@@ -1,0 +1,222 @@
+OS: Ubuntu 22.04.5 LTS | sentry-host | 2026-10-27T04:12:18Z
+# re-run after run 36 (check command unescaped the instance name -> auto-rollback); profile check fixed
+$ cat probe-egress.sh
+#!/usr/bin/env bash
+# unitguard probes for pft-egress-reapply@ on this host (run from the unitguard dir): tuned profile against the
+# real reapply (no drift), a forced-drift reload (scratch STATE_DIR whose saved live_rules differ, so reapply
+# re-loads the SAME policy into the live chain in one iptables-restore transaction), a control profile without
+# AF_NETLINK that must fail visibly, and negatives. Live chain must still match its snapshot afterwards.
+set -uo pipefail
+C="${1:?container}"; P=profiles/pft-egress-reapply@.service.conf; S=/var/lib/ug-probe-egress
+echo "tool sha256 $(sha256sum pft-unitguard.sh | cut -d' ' -f1)  profile sha256 $(sha256sum "$P" | cut -d' ' -f1)"
+sudo pft-egress check --container "$C" | grep -E 'RESULT|chain|jump'
+rules_before="$(sudo iptables -S PFT-EGRESS | sha256sum | cut -c1-16)"; echo "live PFT-EGRESS rules sha $rules_before"
+fails=0; r() { if [ "$1" = 0 ]; then echo "  [PASS] $2"; else echo "  [FAIL] $2"; fails=$((fails+1)); fi; }
+mkscratch() { sudo rm -rf "$S"; sudo install -d -m 700 "$S"; sudo cp -p "/var/lib/pft-egress/$C.json" "$S/"; }
+withstate() { cp "$P" "$1"; printf '%s\n' "Environment=STATE_DIR=$S" "ReadWritePaths=$S" >> "$1"; }
+echo "=== probe 1: real reapply, no drift, tuned profile (live state dir)"
+sudo bash drill/probe.sh "$P" -- /usr/local/sbin/pft-egress reapply --container "$C"; r $? "no-drift reapply exits 0 under the profile"
+echo "=== probe 2: forced drift (scratch state, saved live_rules altered) -> reload of the same policy, tuned profile"
+mkscratch; sudo jq '.live_rules += ["-A PFT-EGRESS -m comment --comment ug-probe-drift -j RETURN"]' "$S/$C.json" | sudo tee "$S/x" >/dev/null && sudo mv "$S/x" "$S/$C.json"
+withstate /tmp/ug-egress-probe.conf
+sudo bash drill/probe.sh /tmp/ug-egress-probe.conf -- /usr/local/sbin/pft-egress reapply --container "$C"; r $? "forced-drift reload exits 0 under the profile"
+sudo jq -r '.live_rules | join("\n")' "$S/$C.json" | diff <(sudo iptables -S PFT-EGRESS) - >/dev/null; r $? "scratch state rewritten with the live rules (ug-probe-drift line gone)"
+echo "scratch state mode after reload: $(sudo stat -c %a "$S/$C.json") (UMask=0077)"
+echo "=== probe 3: control = tuned profile minus AF_NETLINK, forced drift (must fail visibly, live chain untouched)"
+mkscratch; sudo jq '.live_rules += ["-A PFT-EGRESS -m comment --comment ug-probe-drift -j RETURN"]' "$S/$C.json" | sudo tee "$S/x" >/dev/null && sudo mv "$S/x" "$S/$C.json"
+withstate /tmp/ug-egress-ctl.conf; sed -i 's/^RestrictAddressFamilies=.*/RestrictAddressFamilies=AF_UNIX/' /tmp/ug-egress-ctl.conf
+sudo bash drill/probe.sh /tmp/ug-egress-ctl.conf --expect-fail -- /usr/local/sbin/pft-egress reapply --container "$C"; r $? "control without AF_NETLINK fails"
+echo "=== negatives under the tuned profile"
+sudo bash drill/probe.sh "$P" --expect-fail -- /bin/sh -c 'touch /etc/ug-probe-write'; r $? "write to /etc blocked (ProtectSystem=strict)"
+sudo bash drill/probe.sh "$P" --expect-fail -- /bin/bash -c 'exec 3<>/dev/tcp/127.0.0.1/5005'; r $? "AF_INET socket blocked (RestrictAddressFamilies)"
+sudo bash drill/probe.sh "$P" --expect-fail -- /bin/sh -c 'ls /root'; r $? "/root hidden (ProtectHome)"
+sudo rm -rf "$S" /tmp/ug-egress-probe.conf /tmp/ug-egress-ctl.conf; sudo rm -f /etc/ug-probe-write
+echo "=== after"
+rules_after="$(sudo iptables -S PFT-EGRESS | sha256sum | cut -c1-16)"; echo "live PFT-EGRESS rules sha $rules_after"
+[ "$rules_before" = "$rules_after" ]; r $? "live chain rules identical before/after"
+sudo pft-egress check --container "$C" >/dev/null; r $? "pft-egress check PASS after probes"
+echo "PROBES RESULT: $([ $fails = 0 ] && echo PASS || echo "FAIL ($fails)")"; [ $fails = 0 ]
+$ cat apply-egress.sh
+#!/usr/bin/env bash
+# unitguard apply of pft-egress-reapply@CONTAINER with the fixed check (run 36's check unescaped the instance name),
+# plus a control that the check command itself fails when the unit Result does not match. Run from the unitguard dir.
+set -uo pipefail
+C="${1:?container}"; U="pft-egress-reapply@$C.service"; P=profiles/pft-egress-reapply@.service.conf
+echo "tool sha256 $(sha256sum pft-unitguard.sh | cut -d' ' -f1)  profile sha256 $(sha256sum "$P" | cut -d' ' -f1)"
+c="$(sed -n 's/^#@ check: //p' "$P")"
+echo "=== check-command control: same command with Result compared to a value it never has (must exit non-zero)"
+sudo bash -c "${c//= success/= nosuchresult}"; rc=$?; echo "control exit $rc -> $([ $rc != 0 ] && echo PASS || echo FAIL)"
+echo "\$ sudo bash pft-unitguard.sh apply $U"
+sudo bash pft-unitguard.sh apply "$U"; ra=$?; echo "exit $ra"
+echo "\$ sudo pft-egress check --container $C"; sudo pft-egress check --container "$C"
+echo "\$ sudo bash pft-unitguard.sh audit --detail"; sudo bash pft-unitguard.sh audit --detail; echo "exit $?"
+echo "\$ sudo cat /etc/systemd/system/pft-egress-reapply@.service.d/50-unitguard.conf | sha256sum; profile directives sha256"
+sudo cat /etc/systemd/system/pft-egress-reapply@.service.d/50-unitguard.conf | sha256sum | cut -c1-64
+echo "(drop-in = generated header + the profile directives; diff below must show only header lines)"; diff <(sudo cat /etc/systemd/system/pft-egress-reapply@.service.d/50-unitguard.conf) <(grep -v "^#@" "$P")
+if [ $rc != 0 ] && [ $ra = 0 ]; then echo "APPLY RESULT: PASS"; else echo "APPLY RESULT: FAIL"; exit 1; fi
+$ bash probe-egress.sh postfiatd-sentry
+tool sha256 fadc7034332bc89a6bdcec0ac05a68a17683d95e5ee20919682fb0a55cac27b9  profile sha256 a16c4ecfdc3bf556afa65fdf60f974e8bf20aad2f3be377d6a03676760e41a11
+  [PASS] chain PFT-EGRESS matches the applied snapshot (8 rules)
+  [PASS] exactly one jump, at DOCKER-USER position 1
+RESULT: PASS
+live PFT-EGRESS rules sha 9bff5e9d2495f477
+=== probe 1: real reapply, no drift, tuned profile (live state dir)
+probe profile: pft-egress-reapply@.service.conf (26 properties) sha256 a16c4ecfdc3bf556
+probe command: /usr/local/sbin/pft-egress reapply --container postfiatd-sentry
+probe exit 0
+PROBE PASS
+  [PASS] no-drift reapply exits 0 under the profile
+=== probe 2: forced drift (scratch state, saved live_rules altered) -> reload of the same policy, tuned profile
+probe profile: ug-egress-probe.conf (28 properties) sha256 c5760f9e76b75edf
+probe command: /usr/local/sbin/pft-egress reapply --container postfiatd-sentry
+[2026-10-27T04:12:20Z] reapply: drift found (chain changed, jump missing/moved/duplicated, or container IP now 172.17.0.2) - reloading
+[2026-10-27T04:12:21Z] reapply: done
+probe exit 0
+PROBE PASS
+  [PASS] forced-drift reload exits 0 under the profile
+  [PASS] scratch state rewritten with the live rules (ug-probe-drift line gone)
+scratch state mode after reload: 644 (UMask=0077)
+=== probe 3: control = tuned profile minus AF_NETLINK, forced drift (must fail visibly, live chain untouched)
+probe profile: ug-egress-ctl.conf (28 properties) sha256 684a6c2bec660bb2
+probe command: /usr/local/sbin/pft-egress reapply --container postfiatd-sentry
+[2026-10-27T04:12:22Z] reapply: drift found (chain changed, jump missing/moved/duplicated, or container IP now 172.17.0.2) - reloading
+iptables-restore/1.8.7 Failed to initialize nft: Address family not supported by protocol
+Error: writing output failed: Broken pipe
+probe exit 1
+PROBE PASS (blocked as expected)
+  [PASS] control without AF_NETLINK fails
+=== negatives under the tuned profile
+probe profile: pft-egress-reapply@.service.conf (26 properties) sha256 a16c4ecfdc3bf556
+probe command: /bin/sh -c touch /etc/ug-probe-write
+touch: cannot touch '/etc/ug-probe-write': Read-only file system
+probe exit 1
+PROBE PASS (blocked as expected)
+  [PASS] write to /etc blocked (ProtectSystem=strict)
+probe profile: pft-egress-reapply@.service.conf (26 properties) sha256 a16c4ecfdc3bf556
+probe command: /bin/bash -c exec 3<>/dev/tcp/127.0.0.1/5005
+/bin/bash: socket: Address family not supported by protocol
+/bin/bash: line 1: /dev/tcp/127.0.0.1/5005: Address family not supported by protocol
+probe exit 1
+PROBE PASS (blocked as expected)
+  [PASS] AF_INET socket blocked (RestrictAddressFamilies)
+probe profile: pft-egress-reapply@.service.conf (26 properties) sha256 a16c4ecfdc3bf556
+probe command: /bin/sh -c ls /root
+ls: cannot open directory '/root': Permission denied
+probe exit 2
+PROBE PASS (blocked as expected)
+  [PASS] /root hidden (ProtectHome)
+=== after
+live PFT-EGRESS rules sha 9bff5e9d2495f477
+  [PASS] live chain rules identical before/after
+  [PASS] pft-egress check PASS after probes
+PROBES RESULT: PASS
+exit 0
+$ bash apply-egress.sh postfiatd-sentry
+tool sha256 fadc7034332bc89a6bdcec0ac05a68a17683d95e5ee20919682fb0a55cac27b9  profile sha256 a16c4ecfdc3bf556afa65fdf60f974e8bf20aad2f3be377d6a03676760e41a11
+=== check-command control: same command with Result compared to a value it never has (must exit non-zero)
+control exit 1 -> PASS
+$ sudo bash pft-unitguard.sh apply pft-egress-reapply@postfiatd-sentry.service
+[2026-10-27T04:12:23Z] APPLY pft-egress-reapply@postfiatd-sentry.service class=iptables target<=<before -> /etc/systemd/system/pft-egress-reapply@.service.d/50-unitguard.conf
+[2026-10-27T04:12:23Z]   exposure before: 9.6
+[2026-10-27T04:12:24Z]   run pft-egress-reapply@postfiatd-sentry.service (oneshot): Result=success ExecMainStatus=0
+[2026-10-27T04:12:24Z]   check: u=$(systemctl list-units --all --plain --no-legend 'pft-egress-reapply@*.service' | awk '{print $1}' | head -1); c=${u#pft-egress-reapply@}; c=${c%.service}; test "$(systemctl show -p Result --value "$u")" = success && pft-egress check --container "$c" >/dev/null
+[2026-10-27T04:12:25Z]   check exit 0
+[2026-10-27T04:12:25Z] PASS pft-egress-reapply@postfiatd-sentry.service exposure now: 1.9 OK 13
+exit 0
+$ sudo pft-egress check --container postfiatd-sentry
+pft-egress check postfiatd-sentry - 2026-10-27T04:12:25Z
+  [PASS] state file present
+  [PASS] chain PFT-EGRESS matches the applied snapshot (8 rules)
+  [PASS] container IP unchanged since apply
+  [PASS] exactly one jump, at DOCKER-USER position 1
+  [PASS] reapply timer enabled
+  [INFO] default-deny DROP counter: 0 pkts 0 bytes
+  [INFO] drop log lines in the last hour: 0
+  [PASS] server_state full
+  [PASS] peers 11 >= baseline 11
+RESULT: PASS
+$ sudo bash pft-unitguard.sh audit --detail
+UNIT                                     EXPOS  RATING   FAILED USER      CLASS    TARGET DROPIN VERDICT
+pft-divergence.service                   2.6    OK       18     root      docker   <before yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_SET(UID|GID|PCAP) 
+    missing: RestrictAddressFamilies=~AF_(INET|INET6) DeviceAllow= IPAddressDeny= PrivateUsers= ProtectHome= ProtectProc= 
+    missing: SystemCallFilter=~@privileged SystemCallFilter=~@resources CapabilityBoundingSet=~CAP_AUDIT_* 
+    missing: CapabilityBoundingSet=~CAP_SYS_(NICE|RESOURCE) RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= UMask= 
+    missing: RestrictAddressFamilies=~AF_UNIX ProcSubset=
+pft-egress-reapply@postfiatd-sentry.service 1.9    OK       13     root      iptables <before yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_NET_ADMIN DeviceAllow= IPAddressDeny= PrivateUsers= 
+    missing: ProtectProc= SystemCallFilter=~@privileged CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) 
+    missing: RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= RestrictAddressFamilies=~AF_UNIX ProcSubset=
+pft-integrity.service                    2.4    OK       15     root      iptables <before yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) CapabilityBoundingSet=~CAP_NET_ADMIN DeviceAllow= 
+    missing: IPAddressDeny= PrivateUsers= ProtectProc= SystemCallFilter=~@privileged 
+    missing: CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) RestrictAddressFamilies=~AF_NETLINK 
+    missing: RootDirectory=/RootImage= RestrictAddressFamilies=~AF_UNIX ProcSubset=
+pft-logship-check.service                2.1    OK       13     root      docker   <before yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) DeviceAllow= IPAddressDeny= PrivateUsers= ProtectProc= 
+    missing: SystemCallFilter=~@privileged RootDirectory=/RootImage= UMask= RestrictAddressFamilies=~AF_UNIX ProcSubset=
+pft-logship-dockerlog@postfiatd-sentry.service 9.6    UNSAFE   74     root      docker   <before no    not-applied
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_SET(UID|GID|PCAP) 
+    missing: CapabilityBoundingSet=~CAP_SYS_ADMIN CapabilityBoundingSet=~CAP_SYS_PTRACE RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: RestrictNamespaces=~CLONE_NEWUSER RestrictAddressFamilies=~… CapabilityBoundingSet=~CAP_(CHOWN|FSETID|SETFCAP) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) CapabilityBoundingSet=~CAP_NET_ADMIN 
+    missing: CapabilityBoundingSet=~CAP_SYS_MODULE CapabilityBoundingSet=~CAP_SYS_RAWIO CapabilityBoundingSet=~CAP_SYS_TIME 
+    missing: DeviceAllow= IPAddressDeny= NoNewPrivileges= PrivateDevices= PrivateMounts= PrivateTmp= PrivateUsers= ProtectClock= 
+    missing: ProtectControlGroups= ProtectHome= ProtectKernelLogs= ProtectKernelModules= ProtectKernelTunables= ProtectProc= 
+    missing: ProtectSystem= RestrictAddressFamilies=~AF_PACKET RestrictSUIDSGID= SystemCallArchitectures= 
+    missing: SystemCallFilter=~@clock SystemCallFilter=~@debug SystemCallFilter=~@module SystemCallFilter=~@mount 
+    missing: SystemCallFilter=~@raw-io SystemCallFilter=~@reboot SystemCallFilter=~@swap SystemCallFilter=~@privileged 
+    missing: SystemCallFilter=~@resources CapabilityBoundingSet=~CAP_AUDIT_* CapabilityBoundingSet=~CAP_KILL 
+    missing: CapabilityBoundingSet=~CAP_MKNOD CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) 
+    missing: CapabilityBoundingSet=~CAP_SYSLOG CapabilityBoundingSet=~CAP_SYS_(NICE|RESOURCE) 
+    missing: RestrictNamespaces=~CLONE_NEWCGROUP RestrictNamespaces=~CLONE_NEWIPC RestrictNamespaces=~CLONE_NEWNET 
+    missing: RestrictNamespaces=~CLONE_NEWNS RestrictNamespaces=~CLONE_NEWPID RestrictRealtime= SystemCallFilter=~@cpu-emulation 
+    missing: SystemCallFilter=~@obsolete RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= 
+    missing: CapabilityBoundingSet=~CAP_MAC_* CapabilityBoundingSet=~CAP_SYS_BOOT LockPersonality= MemoryDenyWriteExecute= 
+    missing: RestrictNamespaces=~CLONE_NEWUTS UMask= CapabilityBoundingSet=~CAP_LINUX_IMMUTABLE 
+    missing: CapabilityBoundingSet=~CAP_IPC_LOCK CapabilityBoundingSet=~CAP_SYS_CHROOT ProtectHostname= 
+    missing: CapabilityBoundingSet=~CAP_BLOCK_SUSPEND CapabilityBoundingSet=~CAP_LEASE CapabilityBoundingSet=~CAP_SYS_PACCT 
+    missing: CapabilityBoundingSet=~CAP_SYS_TTY_CONFIG CapabilityBoundingSet=~CAP_WAKE_ALARM RestrictAddressFamilies=~AF_UNIX 
+    missing: ProcSubset=
+pft-logship-vacuum.service               0.5    SAFE     5      systemd-journal-remote standard 5.0    yes   OK
+    missing: DeviceAllow= IPAddressDeny= PrivateUsers= RootDirectory=/RootImage= RestrictAddressFamilies=~AF_UNIX
+pft-maint-tick.service                   1.6    OK       9      root      standard 5.0    yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= RestrictAddressFamilies=~AF_(INET|INET6) DeviceAllow= IPAddressDeny= 
+    missing: PrivateUsers= RootDirectory=/RootImage= UMask= RestrictAddressFamilies=~AF_UNIX
+pft-watchdog.service                     1.8    OK       9      root      standard 5.0    yes   OK
+    missing: PrivateNetwork= User=/DynamicUser= RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) DeviceAllow= IPAddressDeny= PrivateUsers= 
+    missing: RootDirectory=/RootImage= RestrictAddressFamilies=~AF_UNIX
+postfiat-docker-user.service             9.6    UNSAFE   74     root      iptables <before no    not-applied
+    missing: PrivateNetwork= User=/DynamicUser= CapabilityBoundingSet=~CAP_SET(UID|GID|PCAP) 
+    missing: CapabilityBoundingSet=~CAP_SYS_ADMIN CapabilityBoundingSet=~CAP_SYS_PTRACE RestrictAddressFamilies=~AF_(INET|INET6) 
+    missing: RestrictNamespaces=~CLONE_NEWUSER RestrictAddressFamilies=~… CapabilityBoundingSet=~CAP_(CHOWN|FSETID|SETFCAP) 
+    missing: CapabilityBoundingSet=~CAP_(DAC_*|FOWNER|IPC_OWNER) CapabilityBoundingSet=~CAP_NET_ADMIN 
+    missing: CapabilityBoundingSet=~CAP_SYS_MODULE CapabilityBoundingSet=~CAP_SYS_RAWIO CapabilityBoundingSet=~CAP_SYS_TIME 
+    missing: DeviceAllow= IPAddressDeny= NoNewPrivileges= PrivateDevices= PrivateMounts= PrivateTmp= PrivateUsers= ProtectClock= 
+    missing: ProtectControlGroups= ProtectHome= ProtectKernelLogs= ProtectKernelModules= ProtectKernelTunables= ProtectProc= 
+    missing: ProtectSystem= RestrictAddressFamilies=~AF_PACKET RestrictSUIDSGID= SystemCallArchitectures= 
+    missing: SystemCallFilter=~@clock SystemCallFilter=~@debug SystemCallFilter=~@module SystemCallFilter=~@mount 
+    missing: SystemCallFilter=~@raw-io SystemCallFilter=~@reboot SystemCallFilter=~@swap SystemCallFilter=~@privileged 
+    missing: SystemCallFilter=~@resources CapabilityBoundingSet=~CAP_AUDIT_* CapabilityBoundingSet=~CAP_KILL 
+    missing: CapabilityBoundingSet=~CAP_MKNOD CapabilityBoundingSet=~CAP_NET_(BIND_SERVICE|BROADCAST|RAW) 
+    missing: CapabilityBoundingSet=~CAP_SYSLOG CapabilityBoundingSet=~CAP_SYS_(NICE|RESOURCE) 
+    missing: RestrictNamespaces=~CLONE_NEWCGROUP RestrictNamespaces=~CLONE_NEWIPC RestrictNamespaces=~CLONE_NEWNET 
+    missing: RestrictNamespaces=~CLONE_NEWNS RestrictNamespaces=~CLONE_NEWPID RestrictRealtime= SystemCallFilter=~@cpu-emulation 
+    missing: SystemCallFilter=~@obsolete RestrictAddressFamilies=~AF_NETLINK RootDirectory=/RootImage= 
+    missing: CapabilityBoundingSet=~CAP_MAC_* CapabilityBoundingSet=~CAP_SYS_BOOT LockPersonality= MemoryDenyWriteExecute= 
+    missing: RestrictNamespaces=~CLONE_NEWUTS UMask= CapabilityBoundingSet=~CAP_LINUX_IMMUTABLE 
+    missing: CapabilityBoundingSet=~CAP_IPC_LOCK CapabilityBoundingSet=~CAP_SYS_CHROOT ProtectHostname= 
+    missing: CapabilityBoundingSet=~CAP_BLOCK_SUSPEND CapabilityBoundingSet=~CAP_LEASE CapabilityBoundingSet=~CAP_SYS_PACCT 
+    missing: CapabilityBoundingSet=~CAP_SYS_TTY_CONFIG CapabilityBoundingSet=~CAP_WAKE_ALARM RestrictAddressFamilies=~AF_UNIX 
+    missing: ProcSubset=
+exit 0
+$ sudo cat /etc/systemd/system/pft-egress-reapply@.service.d/50-unitguard.conf | sha256sum; profile directives sha256
+7bff7faff0ab7dc0293fb8765929844a26c4ce45f603b7e6a45d4e2571636f61
+(drop-in = generated header + the profile directives; diff below must show only header lines)
+1d0
+< # written by pft-unitguard from pft-egress-reapply@.service.conf - remove with: pft-unitguard rollback <unit>
+APPLY RESULT: PASS
+exit 0

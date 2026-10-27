@@ -1,0 +1,49 @@
+OS: Ubuntu 22.04.5 LTS | validator-host + sentry-host | 2026-10-27T04:25:16Z
+# read-only: timer-driven pft-egress-reapply runs and the dockerlog follower after the unitguard applies (runs 37/38, 42/43)
+===== validator-host
+$ journalctl --utc -u pft-egress-reapply@postfiatd.service --since -30min (Finished/Failed)
+2026-10-27T03:58:30+0000 systemd[1]: Finished pft-egress: re-apply the egress policy for container postfiatd.
+2026-10-27T04:03:40+0000 systemd[1]: Finished pft-egress: re-apply the egress policy for container postfiatd.
+2026-10-27T04:08:40+0000 systemd[1]: Finished pft-egress: re-apply the egress policy for container postfiatd.
+2026-10-27T04:10:42+0000 systemd[1]: Finished pft-egress: re-apply the egress policy for container postfiatd.
+2026-10-27T04:11:53+0000 systemd[1]: Finished pft-egress: re-apply the egress policy for container postfiatd.
+2026-10-27T04:16:59+0000 systemd[1]: Finished pft-egress: re-apply the egress policy for container postfiatd.
+2026-10-27T04:22:10+0000 systemd[1]: Finished pft-egress: re-apply the egress policy for container postfiatd.
+$ systemctl show pft-egress-reapply@postfiatd.service -p Result,ExecMainStatus,DropInPaths
+Result=success
+ExecMainStatus=0
+DropInPaths=/etc/systemd/system/pft-egress-reapply@.service.d/50-unitguard.conf
+$ systemctl show pft-logship-dockerlog@postfiatd.service -p ActiveState,NRestarts,DropInPaths
+NRestarts=0
+ActiveState=active
+DropInPaths=/etc/systemd/system/pft-logship-dockerlog@.service.d/50-unitguard.conf
+$ sudo pft-egress check --container postfiatd | tail -1
+RESULT: PASS
+$ sudo pft-logship check | tail -1
+RESULT: PASS -> exit 0
+$ sudo pft-integrity verify | tail -1
+RESULT: PASS - 59 unchanged, 0 warn, 0 fail -> exit 0
+===== sentry-host
+$ journalctl --utc -u pft-egress-reapply@postfiatd-sentry.service --since -30min (Finished/Failed)
+2026-10-27T03:56:29+0000 systemd[1]: Finished pft-egress: re-apply the egress policy for container postfiatd-sentry.
+2026-10-27T04:01:29+0000 systemd[1]: Finished pft-egress: re-apply the egress policy for container postfiatd-sentry.
+2026-10-27T04:06:31+0000 systemd[1]: Finished pft-egress: re-apply the egress policy for container postfiatd-sentry.
+2026-10-27T04:11:02+0000 systemd[1]: Finished pft-egress: re-apply the egress policy for container postfiatd-sentry.
+2026-10-27T04:11:03+0000 systemd[1]: Finished pft-egress: re-apply the egress policy for container postfiatd-sentry.
+2026-10-27T04:12:24+0000 systemd[1]: Finished pft-egress: re-apply the egress policy for container postfiatd-sentry.
+2026-10-27T04:17:25+0000 systemd[1]: Finished pft-egress: re-apply the egress policy for container postfiatd-sentry.
+2026-10-27T04:22:26+0000 systemd[1]: Finished pft-egress: re-apply the egress policy for container postfiatd-sentry.
+$ systemctl show pft-egress-reapply@postfiatd-sentry.service -p Result,ExecMainStatus,DropInPaths
+Result=success
+ExecMainStatus=0
+DropInPaths=/etc/systemd/system/pft-egress-reapply@.service.d/50-unitguard.conf
+$ systemctl show pft-logship-dockerlog@postfiatd-sentry.service -p ActiveState,NRestarts,DropInPaths
+NRestarts=0
+ActiveState=active
+DropInPaths=/etc/systemd/system/pft-logship-dockerlog@.service.d/50-unitguard.conf
+$ sudo pft-egress check --container postfiatd-sentry | tail -1
+RESULT: PASS
+$ sudo pft-logship check | tail -1
+RESULT: PASS -> exit 0
+$ sudo pft-integrity verify | tail -1
+RESULT: PASS - 35 unchanged, 0 warn, 0 fail -> exit 0

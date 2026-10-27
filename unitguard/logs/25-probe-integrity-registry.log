@@ -1,0 +1,35 @@
+OS: Ubuntu 22.04.5 LTS | validator-host | 2026-10-27T03:11:39Z
+$ cat probe-25.sh
+#!/usr/bin/env bash
+# unitguard: run pft-integrity's two Docker Hub calls (token + manifest HEAD, copied from registry_digest) inside the
+# pft-integrity profile and compare the digest with the running image's local RepoDigest.
+# Run 24 could not tell "yes" from a skipped "unknown" (verify prints only "unchanged"), so this checks the value itself.
+set -uo pipefail
+cd "$(dirname "$0")/../postfiat-validator-installer/unitguard" || exit 3
+ref="$(sudo docker inspect postfiatd --format '{{.Config.Image}}')"; repo="${ref%:*}" tag="${ref##*:}"
+local_d="$(sudo docker image inspect "$(sudo docker inspect postfiatd --format '{{.Image}}')" --format '{{json .RepoDigests}}' |
+  jq -r --arg r "$repo" '[.[] | select(startswith($r + "@"))][0] // "none" | sub(".*@"; "")')"
+echo "running image ref: $ref | local repo digest: ${local_d:0:19}..."
+# shellcheck disable=SC2016  # expanded by the bash inside the sandbox
+cmd='tok="$(curl -fsS -m 10 "https://auth.docker.io/token?service=registry.docker.io&scope=repository:$1:pull" | jq -r .token)"
+[ -n "$tok" ] && [ "$tok" != null ] || { echo "no token"; exit 1; }
+curl -fsSI -m 10 -H "Authorization: Bearer $tok" -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json" \
+  "https://registry-1.docker.io/v2/$1/manifests/$2" | tr -d "\r" | awk -F": " "tolower(\$1)==\"docker-content-digest\" {print \$2}"'
+# shellcheck disable=SC2024
+sudo bash drill/probe.sh profiles/pft-integrity.service.conf -- /bin/bash -c "$cmd" _ "$repo" "$tag" > /tmp/ug-reg.out 2>&1; r=$?
+sed -E 's/(sha256:[0-9a-f]{12})[0-9a-f]+/\1.../' /tmp/ug-reg.out
+reg="$(grep -oE '^sha256:[0-9a-f]{64}' /tmp/ug-reg.out | head -1)"
+v=FAIL; [ "$r" = 0 ] && [ -n "$reg" ] && [ "$reg" = "$local_d" ] && v=PASS
+echo "sandboxed registry digest == local repo digest: $v"
+$ bash probe-25.sh
+running image ref: agtipft/postfiatd:testnet-light-latest | local repo digest: sha256:cc139becfe50...
+probe profile: pft-integrity.service.conf (26 properties) sha256 7ede62378635a3bc
+probe command: /bin/bash -c tok="$(curl -fsS -m 10 "https://auth.docker.io/token?service=registry.docker.io&scope=repository:$1:pull" | jq -r .token)"
+[ -n "$tok" ] && [ "$tok" != null ] || { echo "no token"; exit 1; }
+curl -fsSI -m 10 -H "Authorization: Bearer $tok" -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json" \
+  "https://registry-1.docker.io/v2/$1/manifests/$2" | tr -d "\r" | awk -F": " "tolower(\$1)==\"docker-content-digest\" {print \$2}" _ agtipft/postfiatd testnet-light-latest
+sha256:cc139becfe50...
+probe exit 0
+PROBE PASS
+sandboxed registry digest == local repo digest: PASS
+exit 0

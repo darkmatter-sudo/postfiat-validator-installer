@@ -1,0 +1,62 @@
+OS: Ubuntu 22.04.5 LTS | sentry-host | 2026-10-27T03:18:48Z | profile sha256 a7b0145d35e0317f
+$ cat sentry-29.sh
+#!/usr/bin/env bash
+# unitguard probe on sentry-host: pft-watchdog check under the tuned profile vs the first draft (empty
+# CapabilityBoundingSet), each on a scratch copy of the state and of one real signed heartbeat message in a
+# pftwd-owned 0700 scratch spool. Alerts go to NTFY_OUTBOX files, never ntfy. Nothing live is changed.
+set -uo pipefail
+cd /tmp/ug || exit 3
+P=profiles/pft-watchdog.service.conf D=/tmp/ug-wd-draft.conf
+left_tuned=x lg_tuned=x left_draft=x lg_draft=x
+sed -e 's/^CapabilityBoundingSet=.*/CapabilityBoundingSet=/' \
+    -e 's#^ReadWritePaths=.*#ReadWritePaths=/var/lib/pft-watchdog /var/lib/pft-watchdog-spool#' "$P" > "$D"
+echo "tuned profile: $(grep -E '^(CapabilityBoundingSet|ReadWritePaths)=' "$P" | tr '\n' ' ')"
+echo "draft control: $(grep -E '^(CapabilityBoundingSet|ReadWritePaths)=' "$D" | tr '\n' ' ')"
+echo "=== copy one real heartbeat message as soon as it lands (read-only; the live watchdog still consumes the original)"
+m=""; for _ in $(seq 1 650); do
+  f="$(sudo find /var/lib/pft-watchdog-spool -maxdepth 1 -name '*.msg' | head -1)"
+  if [ -n "$f" ] && sudo cp "$f" /tmp/ug-hb.msg 2>/dev/null; then m=$f; break; fi; sleep 0.2; done
+[ -n "$m" ] || { echo "no heartbeat message seen in 130 s"; exit 1; }
+hts="$(sudo head -1 /tmp/ug-hb.msg | jq -r .ts)"; echo "copied message ts=$hts type=$(sudo head -1 /tmp/ug-hb.msg | jq -r '.type // "heartbeat"')"
+run() { # label profile
+  local S=/var/lib/ug-probe-wd-$1 Q=/var/lib/ug-probe-spool-$1 c=/tmp/ug-wd-$1.conf
+  sudo rm -rf "$S" "$Q"; sudo install -d -m 700 "$S"; sudo install -d -m 700 -o pftwd -g pftwd "$Q"
+  sudo cp -p /var/lib/pft-watchdog/state.json "$S/"; sudo install -m 600 -o pftwd -g pftwd /tmp/ug-hb.msg "$Q/$(date -u +%s%N).msg"
+  cp "$2" "$c"; printf '%s\n' "Environment=STATE_DIR=$S SPOOL_DIR=$Q NTFY_OUTBOX=$S/outbox" "ReadWritePaths=$S $Q" >> "$c"
+  sudo bash drill/probe.sh "$c" -- /usr/local/bin/pft-watchdog check --notify 2>&1 | grep -vE '^probe profile'
+  left=$(sudo find "$Q" -maxdepth 1 -name '*.msg' | wc -l)
+  lg=$(sudo jq -r '.last_good.ts // 0' "$S/state.json"); st=$(sudo jq -r .state "$S/state.json")
+  echo "[$1] messages left in scratch spool: $left | state $st | last_good.ts $lg (message ts $hts) | outbox lines $(sudo cat "$S/outbox" 2>/dev/null | grep -c .)"
+  printf -v "left_$1" %s "$left"; printf -v "lg_$1" %s "$lg"
+  sudo rm -rf "$S" "$Q" "$c"
+}
+echo "=== tuned profile"; run tuned "$P"
+echo "=== draft control"; run draft "$D"
+v1=FAIL; [ "$left_tuned" = 0 ] && [ "$lg_tuned" = "$hts" ] && v1=PASS
+v2=FAIL; [ "$left_draft" = 1 ] && [ "$lg_draft" != "$hts" ] && v2=PASS
+echo "tuned profile consumed + verified the heartbeat: $v1"
+echo "draft control could NOT consume it (as expected): $v2"
+sudo rm -f /tmp/ug-hb.msg "$D"
+[ "$v1" = PASS ] && [ "$v2" = PASS ]
+$ ssh sentry-host bash -s < sentry-29.sh
+tuned profile: CapabilityBoundingSet=CAP_DAC_OVERRIDE ReadWritePaths=/var/lib/pft-watchdog /var/lib/pft-watchdog-spool /var/lib/pft-maint 
+draft control: CapabilityBoundingSet= ReadWritePaths=/var/lib/pft-watchdog /var/lib/pft-watchdog-spool 
+=== copy one real heartbeat message as soon as it lands (read-only; the live watchdog still consumes the original)
+copied message ts=1793071107 type=heartbeat
+=== tuned profile
+probe command: /usr/local/bin/pft-watchdog check --notify
+2026-10-27T03:18:50Z state=OK prev=OK good=1 bad=0 maint=false notified=none | heartbeat age 23s, lag 5s
+probe exit 0
+PROBE PASS
+[tuned] messages left in scratch spool: 0 | state OK | last_good.ts 1793071107 (message ts 1793071107) | outbox lines 0
+=== draft control
+cp: '/tmp/ug-wd-draft.conf' and '/tmp/ug-wd-draft.conf' are the same file
+probe command: /usr/local/bin/pft-watchdog check --notify
+2026-10-27T03:18:53Z state=OK prev=OK good=0 bad=0 maint=false notified=none | heartbeat age 90s, lag 2s
+probe exit 0
+PROBE PASS
+[draft] messages left in scratch spool: 1 | state OK | last_good.ts 1793071043 (message ts 1793071107) | outbox lines 0
+tuned profile consumed + verified the heartbeat: PASS
+draft control could NOT consume it (as expected): PASS
+exit 0
+# SUPERSEDED by run 30: the draft-control step printed 'cp: ... are the same file' (draft base and control config shared /tmp/ug-wd-draft.conf); the probe content was still draft+scratch env, but re-run cleanly.

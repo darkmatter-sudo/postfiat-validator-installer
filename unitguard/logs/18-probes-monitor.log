@@ -1,0 +1,53 @@
+# unitguard probe run 18 (postfiat-monitor iptables-class profile) 2026-10-27T02:08:47Z
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+## probe 1: postfiat-health (read-only) under the profile
+probe profile: postfiat-monitor.service.conf (25 properties) sha256 c87f4852d194effa
+probe command: /usr/local/bin/postfiat-health
+Post Fiat health check - 2026-10-27T02:08:47Z
+  [PASS] container postfiatd running
+  [PASS] admin port 5005 bound to 127.0.0.1
+  [PASS] admin port 6005 bound to 127.0.0.1
+  [PASS] admin port 6006 bound to 127.0.0.1
+  [PASS] admin port 50051 bound to 127.0.0.1
+  [PASS] peer port 2559 listening
+  [PASS] UFW active
+  [PASS] UFW rate limit on 2559
+  [PASS] DOCKER-USER rate limit on 2559
+  [PASS] RPC responding (server_state: full)
+  [INFO] build_version: 1.0.9 | peers: 11 | complete_ledgers: 7514753-7515314
+  [PASS] build matches foundation RPC (1.0.9)
+  [INFO] node full - add validator token (official guide steps 5-8) to start proposing
+
+RESULT: HEALTHY
+probe exit 0
+PROBE PASS
+## probe 2 (control): postfiat-health under the previous DRAFT standard profile (empty CapabilityBoundingSet) - expected to fail
+probe profile: ug-monitor-standard.conf.bak (28 properties) sha256 95558ced0534b9a0
+probe command: /usr/local/bin/postfiat-health
+Post Fiat health check - 2026-10-27T02:08:58Z
+  [PASS] container postfiatd running
+  [INFO] admin port 5005 not listening
+  [INFO] admin port 6005 not listening
+  [INFO] admin port 6006 not listening
+  [INFO] admin port 50051 not listening
+  [FAIL] peer port 2559 not listening
+ERROR: Couldn't determine iptables version
+  [FAIL] UFW inactive
+  [FAIL] DOCKER-USER rate limit missing
+  [PASS] RPC responding (server_state: full)
+  [INFO] build_version: 1.0.9 | peers: 11 | complete_ledgers: 7514753-7515317
+  [PASS] build matches foundation RPC (1.0.9)
+  [INFO] node full - add validator token (official guide steps 5-8) to start proposing
+
+RESULT: UNHEALTHY
+probe exit 1
+PROBE PASS (blocked as expected)
+## probe 3: full postfiat-monitor under the profile + scratch STATE_DIR/LOG_FILE and NTFY_OUTBOX (no live state written, nothing sent)
+probe profile: ug-probe-monitor.conf (27 properties) sha256 40a9f6455af928c3
+probe command: /usr/local/bin/postfiat-monitor
+[2026-10-27T02:09:04Z] OK: server_state=full
+probe exit 0
+PROBE PASS
+scratch log:
+[2026-10-27T02:09:04Z] OK: server_state=full
+outbox lines: 0

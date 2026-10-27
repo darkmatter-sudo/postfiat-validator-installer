@@ -1,0 +1,38 @@
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+2026-10-26T23:14:14Z
+5ae1677e2e51f3ad0b823ea24df7a62f10f995001c672225830fc67f3975ccdf  pft-unitguard.sh
+e87eb1801700c4de143bd88e1b576b3f47073fe05856cc222127057718ce8e52  tests/test-unitguard.sh
+3f863d9739015fcd893942da4963cea49cb5e2187d2a9223e32a38f55a6e6f58  tests/stubs/systemctl
+7e124f3f2a696c12bedf58f238a1899424a42ef171870257ab0341c995eb830b  tests/stubs/systemd-analyze
+$ shellcheck pft-unitguard.sh tests/test-unitguard.sh tests/stubs/* drill/audit-host.sh
+shellcheck exit 0
+$ bash tests/test-unitguard.sh
+PASS audit-before: rc 0, a not-applied at 9.6
+PASS audit-before: template instance listed
+PASS audit --detail lists missing checks
+PASS apply-a: rc 0 + PASS line
+PASS apply-a: drop-in content from profile, metadata stripped
+PASS apply-a: drop-in mode 0644, dir 0755
+PASS apply-a: daemon-reload before start
+PASS apply-a: before score recorded 9.6
+PASS audit-after: OK verdict
+PASS fail-unit: rc 1, rolled back, drop-in gone
+PASS fail-unit: unit re-run after rollback
+PASS fail-check: rc 1, check exit 7 logged, rolled back
+PASS fail-target: rc 1, misses target 5.0, rolled back
+PASS docker-lower: rc 0
+PASS docker-equal: rc 1 (not reduced)
+PASS daemon-restarts: rc 1, NRestarts change logged, rolled back
+PASS daemon-ok: restart used, rc 0
+PASS rollback: drop-in removed, rc 0
+PASS rollback: earlier drop-in restored byte-identical
+PASS skip: d left alone, others applied
+PASS template: drop-in on t@.service.d
+PASS perms: group-writable dir flagged
+PASS perms: world-writable parent dir of ExecStart binary flagged
+PASS usage: apply without unit -> 3
+PASS plan: unknown unit -> 3
+PASS plan: shows exception + drop-in
+PASS root: apply as non-root refused (4)
+RESULT: 27 passed, 0 failed
+exit 0

@@ -1,0 +1,50 @@
+OS: Ubuntu 22.04.5 LTS | validator-host | 2026-10-27T00:13:50Z | probe.sh sha256 52dcba6321f99a0d
+$ sudo bash drill/probe.sh profiles/pft-logship-vacuum.service.conf -- journalctl --directory=/var/log/journal/remote --disk-usage
+probe profile: pft-logship-vacuum.service.conf (29 properties) sha256 94376841f05f73bc
+probe command: journalctl --directory=/var/log/journal/remote --disk-usage
+No journal files were opened due to insufficient permissions.
+probe exit 1
+PROBE FAIL
+--- file ownership
+systemd-journal-remote:systemd-journal-remote 755 /var/log/journal/remote
+systemd-journal-remote:systemd-journal-remote 640 /var/log/journal/remote/remote-CN=sentry-host,O=pft-logship.journal
+systemd-journal-remote:systemd-journal-remote 640 /var/log/journal/remote/remote-CN=sentry-host,O=pft-logship@2e9c063d412b40e6accb9a3c25722d27-0000000000000001-00065e5102f6e87a.journal
+12:ProtectControlGroups=yes
+27:CapabilityBoundingSet=
+28:AmbientCapabilities=
+=== fix: profile now runs as User/Group systemd-journal-remote (2026-10-27T00:14:04Z)
+$ sudo bash drill/probe.sh profiles/pft-logship-vacuum.service.conf -- journalctl --directory=/var/log/journal/remote --disk-usage
+probe profile: pft-logship-vacuum.service.conf (31 properties) sha256 dbc70408951ec390
+probe command: journalctl --directory=/var/log/journal/remote --disk-usage
+Archived and active journals take up 1.5G in the file system.
+probe exit 0
+PROBE PASS
+$ sudo bash drill/probe.sh profiles/pft-logship-vacuum.service.conf -- journalctl --directory=/var/log/journal/remote --vacuum-size=2G
+probe profile: pft-logship-vacuum.service.conf (31 properties) sha256 dbc70408951ec390
+probe command: journalctl --directory=/var/log/journal/remote --vacuum-size=2G
+Vacuuming done, freed 0B of archived journals from /var/log/journal/remote.
+probe exit 0
+PROBE PASS
+=== 2026-10-27T00:14:13Z
+$ sudo bash drill/probe.sh profiles/pft-integrity.service.conf -- /usr/local/bin/pft-integrity verify
+probe profile: pft-integrity.service.conf (15 properties) sha256 e4f64162da21e0cb
+probe command: /usr/local/bin/pft-integrity verify
+pft-integrity verify - 2026-10-27T00:14:20Z
+OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-10-26T20:36:45Z
+RESULT: PASS - 59 unchanged, 0 warn, 0 fail -> exit 0
+probe exit 0
+PROBE PASS
+=== exploration before writing negative.sh expectations (2026-10-27T00:15:26Z)
+/root/.profile exists on host
+$ sudo bash drill/probe.sh profiles/pft-heartbeat.service.conf --expect-fail -- ls /root/.profile
+probe profile: pft-heartbeat.service.conf (28 properties) sha256 22f9cc8e4a679263
+probe command: ls /root/.profile
+/usr/bin/ls: cannot access '/root/.profile': Permission denied
+probe exit 2
+PROBE PASS (blocked as expected)
+$ sudo bash drill/probe.sh profiles/pft-integrity.service.conf --expect-fail -- ls /root/.profile
+probe profile: pft-integrity.service.conf (15 properties) sha256 e4f64162da21e0cb
+probe command: ls /root/.profile
+/usr/bin/ls: cannot access '/root/.profile': No such file or directory
+probe exit 2
+PROBE PASS (blocked as expected)

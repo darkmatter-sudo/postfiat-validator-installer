@@ -27,6 +27,7 @@ Exit codes: `0` all PASS, `1` at least one WARN, `2` at least one FAIL, `3` usag
 | `compose:<file>` | `docker-compose*.yml`, `compose*.yml` and `.env` in the container's compose project dir (`COMPOSE_DIR` overrides) | sha256, mode, owner, mtime |
 | `cfgvol:<file>` | every file in the volume mounted at `/etc/postfiatd` (`postfiatd.cfg`, `validators.txt`, ...) | sha256, mode, owner, mtime (**never contents**) |
 | `unit:<name>` | `/etc/systemd/system/pft-*` and `postfiat-*` `.service`/`.timer` (the add-ons in this repo) | sha256, mode, owner, mtime |
+| `dropin:<unit>.d/<file>` | `*.conf` drop-ins of those units (e.g. the unitguard sandboxes, `../unitguard/`): a changed or removed drop-in can undo a sandbox | sha256, mode, owner, mtime |
 | `bin:<name>` | every regular file in `/usr/local/bin` (`postfiat-health`, `postfiat-monitor`, this script, ...) | sha256, mode, owner, mtime |
 | `sshd:...` | `/etc/ssh/sshd_config`, `/etc/ssh/sshd_config.d/*`, plus `sshd:effective` = hash of `sshd -T` | sha256, mode, owner, mtime |
 | `fw:ufw` | `ufw show added` + `Status:`/`Default:` lines of `ufw status verbose` (no counters) | rule count, sha256 |

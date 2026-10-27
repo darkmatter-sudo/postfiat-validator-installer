@@ -1,0 +1,79 @@
+OS: Ubuntu 22.04.5 LTS | validator-host | 2026-10-27T04:18:18Z
+# re-run of 40: probe pass criterion fixed (control's docker error text was counted as captured lines)
+$ cat probe-dockerlog.sh
+#!/usr/bin/env bash
+# unitguard probes for pft-logship-dockerlog@ on this host (run from the unitguard dir). The real follower runs
+# under the profile for 15 s with a scratch, empty state dir (-> `--tail 0`, no backfill) and its stdout goes to a
+# file in the probe's PrivateTmp, so nothing reaches the live journal and the live resume state is not touched.
+# PASS = the follower was still running at the timeout (exit 124) AND saved resume state (only done after real
+# container lines) AND captured lines; run 40 counted docker's error text as lines. Control: no AF_UNIX must fail. Negatives: /etc write, AF_INET socket, chown.
+set -uo pipefail
+C="${1:?container}"; P=profiles/pft-logship-dockerlog@.service.conf; S=/var/lib/pft-logship/dockerlog/ug-probe
+echo "tool sha256 $(sha256sum pft-unitguard.sh | cut -d' ' -f1)  profile sha256 $(sha256sum "$P" | cut -d' ' -f1)"
+fails=0; r() { if [ "$1" = 0 ]; then echo "  [PASS] $2"; else echo "  [FAIL] $2"; fails=$((fails+1)); fi; }
+live_before="$(sudo sha256sum "/var/lib/pft-logship/dockerlog/$C.state" | cut -c1-16)"
+# shellcheck disable=SC2016  # expanded inside the probe
+body='PFT_LS_DL_STATE='"$S"' timeout -s TERM 15 /usr/bin/python3 -I /usr/local/sbin/pft-logship-dockerlog '"$C"' > /tmp/out 2>&1; rc=$?; n=$(grep -c . /tmp/out); echo "follower exit $rc (124 = still following when the timeout stopped it), lines captured: $n, state: $(cat '"$S/$C"'.state 2>/dev/null || echo none)"; echo "first captured line (truncated): $(head -c 120 /tmp/out | head -1)"; [ "$rc" = 124 ] && [ -s '"$S/$C"'.state ] && [ "$n" -gt 0 ]'
+mk() { sudo rm -rf "$S"; sudo install -d -m 700 "$S"; cp "$P" "$1"; echo "ReadWritePaths=$S" >> "$1"; }
+echo "=== probe 1: real follower under the tuned profile, 15 s"
+mk /tmp/ug-dl-probe.conf
+sudo bash drill/probe.sh /tmp/ug-dl-probe.conf -- /bin/bash -c "$body"; r $? "follower captures container lines under the profile"
+echo "=== probe 2: control = tuned profile with RestrictAddressFamilies=AF_INET (no AF_UNIX for the docker socket)"
+mk /tmp/ug-dl-ctl.conf; sed -i 's/^RestrictAddressFamilies=.*/RestrictAddressFamilies=AF_INET/' /tmp/ug-dl-ctl.conf
+sudo bash drill/probe.sh /tmp/ug-dl-ctl.conf --expect-fail -- /bin/bash -c "$body"; r $? "control without AF_UNIX: follower fails, no resume state"
+echo "=== negatives under the tuned profile"
+sudo bash drill/probe.sh "$P" --expect-fail -- /bin/sh -c 'touch /etc/ug-probe-write'; r $? "write to /etc blocked (ProtectSystem=strict)"
+sudo bash drill/probe.sh "$P" --expect-fail -- /bin/bash -c 'exec 3<>/dev/tcp/127.0.0.1/5005'; r $? "AF_INET socket blocked (RestrictAddressFamilies)"
+sudo bash drill/probe.sh "$P" --expect-fail -- /bin/sh -c 'f=/var/lib/pft-logship/dockerlog/ug-chown; : > $f; chown nobody $f; rc=$?; rm -f $f; exit $rc'; r $? "chown blocked (empty CapabilityBoundingSet)"
+sudo rm -rf "$S" /tmp/ug-dl-probe.conf /tmp/ug-dl-ctl.conf; sudo rm -f /etc/ug-probe-write
+echo "=== after"
+systemctl is-active "pft-logship-dockerlog@$C.service"; r $? "live follower still active"
+sudo test -n "$(sudo cat "/var/lib/pft-logship/dockerlog/$C.state")"; r $? "live resume state present (sha before $live_before, now $(sudo sha256sum "/var/lib/pft-logship/dockerlog/$C.state" | cut -c1-16), advanced by the live unit)"
+echo "PROBES RESULT: $([ $fails = 0 ] && echo PASS || echo "FAIL ($fails)")"; [ $fails = 0 ]
+$ bash probe-dockerlog.sh postfiatd
+tool sha256 fadc7034332bc89a6bdcec0ac05a68a17683d95e5ee20919682fb0a55cac27b9  profile sha256 fc3faeb8b16351116d2b36abdd6e5bc78d7b1cfbc4ba41b5e3e8d2e58315ee25
+=== probe 1: real follower under the tuned profile, 15 s
+probe profile: ug-dl-probe.conf (27 properties) sha256 1bdcecdc2d151dc0
+probe command: /bin/bash -c PFT_LS_DL_STATE=/var/lib/pft-logship/dockerlog/ug-probe timeout -s TERM 15 /usr/bin/python3 -I /usr/local/sbin/pft-logship-dockerlog postfiatd > /tmp/out 2>&1; rc=$?; n=$(grep -c . /tmp/out); echo "follower exit $rc (124 = still following when the timeout stopped it), lines captured: $n, state: $(cat /var/lib/pft-logship/dockerlog/ug-probe/postfiatd.state 2>/dev/null || echo none)"; echo "first captured line (truncated): $(head -c 120 /tmp/out | head -1)"; [ "$rc" = 124 ] && [ -s /var/lib/pft-logship/dockerlog/ug-probe/postfiatd.state ] && [ "$n" -gt 0 ]
+/bin/bash: /root/.bashrc: Permission denied
+follower exit 124 (124 = still following when the timeout stopped it), lines captured: 212, state: 1793074713390819661 1
+first captured line (truncated): pft-logship-dockerlog: postfiatd --tail 0 (no state: from now)
+probe exit 0
+PROBE PASS
+  [PASS] follower captures container lines under the profile
+=== probe 2: control = tuned profile with RestrictAddressFamilies=AF_INET (no AF_UNIX for the docker socket)
+probe profile: ug-dl-ctl.conf (27 properties) sha256 f52021e76a9001a3
+probe command: /bin/bash -c PFT_LS_DL_STATE=/var/lib/pft-logship/dockerlog/ug-probe timeout -s TERM 15 /usr/bin/python3 -I /usr/local/sbin/pft-logship-dockerlog postfiatd > /tmp/out 2>&1; rc=$?; n=$(grep -c . /tmp/out); echo "follower exit $rc (124 = still following when the timeout stopped it), lines captured: $n, state: $(cat /var/lib/pft-logship/dockerlog/ug-probe/postfiatd.state 2>/dev/null || echo none)"; echo "first captured line (truncated): $(head -c 120 /tmp/out | head -1)"; [ "$rc" = 124 ] && [ -s /var/lib/pft-logship/dockerlog/ug-probe/postfiatd.state ] && [ "$n" -gt 0 ]
+/bin/bash: /root/.bashrc: Permission denied
+follower exit 1 (124 = still following when the timeout stopped it), lines captured: 4, state: none
+first captured line (truncated): pft-logship-dockerlog: postfiatd --tail 0 (no state: from now)
+probe exit 1
+PROBE PASS (blocked as expected)
+  [PASS] control without AF_UNIX: follower fails, no resume state
+=== negatives under the tuned profile
+probe profile: pft-logship-dockerlog@.service.conf (26 properties) sha256 fc3faeb8b1635111
+probe command: /bin/sh -c touch /etc/ug-probe-write
+touch: cannot touch '/etc/ug-probe-write': Read-only file system
+probe exit 1
+PROBE PASS (blocked as expected)
+  [PASS] write to /etc blocked (ProtectSystem=strict)
+probe profile: pft-logship-dockerlog@.service.conf (26 properties) sha256 fc3faeb8b1635111
+probe command: /bin/bash -c exec 3<>/dev/tcp/127.0.0.1/5005
+/bin/bash: /root/.bashrc: Permission denied
+/bin/bash: socket: Address family not supported by protocol
+/bin/bash: line 1: /dev/tcp/127.0.0.1/5005: Address family not supported by protocol
+probe exit 1
+PROBE PASS (blocked as expected)
+  [PASS] AF_INET socket blocked (RestrictAddressFamilies)
+probe profile: pft-logship-dockerlog@.service.conf (26 properties) sha256 fc3faeb8b1635111
+probe command: /bin/sh -c f=/var/lib/pft-logship/dockerlog/ug-chown; : > $f; chown nobody $f; rc=$?; rm -f $f; exit $rc
+chown: changing ownership of '/var/lib/pft-logship/dockerlog/ug-chown': Operation not permitted
+probe exit 1
+PROBE PASS (blocked as expected)
+  [PASS] chown blocked (empty CapabilityBoundingSet)
+=== after
+active
+  [PASS] live follower still active
+  [PASS] live resume state present (sha before fdd67802e39e3d27, now 449c01cc35cb3886, advanced by the live unit)
+PROBES RESULT: PASS
+exit 0

@@ -363,6 +363,19 @@ sudo bash divergence/install.sh --sources "validator=docker:postfiatd public=htt
 sudo pft-divergence --json
 ```
 
+## Systemd sandboxing for the add-on units (unitguard)
+
+[`unitguard/`](unitguard/README.md): `pft-unitguard.sh` audits the add-on units with `systemd-analyze security`
+and applies one drop-in per unit from a per-unit profile (`standard` / `docker` / `iptables` class, documented
+exceptions), with a functional check right after apply and automatic rollback on failure. Live on both hosts:
+22 units from 9.6 UNSAFE (exporter 8.1) to 0.5-2.6. pft-integrity now also tracks unit drop-ins.
+
+```bash
+sudo bash unitguard/pft-unitguard.sh audit --detail
+sudo bash unitguard/pft-unitguard.sh apply pft-exporter.service && sudo pft-integrity accept --reason "unitguard: pft-exporter"
+bash unitguard/tests/test-unitguard.sh && bash unitguard/tests/mutants-unitguard.sh
+```
+
 ## Upgrade
 
 ```bash
