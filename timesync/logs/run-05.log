@@ -1,0 +1,59 @@
+# runlog 5: chrony 4.2 output-format probe (retry of 4), chronyd -x (never adjusts the clock), extracted deb, NOT installed; 2026-10-28T21:09:39Z
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+## chronyc -c -N tracking
+0195CD25,ntppool1.time.nl,2,1793221787.622236053,0.000680615,-0.000187949,0.000187949,-35.187,93.312,536.235,0.276591241,0.021144409,2.6,Normal
+rc=0
+## chronyc -c -N sources
+^,+,time.cloudflare.com,3,6,17,31,0.003833808,0.003645859,0.173436880
+^,-,nts.netnod.se,1,6,17,28,-0.003586549,-0.003586549,0.146273285
+^,+,ptbtime1.ptb.de,1,6,17,32,-0.002183796,-0.002371745,0.141923606
+^,*,ntppool1.time.nl,1,6,17,31,-0.002717538,-0.002905487,0.138864309
+rc=0
+## chronyc -c -N sourcestats
+time.cloudflare.com,4,3,8,-50.069,5939.564,0.004248604,0.000691748
+nts.netnod.se,4,3,8,27.164,1709.500,-0.002559391,0.000265822
+ptbtime1.ptb.de,4,3,7,216.902,3999.136,0.004623070,0.000691641
+ntppool1.time.nl,4,3,8,57.034,3146.846,-0.000806391,0.000522591
+rc=0
+## chronyc -c -N authdata
+time.cloudflare.com,NTS,1,15,256,106,0,0,8,96
+nts.netnod.se,NTS,1,15,256,36,0,0,8,100
+ptbtime1.ptb.de,NTS,1,15,256,105,0,0,8,100
+ntppool1.time.nl,NTS,1,15,256,106,0,0,8,96
+rc=0
+## chronyc -N authdata (human)
+Name/IP address             Mode KeyID Type KLen Last Atmp  NAK Cook CLen
+=========================================================================
+time.cloudflare.com          NTS     1   15  256  106    0    0    8   96
+nts.netnod.se                NTS     1   15  256   36    0    0    8  100
+ptbtime1.ptb.de              NTS     1   15  256  105    0    0    8  100
+ntppool1.time.nl             NTS     1   15  256  106    0    0    8   96
+## chronyc -N sources (human)
+MS Name/IP address         Stratum Poll Reach LastRx Last sample               
+===============================================================================
+^+ time.cloudflare.com           3   6    17    31  +3834us[+3646us] +/-  173ms
+^- nts.netnod.se                 1   6    17    28  -3587us[-3587us] +/-  146ms
+^+ ptbtime1.ptb.de               1   6    17    32  -2184us[-2372us] +/-  142ms
+^* ntppool1.time.nl              1   6    17    31  -2718us[-2905us] +/-  139ms
+## chronyc tracking (human)
+Reference ID    : 0195CD25 (ntppool1.time.nl)
+Stratum         : 2
+Ref time (UTC)  : Wed Oct 28 21:09:47 2026
+System time     : 0.000684946 seconds slow of NTP time
+Last offset     : -0.000187949 seconds
+RMS offset      : 0.000187949 seconds
+Frequency       : 35.187 ppm slow
+Residual freq   : +93.312 ppm
+Skew            : 536.235 ppm
+Root delay      : 0.276591241 seconds
+Root dispersion : 0.021222010 seconds
+Update interval : 2.6 seconds
+Leap status     : Normal
+## chronyd -d output
+  2026-10-28T21:09:39Z chronyd version 4.2 starting (+CMDMON +NTP +REFCLOCK +RTC +PRIVDROP +SCFILTER +SIGND +ASYNCDNS +NTS +SECHASH +IPV6 -DEBUG)
+  2026-10-28T21:09:39Z Disabled control of system clock
+  2026-10-28T21:09:39Z Running with root privileges
+  2026-10-28T21:09:39Z Frequency -35.187 +/- 536.235 ppm read from /tmp/chr-probe/run/drift
+  2026-10-28T21:09:43Z Source 2001:67c:254c:b::21e changed to 2a01:3f7:3:51::4 (nts.netnod.se)
+  2026-10-28T21:09:46Z Selected source 2a00:d78:0:712:94:198:159:15 (ntppool1.time.nl)
+  2026-10-28T21:10:39Z chronyd exiting

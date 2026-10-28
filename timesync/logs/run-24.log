@@ -1,0 +1,64 @@
+== live: pft-timesync-pull on the validator (sentry clock metrics into the validator's Prometheus) - 2026-10-28T22:26:10Z - Ubuntu 22.04.5 LTS - commit 9bdef5c7abae12b72f0807607b46bf142f0ec86d
+postfiatd StartedAt before: 2026-10-28T11:33:11.215149204Z
+$ write /etc/pft-timesync-pull.env (root:root 0600; PULL_SSH = runuser -u <operator> -- ssh -o BatchMode=yes -o ConnectTimeout=10 <sentry alias>)
+600 root:root 82 bytes
+$ sudo ./install.sh --pull
+install: installed /usr/local/sbin/pft-timesync-pull (bf0032bde2eafc24af7f057768e317cbee9e5d61c3c7cf6874e30d5a8ef782b3), timer enabled; first pull: pft_timesync_state{host="sentry"} 0
+install exit 0
+$ sudo head -4 /var/lib/pft-exporter/textfile/pft_timesync_peer_sentry.prom; grep -v '^#' ... | head -3
+# HELP pft_timesync_state Audit result: 0 OK, 1 WARN, 2 CRIT
+# TYPE pft_timesync_state gauge
+pft_timesync_state{host="sentry"} 0
+pft_timesync_daemon{host="sentry",daemon="chrony"} 1
+pft_timesync_check{host="sentry",check="conflicting-daemons"} 0
+$ TZ=UTC systemctl list-timers pft-timesync-pull.timer
+NEXT LEFT LAST                        PASSED   UNIT                    ACTIVATES
+n/a  n/a  Wed 2026-10-28 22:26:12 UTC 69ms ago pft-timesync-pull.timer pft-timesync-pull.service
+$ sudo docker kill -s HUP pft-prometheus   (reload rules; no recreate)
+hup exit 0
+note: the echo above says 'sudo head -4'; the command that ran was 'sudo head -2' (first two lines). Output is as printed.
+$ sudo pft-integrity verify | tail -6   (expected: WARN for the new binary + 2 units only)
+  [WARN] unit:pft-timesync-pull.service               added    new file
+  [WARN] unit:pft-timesync-pull.timer                 added    new file
+RESULT: WARN - 84 unchanged, 2 warn, 0 fail -> exit 1
+$ sudo pft-integrity accept --reason "task_21dabb0e: pft-timesync-pull binary + units installed"
+pft-integrity accept - 2026-10-28T22:26:40Z: re-baselined 86 items by <user>
+manifest sha256: 3b8342cf5529a5e6d6e7ba2d787eedf59c17da8f63e052d558cfe535020877a6 -> 2256bbe164ced25460aa7f4cf10e8473f61903ce4cdc17ea142c1a7057d056c1 (logged to accept.log)
+$ sudo pft-integrity verify | tail -1
+RESULT: PASS - 86 unchanged, 0 warn, 0 fail -> exit 0
+note: in the integrity block above, the echoed lines are summaries: verify ran as 'sudo pft-integrity verify | grep -E "WARN|FAIL|RESULT" | tail -8', and accept's --reason was 'task_21dabb0e252709055e09d7cedeaf5388: pft-timesync-pull binary + pft-timesync-pull.service/.timer installed'. From here on every echoed command is the evaluated string.
+== Prometheus after HUP (2026-10-28T22:26:59Z)
+$ curl -s 'http://127.0.0.1:9090/api/v1/query?query=pft_timesync_state' | jq -c '.data.result[] | {host: (.metric.host // "(none)"), v: .value[1]}'
+{"host":"(none)","v":"0"}
+{"host":"sentry","v":"0"}
+(exit 0)
+$ curl -s 'http://127.0.0.1:9090/api/v1/query?query=pft_timesync_nts_sources' | jq -c '.data.result[] | {host: (.metric.host // "(none)"), v: .value[1]}'
+{"host":"(none)","v":"5"}
+{"host":"sentry","v":"5"}
+(exit 0)
+$ curl -s 'http://127.0.0.1:9090/api/v1/query' --data-urlencode 'query=time() - pft_timesync_collect_timestamp_seconds' | jq -c '.data.result[] | {host: (.metric.host // "(none)"), age_s: (.value[1] | tonumber | floor)}'
+{"host":"(none)","age_s":48}
+{"host":"sentry","age_s":83}
+(exit 0)
+$ curl -s 'http://127.0.0.1:9090/api/v1/query?query=pft_textfile_errors' | jq -c '.data.result[] | .value[1]'
+"0"
+(exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/rules | jq -r '.data.groups[] | select(.name=="pft-timesync") | .rules[] | "\(.name) health=\(.health) summary=\(.annotations.summary)"'
+PFTClockNotSynchronised health=ok summary={{ or $labels.host "validator" }} clock not synchronised ({{ $labels.instance }})
+PFTClockOffsetHigh health=ok summary={{ or $labels.host "validator" }} clock {{ $value | humanizeDuration }} from NTP time
+PFTClockNTSSourcesLow health=ok summary={{ or $labels.host "validator" }}: only {{ $value }} NTS-authenticated time sources
+PFTTimesyncAuditCritical health=ok summary={{ or $labels.host "validator" }}: pft-timesync audit CRIT for 5m
+PFTTimesyncStale health=ok summary={{ or $labels.host "validator" }}: pft-timesync metrics are stale
+(exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/alerts | jq -c '[.data.alerts[] | .labels.alertname]'
+["PFTAlertPipelineWatchdog"]
+(exit 0)
+$ sudo docker inspect -f '{{.Name}} {{.State.StartedAt}}' pft-prometheus pft-alertmanager postfiatd
+/pft-prometheus 2026-10-26T07:37:48.872465152Z
+/pft-alertmanager 2026-10-28T14:53:47.064461907Z
+/postfiatd 2026-10-28T11:33:11.215149204Z
+(exit 0)
+$ sudo postfiat-health | grep -E 'server_state|RESULT'
+  [PASS] RPC responding (server_state: full)
+RESULT: HEALTHY
+(exit 0)

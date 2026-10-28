@@ -1,0 +1,13 @@
+# runlog 10: mutation controls at commit c29a017f104784557938d1f2a75337665eda8f7d (control run first); 2026-10-28T21:22:11Z
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+sha256 2658de52c280989e70504f9685275ca9c4da5227942ac4d3d9fe3c5d72f3d940  pft-timesync.sh
+sha256 d0925f4f57a11035e14053766bcec50f05aa80f743005b25ca9781ea0ca20db6  tests/mutate.sh
+control: unmutated copy RESULT: 105 passed, 0 failed
+M01 CAUGHT - NTS source counted without an established NTS key (KLen 0) :: 2 failing: audit NTS-KE not done (KLen 0) -> rc 1 (rc=0 want 1, /^\[WARN\] n;audit --json NTS-KE not done (KLen 0) -> exit 1
+M02 CAUGHT - NTS source counted although unreachable :: 2 failing: audit NTS source unreachable (reach 0) -> rc 1 (rc=0 want 1, /^\[;audit --json NTS source unreachable (reach 0) -> exit 1
+M03 CAUGHT - chrony offset sign not flipped (slow read as fast) :: 6 failing: good host: offset sign (chrony 'slow' = clock behind -> negative);audit offset 0.1 s -> rc 1 (rc=1 want 1, /^\[WARN\] offset +syste;audit offset -0.3 s (fast) -> rc 2 (rc=2 want 2, /^\[CRIT\] offse
+M04 CAUGHT - offset graded without abs() :: 2 failing: audit offset 0.1 s -> rc 1 (rc=0 want 1, /^\[WARN\] offset +syste;audit --json offset 0.1 s -> exit 1
+M05 CAUGHT - conflicting daemons not detected :: 2 failing: audit conflicting daemons -> rc 2 (rc=0 want 2, /^\[CRIT\] confli;audit --json conflicting daemons -> exit 2
+M06 CAUGHT - leap Not synchronised read as Normal :: 4 failing: audit leap not synchronised -> rc 2 (rc=0 want 2, /^\[CRIT\] leap;audit --json leap not synchronised -> exit 2;audit timesyncd leap 3 -> rc 2 (rc=1 want 2, /^\[CRIT\] leap +Not
+M07 CAUGHT - makestep in chrony.conf not detected :: 2 failing: audit makestep in chrony.conf -> rc 1 (rc=0 want 1, /^\[WARN\] ma;audit --json makestep in chrony.conf -> exit 1
+# STOPPED by the agent at 2026-10-28T21:30:29Z: SUPERSEDED. The live sentry run (log 13) found that the sync gate ignores root dispersion (gate PASS while the after-audit was CRIT, 2.77 s), so pft-timesync.sh changes; mutants are re-run on the fixed commit.

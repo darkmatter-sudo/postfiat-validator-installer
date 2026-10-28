@@ -1,0 +1,20 @@
+# runlog 17: install pft-timesync on the VALIDATOR from commit 328946552728766512ec560ab04afb820851b112; 2026-10-28T21:36:32Z
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+c632a684fc20c4be6d2ad35a01d34661e7cbb3e881ce49cc16085cfbb64619f0  pft-timesync.sh
+1e8d493c187cf7a274761ad48046ee16542bd1bd8689e90267c120f0682636d9  install.sh
+a18ffeacbc760a86dd632c1e27529ec500623b4a4e741f79e8c8273785d76d57  systemd/pft-timesync.service
+73eac0ad1d85deaa5648fe7b0a1fa8c694d52635910d3eef39a05b0d20c246a9  systemd/pft-timesync.timer
+8f6dade94bc0370718b5cfc39e38b6d61b9f2b92ba355eef7f9185d4a26ed0e0  drill/live-run.sh
+install: installed /usr/local/sbin/pft-timesync (c632a684fc20c4be6d2ad35a01d34661e7cbb3e881ce49cc16085cfbb64619f0), pft-timesync.timer enabled; first collection: pft_timesync_state 1
+install exit 0
+pft_timesync_state 1
+pft_timesync_daemon{daemon="systemd-timesyncd"} 1
+pft_timesync_synced 1
+== pft-integrity verify (expect WARN for the new units)
+  [WARN] unit:pft-timesync.service                    added    new file
+  [WARN] unit:pft-timesync.timer                      added    new file
+RESULT: WARN - 82 unchanged, 2 warn, 0 fail -> exit 1
+== pft-integrity accept (validator)
+pft-integrity accept - 2026-10-28T21:36:50Z: re-baselined 84 items by <user>
+manifest sha256: 1cad89a591edc0f8559d72afe3dccae42aff5c9ce5ce6ffeb9bea52886665545 -> 3b8342cf5529a5e6d6e7ba2d787eedf59c17da8f63e052d558cfe535020877a6 (logged to accept.log)
+RESULT: PASS - 84 unchanged, 0 warn, 0 fail -> exit 0

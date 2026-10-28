@@ -1,0 +1,150 @@
+# runlog 16: SENTRY re-proof on the fixed commit 328946552728766512ec560ab04afb820851b112: reinstall, manual 'rollback --yes' of run 13's apply, then live-run again; 2026-10-28T21:36:30Z
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+c632a684fc20c4be6d2ad35a01d34661e7cbb3e881ce49cc16085cfbb64619f0  pft-timesync.sh
+8f6dade94bc0370718b5cfc39e38b6d61b9f2b92ba355eef7f9185d4a26ed0e0  drill/live-run.sh
+install: installed /usr/local/sbin/pft-timesync (c632a684fc20c4be6d2ad35a01d34661e7cbb3e881ce49cc16085cfbb64619f0), pft-timesync.timer enabled; first collection: pft_timesync_state 0
+install exit 0
+== sudo pft-timesync rollback --yes (manual)
+2026-10-28T21:36:32Z rollback: from /var/lib/pft-timesync/20261028T212940Z (before: chrony=none timesyncd=249.11-0ubuntu3.23 active=systemd-timesyncd)
+  restore /etc/systemd/timesyncd.conf: sha256 ce491ba1455290e24322976a0f575b06df58e8d19305e3bfc01e7299e39a11d7 byte-identical
+  restore /etc/chrony/chrony.conf: absent as before
+  restore /etc/systemd/system/chrony.service.d/50-pft-timesync.conf: absent as before
+  restore /etc/chrony/conf.d/pft-boot-makestep.conf: absent as before
+  packages: chrony=none (before none), systemd-timesyncd=249.11-0ubuntu3.23 (before 249.11-0ubuntu3.23)
+  active daemon: systemd-timesyncd (before systemd-timesyncd)
+2026-10-28T21:36:52Z rollback: PASS (files byte-identical, packages and daemon as before)
+rollback exit 0
+== pft-integrity verify
+  [WARN] unit:pft-timesync.service                    changed  mtime
+  [WARN] unit:pft-timesync.timer                      changed  mtime
+RESULT: WARN - 50 unchanged, 2 warn, 0 fail -> exit 1
+== live-run
+# pft-timesync live run (sentry) 2026-10-28T21:36:57Z
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+tool /usr/local/sbin/pft-timesync sha256 c632a684fc20c4be6d2ad35a01d34661e7cbb3e881ce49cc16085cfbb64619f0
+== 0. before
+  timesyncd.conf sha256 ce491ba1455290e24322976a0f575b06df58e8d19305e3bfc01e7299e39a11d7
+  chrony.conf absent, drop-in absent
+  packages: systemd-timesyncd=installed/249.11-0ubuntu3.23 
+  active: chrony=inactive systemd-timesyncd=active; NTPSynchronized=yes
+  postfiatd-sentry StartedAt 2026-10-28T19:15:58.719946776Z, server_state full
+== 1. injected failure: PFT_TIMESYNC_INJECT=unreachable SYNC_BUDGET=120 pft-timesync apply --yes
+2026-10-28T21:36:58Z apply: before
+  pft-timesync audit - 2026-10-28T21:36:58Z
+  [PASS] conflicting-daemons  only systemd-timesyncd
+  [WARN] daemon               systemd-timesyncd (SNTP client, no authentication)
+  [WARN] sources              1 in use (< 3)
+  [WARN] nts                  0 NTS-authenticated sources (timesyncd cannot do NTS)
+  [PASS] selected             NTPSynchronized=yes
+  [INFO] offset               not exported by systemd-timesyncd (see offset_probe.py)
+  [PASS] root-dispersion      0.000503000 s
+  [PASS] stratum              2
+  [PASS] leap                 Normal
+  [PASS] rtc                  RTC in UTC (LocalRTC=no)
+  RESULT: WARN (daemon systemd-timesyncd) -> exit 1
+2026-10-28T21:36:58Z apply: backup /var/lib/pft-timesync/20261028T213658Z
+  /etc/systemd/timesyncd.conf	present	ce491ba1455290e24322976a0f575b06df58e8d19305e3bfc01e7299e39a11d7	f1
+  /etc/chrony/chrony.conf	absent	-	-
+  /etc/systemd/system/chrony.service.d/50-pft-timesync.conf	absent	-	-
+  /etc/chrony/conf.d/pft-boot-makestep.conf	absent	-	-
+  chrony=
+  systemd-timesyncd=249.11-0ubuntu3.23
+  active=systemd-timesyncd
+2026-10-28T21:37:01Z apply: cached systemd-timesyncd_249.11-0ubuntu3.23_amd64.deb for rollback
+2026-10-28T21:37:03Z apply: postfiatd-sentry StartedAt 2026-10-28T19:15:58.719946776Z; stopping timesyncd, installing chrony (package start blocked by policy-rc.d)
+2026-10-28T21:37:20Z apply: chrony started (5 NTS servers, injected=unreachable); sync gate budget 120 s
+2026-10-28T21:39:23Z sync gate: FAIL after 123 s (selected= nts=0 offset=-0.000000000 disp=1.000000000 leap=Not synchronised; StartedAt unchanged, server_state=full; injected=unreachable)
+2026-10-28T21:39:23Z apply: sync gate missed -> automatic rollback
+2026-10-28T21:39:23Z rollback: from /var/lib/pft-timesync/20261028T213658Z (before: chrony=none timesyncd=249.11-0ubuntu3.23 active=systemd-timesyncd)
+  restore /etc/systemd/timesyncd.conf: sha256 ce491ba1455290e24322976a0f575b06df58e8d19305e3bfc01e7299e39a11d7 byte-identical
+  restore /etc/chrony/chrony.conf: absent as before
+  restore /etc/systemd/system/chrony.service.d/50-pft-timesync.conf: absent as before
+  restore /etc/chrony/conf.d/pft-boot-makestep.conf: absent as before
+  packages: chrony=none (before none), systemd-timesyncd=249.11-0ubuntu3.23 (before 249.11-0ubuntu3.23)
+  active daemon: systemd-timesyncd (before systemd-timesyncd)
+2026-10-28T21:39:40Z rollback: PASS (files byte-identical, packages and daemon as before)
+  postfiatd-sentry StartedAt 2026-10-28T19:15:58.719946776Z (unchanged), server_state full
+apply (injected) exit 1
+  timesyncd.conf sha256 ce491ba1455290e24322976a0f575b06df58e8d19305e3bfc01e7299e39a11d7
+  chrony.conf absent, drop-in absent
+  packages: systemd-timesyncd=installed/249.11-0ubuntu3.23 
+  active: chrony=inactive systemd-timesyncd=active; NTPSynchronized=yes
+  postfiatd-sentry StartedAt 2026-10-28T19:15:58.719946776Z, server_state full
+== 2. real apply: pft-timesync apply --yes
+2026-10-28T21:39:41Z apply: before
+  pft-timesync audit - 2026-10-28T21:39:41Z
+  [PASS] conflicting-daemons  only systemd-timesyncd
+  [WARN] daemon               systemd-timesyncd (SNTP client, no authentication)
+  [WARN] sources              1 in use (< 3)
+  [WARN] nts                  0 NTS-authenticated sources (timesyncd cannot do NTS)
+  [PASS] selected             NTPSynchronized=yes
+  [INFO] offset               not exported by systemd-timesyncd (see offset_probe.py)
+  [PASS] root-dispersion      0.000671000 s
+  [PASS] stratum              2
+  [PASS] leap                 Normal
+  [PASS] rtc                  RTC in UTC (LocalRTC=no)
+  RESULT: WARN (daemon systemd-timesyncd) -> exit 1
+2026-10-28T21:39:41Z apply: backup /var/lib/pft-timesync/20261028T213941Z
+  /etc/systemd/timesyncd.conf	present	ce491ba1455290e24322976a0f575b06df58e8d19305e3bfc01e7299e39a11d7	f1
+  /etc/chrony/chrony.conf	absent	-	-
+  /etc/systemd/system/chrony.service.d/50-pft-timesync.conf	absent	-	-
+  /etc/chrony/conf.d/pft-boot-makestep.conf	absent	-	-
+  chrony=
+  systemd-timesyncd=249.11-0ubuntu3.23
+  active=systemd-timesyncd
+2026-10-28T21:39:43Z apply: cached systemd-timesyncd_249.11-0ubuntu3.23_amd64.deb for rollback
+2026-10-28T21:39:45Z apply: postfiatd-sentry StartedAt 2026-10-28T19:15:58.719946776Z; stopping timesyncd, installing chrony (package start blocked by policy-rc.d)
+2026-10-28T21:40:06Z apply: chrony started (5 NTS servers); sync gate budget 600 s
+2026-10-28T21:41:25Z sync gate: PASS after 79 s (selected nts.teambelgium.net, 5 NTS sources, offset 0.003677092 s, root dispersion 0.001097030 s, leap Normal; postfiatd-sentry StartedAt unchanged, server_state full)
+2026-10-28T21:41:25Z apply: after
+  pft-timesync audit - 2026-10-28T21:41:25Z
+  [PASS] conflicting-daemons  only chrony
+  [PASS] daemon               chrony
+  [PASS] sources              5 configured, 5 reachable
+  [PASS] nts                  5 NTS-authenticated reachable sources
+  [PASS] selected             a source is selected
+  [PASS] offset               system clock 0.003671175 s from NTP time
+  [PASS] makestep             steps only within 300 s of boot (boot-gate)
+  [PASS] slew-bound           maxslewrate 500 ppm
+  [PASS] root-dispersion      0.001118498 s
+  [PASS] stratum              2
+  [PASS] leap                 Normal
+  [PASS] rtc                  RTC in UTC (LocalRTC=no)
+  RESULT: OK (daemon chrony) -> exit 0
+2026-10-28T21:41:25Z apply: PASS
+apply exit 0
+  timesyncd.conf sha256 ce491ba1455290e24322976a0f575b06df58e8d19305e3bfc01e7299e39a11d7
+  chrony.conf present, drop-in present
+  packages: chrony=installed/4.2-2ubuntu2.1 systemd-timesyncd=config-files/249.11-0ubuntu3.23 
+  active: chrony=active systemd-timesyncd=inactive; NTPSynchronized=yes
+  postfiatd-sentry StartedAt 2026-10-28T19:15:58.719946776Z, server_state full
+== dpkg.log lines written during this run (chrony / systemd-timesyncd)
+  status installed systemd-timesyncd:amd64 249.11-0ubuntu3.23
+  remove systemd-timesyncd:amd64 249.11-0ubuntu3.23 <none>
+  install chrony:amd64 <none> 4.2-2ubuntu2.1
+  status installed chrony:amd64 4.2-2ubuntu2.1
+  status installed chrony:amd64 4.2-2ubuntu2.1
+  remove chrony:amd64 4.2-2ubuntu2.1 <none>
+  purge chrony:amd64 4.2-2ubuntu2.1 <none>
+  status not-installed chrony:amd64 <none>
+  install systemd-timesyncd:amd64 249.11-0ubuntu3.23 249.11-0ubuntu3.23
+  status installed systemd-timesyncd:amd64 249.11-0ubuntu3.23
+  status installed systemd-timesyncd:amd64 249.11-0ubuntu3.23
+  remove systemd-timesyncd:amd64 249.11-0ubuntu3.23 <none>
+  install chrony:amd64 <none> 4.2-2ubuntu2.1
+  status installed chrony:amd64 4.2-2ubuntu2.1
+== verdict
+PASS injected apply exit 1 (automatic rollback)
+PASS timesyncd.conf byte-identical after rollback (ce491ba1455290e24322976a0f575b06df58e8d19305e3bfc01e7299e39a11d7)
+PASS real apply exit 0
+PASS postfiatd StartedAt unchanged through both steps (2026-10-28T19:15:58.719946776Z)
+PASS server_state full at the end
+PASS chrony active, timesyncd inactive at the end
+RESULT: PASS 2026-10-28T21:41:26Z
+live-run exit 0
+== after live-run: pft-integrity (units mtime-only from the reinstall; sha256 = commit 3289465 systemd/ files)
+a18ffeacbc760a86dd632c1e27529ec500623b4a4e741f79e8c8273785d76d57  /etc/systemd/system/pft-timesync.service
+73eac0ad1d85deaa5648fe7b0a1fa8c694d52635910d3eef39a05b0d20c246a9  /etc/systemd/system/pft-timesync.timer
+pft-integrity accept - 2026-10-28T21:41:49Z: re-baselined 52 items by root
+manifest sha256: 13781bdd582a208efbe049a216fed0582b3abec041d9dc7a2bbf7d7dc758de45 -> 27a586b02f3e8b27d5f78f3e3b040502869fcad02bf058ae072b5a3ae4828215 (logged to accept.log)
+RESULT: PASS - 52 unchanged, 0 warn, 0 fail -> exit 0

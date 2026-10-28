@@ -1,0 +1,66 @@
+# runlog 27: final state both hosts (integrity PASS after rebaselines, timesync audit, postfiatd health/uptime); 2026-10-28T23:09:00Z
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+## validator
+$ sudo pft-integrity verify | tail -3
+pft-integrity verify - 2026-10-28T23:09:09Z
+OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-10-28T22:26:34Z
+RESULT: PASS - 86 unchanged, 0 warn, 0 fail -> exit 0
+(exit 0)
+$ sudo pft-timesync audit
+pft-timesync audit - 2026-10-28T23:09:10Z
+[PASS] conflicting-daemons  only chrony
+[PASS] daemon               chrony
+[PASS] sources              5 configured, 5 reachable
+[PASS] nts                  5 NTS-authenticated reachable sources
+[PASS] selected             a source is selected
+[PASS] offset               system clock -0.000211021 s from NTP time
+[PASS] makestep             steps only within 300 s of boot (boot-gate)
+[PASS] slew-bound           maxslewrate 500 ppm
+[PASS] root-dispersion      0.000575046 s
+[PASS] stratum              2
+[PASS] leap                 Normal
+[PASS] rtc                  RTC in UTC (LocalRTC=no)
+RESULT: OK (daemon chrony) -> exit 0
+(exit 0)
+$ sudo docker inspect -f '{{.State.StartedAt}} restarts={{.RestartCount}}' postfiatd
+2026-10-28T11:33:11.215149204Z restarts=0
+(exit 0)
+$ sudo postfiat-health | grep -E 'server_state|RESULT'
+  [PASS] RPC responding (server_state: full)
+RESULT: HEALTHY
+(exit 0)
+## sentry
+$ ssh relay 'sudo pft-integrity verify | tail -3'
+pft-integrity verify - 2026-10-28T23:09:18Z
+OS: Ubuntu 22.04.5 LTS | container: postfiatd-sentry | baseline: 2026-10-28T21:41:45Z
+RESULT: PASS - 52 unchanged, 0 warn, 0 fail -> exit 0
+(exit 0)
+$ ssh relay 'sudo pft-timesync audit'
+pft-timesync audit - 2026-10-28T23:09:18Z
+[PASS] conflicting-daemons  only chrony
+[PASS] daemon               chrony
+[PASS] sources              5 configured, 5 reachable
+[PASS] nts                  5 NTS-authenticated reachable sources
+[PASS] selected             a source is selected
+[PASS] offset               system clock -0.000145023 s from NTP time
+[PASS] makestep             steps only within 300 s of boot (boot-gate)
+[PASS] slew-bound           maxslewrate 500 ppm
+[PASS] root-dispersion      0.001365220 s
+[PASS] stratum              2
+[PASS] leap                 Normal
+[PASS] rtc                  RTC in UTC (LocalRTC=no)
+RESULT: OK (daemon chrony) -> exit 0
+(exit 0)
+$ ssh relay "sudo docker inspect -f '{{.State.StartedAt}} restarts={{.RestartCount}}' postfiatd-sentry"
+2026-10-28T19:15:58.719946776Z restarts=0
+(exit 0)
+$ ssh relay "sudo docker exec postfiatd-sentry sh -c 'curl -s -d {\"method\":\"server_info\"} http://127.0.0.1:5005' | jq -r .result.info.server_state"
+parse error: Invalid numeric literal at line 1, column 7
+(exit 4)
+## (the previous command's nested quoting broke the JSON body; same query as drill/live-run.sh line 14, sent as a file)
+$ cat ss.sh
+docker exec postfiatd-sentry sh -c 'curl -s -m 5 -d "{\"method\":\"server_info\"}" http://127.0.0.1:5005/' | jq -r '.result.info.server_state'
+$ ssh relay "sudo bash -s" < ss.sh
+full
+(exit 0)
+# end 2026-10-28T23:09:29Z

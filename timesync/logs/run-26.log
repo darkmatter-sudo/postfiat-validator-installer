@@ -1,0 +1,34 @@
+# runlog 26: AFTER-window offset statistics (chrony + NTS, 21:44:09Z-22:59Z, 75 rounds x 3 servers per host) at commit a2a9da0404f997b0b10dd9f7243bbfcf607525eb; 2026-10-28T23:08:43Z
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+sha256 97db15a1b21bae0fa65c2a08e2019bb7cbca45edd22f51eb7e05daec3910d012 offset_stats.py; sha256 b86862f0735586fc1665531641f26d7acca7384bb77211eb54c4df6c3f8a4915 offset_probe.py
+## validator: validator-after.csv sha256 99ef8f9ebfb0399928143dec9b2c5b975677b846f77383e4037e3c48d186a514, 225 rows
+$ python3 -u <repo>/timesync/offset_stats.py validator-after.csv
+validator-after.csv: 225 rows, 225 ok, 0 failed, 2026-10-28T21:44:09Z .. 2026-10-28T22:58:14Z
+  ptbtime1.ptb.de        n=75   |offset| median 1.805 ms p95 8.993 ms max 19.783 ms | delay median 286.824 ms
+  time.cloudflare.com    n=75   |offset| median 7.684 ms p95 18.229 ms max 48.274 ms | delay median 317.578 ms
+  time.google.com        n=75   |offset| median 7.030 ms p95 17.031 ms max 21.160 ms | delay median 127.473 ms
+  round-median           n=75   |offset| median 7.030 ms p95 9.713 ms max 21.160 ms
+(exit 0)
+## sentry: sentry-after.csv sha256 603b05dd37f8d0bc4ddf206e34e1ae92e4e241ebf7e47d48ef5de2c8cdd93edc, 225 rows
+$ python3 -u <repo>/timesync/offset_stats.py sentry-after.csv
+sentry-after.csv: 225 rows, 225 ok, 0 failed, 2026-10-28T21:44:10Z .. 2026-10-28T22:58:14Z
+  ptbtime1.ptb.de        n=75   |offset| median 1.943 ms p95 32.240 ms max 48.996 ms | delay median 287.130 ms
+  time.cloudflare.com    n=75   |offset| median 8.159 ms p95 28.745 ms max 43.556 ms | delay median 318.281 ms
+  time.google.com        n=75   |offset| median 7.673 ms p95 29.001 ms max 91.421 ms | delay median 128.037 ms
+  round-median           n=75   |offset| median 7.555 ms p95 14.821 ms max 29.001 ms
+(exit 0)
+## before (run 11, same probe/stats code) for comparison
+$ python3 -u <repo>/timesync/offset_stats.py ../ts-before/validator-before.csv
+../ts-before/validator-before.csv: 225 rows, 225 ok, 0 failed, 2026-10-28T20:11:06Z .. 2026-10-28T21:25:11Z
+  ptbtime1.ptb.de        n=75   |offset| median 2.936 ms p95 24.684 ms max 40.599 ms | delay median 287.650 ms
+  time.cloudflare.com    n=75   |offset| median 6.529 ms p95 31.239 ms max 53.378 ms | delay median 317.753 ms
+  time.google.com        n=75   |offset| median 5.119 ms p95 22.236 ms max 65.896 ms | delay median 127.596 ms
+  round-median           n=75   |offset| median 5.065 ms p95 13.250 ms max 35.074 ms
+(exit 0)
+$ python3 -u <repo>/timesync/offset_stats.py ../ts-before/sentry-before.csv
+../ts-before/sentry-before.csv: 225 rows, 224 ok, 1 failed, 2026-10-28T20:11:07Z .. 2026-10-28T21:25:12Z
+  ptbtime1.ptb.de        n=75   |offset| median 2.164 ms p95 25.074 ms max 88.193 ms | delay median 289.821 ms
+  time.cloudflare.com    n=74   |offset| median 10.490 ms p95 66.591 ms max 97.475 ms | delay median 321.384 ms
+  time.google.com        n=75   |offset| median 7.832 ms p95 28.515 ms max 125.523 ms | delay median 127.581 ms
+  round-median           n=75   |offset| median 7.670 ms p95 24.060 ms max 28.424 ms
+(exit 0)

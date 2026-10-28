@@ -1,0 +1,26 @@
+# runlog 19: load alerts/timesync.rules.yml into the validator's Prometheus (prometheus.yml rule_files line, promtool check config, SIGHUP reload - no recreate); 2026-10-28T21:43:45Z
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+diff --git a/alerts/prometheus.yml b/alerts/prometheus.yml
+index e5adc40..d802c24 100644
+--- a/alerts/prometheus.yml
++++ b/alerts/prometheus.yml
+@@ -8,6 +8,7 @@ rule_files:
+   - /etc/pft-alerts/logship.rules.yml      # ../logship (pft-logship textfile metrics)
+   - /etc/pft-alerts/resources.rules.yml    # ../resources (pft-resources cgroup v2 textfile metrics)
+   - /etc/pft-alerts/alertpath.rules.yml    # ../alertpath (always-firing pipeline watchdog, routed to the sink only)
++  - /etc/pft-alerts/timesync.rules.yml     # ../timesync (pft-timesync chrony/NTS textfile metrics)
+   - /etc/pft-slo/*.rules.yml    # ../slo (availability SLO + burn-rate alerts); run-stack.sh mounts it
+ alerting:
+   alertmanagers:
+  SUCCESS: 7 rule files found
+Checking /etc/pft-alerts/timesync.rules.yml
+pft-prometheus StartedAt before 2026-10-26T07:37:48.872465152Z
+HUP rc=0
+pft-prometheus StartedAt after  2026-10-26T07:37:48.872465152Z
+PFTClockNotSynchronised health=ok state=inactive
+PFTClockOffsetHigh health=ok state=inactive
+PFTClockNTSSourcesLow health=ok state=inactive
+PFTTimesyncAuditCritical health=ok state=inactive
+PFTTimesyncStale health=ok state=inactive
+== pft_timesync series scraped
+{"metric":"pft_timesync_state","v":"0"}

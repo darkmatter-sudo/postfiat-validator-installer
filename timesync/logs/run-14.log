@@ -1,0 +1,121 @@
+# runlog 14: offline checks at commit 328946552728766512ec560ab04afb820851b112 (dispersion gate fix); 2026-10-28T21:35:19Z
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+sha256 c632a684fc20c4be6d2ad35a01d34661e7cbb3e881ce49cc16085cfbb64619f0  pft-timesync.sh
+sha256 21501fbdfd5357688c1974d6e48f14ba35077e9057d115ecbc144e0ea3ae6589  tests/run-tests.sh
+sha256 105c0fb13d4be34831b1ad1a09577d5ab9162507e68685985465de00d302ce23  tests/stubs.sh
+sha256 beeaf0194e972073bfb112afd8d9aeeceaec5fd0fc69ad70b00231db593acb5e  tests/mutate.sh
+sha256 1e8d493c187cf7a274761ad48046ee16542bd1bd8689e90267c120f0682636d9  install.sh
+sha256 8f6dade94bc0370718b5cfc39e38b6d61b9f2b92ba355eef7f9185d4a26ed0e0  drill/live-run.sh
+## shellcheck version: 0.8.0
+shellcheck exit 0
+## bash tests/run-tests.sh
+ok   audit good chrony host -> OK exit 0
+ok   good host has no WARN/CRIT lines
+ok   good host counts 5 NTS sources
+ok   good host: offset sign (chrony 'slow' = clock behind -> negative)
+ok   good host: makestep boot-only
+ok   --json good host
+ok   audit no daemon -> rc 2
+ok   audit --json no daemon -> exit 2
+ok   audit conflicting daemons -> rc 2
+ok   audit --json conflicting daemons -> exit 2
+ok   audit chronyd not answering -> rc 2
+ok   audit --json chronyd not answering -> exit 2
+ok   audit only 3 NTS (2 sources without NTS) -> rc 1
+ok   audit --json only 3 NTS (2 sources without NTS) -> exit 1
+ok   audit NTS-KE not done (KLen 0) -> rc 1
+ok   audit --json NTS-KE not done (KLen 0) -> exit 1
+ok   audit NTS source unreachable (reach 0) -> rc 1
+ok   audit --json NTS source unreachable (reach 0) -> exit 1
+ok   audit fewer sources than minsources -> rc 1
+ok   audit --json fewer sources than minsources -> exit 1
+ok   audit no selected source -> rc 2
+ok   audit --json no selected source -> exit 2
+ok   audit offset 0.1 s -> rc 1
+ok   audit --json offset 0.1 s -> exit 1
+ok   audit offset -0.3 s (fast) -> rc 2
+ok   audit --json offset -0.3 s (fast) -> exit 2
+ok   audit root dispersion 0.2 s -> rc 1
+ok   audit --json root dispersion 0.2 s -> exit 1
+ok   audit root dispersion 2 s -> rc 2
+ok   audit --json root dispersion 2 s -> exit 2
+ok   audit stratum 8 -> rc 1
+ok   audit --json stratum 8 -> exit 1
+ok   audit stratum 16 -> rc 2
+ok   audit --json stratum 16 -> exit 2
+ok   audit leap insert pending -> rc 1
+ok   audit --json leap insert pending -> exit 1
+ok   audit leap not synchronised -> rc 2
+ok   audit --json leap not synchronised -> exit 2
+ok   audit makestep in chrony.conf -> rc 1
+ok   audit --json makestep in chrony.conf -> exit 1
+ok   audit makestep commented out is not a step -> rc 0
+ok   audit --json makestep commented out is not a step -> exit 0
+ok   audit no boot-gate drop-in, no makestep -> rc 0
+ok   audit --json no boot-gate drop-in, no makestep -> exit 0
+ok   audit maxslewrate unset -> rc 1
+ok   audit --json maxslewrate unset -> exit 1
+ok   audit maxslewrate 5000 -> rc 1
+ok   audit --json maxslewrate 5000 -> exit 1
+ok   audit RTC in local time -> rc 1
+ok   audit --json RTC in local time -> exit 1
+ok   audit timesyncd host (before migration) -> rc 1
+ok   audit --json timesyncd host (before migration) -> exit 1
+ok   audit timesyncd unsynchronised -> rc 2
+ok   audit --json timesyncd unsynchronised -> exit 2
+ok   audit timesyncd dispersion 150ms -> rc 1
+ok   audit --json timesyncd dispersion 150ms -> exit 1
+ok   audit timesyncd leap 3 -> rc 2
+ok   audit --json timesyncd leap 3 -> exit 2
+ok   timesyncd host: nts WARN + offset INFO + 1 source WARN
+ok   boot-gate within window writes makestep 1.0 3
+ok   boot-gate after window removes it
+ok   metrics: state 0, offset, nts 5, synced 1, timestamp
+ok   metrics: per-check gauges + no temp file left
+ok   metrics: unsynced -> state 2, synced 0, check selected 2
+ok   metrics on timesyncd: daemon label, no offset series, synced 1
+ok   plan: >= 4 NTS servers, minsources, maxslewrate, no active makestep
+ok   plan: drop-in runs boot-gate outside the sandbox
+ok   plan with injection: TEST-NET-1 only
+ok   apply without --yes -> refused 4
+ok   apply with an existing policy-rc.d -> refused 4
+ok   apply before install.sh -> refused 4
+ok   apply with fewer servers than MIN_NTS -> refused 4
+ok   apply: timesyncd .deb not cacheable -> refused 4
+ok   refusals changed nothing (no stop/install, timesyncd active, file identical)
+ok   apply: unknown container -> refused 4
+ok   apply from timesyncd -> PASS exit 0
+ok   apply: sync gate PASS line names 5 NTS sources + StartedAt unchanged
+ok   apply: chrony package start was blocked by policy-rc.d, which is gone afterwards
+ok   apply: timesyncd stopped BEFORE the install
+ok   apply: chrony.conf = plan, drop-in written, chronyd -p ran first
+ok   apply: only chrony active, timesyncd .deb cached in the backup
+ok   apply: after-audit OK
+ok   apply again -> idempotent, nothing changed
+ok   idempotent apply did not reinstall or restart
+ok   rollback without --yes -> refused 4
+ok   manual rollback -> PASS
+ok   manual rollback: timesyncd.conf byte-identical, chrony files absent, timesyncd back
+ok   apply unreachable sources (injected) -> automatic rollback exit 1
+ok   unreachable sources (injected): rollback PASS, file byte-identical, timesyncd back, chrony purged
+ok   apply chronyd -p rejects the config -> automatic rollback exit 1
+ok   chronyd -p rejects the config: rollback PASS, file byte-identical, timesyncd back, chrony purged
+ok   apply apt install fails -> automatic rollback exit 1
+ok   apt install fails: rollback PASS, file byte-identical, timesyncd back, chrony purged
+ok   apply postfiatd restarted during the gate -> automatic rollback exit 1
+ok   postfiatd restarted during the gate: rollback PASS, file byte-identical, timesyncd back, chrony purged
+ok   apply server_state not full -> automatic rollback exit 1
+ok   server_state not full: rollback PASS, file byte-identical, timesyncd back, chrony purged
+ok   apply only 3 NTS sources authenticate -> automatic rollback exit 1
+ok   only 3 NTS sources authenticate: rollback PASS, file byte-identical, timesyncd back, chrony purged
+ok   apply fresh chronyd: root dispersion 17 s (skew not settled) -> automatic rollback exit 1
+ok   fresh chronyd: root dispersion 17 s (skew not settled): rollback PASS, file byte-identical, timesyncd back, chrony purged
+ok   apply offset above OFFSET_WARN -> automatic rollback exit 1
+ok   offset above OFFSET_WARN: rollback PASS, file byte-identical, timesyncd back, chrony purged
+ok   injected rollback prints the restore lines (absent + byte-identical)
+ok   injected rollback: postfiatd StartedAt unchanged, full
+ok   rollback that cannot reinstall timesyncd -> exit 5
+ok   failed rollback names the mismatch
+ok   rollback whose backup copy differs from the recorded sha -> exit 5
+RESULT: 108 passed, 0 failed
+run-tests exit 0

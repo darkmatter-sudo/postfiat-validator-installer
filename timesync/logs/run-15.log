@@ -1,0 +1,39 @@
+# runlog 15: mutation controls at commit 328946552728766512ec560ab04afb820851b112 (control run first); 2026-10-28T21:36:21Z
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+sha256 c632a684fc20c4be6d2ad35a01d34661e7cbb3e881ce49cc16085cfbb64619f0  pft-timesync.sh
+sha256 beeaf0194e972073bfb112afd8d9aeeceaec5fd0fc69ad70b00231db593acb5e  tests/mutate.sh
+control: unmutated copy RESULT: 108 passed, 0 failed
+M01 CAUGHT - NTS source counted without an established NTS key (KLen 0) :: 2 failing: audit NTS-KE not done (KLen 0) -> rc 1 (rc=0 want 1, /^\[WARN\] n;audit --json NTS-KE not done (KLen 0) -> exit 1
+M02 CAUGHT - NTS source counted although unreachable :: 2 failing: audit NTS source unreachable (reach 0) -> rc 1 (rc=0 want 1, /^\[;audit --json NTS source unreachable (reach 0) -> exit 1
+M03 CAUGHT - chrony offset sign not flipped (slow read as fast) :: 6 failing: good host: offset sign (chrony 'slow' = clock behind -> negative);audit offset 0.1 s -> rc 1 (rc=1 want 1, /^\[WARN\] offset +syste;audit offset -0.3 s (fast) -> rc 2 (rc=2 want 2, /^\[CRIT\] offse
+M04 CAUGHT - offset graded without abs() :: 2 failing: audit offset 0.1 s -> rc 1 (rc=0 want 1, /^\[WARN\] offset +syste;audit --json offset 0.1 s -> exit 1
+M05 CAUGHT - conflicting daemons not detected :: 2 failing: audit conflicting daemons -> rc 2 (rc=0 want 2, /^\[CRIT\] confli;audit --json conflicting daemons -> exit 2
+M06 CAUGHT - leap Not synchronised read as Normal :: 4 failing: audit leap not synchronised -> rc 2 (rc=0 want 2, /^\[CRIT\] leap;audit --json leap not synchronised -> exit 2;audit timesyncd leap 3 -> rc 2 (rc=1 want 2, /^\[CRIT\] leap +Not
+M07 CAUGHT - makestep in chrony.conf not detected :: 2 failing: audit makestep in chrony.conf -> rc 1 (rc=0 want 1, /^\[WARN\] ma;audit --json makestep in chrony.conf -> exit 1
+M08 CAUGHT - commented-out makestep counted as a step :: 10 failing: audit good chrony host -> OK exit 0 (rc=1 want 0, /^RESULT: OK \(;good host has no WARN/CRIT lines;good host: makestep boot-only
+M09 CAUGHT - boot-gate ignores uptime (steps allowed at every start) :: 1 failing: boot-gate after window removes it
+M10 CAUGHT - policy-rc.d not written (package starts chrony with the default makestep config) :: 1 failing: apply: chrony package start was blocked by policy-rc.d, which is 
+M11 CAUGHT - policy-rc.d left behind after the install :: 10 failing: apply: chrony package start was blocked by policy-rc.d, which is ;apply again -> idempotent, nothing changed (rc=4 want 0, /already;unreachable sources (injected): rollback PASS, file byte-identica
+M12 CAUGHT - candidate chrony.conf installed without chronyd -p :: 3 failing: apply: chrony.conf = plan, drop-in written, chronyd -p ran first;apply chronyd -p rejects the config -> automatic rollback exit 1 ;chronyd -p rejects the config: rollback PASS, file byte-identical
+M13 CAUGHT - sync gate ignores the NTS count :: 2 failing: apply only 3 NTS sources authenticate -> automatic rollback exit ;only 3 NTS sources authenticate: rollback PASS, file byte-identic
+M14 CAUGHT - sync gate ignores a changed postfiatd StartedAt :: 2 failing: apply postfiatd restarted during the gate -> automatic rollback e;postfiatd restarted during the gate: rollback PASS, file byte-ide
+M15 CAUGHT - sync gate ignores server_state :: 2 failing: apply server_state not full -> automatic rollback exit 1 (rc=0 wa;server_state not full: rollback PASS, file byte-identical, timesy
+M16 CAUGHT - sync gate ignores the offset :: 2 failing: apply offset above OFFSET_WARN -> automatic rollback exit 1 (rc=0;offset above OFFSET_WARN: rollback PASS, file byte-identical, tim
+M17 CAUGHT - no rollback after a sync-gate miss :: 9 failing: unreachable sources (injected): rollback PASS, file byte-identica;postfiatd restarted during the gate: rollback PASS, file byte-ide;server_state not full: rollback PASS, file byte-identical, timesy
+M18 CAUGHT - rollback does not purge chrony :: 18 failing: manual rollback -> PASS (rc=5 want 0, /rollback: PASS/);manual rollback: timesyncd.conf byte-identical, chrony files abse;apply unreachable sources (injected) -> automatic rollback exit 1
+M19 CAUGHT - rollback does not reinstall the cached timesyncd :: 18 failing: manual rollback -> PASS (rc=5 want 0, /rollback: PASS/);manual rollback: timesyncd.conf byte-identical, chrony files abse;apply unreachable sources (injected) -> automatic rollback exit 1
+M20 CAUGHT - rollback leaves files that were absent before :: 15 failing: manual rollback -> PASS (rc=5 want 0, /rollback: PASS/);manual rollback: timesyncd.conf byte-identical, chrony files abse;apply unreachable sources (injected) -> automatic rollback exit 1
+M21 CAUGHT - restore check does not compare sha256 :: 1 failing: rollback whose backup copy differs from the recorded sha -> exit 
+M22 CAUGHT - rollback verdict ignores packages and active daemon :: 1 failing: rollback that cannot reinstall timesyncd -> exit 5 (rc=1 want 5, 
+M23 CAUGHT - apply proceeds without a cached timesyncd .deb :: 1 failing: apply: timesyncd .deb not cacheable -> refused 4 (rc=4 want 4, /c
+M24 CAUGHT - timesyncd not stopped before the install :: 1 failing: apply: timesyncd stopped BEFORE the install
+M25 CAUGHT - apply without --yes allowed :: 3 failing: apply without --yes -> refused 4 (rc=0 want 4, /re-run with --yes;apply: timesyncd .deb not cacheable -> refused 4 (rc=0 want 4, /c;refusals changed nothing (no stop/install, timesyncd active, file
+M26 CAUGHT - idempotence check removed (re-installs and restarts every time) :: 3 failing: apply again -> idempotent, nothing changed (rc=0 want 0, /already;idempotent apply did not reinstall or restart;manual rollback: timesyncd.conf byte-identical, chrony files abse
+M27 CAUGHT - slew bound not compared :: 2 failing: audit maxslewrate 5000 -> rc 1 (rc=0 want 1, /^\[WARN\] slew-boun;audit --json maxslewrate 5000 -> exit 1
+M28 CAUGHT - metrics report synced 1 when unsynchronised :: 1 failing: metrics: unsynced -> state 2, synced 0, check selected 2
+M29 CAUGHT - any source counts as selected :: 5 failing: audit no selected source -> rc 2 (rc=0 want 2, /^\[CRIT\] selecte;audit --json no selected source -> exit 2;metrics: unsynced -> state 2, synced 0, check selected 2
+M30 CAUGHT - timesyncd ms dispersion scaled as us :: 1 failing: audit timesyncd dispersion 150ms -> rc 1 (rc=1 want 1, /^\[WARN\]
+M31 CAUGHT - sync gate ignores root dispersion (the bug found in live run 13) :: 2 failing: apply fresh chronyd: root dispersion 17 s (skew not settled) -> a;fresh chronyd: root dispersion 17 s (skew not settled): rollback 
+M32 CAUGHT - apply proceeds without the installed tool (chrony boot-gate drop-in would fail) :: 3 failing: apply before install.sh -> refused 4 (rc=0 want 4, /is not instal;apply: timesyncd .deb not cacheable -> refused 4 (rc=0 want 4, /c;refusals changed nothing (no stop/install, timesyncd active, file
+RESULT: 32/32 caught, 0 survived, 0 not applied
+mutate exit 0 2026-10-28T22:08:48Z

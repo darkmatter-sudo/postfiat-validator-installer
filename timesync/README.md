@@ -126,4 +126,63 @@ several ms of asymmetry noise; the per-round median is the comparable figure.
 
 ## Results
 
-Filled in with the published logs (see the log index below).
+All from real runs on Ubuntu 22.04.5 (validator host + sentry host), 2026-10-28. Host names, addresses, the agent's
+user name and ntfy topics are redacted in `logs/`; the repo path in run 26 is shown as `<repo>`.
+
+| Claim | Result | Log |
+|---|---|---|
+| shellcheck clean | `shellcheck -x ./*.sh tests/*.sh drill/*.sh ../alerts/run-stack.sh` exit 0 | run-23 lines 6-7 |
+| offline audit states, apply/rollback paths | 108 passed, 0 failed (`3289465`; `pft-timesync.sh` and `tests/` unchanged since) | run-14 line 120, run-22 line 99 |
+| mutation controls (control run first) | control 108/108, then 32/32 mutants caught, 0 not applied | run-15 lines 38-39 |
+| pft-timesync-pull tests + mutants | 53/53; control then 16/16 caught | run-22 lines 73, 77, 94 |
+| promtool check + test, rule mutants | SUCCESS; 9/9 rule mutants caught | run-22 lines 116-186 |
+| injected unreachable sources -> automatic rollback | sentry: gate FAIL after 123 s -> rollback, exit 1; validator: same | run-16 lines 31-67, run-18 lines 11-47 |
+| rollback byte-identical | `timesyncd.conf` sha256 `ce491ba1...a11d7` equal after rollback, chrony files absent, timesyncd back | run-16 lines 58-65 and 138, run-18 line 118 |
+| real apply passes the gate | sentry 79 s (5 NTS sources), validator 143 s (4 NTS reachable then; 5/5 at run 27) | run-16 line 98, run-18 line 78 |
+| postfiatd untouched | `StartedAt` unchanged through injected + real apply on both hosts, `server_state` full; still the same at the end, `RestartCount` 0 | run-16 line 140, run-18 line 120, run-27 |
+| alert drill on a throwaway topic only | validator `PFTTimesyncStale` FIRING + RESOLVED on the throwaway topic, operator topics 0 messages, env files restored byte-identical; same for the sentry's pulled copy | run-21 lines 40-74, run-25 lines 48-80 |
+| integrity rebaseline + final PASS | accepted after install/apply (runs 12, 17, 24); final verify PASS 86/0/0 validator, 52/0/0 sentry | run-27 |
+| final audit | OK on both hosts: chrony, 5/5 NTS sources reachable, offset 0.2 ms / 0.1 ms | run-27 |
+
+**Offset, before (timesyncd, 1 SNTP source) vs after (chrony, 5 NTS sources)**: 75 one-minute rounds per window
+and host (20:11-21:25Z before, 21:44-22:58Z after), same probe (`offset_probe.py` sha256 `b86862f0...4915`) against
+the same three public servers. Figure: \|per-round median offset\| (runs 11 and 26; raw CSVs in `logs/`).
+
+| host | before median | before p95 | after median | after p95 |
+|---|---|---|---|---|
+| validator | 5.065 ms | 13.250 ms | 7.030 ms | 9.713 ms |
+| sentry | 7.670 ms | 24.060 ms | 7.555 ms | 14.821 ms |
+
+The p95 (and max) dropped on both hosts; the median did not improve (validator +2 ms). With 130-330 ms paths to the
+probe servers, a few ms of median is within the probe's path-asymmetry noise, so this probe cannot resolve sub-5 ms
+differences. chrony's own estimate (audit `offset`, run 27) is 0.1-0.2 ms. The gain is mostly authentication,
+source redundancy, the bounded tail and exported metrics, not a smaller median.
+
+**Found during the live runs (fixed before the final proof):** run 13 (sentry, `017d20d`) passed its sync gate after
+11 s while the tool's own after-audit graded root dispersion CRIT (2.77 s; a fresh chronyd reports huge skew until a
+few clock updates). The gate now also requires root dispersion <= `DISP_WARN` (`3289465`, test + mutants M31/M32);
+run 16 rolled back run 13's apply by hand and re-ran the whole drill on the fixed code.
+
+### Log index (`logs/`)
+
+Run 1 (discovery) is not published: its `timedatectl` output names the host's time zone.
+
+| Run | What |
+|---|---|
+| 02, 20 | before / after window collector launch (transient units, both hosts) |
+| 03 | NTS-KE handshake check from both hosts, 7 candidate servers |
+| 04, 05 | chrony 4.2 output-format probe from an extracted deb, `chronyd -x` (04 failed on socket dir perms, 05 ok) |
+| 06 | dev smoke: read-only audit + plan on both hosts (uncommitted code, sha256 in header) |
+| 07 | `chronyd -p` validates the candidate config, rejects an unknown directive |
+| 08 | `apt-get -s install chrony` on both hosts (simulation) |
+| 09, 10 | offline 105/105 and mutants at `c29a017`; 10 stopped after M07, superseded by 15 |
+| 11, 26 | before / after offset statistics; CSVs `*-before.csv`, `*-after.csv` |
+| 12, 17 | install on the sentry / validator + integrity accept |
+| 13 | sentry live run at `017d20d`: PASS verdict, but found the dispersion gate gap (above) |
+| 14, 15 | offline 108/108 and mutants 32/32 at `3289465` |
+| 16, 18 | sentry / validator live run at `3289465`: injected rollback + real apply, PASS |
+| 19 | rules loaded into the validator's Prometheus (SIGHUP, no recreate) |
+| 21, 25 | throwaway-topic alert drill: validator, then the sentry's pulled copy |
+| 22, 23 | offline final (pull tests/mutants, rules, promtool, run-stack check) and shellcheck |
+| 24 | pft-timesync-pull live on the validator + integrity accept |
+| 27 | final state: integrity PASS, audit OK, postfiatd health and StartedAt, both hosts |

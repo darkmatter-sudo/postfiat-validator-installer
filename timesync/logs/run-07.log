@@ -1,0 +1,38 @@
+# runlog 7: chrony 4.2 'chronyd -p -f' validates the candidate config (exit 0) and rejects an unknown directive (exit 1); confdir pulls in the boot-gate makestep file; extracted deb, NOT installed; 2026-10-28T21:15:14Z
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+## valid candidate (plan output, confdir pointed at a temp dir holding makestep 1.0 3)
+server time.cloudflare.com iburst nts
+server nts.netnod.se iburst nts
+server ptbtime1.ptb.de iburst nts
+server ntppool1.time.nl iburst nts
+server nts.teambelgium.net iburst nts
+minsources 3
+maxslewrate 500
+maxupdateskew 100.0
+makestep 1.0 3
+driftfile /var/lib/chrony/chrony.drift
+ntsdumpdir /var/lib/chrony
+logdir /var/log/chrony
+cmdport 0
+rtcsync
+leapsectz right/UTC
+exit 0
+## + bogusdirective 1
+2026-10-28T21:15:14Z Fatal error : Invalid directive at line 22 in file cand.conf
+server time.cloudflare.com iburst nts
+server nts.netnod.se iburst nts
+server ptbtime1.ptb.de iburst nts
+server ntppool1.time.nl iburst nts
+server nts.teambelgium.net iburst nts
+minsources 3
+maxslewrate 500
+maxupdateskew 100.0
+makestep 1.0 3
+driftfile /var/lib/chrony/chrony.drift
+ntsdumpdir /var/lib/chrony
+logdir /var/log/chrony
+cmdport 0
+rtcsync
+leapsectz right/UTC
+bogusdirective 1
+exit 1

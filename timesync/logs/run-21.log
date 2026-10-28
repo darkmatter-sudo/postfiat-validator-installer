@@ -1,0 +1,75 @@
+pft-timesync alert drill - 2026-10-28T22:11:35Z - Ubuntu 22.04.5 LTS - alert PFTTimesyncStale
+sha256 23dbd078a99fd510c71f3beab85399e5d8a5957076fcc293cedb3f35e5b7d6ee timesync/drill/alert-drill.sh
+sha256 6007fbaebf291d1440a932743eaacb59bf66e48b267c86039e5c85ea981a915b alerts/timesync.rules.yml
+
+== 1. preflight
+  stack ready; bridge on the real env file; no PFTTimesync*/PFTClock* alerts; node full; timer active
+  postfiatd StartedAt 2026-10-28T11:33:11.215149204Z; sentry alertpath env sha256 ddb52721a668f54d..; operator topics read: 2
+  2026-10-28T22:11:36Z node=full stale_age=5s prometheus=inactive alertmanager=none
+
+== 2. redirect to the throwaway topic <redacted>
+  sentry /etc/pft-alertpath/ntfy.env -> throwaway (backup kept beside it)
+  $ NTFY_ENV_FILE=<throwaway env> alerts/run-stack.sh bridge
+  2026-10-28T22:11:39Z starting pft-alert-bridge (ntfy: on)
+  2026-10-28T22:11:41Z pft-alert-bridge listening
+  pft-alert-bridge -> throwaway (mount source checked); not recreated: /pft-prometheus 2026-10-26T07:37:48.872465152Z /pft-alertmanager 2026-10-28T14:53:47.064461907Z 
+
+== 3. inject: stop pft-timesync.timer (metrics stop; chrony and postfiatd untouched)
+  $ sudo systemctl stop pft-timesync.timer
+
+== 4. expect PFTTimesyncStale firing (budget 900s)
+  2026-10-28T22:11:41Z node=full stale_age=11s prometheus=inactive alertmanager=none
+  2026-10-28T22:12:14Z node=full stale_age=43s prometheus=inactive alertmanager=none
+  2026-10-28T22:12:45Z node=full stale_age=74s prometheus=inactive alertmanager=none
+  2026-10-28T22:13:16Z node=full stale_age=105s prometheus=inactive alertmanager=none
+  2026-10-28T22:13:47Z node=full stale_age=136s prometheus=inactive alertmanager=none
+  2026-10-28T22:14:18Z node=full stale_age=167s prometheus=inactive alertmanager=none
+  2026-10-28T22:14:49Z node=full stale_age=198s prometheus=inactive alertmanager=none
+  2026-10-28T22:15:20Z node=full stale_age=230s prometheus=inactive alertmanager=none
+  2026-10-28T22:15:51Z node=full stale_age=261s prometheus=inactive alertmanager=none
+  2026-10-28T22:16:23Z node=full stale_age=292s prometheus=inactive alertmanager=none
+  2026-10-28T22:16:54Z node=full stale_age=323s prometheus=pending alertmanager=none
+  2026-10-28T22:17:25Z node=full stale_age=354s prometheus=pending alertmanager=none
+  2026-10-28T22:17:56Z node=full stale_age=386s prometheus=pending alertmanager=none
+  2026-10-28T22:18:27Z node=full stale_age=417s prometheus=pending alertmanager=none
+  2026-10-28T22:18:59Z node=full stale_age=448s prometheus=firing alertmanager=active
+  firing after 439s
+[PASS] Prometheus showed PFTTimesyncStale pending
+[PASS] Prometheus showed PFTTimesyncStale firing
+[PASS] Alertmanager showed PFTTimesyncStale active
+[PASS] [FIRING] PFTTimesyncStale reached the throwaway topic
+
+== 5. recover: start pft-timesync.timer (budget 600s)
+  $ sudo systemctl start pft-timesync.timer
+  2026-10-28T22:19:20Z node=full stale_age=19s prometheus=inactive alertmanager=none
+  2026-10-28T22:19:41Z node=full stale_age=40s prometheus=inactive alertmanager=none
+  2026-10-28T22:20:02Z node=full stale_age=62s prometheus=inactive alertmanager=none
+  resolved after 64s
+[PASS] PFTTimesyncStale left Prometheus and Alertmanager
+[PASS] [RESOLVED] PFTTimesyncStale reached the throwaway topic
+
+== 6. restore (2026-10-28T22:20:04Z)
+  pft-timesync.timer: active
+  $ NTFY_ENV_FILE=<real bridge env> alerts/run-stack.sh bridge
+  2026-10-28T22:20:08Z starting pft-alert-bridge (ntfy: on)
+  2026-10-28T22:20:12Z pft-alert-bridge listening
+[PASS] pft-alert-bridge mount source is the real env file again
+  sentry alertpath check before env restore: 2026-10-28T22:21:31Z state=OK accepted=2 rejected=0 snapshot_age=19 delivery_age=54
+[PASS] sentry alertpath ntfy.env restored byte-identical (sha256 ddb52721a668f54d.. = pre-drill)
+[PASS] sentry alertpath ntfy.env mode/owner 600:root
+
+== 7. verdict (2026-10-28T22:21:42Z)
+  throwaway topic <redacted>: 4 messages
+    [FIRING] PFTTimesyncStale
+    [RESOLVED] PFTTimesyncStale
+    [alertpath] DEGRADED
+    [alertpath] RECOVERED
+[PASS] throwaway topic got [FIRING] PFTTimesyncStale
+[PASS] throwaway topic got [RESOLVED] PFTTimesyncStale
+[PASS] operator topic #1: 0 messages during the drill
+[PASS] operator topic #2: 0 messages during the drill
+[PASS] postfiatd StartedAt unchanged (2026-10-28T11:33:11.215149204Z)
+[PASS] postfiatd server_state full
+[PASS] pft-timesync audit exit 0 after the drill
+RESULT: PASS
+drill exit 0 2026-10-28T22:21:45Z

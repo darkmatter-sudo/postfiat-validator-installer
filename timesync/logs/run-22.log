@@ -1,0 +1,186 @@
+== offline final for pull + rules - 2026-10-28T22:23:22Z - Ubuntu 22.04.5 LTS - commit 9bdef5c7abae12b72f0807607b46bf142f0ec86d
+$ git status --short (must be empty)
+$ sha256sum
+c632a684fc20c4be6d2ad35a01d34661e7cbb3e881ce49cc16085cfbb64619f0  timesync/pft-timesync.sh
+bf0032bde2eafc24af7f057768e317cbee9e5d61c3c7cf6874e30d5a8ef782b3  timesync/pft-timesync-pull.sh
+a8416f727b91b2569be687eed9e5e76259451d0adb0e781a87b034447ca3b492  timesync/install.sh
+c78adc0ad8efdca07be5ab555c9e412198f97a664dc57d7db7dc50a006129cc9  alerts/timesync.rules.yml
+0aae3b7ef2b772a87eeb221d795a17a64daf0bc6c8109df9aee9b00fc8fb696b  alerts/timesync.tests.yml
+23dbd078a99fd510c71f3beab85399e5d8a5957076fcc293cedb3f35e5b7d6ee  timesync/drill/alert-drill.sh
+$ shellcheck timesync/*.sh timesync/tests/*.sh timesync/drill/*.sh alerts/run-stack.sh
+
+In timesync/tests/run-tests.sh line 13:
+. "$HERE/stubs.sh"
+  ^--------------^ SC1091 (info): Not following: tests/stubs.sh was not specified as input (see shellcheck -x).
+
+For more information:
+  https://www.shellcheck.net/wiki/SC1091 -- Not following: tests/stubs.sh was...
+shellcheck exit 1
+$ bash timesync/tests/pull-tests.sh
+ok   relabel real-format file -> exit 0
+ok   every sample kept (8)
+ok   host label is the FIRST label of every sample
+ok   existing labels kept after host
+ok   negative value kept byte-exact
+ok   HELP/TYPE lines kept
+ok   output passes the exporter's SAMPLE_RE (file would not be skipped)
+ok   plain comments and blank lines dropped -> exit 0
+ok   plain comment dropped
+ok   reject: peer sets its own host label -> exit 2
+ok   reject: peer sets its own host label prints no samples
+ok   reject: host label not first -> exit 2
+ok   reject: host label not first prints no samples
+ok   reject: foreign metric sample -> exit 2
+ok   reject: foreign metric sample prints no samples
+ok   reject: foreign HELP line -> exit 2
+ok   reject: foreign HELP line prints no samples
+ok   reject: non-numeric value -> exit 2
+ok   reject: non-numeric value prints no samples
+ok   reject: NaN value -> exit 2
+ok   reject: NaN value prints no samples
+ok   reject: trailing garbage after value -> exit 2
+ok   reject: trailing garbage after value prints no samples
+ok   reject: quote breaks out of a label -> exit 2
+ok   reject: quote breaks out of a label prints no samples
+ok   reject: unclosed label set -> exit 2
+ok   reject: unclosed label set prints no samples
+ok   reject: second label set -> exit 2
+ok   reject: second label set prints no samples
+ok   reject: no pft_timesync_state -> exit 2
+ok   reject: no pft_timesync_state prints no samples
+ok   reject: no collect timestamp -> exit 2
+ok   reject: no collect timestamp prints no samples
+ok   reject: empty file -> exit 2
+ok   reject: file over MAX_BYTES -> exit 2
+ok   bad host label -> exit 3
+ok   missing file -> exit 2
+ok   pull ok -> exit 0
+ok   pulled file = relabel output
+ok   pulled file mode 644 (exporter reads it)
+ok   pull --host sentry-2 -> its own file
+ok   --host sets the label
+ok   fetch failure -> exit 1
+ok   fetch failure keeps the previous copy byte-identical
+ok   hung transport -> timeout, exit 1
+ok   timeout keeps the previous copy byte-identical
+ok   spoofing peer file -> exit 2
+ok   rejected file keeps the previous copy byte-identical
+ok   no temp files left in the textfile dir
+ok   PULL_SSH unset -> exit 3
+ok   missing textfile dir -> exit 3
+ok   non-root-owned conf is not sourced -> exit 3
+ok   unknown command -> exit 3
+RESULT: 53 passed, 0 failed
+pull-tests exit 0
+$ bash timesync/tests/pull-mutate.sh
+sha256 bf0032bde2eafc24af7f057768e317cbee9e5d61c3c7cf6874e30d5a8ef782b3 pft-timesync-pull.sh
+control: unmutated copy RESULT: 53 passed, 0 failed
+P01 CAUGHT - peer may set its own host label :: 6 failing: reject: peer sets its own host label -> exit 2 (rc=0 want 2, /alr;reject: peer sets its own host label prints no samples;reject: host label not first -> exit 2 (rc=0 want 2, /already has
+P02 CAUGHT - host label appended last instead of first :: 2 failing: host label first;existing labels kept
+P03 CAUGHT - any metric name accepted :: 2 failing: reject: foreign metric sample -> exit 2 (rc=0 want 2, /not a pft_;reject: foreign metric sample prints no samples
+P04 CAUGHT - foreign HELP/TYPE lines treated as plain comments :: 2 failing: reject: foreign HELP line -> exit 2 (rc=0 want 2, /HELP/TYPE for ;reject: foreign HELP line prints no samples
+P05 CAUGHT - value not anchored at the end (trailing garbage) :: 2 failing: reject: trailing garbage after value -> exit 2 (rc=0 want 2, /mal;reject: trailing garbage after value prints no samples
+P06 CAUGHT - label values may contain quotes/backslashes :: 4 failing: reject: quote breaks out of a label -> exit 2 (rc=0 want 2, /malf;reject: quote breaks out of a label prints no samples;reject: second label set -> exit 2 (rc=0 want 2, /malformed (labe
+P07 CAUGHT - pft_timesync_state not required :: 2 failing: reject: no pft_timesync_state -> exit 2 (rc=0 want 2, /no pft_tim;reject: no pft_timesync_state prints no samples
+P08 CAUGHT - collect timestamp not required (stale alert could never fire) :: 2 failing: reject: no collect timestamp -> exit 2 (rc=0 want 2, /no pft_time;reject: no collect timestamp prints no samples
+P09 CAUGHT - size limit not enforced :: 1 failing: reject: file over MAX_BYTES -> exit 2 (rc=0 want 2, /bytes > MAX_
+P10 CAUGHT - fetch failure not detected (empty copy replaces the previous one) :: 2 failing: fetch failure -> exit 1 (rc=2 want 1, /fetch of .* failed or time;hung transport -> timeout, exit 1 (rc=2 want 1, /failed or timed 
+P11 CAUGHT - relabel failure ignored (invalid file renamed into place) :: 2 failing: spoofing peer file -> exit 2 (rc=0 want 2, /rejected the peer fil;rejected file keeps previous copy
+P12 CAUGHT - temp file not removed on rejection :: 1 failing: temp files left: /tmp/tmp.QR7MAdDM9O/textfile/.tspull-sentry.DkyW
+P13 CAUGHT - non-atomic write straight to the destination :: 3 failing: fetch failure keeps previous copy;timeout keeps previous copy;rejected file keeps previous copy
+P14 CAUGHT - conf sourced even when not root-owned :: 1 failing: non-root-owned conf is not sourced -> exit 3 (rc=0 want 3, /PULL_
+P15 CAUGHT - output file left with mktemp mode 600 :: 1 failing: pulled file mode 600
+P16 CAUGHT - host label not validated :: 1 failing: bad host label -> exit 3 (rc=0 want 3, /bad host label/)
+RESULT: 16/16 caught, 0 survived, 0 not applied
+pull-mutate exit 0
+$ bash timesync/tests/run-tests.sh | tail -1
+run-tests exit 0
+108
+RESULT: 108 passed, 0 failed
+$ DOCKER="sudo docker" bash timesync/tests/check-rules.sh
+== real rules
+Checking timesync.rules.yml
+  SUCCESS: 5 rules found
+
+  SUCCESS
+
+R1 CAUGHT: offset threshold 0.05 -> 0.1 (80 ms missed) -> 1 failing eval(s), first: alertname: PFTClockOffsetHigh, time: 10m, 
+R2 CAUGHT: offset without abs() (slow clock never alerts) -> 1 failing eval(s), first: alertname: PFTClockOffsetHigh, time: 10m, 
+R3 CAUGHT: NTS threshold < 4 -> < 3 -> 1 failing eval(s), first: alertname: PFTClockNTSSourcesLow, time: 15m, 
+R4 CAUGHT: audit alert fires on WARN too -> 1 failing eval(s), first: alertname: PFTTimesyncAuditCritical, time: 5m, 
+R5 CAUGHT: unsynced for: 5m -> 0m -> 1 failing eval(s), first: alertname: PFTClockNotSynchronised, time: 15m, 
+R6 CAUGHT: staleness 300 -> 900 -> 2 failing eval(s), first: alertname: PFTTimesyncStale, time: 18m, 
+R7 CAUGHT: offset for: 10m -> 30m -> 1 failing eval(s), first: alertname: PFTClockOffsetHigh, time: 10m, 
+R8 CAUGHT: synced alert inverted -> 2 failing eval(s), first: alertname: PFTClockNotSynchronised, time: 1h, 
+R9 CAUGHT: summary drops the host (sentry alert reads as the validator) -> 1 failing eval(s), first: alertname: PFTTimesyncStale, time: 18m, 
+RULE MUTANTS: 9/9 caught
+check-rules exit 0
+$ DOCKER="sudo docker" alerts/run-stack.sh check
+2026-10-28T22:25:19Z promtool check rules
+Checking postfiat.rules.yml
+  SUCCESS: 16 rules found
+
+Checking divergence.rules.yml
+  SUCCESS: 2 rules found
+
+Checking logship.rules.yml
+  SUCCESS: 1 rules found
+
+Checking resources.rules.yml
+  SUCCESS: 10 rules found
+
+Checking alertpath.rules.yml
+  SUCCESS: 1 rules found
+
+Checking timesync.rules.yml
+  SUCCESS: 5 rules found
+
+2026-10-28T22:25:20Z promtool test rules
+  SUCCESS
+
+  SUCCESS
+
+  SUCCESS
+
+  SUCCESS
+
+  SUCCESS
+
+  SUCCESS
+
+2026-10-28T22:25:25Z promtool check config (prometheus.yml + slo rules at /etc/pft-slo)
+Checking /etc/pft-alerts/prometheus.yml
+  SUCCESS: 7 rule files found
+ SUCCESS: /etc/pft-alerts/prometheus.yml is valid prometheus config file syntax
+
+Checking /etc/pft-alerts/postfiat.rules.yml
+  SUCCESS: 16 rules found
+
+Checking /etc/pft-alerts/divergence.rules.yml
+  SUCCESS: 2 rules found
+
+Checking /etc/pft-alerts/logship.rules.yml
+  SUCCESS: 1 rules found
+
+Checking /etc/pft-alerts/resources.rules.yml
+  SUCCESS: 10 rules found
+
+Checking /etc/pft-alerts/alertpath.rules.yml
+  SUCCESS: 1 rules found
+
+Checking /etc/pft-alerts/timesync.rules.yml
+  SUCCESS: 5 rules found
+
+Checking /etc/pft-slo/slo.rules.yml
+  SUCCESS: 17 rules found
+
+2026-10-28T22:25:26Z amtool check-config
+Checking '/w/alertmanager.yml'  SUCCESS
+Found:
+ - global config
+ - route
+ - 2 inhibit rules
+ - 2 receivers
+ - 0 templates
+
+run-stack check exit 0

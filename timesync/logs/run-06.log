@@ -1,0 +1,122 @@
+# runlog 6: dev smoke, read-only audit + plan on both hosts (uncommitted code sha256 f79078ffefcfeae643c229dcf0107678752fa712d5af9bf6bc0c20be490bc25b); 2026-10-28T21:14:58Z
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+## validator: audit
+pft-timesync audit - 2026-10-28T21:14:58Z
+[PASS] conflicting-daemons  only systemd-timesyncd
+[WARN] daemon               systemd-timesyncd (SNTP client, no authentication)
+[WARN] sources              1 in use (< 3)
+[WARN] nts                  0 NTS-authenticated sources (timesyncd cannot do NTS)
+[PASS] selected             NTPSynchronized=yes
+[INFO] offset               not exported by systemd-timesyncd (see offset_probe.py)
+[PASS] root-dispersion      0.000686000 s
+[PASS] stratum              2
+[PASS] leap                 Normal
+[PASS] rtc                  RTC in UTC (LocalRTC=no)
+RESULT: WARN (daemon systemd-timesyncd) -> exit 1
+exit 1
+## validator: audit --json
+{
+  "time": "2026-10-28T21:14:58Z",
+  "result": "WARN",
+  "exit": 1,
+  "daemon": "systemd-timesyncd",
+  "checks": [
+    {
+      "state": "PASS",
+      "check": "conflicting-daemons",
+      "detail": "only systemd-timesyncd"
+    },
+    {
+      "state": "WARN",
+      "check": "daemon",
+      "detail": "systemd-timesyncd (SNTP client, no authentication)"
+    },
+    {
+      "state": "WARN",
+      "check": "sources",
+      "detail": "1 in use (< 3)"
+    },
+    {
+      "state": "WARN",
+      "check": "nts",
+      "detail": "0 NTS-authenticated sources (timesyncd cannot do NTS)"
+    },
+    {
+      "state": "PASS",
+      "check": "selected",
+      "detail": "NTPSynchronized=yes"
+    },
+    {
+      "state": "INFO",
+      "check": "offset",
+      "detail": "not exported by systemd-timesyncd (see offset_probe.py)"
+    },
+    {
+      "state": "PASS",
+      "check": "root-dispersion",
+      "detail": "0.000686000 s"
+    },
+    {
+      "state": "PASS",
+      "check": "stratum",
+      "detail": "2"
+    },
+    {
+      "state": "PASS",
+      "check": "leap",
+      "detail": "Normal"
+    },
+    {
+      "state": "PASS",
+      "check": "rtc",
+      "detail": "RTC in UTC (LocalRTC=no)"
+    }
+  ]
+}
+exit 1
+## sentry: audit
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+pft-timesync audit - 2026-10-28T21:14:59Z
+[PASS] conflicting-daemons  only systemd-timesyncd
+[WARN] daemon               systemd-timesyncd (SNTP client, no authentication)
+[WARN] sources              1 in use (< 3)
+[WARN] nts                  0 NTS-authenticated sources (timesyncd cannot do NTS)
+[PASS] selected             NTPSynchronized=yes
+[INFO] offset               not exported by systemd-timesyncd (see offset_probe.py)
+[PASS] root-dispersion      0.000244000 s
+[PASS] stratum              2
+[PASS] leap                 Normal
+[PASS] rtc                  RTC in UTC (LocalRTC=no)
+RESULT: WARN (daemon systemd-timesyncd) -> exit 1
+exit 1
+## plan
+# /etc/chrony/chrony.conf
+# Managed by pft-timesync (postfiat-validator-installer/timesync). Changes are overwritten by 'apply'.
+# NTS-authenticated sources only; no pool, no DHCP-provided (unauthenticated) servers.
+server time.cloudflare.com iburst nts
+server nts.netnod.se iburst nts
+server ptbtime1.ptb.de iburst nts
+server ntppool1.time.nl iburst nts
+server nts.teambelgium.net iburst nts
+# a clock update needs agreement of at least this many selectable sources
+minsources 3
+# running clock: slew only, at most 500 ppm (0.5 ms per s). No makestep here: steps are only
+# allowed right after boot, by /etc/chrony/conf.d/pft-boot-makestep.conf (written by 'pft-timesync boot-gate').
+maxslewrate 500
+maxupdateskew 100.0
+confdir /etc/chrony/conf.d
+driftfile /var/lib/chrony/chrony.drift
+ntsdumpdir /var/lib/chrony
+logdir /var/log/chrony
+# no UDP command port; chronyc talks over the root-only unix socket
+cmdport 0
+rtcsync
+leapsectz right/UTC
+# /etc/systemd/system/chrony.service.d/50-pft-timesync.conf
+# Managed by pft-timesync: allow makestep only within BOOT_WINDOW seconds of boot ("+" = runs outside the sandbox,
+# it writes or removes /etc/chrony/conf.d/pft-boot-makestep.conf before chronyd reads its config).
+[Service]
+ExecStartPre=+/usr/local/sbin/pft-timesync boot-gate
+# boot-gate: within 300 s of boot /etc/chrony/conf.d/pft-boot-makestep.conf = 'makestep 1.0 3', otherwise removed
+# packages: install chrony (removes systemd-timesyncd: both provide time-daemon); the installed timesyncd .deb is cached for rollback
+exit 0

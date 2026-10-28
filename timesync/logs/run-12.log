@@ -1,0 +1,55 @@
+# runlog 12: install pft-timesync on the SENTRY from commit 017d20d8e3c969284badce1dc8cb979a63b6b7a1 (files copied over ssh); 2026-10-28T21:26:27Z
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+2658de52c280989e70504f9685275ca9c4da5227942ac4d3d9fe3c5d72f3d940  pft-timesync.sh
+1e8d493c187cf7a274761ad48046ee16542bd1bd8689e90267c120f0682636d9  install.sh
+a18ffeacbc760a86dd632c1e27529ec500623b4a4e741f79e8c8273785d76d57  systemd/pft-timesync.service
+73eac0ad1d85deaa5648fe7b0a1fa8c694d52635910d3eef39a05b0d20c246a9  systemd/pft-timesync.timer
+8f6dade94bc0370718b5cfc39e38b6d61b9f2b92ba355eef7f9185d4a26ed0e0  drill/live-run.sh
+install: installed /usr/local/sbin/pft-timesync (2658de52c280989e70504f9685275ca9c4da5227942ac4d3d9fe3c5d72f3d940), pft-timesync.timer enabled; first collection: pft_timesync_state 1
+install exit 0
+NEXT LEFT LAST                        PASSED    UNIT               ACTIVATES
+n/a  n/a  Wed 2026-10-28 21:26:29 UTC 226ms ago pft-timesync.timer pft-timesync.service
+# HELP pft_timesync_state Audit result: 0 OK, 1 WARN, 2 CRIT
+# TYPE pft_timesync_state gauge
+pft_timesync_state 1
+# HELP pft_timesync_daemon Active time daemon (1 for the active one)
+# TYPE pft_timesync_daemon gauge
+pft_timesync_daemon{daemon="systemd-timesyncd"} 1
+# HELP pft_timesync_check Per-check state: 0 PASS/INFO, 1 WARN, 2 CRIT
+# TYPE pft_timesync_check gauge
+pft_timesync_check{check="conflicting-daemons"} 0
+pft_timesync_check{check="daemon"} 1
+pft_timesync_check{check="sources"} 1
+pft_timesync_check{check="nts"} 1
+pft_timesync_check{check="selected"} 0
+pft_timesync_check{check="offset"} 0
+pft_timesync_check{check="root-dispersion"} 0
+pft_timesync_check{check="stratum"} 0
+pft_timesync_check{check="leap"} 0
+pft_timesync_check{check="rtc"} 0
+# HELP pft_timesync_root_dispersion_seconds Root dispersion
+# TYPE pft_timesync_root_dispersion_seconds gauge
+pft_timesync_root_dispersion_seconds 0.000244000
+# HELP pft_timesync_stratum Stratum of this host
+# TYPE pft_timesync_stratum gauge
+pft_timesync_stratum 2
+# HELP pft_timesync_nts_sources NTS-authenticated reachable sources
+# TYPE pft_timesync_nts_sources gauge
+pft_timesync_nts_sources 0
+# HELP pft_timesync_sources Configured sources
+# TYPE pft_timesync_sources gauge
+pft_timesync_sources 1
+# HELP pft_timesync_synced 1 if a source is selected / NTPSynchronized=yes
+# TYPE pft_timesync_synced gauge
+pft_timesync_synced 1
+# HELP pft_timesync_collect_timestamp_seconds Unix time of this collection
+# TYPE pft_timesync_collect_timestamp_seconds gauge
+pft_timesync_collect_timestamp_seconds 1793222788
+== pft-integrity verify (expect WARN for the new items)
+  [WARN] unit:pft-timesync.service                    added    new file
+  [WARN] unit:pft-timesync.timer                      added    new file
+RESULT: WARN - 50 unchanged, 2 warn, 0 fail -> exit 1
+== pft-integrity accept (sentry)
+pft-integrity accept - 2026-10-28T21:26:46Z: re-baselined 52 items by root
+manifest sha256: 38d76d68ccfe05301d101f42f786c17007b0cff39de2c6a7fb75a289e7ae9762 -> 13781bdd582a208efbe049a216fed0582b3abec041d9dc7a2bbf7d7dc758de45 (logged to accept.log)
+RESULT: PASS - 52 unchanged, 0 warn, 0 fail -> exit 0

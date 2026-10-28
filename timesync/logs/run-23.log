@@ -1,0 +1,7 @@
+== shellcheck from timesync/ (log 22 ran it from the repo root, where the 'source=tests/stubs.sh' directive in run-tests.sh does not resolve: SC1091 info) - 2026-10-28T22:25:39Z - commit 9bdef5c7abae12b72f0807607b46bf142f0ec86d
+$ cd timesync && shellcheck -x *.sh tests/*.sh drill/*.sh ../alerts/run-stack.sh
+shellcheck exit 0
+
+== re-run with the echoed command identical to the executed one (above echo said *.sh, the command ran ./*.sh) - 2026-10-28T22:25:49Z
+$ cd timesync && shellcheck -x ./*.sh tests/*.sh drill/*.sh ../alerts/run-stack.sh
+shellcheck exit 0
