@@ -200,7 +200,7 @@ collect() {
 }
 
 HELP="pft_resources_container_restarts docker RestartCount of the container
-pft_resources_container_oom_killed 1 if docker State.OOMKilled is true (the last run of the main process was OOM-killed)
+pft_resources_container_oom_killed 1 if docker State.OOMKilled is true (any OOM kill in the container cgroup since its last start, also of a child process; alert on changes)
 pft_resources_container_info container id (first 12 hex) of the running container; changes on recreate
 pft_resources_limit_set 1 if the cgroup has its own limit for the resource, 0 if it is max (host value exported)
 pft_resources_memory_current_bytes cgroup memory.current
