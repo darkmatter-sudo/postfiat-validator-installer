@@ -19,8 +19,10 @@
 #          3. installs the full file and restarts dockerd (the other keys are not reloadable). With live-restore
 #             on, running containers keep running: the health gate requires every container's StartedAt to be
 #             unchanged, DOCKER-USER to be unchanged, the peer port to listen again, and postfiatd's server_state
-#             to be full within HEALTH_BUDGET seconds. Any miss -> automatic rollback: the backup is restored
-#             byte-identical (sha256 compared), dockerd restarted, and the result checked again (exit 1).
+#             to be full within HEALTH_BUDGET seconds. A dockerd restart drops the DOCKER-USER -> PFT-EGRESS jump
+#             of the egress/ add-on, so while DOCKER-USER differs the gate runs `pft-egress reapply` (if installed).
+#             Any miss -> automatic rollback: the backup is restored byte-identical (sha256 compared), dockerd
+#             restarted, and the rollback is gated too (DOCKER-USER as before apply, port, full; exit 1, or 5).
 #          4. writes the missing auditd watches to AUDIT_RULES and loads them with augenrules, unless auditd is in
 #             immutable mode (-e 2): then the rules are staged and take effect at the next boot (reported).
 #
@@ -30,6 +32,7 @@
 #      AUDIT_RULES (/etc/audit/rules.d/pft-dockerd.rules)  BACKUP_DIR (/var/lib/pft-dockerd)
 #      Test hooks: PFT_DOCKERD_ROOT (path prefix for every file)  PFT_DOCKERD_DOCKER / _DOCKERD / _SYSTEMCTL /
 #      _AUDITCTL / _AUGENRULES / _SS / _IPT / _STAT / _GETENT / _PGREP / _RPC (commands)  RELOAD_WAIT (2)  PFT_DOCKERD_INJECT (bad-key | health)
+#      PFT_DOCKERD_EGRESS (pft-egress binary; default $PFT_DOCKERD_ROOT/usr/local/sbin/pft-egress, skipped if absent)
 
 # jq programs are single-quoted on purpose. "A && B || C" is intended where C only reports or returns.
 # shellcheck disable=SC2016,SC2015
@@ -48,6 +51,7 @@ STAT="${PFT_DOCKERD_STAT:-stat}"
 INJECT="${PFT_DOCKERD_INJECT:-}"
 GETENT="${PFT_DOCKERD_GETENT:-getent}"
 PGREP="${PFT_DOCKERD_PGREP:-pgrep}"
+EGRESS="${PFT_DOCKERD_EGRESS:-$R/usr/local/sbin/pft-egress}"
 RELOAD_WAIT="${RELOAD_WAIT:-2}"
 PEER_PORT="${PEER_PORT:-2559}"
 HEALTH_BUDGET="${HEALTH_BUDGET:-300}"
@@ -213,19 +217,33 @@ server_state() {
   "$DOCKER" exec "$1" sh -c 'curl -s -m 5 -d "{\"method\":\"server_info\"}" http://127.0.0.1:${RPC_PORT:-5005}/' 2>/dev/null \
     | jq -r '.result.info.server_state // "unknown"' 2>/dev/null || echo unknown
 }
-health_gate() { # BEFORE_SNAPSHOT CONTAINER -> 0 healthy within budget
-  local before="$1" c="$2" start now st snap
-  start="$(date +%s)"
+# Every dockerd restart rebuilds DOCKER-USER without the PFT-EGRESS jump that egress/ owns; its 5-min reapply
+# timer would heal it, but until then the node runs without its egress policy. Re-apply it right away.
+egress_reapply() { # CONTAINER
+  [ -x "$EGRESS" ] || return 0
+  if "$EGRESS" reapply --container "$1" >/dev/null 2>&1; then echo "$(ts) egress: pft-egress reapply --container $1: ok"
+  else echo "$(ts) egress: pft-egress reapply --container $1: FAILED (rc $?)"; fi
+}
+health_gate() { # BEFORE_SNAPSHOT CONTAINER [rollback] -> 0 healthy within budget
+  # rollback mode: the restored file may lack live-restore (containers restart by design), so only DOCKER-USER,
+  # the peer port and server_state are compared, and the injected miss does not apply
+  local before="$1" c="$2" mode="${3:-apply}" start now st snap cmp_b cmp_s label
+  start="$(date +%s)"; label="health"; [ "$mode" = rollback ] && label="rollback: health"
   while :; do
     now="$(date +%s)"
     snap="$(snapshot)"; st="$(server_state "$c")"
-    if [ "$INJECT" != health ] && [ "$snap" = "$before" ] && [ "$st" = full ] \
+    cmp_b="$before"; cmp_s="$snap"
+    [ "$mode" = rollback ] && { cmp_b="$(grep '^ipt ' <<<"$before")"; cmp_s="$(grep '^ipt ' <<<"$snap")"; }
+    if [ "$(grep '^ipt ' <<<"$snap")" != "$(grep '^ipt ' <<<"$before")" ]; then
+      egress_reapply "$c"; snap="$(snapshot)"; cmp_s="$snap"; [ "$mode" = rollback ] && cmp_s="$(grep '^ipt ' <<<"$snap")"
+    fi
+    if { [ "$INJECT" != health ] || [ "$mode" = rollback ]; } && [ "$cmp_s" = "$cmp_b" ] && [ "$st" = full ] \
        && "$SS" -Hltn 2>/dev/null | awk '{print $4}' | grep -qE ":$PEER_PORT\$"; then
-      echo "$(ts) health: PASS after $((now - start)) s (StartedAt + DOCKER-USER unchanged, :$PEER_PORT listening, server_state full)"
+      echo "$(ts) $label: PASS after $((now - start)) s ($([ "$mode" = rollback ] && echo "DOCKER-USER as before apply, StartedAt $([ "$snap" = "$before" ] && echo unchanged || echo changed)" || echo "StartedAt + DOCKER-USER unchanged"), :$PEER_PORT listening, server_state full)"
       return 0
     fi
     if (( now - start >= HEALTH_BUDGET )); then
-      echo "$(ts) health: FAIL after $((now - start)) s (server_state=$st; snapshot $([ "$snap" = "$before" ] && echo same || echo CHANGED)${INJECT:+; injected=$INJECT})"
+      echo "$(ts) $label: FAIL after $((now - start)) s (server_state=$st; snapshot $([ "$cmp_s" = "$cmp_b" ] && echo same || echo CHANGED)${INJECT:+; injected=$INJECT})"
       diff <(echo "$before") <(echo "$snap") | sed 's/^/  /' | head -20
       return 1
     fi
@@ -235,8 +253,9 @@ health_gate() { # BEFORE_SNAPSHOT CONTAINER -> 0 healthy within budget
 wait_docker() { local _n; for _n in $(seq 1 60); do "$DOCKER" info >/dev/null 2>&1 && return 0; sleep 1; done; return 1; }
 sha() { if [ -f "$1" ]; then sha256sum "$1" | cut -d' ' -f1; else echo absent; fi; }
 
-do_rollback() { # BACKUP (or "absent") ; restores and restarts dockerd
-  local b="$1"
+do_rollback() { # BACKUP (or "absent") [BEFORE_SNAPSHOT CONTAINER] ; restores, restarts dockerd, gates the result
+  local b="$1" before="${2:-}" c="${3:-$(detect_container)}"
+  [ -n "$before" ] || before="$(snapshot)"
   # restoring a file without live-restore means this restart stops and restarts the running containers
   { [ "$b" = absent ] || [ "$(jq -r '."live-restore" // false' "$b" 2>/dev/null)" != true ]; } \
     && echo "$(ts) rollback: WARNING the restored daemon.json has no live-restore; this dockerd restart restarts running containers"
@@ -245,6 +264,7 @@ do_rollback() { # BACKUP (or "absent") ; restores and restarts dockerd
   echo "$(ts) rollback: daemon.json sha256 $(sha "$DJSON") (backup $([ "$b" = absent ] && echo absent || sha "$b"))"
   if [ "$b" = absent ]; then [ ! -e "$DJSON" ]; else cmp -s "$b" "$DJSON"; fi \
     && echo "$(ts) rollback: daemon.json byte-identical to the pre-apply state" || { echo "$(ts) rollback: MISMATCH"; return 5; }
+  health_gate "$before" "$c" rollback || return 5
 }
 
 cmd_apply() {
@@ -279,13 +299,13 @@ cmd_apply() {
     if [ "$live" != true ]; then # step 2: live-restore first, by reload
       jq '. + {"live-restore": true}' <<<"$(djson)" > "$DJSON.pft-tmp" && mv "$DJSON.pft-tmp" "$DJSON"
       "$SYSTEMCTL" reload docker; sleep "$RELOAD_WAIT"
-      [ "$(info | jq -r '.LiveRestoreEnabled')" = true ] || { echo "$(ts) apply: live-restore did not take effect on reload -> rollback"; do_rollback "$b"; return 1; }
+      [ "$(info | jq -r '.LiveRestoreEnabled')" = true ] || { echo "$(ts) apply: live-restore did not take effect on reload -> rollback"; do_rollback "$b" "$before" "$c" || return 5; return 1; }
       echo "$(ts) apply: live-restore enabled by reload (no restart); snapshot unchanged: $([ "$(snapshot)" = "$before" ] && echo yes || echo NO)"
     fi
     install -m 644 -o root -g root "$tmp" "$DJSON" 2>/dev/null || install -m 644 "$tmp" "$DJSON"; rm -f "$tmp"
     echo "$(ts) apply: installed daemon.json (sha256 $(sha "$DJSON")); restarting dockerd (live-restore on)"
-    "$SYSTEMCTL" restart docker && wait_docker || { echo "$(ts) apply: dockerd did not come back -> rollback"; do_rollback "$b"; return 1; }
-    if ! health_gate "$before" "$c"; then echo "$(ts) apply: health gate missed -> automatic rollback"; do_rollback "$b" || return 5; return 1; fi
+    "$SYSTEMCTL" restart docker && wait_docker || { echo "$(ts) apply: dockerd did not come back -> rollback"; do_rollback "$b" "$before" "$c" || return 5; return 1; }
+    if ! health_gate "$before" "$c"; then echo "$(ts) apply: health gate missed -> automatic rollback"; do_rollback "$b" "$before" "$c" || return 5; return 1; fi
   fi
   # step 4: auditd watches
   if [ "$(rules_text | grep -c '^-w')" -gt 0 ]; then

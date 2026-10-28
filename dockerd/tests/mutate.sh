@@ -71,7 +71,7 @@ mutant M16 "health gate ignores server_state" \
 mutant M17 "health gate ignores the peer listener" \
   '&& "$SS" -Hltn 2>/dev/null | awk '"'"'{print $4}'"'"' | grep -qE ":$PEER_PORT\$"; then' '; then'
 mutant M18 "no rollback after a health miss" \
-  'echo "$(ts) apply: health gate missed -> automatic rollback"; do_rollback "$b" || return 5; return 1;' 'echo "$(ts) apply: health gate missed -> automatic rollback"; return 1;'
+  'echo "$(ts) apply: health gate missed -> automatic rollback"; do_rollback "$b" "$before" "$c" || return 5; return 1;' 'echo "$(ts) apply: health gate missed -> automatic rollback"; return 1;'
 mutant M19 "rollback to an absent file leaves the new file" \
   'if [ "$b" = absent ]; then rm -f "$DJSON"; else' 'if [ "$b" = absent ]; then :; else'
 mutant M20 "augenrules --load run even when immutable" \
@@ -88,6 +88,17 @@ mutant M25 "health drill does not change the candidate (no restart on an applied
   '[ "$INJECT" = health ] && cand="$(jq '"'"'. + {"labels": ["pft.dockerd-drill=1"]}'"'"' <<<"$cand")"' ':'
 mutant M26 "no warning when the rollback target lacks live-restore" \
   '&& echo "$(ts) rollback: WARNING the restored daemon.json' '&& : "$(ts) rollback: WARNING the restored daemon.json'
+
+mutant M27 "health gate never re-applies the egress jump a dockerd restart dropped" \
+  'egress_reapply "$c"; snap="$(snapshot)"' ':; snap="$(snapshot)"'
+mutant M28 "rollback not health-gated" \
+  'health_gate "$before" "$c" rollback || return 5' ':'
+mutant M29 "rollback gate compares StartedAt too (fails whenever the failed apply restarted containers)" \
+  '[ "$mode" = rollback ] && { cmp_b="$(grep '"'"'^ipt '"'"' <<<"$before")"; cmp_s="$(grep '"'"'^ipt '"'"' <<<"$snap")"; }' ':'
+mutant M30 "rollback gate honours the injected health miss (drill can never roll back cleanly)" \
+  '{ [ "$INJECT" != health ] || [ "$mode" = rollback ]; }' '[ "$INJECT" != health ]'
+mutant M31 "a failed rollback after a health miss exits 1 instead of 5" \
+  'automatic rollback"; do_rollback "$b" "$before" "$c" || return 5; return 1;' 'automatic rollback"; do_rollback "$b" "$before" "$c"; return 1;'
 
 echo "RESULT: $CAUGHT/$TOTAL caught, $SURVIVED survived, $NOTAPPLIED not applied"
 [ "$SURVIVED" = 0 ] && [ "$NOTAPPLIED" = 0 ]

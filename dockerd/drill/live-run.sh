@@ -42,7 +42,8 @@ since="$(date -u +%s)"; RUN="$(date -u +%Y%m%dT%H%M%SZ)"
 ts() { date -u +%FT%TZ; }
 SEC="$(mktemp -d)"; chmod 700 "$SEC"; LIT="$SEC/literals.tsv"; : > "$LIT"; chmod 600 "$LIT"
 printf 'topic\t%s\ntopic\t%s\nuser\t%s\n' "$ALERT" "$MAINT" "$(id -un)" >> "$LIT"
-red() { python3 -u "$REDACT" filter --literals "$LIT" | sed -u -E 's/by [a-z_][a-z0-9_-]*/by <user>/g'; }
+# the user name is a literal (above); a generic "by <word>" rewrite also hit text like "enabled by reload"
+red() { python3 -u "$REDACT" filter --literals "$LIT"; }
 R() { ssh -o LogLevel=ERROR -o ConnectTimeout=10 -o BatchMode=yes "$RELAY" "$@"; }
 L() { bash -c "$1"; }
 on() { if [ "$1" = relay ]; then R "$2"; else L "$2"; fi; } # HOST CMDSTRING
@@ -55,6 +56,12 @@ state() { # HOST CONTAINER -> server_state (down if no answer)
 started() { on "$1" "sudo -n docker inspect -f '{{.State.StartedAt}}' $2" 2>/dev/null; }
 djsha() { on "$1" "sudo -n sh -c 'if [ -f /etc/docker/daemon.json ]; then sha256sum /etc/docker/daemon.json | cut -c1-64; else echo absent; fi'"; }
 
+egress_jump() { # HOSTNAME: egress/ owns a DOCKER-USER -> PFT-EGRESS jump; after the dockerd restarts it must be there once
+  local h n; h="$(hostof "$1")"
+  on "$h" "test -x /usr/local/sbin/pft-egress" || { echo "-- $1: egress/ not installed, no PFT-EGRESS jump to check"; return 0; }
+  n="$(on "$h" "sudo -n iptables -S DOCKER-USER" | grep -c -- '-j PFT-EGRESS')"
+  check "$1 DOCKER-USER -> PFT-EGRESS jump present once after the dockerd restarts" "$([ "$n" = 1 ] && echo 0 || echo 1)" "$n"
+}
 FAILS=0
 check() { # NAME CONDITION-RESULT(0/1) DETAIL
   if [ "$2" = 0 ]; then echo "CHECK ok   $1${3:+ ($3)}"; else echo "CHECK FAIL $1${3:+ ($3)}"; FAILS=$((FAILS + 1)); fi
@@ -215,6 +222,7 @@ else
     echo "-- $hn: $c StartedAt after: $st1, server_state $ss"
     check "$hn container StartedAt unchanged through apply + both drills" "$([ -n "$st0" ] && [ "$st0" = "$st1" ] && echo 0 || echo 1)"
     check "$hn server_state full" "$(case "$ss" in full|proposing) echo 0 ;; *) echo 1 ;; esac)" "$ss"
+    egress_jump "$hn"
   done
   if [ "$REBOOT_SENTRY" = 1 ]; then
     echo; echo "-- sentry: reboot to load the staged auditd watches (auditd -e 2) ($(ts))"
@@ -225,6 +233,10 @@ else
     echo "  sentry back: uptime $(R 'cut -d. -f1 /proc/uptime') s, server_state $(state relay "$SENTRY_C") ($(ts))"
     RDIR="$(R 'mktemp -d')"; R "cat > $RDIR/pft-dockerd.sh" < "$PD"
     step sentry audit-after-reboot 0 -- audit
+    en="$(R "sudo -n auditctl -s" | awk '$1=="enabled"{print $2}')"; nr="$(R "sudo -n auditctl -l" | grep -c .)"
+    echo "  sentry auditd after reboot: enabled $en, $nr rules loaded"
+    check "sentry auditd immutable (-e 2) after reboot" "$([ "$en" = 2 ] && echo 0 || echo 1)" "enabled $en"
+    egress_jump sentry
     check "sentry server_state full after reboot" "$(case "$(state relay "$SENTRY_C")" in full|proposing) echo 0 ;; *) echo 1 ;; esac)"
   fi
 fi

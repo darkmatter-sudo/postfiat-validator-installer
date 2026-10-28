@@ -138,12 +138,36 @@ fresh; touch "$STUB_S/kill_on_restart"; run apply --yes
 expect "containers restarted by dockerd restart -> rollback" 1 'snapshot CHANGED'
 [ ! -e "$PFT_DOCKERD_ROOT/etc/docker/daemon.json" ] && ok "rollback to absent removes daemon.json" || ko "rollback to absent" "$OUT"
 expect "rollback to a file without live-restore warns" 1 'WARNING the restored daemon.json has no live-restore'
+expect "rollback gate: DOCKER-USER as before, StartedAt changed reported" 1 'rollback: health: PASS .*DOCKER-USER as before apply, StartedAt changed'
+# a node that stays unhealthy after the rollback is a failed rollback (exit 5), not a clean one
 fresh; echo stuck > "$STUB_S/state"; run apply --yes
-expect "server_state not full -> rollback" 1 'health: FAIL .*server_state=stuck'
+expect "server_state not full -> rollback" 5 '^[^ ]+ health: FAIL .*server_state=stuck'
+expect "server_state still not full after rollback -> exit 5" 5 'rollback: health: FAIL .*server_state=stuck'
 fresh; : > "$STUB_S/ss"; run apply --yes
-expect "peer port not listening -> rollback" 1 'health: FAIL'
+expect "peer port not listening -> rollback, still down -> exit 5" 5 'rollback: health: FAIL'
 fresh; touch "$STUB_S/restart_fails"; run apply --yes
-expect "dockerd does not come back -> rollback attempted" 1 'did not come back'
+expect "dockerd does not come back -> rollback attempted, fails -> exit 5" 5 'rollback: dockerd did not come back'
+
+# --- egress/ installed: every dockerd restart drops the DOCKER-USER -> PFT-EGRESS jump
+fresh; run apply --yes
+grep -q 'egress:' <<<"$OUT" || grep -q pft-egress "$STUB_S/calls" && ko "no egress/ installed -> no reapply" "$OUT" || ok "no egress/ installed -> no reapply"
+fresh; egress_env "$E"; run apply --yes
+expect "egress: jump dropped by restart -> reapply -> gate PASS" 0 'egress: pft-egress reapply --container postfiatd: ok'
+expect "egress: apply done" 0 'apply: done'
+grep -q PFT-EGRESS "$STUB_S/ipt" && ok "egress: jump present after apply" || ko "egress: jump present after apply" "$(cat "$STUB_S/ipt")"
+cp "$PFT_DOCKERD_ROOT/etc/docker/daemon.json" "$E/applied"
+PFT_DOCKERD_INJECT=health run apply --yes
+expect "egress: health drill -> rollback exit 1" 1 'health gate missed -> automatic rollback'
+expect "egress: rollback gated, PASS with the jump restored" 1 'rollback: health: PASS .*StartedAt unchanged'
+[ "$(grep -c 'pft-egress reapply' "$STUB_S/calls")" -ge 3 ] && ok "egress: reapplied after the apply AND the rollback restart" || ko "egress reapply count" "$(cat "$STUB_S/calls")"
+grep -q PFT-EGRESS "$STUB_S/ipt" && cmp -s "$E/applied" "$PFT_DOCKERD_ROOT/etc/docker/daemon.json" && ok "egress: jump present + daemon.json byte-identical after drill" || ko "egress after drill" "$OUT"
+run rollback --yes
+expect "egress: rollback command gated too" 0 'rollback: health: PASS'
+grep -q PFT-EGRESS "$STUB_S/ipt" && ok "egress: jump present after rollback command" || ko "egress after rollback command" "$(cat "$STUB_S/ipt")"
+fresh; egress_env "$E"; touch "$STUB_S/egress_fail"; run apply --yes
+expect "egress reapply fails -> apply gate misses" 5 '^[^ ]+ health: FAIL .*snapshot CHANGED'
+expect "egress reapply fails -> rollback gate FAIL -> exit 5" 5 'rollback: health: FAIL'
+expect "egress reapply failure is reported" 5 'pft-egress reapply --container postfiatd: FAILED'
 
 # --- auditd immutable
 fresh; good; echo 2 > "$STUB_S/enabled"; sed -i '\#/usr/bin/runc #d' "$STUB_S/rules"; run apply --yes

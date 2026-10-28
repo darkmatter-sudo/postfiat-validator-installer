@@ -70,6 +70,8 @@ case "$1" in
       awk '{print $1, $2, "2099-01-01T00:00:00Z"}' "$S/containers" > "$S/c.tmp" && mv "$S/c.tmp" "$S/containers"
       rm -f "$S/kill_on_restart"
     fi
+    # like the real daemon: a restart rebuilds DOCKER-USER without the egress/ jump (egress_env sets the flag)
+    [ -f "$S/egress_drop" ] && sed -i '/PFT-EGRESS/d' "$S/ipt"
     cur > "$S/loaded.json" ;;
 esac
 B
@@ -110,6 +112,20 @@ B
 cat "$STUB_S/state"
 B
   chmod +x "$d/bin/"*
+}
+
+egress_env() { # DIR: egress/ installed: DOCKER-USER has the PFT-EGRESS jump, restarts drop it, reapply restores it
+  local d="$1"
+  echo '-A DOCKER-USER -s 172.18.0.2/32 -j PFT-EGRESS' >> "$d/s/ipt"; touch "$d/s/egress_drop"
+  mkdir -p "$d/root/usr/local/sbin"
+  cat > "$d/root/usr/local/sbin/pft-egress" <<'B'
+#!/usr/bin/env bash
+S="$STUB_S"; echo "pft-egress $*" >> "$S/calls"
+[ "$1 $2 $3" = "reapply --container postfiatd" ] || exit 3
+[ -f "$S/egress_fail" ] && exit 1
+grep -q PFT-EGRESS "$S/ipt" || echo '-A DOCKER-USER -s 172.18.0.2/32 -j PFT-EGRESS' >> "$S/ipt"
+B
+  chmod +x "$d/root/usr/local/sbin/pft-egress"
 }
 
 use_env() { # DIR -> exports for the tool
