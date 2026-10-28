@@ -1,0 +1,102 @@
+# OS: Ubuntu 22.04.5 LTS | host validator-host | 2026-10-28T07:08:38Z | verification: pull path + single-Prometheus scrape of both hosts (read-only)
+## repo commit: 4ad60e82d7c7b743f41d9dfe308428660f8b68ca
+$ sha256sum resources/pft-resources-pull.sh /usr/local/bin/pft-resources-pull | cut -c1-64
+63bac38131a8203e7b3bfacf760afea1a9ed4eb2373cca535c015f1714cfc686
+63bac38131a8203e7b3bfacf760afea1a9ed4eb2373cca535c015f1714cfc686
+(rc=0)
+## sentry side: collector writes container="postfiatd-sentry" itself (unit instance %i = --container)
+$ ssh relay 'systemctl show pft-resources@postfiatd-sentry.service -p ExecStart --value | grep -o "path=[^ ]* ; argv\[\]=[^;]*"'
+path=/usr/local/bin/pft-resources ; argv[]=/usr/local/bin/pft-resources collect --container postfiatd-sentry --history /var/lib/pft-resources/history-postfiatd-sentry.jsonl 
+(rc=0)
+$ ssh relay 'sudo grep -E "^pft_resources_(up|collect_timestamp_seconds)\{" /var/lib/pft-exporter/textfile/pft_resources_postfiatd-sentry.prom'
+pft_resources_up{container="postfiatd-sentry"} 1
+pft_resources_collect_timestamp_seconds{container="postfiatd-sentry"} 1793171280
+(rc=0)
+## validator side: pull timer + last run
+$ systemctl show pft-resources-pull@postfiatd-sentry.timer -p ActiveState -p LastTriggerUSec
+LastTriggerUSec=Wed 2026-10-28 07:08:30 UTC
+ActiveState=active
+(rc=0)
+$ systemctl show pft-resources-pull@postfiatd-sentry.service -p ExecStart --value | grep -o 'argv\[\]=[^;]*'
+argv[]=/usr/local/bin/pft-resources-pull pull --container postfiatd-sentry 
+(rc=0)
+$ systemctl show pft-resources-pull@postfiatd-sentry.service -p Result -p ExecMainStatus
+Result=success
+ExecMainStatus=0
+(rc=0)
+$ journalctl --utc -u pft-resources-pull@postfiatd-sentry.service -n 3 --no-pager -o cat | grep pft-resources-pull
+(rc=1)
+$ sudo ls -l --time-style=+%FT%T /var/lib/pft-exporter/textfile | awk '{print $1, $3, $6, $7}' | grep -E 'pft_resources|total'
+total   
+-rw-r--r-- root 2026-10-28T07:08:31 pft_resources_postfiatd-sentry.prom
+-rw-r--r-- root 2026-10-28T07:08:02 pft_resources_postfiatd.prom
+(rc=0)
+$ sudo grep -E '^pft_resources_(up|collect_timestamp_seconds)\{' /var/lib/pft-exporter/textfile/pft_resources_postfiatd-sentry.prom
+pft_resources_up{container="postfiatd-sentry"} 1
+pft_resources_collect_timestamp_seconds{container="postfiatd-sentry"} 1793171280
+(rc=0)
+$ sudo grep -c '^pft_resources_' /var/lib/pft-exporter/textfile/pft_resources_postfiatd-sentry.prom
+56
+(rc=0)
+$ sudo grep '^pft_resources_' /var/lib/pft-exporter/textfile/pft_resources_postfiatd-sentry.prom | grep -vc '^pft_resources_[a-z0-9_]*{container="postfiatd-sentry"'
+0
+(rc=1)
+## all-or-nothing validation: real pulled copy valid; one mutated line -> whole file rejected
+$ /usr/local/bin/pft-resources-pull validate /tmp/tmp.kZMxmTzLB3/ok.prom postfiatd-sentry
+/usr/local/bin/pft-resources-pull: line 29: /etc/pft-resources-pull.env: Permission denied
+valid
+(rc=0)
+$ diff /tmp/tmp.kZMxmTzLB3/ok.prom /tmp/tmp.kZMxmTzLB3/wrong-container.prom | head -4
+4c4
+< pft_resources_up{container="postfiatd-sentry"} 1
+---
+> pft_resources_up{container="postfiatd"} 1
+(rc=0)
+$ /usr/local/bin/pft-resources-pull validate /tmp/tmp.kZMxmTzLB3/wrong-container.prom postfiatd-sentry
+/usr/local/bin/pft-resources-pull: line 29: /etc/pft-resources-pull.env: Permission denied
+invalid: line 4: first label is not container="postfiatd-sentry"
+(rc=2)
+$ /usr/local/bin/pft-resources-pull validate /tmp/tmp.kZMxmTzLB3/foreign.prom postfiatd-sentry
+/usr/local/bin/pft-resources-pull: line 29: /etc/pft-resources-pull.env: Permission denied
+invalid: line 106: not a pft_resources_ line
+(rc=2)
+$ /usr/local/bin/pft-resources-pull validate /tmp/tmp.kZMxmTzLB3/no-up.prom postfiatd-sentry
+/usr/local/bin/pft-resources-pull: line 29: /etc/pft-resources-pull.env: Permission denied
+invalid: no pft_resources_up sample
+(rc=2)
+## the one Prometheus: container pft-prometheus, config = alerts/prometheus.yml (repo dir mounted at /etc/pft-alerts)
+$ sudo docker inspect pft-prometheus -f '{{range .Mounts}}{{if eq .Destination "/etc/pft-alerts"}}{{.Destination}} ro={{not .RW}}{{end}}{{end}} | args: {{join .Args " "}}' | sed 's/--storage[^ ]*//g'
+/etc/pft-alerts ro=true | args: --config.file=/etc/pft-alerts/prometheus.yml --web.listen-address=127.0.0.1:9090  
+(rc=0)
+$ sudo docker exec pft-prometheus sha256sum /etc/pft-alerts/prometheus.yml /etc/pft-alerts/resources.rules.yml; sha256sum alerts/prometheus.yml alerts/resources.rules.yml
+7aa53d43e2289d9004a6b112b7f610170daf46d9992e0ef35686afccac903bc3  /etc/pft-alerts/prometheus.yml
+8e1722054566877c887481f86871452b0696db69848dc80bbc28bc039e7b341d  /etc/pft-alerts/resources.rules.yml
+7aa53d43e2289d9004a6b112b7f610170daf46d9992e0ef35686afccac903bc3  alerts/prometheus.yml
+8e1722054566877c887481f86871452b0696db69848dc80bbc28bc039e7b341d  alerts/resources.rules.yml
+(rc=0)
+$ curl -s http://127.0.0.1:9090/api/v1/targets | jq -c '.data.activeTargets[] | {job: .labels.job, scrapeUrl, health, lastScrape}'
+{"job":"postfiat","scrapeUrl":"http://127.0.0.1:9877/metrics","health":"up","lastScrape":"2026-10-28T07:08:33.170115987Z"}
+(rc=0)
+$ curl -s http://127.0.0.1:9877/metrics | grep -E '^pft_resources_up\{|^pft_textfile_mtime_seconds\{file="pft_resources|^pft_textfile_errors'
+pft_resources_up{container="postfiatd-sentry"} 1
+pft_resources_up{container="postfiatd"} 1
+pft_textfile_mtime_seconds{file="pft_resources_postfiatd-sentry.prom"} 1793171311
+pft_textfile_mtime_seconds{file="pft_resources_postfiatd.prom"} 1793171282
+pft_textfile_errors 0
+(rc=0)
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=pft_resources_up' | jq -c '.data.result[] | {metric, v: .value[1]}'
+{"metric":{"__name__":"pft_resources_up","container":"postfiatd","instance":"127.0.0.1:9877","job":"postfiat"},"v":"1"}
+{"metric":{"__name__":"pft_resources_up","container":"postfiatd-sentry","instance":"127.0.0.1:9877","job":"postfiat"},"v":"1"}
+(rc=0)
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=time() - pft_resources_collect_timestamp_seconds' | jq -c '.data.result[] | {c: .metric.container, job: .metric.job, age_s: .value[1]}'
+{"c":"postfiatd","job":"postfiat","age_s":"39.07299995422363"}
+{"c":"postfiatd-sentry","job":"postfiat","age_s":"40.07299995422363"}
+(rc=0)
+$ curl -s http://127.0.0.1:9090/api/v1/rules | jq -c '.data.groups[] | select(.file | test("resources")) | {file, rules: (.rules|length), lastEvaluation}'
+{"file":"/etc/pft-alerts/resources.rules.yml","rules":10,"lastEvaluation":"2026-10-28T07:08:34.949263995Z"}
+(rc=0)
+$ sudo postfiat-health | grep -E 'server_state|RESULT'
+  [PASS] RPC responding (server_state: full)
+RESULT: HEALTHY
+(rc=0)
+## end 2026-10-28T07:08:42Z
