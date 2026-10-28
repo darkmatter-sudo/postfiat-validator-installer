@@ -1,0 +1,30 @@
+M01	snapshot age threshold x100	$snap_age > $snap_stale then	$snap_age > $snap_stale * 100 then
+M02	watchdog delivery age never stale	$wd_age != null and $wd_age > $wd_stale then	false then
+M03	missing delivery record not stale	if $c != null and $c.wd == null then	if false then
+M04	Prometheus reload failure ignored	$c.prom.reload_ok != 1	false
+M05	counter reset counted as 0	else $v[$i] end	else 0 end
+M06	counter increase always 0	if ($v | length) < 2 then 0	if true then 0
+M07	Alertmanager down ignored	if $c.am.up != 1 then "Alertmanager unreachable"	if false then "Alertmanager unreachable"
+M08	webhook failures ignored	inc(.am.notif_failed)	inc(.am.notif_failed) * 0
+M09	bridge container state ignored	$c.bridge.running != 1	false
+M10	bridge listener ignored	$c.bridge.listening != 1	false
+M11	bridge ntfy errors ignored	inc(.bridge.ntfy_errors)	inc(.bridge.ntfy_errors) * 0
+M12	mis-routed deliveries ignored	inc(.wd.unexpected)	inc(.wd.unexpected) * 0
+M13	rule group eval age x100	> $eval_stale then	> $eval_stale * 100 then
+M14	rule group not loaded ignored	if ($c.prom.wd_last_eval | num) == null then "alertpath	if false then "alertpath
+M15	replay of equal ts accepted	[ "$ts" -le "$last_ts" ]	[ "$ts" -lt "$last_ts" ]
+M16	future ts accepted	[ "$ts" -gt $((NOW + SKEW_TOL_SEC)) ]	false
+M17	HMAC not compared	[ "$sig" != "$want" ]	false
+M18	message type not checked	.type == "alertpath"	true
+M19	no history window	select(.ts >= $cut)	select(true)
+M20	resolved watchdog ignored	$c.wd.status != "firing"	false
+M21	no-Alertmanager ignored	$c.prom.am_discovered < 1	false
+M22	Prometheus notification errors ignored	inc(.prom.notif_errors)	inc(.prom.notif_errors) * 0
+M23	dropped notifications ignored	inc(.prom.notif_dropped)	inc(.prom.notif_dropped) * 0
+M24	notify on every run	if [ "$state" != "$prev" ]; then	if true; then
+M25	no RECOVERED message	OK) ntfy "[alertpath] RECOVERED"	OK) : "[alertpath] RECOVERED"
+M26	metric label filter ignored	(f == "" || index($1, f) > 0)	(1)
+M27	rule evaluation failures ignored	inc(.prom.rule_eval_failures)	inc(.prom.rule_eval_failures) * 0
+M28	Alertmanager reload failure ignored	$c.am.reload_ok != 1	false
+M29	DEGRADED exits 2	DEGRADED) exit 1	DEGRADED) exit 2
+M30	DEGRADED outranks STALE	state:(if ($stale|length) > 0 then "STALE" elif ($degraded|length) > 0 then "DEGRADED"	state:(if ($degraded|length) > 0 then "DEGRADED" elif ($stale|length) > 0 then "STALE"

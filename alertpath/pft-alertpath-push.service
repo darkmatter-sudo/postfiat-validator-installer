@@ -1,0 +1,10 @@
+[Unit]
+Description=pft-alertpath push: send a signed alert-pipeline snapshot to the sentry
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/alertpath
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/pft-alertpath push
+TimeoutStartSec=25

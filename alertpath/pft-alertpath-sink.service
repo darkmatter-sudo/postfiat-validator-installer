@@ -1,0 +1,31 @@
+[Unit]
+Description=pft-alertpath sink: loopback webhook receiver for the PFTAlertPipelineWatchdog alert (127.0.0.1:9096)
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/alertpath
+
+[Service]
+ExecStart=/usr/bin/python3 -I -u /usr/local/lib/pft-alertpath/alertpath_sink.py
+Restart=always
+RestartSec=5
+DynamicUser=yes
+StateDirectory=pft-alertpath
+StateDirectoryMode=0755
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_INET
+IPAddressDeny=any
+IPAddressAllow=localhost
+CapabilityBoundingSet=
+SystemCallFilter=@system-service
+MemoryDenyWriteExecute=yes
+LockPersonality=yes
+UMask=0022
+
+[Install]
+WantedBy=multi-user.target

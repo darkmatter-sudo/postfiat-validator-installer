@@ -1,11 +1,21 @@
 # Alertmanager config used by run-stack.sh. Every notification (firing and resolved) goes to the
-# loopback ntfy bridge, which logs it and forwards to ntfy only if NTFY_URL is set.
+# loopback ntfy bridge, which logs it and forwards to ntfy only if NTFY_URL is set, except the always-firing
+# PFTAlertPipelineWatchdog (../alertpath), which goes only to the loopback alertpath sink.
 route:
   receiver: bridge
   group_by: ["alertname", "instance"]
   group_wait: 10s
   group_interval: 1m
   repeat_interval: 4h
+  routes:
+    # alertpath/: the always-firing pipeline watchdog goes ONLY to the loopback alertpath sink (never to the
+    # bridge / operator topic). continue: false stops it from reaching the default receiver.
+    - matchers: ['alertname="PFTAlertPipelineWatchdog"']
+      receiver: alertpath
+      continue: false
+      group_wait: 0s
+      group_interval: 30s
+      repeat_interval: 1m
 inhibit_rules:
   # When the RPC is down, every node-level alert is a symptom of that; page once.
   - source_matchers: ['alertname="PFTNodeRPCDown"']
@@ -18,4 +28,8 @@ receivers:
   - name: bridge
     webhook_configs:
       - url: http://127.0.0.1:9095/alert
+        send_resolved: true
+  - name: alertpath
+    webhook_configs:
+      - url: http://127.0.0.1:9096/watchdog
         send_resolved: true

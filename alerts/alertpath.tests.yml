@@ -1,0 +1,28 @@
+# promtool test rules alertpath.tests.yml
+rule_files:
+  - alertpath.rules.yml
+evaluation_interval: 15s
+tests:
+  # Fires from the first evaluation with no input series at all (vector(1) needs no scrape).
+  - interval: 15s
+    alert_rule_test:
+      - eval_time: 0s
+        alertname: PFTAlertPipelineWatchdog
+        exp_alerts:
+          - exp_labels:
+              severity: none
+              pipeline: alertpath
+            exp_annotations:
+              summary: "Alert pipeline heartbeat (always firing; never routed to the operator topic)"
+              description: "Delivered every ~1m to the alertpath sink. Its absence on the sentry means the pipeline is broken."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/alertpath#states"
+      - eval_time: 6h
+        alertname: PFTAlertPipelineWatchdog
+        exp_alerts:
+          - exp_labels:
+              severity: none
+              pipeline: alertpath
+            exp_annotations:
+              summary: "Alert pipeline heartbeat (always firing; never routed to the operator topic)"
+              description: "Delivered every ~1m to the alertpath sink. Its absence on the sentry means the pipeline is broken."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/alertpath#states"

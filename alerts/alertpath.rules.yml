@@ -1,0 +1,17 @@
+# ../alertpath: the always-firing dead-man alert for the alerting pipeline itself.
+# It fires as long as Prometheus loads this file and evaluates rules, and Alertmanager routes it ONLY to the
+# loopback alertpath sink (see alertmanager.yml, route "alertpath"). If deliveries stop arriving, some part of
+# Prometheus -> Alertmanager -> webhook is broken; pft-alertpath on the sentry reports that as STALE.
+groups:
+  - name: alertpath
+    interval: 15s
+    rules:
+      - alert: PFTAlertPipelineWatchdog
+        expr: vector(1)
+        labels:
+          severity: none
+          pipeline: alertpath
+        annotations:
+          summary: "Alert pipeline heartbeat (always firing; never routed to the operator topic)"
+          description: "Delivered every ~1m to the alertpath sink. Its absence on the sentry means the pipeline is broken."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/alertpath#states"

@@ -1,0 +1,10 @@
+[Unit]
+Description=pft-alertpath check: alert-pipeline dead-man state (OK/DEGRADED/STALE), ntfy on change
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/alertpath
+
+[Service]
+Type=oneshot
+# exit 1/2 (DEGRADED/STALE) is a result, not a unit failure
+SuccessExitStatus=1 2
+ExecStart=/usr/local/bin/pft-alertpath check --notify
+TimeoutStartSec=50
