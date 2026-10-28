@@ -236,6 +236,11 @@ else
     en="$(R "sudo -n auditctl -s" | awk '$1=="enabled"{print $2}')"; nr="$(R "sudo -n auditctl -l" | grep -c .)"
     echo "  sentry auditd after reboot: enabled $en, $nr rules loaded"
     check "sentry auditd immutable (-e 2) after reboot" "$([ "$en" = 2 ] && echo 0 || echo 1)" "enabled $en"
+    # one ENOENT aborts the boot load, so also require every staged pft-dockerd watch to be loaded
+    miss="$(R "sudo -n sed -n 's/^-w \\([^ ]*\\) .*/\\1/p' /etc/audit/rules.d/pft-dockerd.rules | while read -r w; do sudo -n auditctl -l | grep -qE -- \"^-w \$w( |\$)\" || echo \"\$w\"; done")"
+    nw="$(R "sudo -n grep -c '^-w ' /etc/audit/rules.d/pft-dockerd.rules")"
+    echo "  sentry pft-dockerd.rules: $nw watch(es) staged, not loaded: ${miss:-none}"
+    check "sentry: every staged pft-dockerd watch loaded at boot" "$([ -z "$miss" ] && [ "${nw:-0}" -gt 0 ] && echo 0 || echo 1)" "${miss:-all $nw loaded}"
     egress_jump sentry
     check "sentry server_state full after reboot" "$(case "$(state relay "$SENTRY_C")" in full|proposing) echo 0 ;; *) echo 1 ;; esac)"
   fi
