@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Fake sha256sum. With STUB_NEED_SUDO=1 it models root-only files: reading stdin means the file was opened by the
+# calling (unprivileged) shell, which the real hosts refuse, so it fails like "bash: FILE: Permission denied".
+# $STUB/sha_unreadable: every call fails with no output. Otherwise the real sha256sum.
+[ -e "${STUB:-/nonexistent}/sha_unreadable" ] && { echo "sha256sum: unreadable (stub)" >&2; exit 1; }
+if [ $# -eq 0 ] && [ -n "${STUB_NEED_SUDO:-}" ]; then echo "bash: line 1: Permission denied (stub: '<' opened unprivileged)" >&2; exit 1; fi
+exec /usr/bin/sha256sum "$@"

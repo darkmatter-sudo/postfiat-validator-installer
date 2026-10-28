@@ -19,6 +19,9 @@ MUTANTS=(
   'W11 local lock list without sudo (root-only tool)|s/locks="$(sudo -n pft-maint lock list/locks="$(pft-maint lock list/'
   'W12 local integrity verify without sudo|s/; sudo -n "$INTEGRITY_CMD" verify/; "$INTEGRITY_CMD" verify/'
   'W13 no passwordless-sudo preflight|s/^sudo -n true || /true || /'
+  'W14 pre-drill hash read through an unprivileged < redirect|s/fsha() { on "$1" "sudo -n sha256sum $2"/fsha() { on "$1" "sudo -n sha256sum < $2"/'
+  'W15 empty pre-drill hash accepted|s/^  \[\[ "${SHA\["$h:$f"\]}" =~ ^\[0-9a-f\]{64}$ \]\] || /  true || /'
+  'W16 restore compare accepts an empty hash|s/\[ -n "$now_sha" \] \&\& \[ "$now_sha"/[ "$now_sha"/'
 )
 MC=0
 for m in "${MUTANTS[@]}"; do

@@ -192,6 +192,16 @@ t_nosudo() {
   check "no pft-rollout run" eq "$(cnt "$T/calls.log" -cE ' docker (restart|run|compose|tag)')" 0
   end
 }
-t_noop; t_badimage; t_nosudo; t_alert_seen; t_ntfy_down; t_logship_stale; t_logship_empty; t_logship_inactive; t_lock; t_leftover; t_drill_tag_present; t_build_fail
+t_sha_unreadable() {
+  setup "env file hash unreadable: stop before any backup or redirect"
+  touch "$T/sha_unreadable"
+  lr noop
+  check "rc=3 (got $RC)" eq "$RC" 3
+  check "says sha256 unreadable" has "unreadable - stopping"
+  check "nothing redirected" untouched
+  check "no backup copies" eq "$(find "$T" -name '*.pre-rollout-drill' | wc -l)" 0
+  end
+}
+t_noop; t_badimage; t_nosudo; t_sha_unreadable; t_alert_seen; t_ntfy_down; t_logship_stale; t_logship_empty; t_logship_inactive; t_lock; t_leftover; t_drill_tag_present; t_build_fail
 echo "live-run tests: $PASSN passed, $FAILN failed${FAILED[*]:+ (${FAILED[*]})}"
 [ "$FAILN" -eq 0 ]

@@ -60,6 +60,9 @@ cfact() { # HOST CONTAINER -> {"id","started"} or {"id":null,"started":null}
 }
 
 declare -A SHA=()   # "host:path" -> sha256 before the drill
+# fsha HOST PATH -> the file's sha256 (64 hex) or nothing. The file is opened by sha256sum under sudo: a "sudo -n
+# sha256sum < FILE" redirect is opened by the unprivileged shell and fails on root-only files (first live run -21).
+fsha() { on "$1" "sudo -n sha256sum $2" 2>/dev/null | cut -d' ' -f1; }
 declare -a MOVED=() CREATED=()
 RESTORED=0; DRILL_BUILT=0
 restore() {
@@ -69,8 +72,8 @@ restore() {
   for k in "${MOVED[@]}"; do
     h="${k%%:*}"; f="${k#*:}"
     on "$h" "sudo -n mv -f $f$SUF $f" || echo "  restore $k: mv FAILED"
-    now_sha="$(on "$h" "sudo -n sha256sum < $f")"
-    echo "  restored $k: sha256 matches pre-drill copy: $([ "$now_sha" = "${SHA[$k]}" ] && echo yes || echo NO)"
+    now_sha="$(fsha "$h" "$f")"
+    echo "  restored $k: sha256 matches pre-drill copy: $([ -n "$now_sha" ] && [ "$now_sha" = "${SHA[$k]}" ] && echo yes || echo NO)"
   done
   for k in "${CREATED[@]}"; do
     h="${k%%:*}"; f="${k#*:}"
@@ -110,7 +113,8 @@ echo "  ok: relay reachable, Alertmanager ready, env files present, no leftovers
 echo; echo "== 1. redirect notifiers (ALERT and MAINT throwaway topics)"
 redirect() { # HOST PATH
   local h="$1" f="$2"
-  SHA["$h:$f"]="$(on "$h" "sudo -n sha256sum < $f")"
+  SHA["$h:$f"]="$(fsha "$h" "$f")"
+  [[ "${SHA["$h:$f"]}" =~ ^[0-9a-f]{64}$ ]] || { echo "  sha256 of $h:$f unreadable - stopping"; exit 3; }
   on "$h" "sudo -n cp -p $f $f$SUF" || { echo "  backup of $h:$f failed - stopping"; exit 3; }
   MOVED+=("$h:$f")
   on "$h" "sudo -n sh -c 'umask 077; { grep -vE \"^(NTFY_TOPIC|NTFY_TOKEN|NTFY_SERVER)=\" $f$SUF; printf \"NTFY_SERVER=%s\nNTFY_TOPIC=%s\n\" $NTFY $ALERT; } > $f.new && mv -f $f.new $f'" \
