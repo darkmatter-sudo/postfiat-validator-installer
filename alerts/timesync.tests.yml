@@ -37,7 +37,7 @@ tests:
         exp_alerts:
           - exp_labels: {severity: critical, job: postfiat, instance: "node:9877"}
             exp_annotations:
-              summary: "host clock not synchronised (node:9877)"
+              summary: "validator clock not synchronised (node:9877)"
               description: "For 5m the time daemon has had no selected source (chrony) / NTPSynchronized=no (timesyncd). The clock is free-running; postfiatd's close times drift with it. Run `sudo pft-timesync audit`."
               runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/timesync/README.md#alerts"
 
@@ -57,12 +57,12 @@ tests:
         exp_alerts:
           - exp_labels: {severity: warning, job: postfiat, instance: "fast:9877"}
             exp_annotations:
-              summary: "host clock 80ms from NTP time"
+              summary: "validator clock 80ms from NTP time"
               description: "|offset| has been above 50 ms for 10m. chrony slews at most maxslewrate (500 ppm = 0.5 ms/s) and never steps after boot, so a large offset shrinks slowly; check `sudo chronyc -N sources` for a bad or unreachable source."
               runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/timesync/README.md#alerts"
           - exp_labels: {severity: warning, job: postfiat, instance: "slow:9877"}
             exp_annotations:
-              summary: "host clock 80ms from NTP time"
+              summary: "validator clock 80ms from NTP time"
               description: "|offset| has been above 50 ms for 10m. chrony slews at most maxslewrate (500 ppm = 0.5 ms/s) and never steps after boot, so a large offset shrinks slowly; check `sudo chronyc -N sources` for a bad or unreachable source."
               runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/timesync/README.md#alerts"
 
@@ -80,7 +80,7 @@ tests:
         exp_alerts:
           - exp_labels: {severity: warning, job: postfiat, instance: "low:9877"}
             exp_annotations:
-              summary: "only 3 NTS-authenticated time sources"
+              summary: "validator: only 3 NTS-authenticated time sources"
               description: "Fewer than 4 reachable NTS-authenticated sources for 15m (NTS-KE failing, servers unreachable, or not migrated from timesyncd). With minsources 3, two more losses stop clock updates. Run `sudo chronyc -N authdata`."
               runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/timesync/README.md#alerts"
 
@@ -98,7 +98,7 @@ tests:
         exp_alerts:
           - exp_labels: {severity: critical, job: postfiat, instance: "crit:9877"}
             exp_annotations:
-              summary: "pft-timesync audit CRIT for 5m"
+              summary: "validator: pft-timesync audit CRIT for 5m"
               description: "One or more audit checks are CRIT (pft_timesync_check == 2: conflicting daemons, chronyd not answering, stratum 16, dispersion > 1 s, offset > 250 ms, leap unsynchronised). Run `sudo pft-timesync audit`."
               runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/timesync/README.md#alerts"
 
@@ -114,6 +114,36 @@ tests:
         exp_alerts:
           - exp_labels: {severity: warning, job: postfiat, instance: "node:9877"}
             exp_annotations:
-              summary: "pft-timesync metrics are stale"
-              description: "The last collection is older than 5 min: pft-timesync.timer is not running. Check `systemctl status pft-timesync.timer`."
+              summary: "validator: pft-timesync metrics are stale"
+              description: "The last collection is older than 5 min: pft-timesync.timer is not running (or, for host=sentry, pft-timesync-pull on the validator cannot fetch or rejects the sentry's file). Check `systemctl status pft-timesync.timer` (and `journalctl -u pft-timesync-pull`)."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/timesync/README.md#alerts"
+
+  - name: sentry copy (host="sentry" from pft-timesync-pull) alerts with the host in label and summary; validator healthy
+    interval: 1m
+    input_series:
+      # the pull stopped at 10m: the sentry's copy keeps its last collect timestamp
+      - series: 'pft_timesync_collect_timestamp_seconds{job="postfiat", instance="node:9877", host="sentry"}'
+        values: "0+60x10 600x20"
+      - series: 'pft_timesync_collect_timestamp_seconds{job="postfiat", instance="node:9877"}'
+        values: "0+60x30"
+      - series: 'pft_timesync_nts_sources{job="postfiat", instance="node:9877", host="sentry"}'
+        values: "2x30"
+      - series: 'pft_timesync_nts_sources{job="postfiat", instance="node:9877"}'
+        values: "5x30"
+    alert_rule_test:
+      - eval_time: 18m
+        alertname: PFTTimesyncStale
+        exp_alerts:
+          - exp_labels: {severity: warning, job: postfiat, instance: "node:9877", host: sentry}
+            exp_annotations:
+              summary: "sentry: pft-timesync metrics are stale"
+              description: "The last collection is older than 5 min: pft-timesync.timer is not running (or, for host=sentry, pft-timesync-pull on the validator cannot fetch or rejects the sentry's file). Check `systemctl status pft-timesync.timer` (and `journalctl -u pft-timesync-pull`)."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/timesync/README.md#alerts"
+      - eval_time: 15m
+        alertname: PFTClockNTSSourcesLow
+        exp_alerts:
+          - exp_labels: {severity: warning, job: postfiat, instance: "node:9877", host: sentry}
+            exp_annotations:
+              summary: "sentry: only 2 NTS-authenticated time sources"
+              description: "Fewer than 4 reachable NTS-authenticated sources for 15m (NTS-KE failing, servers unreachable, or not migrated from timesyncd). With minsources 3, two more losses stop clock updates. Run `sudo chronyc -N authdata`."
               runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/timesync/README.md#alerts"

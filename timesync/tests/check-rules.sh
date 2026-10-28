@@ -31,5 +31,6 @@ mutant R5 "unsynced for: 5m -> 0m" '/alert: PFTClockNotSynchronised/,/for:/ s/fo
 mutant R6 "staleness 300 -> 900" 's/pft_timesync_collect_timestamp_seconds > 300/pft_timesync_collect_timestamp_seconds > 900/'
 mutant R7 "offset for: 10m -> 30m" '/alert: PFTClockOffsetHigh/,/for:/ s/for: 10m/for: 30m/'
 mutant R8 "synced alert inverted" 's/expr: pft_timesync_synced == 0/expr: pft_timesync_synced == 1/'
+mutant R9 "summary drops the host (sentry alert reads as the validator)" '/alert: PFTTimesyncStale/,/summary:/ s/{{ or $labels.host \\"validator\\" }}/validator/'
 echo "RULE MUTANTS: $caught/$n caught"
 [ "$caught" = "$n" ]

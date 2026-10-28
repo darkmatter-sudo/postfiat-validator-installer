@@ -1,6 +1,8 @@
 # Alert rules for pft-timesync (../timesync). pft-timesync.timer runs 'pft-timesync metrics' every minute; the pft
 # exporter serves the textfile as pft_timesync_*. The offset is chrony's "system time" (clock minus NTP time); abs() is
 # taken on the LEFT so the alert's $value is the measured offset. Thresholds = the audit's WARN levels.
+# Series without a host label are this host's (the validator's); pft-timesync-pull adds host="sentry" to the
+# sentry's copy, so every summary names the host.
 # Tests: timesync.tests.yml (promtool test rules timesync.tests.yml), 1m sample interval = the timer's period.
 groups:
   - name: pft-timesync
@@ -11,7 +13,7 @@ groups:
         labels:
           severity: critical
         annotations:
-          summary: "host clock not synchronised ({{ $labels.instance }})"
+          summary: "{{ or $labels.host \"validator\" }} clock not synchronised ({{ $labels.instance }})"
           description: "For 5m the time daemon has had no selected source (chrony) / NTPSynchronized=no (timesyncd). The clock is free-running; postfiatd's close times drift with it. Run `sudo pft-timesync audit`."
           runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/timesync/README.md#alerts"
       - alert: PFTClockOffsetHigh
@@ -20,7 +22,7 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "host clock {{ $value | humanizeDuration }} from NTP time"
+          summary: "{{ or $labels.host \"validator\" }} clock {{ $value | humanizeDuration }} from NTP time"
           description: "|offset| has been above 50 ms for 10m. chrony slews at most maxslewrate (500 ppm = 0.5 ms/s) and never steps after boot, so a large offset shrinks slowly; check `sudo chronyc -N sources` for a bad or unreachable source."
           runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/timesync/README.md#alerts"
       - alert: PFTClockNTSSourcesLow
@@ -29,7 +31,7 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "only {{ $value }} NTS-authenticated time sources"
+          summary: "{{ or $labels.host \"validator\" }}: only {{ $value }} NTS-authenticated time sources"
           description: "Fewer than 4 reachable NTS-authenticated sources for 15m (NTS-KE failing, servers unreachable, or not migrated from timesyncd). With minsources 3, two more losses stop clock updates. Run `sudo chronyc -N authdata`."
           runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/timesync/README.md#alerts"
       - alert: PFTTimesyncAuditCritical
@@ -38,7 +40,7 @@ groups:
         labels:
           severity: critical
         annotations:
-          summary: "pft-timesync audit CRIT for 5m"
+          summary: "{{ or $labels.host \"validator\" }}: pft-timesync audit CRIT for 5m"
           description: "One or more audit checks are CRIT (pft_timesync_check == 2: conflicting daemons, chronyd not answering, stratum 16, dispersion > 1 s, offset > 250 ms, leap unsynchronised). Run `sudo pft-timesync audit`."
           runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/timesync/README.md#alerts"
       - alert: PFTTimesyncStale
@@ -47,6 +49,6 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "pft-timesync metrics are stale"
-          description: "The last collection is older than 5 min: pft-timesync.timer is not running. Check `systemctl status pft-timesync.timer`."
+          summary: "{{ or $labels.host \"validator\" }}: pft-timesync metrics are stale"
+          description: "The last collection is older than 5 min: pft-timesync.timer is not running (or, for host=sentry, pft-timesync-pull on the validator cannot fetch or rejects the sentry's file). Check `systemctl status pft-timesync.timer` (and `journalctl -u pft-timesync-pull`)."
           runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/timesync/README.md#alerts"
