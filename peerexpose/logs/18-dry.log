@@ -1,0 +1,99 @@
+pft-peerexpose live-run - 2026-10-28T07:26:10Z - Ubuntu 22.04.5 LTS - run 20261028T072610Z
+sha256: pft-peerexpose.sh 0c9b17818747ccae39f2fa57baf43ba469ede80262e90e3ad8216ae4474f6218 | live-run.sh 95db4e545d817761b858e54467ab15645b441837e63110bfb764a65548879da8
+        check-drill.sh 965d6b1531484c54b9a6b280c4fa801f5370fd3c772ecfb9ceb3ec1b08a317be | redact.py f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8
+        lib.sh 6d2e4771731e067a9e7a8e7dd109d3ba9ebb9df7c0ddb73cbb6daaeb10f2f9e1
+
+== 0. preflight (nothing changed yet)
+  pft-maint: no data-collection locks
+  local postfiatd: server_state=full peers=13
+  relay postfiatd-sentry: server_state=full peers=15
+  peering before: validator has sentry: true | sentry has validator: true
+  literals for redaction: 2 ip, 3 key, 2 topic, 1 user (values not printed)
+$ redact.py control --literals <literals>
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (17/17)
+  pft-peerexpose.sh copied to the sentry host (temp dir, same sha256), removed on exit
+  ok: relay reachable, Alertmanager ready, no locks, env files present, no leftovers, both nodes full
+
+== 1. redirect notifiers (ALERT and MAINT throwaway topics)
+bash: line 1: /etc/postfiat-monitor.env: Permission denied
+  local:/etc/postfiat-monitor.env -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/postfiat-monitor.env.pre-peerexpose-drill
+bash: line 1: /etc/pft-integrity.env: Permission denied
+  local:/etc/pft-integrity.env -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/pft-integrity.env.pre-peerexpose-drill
+  relay:/etc/pft-watchdog/ntfy.env -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/pft-watchdog/ntfy.env.pre-peerexpose-drill
+  relay:/etc/pft-integrity.env -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/pft-integrity.env.pre-peerexpose-drill
+  local:/etc/pft-maint/ntfy.env created for the drill only -> https://ntfy.sh/<redacted> (MAINT)
+  relay:/etc/pft-maint/ntfy.env created for the drill only -> https://ntfy.sh/<redacted> (MAINT)
+
+== 2. DRY=1: no pft-peerexpose step
+
+-- peering and server_state (2026-10-28T07:26:21Z)
+  validator: {"state":"full","peers":13,"has_other":true}   (has_other = the sentry is a connected peer)
+  sentry:    {"state":"full","peers":15,"has_other":true}   (has_other = the validator is a connected peer)
+
+== 3. restore, read back, verdict
+bash: line 1: /etc/postfiat-monitor.env: Permission denied
+  restored local:/etc/postfiat-monitor.env: sha256 matches pre-drill copy: yes
+bash: line 1: /etc/pft-integrity.env: Permission denied
+  restored local:/etc/pft-integrity.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-watchdog/ntfy.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-integrity.env: sha256 matches pre-drill copy: yes
+  removed drill-only local:/etc/pft-maint/ntfy.env: yes
+  removed drill-only relay:/etc/pft-maint/ntfy.env: yes
+  MAINT topic: 0 message(s)
+  ALERT topic: 0 message(s)
+  $ pft-integrity verify (validator host)
+    pft-integrity verify - 2026-10-28T07:26:40Z
+    OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-10-28T06:13:51Z
+    RESULT: PASS - 78 unchanged, 0 warn, 0 fail -> exit 0
+  $ pft-integrity verify (sentry host)
+    pft-integrity verify - 2026-10-28T07:26:45Z
+    OS: Ubuntu 22.04.5 LTS | container: postfiatd-sentry | baseline: 2026-10-28T06:14:40Z
+    RESULT: PASS - 47 unchanged, 0 warn, 0 fail -> exit 0
+  facts: {"alert_msgs":0,"maint_msgs":0,"restore_ok":true,"redaction_control":0,"dry":true,"final":{"validator":{"state":"full","peers":13,"has_other":true},"sentry":{"state":"full","peers":15,"has_other":true}}}
+  steps: 0 recorded
+$ check-drill.sh <steps> <facts>
+FAIL not a dry run
+FAIL 12 steps, each once, in order (sentry first)
+FAIL audit-sentry-initial finds violations (exit 1)
+FAIL audit-validator-initial finds violations (exit 1)
+FAIL apply-sentry APPLIED (exit 0)
+FAIL audit-sentry-applied 0 violations (exit 0)
+FAIL rollback-sentry ROLLED BACK (exit 0)
+FAIL audit-sentry-rolledback finds violations (exit 1)
+FAIL sentry rollback restores the initial exposure (same violation count)
+FAIL reapply-sentry APPLIED (exit 0)
+FAIL audit-sentry-reapplied 0 violations (exit 0)
+FAIL apply-validator APPLIED (exit 0)
+FAIL audit-validator-applied 0 violations (exit 0)
+FAIL audit-sentry-final 0 violations (exit 0)
+FAIL audit-validator-final 0 violations (exit 0)
+PASS validator full|proposing at the end
+PASS validator sees the other host as a connected peer
+PASS sentry full|proposing at the end
+PASS sentry sees the other host as a connected peer
+PASS throwaway ALERT topic received nothing
+FAIL throwaway MAINT topic received the windows
+PASS notifiers restored (sha256 match, drill files removed)
+PASS redaction positive control passed
+RESULT: FAIL (7/23)
+$ redact.py check --literals <literals> <this log so far>
+  redaction check: 8 literal(s) (ip,key,topic,user), 96 line(s) scanned
+  REDACTION: CLEAN (0 literals, 0 pattern hits)
+live-run done 2026-10-28T07:26:46Z: verdict exit 1

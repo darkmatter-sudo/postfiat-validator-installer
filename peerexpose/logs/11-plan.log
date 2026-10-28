@@ -1,0 +1,32 @@
+plan (read-only) - 2026-10-27T21:19:27Z - Ubuntu 22.04.5 LTS - pft-peerexpose.sh sha256 46a051d891c1ae7d
+$ bash pft-peerexpose.sh plan --role sentry --ssh relay --container postfiatd-sentry
+pft-peerexpose plan - 2026-10-27T21:19:28Z - role sentry, container postfiatd-sentry (remote)
+  effective now:   crawl=1 overlay=1 server=1 counts=0 unl=1 vl=1
+  effective after: crawl=1 overlay=0 server=1 counts=0 unl=1 vl=1
+  validate: OK (one [crawl], one [vl], effective = sentry policy, nothing else changed)
+  diff ([crawl]/[vl] sections only):
+    0a1,8
+    > [crawl]
+    > overlay=0
+    > server=1
+    > counts=0
+    > unl=1
+    > 
+    > [vl]
+    > enable=1
+RESULT: CHANGE NEEDED (container restart required to take effect)
+exit 0
+$ bash pft-peerexpose.sh plan --role validator
+pft-peerexpose plan - 2026-10-27T21:19:28Z - role validator, container postfiatd
+  effective now:   crawl=1 overlay=1 server=1 counts=0 unl=1 vl=1
+  effective after: crawl=0 overlay=1 server=1 counts=0 unl=1 vl=0
+  validate: OK (one [crawl], one [vl], effective = validator policy, nothing else changed)
+  diff ([crawl]/[vl] sections only):
+    0a1,5
+    > [crawl]
+    > 0
+    > 
+    > [vl]
+    > enable=0
+RESULT: CHANGE NEEDED (container restart required to take effect)
+exit 0

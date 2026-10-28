@@ -1,0 +1,216 @@
+== run 24 2026-10-28T09:10:10Z code: d466303ecff0aea5acfddf1c638da0c3443f58b3
+75599e6bb4ecc5290df23c981653b68d130a99e30e97db449a1757965e3bf19c  pft-peerexpose.sh
+0d4a872a58d2009db2874eefc71395ff694db3e00508caa2a611a9b900fb5531  tests/run-tests.sh
+eea40a83fa679d78956ead7ede8f63b62d9c6bbc096cf7972e8b52984e7664d2  tests/mutate.sh
+cf88e34d96d0aaf2ee8e8aa62a95ceeaf9be732fb9269ee7c727446beff531ec  drill/check-drill.sh
+1c4dcad600d10488c0657e2a5f842e6041df8c0498de097940a873d20e52b891  drill/lib.sh
+89f3edb534ca6a0417f5042eec2d0fc6e3f284b9b0fe8ba957f8a5c641733fd0  drill/live-run.sh
+1cfacfec481cafa64657bec0b10b7bc3df88e8dac4ec4f9e5b936fb19ba88f64  drill/test-drill.sh
+f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8  drill/redact.py
+== shellcheck
+shellcheck rc=0
+== offline suite
+PASS open12 validator exit 1
+PASS open12 peer_ip disclosed n=12 VIOLATION
+PASS open12 peer_pubkey n=12
+PASS open12 pubkey_node VIOLATION
+PASS open12 vl served VIOLATION
+PASS open12 counts restricted ok
+PASS open12 health allowed
+PASS open12 violations=11
+PASS open12 vl key taken from local admin RPC
+PASS open12 no address or key in output
+PASS open1 peer_ip disclosed n=1
+PASS open12 sentry exit 1
+PASS open12 sentry violations=4 (overlay only)
+PASS open12 sentry pubkey_node allowed
+PASS open12 sentry vl allowed
+PASS sentry_hardened exit 0
+PASS sentry_hardened peer_ip restricted
+PASS sentry_hardened as validator exit 1
+PASS sentry counts disclosed = VIOLATION
+PASS restricted validator exit 0
+PASS restricted crawl.endpoint restricted (http 403)
+PASS restricted vl restricted
+PASS restricted text output RESULT line
+PASS unreachable exit 2
+PASS crawl 200 non-JSON exit 2
+PASS vl 200 without blob = restricted
+PASS health details disclosed, allowed
+PASS no RPC keys -> dummy key probed
+PASS --vl-key and --url used, RPC not called
+PASS missing --role exit 3
+PASS bad role exit 3
+PASS plan stock validator: CHANGE NEEDED, exit 0
+PASS plan stock validator: effective now = defaults
+PASS plan stock validator: effective after = policy
+PASS plan stock validator: validate OK
+PASS plan output has no address
+PASS plan stock sentry: effective after = policy
+PASS plan reads the cfg through docker exec
+PASS render keeps every non-blank line outside the block
+PASS render keeps the commented # [crawl] docs
+PASS render validator: one [crawl] with bare 0, [vl] enabled=0
+PASS render is idempotent
+PASS render sentry then validator = validator
+PASS plan on rendered cfg: NO CHANGE
+PASS plan validator-rendered cfg as sentry: CHANGE NEEDED
+PASS existing sections: effective now parsed (counts = 1 with spaces)
+PASS existing sections: validate OK, after = policy
+PASS existing sections: diff removes the old lines
+PASS existing sections: exactly one [crawl] and one [vl] after render
+PASS existing sections: [ips_fixed] kept
+PASS plan with unreadable cfg exit 2
+PASS validate rendered cfg: exit 0, OK
+PASS validate rejects a change outside [crawl]/[vl]
+PASS validate rejects two [crawl] sections
+PASS validate rejects a missing [vl] section
+PASS validate rejects [vl] enable=0 (ignored key, effective vl=1)
+PASS validate accepts [vl] enabled=0 (effective vl=0)
+PASS validate rejects the validator block for a sentry
+PASS validate without --new exit 3
+PASS plan --ssh uses ssh BatchMode + sudo -n docker exec
+PASS apply validator: exit 0, APPLIED
+PASS apply validator: live cfg = rendered validator block
+PASS apply validator: exactly one restart
+PASS apply validator: window opened before the write, closed after the restart
+PASS apply validator: AM silence posted before the restart
+PASS apply validator: silence matcher + comment
+PASS apply validator: fixed peer required by default and found (1/1), audit 0
+PASS apply validator: backup = original, 0600 in 0700 dirs, LATEST
+PASS apply validator: effective before -> after printed
+PASS apply validator: no peer address in output
+PASS apply again: NO CHANGE, no restart, no window
+PASS rollback: exit 0, ROLLED BACK
+PASS rollback: live cfg byte-identical to the original
+PASS rollback: one restart inside a window, silence posted
+PASS rollback: pre-rollback copy kept (0600)
+PASS rollback twice: NO CHANGE, no restart
+PASS rollback refuses outside-block drift (exit 4, nothing written)
+PASS rollback without a backup: exit 2
+PASS badgate: exit 2, ROLLED BACK
+PASS badgate: audit violations seen in the gate
+PASS badgate: live cfg restored byte-identical
+PASS badgate: two restarts (apply + rollback), window closed once
+PASS fixed peer missing: refused before any write
+PASS write failure: ROLLBACK FAILED exit 5, window closed, no restart
+PASS lock held: exit 4, nothing written, no window
+PASS node syncing: exit 4, nothing written
+PASS --min-peers 12 with 11 peers: refused
+PASS dry run: diff shown, nothing written, no backup, no restart
+PASS AM=none: applied without a silence
+PASS apply sentry remote: APPLIED, sentry block live
+PASS apply sentry remote: restart + write through ssh sudo -n
+PASS apply sentry remote: audit probed the given URL, required peer 1/1
+PASS apply sentry remote: backup under the target label
+PASS apply sentry remote: window + silence run locally (not via ssh)
+PASS inbound peer by node key: APPLIED, required peer 1/1, key not printed
+PASS inbound peer by its real address: 0/1, refused before any write
+PASS unknown node key: 0/1, refused before any write
+PASS key prefix is not a key (address match fails): 0/1, refused
+PASS remote apply without --url: exit 3
+PASS --gate-timeout over the window limit: exit 3
+RESULT: 100 passed, 0 failed
+suite rc=0
+== drill self-test
+== 1. parsers
+ok   audit sentry fixture: violations
+ok   audit validator fixture: violations (two digits)
+ok   audit fixture: no RESULT verdict word
+ok   RESULT line from source: APPLIED
+ok   RESULT line from source: DRY RUN
+ok   RESULT line from source: ERROR
+ok   RESULT line from source: NO CHANGE
+ok   RESULT line from source: NO CHANGE
+ok   RESULT line from source: REFUSED
+ok   RESULT line from source: REFUSED
+ok   RESULT line from source: ROLLBACK FAILED
+ok   RESULT line from source: ROLLBACK FAILED
+ok   RESULT line from source: ROLLED BACK
+ok   RESULT line from source: ROLLED BACK
+ok   RESULT formats found in pft-peerexpose.sh
+ok   REFUSED (no RESULT line) parses empty
+== 1b. peer_has (shape of the live sentry's peers answer: the validator connects inbound via docker-proxy)
+ok   inbound validator: real address not listed, key matches
+ok   inbound validator: address only (no key) does not match
+ok   outbound peer: address matches without a key
+ok   IPv4-mapped address matches
+ok   address prefix does not match (<redacted-ip> vs <redacted-ip>)
+ok   key is exact, not a prefix
+ok   one changed key char does not match
+ok   empty / error answer -> false
+== 2. check-drill.sh
+ok   good run: PASS, exit 0, 24 checks
+ok   validator applied before sentry: exit 1 and fails only '12 steps, each once, in order (sentry first)'
+ok   rollback did not bring exposure back: exit 1 and fails only 'audit-sentry-rolledback finds violations (exit 1)
+sentry rollback restores the initial exposure (same violation count)'
+ok   rollback exposure differs (11 vs 4, two digits): exit 1 and fails only 'sentry rollback restores the initial exposure (same violation count)'
+ok   apply auto-rolled back (ROLLED BACK, exit 2): exit 1 and fails only 'apply-validator APPLIED (exit 0)'
+ok   manual rollback exit 2: exit 1 and fails only 'rollback-sentry ROLLED BACK (exit 0)'
+ok   audit summary not parsed (violations null): exit 1 and fails only 'audit-validator-final 0 violations (exit 0)'
+ok   initial audit unreachable (exit 2): exit 1 and fails only 'audit-validator-initial finds violations (exit 1)'
+ok   step recorded twice: exit 1 and fails only '12 steps, each once, in order (sentry first)
+audit-sentry-final 0 violations (exit 0)'
+ok   an alert reached the throwaway topic: exit 1 and fails only 'throwaway ALERT topic received nothing'
+ok   ALERT topic unreadable (null): exit 1 and fails only 'throwaway ALERT topic received nothing'
+ok   no MAINT messages: exit 1 and fails only 'throwaway MAINT topic received the windows'
+ok   sentry lost the validator link: exit 1 and fails only 'sentry sees the other host as a connected peer'
+ok   validator still syncing: exit 1 and fails only 'validator full|proposing at the end'
+ok   notifier restore mismatch: exit 1 and fails only 'notifiers restored (sha256 match, drill files removed)'
+ok   redaction control failed: exit 1 and fails only 'redaction positive control passed'
+ok   dry run: exit 1 and fails only 'not a dry run'
+ok   reset first, reset=true: PASS, exit 0, 25 checks
+ok   reset recorded but reset=false: exit 1 and fails only 'reset-sentry recorded iff the sentry carried a block (facts.reset is a bool)
+12 steps, each once, in order (sentry first)'
+ok   reset=true but no reset step: exit 1 and fails only 'reset-sentry recorded iff the sentry carried a block (facts.reset is a bool)
+reset-sentry ROLLED BACK (exit 0)
+12 steps, each once, in order (sentry first)'
+ok   reset failed (exit 2): exit 1 and fails only 'reset-sentry ROLLED BACK (exit 0)'
+ok   reset after the initial audit: exit 1 and fails only '12 steps, each once, in order (sentry first)'
+ok   reset fact missing: exit 1 and fails only 'reset-sentry recorded iff the sentry carried a block (facts.reset is a bool)'
+ok   no steps at all: exit 1, RESULT FAIL
+== 2b. has_block (pft-peerexpose MARK line)
+ok   MARK found in pft-peerexpose.sh
+ok   config with the MARK line -> true
+ok   original config (no block) -> false
+ok   indented/quoted mention is not a block
+ok   empty input -> false
+== 3. redact.py
+ok   positive control: exit 0, all PASS
+ok   check finds the planted leaks in the raw file
+ok   check is clean on the filtered file
+ok   filtered file keeps the port and the structure
+ok   unlisted IPv4 is still a leak (pattern)
+ok   check output never prints a value
+RESULT: 59 passed, 0 failed
+drill rc=0
+== mutants
+M1 CAUGHT (sentry overlay allowed) by 2 test(s): open12 sentry exit 1;open12 sentry violations=4 (overlay only)
+M2 CAUGHT (validator health restricted) by 1 test(s): health details disclosed, allowed
+M3 CAUGHT (disclosed needs 2+ matches) by 6 test(s): open12 pubkey_node VIOLATION;open12 violations=11;open1 peer_ip disclosed n=1;open12 sentry pubkey_node allowed;sentry counts disclosed = VIOLATION;badgate: audit violations seen in the gate
+M4 CAUGHT (vl 200 counts without blob) by 1 test(s): vl 200 without blob = restricted
+M5 CAUGHT (violation ignores role policy) by 7 test(s): open12 sentry violations=4 (overlay only);open12 sentry pubkey_node allowed;open12 sentry vl allowed;sentry_hardened exit 0;health details disclosed, allowed;apply sentry remote: APPLIED, sentry block live;inbound peer by node key: APPLIED, required peer 1/1, key not printed
+M6 CAUGHT (errors do not set exit 2) by 2 test(s): unreachable exit 2;crawl 200 non-JSON exit 2
+M7 CAUGHT (non-200 crawl treated as disclosed) by 16 test(s): restricted validator exit 0;restricted crawl.endpoint restricted (http 403);restricted text output RESULT line;vl 200 without blob = restricted;health details disclosed, allowed;apply validator: exit 0, APPLIED;apply validator: live cfg = rendered validator block;apply validator: exactly one restart;apply validator: window opened before the write, closed after the restart;apply validator: AM silence posted before the restart;apply validator: fixed peer required by default and found (1/1), audit 0;apply again: NO CHANGE, no restart, no window;rollback: exit 0, ROLLED BACK;rollback: one restart inside a window, silence posted;rollback: pre-rollback copy kept (0600);AM=none: applied without a silence
+M8 CAUGHT (peer IPs not inspected) by 5 test(s): open12 peer_ip disclosed n=12 VIOLATION;open12 violations=11;open1 peer_ip disclosed n=1;open12 sentry violations=4 (overlay only);badgate: audit violations seen in the gate
+M9 CAUGHT (sentry block keeps overlay public) by 12 test(s): plan stock sentry: effective after = policy;plan validator-rendered cfg as sentry: CHANGE NEEDED;plan --ssh uses ssh BatchMode + sudo -n docker exec;apply sentry remote: APPLIED, sentry block live;apply sentry remote: restart + write through ssh sudo -n;apply sentry remote: audit probed the given URL, required peer 1/1;apply sentry remote: backup under the target label;apply sentry remote: window + silence run locally (not via ssh);inbound peer by node key: APPLIED, required peer 1/1, key not printed;inbound peer by its real address: 0/1, refused before any write;unknown node key: 0/1, refused before any write;key prefix is not a key (address match fails): 0/1, refused
+M10 CAUGHT (render leaves old [vl] sections in place) by 47 test(s): plan stock validator: CHANGE NEEDED, exit 0;plan stock validator: validate OK;plan stock sentry: effective after = policy;render is idempotent;render sentry then validator = validator;plan on rendered cfg: NO CHANGE;plan validator-rendered cfg as sentry: CHANGE NEEDED;existing sections: validate OK, after = policy;existing sections: diff removes the old lines;existing sections: exactly one [crawl] and one [vl] after render;validate rendered cfg: exit 0, OK;validate accepts [vl] enabled=0 (effective vl=0);plan --ssh uses ssh BatchMode + sudo -n docker exec;apply validator: exit 0, APPLIED;apply validator: live cfg = rendered validator block;apply validator: exactly one restart;apply validator: window opened before the write, closed after the restart;apply validator: AM silence posted before the restart;apply validator: silence matcher + comment;apply validator: fixed peer required by default and found (1/1), audit 0;apply validator: backup = original, 0600 in 0700 dirs, LATEST;apply validator: effective before -> after printed;apply again: NO CHANGE, no restart, no window;rollback: exit 0, ROLLED BACK;rollback: one restart inside a window, silence posted;rollback: pre-rollback copy kept (0600);rollback twice: NO CHANGE, no restart;rollback refuses outside-block drift (exit 4, nothing written);badgate: exit 2, ROLLED BACK;badgate: audit violations seen in the gate;badgate: two restarts (apply + rollback), window closed once;fixed peer missing: refused before any write;write failure: ROLLBACK FAILED exit 5, window closed, no restart;lock held: exit 4, nothing written, no window;node syncing: exit 4, nothing written;--min-peers 12 with 11 peers: refused;dry run: diff shown, nothing written, no backup, no restart;AM=none: applied without a silence;apply sentry remote: APPLIED, sentry block live;apply sentry remote: restart + write through ssh sudo -n;apply sentry remote: audit probed the given URL, required peer 1/1;apply sentry remote: backup under the target label;apply sentry remote: window + silence run locally (not via ssh);inbound peer by node key: APPLIED, required peer 1/1, key not printed;inbound peer by its real address: 0/1, refused before any write;unknown node key: 0/1, refused before any write;key prefix is not a key (address match fails): 0/1, refused
+M11 CAUGHT (effective default counts=1) by 36 test(s): plan stock validator: CHANGE NEEDED, exit 0;plan stock validator: effective now = defaults;plan stock validator: effective after = policy;plan stock validator: validate OK;plan on rendered cfg: NO CHANGE;existing sections: validate OK, after = policy;existing sections: diff removes the old lines;validate rendered cfg: exit 0, OK;validate rejects a change outside [crawl]/[vl];validate rejects [vl] enable=0 (ignored key, effective vl=1);validate accepts [vl] enabled=0 (effective vl=0);apply validator: exit 0, APPLIED;apply validator: live cfg = rendered validator block;apply validator: exactly one restart;apply validator: window opened before the write, closed after the restart;apply validator: AM silence posted before the restart;apply validator: silence matcher + comment;apply validator: fixed peer required by default and found (1/1), audit 0;apply validator: backup = original, 0600 in 0700 dirs, LATEST;apply validator: effective before -> after printed;apply again: NO CHANGE, no restart, no window;rollback: exit 0, ROLLED BACK;rollback: one restart inside a window, silence posted;rollback: pre-rollback copy kept (0600);rollback twice: NO CHANGE, no restart;rollback refuses outside-block drift (exit 4, nothing written);badgate: exit 2, ROLLED BACK;badgate: audit violations seen in the gate;badgate: two restarts (apply + rollback), window closed once;fixed peer missing: refused before any write;write failure: ROLLBACK FAILED exit 5, window closed, no restart;lock held: exit 4, nothing written, no window;node syncing: exit 4, nothing written;--min-peers 12 with 11 peers: refused;dry run: diff shown, nothing written, no backup, no restart;AM=none: applied without a silence
+M12 CAUGHT (validate ignores changes outside the block) by 1 test(s): validate rejects a change outside [crawl]/[vl]
+M13 CAUGHT (bare [crawl] 0 not parsed) by 36 test(s): plan stock validator: CHANGE NEEDED, exit 0;plan stock validator: effective after = policy;plan stock validator: validate OK;plan on rendered cfg: NO CHANGE;existing sections: validate OK, after = policy;existing sections: diff removes the old lines;validate rendered cfg: exit 0, OK;validate rejects a change outside [crawl]/[vl];validate rejects [vl] enable=0 (ignored key, effective vl=1);validate accepts [vl] enabled=0 (effective vl=0);validate rejects the validator block for a sentry;apply validator: exit 0, APPLIED;apply validator: live cfg = rendered validator block;apply validator: exactly one restart;apply validator: window opened before the write, closed after the restart;apply validator: AM silence posted before the restart;apply validator: silence matcher + comment;apply validator: fixed peer required by default and found (1/1), audit 0;apply validator: backup = original, 0600 in 0700 dirs, LATEST;apply validator: effective before -> after printed;apply again: NO CHANGE, no restart, no window;rollback: exit 0, ROLLED BACK;rollback: one restart inside a window, silence posted;rollback: pre-rollback copy kept (0600);rollback twice: NO CHANGE, no restart;rollback refuses outside-block drift (exit 4, nothing written);badgate: exit 2, ROLLED BACK;badgate: audit violations seen in the gate;badgate: two restarts (apply + rollback), window closed once;fixed peer missing: refused before any write;write failure: ROLLBACK FAILED exit 5, window closed, no restart;lock held: exit 4, nothing written, no window;node syncing: exit 4, nothing written;--min-peers 12 with 11 peers: refused;dry run: diff shown, nothing written, no backup, no restart;AM=none: applied without a silence
+M14 CAUGHT ([vl] count not checked) by 1 test(s): validate rejects a missing [vl] section
+M15 CAUGHT (lock list ignored) by 1 test(s): lock held: exit 4, nothing written, no window
+M16 CAUGHT (required peers not checked) by 4 test(s): fixed peer missing: refused before any write;inbound peer by its real address: 0/1, refused before any write;unknown node key: 0/1, refused before any write;key prefix is not a key (address match fails): 0/1, refused
+M17 CAUGHT (audit not part of the gate) by 3 test(s): badgate: exit 2, ROLLED BACK;badgate: live cfg restored byte-identical;badgate: two restarts (apply + rollback), window closed once
+M18 CAUGHT (no automatic rollback after a failed gate) by 4 test(s): badgate: exit 2, ROLLED BACK;badgate: live cfg restored byte-identical;badgate: two restarts (apply + rollback), window closed once;write failure: ROLLBACK FAILED exit 5, window closed, no restart
+M19 CAUGHT (pre-rollback copy moves LATEST) by 1 test(s): rollback twice: NO CHANGE, no restart
+M20 CAUGHT (dry run writes) by 1 test(s): dry run: diff shown, nothing written, no backup, no restart
+M21 CAUGHT (no silence before the restart) by 3 test(s): apply validator: AM silence posted before the restart;apply validator: silence matcher + comment;rollback: one restart inside a window, silence posted
+M22 CAUGHT (rollback skips the outside-block drift check) by 1 test(s): rollback refuses outside-block drift (exit 4, nothing written)
+M23 CAUGHT (node-key peers never counted) by 1 test(s): inbound peer by node key: APPLIED, required peer 1/1, key not printed
+M24 CAUGHT (node key matched as a substring) by 1 test(s): unknown node key: 0/1, refused before any write
+M25 CAUGHT (keys not recognised (address match only)) by 1 test(s): inbound peer by node key: APPLIED, required peer 1/1, key not printed
+M26 CAUGHT (effective parses the ignored [vl] enable key) by 35 test(s): plan stock validator: CHANGE NEEDED, exit 0;plan stock validator: effective after = policy;plan stock validator: validate OK;plan on rendered cfg: NO CHANGE;existing sections: validate OK, after = policy;existing sections: diff removes the old lines;validate rendered cfg: exit 0, OK;validate rejects a change outside [crawl]/[vl];validate rejects [vl] enable=0 (ignored key, effective vl=1);validate accepts [vl] enabled=0 (effective vl=0);apply validator: exit 0, APPLIED;apply validator: live cfg = rendered validator block;apply validator: exactly one restart;apply validator: window opened before the write, closed after the restart;apply validator: AM silence posted before the restart;apply validator: silence matcher + comment;apply validator: fixed peer required by default and found (1/1), audit 0;apply validator: backup = original, 0600 in 0700 dirs, LATEST;apply validator: effective before -> after printed;apply again: NO CHANGE, no restart, no window;rollback: exit 0, ROLLED BACK;rollback: one restart inside a window, silence posted;rollback: pre-rollback copy kept (0600);rollback twice: NO CHANGE, no restart;rollback refuses outside-block drift (exit 4, nothing written);badgate: exit 2, ROLLED BACK;badgate: audit violations seen in the gate;badgate: two restarts (apply + rollback), window closed once;fixed peer missing: refused before any write;write failure: ROLLBACK FAILED exit 5, window closed, no restart;lock held: exit 4, nothing written, no window;node syncing: exit 4, nothing written;--min-peers 12 with 11 peers: refused;dry run: diff shown, nothing written, no backup, no restart;AM=none: applied without a silence
+M27 CAUGHT (validator block writes the ignored enable=0) by 34 test(s): plan stock validator: CHANGE NEEDED, exit 0;plan stock validator: effective after = policy;plan stock validator: validate OK;render validator: one [crawl] with bare 0, [vl] enabled=0;plan on rendered cfg: NO CHANGE;existing sections: validate OK, after = policy;existing sections: diff removes the old lines;validate rendered cfg: exit 0, OK;validate accepts [vl] enabled=0 (effective vl=0);apply validator: exit 0, APPLIED;apply validator: live cfg = rendered validator block;apply validator: exactly one restart;apply validator: window opened before the write, closed after the restart;apply validator: AM silence posted before the restart;apply validator: silence matcher + comment;apply validator: fixed peer required by default and found (1/1), audit 0;apply validator: backup = original, 0600 in 0700 dirs, LATEST;apply validator: effective before -> after printed;apply again: NO CHANGE, no restart, no window;rollback: exit 0, ROLLED BACK;rollback: one restart inside a window, silence posted;rollback: pre-rollback copy kept (0600);rollback twice: NO CHANGE, no restart;rollback refuses outside-block drift (exit 4, nothing written);badgate: exit 2, ROLLED BACK;badgate: audit violations seen in the gate;badgate: two restarts (apply + rollback), window closed once;fixed peer missing: refused before any write;write failure: ROLLBACK FAILED exit 5, window closed, no restart;lock held: exit 4, nothing written, no window;node syncing: exit 4, nothing written;--min-peers 12 with 11 peers: refused;dry run: diff shown, nothing written, no backup, no restart;AM=none: applied without a silence
+MUTANTS: 27/27 caught
+mutate rc=0

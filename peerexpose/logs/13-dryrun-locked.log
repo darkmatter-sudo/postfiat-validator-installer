@@ -1,0 +1,38 @@
+# Ubuntu 22.04.5 LTS | 2026-10-27T23:29:37Z | apply --dry-run on both real hosts while the resources-24h data-collection lock is held (expected: REFUSED exit 4, nothing written)
+# sha256 df4042849fa4ebf671f48e0f78dac92913f99cd3207d603e9613c71a7e2cff35 pft-peerexpose.sh
+$ sudo pft-maint lock list
+resources-24h 2026-10-28T06:20:00Z task_10dbceb resources 24h baseline window
+$ ./pft-peerexpose.sh apply --role validator --dry-run
+2026-10-27T23:29:38Z pft-peerexpose apply - role validator, target local, container postfiatd, run 20261027T232938Z
+2026-10-27T23:29:38Z   gate: full|proposing, peers >= 1, required peers 1, audit 0 violations, within 900s
+  validate: OK (one [crawl], one [vl], effective = validator policy, nothing else changed)
+2026-10-27T23:29:38Z   effective: crawl=1 overlay=1 server=1 counts=0 unl=1 vl=1 -> crawl=0 overlay=1 server=1 counts=0 unl=1 vl=0
+2026-10-27T23:29:38Z   diff ([crawl]/[vl] sections only):
+    0a1,5
+    > [crawl]
+    > 0
+    > 
+    > [vl]
+    > enable=0
+REFUSED: pft-maint data-collection lock held: resources-24h 2026-10-28T06:20:00Z task_10dbceb resources 24h baseline window
+exit 4
+$ ./pft-peerexpose.sh apply --role sentry --ssh relay --container postfiatd-sentry --url "$SENTRY_URL" --dry-run
+2026-10-27T23:29:39Z pft-peerexpose apply - role sentry, target relay, container postfiatd-sentry, run 20261027T232938Z
+2026-10-27T23:29:39Z   gate: full|proposing, peers >= 1, required peers 0, audit 0 violations, within 900s
+  validate: OK (one [crawl], one [vl], effective = sentry policy, nothing else changed)
+2026-10-27T23:29:39Z   effective: crawl=1 overlay=1 server=1 counts=0 unl=1 vl=1 -> crawl=1 overlay=0 server=1 counts=0 unl=1 vl=1
+2026-10-27T23:29:39Z   diff ([crawl]/[vl] sections only):
+    0a1,8
+    > [crawl]
+    > overlay=0
+    > server=1
+    > counts=0
+    > unl=1
+    > 
+    > [vl]
+    > enable=1
+REFUSED: pft-maint data-collection lock held: resources-24h 2026-10-28T06:20:00Z task_10dbceb resources 24h baseline window
+exit 4
+$ sudo docker exec postfiatd sh -c "grep -ciE ^\[(crawl|vl)\] /etc/postfiatd/postfiatd.cfg"  # unchanged: 0 sections
+0
+0

@@ -1,0 +1,74 @@
+$ sudo bash tests/keyprobe.sh   (sha256 c2c2750b87037b77, pft-peerexpose.sh 3f72011e053802b6)
+keyprobe - 2026-10-27T21:11:02Z - Ubuntu 22.04.5 LTS - image agtipft/postfiatd:testnet-light-latest (sha256:cc139becfe50)
+=== variant stock
+tests/keyprobe.sh: line 34: awk/^\[(crawl|vl)\]/{on=1} /^\[/ && !/^\[(crawl|vl)\]/{on=0} on && !/^#/ && NF: No such file or directory
+[crawl]/[vl] lines: 
+peer port up: /health http 500
+/crawl http 200, keys: {"top":["overlay","server","unl","version"],"server":["build_version","closed_ledger","complete_ledgers","io_latency_ms","jq_trans_overflow","last_close","load_base","load_factor","load_factor_fee_reference","load_factor_server","network_id","peer_disconnects","peer_disconnects_resources","peers","ports","pubkey_node","published_ledger","server_state","server_state_duration_us","state_accounting","time","uptime","warnings"],"overlay":["active"],"unl":["local_static_keys","publisher_lists","validator_list","validator_sites"]}
+/vl/<well-formed unknown key> http 404  /vl/<malformed key> http 404
+audit --role validator inside the probe container's netns:
+pft-peerexpose audit - 2026-10-27T21:11:08Z - role validator
+  crawl.endpoint                 disclosed  n=1    VIOLATION http 200
+  crawl.server.pubkey_node       disclosed  n=1    VIOLATION 
+  crawl.server.build_version     disclosed  n=1    VIOLATION 
+  crawl.server.uptime            disclosed  n=1    VIOLATION 
+  crawl.server.state_accounting  disclosed  n=1    VIOLATION 
+  crawl.overlay.peer_ip          restricted n=0    ok        
+  crawl.overlay.peer_port        restricted n=0    ok        
+  crawl.overlay.peer_pubkey      restricted n=0    ok        
+  crawl.overlay.peer_version     restricted n=0    ok        
+  crawl.counts                   restricted n=0    ok        
+  crawl.unl.publisher_lists      disclosed  n=1    VIOLATION 
+  vl.list                        restricted n=0    ok        not served for 1 publisher key(s)
+  health.details                 disclosed  n=3    ok        http 500, node not fully healthy
+RESULT: 6 violation(s), 0 error(s)
+audit exit 1
+=== variant validator
+tests/keyprobe.sh: line 34: awk/^\[(crawl|vl)\]/{on=1} /^\[/ && !/^\[(crawl|vl)\]/{on=0} on && !/^#/ && NF: No such file or directory
+[crawl]/[vl] lines: 
+peer port up: /health http 500
+/crawl http 403, keys: non-JSON
+/vl/<well-formed unknown key> http 404  /vl/<malformed key> http 404
+audit --role validator inside the probe container's netns:
+pft-peerexpose audit - 2026-10-27T21:11:13Z - role validator
+  crawl.endpoint                 restricted n=0    ok        http 403
+  crawl.server.pubkey_node       restricted n=0    ok        
+  crawl.server.build_version     restricted n=0    ok        
+  crawl.server.uptime            restricted n=0    ok        
+  crawl.server.state_accounting  restricted n=0    ok        
+  crawl.overlay.peer_ip          restricted n=0    ok        
+  crawl.overlay.peer_port        restricted n=0    ok        
+  crawl.overlay.peer_pubkey      restricted n=0    ok        
+  crawl.overlay.peer_version     restricted n=0    ok        
+  crawl.counts                   restricted n=0    ok        
+  crawl.unl.publisher_lists      restricted n=0    ok        
+  vl.list                        restricted n=0    ok        not served for 1 publisher key(s)
+  health.details                 disclosed  n=3    ok        http 500, node not fully healthy
+RESULT: 0 violation(s), 0 error(s)
+audit exit 0
+=== variant sentry
+tests/keyprobe.sh: line 34: awk/^\[(crawl|vl)\]/{on=1} /^\[/ && !/^\[(crawl|vl)\]/{on=0} on && !/^#/ && NF: No such file or directory
+[crawl]/[vl] lines: 
+peer port up: /health http 500
+/crawl http 200, keys: {"top":["server","unl","version"],"server":["build_version","closed_ledger","complete_ledgers","io_latency_ms","jq_trans_overflow","last_close","load_base","load_factor","load_factor_fee_reference","load_factor_server","network_id","peer_disconnects","peer_disconnects_resources","peers","ports","pubkey_node","published_ledger","server_state","server_state_duration_us","state_accounting","time","uptime","warnings"],"overlay":[],"unl":["local_static_keys","publisher_lists","validator_list","validator_sites"]}
+/vl/<well-formed unknown key> http 404  /vl/<malformed key> http 404
+audit --role sentry inside the probe container's netns:
+pft-peerexpose audit - 2026-10-27T21:11:18Z - role sentry
+  crawl.endpoint                 disclosed  n=1    ok        http 200
+  crawl.server.pubkey_node       disclosed  n=1    ok        
+  crawl.server.build_version     disclosed  n=1    ok        
+  crawl.server.uptime            disclosed  n=1    ok        
+  crawl.server.state_accounting  disclosed  n=1    ok        
+  crawl.overlay.peer_ip          restricted n=0    ok        
+  crawl.overlay.peer_port        restricted n=0    ok        
+  crawl.overlay.peer_pubkey      restricted n=0    ok        
+  crawl.overlay.peer_version     restricted n=0    ok        
+  crawl.counts                   restricted n=0    ok        
+  crawl.unl.publisher_lists      disclosed  n=1    ok        
+  vl.list                        restricted n=0    ok        not served for 1 publisher key(s)
+  health.details                 disclosed  n=3    ok        http 500, node not fully healthy
+RESULT: 0 violation(s), 0 error(s)
+audit exit 0
+keyprobe done; probe container removed: yes
+exit 0
+# SUPERSEDED by -9: the '[crawl]/[vl] lines' echo had a missing space after awk (line 34), so it printed an error instead of the config lines; probe results unaffected. Fixed and re-run as -9.

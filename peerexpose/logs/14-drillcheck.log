@@ -1,0 +1,59 @@
+# Ubuntu 22.04.5 LTS | 2026-10-28T03:14:29Z | offline tests of the live-drill logic (drill/), before the live run
+# note: one earlier scratch run of test-drill.sh was not tee'd: 37/40, found redact.py check/argparse bug (positional after --literals rejected) -> parse_intermixed_args; and shellcheck SC1091 info -> source-path
+# sha256 df4042849fa4ebf671f48e0f78dac92913f99cd3207d603e9613c71a7e2cff35 pft-peerexpose.sh
+# sha256 4b0b34d02de977ce10a7b66a9f80de36379ea2aca1cd598b256badbc15febdf1 drill/live-run.sh
+# sha256 965d6b1531484c54b9a6b280c4fa801f5370fd3c772ecfb9ceb3ec1b08a317be drill/check-drill.sh
+# sha256 bcc4b08ce026de87146151199818f0c00f9685e3aa92e28a8b58c61acb6f83ff drill/lib.sh
+# sha256 f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8 drill/redact.py
+# sha256 494d0b8bd1870bd3bc33d8bbd52849ed0c1e101a787046a67dae48cde11b48c2 drill/test-drill.sh
+$ shellcheck -x drill/*.sh pft-peerexpose.sh
+shellcheck exit 0
+$ bash drill/test-drill.sh
+== 1. parsers
+ok   audit sentry fixture: violations
+ok   audit validator fixture: violations (two digits)
+ok   audit fixture: no RESULT verdict word
+ok   RESULT line from source: APPLIED
+ok   RESULT line from source: DRY RUN
+ok   RESULT line from source: ERROR
+ok   RESULT line from source: NO CHANGE
+ok   RESULT line from source: NO CHANGE
+ok   RESULT line from source: REFUSED
+ok   RESULT line from source: REFUSED
+ok   RESULT line from source: ROLLBACK FAILED
+ok   RESULT line from source: ROLLBACK FAILED
+ok   RESULT line from source: ROLLED BACK
+ok   RESULT line from source: ROLLED BACK
+ok   RESULT formats found in pft-peerexpose.sh
+ok   REFUSED (no RESULT line) parses empty
+== 2. check-drill.sh
+ok   good run: PASS, exit 0, 23 checks
+ok   validator applied before sentry: exit 1 and fails only '12 steps, each once, in order (sentry first)'
+ok   rollback did not bring exposure back: exit 1 and fails only 'audit-sentry-rolledback finds violations (exit 1)
+sentry rollback restores the initial exposure (same violation count)'
+ok   rollback exposure differs (11 vs 4, two digits): exit 1 and fails only 'sentry rollback restores the initial exposure (same violation count)'
+ok   apply auto-rolled back (ROLLED BACK, exit 2): exit 1 and fails only 'apply-validator APPLIED (exit 0)'
+ok   manual rollback exit 2: exit 1 and fails only 'rollback-sentry ROLLED BACK (exit 0)'
+ok   audit summary not parsed (violations null): exit 1 and fails only 'audit-validator-final 0 violations (exit 0)'
+ok   initial audit unreachable (exit 2): exit 1 and fails only 'audit-validator-initial finds violations (exit 1)'
+ok   step recorded twice: exit 1 and fails only '12 steps, each once, in order (sentry first)
+audit-sentry-final 0 violations (exit 0)'
+ok   an alert reached the throwaway topic: exit 1 and fails only 'throwaway ALERT topic received nothing'
+ok   ALERT topic unreadable (null): exit 1 and fails only 'throwaway ALERT topic received nothing'
+ok   no MAINT messages: exit 1 and fails only 'throwaway MAINT topic received the windows'
+ok   sentry lost the validator link: exit 1 and fails only 'sentry sees the other host as a connected peer'
+ok   validator still syncing: exit 1 and fails only 'validator full|proposing at the end'
+ok   notifier restore mismatch: exit 1 and fails only 'notifiers restored (sha256 match, drill files removed)'
+ok   redaction control failed: exit 1 and fails only 'redaction positive control passed'
+ok   dry run: exit 1 and fails only 'not a dry run'
+ok   no steps at all: exit 1, RESULT FAIL
+== 3. redact.py
+ok   positive control: exit 0, all PASS
+ok   check finds the planted leaks in the raw file
+ok   check is clean on the filtered file
+ok   filtered file keeps the port and the structure
+ok   unlisted IPv4 is still a leak (pattern)
+ok   check output never prints a value
+RESULT: 40 passed, 0 failed
+test-drill exit 0
+# SUPERSEDED by -15: fixtures were then made synthetic (no real-host timestamps/counts before the fix is live) and test-drill.sh header reworded

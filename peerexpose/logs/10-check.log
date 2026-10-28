@@ -1,0 +1,85 @@
+check - 2026-10-27T21:16:45Z - Ubuntu 22.04.5 LTS - version: 0.8.0
+sha256 46a051d891c1ae7d pft-peerexpose.sh
+sha256 4ecbeab5fba8acd1 tests/run-tests.sh
+sha256 6e3de4fb76a3f1a2 tests/mutate.sh
+sha256 a219516f4b61a248 tests/keyprobe.sh
+$ shellcheck pft-peerexpose.sh tests/run-tests.sh tests/mutate.sh tests/keyprobe.sh
+shellcheck exit 0
+$ bash tests/run-tests.sh
+PASS open12 validator exit 1
+PASS open12 peer_ip disclosed n=12 VIOLATION
+PASS open12 peer_pubkey n=12
+PASS open12 pubkey_node VIOLATION
+PASS open12 vl served VIOLATION
+PASS open12 counts restricted ok
+PASS open12 health allowed
+PASS open12 violations=11
+PASS open12 vl key taken from local admin RPC
+PASS open12 no address or key in output
+PASS open1 peer_ip disclosed n=1
+PASS open12 sentry exit 1
+PASS open12 sentry violations=4 (overlay only)
+PASS open12 sentry pubkey_node allowed
+PASS open12 sentry vl allowed
+PASS sentry_hardened exit 0
+PASS sentry_hardened peer_ip restricted
+PASS sentry_hardened as validator exit 1
+PASS sentry counts disclosed = VIOLATION
+PASS restricted validator exit 0
+PASS restricted crawl.endpoint restricted (http 403)
+PASS restricted vl restricted
+PASS restricted text output RESULT line
+PASS unreachable exit 2
+PASS crawl 200 non-JSON exit 2
+PASS vl 200 without blob = restricted
+PASS health details disclosed, allowed
+PASS no RPC keys -> dummy key probed
+PASS --vl-key and --url used, RPC not called
+PASS missing --role exit 3
+PASS bad role exit 3
+PASS plan stock validator: CHANGE NEEDED, exit 0
+PASS plan stock validator: effective now = defaults
+PASS plan stock validator: effective after = policy
+PASS plan stock validator: validate OK
+PASS plan output has no address
+PASS plan stock sentry: effective after = policy
+PASS plan reads the cfg through docker exec
+PASS render keeps every non-blank line outside the block
+PASS render keeps the commented # [crawl] docs
+PASS render validator: one [crawl] with bare 0, [vl] enable=0
+PASS render is idempotent
+PASS render sentry then validator = validator
+PASS plan on rendered cfg: NO CHANGE
+PASS plan validator-rendered cfg as sentry: CHANGE NEEDED
+PASS existing sections: effective now parsed (counts = 1 with spaces)
+PASS existing sections: validate OK, after = policy
+PASS existing sections: diff removes the old lines
+PASS existing sections: exactly one [crawl] and one [vl] after render
+PASS existing sections: [ips_fixed] kept
+PASS plan with unreadable cfg exit 2
+PASS validate rendered cfg: exit 0, OK
+PASS validate rejects a change outside [crawl]/[vl]
+PASS validate rejects two [crawl] sections
+PASS validate rejects a missing [vl] section
+PASS validate rejects the validator block for a sentry
+PASS validate without --new exit 3
+PASS plan --ssh uses ssh BatchMode + sudo -n docker exec
+RESULT: 58 passed, 0 failed
+tests exit 0
+$ bash tests/mutate.sh
+M1 CAUGHT (sentry overlay allowed) by 2 test(s): open12 sentry exit 1;open12 sentry violations=4 (overlay only)
+M2 CAUGHT (validator health restricted) by 1 test(s): health details disclosed, allowed
+M3 CAUGHT (disclosed needs 2+ matches) by 5 test(s): open12 pubkey_node VIOLATION;open12 violations=11;open1 peer_ip disclosed n=1;open12 sentry pubkey_node allowed;sentry counts disclosed = VIOLATION
+M4 CAUGHT (vl 200 counts without blob) by 1 test(s): vl 200 without blob = restricted
+M5 CAUGHT (violation ignores role policy) by 5 test(s): open12 sentry violations=4 (overlay only);open12 sentry pubkey_node allowed;open12 sentry vl allowed;sentry_hardened exit 0;health details disclosed, allowed
+M6 CAUGHT (errors do not set exit 2) by 2 test(s): unreachable exit 2;crawl 200 non-JSON exit 2
+M7 CAUGHT (non-200 crawl treated as disclosed) by 5 test(s): restricted validator exit 0;restricted crawl.endpoint restricted (http 403);restricted text output RESULT line;vl 200 without blob = restricted;health details disclosed, allowed
+M8 CAUGHT (peer IPs not inspected) by 4 test(s): open12 peer_ip disclosed n=12 VIOLATION;open12 violations=11;open1 peer_ip disclosed n=1;open12 sentry violations=4 (overlay only)
+M9 CAUGHT (sentry block keeps overlay public) by 3 test(s): plan stock sentry: effective after = policy;plan validator-rendered cfg as sentry: CHANGE NEEDED;plan --ssh uses ssh BatchMode + sudo -n docker exec
+M10 CAUGHT (render leaves old [vl] sections in place) by 12 test(s): plan stock validator: CHANGE NEEDED, exit 0;plan stock validator: validate OK;plan stock sentry: effective after = policy;render is idempotent;render sentry then validator = validator;plan on rendered cfg: NO CHANGE;plan validator-rendered cfg as sentry: CHANGE NEEDED;existing sections: validate OK, after = policy;existing sections: diff removes the old lines;existing sections: exactly one [crawl] and one [vl] after render;validate rendered cfg: exit 0, OK;plan --ssh uses ssh BatchMode + sudo -n docker exec
+M11 CAUGHT (effective default counts=1) by 9 test(s): plan stock validator: CHANGE NEEDED, exit 0;plan stock validator: effective now = defaults;plan stock validator: effective after = policy;plan stock validator: validate OK;plan on rendered cfg: NO CHANGE;existing sections: validate OK, after = policy;existing sections: diff removes the old lines;validate rendered cfg: exit 0, OK;validate rejects a change outside [crawl]/[vl]
+M12 CAUGHT (validate ignores changes outside the block) by 1 test(s): validate rejects a change outside [crawl]/[vl]
+M13 CAUGHT (bare [crawl] 0 not parsed) by 9 test(s): plan stock validator: CHANGE NEEDED, exit 0;plan stock validator: effective after = policy;plan stock validator: validate OK;plan on rendered cfg: NO CHANGE;existing sections: validate OK, after = policy;existing sections: diff removes the old lines;validate rendered cfg: exit 0, OK;validate rejects a change outside [crawl]/[vl];validate rejects the validator block for a sentry
+M14 CAUGHT ([vl] count not checked) by 1 test(s): validate rejects a missing [vl] section
+MUTANTS: 14/14 caught
+mutate exit 0

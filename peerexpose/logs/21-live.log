@@ -1,0 +1,382 @@
+pft-peerexpose live-run - 2026-10-28T07:28:52Z - Ubuntu 22.04.5 LTS - run 20261028T072852Z
+sha256: pft-peerexpose.sh 0c9b17818747ccae39f2fa57baf43ba469ede80262e90e3ad8216ae4474f6218 | live-run.sh 6a20ab0b1c7217de758773aea9fc38df63599d071c08e4233062da1bd6f8bbef
+        check-drill.sh 965d6b1531484c54b9a6b280c4fa801f5370fd3c772ecfb9ceb3ec1b08a317be | redact.py f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8
+        lib.sh 6d2e4771731e067a9e7a8e7dd109d3ba9ebb9df7c0ddb73cbb6daaeb10f2f9e1
+
+== 0. preflight (nothing changed yet)
+  pft-maint: no data-collection locks
+  local postfiatd: server_state=full peers=13
+  relay postfiatd-sentry: server_state=full peers=15
+  peering before: validator has sentry: true | sentry has validator: true
+  literals for redaction: 2 ip, 3 key, 2 topic, 1 user (values not printed)
+$ redact.py control --literals <literals>
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (17/17)
+  pft-peerexpose.sh copied to the sentry host (temp dir, same sha256), removed on exit
+  ok: relay reachable, Alertmanager ready, no locks, env files present, no leftovers, both nodes full
+
+== 1. redirect notifiers (ALERT and MAINT throwaway topics)
+  local:/etc/postfiat-monitor.env sha256 6dc3b10fb491 (before)
+  local:/etc/postfiat-monitor.env -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/postfiat-monitor.env.pre-peerexpose-drill
+  local:/etc/pft-integrity.env sha256 b3cd1c3da7ff (before)
+  local:/etc/pft-integrity.env -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/pft-integrity.env.pre-peerexpose-drill
+  relay:/etc/pft-watchdog/ntfy.env sha256 ddb52721a668 (before)
+  relay:/etc/pft-watchdog/ntfy.env -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/pft-watchdog/ntfy.env.pre-peerexpose-drill
+  relay:/etc/pft-integrity.env sha256 cdd330a974d2 (before)
+  relay:/etc/pft-integrity.env -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/pft-integrity.env.pre-peerexpose-drill
+  local:/etc/pft-maint/ntfy.env created for the drill only -> https://ntfy.sh/<redacted> (MAINT)
+  relay:/etc/pft-maint/ntfy.env created for the drill only -> https://ntfy.sh/<redacted> (MAINT)
+
+== 2. sequence: sentry first, then validator
+
+-- audit-sentry-initial (2026-10-28T07:29:02Z)
+$ pft-peerexpose.sh audit --role sentry --url https://<redacted-ip>:2559 
+pft-peerexpose audit - 2026-10-28T07:29:04Z - role sentry
+  crawl.endpoint                 disclosed  n=1    ok        http 200
+  crawl.server.pubkey_node       disclosed  n=1    ok        
+  crawl.server.build_version     disclosed  n=1    ok        
+  crawl.server.uptime            disclosed  n=1    ok        
+  crawl.server.state_accounting  disclosed  n=1    ok        
+  crawl.overlay.peer_ip          disclosed  n=15   VIOLATION 
+  crawl.overlay.peer_port        disclosed  n=10   VIOLATION 
+  crawl.overlay.peer_pubkey      disclosed  n=15   VIOLATION 
+  crawl.overlay.peer_version     disclosed  n=15   VIOLATION 
+  crawl.counts                   restricted n=0    ok        
+  crawl.unl.publisher_lists      disclosed  n=1    ok        
+  vl.list                        disclosed  n=1    ok        served for 1/1 publisher key(s)
+  health.details                 restricted n=0    ok        http 200, empty info
+RESULT: 4 violation(s), 0 error(s)
+exit 1
+
+-- audit-validator-initial (2026-10-28T07:29:04Z)
+$ pft-peerexpose.sh audit --role validator --url https://<redacted-ip>:2559 --container postfiatd-sentry    (on the sentry host)
+pft-peerexpose audit - 2026-10-28T07:29:06Z - role validator
+  crawl.endpoint                 disclosed  n=1    VIOLATION http 200
+  crawl.server.pubkey_node       disclosed  n=1    VIOLATION 
+  crawl.server.build_version     disclosed  n=1    VIOLATION 
+  crawl.server.uptime            disclosed  n=1    VIOLATION 
+  crawl.server.state_accounting  disclosed  n=1    VIOLATION 
+  crawl.overlay.peer_ip          disclosed  n=13   VIOLATION 
+  crawl.overlay.peer_port        disclosed  n=11   VIOLATION 
+  crawl.overlay.peer_pubkey      disclosed  n=13   VIOLATION 
+  crawl.overlay.peer_version     disclosed  n=13   VIOLATION 
+  crawl.counts                   restricted n=0    ok        
+  crawl.unl.publisher_lists      disclosed  n=1    VIOLATION 
+  vl.list                        disclosed  n=1    VIOLATION served for 1/1 publisher key(s)
+  health.details                 restricted n=0    ok        http 200, empty info
+RESULT: 11 violation(s), 0 error(s)
+exit 1
+
+-- apply-sentry (2026-10-28T07:29:06Z)
+$ pft-peerexpose.sh apply --role sentry --ssh relay --container postfiatd-sentry --url https://<redacted-ip>:2559 --gate-timeout 600 --require-peer <redacted-key> 
+2026-10-28T07:29:06Z pft-peerexpose apply - role sentry, target relay, container postfiatd-sentry, run 20261028T072906Z
+2026-10-28T07:29:07Z   gate: full|proposing, peers >= 1, required peers 1, audit 0 violations, within 600s
+  validate: OK (one [crawl], one [vl], effective = sentry policy, nothing else changed)
+2026-10-28T07:29:07Z   effective: crawl=1 overlay=1 server=1 counts=0 unl=1 vl=1 -> crawl=1 overlay=0 server=1 counts=0 unl=1 vl=1
+2026-10-28T07:29:07Z   diff ([crawl]/[vl] sections only):
+    0a1,8
+    > [crawl]
+    > overlay=0
+    > server=1
+    > counts=0
+    > unl=1
+    > 
+    > [vl]
+    > enable=1
+2026-10-28T07:29:08Z   gate: state=full peers=15 required_peers=1/1 audit_violations=-
+2026-10-28T07:29:08Z   backup: /home/<user>/.local/state/pft-peerexpose/backups/relay/postfiatd.cfg.20261028T072906Z.pre-apply (600, sha256 624f549982d6648e...)
+  maint: window started: id m1793172548-149613 until 2026-10-28T07:59:08Z | sentry copy: pushed
+2026-10-28T07:29:10Z   Alertmanager silence 4c7a96c6 (alertname=~.+) until 2026-10-28T08:09:10Z
+2026-10-28T07:29:11Z   installed /etc/postfiatd/postfiatd.cfg in postfiatd-sentry (mode 644, sha256 aced182c10913e14...)
+2026-10-28T07:29:11Z   restarting container postfiatd-sentry
+2026-10-28T07:29:25Z   gate: state=down peers=0 required_peers=0/1 audit_violations=-
+2026-10-28T07:29:36Z   gate: state=connected peers=10 required_peers=0/1 audit_violations=-
+2026-10-28T07:30:13Z   gate: state=syncing peers=10 required_peers=1/1 audit_violations=-
+2026-10-28T07:30:26Z   gate: state=full peers=11 required_peers=1/1 audit_violations=0
+  maint: window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+2026-10-28T07:30:28Z RESULT: APPLIED (role sentry policy live, audit 0 violations, gate passed)
+exit 0
+
+-- audit-sentry-applied (2026-10-28T07:30:28Z)
+$ pft-peerexpose.sh audit --role sentry --url https://<redacted-ip>:2559 
+pft-peerexpose audit - 2026-10-28T07:30:29Z - role sentry
+  crawl.endpoint                 disclosed  n=1    ok        http 200
+  crawl.server.pubkey_node       disclosed  n=1    ok        
+  crawl.server.build_version     disclosed  n=1    ok        
+  crawl.server.uptime            disclosed  n=1    ok        
+  crawl.server.state_accounting  disclosed  n=1    ok        
+  crawl.overlay.peer_ip          restricted n=0    ok        
+  crawl.overlay.peer_port        restricted n=0    ok        
+  crawl.overlay.peer_pubkey      restricted n=0    ok        
+  crawl.overlay.peer_version     restricted n=0    ok        
+  crawl.counts                   restricted n=0    ok        
+  crawl.unl.publisher_lists      disclosed  n=1    ok        
+  vl.list                        restricted n=0    ok        not served for 1 publisher key(s)
+  health.details                 restricted n=0    ok        unreachable
+RESULT: 0 violation(s), 0 error(s)
+exit 0
+
+-- rollback-sentry (2026-10-28T07:30:29Z)
+$ pft-peerexpose.sh rollback --role sentry --ssh relay --container postfiatd-sentry --url https://<redacted-ip>:2559 --gate-timeout 600 --require-peer <redacted-key> 
+2026-10-28T07:30:30Z pft-peerexpose rollback - role sentry, target relay, container postfiatd-sentry, run 20261028T073029Z
+2026-10-28T07:30:30Z   restore: /home/<user>/.local/state/pft-peerexpose/backups/relay/postfiatd.cfg.20261028T072906Z.pre-apply
+2026-10-28T07:30:30Z   effective: crawl=1 overlay=0 server=1 counts=0 unl=1 vl=1 -> crawl=1 overlay=1 server=1 counts=0 unl=1 vl=1
+    1,8d0
+    < [crawl]
+    < overlay=0
+    < server=1
+    < counts=0
+    < unl=1
+    < 
+    < [vl]
+    < enable=1
+2026-10-28T07:30:32Z   gate: state=full peers=11 required_peers=1/1 audit_violations=-
+2026-10-28T07:30:32Z   pre-rollback copy: /home/<user>/.local/state/pft-peerexpose/backups/relay/postfiatd.cfg.20261028T073029Z.pre-rollback (600)
+  maint: window started: id m1793172632-150920 until 2026-10-28T07:50:32Z | sentry copy: pushed
+2026-10-28T07:30:34Z   Alertmanager silence 1ebdaa3e (alertname=~.+) until 2026-10-28T08:00:34Z
+2026-10-28T07:30:36Z   installed /etc/postfiatd/postfiatd.cfg in postfiatd-sentry (mode 644, sha256 624f549982d6648e...)
+2026-10-28T07:30:36Z   restarting container postfiatd-sentry
+2026-10-28T07:30:39Z   gate: state=connected peers=0 required_peers=0/1 audit_violations=-
+2026-10-28T07:30:51Z   gate: state=connected peers=10 required_peers=0/1 audit_violations=-
+2026-10-28T07:31:29Z   gate: state=full peers=10 required_peers=0/1 audit_violations=-
+2026-10-28T07:31:41Z   gate: state=full peers=13 required_peers=1/1 audit_violations=-
+  maint: window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+2026-10-28T07:31:43Z RESULT: ROLLED BACK (backup restored, gate passed)
+exit 0
+
+-- audit-sentry-rolledback (2026-10-28T07:31:43Z)
+$ pft-peerexpose.sh audit --role sentry --url https://<redacted-ip>:2559 
+pft-peerexpose audit - 2026-10-28T07:31:44Z - role sentry
+  crawl.endpoint                 disclosed  n=1    ok        http 200
+  crawl.server.pubkey_node       disclosed  n=1    ok        
+  crawl.server.build_version     disclosed  n=1    ok        
+  crawl.server.uptime            disclosed  n=1    ok        
+  crawl.server.state_accounting  disclosed  n=1    ok        
+  crawl.overlay.peer_ip          disclosed  n=13   VIOLATION 
+  crawl.overlay.peer_port        disclosed  n=10   VIOLATION 
+  crawl.overlay.peer_pubkey      disclosed  n=13   VIOLATION 
+  crawl.overlay.peer_version     disclosed  n=13   VIOLATION 
+  crawl.counts                   restricted n=0    ok        
+  crawl.unl.publisher_lists      disclosed  n=1    ok        
+  vl.list                        disclosed  n=1    ok        served for 1/1 publisher key(s)
+  health.details                 restricted n=0    ok        http 200, empty info
+RESULT: 4 violation(s), 0 error(s)
+exit 1
+
+-- reapply-sentry (2026-10-28T07:31:44Z)
+$ pft-peerexpose.sh apply --role sentry --ssh relay --container postfiatd-sentry --url https://<redacted-ip>:2559 --gate-timeout 600 --require-peer <redacted-key> 
+2026-10-28T07:31:44Z pft-peerexpose apply - role sentry, target relay, container postfiatd-sentry, run 20261028T073144Z
+2026-10-28T07:31:44Z   gate: full|proposing, peers >= 1, required peers 1, audit 0 violations, within 600s
+  validate: OK (one [crawl], one [vl], effective = sentry policy, nothing else changed)
+2026-10-28T07:31:45Z   effective: crawl=1 overlay=1 server=1 counts=0 unl=1 vl=1 -> crawl=1 overlay=0 server=1 counts=0 unl=1 vl=1
+2026-10-28T07:31:45Z   diff ([crawl]/[vl] sections only):
+    0a1,8
+    > [crawl]
+    > overlay=0
+    > server=1
+    > counts=0
+    > unl=1
+    > 
+    > [vl]
+    > enable=1
+2026-10-28T07:31:47Z   gate: state=full peers=13 required_peers=1/1 audit_violations=-
+2026-10-28T07:31:47Z   backup: /home/<user>/.local/state/pft-peerexpose/backups/relay/postfiatd.cfg.20261028T073144Z.pre-apply (600, sha256 624f549982d6648e...)
+  maint: window started: id m1793172707-152280 until 2026-10-28T08:01:47Z | sentry copy: pushed
+2026-10-28T07:31:51Z   Alertmanager silence b41b7b04 (alertname=~.+) until 2026-10-28T08:11:51Z
+2026-10-28T07:31:53Z   installed /etc/postfiatd/postfiatd.cfg in postfiatd-sentry (mode 644, sha256 aced182c10913e14...)
+2026-10-28T07:31:53Z   restarting container postfiatd-sentry
+2026-10-28T07:31:57Z   gate: state=connected peers=0 required_peers=1/1 audit_violations=-
+2026-10-28T07:32:09Z   gate: state=connected peers=10 required_peers=1/1 audit_violations=-
+2026-10-28T07:32:45Z   gate: state=full peers=10 required_peers=1/1 audit_violations=0
+  maint: window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+2026-10-28T07:32:47Z RESULT: APPLIED (role sentry policy live, audit 0 violations, gate passed)
+exit 0
+
+-- audit-sentry-reapplied (2026-10-28T07:32:47Z)
+$ pft-peerexpose.sh audit --role sentry --url https://<redacted-ip>:2559 
+pft-peerexpose audit - 2026-10-28T07:32:48Z - role sentry
+  crawl.endpoint                 disclosed  n=1    ok        http 200
+  crawl.server.pubkey_node       disclosed  n=1    ok        
+  crawl.server.build_version     disclosed  n=1    ok        
+  crawl.server.uptime            disclosed  n=1    ok        
+  crawl.server.state_accounting  disclosed  n=1    ok        
+  crawl.overlay.peer_ip          restricted n=0    ok        
+  crawl.overlay.peer_port        restricted n=0    ok        
+  crawl.overlay.peer_pubkey      restricted n=0    ok        
+  crawl.overlay.peer_version     restricted n=0    ok        
+  crawl.counts                   restricted n=0    ok        
+  crawl.unl.publisher_lists      disclosed  n=1    ok        
+  vl.list                        disclosed  n=1    ok        served for 1/1 publisher key(s)
+  health.details                 restricted n=0    ok        unreachable
+RESULT: 0 violation(s), 0 error(s)
+exit 0
+
+-- apply-validator (2026-10-28T07:32:48Z)
+$ pft-peerexpose.sh apply --role validator --gate-timeout 600 
+2026-10-28T07:32:48Z pft-peerexpose apply - role validator, target local, container postfiatd, run 20261028T073248Z
+2026-10-28T07:32:48Z   gate: full|proposing, peers >= 1, required peers 1, audit 0 violations, within 600s
+  validate: OK (one [crawl], one [vl], effective = validator policy, nothing else changed)
+2026-10-28T07:32:48Z   effective: crawl=1 overlay=1 server=1 counts=0 unl=1 vl=1 -> crawl=0 overlay=1 server=1 counts=0 unl=1 vl=0
+2026-10-28T07:32:48Z   diff ([crawl]/[vl] sections only):
+    0a1,5
+    > [crawl]
+    > 0
+    > 
+    > [vl]
+    > enable=0
+2026-10-28T07:32:49Z   gate: state=full peers=13 required_peers=1/1 audit_violations=-
+2026-10-28T07:32:49Z   backup: /home/<user>/.local/state/pft-peerexpose/backups/local/postfiatd.cfg.20261028T073248Z.pre-apply (600, sha256 d947d807b033774e...)
+  maint: window started: id m1793172769-153722 until 2026-10-28T08:02:49Z | sentry copy: pushed
+2026-10-28T07:32:50Z   Alertmanager silence 663703a8 (alertname=~.+) until 2026-10-28T08:12:50Z
+2026-10-28T07:32:51Z   installed /etc/postfiatd/postfiatd.cfg in postfiatd (mode 644, sha256 00bcafd4a576f928...)
+2026-10-28T07:32:51Z   restarting container postfiatd
+2026-10-28T07:33:00Z   gate: state=down peers=0 required_peers=0/1 audit_violations=-
+2026-10-28T07:33:11Z   gate: state=connected peers=10 required_peers=0/1 audit_violations=-
+2026-10-28T07:33:44Z   gate: state=full peers=10 required_peers=0/1 audit_violations=1
+2026-10-28T07:33:56Z   gate: state=full peers=11 required_peers=0/1 audit_violations=1
+2026-10-28T07:34:20Z   gate: state=full peers=12 required_peers=1/1 audit_violations=1
+2026-10-28T07:43:04Z   apply gate FAILED: automatic rollback to /home/<user>/.local/state/pft-peerexpose/backups/local/postfiatd.cfg.20261028T073248Z.pre-apply
+2026-10-28T07:43:05Z   installed /etc/postfiatd/postfiatd.cfg in postfiatd (mode 644, sha256 d947d807b033774e...)
+2026-10-28T07:43:05Z   restarting container postfiatd
+2026-10-28T07:43:08Z   gate: state=down peers=0 required_peers=0/1 audit_violations=-
+2026-10-28T07:43:19Z   gate: state=connected peers=11 required_peers=1/1 audit_violations=-
+2026-10-28T07:43:51Z   gate: state=full peers=11 required_peers=1/1 audit_violations=-
+  maint: window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+2026-10-28T07:43:53Z RESULT: ROLLED BACK (apply failed its gate; previous config restored and healthy)
+exit 2
+
+-- audit-validator-applied (2026-10-28T07:43:53Z)
+$ pft-peerexpose.sh audit --role validator --url https://<redacted-ip>:2559 --container postfiatd-sentry    (on the sentry host)
+pft-peerexpose audit - 2026-10-28T07:43:54Z - role validator
+  crawl.endpoint                 disclosed  n=1    VIOLATION http 200
+  crawl.server.pubkey_node       disclosed  n=1    VIOLATION 
+  crawl.server.build_version     disclosed  n=1    VIOLATION 
+  crawl.server.uptime            disclosed  n=1    VIOLATION 
+  crawl.server.state_accounting  disclosed  n=1    VIOLATION 
+  crawl.overlay.peer_ip          disclosed  n=11   VIOLATION 
+  crawl.overlay.peer_port        disclosed  n=11   VIOLATION 
+  crawl.overlay.peer_pubkey      disclosed  n=11   VIOLATION 
+  crawl.overlay.peer_version     disclosed  n=11   VIOLATION 
+  crawl.counts                   restricted n=0    ok        
+  crawl.unl.publisher_lists      disclosed  n=1    VIOLATION 
+  vl.list                        disclosed  n=1    VIOLATION served for 1/1 publisher key(s)
+  health.details                 restricted n=0    ok        http 200, empty info
+RESULT: 11 violation(s), 0 error(s)
+exit 1
+
+-- audit-sentry-final (2026-10-28T07:43:55Z)
+$ pft-peerexpose.sh audit --role sentry --url https://<redacted-ip>:2559 
+pft-peerexpose audit - 2026-10-28T07:43:55Z - role sentry
+  crawl.endpoint                 disclosed  n=1    ok        http 200
+  crawl.server.pubkey_node       disclosed  n=1    ok        
+  crawl.server.build_version     disclosed  n=1    ok        
+  crawl.server.uptime            disclosed  n=1    ok        
+  crawl.server.state_accounting  disclosed  n=1    ok        
+  crawl.overlay.peer_ip          restricted n=0    ok        
+  crawl.overlay.peer_port        restricted n=0    ok        
+  crawl.overlay.peer_pubkey      restricted n=0    ok        
+  crawl.overlay.peer_version     restricted n=0    ok        
+  crawl.counts                   restricted n=0    ok        
+  crawl.unl.publisher_lists      disclosed  n=1    ok        
+  vl.list                        disclosed  n=1    ok        served for 1/1 publisher key(s)
+  health.details                 restricted n=0    ok        http 200, empty info
+RESULT: 0 violation(s), 0 error(s)
+exit 0
+
+-- audit-validator-final (2026-10-28T07:43:56Z)
+$ pft-peerexpose.sh audit --role validator --url https://<redacted-ip>:2559 --container postfiatd-sentry    (on the sentry host)
+pft-peerexpose audit - 2026-10-28T07:43:57Z - role validator
+  crawl.endpoint                 disclosed  n=1    VIOLATION http 200
+  crawl.server.pubkey_node       disclosed  n=1    VIOLATION 
+  crawl.server.build_version     disclosed  n=1    VIOLATION 
+  crawl.server.uptime            disclosed  n=1    VIOLATION 
+  crawl.server.state_accounting  disclosed  n=1    VIOLATION 
+  crawl.overlay.peer_ip          disclosed  n=11   VIOLATION 
+  crawl.overlay.peer_port        disclosed  n=11   VIOLATION 
+  crawl.overlay.peer_pubkey      disclosed  n=11   VIOLATION 
+  crawl.overlay.peer_version     disclosed  n=11   VIOLATION 
+  crawl.counts                   restricted n=0    ok        
+  crawl.unl.publisher_lists      disclosed  n=1    VIOLATION 
+  vl.list                        disclosed  n=1    VIOLATION served for 1/1 publisher key(s)
+  health.details                 restricted n=0    ok        http 200, empty info
+RESULT: 11 violation(s), 0 error(s)
+exit 1
+
+-- peering and server_state (2026-10-28T07:43:57Z)
+  validator: {"state":"full","peers":11,"has_other":true}   (has_other = the sentry is a connected peer)
+  sentry:    {"state":"full","peers":13,"has_other":true}   (has_other = the validator is a connected peer)
+
+== 3. restore, read back, verdict
+  restored local:/etc/postfiat-monitor.env: sha256 matches pre-drill copy: yes
+  restored local:/etc/pft-integrity.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-watchdog/ntfy.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-integrity.env: sha256 matches pre-drill copy: yes
+  removed drill-only local:/etc/pft-maint/ntfy.env: yes
+  removed drill-only relay:/etc/pft-maint/ntfy.env: yes
+  MAINT topic: 8 message(s)
+    {"time":"2026-10-28T07:29:10Z","title":"[MAINT] start validator","message":"pft-peerexpose 20261028T072906Z sentry relay | until 2026-10-28T07:59:08Z (ttl 1800s) | sentry copy: pushed"}
+    {"time":"2026-10-28T07:30:28Z","title":"[MAINT] end validator","message":"pft-peerexpose 20261028T072906Z sentry relay | pft-peerexpose 20261028T072906Z done after 79s | suppressed here: watchdog=0 monitor=0 integrity=0 | sentry copy: pushed"}
+    {"time":"2026-10-28T07:30:34Z","title":"[MAINT] start validator","message":"pft-peerexpose 20261028T073029Z sentry relay | until 2026-10-28T07:50:32Z (ttl 1200s) | sentry copy: pushed"}
+    {"time":"2026-10-28T07:31:42Z","title":"[MAINT] end validator","message":"pft-peerexpose 20261028T073029Z sentry relay | pft-peerexpose 20261028T073029Z done after 70s | suppressed here: watchdog=0 monitor=0 integrity=0 | sentry copy: pushed"}
+    {"time":"2026-10-28T07:31:51Z","title":"[MAINT] start validator","message":"pft-peerexpose 20261028T073144Z sentry relay | until 2026-10-28T08:01:47Z (ttl 1800s) | sentry copy: pushed"}
+    {"time":"2026-10-28T07:32:46Z","title":"[MAINT] end validator","message":"pft-peerexpose 20261028T073144Z sentry relay | pft-peerexpose 20261028T073144Z done after 59s | suppressed here: watchdog=0 monitor=0 integrity=0 | sentry copy: pushed"}
+    {"time":"2026-10-28T07:32:50Z","title":"[MAINT] start validator","message":"pft-peerexpose 20261028T073248Z validator local | until 2026-10-28T08:02:49Z (ttl 1800s) | sentry copy: pushed"}
+    {"time":"2026-10-28T07:43:53Z","title":"[MAINT] end validator","message":"pft-peerexpose 20261028T073248Z validator local | pft-peerexpose 20261028T073248Z done after 663s | suppressed here: watchdog=0 monitor=0 integrity=0 | sentry copy: pushed"}
+  ALERT topic: 0 message(s)
+  $ pft-integrity verify (validator host)
+    pft-integrity verify - 2026-10-28T07:44:35Z
+    OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-10-28T06:13:51Z
+      [WARN] cfgvol:postfiatd.cfg                         changed  mtime
+    RESULT: WARN - 77 unchanged, 1 warn, 0 fail -> exit 1
+  $ pft-integrity verify (sentry host)
+    pft-integrity verify - 2026-10-28T07:44:41Z
+    OS: Ubuntu 22.04.5 LTS | container: postfiatd-sentry | baseline: 2026-10-28T06:14:40Z
+      [FAIL] cfgvol:postfiatd.cfg                         changed  mtime, sha256
+    RESULT: FAIL - 46 unchanged, 0 warn, 1 fail -> exit 2
+  facts: {"alert_msgs":0,"maint_msgs":8,"restore_ok":true,"redaction_control":0,"dry":false,"final":{"validator":{"state":"full","peers":11,"has_other":true},"sentry":{"state":"full","peers":13,"has_other":true}}}
+  steps: 12 recorded
+$ check-drill.sh <steps> <facts>
+PASS not a dry run
+PASS 12 steps, each once, in order (sentry first)
+PASS audit-sentry-initial finds violations (exit 1)
+PASS audit-validator-initial finds violations (exit 1)
+PASS apply-sentry APPLIED (exit 0)
+PASS audit-sentry-applied 0 violations (exit 0)
+PASS rollback-sentry ROLLED BACK (exit 0)
+PASS audit-sentry-rolledback finds violations (exit 1)
+PASS sentry rollback restores the initial exposure (same violation count)
+PASS reapply-sentry APPLIED (exit 0)
+PASS audit-sentry-reapplied 0 violations (exit 0)
+FAIL apply-validator APPLIED (exit 0)
+FAIL audit-validator-applied 0 violations (exit 0)
+PASS audit-sentry-final 0 violations (exit 0)
+FAIL audit-validator-final 0 violations (exit 0)
+PASS validator full|proposing at the end
+PASS validator sees the other host as a connected peer
+PASS sentry full|proposing at the end
+PASS sentry sees the other host as a connected peer
+PASS throwaway ALERT topic received nothing
+PASS throwaway MAINT topic received the windows
+PASS notifiers restored (sha256 match, drill files removed)
+PASS redaction positive control passed
+RESULT: FAIL (20/23)
+$ redact.py check --literals <literals> <this log so far>
+  redaction check: 8 literal(s) (ip,key,topic,user), 379 line(s) scanned
+  REDACTION: CLEAN (0 literals, 0 pattern hits)
+live-run done 2026-10-28T07:44:43Z: verdict exit 1

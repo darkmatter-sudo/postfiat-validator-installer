@@ -1,0 +1,44 @@
+== run 23 2026-10-28T08:23:11Z throwaway postfiatd (image agtipft/postfiatd:testnet-light-latest, postfiatd 1.0.9 32723c15e686a2088f2c83017a6ff909d93822cd), validator cfg as rendered by build 5 with [ips_fixed] emptied, ports on 127.0.0.1 only
+== variant [vl] enable=0 (2026-10-28T08:23:11Z)
+-- [vl] section in the throwaway cfg:
+[vl]
+enable=0
+-- publisher lists loaded: 1
+pft-peerexpose audit - 2026-10-28T08:23:19Z - role validator
+  crawl.endpoint                 restricted n=0    ok        http 403
+  crawl.server.pubkey_node       restricted n=0    ok        
+  crawl.server.build_version     restricted n=0    ok        
+  crawl.server.uptime            restricted n=0    ok        
+  crawl.server.state_accounting  restricted n=0    ok        
+  crawl.overlay.peer_ip          restricted n=0    ok        
+  crawl.overlay.peer_port        restricted n=0    ok        
+  crawl.overlay.peer_pubkey      restricted n=0    ok        
+  crawl.overlay.peer_version     restricted n=0    ok        
+  crawl.counts                   restricted n=0    ok        
+  crawl.unl.publisher_lists      restricted n=0    ok        
+  vl.list                        disclosed  n=1    VIOLATION served for 1/1 publisher key(s)
+  health.details                 disclosed  n=3    ok        http 500, node not fully healthy
+RESULT: 1 violation(s), 0 error(s)
+audit rc=1
+== variant [vl] enabled=0 (2026-10-28T08:23:19Z)
+-- [vl] section in the throwaway cfg:
+[vl]
+enabled=0
+-- publisher lists loaded: 1
+pft-peerexpose audit - 2026-10-28T08:23:25Z - role validator
+  crawl.endpoint                 restricted n=0    ok        http 403
+  crawl.server.pubkey_node       restricted n=0    ok        
+  crawl.server.build_version     restricted n=0    ok        
+  crawl.server.uptime            restricted n=0    ok        
+  crawl.server.state_accounting  restricted n=0    ok        
+  crawl.overlay.peer_ip          restricted n=0    ok        
+  crawl.overlay.peer_port        restricted n=0    ok        
+  crawl.overlay.peer_pubkey      restricted n=0    ok        
+  crawl.overlay.peer_version     restricted n=0    ok        
+  crawl.counts                   restricted n=0    ok        
+  crawl.unl.publisher_lists      restricted n=0    ok        
+  vl.list                        restricted n=0    ok        not served for 1 publisher key(s)
+  health.details                 disclosed  n=3    ok        http 503, node not fully healthy
+RESULT: 0 violation(s), 0 error(s)
+audit rc=0
+== throwaway container removed: 0 left

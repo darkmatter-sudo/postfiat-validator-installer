@@ -1,0 +1,17 @@
+== run 26 2026-10-28T09:29:08Z post-drill: integrity re-baseline record + verify, node health, peering (read-only except the accepts already run 09:27Z)
+$ sudo pft-integrity verify (validator host)
+pft-integrity verify - 2026-10-28T09:29:14Z
+OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-10-28T09:27:34Z
+RESULT: PASS - 78 unchanged, 0 warn, 0 fail -> exit 0
+$ tail -1 accept.log (validator host)
+2026-10-28T09:27:38Z	by=<user>	old=95888ad33ed75f62b60ab6d9be1b962e5b10361d769bfd1ef84c4d9215ff757a	new=c5d9983799b6b9ef66a3a38ddc943f59ddd5fa19d0ec904d3a7fa25f17f1e7c5	reason=task_bfa8aa422a741f364dd84b7036ddf660: peerexpose validator [crawl]/[vl] block applied (live run 25) 
+$ sudo pft-integrity verify (sentry host)
+pft-integrity verify - 2026-10-28T09:29:21Z
+OS: Ubuntu 22.04.5 LTS | container: postfiatd-sentry | baseline: 2026-10-28T09:27:39Z
+RESULT: PASS - 47 unchanged, 0 warn, 0 fail -> exit 0
+$ sudo postfiat-health (validator host)
+  [PASS] RPC responding (server_state: full)
+  [INFO] build_version: 1.0.9 | peers: 12 | complete_ledgers: 7551617-7552619
+RESULT: HEALTHY
+$ sentry server_state
+{"server_state":"full","peers":13,"build_version":"1.0.9"}

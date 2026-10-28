@@ -1,0 +1,82 @@
+# Ubuntu 22.04.5 LTS | 2026-10-27T20:12:20Z | pft-peerexpose.sh sha256 a8e2420c9b57c367
+$ shellcheck pft-peerexpose.sh tests/run-tests.sh tests/mutate.sh
+
+In tests/mutate.sh line 15:
+  'M3@@disclosed needs 2+ matches@@    if [ "$n" -gt 0 ]; then record@@    if [ "$n" -gt 1 ]; then record'
+  ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In tests/mutate.sh line 16:
+  'M4@@vl 200 counts without blob@@    if [ "$code" = 200 ] && jq -e '"'"'has("blob")'"'"' "$TMP/vl.body" >/dev/null 2>&1; then@@    if [ "$code" = 200 ]; then'
+  ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+                                                                                         ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In tests/mutate.sh line 17:
+  'M5@@violation ignores role policy@@  if [ "$2" = disclosed ] && [ "$(policy "$ROLE" "$1")" = restrict ]; then verdict=VIOLATION@@  if [ "$2" = disclosed ]; then verdict=VIOLATION'
+  ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In tests/mutate.sh line 18:
+  'M6@@errors do not set exit 2@@  if [ "$ERRORS" -gt 0 ]; then return 2; fi@@  :'
+  ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In tests/mutate.sh line 19:
+  'M7@@non-200 crawl treated as disclosed@@    record crawl.endpoint restricted 0 "http $code"@@    record crawl.endpoint disclosed 1 "http $code"'
+  ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In tests/mutate.sh line 37:
+  if [ $? -ne 0 ] || cmp -s "$SRC" "$WORK/m.sh"; then
+       ^-- SC2181 (style): Check exit code directly with e.g. 'if ! mycmd;', not indirectly with $?.
+
+For more information:
+  https://www.shellcheck.net/wiki/SC2016 -- Expressions don't expand in singl...
+  https://www.shellcheck.net/wiki/SC2181 -- Check exit code directly with e.g...
+$ bash tests/run-tests.sh
+PASS open12 validator exit 1
+PASS open12 peer_ip disclosed n=12 VIOLATION
+PASS open12 peer_pubkey n=12
+PASS open12 pubkey_node VIOLATION
+PASS open12 vl served VIOLATION
+PASS open12 counts restricted ok
+PASS open12 health allowed
+PASS open12 violations=11
+PASS open12 vl key taken from local admin RPC
+PASS open12 no address or key in output
+PASS open1 peer_ip disclosed n=1
+PASS open12 sentry exit 1
+PASS open12 sentry violations=4 (overlay only)
+PASS open12 sentry pubkey_node allowed
+PASS open12 sentry vl allowed
+PASS sentry_hardened exit 0
+PASS sentry_hardened peer_ip restricted
+PASS sentry_hardened as validator exit 1
+PASS sentry counts disclosed = VIOLATION
+PASS restricted validator exit 0
+PASS restricted crawl.endpoint restricted (http 403)
+PASS restricted vl restricted
+PASS restricted text output RESULT line
+PASS unreachable exit 2
+PASS crawl 200 non-JSON exit 2
+PASS vl 200 without blob = restricted
+PASS health details disclosed, allowed
+PASS no RPC keys -> dummy key probed
+PASS --vl-key and --url used, RPC not called
+PASS missing --role exit 3
+PASS bad role exit 3
+RESULT: 31 passed, 0 failed
+exit=0
+$ bash tests/mutate.sh
+M1 CAUGHT (sentry overlay allowed) by 2 test(s): open12 sentry exit 1;open12 sentry violations=4 (overlay only)
+M2 CAUGHT (validator health restricted) by 1 test(s): health details disclosed, allowed
+M3 CAUGHT (disclosed needs 2+ matches) by 5 test(s): open12 pubkey_node VIOLATION;open12 violations=11;open1 peer_ip disclosed n=1;open12 sentry pubkey_node allowed;sentry counts disclosed = VIOLATION
+M4 CAUGHT (vl 200 counts without blob) by 1 test(s): vl 200 without blob = restricted
+M5 CAUGHT (violation ignores role policy) by 5 test(s): open12 sentry violations=4 (overlay only);open12 sentry pubkey_node allowed;open12 sentry vl allowed;sentry_hardened exit 0;health details disclosed, allowed
+M6 CAUGHT (errors do not set exit 2) by 2 test(s): unreachable exit 2;crawl 200 non-JSON exit 2
+M7 CAUGHT (non-200 crawl treated as disclosed) by 5 test(s): restricted validator exit 0;restricted crawl.endpoint restricted (http 403);restricted text output RESULT line;vl 200 without blob = restricted;health details disclosed, allowed
+M8 CAUGHT (peer IPs not inspected) by 4 test(s): open12 peer_ip disclosed n=12 VIOLATION;open12 violations=11;open1 peer_ip disclosed n=1;open12 sentry violations=4 (overlay only)
+MUTANTS: 8/8 caught
+exit=0
+# SUPERSEDED by -6: shellcheck reported SC2016/SC2181 in tests/mutate.sh in this run (not clean); fixed (directive + direct status check) and re-run

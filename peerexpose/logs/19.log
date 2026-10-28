@@ -1,0 +1,63 @@
+# peerexpose build 5b offline - 2026-10-28T07:27:34Z: drill sha256 compares read the file through sudo (a '<' redirect ran unprivileged: empty == empty, found by DRY run -18)
+0c9b17818747ccae39f2fa57baf43ba469ede80262e90e3ad8216ae4474f6218  pft-peerexpose.sh
+6a20ab0b1c7217de758773aea9fc38df63599d071c08e4233062da1bd6f8bbef  drill/live-run.sh
+6d2e4771731e067a9e7a8e7dd109d3ba9ebb9df7c0ddb73cbb6daaeb10f2f9e1  drill/lib.sh
+$ shellcheck pft-peerexpose.sh drill/*.sh tests/*.sh
+shellcheck rc=0
+$ bash drill/test-drill.sh
+== 1. parsers
+ok   audit sentry fixture: violations
+ok   audit validator fixture: violations (two digits)
+ok   audit fixture: no RESULT verdict word
+ok   RESULT line from source: APPLIED
+ok   RESULT line from source: DRY RUN
+ok   RESULT line from source: ERROR
+ok   RESULT line from source: NO CHANGE
+ok   RESULT line from source: NO CHANGE
+ok   RESULT line from source: REFUSED
+ok   RESULT line from source: REFUSED
+ok   RESULT line from source: ROLLBACK FAILED
+ok   RESULT line from source: ROLLBACK FAILED
+ok   RESULT line from source: ROLLED BACK
+ok   RESULT line from source: ROLLED BACK
+ok   RESULT formats found in pft-peerexpose.sh
+ok   REFUSED (no RESULT line) parses empty
+== 1b. peer_has (shape of the live sentry's peers answer: the validator connects inbound via docker-proxy)
+ok   inbound validator: real address not listed, key matches
+ok   inbound validator: address only (no key) does not match
+ok   outbound peer: address matches without a key
+ok   IPv4-mapped address matches
+ok   address prefix does not match (<redacted-ip> vs <redacted-ip>)
+ok   key is exact, not a prefix
+ok   one changed key char does not match
+ok   empty / error answer -> false
+== 2. check-drill.sh
+ok   good run: PASS, exit 0, 23 checks
+ok   validator applied before sentry: exit 1 and fails only '12 steps, each once, in order (sentry first)'
+ok   rollback did not bring exposure back: exit 1 and fails only 'audit-sentry-rolledback finds violations (exit 1)
+sentry rollback restores the initial exposure (same violation count)'
+ok   rollback exposure differs (11 vs 4, two digits): exit 1 and fails only 'sentry rollback restores the initial exposure (same violation count)'
+ok   apply auto-rolled back (ROLLED BACK, exit 2): exit 1 and fails only 'apply-validator APPLIED (exit 0)'
+ok   manual rollback exit 2: exit 1 and fails only 'rollback-sentry ROLLED BACK (exit 0)'
+ok   audit summary not parsed (violations null): exit 1 and fails only 'audit-validator-final 0 violations (exit 0)'
+ok   initial audit unreachable (exit 2): exit 1 and fails only 'audit-validator-initial finds violations (exit 1)'
+ok   step recorded twice: exit 1 and fails only '12 steps, each once, in order (sentry first)
+audit-sentry-final 0 violations (exit 0)'
+ok   an alert reached the throwaway topic: exit 1 and fails only 'throwaway ALERT topic received nothing'
+ok   ALERT topic unreadable (null): exit 1 and fails only 'throwaway ALERT topic received nothing'
+ok   no MAINT messages: exit 1 and fails only 'throwaway MAINT topic received the windows'
+ok   sentry lost the validator link: exit 1 and fails only 'sentry sees the other host as a connected peer'
+ok   validator still syncing: exit 1 and fails only 'validator full|proposing at the end'
+ok   notifier restore mismatch: exit 1 and fails only 'notifiers restored (sha256 match, drill files removed)'
+ok   redaction control failed: exit 1 and fails only 'redaction positive control passed'
+ok   dry run: exit 1 and fails only 'not a dry run'
+ok   no steps at all: exit 1, RESULT FAIL
+== 3. redact.py
+ok   positive control: exit 0, all PASS
+ok   check finds the planted leaks in the raw file
+ok   check is clean on the filtered file
+ok   filtered file keeps the port and the structure
+ok   unlisted IPv4 is still a leak (pattern)
+ok   check output never prints a value
+RESULT: 48 passed, 0 failed
+test-drill rc=0
