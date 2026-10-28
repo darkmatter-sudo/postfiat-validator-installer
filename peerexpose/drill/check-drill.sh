@@ -2,9 +2,10 @@
 # check-drill: PASS/FAIL verdict for one live pft-peerexpose drill, computed only from what live-run.sh recorded.
 #   check-drill.sh STEPS_JSONL FACTS_JSON
 # STEPS_JSONL  one {"step","exit","result","violations"} per pft-peerexpose call, in run order
-# FACTS_JSON   {"alert_msgs":N, "maint_msgs":N, "restore_ok":bool, "redaction_control":rc, "dry":bool,
+# FACTS_JSON   {"alert_msgs":N, "maint_msgs":N, "restore_ok":bool, "redaction_control":rc, "dry":bool, "reset":bool,
 #               "final":{"validator":{"state","peers","has_other"}, "sentry":{...}}}
-# Expected: the 12 steps exactly once each and in order; both initial audits find violations (exit 1); every apply
+# Expected: reset-sentry (ROLLED BACK, exit 0) first if and only if facts.reset is true, then the 12 steps exactly
+# once each and in order; both initial audits find violations (exit 1); every apply
 # APPLIED (exit 0) and every audit after it 0 violations (exit 0); the sentry rollback ROLLED BACK and its audit is
 # back to the initial violation count; both nodes full|proposing at the end with the sentry<->validator link seen
 # from both sides; the throwaway ALERT topic got nothing, the MAINT topic got the windows; notifiers restored;
@@ -34,6 +35,12 @@ ORDER='["audit-sentry-initial","audit-validator-initial","apply-sentry","audit-s
   "audit-sentry-rolledback","reapply-sentry","audit-sentry-reapplied","apply-validator","audit-validator-applied",
   "audit-sentry-final","audit-validator-final"]'
 ck "not a dry run" '$f.dry == false'
+ck "reset-sentry recorded iff the sentry carried a block (facts.reset is a bool)" \
+  '($f.reset | type) == "boolean" and ([$st[] | select(.step == "reset-sentry")] | length) == (if $f.reset then 1 else 0 end)'
+if [ "$(jq -r '.reset' "$FACTS_F" 2>/dev/null)" = true ]; then
+  result reset-sentry "ROLLED BACK"
+  ORDER="[\"reset-sentry\",${ORDER#[}"
+fi
 ck "12 steps, each once, in order (sentry first)" "[\$st[].step] == $ORDER"
 audit_bad audit-sentry-initial
 audit_bad audit-validator-initial

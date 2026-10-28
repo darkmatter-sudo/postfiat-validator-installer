@@ -13,3 +13,5 @@ peer_has() {
     echo true
   else echo false; fi
 }
+# has_block < postfiatd.cfg -> "true" if the config carries a pft-peerexpose managed block (MARK in pft-peerexpose.sh)
+has_block() { if grep -qE '^# pft-peerexpose managed block( |$)'; then echo true; else echo false; fi; }

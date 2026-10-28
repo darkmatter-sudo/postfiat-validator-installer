@@ -10,6 +10,8 @@
 #    ntfy.env on both hosts points at a second throwaway MAINT topic. sha256 of each original is recorded and
 #    everything is restored on ANY exit (trap) and compared. Alertmanager is silenced by pft-peerexpose itself.
 # 2  sequence (each step: command line, redacted output, exit code -> STEPS jsonl):
+#    0 reset-sentry: only if the sentry already carries a pft-peerexpose block (an earlier drill left it applied),
+#      roll it back to its LATEST pre-apply backup first, so the initial audit sees the host's original exposure
 #    a audit-sentry-initial (from here, public address)  b audit-validator-initial (from the relay)
 #    c apply-sentry (--require-peer <validator key>)          d audit-sentry-applied
 #    e rollback-sentry                                    f audit-sentry-rolledback (violations must be back)
@@ -62,7 +64,7 @@ mkdir -p "$OUT"; chmod 700 "$OUT"; STEPS="$OUT/steps-$RUN.jsonl"; : > "$STEPS"
 
 declare -A SHA=()   # "host:path" -> sha256 before the drill
 declare -a MOVED=() CREATED=()
-RESTORED=0; RESTORE_OK=true; RDIR=""
+RESTORED=0; RESTORE_OK=true; RDIR=""; RESET=false
 restore() {
   [ "$RESTORED" -eq 1 ] && return 0
   RESTORED=1
@@ -190,6 +192,9 @@ if [ "$DRY" = 1 ]; then
   echo; echo "== 2. DRY=1: no pft-peerexpose step"
 else
   echo; echo "== 2. sequence: sentry first, then validator"
+  RESET="$(R "sudo -n docker exec $SENTRY_C cat $CFG" | has_block)"
+  echo "  sentry carries a pft-peerexpose block before the drill: $RESET"
+  [ "$RESET" = false ] || step reset-sentry local rollback "${S[@]}"
   step audit-sentry-initial local audit --role sentry --url "$SURL"
   step audit-validator-initial relay audit --role validator --url "$VURL" --container "$SENTRY_C"
   step apply-sentry local apply "${S[@]}"
@@ -230,8 +235,8 @@ if [ "$INTEGRITY_CMD" != none ]; then
 fi
 FACTS="$OUT/facts-$RUN.json"
 jq -n --argjson a "$ALERTS" --argjson m "$MAINTS" --argjson r "$RESTORE_OK" --argjson rc "$RCTL" --argjson v "$PV" --argjson s "$PS" \
-  --argjson dry "$([ "$DRY" = 1 ] && echo true || echo false)" \
-  '{alert_msgs: $a, maint_msgs: $m, restore_ok: $r, redaction_control: $rc, dry: $dry, final: {validator: $v, sentry: $s}}' > "$FACTS"
+  --argjson dry "$([ "$DRY" = 1 ] && echo true || echo false)" --argjson reset "$RESET" \
+  '{alert_msgs: $a, maint_msgs: $m, restore_ok: $r, redaction_control: $rc, dry: $dry, reset: $reset, final: {validator: $v, sentry: $s}}' > "$FACTS"
 echo "  facts: $(jq -c . "$FACTS")"
 echo "  steps: $(wc -l < "$STEPS") recorded"
 echo "\$ check-drill.sh <steps> <facts>"

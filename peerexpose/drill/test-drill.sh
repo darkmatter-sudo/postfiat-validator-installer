@@ -54,7 +54,7 @@ good_steps() {
     a("audit-validator-applied"; 0; 0), a("audit-sentry-final"; 0; 0), a("audit-validator-final"; 0; 0)'
 }
 good_facts() {
-  jq -nc '{alert_msgs: 0, maint_msgs: 8, restore_ok: true, redaction_control: 0, dry: false,
+  jq -nc '{alert_msgs: 0, maint_msgs: 8, restore_ok: true, redaction_control: 0, dry: false, reset: false,
     final: {validator: {state: "full", peers: 11, has_other: true}, sentry: {state: "full", peers: 11, has_other: true}}}'
 }
 run_case() { # NAME STEPS_JQ FACTS_JQ EXPECT_FAIL_CHECK ("" = expect PASS)
@@ -93,9 +93,28 @@ run_case "validator still syncing" . '.final.validator.state = "syncing"' "valid
 run_case "notifier restore mismatch" . '.restore_ok = false' "notifiers restored (sha256 match, drill files removed)"
 run_case "redaction control failed" . '.redaction_control = 1' "redaction positive control passed"
 run_case "dry run" . '.dry = true' "not a dry run"
+RS='{step: "reset-sentry", exit: 0, result: "ROLLED BACK", violations: null}'
+run_case "reset first, reset=true" "if .step == \"audit-sentry-initial\" then $RS, . else . end" '.reset = true' ""
+run_case "reset recorded but reset=false" "if .step == \"audit-sentry-initial\" then $RS, . else . end" . \
+  "$(printf '%s\n' "reset-sentry recorded iff the sentry carried a block (facts.reset is a bool)" "12 steps, each once, in order (sentry first)")"
+run_case "reset=true but no reset step" . '.reset = true' \
+  "$(printf '%s\n' "reset-sentry recorded iff the sentry carried a block (facts.reset is a bool)" "reset-sentry ROLLED BACK (exit 0)" "12 steps, each once, in order (sentry first)")"
+run_case "reset failed (exit 2)" "if .step == \"audit-sentry-initial\" then ($RS | .exit = 2), . else . end" '.reset = true' \
+  "reset-sentry ROLLED BACK (exit 0)"
+run_case "reset after the initial audit" "if .step == \"audit-sentry-initial\" then ., $RS else . end" '.reset = true' \
+  "12 steps, each once, in order (sentry first)"
+run_case "reset fact missing" . 'del(.reset)' "reset-sentry recorded iff the sentry carried a block (facts.reset is a bool)"
 : > "$T/empty.jsonl"; good_facts > "$T/facts.json"
 out="$(bash "$HERE/check-drill.sh" "$T/empty.jsonl" "$T/facts.json")"; rc=$?
 ok "no steps at all: exit 1, RESULT FAIL" "$rc:$(grep -c '^RESULT: FAIL' <<<"$out")" "1:1"
+
+echo "== 2b. has_block (pft-peerexpose MARK line)"
+MARKL="$(grep -oE '^MARK="[^"]*"' "$HERE/../pft-peerexpose.sh" | sed -E 's/^MARK="//; s/"$//')"
+ok "MARK found in pft-peerexpose.sh" "$([ -n "$MARKL" ] && echo yes || echo no)" yes
+ok "config with the MARK line -> true" "$(printf '[server]\nport_peer\n\n%s\n[crawl]\noverlay=0\n' "$MARKL" | has_block)" true
+ok "original config (no block) -> false" "$(printf '[server]\nport_peer\n[crawl]\noverlay=0\n' | has_block)" false
+ok "indented/quoted mention is not a block" "$(printf '  # pft-peerexpose managed block\nx=\"# pft-peerexpose managed block\"\n' | has_block)" false
+ok "empty input -> false" "$(has_block < /dev/null)" false
 
 echo "== 3. redact.py"
 printf 'ip\t203.0.113.77\nip\t198.51.100.9\nkey\tn9KfakeKEYfakeKEYfakeKEYfakeKEYfakeKEYfakeKEYfake12\ntopic\tpeerdrill-0123456789abcdef01234567\nuser\tdrilluser\n' > "$T/lit"
