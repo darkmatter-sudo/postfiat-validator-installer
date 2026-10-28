@@ -7,15 +7,18 @@
 #  2 redirect   pft-alert-bridge -> throwaway topic (alerts/run-stack.sh bridge; Prometheus/Alertmanager keep
 #               running) and the sentry's /etc/pft-alertpath/ntfy.env -> the same throwaway topic, because the
 #               ~2 s bridge recreate can make ../alertpath report DEGRADED, and that page must not reach the operator
-#  3 inject     stop pft-timesync.timer (metrics only: chrony and postfiatd are not touched). The textfile keeps its
-#               last collect timestamp, so PFTTimesyncStale goes pending (> 300 s) then firing (for: 2m)
+#  3 inject     stop TIMER (metrics only: chrony and postfiatd are not touched). The textfile keeps its last
+#               collect timestamp, so PFTTimesyncStale goes pending (> 300 s) then firing (for: 2m).
+#               TIMER=pft-timesync.timer (default) drills the validator's own series (no host label);
+#               TIMER=pft-timesync-pull.timer HOST=sentry drills the sentry's pulled copy (host="sentry")
 #  4 expect     PFTTimesyncStale firing in Prometheus, active in Alertmanager, "[FIRING] PFTTimesyncStale" on the topic
 #  5 recover    start the timer; expect the alert gone from Prometheus/Alertmanager and "[RESOLVED]" on the topic
 #  6 restore    on ANY exit (trap): timer started, bridge back on the real env file (mount source checked), sentry
 #               env restored and compared by sha256 with the pre-drill file, after the sentry check reports OK
 #  7 verdict    one PASS/FAIL line per check; messages on the operator topics during the drill must be 0
 #
-# Usage: alert-drill.sh OUTDIR    Env: SSH_SENTRY ("ssh relay"), FIRE_BUDGET (900 s), RESOLVE_BUDGET (600 s)
+# Usage: alert-drill.sh OUTDIR    Env: TIMER, HOST (see 3), SSH_SENTRY ("ssh relay"), FIRE_BUDGET (900 s),
+#        RESOLVE_BUDGET (600 s)
 # Output is redacted: topic names -> <redacted>, home paths -> <home>, IPv4 -> <redacted-ip>.
 set -euo pipefail
 
@@ -29,6 +32,11 @@ RESOLVE_BUDGET="${RESOLVE_BUDGET:-600}"
 PROM=http://127.0.0.1:9090
 AM=http://127.0.0.1:9093
 ALERT=PFTTimesyncStale
+TIMER="${TIMER:-pft-timesync.timer}"
+HOST="${HOST:-}"
+case "$TIMER" in pft-timesync.timer|pft-timesync-pull.timer) ;; *) echo "TIMER must be pft-timesync(-pull).timer"; exit 3 ;; esac
+[[ "$HOST" =~ ^[a-z0-9_.-]*$ ]] || { echo "bad HOST"; exit 3; }
+SUMMARY="${HOST:-validator}: pft-timesync metrics are stale"
 REAL_BRIDGE_ENV="$(readlink -f "$HOME/.config/pft-alerts/ntfy.env")"
 SENTRY_ENV=/etc/pft-alertpath/ntfy.env
 SENTRY_BAK=/etc/pft-alertpath/ntfy.env.pre-tsdrill
@@ -51,28 +59,34 @@ node_state() {
     | jq -r '.result.info.server_state // "unreachable"' 2>/dev/null || echo unreachable
 }
 started_at() { sudo docker inspect -f '{{.State.StartedAt}}' postfiatd; }
-prom_state() { # alert state in Prometheus: inactive|pending|firing
-  curl -fsS "$PROM/api/v1/alerts" | jq -r --arg a "$ALERT" '[.data.alerts[] | select(.labels.alertname == $a) | .state] | first // "inactive"'
+prom_state() { # state of the alert for HOST in Prometheus: inactive|pending|firing
+  curl -fsS "$PROM/api/v1/alerts" | jq -r --arg a "$ALERT" --arg h "$HOST" '[.data.alerts[] | select(.labels.alertname == $a and (.labels.host // "") == $h) | .state] | first // "inactive"'
 }
-am_state() { curl -fsS "$AM/api/v2/alerts" | jq -r --arg a "$ALERT" '[.[] | select(.labels.alertname == $a) | .status.state] | first // "none"'; }
-stale_age() { curl -fsS "$PROM/api/v1/query" --data-urlencode 'query=time() - pft_timesync_collect_timestamp_seconds' | jq -r '.data.result[0].value[1] // "none" | (tonumber? | floor) // .'; }
+am_state() { curl -fsS "$AM/api/v2/alerts" | jq -r --arg a "$ALERT" --arg h "$HOST" '[.[] | select(.labels.alertname == $a and (.labels.host // "") == $h) | .status.state] | first // "none"'; }
+other_hosts() { # the same alert for any OTHER host (must stay empty: the drill must not fire the other copy)
+  curl -fsS "$PROM/api/v1/alerts" | jq -r --arg a "$ALERT" --arg h "$HOST" '[.data.alerts[] | select(.labels.alertname == $a and (.labels.host // "") != $h) | (.labels.host // "validator")] | join(",")'
+}
+stale_age() { curl -fsS "$PROM/api/v1/query" --data-urlencode 'query=time() - pft_timesync_collect_timestamp_seconds' | jq -r --arg h "$HOST" '[.data.result[] | select((.metric.host // "") == $h) | .value[1]] | first // "none" | (tonumber? | floor) // .'; }
 topic_titles() { # TOPIC -> one title per line for messages since the drill started
   curl -s --max-time 20 "https://ntfy.sh/$1/json?poll=1&since=$since" | jq -r 'select(.event == "message") | .title // ""' 2>/dev/null || true
 }
 topic_of() { sed -n -e 's|^NTFY_URL=https\{0,1\}://[^/]*/||p' -e 's|^NTFY_TOPIC=||p' | head -1 | tr -d '"[:space:]'; }
 sentry_sha() { "${SSH_SENTRY[@]}" "sudo sha256sum $1 2>/dev/null | cut -d' ' -f1" </dev/null; }
 sentry_check_line() { "${SSH_SENTRY[@]}" 'journalctl --utc -u pft-alertpath-check.service -n 30 --no-pager -o cat | grep -E "state=" | tail -1' </dev/null; }
-sample() { echo "$(ts) node=$(node_state) stale_age=$(stale_age)s prometheus=$(prom_state) alertmanager=$(am_state)"; }
+sample() { echo "$(ts) node=$(node_state) stale_age=$(stale_age)s prometheus=$(prom_state) alertmanager=$(am_state) other_hosts=$(other_hosts)"; }
+topic_summaries() { # TOPIC -> "title | message" per message since the drill started
+  curl -s --max-time 20 "https://ntfy.sh/$1/json?poll=1&since=$since" | jq -r 'select(.event == "message") | "\(.title // "") | \(.message // "")"' 2>/dev/null || true
+}
 
 restore() {
   [ "$RESTORED" -eq 1 ] && return 0
   RESTORED=1
   set +e   # a failing step must not abort the rest of the restore
   echo; echo "== 6. restore ($(ts))"
-  if [ "$TIMER_STOPPED" -eq 1 ] && ! systemctl is-active -q pft-timesync.timer; then
-    echo "  \$ sudo systemctl start pft-timesync.timer"; sudo systemctl start pft-timesync.timer
+  if [ "$TIMER_STOPPED" -eq 1 ] && ! systemctl is-active -q "$TIMER"; then
+    echo "  \$ sudo systemctl start $TIMER"; sudo systemctl start "$TIMER"
   fi
-  echo "  pft-timesync.timer: $(systemctl is-active pft-timesync.timer)"
+  echo "  $TIMER: $(systemctl is-active "$TIMER")"
   if [ "$BRIDGE_REDIR" -eq 1 ]; then
     echo "  \$ NTFY_ENV_FILE=<real bridge env> alerts/run-stack.sh bridge"
     NTFY_ENV_FILE="$REAL_BRIDGE_ENV" DOCKER="sudo docker" bash "$ROOT/alerts/run-stack.sh" bridge 2>&1 | red | sed 's/^/  /'
@@ -99,6 +113,8 @@ restore() {
   echo "  throwaway topic <redacted>: ${#got[@]} messages"
   printf '    %s\n' "${got[@]}"
   check "throwaway topic got [FIRING] $ALERT" "$(printf '%s\n' "${got[@]}" | grep -qx "\[FIRING\] $ALERT" && echo yes || echo no)"
+  echo "  message bodies on the throwaway topic:"; topic_summaries "$topic" | sed 's/^/    /'
+  check "the [FIRING] message body is the summary \"$SUMMARY\"" "$(topic_summaries "$topic" | grep -qxF "[FIRING] $ALERT | $SUMMARY" && echo yes || echo no)"
   check "throwaway topic got [RESOLVED] $ALERT" "$(printf '%s\n' "${got[@]}" | grep -qx "\[RESOLVED\] $ALERT" && echo yes || echo no)"
   local t n k=0
   for t in "${op_topics[@]}"; do
@@ -114,7 +130,7 @@ restore() {
 }
 trap restore EXIT
 
-echo "pft-timesync alert drill - $(ts) - $(sed -n 's/^PRETTY_NAME="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' /etc/os-release) - alert $ALERT"
+echo "pft-timesync alert drill - $(ts) - TIMER=$TIMER HOST=${HOST:-(none: validator)} - $(sed -n 's/^PRETTY_NAME="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' /etc/os-release) - alert $ALERT"
 echo "sha256 $(sha256sum "$0" | cut -c1-64) timesync/drill/alert-drill.sh"
 echo "sha256 $(sha256sum "$ROOT/alerts/timesync.rules.yml" | cut -c1-64) alerts/timesync.rules.yml"
 echo; echo "== 1. preflight"
@@ -123,7 +139,7 @@ if ! { curl -fsS "$PROM/-/ready" >/dev/null && curl -fsS "$AM/-/ready" >/dev/nul
 active="$(curl -fsS "$PROM/api/v1/alerts" | jq -r '[.data.alerts[] | .labels.alertname | select(test("^PFT(Timesync|Clock)"))] | join(",")')"
 [ -z "$active" ] || { echo "  timesync alerts already active ($active) - stopping"; exit 3; }
 [ "$(node_state)" = full ] || { echo "  node not full - stopping"; exit 3; }
-systemctl is-active -q pft-timesync.timer || { echo "  pft-timesync.timer not active - stopping"; exit 3; }
+systemctl is-active -q "$TIMER" || { echo "  $TIMER not active - stopping"; exit 3; }
 STARTED="$(started_at)"
 SENTRY_SHA="$(sentry_sha "$SENTRY_ENV")"
 [ ${#SENTRY_SHA} -eq 64 ] || { echo "  cannot hash the sentry env file - stopping"; exit 3; }
@@ -149,18 +165,19 @@ NTFY_ENV_FILE="$TBRIDGE" DOCKER="sudo docker" bash "$ROOT/alerts/run-stack.sh" b
 [ "$(bridge_src)" = "$TBRIDGE" ] || { echo "  bridge not on the throwaway file - stopping"; exit 1; }
 echo "  pft-alert-bridge -> throwaway (mount source checked); not recreated: $(sudo docker inspect -f '{{.Name}} {{.State.StartedAt}}' pft-prometheus pft-alertmanager | tr '\n' ' ')"
 
-echo; echo "== 3. inject: stop pft-timesync.timer (metrics stop; chrony and postfiatd untouched)"
+echo; echo "== 3. inject: stop $TIMER (metrics stop; chrony and postfiatd untouched)"
 TIMER_STOPPED=1
-echo "  \$ sudo systemctl stop pft-timesync.timer"; sudo systemctl stop pft-timesync.timer
+echo "  \$ sudo systemctl stop $TIMER"; sudo systemctl stop "$TIMER"
 t0="$(date -u +%s)"
 
 echo; echo "== 4. expect $ALERT firing (budget ${FIRE_BUDGET}s)"
-seen_pending=no seen_firing=no seen_am=no seen_topic=no
+seen_pending=no seen_firing=no seen_am=no seen_topic=no other_fired=no
 while [ $(( $(date -u +%s) - t0 )) -lt "$FIRE_BUDGET" ]; do
   s="$(sample)"; echo "  $s"
   [[ "$s" == *"prometheus=pending"* ]] && seen_pending=yes
   [[ "$s" == *"prometheus=firing"* ]] && seen_firing=yes
   [[ "$s" == *"alertmanager=active"* ]] && seen_am=yes
+  [[ "$s" == *"other_hosts=" ]] || other_fired=yes
   topic_titles "$topic" | grep -qx "\[FIRING\] $ALERT" && seen_topic=yes
   [ "$seen_firing" = yes ] && [ "$seen_am" = yes ] && [ "$seen_topic" = yes ] && break
   sleep 30
@@ -170,9 +187,10 @@ check "Prometheus showed $ALERT pending" "$seen_pending"
 check "Prometheus showed $ALERT firing" "$seen_firing"
 check "Alertmanager showed $ALERT active" "$seen_am"
 check "[FIRING] $ALERT reached the throwaway topic" "$seen_topic"
+check "the other host's $ALERT never fired during the drill" "$([ "$other_fired" = no ] && echo yes || echo no)"
 
-echo; echo "== 5. recover: start pft-timesync.timer (budget ${RESOLVE_BUDGET}s)"
-echo "  \$ sudo systemctl start pft-timesync.timer"; sudo systemctl start pft-timesync.timer
+echo; echo "== 5. recover: start $TIMER (budget ${RESOLVE_BUDGET}s)"
+echo "  \$ sudo systemctl start $TIMER"; sudo systemctl start "$TIMER"
 t1="$(date -u +%s)"; resolved=no topic_res=no
 while [ $(( $(date -u +%s) - t1 )) -lt "$RESOLVE_BUDGET" ]; do
   sleep 20
