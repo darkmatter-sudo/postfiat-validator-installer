@@ -1,0 +1,99 @@
+# alertpath mutation controls, code 067704c9fddef48f74ad0e1c61e63d85cde5217a 2026-10-28T14:50:31Z
+# pft-alertpath.sh sha256 289669622bf29208b48f80f7b31fe2338782c9900866f453ba9716b52a1183c3
+# control: unmutated script
+RESULT: 38 passed, 0 failed
+M01 CAUGHT (snapshot age threshold x100) by 1 test(s):
+    FAIL snapshot 200s old (want STALE rc=2 /last snapshot 20[0-9]s old/, got OK rc=0: {"checked_at":1793199063,"state":"OK","reasons":[],"snapshot_age":200,"delive
+M02 CAUGHT (watchdog delivery age never stale) by 1 test(s):
+    FAIL watchdog delivery 300s old (want STALE rc=2 /last watchdog delivery 300s/, got OK rc=0: {"checked_at":1793199094,"state":"OK","reasons":[],"snapshot_age":5
+M03 CAUGHT (missing delivery record not stale) by 2 test(s):
+    FAIL no delivery recorded (want STALE rc=2 /no watchdog delivery recorded/, got OK rc=0: {"checked_at":1793199126,"state":"OK","reasons":[],"snapshot_age":5,"de
+    FAIL notify sequence: got '[alertpath] DEGRADED|default [alertpath] RECOVERED|low '
+M04 CAUGHT (Prometheus reload failure ignored) by 1 test(s):
+    FAIL Prometheus reload failed (want DEGRADED rc=1 /Prometheus last config reload failed/, got OK rc=0: {"checked_at":1793199154,"state":"OK","reasons":[],"snaps
+count=0
+M05 NOT APPLIED (counter reset counted as 0)
+count=0
+M06 NOT APPLIED (counter increase always 0)
+M07 CAUGHT (Alertmanager down ignored) by 3 test(s):
+    FAIL Alertmanager down (want DEGRADED rc=1 /Alertmanager unreachable/, got OK rc=0: {"checked_at":1793199192,"state":"OK","reasons":[],"snapshot_age":6,"deliver
+    FAIL notify sequence: got '[alertpath] STALE|high [alertpath] RECOVERED|low '
+    FAIL text output: rc=0 2026-10-28T14:53:28Z state=OK accepted=1 rejected=0 snapshot_age=5 delivery_age=30
+M08 CAUGHT (webhook failures ignored) by 1 test(s):
+    FAIL webhook failures +4 (want DEGRADED rc=1 /webhook notifications failed \+4/, got OK rc=0: {"checked_at":1793199220,"state":"OK","reasons":[],"snapshot_age":
+M09 CAUGHT (bridge container state ignored) by 1 test(s):
+    FAIL bridge container stopped (want DEGRADED rc=1 /bridge container not running/, got DEGRADED rc=1: {"checked_at":1793199250,"state":"DEGRADED","reasons":["ntf
+M10 CAUGHT (bridge listener ignored) by 1 test(s):
+    FAIL bridge not listening (want DEGRADED rc=1 /bridge not listening/, got OK rc=0: {"checked_at":1793199278,"state":"OK","reasons":[],"snapshot_age":5,"delivery
+M11 CAUGHT (bridge ntfy errors ignored) by 1 test(s):
+    FAIL bridge ntfy errors +2 (want DEGRADED rc=1 /delivery errors \+2/, got OK rc=0: {"checked_at":1793199314,"state":"OK","reasons":[],"snapshot_age":5,"delivery
+M12 CAUGHT (mis-routed deliveries ignored) by 1 test(s):
+    FAIL mis-routed delivery (want DEGRADED rc=1 /mis-routed/, got OK rc=0: {"checked_at":1793199343,"state":"OK","reasons":[],"snapshot_age":6,"delivery_age":30,"s
+M13 CAUGHT (rule group eval age x100) by 1 test(s):
+    FAIL rule group eval 300s old (want DEGRADED rc=1 /last evaluated 300s ago/, got OK rc=0: {"checked_at":1793199368,"state":"OK","reasons":[],"snapshot_age":6,"d
+M14 CAUGHT (rule group not loaded ignored) by 1 test(s):
+    FAIL rule group not loaded (want DEGRADED rc=1 /rule group not loaded/, got ? rc=3: )
+M15 CAUGHT (replay of equal ts accepted) by 1 test(s):
+    FAIL replayed ts (want DEGRADED rc=1 /rejected/, got OK rc=0: {"checked_at":1793199441,"state":"OK","reasons":[],"snapshot_age":5,"delivery_age":30,"snapshots":
+M16 CAUGHT (future ts accepted) by 1 test(s):
+    FAIL ts 120s in the future (want STALE rc=2 /rejected/, got OK rc=0: {"checked_at":1793199469,"state":"OK","reasons":[],"snapshot_age":-119,"delivery_age":30,"s
+M17 CAUGHT (HMAC not compared) by 2 test(s):
+    FAIL bad HMAC alone (want STALE rc=2 /1 spooled message\(s\) rejected/, got OK rc=0: {"checked_at":1793199498,"state":"OK","reasons":[],"snapshot_age":5,"delive
+    FAIL body swapped under a valid sig (want DEGRADED rc=1 /rejected/, got DEGRADED rc=1: {"checked_at":1793199501,"state":"DEGRADED","reasons":["Prometheus unreac
+M18 CAUGHT (message type not checked) by 1 test(s):
+    FAIL wrong message type (want STALE rc=2 /rejected/, got OK rc=0: {"checked_at":1793199529,"state":"OK","reasons":[],"snapshot_age":6,"delivery_age":30,"snapsho
+M19 CAUGHT (no history window) by 1 test(s):
+    FAIL increase only vs. window (want OK rc=0 /"reasons":\[\]/, got DEGRADED rc=1: {"checked_at":1793199557,"state":"DEGRADED","reasons":["Prometheus rule evaluat
+M20 CAUGHT (resolved watchdog ignored) by 1 test(s):
+    FAIL watchdog resolved (want DEGRADED rc=1 /status resolved/, got OK rc=0: {"checked_at":1793199571,"state":"OK","reasons":[],"snapshot_age":6,"delivery_age":30
+M21 CAUGHT (no-Alertmanager ignored) by 1 test(s):
+    FAIL no Alertmanager discovered (want DEGRADED rc=1 /no Alertmanager/, got OK rc=0: {"checked_at":1793199601,"state":"OK","reasons":[],"snapshot_age":6,"deliver
+M22 CAUGHT (Prometheus notification errors ignored) by 2 test(s):
+    FAIL Prom notification errors (want DEGRADED rc=1 /notification errors \+2/, got OK rc=0: {"checked_at":1793199636,"state":"OK","reasons":[],"snapshot_age":5,"d
+    FAIL baseline sample before the cut is used (want DEGRADED rc=1 /notification errors \+2/, got OK rc=0: {"checked_at":1793199650,"state":"OK","reasons":[],"snap
+M23 CAUGHT (dropped notifications ignored) by 1 test(s):
+    FAIL Prom notifications dropped (want DEGRADED rc=1 /dropped \+1/, got OK rc=0: {"checked_at":1793199671,"state":"OK","reasons":[],"snapshot_age":5,"delivery_ag
+M24 CAUGHT (notify on every run) by 1 test(s):
+    FAIL notify sequence: got '[alertpath] RECOVERED|low [alertpath] DEGRADED|default [alertpath] DEGRADED|default [alertpath] STALE|high [alertpath] RECOVERED|low 
+M25 CAUGHT (no RECOVERED message) by 1 test(s):
+    FAIL notify sequence: got '[alertpath] DEGRADED|default [alertpath] STALE|high '
+M26 CAUGHT (metric label filter ignored) by 1 test(s):
+    FAIL snapshot fields: {"rule_eval_failures":3,"wd_last_eval":2793196700,"amfail":10,"amtotal":13,"running":1,"listening":0,"ntfy_errors":1,"wd_count":3} (want {
+M27 CAUGHT (rule evaluation failures ignored) by 2 test(s):
+    FAIL rule eval failures +3 (want DEGRADED rc=1 /rule evaluation failures \+3/, got OK rc=0: {"checked_at":1793199802,"state":"OK","reasons":[],"snapshot_age":5,
+    FAIL counter reset then +2 (want DEGRADED rc=1 /rule evaluation failures \+2/, got OK rc=0: {"checked_at":1793199814,"state":"OK","reasons":[],"snapshot_age":6,
+M28 CAUGHT (Alertmanager reload failure ignored) by 1 test(s):
+    FAIL Alertmanager reload failed (want DEGRADED rc=1 /Alertmanager last config reload failed/, got OK rc=0: {"checked_at":1793199836,"state":"OK","reasons":[],"s
+M29 CAUGHT (DEGRADED exits 2) by 21 test(s):
+    FAIL watchdog resolved (want DEGRADED rc=1 /status resolved/, got DEGRADED rc=2: {"checked_at":1793199862,"state":"DEGRADED","reasons":["watchdog delivery statu
+    FAIL Prometheus down (want DEGRADED rc=1 /"reasons":\["Prometheus unreachable"\]/, got DEGRADED rc=2: {"checked_at":1793199863,"state":"DEGRADED","reasons":["Pr
+    FAIL Prometheus reload failed (want DEGRADED rc=1 /Prometheus last config reload failed/, got DEGRADED rc=2: {"checked_at":1793199864,"state":"DEGRADED","reason
+    FAIL rule eval failures +3 (want DEGRADED rc=1 /rule evaluation failures \+3/, got DEGRADED rc=2: {"checked_at":1793199865,"state":"DEGRADED","reasons":["Promet
+    FAIL Prom notification errors (want DEGRADED rc=1 /notification errors \+2/, got DEGRADED rc=2: {"checked_at":1793199866,"state":"DEGRADED","reasons":["Promethe
+    FAIL Prom notifications dropped (want DEGRADED rc=1 /dropped \+1/, got DEGRADED rc=2: {"checked_at":1793199867,"state":"DEGRADED","reasons":["Prometheus notific
+    FAIL no Alertmanager discovered (want DEGRADED rc=1 /no Alertmanager/, got DEGRADED rc=2: {"checked_at":1793199867,"state":"DEGRADED","reasons":["Prometheus has
+    FAIL rule group not loaded (want DEGRADED rc=1 /rule group not loaded/, got DEGRADED rc=2: {"checked_at":1793199868,"state":"DEGRADED","reasons":["alertpath rul
+    FAIL rule group eval 300s old (want DEGRADED rc=1 /last evaluated 300s ago/, got DEGRADED rc=2: {"checked_at":1793199869,"state":"DEGRADED","reasons":["alertpat
+    FAIL Alertmanager down (want DEGRADED rc=1 /Alertmanager unreachable/, got DEGRADED rc=2: {"checked_at":1793199870,"state":"DEGRADED","reasons":["Alertmanager u
+    FAIL Alertmanager reload failed (want DEGRADED rc=1 /Alertmanager last config reload failed/, got DEGRADED rc=2: {"checked_at":1793199871,"state":"DEGRADED","re
+    FAIL webhook failures +4 (want DEGRADED rc=1 /webhook notifications failed \+4/, got DEGRADED rc=2: {"checked_at":1793199871,"state":"DEGRADED","reasons":["Aler
+    FAIL bridge container stopped (want DEGRADED rc=1 /bridge container not running/, got DEGRADED rc=2: {"checked_at":1793199872,"state":"DEGRADED","reasons":["ntf
+    FAIL bridge not listening (want DEGRADED rc=1 /bridge not listening/, got DEGRADED rc=2: {"checked_at":1793199873,"state":"DEGRADED","reasons":["ntfy bridge not
+    FAIL bridge ntfy errors +2 (want DEGRADED rc=1 /delivery errors \+2/, got DEGRADED rc=2: {"checked_at":1793199874,"state":"DEGRADED","reasons":["ntfy bridge del
+    FAIL mis-routed delivery (want DEGRADED rc=1 /mis-routed/, got DEGRADED rc=2: {"checked_at":1793199874,"state":"DEGRADED","reasons":["alertpath sink got 1 mis-r
+    FAIL counter reset then +2 (want DEGRADED rc=1 /rule evaluation failures \+2/, got DEGRADED rc=2: {"checked_at":1793199876,"state":"DEGRADED","reasons":["Promet
+    FAIL baseline sample before the cut is used (want DEGRADED rc=1 /notification errors \+2/, got DEGRADED rc=2: {"checked_at":1793199879,"state":"DEGRADED","reaso
+    FAIL replayed ts (want DEGRADED rc=1 /rejected/, got DEGRADED rc=2: {"checked_at":1793199880,"state":"DEGRADED","reasons":["1 spooled message(s) rejected (HMAC/
+    FAIL body swapped under a valid sig (want DEGRADED rc=1 /rejected/, got DEGRADED rc=2: {"checked_at":1793199882,"state":"DEGRADED","reasons":["1 spooled message
+    FAIL text output: rc=2 transition OK -> DEGRADED at 1793199887: Alertmanager unreachable
+M30 CAUGHT (DEGRADED outranks STALE) by 4 test(s):
+    FAIL bad HMAC alone (want STALE rc=2 /1 spooled message\(s\) rejected/, got DEGRADED rc=1: {"checked_at":1793199917,"state":"DEGRADED","reasons":["no snapshot r
+    FAIL ts 120s in the future (want STALE rc=2 /rejected/, got DEGRADED rc=1: {"checked_at":1793199919,"state":"DEGRADED","reasons":["no snapshot received from the
+    FAIL wrong message type (want STALE rc=2 /rejected/, got DEGRADED rc=1: {"checked_at":1793199920,"state":"DEGRADED","reasons":["no snapshot received from the va
+    FAIL oversize message (want STALE rc=2 /rejected/, got DEGRADED rc=1: {"checked_at":1793199922,"state":"DEGRADED","reasons":["no snapshot received from the vali
+M31 CAUGHT (increase counted over the whole history) by 1 test(s):
+    FAIL increase older than INC_WINDOW_SEC clears (want OK rc=0 /"reasons":\[\]/, got DEGRADED rc=1: {"checked_at":1793199946,"state":"DEGRADED","reasons":["Promet
+M32 CAUGHT (baseline sample before the cut ignored) by 1 test(s):
+    FAIL baseline sample before the cut is used (want DEGRADED rc=1 /notification errors \+2/, got OK rc=0: {"checked_at":1793199984,"state":"OK","reasons":[],"snap
+MUTANTS: 30/32 caught, 2 not applied
+mutate exit=1

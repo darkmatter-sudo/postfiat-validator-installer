@@ -98,7 +98,39 @@ checks that the bridge never saw the watchdog. A trap always restarts Alertmanag
 
 ## Results
 
-RESULTS_PLACEHOLDER
+All runs on the two-host testnet setup (validator + sentry), 2026-10-28. Raw logs are in [`logs/`](logs/)
+(home path → `~`, hostnames → validator/sentry, ntfy topics → `<redacted>`).
+
+**Live drill** ([`logs/11-drill-PASS-067704c.log`](logs/11-drill-PASS-067704c.log), code 067704c, RESULT: PASS):
+
+| fault | detected | latency | restored to OK |
+|---|---|---|---|
+| `docker stop pft-alertmanager` | DEGRADED ("Alertmanager unreachable") | 67 s | — |
+| same, continued | STALE (last watchdog delivery 195 s old) | 189 s | — |
+| Alertmanager started again | — | — | OK after 181 s |
+| PromQL syntax error in `alertpath.rules.yml` + SIGHUP | DEGRADED ("Prometheus last config reload failed") | 55 s | OK 58 s after restore; rules file identical to the pre-drill copy |
+
+The throwaway topic got 6 messages (4 incidents + 2 RECOVERED). The operator topic got **0** messages during the
+drill (checked for both configured topic sources), and the bridge saw the watchdog 0 times.
+
+**First live drill failed** ([`logs/07-drill-FAILED-recovery-03a6e92.log`](logs/07-drill-FAILED-recovery-03a6e92.log)).
+After Alertmanager came back, the state stayed DEGRADED for 480 s because counter increases were judged over the
+whole 10-min history. Fixed in 067704c (`INC_WINDOW_SEC`, 180 s) with new fixture tests and mutants M31/M32, then
+re-drilled (log 11). Mutation run 9 was stopped while the fix was written, and run 12 had 2 mutants (M05/M06) that no
+longer applied to the new code. They were retargeted and the final run 13 catches **32/32**.
+
+| check | result | log |
+|---|---|---|
+| promtool check rules + test rules (incl. `alertpath.tests.yml`), promtool check config, amtool check-config | SUCCESS, exit 0 | [`15`](logs/15-offline-final.log) |
+| amtool routes: watchdog → `alertpath` only; node alerts → `bridge` | as expected | [`15`](logs/15-offline-final.log), [`02`](logs/02-alerts-route-check.log) |
+| shellcheck 0.8.0 | exit 0 | [`15`](logs/15-offline-final.log) |
+| sink tests / checker fixture tests | 11/11, 38/38 | [`15`](logs/15-offline-final.log) |
+| mutation controls | 32/32 caught, 0 not applied | [`13`](logs/13-mutants-final-32of32.log) |
+| installs + pft-integrity rebaseline (both hosts) | PASS 82 / 50 | [`03`](logs/03-install-validator.log) [`04`](logs/04-install-sentry.log) [`06`](logs/06-rebaseline-install.log) [`10`](logs/10-rebaseline-fix-067704c.log) |
+| final state: installed binary = repo sha256 on both hosts, sentry OK, **pft-integrity PASS on both hosts** | PASS | [`16`](logs/16-final-state-integrity.log) |
+
+Log 14 is the same offline run as 15, but its syntax-check step was labelled `py_compile` while the command was
+`ast.parse`. It was re-run with the right label as log 15.
 
 ## Limitations
 

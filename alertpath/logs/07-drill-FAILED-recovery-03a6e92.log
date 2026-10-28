@@ -1,0 +1,29 @@
+# alertpath live drill, code 03a6e923187bbe7f452f9d8e5e17afae8dd788bb, drill.sh sha256 288b070045f458399fe2c61f6cfe7c1abeede28d9fab3b987075825a7e4f3e2f, pft-alertpath.sh sha256 a23cea1d5ba9c47727071124f07c08f20f3935e276e5fbab9928695d6c2c9229, host validator + sentry
+2026-10-28T14:32:48Z drill start (rules sha256 b9f0b6bef62c861e0b01fd927c1c880818c7ecfe395c71949d3a368ec1891ffe)
+2026-10-28T14:32:48Z phase 0: baseline
+2026-10-28T14:32:49Z   sentry state OK
+2026-10-28T14:32:49Z PASS baseline OK
+2026-10-28T14:32:49Z phase 1: stop pft-alertmanager
+2026-10-28T14:32:50Z   t0=1793197969 pft-alertmanager stopped
+2026-10-28T14:32:51Z   sentry state OK (since 1793197701)
+2026-10-28T14:33:30Z   sentry state DEGRADED (since 1793198006)
+2026-10-28T14:33:30Z   -> DEGRADED detected 37 s after t0
+2026-10-28T14:33:30Z PASS AM stop -> DEGRADED (latency 37s)
+2026-10-28T14:33:31Z   sentry state DEGRADED (since 1793198006)
+2026-10-28T14:36:32Z   sentry state STALE (since 1793198188)
+2026-10-28T14:36:32Z   -> STALE detected 219 s after t0
+2026-10-28T14:36:32Z PASS AM stop -> STALE (latency 219s)
+  {"state":"STALE","reasons":["last watchdog delivery 232s before the snapshot (> 180s)","Prometheus notification errors +3","Prometheus notifications dropped +3","Alertmanager unreachable"],"snapshot_age":9,"delivery_age":232}
+2026-10-28T14:36:33Z   t0=1793198193 pft-alertmanager started
+2026-10-28T14:36:35Z   sentry state STALE (since 1793198188)
+2026-10-28T14:37:34Z   sentry state DEGRADED (since 1793198249)
+2026-10-28T14:44:35Z   -> OK NOT reached within 480s
+2026-10-28T14:44:35Z FAIL AM start -> OK (latency -1s)
+2026-10-28T14:44:35Z phase 2: break the alertpath rules file + reload Prometheus
+2026-10-28T14:44:35Z   t0=1793198675 rules broken (1 line changed), SIGHUP sent
+2026-10-28T14:44:38Z   prometheus_config_last_reload_successful=0
+2026-10-28T14:44:38Z PASS broken rules -> reload fails
+2026-10-28T14:44:39Z   sentry state DEGRADED (since 1793198249)
+2026-10-28T14:46:50Z trap: rules file restored + Prometheus reloaded
+drill exit=143
+# STOPPED 2026-10-28T14:47:20Z by the agent (SIGTERM to drill.sh) during phase 2. Phase 1 recovery FAILED: after Alertmanager restarted the sentry stayed DEGRADED for 480 s because the Prometheus notification error/dropped counters that rose during the outage counted as 'increased' for the whole 10-min history window (WINDOW_SEC=600), so a recovered pipeline could not return to OK for up to 10 min; phase 2 could then not show a fresh DEGRADED transition. Trap restored rules file + reloaded Prometheus (verified: git diff empty, reload_successful 1, pft-alertmanager Up). Fix: counter increases are judged over INC_WINDOW_SEC (180 s); re-run on the fixed commit.

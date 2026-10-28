@@ -1,0 +1,38 @@
+# alertpath final state both hosts 2026-10-28T15:34:09Z, code 0977258afaa1d2f89cddc5e78bf686085721fc28
+$ git status --short alerts alertpath  (live stack mounts this checkout read-only)
+repo pft-alertpath.sh: 289669622bf29208b48f80f7b31fe2338782c9900866f453ba9716b52a1183c3  -
+## validator
+installed: 289669622bf29208b48f80f7b31fe2338782c9900866f453ba9716b52a1183c3  -
+$ systemctl is-active pft-alertpath-sink pft-alertpath-push.timer
+active
+active
+$ prometheus_config_last_reload_successful / alertpath rule
+null
+[{"a":"PFTAlertPipelineWatchdog","s":"firing"}]
+$ sudo pft-integrity verify
+OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-10-28T14:49:06Z
+RESULT: PASS - 82 unchanged, 0 warn, 0 fail -> exit 0
+## sentry
+installed: 289669622bf29208b48f80f7b31fe2338782c9900866f453ba9716b52a1183c3  -
+active
+$ sudo pft-alertpath status --json
+{
+  "state": "OK",
+  "since": 1793199530,
+  "last_ts": 1793201592,
+  "rejected": 0,
+  "last": {
+    "checked_at": 1793201611,
+    "state": "OK",
+    "reasons": [],
+    "snapshot_age": 19,
+    "delivery_age": 59,
+    "snapshots": 19
+  }
+}
+rc=0
+$ sudo pft-integrity verify
+OS: Ubuntu 22.04.5 LTS | container: postfiatd-sentry | baseline: 2026-10-28T14:49:24Z
+RESULT: PASS - 50 unchanged, 0 warn, 0 fail -> exit 0
+$ (validator) curl -s http://127.0.0.1:9090/metrics | grep ^prometheus_config_last_reload_successful   # Prometheus does not scrape itself here, so the API query above is empty; pft-alertpath push reads /metrics
+prometheus_config_last_reload_successful 1

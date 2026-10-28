@@ -1,0 +1,31 @@
+# alertpath go-live reload 2026-10-28T14:27:42Z on validator
+bridge log lines before: 5
+bridge lines mentioning watchdog before: 0
+SIGHUP alertmanager
+SIGHUP prometheus
+first sink delivery at 2026-10-28T14:29:42Z
+prometheus_config_last_reload_successful 1
+prometheus_rule_evaluation_failures_total{rule_group="/etc/pft-alerts/alertpath.rules.yml;alertpath"} 0
+prometheus_rule_evaluations_total{rule_group="/etc/pft-alerts/alertpath.rules.yml;alertpath"} 8
+prometheus_rule_group_interval_seconds{rule_group="/etc/pft-alerts/alertpath.rules.yml;alertpath"} 15
+prometheus_rule_group_iterations_missed_total{rule_group="/etc/pft-alerts/alertpath.rules.yml;alertpath"} 0
+prometheus_rule_group_iterations_total{rule_group="/etc/pft-alerts/alertpath.rules.yml;alertpath"} 8
+prometheus_rule_group_last_duration_seconds{rule_group="/etc/pft-alerts/alertpath.rules.yml;alertpath"} 0.000575369
+prometheus_rule_group_last_evaluation_samples{rule_group="/etc/pft-alerts/alertpath.rules.yml;alertpath"} 2
+prometheus_rule_group_last_evaluation_timestamp_seconds{rule_group="/etc/pft-alerts/alertpath.rules.yml;alertpath"} 1.7931977819365993e+09
+prometheus_rule_group_last_rule_duration_sum_seconds{rule_group="/etc/pft-alerts/alertpath.rules.yml;alertpath"} 0.000527691
+prometheus_rule_group_rules{rule_group="/etc/pft-alerts/alertpath.rules.yml;alertpath"} 1
+alertmanager_config_last_reload_successful 1
+cat: /var/lib/pft-alertpath/last.json: Permission denied
+sink last.json: 
+[{"alertname":"PFTAlertPipelineWatchdog","state":"firing"}]
+# NOTE 2026-10-28T14:29:58Z: the 'first sink delivery at 14:29:42Z' line above is WRONG - the wait loop ran unprivileged, could not stat /var/lib/pft-alertpath (DynamicUser state dir under /var/lib/private, 0700 root), and that line is just its 120 s timeout. Same cause for 'Permission denied' / empty 'sink last.json'. Real values, read as root:
+2026-10-28T14:26:58+0000 <host>: Started pft-alertpath sink: loopback webhook receiver for the PFTAlertPipelineWatchdog alert (127.0.0.1:9096).
+2026-10-28T14:26:58+0000 <host>: alertpath sink listening on 127.0.0.1:9096 state=/var/lib/pft-alertpath
+2026-10-28T14:27:56+0000 <host>: delivery 1 status=firing
+2026-10-28T14:28:56+0000 <host>: delivery 2 status=firing
+sink last.json (root): {"count": 2, "received": 1793197736, "startsAt": "2026-10-28T14:27:56.934Z", "status": "firing", "unexpected": 0, "v": 1}
+bridge lines mentioning watchdog after: 0
+alertmanager_notifications_total{integration="webhook"} 15
+{"checked_at":1793197801,"state":"OK","reasons":[],"snapshot_age":30,"delivery_age":35,"snapshots":5,"accepted":1,"since":1793197701}
+sentry check exit=0

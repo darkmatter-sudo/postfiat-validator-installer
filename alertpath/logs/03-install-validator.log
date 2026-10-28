@@ -1,0 +1,16 @@
+# alertpath install validator 2026-10-28T14:26:56Z
+created /etc/pft-alertpath/hmac.key
+pinned sentry host key: SHA256:pqN7oiBkAu08uT6J/s+Tvtbt6c5Mt1nVwyZfxJ0nAlU
+Created symlink /etc/systemd/system/multi-user.target.wants/pft-alertpath-sink.service → /etc/systemd/system/pft-alertpath-sink.service.
+Created symlink /etc/systemd/system/timers.target.wants/pft-alertpath-push.timer → /etc/systemd/system/pft-alertpath-push.timer.
+installed. Copy /etc/pft-alertpath/hmac.key and /etc/pft-alertpath/id_ed25519.pub to the sentry.
+exit=0
+● pft-alertpath-sink.service - pft-alertpath sink: loopback webhook receiver for the PFTAlertPipelineWatchdog alert (127.0.0.1:9096)
+     Loaded: loaded (/etc/systemd/system/pft-alertpath-sink.service; enabled; vendor preset: enabled)
+     Active: active (running) since Wed 2026-10-28 14:26:58 UTC; 2s ago
+       Docs: https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/alertpath
+   Main PID: 1131624 (python3)
+LISTEN 0      5      127.0.0.1:9096 0.0.0.0:*
+NEXT                        LEFT     LAST                        PASSED UNIT                     ACTIVATES
+Wed 2026-10-28 14:27:28 UTC 26s left Wed 2026-10-28 14:26:58 UTC 3s ago pft-alertpath-push.timer pft-alertpath-push.service
+

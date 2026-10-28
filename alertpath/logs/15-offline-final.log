@@ -1,0 +1,142 @@
+# alertpath final offline suite, code 0977258afaa1d2f89cddc5e78bf686085721fc28 2026-10-28T15:33:12Z on validator
+289669622bf29208b48f80f7b31fe2338782c9900866f453ba9716b52a1183c3  pft-alertpath.sh
+091f8cad2440466c715d23a8a1563f97f85f5f763446ee46a4a86575265b1a95  alertpath_sink.py
+657dc6fbea493abfbe22e4c7e41b762ce1e51aaa1c64826315d1f6e05317185a  install.sh
+288b070045f458399fe2c61f6cfe7c1abeede28d9fab3b987075825a7e4f3e2f  drill/drill.sh
+c6491e07b92f5fade9a1d7f4a247d26138625487529b75ca83486b6934eb1528  tests/mutate.sh
+2783020b6cfec7faf19e9242059c5db2b8881ba00e49dd6f7afb1f8ded6a6de9  tests/test-alertpath.sh
+2839bd8df8353a423f184a9396fdf059798d60e207762c8fc0512be13260cb9b  tests/test-sink.sh
+d62b98634cf6e04f3654c03d46b9ec3c48863916ac969b16051851228eaf45b2  tests/mutants.tsv
+b9f0b6bef62c861e0b01fd927c1c880818c7ecfe395c71949d3a368ec1891ffe  alertpath.rules.yml
+6935c8e1622e038a5447324b93599eb2693a6ed72e31829781664fd2049b7089  alertpath.tests.yml
+de1a1b4bd65622981ee41174538179c404a66df5f1cf2193a541b37d86c5e833  alertmanager.yml
+7823f2b46f5b486cc2c004005b9e5aec2f1286c3f8ec8ed1bf1e61294764bdc4  run-stack.sh
+## alerts/run-stack.sh check (promtool check rules + test rules incl. alertpath.tests.yml, promtool check config, amtool check-config)
+2026-10-28T15:33:12Z promtool check rules
+Checking postfiat.rules.yml
+  SUCCESS: 16 rules found
+
+Checking divergence.rules.yml
+  SUCCESS: 2 rules found
+
+Checking logship.rules.yml
+  SUCCESS: 1 rules found
+
+Checking resources.rules.yml
+  SUCCESS: 10 rules found
+
+Checking alertpath.rules.yml
+  SUCCESS: 1 rules found
+
+2026-10-28T15:33:13Z promtool test rules
+  SUCCESS
+
+  SUCCESS
+
+  SUCCESS
+
+  SUCCESS
+
+  SUCCESS
+
+2026-10-28T15:33:19Z promtool check config (prometheus.yml + slo rules at /etc/pft-slo)
+Checking /etc/pft-alerts/prometheus.yml
+  SUCCESS: 6 rule files found
+ SUCCESS: /etc/pft-alerts/prometheus.yml is valid prometheus config file syntax
+
+Checking /etc/pft-alerts/postfiat.rules.yml
+  SUCCESS: 16 rules found
+
+Checking /etc/pft-alerts/divergence.rules.yml
+  SUCCESS: 2 rules found
+
+Checking /etc/pft-alerts/logship.rules.yml
+  SUCCESS: 1 rules found
+
+Checking /etc/pft-alerts/resources.rules.yml
+  SUCCESS: 10 rules found
+
+Checking /etc/pft-alerts/alertpath.rules.yml
+  SUCCESS: 1 rules found
+
+Checking /etc/pft-slo/slo.rules.yml
+  SUCCESS: 17 rules found
+
+2026-10-28T15:33:20Z amtool check-config
+Checking '/w/alertmanager.yml'  SUCCESS
+Found:
+ - global config
+ - route
+ - 2 inhibit rules
+ - 2 receivers
+ - 0 templates
+
+exit=0
+## amtool config routes test alertname=PFTAlertPipelineWatchdog
+alertpath
+exit=0
+## amtool config routes test alertname=PFTNodeRPCDown
+bridge
+exit=0
+## amtool config routes test alertname=PFTExporterDown
+bridge
+exit=0
+## shellcheck version: 0.8.0
+shellcheck exit=0
+## python3 ast.parse syntax check: alertpath_sink.py
+exit=0
+## tests/test-sink.sh
+PASS watchdog delivery recorded
+PASS received timestamp is now (+-2s)
+PASS mis-routed delivery answered 200
+PASS mis-routed delivery does not refresh the heartbeat
+PASS resolved status + unexpected counter carried
+PASS wrong path -> 404
+PASS malformed body -> 400
+PASS non-object JSON -> 400
+PASS bad requests leave state unchanged
+PASS listens on 127.0.0.1 only
+PASS mis-route logged
+RESULT: 11 passed, 0 failed
+exit=0
+## tests/test-alertpath.sh
+PASS no snapshot -> STALE rc=2
+PASS healthy snapshot -> OK rc=0
+PASS snapshot 200s old -> STALE rc=2
+PASS watchdog delivery 300s old -> STALE rc=2
+PASS no delivery recorded -> STALE rc=2
+PASS watchdog resolved -> DEGRADED rc=1
+PASS Prometheus down -> DEGRADED rc=1
+PASS Prometheus reload failed -> DEGRADED rc=1
+PASS rule eval failures +3 -> DEGRADED rc=1
+PASS Prom notification errors -> DEGRADED rc=1
+PASS Prom notifications dropped -> DEGRADED rc=1
+PASS no Alertmanager discovered -> DEGRADED rc=1
+PASS rule group not loaded -> DEGRADED rc=1
+PASS rule group eval 300s old -> DEGRADED rc=1
+PASS Alertmanager down -> DEGRADED rc=1
+PASS Alertmanager reload failed -> DEGRADED rc=1
+PASS webhook failures +4 -> DEGRADED rc=1
+PASS bridge container stopped -> DEGRADED rc=1
+PASS bridge not listening -> DEGRADED rc=1
+PASS bridge ntfy errors +2 -> DEGRADED rc=1
+PASS mis-routed delivery -> DEGRADED rc=1
+PASS counter reset to 0 -> OK rc=0
+PASS counter reset then +2 -> DEGRADED rc=1
+PASS increase only vs. window -> OK rc=0
+PASS increase older than INC_WINDOW_SEC clears -> OK rc=0
+PASS baseline sample before the cut is used -> DEGRADED rc=1
+PASS bad HMAC alone -> STALE rc=2
+PASS replayed ts -> DEGRADED rc=1
+PASS ts 120s in the future -> STALE rc=2
+PASS wrong message type -> STALE rc=2
+PASS body swapped under a valid sig -> DEGRADED rc=1
+PASS oversize message -> STALE rc=2
+PASS spool full refused
+PASS notify sequence: [alertpath] DEGRADED|default [alertpath] STALE|high [alertpath] RECOVERED|low 
+PASS text output DEGRADED rc=1
+PASS push --print bash HMAC == openssl HMAC
+PASS snapshot parses fixture scrapes: {"rule_eval_failures":3,"wd_last_eval":1793196700,"amfail":3,"amtotal":13,"running":1,"listening":0,"ntfy_errors":1,"wd_count":3}
+PASS snapshot with everything down: [0,null,0,null,0,null]
+RESULT: 38 passed, 0 failed
+exit=0

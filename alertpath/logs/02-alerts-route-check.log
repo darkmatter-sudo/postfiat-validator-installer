@@ -1,0 +1,76 @@
+# alertpath: ../alerts check with alertpath rule + route 2026-10-28T14:26:34Z on validator
+b9f0b6bef62c861e0b01fd927c1c880818c7ecfe395c71949d3a368ec1891ffe  alertpath.rules.yml
+6935c8e1622e038a5447324b93599eb2693a6ed72e31829781664fd2049b7089  alertpath.tests.yml
+de1a1b4bd65622981ee41174538179c404a66df5f1cf2193a541b37d86c5e833  alertmanager.yml
+a0442dbc9d10193b0a87fbdf298bcf4d9dbb2b13a06d612c003b6fc0a4249609  prometheus.yml
+7823f2b46f5b486cc2c004005b9e5aec2f1286c3f8ec8ed1bf1e61294764bdc4  run-stack.sh
+2026-10-28T14:26:34Z promtool check rules
+Checking postfiat.rules.yml
+  SUCCESS: 16 rules found
+
+Checking divergence.rules.yml
+  SUCCESS: 2 rules found
+
+Checking logship.rules.yml
+  SUCCESS: 1 rules found
+
+Checking resources.rules.yml
+  SUCCESS: 10 rules found
+
+Checking alertpath.rules.yml
+  SUCCESS: 1 rules found
+
+2026-10-28T14:26:37Z promtool test rules
+  SUCCESS
+
+  SUCCESS
+
+  SUCCESS
+
+  SUCCESS
+
+  SUCCESS
+
+2026-10-28T14:26:42Z promtool check config (prometheus.yml + slo rules at /etc/pft-slo)
+Checking /etc/pft-alerts/prometheus.yml
+  SUCCESS: 6 rule files found
+ SUCCESS: /etc/pft-alerts/prometheus.yml is valid prometheus config file syntax
+
+Checking /etc/pft-alerts/postfiat.rules.yml
+  SUCCESS: 16 rules found
+
+Checking /etc/pft-alerts/divergence.rules.yml
+  SUCCESS: 2 rules found
+
+Checking /etc/pft-alerts/logship.rules.yml
+  SUCCESS: 1 rules found
+
+Checking /etc/pft-alerts/resources.rules.yml
+  SUCCESS: 10 rules found
+
+Checking /etc/pft-alerts/alertpath.rules.yml
+  SUCCESS: 1 rules found
+
+Checking /etc/pft-slo/slo.rules.yml
+  SUCCESS: 17 rules found
+
+2026-10-28T14:26:43Z amtool check-config
+Checking '/w/alertmanager.yml'  SUCCESS
+Found:
+ - global config
+ - route
+ - 2 inhibit rules
+ - 2 receivers
+ - 0 templates
+
+run-stack check exit=0
+## route alertname=PFTAlertPipelineWatchdog -> alertpath
+## route alertname=PFTNodeRPCDown -> bridge
+## route alertname=PFTExporterDown -> bridge
+## route alertname=PFTSLOBudgetBurnFast -> bridge
+## routing tree
+Routing tree:
+.
+└── default-route  receiver: bridge
+    └── {alertname="PFTAlertPipelineWatchdog"}  receiver: alertpath
+

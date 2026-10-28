@@ -1,0 +1,52 @@
+# alertpath live drill (re-run on fixed code), code 067704c9fddef48f74ad0e1c61e63d85cde5217a, drill.sh sha256 288b070045f458399fe2c61f6cfe7c1abeede28d9fab3b987075825a7e4f3e2f, pft-alertpath.sh sha256 289669622bf29208b48f80f7b31fe2338782c9900866f453ba9716b52a1183c3, installed sentry binary sha256 289669622bf29208b48f80f7b31fe2338782c9900866f453ba9716b52a1183c3
+2026-10-28T14:50:32Z drill start (rules sha256 b9f0b6bef62c861e0b01fd927c1c880818c7ecfe395c71949d3a368ec1891ffe)
+2026-10-28T14:50:32Z phase 0: baseline
+2026-10-28T14:50:33Z   sentry state OK
+2026-10-28T14:50:33Z PASS baseline OK
+2026-10-28T14:50:33Z phase 1: stop pft-alertmanager
+2026-10-28T14:50:33Z   t0=1793199033 pft-alertmanager stopped
+2026-10-28T14:50:34Z   sentry state OK (since 1793198856)
+2026-10-28T14:51:42Z   sentry state DEGRADED (since 1793199100)
+2026-10-28T14:51:42Z   -> DEGRADED detected 67 s after t0
+2026-10-28T14:51:42Z PASS AM stop -> DEGRADED (latency 67s)
+2026-10-28T14:51:43Z   sentry state DEGRADED (since 1793199100)
+2026-10-28T14:53:46Z   sentry state STALE (since 1793199222)
+2026-10-28T14:53:46Z   -> STALE detected 189 s after t0
+2026-10-28T14:53:46Z PASS AM stop -> STALE (latency 189s)
+  {"state":"STALE","reasons":["last watchdog delivery 195s before the snapshot (> 180s)","Prometheus notification errors +2","Prometheus notifications dropped +2","Alertmanager unreachable"],"snapshot_age":15,"delivery_age":195}
+2026-10-28T14:53:47Z   t0=1793199226 pft-alertmanager started
+2026-10-28T14:53:47Z   sentry state STALE (since 1793199222)
+2026-10-28T14:54:47Z   sentry state DEGRADED (since 1793199284)
+2026-10-28T14:56:53Z   sentry state OK (since 1793199407)
+2026-10-28T14:56:53Z   -> OK detected 181 s after t0
+2026-10-28T14:56:53Z PASS AM start -> OK (latency 181s)
+2026-10-28T14:56:53Z phase 2: break the alertpath rules file + reload Prometheus
+2026-10-28T14:56:53Z   t0=1793199413 rules broken (1 line changed), SIGHUP sent
+2026-10-28T14:56:57Z   prometheus_config_last_reload_successful=0
+2026-10-28T14:56:57Z PASS broken rules -> reload fails
+2026-10-28T14:56:57Z   sentry state OK (since 1793199407)
+2026-10-28T14:57:52Z   sentry state DEGRADED (since 1793199468)
+2026-10-28T14:57:52Z   -> DEGRADED detected 55 s after t0
+2026-10-28T14:57:52Z PASS broken rules -> DEGRADED (latency 55s)
+  {"state":"DEGRADED","reasons":["Prometheus last config reload failed"]}
+2026-10-28T14:57:55Z   t0=1793199472 rules restored, SIGHUP sent, prometheus_config_last_reload_successful=1
+2026-10-28T14:57:55Z PASS restored rules -> reload ok
+2026-10-28T14:57:56Z   sentry state DEGRADED (since 1793199468)
+2026-10-28T14:58:55Z   sentry state OK (since 1793199530)
+2026-10-28T14:58:55Z   -> OK detected 58 s after t0
+2026-10-28T14:58:55Z PASS restore -> OK (latency 58s)
+2026-10-28T14:58:55Z PASS rules file identical to pre-drill copy
+2026-10-28T14:58:55Z end: notifications since drill start (1793199032)
+2026-10-28T14:58:56Z PASS sentry ntfy.env points at the throwaway topic
+  throwaway <redacted>: 2026-10-28T14:51:42Z [alertpath] DEGRADED | Alertmanager unreachable
+  throwaway <redacted>: 2026-10-28T14:53:44Z [alertpath] STALE | last watchdog delivery 195s before the snapshot (> 180s); Prometheus notification errors +2; Prometheus notifications dropped +2; Alertmanager unreachable
+  throwaway <redacted>: 2026-10-28T14:54:46Z [alertpath] DEGRADED | Prometheus notification errors +2; Prometheus notifications dropped +2
+  throwaway <redacted>: 2026-10-28T14:56:48Z [alertpath] RECOVERED | Alert pipeline OK again (was DEGRADED)
+  throwaway <redacted>: 2026-10-28T14:57:50Z [alertpath] DEGRADED | Prometheus last config reload failed
+  throwaway <redacted>: 2026-10-28T14:58:51Z [alertpath] RECOVERED | Alert pipeline OK again (was DEGRADED)
+2026-10-28T14:58:57Z PASS throwaway topic got the incident + recovery messages (6)
+2026-10-28T14:58:58Z PASS operator topic from ntfy.env: 0 messages during the drill
+2026-10-28T14:58:58Z PASS operator topic from config.env: 0 messages during the drill
+2026-10-28T14:58:58Z PASS bridge saw the watchdog 0 times (before 0, after 0)
+2026-10-28T14:58:58Z RESULT: PASS
+drill exit=0

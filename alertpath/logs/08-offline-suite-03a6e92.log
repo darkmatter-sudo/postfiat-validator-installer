@@ -1,0 +1,66 @@
+# alertpath offline suite, code 03a6e923187bbe7f452f9d8e5e17afae8dd788bb 2026-10-28T14:32:52Z
+a23cea1d5ba9c47727071124f07c08f20f3935e276e5fbab9928695d6c2c9229  pft-alertpath.sh
+091f8cad2440466c715d23a8a1563f97f85f5f763446ee46a4a86575265b1a95  alertpath_sink.py
+657dc6fbea493abfbe22e4c7e41b762ce1e51aaa1c64826315d1f6e05317185a  install.sh
+288b070045f458399fe2c61f6cfe7c1abeede28d9fab3b987075825a7e4f3e2f  drill/drill.sh
+33fd4fba117af7f0bc16e806c2da950fbec3f39f1d21c1c038f0a42c67a8deb3  tests/mutants.tsv
+c6491e07b92f5fade9a1d7f4a247d26138625487529b75ca83486b6934eb1528  tests/mutate.sh
+d6ae3c68260c71aa2809c84d55d1fd001316fe7c17fbda959b07e7d5af0c1179  tests/test-alertpath.sh
+2839bd8df8353a423f184a9396fdf059798d60e207762c8fc0512be13260cb9b  tests/test-sink.sh
+## shellcheck version: 0.8.0
+shellcheck exit=0
+## python3 -m py_compile alertpath_sink.py
+exit=0
+## tests/test-sink.sh
+PASS watchdog delivery recorded
+PASS received timestamp is now (+-2s)
+PASS mis-routed delivery answered 200
+PASS mis-routed delivery does not refresh the heartbeat
+PASS resolved status + unexpected counter carried
+PASS wrong path -> 404
+PASS malformed body -> 400
+PASS non-object JSON -> 400
+PASS bad requests leave state unchanged
+PASS listens on 127.0.0.1 only
+PASS mis-route logged
+RESULT: 11 passed, 0 failed
+exit=0
+## tests/test-alertpath.sh
+PASS no snapshot -> STALE rc=2
+PASS healthy snapshot -> OK rc=0
+PASS snapshot 200s old -> STALE rc=2
+PASS watchdog delivery 300s old -> STALE rc=2
+PASS no delivery recorded -> STALE rc=2
+PASS watchdog resolved -> DEGRADED rc=1
+PASS Prometheus down -> DEGRADED rc=1
+PASS Prometheus reload failed -> DEGRADED rc=1
+PASS rule eval failures +3 -> DEGRADED rc=1
+PASS Prom notification errors -> DEGRADED rc=1
+PASS Prom notifications dropped -> DEGRADED rc=1
+PASS no Alertmanager discovered -> DEGRADED rc=1
+PASS rule group not loaded -> DEGRADED rc=1
+PASS rule group eval 300s old -> DEGRADED rc=1
+PASS Alertmanager down -> DEGRADED rc=1
+PASS Alertmanager reload failed -> DEGRADED rc=1
+PASS webhook failures +4 -> DEGRADED rc=1
+PASS bridge container stopped -> DEGRADED rc=1
+PASS bridge not listening -> DEGRADED rc=1
+PASS bridge ntfy errors +2 -> DEGRADED rc=1
+PASS mis-routed delivery -> DEGRADED rc=1
+PASS counter reset to 0 -> OK rc=0
+PASS counter reset then +2 -> DEGRADED rc=1
+PASS increase only vs. window -> OK rc=0
+PASS bad HMAC alone -> STALE rc=2
+PASS replayed ts -> DEGRADED rc=1
+PASS ts 120s in the future -> STALE rc=2
+PASS wrong message type -> STALE rc=2
+PASS body swapped under a valid sig -> DEGRADED rc=1
+PASS oversize message -> STALE rc=2
+PASS spool full refused
+PASS notify sequence: [alertpath] DEGRADED|default [alertpath] STALE|high [alertpath] RECOVERED|low 
+PASS text output DEGRADED rc=1
+PASS push --print bash HMAC == openssl HMAC
+PASS snapshot parses fixture scrapes: {"rule_eval_failures":3,"wd_last_eval":1793196700,"amfail":3,"amtotal":13,"running":1,"listening":0,"ntfy_errors":1,"wd_count":3}
+PASS snapshot with everything down: [0,null,0,null,0,null]
+RESULT: 36 passed, 0 failed
+exit=0

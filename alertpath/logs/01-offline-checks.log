@@ -1,0 +1,49 @@
+# alertpath offline checks 2026-10-28T14:09:35Z on validator
+3d8ba13ff62be8b506a17db4223deba357ed7a1c04a708cc5a785fa09bd46204  alertpath.rules.yml
+6935c8e1622e038a5447324b93599eb2693a6ed72e31829781664fd2049b7089  alertpath.tests.yml
+b0fe48513d09146aac8910d9314cebf29ff7ef2c931ea219c4d6d5795b070296  alertmanager.yml
+## promtool check rules
+Checking alertpath.rules.yml
+  SUCCESS: 1 rules found
+
+exit=0
+## promtool test rules
+  SUCCESS
+
+exit=0
+## amtool check-config
+Checking '/w/alertmanager.yml'  SUCCESS
+Found:
+ - global config
+ - route
+ - 2 inhibit rules
+ - 2 receivers
+ - 0 templates
+
+exit=0
+## amtool config routes test alertname=PFTAlertPipelineWatchdog
+alertpath
+exit=0
+## amtool config routes test alertname=PFTNodeRPCDown
+bridge
+exit=0
+## amtool config routes test alertname=PFTExporterDown
+bridge
+exit=0
+## diff live alerts/alertmanager.yml -> alertpath/alertmanager.yml
+8a9,17
+>   routes:
+>     # alertpath/: the always-firing pipeline watchdog goes ONLY to the loopback alertpath sink (never to the
+>     # bridge / operator topic). continue: false stops it from reaching the default receiver.
+>     - matchers: ['alertname="PFTAlertPipelineWatchdog"']
+>       receiver: alertpath
+>       continue: false
+>       group_wait: 0s
+>       group_interval: 30s
+>       repeat_interval: 1m
+20a30,33
+>         send_resolved: true
+>   - name: alertpath
+>     webhook_configs:
+>       - url: http://127.0.0.1:9096/watchdog
+diff_exit=1
