@@ -1,0 +1,41 @@
+== run 3 cfglint live lint (read-only) 2026-10-28T13:26:52Z, code 3b4414c8ff805e89123ad451f3a43ccf31c97350, sha256 pft-cfglint.sh 7c3afcfd3a1ff4eb0cd82cd6e5e1885fa40059b44f29e2f06cc24c92ccb0abf2, cfglint.py f76524bee937d62b72b14fcf8bc280b49f4ccbe2fd66a596249ddd7ef5ded5d7, registry.json c6a7c64ba17ad0cae0c8d09614c15cc667be2534485e3a77447e53fa1af3ba99
+== validator
+$ bash pft-cfglint.sh --container postfiatd; echo rc=$?
+RESULT: 0 error(s), 0 warning(s) -> exit 0
+rc=0
+$ bash pft-cfglint.sh --container postfiatd --json; echo rc=$?
+{
+ "registry_commit": "32723c15e686a2088f2c83017a6ff909d93822cd",
+ "build_commit": "32723c15e686a2088f2c83017a6ff909d93822cd",
+ "findings": [],
+ "errors": 0,
+ "warnings": 0,
+ "exit": 0
+}
+rc=0
+-- what was checked (section names + key counts only, no values):
+   [server](4)    [port_rpc_admin_local](4)    [port_peer](3)    [port_ws_admin_local](5)    [port_grpc](3)    [port_ws_public](3)    [ips](6)    [peer_private](1)    [network_id](1)    [amendment_majority_time](1)    [node_db](4)    [database_path](1)    [debug_logfile](1)    [validators_file](1)    [rpc_startup](1)    [ssl_verify](1)    [validator_exclusions_sources](1)    [validator_exclusions_interval](1)    [ips_fixed](1)    [crawl](1)    [vl](1) 
+== sentry
+$ bash pft-cfglint.sh --ssh <sentry-ssh-alias> --container postfiatd-sentry; echo rc=$?
+RESULT: 0 error(s), 0 warning(s) -> exit 0
+rc=0
+$ bash pft-cfglint.sh --ssh <sentry-ssh-alias> --container postfiatd-sentry --json; echo rc=$?
+{
+ "registry_commit": "32723c15e686a2088f2c83017a6ff909d93822cd",
+ "build_commit": "32723c15e686a2088f2c83017a6ff909d93822cd",
+ "findings": [],
+ "errors": 0,
+ "warnings": 0,
+ "exit": 0
+}
+rc=0
+-- what was checked (section names + line counts only, no values):
+   [server](4)    [port_rpc_admin_local](4)    [port_peer](3)    [port_ws_admin_local](5)    [port_grpc](3)    [port_ws_public](3)    [ips](6)    [peer_private](1)    [network_id](1)    [amendment_majority_time](1)    [node_db](4)    [database_path](1)    [debug_logfile](1)    [validators_file](1)    [rpc_startup](1)    [ssl_verify](1)    [validator_exclusions_sources](1)    [validator_exclusions_interval](1)    [crawl](4)    [vl](1) 
+== negative control on the live validator cfg: same file with [vl] enabled -> enable (temp copy, never written back)
+$ docker exec postfiatd cat <cfg> | sed 's/^enabled=0$/enable=0/' > $tmp; bash pft-cfglint.sh --file $tmp; echo rc=$?
+   lines changed: 1
+ERROR line 1582 unread-documented-key  [vl] enable                  documented (cfg/postfiatd-example.cfg:1367) but postfiatd never reads it  (did you mean `enabled`?)
+RESULT: 1 error(s), 0 warning(s) -> exit 1
+rc=1
+== live cfg unchanged: sha256 before/after not printed (host detail); container StartedAt unchanged:
+2026-10-28T11:33:11.215149204Z

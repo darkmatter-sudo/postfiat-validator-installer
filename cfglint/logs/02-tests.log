@@ -1,0 +1,82 @@
+== run 2 cfglint tests 2026-10-28T13:25:21Z, code 3b4414c8ff805e89123ad451f3a43ccf31c97350
+   sha256 pft-cfglint.sh 7c3afcfd3a1ff4eb0cd82cd6e5e1885fa40059b44f29e2f06cc24c92ccb0abf2
+   sha256 cfglint.py f76524bee937d62b72b14fcf8bc280b49f4ccbe2fd66a596249ddd7ef5ded5d7
+   sha256 extract_registry.py 123d568548a9fe1f5aa62414289952b2c2c0fbf60776b322b3f1904805ccaa35
+   sha256 registry.json c6a7c64ba17ad0cae0c8d09614c15cc667be2534485e3a77447e53fa1af3ba99
+   sha256 tests/run-tests.sh 1a650857355574f4a506d3ecb06a07c5b3f8ef862da54e04ef2171f24438476e
+   sha256 tests/mutate.sh ff0712df0b11f749a463bc002dd1e5bd07c99bcdfcad7e45059173fc3386198c
+   sha256 tests/extractor-guard.sh ff46f9be16f87a0ba6359a8f226739d4199172f7f8b435df094da44677106197
+   sha256 drill/vl-drill.sh 58d7bac5a1664415934a3842decbac951467f70fba718a20281318fb37f33977
+$ shellcheck --version | sed -n 2p; shellcheck pft-cfglint.sh tests/*.sh drill/*.sh; echo rc=$?
+version: 0.8.0
+rc=0
+$ ruff format --line-length 120 --check cfglint.py extract_registry.py; echo rc=$?
+2 files already formatted
+rc=0
+$ SRC=<postfiatd checkout @32723c15> bash tests/run-tests.sh; echo rc=$?
+PASS clean-config-exit-0
+PASS vl-enable-flagged
+PASS vl-enable-cites-example
+PASS vl-enabled-clean
+PASS unknown-section-suggest
+PASS unknown-key-suggest
+PASS duplicate-key
+PASS duplicate-section
+PASS empty-value
+PASS plain-value-in-keys
+PASS line-before-section
+PASS port-section-key-typo
+PASS port-section-not-in-server
+PASS tq-documented-unread
+PASS comment-handling
+PASS crlf-line-endings
+PASS build-mismatch-warns
+PASS build-match-quiet
+PASS empty-input-exit-2
+PASS missing-file-exit-2
+PASS no-registry-exit-2
+PASS bad-registry-schema-exit-2
+PASS unknown-flag-exit-2
+PASS text-output
+PASS values-never-printed
+PASS wrapper-file-mode
+PASS wrapper-json-clean
+PASS wrapper-usage-exit-2
+PASS wrapper-file-ssh-exclusive
+PASS registry-facts
+PASS extractor-guard-synthetic
+  provenance: 130 key sites checked, 0 misses
+PASS registry-provenance
+PASS registry-regenerates-identically
+RESULT: 33 passed, 0 failed
+rc=0
+$ SRC=<postfiatd checkout @32723c15> bash tests/mutate.sh; echo rc=$?
+MUTANT C1 CAUGHT (key regex accepts an empty value): empty-value,comment-handling
+MUTANT C2 CAUGHT (documented-but-unread keys reported as plain unknown): vl-enable-flagged,vl-enable-cites-example,tq-documented-unread,crlf-line-endings
+MUTANT C3 CAUGHT (no closest-match suggestions): vl-enable-flagged,unknown-section-suggest,unknown-key-suggest,port-section-key-typo,port-section-not-in-server,text-output
+MUTANT C4 CAUGHT (duplicate keys not reported): duplicate-key,duplicate-section
+MUTANT C5 CAUGHT (duplicate sections not reported): duplicate-section
+MUTANT C6 CAUGHT (key checks run inside value-list sections): clean-config-exit-0,values-never-printed
+MUTANT C7 CAUGHT ([server] port names not treated as sections): clean-config-exit-0,port-section-key-typo
+MUTANT C8 CAUGHT (warnings do not set exit 1): duplicate-key,duplicate-section,plain-value-in-keys,build-mismatch-warns
+MUTANT C9 CAUGHT (trailing comments not stripped): comment-handling
+MUTANT C10 CAUGHT (build/registry mismatch not checked): build-mismatch-warns
+MUTANT C11 CAUGHT (lines before the first section ignored): line-before-section
+MUTANT C12 CAUGHT (plain values in key sections ignored): plain-value-in-keys
+MUTANT C13 CAUGHT (empty values ignored): empty-value,comment-handling
+MUTANT C14 CAUGHT (unknown keys accepted): vl-enable-flagged,vl-enable-cites-example,unknown-key-suggest,port-section-key-typo,tq-documented-unread,crlf-line-endings,text-output,values-never-printed
+MUTANT C15 CAUGHT (unknown sections accepted): unknown-section-suggest,port-section-not-in-server
+MUTANT C16 CAUGHT (value printed in a finding): values-never-printed
+MUTANT C17 CAUGHT (registry schema not checked): bad-registry-schema-exit-2
+MUTANT C18 CAUGHT (comment-only config accepted): empty-input-exit-2
+MUTANT C19 CAUGHT (unknown flags accepted): unknown-flag-exit-2
+MUTANT C20 CAUGHT (suggestion drawn from the wrong candidate set): vl-enable-flagged,unknown-key-suggest,port-section-key-typo,text-output
+CONTROL extractor (unmutated) reproduces registry.json: yes
+MUTANT E1 CAUGHT (4-argument set(v, default, "k", s) not matched): registry differs (8 lines)
+MUTANT E2 CAUGHT (values() through a bound variable not seen): registry differs (2 lines)
+MUTANT E3 CAUGHT (variable rebinding not respected): registry differs (2 lines)
+MUTANT E4 CAUGHT (section headings with a trailing tag (EXPERIMENTAL) skipped): registry differs (62 lines)
+MUTANT E5 CAUGHT (unattributed key sites dropped silently): extractor-guard G1-orphan-key-fails
+MUTANT E6 CAUGHT (NOT_CONFIG exclusions ignored): extractor exit 1: unattributed key sites (fix FILE_SECTION/RANGE_SECTION):   src/xrpld/app/misc/detail/Manifest.cpp:288 manifest   src/xrpld/app/misc/detail/Manifest.cpp:289 vali
+MUTANTS: 26/26 caught
+rc=0

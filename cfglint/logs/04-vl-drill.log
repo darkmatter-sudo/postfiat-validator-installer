@@ -1,0 +1,60 @@
+== run 4 cfglint [vl] drill, code 3b4414c8ff805e89123ad451f3a43ccf31c97350, sha256 vl-drill.sh 58d7bac5a1664415934a3842decbac951467f70fba718a20281318fb37f33977, pft-cfglint.sh 7c3afcfd3a1ff4eb0cd82cd6e5e1885fa40059b44f29e2f06cc24c92ccb0abf2, cfglint.py f76524bee937d62b72b14fcf8bc280b49f4ccbe2fd66a596249ddd7ef5ded5d7
+== base cfg: postfiatd source cfg/postfiatd-testnet-light.cfg + cfg/validators-testnet.txt at 32723c15e686a2088f2c83017a6ff909d93822cd
+$ bash drill/vl-drill.sh <src>/cfg/postfiatd-testnet-light.cfg <src>/cfg/validators-testnet.txt
+== vl-drill 2026-10-28T13:24:55Z image agtipft/postfiatd:testnet-light-latest (cc139becfe50)
+== base cfg sha256 624f549982d6648e209ef9b78c81867881e09a1f50e38bb8d8096198fb7b54b2, validators.txt sha256 6b79194d3fd6528372fa008247bcc1dde8a190bc9bceb1efe3bb3cdac3750599
+
+== variant: none (13:24:55Z)
+-- [vl] section of the rendered cfg:
+   (none)
+-- pft-cfglint --file:
+   RESULT: 0 error(s), 0 warning(s) -> exit 0
+  PASS lint exit (file) (0)
+-- published ports: 2559/tcp -> 127.0.0.1:12559 
+-- pft-cfglint --container cfglint-drill:
+   RESULT: 0 error(s), 0 warning(s) -> exit 0
+  PASS lint exit (running container) (0)
+-- publisher list loaded after 4s (publisher key ED3F1E0D...)
+-- GET /vl/<publisher key> -> HTTP 200, signed list blob: yes (14748 bytes)
+  PASS /vl served (yes)
+-- throwaway container removed: 0 left
+  PASS container cleanup (0)
+
+== variant: enable=0 (13:25:05Z)
+-- [vl] section of the rendered cfg:
+[vl]
+enable=0
+-- pft-cfglint --file:
+   ERROR line 1575 unread-documented-key  [vl] enable                  documented (cfg/postfiatd-example.cfg:1367) but postfiatd never reads it  (did you mean `enabled`?)
+   RESULT: 1 error(s), 0 warning(s) -> exit 1
+  PASS lint exit (file) (1)
+-- published ports: 2559/tcp -> 127.0.0.1:12559 
+-- pft-cfglint --container cfglint-drill:
+   ERROR line 1575 unread-documented-key  [vl] enable                  documented (cfg/postfiatd-example.cfg:1367) but postfiatd never reads it  (did you mean `enabled`?)
+   RESULT: 1 error(s), 0 warning(s) -> exit 1
+  PASS lint exit (running container) (1)
+-- publisher list loaded after 1s (publisher key ED3F1E0D...)
+-- GET /vl/<publisher key> -> HTTP 200, signed list blob: yes (14748 bytes)
+  PASS /vl served (yes)
+-- throwaway container removed: 0 left
+  PASS container cleanup (0)
+
+== variant: enabled=0 (13:25:10Z)
+-- [vl] section of the rendered cfg:
+[vl]
+enabled=0
+-- pft-cfglint --file:
+   RESULT: 0 error(s), 0 warning(s) -> exit 0
+  PASS lint exit (file) (0)
+-- published ports: 2559/tcp -> 127.0.0.1:12559 
+-- pft-cfglint --container cfglint-drill:
+   RESULT: 0 error(s), 0 warning(s) -> exit 0
+  PASS lint exit (running container) (0)
+-- publisher list loaded after 0s (publisher key ED3F1E0D...)
+-- GET /vl/<publisher key> -> HTTP 403, signed list blob: no (11 bytes)
+  PASS /vl served (no)
+-- throwaway container removed: 0 left
+  PASS container cleanup (0)
+
+RESULT: 0 failure(s)
+drill exit=0

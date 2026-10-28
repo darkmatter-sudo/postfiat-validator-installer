@@ -376,6 +376,19 @@ sudo bash unitguard/pft-unitguard.sh apply pft-exporter.service && sudo pft-inte
 bash unitguard/tests/test-unitguard.sh && bash unitguard/tests/mutants-unitguard.sh
 ```
 
+## Config linter add-on (cfglint)
+
+[`cfglint/`](cfglint/README.md): `pft-cfglint.sh` flags `postfiatd.cfg` sections and keys the running build silently
+ignores (unknown, typo'd, documented-but-unread like `[vl] enable`, empty values, duplicates). It checks against a
+registry extracted from the postfiatd source at the node's exact commit, with file:line provenance. Read-only; never prints
+values. Live: validator and sentry clean. Throwaway-node drill: `enable=0` is flagged and leaves `/vl` served
+(HTTP 200); only `enabled=0` closes it (HTTP 403).
+
+```bash
+bash cfglint/pft-cfglint.sh                       # exit 0 clean, 1 findings, 2 error
+bash cfglint/pft-cfglint.sh --file postfiatd.cfg --json
+```
+
 ## Upgrade
 
 ```bash

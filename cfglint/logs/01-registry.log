@@ -1,0 +1,63 @@
+== run 1 cfglint registry 2026-10-28T13:25:07Z, code 3b4414c8ff805e89123ad451f3a43ccf31c97350, sha256 extract_registry.py 123d568548a9fe1f5aa62414289952b2c2c0fbf60776b322b3f1904805ccaa35
+$ docker exec postfiatd postfiatd --version   # validator
+postfiatd version 1.0.9
+Git commit hash: 32723c15e686a2088f2c83017a6ff909d93822cd
+Git build branch: HEAD
+$ ssh <sentry-ssh-alias> docker exec postfiatd-sentry postfiatd --version   # sentry
+postfiatd version 1.0.9
+Git commit hash: 32723c15e686a2088f2c83017a6ff909d93822cd
+Git build branch: HEAD
+$ git -C <src> remote get-url origin; git -C <src> rev-parse HEAD   # shallow fetch of that exact commit
+https://github.com/postfiatorg/postfiatd.git
+32723c15e686a2088f2c83017a6ff909d93822cd
+$ python3 -I extract_registry.py <src> > /tmp/registry.json; echo rc=$?
+rc=0
+$ cmp /tmp/registry.json registry.json && echo identical-to-committed
+identical-to-committed
+$ sha256sum registry.json
+c6a7c64ba17ad0cae0c8d09614c15cc667be2534485e3a77447e53fa1af3ba99
+$ summary (jq)
+commit 32723c15e686a2088f2c83017a6ff909d93822cd
+sections 71 (keys: 15, values-only: 56), keys 78 + port-section keys 22
+-- key sections:
+  [crawl] mixed: counts overlay server unl
+  [hashrouter] keys: hold_time relay_time
+  [insight] keys: address prefix server
+  [ledger_tx_tables] keys: use_tx_tables
+  [node_db] keys: advisory_delete age_threshold_seconds back_off_milliseconds bbt_options bg_threads block_size cache_age cache_mb cache_size delete_batch earliest_seq fast_load file_size_mb file_size_mult filter_bits filter_full hard_set high_threads online_delete open_files options path recovery_wait_seconds rq_bundle type universal_compaction
+  [overlay] keys: ip_limit max_diverged_time max_unknown_time max_untrusted_count public_ip verify_endpoints
+  [perf] keys: log_interval perf_log
+  [port_grpc] keys: ip port secure_gateway
+  [reduce_relay] keys: tx_enable tx_metrics tx_min_peers tx_relay_percentage vp_base_squelch_enable vp_base_squelch_max_selected_peers vp_enable
+  [relational_db] keys: backend
+  [sqdb] keys: backend
+  [sqlite] keys: journal_mode journal_size_limit page_size safety_level synchronous temp_store
+  [transaction_queue] keys: ledgers_in_queue maximum_txn_in_ledger maximum_txn_per_account minimum_escalation_multiplier minimum_last_ledger_buffer minimum_queue_size minimum_txn_in_ledger minimum_txn_in_ledger_standalone normal_consensus_increase_percent retry_sequence_percent slow_consensus_decrease_percent target_txn_in_ledger
+  [vl] keys: enabled
+  [voting] keys: account_reserve owner_reserve reference_fee
+  [<port listed in [server]>] keys: admin admin_password admin_user client_max_window_bits client_no_context_takeover compress_level ip limit memory_level password permessage_deflate port protocol secure_gateway send_queue_limit server_max_window_bits server_no_context_takeover ssl_cert ssl_chain ssl_ciphers ssl_key user
+-- [vl] entry:
+{"kind":"keys","sites":["src/xrpld/overlay/detail/OverlayImpl.cpp:1623"],"keys":{"enabled":["src/xrpld/overlay/detail/OverlayImpl.cpp:1625"]}}
+-- documented in cfg/postfiatd-example.cfg but never read:
+{"section":"transaction_queue","key":"zero_basefee_transaction_feelevel","documented_at":"cfg/postfiatd-example.cfg:642"}
+{"section":"vl","key":"enable","documented_at":"cfg/postfiatd-example.cfg:1367"}
+-- source lines (pinned commit):
+OverlayImpl.cpp:
+1621: }
+1622: {
+1623: auto const& section = config.section("vl");
+1624:
+1625: set(setup.vlEnabled, "enabled", section);
+1626: }
+postfiatd-example.cfg:
+1362: # [vl]
+1363: #
+1364: #   Options to control what data is reported through the /vl endpoint
+1365: #   See [...]
+1366: #
+1367: #   enable = <flag>
+1368: #
+1369: #       Enable or disable access to /vl requests. Default is '1' which
+1370: #       enables access.
+$ grep -rn '"enable"' src include (non-test)
+matches: 0
