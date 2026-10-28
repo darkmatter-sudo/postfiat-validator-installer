@@ -37,6 +37,9 @@ MUTANTS=(
     n=@@  if false; then
     n='
   'M22@@rollback skips the outside-block drift check@@  cmp -s <(strip_managed < "$cur") <(strip_managed < "$FROM") \@@  true \'
+  'M23@@node-key peers never counted@@      if is_key "$a"; then if grep -qxF -- "$a" <<<"$keys"; then req=$((req + 1)); fi@@      if is_key "$a"; then :'
+  'M24@@node key matched as a substring@@      if is_key "$a"; then if grep -qxF -- "$a" <<<"$keys"; then req=$((req + 1)); fi@@      if is_key "$a"; then if grep -qF -- "${a:0:20}" <<<"$keys"; then req=$((req + 1)); fi'
+  'M25@@keys not recognised (address match only)@@is_key() { [[ "$1" =~ ^n[1-9A-HJ-NP-Za-km-z]{49,52}$ ]]; }@@is_key() { false; }'
 )
 
 caught=0; total=0

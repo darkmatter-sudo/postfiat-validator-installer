@@ -11,7 +11,7 @@
 #    everything is restored on ANY exit (trap) and compared. Alertmanager is silenced by pft-peerexpose itself.
 # 2  sequence (each step: command line, redacted output, exit code -> STEPS jsonl):
 #    a audit-sentry-initial (from here, public address)  b audit-validator-initial (from the relay)
-#    c apply-sentry (--require-peer validator)            d audit-sentry-applied
+#    c apply-sentry (--require-peer <validator key>)          d audit-sentry-applied
 #    e rollback-sentry                                    f audit-sentry-rolledback (violations must be back)
 #    g reapply-sentry                                     h audit-sentry-reapplied
 #    i apply-validator (required peer: its [ips_fixed])  j audit-validator-applied (from the relay)
@@ -52,12 +52,11 @@ on() { if [ "$1" = relay ]; then R "$2"; else L "$2"; fi; } # HOST CMDSTRING
 rpc() { # HOST CONTAINER METHOD -> admin RPC JSON
   on "$1" "sudo -n docker exec $2 curl -s -m 10 -d '{\"method\":\"$3\"}' http://127.0.0.1:5005"
 }
-peerfact() { # HOST CONTAINER OTHER_ADDR -> {"state","peers","has_other"}
-  local si pa st p has=false
-  si="$(rpc "$1" "$2" server_info)"; pa="$(rpc "$1" "$2" peers | jq -r '.result.peers[]?.address // empty' 2>/dev/null)"
+peerfact() { # HOST CONTAINER OTHER_ADDR OTHER_KEY -> {"state","peers","has_other"} (peer_has in lib.sh: address OR key)
+  local si st p has
+  si="$(rpc "$1" "$2" server_info)"; has="$(rpc "$1" "$2" peers | peer_has "$3" "$4")"
   st="$(jq -r '.result.info.server_state // "down"' <<<"$si" 2>/dev/null)"; p="$(jq -r '.result.info.peers // 0' <<<"$si" 2>/dev/null)"
-  grep -Eq "(^|[^0-9.])${3//./\\.}([]:]|$)" <<<"$pa" && has=true
-  jq -nc --arg s "${st:-down}" --argjson p "${p:-0}" --argjson h "$has" '{state: $s, peers: $p, has_other: $h}'
+  jq -nc --arg s "${st:-down}" --argjson p "${p:-0}" --argjson h "${has:-false}" '{state: $s, peers: $p, has_other: $h}'
 }
 mkdir -p "$OUT"; chmod 700 "$OUT"; STEPS="$OUT/steps-$RUN.jsonl"; : > "$STEPS"
 
@@ -134,17 +133,20 @@ for v in "$VIP" "$SIP"; do
     || { echo "  could not determine both host addresses - stopping" >&2; exit 3; }
 done
 printf 'ip\t%s\nip\t%s\n' "$VIP" "$SIP" >> "$LIT"
+VKEY=""; SKEY=""
 for hc in "local:$VALIDATOR_C" "relay:$SENTRY_C"; do
   si="$(rpc "${hc%%:*}" "${hc#*:}" server_info)"
   st="$(jq -r '.result.info.server_state // "down"' <<<"$si" 2>/dev/null)"
   k="$(jq -r '.result.info.pubkey_node // empty' <<<"$si" 2>/dev/null)"
   [ -z "$k" ] || printf 'key\t%s\n' "$k" >> "$LIT"
+  if [ "${hc%%:*}" = local ]; then VKEY="$k"; else SKEY="$k"; fi
   echo "  ${hc%%:*} ${hc#*:}: server_state=${st:-down} peers=$(jq -r '.result.info.peers // 0' <<<"$si" 2>/dev/null)"
   case "$st" in full|proposing) ;; *) echo "  node not full - stopping" >&2; exit 4 ;; esac
 done
 while read -r k; do [ -z "$k" ] || printf 'key\t%s\n' "$k" >> "$LIT"; done < <(rpc local "$VALIDATOR_C" validators \
   | jq -r '.result.publisher_lists[]?.pubkey_publisher // empty' 2>/dev/null)
-pv="$(peerfact local "$VALIDATOR_C" "$SIP")"; ps="$(peerfact relay "$SENTRY_C" "$VIP")"
+if [ -z "$VKEY" ] || [ -z "$SKEY" ]; then echo "  could not read both node public keys - stopping" >&2; exit 3; fi
+pv="$(peerfact local "$VALIDATOR_C" "$SIP" "$SKEY")"; ps="$(peerfact relay "$SENTRY_C" "$VIP" "$VKEY")"
 echo "  peering before: validator has sentry: $(jq -r .has_other <<<"$pv") | sentry has validator: $(jq -r .has_other <<<"$ps")"
 [ "$(jq -r .has_other <<<"$pv")$(jq -r .has_other <<<"$ps")" = truetrue ] \
   || { echo "  sentry<->validator link not seen from both sides (or wrong address) - stopping" >&2; exit 4; }
@@ -181,7 +183,7 @@ for k in "local:$MAINT_DIR_L" "relay:$MAINT_DIR_R"; do
 done
 
 SURL="https://$SIP:2559"; VURL="https://$VIP:2559"
-S=(--role sentry --ssh "$RELAY" --container "$SENTRY_C" --url "$SURL" --gate-timeout "$GATE" --require-peer "$VIP")
+S=(--role sentry --ssh "$RELAY" --container "$SENTRY_C" --url "$SURL" --gate-timeout "$GATE" --require-peer "$VKEY")
 if [ "$DRY" = 1 ]; then
   echo; echo "== 2. DRY=1: no pft-peerexpose step"
 else
@@ -201,7 +203,7 @@ else
 fi
 
 echo; echo "-- peering and server_state ($(ts))"
-PV="$(peerfact local "$VALIDATOR_C" "$SIP")"; PS="$(peerfact relay "$SENTRY_C" "$VIP")"
+PV="$(peerfact local "$VALIDATOR_C" "$SIP" "$SKEY")"; PS="$(peerfact relay "$SENTRY_C" "$VIP" "$VKEY")"
 echo "  validator: $PV   (has_other = the sentry is a connected peer)"
 echo "  sentry:    $PS   (has_other = the validator is a connected peer)"
 

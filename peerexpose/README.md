@@ -89,9 +89,17 @@ there). Exit 0 with `CHANGE NEEDED` or `NO CHANGE`, 2 on error. The change takes
 pft-peerexpose apply --role validator --dry-run                     # everything up to the write: diff, lock + health check
 pft-peerexpose apply --role validator                               # this host; required peers default to its [ips_fixed]
 pft-peerexpose apply --role sentry --ssh <sentry-ssh-alias> --container postfiatd-sentry \
-    --url https://<sentry-address>:2559 --require-peer <validator-address>
+    --url https://<sentry-address>:2559 --require-peer <validator-node-public-key>
 pft-peerexpose rollback --role sentry --ssh <sentry-ssh-alias> --container postfiatd-sentry --url https://<sentry-address>:2559
 ```
+
+`--require-peer` takes an address or a node public key (`n...`, the other node's `server_info` `pubkey_node`).
+**On a sentry, use the validator's key.** The validator connects to the sentry *inbound*, and with Docker's default
+userland proxy the sentry's `peers` lists that connection as the bridge gateway (e.g. `172.17.0.1:43120`), not as the
+validator's address, so an address requirement can never be met and the gate refuses. The first live-drill preflight
+found this (the sentry side of the peering check failed by address while the link was up). The key is matched
+exactly and is never printed. On the validator, the default (its `[ips_fixed]` addresses) works, because that
+connection is outbound.
 
 `apply`, in order:
 

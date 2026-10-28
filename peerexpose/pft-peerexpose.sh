@@ -30,11 +30,13 @@
 #        pft-peerexpose validate --role validator|sentry --old FILE --new FILE
 #   Checks a (hand-)edited config against the role: exit 0 OK, 1 rejected (reason printed), 3 usage.
 #        pft-peerexpose apply|rollback --role validator|sentry [--ssh TARGET --url https://ADDR:2559] [--container NAME]
-#                             [--dry-run] [--gate-timeout SEC (900)] [--min-peers N (1)] [--require-peer ADDR]... [--from FILE]
+#                             [--dry-run] [--gate-timeout SEC (900)] [--min-peers N (1)] [--require-peer ADDR|KEY]... [--from FILE]
 #   WRITES (unless --dry-run). Refuses (exit 4) while a pft-maint data-collection lock is held, another run holds the
 #   lock, or the node is not healthy now. apply: validate the rendered config, timestamped 0600 backup, pft-maint window +
 #   Alertmanager silence, install, ONE restart, gate (full|proposing, peers >= N, every --require-peer connected (validator
-#   default: its [ips_fixed] peers), role audit 0 violations). A failed gate restores the backup automatically (exit 2;
+#   default: its [ips_fixed] peers), role audit 0 violations). A required peer is an address or a node public key (n...);
+#   use the key for a peer that connects INBOUND through docker-proxy, which the node lists as the bridge gateway
+#   (e.g. 172.17.0.1), not as its real address. A failed gate restores the backup automatically (exit 2;
 #   5 if that also fails). rollback: restore the LATEST (or --from) backup for that target, same window/silence/gate
 #   without the audit. Only [crawl]/[vl] may differ from the backup. Exit 0 applied / rolled back / no change.
 #   Env: STATE_DIR (~/.local/state/pft-peerexpose)  AM (http://127.0.0.1:9093, none)  SILENCE_MATCHER (alertname=~.+)
@@ -291,25 +293,28 @@ target_label() { local t="${SSH_TARGET:-local}"; echo "${t//[^A-Za-z0-9._-]/_}";
 rpc() { # METHOD -> JSON answer of the target node's admin RPC
   hx docker exec "$CONTAINER" curl -s -m "$TIMEOUT" -d "{\"method\":\"$1\"}" "$RPC_URL" 2>/dev/null
 }
+is_key() { [[ "$1" =~ ^n[1-9A-HJ-NP-Za-km-z]{49,52}$ ]]; } # node public key (base58, n...), not an address
 fixed_peers() { # cfg file -> addresses from [ips_fixed], one per line
   awk '/^[[:space:]]*\[/ { on = (tolower($0) ~ /^[[:space:]]*\[ips_fixed\][[:space:]]*$/); next }
        on && !/^[[:space:]]*(#|$)/ { print $1 }' "$1"
 }
 
 # gate WITH_AUDIT -> 0 once (within GATE_TIMEOUT) server_state is full|proposing, peers >= MIN_PEERS, every
-# required peer address is connected and, if WITH_AUDIT, the role audit shows 0 violations and 0 errors.
+# required peer (address, or node public key n...) is connected and, if WITH_AUDIT, the role audit shows 0 violations and 0 errors.
 # Prints one line per change of the observed state. Peer addresses are never printed, only counts.
 gate() {
-  local deadline st p req=0 a addrs viol line last=""
+  local deadline st p req=0 a addrs keys viol line last=""
   deadline=$(( $(date +%s) + GATE_TIMEOUT ))
   while :; do
     read -r st p < <(rpc server_info | jq -r '[.result.info.server_state // "down", .result.info.peers // 0] | @tsv' 2>/dev/null \
       || echo "down 0")
     [ -n "${st:-}" ] || { st=down; p=0; }
     addrs="$(rpc peers | jq -r '.result.peers[]?.address // empty' 2>/dev/null || true)"
+    keys="$(rpc peers | jq -r '.result.peers[]?.public_key // empty' 2>/dev/null || true)"
     req=0
     for a in "${REQ_PEERS[@]}"; do
-      if grep -Eq "(^|[^0-9.])${a//./\\.}([]:]|$)" <<<"$addrs"; then req=$((req + 1)); fi
+      if is_key "$a"; then if grep -qxF -- "$a" <<<"$keys"; then req=$((req + 1)); fi
+      elif grep -Eq "(^|[^0-9.])${a//./\\.}([]:]|$)" <<<"$addrs"; then req=$((req + 1)); fi
     done
     viol="-"
     if [ "$1" = audit ] && { [ "$st" = full ] || [ "$st" = proposing ]; }; then

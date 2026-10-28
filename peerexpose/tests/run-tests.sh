@@ -311,6 +311,16 @@ check "apply sentry remote: restart + write through ssh sudo -n" 'grep -q "^ssh 
 check "apply sentry remote: audit probed the given URL, required peer 1/1" 'grep -q "^https://203.0.113.9:2559/crawl$" "$STUB_LOG" && grep -q "required_peers=1/1" "$OUT"'
 check "apply sentry remote: backup under the target label" '[ -s "$ST/backups/relayhost/LATEST" ]'
 check "apply sentry remote: window + silence run locally (not via ssh)" 'grep -q "^pft-maint start" "$STUB_LOG" && ! grep -q "relayhost sudo -n pft-maint" "$STUB_LOG"'
+# inbound peer behind docker-proxy: the sentry lists its validator as 172.17.0.1:PORT, so only the node key matches
+SI=apply_sentry_inbound; VKEY="$(cat "$FIX/$SI/validator.key")"
+arun $SI apply --role sentry --ssh relayhost --container postfiatd-sentry --url https://203.0.113.9:2559 --require-peer "$VKEY" --gate-timeout 0
+check "inbound peer by node key: APPLIED, required peer 1/1, key not printed" '[ "$RC" -eq 0 ] && grep -q "RESULT: APPLIED" "$OUT" && grep -q "required_peers=1/1" "$OUT" && ! grep -qF "$VKEY" "$OUT"'
+arun $SI apply --role sentry --ssh relayhost --container postfiatd-sentry --url https://203.0.113.9:2559 --require-peer 192.0.2.20 --gate-timeout 0
+check "inbound peer by its real address: 0/1, refused before any write" '[ "$RC" -eq 4 ] && grep -q "required_peers=0/1" "$OUT" && cmp -s "$LIVE" "$FIX/$SI/postfiatd.cfg" && ! grep -q "^pft-maint start" "$STUB_LOG"'
+arun $SI apply --role sentry --ssh relayhost --container postfiatd-sentry --url https://203.0.113.9:2559 --require-peer "${VKEY%?}x" --gate-timeout 0
+check "unknown node key: 0/1, refused before any write" '[ "$RC" -eq 4 ] && grep -q "required_peers=0/1" "$OUT" && cmp -s "$LIVE" "$FIX/$SI/postfiatd.cfg"'
+arun $SI apply --role sentry --ssh relayhost --container postfiatd-sentry --url https://203.0.113.9:2559 --require-peer "${VKEY:0:20}" --gate-timeout 0
+check "key prefix is not a key (address match fails): 0/1, refused" '[ "$RC" -eq 4 ] && grep -q "required_peers=0/1" "$OUT"'
 arun apply_sentry apply --role sentry --ssh relayhost --container postfiatd-sentry
 check "remote apply without --url: exit 3" '[ "$RC" -eq 3 ] && grep -q "needs --url" "$OUT"'
 arun $AV apply --role validator --gate-timeout 99999

@@ -29,6 +29,20 @@ ok "RESULT formats found in pft-peerexpose.sh" "$([ "$n" -ge 7 ] && echo yes || 
 printf 'REFUSED: pft-maint data-collection lock held: x\n' > "$T/out"
 ok "REFUSED (no RESULT line) parses empty" "$(parse_result "$T/out")" ""
 
+echo "== 1b. peer_has (shape of the live sentry's peers answer: the validator connects inbound via docker-proxy)"
+K1=n94YefruMzW9LEkaLZDrjb7oksDCQzWJpiaHRczyPMwwamiEWJBQ; K2=n9Lkb3sHf7kVQx2pR8mYc4dTzN6aWuE1gJhX5vB9rCnD2eFqGtUs
+cat > "$T/peers.json" <<JSON
+{"result":{"peers":[{"address":"172.17.0.1:43120","public_key":"$K1","inbound":true},{"address":"198.51.100.7:2559","public_key":"$K2"},{"address":"[::ffff:192.0.2.20]:2559","public_key":"n9Other"}],"status":"success"}}
+JSON
+ok "inbound validator: real address not listed, key matches" "$(peer_has 203.0.113.5 "$K1" < "$T/peers.json")" true
+ok "inbound validator: address only (no key) does not match" "$(peer_has 203.0.113.5 "" < "$T/peers.json")" false
+ok "outbound peer: address matches without a key" "$(peer_has 198.51.100.7 "" < "$T/peers.json")" true
+ok "IPv4-mapped address matches" "$(peer_has 192.0.2.20 "" < "$T/peers.json")" true
+ok "address prefix does not match (192.0.2.2 vs 192.0.2.20)" "$(peer_has 192.0.2.2 "" < "$T/peers.json")" false
+ok "key is exact, not a prefix" "$(peer_has 203.0.113.5 "${K1:0:20}" < "$T/peers.json")" false
+ok "one changed key char does not match" "$(peer_has 203.0.113.5 "${K1%?}x" < "$T/peers.json")" false
+ok "empty / error answer -> false" "$(peer_has 198.51.100.7 "$K1" <<<'{"error":"x"}')" false
+
 echo "== 2. check-drill.sh"
 good_steps() {
   jq -nc '
