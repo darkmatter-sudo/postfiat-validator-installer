@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Fake pft-integrity: `verify` prints a PASS result, or refuses like the real tool when not run through sudo.
+echo "${STUB_HOST:-local} pft-integrity $*" >> "$STUB/integrity.log"
+[ -z "${STUB_SUDO:-}" ] && { echo "run as root (reads root-only files, docker and iptables)" >&2; exit 3; }
+echo "RESULT: PASS - 1 unchanged, 0 warn, 0 fail -> exit 0 (${STUB_HOST:-local})"

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
-# Fake sudo: drops -n and runs the command as the calling user (the stubs need no root).
+# Fake sudo: drops -n and runs the command as the calling user (the stubs need no root), with STUB_SUDO=1 so
+# stubs with STUB_NEED_SUDO=1 can refuse calls that skipped sudo, as the real root-only tools do.
 [ "${1:-}" = -n ] && shift
-exec "$@"
+[ -e "${STUB:-/nonexistent}/sudo_denied" ] && { echo "sudo: a password is required" >&2; exit 1; }
+STUB_SUDO=1 exec "$@"

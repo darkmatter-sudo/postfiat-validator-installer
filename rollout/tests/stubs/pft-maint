@@ -2,6 +2,8 @@
 # Fake pft-maint: records calls; `lock list` prints $STUB/locks if present. On `start` it writes the NTFY_ lines of
 # every file in $STUB_WATCH to $STUB/watch.log (what the notifiers point at while the window is open).
 echo "${STUB_HOST:-local} pft-maint $*" >> "$STUB/maint.log"
+# STUB_NEED_SUDO=1: behave like the real tool when not run through sudo
+[ -n "${STUB_NEED_SUDO:-}" ] && [ -z "${STUB_SUDO:-}" ] && { echo "run as root (reads root-only files, docker and iptables)" >&2; exit 3; }
 case "$1 ${2:-}" in
   "lock list") if [ -s "$STUB/locks" ]; then cat "$STUB/locks"; else echo "no data-collection locks"; fi ;;
   "start "*) for f in ${STUB_WATCH:-}; do echo "$f $(grep -h '^NTFY_' "$f" 2>/dev/null | tr '\n' ' ')"; done >> "$STUB/watch.log"

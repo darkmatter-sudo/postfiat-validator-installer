@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # live-run: one live pft-rollout drill (no-op rollout of both hosts, or bad-image canary drill on the sentry) with
 # every notifier on both hosts pointed at throwaway topics, and a PASS/FAIL verdict from check-drill.sh.
-#   sudo bash drill/live-run.sh noop|badimage        (run from the rollout/ directory, tee the output)
+#   bash drill/live-run.sh noop|badimage   (as the controller user whose ssh config reaches RELAY, with passwordless
+#   sudo; run from the rollout/ directory, tee the output). Every privileged command goes through `sudo -n`, like
+#   pft-rollout.sh itself, so root's ssh config is never needed.
 # 0  preflight (nothing changed yet): relay reachable, Alertmanager ready, no pft-maint data-collection lock, no
 #    leftover drill files, badimage: drill tag not present yet.
 # 1  redirect: LOCAL_ENVS here and REMOTE_ENVS on the relay get NTFY_SERVER/NTFY_TOPIC (NTFY_TOKEN dropped) of a random
@@ -20,10 +22,10 @@
 # 4  badimage: rmi the drill tag on the relay. Restore notifiers, read both throwaway topics back from ntfy, write
 #    facts JSON next to the audit log, run check-drill.sh on this run's audit lines. Exit = checker exit (0 PASS).
 # Topics print as <redacted>, user names in pft-integrity output as <user>.
-# Env: CONF (/etc/pft-rollout/hosts.conf)  STATE_DIR (/var/lib/pft-rollout)  RELAY (relay)  NTFY (https://ntfy.sh)
+# Env: CONF (/etc/pft-rollout/hosts.conf)  STATE_DIR (~/.local/state/pft-rollout, as pft-rollout)  RELAY (relay)  NTFY (https://ntfy.sh)
 #      AM (http://127.0.0.1:9093)  SENTRY_C (postfiatd-sentry)  VALIDATOR_C (postfiatd)  IMAGE_TAG (as pft-rollout)
 #      LOCAL_ENVS  REMOTE_ENVS  MAINT_DIR_L / MAINT_DIR_R (/etc/pft-maint)  INTEGRITY_CMD (pft-integrity, none = skip)
-#      NEED_ROOT (1)  NTFY_WAIT (15 s before reading the topics back)  PFT_ROLLOUT / CHECK_DRILL (the scripts next to this one)
+#      NTFY_WAIT (15 s before reading the topics back)  PFT_ROLLOUT / CHECK_DRILL (the scripts next to this one)
 #      LOGSHIP_DIR (/var/log/journal/remote)  LOGSHIP_UNIT (pft-logship-dockerlog@SENTRY_C)  LOGSHIP_WAIT (120)
 #      pft-rollout env (GATE_TIMEOUT, ...) passes through.
 set -uo pipefail
@@ -31,14 +33,14 @@ MODE="${1:-}"
 case "$MODE" in noop|badimage) ;; *) echo "usage: $0 noop|badimage" >&2; exit 3 ;; esac
 HERE="$(cd "$(dirname "$0")" && pwd)"
 RO="${PFT_ROLLOUT:-$HERE/../pft-rollout.sh}"; CHECK="${CHECK_DRILL:-$HERE/check-drill.sh}"
-export CONF="${CONF:-/etc/pft-rollout/hosts.conf}" STATE_DIR="${STATE_DIR:-/var/lib/pft-rollout}"
+export CONF="${CONF:-/etc/pft-rollout/hosts.conf}" STATE_DIR="${STATE_DIR:-${HOME:-/root}/.local/state/pft-rollout}"
 IMAGE_TAG="${IMAGE_TAG:-agtipft/postfiatd:testnet-light-latest}"
 RELAY="${RELAY:-relay}"; NTFY="${NTFY:-https://ntfy.sh}"; AM="${AM:-http://127.0.0.1:9093}"
 SENTRY_C="${SENTRY_C:-postfiatd-sentry}"; VALIDATOR_C="${VALIDATOR_C:-postfiatd}"
 LOCAL_ENVS="${LOCAL_ENVS:-/etc/postfiat-monitor.env /etc/pft-integrity.env}"
 REMOTE_ENVS="${REMOTE_ENVS:-/etc/pft-watchdog/ntfy.env /etc/pft-integrity.env}"
 MAINT_DIR_L="${MAINT_DIR_L:-/etc/pft-maint}"; MAINT_DIR_R="${MAINT_DIR_R:-/etc/pft-maint}"
-INTEGRITY_CMD="${INTEGRITY_CMD:-pft-integrity}"; NEED_ROOT="${NEED_ROOT:-1}"; NTFY_WAIT="${NTFY_WAIT:-15}"
+INTEGRITY_CMD="${INTEGRITY_CMD:-pft-integrity}"; NTFY_WAIT="${NTFY_WAIT:-15}"
 LOGSHIP_DIR="${LOGSHIP_DIR:-/var/log/journal/remote}"; LOGSHIP_UNIT="${LOGSHIP_UNIT:-pft-logship-dockerlog@$SENTRY_C}"
 LOGSHIP_WAIT="${LOGSHIP_WAIT:-120}"
 DRILL_TAG=pft-rollout-drill:bad
@@ -83,11 +85,11 @@ echo "pft-rollout live-run $MODE - $(ts) - $(grep PRETTY_NAME /etc/os-release | 
 echo "sha256: pft-rollout.sh $(sha256sum < "$RO" | cut -c1-64) | live-run.sh $(sha256sum < "$0" | cut -c1-64) | check-drill.sh $(sha256sum < "$CHECK" | cut -c1-64)"
 
 echo; echo "== 0. preflight (nothing changed yet)"
-[ "$NEED_ROOT" = 0 ] || [ "$(id -u)" -eq 0 ] || { echo "  run as root" >&2; exit 3; }
+sudo -n true || { echo "  passwordless sudo needed (sudo -n) - stopping" >&2; exit 3; }
 [ -r "$CONF" ] || { echo "  no $CONF" >&2; exit 3; }
 R true || { echo "  relay unreachable - stopping" >&2; exit 3; }
 curl -s --max-time 5 -o /dev/null "$AM/-/ready" || { echo "  Alertmanager not reachable - stopping" >&2; exit 3; }
-locks="$(pft-maint lock list 2>&1)"
+locks="$(sudo -n pft-maint lock list 2>&1)"
 [ "$locks" = "no data-collection locks" ] || { echo "  pft-maint data-collection lock held: $locks - stopping" >&2; exit 4; }
 echo "  pft-maint: $locks"
 for f in $LOCAL_ENVS; do
@@ -191,7 +193,7 @@ readback() { # TOPIC LABEL -> prints messages, sets N_MSG (number, or null if nt
 readback "$MAINT" MAINT
 readback "$ALERT" ALERT; ALERTS="$N_MSG"
 if [ "$INTEGRITY_CMD" != none ]; then
-  echo "  \$ $INTEGRITY_CMD verify (local)"; "$INTEGRITY_CMD" verify 2>&1 | red | tail -12 | sed 's/^/    /'
+  echo "  \$ $INTEGRITY_CMD verify (local)"; sudo -n "$INTEGRITY_CMD" verify 2>&1 | red | tail -12 | sed 's/^/    /'
   echo "  \$ $INTEGRITY_CMD verify (relay)"; R "sudo -n $INTEGRITY_CMD verify" 2>&1 | red | tail -12 | sed 's/^/    /'
 fi
 FACTS="$STATE_DIR/facts-${RUN:-none}.json"

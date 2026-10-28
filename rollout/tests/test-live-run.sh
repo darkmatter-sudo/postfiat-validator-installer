@@ -26,7 +26,7 @@ setup() { # fixture + notifier env files on both fake hosts (originals copied to
 lr() { # MODE -> output in $T/out, exit code in RC
   PATH="$STUBS:$PATH" STUB="$T" CONF="$T/hosts.conf" STATE_DIR="$T/state" HOME="$T/home" PFT_ROLLOUT_NOW_FILE="$T/now" \
     GATE_TIMEOUT=300 SOAK_SEC=60 POLL_SEC=10 MIN_ADVANCE=10 ROLLBACK_TIMEOUT=300 AM=http://am.test:9093 \
-    FOUNDATION_RPC=https://foundation.test NTFY=https://ntfy.test RELAY=relay NEED_ROOT=0 NTFY_WAIT=0 INTEGRITY_CMD=none LOGSHIP_WAIT=0 \
+    FOUNDATION_RPC=https://foundation.test NTFY=https://ntfy.test RELAY=relay STUB_NEED_SUDO=1 NTFY_WAIT=0 INTEGRITY_CMD=pft-integrity LOGSHIP_WAIT=0 \
     LOCAL_ENVS="$T/etc-l/postfiat-monitor.env $T/etc-l/pft-integrity.env" \
     REMOTE_ENVS="$T/etc-r/pft-watchdog/ntfy.env $T/etc-r/pft-integrity.env" \
     MAINT_DIR_L="$T/etc-l/pft-maint" MAINT_DIR_R="$T/etc-r/pft-maint" \
@@ -66,6 +66,8 @@ t_noop() {
   check "facts logship: unit active, newest > after" eq "$(jq -r '.logship | "\(.unit) \(.nrestarts) \(.newest_us > .after_us)"' "$T"/state/facts-*.json)" "active 2 true"
   check "remote journal queried newest-first for the sentry" eq "$(cnt "$T/calls.log" -c '^local journalctl -D /var/log/journal/remote -t postfiatd-sentry -r -n 1 -o json')" 1
   check "bridge unit read on the relay" eq "$(cnt "$T/calls.log" -c '^relay systemctl show -p ActiveState -p NRestarts pft-logship-dockerlog@postfiatd-sentry$')" 1
+  check "local lock list ran through sudo (no 'run as root')" has "pft-maint: no data-collection locks"
+  check "integrity verify PASS on both hosts (through sudo)" eq "$(grep -cE '^    RESULT: PASS .*\((local|relay)\)$' "$T/out")" 2
   end
 }
 t_badimage() {
@@ -180,6 +182,16 @@ t_build_fail() {
   end
 }
 
-t_noop; t_badimage; t_alert_seen; t_ntfy_down; t_logship_stale; t_logship_empty; t_logship_inactive; t_lock; t_leftover; t_drill_tag_present; t_build_fail
+t_nosudo() {
+  setup "no passwordless sudo: stop in preflight, nothing redirected"
+  touch "$T/sudo_denied"
+  lr noop
+  check "rc=3 (got $RC)" eq "$RC" 3
+  check "says passwordless sudo needed" has "passwordless sudo needed"
+  check "nothing redirected" untouched
+  check "no pft-rollout run" eq "$(cnt "$T/calls.log" -cE ' docker (restart|run|compose|tag)')" 0
+  end
+}
+t_noop; t_badimage; t_nosudo; t_alert_seen; t_ntfy_down; t_logship_stale; t_logship_empty; t_logship_inactive; t_lock; t_leftover; t_drill_tag_present; t_build_fail
 echo "live-run tests: $PASSN passed, $FAILN failed${FAILED[*]:+ (${FAILED[*]})}"
 [ "$FAILN" -eq 0 ]

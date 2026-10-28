@@ -16,6 +16,9 @@ MUTANTS=(
   'W9 remote journal read oldest-first (no -r)|s/-t $SENTRY_C -r -n 1/-t $SENTRY_C -n 1/'
   'W10 logship facts not recorded|s/--argjson ls "$LS"/--argjson ls null/'
   'W8 existing relay pft-maint ntfy.env overwritten|s/^! R "sudo -n test -e $MAINT_DIR_R\/ntfy.env" ||/true ||/'
+  'W11 local lock list without sudo (root-only tool)|s/locks="$(sudo -n pft-maint lock list/locks="$(pft-maint lock list/'
+  'W12 local integrity verify without sudo|s/; sudo -n "$INTEGRITY_CMD" verify/; "$INTEGRITY_CMD" verify/'
+  'W13 no passwordless-sudo preflight|s/^sudo -n true || /true || /'
 )
 MC=0
 for m in "${MUTANTS[@]}"; do
