@@ -1,0 +1,57 @@
+== 2026-10-28T18:18:31Z run 12: deploy audittrail boot-load fix (commit f506217dc287a0c01396a97c58d574bb0f29b291) - Ubuntu 22.04.5 LTS
+sha256 pft-audittrail.sh 7cf62240c7f2ccd1f3e6bed8972d9b345df214c89e7318783325aa4568384e86
+
+-- validator host (auditd enabled 1): install the new script, apply (rules unchanged + drop-in), check
+installed sha256 7cf62240c7f2ccd1f3e6bed8972d9b345df214c89e7318783325aa4568384e86
+$ systemctl show -p ProtectHome --value auditd   (before)
+yes
+$ sudo pft-audittrail apply --yes
+[2026-10-28T18:18:33Z] auditd.service drop-in installed (ProtectHome=read-only: the boot-time rule load can see /root)
+[2026-10-28T18:18:33Z] loading rules (55 in /etc/audit/rules.d/pft-audittrail.rules, immutable=off)
+pft-audittrail: loaded 61 pft-* rules, rules file has 55
+exit 1
+$ systemctl show -p ProtectHome --value auditd   (after)
+read-only
+$ sudo pft-audittrail check
+pft-audittrail check - 2026-10-28T18:18:34Z
+  [PASS] auditd active
+  [PASS] audit enabled=1 (expected 1)
+  [INFO] lost events: 0
+  [FAIL] loaded pft-* rules 61 != rules file 55
+  [PASS] loaded rules identical to apply snapshot
+  [PASS] journald drop-in Storage=persistent Seal=yes
+  [PASS] FSS sealing key present
+  [PASS] auditd.service ProtectHome=read-only (boot-time rule load sees every watched path)
+  [PASS] journalctl --verify: 14 files PASS, 50 sealed file(s) need the off-host key (--verify-key-file) for seal verification
+RESULT: FAIL (1) -> exit 1
+exit 1
+
+-- sentry host (auditd enabled 2, immutable: apply cannot reload rules until reboot): install the script, write the drop-in it renders, daemon-reload, check
+installed sha256 fc421c385172f285b22dfa0a7b6b3e479a532a3a726375900ef54a4a1b4ef9ff
+$ systemctl show -p ProtectHome --value auditd   (before)
+yes
+$ sudo pft-audittrail check   (before: expected FAIL on the missing drop-in)
+  [PASS] journald drop-in Storage=persistent Seal=yes
+  [FAIL] auditd.service drop-in /etc/systemd/system/auditd.service.d/pft-audittrail.conf missing or changed
+RESULT: FAIL (1) -> exit 1
+$ cat /etc/systemd/system/auditd.service.d/pft-audittrail.conf
+# pft-audittrail: boot-time augenrules (ExecStartPost) must see the watches under /root
+[Service]
+ProtectHome=read-only
+$ systemctl show -p ProtectHome --value auditd   (after)
+read-only
+$ sudo pft-audittrail check
+pft-audittrail check - 2026-10-28T18:24:35Z
+  [PASS] auditd active
+  [PASS] audit enabled=2 (expected 2)
+  [INFO] lost events: 0
+  [PASS] loaded pft-* rules = rules file (36)
+  [PASS] loaded rules identical to apply snapshot
+  [PASS] journald drop-in Storage=persistent Seal=yes
+  [PASS] FSS sealing key present
+  [PASS] auditd.service ProtectHome=read-only (boot-time rule load sees every watched path)
+  [PASS] journalctl --verify: 0 files PASS, 34 sealed file(s) need the off-host key (--verify-key-file) for seal verification
+RESULT: PASS -> exit 0
+exit 0
+== 2026-10-28T18:24:35Z end run 12
+NOTE 2026-10-28T18:25:01Z: this run is SUPERSEDED by run 14. (1) The validator apply exposed a bug: audittrail counted dockerd/'s '-k pft-dockerd' watches as its own (61 loaded vs 55 in its file) and stopped before the journald step. (2) The agent fixed that bug in the working tree WHILE this run was still running, so the sentry part installed the working-tree script (sha256 fc421c38..., shown above), not commit f506217 (7cf62240...). Run 14 redeploys the committed fix on both hosts.

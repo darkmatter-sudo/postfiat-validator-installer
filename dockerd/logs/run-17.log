@@ -1,0 +1,112 @@
+== 2026-10-28T19:09:08Z run 17: shellcheck + offline tests after rules_text fix (boot-safe watches) - Ubuntu 22.04.5 LTS - HEAD 46a69196e0cf139f9cee94166cef34fdbe3279a9 + working tree
+NOTE (appended): the one FAIL (boot-safe parents) was a wrong threshold in the NEW test (-ge 10; the fresh stub plans 5 watches), not a tool fault; fixed to = 5 and re-run as run 18.
+6532ac65c4bad5350089fd347366f5211101d1134b1ead69d830d5cc3d392dcd  dockerd/pft-dockerd.sh
+a43f1d3b89e1c37b5b768d1af75ac844970f9a61985e52f355f4b41784c9a408  dockerd/tests/run-tests.sh
+3c011d11ee65449a74444541e42b0c3f26284906ae015c803ab45e98ca8f0df6  dockerd/tests/mutate.sh
+-- shellcheck
+shellcheck exit 0
+-- bash tests/run-tests.sh
+ok   audit good host -> PASS exit 0
+ok   good host has no FAIL lines
+ok   --json good host
+ok   audit live-restore off -> FAIL
+ok   audit no-new-privileges missing -> FAIL
+ok   audit log max-size missing -> FAIL
+ok   audit hosts tcp in daemon.json -> FAIL
+ok   audit -H tcp on cmdline -> FAIL
+ok   audit dockerd TCP listener -> FAIL
+ok   audit insecure registry CIDR -> FAIL
+ok   audit insecure registry name -> FAIL
+ok   audit iptables=false -> FAIL
+ok   audit experimental on -> FAIL
+ok   audit no seccomp -> FAIL
+ok   audit no apparmor -> FAIL
+ok   audit swarm active -> FAIL
+ok   audit daemon.json not an object -> FAIL
+ok   audit docker.service mode 666 -> FAIL
+ok   audit docker.socket owner -> FAIL
+ok   audit /etc/docker mode 777 -> FAIL
+ok   audit docker.sock mode 666 -> FAIL
+ok   audit docker.sock owner root:root -> FAIL
+ok   audit daemon.json mode 664 -> FAIL
+ok   audit /etc/default/docker mode 666 -> FAIL
+ok   audit containerd.sock mode 666 -> FAIL
+ok   audit audit dockerd missing -> FAIL
+ok   audit audit /run/containerd missing -> FAIL
+ok   audit audit docker.service missing -> FAIL
+ok   audit audit runc missing -> FAIL
+ok   audit audit /etc/docker missing -> FAIL
+ok   containerd.sock covered by /run/containerd watch
+ok   daemon.json covered by /etc/docker watch
+ok   watch on a longer path (/usr/bin/runcx) does not cover runc
+ok   docker group members counted, never named
+ok   group member names not printed
+ok   explicit false is reported as false (jq // trap)
+ok   icc=false reported
+ok   decisions listed (icc, userland-proxy, userns-remap)
+ok   5 DECISION lines
+ok   docker info failure -> exit 2
+ok   plan prints merged json + missing watches
+ok   plan omits watches already loaded
+ok   fresh plan watches /run/containerd
+ok   fresh plan: no socket watch (dir emitted in the same file covers it)
+FAIL boot-safe parents
+ok   apply --dry-run
+ok   dry-run changed nothing
+ok   apply without --yes refused
+ok   injected bad key -> REFUSED exit 4
+ok   bad key: daemon.json byte-identical, dockerd untouched
+ok   label without key=value -> REFUSED exit 4 (stub mirrors dockerd)
+ok   unparseable daemon.json -> refused
+ok   apply from absent -> done
+ok   live-restore enabled by reload first
+ok   health gate PASS
+ok   reload happens before restart
+ok   audit watches loaded
+ok   re-audit after apply -> PASS
+ok   second apply -> no change
+ok   second apply did not restart dockerd
+ok   second apply: watches complete
+ok   conflicting existing key kept + reported
+ok   merge kept log-opts/debug, added live-restore
+ok   injected health miss -> rollback exit 1
+ok   health rollback: daemon.json byte-identical
+ok   health rollback reports byte-identical
+ok   health drill on applied host -> rollback exit 1
+ok   health drill candidate carries the drill label
+ok   health drill restarted dockerd (apply + rollback)
+ok   health drill: applied daemon.json byte-identical after rollback
+ok   no live-restore warning when the backup has live-restore
+ok   containers restarted by dockerd restart -> rollback
+ok   rollback to absent removes daemon.json
+ok   rollback to a file without live-restore warns
+ok   rollback gate: DOCKER-USER as before, StartedAt changed reported
+ok   server_state not full -> rollback
+ok   server_state still not full after rollback -> exit 5
+ok   peer port not listening -> rollback, still down -> exit 5
+ok   dockerd does not come back -> rollback attempted, fails -> exit 5
+ok   no egress/ installed -> no reapply
+ok   egress: jump dropped by restart -> reapply -> gate PASS
+ok   egress: apply done
+ok   egress: jump present after apply
+ok   egress: health drill -> rollback exit 1
+ok   egress: rollback gated, PASS with the jump restored
+ok   egress: reapplied after the apply AND the rollback restart
+ok   egress: jump present + daemon.json byte-identical after drill
+ok   egress: rollback command gated too
+ok   egress: jump present after rollback command
+ok   egress reapply fails -> apply gate misses
+ok   egress reapply fails -> rollback gate FAIL -> exit 5
+ok   egress reapply failure is reported
+ok   immutable auditd -> staged, not loaded
+ok   no augenrules under -e 2
+ok   audit reports staged-until-boot
+ok   immutable: socket not staged
+ok   audit: socket covered by the staged /run/containerd watch
+ok   rollback --yes restores backup
+ok   rollback file identical
+ok   rollback without backup refused
+ok   unknown command -> usage exit 3
+RESULT: 100 passed, 1 failed
+tests exit 1
+== 2026-10-28T19:10:16Z end run 17

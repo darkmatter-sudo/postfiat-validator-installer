@@ -1,0 +1,92 @@
+== 2026-10-28T17:15:24Z run 3: offline tests + shellcheck | OS: Ubuntu 22.04.5 LTS | commit 0c20aecad7a4272c4cfad307d5213350266cd2e0
+9ac3db664c617eac92af209d8e4e46e0976597a27d6eb3e61b758a7b0a50a2ef  pft-dockerd.sh
+8392ef2a3e314eaa8985a6137c69d9a3df196bb3153e2a8fb70252c2e500cea4  tests/mutate.sh
+d70b4ccb7e4cc7cc9191186762c349710d4153b4ae1271c9e32a6477a43f1d3d  tests/run-tests.sh
+28f01e73d523167d3fe27fa3635315e2733470b5bfebdb463285a770b6d5877d  tests/stubs.sh
+$ shellcheck -x pft-dockerd.sh tests/*.sh
+shellcheck exit 0
+$ bash tests/run-tests.sh
+ok   audit good host -> PASS exit 0
+ok   good host has no FAIL lines
+ok   --json good host
+ok   audit live-restore off -> FAIL
+ok   audit no-new-privileges missing -> FAIL
+ok   audit log max-size missing -> FAIL
+ok   audit hosts tcp in daemon.json -> FAIL
+ok   audit -H tcp on cmdline -> FAIL
+ok   audit dockerd TCP listener -> FAIL
+ok   audit insecure registry CIDR -> FAIL
+ok   audit insecure registry name -> FAIL
+ok   audit iptables=false -> FAIL
+ok   audit experimental on -> FAIL
+ok   audit no seccomp -> FAIL
+ok   audit no apparmor -> FAIL
+ok   audit swarm active -> FAIL
+ok   audit daemon.json not an object -> FAIL
+ok   audit docker.service mode 666 -> FAIL
+ok   audit docker.socket owner -> FAIL
+ok   audit /etc/docker mode 777 -> FAIL
+ok   audit docker.sock mode 666 -> FAIL
+ok   audit docker.sock owner root:root -> FAIL
+ok   audit daemon.json mode 664 -> FAIL
+ok   audit /etc/default/docker mode 666 -> FAIL
+ok   audit containerd.sock mode 666 -> FAIL
+ok   audit audit dockerd missing -> FAIL
+ok   audit audit /run/containerd missing -> FAIL
+ok   audit audit docker.service missing -> FAIL
+ok   audit audit runc missing -> FAIL
+ok   audit audit /etc/docker missing -> FAIL
+ok   containerd.sock covered by /run/containerd watch
+ok   daemon.json covered by /etc/docker watch
+ok   watch on a longer path (/usr/bin/runcx) does not cover runc
+ok   docker group members counted, never named
+ok   group member names not printed
+ok   explicit false is reported as false (jq // trap)
+ok   icc=false reported
+ok   decisions listed (icc, userland-proxy, userns-remap)
+ok   5 DECISION lines
+ok   docker info failure -> exit 2
+ok   plan prints merged json + missing watches
+ok   plan omits watches already loaded
+ok   apply --dry-run
+ok   dry-run changed nothing
+ok   apply without --yes refused
+ok   injected bad key -> REFUSED exit 4
+ok   bad key: daemon.json byte-identical, dockerd untouched
+ok   label without key=value -> REFUSED exit 4 (stub mirrors dockerd)
+ok   unparseable daemon.json -> refused
+ok   apply from absent -> done
+ok   live-restore enabled by reload first
+ok   health gate PASS
+ok   reload happens before restart
+ok   audit watches loaded
+ok   re-audit after apply -> PASS
+ok   second apply -> no change
+ok   second apply did not restart dockerd
+ok   second apply: watches complete
+ok   conflicting existing key kept + reported
+ok   merge kept log-opts/debug, added live-restore
+ok   injected health miss -> rollback exit 1
+ok   health rollback: daemon.json byte-identical
+ok   health rollback reports byte-identical
+ok   health drill on applied host -> rollback exit 1
+ok   health drill candidate carries the drill label
+ok   health drill restarted dockerd (apply + rollback)
+ok   health drill: applied daemon.json byte-identical after rollback
+ok   no live-restore warning when the backup has live-restore
+ok   containers restarted by dockerd restart -> rollback
+ok   rollback to absent removes daemon.json
+ok   rollback to a file without live-restore warns
+ok   server_state not full -> rollback
+ok   peer port not listening -> rollback
+ok   dockerd does not come back -> rollback attempted
+ok   immutable auditd -> staged, not loaded
+ok   no augenrules under -e 2
+ok   audit reports staged-until-boot
+ok   rollback --yes restores backup
+ok   rollback file identical
+ok   rollback without backup refused
+ok   unknown command -> usage exit 3
+RESULT: 81 passed, 0 failed
+run-tests exit 0
+== 2026-10-28T17:16:24Z end run 3

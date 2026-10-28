@@ -1,0 +1,33 @@
+== 2026-10-28T18:37:30Z run 16: restore after run 15 - Ubuntu 22.04.5 LTS
+context: run 15 sentry boot load stopped at audit.rules line 44 '-w /run/containerd/containerd.sock -p wa -k pft-dockerd' (ENOENT: containerd creates the socket after auditd starts). Lines 1-43 incl. the /root watch loaded (audittrail fix works). The socket is covered by the /run/containerd directory watch (CIS 1.1.4), so the file watch is removed from pft-dockerd.rules on both hosts and the rules reloaded.
+
+-- sentry host
+$ sudo journalctl -b -u auditd | grep augenrules.*error
+augenrules[618]: Error sending add rule data request (No such file or directory)
+augenrules[618]: There was an error in line 44 of /etc/audit/audit.rules
+before: enabled 1, 38 rules
+$ cat /etc/audit/rules.d/pft-dockerd.rules
+# pft-dockerd: auditd watches for the Docker daemon files (CIS Docker Benchmark v1.6.0 1.1.x)
+-w /run/containerd -p wa -k pft-dockerd
+-w /lib/systemd/system/docker.service -p wa -k pft-dockerd
+-w /lib/systemd/system/docker.socket -p wa -k pft-dockerd
+-w /usr/bin/containerd-shim-runc-v2 -p wa -k pft-dockerd
+-w /usr/bin/runc -p wa -k pft-dockerd
+$ sudo augenrules --load
+rc 0
+after: enabled 2, 41 rules, compiled file has 41 -w/-a lines
+
+-- validator host
+$ sudo journalctl -b -u auditd | grep augenrules.*error
+before: enabled 1, 61 rules
+$ cat /etc/audit/rules.d/pft-dockerd.rules
+# pft-dockerd: auditd watches for the Docker daemon files (CIS Docker Benchmark v1.6.0 1.1.x)
+-w /run/containerd -p wa -k pft-dockerd
+-w /lib/systemd/system/docker.service -p wa -k pft-dockerd
+-w /lib/systemd/system/docker.socket -p wa -k pft-dockerd
+-w /usr/bin/containerd-shim-runc-v2 -p wa -k pft-dockerd
+-w /usr/bin/runc -p wa -k pft-dockerd
+$ sudo augenrules --load
+rc 0
+after: enabled 1, 60 rules, compiled file has 60 -w/-a lines
+== 2026-10-28T18:37:34Z end run 16

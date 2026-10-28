@@ -53,6 +53,21 @@ per host with `plan`, do not copy the example.
 `--immutable` adds `zz-pft-audittrail-immutable.rules` (`-e 2`, sorts last). The kernel then refuses every rule
 change until the next reboot, including by root. It is off unless you ask for it.
 
+### Boot-time rule load (fixed 2026-10-28)
+
+Ubuntu 22.04's `auditd.service` loads `rules.d` at boot with `ExecStartPost=-/sbin/augenrules --load` and runs with
+`ProtectHome=true`, so `/root` is hidden from that load. The `-w /root/.ssh/authorized_keys` watch then fails with
+`No such file or directory` and auditctl stops: the first sentry reboot after `apply --immutable` loaded 11 of 42
+rules and never reached `-e 2`. A load from a shell (`augenrules --load`) works, so no live apply ever showed it.
+`apply` now installs `/etc/systemd/system/auditd.service.d/pft-audittrail.conf` (`ProtectHome=read-only`) and runs
+`systemctl daemon-reload`; `check` fails if the drop-in is missing or not loaded yet (`systemctl show -p ProtectHome
+auditd` still `yes`) while a watch lives under `/root` or `/home`; `rollback` removes it. Tests: section 9 of
+`tests/run-tests.sh` (a simulated boot load inside the sandboxed unit; with the pre-fix script it loads 11/28 rules).
+`check` also counts only this tool's own keys now: `dockerd/` loads `-k pft-dockerd` watches, which the old
+`pft-` prefix match counted as drift (section 10).
+Live proof: a planned sentry reboot after the fix loaded every rule with `enabled 2`
+(`dockerd/logs/run-22.log`; the failing boot loads are in `dockerd/logs/run-06.log` and `run-15.log`).
+
 ### apply and the verification key
 
 `apply --yes` installs auditd if missing, writes the rules file, loads it, snapshots the loaded `pft-*` rules,

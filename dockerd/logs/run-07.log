@@ -1,0 +1,93 @@
+== 2026-10-28T17:35:11Z run 7: post-drill fixes + verification | OS: Ubuntu 22.04.5 LTS | commit 40c2213e65486975b921a08bd5a9fb6fdbdef5be
+context: run 6 sentry audit-after-reboot FAIL - boot-time augenrules aborted at an earlier (non-pft-dockerd) rule; validator DOCKER-USER lost the pft-egress jump on dockerd restart (healed by pft-egress-reapply 17:33:45Z)
+$ (sentry) sudo augenrules --load   [run by hand 2026-10-28T17:36Z, output: enabled 2, rc 0]
+$ (sentry) sudo auditctl -s | head -1; sudo auditctl -l | grep -c pft-dockerd
+enabled 2
+6
+$ (sentry) sudo pft-dockerd audit
+pft-dockerd audit - 2026-10-28T17:35:15Z
+  [PASS    ] 2.14       live-restore                               enabled
+  [PASS    ] 2.18       no-new-privileges                          daemon default on
+  [PASS    ] n/a        log-rotation                               {"d":"json-file","o":{"max-size":"100m","max-file":"5"}}
+  [PASS    ] 2.7        tcp-socket                                 unix socket only
+  [PASS    ] 2.5        insecure-registries                        loopback defaults only
+  [PASS    ] 2.4        iptables                                   dockerd manages iptables
+  [PASS    ] 2.17       experimental                               off
+  [PASS    ] 2.16       seccomp                                    default profile
+  [PASS    ] n/a        apparmor                                   enabled
+  [PASS    ] 7.1        swarm                                      inactive
+  [DECISION] 2.2        icc                                        icc=true (not changed: see README)
+  [DECISION] 2.15       userland-proxy                             userland-proxy=true (not changed)
+  [DECISION] 2.9        userns-remap                               userns-remap=off (not changed)
+  [DECISION] 2.12       authorization-plugin                       none (unix socket only, root/docker-group access is admin access)
+  [DECISION] 1.1.5      audit:/var/lib/docker                      not watched (postfiatd writes its ledger DB there continuously)
+  [PASS    ] 1.1.2      docker-group                               no members
+  [PASS    ] 3.1-3.2    perm:/lib/systemd/system/docker.service    root:root 644
+  [PASS    ] 3.3-3.4    perm:/lib/systemd/system/docker.socket     root:root 644
+  [PASS    ] 3.5-3.6    perm:/etc/docker                           root:root 755
+  [PASS    ] 3.15-3.16  perm:/run/docker.sock                      root:docker 660
+  [PASS    ] 3.17-3.18  perm:/etc/docker/daemon.json               root:root 644
+  [INFO    ] 3.19-3.20  perm:/etc/default/docker                   absent
+  [PASS    ] 3.23-3.24  perm:/run/containerd/containerd.sock       root:root 660
+  [PASS    ] 1.1.3      audit:/usr/bin/dockerd                     watched
+  [PASS    ] 1.1.4      audit:/run/containerd                      watched
+  [PASS    ] 1.1.6      audit:/etc/docker                          watched
+  [PASS    ] 1.1.7      audit:/lib/systemd/system/docker.service   watched
+  [PASS    ] 1.1.8      audit:/run/containerd/containerd.sock      watched
+  [PASS    ] 1.1.9      audit:/lib/systemd/system/docker.socket    watched
+  [INFO    ] 1.1.10     audit:/etc/default/docker                  path absent
+  [PASS    ] 1.1.11     audit:/etc/docker/daemon.json              watched
+  [INFO    ] 1.1.12     audit:/etc/containerd/config.toml          path absent
+  [PASS    ] 1.1.14     audit:/usr/bin/containerd                  watched
+  [PASS    ] 1.1.17     audit:/usr/bin/containerd-shim-runc-v2     watched
+  [PASS    ] 1.1.18     audit:/usr/bin/runc                        watched
+RESULT: PASS
+exit 0
+$ (validator) sudo pft-dockerd audit
+pft-dockerd audit - 2026-10-28T17:35:16Z
+  [PASS    ] 2.14       live-restore                               enabled
+  [PASS    ] 2.18       no-new-privileges                          daemon default on
+  [PASS    ] n/a        log-rotation                               {"d":"json-file","o":{"max-size":"100m","max-file":"5"}}
+  [PASS    ] 2.7        tcp-socket                                 unix socket only
+  [PASS    ] 2.5        insecure-registries                        loopback defaults only
+  [PASS    ] 2.4        iptables                                   dockerd manages iptables
+  [PASS    ] 2.17       experimental                               off
+  [PASS    ] 2.16       seccomp                                    default profile
+  [PASS    ] n/a        apparmor                                   enabled
+  [PASS    ] 7.1        swarm                                      inactive
+  [DECISION] 2.2        icc                                        icc=true (not changed: see README)
+  [DECISION] 2.15       userland-proxy                             userland-proxy=true (not changed)
+  [DECISION] 2.9        userns-remap                               userns-remap=off (not changed)
+  [DECISION] 2.12       authorization-plugin                       none (unix socket only, root/docker-group access is admin access)
+  [DECISION] 1.1.5      audit:/var/lib/docker                      not watched (postfiatd writes its ledger DB there continuously)
+  [INFO    ] 1.1.2      docker-group                               1 member(s); each is root-equivalent, review
+  [PASS    ] 3.1-3.2    perm:/lib/systemd/system/docker.service    root:root 644
+  [PASS    ] 3.3-3.4    perm:/lib/systemd/system/docker.socket     root:root 644
+  [PASS    ] 3.5-3.6    perm:/etc/docker                           root:root 755
+  [PASS    ] 3.15-3.16  perm:/run/docker.sock                      root:docker 660
+  [PASS    ] 3.17-3.18  perm:/etc/docker/daemon.json               root:root 644
+  [INFO    ] 3.19-3.20  perm:/etc/default/docker                   absent
+  [PASS    ] 3.23-3.24  perm:/run/containerd/containerd.sock       root:root 660
+  [PASS    ] 1.1.3      audit:/usr/bin/dockerd                     watched
+  [PASS    ] 1.1.4      audit:/run/containerd                      watched
+  [PASS    ] 1.1.6      audit:/etc/docker                          watched
+  [PASS    ] 1.1.7      audit:/lib/systemd/system/docker.service   watched
+  [PASS    ] 1.1.8      audit:/run/containerd/containerd.sock      watched
+  [PASS    ] 1.1.9      audit:/lib/systemd/system/docker.socket    watched
+  [INFO    ] 1.1.10     audit:/etc/default/docker                  path absent
+  [PASS    ] 1.1.11     audit:/etc/docker/daemon.json              watched
+  [INFO    ] 1.1.12     audit:/etc/containerd/config.toml          path absent
+  [PASS    ] 1.1.14     audit:/usr/bin/containerd                  watched
+  [PASS    ] 1.1.17     audit:/usr/bin/containerd-shim-runc-v2     watched
+  [PASS    ] 1.1.18     audit:/usr/bin/runc                        watched
+RESULT: PASS
+exit 0
+$ (validator) sudo iptables -S DOCKER-USER | grep -c PFT-EGRESS
+1
+$ (sentry) sudo iptables -S DOCKER-USER | grep -c PFT-EGRESS
+1
+$ (validator) sudo pft-integrity verify
+pft-integrity verify - 2026-10-28T17:35:26Z
+OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-10-28T14:49:06Z
+RESULT: PASS - 82 unchanged, 0 warn, 0 fail -> exit 0
+NOTE (appended 2026-10-28T17:35:33Z): the '[run by hand 2026-10-28T17:36Z]' annotation above is wrong; the augenrules --load ran between 17:33:26Z (end of run 6) and 17:35:11Z (start of this run).

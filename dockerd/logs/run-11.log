@@ -1,0 +1,84 @@
+== 2026-10-28T18:16:54Z run 11: audittrail boot-load fix - offline tests + revert control + shellcheck - Ubuntu 22.04.5 LTS - base commit 2ac1f1f6af9f266bf422ae919845de1760828254 + working tree
+sha256 pft-audittrail.sh 7cf62240c7f2ccd1f3e6bed8972d9b345df214c89e7318783325aa4568384e86 | tests/run-tests.sh b49a54cce292f1bd0bc71aafbde4b1903dfc97e275e6b7a3c7df90b28f8dc5ef
+$ bash tests/run-tests.sh
+# pft-audittrail unit tests - 2026-10-28T18:16:55Z - Ubuntu 22.04.5 LTS - bash 5.1.16(1)-release
+ok   - plan exits 0
+ok   - plan: sshd + node config volume (discovered via docker inspect) watched
+ok   - plan: pft-keys / pft-agent paths redacted
+ok   - plan: absent path skipped, not watched
+ok   - plan: execve (auid>=1000 + root logins), module-load and time-change rules
+ok   - plan: -e 2 only with --immutable
+ok   - plan changed nothing
+ok   - apply without --yes refused (exit 4)
+ok   - apply without --key-out refused while no FSS key exists (exit 4)
+ok   - apply --dry-run: diff printed, nothing changed
+ok   - apply: auditd installed, 27 rules written and loaded
+ok   - apply: verification key only in --key-out (0600), stdout shows a sha256 prefix
+ok   - apply: journald drop-in, restart + rotate
+ok   - apply: root-only salt + canary file
+ok   - apply refuses to overwrite an existing key file
+ok   - re-apply: idempotent, no new keys, no reinstall
+ok   - check PASS after apply
+ok   - check: sealed file without key = expected (counted, not failed)
+ok   - check --verify-key-file: sealed file verified too (4 PASS)
+ok   - apply: drop-in has Audit=yes, auditing still enabled after the journald restart
+ok   - check --verify-key-file passes the key to journalctl --verify
+ok   - check output carries no machine-id paths
+ok   - drift: watch deleted (auditctl -W) -> exit 1 (differ from apply snapshot)
+ok   - drift: all rules flushed (auditctl -D) -> exit 1 (loaded pft-\* rules 0 != rules file)
+ok   - drift: rule swapped, same count -> exit 1 (differ from apply snapshot)
+ok   - drift: auditd stopped -> exit 1 (auditd not active)
+ok   - drift: audit disabled (enabled 0) -> exit 1 (enabled=0 (expected 1))
+ok   - drift: journal byte-flipped -> exit 1 (FAIL: system@flipped.journal (Bad message))
+ok   - drift: FSS key removed -> exit 1 (FSS sealing key missing)
+ok   - drift: journald drop-in edited (Seal=no) -> exit 1 (journald drop-in missing or changed)
+ok   - drift: rules file deleted -> exit 1 (rules file .* missing)
+ok   - check PASS again after every drift was undone
+ok   - check drift diff redacts pft-agent/pft-keys paths
+ok   - report: real ausearch csv -> counts by auid/command/object
+ok   - report: username hashed (u-bf6c105b), pft-keys object redacted
+ok   - report: keys with no events listed as 0; ausearch always run with --input-logs
+ok   - report: path-less (fd) events named by action, never an empty object
+ok   - apply --immutable: -e 2 file sorts last, kernel enabled=2
+ok   - check PASS with immutable (expects enabled 2)
+ok   - immutable: auditctl -D refused, rules kept
+ok   - rollback while immutable: files removed, exit 2 (reboot pending), auditd kept
+ok   - rollback after reboot: auditd removed (installed by apply), state gone
+ok   - rollback --dry-run changes nothing, keeps a pre-existing auditd
+ok   - rollback: rules + drop-in gone, pre-existing auditd kept
+ok   - rollback: kernel auditing re-enabled after journald (Audit=no default) restart
+ok   - check after rollback: FAIL (not applied)
+ok   - empty PFT_AT_ROOT: apply ok
+ok   - empty PFT_AT_ROOT: rollback removes the state dir, exit 0
+ok   - rollback: journald back on /var with a fresh unsealed system.journal
+ok   - rollback: the sealed active file was archived under journald's name (system@<seqnum id>-<head seq>-<head rt>)
+ok   - re-apply with new keys: no file sealed under two keys
+ok   - re-key while the old key is loaded: old file archived, new file sealed, no mixing
+ok   - apply: auditd.service drop-in ProtectHome=read-only + daemon-reload (a /root watch is in the rules)
+ok   - simulated boot with the drop-in: all 28 rules + -e 2 load inside auditd.service
+ok   - check PASS after the simulated boot (immutable)
+ok   - check reports ProtectHome=read-only
+ok   - control: without the drop-in the simulated boot aborts (11/28 rules, enabled 1)
+ok   - check: missing auditd.service drop-in -> FAIL
+ok   - check: drop-in present but not loaded (ProtectHome=yes) -> FAIL
+ok   - rollback removes the auditd.service drop-in + daemon-reload
+
+RESULT: 60 passed, 0 failed
+exit 0
+
+-- revert control: the same suite against the pre-fix script (git show HEAD:audittrail/pft-audittrail.sh, sha256 0ddb08ce407521429661c55ac0856f1ad7098b8cfc4f85e02404a47f41968296); section 9 must FAIL
+$ PFT_AT_SCRIPT=<pre-fix copy> bash tests/run-tests.sh
+grep: /tmp/tmp.fHjKa5hGyE/root/etc/systemd/system/auditd.service.d/pft-audittrail.conf: No such file or directory
+FAIL - auditd drop-in rc=0
+FAIL - boot with drop-in: 11/28 rules, enabled 1
+FAIL - check after boot
+FAIL - check ProtectHome line
+mv: cannot stat '/tmp/tmp.fHjKa5hGyE/root/etc/systemd/system/auditd.service.d/pft-audittrail.conf': No such file or directory
+FAIL - check missing drop-in rc=1
+cp: cannot stat '/tmp/tmp.fHjKa5hGyE/di.bak': No such file or directory
+FAIL - check daemon-reload pending rc=1
+RESULT: 54 passed, 6 failed
+exit 1 (expect 1)
+$ shellcheck -x pft-audittrail.sh tests/run-tests.sh
+shellcheck exit 0
+== 2026-10-28T18:17:42Z end run 11

@@ -1,0 +1,38 @@
+== 2026-10-28T18:21:58Z run 13: mutation controls (relaunch of stopped run 9, detached) - Ubuntu 22.04.5 LTS - commit f506217dc287a0c01396a97c58d574bb0f29b291
+sha256 pft-dockerd.sh fc024db6034bfc743c6a0dce53f6d16a298507c3420eb55f96e1b3ce61ec9580
+$ bash tests/mutate.sh
+control: unmutated copy RESULT: 96 passed, 0 failed
+M01 CAUGHT - live-restore check always PASS :: 1 failing: audit live-restore off -> FAIL (rc=0 want 1, /\[FAIL +\] 2.14 +li
+M02 CAUGHT - no-new-privileges default ignored :: 1 failing: audit no-new-privileges missing -> FAIL (rc=0 want 1, /\[FAIL +\]
+M03 CAUGHT - TCP listener not checked :: 1 failing: audit dockerd TCP listener -> FAIL (rc=0 want 1, /\[FAIL +\] 2.7 
+M04 CAUGHT - -H tcp on the command line ignored :: 1 failing: audit -H tcp on cmdline -> FAIL (rc=0 want 1, /\[FAIL +\] 2.7 +tc
+M05 CAUGHT - insecure registry names (IndexConfigs) ignored :: 1 failing: audit insecure registry name -> FAIL (rc=0 want 1, /\[FAIL +\] 2.
+M06 CAUGHT - back to the jq // trap for iptables :: 1 failing: audit iptables=false -> FAIL (rc=0 want 1, /\[FAIL +\] 2.4 +iptab
+M07 CAUGHT - perm: owner not compared :: 2 failing: audit docker.socket owner -> FAIL (rc=0 want 1, /\[FAIL +\] 3.3-3;audit docker.sock owner root:root -> FAIL (rc=0 want 1, /\[FAIL +
+M08 CAUGHT - perm: mode bits not compared :: 6 failing: audit docker.service mode 666 -> FAIL (rc=0 want 1, /\[FAIL +\] 3;audit /etc/docker mode 777 -> FAIL (rc=0 want 1, /\[FAIL +\] 3.5-;audit docker.sock mode 666 -> FAIL (rc=0 want 1, /\[FAIL +\] 3.15
+M09 CAUGHT - audit watch matched as a prefix (runcx covers runc) :: 1 failing: watch on a longer path (/usr/bin/runcx) does not cover runc (rc=0
+M10 CAUGHT - staged-until-boot not distinguished :: 1 failing: audit reports staged-until-boot (rc=1 want 1, /1.1.18 +audit:/usr
+M11 CAUGHT - docker group prints member names :: 2 failing: docker group members counted, never named (rc=0 want 0, /INFO +\];group member names not printed
+M12 CAUGHT - merge overwrites existing values :: 1 failing: merge
+M13 CAUGHT - dockerd --validate result ignored :: 3 failing: injected bad key -> REFUSED exit 4 (rc=0 want 4, /REFUSED - candi;bad key: file untouched;label without key=value -> REFUSED exit 4 (stub mirrors dockerd) 
+M14 CAUGHT - live-restore not enabled by reload first :: 16 failing: apply from absent -> done (rc=1 want 0, /apply: done/);live-restore enabled by reload first (rc=1 want 0, /live-restore ;health gate PASS (rc=1 want 0, /health: PASS/)
+M15 NOT APPLIED (matches=0) - health gate ignores changed StartedAt / DOCKER-USER
+M16 NOT APPLIED (matches=0) - health gate ignores server_state
+M17 CAUGHT - health gate ignores the peer listener :: 1 failing: peer port not listening -> rollback, still down -> exit 5 (rc=0 w
+M18 CAUGHT - no rollback after a health miss :: 16 failing: health rollback byte-identical;health rollback reports byte-identical (rc=1 want 1, /byte-identi;health drill restarts
+M19 CAUGHT - rollback to an absent file leaves the new file :: 7 failing: containers restarted by dockerd restart -> rollback (rc=5 want 1,;rollback to absent;rollback to a file without live-restore warns (rc=5 want 1, /WARN
+M20 CAUGHT - augenrules --load run even when immutable :: 2 failing: immutable auditd -> staged, not loaded (rc=0 want 0, /auditd immu;no augenrules under -e 2
+M21 CAUGHT - apply without --yes allowed :: 1 failing: apply without --yes refused (rc=0 want 4, /needs --yes/)
+M22 CAUGHT - dry run writes the file :: 2 failing: apply --dry-run (rc=0 want 0, /dry run, nothing changed/);dry-run changed nothing
+M23 CAUGHT - idempotence check removed (always restarts) :: 2 failing: second apply -> no change (rc=0 want 0, /already as planned \(no ;no second restart
+M24 CAUGHT - swarm state not checked :: 1 failing: audit swarm active -> FAIL (rc=0 want 1, /\[FAIL +\] 7.1 +swarm/)
+M25 CAUGHT - health drill does not change the candidate (no restart on an applied host) :: 6 failing: health drill on applied host -> rollback exit 1 (rc=0 want 1, /he;health drill candidate carries the drill label (rc=0 want 1, /pft;health drill restarts
+M26 CAUGHT - no warning when the rollback target lacks live-restore :: 1 failing: rollback to a file without live-restore warns (rc=1 want 1, /WARN
+M27 CAUGHT - health gate never re-applies the egress jump a dockerd restart dropped :: 7 failing: egress: jump dropped by restart -> reapply -> gate PASS (rc=5 wan;egress: apply done (rc=5 want 0, /apply: done/);egress: jump present after apply
+M28 CAUGHT - rollback not health-gated :: 12 failing: rollback gate: DOCKER-USER as before, StartedAt changed reported ;server_state not full -> rollback (rc=1 want 5, /^[^ ]+ health: F;server_state still not full after rollback -> exit 5 (rc=1 want 5
+M29 CAUGHT - rollback gate compares StartedAt too (fails whenever the failed apply restarted containers) :: 3 failing: containers restarted by dockerd restart -> rollback (rc=5 want 1,;rollback to a file without live-restore warns (rc=5 want 1, /WARN;rollback gate: DOCKER-USER as before, StartedAt changed reported 
+M30 CAUGHT - rollback gate honours the injected health miss (drill can never roll back cleanly) :: 6 failing: injected health miss -> rollback exit 1 (rc=5 want 1, /health gat;health rollback reports byte-identical (rc=5 want 1, /byte-identi;health drill on applied host -> rollback exit 1 (rc=5 want 1, /he
+M31 CAUGHT - a failed rollback after a health miss exits 1 instead of 5 :: 6 failing: server_state not full -> rollback (rc=1 want 5, /^[^ ]+ health: F;server_state still not full after rollback -> exit 5 (rc=1 want 5;peer port not listening -> rollback, still down -> exit 5 (rc=1 w
+RESULT: 29/31 caught, 0 survived, 2 not applied
+mutate exit 1
+== 2026-10-28T18:53:45Z end run 13

@@ -1,0 +1,155 @@
+pft-dockerd live-run - 2026-10-28T17:18:59Z - Ubuntu 22.04.5 LTS - run 20261028T171859Z - DRY
+sha256: pft-dockerd.sh 9ac3db664c617eac92af209d8e4e46e0976597a27d6eb3e61b758a7b0a50a2ef | live-run.sh f137507d63db707dbea326d65981bb251fbd57f70507d6e5c16d6914753860c1
+        redact.py f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8
+
+== 0. preflight (nothing changed yet)
+  pft-maint: no data-collection locks, no window open
+  sentry (postfiatd-sentry): server_state=full
+  validator (postfiatd): server_state=full
+  literals for redaction: 2 ip, 2 key, 2 topic, 1 user (values not printed)
+$ redact.py control --literals <literals>
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (16/16)
+  pft-dockerd.sh copied to the sentry host (temp dir, same sha256), removed on exit
+
+== 1. redirect notifiers, open the maintenance window, silence Alertmanager
+  local:/etc/postfiat-monitor.env sha256 6dc3b10fb491 (before)
+  local:/etc/postfiat-monitor.env -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/postfiat-monitor.env.pre-dockerd-drill
+  local:/etc/pft-integrity.env sha256 b3cd1c3da7ff (before)
+  local:/etc/pft-integrity.env -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/pft-integrity.env.pre-dockerd-drill
+  relay:/etc/pft-watchdog/ntfy.env sha256 ddb52721a668 (before)
+  relay:/etc/pft-watchdog/ntfy.env -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/pft-watchdog/ntfy.env.pre-dockerd-drill
+  relay:/etc/pft-integrity.env sha256 cdd330a974d2 (before)
+  relay:/etc/pft-integrity.env -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/pft-integrity.env.pre-dockerd-drill
+  relay:/etc/pft-alertpath/ntfy.env sha256 ddb52721a668 (before)
+  relay:/etc/pft-alertpath/ntfy.env -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/pft-alertpath/ntfy.env.pre-dockerd-drill
+  local:/etc/pft-maint/ntfy.env created for the drill only -> https://ntfy.sh/<redacted> (MAINT)
+  relay:/etc/pft-maint/ntfy.env created for the drill only -> https://ntfy.sh/<redacted> (MAINT)
+  window started: id m1793207959-1960968 until 2026-10-28T18:19:19Z | sentry copy: pushed
+  Alertmanager silence job=~".+" until 2026-10-28T18:19:21Z (id 64cab2a5)
+
+== 2. DRY=1: read-only audit per host, no change
+
+-- sentry: audit-initial (2026-10-28T17:19:21Z)
+$ sudo pft-dockerd audit
+pft-dockerd audit - 2026-10-28T17:19:25Z
+  [FAIL    ] 2.14       live-restore                               disabled (dockerd restart or crash stops every container)
+  [FAIL    ] 2.18       no-new-privileges                          not a daemon default (new containers may gain privileges via setuid)
+  [FAIL    ] n/a        log-rotation                               json-file without a default max-size (new containers can fill the disk)
+  [PASS    ] 2.7        tcp-socket                                 unix socket only
+  [PASS    ] 2.5        insecure-registries                        loopback defaults only
+  [PASS    ] 2.4        iptables                                   dockerd manages iptables
+  [PASS    ] 2.17       experimental                               off
+  [PASS    ] 2.16       seccomp                                    default profile
+  [PASS    ] n/a        apparmor                                   enabled
+  [PASS    ] 7.1        swarm                                      inactive
+  [DECISION] 2.2        icc                                        icc=true (not changed: see README)
+  [DECISION] 2.15       userland-proxy                             userland-proxy=true (not changed)
+  [DECISION] 2.9        userns-remap                               userns-remap=off (not changed)
+  [DECISION] 2.12       authorization-plugin                       none (unix socket only, root/docker-group access is admin access)
+  [DECISION] 1.1.5      audit:/var/lib/docker                      not watched (postfiatd writes its ledger DB there continuously)
+  [PASS    ] 1.1.2      docker-group                               no members
+  [PASS    ] 3.1-3.2    perm:/lib/systemd/system/docker.service    root:root 644
+  [PASS    ] 3.3-3.4    perm:/lib/systemd/system/docker.socket     root:root 644
+  [PASS    ] 3.5-3.6    perm:/etc/docker                           root:root 755
+  [PASS    ] 3.15-3.16  perm:/run/docker.sock                      root:docker 660
+  [INFO    ] 3.17-3.18  perm:/etc/docker/daemon.json               absent
+  [INFO    ] 3.19-3.20  perm:/etc/default/docker                   absent
+  [PASS    ] 3.23-3.24  perm:/run/containerd/containerd.sock       root:root 660
+  [PASS    ] 1.1.3      audit:/usr/bin/dockerd                     watched
+  [FAIL    ] 1.1.4      audit:/run/containerd                      no auditd watch
+  [PASS    ] 1.1.6      audit:/etc/docker                          watched
+  [FAIL    ] 1.1.7      audit:/lib/systemd/system/docker.service   no auditd watch
+  [FAIL    ] 1.1.8      audit:/run/containerd/containerd.sock      no auditd watch
+  [FAIL    ] 1.1.9      audit:/lib/systemd/system/docker.socket    no auditd watch
+  [INFO    ] 1.1.10     audit:/etc/default/docker                  path absent
+  [INFO    ] 1.1.11     audit:/etc/docker/daemon.json              path absent
+  [INFO    ] 1.1.12     audit:/etc/containerd/config.toml          path absent
+  [PASS    ] 1.1.14     audit:/usr/bin/containerd                  watched
+  [FAIL    ] 1.1.17     audit:/usr/bin/containerd-shim-runc-v2     no auditd watch
+  [FAIL    ] 1.1.18     audit:/usr/bin/runc                        no auditd watch
+RESULT: FAIL - 9 finding(s)
+exit 1
+
+-- validator: audit-initial (2026-10-28T17:19:25Z)
+$ sudo pft-dockerd audit
+pft-dockerd audit - 2026-10-28T17:19:26Z
+  [FAIL    ] 2.14       live-restore                               disabled (dockerd restart or crash stops every container)
+  [FAIL    ] 2.18       no-new-privileges                          not a daemon default (new containers may gain privileges via setuid)
+  [FAIL    ] n/a        log-rotation                               json-file without a default max-size (new containers can fill the disk)
+  [PASS    ] 2.7        tcp-socket                                 unix socket only
+  [PASS    ] 2.5        insecure-registries                        loopback defaults only
+  [PASS    ] 2.4        iptables                                   dockerd manages iptables
+  [PASS    ] 2.17       experimental                               off
+  [PASS    ] 2.16       seccomp                                    default profile
+  [PASS    ] n/a        apparmor                                   enabled
+  [PASS    ] 7.1        swarm                                      inactive
+  [DECISION] 2.2        icc                                        icc=true (not changed: see README)
+  [DECISION] 2.15       userland-proxy                             userland-proxy=true (not changed)
+  [DECISION] 2.9        userns-remap                               userns-remap=off (not changed)
+  [DECISION] 2.12       authorization-plugin                       none (unix socket only, root/docker-group access is admin access)
+  [DECISION] 1.1.5      audit:/var/lib/docker                      not watched (postfiatd writes its ledger DB there continuously)
+  [INFO    ] 1.1.2      docker-group                               1 member(s); each is root-equivalent, review
+  [PASS    ] 3.1-3.2    perm:/lib/systemd/system/docker.service    root:root 644
+  [PASS    ] 3.3-3.4    perm:/lib/systemd/system/docker.socket     root:root 644
+  [PASS    ] 3.5-3.6    perm:/etc/docker                           root:root 755
+  [PASS    ] 3.15-3.16  perm:/run/docker.sock                      root:docker 660
+  [INFO    ] 3.17-3.18  perm:/etc/docker/daemon.json               absent
+  [INFO    ] 3.19-3.20  perm:/etc/default/docker                   absent
+  [PASS    ] 3.23-3.24  perm:/run/containerd/containerd.sock       root:root 660
+  [PASS    ] 1.1.3      audit:/usr/bin/dockerd                     watched
+  [FAIL    ] 1.1.4      audit:/run/containerd                      no auditd watch
+  [PASS    ] 1.1.6      audit:/etc/docker                          watched
+  [FAIL    ] 1.1.7      audit:/lib/systemd/system/docker.service   no auditd watch
+  [FAIL    ] 1.1.8      audit:/run/containerd/containerd.sock      no auditd watch
+  [FAIL    ] 1.1.9      audit:/lib/systemd/system/docker.socket    no auditd watch
+  [INFO    ] 1.1.10     audit:/etc/default/docker                  path absent
+  [INFO    ] 1.1.11     audit:/etc/docker/daemon.json              path absent
+  [INFO    ] 1.1.12     audit:/etc/containerd/config.toml          path absent
+  [PASS    ] 1.1.14     audit:/usr/bin/containerd                  watched
+  [FAIL    ] 1.1.17     audit:/usr/bin/containerd-shim-runc-v2     no auditd watch
+  [FAIL    ] 1.1.18     audit:/usr/bin/runc                        no auditd watch
+RESULT: FAIL - 9 finding(s)
+exit 1
+
+== 3. close window, expire silence, restore, read back
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+  silence expired: HTTP 200
+  restored local:/etc/postfiat-monitor.env: sha256 matches pre-drill copy: yes
+  restored local:/etc/pft-integrity.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-watchdog/ntfy.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-integrity.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-alertpath/ntfy.env: sha256 matches pre-drill copy: yes
+  removed drill-only local:/etc/pft-maint/ntfy.env: yes
+  removed drill-only relay:/etc/pft-maint/ntfy.env: yes
+CHECK ok   notifier env files restored byte-identical, drill-only files removed
+  MAINT topic: 2 message(s)
+    {"time":"2026-10-28T17:19:21Z","title":"[MAINT] start validator","message":"pft-dockerd drill 20261028T171859Z | until 2026-10-28T18:19:19Z (ttl 3600s) | sentry copy: pushed"}
+    {"time":"2026-10-28T17:19:28Z","title":"[MAINT] end validator","message":"pft-dockerd drill 20261028T171859Z | pft-dockerd drill done after 8s | suppressed here: watchdog=0 monitor=0 integrity=0 | sentry copy: pushed"}
+  ALERT topic: 0 message(s)
+CHECK ok   ALERT throwaway topic received nothing (0)
+  $ pft-integrity verify (validator host)
+    pft-integrity verify - 2026-10-28T17:19:55Z
+    OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-10-28T14:49:06Z
+    RESULT: PASS - 82 unchanged, 0 warn, 0 fail -> exit 0
+  $ pft-integrity verify (sentry host)
+    pft-integrity verify - 2026-10-28T17:20:11Z
+    OS: Ubuntu 22.04.5 LTS | container: postfiatd-sentry | baseline: 2026-10-28T14:49:24Z
+    RESULT: PASS - 50 unchanged, 0 warn, 0 fail -> exit 0
+
+live-run done 2026-10-28T17:20:11Z: 0 check(s) failed -> PASS

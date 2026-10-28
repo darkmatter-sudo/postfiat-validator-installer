@@ -1,0 +1,30 @@
+== 2026-10-28T19:12:40Z run 20: read-only pre-checks for the sentry reboot proof - Ubuntu 22.04.5 LTS - commit 5f29f53a64364d5af2ffed53d65e2656e5785f2b; sentry: Ubuntu 22.04.5 LTS
+NOTE (appended): check 1 compared against an EMPTY auditctl -l, so watches audittrail already loads (/etc/docker, dockerd, containerd) appear only on the generated side; that baseline was wrong for an equality check. Run 21 repeats it with the sentry's loaded rules minus the pft-dockerd key.
+pft-dockerd.sh sha256 6532ac65c4bad5350089fd347366f5211101d1134b1ead69d830d5cc3d392dcd
+-- 1. watches the FIXED tool writes on a host with no watches loaded (PFT_DOCKERD_AUDITCTL=true -> empty auditctl -l), sentry
+-w /etc/docker -p wa -k pft-dockerd
+-w /lib/systemd/system/docker.service -p wa -k pft-dockerd
+-w /lib/systemd/system/docker.socket -p wa -k pft-dockerd
+-w /run/containerd -p wa -k pft-dockerd
+-w /usr/bin/containerd -p wa -k pft-dockerd
+-w /usr/bin/containerd-shim-runc-v2 -p wa -k pft-dockerd
+-w /usr/bin/dockerd -p wa -k pft-dockerd
+-w /usr/bin/runc -p wa -k pft-dockerd
+-- 2. -w lines installed on the sentry (/etc/audit/rules.d/pft-dockerd.rules)
+-w /lib/systemd/system/docker.service -p wa -k pft-dockerd
+-w /lib/systemd/system/docker.socket -p wa -k pft-dockerd
+-w /run/containerd -p wa -k pft-dockerd
+-w /usr/bin/containerd-shim-runc-v2 -p wa -k pft-dockerd
+-w /usr/bin/runc -p wa -k pft-dockerd
+1d0
+< -w /etc/docker -p wa -k pft-dockerd
+5d3
+< -w /usr/bin/containerd -p wa -k pft-dockerd
+7d4
+< -w /usr/bin/dockerd -p wa -k pft-dockerd
+generated == installed: NO
+socket watches generated: 0
+-- 3. staged-watch-loaded check (live-run.sh snippet): real file, then negative control with an unloaded path
+  pft-dockerd.rules: not loaded: none
+  neg.rules: not loaded: /etc/pft-dockerd-neg-control
+== 2026-10-28T19:12:44Z end run 20

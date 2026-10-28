@@ -73,10 +73,20 @@ Some CIS recommendations break or change a working node. `audit` lists them as `
    containers keep running. The health gate then requires, within `HEALTH_BUDGET` (300 s): every container's
    `StartedAt` unchanged, `iptables -S DOCKER-USER` unchanged, the peer port listening, and postfiatd
    `server_state` = `full`. Any miss restores the backup (sha256-compared, byte-identical), restarts dockerd again,
-   and exits 1.
+   and exits 1. The rollback restart is gated too (DOCKER-USER as before apply, peer port, `full`); if the node is
+   still unhealthy after the rollback, apply exits 5.
+   Every dockerd restart rebuilds the `DOCKER-USER` chain without the `PFT-EGRESS` jump that `egress/` adds. When
+   the gate sees `DOCKER-USER` differ and `/usr/local/sbin/pft-egress` exists, it runs `pft-egress reapply
+   --container <c>` right away instead of waiting for egress's 5-minute reapply timer (the first live drill found
+   a 3.5-minute window without the egress policy after an ungated rollback restart).
 6. Writes the missing auditd watches to `/etc/audit/rules.d/pft-dockerd.rules` and loads them with
    `augenrules --load`. If auditd is immutable (`-e 2`, as `audittrail/` sets on the sentry), the rules are staged
    and take effect at the next boot; until then `audit` reports them as `staged ... next boot`.
+   At boot, `augenrules --load` stops at the first watch whose parent directory does not exist yet, and nothing
+   after it loads, including `-e 2`. `/run/containerd` is created by containerd after auditd starts, so a watch on
+   `/run/containerd/containerd.sock` aborted the sentry's boot load in the drill. pft-dockerd never writes a watch
+   that a directory watch already covers, counting the lines it is writing in the same file, so it stages
+   `-w /run/containerd` (its parent `/run` always exists) and covers the socket through it.
 
 Reload vs restart: only some dockerd options are reloadable (e.g. `live-restore`, `debug`, `labels`, registry
 mirrors). `no-new-privileges` and `log-opts` are not; they need a restart and apply only to containers created
@@ -103,6 +113,59 @@ tests/mutate.sh         # mutation controls: control run first, then each mutant
 shellcheck -x pft-dockerd.sh tests/*.sh
 ```
 
-## Results
+## Live drill
 
-Two-host results (found -> fixed -> verified) are added after the live drill.
+`drill/live-run.sh` runs the whole sequence per host, sentry first: audit + `--json` (before), `apply --dry-run`,
+the bad-key drill (exit 4, `daemon.json` sha256 unchanged), `apply --yes`, the health drill (exit 1, rollback,
+`daemon.json` byte-identical to the applied file), audit + `--json` (after), container `StartedAt` unchanged,
+`server_state` full, the egress jump present once. It opens a `pft-maint` window on both hosts, silences
+Alertmanager, points every notifier at throwaway topics (restored by sha256 on exit, then read back: the alert topic
+must stay empty), and ends with `pft-integrity verify` on both hosts. `REBOOT_SENTRY=1` adds a planned sentry reboot
+and checks auditd `enabled 2` and that every staged pft-dockerd watch loaded at boot. All output is redacted
+(`peerexpose/drill/redact.py`). `DRY=1` runs only preflight, redirect, window, silence and restore.
+
+## Results (found -> fixed -> verified, Ubuntu 22.04.5, Docker 29)
+
+| Host | Before (logs/run-06.log) | After |
+|---|---|---|
+| sentry | FAIL, 9 findings: live-restore off (2.14), no default no-new-privileges (2.18), no default log max-size, 6 missing auditd watches (1.1.4/7/8/9/17/18) | apply exit 0; watches staged under `-e 2`, loaded at the planned reboot; `audit` PASS exit 0 after the reboot (run-22) |
+| validator | FAIL, 9 findings (same set) | apply exit 0; watches loaded live; `audit` PASS exit 0 (run-06, run-10, run-23) |
+
+Both hosts, every live run: bad-key drill refused with exit 4 and `daemon.json` unchanged; health drill rolled back
+with `daemon.json` byte-identical to the applied file; postfiatd `StartedAt` unchanged through apply and both drills;
+`server_state` full; alert throwaway topic empty; `pft-integrity verify` PASS (an mtime-only `sshd_config` WARN after
+each planned sentry reboot is cloud-init's; sha256 equals the manifest, and it was accepted as its own logged step).
+
+Found by the drills and fixed before publication:
+
+| # | Found (run) | Fix (commit) | Verified (run) |
+|---|---|---|---|
+| 1 | Every dockerd restart drops the `DOCKER-USER -> PFT-EGRESS` jump from `egress/`; the apply gate only passed once egress's 5-min timer had healed it, and the ungated rollback restart left the validator without the jump for 3.5 min (run-06) | gate re-applies the jump, rollback is gated, exit 5 if still unhealthy (`2ac1f1f`) | run-10 both hosts, run-22, run-23: jump present once, rollback gate PASS |
+| 2 | `audittrail/`: Ubuntu's `auditd.service` (`ProtectHome=true`) hid `/root` from the boot-time rule load, which aborted at 11 of 42 rules without `-e 2` (run-06) | `ProtectHome=read-only` drop-in (`f506217`), exact key match (`46a6919`) | run-14 (tests + deploy), run-15 (boot load passes the `/root` watch), run-22 |
+| 3 | pft-dockerd's own `-w /run/containerd/containerd.sock` aborted the boot load (parent created after auditd starts) (run-15) | never stage a watch covered by a directory watch in the same file (`5f29f53`) | run-21 (installed file == fixed tool's output), run-22 (reboot: enabled 2, 5/5 staged watches loaded, audit PASS) |
+
+Offline: `tests/run-tests.sh` 101/101 and shellcheck 0 (run-18), mutation controls run-24.
+
+### Log index (`logs/`)
+
+| Run | What |
+|---|---|
+| 01 | shellcheck + first offline suite (74/74) |
+| 02 | mutation controls 24/24 |
+| 03, 04 | tests 81/81 and mutants 26/26 after the health-drill label change |
+| 05 | live-run `DRY=1` (preflight, redirect, window, silence, restore only) |
+| 06 | first live run, both hosts + sentry reboot: dockerd checks ok, verdict FAIL (findings 1 and 2 above) |
+| 07 | post-drill verification: both audits PASS, egress jumps present, integrity PASS |
+| 08, 09 | tests 96/96 after the egress fix; mutant run 09 stopped early (time limit), superseded by 13 |
+| 10 | live run both hosts on `2ac1f1f`: PASS, 0 failed |
+| 11, 12, 14 | `audittrail/` fix: tests + revert controls; 12 superseded (file edited mid-run), 14 deploys the commit to both hosts |
+| 13 | mutation controls on `2ac1f1f`: 29/31 caught, 2 NOT APPLIED (M15/M16 targeted the pre-fix gate text; retargeted in `5f29f53`) |
+| 15 | sentry reboot proof: FAIL (finding 3) |
+| 16 | mitigation: socket watch line removed on both hosts, rules reloaded |
+| 17 | tests after the finding-3 fix: 1 FAIL in the new test's own threshold (annotated), re-run as 18 |
+| 18 | shellcheck 0 + tests 101/101 on `5f29f53` |
+| 19 | mutation controls on `5f29f53`: stopped by the agent after 6 mutants (annotated), superseded by 24 |
+| 20, 21 | read-only: fixed tool's staged watches vs the sentry's installed file (20 used the wrong baseline, annotated; 21 equal) |
+| 22 | sentry live run + planned reboot on `70dedef`: PASS, 0 failed |
+| 23 | validator live run on `70dedef`: PASS, 0 failed; integrity PASS on both hosts |
+| 24 | mutation controls on `70dedef` (same pft-dockerd.sh/tests sha256 as 18) |

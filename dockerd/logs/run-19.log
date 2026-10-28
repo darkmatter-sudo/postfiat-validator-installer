@@ -1,0 +1,15 @@
+== 2026-10-28T19:11:54Z run 19: mutation controls - Ubuntu 22.04.5 LTS - commit 5f29f53a64364d5af2ffed53d65e2656e5785f2b
+6532ac65c4bad5350089fd347366f5211101d1134b1ead69d830d5cc3d392dcd  dockerd/pft-dockerd.sh
+b46e0959d25ee97d942e053cc303faf465e0414f22474f7d932359a591fafbd8  dockerd/tests/run-tests.sh
+3c011d11ee65449a74444541e42b0c3f26284906ae015c803ab45e98ca8f0df6  dockerd/tests/mutate.sh
+control: unmutated copy RESULT: 101 passed, 0 failed
+M01 CAUGHT - live-restore check always PASS :: 1 failing: audit live-restore off -> FAIL (rc=0 want 1, /\[FAIL +\] 2.14 +li
+M02 CAUGHT - no-new-privileges default ignored :: 1 failing: audit no-new-privileges missing -> FAIL (rc=0 want 1, /\[FAIL +\]
+M03 CAUGHT - TCP listener not checked :: 1 failing: audit dockerd TCP listener -> FAIL (rc=0 want 1, /\[FAIL +\] 2.7 
+M04 CAUGHT - -H tcp on the command line ignored :: 1 failing: audit -H tcp on cmdline -> FAIL (rc=0 want 1, /\[FAIL +\] 2.7 +tc
+M05 CAUGHT - insecure registry names (IndexConfigs) ignored :: 1 failing: audit insecure registry name -> FAIL (rc=0 want 1, /\[FAIL +\] 2.
+M06 CAUGHT - back to the jq // trap for iptables :: 1 failing: audit iptables=false -> FAIL (rc=0 want 1, /\[FAIL +\] 2.4 +iptab
+Terminated
+mutate exit 143
+== 2026-10-28T19:21:22Z end run 19
+NOTE (appended 2026-10-28T19:21:25Z): run STOPPED by the agent after 6 mutants (slowed by the parallel live runs 22/23; would not finish inside the cycle, and a session-bound child dies with the session). Superseded by run 24 (same commit, detached).

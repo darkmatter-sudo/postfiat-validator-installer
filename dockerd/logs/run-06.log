@@ -1,0 +1,1394 @@
+pft-dockerd live-run - 2026-10-28T17:20:38Z - Ubuntu 22.04.5 LTS - run 20261028T172038Z
+sha256: pft-dockerd.sh 9ac3db664c617eac92af209d8e4e46e0976597a27d6eb3e61b758a7b0a50a2ef | live-run.sh f137507d63db707dbea326d65981bb251fbd57f70507d6e5c16d6914753860c1
+        redact.py f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8
+
+== 0. preflight (nothing changed yet)
+  pft-maint: no data-collection locks, no window open
+  sentry (postfiatd-sentry): server_state=full
+  validator (postfiatd): server_state=full
+  literals for redaction: 2 ip, 2 key, 2 topic, 1 user (values not printed)
+$ redact.py control --literals <literals>
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (16/16)
+  pft-dockerd.sh copied to the sentry host (temp dir, same sha256), removed on exit
+
+== 1. redirect notifiers, open the maintenance window, silence Alertmanager
+  local:/etc/postfiat-monitor.env sha256 6dc3b10fb491 (before)
+  local:/etc/postfiat-monitor.env -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/postfiat-monitor.env.pre-dockerd-drill
+  local:/etc/pft-integrity.env sha256 b3cd1c3da7ff (before)
+  local:/etc/pft-integrity.env -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/pft-integrity.env.pre-dockerd-drill
+  relay:/etc/pft-watchdog/ntfy.env sha256 ddb52721a668 (before)
+  relay:/etc/pft-watchdog/ntfy.env -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/pft-watchdog/ntfy.env.pre-dockerd-drill
+  relay:/etc/pft-integrity.env sha256 cdd330a974d2 (before)
+  relay:/etc/pft-integrity.env -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/pft-integrity.env.pre-dockerd-drill
+  relay:/etc/pft-alertpath/ntfy.env sha256 ddb52721a668 (before)
+  relay:/etc/pft-alertpath/ntfy.env -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/pft-alertpath/ntfy.env.pre-dockerd-drill
+  local:/etc/pft-maint/ntfy.env created for the drill only -> https://ntfy.sh/<redacted> (MAINT)
+  relay:/etc/pft-maint/ntfy.env created for the drill only -> https://ntfy.sh/<redacted> (MAINT)
+  window started: id m1793208058-1976482 until 2026-10-28T18:20:58Z | sentry copy: pushed
+  Alertmanager silence job=~".+" until 2026-10-28T18:21:01Z (id 6550cbec)
+
+== 2. sequence per host: sentry validator
+
+-- sentry: postfiatd-sentry StartedAt before: 2026-10-28T11:27:08.195471885Z, daemon.json sha256 absent
+
+-- sentry: audit-initial (2026-10-28T17:21:07Z)
+$ sudo pft-dockerd audit
+pft-dockerd audit - 2026-10-28T17:21:09Z
+  [FAIL    ] 2.14       live-restore                               disabled (dockerd restart or crash stops every container)
+  [FAIL    ] 2.18       no-new-privileges                          not a daemon default (new containers may gain privileges via setuid)
+  [FAIL    ] n/a        log-rotation                               json-file without a default max-size (new containers can fill the disk)
+  [PASS    ] 2.7        tcp-socket                                 unix socket only
+  [PASS    ] 2.5        insecure-registries                        loopback defaults only
+  [PASS    ] 2.4        iptables                                   dockerd manages iptables
+  [PASS    ] 2.17       experimental                               off
+  [PASS    ] 2.16       seccomp                                    default profile
+  [PASS    ] n/a        apparmor                                   enabled
+  [PASS    ] 7.1        swarm                                      inactive
+  [DECISION] 2.2        icc                                        icc=true (not changed: see README)
+  [DECISION] 2.15       userland-proxy                             userland-proxy=true (not changed)
+  [DECISION] 2.9        userns-remap                               userns-remap=off (not changed)
+  [DECISION] 2.12       authorization-plugin                       none (unix socket only, root/docker-group access is admin access)
+  [DECISION] 1.1.5      audit:/var/lib/docker                      not watched (postfiatd writes its ledger DB there continuously)
+  [PASS    ] 1.1.2      docker-group                               no members
+  [PASS    ] 3.1-3.2    perm:/lib/systemd/system/docker.service    root:root 644
+  [PASS    ] 3.3-3.4    perm:/lib/systemd/system/docker.socket     root:root 644
+  [PASS    ] 3.5-3.6    perm:/etc/docker                           root:root 755
+  [PASS    ] 3.15-3.16  perm:/run/docker.sock                      root:docker 660
+  [INFO    ] 3.17-3.18  perm:/etc/docker/daemon.json               absent
+  [INFO    ] 3.19-3.20  perm:/etc/default/docker                   absent
+  [PASS    ] 3.23-3.24  perm:/run/containerd/containerd.sock       root:root 660
+  [PASS    ] 1.1.3      audit:/usr/bin/dockerd                     watched
+  [FAIL    ] 1.1.4      audit:/run/containerd                      no auditd watch
+  [PASS    ] 1.1.6      audit:/etc/docker                          watched
+  [FAIL    ] 1.1.7      audit:/lib/systemd/system/docker.service   no auditd watch
+  [FAIL    ] 1.1.8      audit:/run/containerd/containerd.sock      no auditd watch
+  [FAIL    ] 1.1.9      audit:/lib/systemd/system/docker.socket    no auditd watch
+  [INFO    ] 1.1.10     audit:/etc/default/docker                  path absent
+  [INFO    ] 1.1.11     audit:/etc/docker/daemon.json              path absent
+  [INFO    ] 1.1.12     audit:/etc/containerd/config.toml          path absent
+  [PASS    ] 1.1.14     audit:/usr/bin/containerd                  watched
+  [FAIL    ] 1.1.17     audit:/usr/bin/containerd-shim-runc-v2     no auditd watch
+  [FAIL    ] 1.1.18     audit:/usr/bin/runc                        no auditd watch
+RESULT: FAIL - 9 finding(s)
+exit 1
+
+-- sentry: audit-initial-json (2026-10-28T17:21:09Z)
+$ sudo pft-dockerd audit --json
+{
+  "ts": "2026-10-28T17:21:12Z",
+  "fails": 9,
+  "result": "FAIL",
+  "checks": [
+    {
+      "status": "FAIL",
+      "cis": "2.14",
+      "id": "live-restore",
+      "detail": "disabled (dockerd restart or crash stops every container)"
+    },
+    {
+      "status": "FAIL",
+      "cis": "2.18",
+      "id": "no-new-privileges",
+      "detail": "not a daemon default (new containers may gain privileges via setuid)"
+    },
+    {
+      "status": "FAIL",
+      "cis": "n/a",
+      "id": "log-rotation",
+      "detail": "json-file without a default max-size (new containers can fill the disk)"
+    },
+    {
+      "status": "PASS",
+      "cis": "2.7",
+      "id": "tcp-socket",
+      "detail": "unix socket only"
+    },
+    {
+      "status": "PASS",
+      "cis": "2.5",
+      "id": "insecure-registries",
+      "detail": "loopback defaults only"
+    },
+    {
+      "status": "PASS",
+      "cis": "2.4",
+      "id": "iptables",
+      "detail": "dockerd manages iptables"
+    },
+    {
+      "status": "PASS",
+      "cis": "2.17",
+      "id": "experimental",
+      "detail": "off"
+    },
+    {
+      "status": "PASS",
+      "cis": "2.16",
+      "id": "seccomp",
+      "detail": "default profile"
+    },
+    {
+      "status": "PASS",
+      "cis": "n/a",
+      "id": "apparmor",
+      "detail": "enabled"
+    },
+    {
+      "status": "PASS",
+      "cis": "7.1",
+      "id": "swarm",
+      "detail": "inactive"
+    },
+    {
+      "status": "DECISION",
+      "cis": "2.2",
+      "id": "icc",
+      "detail": "icc=true (not changed: see README)"
+    },
+    {
+      "status": "DECISION",
+      "cis": "2.15",
+      "id": "userland-proxy",
+      "detail": "userland-proxy=true (not changed)"
+    },
+    {
+      "status": "DECISION",
+      "cis": "2.9",
+      "id": "userns-remap",
+      "detail": "userns-remap=off (not changed)"
+    },
+    {
+      "status": "DECISION",
+      "cis": "2.12",
+      "id": "authorization-plugin",
+      "detail": "none (unix socket only, root/docker-group access is admin access)"
+    },
+    {
+      "status": "DECISION",
+      "cis": "1.1.5",
+      "id": "audit:/var/lib/docker",
+      "detail": "not watched (postfiatd writes its ledger DB there continuously)"
+    },
+    {
+      "status": "PASS",
+      "cis": "1.1.2",
+      "id": "docker-group",
+      "detail": "no members"
+    },
+    {
+      "status": "PASS",
+      "cis": "3.1-3.2",
+      "id": "perm:/lib/systemd/system/docker.service",
+      "detail": "root:root 644"
+    },
+    {
+      "status": "PASS",
+      "cis": "3.3-3.4",
+      "id": "perm:/lib/systemd/system/docker.socket",
+      "detail": "root:root 644"
+    },
+    {
+      "status": "PASS",
+      "cis": "3.5-3.6",
+      "id": "perm:/etc/docker",
+      "detail": "root:root 755"
+    },
+    {
+      "status": "PASS",
+      "cis": "3.15-3.16",
+      "id": "perm:/run/docker.sock",
+      "detail": "root:docker 660"
+    },
+    {
+      "status": "INFO",
+      "cis": "3.17-3.18",
+      "id": "perm:/etc/docker/daemon.json",
+      "detail": "absent"
+    },
+    {
+      "status": "INFO",
+      "cis": "3.19-3.20",
+      "id": "perm:/etc/default/docker",
+      "detail": "absent"
+    },
+    {
+      "status": "PASS",
+      "cis": "3.23-3.24",
+      "id": "perm:/run/containerd/containerd.sock",
+      "detail": "root:root 660"
+    },
+    {
+      "status": "PASS",
+      "cis": "1.1.3",
+      "id": "audit:/usr/bin/dockerd",
+      "detail": "watched"
+    },
+    {
+      "status": "FAIL",
+      "cis": "1.1.4",
+      "id": "audit:/run/containerd",
+      "detail": "no auditd watch"
+    },
+    {
+      "status": "PASS",
+      "cis": "1.1.6",
+      "id": "audit:/etc/docker",
+      "detail": "watched"
+    },
+    {
+      "status": "FAIL",
+      "cis": "1.1.7",
+      "id": "audit:/lib/systemd/system/docker.service",
+      "detail": "no auditd watch"
+    },
+    {
+      "status": "FAIL",
+      "cis": "1.1.8",
+      "id": "audit:/run/containerd/containerd.sock",
+      "detail": "no auditd watch"
+    },
+    {
+      "status": "FAIL",
+      "cis": "1.1.9",
+      "id": "audit:/lib/systemd/system/docker.socket",
+      "detail": "no auditd watch"
+    },
+    {
+      "status": "INFO",
+      "cis": "1.1.10",
+      "id": "audit:/etc/default/docker",
+      "detail": "path absent"
+    },
+    {
+      "status": "INFO",
+      "cis": "1.1.11",
+      "id": "audit:/etc/docker/daemon.json",
+      "detail": "path absent"
+    },
+    {
+      "status": "INFO",
+      "cis": "1.1.12",
+      "id": "audit:/etc/containerd/config.toml",
+      "detail": "path absent"
+    },
+    {
+      "status": "PASS",
+      "cis": "1.1.14",
+      "id": "audit:/usr/bin/containerd",
+      "detail": "watched"
+    },
+    {
+      "status": "FAIL",
+      "cis": "1.1.17",
+      "id": "audit:/usr/bin/containerd-shim-runc-v2",
+      "detail": "no auditd watch"
+    },
+    {
+      "status": "FAIL",
+      "cis": "1.1.18",
+      "id": "audit:/usr/bin/runc",
+      "detail": "no auditd watch"
+    }
+  ]
+}
+exit 1
+
+-- sentry: plan-dry-run (2026-10-28T17:21:12Z)
+$ sudo pft-dockerd apply --dry-run
+2026-10-28T17:21:15Z apply: candidate daemon.json:
+  {
+    "live-restore": true,
+    "no-new-privileges": true,
+    "log-driver": "json-file",
+    "log-opts": {
+      "max-size": "100m",
+      "max-file": "5"
+    }
+  }
+  dockerd --validate: configuration OK
+2026-10-28T17:21:15Z apply: audit rules to stage:
+  # pft-dockerd: auditd watches for the Docker daemon files (CIS Docker Benchmark v1.6.0 1.1.x)
+  -w /run/containerd -p wa -k pft-dockerd
+  -w /lib/systemd/system/docker.service -p wa -k pft-dockerd
+  -w /run/containerd/containerd.sock -p wa -k pft-dockerd
+  -w /lib/systemd/system/docker.socket -p wa -k pft-dockerd
+  -w /usr/bin/containerd-shim-runc-v2 -p wa -k pft-dockerd
+  -w /usr/bin/runc -p wa -k pft-dockerd
+2026-10-28T17:21:16Z apply: dry run, nothing changed
+exit 0
+CHECK ok   sentry plan-dry-run exit 0 (got 0)
+
+-- sentry: bad-key-drill (2026-10-28T17:21:17Z)
+$ sudo PFT_DOCKERD_INJECT=bad-key pft-dockerd apply --yes
+2026-10-28T17:21:17Z apply: candidate daemon.json:
+  {
+    "live-restore": true,
+    "no-new-privileges": true,
+    "log-driver": "json-file",
+    "log-opts": {
+      "max-size": "100m",
+      "max-file": "5"
+    },
+    "pft-injected-bad-key": true
+  }
+  dockerd --validate: unable to configure the Docker daemon with file /tmp/tmp.GJuIpWgiRT: the following directives don't match any configuration option: pft-injected-bad-key
+2026-10-28T17:21:17Z apply: REFUSED - candidate failed dockerd --validate; /etc/docker/daemon.json untouched (sha256 absent)
+exit 4
+CHECK ok   sentry bad-key-drill exit 4 (got 4)
+CHECK ok   sentry bad-key drill: daemon.json unchanged (sha256 absent -> absent)
+
+-- sentry: apply (2026-10-28T17:21:18Z)
+$ sudo pft-dockerd apply --yes
+2026-10-28T17:21:19Z apply: candidate daemon.json:
+  {
+    "live-restore": true,
+    "no-new-privileges": true,
+    "log-driver": "json-file",
+    "log-opts": {
+      "max-size": "100m",
+      "max-file": "5"
+    }
+  }
+  dockerd --validate: configuration OK
+2026-10-28T17:21:19Z apply: audit rules to stage:
+  # pft-dockerd: auditd watches for the Docker daemon files (CIS Docker Benchmark v1.6.0 1.1.x)
+  -w /run/containerd -p wa -k pft-dockerd
+  -w /lib/systemd/system/docker.service -p wa -k pft-dockerd
+  -w /run/containerd/containerd.sock -p wa -k pft-dockerd
+  -w /lib/systemd/system/docker.socket -p wa -k pft-dockerd
+  -w /usr/bin/containerd-shim-runc-v2 -p wa -k pft-dockerd
+  -w /usr/bin/runc -p wa -k pft-dockerd
+2026-10-28T17:21:20Z apply: backup absent (sha256 absent)
+2026-10-28T17:21:22Z apply: live-restore enabled by <user> (no restart); snapshot unchanged: yes
+2026-10-28T17:21:23Z apply: installed daemon.json (sha256 4548e32c79f27adff6bc71100bd82020aa5cf411a9fb91dbc497744d8a367553); restarting dockerd (live-restore on)
+2026-10-28T17:24:55Z health: PASS after 202 s (StartedAt + DOCKER-USER unchanged, :2559 listening, server_state full)
+2026-10-28T17:24:55Z apply: auditd immutable (-e 2): 6 watch(es) staged in /etc/audit/rules.d/pft-dockerd.rules, active after the next reboot
+2026-10-28T17:24:55Z apply: done
+exit 0
+CHECK ok   sentry apply exit 0 (got 0)
+
+-- sentry: health-drill (2026-10-28T17:24:56Z)
+$ sudo PFT_DOCKERD_INJECT=health HEALTH_BUDGET=60 pft-dockerd apply --yes
+2026-10-28T17:24:56Z apply: candidate daemon.json:
+  {
+    "live-restore": true,
+    "no-new-privileges": true,
+    "log-driver": "json-file",
+    "log-opts": {
+      "max-size": "100m",
+      "max-file": "5"
+    },
+    "labels": [
+      "pft.dockerd-drill=1"
+    ]
+  }
+  dockerd --validate: configuration OK
+2026-10-28T17:24:57Z apply: audit rules to stage:
+  # pft-dockerd: auditd watches for the Docker daemon files (CIS Docker Benchmark v1.6.0 1.1.x)
+  -w /run/containerd -p wa -k pft-dockerd
+  -w /lib/systemd/system/docker.service -p wa -k pft-dockerd
+  -w /run/containerd/containerd.sock -p wa -k pft-dockerd
+  -w /lib/systemd/system/docker.socket -p wa -k pft-dockerd
+  -w /usr/bin/containerd-shim-runc-v2 -p wa -k pft-dockerd
+  -w /usr/bin/runc -p wa -k pft-dockerd
+2026-10-28T17:24:57Z apply: backup /var/lib/pft-dockerd/daemon.json.20261028T172457Z (sha256 4548e32c79f27adff6bc71100bd82020aa5cf411a9fb91dbc497744d8a367553)
+2026-10-28T17:24:58Z apply: installed daemon.json (sha256 3754dd045cdf5fc213339c127ba650d4141aec37f6838e26a5f471ce583da43b); restarting dockerd (live-restore on)
+2026-10-28T17:26:12Z health: FAIL after 61 s (server_state=full; snapshot CHANGED; injected=health)
+  3d2
+  < ipt -A DOCKER-USER -s <redacted-ip>/32 -i docker0 ! -o docker0 -m comment --comment "pft-egress:postfiatd-sentry" -j PFT-EGRESS
+2026-10-28T17:26:12Z apply: health gate missed -> automatic rollback
+2026-10-28T17:26:19Z rollback: daemon.json sha256 4548e32c79f27adff6bc71100bd82020aa5cf411a9fb91dbc497744d8a367553 (backup 4548e32c79f27adff6bc71100bd82020aa5cf411a9fb91dbc497744d8a367553)
+2026-10-28T17:26:19Z rollback: daemon.json byte-identical to the pre-apply state
+exit 1
+CHECK ok   sentry health-drill exit 1 (got 1)
+CHECK ok   sentry health drill: daemon.json byte-identical to the applied file (sha256 4548e32c79f27adff6bc71100bd82020aa5cf411a9fb91dbc497744d8a367553 -> 4548e32c79f27adff6bc71100bd82020aa5cf411a9fb91dbc497744d8a367553)
+
+-- sentry: audit-final (2026-10-28T17:26:20Z)
+$ sudo pft-dockerd audit
+pft-dockerd audit - 2026-10-28T17:26:22Z
+  [PASS    ] 2.14       live-restore                               enabled
+  [PASS    ] 2.18       no-new-privileges                          daemon default on
+  [PASS    ] n/a        log-rotation                               {"d":"json-file","o":{"max-size":"100m","max-file":"5"}}
+  [PASS    ] 2.7        tcp-socket                                 unix socket only
+  [PASS    ] 2.5        insecure-registries                        loopback defaults only
+  [PASS    ] 2.4        iptables                                   dockerd manages iptables
+  [PASS    ] 2.17       experimental                               off
+  [PASS    ] 2.16       seccomp                                    default profile
+  [PASS    ] n/a        apparmor                                   enabled
+  [PASS    ] 7.1        swarm                                      inactive
+  [DECISION] 2.2        icc                                        icc=true (not changed: see README)
+  [DECISION] 2.15       userland-proxy                             userland-proxy=true (not changed)
+  [DECISION] 2.9        userns-remap                               userns-remap=off (not changed)
+  [DECISION] 2.12       authorization-plugin                       none (unix socket only, root/docker-group access is admin access)
+  [DECISION] 1.1.5      audit:/var/lib/docker                      not watched (postfiatd writes its ledger DB there continuously)
+  [PASS    ] 1.1.2      docker-group                               no members
+  [PASS    ] 3.1-3.2    perm:/lib/systemd/system/docker.service    root:root 644
+  [PASS    ] 3.3-3.4    perm:/lib/systemd/system/docker.socket     root:root 644
+  [PASS    ] 3.5-3.6    perm:/etc/docker                           root:root 755
+  [PASS    ] 3.15-3.16  perm:/run/docker.sock                      root:docker 660
+  [PASS    ] 3.17-3.18  perm:/etc/docker/daemon.json               root:root 644
+  [INFO    ] 3.19-3.20  perm:/etc/default/docker                   absent
+  [PASS    ] 3.23-3.24  perm:/run/containerd/containerd.sock       root:root 660
+  [PASS    ] 1.1.3      audit:/usr/bin/dockerd                     watched
+  [FAIL    ] 1.1.4      audit:/run/containerd                      staged in /etc/audit/rules.d/pft-dockerd.rules, loads at next boot (auditd immutable)
+  [PASS    ] 1.1.6      audit:/etc/docker                          watched
+  [FAIL    ] 1.1.7      audit:/lib/systemd/system/docker.service   staged in /etc/audit/rules.d/pft-dockerd.rules, loads at next boot (auditd immutable)
+  [FAIL    ] 1.1.8      audit:/run/containerd/containerd.sock      staged in /etc/audit/rules.d/pft-dockerd.rules, loads at next boot (auditd immutable)
+  [FAIL    ] 1.1.9      audit:/lib/systemd/system/docker.socket    staged in /etc/audit/rules.d/pft-dockerd.rules, loads at next boot (auditd immutable)
+  [INFO    ] 1.1.10     audit:/etc/default/docker                  path absent
+  [PASS    ] 1.1.11     audit:/etc/docker/daemon.json              watched
+  [INFO    ] 1.1.12     audit:/etc/containerd/config.toml          path absent
+  [PASS    ] 1.1.14     audit:/usr/bin/containerd                  watched
+  [FAIL    ] 1.1.17     audit:/usr/bin/containerd-shim-runc-v2     staged in /etc/audit/rules.d/pft-dockerd.rules, loads at next boot (auditd immutable)
+  [FAIL    ] 1.1.18     audit:/usr/bin/runc                        staged in /etc/audit/rules.d/pft-dockerd.rules, loads at next boot (auditd immutable)
+RESULT: FAIL - 6 finding(s)
+exit 1
+
+-- sentry: audit-final-json (2026-10-28T17:26:22Z)
+$ sudo pft-dockerd audit --json
+{
+  "ts": "2026-10-28T17:26:25Z",
+  "fails": 6,
+  "result": "FAIL",
+  "checks": [
+    {
+      "status": "PASS",
+      "cis": "2.14",
+      "id": "live-restore",
+      "detail": "enabled"
+    },
+    {
+      "status": "PASS",
+      "cis": "2.18",
+      "id": "no-new-privileges",
+      "detail": "daemon default on"
+    },
+    {
+      "status": "PASS",
+      "cis": "n/a",
+      "id": "log-rotation",
+      "detail": "{\"d\":\"json-file\",\"o\":{\"max-size\":\"100m\",\"max-file\":\"5\"}}"
+    },
+    {
+      "status": "PASS",
+      "cis": "2.7",
+      "id": "tcp-socket",
+      "detail": "unix socket only"
+    },
+    {
+      "status": "PASS",
+      "cis": "2.5",
+      "id": "insecure-registries",
+      "detail": "loopback defaults only"
+    },
+    {
+      "status": "PASS",
+      "cis": "2.4",
+      "id": "iptables",
+      "detail": "dockerd manages iptables"
+    },
+    {
+      "status": "PASS",
+      "cis": "2.17",
+      "id": "experimental",
+      "detail": "off"
+    },
+    {
+      "status": "PASS",
+      "cis": "2.16",
+      "id": "seccomp",
+      "detail": "default profile"
+    },
+    {
+      "status": "PASS",
+      "cis": "n/a",
+      "id": "apparmor",
+      "detail": "enabled"
+    },
+    {
+      "status": "PASS",
+      "cis": "7.1",
+      "id": "swarm",
+      "detail": "inactive"
+    },
+    {
+      "status": "DECISION",
+      "cis": "2.2",
+      "id": "icc",
+      "detail": "icc=true (not changed: see README)"
+    },
+    {
+      "status": "DECISION",
+      "cis": "2.15",
+      "id": "userland-proxy",
+      "detail": "userland-proxy=true (not changed)"
+    },
+    {
+      "status": "DECISION",
+      "cis": "2.9",
+      "id": "userns-remap",
+      "detail": "userns-remap=off (not changed)"
+    },
+    {
+      "status": "DECISION",
+      "cis": "2.12",
+      "id": "authorization-plugin",
+      "detail": "none (unix socket only, root/docker-group access is admin access)"
+    },
+    {
+      "status": "DECISION",
+      "cis": "1.1.5",
+      "id": "audit:/var/lib/docker",
+      "detail": "not watched (postfiatd writes its ledger DB there continuously)"
+    },
+    {
+      "status": "PASS",
+      "cis": "1.1.2",
+      "id": "docker-group",
+      "detail": "no members"
+    },
+    {
+      "status": "PASS",
+      "cis": "3.1-3.2",
+      "id": "perm:/lib/systemd/system/docker.service",
+      "detail": "root:root 644"
+    },
+    {
+      "status": "PASS",
+      "cis": "3.3-3.4",
+      "id": "perm:/lib/systemd/system/docker.socket",
+      "detail": "root:root 644"
+    },
+    {
+      "status": "PASS",
+      "cis": "3.5-3.6",
+      "id": "perm:/etc/docker",
+      "detail": "root:root 755"
+    },
+    {
+      "status": "PASS",
+      "cis": "3.15-3.16",
+      "id": "perm:/run/docker.sock",
+      "detail": "root:docker 660"
+    },
+    {
+      "status": "PASS",
+      "cis": "3.17-3.18",
+      "id": "perm:/etc/docker/daemon.json",
+      "detail": "root:root 644"
+    },
+    {
+      "status": "INFO",
+      "cis": "3.19-3.20",
+      "id": "perm:/etc/default/docker",
+      "detail": "absent"
+    },
+    {
+      "status": "PASS",
+      "cis": "3.23-3.24",
+      "id": "perm:/run/containerd/containerd.sock",
+      "detail": "root:root 660"
+    },
+    {
+      "status": "PASS",
+      "cis": "1.1.3",
+      "id": "audit:/usr/bin/dockerd",
+      "detail": "watched"
+    },
+    {
+      "status": "FAIL",
+      "cis": "1.1.4",
+      "id": "audit:/run/containerd",
+      "detail": "staged in /etc/audit/rules.d/pft-dockerd.rules, loads at next boot (auditd immutable)"
+    },
+    {
+      "status": "PASS",
+      "cis": "1.1.6",
+      "id": "audit:/etc/docker",
+      "detail": "watched"
+    },
+    {
+      "status": "FAIL",
+      "cis": "1.1.7",
+      "id": "audit:/lib/systemd/system/docker.service",
+      "detail": "staged in /etc/audit/rules.d/pft-dockerd.rules, loads at next boot (auditd immutable)"
+    },
+    {
+      "status": "FAIL",
+      "cis": "1.1.8",
+      "id": "audit:/run/containerd/containerd.sock",
+      "detail": "staged in /etc/audit/rules.d/pft-dockerd.rules, loads at next boot (auditd immutable)"
+    },
+    {
+      "status": "FAIL",
+      "cis": "1.1.9",
+      "id": "audit:/lib/systemd/system/docker.socket",
+      "detail": "staged in /etc/audit/rules.d/pft-dockerd.rules, loads at next boot (auditd immutable)"
+    },
+    {
+      "status": "INFO",
+      "cis": "1.1.10",
+      "id": "audit:/etc/default/docker",
+      "detail": "path absent"
+    },
+    {
+      "status": "PASS",
+      "cis": "1.1.11",
+      "id": "audit:/etc/docker/daemon.json",
+      "detail": "watched"
+    },
+    {
+      "status": "INFO",
+      "cis": "1.1.12",
+      "id": "audit:/etc/containerd/config.toml",
+      "detail": "path absent"
+    },
+    {
+      "status": "PASS",
+      "cis": "1.1.14",
+      "id": "audit:/usr/bin/containerd",
+      "detail": "watched"
+    },
+    {
+      "status": "FAIL",
+      "cis": "1.1.17",
+      "id": "audit:/usr/bin/containerd-shim-runc-v2",
+      "detail": "staged in /etc/audit/rules.d/pft-dockerd.rules, loads at next boot (auditd immutable)"
+    },
+    {
+      "status": "FAIL",
+      "cis": "1.1.18",
+      "id": "audit:/usr/bin/runc",
+      "detail": "staged in /etc/audit/rules.d/pft-dockerd.rules, loads at next boot (auditd immutable)"
+    }
+  ]
+}
+exit 1
+-- sentry: postfiatd-sentry StartedAt after: 2026-10-28T11:27:08.195471885Z, server_state full
+CHECK ok   sentry container StartedAt unchanged through apply + both drills
+CHECK ok   sentry server_state full (full)
+
+-- validator: postfiatd StartedAt before: 2026-10-28T11:33:11.215149204Z, daemon.json sha256 absent
+
+-- validator: audit-initial (2026-10-28T17:26:27Z)
+$ sudo pft-dockerd audit
+pft-dockerd audit - 2026-10-28T17:26:28Z
+  [FAIL    ] 2.14       live-restore                               disabled (dockerd restart or crash stops every container)
+  [FAIL    ] 2.18       no-new-privileges                          not a daemon default (new containers may gain privileges via setuid)
+  [FAIL    ] n/a        log-rotation                               json-file without a default max-size (new containers can fill the disk)
+  [PASS    ] 2.7        tcp-socket                                 unix socket only
+  [PASS    ] 2.5        insecure-registries                        loopback defaults only
+  [PASS    ] 2.4        iptables                                   dockerd manages iptables
+  [PASS    ] 2.17       experimental                               off
+  [PASS    ] 2.16       seccomp                                    default profile
+  [PASS    ] n/a        apparmor                                   enabled
+  [PASS    ] 7.1        swarm                                      inactive
+  [DECISION] 2.2        icc                                        icc=true (not changed: see README)
+  [DECISION] 2.15       userland-proxy                             userland-proxy=true (not changed)
+  [DECISION] 2.9        userns-remap                               userns-remap=off (not changed)
+  [DECISION] 2.12       authorization-plugin                       none (unix socket only, root/docker-group access is admin access)
+  [DECISION] 1.1.5      audit:/var/lib/docker                      not watched (postfiatd writes its ledger DB there continuously)
+  [INFO    ] 1.1.2      docker-group                               1 member(s); each is root-equivalent, review
+  [PASS    ] 3.1-3.2    perm:/lib/systemd/system/docker.service    root:root 644
+  [PASS    ] 3.3-3.4    perm:/lib/systemd/system/docker.socket     root:root 644
+  [PASS    ] 3.5-3.6    perm:/etc/docker                           root:root 755
+  [PASS    ] 3.15-3.16  perm:/run/docker.sock                      root:docker 660
+  [INFO    ] 3.17-3.18  perm:/etc/docker/daemon.json               absent
+  [INFO    ] 3.19-3.20  perm:/etc/default/docker                   absent
+  [PASS    ] 3.23-3.24  perm:/run/containerd/containerd.sock       root:root 660
+  [PASS    ] 1.1.3      audit:/usr/bin/dockerd                     watched
+  [FAIL    ] 1.1.4      audit:/run/containerd                      no auditd watch
+  [PASS    ] 1.1.6      audit:/etc/docker                          watched
+  [FAIL    ] 1.1.7      audit:/lib/systemd/system/docker.service   no auditd watch
+  [FAIL    ] 1.1.8      audit:/run/containerd/containerd.sock      no auditd watch
+  [FAIL    ] 1.1.9      audit:/lib/systemd/system/docker.socket    no auditd watch
+  [INFO    ] 1.1.10     audit:/etc/default/docker                  path absent
+  [INFO    ] 1.1.11     audit:/etc/docker/daemon.json              path absent
+  [INFO    ] 1.1.12     audit:/etc/containerd/config.toml          path absent
+  [PASS    ] 1.1.14     audit:/usr/bin/containerd                  watched
+  [FAIL    ] 1.1.17     audit:/usr/bin/containerd-shim-runc-v2     no auditd watch
+  [FAIL    ] 1.1.18     audit:/usr/bin/runc                        no auditd watch
+RESULT: FAIL - 9 finding(s)
+exit 1
+
+-- validator: audit-initial-json (2026-10-28T17:26:28Z)
+$ sudo pft-dockerd audit --json
+{
+  "ts": "2026-10-28T17:26:29Z",
+  "fails": 9,
+  "result": "FAIL",
+  "checks": [
+    {
+      "status": "FAIL",
+      "cis": "2.14",
+      "id": "live-restore",
+      "detail": "disabled (dockerd restart or crash stops every container)"
+    },
+    {
+      "status": "FAIL",
+      "cis": "2.18",
+      "id": "no-new-privileges",
+      "detail": "not a daemon default (new containers may gain privileges via setuid)"
+    },
+    {
+      "status": "FAIL",
+      "cis": "n/a",
+      "id": "log-rotation",
+      "detail": "json-file without a default max-size (new containers can fill the disk)"
+    },
+    {
+      "status": "PASS",
+      "cis": "2.7",
+      "id": "tcp-socket",
+      "detail": "unix socket only"
+    },
+    {
+      "status": "PASS",
+      "cis": "2.5",
+      "id": "insecure-registries",
+      "detail": "loopback defaults only"
+    },
+    {
+      "status": "PASS",
+      "cis": "2.4",
+      "id": "iptables",
+      "detail": "dockerd manages iptables"
+    },
+    {
+      "status": "PASS",
+      "cis": "2.17",
+      "id": "experimental",
+      "detail": "off"
+    },
+    {
+      "status": "PASS",
+      "cis": "2.16",
+      "id": "seccomp",
+      "detail": "default profile"
+    },
+    {
+      "status": "PASS",
+      "cis": "n/a",
+      "id": "apparmor",
+      "detail": "enabled"
+    },
+    {
+      "status": "PASS",
+      "cis": "7.1",
+      "id": "swarm",
+      "detail": "inactive"
+    },
+    {
+      "status": "DECISION",
+      "cis": "2.2",
+      "id": "icc",
+      "detail": "icc=true (not changed: see README)"
+    },
+    {
+      "status": "DECISION",
+      "cis": "2.15",
+      "id": "userland-proxy",
+      "detail": "userland-proxy=true (not changed)"
+    },
+    {
+      "status": "DECISION",
+      "cis": "2.9",
+      "id": "userns-remap",
+      "detail": "userns-remap=off (not changed)"
+    },
+    {
+      "status": "DECISION",
+      "cis": "2.12",
+      "id": "authorization-plugin",
+      "detail": "none (unix socket only, root/docker-group access is admin access)"
+    },
+    {
+      "status": "DECISION",
+      "cis": "1.1.5",
+      "id": "audit:/var/lib/docker",
+      "detail": "not watched (postfiatd writes its ledger DB there continuously)"
+    },
+    {
+      "status": "INFO",
+      "cis": "1.1.2",
+      "id": "docker-group",
+      "detail": "1 member(s); each is root-equivalent, review"
+    },
+    {
+      "status": "PASS",
+      "cis": "3.1-3.2",
+      "id": "perm:/lib/systemd/system/docker.service",
+      "detail": "root:root 644"
+    },
+    {
+      "status": "PASS",
+      "cis": "3.3-3.4",
+      "id": "perm:/lib/systemd/system/docker.socket",
+      "detail": "root:root 644"
+    },
+    {
+      "status": "PASS",
+      "cis": "3.5-3.6",
+      "id": "perm:/etc/docker",
+      "detail": "root:root 755"
+    },
+    {
+      "status": "PASS",
+      "cis": "3.15-3.16",
+      "id": "perm:/run/docker.sock",
+      "detail": "root:docker 660"
+    },
+    {
+      "status": "INFO",
+      "cis": "3.17-3.18",
+      "id": "perm:/etc/docker/daemon.json",
+      "detail": "absent"
+    },
+    {
+      "status": "INFO",
+      "cis": "3.19-3.20",
+      "id": "perm:/etc/default/docker",
+      "detail": "absent"
+    },
+    {
+      "status": "PASS",
+      "cis": "3.23-3.24",
+      "id": "perm:/run/containerd/containerd.sock",
+      "detail": "root:root 660"
+    },
+    {
+      "status": "PASS",
+      "cis": "1.1.3",
+      "id": "audit:/usr/bin/dockerd",
+      "detail": "watched"
+    },
+    {
+      "status": "FAIL",
+      "cis": "1.1.4",
+      "id": "audit:/run/containerd",
+      "detail": "no auditd watch"
+    },
+    {
+      "status": "PASS",
+      "cis": "1.1.6",
+      "id": "audit:/etc/docker",
+      "detail": "watched"
+    },
+    {
+      "status": "FAIL",
+      "cis": "1.1.7",
+      "id": "audit:/lib/systemd/system/docker.service",
+      "detail": "no auditd watch"
+    },
+    {
+      "status": "FAIL",
+      "cis": "1.1.8",
+      "id": "audit:/run/containerd/containerd.sock",
+      "detail": "no auditd watch"
+    },
+    {
+      "status": "FAIL",
+      "cis": "1.1.9",
+      "id": "audit:/lib/systemd/system/docker.socket",
+      "detail": "no auditd watch"
+    },
+    {
+      "status": "INFO",
+      "cis": "1.1.10",
+      "id": "audit:/etc/default/docker",
+      "detail": "path absent"
+    },
+    {
+      "status": "INFO",
+      "cis": "1.1.11",
+      "id": "audit:/etc/docker/daemon.json",
+      "detail": "path absent"
+    },
+    {
+      "status": "INFO",
+      "cis": "1.1.12",
+      "id": "audit:/etc/containerd/config.toml",
+      "detail": "path absent"
+    },
+    {
+      "status": "PASS",
+      "cis": "1.1.14",
+      "id": "audit:/usr/bin/containerd",
+      "detail": "watched"
+    },
+    {
+      "status": "FAIL",
+      "cis": "1.1.17",
+      "id": "audit:/usr/bin/containerd-shim-runc-v2",
+      "detail": "no auditd watch"
+    },
+    {
+      "status": "FAIL",
+      "cis": "1.1.18",
+      "id": "audit:/usr/bin/runc",
+      "detail": "no auditd watch"
+    }
+  ]
+}
+exit 1
+
+-- validator: plan-dry-run (2026-10-28T17:26:29Z)
+$ sudo pft-dockerd apply --dry-run
+2026-10-28T17:26:29Z apply: candidate daemon.json:
+  {
+    "live-restore": true,
+    "no-new-privileges": true,
+    "log-driver": "json-file",
+    "log-opts": {
+      "max-size": "100m",
+      "max-file": "5"
+    }
+  }
+  dockerd --validate: configuration OK
+2026-10-28T17:26:30Z apply: audit rules to stage:
+  # pft-dockerd: auditd watches for the Docker daemon files (CIS Docker Benchmark v1.6.0 1.1.x)
+  -w /run/containerd -p wa -k pft-dockerd
+  -w /lib/systemd/system/docker.service -p wa -k pft-dockerd
+  -w /run/containerd/containerd.sock -p wa -k pft-dockerd
+  -w /lib/systemd/system/docker.socket -p wa -k pft-dockerd
+  -w /usr/bin/containerd-shim-runc-v2 -p wa -k pft-dockerd
+  -w /usr/bin/runc -p wa -k pft-dockerd
+2026-10-28T17:26:30Z apply: dry run, nothing changed
+exit 0
+CHECK ok   validator plan-dry-run exit 0 (got 0)
+
+-- validator: bad-key-drill (2026-10-28T17:26:30Z)
+$ sudo PFT_DOCKERD_INJECT=bad-key pft-dockerd apply --yes
+2026-10-28T17:26:30Z apply: candidate daemon.json:
+  {
+    "live-restore": true,
+    "no-new-privileges": true,
+    "log-driver": "json-file",
+    "log-opts": {
+      "max-size": "100m",
+      "max-file": "5"
+    },
+    "pft-injected-bad-key": true
+  }
+  dockerd --validate: unable to configure the Docker daemon with file /tmp/tmp.dDE7hILSIe: the following directives don't match any configuration option: pft-injected-bad-key
+2026-10-28T17:26:30Z apply: REFUSED - candidate failed dockerd --validate; /etc/docker/daemon.json untouched (sha256 absent)
+exit 4
+CHECK ok   validator bad-key-drill exit 4 (got 4)
+CHECK ok   validator bad-key drill: daemon.json unchanged (sha256 absent -> absent)
+
+-- validator: apply (2026-10-28T17:26:30Z)
+$ sudo pft-dockerd apply --yes
+2026-10-28T17:26:30Z apply: candidate daemon.json:
+  {
+    "live-restore": true,
+    "no-new-privileges": true,
+    "log-driver": "json-file",
+    "log-opts": {
+      "max-size": "100m",
+      "max-file": "5"
+    }
+  }
+  dockerd --validate: configuration OK
+2026-10-28T17:26:30Z apply: audit rules to stage:
+  # pft-dockerd: auditd watches for the Docker daemon files (CIS Docker Benchmark v1.6.0 1.1.x)
+  -w /run/containerd -p wa -k pft-dockerd
+  -w /lib/systemd/system/docker.service -p wa -k pft-dockerd
+  -w /run/containerd/containerd.sock -p wa -k pft-dockerd
+  -w /lib/systemd/system/docker.socket -p wa -k pft-dockerd
+  -w /usr/bin/containerd-shim-runc-v2 -p wa -k pft-dockerd
+  -w /usr/bin/runc -p wa -k pft-dockerd
+2026-10-28T17:26:31Z apply: backup absent (sha256 absent)
+2026-10-28T17:26:33Z apply: live-restore enabled by <user> (no restart); snapshot unchanged: yes
+2026-10-28T17:26:33Z apply: installed daemon.json (sha256 4548e32c79f27adff6bc71100bd82020aa5cf411a9fb91dbc497744d8a367553); restarting dockerd (live-restore on)
+2026-10-28T17:28:48Z health: PASS after 125 s (StartedAt + DOCKER-USER unchanged, :2559 listening, server_state full)
+2026-10-28T17:28:49Z apply: auditd watches loaded (6)
+2026-10-28T17:28:49Z apply: done
+exit 0
+CHECK ok   validator apply exit 0 (got 0)
+
+-- validator: health-drill (2026-10-28T17:28:49Z)
+$ sudo PFT_DOCKERD_INJECT=health HEALTH_BUDGET=60 pft-dockerd apply --yes
+2026-10-28T17:28:50Z apply: candidate daemon.json:
+  {
+    "live-restore": true,
+    "no-new-privileges": true,
+    "log-driver": "json-file",
+    "log-opts": {
+      "max-size": "100m",
+      "max-file": "5"
+    },
+    "labels": [
+      "pft.dockerd-drill=1"
+    ]
+  }
+  dockerd --validate: configuration OK
+2026-10-28T17:28:50Z apply: audit rules to stage:
+  # pft-dockerd: auditd watches for the Docker daemon files (CIS Docker Benchmark v1.6.0 1.1.x)
+2026-10-28T17:28:50Z apply: backup /var/lib/pft-dockerd/daemon.json.20261028T172850Z (sha256 4548e32c79f27adff6bc71100bd82020aa5cf411a9fb91dbc497744d8a367553)
+2026-10-28T17:28:51Z apply: installed daemon.json (sha256 3754dd045cdf5fc213339c127ba650d4141aec37f6838e26a5f471ce583da43b); restarting dockerd (live-restore on)
+2026-10-28T17:30:06Z health: FAIL after 63 s (server_state=full; snapshot CHANGED; injected=health)
+  6d5
+  < ipt -A DOCKER-USER -s <redacted-ip>/32 -i br-8cedebf23a84 ! -o br-8cedebf23a84 -m comment --comment "pft-egress:postfiatd" -j PFT-EGRESS
+2026-10-28T17:30:07Z apply: health gate missed -> automatic rollback
+2026-10-28T17:30:17Z rollback: daemon.json sha256 4548e32c79f27adff6bc71100bd82020aa5cf411a9fb91dbc497744d8a367553 (backup 4548e32c79f27adff6bc71100bd82020aa5cf411a9fb91dbc497744d8a367553)
+2026-10-28T17:30:17Z rollback: daemon.json byte-identical to the pre-apply state
+exit 1
+CHECK ok   validator health-drill exit 1 (got 1)
+CHECK ok   validator health drill: daemon.json byte-identical to the applied file (sha256 4548e32c79f27adff6bc71100bd82020aa5cf411a9fb91dbc497744d8a367553 -> 4548e32c79f27adff6bc71100bd82020aa5cf411a9fb91dbc497744d8a367553)
+
+-- validator: audit-final (2026-10-28T17:30:17Z)
+$ sudo pft-dockerd audit
+pft-dockerd audit - 2026-10-28T17:30:18Z
+  [PASS    ] 2.14       live-restore                               enabled
+  [PASS    ] 2.18       no-new-privileges                          daemon default on
+  [PASS    ] n/a        log-rotation                               {"d":"json-file","o":{"max-size":"100m","max-file":"5"}}
+  [PASS    ] 2.7        tcp-socket                                 unix socket only
+  [PASS    ] 2.5        insecure-registries                        loopback defaults only
+  [PASS    ] 2.4        iptables                                   dockerd manages iptables
+  [PASS    ] 2.17       experimental                               off
+  [PASS    ] 2.16       seccomp                                    default profile
+  [PASS    ] n/a        apparmor                                   enabled
+  [PASS    ] 7.1        swarm                                      inactive
+  [DECISION] 2.2        icc                                        icc=true (not changed: see README)
+  [DECISION] 2.15       userland-proxy                             userland-proxy=true (not changed)
+  [DECISION] 2.9        userns-remap                               userns-remap=off (not changed)
+  [DECISION] 2.12       authorization-plugin                       none (unix socket only, root/docker-group access is admin access)
+  [DECISION] 1.1.5      audit:/var/lib/docker                      not watched (postfiatd writes its ledger DB there continuously)
+  [INFO    ] 1.1.2      docker-group                               1 member(s); each is root-equivalent, review
+  [PASS    ] 3.1-3.2    perm:/lib/systemd/system/docker.service    root:root 644
+  [PASS    ] 3.3-3.4    perm:/lib/systemd/system/docker.socket     root:root 644
+  [PASS    ] 3.5-3.6    perm:/etc/docker                           root:root 755
+  [PASS    ] 3.15-3.16  perm:/run/docker.sock                      root:docker 660
+  [PASS    ] 3.17-3.18  perm:/etc/docker/daemon.json               root:root 644
+  [INFO    ] 3.19-3.20  perm:/etc/default/docker                   absent
+  [PASS    ] 3.23-3.24  perm:/run/containerd/containerd.sock       root:root 660
+  [PASS    ] 1.1.3      audit:/usr/bin/dockerd                     watched
+  [PASS    ] 1.1.4      audit:/run/containerd                      watched
+  [PASS    ] 1.1.6      audit:/etc/docker                          watched
+  [PASS    ] 1.1.7      audit:/lib/systemd/system/docker.service   watched
+  [PASS    ] 1.1.8      audit:/run/containerd/containerd.sock      watched
+  [PASS    ] 1.1.9      audit:/lib/systemd/system/docker.socket    watched
+  [INFO    ] 1.1.10     audit:/etc/default/docker                  path absent
+  [PASS    ] 1.1.11     audit:/etc/docker/daemon.json              watched
+  [INFO    ] 1.1.12     audit:/etc/containerd/config.toml          path absent
+  [PASS    ] 1.1.14     audit:/usr/bin/containerd                  watched
+  [PASS    ] 1.1.17     audit:/usr/bin/containerd-shim-runc-v2     watched
+  [PASS    ] 1.1.18     audit:/usr/bin/runc                        watched
+RESULT: PASS
+exit 0
+
+-- validator: audit-final-json (2026-10-28T17:30:18Z)
+$ sudo pft-dockerd audit --json
+{
+  "ts": "2026-10-28T17:30:20Z",
+  "fails": 0,
+  "result": "PASS",
+  "checks": [
+    {
+      "status": "PASS",
+      "cis": "2.14",
+      "id": "live-restore",
+      "detail": "enabled"
+    },
+    {
+      "status": "PASS",
+      "cis": "2.18",
+      "id": "no-new-privileges",
+      "detail": "daemon default on"
+    },
+    {
+      "status": "PASS",
+      "cis": "n/a",
+      "id": "log-rotation",
+      "detail": "{\"d\":\"json-file\",\"o\":{\"max-size\":\"100m\",\"max-file\":\"5\"}}"
+    },
+    {
+      "status": "PASS",
+      "cis": "2.7",
+      "id": "tcp-socket",
+      "detail": "unix socket only"
+    },
+    {
+      "status": "PASS",
+      "cis": "2.5",
+      "id": "insecure-registries",
+      "detail": "loopback defaults only"
+    },
+    {
+      "status": "PASS",
+      "cis": "2.4",
+      "id": "iptables",
+      "detail": "dockerd manages iptables"
+    },
+    {
+      "status": "PASS",
+      "cis": "2.17",
+      "id": "experimental",
+      "detail": "off"
+    },
+    {
+      "status": "PASS",
+      "cis": "2.16",
+      "id": "seccomp",
+      "detail": "default profile"
+    },
+    {
+      "status": "PASS",
+      "cis": "n/a",
+      "id": "apparmor",
+      "detail": "enabled"
+    },
+    {
+      "status": "PASS",
+      "cis": "7.1",
+      "id": "swarm",
+      "detail": "inactive"
+    },
+    {
+      "status": "DECISION",
+      "cis": "2.2",
+      "id": "icc",
+      "detail": "icc=true (not changed: see README)"
+    },
+    {
+      "status": "DECISION",
+      "cis": "2.15",
+      "id": "userland-proxy",
+      "detail": "userland-proxy=true (not changed)"
+    },
+    {
+      "status": "DECISION",
+      "cis": "2.9",
+      "id": "userns-remap",
+      "detail": "userns-remap=off (not changed)"
+    },
+    {
+      "status": "DECISION",
+      "cis": "2.12",
+      "id": "authorization-plugin",
+      "detail": "none (unix socket only, root/docker-group access is admin access)"
+    },
+    {
+      "status": "DECISION",
+      "cis": "1.1.5",
+      "id": "audit:/var/lib/docker",
+      "detail": "not watched (postfiatd writes its ledger DB there continuously)"
+    },
+    {
+      "status": "INFO",
+      "cis": "1.1.2",
+      "id": "docker-group",
+      "detail": "1 member(s); each is root-equivalent, review"
+    },
+    {
+      "status": "PASS",
+      "cis": "3.1-3.2",
+      "id": "perm:/lib/systemd/system/docker.service",
+      "detail": "root:root 644"
+    },
+    {
+      "status": "PASS",
+      "cis": "3.3-3.4",
+      "id": "perm:/lib/systemd/system/docker.socket",
+      "detail": "root:root 644"
+    },
+    {
+      "status": "PASS",
+      "cis": "3.5-3.6",
+      "id": "perm:/etc/docker",
+      "detail": "root:root 755"
+    },
+    {
+      "status": "PASS",
+      "cis": "3.15-3.16",
+      "id": "perm:/run/docker.sock",
+      "detail": "root:docker 660"
+    },
+    {
+      "status": "PASS",
+      "cis": "3.17-3.18",
+      "id": "perm:/etc/docker/daemon.json",
+      "detail": "root:root 644"
+    },
+    {
+      "status": "INFO",
+      "cis": "3.19-3.20",
+      "id": "perm:/etc/default/docker",
+      "detail": "absent"
+    },
+    {
+      "status": "PASS",
+      "cis": "3.23-3.24",
+      "id": "perm:/run/containerd/containerd.sock",
+      "detail": "root:root 660"
+    },
+    {
+      "status": "PASS",
+      "cis": "1.1.3",
+      "id": "audit:/usr/bin/dockerd",
+      "detail": "watched"
+    },
+    {
+      "status": "PASS",
+      "cis": "1.1.4",
+      "id": "audit:/run/containerd",
+      "detail": "watched"
+    },
+    {
+      "status": "PASS",
+      "cis": "1.1.6",
+      "id": "audit:/etc/docker",
+      "detail": "watched"
+    },
+    {
+      "status": "PASS",
+      "cis": "1.1.7",
+      "id": "audit:/lib/systemd/system/docker.service",
+      "detail": "watched"
+    },
+    {
+      "status": "PASS",
+      "cis": "1.1.8",
+      "id": "audit:/run/containerd/containerd.sock",
+      "detail": "watched"
+    },
+    {
+      "status": "PASS",
+      "cis": "1.1.9",
+      "id": "audit:/lib/systemd/system/docker.socket",
+      "detail": "watched"
+    },
+    {
+      "status": "INFO",
+      "cis": "1.1.10",
+      "id": "audit:/etc/default/docker",
+      "detail": "path absent"
+    },
+    {
+      "status": "PASS",
+      "cis": "1.1.11",
+      "id": "audit:/etc/docker/daemon.json",
+      "detail": "watched"
+    },
+    {
+      "status": "INFO",
+      "cis": "1.1.12",
+      "id": "audit:/etc/containerd/config.toml",
+      "detail": "path absent"
+    },
+    {
+      "status": "PASS",
+      "cis": "1.1.14",
+      "id": "audit:/usr/bin/containerd",
+      "detail": "watched"
+    },
+    {
+      "status": "PASS",
+      "cis": "1.1.17",
+      "id": "audit:/usr/bin/containerd-shim-runc-v2",
+      "detail": "watched"
+    },
+    {
+      "status": "PASS",
+      "cis": "1.1.18",
+      "id": "audit:/usr/bin/runc",
+      "detail": "watched"
+    }
+  ]
+}
+exit 0
+-- validator: postfiatd StartedAt after: 2026-10-28T11:33:11.215149204Z, server_state full
+CHECK ok   validator container StartedAt unchanged through apply + both drills
+CHECK ok   validator server_state full (full)
+
+-- sentry: reboot to load the staged auditd watches (auditd -e 2) (2026-10-28T17:30:20Z)
+  sentry back: uptime 109 s, server_state full (2026-10-28T17:32:33Z)
+
+-- sentry: audit-after-reboot (2026-10-28T17:32:34Z)
+$ sudo pft-dockerd audit
+pft-dockerd audit - 2026-10-28T17:32:37Z
+  [PASS    ] 2.14       live-restore                               enabled
+  [PASS    ] 2.18       no-new-privileges                          daemon default on
+  [PASS    ] n/a        log-rotation                               {"d":"json-file","o":{"max-size":"100m","max-file":"5"}}
+  [PASS    ] 2.7        tcp-socket                                 unix socket only
+  [PASS    ] 2.5        insecure-registries                        loopback defaults only
+  [PASS    ] 2.4        iptables                                   dockerd manages iptables
+  [PASS    ] 2.17       experimental                               off
+  [PASS    ] 2.16       seccomp                                    default profile
+  [PASS    ] n/a        apparmor                                   enabled
+  [PASS    ] 7.1        swarm                                      inactive
+  [DECISION] 2.2        icc                                        icc=true (not changed: see README)
+  [DECISION] 2.15       userland-proxy                             userland-proxy=true (not changed)
+  [DECISION] 2.9        userns-remap                               userns-remap=off (not changed)
+  [DECISION] 2.12       authorization-plugin                       none (unix socket only, root/docker-group access is admin access)
+  [DECISION] 1.1.5      audit:/var/lib/docker                      not watched (postfiatd writes its ledger DB there continuously)
+  [PASS    ] 1.1.2      docker-group                               no members
+  [PASS    ] 3.1-3.2    perm:/lib/systemd/system/docker.service    root:root 644
+  [PASS    ] 3.3-3.4    perm:/lib/systemd/system/docker.socket     root:root 644
+  [PASS    ] 3.5-3.6    perm:/etc/docker                           root:root 755
+  [PASS    ] 3.15-3.16  perm:/run/docker.sock                      root:docker 660
+  [PASS    ] 3.17-3.18  perm:/etc/docker/daemon.json               root:root 644
+  [INFO    ] 3.19-3.20  perm:/etc/default/docker                   absent
+  [PASS    ] 3.23-3.24  perm:/run/containerd/containerd.sock       root:root 660
+  [PASS    ] 1.1.3      audit:/usr/bin/dockerd                     watched
+  [FAIL    ] 1.1.4      audit:/run/containerd                      no auditd watch
+  [PASS    ] 1.1.6      audit:/etc/docker                          watched
+  [FAIL    ] 1.1.7      audit:/lib/systemd/system/docker.service   no auditd watch
+  [FAIL    ] 1.1.8      audit:/run/containerd/containerd.sock      no auditd watch
+  [FAIL    ] 1.1.9      audit:/lib/systemd/system/docker.socket    no auditd watch
+  [INFO    ] 1.1.10     audit:/etc/default/docker                  path absent
+  [PASS    ] 1.1.11     audit:/etc/docker/daemon.json              watched
+  [INFO    ] 1.1.12     audit:/etc/containerd/config.toml          path absent
+  [PASS    ] 1.1.14     audit:/usr/bin/containerd                  watched
+  [FAIL    ] 1.1.17     audit:/usr/bin/containerd-shim-runc-v2     no auditd watch
+  [FAIL    ] 1.1.18     audit:/usr/bin/runc                        no auditd watch
+RESULT: FAIL - 6 finding(s)
+exit 1
+CHECK FAIL sentry audit-after-reboot exit 0 (got 1)
+CHECK ok   sentry server_state full after reboot
+
+== 3. close window, expire silence, restore, read back
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+  silence expired: HTTP 200
+  restored local:/etc/postfiat-monitor.env: sha256 matches pre-drill copy: yes
+  restored local:/etc/pft-integrity.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-watchdog/ntfy.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-integrity.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-alertpath/ntfy.env: sha256 matches pre-drill copy: yes
+  removed drill-only local:/etc/pft-maint/ntfy.env: yes
+  removed drill-only relay:/etc/pft-maint/ntfy.env: yes
+CHECK ok   notifier env files restored byte-identical, drill-only files removed
+  MAINT topic: 2 message(s)
+    {"time":"2026-10-28T17:21:00Z","title":"[MAINT] start validator","message":"pft-dockerd drill 20261028T172038Z | until 2026-10-28T18:20:58Z (ttl 3600s) | sentry copy: pushed"}
+    {"time":"2026-10-28T17:32:39Z","title":"[MAINT] end validator","message":"pft-dockerd drill 20261028T172038Z | pft-dockerd drill done after 701s | suppressed here: watchdog=0 monitor=0 integrity=0 | sentry copy: pushed"}
+  ALERT topic: 0 message(s)
+CHECK ok   ALERT throwaway topic received nothing (0)
+  $ pft-integrity verify (validator host)
+    pft-integrity verify - 2026-10-28T17:33:10Z
+    OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-10-28T14:49:06Z
+      [FAIL] fw:docker-user                               changed  rules 6->5, sha256
+    RESULT: FAIL - 81 unchanged, 0 warn, 1 fail -> exit 2
+  $ pft-integrity verify (sentry host)
+    pft-integrity verify - 2026-10-28T17:33:23Z
+    OS: Ubuntu 22.04.5 LTS | container: postfiatd-sentry | baseline: 2026-10-28T14:49:24Z
+      [WARN] sshd:sshd_config                             changed  mtime
+    RESULT: WARN - 49 unchanged, 1 warn, 0 fail -> exit 1
+
+live-run done 2026-10-28T17:33:23Z: 1 check(s) failed -> FAIL
+wrapper exit 1
