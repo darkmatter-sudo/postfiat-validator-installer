@@ -355,6 +355,14 @@ env PATH="$WORK/bin:$PATH" systemctl daemon-reload; echo 1 > "$STUB/enabled"
 out="$(run rollback --yes 2>&1)"; rc=$?
 [ $rc -eq 0 ] && [ ! -e "$DI" ] && [ "$(cat "$STUB/protecthome")" = yes ] && ok "rollback removes the auditd.service drop-in + daemon-reload" || { bad "rollback drop-in rc=$rc"; ind <<<"$out"; }
 
+# --- 10. other add-ons' rules share the pft- prefix (dockerd/ loads -k pft-dockerd): not counted as ours ---
+reset_host; touch "$STUB/installed"; echo active > "$STUB/auditd_active"
+printf -- '-w /usr/bin/runc -p wa -k pft-dockerd\n-w /run/containerd -p wa -k pft-dockerd\n' > "$(R /etc/audit/rules.d/pft-dockerd.rules)"
+out="$(run apply --yes --key-out "$WORK/k10" 2>&1)"; rc=$?
+[ $rc -eq 0 ] && grep -q -- '-k pft-dockerd' "$STUB/rules" && ok "apply with another add-on's pft-dockerd rules loaded: counts only its own keys" || { bad "foreign-key apply rc=$rc"; ind <<<"$out"; }
+out="$(run check 2>&1)"; rc=$?
+[ $rc -eq 0 ] && ! grep -q pft-dockerd "$(R /var/lib/pft-audittrail/rules.loaded)" && ok "check PASS with pft-dockerd rules loaded; snapshot holds only audittrail keys" || { bad "foreign-key check rc=$rc"; ind <<<"$out"; }
+
 echo
 echo "RESULT: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

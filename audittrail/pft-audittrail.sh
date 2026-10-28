@@ -204,7 +204,8 @@ redact_paths() { # pft-keys / pft-agent paths are secret-adjacent: never print t
   sed -E 's#^(-w )[^ ]+( -p [a-z]+ -k (pft-keys|pft-agent))$#\1<redacted>\2#'
 }
 
-loaded_pft_rules() { "$AUDITCTL" -l 2>/dev/null | grep -E '(-k |key=)pft-' ; }
+# only this tool's own keys, matched whole: other add-ons' keys share the prefix (dockerd/ loads -k pft-dockerd)
+loaded_pft_rules() { "$AUDITCTL" -l 2>/dev/null | grep -E -- "(-k |key=)(${KEYS// /|})\$" ; }
 
 do_apply() { # YES DRY IMMUTABLE KEYOUT
   local rules dropin st installed=false gen=false n_loaded n_file en
