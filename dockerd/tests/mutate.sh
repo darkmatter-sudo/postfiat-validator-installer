@@ -65,9 +65,9 @@ mutant M13 "dockerd --validate result ignored" \
 mutant M14 "live-restore not enabled by reload first" \
   'if [ "$live" != true ]; then # step 2' 'if false; then # step 2'
 mutant M15 "health gate ignores changed StartedAt / DOCKER-USER" \
-  '[ "$snap" = "$before" ] && [ "$st" = full ]' '[ "$st" = full ]'
+  '[ "$cmp_s" = "$cmp_b" ] && [ "$st" = full ]' '[ "$st" = full ]'
 mutant M16 "health gate ignores server_state" \
-  '[ "$snap" = "$before" ] && [ "$st" = full ]' '[ "$snap" = "$before" ]'
+  '[ "$cmp_s" = "$cmp_b" ] && [ "$st" = full ]' '[ "$cmp_s" = "$cmp_b" ]'
 mutant M17 "health gate ignores the peer listener" \
   '&& "$SS" -Hltn 2>/dev/null | awk '"'"'{print $4}'"'"' | grep -qE ":$PEER_PORT\$"; then' '; then'
 mutant M18 "no rollback after a health miss" \
@@ -99,6 +99,10 @@ mutant M30 "rollback gate honours the injected health miss (drill can never roll
   '{ [ "$INJECT" != health ] || [ "$mode" = rollback ]; }' '[ "$INJECT" != health ]'
 mutant M31 "a failed rollback after a health miss exits 1 instead of 5" \
   'automatic rollback"; do_rollback "$b" "$before" "$c" || return 5; return 1;' 'automatic rollback"; do_rollback "$b" "$before" "$c"; return 1;'
+mutant M32 "watches emitted earlier in the same file do not count as coverage (socket staged, boot load aborts)" \
+  'rules+=$'"'"'\n'"'"'"-w $p -p wa -k pft-dockerd"' ':'
+mutant M33 "staged check ignores a staged parent-directory watch" \
+  '|| covered_by_dir "$1" "$(cat "$AUDIT_RULES")"; }; }' '; }; }'
 
 echo "RESULT: $CAUGHT/$TOTAL caught, $SURVIVED survived, $NOTAPPLIED not applied"
 [ "$SURVIVED" = 0 ] && [ "$NOTAPPLIED" = 0 ]

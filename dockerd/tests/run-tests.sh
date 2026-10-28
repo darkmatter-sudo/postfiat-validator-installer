@@ -87,6 +87,12 @@ fresh; good; chmod 000 "$E/bin/docker"; run audit; expect "docker info failure -
 fresh; run plan
 if [ "$RC" = 0 ] && grep -q '"live-restore": true' <<<"$OUT" && grep -q -- '-w /usr/bin/runc -p wa -k pft-dockerd' <<<"$OUT"; then ok "plan prints merged json + missing watches"; else ko plan "$OUT"; fi
 grep -q -- '-w /usr/bin/dockerd ' <<<"$OUT" && ko "plan omits watches already loaded" "$OUT" || ok "plan omits watches already loaded"
+# boot-time load: augenrules aborts at a watch whose parent dir is missing at boot (/run/<x>/ is created later)
+fresh; run plan
+grep -qx -- '-w /run/containerd -p wa -k pft-dockerd' <<<"$OUT" && ok "fresh plan watches /run/containerd" || ko "fresh plan watches /run/containerd" "$OUT"
+grep -q -- '^-w /run/containerd/containerd.sock' <<<"$OUT" && ko "fresh plan: no socket watch (dir emitted in the same file covers it)" "$OUT" || ok "fresh plan: no socket watch (dir emitted in the same file covers it)"
+bad="$(sed -n 's/^-w \([^ ]*\) .*/\1/p' <<<"$OUT" | while read -r w; do case "$(dirname "$w")" in /run/*) echo "$w";; esac; done)"
+[ -z "$bad" ] && [ "$(grep -c '^-w ' <<<"$OUT")" = 5 ] && ok "every planned watch has a parent that exists at boot" || ko "boot-safe parents" "$bad"
 fresh; run apply --dry-run
 expect "apply --dry-run" 0 'dry run, nothing changed'
 [ ! -e "$PFT_DOCKERD_ROOT/etc/docker/daemon.json" ] && ! grep -q systemctl "$STUB_S/calls" && ok "dry-run changed nothing" || ko "dry-run changed nothing" "$(cat "$STUB_S/calls")"
@@ -174,6 +180,9 @@ fresh; good; echo 2 > "$STUB_S/enabled"; sed -i '\#/usr/bin/runc #d' "$STUB_S/ru
 expect "immutable auditd -> staged, not loaded" 0 'auditd immutable \(-e 2\): 1 watch\(es\) staged'
 grep -q augenrules "$STUB_S/calls" && ko "no augenrules under -e 2" "$(cat "$STUB_S/calls")" || ok "no augenrules under -e 2"
 run audit; expect "audit reports staged-until-boot" 1 '1.1.18 +audit:/usr/bin/runc +staged in .*next boot'
+fresh; good; echo 2 > "$STUB_S/enabled"; sed -i '\#^-w /run/containerd #d' "$STUB_S/rules"; run apply --yes
+grep -q -- '^-w /run/containerd/containerd.sock' "$PFT_DOCKERD_ROOT/etc/audit/rules.d/pft-dockerd.rules" && ko "immutable: socket not staged" "$(cat "$PFT_DOCKERD_ROOT/etc/audit/rules.d/pft-dockerd.rules")" || ok "immutable: socket not staged"
+run audit; expect "audit: socket covered by the staged /run/containerd watch" 1 '1.1.8 +audit:/run/containerd/containerd.sock +staged in .*next boot'
 
 # --- rollback command
 fresh; echo '{"debug":false}' > "$PFT_DOCKERD_ROOT/etc/docker/daemon.json"; cp "$PFT_DOCKERD_ROOT/etc/docker/daemon.json" "$E/pre"

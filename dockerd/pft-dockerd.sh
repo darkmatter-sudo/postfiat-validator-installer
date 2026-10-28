@@ -174,7 +174,7 @@ covered_by_dir() { # a -w on a parent directory covers files under it (e.g. /etc
   [ "$dir" != / ] && [ "$dir" != /usr/bin ] && [ "$dir" != /lib/systemd/system ] && [ "$dir" != /run ] \
     && grep -qE -- "^-w ${dir//./\\.}( |$)" <<<"$rules"
 }
-staged() { [ -f "$AUDIT_RULES" ] && grep -qE -- "^-w ${1//./\\.} " "$AUDIT_RULES"; }
+staged() { [ -f "$AUDIT_RULES" ] && { grep -qE -- "^-w ${1//./\\.} " "$AUDIT_RULES" || covered_by_dir "$1" "$(cat "$AUDIT_RULES")"; }; }
 
 print_results() {
   if [ "${JSON:-0}" = 1 ]; then
@@ -196,6 +196,10 @@ candidate() { # merged daemon.json on stdout; conflicting existing values are ke
   jq -rn --argjson cur "$d" --argjson safe "$SAFE_KEYS" \
     '$safe | to_entries[] | . as $e | select(($cur | has($e.key)) and ($cur[$e.key] != $e.value)) | "kept existing \($e.key)=\($cur[$e.key]|tojson) (safe value \($e.value|tojson) not forced)"' >&2
 }
+# A boot-time `augenrules --load` aborts at the first watch whose PARENT directory does not exist yet, and nothing
+# after it (incl. `-e 2`) loads. /run is empty at boot (containerd creates /run/containerd later), so
+# `-w /run/containerd/containerd.sock` aborted the sentry's boot load. Lines already emitted count as coverage,
+# so a fresh host gets `-w /run/containerd` (parent /run exists at boot) and never the socket itself.
 rules_text() { # missing watches only
   local rules p cis; rules="$("$AUDITCTL" -l 2>/dev/null)"
   echo "# pft-dockerd: auditd watches for the Docker daemon files (CIS Docker Benchmark v1.6.0 1.1.x)"
@@ -204,6 +208,7 @@ rules_text() { # missing watches only
     grep -qE -- "^-w ${p//./\\.}( |$)" <<<"$rules" && continue
     covered_by_dir "$p" "$rules" && continue
     echo "-w $p -p wa -k pft-dockerd"   # CIS $cis
+    rules+=$'\n'"-w $p -p wa -k pft-dockerd"
   done <<<"$WATCHES"
 }
 
