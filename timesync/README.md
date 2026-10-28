@@ -76,19 +76,46 @@ hijacked source cannot move the clock. `cmdport 0`: no UDP command port.
 `pft_timesync_nts_sources`, `pft_timesync_sources`, `pft_timesync_reachable_sources`, `pft_timesync_synced`,
 `pft_timesync_collect_timestamp_seconds`. The validator's exporter serves the textfile dir.
 
+**Sentry clock in the same Prometheus.** The sentry runs no Prometheus and no exporter (no new listener), the same
+design as `../resources`. On the validator, `pft-timesync-pull` (timer, every minute) runs
+`$PULL_SSH cat -- /var/lib/pft-exporter/textfile/pft_timesync.prom` over the existing admin ssh link and writes
+`pft_timesync_peer_sentry.prom` with `host="sentry"` as the first label of every sample. The relabel is
+all-or-nothing: only `pft_timesync_*` samples and HELP/TYPE lines, well-formed labels, numeric values, no `host`
+label from the peer (it cannot pose as another host), `pft_timesync_state` and the collect timestamp present,
+<= 64 KiB. On any failure the previous copy stays, its timestamp ages, and `PFTTimesyncStale{host="sentry"}` fires.
+Series without `host` are the validator's own; every alert summary starts with the host (`sentry: ...` /
+`validator: ...`), because the ntfy message body is the summary.
+
+```
+sudo install -m 0600 -o root -g root pft-timesync-pull.env.example /etc/pft-timesync-pull.env   # then edit PULL_SSH
+sudo ./install.sh --pull                 # /usr/local/sbin/pft-timesync-pull + pft-timesync-pull.timer, one pull first
+sudo docker kill -s HUP pft-prometheus   # reload rules after git pull (no recreate: silences and for: timers survive)
+```
+
 ### Alerts
 
 `../alerts/timesync.rules.yml`: PFTClockNotSynchronised (synced 0 for 5m, critical), PFTClockOffsetHigh
 (\|offset\| > 50 ms for 10m), PFTClockNTSSourcesLow (< 4 for 15m), PFTTimesyncAuditCritical (state 2 for 5m,
 critical), PFTTimesyncStale (no collection for 5 + 2 min). `../alerts/timesync.tests.yml` has promtool tests
-with a firing case and a non-firing control for each rule; `tests/check-rules.sh` runs them plus 8 rule mutants.
+with a firing case and a non-firing control for each rule, plus a `host="sentry"` case that checks the label and the
+summary; `tests/check-rules.sh` runs them plus 9 rule mutants.
+
+`drill/alert-drill.sh OUTDIR` is the live alert drill. It runs on the validator as the operator user and stops
+`pft-timesync.timer` (metrics only; chrony and postfiatd are not touched) until PFTTimesyncStale fires, then starts it
+again. For the drill both notifiers that could fire point at a random throwaway ntfy topic: the bridge
+(`alerts/run-stack.sh bridge`; Prometheus and Alertmanager are not recreated) and the sentry's
+`/etc/pft-alertpath/ntfy.env`, because the ~2 s bridge recreate makes `../alertpath` report DEGRADED. A trap restores
+both, checks the bridge mount source and the sentry file's sha256, and the verdict needs 0 messages on the operator
+topics during the drill.
 
 ## Tests
 
 ```
 bash tests/run-tests.sh      # offline: stub host (fake systemctl/chronyc/apt-get/dpkg/docker), chronyc CSV from a real run
 bash tests/mutate.sh         # control run, then 32 mutants; each must make the suite fail
-DOCKER="sudo docker" bash tests/check-rules.sh   # promtool check + test, 8 rule mutants
+bash tests/pull-tests.sh     # offline: pft-timesync-pull relabel/rejections/atomic pull (stub transport), 53 tests
+bash tests/pull-mutate.sh    # control run, then 16 mutants of pft-timesync-pull.sh
+DOCKER="sudo docker" bash tests/check-rules.sh   # promtool check + test, 9 rule mutants
 bash drill/live-run.sh ROLE  # LIVE (root): injected unreachable sources -> auto rollback, then the real apply
 ```
 
