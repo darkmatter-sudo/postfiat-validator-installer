@@ -2,8 +2,8 @@ M01	snapshot age threshold x100	$snap_age > $snap_stale then	$snap_age > $snap_s
 M02	watchdog delivery age never stale	$wd_age != null and $wd_age > $wd_stale then	false then
 M03	missing delivery record not stale	if $c != null and $c.wd == null then	if false then
 M04	Prometheus reload failure ignored	$c.prom.reload_ok != 1	false
-M05	counter reset counted as 0	else $v[$i] end	else 0 end
-M06	counter increase always 0	if ($v | length) < 2 then 0	if true then 0
+M05	counter reset counted as 0	else $s[$i].v end)	else 0 end)
+M06	counter increase always 0	reduce range(1; $s | length) as $i (0;	reduce range(1; 1) as $i (0;
 M07	Alertmanager down ignored	if $c.am.up != 1 then "Alertmanager unreachable"	if false then "Alertmanager unreachable"
 M08	webhook failures ignored	inc(.am.notif_failed)	inc(.am.notif_failed) * 0
 M09	bridge container state ignored	$c.bridge.running != 1	false
