@@ -1,0 +1,222 @@
+pft-resources live drill (validator + sentry) - 2026-10-27T08:17:53Z - Ubuntu 22.04.5 LTS
+sha256: drill.sh 643987eca58c | drill_load.py 9e72ff80e490 | drill_verdict.py 7ba8999afc9a | resources.rules.yml 8e1722054566 | pft-resources 3df61580b082 (sentry 3df61580b082) | pft-resources-pull 63bac38131a8
+
+== 1. preflight
+  pft-resources rule group loaded: ["PFTResourcesCollectorFailing","PFTResourcesStale","PFTMemoryNearLimit","PFTMemoryGrowthToLimit","PFTContainerOOMKill","PFTFdNearLimit","PFTPidsNearLimit","PFTCPUThrottled","PFTMemoryPressure","PFTIOPressure"]
+  nodes: validator full, sentry full
+  drill image python@sha256:1b668429b3511ab407d8e00648891631b0b1a4d7e15e3ca70f38ab5b91ad4ab4
+  Alertmanager: active silences 0, active alerts []
+
+== 2. bridge -> throwaway topic
+  $ NTFY_ENV_FILE=<throwaway env> alerts/run-stack.sh bridge
+  2026-10-27T08:17:59Z starting pft-alert-bridge (ntfy: on)
+  2026-10-27T08:18:07Z pft-alert-bridge listening
+  pft-alert-bridge -> https://ntfy.sh/<redacted> (throwaway; mount source checked); Prometheus/Alertmanager not recreated: /pft-prometheus 2026-10-26T07:37:48.872465152Z /pft-alertmanager 2026-10-26T07:37:48.158615953Z 
+
+== 3. throwaway containers
+  sentry: docker pull python@sha256:1b668429b3511ab407d8e00648891631b0b1a4d7e15e3ca70f38ab5b91ad4ab4
+    docker.io/library/python@sha256:1b668429b3511ab407d8e00648891631b0b1a4d7e15e3ca70f38ab5b91ad4ab4
+  sentry drill_load.py sha256 9e72ff80e490
+  docker run -d --name NAME --network none --read-only --cap-drop ALL --security-opt no-new-privileges --memory 128m --memory-swap 128m --pids-limit 32 --ulimit nofile=64:64 -v CTL:/ctl:ro -v drill_load.py:/app/drill_load.py:ro python@sha256:1b668429b3511ab407d8e00648891631b0b1a4d7e15e3ca70f38ab5b91ad4ab4 python3 -u /app/drill_load.py
+  running: validator running, sentry running
+
+== 3a. idle (2026-10-27T08:18:36Z)
+  2026-10-27T08:19:02Z idle nodes v=full s=full | pft-res-drill-s up=1 fd=3/64 pids=1/32 mem=5% oom_kill=0 oomkilled=0 | pft-res-drill-v up=1 fd=3/64 pids=1/32 mem=5% oom_kill=0 oomkilled=0
+      prometheus {} | alertmanager {} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:19:28Z idle nodes v=full s=full | pft-res-drill-s up=1 fd=3/64 pids=1/32 mem=5% oom_kill=0 oomkilled=0 | pft-res-drill-v up=1 fd=3/64 pids=1/32 mem=5% oom_kill=0 oomkilled=0
+      prometheus {} | alertmanager {} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:19:53Z idle nodes v=full s=full | pft-res-drill-s up=1 fd=3/64 pids=1/32 mem=5% oom_kill=0 oomkilled=0 | pft-res-drill-v up=1 fd=3/64 pids=1/32 mem=5% oom_kill=0 oomkilled=0
+      prometheus {} | alertmanager {} | real-container resources alerts [] | other AM alerts []
+
+== 3b. load: fds 87.5%, pids 94%, memory 93% (2026-10-27T08:19:53Z)
+  2026-10-27T08:20:20Z load nodes v=full s=full | pft-res-drill-s up=1 fd=56/64 pids=30/32 mem=60% oom_kill=0 oomkilled=0 | pft-res-drill-v up=1 fd=56/64 pids=30/32 mem=93% oom_kill=0 oomkilled=0
+      prometheus {"pft-res-drill-s":{"PFTMemoryGrowthToLimit":"pending","PFTFdNearLimit":"pending","PFTPidsNearLimit":"pending"},"pft-res-drill-v":{"PFTMemoryNearLimit":"pending","PFTMemoryGrowthToLimit":"pending","PFTFdNearLimit":"pending","PFTPidsNearLimit":"pending"}} | alertmanager {} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:20:47Z load nodes v=full s=full | pft-res-drill-s up=1 fd=56/64 pids=30/32 mem=93% oom_kill=0 oomkilled=0 | pft-res-drill-v up=1 fd=56/64 pids=30/32 mem=93% oom_kill=0 oomkilled=0
+      prometheus {"pft-res-drill-s":{"PFTMemoryNearLimit":"pending","PFTMemoryGrowthToLimit":"pending","PFTFdNearLimit":"pending","PFTPidsNearLimit":"pending"},"pft-res-drill-v":{"PFTMemoryNearLimit":"pending","PFTMemoryGrowthToLimit":"pending","PFTFdNearLimit":"pending","PFTPidsNearLimit":"pending"}} | alertmanager {} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:21:14Z load nodes v=full s=full | pft-res-drill-s up=1 fd=56/64 pids=30/32 mem=93% oom_kill=0 oomkilled=0 | pft-res-drill-v up=1 fd=56/64 pids=30/32 mem=93% oom_kill=0 oomkilled=0
+      prometheus {"pft-res-drill-s":{"PFTMemoryNearLimit":"pending","PFTMemoryGrowthToLimit":"pending","PFTFdNearLimit":"pending","PFTPidsNearLimit":"pending"},"pft-res-drill-v":{"PFTMemoryNearLimit":"pending","PFTMemoryGrowthToLimit":"pending","PFTFdNearLimit":"pending","PFTPidsNearLimit":"pending"}} | alertmanager {} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:21:39Z load nodes v=full s=full | pft-res-drill-s up=1 fd=56/64 pids=30/32 mem=93% oom_kill=0 oomkilled=0 | pft-res-drill-v up=1 fd=56/64 pids=30/32 mem=93% oom_kill=0 oomkilled=0
+      prometheus {"pft-res-drill-s":{"PFTMemoryNearLimit":"pending","PFTMemoryGrowthToLimit":"pending","PFTFdNearLimit":"pending","PFTPidsNearLimit":"pending"},"pft-res-drill-v":{"PFTMemoryNearLimit":"pending","PFTMemoryGrowthToLimit":"pending","PFTFdNearLimit":"pending","PFTPidsNearLimit":"pending"}} | alertmanager {} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:22:04Z load nodes v=full s=full | pft-res-drill-s up=1 fd=56/64 pids=30/32 mem=93% oom_kill=0 oomkilled=0 | pft-res-drill-v up=1 fd=56/64 pids=30/32 mem=93% oom_kill=0 oomkilled=0
+      prometheus {"pft-res-drill-s":{"PFTMemoryNearLimit":"pending","PFTMemoryGrowthToLimit":"pending","PFTFdNearLimit":"pending","PFTPidsNearLimit":"pending"},"pft-res-drill-v":{"PFTMemoryNearLimit":"pending","PFTMemoryGrowthToLimit":"pending","PFTFdNearLimit":"pending","PFTPidsNearLimit":"pending"}} | alertmanager {} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:22:29Z load nodes v=full s=full | pft-res-drill-s up=1 fd=56/64 pids=30/32 mem=93% oom_kill=0 oomkilled=0 | pft-res-drill-v up=1 fd=56/64 pids=30/32 mem=93% oom_kill=0 oomkilled=0
+      prometheus {"pft-res-drill-s":{"PFTMemoryNearLimit":"pending","PFTMemoryGrowthToLimit":"pending","PFTFdNearLimit":"pending","PFTPidsNearLimit":"pending"},"pft-res-drill-v":{"PFTMemoryNearLimit":"pending","PFTMemoryGrowthToLimit":"pending","PFTFdNearLimit":"pending","PFTPidsNearLimit":"pending"}} | alertmanager {} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:22:54Z load nodes v=full s=full | pft-res-drill-s up=1 fd=56/64 pids=30/32 mem=93% oom_kill=0 oomkilled=0 | pft-res-drill-v up=1 fd=56/64 pids=30/32 mem=93% oom_kill=0 oomkilled=0
+      prometheus {"pft-res-drill-s":{"PFTMemoryNearLimit":"pending","PFTMemoryGrowthToLimit":"pending","PFTFdNearLimit":"pending","PFTPidsNearLimit":"pending"},"pft-res-drill-v":{"PFTMemoryNearLimit":"pending","PFTMemoryGrowthToLimit":"pending","PFTFdNearLimit":"pending","PFTPidsNearLimit":"pending"}} | alertmanager {} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:23:19Z load nodes v=full s=full | pft-res-drill-s up=1 fd=57/64 pids=30/32 mem=93% oom_kill=0 oomkilled=0 | pft-res-drill-v up=1 fd=56/64 pids=30/32 mem=93% oom_kill=0 oomkilled=0
+      prometheus {"pft-res-drill-s":{"PFTMemoryNearLimit":"pending","PFTMemoryGrowthToLimit":"pending","PFTFdNearLimit":"pending","PFTPidsNearLimit":"pending"},"pft-res-drill-v":{"PFTMemoryNearLimit":"pending","PFTMemoryGrowthToLimit":"pending","PFTFdNearLimit":"pending","PFTPidsNearLimit":"pending"}} | alertmanager {} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:23:43Z load nodes v=full s=full | pft-res-drill-s up=1 fd=56/64 pids=30/32 mem=93% oom_kill=0 oomkilled=0 | pft-res-drill-v up=1 fd=56/64 pids=30/32 mem=93% oom_kill=0 oomkilled=0
+      prometheus {"pft-res-drill-s":{"PFTMemoryNearLimit":"pending","PFTMemoryGrowthToLimit":"pending","PFTFdNearLimit":"pending","PFTPidsNearLimit":"pending"},"pft-res-drill-v":{"PFTMemoryNearLimit":"pending","PFTMemoryGrowthToLimit":"pending","PFTFdNearLimit":"pending","PFTPidsNearLimit":"pending"}} | alertmanager {} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:24:08Z load nodes v=full s=full | pft-res-drill-s up=1 fd=56/64 pids=30/32 mem=93% oom_kill=0 oomkilled=0 | pft-res-drill-v up=1 fd=56/64 pids=30/32 mem=93% oom_kill=0 oomkilled=0
+      prometheus {"pft-res-drill-s":{"PFTMemoryNearLimit":"pending","PFTMemoryGrowthToLimit":"pending","PFTFdNearLimit":"pending","PFTPidsNearLimit":"pending"},"pft-res-drill-v":{"PFTMemoryNearLimit":"pending","PFTMemoryGrowthToLimit":"pending","PFTFdNearLimit":"pending","PFTPidsNearLimit":"pending"}} | alertmanager {} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:24:32Z load nodes v=full s=full | pft-res-drill-s up=1 fd=56/64 pids=30/32 mem=93% oom_kill=0 oomkilled=0 | pft-res-drill-v up=1 fd=56/64 pids=30/32 mem=93% oom_kill=0 oomkilled=0
+      prometheus {"pft-res-drill-s":{"PFTMemoryNearLimit":"pending","PFTMemoryGrowthToLimit":"pending","PFTFdNearLimit":"pending","PFTPidsNearLimit":"pending"},"pft-res-drill-v":{"PFTMemoryNearLimit":"pending","PFTMemoryGrowthToLimit":"pending","PFTFdNearLimit":"pending","PFTPidsNearLimit":"pending"}} | alertmanager {} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:24:57Z load nodes v=full s=full | pft-res-drill-s up=1 fd=56/64 pids=30/32 mem=93% oom_kill=0 oomkilled=0 | pft-res-drill-v up=1 fd=56/64 pids=30/32 mem=93% oom_kill=0 oomkilled=0
+      prometheus {"pft-res-drill-s":{"PFTMemoryNearLimit":"pending","PFTMemoryGrowthToLimit":"pending","PFTFdNearLimit":"pending","PFTPidsNearLimit":"pending"},"pft-res-drill-v":{"PFTMemoryNearLimit":"pending","PFTMemoryGrowthToLimit":"pending","PFTFdNearLimit":"pending","PFTPidsNearLimit":"pending"}} | alertmanager {} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:25:25Z load nodes v=full s=full | pft-res-drill-s up=1 fd=56/64 pids=30/32 mem=93% oom_kill=0 oomkilled=0 | pft-res-drill-v up=1 fd=56/64 pids=30/32 mem=93% oom_kill=0 oomkilled=0
+      prometheus {"pft-res-drill-s":{"PFTMemoryNearLimit":"pending","PFTMemoryGrowthToLimit":"pending","PFTFdNearLimit":"firing","PFTPidsNearLimit":"firing"},"pft-res-drill-v":{"PFTMemoryNearLimit":"firing","PFTMemoryGrowthToLimit":"pending","PFTFdNearLimit":"firing","PFTPidsNearLimit":"firing"}} | alertmanager {"pft-res-drill-s":["PFTFdNearLimit","PFTPidsNearLimit"],"pft-res-drill-v":["PFTFdNearLimit","PFTMemoryNearLimit","PFTPidsNearLimit"]} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:25:51Z load nodes v=full s=full | pft-res-drill-s up=1 fd=56/64 pids=30/32 mem=93% oom_kill=0 oomkilled=0 | pft-res-drill-v up=1 fd=56/64 pids=30/32 mem=93% oom_kill=0 oomkilled=0
+      prometheus {"pft-res-drill-s":{"PFTMemoryNearLimit":"firing","PFTMemoryGrowthToLimit":"pending","PFTFdNearLimit":"firing","PFTPidsNearLimit":"firing"},"pft-res-drill-v":{"PFTMemoryNearLimit":"firing","PFTMemoryGrowthToLimit":"pending","PFTFdNearLimit":"firing","PFTPidsNearLimit":"firing"}} | alertmanager {"pft-res-drill-s":["PFTFdNearLimit","PFTMemoryNearLimit","PFTPidsNearLimit"],"pft-res-drill-v":["PFTFdNearLimit","PFTMemoryNearLimit","PFTPidsNearLimit"]} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:26:17Z load nodes v=full s=full | pft-res-drill-s up=1 fd=56/64 pids=30/32 mem=93% oom_kill=0 oomkilled=0 | pft-res-drill-v up=1 fd=56/64 pids=30/32 mem=93% oom_kill=0 oomkilled=0
+      prometheus {"pft-res-drill-s":{"PFTMemoryNearLimit":"firing","PFTMemoryGrowthToLimit":"pending","PFTFdNearLimit":"firing","PFTPidsNearLimit":"firing"},"pft-res-drill-v":{"PFTMemoryNearLimit":"firing","PFTMemoryGrowthToLimit":"pending","PFTFdNearLimit":"firing","PFTPidsNearLimit":"firing"}} | alertmanager {"pft-res-drill-s":["PFTFdNearLimit","PFTMemoryNearLimit","PFTPidsNearLimit"],"pft-res-drill-v":["PFTFdNearLimit","PFTMemoryNearLimit","PFTPidsNearLimit"]} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:26:18Z all 3 load alerts firing for both containers and [FIRING] x6 seen on the topic
+
+== 3c. oom: release, one child OOM-killed in each cgroup (2026-10-27T08:26:18Z)
+  2026-10-27T08:26:44Z oom nodes v=full s=full | pft-res-drill-s up=1 fd=56/64 pids=2/32 mem=5% oom_kill=1 oomkilled=1 | pft-res-drill-v up=1 fd=56/64 pids=2/32 mem=24% oom_kill=0 oomkilled=0
+      prometheus {"pft-res-drill-s":{"PFTContainerOOMKill":"firing","PFTFdNearLimit":"firing"},"pft-res-drill-v":{"PFTFdNearLimit":"firing"}} | alertmanager {"pft-res-drill-s":["PFTContainerOOMKill","PFTFdNearLimit"],"pft-res-drill-v":["PFTFdNearLimit"]} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:27:10Z oom nodes v=full s=full | pft-res-drill-s up=1 fd=56/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1 | pft-res-drill-v up=1 fd=56/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1
+      prometheus {"pft-res-drill-s":{"PFTContainerOOMKill":"firing","PFTFdNearLimit":"firing"},"pft-res-drill-v":{"PFTContainerOOMKill":"firing","PFTFdNearLimit":"firing"}} | alertmanager {"pft-res-drill-s":["PFTContainerOOMKill","PFTFdNearLimit"],"pft-res-drill-v":["PFTContainerOOMKill","PFTFdNearLimit"]} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:27:35Z oom nodes v=full s=full | pft-res-drill-s up=1 fd=56/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1 | pft-res-drill-v up=1 fd=56/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1
+      prometheus {"pft-res-drill-s":{"PFTContainerOOMKill":"firing","PFTFdNearLimit":"firing"},"pft-res-drill-v":{"PFTContainerOOMKill":"firing","PFTFdNearLimit":"firing"}} | alertmanager {"pft-res-drill-s":["PFTContainerOOMKill","PFTFdNearLimit"],"pft-res-drill-v":["PFTContainerOOMKill","PFTFdNearLimit"]} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:27:59Z oom nodes v=full s=full | pft-res-drill-s up=1 fd=56/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1 | pft-res-drill-v up=1 fd=56/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1
+      prometheus {"pft-res-drill-s":{"PFTContainerOOMKill":"firing","PFTFdNearLimit":"firing"},"pft-res-drill-v":{"PFTContainerOOMKill":"firing","PFTFdNearLimit":"firing"}} | alertmanager {"pft-res-drill-s":["PFTContainerOOMKill","PFTFdNearLimit"],"pft-res-drill-v":["PFTContainerOOMKill","PFTFdNearLimit"]} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:28:01Z PFTContainerOOMKill firing for both containers and [FIRING] x2 seen on the topic
+
+== 3d. calm: container idle until every drill alert resolved (2026-10-27T08:28:01Z)
+  2026-10-27T08:28:28Z calm nodes v=full s=full | pft-res-drill-s up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1 | pft-res-drill-v up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1
+      prometheus {"pft-res-drill-s":{"PFTContainerOOMKill":"firing"},"pft-res-drill-v":{"PFTContainerOOMKill":"firing"}} | alertmanager {"pft-res-drill-s":["PFTContainerOOMKill"],"pft-res-drill-v":["PFTContainerOOMKill"]} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:28:52Z calm nodes v=full s=full | pft-res-drill-s up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1 | pft-res-drill-v up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1
+      prometheus {"pft-res-drill-s":{"PFTContainerOOMKill":"firing"},"pft-res-drill-v":{"PFTContainerOOMKill":"firing"}} | alertmanager {"pft-res-drill-s":["PFTContainerOOMKill"],"pft-res-drill-v":["PFTContainerOOMKill"]} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:29:16Z calm nodes v=full s=full | pft-res-drill-s up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1 | pft-res-drill-v up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1
+      prometheus {"pft-res-drill-s":{"PFTContainerOOMKill":"firing"},"pft-res-drill-v":{"PFTContainerOOMKill":"firing"}} | alertmanager {"pft-res-drill-s":["PFTContainerOOMKill"],"pft-res-drill-v":["PFTContainerOOMKill"]} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:29:40Z calm nodes v=full s=full | pft-res-drill-s up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1 | pft-res-drill-v up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1
+      prometheus {"pft-res-drill-s":{"PFTContainerOOMKill":"firing"},"pft-res-drill-v":{"PFTContainerOOMKill":"firing"}} | alertmanager {"pft-res-drill-s":["PFTContainerOOMKill"],"pft-res-drill-v":["PFTContainerOOMKill"]} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:30:09Z calm nodes v=full s=full | pft-res-drill-s up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1 | pft-res-drill-v up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1
+      prometheus {"pft-res-drill-s":{"PFTContainerOOMKill":"firing"},"pft-res-drill-v":{"PFTContainerOOMKill":"firing"}} | alertmanager {"pft-res-drill-s":["PFTContainerOOMKill"],"pft-res-drill-v":["PFTContainerOOMKill"]} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:30:36Z calm nodes v=full s=full | pft-res-drill-s up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1 | pft-res-drill-v up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1
+      prometheus {"pft-res-drill-s":{"PFTContainerOOMKill":"firing"},"pft-res-drill-v":{"PFTContainerOOMKill":"firing"}} | alertmanager {"pft-res-drill-s":["PFTContainerOOMKill"],"pft-res-drill-v":["PFTContainerOOMKill"]} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:31:04Z calm nodes v=full s=full | pft-res-drill-s up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1 | pft-res-drill-v up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1
+      prometheus {"pft-res-drill-s":{"PFTContainerOOMKill":"firing"},"pft-res-drill-v":{"PFTContainerOOMKill":"firing"}} | alertmanager {"pft-res-drill-s":["PFTContainerOOMKill"],"pft-res-drill-v":["PFTContainerOOMKill"]} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:31:31Z calm nodes v=full s=full | pft-res-drill-s up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1 | pft-res-drill-v up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1
+      prometheus {"pft-res-drill-s":{"PFTContainerOOMKill":"firing"},"pft-res-drill-v":{"PFTContainerOOMKill":"firing"}} | alertmanager {"pft-res-drill-s":["PFTContainerOOMKill"],"pft-res-drill-v":["PFTContainerOOMKill"]} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:31:56Z calm nodes v=full s=full | pft-res-drill-s up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1 | pft-res-drill-v up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1
+      prometheus {"pft-res-drill-s":{"PFTContainerOOMKill":"firing"},"pft-res-drill-v":{"PFTContainerOOMKill":"firing"}} | alertmanager {"pft-res-drill-s":["PFTContainerOOMKill"],"pft-res-drill-v":["PFTContainerOOMKill"]} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:32:21Z calm nodes v=full s=full | pft-res-drill-s up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1 | pft-res-drill-v up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1
+      prometheus {"pft-res-drill-s":{"PFTContainerOOMKill":"firing"},"pft-res-drill-v":{"PFTContainerOOMKill":"firing"}} | alertmanager {"pft-res-drill-s":["PFTContainerOOMKill"],"pft-res-drill-v":["PFTContainerOOMKill"]} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:32:46Z calm nodes v=full s=full | pft-res-drill-s up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1 | pft-res-drill-v up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1
+      prometheus {"pft-res-drill-s":{"PFTContainerOOMKill":"firing"},"pft-res-drill-v":{"PFTContainerOOMKill":"firing"}} | alertmanager {"pft-res-drill-s":["PFTContainerOOMKill"],"pft-res-drill-v":["PFTContainerOOMKill"]} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:33:12Z calm nodes v=full s=full | pft-res-drill-s up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1 | pft-res-drill-v up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1
+      prometheus {"pft-res-drill-s":{"PFTContainerOOMKill":"firing"},"pft-res-drill-v":{"PFTContainerOOMKill":"firing"}} | alertmanager {"pft-res-drill-s":["PFTContainerOOMKill"],"pft-res-drill-v":["PFTContainerOOMKill"]} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:33:38Z calm nodes v=full s=full | pft-res-drill-s up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1 | pft-res-drill-v up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1
+      prometheus {"pft-res-drill-s":{"PFTContainerOOMKill":"firing"},"pft-res-drill-v":{"PFTContainerOOMKill":"firing"}} | alertmanager {"pft-res-drill-s":["PFTContainerOOMKill"],"pft-res-drill-v":["PFTContainerOOMKill"]} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:34:04Z calm nodes v=full s=full | pft-res-drill-s up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1 | pft-res-drill-v up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1
+      prometheus {"pft-res-drill-s":{"PFTContainerOOMKill":"firing"},"pft-res-drill-v":{"PFTContainerOOMKill":"firing"}} | alertmanager {"pft-res-drill-s":["PFTContainerOOMKill"],"pft-res-drill-v":["PFTContainerOOMKill"]} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:34:29Z calm nodes v=full s=full | pft-res-drill-s up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1 | pft-res-drill-v up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1
+      prometheus {"pft-res-drill-s":{"PFTContainerOOMKill":"firing"},"pft-res-drill-v":{"PFTContainerOOMKill":"firing"}} | alertmanager {"pft-res-drill-s":["PFTContainerOOMKill"],"pft-res-drill-v":["PFTContainerOOMKill"]} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:34:55Z calm nodes v=full s=full | pft-res-drill-s up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1 | pft-res-drill-v up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1
+      prometheus {"pft-res-drill-s":{"PFTContainerOOMKill":"firing"},"pft-res-drill-v":{"PFTContainerOOMKill":"firing"}} | alertmanager {"pft-res-drill-s":["PFTContainerOOMKill"],"pft-res-drill-v":["PFTContainerOOMKill"]} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:35:19Z calm nodes v=full s=full | pft-res-drill-s up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1 | pft-res-drill-v up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1
+      prometheus {"pft-res-drill-s":{"PFTContainerOOMKill":"firing"},"pft-res-drill-v":{"PFTContainerOOMKill":"firing"}} | alertmanager {"pft-res-drill-s":["PFTContainerOOMKill"],"pft-res-drill-v":["PFTContainerOOMKill"]} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:35:46Z calm nodes v=full s=full | pft-res-drill-s up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1 | pft-res-drill-v up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1
+      prometheus {"pft-res-drill-s":{"PFTContainerOOMKill":"firing"},"pft-res-drill-v":{"PFTContainerOOMKill":"firing"}} | alertmanager {"pft-res-drill-s":["PFTContainerOOMKill"],"pft-res-drill-v":["PFTContainerOOMKill"]} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:36:12Z calm nodes v=full s=full | pft-res-drill-s up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1 | pft-res-drill-v up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1
+      prometheus {"pft-res-drill-s":{"PFTContainerOOMKill":"firing"},"pft-res-drill-v":{"PFTContainerOOMKill":"firing"}} | alertmanager {"pft-res-drill-s":["PFTContainerOOMKill"],"pft-res-drill-v":["PFTContainerOOMKill"]} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:36:37Z calm nodes v=full s=full | pft-res-drill-s up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1 | pft-res-drill-v up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1
+      prometheus {} | alertmanager {} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:37:03Z calm nodes v=full s=full | pft-res-drill-s up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1 | pft-res-drill-v up=1 fd=3/64 pids=1/32 mem=5% oom_kill=1 oomkilled=1
+      prometheus {} | alertmanager {} | real-container resources alerts [] | other AM alerts []
+  2026-10-27T08:37:04Z no drill alert in Prometheus or Alertmanager and [RESOLVED] x8 seen on the topic
+
+== 4. restore (2026-10-27T08:37:04Z)
+  pft-res-drill-v: exit=0 OOMKilled=true; docker logs (drill_load.py):
+    2026-10-27T08:18:28Z drill_load: start pid=1 ctl=/ctl/phase ratios fd=0.875 pids=0.94 mem=0.93
+    2026-10-27T08:18:28Z drill_load: phase None -> idle
+    2026-10-27T08:18:28Z drill_load: state fds=4 threads=0 mem_chunks=0 pids.current=1 memory.current=7401472
+    2026-10-27T08:19:54Z drill_load: phase idle -> load
+    2026-10-27T08:19:54Z drill_load: state fds=4 threads=0 mem_chunks=0 pids.current=1 memory.current=7512064
+    2026-10-27T08:19:54Z drill_load: load reached: fds=57 threads=29 mem_chunks=111 pids.current=30 memory.current=125722624
+    2026-10-27T08:26:19Z drill_load: phase load -> oom
+    2026-10-27T08:26:19Z drill_load: oom child pid=36 started
+    2026-10-27T08:26:19Z drill_load: state fds=57 threads=0 mem_chunks=0 pids.current=2 memory.current=8347648
+    2026-10-27T08:26:20Z drill_load: oom child exited rc=-9 (-9 = SIGKILL from the OOM killer)
+    2026-10-27T08:26:20Z drill_load: state fds=57 threads=0 mem_chunks=0 pids.current=1 memory.current=7340032
+    2026-10-27T08:28:02Z drill_load: phase oom -> idle
+    2026-10-27T08:28:02Z drill_load: state fds=4 threads=0 mem_chunks=0 pids.current=1 memory.current=7372800
+    2026-10-27T08:37:05Z drill_load: phase idle -> done
+    2026-10-27T08:37:05Z drill_load: state fds=4 threads=0 mem_chunks=0 pids.current=1 memory.current=7360512
+  pft-res-drill-s: exit=0 OOMKilled=true; docker logs (drill_load.py):
+    2026-10-27T08:18:32Z drill_load: start pid=1 ctl=/ctl/phase ratios fd=0.875 pids=0.94 mem=0.93
+    2026-10-27T08:18:32Z drill_load: phase None -> idle
+    2026-10-27T08:18:32Z drill_load: state fds=4 threads=0 mem_chunks=0 pids.current=1 memory.current=7282688
+    2026-10-27T08:19:55Z drill_load: phase idle -> load
+    2026-10-27T08:19:55Z drill_load: state fds=4 threads=0 mem_chunks=0 pids.current=1 memory.current=7372800
+    2026-10-27T08:19:56Z drill_load: load reached: fds=57 threads=29 mem_chunks=111 pids.current=30 memory.current=125632512
+    2026-10-27T08:26:19Z drill_load: phase load -> oom
+    2026-10-27T08:26:19Z drill_load: oom child pid=36 started
+    2026-10-27T08:26:19Z drill_load: state fds=57 threads=0 mem_chunks=0 pids.current=2 memory.current=9453568
+    2026-10-27T08:26:20Z drill_load: oom child exited rc=-9 (-9 = SIGKILL from the OOM killer)
+    2026-10-27T08:26:20Z drill_load: state fds=57 threads=0 mem_chunks=0 pids.current=1 memory.current=7335936
+    2026-10-27T08:28:03Z drill_load: phase oom -> idle
+    2026-10-27T08:28:03Z drill_load: state fds=4 threads=0 mem_chunks=0 pids.current=1 memory.current=7368704
+    2026-10-27T08:37:06Z drill_load: phase idle -> done
+    2026-10-27T08:37:06Z drill_load: state fds=4 threads=0 mem_chunks=0 pids.current=1 memory.current=7356416
+  containers removed: validator 0 left, sentry 0 left
+  drill textfiles left: validator 0, sentry 0
+  no drill alert in Prometheus/Alertmanager; one group_interval (65 s) for late notifications
+  $ NTFY_ENV_FILE=<real bridge env> alerts/run-stack.sh bridge
+  2026-10-27T08:38:21Z starting pft-alert-bridge (ntfy: on)
+  2026-10-27T08:38:22Z pft-alert-bridge listening
+  pft-alert-bridge mount source is the real env file: yes
+  sentry: drill image removed again (it was not there before): gone
+  nodes after restore: validator full, sentry full
+
+== 5. throwaway topic read back
+  2026-10-27T08:25:16Z [FIRING] PFTMemoryNearLimit | pft-res-drill-v memory above 90% of its limit
+  2026-10-27T08:25:16Z [FIRING] PFTFdNearLimit | pft-res-drill-s uses over 80% of its open-file limit
+  2026-10-27T08:25:17Z [FIRING] PFTFdNearLimit | pft-res-drill-v uses over 80% of its open-file limit
+  2026-10-27T08:25:17Z [FIRING] PFTPidsNearLimit | pft-res-drill-s uses over 90% of pids.max
+  2026-10-27T08:25:18Z [FIRING] PFTPidsNearLimit | pft-res-drill-v uses over 90% of pids.max
+  2026-10-27T08:26:16Z [FIRING] PFTMemoryNearLimit | pft-res-drill-s memory above 90% of its limit
+  2026-10-27T08:26:16Z [FIRING] PFTMemoryNearLimit | pft-res-drill-v memory above 90% of its limit
+  2026-10-27T08:26:45Z [FIRING] PFTContainerOOMKill | OOM kill in pft-res-drill-s
+  2026-10-27T08:27:16Z [RESOLVED] PFTMemoryNearLimit | pft-res-drill-s memory above 90% of its limit
+  2026-10-27T08:27:16Z [RESOLVED] PFTMemoryNearLimit | pft-res-drill-v memory above 90% of its limit
+  2026-10-27T08:27:17Z [RESOLVED] PFTPidsNearLimit | pft-res-drill-s uses over 90% of pids.max
+  2026-10-27T08:27:17Z [RESOLVED] PFTPidsNearLimit | pft-res-drill-v uses over 90% of pids.max
+  2026-10-27T08:27:45Z [FIRING] PFTContainerOOMKill | OOM kill in pft-res-drill-s
+  2026-10-27T08:27:46Z [FIRING] PFTContainerOOMKill | OOM kill in pft-res-drill-v
+  2026-10-27T08:29:16Z [RESOLVED] PFTFdNearLimit | pft-res-drill-s uses over 80% of its open-file limit
+  2026-10-27T08:29:16Z [RESOLVED] PFTFdNearLimit | pft-res-drill-v uses over 80% of its open-file limit
+  2026-10-27T08:36:45Z [RESOLVED] PFTContainerOOMKill | OOM kill in pft-res-drill-s
+  2026-10-27T08:36:46Z [RESOLVED] PFTContainerOOMKill | OOM kill in pft-res-drill-v
+$ python3 resources/drill/drill_verdict.py samples.jsonl ntfy.jsonl
+PASS phases idle -> load -> oom -> calm all sampled, in order
+PASS pft-res-drill-v PFTFdNearLimit firing in Prometheus during load
+PASS pft-res-drill-v [FIRING] PFTFdNearLimit on the throwaway topic after the load phase began
+PASS pft-res-drill-v [RESOLVED] PFTFdNearLimit on the topic after its FIRING
+PASS pft-res-drill-v PFTPidsNearLimit firing in Prometheus during load
+PASS pft-res-drill-v [FIRING] PFTPidsNearLimit on the throwaway topic after the load phase began
+PASS pft-res-drill-v [RESOLVED] PFTPidsNearLimit on the topic after its FIRING
+PASS pft-res-drill-v PFTMemoryNearLimit firing in Prometheus during load
+PASS pft-res-drill-v [FIRING] PFTMemoryNearLimit on the throwaway topic after the load phase began
+PASS pft-res-drill-v [RESOLVED] PFTMemoryNearLimit on the topic after its FIRING
+PASS pft-res-drill-v PFTContainerOOMKill firing in Prometheus during oom/calm
+PASS pft-res-drill-v [FIRING] PFTContainerOOMKill on the throwaway topic after the oom phase began
+PASS pft-res-drill-v [RESOLVED] PFTContainerOOMKill on the topic after its FIRING
+PASS pft-res-drill-s PFTFdNearLimit firing in Prometheus during load
+PASS pft-res-drill-s [FIRING] PFTFdNearLimit on the throwaway topic after the load phase began
+PASS pft-res-drill-s [RESOLVED] PFTFdNearLimit on the topic after its FIRING
+PASS pft-res-drill-s PFTPidsNearLimit firing in Prometheus during load
+PASS pft-res-drill-s [FIRING] PFTPidsNearLimit on the throwaway topic after the load phase began
+PASS pft-res-drill-s [RESOLVED] PFTPidsNearLimit on the topic after its FIRING
+PASS pft-res-drill-s PFTMemoryNearLimit firing in Prometheus during load
+PASS pft-res-drill-s [FIRING] PFTMemoryNearLimit on the throwaway topic after the load phase began
+PASS pft-res-drill-s [RESOLVED] PFTMemoryNearLimit on the topic after its FIRING
+PASS pft-res-drill-s PFTContainerOOMKill firing in Prometheus during oom/calm
+PASS pft-res-drill-s [FIRING] PFTContainerOOMKill on the throwaway topic after the oom phase began
+PASS pft-res-drill-s [RESOLVED] PFTContainerOOMKill on the topic after its FIRING
+PASS last sample (calm): no drill alert in Prometheus or Alertmanager
+PASS collector up 1 for both drill containers in every load/oom/calm sample
+PASS validator and sentry server_state full in every sample (43 samples)
+PASS no pft-resources alert on the real postfiatd containers in any sample
+timeline (unix s):
+  pft-res-drill-v PFTFdNearLimit       prom firing 1793089525 | FIRING msg 1793089517 | RESOLVED msg 1793089756
+  pft-res-drill-v PFTPidsNearLimit     prom firing 1793089525 | FIRING msg 1793089518 | RESOLVED msg 1793089637
+  pft-res-drill-v PFTMemoryNearLimit   prom firing 1793089525 | FIRING msg 1793089516 | RESOLVED msg 1793089636
+  pft-res-drill-v PFTContainerOOMKill  prom firing 1793089630 | FIRING msg 1793089666 | RESOLVED msg 1793090206
+  pft-res-drill-s PFTFdNearLimit       prom firing 1793089525 | FIRING msg 1793089516 | RESOLVED msg 1793089756
+  pft-res-drill-s PFTPidsNearLimit     prom firing 1793089525 | FIRING msg 1793089517 | RESOLVED msg 1793089637
+  pft-res-drill-s PFTMemoryNearLimit   prom firing 1793089551 | FIRING msg 1793089576 | RESOLVED msg 1793089636
+  pft-res-drill-s PFTContainerOOMKill  prom firing 1793089604 | FIRING msg 1793089605 | RESOLVED msg 1793090205
+DRILL PASS
+drill done 2026-10-27T08:38:25Z: verdict exit 0

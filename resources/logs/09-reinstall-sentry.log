@@ -1,0 +1,21 @@
+# OS: Ubuntu 22.04.5 LTS | host sentry-host | 2026-10-27T06:21:51Z | reinstall with the build-2 fix
+pft-resources.sh sha256 3df61580b082
+$ sudo bash install.sh --container postfiatd-sentry
+2026-10-27T06:21:51Z installed /usr/local/bin/pft-resources (sha256 3df61580b082)
+2026-10-27T06:21:53Z first collection (through the sandboxed unit):
+pft_resources_up{container="postfiatd-sentry"} 1
+pft_resources_memory_current_bytes{container="postfiatd-sentry"} 1244147712
+pft_resources_pids_current{container="postfiatd-sentry"} 31
+pft_resources_fd_open{container="postfiatd-sentry"} 42
+2026-10-27T06:21:54Z enabled pft-resources@postfiatd-sentry.timer (every minute at :00)
+2026-10-27T06:21:54Z remember: sudo pft-integrity accept --reason 'pft-resources installed'
+exit 0
+$ sudo pft-integrity verify
+  [FAIL] bin:pft-resources                            changed  mtime, sha256
+  [WARN] unit:pft-resources@.service                  changed  mtime
+  [WARN] unit:pft-resources@.timer                    changed  mtime
+RESULT: FAIL - 44 unchanged, 2 warn, 1 fail -> exit 2
+$ sudo pft-integrity accept --reason "task_10dbceb5: pft-resources build 2 (reader error propagation fix)"
+pft-integrity accept - 2026-10-27T06:22:09Z: re-baselined 47 items by root
+manifest sha256: e619d104c9d8ffd9a687a9d5b3881faeec37bad0e921b0603c8e8d0d326f6835 -> 0825719e32d816ada998a515186da60867e04b0f69afba5556aefd5636528174 (logged to accept.log)
+RESULT: PASS - 47 unchanged, 0 warn, 0 fail -> exit 0

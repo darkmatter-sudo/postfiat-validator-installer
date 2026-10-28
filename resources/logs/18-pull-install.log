@@ -1,0 +1,23 @@
+# 2026-10-27T07:16:53Z validator-host: install pft-resources-pull for the sentry's container (sentry metrics -> validator Prometheus); Ubuntu 22.04.5 LTS
+$ sudo ./install.sh --pull postfiatd-sentry
+2026-10-27T07:16:53Z installed /usr/local/bin/pft-resources-pull (sha256 63bac38131a8)
+2026-10-27T07:16:54Z first pull (through the sandboxed unit):
+pft_resources_up{container="postfiatd-sentry"} 1
+pft_resources_collect_timestamp_seconds{container="postfiatd-sentry"} 1793085360
+Created symlink /etc/systemd/system/timers.target.wants/pft-resources-pull@postfiatd-sentry.timer → /etc/systemd/system/pft-resources-pull@.timer.
+2026-10-27T07:16:55Z enabled pft-resources-pull@postfiatd-sentry.timer (every minute at :30)
+2026-10-27T07:16:55Z remember: sudo pft-integrity accept --reason 'pft-resources-pull installed'
+exit=0
+$ TZ=UTC systemctl list-timers pft-resources-pull@postfiatd-sentry.timer --no-pager
+NEXT                        LEFT     LAST PASSED UNIT                                      ACTIVATES
+Tue 2026-10-27 07:17:30 UTC 34s left n/a  n/a    pft-resources-pull@postfiatd-sentry.timer pft-resources-pull@postfiatd-sentry.service
+
+1 timers listed.
+Pass --all to see loaded but inactive timers, too.
+$ ls -l --time-style=+%FT%TZ (TZ=UTC) /var/lib/pft-exporter/textfile
+total   
+-rw-r--r-- 1121 2026-10-27T07:16:39Z pft_divergence.prom
+-rw-r--r-- 308 2026-10-27T07:16:31Z pft_logship.prom
+-rw-r--r-- 7987 2026-10-27T07:16:55Z pft_resources_postfiatd-sentry.prom
+-rw-r--r-- 7592 2026-10-27T07:16:01Z pft_resources_postfiatd.prom
+# annotation added 2026-10-27T07:17:08Z: the ls command echoed above is abbreviated; it ran as: TZ=UTC ls -l --time-style=+%FT%TZ /var/lib/pft-exporter/textfile | awk '{print $1, $5, $6, $7}' (owner/group/link columns dropped)

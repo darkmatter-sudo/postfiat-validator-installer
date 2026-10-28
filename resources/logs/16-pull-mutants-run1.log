@@ -1,0 +1,63 @@
+# 2026-10-27T07:13:00Z validator-host: mutation check for pft-resources-pull.sh (run 1); Ubuntu 22.04.5 LTS
+pft-resources-pull.sh sha256 63bac38131a8
+$ bash resources/tests/check-pull.sh
+== baseline: real script
+RESULT: 52/52 passed
+P1 CAUGHT: validation result ignored (any fetched file installed) (38 failing assertions)
+    FAIL 3a foreign metric name: exit 2
+    FAIL 3a foreign metric name: reason 'not a pft_resources_ line'
+    FAIL 3a foreign metric name: previous copy kept, no temp file left
+P2 CAUGHT: fetch failure ignored (partial/empty output validated instead) (30 failing assertions)
+    FAIL 1a exit 0
+    FAIL 1b destination == remote file
+    FAIL 1c mode 0644
+P3 CAUGHT: no timeout around ssh (2 failing assertions)
+    FAIL 2c hang: exit 1 after the timeout (30s)
+    FAIL 2d hang: previous kept, no temp
+P4 CAUGHT: foreign metric names accepted (1 failing assertions)
+    FAIL 3a foreign metric name: reason 'not a pft_resources_ line'
+P5 CAUGHT: first-label container check dropped (3 failing assertions)
+    FAIL 3b other container's series: reason 'first label is not'
+    FAIL 3c container label not first: reason 'first label is not'
+    FAIL 3l container prefix trick (postfiatd-sentry2): reason 'first label is not'
+P6 CAUGHT: container match is a prefix match (postfiatd-sentry2 accepted) (12 failing assertions)
+    FAIL 1a exit 0
+    FAIL 1b destination == remote file
+    FAIL 1c mode 0644
+P7 CAUGHT: HELP/TYPE for foreign metrics accepted as plain comments (3 failing assertions)
+    FAIL 3d HELP for a foreign metric: exit 2
+    FAIL 3d HELP for a foreign metric: reason 'foreign metric'
+    FAIL 3d HELP for a foreign metric: previous copy kept, no temp file left
+P8 CAUGHT: value regex not anchored at the end (3 failing assertions)
+    FAIL 3f extra text after value: exit 2
+    FAIL 3f extra text after value: reason 'malformed labels or value'
+    FAIL 3f extra text after value: previous copy kept, no temp file left
+P9 CAUGHT: label values may contain an escaped quote (3 failing assertions)
+    FAIL 3g escaped quote in a label: exit 2
+    FAIL 3g escaped quote in a label: reason 'malformed labels or value'
+    FAIL 3g escaped quote in a label: previous copy kept, no temp file left
+P10 CAUGHT: missing up sample accepted (3 failing assertions)
+    FAIL 3i no up sample: exit 2
+    FAIL 3i no up sample: reason 'no pft_resources_up'
+    FAIL 3i no up sample: previous copy kept, no temp file left
+P11 CAUGHT: missing timestamp sample accepted (3 failing assertions)
+    FAIL 3j no timestamp sample: exit 2
+    FAIL 3j no timestamp sample: reason 'no pft_resources_collect_timestamp_seconds'
+    FAIL 3j no timestamp sample: previous copy kept, no temp file left
+P12 CAUGHT: MAX_BYTES not enforced (2 failing assertions)
+    FAIL 3m over MAX_BYTES: exit 2 + reason
+    FAIL 3n over MAX_BYTES: previous kept
+P13 CAUGHT: temp file not removed on rejection (13 failing assertions)
+    FAIL 3a foreign metric name: previous copy kept, no temp file left
+    FAIL 3b other container's series: previous copy kept, no temp file left
+    FAIL 3c container label not first: previous copy kept, no temp file left
+P14 CAUGHT: written in place (no temp + rename): failed pulls clobber the previous copy (18 failing assertions)
+    FAIL 1a exit 0
+    FAIL 1b destination == remote file
+    FAIL 1c mode 0644
+P15 CAUGHT: empty file accepted (1 failing assertions)
+    FAIL 3k empty file: reason 'empty file'
+P16 CAUGHT: container name not validated (1 failing assertions)
+    FAIL 4a bad container name: exit 3, previous kept
+MUTANTS: 16/16 caught
+exit=0

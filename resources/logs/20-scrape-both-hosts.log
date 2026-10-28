@@ -1,0 +1,29 @@
+# 2026-10-27T07:18:37Z validator-host: Prometheus scrape of BOTH hosts' pft_resources_* (validator: local collector; sentry: pft-resources-pull every minute at :30)
+$ TZ=UTC systemctl show pft-resources-pull@postfiatd-sentry.service -p Result -p ExecMainStatus -p ExecMainExitTimestamp
+Result=success
+ExecMainExitTimestamp=Tue 2026-10-27 07:18:31 UTC
+ExecMainStatus=0
+$ journalctl --utc -u pft-resources-pull@postfiatd-sentry.service -o short-iso --no-pager | grep pft-resources-pull:
+Hint: You are currently not seeing messages from other users and the system.
+      Users in groups 'adm', 'systemd-journal' can see all messages.
+      Pass -q to turn off this notice.
+$ curl -s 127.0.0.1:9090/api/v1/query --data-urlencode 'query=pft_resources_up'
+{"c":"postfiatd","v":"1"}
+{"c":"postfiatd-sentry","v":"1"}
+$ curl -s 127.0.0.1:9090/api/v1/query --data-urlencode 'query=time() - pft_resources_collect_timestamp_seconds'
+{"c":"postfiatd","v":"37.3289999961853"}
+{"c":"postfiatd-sentry","v":"38.3289999961853"}
+$ curl -s 127.0.0.1:9090/api/v1/query --data-urlencode 'query=pft_resources_memory_current_bytes / pft_resources_memory_max_bytes'
+{"c":"postfiatd","v":"0.343658447265625"}
+{"c":"postfiatd-sentry","v":"0.5801353454589844"}
+$ curl -s 127.0.0.1:9090/api/v1/query --data-urlencode 'query=pft_resources_fd_open / pft_resources_fd_limit_soft'
+{"c":"postfiatd","v":"0.0419921875"}
+{"c":"postfiatd-sentry","v":"0.041015625"}
+$ curl -s 127.0.0.1:9090/api/v1/query --data-urlencode 'query=pft_resources_pids_current'
+{"c":"postfiatd","v":"31"}
+{"c":"postfiatd-sentry","v":"31"}
+$ curl -s 127.0.0.1:9090/api/v1/query --data-urlencode 'query=count by (container) ({__name__=~"pft_resources_.+"})'
+{"c":"postfiatd","v":"56"}
+{"c":"postfiatd-sentry","v":"56"}
+$ curl -s 127.0.0.1:9090/api/v1/query --data-urlencode 'query=up{job="postfiat"}'
+{"c":"127.0.0.1:9877","v":"1"}

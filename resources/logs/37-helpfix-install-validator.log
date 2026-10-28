@@ -1,0 +1,29 @@
+# OS: Ubuntu 22.04.5 LTS | host validator-host | 2026-10-28T06:13:36Z | install the HELP-text fix (commit f575c3ccd726e15035d3e96a035fa0fd881dad24) after the 24h window
+$ sha256sum resources/pft-resources.sh /usr/local/bin/pft-resources
+3089a1f0d4e95aa4bcb1d01980eaa2537bc7e50650ee21cbf2d726239db4c040  resources/pft-resources.sh
+3df61580b0827fff5beebd7b428a85782709afeadcb000e6bb35823d904f119f  /usr/local/bin/pft-resources
+$ sudo bash resources/install.sh --container postfiatd
+2026-10-28T06:13:36Z installed /usr/local/bin/pft-resources (sha256 3089a1f0d4e9)
+2026-10-28T06:13:38Z first collection (through the sandboxed unit):
+pft_resources_up{container="postfiatd"} 1
+pft_resources_memory_current_bytes{container="postfiatd"} 1040609280
+pft_resources_pids_current{container="postfiatd"} 31
+pft_resources_fd_open{container="postfiatd"} 43
+2026-10-28T06:13:40Z enabled pft-resources@postfiatd.timer (every minute at :00)
+2026-10-28T06:13:40Z remember: sudo pft-integrity accept --reason 'pft-resources installed'
+exit 0
+$ grep HELP.*oom_killed /var/lib/node_exporter/textfile? -> textfile written by the unit
+$ sudo pft-integrity verify
+  [FAIL] bin:pft-resources                            changed  mtime, sha256
+  [WARN] unit:pft-resources@.service                  changed  mtime
+  [WARN] unit:pft-resources@.timer                    changed  mtime
+RESULT: FAIL - 75 unchanged, 2 warn, 1 fail -> exit 2
+$ sudo pft-integrity accept --reason "task_10dbceb5: pft-resources HELP-text fix (f575c3c) installed after 24h window"
+pft-integrity accept - 2026-10-28T06:13:57Z: re-baselined 78 items by <user>
+manifest sha256: 6baca6b42581a3f114d43d86e3a149676b5726e13524384c7dc8a1b12d504cee -> 92b8afd62df00d9faa8cbbbda4d52cb67a80d38bbbc9ce3fa2a576a1f57c19b1 (logged to accept.log)
+$ sudo pft-integrity verify
+RESULT: PASS - 78 unchanged, 0 warn, 0 fail -> exit 0
+# NOTE 2026-10-28T06:14:21Z: the 'grep HELP.*oom_killed' step above printed nothing: wrong pattern (HELP text is kept as 'name text' lines in the script, the textfile is under /var/lib/pft-exporter/textfile). Corrected check:
+$ sudo grep -h "HELP pft_resources_container_oom_killed" /var/lib/pft-exporter/textfile/pft_resources_postfiatd.prom
+# HELP pft_resources_container_oom_killed 1 if docker State.OOMKilled is true (any OOM kill in the container cgroup since its last start, also of a child process; alert on changes)
+rc=0

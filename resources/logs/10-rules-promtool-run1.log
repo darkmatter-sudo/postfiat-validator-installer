@@ -1,0 +1,23 @@
+# OS: Ubuntu 22.04.5 LTS | host validator-host | 2026-10-27T06:24:59Z
+# resources.rules.yml sha256 d8347fa95a2f | resources.tests.yml 9c07ce215f53 | check-rules.sh 648ef49d6802
+$ DOCKER="sudo docker" bash resources/tests/check-rules.sh
+== real rules
+Checking resources.rules.yml
+  SUCCESS: 10 rules found
+
+  SUCCESS
+
+R1 CAUGHT: memory threshold 0.90 -> 0.99 -> 1 failing eval(s), first: alertname: PFTMemoryNearLimit, time: 6m, 
+R2 CAUGHT: memory alert ignores up (blind collector still alerts) -> 1 failing eval(s), first: alertname: PFTMemoryNearLimit, time: 6m, 
+R3 CAUGHT: OOM alert without the docker OOMKilled branch -> 1 failing eval(s), first: alertname: PFTContainerOOMKill, time: 2m, 
+R4 CAUGHT: OOM alert window 10m -> 1m (kill missed between scrapes) -> 1 failing eval(s), first: alertname: PFTContainerOOMKill, time: 3m, 
+R5 CAUGHT: fd alert guard on the left again ($value = the limit) -> 1 failing eval(s), first: alertname: PFTFdNearLimit, time: 6m, 
+R6 CAUGHT: fd alert without the unlimited-limit guard -> 1 failing eval(s), first: alertname: PFTFdNearLimit, time: 6m, 
+R7 CAUGHT: pids for: 5m -> 0m -> 1 failing eval(s), first: alertname: PFTPidsNearLimit, time: 4m, 
+R8 CAUGHT: staleness threshold 300 -> 900 -> 1 failing eval(s), first: alertname: PFTResourcesStale, time: 11m, 
+R9 SURVIVED: throttling alert without the periods > 0 guard (no-quota NaN case)
+R10 SURVIVED: growth alert without the 50% floor
+R11 CAUGHT: memory PSI uses kind full too (any kind) -> 1 failing eval(s), first: alertname: PFTMemoryPressure, time: 11m, 
+R12 CAUGHT: collector-failing for: 5m -> 1m -> 1 failing eval(s), first: alertname: PFTResourcesCollectorFailing, time: 6m, 
+RULE MUTANTS: 10/12 caught
+exit 1

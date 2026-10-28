@@ -1,0 +1,16 @@
+validator-host Prometheus rule reload after OOMKilled fix - 2026-10-27T08:13:02Z
+mount source of /etc/pft-alerts: <home>/work/postfiat-validator-installer/alerts
+$ docker kill -s HUP pft-prometheus
+sent
+PFTResourcesCollectorFailing health=ok 
+PFTResourcesStale health=ok 
+PFTMemoryNearLimit health=ok 
+PFTMemoryGrowthToLimit health=ok 
+PFTContainerOOMKill health=ok sum by (instance, job, container) (increase(pft_resources_memory_events_total{event="oom_kill"}[10m])) > 0 or max by (instance, job, container) (pft_resources_container_oom_killed == 1 and changes(pft_resources_container_oom_killed[10m]) > 0)
+PFTFdNearLimit health=ok 
+PFTPidsNearLimit health=ok 
+PFTCPUThrottled health=ok 
+PFTMemoryPressure health=ok 
+PFTIOPressure health=ok 
+alerts now: []
+pft-alertmanager/pft-prometheus started at (unchanged = not recreated): /pft-alertmanager 2026-10-26T07:37:48.158615953Z /pft-prometheus 2026-10-26T07:37:48.872465152Z 

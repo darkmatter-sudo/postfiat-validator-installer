@@ -1,0 +1,31 @@
+drill_load.py smoke test (validator-host, throwaway container, no collector/textfile -> no alerts) - 2026-10-27T08:10:11Z - Ubuntu 22.04.5 LTS
+sha256 drill_load.py 9e72ff80e490
+++ sudo docker run -d --name pft-res-smoke --network none --read-only --cap-drop ALL --security-opt no-new-privileges --memory 128m --memory-swap 128m --pids-limit 32 --ulimit nofile=64:64 -v /tmp/pft-res-smoke.H5mhgZ:/ctl:ro -v <home>/work/postfiat-validator-installer/resources/drill/drill_load.py:/app/drill_load.py:ro python:3.12-alpine python3 -u /app/drill_load.py
+++ set +x
+-- during load:
+OCI runtime exec failed: exec failed: unable to start container process: procReady not received
+-- after oom:
+low 0
+high 0
+max 52
+oom 1
+oom_kill 1
+running=true OOMKilled=true restarts=0
+-- docker logs:
+2026-10-27T08:10:12Z drill_load: start pid=1 ctl=/ctl/phase ratios fd=0.875 pids=0.94 mem=0.93
+2026-10-27T08:10:12Z drill_load: phase None -> idle
+2026-10-27T08:10:12Z drill_load: state fds=4 threads=0 mem_chunks=0 pids.current=1 memory.current=10096640
+2026-10-27T08:10:15Z drill_load: phase idle -> load
+2026-10-27T08:10:15Z drill_load: state fds=4 threads=0 mem_chunks=0 pids.current=1 memory.current=10141696
+2026-10-27T08:10:16Z drill_load: load reached: fds=57 threads=29 mem_chunks=108 pids.current=30 memory.current=125231104
+2026-10-27T08:10:26Z drill_load: phase load -> oom
+2026-10-27T08:10:26Z drill_load: oom child pid=61 started
+2026-10-27T08:10:26Z drill_load: state fds=57 threads=0 mem_chunks=0 pids.current=2 memory.current=11943936
+2026-10-27T08:10:27Z drill_load: oom child exited rc=-9 (-9 = SIGKILL from the OOM killer)
+2026-10-27T08:10:27Z drill_load: state fds=57 threads=0 mem_chunks=0 pids.current=1 memory.current=7368704
+2026-10-27T08:10:41Z drill_load: phase oom -> idle
+2026-10-27T08:10:41Z drill_load: state fds=4 threads=0 mem_chunks=0 pids.current=1 memory.current=8273920
+2026-10-27T08:10:44Z drill_load: phase idle -> done
+2026-10-27T08:10:44Z drill_load: state fds=4 threads=0 mem_chunks=0 pids.current=1 memory.current=8261632
+exit=0
+removed container + ctl dir; postfiatd: running

@@ -1,0 +1,60 @@
+pft-resources HELP-text fix: offline suite - 2026-10-28T05:08:49Z - Ubuntu 22.04.5 LTS
+$ sha256sum resources/pft-resources.sh
+3089a1f0d4e95aa4bcb1d01980eaa2537bc7e50650ee21cbf2d726239db4c040  resources/pft-resources.sh
+$ shellcheck resources/pft-resources.sh
+shellcheck rc=0
+$ bash resources/tests/run-tests.sh
+== 1 normal fixture
+PASS 1a exit 0
+PASS 1b up 1
+PASS 1c memory current
+PASS 1d memory max (own limit)
+PASS 1e oom_kill counter
+PASS 1f fds 43 of 1024 (postfiatd, not the cron pid listed first)
+PASS 1g pids
+PASS 1h PSI avg60 as ratio (3.27% -> 0.0327)
+PASS 1i PSI total in seconds
+PASS 1j cpu throttling
+PASS 1k no memory.peak on this fixture -> supported 0, no peak metric
+PASS 1l one TYPE line per family, each family contiguous
+PASS 1m history line is JSON with the same values
+PASS 1n textfile mode 644, no temp files left
+PASS 1o docker restarts 0 + oom_killed 0
+PASS 1p promtool check metrics clean
+== 2 no limits: memory.max/pids.max = max, cpu quota set
+PASS 2a up 1
+PASS 2b memory max = MemTotal bytes, limit_set 0
+PASS 2c pids max = kernel.pid_max, limit_set 0
+PASS 2d cpu quota 2 cores
+== 3 PSI files missing (CONFIG_PSI off / psi=0) + memory.peak present (kernel >= 5.19)
+PASS 3a exit 0, up 1
+PASS 3b file_supported 0 for each PSI file
+PASS 3c no pressure series
+PASS 3d memory.peak exported
+PASS 3e history has no psi keys but is valid JSON
+== 4 restarted container: new PID + new cgroup scope, old scope still on disk
+PASS 4a reads the NEW scope (memory 222333444, not 111)
+PASS 4b new cgroup's oom_kill restarted at 0
+PASS 4c docker OOMKilled=true and RestartCount 1 still visible
+PASS 4d container id label changes
+== 5 malformed memory.current after a good run: up 0, no stale values, no history line, exit 1
+PASS 5a exit 1
+PASS 5b up 0
+PASS 5c only up + timestamp series (stale values gone)
+PASS 5d stderr names the file
+PASS 5e no history line for the failed run
+== 6 other malformed / unreadable inputs -> up 0
+PASS 6-psi up 0 + exit 1
+PASS 6-events up 0 + exit 1
+PASS 6-cpumax up 0 + exit 1
+PASS 6-limits up 0 + exit 1
+== 7 container problems -> up 0
+PASS 7a stopped container (pid 0): up 0, stderr 'not running'
+PASS 7b docker inspect fails: up 0
+PASS 7c no postfiatd process in the cgroup: up 0
+PASS 7d cgroup v1 line only: up 0
+== 8 usage errors
+PASS 8a bad container name -> exit 3
+PASS 8b missing textfile dir -> exit 3
+RESULT: 44/44 passed
+run-tests rc=0

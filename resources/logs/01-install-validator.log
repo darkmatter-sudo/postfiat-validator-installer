@@ -1,0 +1,18 @@
+# OS: Ubuntu 22.04.5 LTS | kernel 5.15.0-198-generic | host validator-host | 2026-10-27T06:11:31Z
+$ sudo bash resources/install.sh --container postfiatd
+2026-10-27T06:11:31Z installed /usr/local/bin/pft-resources (sha256 101a34ca3b9c)
+2026-10-27T06:11:32Z first collection (through the sandboxed unit):
+pft_resources_up{container="postfiatd"} 1
+pft_resources_memory_current_bytes{container="postfiatd"} 852115456
+pft_resources_pids_current{container="postfiatd"} 31
+pft_resources_fd_open{container="postfiatd"} 43
+Created symlink /etc/systemd/system/timers.target.wants/pft-resources@postfiatd.timer → /etc/systemd/system/pft-resources@.timer.
+2026-10-27T06:11:34Z enabled pft-resources@postfiatd.timer (every minute at :00)
+2026-10-27T06:11:34Z remember: sudo pft-integrity accept --reason 'pft-resources installed'
+exit 0
+$ TZ=UTC systemctl list-timers pft-resources@postfiatd.timer
+NEXT                        LEFT     LAST PASSED UNIT                          ACTIVATES
+Tue 2026-10-27 06:12:00 UTC 25s left n/a  n/a    pft-resources@postfiatd.timer pft-resources@postfiatd.service
+
+1 timers listed.
+Pass --all to see loaded but inactive timers, too.

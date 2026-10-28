@@ -1,0 +1,26 @@
+drill checker tests - 2026-10-27T08:17:51Z - Ubuntu 22.04.5 LTS - commit ae9b52d47ff2e62b104f883397a62af4d64147e3
+(one earlier scratch run of the same file, not tee'd, also 15/15 OK)
+$ shellcheck resources/drill/drill.sh alerts/run-stack.sh
+shellcheck clean
+$ python3 resources/drill/test_drill_verdict.py
+test_alert_still_active_at_end (__main__.T) ... ok
+test_cli_exit_codes (__main__.T) ... ok
+test_collector_down_once (__main__.T) ... ok
+test_empty_inputs_fail (__main__.T) ... ok
+test_firing_message_before_phase_fails (__main__.T) ... ok
+test_good_run_passes (__main__.T) ... ok
+test_missing_resolved_for_one_container (__main__.T) ... ok
+test_never_firing_in_prometheus (__main__.T) ... ok
+test_node_missing_from_sample (__main__.T) ... ok
+test_node_not_full_once (__main__.T) ... ok
+test_ntfy_reduce_drops_topic_and_non_messages (__main__.T) ... ok
+test_oom_message_for_other_container_does_not_count (__main__.T) ... ok
+test_phase_missing (__main__.T) ... ok
+test_real_container_alert (__main__.T) ... ok
+test_templates_found (__main__.T) ... ok
+
+----------------------------------------------------------------------
+Ran 15 tests in 0.262s
+
+OK
+exit 0

@@ -1,0 +1,28 @@
+# OS: Ubuntu 22.04.5 LTS | host sentry-host | 2026-10-28T06:14:33Z | install the HELP-text fix (commit f575c3ccd726e15035d3e96a035fa0fd881dad24) after the 24h window
+$ sha256sum pft-resources.sh /usr/local/bin/pft-resources
+3089a1f0d4e95aa4bcb1d01980eaa2537bc7e50650ee21cbf2d726239db4c040  pft-resources.sh
+3df61580b0827fff5beebd7b428a85782709afeadcb000e6bb35823d904f119f  /usr/local/bin/pft-resources
+$ sudo bash install.sh --container postfiatd-sentry
+2026-10-28T06:14:33Z installed /usr/local/bin/pft-resources (sha256 3089a1f0d4e9)
+2026-10-28T06:14:34Z first collection (through the sandboxed unit):
+pft_resources_up{container="postfiatd-sentry"} 1
+pft_resources_memory_current_bytes{container="postfiatd-sentry"} 1455312896
+pft_resources_pids_current{container="postfiatd-sentry"} 31
+pft_resources_fd_open{container="postfiatd-sentry"} 45
+2026-10-28T06:14:35Z enabled pft-resources@postfiatd-sentry.timer (every minute at :00)
+2026-10-28T06:14:35Z remember: sudo pft-integrity accept --reason 'pft-resources installed'
+exit 0
+$ sudo grep -h "HELP pft_resources_container_oom_killed" /var/lib/pft-exporter/textfile/pft_resources_postfiatd-sentry.prom
+# HELP pft_resources_container_oom_killed 1 if docker State.OOMKilled is true (any OOM kill in the container cgroup since its last start, also of a child process; alert on changes)
+rc=0
+$ sudo pft-integrity verify
+  [FAIL] bin:pft-resources                            changed  mtime, sha256
+  [WARN] unit:pft-resources@.service                  changed  mtime
+  [WARN] unit:pft-resources@.timer                    changed  mtime
+RESULT: FAIL - 44 unchanged, 2 warn, 1 fail -> exit 2
+$ sudo pft-integrity accept --reason "task_10dbceb5: pft-resources HELP-text fix (f575c3c) installed after 24h window"
+pft-integrity accept - 2026-10-28T06:14:44Z: re-baselined 47 items by root
+manifest sha256: 0825719e32d816ada998a515186da60867e04b0f69afba5556aefd5636528174 -> abcbe49d6681ab5d358fe8a92094f0b362ed7460ee0e12e3c27f697781ffbd4b (logged to accept.log)
+$ sudo pft-integrity verify
+RESULT: PASS - 47 unchanged, 0 warn, 0 fail -> exit 0
+removed temp install dir: yes

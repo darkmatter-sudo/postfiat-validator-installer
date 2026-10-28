@@ -1,0 +1,287 @@
+# OS: Ubuntu 22.04.5 LTS | host validator-host | 2026-10-27T06:15:01Z
+# pft-resources.sh sha256 101a34ca3b9c | run-tests.sh sha256 cea1eadbbc12
+$ shellcheck resources/pft-resources.sh resources/install.sh resources/tests/run-tests.sh
+
+In resources/tests/run-tests.sh line 36:
+mkstub() { mkdir -p "$1/bin"; printf '#!/bin/sh\n[ "$1" = inspect ] || exit 1\ncat "%s/inspect" 2>/dev/null || exit 1\n' "$1" > "$1/bin/docker"; chmod +x "$1/bin/docker"; }
+                                     ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 42:
+  echo $? > "$root/rc"; OUT="$root/tf/pft_resources_postfiatd.prom"
+                        ^-^ SC2034 (warning): OUT appears unused. Verify use (or export if used externally).
+
+
+In resources/tests/run-tests.sh line 50:
+check "1a exit 0" '[ "$(cat "$D/rc")" = 0 ]'
+                  ^------------------------^ SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 51:
+check "1b up 1" 'has "$OUT" "pft_resources_up{container=\"postfiatd\"} 1"'
+                ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 52:
+check "1c memory current" 'has "$OUT" "pft_resources_memory_current_bytes{container=\"postfiatd\"} 851116032"'
+                          ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 53:
+check "1d memory max (own limit)" 'has "$OUT" "pft_resources_memory_max_bytes{container=\"postfiatd\"} 2415919104" && has "$OUT" "pft_resources_limit_set{container=\"postfiatd\",resource=\"memory\"} 1"'
+                                  ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 54:
+check "1e oom_kill counter" 'has "$OUT" "pft_resources_memory_events_total{container=\"postfiatd\",event=\"oom_kill\"} 1"'
+                            ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 55:
+check "1f fds 43 of 1024 (postfiatd, not the cron pid listed first)" 'has "$OUT" "pft_resources_fd_open{container=\"postfiatd\"} 43" && has "$OUT" "pft_resources_fd_limit_soft{container=\"postfiatd\"} 1024"'
+                                                                     ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 56:
+check "1g pids" 'has "$OUT" "pft_resources_pids_current{container=\"postfiatd\"} 31" && has "$OUT" "pft_resources_pids_max{container=\"postfiatd\"} 256"'
+                ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 57:
+check "1h PSI avg60 as ratio (3.27% -> 0.0327)" 'has "$OUT" "pft_resources_pressure_avg60_ratio{container=\"postfiatd\",resource=\"cpu\",kind=\"some\"} 0.0327"'
+                                                ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 58:
+check "1i PSI total in seconds" 'has "$OUT" "pft_resources_pressure_stall_seconds_total{container=\"postfiatd\",resource=\"cpu\",kind=\"some\"} 3380.818249"'
+                                ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 59:
+check "1j cpu throttling" 'has "$OUT" "pft_resources_cpu_throttled_periods_total{container=\"postfiatd\"} 4" && has "$OUT" "pft_resources_cpu_throttled_seconds_total{container=\"postfiatd\"} 2.500000"'
+                          ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 60:
+check "1k no memory.peak on this fixture -> supported 0, no peak metric" 'has "$OUT" "pft_resources_file_supported{container=\"postfiatd\",file=\"memory.peak\"} 0" && ! grep -q "^pft_resources_memory_peak_bytes" "$OUT"'
+                                                                         ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 61:
+check "1l one TYPE line per family, each family contiguous" '[ -z "$(grep "^# TYPE" "$OUT" | awk "{print \$3}" | sort | uniq -d)" ] && [ -z "$(grep -v "^#" "$OUT" | sed "s/[{ ].*//" | uniq | sort | uniq -d)" ]'
+                                                            ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 62:
+check "1m history line is JSON with the same values" 'python3 -c "import json,sys; d=json.loads(open(sys.argv[1]).read()); assert d[\"mem_current\"]==851116032 and d[\"fds\"]==43 and d[\"oom_kill\"]==1 and d[\"psi_cpu_some_avg60\"]==3.27 and d[\"ts\"]==1793081423" "$D/hist.jsonl"'
+                                                     ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 63:
+check "1n textfile mode 644, no temp files left" '[ "$(stat -c %a "$OUT")" = 644 ] && [ "$(ls -A "$D/tf" | wc -l)" = 1 ]'
+                                                 ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 64:
+check "1o docker restarts 0 + oom_killed 0" 'has "$OUT" "pft_resources_container_restarts{container=\"postfiatd\"} 0" && has "$OUT" "pft_resources_container_oom_killed{container=\"postfiatd\"} 0"'
+                                            ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 66:
+  check "1p promtool check metrics clean" 'docker run --rm -i --entrypoint promtool prom/prometheus:v3.5.0 check metrics < "$OUT" > "$D/lint" 2>&1'
+                                          ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 73:
+check "2a up 1" 'has "$OUT" "pft_resources_up{container=\"postfiatd\"} 1"'
+                ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 74:
+check "2b memory max = MemTotal bytes, limit_set 0" 'has "$OUT" "pft_resources_memory_max_bytes{container=\"postfiatd\"} 8322691072" && has "$OUT" "pft_resources_limit_set{container=\"postfiatd\",resource=\"memory\"} 0"'
+                                                    ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 75:
+check "2c pids max = kernel.pid_max, limit_set 0" 'has "$OUT" "pft_resources_pids_max{container=\"postfiatd\"} 4194304" && has "$OUT" "pft_resources_limit_set{container=\"postfiatd\",resource=\"pids\"} 0"'
+                                                  ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 76:
+check "2d cpu quota 2 cores" 'has "$OUT" "pft_resources_cpu_limit_cores{container=\"postfiatd\"} 2.000" && has "$OUT" "pft_resources_limit_set{container=\"postfiatd\",resource=\"cpu\"} 1"'
+                             ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 81:
+check "3a exit 0, up 1" '[ "$(cat "$D/rc")" = 0 ] && has "$OUT" "pft_resources_up{container=\"postfiatd\"} 1"'
+                        ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 82:
+check "3b file_supported 0 for each PSI file" 'for r in memory cpu io; do has "$OUT" "pft_resources_file_supported{container=\"postfiatd\",file=\"$r.pressure\"} 0" || exit 1; done'
+                                              ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 83:
+check "3c no pressure series" '! grep -q "^pft_resources_pressure_" "$OUT"'
+                              ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 84:
+check "3d memory.peak exported" 'has "$OUT" "pft_resources_memory_peak_bytes{container=\"postfiatd\"} 999999999" && has "$OUT" "pft_resources_file_supported{container=\"postfiatd\",file=\"memory.peak\"} 1"'
+                                ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 85:
+check "3e history has no psi keys but is valid JSON" 'python3 -c "import json,sys; d=json.loads(open(sys.argv[1]).read()); assert not any(k.startswith(\"psi_\") for k in d)" "$D/hist.jsonl"'
+                                                     ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 91:
+check "4a reads the NEW scope (memory 222333444, not 111)" 'has "$OUT" "pft_resources_memory_current_bytes{container=\"postfiatd\"} 222333444"'
+                                                           ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 92:
+check "4b new cgroup's oom_kill restarted at 0" 'has "$OUT" "pft_resources_memory_events_total{container=\"postfiatd\",event=\"oom_kill\"} 0"'
+                                                ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 93:
+check "4c docker OOMKilled=true and RestartCount 1 still visible" 'has "$OUT" "pft_resources_container_oom_killed{container=\"postfiatd\"} 1" && has "$OUT" "pft_resources_container_restarts{container=\"postfiatd\"} 1"'
+                                                                  ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 94:
+check "4d container id label changes" 'has "$OUT" "pft_resources_container_info{container=\"postfiatd\",id=\"new555deadbe\"} 1"'
+                                      ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 97:
+D="$(new malformed 5000)"; mkfix "$D" ddd666 5000; run "$D"; good_lines="$(wc -l < "$D/hist.jsonl")"
+                                                             ^--------^ SC2034 (warning): good_lines appears unused. Verify use (or export if used externally).
+
+
+In resources/tests/run-tests.sh line 99:
+check "5a exit 1" '[ "$(cat "$D/rc")" = 1 ]'
+                  ^------------------------^ SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 100:
+check "5b up 0" 'has "$OUT" "pft_resources_up{container=\"postfiatd\"} 0"'
+                ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 101:
+check "5c only up + timestamp series (stale values gone)" '[ "$(grep -vc "^#" "$OUT")" = 2 ] && has "$OUT" "pft_resources_collect_timestamp_seconds{container=\"postfiatd\"} 1793081423"'
+                                                          ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 102:
+check "5d stderr names the file" 'grep -q "malformed .*memory.current" "$D/err"'
+                                 ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 103:
+check "5e no history line for the failed run" '[ "$good_lines" = 1 ] && [ "$(wc -l < "$D/hist.jsonl")" = 1 ]'
+                                              ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 115:
+  check "6-$c up 0 + exit 1" 'has "$OUT" "pft_resources_up{container=\"postfiatd\"} 0" && [ "$(cat "$D/rc")" = 1 ]'
+                             ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 120:
+check "7a stopped container (pid 0): up 0, stderr 'not running'" 'has "$OUT" "pft_resources_up{container=\"postfiatd\"} 0" && grep -q "not running" "$D/err"'
+                                                                 ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 122:
+check "7b docker inspect fails: up 0" 'has "$OUT" "pft_resources_up{container=\"postfiatd\"} 0" && grep -q "docker inspect" "$D/err"'
+                                      ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 124:
+check "7c no postfiatd process in the cgroup: up 0" 'has "$OUT" "pft_resources_up{container=\"postfiatd\"} 0" && grep -q "no process named postfiatd" "$D/err"'
+                                                    ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 126:
+check "7d cgroup v1 line only: up 0" 'has "$OUT" "pft_resources_up{container=\"postfiatd\"} 0" && grep -q "no cgroup v2 entry" "$D/err"'
+                                     ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 130:
+check "8a bad container name -> exit 3" '[ "$rc" = 3 ]'
+                                        ^-------------^ SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In resources/tests/run-tests.sh line 133:
+  bash "$S" collect --textfile-dir "$D/missing" > /dev/null 2>&1; rc=$?
+                                                                  ^-- SC2034 (warning): rc appears unused. Verify use (or export if used externally).
+
+
+In resources/tests/run-tests.sh line 134:
+check "8b missing textfile dir -> exit 3" '[ "$rc" = 3 ]'
+                                          ^-------------^ SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+For more information:
+  https://www.shellcheck.net/wiki/SC2034 -- OUT appears unused. Verify use (o...
+  https://www.shellcheck.net/wiki/SC2016 -- Expressions don't expand in singl...
+shellcheck exit 1
+$ bash resources/tests/run-tests.sh
+== 1 normal fixture
+PASS 1a exit 0
+PASS 1b up 1
+PASS 1c memory current
+PASS 1d memory max (own limit)
+PASS 1e oom_kill counter
+PASS 1f fds 43 of 1024 (postfiatd, not the cron pid listed first)
+PASS 1g pids
+PASS 1h PSI avg60 as ratio (3.27% -> 0.0327)
+PASS 1i PSI total in seconds
+PASS 1j cpu throttling
+PASS 1k no memory.peak on this fixture -> supported 0, no peak metric
+PASS 1l one TYPE line per family, each family contiguous
+PASS 1m history line is JSON with the same values
+PASS 1n textfile mode 644, no temp files left
+PASS 1o docker restarts 0 + oom_killed 0
+PASS 1p promtool check metrics clean
+== 2 no limits: memory.max/pids.max = max, cpu quota set
+PASS 2a up 1
+PASS 2b memory max = MemTotal bytes, limit_set 0
+PASS 2c pids max = kernel.pid_max, limit_set 0
+PASS 2d cpu quota 2 cores
+== 3 PSI files missing (CONFIG_PSI off / psi=0) + memory.peak present (kernel >= 5.19)
+PASS 3a exit 0, up 1
+PASS 3b file_supported 0 for each PSI file
+PASS 3c no pressure series
+PASS 3d memory.peak exported
+PASS 3e history has no psi keys but is valid JSON
+== 4 restarted container: new PID + new cgroup scope, old scope still on disk
+PASS 4a reads the NEW scope (memory 222333444, not 111)
+PASS 4b new cgroup's oom_kill restarted at 0
+PASS 4c docker OOMKilled=true and RestartCount 1 still visible
+PASS 4d container id label changes
+== 5 malformed memory.current after a good run: up 0, no stale values, no history line, exit 1
+FAIL 5a exit 1
+FAIL 5b up 0
+FAIL 5c only up + timestamp series (stale values gone)
+FAIL 5d stderr names the file
+FAIL 5e no history line for the failed run
+== 6 other malformed / unreadable inputs -> up 0
+FAIL 6-psi up 0 + exit 1
+FAIL 6-events up 0 + exit 1
+PASS 6-cpumax up 0 + exit 1
+PASS 6-limits up 0 + exit 1
+== 7 container problems -> up 0
+PASS 7a stopped container (pid 0): up 0, stderr 'not running'
+PASS 7b docker inspect fails: up 0
+PASS 7c no postfiatd process in the cgroup: up 0
+PASS 7d cgroup v1 line only: up 0
+== 8 usage errors
+PASS 8a bad container name -> exit 3
+PASS 8b missing textfile dir -> exit 3
+RESULT: 37/44 passed
+exit 1

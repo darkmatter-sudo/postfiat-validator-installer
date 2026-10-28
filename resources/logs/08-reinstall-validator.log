@@ -1,0 +1,20 @@
+# OS: Ubuntu 22.04.5 LTS | host validator-host | 2026-10-27T06:21:27Z | reinstall with the build-2 fix (error propagation from reader subshells)
+$ sudo bash resources/install.sh --container postfiatd
+2026-10-27T06:21:27Z installed /usr/local/bin/pft-resources (sha256 3df61580b082)
+2026-10-27T06:21:28Z first collection (through the sandboxed unit):
+pft_resources_up{container="postfiatd"} 1
+pft_resources_memory_current_bytes{container="postfiatd"} 827068416
+pft_resources_pids_current{container="postfiatd"} 31
+pft_resources_fd_open{container="postfiatd"} 43
+2026-10-27T06:21:29Z enabled pft-resources@postfiatd.timer (every minute at :00)
+2026-10-27T06:21:29Z remember: sudo pft-integrity accept --reason 'pft-resources installed'
+exit 0
+$ sudo pft-integrity verify
+  [FAIL] bin:pft-resources                            changed  mtime, sha256
+  [WARN] unit:pft-resources@.service                  changed  mtime
+  [WARN] unit:pft-resources@.timer                    changed  mtime
+RESULT: FAIL - 72 unchanged, 2 warn, 1 fail -> exit 2
+$ sudo pft-integrity accept --reason "task_10dbceb5: pft-resources build 2 (reader error propagation fix)"
+pft-integrity accept - 2026-10-27T06:21:41Z: re-baselined 75 items by <user>
+manifest sha256: 307219e92c8655f2bf955a9ad1e188133a203c9f73595a49952a2985118763d0 -> b2aefd06e87d3ee30ffce875adef66266d41a5f339727202c2372c5261dcb339 (logged to accept.log)
+RESULT: PASS - 75 unchanged, 0 warn, 0 fail -> exit 0

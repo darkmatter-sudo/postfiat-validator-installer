@@ -1,0 +1,25 @@
+# 2026-10-27T07:09:02Z validator-host: hot-reload Prometheus (SIGHUP, no container recreate) + confirm pft-resources rule group loaded
+$ sudo docker inspect -f '{{.State.StartedAt}}' pft-prometheus pft-alertmanager
+/pft-prometheus 2026-10-26T07:37:48.872465152Z
+/pft-alertmanager 2026-10-26T07:37:48.158615953Z
+$ sudo docker kill -s HUP pft-prometheus
+pft-prometheus
+$ curl -s 127.0.0.1:9090/api/v1/status/runtimeinfo | jq '.data|{reloadConfigSuccess,lastConfigTime}'
+{"reloadConfigSuccess":true,"lastConfigTime":"2026-10-27T07:09:03Z"}
+$ curl -s 127.0.0.1:9090/api/v1/rules | jq (group pft-resources)
+/etc/pft-alerts/resources.rules.yml PFTResourcesCollectorFailing state=inactive health=ok lastEvaluation=2026-10-27T07:09:19.943828539Z
+/etc/pft-alerts/resources.rules.yml PFTResourcesStale state=inactive health=ok lastEvaluation=2026-10-27T07:09:19.944259994Z
+/etc/pft-alerts/resources.rules.yml PFTMemoryNearLimit state=inactive health=ok lastEvaluation=2026-10-27T07:09:19.944443416Z
+/etc/pft-alerts/resources.rules.yml PFTMemoryGrowthToLimit state=inactive health=ok lastEvaluation=2026-10-27T07:09:19.944645193Z
+/etc/pft-alerts/resources.rules.yml PFTContainerOOMKill state=inactive health=ok lastEvaluation=2026-10-27T07:09:19.945298823Z
+/etc/pft-alerts/resources.rules.yml PFTFdNearLimit state=inactive health=ok lastEvaluation=2026-10-27T07:09:19.945535144Z
+/etc/pft-alerts/resources.rules.yml PFTPidsNearLimit state=inactive health=ok lastEvaluation=2026-10-27T07:09:19.945764241Z
+/etc/pft-alerts/resources.rules.yml PFTCPUThrottled state=inactive health=ok lastEvaluation=2026-10-27T07:09:19.94590258Z
+/etc/pft-alerts/resources.rules.yml PFTMemoryPressure state=inactive health=ok lastEvaluation=2026-10-27T07:09:19.946147918Z
+/etc/pft-alerts/resources.rules.yml PFTIOPressure state=inactive health=ok lastEvaluation=2026-10-27T07:09:19.946238416Z
+$ curl -s 127.0.0.1:9090/api/v1/query query=pft_resources_up
+{"metric":{"__name__":"pft_resources_up","container":"postfiatd","instance":"127.0.0.1:9877","job":"postfiat"},"value":"1"}
+$ firing/pending alerts
+[]
+/pft-prometheus 2026-10-26T07:37:48.872465152Z
+/pft-alertmanager 2026-10-26T07:37:48.158615953Z

@@ -1,0 +1,42 @@
+# OS: Ubuntu 22.04.5 LTS | host validator-host | 2026-10-27T06:16:08Z
+# pft-resources.sh sha256 198424d7da5d | run-tests.sh d93aa65bd778 | check.sh db65ce3d2a96
+$ bash resources/tests/check.sh
+== baseline: real script
+RESULT: 44/44 passed
+M1 CAUGHT: readers call fail() inside the $(...) subshell again (build-1 bug: malformed file -> up 1) (7 failing assertions)
+    FAIL 5a exit 1
+    FAIL 5b up 0
+    FAIL 5c only up + timestamp series (stale values gone)
+M2 CAUGHT: collection error does not set up 0 (13 failing assertions)
+    FAIL 5a exit 1
+    FAIL 5b up 0
+    FAIL 5c only up + timestamp series (stale values gone)
+M3 CAUGHT: render keeps the metric lines when up is 0 (stale values) (1 failing assertions)
+    FAIL 5c only up + timestamp series (stale values gone)
+M4 CAUGHT: memory.max = max not mapped to MemTotal (1 failing assertions)
+    FAIL 2b memory max = MemTotal bytes, limit_set 0
+M5 CAUGHT: missing PSI file treated as an error (0 failing assertions)
+M6 CAUGHT: fd count includes the fd dir itself (2 failing assertions)
+    FAIL 1f fds 43 of 1024 (postfiatd, not the cron pid listed first)
+    FAIL 1m history line is JSON with the same values
+M7 CAUGHT: docker OOMKilled ignored (1 failing assertions)
+    FAIL 4c docker OOMKilled=true and RestartCount 1 still visible
+M8 CAUGHT: history appended on failed runs too (1 failing assertions)
+    FAIL 5e no history line for the failed run
+M9 CAUGHT: PSI percent not converted to a ratio (1 failing assertions)
+    FAIL 1h PSI avg60 as ratio (3.27% -> 0.0327)
+M10 CAUGHT: metric families not grouped (duplicate TYPE lines) (2 failing assertions)
+    FAIL 1l one TYPE line per family, each family contiguous
+    FAIL 1p promtool check metrics clean
+M11 CAUGHT: cgroup path taken from the first /proc line of any hierarchy (v1 accepted) (1 failing assertions)
+    FAIL 7d cgroup v1 line only: up 0
+M12 CAUGHT: fds of the first process in cgroup.procs instead of PROC_NAME (18 failing assertions)
+    FAIL 1a exit 0
+    FAIL 1b up 1
+    FAIL 1c memory current
+M13 CAUGHT: pids.max = max not mapped to kernel.pid_max (1 failing assertions)
+    FAIL 2c pids max = kernel.pid_max, limit_set 0
+M14 CAUGHT: throttled_usec not converted to seconds (1 failing assertions)
+    FAIL 1j cpu throttling
+MUTANTS: 14/14 caught
+exit 0

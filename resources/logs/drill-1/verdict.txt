@@ -1,0 +1,39 @@
+PASS phases idle -> load -> oom -> calm all sampled, in order
+PASS pft-res-drill-v PFTFdNearLimit firing in Prometheus during load
+PASS pft-res-drill-v [FIRING] PFTFdNearLimit on the throwaway topic after the load phase began
+PASS pft-res-drill-v [RESOLVED] PFTFdNearLimit on the topic after its FIRING
+PASS pft-res-drill-v PFTPidsNearLimit firing in Prometheus during load
+PASS pft-res-drill-v [FIRING] PFTPidsNearLimit on the throwaway topic after the load phase began
+PASS pft-res-drill-v [RESOLVED] PFTPidsNearLimit on the topic after its FIRING
+PASS pft-res-drill-v PFTMemoryNearLimit firing in Prometheus during load
+PASS pft-res-drill-v [FIRING] PFTMemoryNearLimit on the throwaway topic after the load phase began
+PASS pft-res-drill-v [RESOLVED] PFTMemoryNearLimit on the topic after its FIRING
+PASS pft-res-drill-v PFTContainerOOMKill firing in Prometheus during oom/calm
+PASS pft-res-drill-v [FIRING] PFTContainerOOMKill on the throwaway topic after the oom phase began
+PASS pft-res-drill-v [RESOLVED] PFTContainerOOMKill on the topic after its FIRING
+PASS pft-res-drill-s PFTFdNearLimit firing in Prometheus during load
+PASS pft-res-drill-s [FIRING] PFTFdNearLimit on the throwaway topic after the load phase began
+PASS pft-res-drill-s [RESOLVED] PFTFdNearLimit on the topic after its FIRING
+PASS pft-res-drill-s PFTPidsNearLimit firing in Prometheus during load
+PASS pft-res-drill-s [FIRING] PFTPidsNearLimit on the throwaway topic after the load phase began
+PASS pft-res-drill-s [RESOLVED] PFTPidsNearLimit on the topic after its FIRING
+PASS pft-res-drill-s PFTMemoryNearLimit firing in Prometheus during load
+PASS pft-res-drill-s [FIRING] PFTMemoryNearLimit on the throwaway topic after the load phase began
+PASS pft-res-drill-s [RESOLVED] PFTMemoryNearLimit on the topic after its FIRING
+PASS pft-res-drill-s PFTContainerOOMKill firing in Prometheus during oom/calm
+PASS pft-res-drill-s [FIRING] PFTContainerOOMKill on the throwaway topic after the oom phase began
+PASS pft-res-drill-s [RESOLVED] PFTContainerOOMKill on the topic after its FIRING
+PASS last sample (calm): no drill alert in Prometheus or Alertmanager
+PASS collector up 1 for both drill containers in every load/oom/calm sample
+PASS validator and sentry server_state full in every sample (43 samples)
+PASS no pft-resources alert on the real postfiatd containers in any sample
+timeline (unix s):
+  pft-res-drill-v PFTFdNearLimit       prom firing 1793089525 | FIRING msg 1793089517 | RESOLVED msg 1793089756
+  pft-res-drill-v PFTPidsNearLimit     prom firing 1793089525 | FIRING msg 1793089518 | RESOLVED msg 1793089637
+  pft-res-drill-v PFTMemoryNearLimit   prom firing 1793089525 | FIRING msg 1793089516 | RESOLVED msg 1793089636
+  pft-res-drill-v PFTContainerOOMKill  prom firing 1793089630 | FIRING msg 1793089666 | RESOLVED msg 1793090206
+  pft-res-drill-s PFTFdNearLimit       prom firing 1793089525 | FIRING msg 1793089516 | RESOLVED msg 1793089756
+  pft-res-drill-s PFTPidsNearLimit     prom firing 1793089525 | FIRING msg 1793089517 | RESOLVED msg 1793089637
+  pft-res-drill-s PFTMemoryNearLimit   prom firing 1793089551 | FIRING msg 1793089576 | RESOLVED msg 1793089636
+  pft-res-drill-s PFTContainerOOMKill  prom firing 1793089604 | FIRING msg 1793089605 | RESOLVED msg 1793090205
+DRILL PASS

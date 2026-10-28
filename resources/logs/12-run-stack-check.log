@@ -1,0 +1,83 @@
+# 2026-10-27T07:08:42Z validator-host: alerts/run-stack.sh check (resources rules wired in); Ubuntu 22.04.5 LTS
+$ git diff -- prometheus.yml run-stack.sh
+diff --git a/alerts/prometheus.yml b/alerts/prometheus.yml
+index d360e6e..aec13e7 100644
+--- a/alerts/prometheus.yml
++++ b/alerts/prometheus.yml
+@@ -6,6 +6,7 @@ rule_files:
+   - /etc/pft-alerts/postfiat.rules.yml
+   - /etc/pft-alerts/divergence.rules.yml   # ../divergence (pft-divergence textfile metrics)
+   - /etc/pft-alerts/logship.rules.yml      # ../logship (pft-logship textfile metrics)
++  - /etc/pft-alerts/resources.rules.yml    # ../resources (pft-resources cgroup v2 textfile metrics)
+   - /etc/pft-slo/*.rules.yml    # ../slo (availability SLO + burn-rate alerts); run-stack.sh mounts it
+ alerting:
+   alertmanagers:
+diff --git a/alerts/run-stack.sh b/alerts/run-stack.sh
+index 7547012..145def3 100755
+--- a/alerts/run-stack.sh
++++ b/alerts/run-stack.sh
+@@ -33,9 +33,9 @@ die() { log "ERROR: $*"; exit 1; }
+ 
+ check() {
+   log "promtool check rules"
+-  "${DOCKER[@]}" run --rm -v "$HERE:/w:ro" -w /w --entrypoint promtool "$PROM_IMAGE" check rules postfiat.rules.yml divergence.rules.yml logship.rules.yml
++  "${DOCKER[@]}" run --rm -v "$HERE:/w:ro" -w /w --entrypoint promtool "$PROM_IMAGE" check rules postfiat.rules.yml divergence.rules.yml logship.rules.yml resources.rules.yml
+   log "promtool test rules"
+-  "${DOCKER[@]}" run --rm -v "$HERE:/w:ro" -w /w --entrypoint promtool "$PROM_IMAGE" test rules tests.yml divergence.tests.yml logship.tests.yml
++  "${DOCKER[@]}" run --rm -v "$HERE:/w:ro" -w /w --entrypoint promtool "$PROM_IMAGE" test rules tests.yml divergence.tests.yml logship.tests.yml resources.tests.yml
+   log "promtool check config (prometheus.yml${SLO_DIR:+ + slo rules at /etc/pft-slo})"
+   "${DOCKER[@]}" run --rm -v "$HERE:/etc/pft-alerts:ro" "${slo_mount[@]}" --entrypoint promtool "$PROM_IMAGE" \
+     check config /etc/pft-alerts/prometheus.yml
+$ ./run-stack.sh check
+2026-10-27T07:08:42Z promtool check rules
+Checking postfiat.rules.yml
+  SUCCESS: 16 rules found
+
+Checking divergence.rules.yml
+  SUCCESS: 2 rules found
+
+Checking logship.rules.yml
+  SUCCESS: 1 rules found
+
+Checking resources.rules.yml
+  SUCCESS: 10 rules found
+
+2026-10-27T07:08:43Z promtool test rules
+  SUCCESS
+
+  SUCCESS
+
+  SUCCESS
+
+  SUCCESS
+
+2026-10-27T07:08:47Z promtool check config (prometheus.yml + slo rules at /etc/pft-slo)
+Checking /etc/pft-alerts/prometheus.yml
+  SUCCESS: 5 rule files found
+ SUCCESS: /etc/pft-alerts/prometheus.yml is valid prometheus config file syntax
+
+Checking /etc/pft-alerts/postfiat.rules.yml
+  SUCCESS: 16 rules found
+
+Checking /etc/pft-alerts/divergence.rules.yml
+  SUCCESS: 2 rules found
+
+Checking /etc/pft-alerts/logship.rules.yml
+  SUCCESS: 1 rules found
+
+Checking /etc/pft-alerts/resources.rules.yml
+  SUCCESS: 10 rules found
+
+Checking /etc/pft-slo/slo.rules.yml
+  SUCCESS: 17 rules found
+
+2026-10-27T07:08:47Z amtool check-config
+Checking '/w/alertmanager.yml'  SUCCESS
+Found:
+ - global config
+ - route
+ - 2 inhibit rules
+ - 1 receivers
+ - 0 templates
+
+exit=0

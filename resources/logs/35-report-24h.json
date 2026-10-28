@@ -1,0 +1,350 @@
+[
+ {
+  "container": "postfiatd",
+  "coverage": {
+   "container_ids": [
+    "407cf9b6ffa6"
+   ],
+   "expected": 1440,
+   "extra_runs": 2,
+   "gaps": [],
+   "oom_kill_delta": 0,
+   "pct": 100.0,
+   "restarts_delta": 0,
+   "samples": 1442,
+   "unparsed_lines": 0
+  },
+  "growth": {
+   "fds_per_hour": -0.05820341102382777,
+   "hours_to_fd_limit": null,
+   "hours_to_mem_limit": 172.4992948885705,
+   "mem_bytes_per_hour": 7989844.601337672
+  },
+  "label": "validator",
+  "limits": {
+   "fd_limit": 1024,
+   "mem_max": 2415919104,
+   "pids_max": 256
+  },
+  "recommend": [
+   {
+    "default": "> 90%",
+    "headroom_points": 21.19,
+    "observed_max": 68.81,
+    "rule": "PFTMemoryNearLimit",
+    "verdict": "keep default"
+   },
+   {
+    "default": "> 80%",
+    "headroom_points": 75.7,
+    "observed_max": 4.3,
+    "rule": "PFTFdNearLimit",
+    "verdict": "keep default"
+   },
+   {
+    "default": "> 90%",
+    "headroom_points": 74.77,
+    "observed_max": 15.23,
+    "rule": "PFTPidsNearLimit",
+    "verdict": "keep default"
+   },
+   {
+    "default": "> 10%",
+    "observed_max": 0.0,
+    "observed_p95": 0.0,
+    "rule": "PFTMemoryPressure",
+    "verdict": "keep default"
+   },
+   {
+    "default": "> 30%",
+    "observed_max": 1.83,
+    "observed_p95": 0.33,
+    "rule": "PFTIOPressure",
+    "verdict": "keep default"
+   },
+   {
+    "default": "6h horizon, 1h fit, >50% of max, for 30m",
+    "hours_to_limit_at_window_slope": 172.4992948885705,
+    "rule": "PFTMemoryGrowthToLimit",
+    "verdict": "keep default",
+    "window_slope_bytes_per_hour": 7989844.601337672
+   }
+  ],
+  "replay": {
+   "PFTFdNearLimit": {
+    "firing_seconds": 0,
+    "rule": "fd_open / fd_limit_soft > 0.80 for 5m",
+    "would_fire": 0
+   },
+   "PFTIOPressure": {
+    "firing_seconds": 0,
+    "rule": "io PSI some avg60 > 30% for 15m",
+    "would_fire": 0
+   },
+   "PFTMemoryGrowthToLimit": {
+    "firing_seconds": 0,
+    "rule": "predict_linear(memory[1h], 6h) > memory.max and memory > 50% of max, for 30m",
+    "would_fire": 0
+   },
+   "PFTMemoryNearLimit": {
+    "firing_seconds": 0,
+    "rule": "memory.current / memory.max > 0.90 for 5m",
+    "would_fire": 0
+   },
+   "PFTMemoryPressure": {
+    "firing_seconds": 0,
+    "rule": "memory PSI some avg60 > 10% for 10m",
+    "would_fire": 0
+   },
+   "PFTPidsNearLimit": {
+    "firing_seconds": 0,
+    "rule": "pids.current / pids.max > 0.90 for 5m",
+    "would_fire": 0
+   }
+  },
+  "stats": {
+   "cpu_cores": {
+    "max": 0.564472,
+    "median": 0.21901762295081967,
+    "min": 0.14372637704918031,
+    "n": 1441,
+    "p95": 0.30783835
+   },
+   "fd_pct_of_limit": {
+    "max": 4.296875,
+    "median": 4.1015625,
+    "min": 4.1015625,
+    "n": 1442,
+    "p95": 4.19921875
+   },
+   "fds": {
+    "max": 44,
+    "median": 42,
+    "min": 42,
+    "n": 1442,
+    "p95": 43
+   },
+   "mem_bytes": {
+    "max": 1662468096,
+    "median": 939241472,
+    "min": 816254976,
+    "n": 1442,
+    "p95": 1030225920
+   },
+   "mem_pct_of_max": {
+    "max": 68.81306966145833,
+    "median": 38.87719048394097,
+    "min": 33.786519368489586,
+    "n": 1442,
+    "p95": 42.643229166666664
+   },
+   "pids": {
+    "max": 39,
+    "median": 31,
+    "min": 31,
+    "n": 1442,
+    "p95": 31
+   },
+   "psi_cpu_some_avg60": {
+    "max": 8.31,
+    "median": 1.98,
+    "min": 0.69,
+    "n": 1442,
+    "p95": 4.1
+   },
+   "psi_io_some_avg60": {
+    "max": 1.83,
+    "median": 0.03,
+    "min": 0.0,
+    "n": 1442,
+    "p95": 0.33
+   },
+   "psi_memory_some_avg60": {
+    "max": 0.0,
+    "median": 0.0,
+    "min": 0.0,
+    "n": 1442,
+    "p95": 0.0
+   }
+  },
+  "window": {
+   "hours": 24.0,
+   "since": 1793081492.0,
+   "until": 1793167892.0
+  }
+ },
+ {
+  "container": "postfiatd-sentry",
+  "coverage": {
+   "container_ids": [
+    "885926643ead"
+   ],
+   "expected": 1440,
+   "extra_runs": 1,
+   "gaps": [],
+   "oom_kill_delta": 0,
+   "pct": 100.0,
+   "restarts_delta": 0,
+   "samples": 1441,
+   "unparsed_lines": 0
+  },
+  "growth": {
+   "fds_per_hour": 0.05877479493890587,
+   "hours_to_fd_limit": 16673.81402212755,
+   "hours_to_mem_limit": 89.31680089969832,
+   "mem_bytes_per_hour": 7792951.213978724
+  },
+  "label": "sentry",
+  "limits": {
+   "fd_limit": 1024,
+   "mem_max": 2147483648,
+   "pids_max": 256
+  },
+  "recommend": [
+   {
+    "default": "> 90%",
+    "headroom_points": 19.6,
+    "observed_max": 70.4,
+    "rule": "PFTMemoryNearLimit",
+    "verdict": "REVIEW: observed max within 20 points of the threshold"
+   },
+   {
+    "default": "> 80%",
+    "headroom_points": 75.7,
+    "observed_max": 4.3,
+    "rule": "PFTFdNearLimit",
+    "verdict": "keep default"
+   },
+   {
+    "default": "> 90%",
+    "headroom_points": 73.59,
+    "observed_max": 16.41,
+    "rule": "PFTPidsNearLimit",
+    "verdict": "keep default"
+   },
+   {
+    "default": "> 10%",
+    "observed_max": 0.0,
+    "observed_p95": 0.0,
+    "rule": "PFTMemoryPressure",
+    "verdict": "keep default"
+   },
+   {
+    "default": "> 30%",
+    "observed_max": 1.54,
+    "observed_p95": 0.38,
+    "rule": "PFTIOPressure",
+    "verdict": "keep default"
+   },
+   {
+    "default": "6h horizon, 1h fit, >50% of max, for 30m",
+    "hours_to_limit_at_window_slope": 89.31680089969832,
+    "rule": "PFTMemoryGrowthToLimit",
+    "verdict": "REVIEW: window slope reaches the limit within a week",
+    "window_slope_bytes_per_hour": 7792951.213978724
+   }
+  ],
+  "replay": {
+   "PFTFdNearLimit": {
+    "firing_seconds": 0,
+    "rule": "fd_open / fd_limit_soft > 0.80 for 5m",
+    "would_fire": 0
+   },
+   "PFTIOPressure": {
+    "firing_seconds": 0,
+    "rule": "io PSI some avg60 > 30% for 15m",
+    "would_fire": 0
+   },
+   "PFTMemoryGrowthToLimit": {
+    "firing_seconds": 0,
+    "rule": "predict_linear(memory[1h], 6h) > memory.max and memory > 50% of max, for 30m",
+    "would_fire": 0
+   },
+   "PFTMemoryNearLimit": {
+    "firing_seconds": 0,
+    "rule": "memory.current / memory.max > 0.90 for 5m",
+    "would_fire": 0
+   },
+   "PFTMemoryPressure": {
+    "firing_seconds": 0,
+    "rule": "memory PSI some avg60 > 10% for 10m",
+    "would_fire": 0
+   },
+   "PFTPidsNearLimit": {
+    "firing_seconds": 0,
+    "rule": "pids.current / pids.max > 0.90 for 5m",
+    "would_fire": 0
+   }
+  },
+  "stats": {
+   "cpu_cores": {
+    "max": 0.49322645762711864,
+    "median": 0.23427133333333333,
+    "min": 0.11878441666666667,
+    "n": 1440,
+    "p95": 0.3362330666666667
+   },
+   "fd_pct_of_limit": {
+    "max": 4.296875,
+    "median": 4.1015625,
+    "min": 4.1015625,
+    "n": 1441,
+    "p95": 4.19921875
+   },
+   "fds": {
+    "max": 44,
+    "median": 42,
+    "min": 42,
+    "n": 1441,
+    "p95": 43
+   },
+   "mem_bytes": {
+    "max": 1511792640,
+    "median": 1355141120,
+    "min": 1238896640,
+    "n": 1441,
+    "p95": 1441517568
+   },
+   "mem_pct_of_max": {
+    "max": 70.39833068847656,
+    "median": 63.103675842285156,
+    "min": 57.69062042236328,
+    "n": 1441,
+    "p95": 67.12589263916016
+   },
+   "pids": {
+    "max": 42,
+    "median": 31,
+    "min": 31,
+    "n": 1441,
+    "p95": 31
+   },
+   "psi_cpu_some_avg60": {
+    "max": 10.95,
+    "median": 2.5,
+    "min": 0.57,
+    "n": 1441,
+    "p95": 5.61
+   },
+   "psi_io_some_avg60": {
+    "max": 1.54,
+    "median": 0.04,
+    "min": 0.0,
+    "n": 1441,
+    "p95": 0.38
+   },
+   "psi_memory_some_avg60": {
+    "max": 0.0,
+    "median": 0.0,
+    "min": 0.0,
+    "n": 1441,
+    "p95": 0.0
+   }
+  },
+  "window": {
+   "hours": 24.0,
+   "since": 1793081492.0,
+   "until": 1793167892.0
+  }
+ }
+]

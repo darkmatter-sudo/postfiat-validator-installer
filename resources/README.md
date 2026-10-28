@@ -143,11 +143,57 @@ past the limit) and its `for: 30m` kept it from firing, as intended.
 
 ## 24h baseline report
 
-_Filled in after the window closes (2026-10-28T06:13Z): `report/report.py` over both hosts' history files ->
-`REPORT-24h.md` (min/median/p95/max, growth rate, offline replay of the rules, recommended thresholds)._
+[`REPORT-24h.md`](REPORT-24h.md) is the output of `report/report.py --since 1793081492 --until 1793167892` over
+copies of both hosts' history files, window 2026-10-27T06:11:32Z .. 2026-10-28T06:11:32Z (log 35; the input files'
+line counts and sha256 are in the log). Both hosts: 100% coverage, 0 gaps, 0 unparsed lines, 0 container restarts,
+0 new OOM kills, and no rule would have fired in the offline replay.
+
+| | validator (limit 2304 MiB) | sentry (limit 2048 MiB) |
+|---|---|---|
+| memory median / p95 / max | 895.7 / 982.5 / 1585.5 MiB (max 68.8%) | 1292.4 / 1374.7 / 1441.8 MiB (max 70.4%) |
+| memory growth (least squares) | +7.62 MiB/h, 172.5 h to limit | +7.43 MiB/h, 89.3 h to limit |
+| fds median / max (soft limit 1024) | 42 / 44 | 42 / 44 |
+| pids median / max (limit 256) | 31 / 39 | 31 / 42 |
+| CPU cores median / p95 | 0.219 / 0.308 | 0.234 / 0.336 |
+| PSI avg60 max: memory / cpu / io | 0.00 / 8.31 / 1.83 % | 0.00 / 10.95 / 1.54 % |
+
+Recommended thresholds: keep every default except the two the report marks REVIEW, both on the sentry:
+
+- **Memory growth is real, not cache.** Prometheus shows the growth is anonymous memory (`memory.stat` anon
+  +7.36 MiB/h validator, +7.41 MiB/h sentry; file cache flat, log 36). The sentry container had been up 3.3 days
+  at the end of the window and is still growing at the same rate, so at this slope it reaches its 2 GiB limit in
+  about 4 days (the validator in about 7). Whether this levels off (caches warming) or is a leak needs a longer
+  window; 24 h cannot tell. Until then keep `PFTMemoryGrowthToLimit` at its default (6 h horizon): it gives
+  hours of warning before an OOM kill, and `PFTContainerOOMKill` catches the kill itself.
+- **`PFTMemoryNearLimit` (> 90%)** has 19.6 points of headroom on the sentry. That is enough today, but with the
+  growth above the sentry will cross 80% within about a day of this report. Raising the sentry's memory limit or
+  restarting it on a schedule is an operator decision; this add-on only reports it.
+- The validator's 1585.5 MiB maximum is one short spike (p95 982.5 MiB); it stays below the 90% rule.
+
+The "Not evaluable from history" line at the end of the report lists the rules that need Prometheus series
+(CPU throttling, collector staleness); they were checked live in the drill and in logs 20/39.
+
+**HELP-text fix after the window.** The `pft_resources_container_oom_killed` HELP text was wrong in the build that
+ran the window (it said "the main process was OOM-killed"; docker sets the flag for any OOM kill in the cgroup, found
+by the drill smoke, log 22). It was fixed in the repo during the window but installed only after it, so one binary
+ran the whole 24 h: offline suite 44/44 (log 34), install + `pft-integrity accept` on both hosts (logs 37, 38), pull
+and Prometheus scrape of both hosts afterwards, 0 alerts (log 39). Only the HELP string changed, no values.
 
 ## Logs
 
 `logs/NN-*.log` are every recorded run of this task, in order, including the failed and superseded ones (each says
 so in its first lines or in the run after it). Redactions: hostnames -> `validator-host`/`sentry-host`, the local
-user and home path -> `<user>`/`<repo>`, ntfy topics -> `<redacted>`; nothing else was changed.
+user and home path -> `<user>`/`<home>` (and `<repo>`/`<tmp>` in echoed command lines), ntfy topics -> `<redacted>`;
+nothing else was changed. `logs/drill-1/` holds the live drill's output files (`samples.jsonl`, `ntfy.jsonl` without
+the topic, `verdict.txt`); `logs/35-report-24h.json` is the `--json` form of `REPORT-24h.md`.
+
+| logs | what |
+|---|---|
+| 01-03, 08-09 | install on both hosts (+ integrity accept), reinstall with the build-2 fix |
+| 04-07 | collector tests and mutants (04-06 found the two fail-open bugs; 07 final) |
+| 10-13, 23-25 | rules: promtool + rule mutants, Prometheus wiring and SIGHUP reloads |
+| 14-21 | pft-resources-pull: tests + mutants, install, scrape of both hosts, journal |
+| 22, 26-28 | drill: load smoke, helper and checker tests, **live drill (28)** |
+| 29-33 | report.py: tests + mutants, real-data smokes on partial windows (30 superseded) |
+| 34, 37-39 | HELP-text fix: tests, install on both hosts, scrape afterwards |
+| 35, 36 | **24h baseline report**, memory composition from Prometheus |

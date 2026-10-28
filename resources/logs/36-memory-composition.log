@@ -1,0 +1,31 @@
+# Ubuntu 22.04.5 LTS | 2026-10-28T06:13:14Z | memory composition (anon vs file cache) now vs 23h ago, from the validator's Prometheus (read-only queries)
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=pft_resources_memory_stat_bytes{item=~"anon|file"} / 1048576'
+postfiatd anon 942.7109375
+postfiatd file 43.890625
+postfiatd-sentry anon 1320.3203125
+postfiatd-sentry file 41.46484375
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=pft_resources_memory_stat_bytes{item=~"anon|file"} offset 23h / 1048576'
+postfiatd anon 772.015625
+postfiatd file 51.015625
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=deriv(pft_resources_memory_stat_bytes{item=~"anon|file"}[23h]) * 3600 / 1048576'
+pft-res-drill-s anon -375.5858602906499
+pft-res-drill-s file -0.03701399809301977
+pft-res-drill-v anon -393.01865366528426
+pft-res-drill-v file -0.8343978565008056
+postfiatd anon 7.3587415138172325
+postfiatd file 0.22335474894423624
+postfiatd-sentry anon 7.406729579468746
+postfiatd-sentry file 0.020904637345317768
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=deriv(pft_resources_memory_current_bytes[23h]) * 3600 / 1048576'
+pft-res-drill-s - -377.8258190668691
+pft-res-drill-v - -397.86741740977754
+postfiatd - 7.60271629215162
+postfiatd-sentry - 7.443811335809008
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=pft_resources_memory_max_bytes / 1048576'
+postfiatd - 2304
+postfiatd-sentry - 2048
+$ docker inspect -f "{{.Name}} StartedAt={{.State.StartedAt}} RestartCount={{.RestartCount}}" postfiatd (validator-host) / postfiatd-sentry (sentry-host)
+/postfiatd StartedAt=2026-10-26T07:31:18.006787626Z RestartCount=0
+/postfiatd-sentry StartedAt=2026-10-24T22:25:26.906681347Z RestartCount=0
+$ date -u
+2026-10-28T06:13:23Z

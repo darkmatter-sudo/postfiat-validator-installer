@@ -1,0 +1,26 @@
+# Ubuntu 22.04.5 LTS | 2026-10-27T09:11:49Z | report tests + mutants (after real-data smoke fixes)
+# git HEAD ae9b52d47ff2e62b104f883397a62af4d64147e3 + uncommitted resources/report/
+b1e393454ee7cc788c4d911d8186afada10db39d786b68ddc9ac81eea563f6c5  report.py
+a8896c1bdc8e6f85346352a70dcc9ff7fc2eea280f6e73543d765e0472e2ad2c  test_report.py
+e6651fd84364f067431eefc010e9b874dbe6c6f75b94484de4a0b3d47a5e3bfa  mutate_report.py
+$ python3 resources/report/test_report.py
+...................
+----------------------------------------------------------------------
+Ran 19 tests in 0.470s
+
+OK
+rc=0
+$ python3 resources/report/mutate_report.py
+MUTANT R1 percentile floor instead of nearest rank: CAUGHT (FAIL: test_percentile_nearest_rank (__main__.TestReport))
+MUTANT R2 gap does not reset the for: timer: CAUGHT (FAIL: test_gap_resets_for_timer (__main__.TestReport))
+MUTANT R3 restart (container id change) does not split segments: CAUGHT (FAIL: test_oom_kill_counter_resets_with_new_cgroup (__main__.TestReport))
+MUTANT R4 unparsed lines dropped silently: CAUGHT (FAIL: test_unparsed_lines_counted_not_skipped (__main__.TestReport))
+MUTANT R5 growth rule loses the >50%-of-max guard: CAUGHT (FAIL: test_growth_below_half_does_not_fire (__main__.TestReport))
+MUTANT R6 ratio verdict ignores the 20-point headroom: CAUGHT (FAIL: test_close_to_threshold_without_firing_is_review (__main__.TestReport))
+MUTANT R7 for: compare uses > (fires one sample late): CAUGHT (FAIL: test_memory_near_limit_for_duration (__main__.TestReport))
+MUTANT R8 non-numeric field accepted: CAUGHT (ERROR: test_unparsed_lines_counted_not_skipped (__main__.TestReport))
+MUTANT R9 expected count from samples instead of window: CAUGHT (FAIL: test_extra_runs_do_not_inflate_coverage (__main__.TestReport); FAIL: test_gap_counted (__main__.TestReport))
+MUTANT R10 PSI verdict compares p95 instead of max: CAUGHT (FAIL: test_psi_spike_judged_by_max (__main__.TestReport))
+MUTANT R11 extra runs count as coverage: CAUGHT (FAIL: test_extra_runs_do_not_inflate_coverage (__main__.TestReport))
+RESULT: 11/11 mutants caught
+rc=0

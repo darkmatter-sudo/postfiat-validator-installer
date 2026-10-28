@@ -1,0 +1,14 @@
+# 2026-10-27T07:17:09Z validator-host: pft-integrity verify + accept after pft-resources-pull install
+$ sudo pft-integrity verify
+pft-integrity verify - 2026-10-27T07:17:26Z
+OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-10-27T06:21:36Z
+  [WARN] bin:pft-resources-pull                       added    new file
+  [WARN] unit:pft-resources-pull@.service             added    new file
+  [WARN] unit:pft-resources-pull@.timer               added    new file
+RESULT: WARN - 75 unchanged, 3 warn, 0 fail -> exit 1
+$ sudo pft-integrity accept --reason "task_10dbceb59a4ac6897145add5a295c3fd: pft-resources-pull + pft-resources-pull@.service/.timer (sentry metrics pull)"
+pft-integrity accept - 2026-10-27T07:17:33Z: re-baselined 78 items by <user>
+manifest sha256: b2aefd06e87d3ee30ffce875adef66266d41a5f339727202c2372c5261dcb339 -> 6baca6b42581a3f114d43d86e3a149676b5726e13524384c7dc8a1b12d504cee (logged to accept.log)
+$ sudo pft-integrity verify
+OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-10-27T07:17:27Z
+RESULT: PASS - 78 unchanged, 0 warn, 0 fail -> exit 0

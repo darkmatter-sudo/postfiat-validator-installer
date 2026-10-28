@@ -1,0 +1,25 @@
+# Ubuntu 22.04.5 LTS | 2026-10-27T09:11:04Z | report tests + mutants
+# git HEAD ae9b52d47ff2e62b104f883397a62af4d64147e3 + uncommitted resources/report/
+e037f3d5da8f7f99e9f8d2df24968b6d631f6aea8cb9d0480ab1202701369cee  report.py
+06f29f07a0d4b82297ece773ddc88307e20ebaa301cc4ac52dec379442a7c5ad  test_report.py
+6781dc5e6ad8ecd81a486124bfa8751119dcf78e3e8e92720c4a8523fd8c2c71  mutate_report.py
+$ python3 resources/report/test_report.py
+..................
+----------------------------------------------------------------------
+Ran 18 tests in 0.432s
+
+OK
+rc=0
+$ python3 resources/report/mutate_report.py
+MUTANT R1 percentile floor instead of nearest rank: CAUGHT (FAIL: test_percentile_nearest_rank (__main__.TestReport))
+MUTANT R2 gap does not reset the for: timer: CAUGHT (FAIL: test_gap_resets_for_timer (__main__.TestReport))
+MUTANT R3 restart (container id change) does not split segments: CAUGHT (FAIL: test_oom_kill_counter_resets_with_new_cgroup (__main__.TestReport))
+MUTANT R4 unparsed lines dropped silently: CAUGHT (FAIL: test_unparsed_lines_counted_not_skipped (__main__.TestReport))
+MUTANT R5 growth rule loses the >50%-of-max guard: CAUGHT (FAIL: test_growth_below_half_does_not_fire (__main__.TestReport))
+MUTANT R6 ratio verdict ignores the 20-point headroom: CAUGHT (FAIL: test_close_to_threshold_without_firing_is_review (__main__.TestReport))
+MUTANT R7 for: compare uses > (fires one sample late): CAUGHT (FAIL: test_memory_near_limit_for_duration (__main__.TestReport))
+MUTANT R8 non-numeric field accepted: CAUGHT (ERROR: test_unparsed_lines_counted_not_skipped (__main__.TestReport))
+MUTANT R9 expected count from samples instead of window: CAUGHT (FAIL: test_gap_counted (__main__.TestReport))
+MUTANT R10 PSI verdict compares p95 instead of max: CAUGHT (FAIL: test_psi_spike_judged_by_max (__main__.TestReport))
+RESULT: 10/10 mutants caught
+rc=0

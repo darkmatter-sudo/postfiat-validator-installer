@@ -1,0 +1,26 @@
+resources rules check after OOMKilled-stuck fix - 2026-10-27T08:11:34Z - Ubuntu 22.04.5 LTS
+sha256 resources.rules.yml 8e1722054566 resources.tests.yml b86c814ef2ee check-rules.sh 30d97cd55382
+$ shellcheck resources/tests/check-rules.sh
+shellcheck clean
+$ DOCKER="sudo docker" bash resources/tests/check-rules.sh
+== real rules
+Checking resources.rules.yml
+  SUCCESS: 10 rules found
+
+  SUCCESS
+
+R1 CAUGHT: memory threshold 0.90 -> 0.99 -> 1 failing eval(s), first: alertname: PFTMemoryNearLimit, time: 6m, 
+R2 CAUGHT: memory alert ignores up (blind collector still alerts) -> 1 failing eval(s), first: alertname: PFTMemoryNearLimit, time: 6m, 
+R3 CAUGHT: OOM alert without the docker OOMKilled branch -> 2 failing eval(s), first: alertname: PFTContainerOOMKill, time: 2m, 
+R4 SURVIVED: OOM alert window 10m -> 1m (kill missed between scrapes)
+R5 CAUGHT: fd alert guard on the left again ($value = the limit) -> 1 failing eval(s), first: alertname: PFTFdNearLimit, time: 6m, 
+R6 CAUGHT: fd alert without the unlimited-limit guard -> 1 failing eval(s), first: alertname: PFTFdNearLimit, time: 6m, 
+R7 CAUGHT: pids for: 5m -> 0m -> 1 failing eval(s), first: alertname: PFTPidsNearLimit, time: 4m, 
+R8 CAUGHT: staleness threshold 300 -> 900 -> 1 failing eval(s), first: alertname: PFTResourcesStale, time: 11m, 
+R9 CAUGHT: throttling threshold 0.25 -> 0.60 (50% case missed) -> 1 failing eval(s), first: alertname: PFTCPUThrottled, time: 30m, 
+R10 CAUGHT: growth alert without the 50% floor -> 1 failing eval(s), first: alertname: PFTMemoryGrowthToLimit, time: 40m, 
+R11 CAUGHT: memory PSI uses kind full too (any kind) -> 1 failing eval(s), first: alertname: PFTMemoryPressure, time: 11m, 
+R12 CAUGHT: collector-failing for: 5m -> 1m -> 1 failing eval(s), first: alertname: PFTResourcesCollectorFailing, time: 6m, 
+R13 CAUGHT: docker OOMKilled branch without the change check (stays firing forever) -> 2 failing eval(s), first: alertname: PFTContainerOOMKill, time: 15m, 
+RULE MUTANTS: 12/13 caught
+exit 1

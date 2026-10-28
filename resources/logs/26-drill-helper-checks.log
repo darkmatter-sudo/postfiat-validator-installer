@@ -1,0 +1,20 @@
+drill.sh helper checks (offline fixtures + read-only live API) - 2026-10-27T08:17:08Z - Ubuntu 22.04.5 LTS
+sha256 drill.sh 643987eca58c
+helpers extracted: 20 functions
+prom_drill: {"pft-res-drill-s":{"PFTMemoryNearLimit":"firing"},"pft-res-drill-v":{"PFTFdNearLimit":"firing","PFTPidsNearLimit":"pending"}}
+  expect   : {"pft-res-drill-s":{"PFTMemoryNearLimit":"firing"},"pft-res-drill-v":{"PFTFdNearLimit":"firing","PFTPidsNearLimit":"pending"}} (pft-res-drill-vx excluded by the anchored regex)
+am_drill  : {"pft-res-drill-v":["PFTFdNearLimit","PFTPidsNearLimit"]}
+am_other  : ["PFTNodeNotFull"]
+real_res  : ["PFTMemoryNearLimit"]   (expect ["PFTMemoryNearLimit"]: postfiatd only, resources alerts only)
+metrics   : {"pft-res-drill-s":{"up":0},"pft-res-drill-v":{"up":1,"fd_open":57,"memory_events_total":1}}   (expect oom_kill event only, not max=52)
+prom_all firing Fd: rc0 (expect rc0)
+prom_all firing Fd+Pids: rc1 (expect rc1)
+topic_has OOM v: rc0 (expect rc0)
+topic_has OOM s: rc1 (expect rc1)
+topic_has RESOLVED Fd s: rc1 (expect rc1)
+topic_all FIRING Fd: rc1 (expect rc1, v missing)
+topic_has on empty file: rc1 (expect rc1)
+-- live read-only (expect {} {} and current other alerts):
+prom_drill live: {} | am_drill live: {} | am_other live: [] | drill_quiet: yes
+real_res live: []
+metrics live (no drill containers): {}
