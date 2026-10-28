@@ -389,6 +389,20 @@ bash cfglint/pft-cfglint.sh                       # exit 0 clean, 1 findings, 2 
 bash cfglint/pft-cfglint.sh --file postfiatd.cfg --json
 ```
 
+## Alert-pipeline dead-man add-on (alertpath)
+
+[`alertpath/`](alertpath/README.md): checks that the alerting pipeline itself still works, from the sentry. An
+always-firing `PFTAlertPipelineWatchdog` is routed only to a loopback sink (never to the operator topic). Every 30s
+the validator sends an HMAC-signed snapshot (last delivery + Prometheus/Alertmanager self-metrics + bridge state) over
+a forced-command SSH key. Every 60s `pft-alertpath check` on the sentry decides `OK` / `DEGRADED` / `STALE`
+(exit 0/1/2, `--json`) and notifies through its own ntfy config.
+
+```bash
+sudo alertpath/install.sh validator --relay <sentry-ip>                                  # validator
+sudo alertpath/install.sh sentry --pubkey F --hmac-key F --ntfy-env F                    # sentry
+sudo pft-alertpath check --json                                                          # sentry
+```
+
 ## Upgrade
 
 ```bash

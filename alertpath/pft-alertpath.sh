@@ -16,7 +16,7 @@
 #             (Alertmanager/Prometheus/route/sink dead, or the validator host itself is down)
 #   DEGRADED  deliveries still arrive but a part reports failure: Prometheus or Alertmanager unreachable or last
 #             config reload failed, rule evaluation failures / notification errors / webhook failures increased in
-#             the window, the alertpath rule group not evaluated for EVAL_STALE_SEC, bridge container not running or
+#             the last INC_WINDOW_SEC, the alertpath rule group not evaluated for EVAL_STALE_SEC, bridge container not running or
 #             not listening, new bridge ntfy ERROR lines, a mis-routed delivery, or a rejected (bad HMAC) message
 #   OK        none of the above
 # ntfy (--notify): one message per state change, RECOVERED when it returns to OK. Uses its own ntfy.env on the
@@ -32,7 +32,8 @@
 #      STATE_DIR (/var/lib/pft-alertpath)  SPOOL_DIR (/var/lib/pft-alertpath-spool)
 #      SINK_STATE (/var/lib/pft-alertpath/last.json)  PROM_URL (http://127.0.0.1:9090)  AM_URL (http://127.0.0.1:9093)
 #      BRIDGE_CONTAINER (pft-alert-bridge)  BRIDGE_PORT (9095)  DOCKER ("docker")
-#      SNAP_STALE_SEC (150)  WD_STALE_SEC (180)  EVAL_STALE_SEC (120)  WINDOW_SEC (600)  SKEW_TOL_SEC (30)
+#      SNAP_STALE_SEC (150)  WD_STALE_SEC (180)  EVAL_STALE_SEC (120)  WINDOW_SEC (600, history kept)
+#      INC_WINDOW_SEC (180, counter increases count only this far back)  SKEW_TOL_SEC (30)
 #      NTFY_OUTBOX (if set, ntfy messages are appended to this file instead of sent; used by the tests)
 
 set -uo pipefail
@@ -51,6 +52,7 @@ SNAP_STALE_SEC="${SNAP_STALE_SEC:-150}"
 WD_STALE_SEC="${WD_STALE_SEC:-180}"
 EVAL_STALE_SEC="${EVAL_STALE_SEC:-120}"
 WINDOW_SEC="${WINDOW_SEC:-600}"
+INC_WINDOW_SEC="${INC_WINDOW_SEC:-180}"
 SKEW_TOL_SEC="${SKEW_TOL_SEC:-30}"
 MAX_MSG=8192
 MAX_SPOOL=200
@@ -213,16 +215,19 @@ tmp="$(mktemp "$STATE_DIR/.hist.XXXXXX")"
 jq -c --argjson cut $((NOW - WINDOW_SEC)) 'select(.ts >= $cut)' "$HIST" > "$tmp" 2>/dev/null && mv -- "$tmp" "$HIST"
 rm -f -- "$tmp"
 
-# Decide. inc(path): counter increase across the window, Prometheus-style (a drop = reset, counts the new value).
+# Decide.
 verdict="$(jq -sc --argjson now "$NOW" --argjson rejected "$rejected" \
-  --argjson snap_stale "$SNAP_STALE_SEC" --argjson wd_stale "$WD_STALE_SEC" --argjson eval_stale "$EVAL_STALE_SEC" '
+  --argjson inc_window "$INC_WINDOW_SEC" --argjson snap_stale "$SNAP_STALE_SEC" --argjson wd_stale "$WD_STALE_SEC" --argjson eval_stale "$EVAL_STALE_SEC" '
   def num: if type == "number" then . else null end;
-  def inc(f): [ .[] | f | num ] | map(select(. != null)) as $v
-    | if ($v | length) < 2 then 0
-      else reduce range(1; $v | length) as $i (0; . + (if $v[$i] >= $v[$i-1] then $v[$i] - $v[$i-1] else $v[$i] end))
-      end;
   sort_by(.ts) as $h | ($h | last) as $c
-  | (if $c == null then null else $now - $c.ts end) as $snap_age
+  | (if $c == null then 0 else $c.ts - $inc_window end) as $cut
+  # inc(f): counter increase over the last INC_WINDOW_SEC, Prometheus-style: the sample just before the cut is the
+  # baseline, and a drop is a reset that counts the new value. Older increases no longer count, so a recovered
+  # pipeline returns to OK INC_WINDOW_SEC after its last error instead of staying DEGRADED for the whole history.
+  | def inc(f): [ .[] | {ts, v: (f | num)} | select(.v != null) ] as $s
+      | reduce range(1; $s | length) as $i (0;
+          if $s[$i].ts >= $cut then . + (if $s[$i].v >= $s[$i-1].v then $s[$i].v - $s[$i-1].v else $s[$i].v end) else . end);
+    (if $c == null then null else $now - $c.ts end) as $snap_age
   | (if $c == null or $c.wd == null then null else $c.ts - $c.wd.received end) as $wd_age
   | [ if $c == null then "no snapshot received from the validator"
       elif $snap_age > $snap_stale then "last snapshot \($snap_age)s old (> \($snap_stale)s)" else empty end,

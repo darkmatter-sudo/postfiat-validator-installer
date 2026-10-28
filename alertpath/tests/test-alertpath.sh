@@ -77,6 +77,12 @@ expect "counter reset then +2" DEGRADED 1 'rule evaluation failures \+2'
 # old failures outside the window do not count
 reset; spool "$(snap 700 '.prom.rule_eval_failures = 0')"; spool "$(snap 5 '.prom.rule_eval_failures = 9')"
 expect "increase only vs. window" OK 0 '"reasons":\[\]'
+# increases count only over INC_WINDOW_SEC (180 s): an error burst 240 s ago no longer degrades (recovery)
+reset; spool "$(snap 300)"; spool "$(snap 240 '.prom.notif_errors = 3')"; spool "$(snap 5 '.prom.notif_errors = 3')"
+expect "increase older than INC_WINDOW_SEC clears" OK 0 '"reasons":\[\]'
+# ...but the sample just before the cut is the baseline: 0 (260 s ago) -> 2 (60 s ago) is +2
+reset; spool "$(snap 260)"; spool "$(snap 60 '.prom.notif_errors = 2')"
+expect "baseline sample before the cut is used" DEGRADED 1 'notification errors \+2'
 # authentication / replay / clock
 reset; spool "$(snap 5)" "$(printf '0%.0s' {1..64})"; expect "bad HMAC alone" STALE 2 '1 spooled message\(s\) rejected'
 reset; spool "$(snap 5)"; spool "$(snap 5 '.ts += 0')" ; expect "replayed ts" DEGRADED 1 'rejected'

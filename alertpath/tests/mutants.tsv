@@ -28,3 +28,5 @@ M27	rule evaluation failures ignored	inc(.prom.rule_eval_failures)	inc(.prom.rul
 M28	Alertmanager reload failure ignored	$c.am.reload_ok != 1	false
 M29	DEGRADED exits 2	DEGRADED) exit 1	DEGRADED) exit 2
 M30	DEGRADED outranks STALE	state:(if ($stale|length) > 0 then "STALE" elif ($degraded|length) > 0 then "DEGRADED"	state:(if ($degraded|length) > 0 then "DEGRADED" elif ($stale|length) > 0 then "STALE"
+M31	increase counted over the whole history	if $s[$i].ts >= $cut then	if true then
+M32	baseline sample before the cut ignored	if $s[$i].ts >= $cut then	if $s[$i-1].ts >= $cut then
