@@ -23,7 +23,9 @@
 #              written by boot-gate when the host booted less than BOOT_WINDOW s ago. Starts chrony.
 #              The candidate chrony.conf must pass `chronyd -p` before it replaces the file.
 #           3. sync gate: within SYNC_BUDGET s chrony must have a selected source, >= MIN_NTS NTS-authenticated
-#              reachable sources, leap status not "Not synchronised" and |offset| <= OFFSET_WARN; postfiatd's
+#              reachable sources, leap status not "Not synchronised", |offset| <= OFFSET_WARN and root dispersion
+#              <= DISP_WARN (a fresh chronyd reports skew 1000000 ppm and a dispersion of many seconds until it has a
+#              frequency estimate, about 3 updates = 2-3 min, which the audit grades CRIT); postfiatd's
 #              StartedAt must be unchanged and server_state full. Any miss -> automatic rollback (exit 1, or 5).
 #  rollback stops chrony, purges it if it was not installed before, reinstalls the cached timesyncd .deb, restores
 #           every managed file byte-identical (absent files removed), restarts the daemon that was active before,
@@ -33,7 +35,7 @@
 #             --yes, preflight failed: nothing changed), 5 rollback failed.
 # Env: NTS_SERVERS (5 public NTS servers)  MIN_NTS (4)  MIN_SOURCES (3, chrony minsources)  MAXSLEWRATE (500 ppm)
 #      OFFSET_WARN (0.05 s)  OFFSET_CRIT (0.25 s)  DISP_WARN (0.1 s)  DISP_CRIT (1.0 s)  STRATUM_WARN (6)
-#      SYNC_BUDGET (300 s)  POLL_SEC (5)  BOOT_WINDOW (300 s)  CONTAINER (auto: postfiatd or postfiatd-sentry)
+#      SYNC_BUDGET (600 s)  POLL_SEC (5)  BOOT_WINDOW (300 s)  CONTAINER (auto: postfiatd or postfiatd-sentry)
 #      BACKUP_DIR (/var/lib/pft-timesync)  TEXTFILE_DIR (/var/lib/pft-exporter/textfile)
 #      Test hooks: PFT_TIMESYNC_ROOT (path prefix for every file)  PFT_TIMESYNC_SYSTEMCTL / _CHRONYC / _CHRONYD / _TIMEDATECTL /
 #      _APTGET / _DPKGQ / _DPKG / _DOCKER / _RPC (commands)  PFT_TIMESYNC_INJECT (unreachable: TEST-NET-1 sources)
@@ -62,7 +64,7 @@ OFFSET_CRIT="${OFFSET_CRIT:-0.25}"
 DISP_WARN="${DISP_WARN:-0.1}"
 DISP_CRIT="${DISP_CRIT:-1.0}"
 STRATUM_WARN="${STRATUM_WARN:-6}"
-SYNC_BUDGET="${SYNC_BUDGET:-300}"
+SYNC_BUDGET="${SYNC_BUDGET:-600}"
 POLL_SEC="${POLL_SEC:-5}"
 BOOT_WINDOW="${BOOT_WINDOW:-300}"
 BACKUP_DIR="${BACKUP_DIR:-$R/var/lib/pft-timesync}"
@@ -349,12 +351,13 @@ sync_gate() { # CONTAINER STARTED_AT -> rc 0 if synced in budget and postfiatd u
     off="$(get offset "$f")"; sa="$(started_at "$c")"; st="$(server_state "$c")"
     if [ -n "$f" ] && [ -n "$(get selected "$f")" ] && [ "$(get nts "$f")" -ge "$MIN_NTS" ] \
        && [ "$(get leap "$f")" != "Not synchronised" ] && num_le "$(abs "${off:-9}")" "$OFFSET_WARN" \
+       && num_le "$(get disp "$f")" "${DISP_WARN}" \
        && [ "$sa" = "$st0" ] && [ "$st" = full ]; then
-      echo "$(ts) sync gate: PASS after $((now - start)) s (selected $(get selected "$f"), $(get nts "$f") NTS sources, offset $off s, leap $(get leap "$f"); $c StartedAt unchanged, server_state full)"
+      echo "$(ts) sync gate: PASS after $((now - start)) s (selected $(get selected "$f"), $(get nts "$f") NTS sources, offset $off s, root dispersion $(get disp "$f") s, leap $(get leap "$f"); $c StartedAt unchanged, server_state full)"
       return 0
     fi
     if [ $((now - start)) -ge "$SYNC_BUDGET" ]; then
-      echo "$(ts) sync gate: FAIL after $((now - start)) s (selected=$(get selected "$f") nts=$(get nts "$f") offset=${off:-?} leap=$(get leap "$f"); StartedAt $([ "$sa" = "$st0" ] && echo unchanged || echo CHANGED), server_state=$st${INJECT:+; injected=$INJECT})"
+      echo "$(ts) sync gate: FAIL after $((now - start)) s (selected=$(get selected "$f") nts=$(get nts "$f") offset=${off:-?} disp=$(get disp "$f") leap=$(get leap "$f"); StartedAt $([ "$sa" = "$st0" ] && echo unchanged || echo CHANGED), server_state=$st${INJECT:+; injected=$INJECT})"
       return 1
     fi
     sleep "$POLL_SEC"
@@ -367,6 +370,7 @@ cmd_apply() {
   [ "$yes" = 1 ] || die "apply changes the host's time daemon; re-run with --yes (see 'plan')" 4
   [ -n "$R" ] || [ "$(id -u)" = 0 ] || die "apply must run as root" 4
   n="$(servers | wc -w)"; [ "$n" -ge "$MIN_NTS" ] || die "only $n NTS_SERVERS (< MIN_NTS $MIN_NTS)" 4
+  [ -x "$R$TOOL_PATH" ] || die "$TOOL_PATH is not installed (chrony's boot-gate drop-in runs it): run install.sh first" 4
   [ -e "$POLICY_RC" ] && die "$POLICY_RC exists (another tool controls service starts); refusing" 4
   c="$(container)"; [ -n "$c" ] || die "no postfiatd container found (set CONTAINER)" 4
   st0="$(started_at "$c")"; [ -n "$st0" ] || die "cannot read $c StartedAt" 4

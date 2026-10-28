@@ -33,9 +33,10 @@ TSD_MSG='{ Leap=0, Version=4, Mode=4, Stratum=2, Precision=-25, RootDelay=6.637m
 
 mk_env() {
   local d="$1"
-  mkdir -p "$d/root/etc/systemd" "$d/root/usr/sbin" "$d/root/proc" "$d/root/var/lib" "$d/s" "$d/bin"
+  mkdir -p "$d/root/etc/systemd" "$d/root/usr/sbin" "$d/root/usr/local/sbin" "$d/root/proc" "$d/root/var/lib" "$d/s" "$d/bin"
   printf '[Time]\n#NTP=\n' > "$d/root/etc/systemd/timesyncd.conf"; chmod 0644 "$d/root/etc/systemd/timesyncd.conf"
   echo '86400.12 1000.0' > "$d/root/proc/uptime"
+  printf '#!/bin/sh\n' > "$d/root/usr/local/sbin/pft-timesync"; chmod 0755 "$d/root/usr/local/sbin/pft-timesync"
   echo systemd-timesyncd > "$d/s/active"
   echo 'systemd-timesyncd 249.11-0ubuntu3.23' > "$d/s/pkgs"
   echo "$GOOD_TRACKING" > "$d/s/tracking"; echo "$GOOD_SOURCES" > "$d/s/sources"; echo "$GOOD_AUTH" > "$d/s/authdata"

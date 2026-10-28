@@ -103,6 +103,8 @@ fresh; H0="$(sha256sum "$PFT_TIMESYNC_ROOT/etc/systemd/timesyncd.conf")"
 run apply; expect "apply without --yes -> refused 4" 4 're-run with --yes'
 touch "$PFT_TIMESYNC_ROOT/usr/sbin/policy-rc.d"; run apply --yes; expect "apply with an existing policy-rc.d -> refused 4" 4 'policy-rc.d exists'
 rm "$PFT_TIMESYNC_ROOT/usr/sbin/policy-rc.d"
+mv "$PFT_TIMESYNC_ROOT/usr/local/sbin/pft-timesync" "$T/x"; run apply --yes; expect "apply before install.sh -> refused 4" 4 'is not installed .*run install.sh first'
+mv "$T/x" "$PFT_TIMESYNC_ROOT/usr/local/sbin/pft-timesync"
 MIN_NTS=6 run apply --yes; expect "apply with fewer servers than MIN_NTS -> refused 4" 4 'only 5 NTS_SERVERS'
 touch "$STUB_S/download_fail"; run apply --yes; expect "apply: timesyncd .deb not cacheable -> refused 4" 4 'cannot cache systemd-timesyncd'
 check "refusals changed nothing (no stop/install, timesyncd active, file identical)" '! grep -qE "systemctl stop|install -y -q -o" "$STUB_S/calls" && grep -qx systemd-timesyncd "$STUB_S/active" && [ "$(sha256sum "$PFT_TIMESYNC_ROOT/etc/systemd/timesyncd.conf")" = "$H0" ]'
@@ -110,7 +112,7 @@ CONTAINER=nope run apply --yes; expect "apply: unknown container -> refused 4" 4
 
 # --- apply: happy path from timesyncd
 fresh; run apply --yes; expect "apply from timesyncd -> PASS exit 0" 0 'apply: PASS$'
-check "apply: sync gate PASS line names 5 NTS sources + StartedAt unchanged" 'grep -qE "sync gate: PASS after [0-9]+ s \(selected ntppool1.time.nl, 5 NTS sources, offset -0.000680615 s, leap Normal; postfiatd StartedAt unchanged, server_state full\)" <<<"$OUT"'
+check "apply: sync gate PASS line names 5 NTS sources + StartedAt unchanged" 'grep -qE "sync gate: PASS after [0-9]+ s \(selected ntppool1.time.nl, 5 NTS sources, offset -0.000680615 s, root dispersion 0.021144409 s, leap Normal; postfiatd StartedAt unchanged, server_state full\)" <<<"$OUT"'
 check "apply: chrony package start was blocked by policy-rc.d, which is gone afterwards" 'grep -qx blocked "$STUB_S/policy_at_install" && [ ! -e "$PFT_TIMESYNC_ROOT/usr/sbin/policy-rc.d" ]'
 check "apply: timesyncd stopped BEFORE the install" '[ "$(grep -n "systemctl stop systemd-timesyncd" "$STUB_S/calls" | cut -d: -f1)" -lt "$(grep -n "install -y -q -o" "$STUB_S/calls" | cut -d: -f1)" ]'
 check "apply: chrony.conf = plan, drop-in written, chronyd -p ran first" 'diff <(bash "$TOOL" plan | sed -n "/^# \/etc\/chrony\/chrony.conf$/,/^# \/etc\/systemd\/system/p" | sed "1d;\$d") "$PFT_TIMESYNC_ROOT/etc/chrony/chrony.conf" && grep -q boot-gate "$PFT_TIMESYNC_ROOT/etc/systemd/system/chrony.service.d/50-pft-timesync.conf" && grep -q "chronyd -p -f .*chrony.conf.pft-new" "$STUB_S/calls"'
@@ -136,6 +138,7 @@ apt install fails|touch "$STUB_S/install_fail"|apt-get install chrony failed
 postfiatd restarted during the gate|echo 'echo 2026-10-28T21:00:00Z > "$S/started"' > "$STUB_S/restart_hook"|StartedAt CHANGED
 server_state not full|echo syncing > "$STUB_S/state"|server_state=syncing
 only 3 NTS sources authenticate|echo 'sed "1,2s/,NTS,/,-,/" <<<"$GOOD_AUTH" > "$S/authdata"' > "$STUB_S/restart_hook"|sync gate: FAIL .*nts=3
+fresh chronyd: root dispersion 17 s (skew not settled)|echo 'sed -i "s/,0.021144409,/,17.249580383,/" "$S/tracking"' > "$STUB_S/restart_hook"|sync gate: FAIL .*disp=17.249580383
 offset above OFFSET_WARN|echo 'sed -i "s/,0.000680615,/,0.080000000,/" "$S/tracking"' > "$STUB_S/restart_hook"|sync gate: FAIL .*offset=-0.080000000
 MISS
 unset PFT_TIMESYNC_INJECT

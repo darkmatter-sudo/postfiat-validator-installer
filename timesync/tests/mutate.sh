@@ -96,6 +96,10 @@ mutant M29 "any source counts as selected" \
   'if ($2=="*") s=$3' 's=$3'
 mutant M30 "timesyncd ms dispersion scaled as us" \
   '($2=="ms") ? 1e-3' '($2=="ms") ? 1e-6'
+mutant M31 "sync gate ignores root dispersion (the bug found in live run 13)" \
+  '&& num_le "$(get disp "$f")" "${DISP_WARN}"' ''
+mutant M32 "apply proceeds without the installed tool (chrony boot-gate drop-in would fail)" \
+  '[ -x "$R$TOOL_PATH" ] || die' 'true || die'
 
 echo "RESULT: $CAUGHT/$TOTAL caught, $SURVIVED survived, $NOTAPPLIED not applied"
 [ "$SURVIVED" = 0 ] && [ "$NOTAPPLIED" = 0 ]
