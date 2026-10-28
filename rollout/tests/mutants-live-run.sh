@@ -21,8 +21,10 @@ MUTANTS=(
   'W13 no passwordless-sudo preflight|s/^sudo -n true || /true || /'
   'W14 pre-drill hash read through an unprivileged < redirect|s/fsha() { on "$1" "sudo -n sha256sum $2"/fsha() { on "$1" "sudo -n sha256sum < $2"/'
   'W15 empty pre-drill hash accepted|s/^  \[\[ "${SHA\["$h:$f"\]}" =~ ^\[0-9a-f\]{64}$ \]\] || /  true || /'
-  'W16 restore compare accepts an empty hash|s/\[ -n "$now_sha" \] \&\& \[ "$now_sha"/[ "$now_sha"/'
 )
+# Not a mutant here: dropping the `[ -n "$now_sha" ]` guard in restore() (tried as W16 in run -23, NOT CAUGHT) is an
+# equivalent change. redirect() stops unless the pre-drill hash is 64 hex (W15), and a key enters MOVED only after that,
+# so an empty now_sha never equals ${SHA[$k]}. The guard stays as defence in depth; W15 is the control that matters.
 MC=0
 for m in "${MUTANTS[@]}"; do
   name="${m%%|*}"; expr="${m#*|}"

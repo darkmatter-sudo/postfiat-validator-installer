@@ -1,0 +1,12 @@
+OS: Ubuntu 22.04.5 LTS | 2026-10-28T10:27:28Z | manual check during live run -21 (code 43c18b1)
+finding: live-run.sh redirect() records SHA with 'sudo -n sha256sum < $f' -> the '<' is opened unprivileged -> 'Permission denied' on root-only local env files, SHA empty (restore compare would be empty==empty). Redirect itself succeeded:
++ sudo grep -c '^NTFY_TOPIC=<redacted>' /etc/postfiat-monitor.env -> 1
++ sudo sha256sum /etc/postfiat-monitor.env.pre-rollout-drill (original, cp -p) -> 6dc3b10fb49175a5b5b75328098116f31afc44a5ec7187d84a0191e582df1b1e
++ sudo grep -c '^NTFY_TOPIC=<redacted>' /etc/pft-integrity.env -> 1
++ sudo sha256sum /etc/pft-integrity.env.pre-rollout-drill (original, cp -p) -> b3cd1c3da7ff18d90537ce080ba2d98efc50f9846880ff6947afa50d609bfe61
+note: local postfiat-monitor/pft-integrity timers stopped 10:27:03Z-10:27:19Z while I checked the redirect target (no scheduled run missed: next monitor run was 10:28:28Z)
+--- after run -21 (2026-10-28T10:39:02Z): restore verified by hand (the run's two local 'yes' lines compared empty == empty)
++ sudo sha256sum /etc/postfiat-monitor.env -> 6dc3b10fb49175a5b5b75328098116f31afc44a5ec7187d84a0191e582df1b1e  == original: yes
+  topic is drill topic: 0 | leftover /etc/postfiat-monitor.env.pre-rollout-drill: no | mode 600
++ sudo sha256sum /etc/pft-integrity.env -> b3cd1c3da7ff18d90537ce080ba2d98efc50f9846880ff6947afa50d609bfe61  == original: yes
+  topic is drill topic: 0 | leftover /etc/pft-integrity.env.pre-rollout-drill: no | mode 600

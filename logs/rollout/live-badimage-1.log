@@ -1,0 +1,141 @@
+OS: Ubuntu 22.04.5 LTS | 2026-10-28T11:08:41Z | rollout code 268ee4f7d2f6837c88f89d092836be72b99b5b2e (working tree: only tests/mutants-live-run.sh changed)
++ sha256 pft-rollout.sh: 2a3b23396c7065df82f2f4bdb34ced1a857179c66898dc8ddfb939f6f35ba504
++ sha256 drill/live-run.sh: 7042ee1d4f3df7f5bac7b1700a9a6d818c047ab48c9632b7166953038299136c
++ sha256 drill/check-drill.sh: b8697db0c628c715474b2f0351decc9484832e706ac357b120d353ace1d3d716
++ GATE_TIMEOUT=300 bash drill/live-run.sh badimage   (controller user, CONF=/etc/pft-rollout/hosts.conf)
+pft-rollout live-run badimage - 2026-10-28T11:08:41Z - Ubuntu 22.04.5 LTS
+sha256: pft-rollout.sh 2a3b23396c7065df82f2f4bdb34ced1a857179c66898dc8ddfb939f6f35ba504 | live-run.sh 7042ee1d4f3df7f5bac7b1700a9a6d818c047ab48c9632b7166953038299136c | check-drill.sh b8697db0c628c715474b2f0351decc9484832e706ac357b120d353ace1d3d716
+
+== 0. preflight (nothing changed yet)
+  pft-maint: no data-collection locks
+  ok: relay reachable, Alertmanager ready, env files present, no leftovers
+
+== 1. redirect notifiers (ALERT and MAINT throwaway topics)
+  local:/etc/postfiat-monitor.env -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/postfiat-monitor.env.pre-rollout-drill
+  local:/etc/pft-integrity.env -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/pft-integrity.env.pre-rollout-drill
+  relay:/etc/pft-watchdog/ntfy.env -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/pft-watchdog/ntfy.env.pre-rollout-drill
+  relay:/etc/pft-integrity.env -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/pft-integrity.env.pre-rollout-drill
+  local:/etc/pft-maint/ntfy.env created for the drill only -> https://ntfy.sh/<redacted> (MAINT)
+  relay:/etc/pft-maint/ntfy.env created for the drill only -> https://ntfy.sh/<redacted> (MAINT)
+
+== 2. drill image on the relay
+  Dockerfile: FROM sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+  Dockerfile: ENTRYPOINT ["/bin/sh","-c","exec sleep infinity"]
+  build: DEPRECATED: The legacy builder is deprecated and will be removed in a future release.
+  build:             Install the buildx component to build images with BuildKit:
+  build:             https://docs.docker.com/go/buildx/
+  build: 
+  build: sha256:f0db06e28899371d9b84a7a3f2ee9be481737d8e82fb3df5265c0c5bdd3e0aad
+  pft-rollout-drill:bad = sha256:f0db06e28899371d9b84a7a3f2ee9be481737d8e82fb3df5265c0c5bdd3e0aad (base sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e)
+
+== 3. pft-rollout run
+  before: sentry {"id":"sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e","started":"2026-10-28T10:26:23.080308476Z"}
+  before: validator {"id":"sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e","started":"2026-10-28T10:32:21.332380776Z"}
+$ pft-rollout.sh run --yes --no-pull --target pft-rollout-drill:bad   (GATE_TIMEOUT=300 SOAK_SEC=300)
+[2026-10-28T11:12:41Z] pft-rollout run 20261028T111241Z: hosts sentry validator (in this order), tag agtipft/postfiatd:testnet-light-latest, target pft-rollout-drill:bad
+[2026-10-28T11:12:41Z] thresholds: gate 300s, soak 300s (fail after 3 bad polls, seq +>=10), ledger age <= 20s, poll 10s, rollback re-gate 1800s
+[2026-10-28T11:12:42Z] PREFLIGHT: foundation build_version 1.0.9
+[2026-10-28T11:12:45Z] PREFLIGHT sentry: postfiatd-sentry mode=run image=cc139becfe50 digest=agtipft/postfiatd@sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+[2026-10-28T11:12:45Z] PREFLIGHT validator: postfiatd mode=compose image=cc139becfe50 digest=agtipft/postfiatd@sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+[2026-10-28T11:12:46Z] PREFLIGHT sentry: state=full build=1.0.9 peers=14 age=2s seq=7554670 ok
+[2026-10-28T11:12:46Z] PREFLIGHT validator: state=full build=1.0.9 peers=11 age=2s seq=7554670 ok
+[2026-10-28T11:12:46Z] === sentry (postfiatd-sentry, run) ===
+[2026-10-28T11:12:48Z]   target pft-rollout-drill:bad = f0db06e28899 (pft-rollout-drill@sha256:f0db06e28899371d9b84a7a3f2ee9be481737d8e82fb3df5265c0c5bdd3e0aad)
+  maint: window started: id m1793185968-809117 until 2026-10-28T12:17:48Z | sentry copy: pushed
+[2026-10-28T11:12:50Z]   Alertmanager silence 9ed57ade (alertname=~.+) until 2026-10-28T12:17:50Z
+[2026-10-28T11:12:51Z]   agtipft/postfiatd:testnet-light-latest -> f0db06e28899
+[2026-10-28T11:12:56Z]   previous container kept as postfiatd-sentry-prerollout-20261028T111241Z (stopped, restart=no)
+[2026-10-28T11:12:56Z]   docker run -d --name=postfiatd-sentry --restart=unless-stopped --user=0:0 --log-driver=json-file --log-opt=max-file=10 --log-opt=max-size=100m --network=bridge --publish=127.0.0.1:2560:2559 --volume=pft-sentry-config:/etc/postfiatd --volume=pft-sentry-data:/var/lib/postfiatd/db --volume=7f505992998799bdc092cfb03d16aaae688a0190738c4429bb66f05355511ec9:/var/log/postfiatd --security-opt=no-new-privileges --cap-drop=ALL --cap-add=CAP_SETGID --cap-add=CAP_SETUID --read-only --tmpfs=/run:rw,noexec,nosuid,size=64m --tmpfs=/tmp:rw,noexec,nosuid,size=64m --tmpfs=/var/backups:rw,noexec,nosuid,size=64m --tmpfs=/var/lib/apt:rw,noexec,nosuid,size=64m --tmpfs=/var/lib/logrotate:rw,noexec,nosuid,size=64m --pids-limit=256 --memory=2147483648 --memory-swap=2147483648 agtipft/postfiatd:testnet-light-latest --conf /etc/postfiatd/postfiatd.cfg
+[2026-10-28T11:12:58Z]   config preserved (user, env, mounts, ports, log, restart, caps, read-only, tmpfs, limits, security_opt)
+[2026-10-28T11:12:59Z]   post: pft-egress reapply --container postfiatd-sentry
+[2026-10-28T11:13:03Z]   gate poll +2s state=down build=none peers=0 age=999999s seq=0 FAIL(state=down build=none!=1.0.9 peers=0<5 age=999999s>20s)
+[2026-10-28T11:13:13Z]   gate poll +12s state=down build=none peers=0 age=999999s seq=0 FAIL(state=down build=none!=1.0.9 peers=0<5 age=999999s>20s)
+[2026-10-28T11:13:24Z]   gate poll +23s state=down build=none peers=0 age=999999s seq=0 FAIL(state=down build=none!=1.0.9 peers=0<5 age=999999s>20s)
+[2026-10-28T11:13:34Z]   gate poll +33s state=down build=none peers=0 age=999999s seq=0 FAIL(state=down build=none!=1.0.9 peers=0<5 age=999999s>20s)
+[2026-10-28T11:13:45Z]   gate poll +44s state=down build=none peers=0 age=999999s seq=0 FAIL(state=down build=none!=1.0.9 peers=0<5 age=999999s>20s)
+[2026-10-28T11:13:56Z]   gate poll +55s state=down build=none peers=0 age=999999s seq=0 FAIL(state=down build=none!=1.0.9 peers=0<5 age=999999s>20s)
+[2026-10-28T11:14:06Z]   gate poll +65s state=down build=none peers=0 age=999999s seq=0 FAIL(state=down build=none!=1.0.9 peers=0<5 age=999999s>20s)
+[2026-10-28T11:14:17Z]   gate poll +76s state=down build=none peers=0 age=999999s seq=0 FAIL(state=down build=none!=1.0.9 peers=0<5 age=999999s>20s)
+[2026-10-28T11:14:28Z]   gate poll +87s state=down build=none peers=0 age=999999s seq=0 FAIL(state=down build=none!=1.0.9 peers=0<5 age=999999s>20s)
+[2026-10-28T11:14:38Z]   gate poll +97s state=down build=none peers=0 age=999999s seq=0 FAIL(state=down build=none!=1.0.9 peers=0<5 age=999999s>20s)
+[2026-10-28T11:14:49Z]   gate poll +108s state=down build=none peers=0 age=999999s seq=0 FAIL(state=down build=none!=1.0.9 peers=0<5 age=999999s>20s)
+[2026-10-28T11:14:59Z]   gate poll +118s state=down build=none peers=0 age=999999s seq=0 FAIL(state=down build=none!=1.0.9 peers=0<5 age=999999s>20s)
+[2026-10-28T11:15:10Z]   gate poll +129s state=down build=none peers=0 age=999999s seq=0 FAIL(state=down build=none!=1.0.9 peers=0<5 age=999999s>20s)
+[2026-10-28T11:15:21Z]   gate poll +140s state=down build=none peers=0 age=999999s seq=0 FAIL(state=down build=none!=1.0.9 peers=0<5 age=999999s>20s)
+[2026-10-28T11:15:32Z]   gate poll +151s state=down build=none peers=0 age=999999s seq=0 FAIL(state=down build=none!=1.0.9 peers=0<5 age=999999s>20s)
+[2026-10-28T11:15:43Z]   gate poll +162s state=down build=none peers=0 age=999999s seq=0 FAIL(state=down build=none!=1.0.9 peers=0<5 age=999999s>20s)
+[2026-10-28T11:15:54Z]   gate poll +173s state=down build=none peers=0 age=999999s seq=0 FAIL(state=down build=none!=1.0.9 peers=0<5 age=999999s>20s)
+[2026-10-28T11:16:06Z]   gate poll +185s state=down build=none peers=0 age=999999s seq=0 FAIL(state=down build=none!=1.0.9 peers=0<5 age=999999s>20s)
+[2026-10-28T11:16:18Z]   gate poll +197s state=down build=none peers=0 age=999999s seq=0 FAIL(state=down build=none!=1.0.9 peers=0<5 age=999999s>20s)
+[2026-10-28T11:16:28Z]   gate poll +207s state=down build=none peers=0 age=999999s seq=0 FAIL(state=down build=none!=1.0.9 peers=0<5 age=999999s>20s)
+[2026-10-28T11:16:39Z]   gate poll +218s state=down build=none peers=0 age=999999s seq=0 FAIL(state=down build=none!=1.0.9 peers=0<5 age=999999s>20s)
+[2026-10-28T11:16:50Z]   gate poll +229s state=down build=none peers=0 age=999999s seq=0 FAIL(state=down build=none!=1.0.9 peers=0<5 age=999999s>20s)
+[2026-10-28T11:17:01Z]   gate poll +240s state=down build=none peers=0 age=999999s seq=0 FAIL(state=down build=none!=1.0.9 peers=0<5 age=999999s>20s)
+[2026-10-28T11:17:14Z]   gate poll +253s state=down build=none peers=0 age=999999s seq=0 FAIL(state=down build=none!=1.0.9 peers=0<5 age=999999s>20s)
+[2026-10-28T11:17:28Z]   gate poll +267s state=down build=none peers=0 age=999999s seq=0 FAIL(state=down build=none!=1.0.9 peers=0<5 age=999999s>20s)
+[2026-10-28T11:17:39Z]   gate poll +278s state=down build=none peers=0 age=999999s seq=0 FAIL(state=down build=none!=1.0.9 peers=0<5 age=999999s>20s)
+[2026-10-28T11:17:50Z]   gate poll +289s state=down build=none peers=0 age=999999s seq=0 FAIL(state=down build=none!=1.0.9 peers=0<5 age=999999s>20s)
+[2026-10-28T11:18:03Z]   gate poll +302s state=down build=none peers=0 age=999999s seq=0 FAIL(state=down build=none!=1.0.9 peers=0<5 age=999999s>20s)
+[2026-10-28T11:18:03Z]   GATE FAIL: not healthy within 300s
+[2026-10-28T11:18:03Z]   ROLLBACK sentry -> recorded image cc139becfe50 (agtipft/postfiatd@sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e)
+[2026-10-28T11:18:10Z]   previous container postfiatd-sentry-prerollout-20261028T111241Z renamed back to postfiatd-sentry and started
+[2026-10-28T11:18:11Z]   post: pft-egress reapply --container postfiatd-sentry
+[2026-10-28T11:18:13Z]   gate poll +1s state=disconnected build=1.0.9 peers=1 age=999999s seq=0 FAIL(state=disconnected peers=1<5 age=999999s>20s)
+[2026-10-28T11:18:23Z]   gate poll +11s state=connected build=1.0.9 peers=10 age=999999s seq=0 FAIL(state=connected age=999999s>20s)
+[2026-10-28T11:18:34Z]   gate poll +22s state=connected build=1.0.9 peers=10 age=999999s seq=0 FAIL(state=connected age=999999s>20s)
+[2026-10-28T11:18:45Z]   gate poll +33s state=connected build=1.0.9 peers=10 age=999999s seq=0 FAIL(state=connected age=999999s>20s)
+[2026-10-28T11:18:56Z]   gate poll +44s state=full build=1.0.9 peers=10 age=2s seq=7554792 -> PASS
+[2026-10-28T11:18:56Z]   rollback re-gate PASS after 44s
+  maint: window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+[2026-10-28T11:19:00Z] STOP: sentry did not promote; hosts after it are untouched
+[2026-10-28T11:19:00Z] RESULT: failed_rolled_back:sentry (exit 1)
+pft-rollout exit 1
+  after:  sentry {"id":"sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e","started":"2026-10-28T11:18:10.228928547Z"}
+  after:  validator {"id":"sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e","started":"2026-10-28T10:32:21.332380776Z"}
+
+== 3b. log forwarding re-attached (sentry container log -> validator remote journal)
+  pft-rollout returned 2026-10-28T11:19:03Z; newest forwarded postfiatd-sentry line: 2026-10-28T11:19:04Z (waited 2 s, max 120)
+  relay pft-logship-dockerlog@postfiatd-sentry: ActiveState=active NRestarts=10
+
+== 4. clean up, restore, read back, verdict
+  rmi: Untagged: pft-rollout-drill:bad
+  rmi: Deleted: sha256:f0db06e28899371d9b84a7a3f2ee9be481737d8e82fb3df5265c0c5bdd3e0aad
+  pft-rollout-drill:bad still present: no
+  restored local:/etc/postfiat-monitor.env: sha256 matches pre-drill copy: yes
+  restored local:/etc/pft-integrity.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-watchdog/ntfy.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-integrity.env: sha256 matches pre-drill copy: yes
+  removed drill-only local:/etc/pft-maint/ntfy.env: yes
+  removed drill-only relay:/etc/pft-maint/ntfy.env: yes
+  MAINT topic: 2 message(s)
+    {"time":"2026-10-28T11:12:50Z","title":"[MAINT] start validator","message":"pft-rollout 20261028T111241Z sentry | until 2026-10-28T12:17:48Z (ttl 3900s) | sentry copy: pushed"}
+    {"time":"2026-10-28T11:18:59Z","title":"[MAINT] end validator","message":"pft-rollout 20261028T111241Z sentry | pft-rollout 20261028T111241Z sentry done after 370s | suppressed here: watchdog=0 monitor=0 integrity=0 | sentry copy: pushed"}
+  ALERT topic: 0 message(s)
+  $ pft-integrity verify (local)
+    pft-integrity verify - 2026-10-28T11:19:33Z
+    OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-10-28T09:27:34Z
+    RESULT: PASS - 78 unchanged, 0 warn, 0 fail -> exit 0
+  $ pft-integrity verify (relay)
+    pft-integrity verify - 2026-10-28T11:19:40Z
+    OS: Ubuntu 22.04.5 LTS | container: postfiatd-sentry | baseline: 2026-10-28T09:27:39Z
+    RESULT: PASS - 47 unchanged, 0 warn, 0 fail -> exit 0
+  facts: {"exit":1,"alert_msgs":0,"sentry":{"before":{"id":"sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e","started":"2026-10-28T10:26:23.080308476Z"},"after":{"id":"sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e","started":"2026-10-28T11:18:10.228928547Z"}},"validator":{"before":{"id":"sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e","started":"2026-10-28T10:32:21.332380776Z"},"after":{"id":"sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e","started":"2026-10-28T10:32:21.332380776Z"}},"logship":{"unit":"active","nrestarts":10,"newest_us":1793186344055969,"after_us":1793186343000000}}
+$ check-drill.sh badimage <audit> 20261028T111241Z <facts>
+PASS audit has events for run 20261028T111241Z
+PASS audit run_start and run_end present
+PASS sentry log forwarded after the run (logship re-attached)
+PASS exit code 1
+PASS sentry deployed
+PASS sentry gate_fail
+PASS sentry rollback_done
+PASS sentry not promoted
+PASS sentry no rollback_fail
+PASS sentry ends on recorded image
+PASS sentry target differs from recorded image
+PASS validator: no audit event
+PASS validator image ID unchanged
+PASS validator StartedAt unchanged
+PASS throwaway alert topic received nothing
+RESULT: PASS (15/15)
+live-run badimage done 2026-10-28T11:19:41Z: pft-rollout exit 1, verdict exit 0
+live-run exit 0 (2026-10-28T11:19:41Z)

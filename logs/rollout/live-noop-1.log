@@ -1,0 +1,177 @@
+OS: Ubuntu 22.04.5 LTS | 2026-10-28T10:26:01Z | rollout code 43c18b10d81b64669a35a82b6800e215f8eac9a5
++ sha256 pft-rollout.sh: 2a3b23396c7065df82f2f4bdb34ced1a857179c66898dc8ddfb939f6f35ba504
++ sha256 drill/live-run.sh: 0012f43391bf593f44df1e4692a4b145eff78c3cb9747ef7a87412fb157d1d5d
++ sha256 drill/check-drill.sh: b8697db0c628c715474b2f0351decc9484832e706ac357b120d353ace1d3d716
++ bash drill/live-run.sh noop   (controller user, CONF=/etc/pft-rollout/hosts.conf)
+pft-rollout live-run noop - 2026-10-28T10:26:02Z - Ubuntu 22.04.5 LTS
+sha256: pft-rollout.sh 2a3b23396c7065df82f2f4bdb34ced1a857179c66898dc8ddfb939f6f35ba504 | live-run.sh 0012f43391bf593f44df1e4692a4b145eff78c3cb9747ef7a87412fb157d1d5d | check-drill.sh b8697db0c628c715474b2f0351decc9484832e706ac357b120d353ace1d3d716
+
+== 0. preflight (nothing changed yet)
+  pft-maint: no data-collection locks
+  ok: relay reachable, Alertmanager ready, env files present, no leftovers
+
+== 1. redirect notifiers (ALERT and MAINT throwaway topics)
+bash: line 1: /etc/postfiat-monitor.env: Permission denied
+  local:/etc/postfiat-monitor.env -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/postfiat-monitor.env.pre-rollout-drill
+bash: line 1: /etc/pft-integrity.env: Permission denied
+  local:/etc/pft-integrity.env -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/pft-integrity.env.pre-rollout-drill
+  relay:/etc/pft-watchdog/ntfy.env -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/pft-watchdog/ntfy.env.pre-rollout-drill
+  relay:/etc/pft-integrity.env -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/pft-integrity.env.pre-rollout-drill
+  local:/etc/pft-maint/ntfy.env created for the drill only -> https://ntfy.sh/<redacted> (MAINT)
+  relay:/etc/pft-maint/ntfy.env created for the drill only -> https://ntfy.sh/<redacted> (MAINT)
+
+== 3. pft-rollout run
+  before: sentry {"id":"sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e","started":"2026-10-28T09:24:07.541097058Z"}
+  before: validator {"id":"sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e","started":"2026-10-28T09:25:15.441484487Z"}
+$ pft-rollout.sh run --yes --no-pull --target agtipft/postfiatd:testnet-light-latest   (GATE_TIMEOUT=1800 SOAK_SEC=300)
+[2026-10-28T10:26:12Z] pft-rollout run 20261028T102612Z: hosts sentry validator (in this order), tag agtipft/postfiatd:testnet-light-latest, target agtipft/postfiatd:testnet-light-latest
+[2026-10-28T10:26:12Z] thresholds: gate 1800s, soak 300s (fail after 3 bad polls, seq +>=10), ledger age <= 20s, poll 10s, rollback re-gate 1800s
+[2026-10-28T10:26:13Z] PREFLIGHT: foundation build_version 1.0.9
+[2026-10-28T10:26:15Z] PREFLIGHT sentry: postfiatd-sentry mode=run image=cc139becfe50 digest=agtipft/postfiatd@sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+[2026-10-28T10:26:16Z] PREFLIGHT validator: postfiatd mode=compose image=cc139becfe50 digest=agtipft/postfiatd@sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+[2026-10-28T10:26:17Z] PREFLIGHT sentry: state=full build=1.0.9 peers=14 age=1s seq=7553751 ok
+[2026-10-28T10:26:17Z] PREFLIGHT validator: state=full build=1.0.9 peers=13 age=1s seq=7553751 ok
+[2026-10-28T10:26:17Z] === sentry (postfiatd-sentry, run) ===
+[2026-10-28T10:26:19Z]   target agtipft/postfiatd:testnet-light-latest = cc139becfe50 (agtipft/postfiatd@sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e)
+  maint: window started: id m1793183179-574132 until 2026-10-28T11:56:19Z | sentry copy: pushed
+[2026-10-28T10:26:21Z]   Alertmanager silence 1d103df2 (alertname=~.+) until 2026-10-28T11:56:21Z
+[2026-10-28T10:26:21Z]   no-op: target is the running image cc139becfe50; docker restart
+[2026-10-28T10:26:23Z]   post: pft-egress reapply --container postfiatd-sentry
+[2026-10-28T10:26:25Z]   gate poll +1s state=disconnected build=1.0.9 peers=2 age=999999s seq=0 FAIL(state=disconnected peers=2<5 age=999999s>20s)
+[2026-10-28T10:26:35Z]   gate poll +11s state=connected build=1.0.9 peers=10 age=999999s seq=0 FAIL(state=connected age=999999s>20s)
+[2026-10-28T10:26:46Z]   gate poll +22s state=connected build=1.0.9 peers=10 age=999999s seq=0 FAIL(state=connected age=999999s>20s)
+[2026-10-28T10:26:57Z]   gate poll +33s state=syncing build=1.0.9 peers=10 age=1s seq=7553764 FAIL(state=syncing)
+[2026-10-28T10:27:08Z]   gate poll +44s state=full build=1.0.9 peers=10 age=3s seq=7553767 -> PASS
+[2026-10-28T10:27:08Z]   GATE PASS after 44s
+[2026-10-28T10:27:20Z]   soak +12s state=full build=1.0.9 peers=10 age=0s seq=7553772 bad_streak=0
+[2026-10-28T10:27:31Z]   soak +23s state=full build=1.0.9 peers=11 age=2s seq=7553775 bad_streak=0
+[2026-10-28T10:27:42Z]   soak +34s state=full build=1.0.9 peers=11 age=1s seq=7553779 bad_streak=0
+[2026-10-28T10:27:53Z]   soak +45s state=full build=1.0.9 peers=11 age=2s seq=7553782 bad_streak=0
+[2026-10-28T10:28:04Z]   soak +56s state=full build=1.0.9 peers=12 age=2s seq=7553786 bad_streak=0
+[2026-10-28T10:28:15Z]   soak +67s state=full build=1.0.9 peers=12 age=1s seq=7553790 bad_streak=0
+[2026-10-28T10:28:25Z]   soak +77s state=full build=1.0.9 peers=12 age=2s seq=7553793 bad_streak=0
+[2026-10-28T10:28:36Z]   soak +88s state=full build=1.0.9 peers=12 age=1s seq=7553797 bad_streak=0
+[2026-10-28T10:28:47Z]   soak +99s state=full build=1.0.9 peers=12 age=3s seq=7553800 bad_streak=0
+[2026-10-28T10:28:58Z]   soak +110s state=full build=1.0.9 peers=13 age=2s seq=7553804 bad_streak=0
+[2026-10-28T10:29:09Z]   soak +121s state=full build=1.0.9 peers=13 age=1s seq=7553808 bad_streak=0
+[2026-10-28T10:29:20Z]   soak +132s state=full build=1.0.9 peers=13 age=2s seq=7553811 bad_streak=0
+[2026-10-28T10:29:32Z]   soak +144s state=full build=1.0.9 peers=13 age=2s seq=7553815 bad_streak=0
+[2026-10-28T10:29:43Z]   soak +155s state=full build=1.0.9 peers=13 age=1s seq=7553819 bad_streak=0
+[2026-10-28T10:29:54Z]   soak +166s state=full build=1.0.9 peers=13 age=3s seq=7553822 bad_streak=0
+[2026-10-28T10:30:08Z]   soak +180s state=full build=1.0.9 peers=13 age=1s seq=7553827 bad_streak=0
+[2026-10-28T10:30:19Z]   soak +191s state=full build=1.0.9 peers=13 age=1s seq=7553831 bad_streak=0
+[2026-10-28T10:30:31Z]   soak +203s state=full build=1.0.9 peers=13 age=4s seq=7553834 bad_streak=0
+[2026-10-28T10:30:42Z]   soak +214s state=full build=1.0.9 peers=13 age=2s seq=7553838 bad_streak=0
+[2026-10-28T10:30:53Z]   soak +225s state=full build=1.0.9 peers=13 age=2s seq=7553842 bad_streak=0
+[2026-10-28T10:31:05Z]   soak +237s state=full build=1.0.9 peers=13 age=1s seq=7553846 bad_streak=0
+[2026-10-28T10:31:16Z]   soak +248s state=full build=1.0.9 peers=13 age=1s seq=7553850 bad_streak=0
+[2026-10-28T10:31:28Z]   soak +260s state=full build=1.0.9 peers=13 age=4s seq=7553853 bad_streak=0
+[2026-10-28T10:31:39Z]   soak +271s state=full build=1.0.9 peers=13 age=3s seq=7553857 bad_streak=0
+[2026-10-28T10:31:49Z]   soak +281s state=full build=1.0.9 peers=13 age=1s seq=7553861 bad_streak=0
+[2026-10-28T10:32:01Z]   soak +293s state=full build=1.0.9 peers=13 age=1s seq=7553865 bad_streak=0
+[2026-10-28T10:32:12Z]   soak +304s state=full build=1.0.9 peers=13 age=3s seq=7553868 bad_streak=0
+[2026-10-28T10:32:12Z]   soak PASS: 300s, validated seq +100
+  maint: window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+[2026-10-28T10:32:15Z]   sentry PROMOTED in 358s
+[2026-10-28T10:32:15Z] === validator (postfiatd, compose) ===
+[2026-10-28T10:32:16Z]   target agtipft/postfiatd:testnet-light-latest = cc139becfe50 (agtipft/postfiatd@sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e)
+  maint: window started: id m1793183536-615941 until 2026-10-28T12:02:16Z | sentry copy: pushed
+[2026-10-28T10:32:18Z]   Alertmanager silence 8323ff00 (alertname=~.+) until 2026-10-28T12:02:18Z
+[2026-10-28T10:32:18Z]   no-op: target is the running image cc139becfe50; docker restart
+[2026-10-28T10:32:22Z]   gate poll +0s state=down build=none peers=0 age=999999s seq=0 FAIL(state=down build=none!=1.0.9 peers=0<5 age=999999s>20s)
+[2026-10-28T10:32:32Z]   gate poll +10s state=connected build=1.0.9 peers=11 age=999999s seq=0 FAIL(state=connected age=999999s>20s)
+[2026-10-28T10:32:43Z]   gate poll +20s state=connected build=1.0.9 peers=11 age=999999s seq=0 FAIL(state=connected age=999999s>20s)
+[2026-10-28T10:32:53Z]   gate poll +31s state=connected build=1.0.9 peers=11 age=999999s seq=0 FAIL(state=connected age=999999s>20s)
+[2026-10-28T10:33:03Z]   gate poll +41s state=full build=1.0.9 peers=11 age=3s seq=7553885 -> PASS
+[2026-10-28T10:33:03Z]   GATE PASS after 41s
+[2026-10-28T10:33:14Z]   soak +11s state=full build=1.0.9 peers=11 age=2s seq=7553889 bad_streak=0
+[2026-10-28T10:33:24Z]   soak +21s state=full build=1.0.9 peers=11 age=3s seq=7553892 bad_streak=0
+[2026-10-28T10:33:35Z]   soak +31s state=full build=1.0.9 peers=11 age=1s seq=7553896 bad_streak=0
+[2026-10-28T10:33:45Z]   soak +42s state=full build=1.0.9 peers=11 age=3s seq=7553899 bad_streak=0
+[2026-10-28T10:33:55Z]   soak +52s state=full build=1.0.9 peers=11 age=1s seq=7553903 bad_streak=0
+[2026-10-28T10:34:05Z]   soak +62s state=full build=1.0.9 peers=11 age=2s seq=7553906 bad_streak=0
+[2026-10-28T10:34:15Z]   soak +72s state=full build=1.0.9 peers=11 age=3s seq=7553909 bad_streak=0
+[2026-10-28T10:34:26Z]   soak +83s state=full build=1.0.9 peers=11 age=1s seq=7553913 bad_streak=0
+[2026-10-28T10:34:36Z]   soak +93s state=full build=1.0.9 peers=11 age=3s seq=7553916 bad_streak=0
+[2026-10-28T10:34:46Z]   soak +103s state=full build=1.0.9 peers=12 age=1s seq=7553920 bad_streak=0
+[2026-10-28T10:34:56Z]   soak +113s state=full build=1.0.9 peers=12 age=2s seq=7553923 bad_streak=0
+[2026-10-28T10:35:07Z]   soak +124s state=full build=1.0.9 peers=12 age=1s seq=7553927 bad_streak=0
+[2026-10-28T10:35:17Z]   soak +134s state=full build=1.0.9 peers=12 age=2s seq=7553930 bad_streak=0
+[2026-10-28T10:35:27Z]   soak +144s state=full build=1.0.9 peers=12 age=3s seq=7553933 bad_streak=0
+[2026-10-28T10:35:38Z]   soak +155s state=full build=1.0.9 peers=12 age=1s seq=7553937 bad_streak=0
+[2026-10-28T10:35:48Z]   soak +165s state=full build=1.0.9 peers=12 age=3s seq=7553940 bad_streak=0
+[2026-10-28T10:35:58Z]   soak +175s state=full build=1.0.9 peers=12 age=1s seq=7553944 bad_streak=0
+[2026-10-28T10:36:08Z]   soak +185s state=full build=1.0.9 peers=12 age=2s seq=7553947 bad_streak=0
+[2026-10-28T10:36:18Z]   soak +195s state=full build=1.0.9 peers=12 age=3s seq=7553950 bad_streak=0
+[2026-10-28T10:36:29Z]   soak +206s state=full build=1.0.9 peers=12 age=2s seq=7553954 bad_streak=0
+[2026-10-28T10:36:39Z]   soak +216s state=full build=1.0.9 peers=12 age=3s seq=7553957 bad_streak=0
+[2026-10-28T10:36:49Z]   soak +226s state=full build=1.0.9 peers=11 age=3s seq=7553960 bad_streak=0
+[2026-10-28T10:36:59Z]   soak +236s state=full build=1.0.9 peers=11 age=1s seq=7553964 bad_streak=0
+[2026-10-28T10:37:10Z]   soak +247s state=full build=1.0.9 peers=11 age=2s seq=7553967 bad_streak=0
+[2026-10-28T10:37:20Z]   soak +257s state=full build=1.0.9 peers=11 age=1s seq=7553971 bad_streak=0
+[2026-10-28T10:37:30Z]   soak +267s state=full build=1.0.9 peers=11 age=2s seq=7553974 bad_streak=0
+[2026-10-28T10:37:40Z]   soak +277s state=full build=1.0.9 peers=11 age=3s seq=7553977 bad_streak=0
+[2026-10-28T10:37:50Z]   soak +287s state=full build=1.0.9 peers=11 age=1s seq=7553981 bad_streak=0
+[2026-10-28T10:38:01Z]   soak +298s state=full build=1.0.9 peers=11 age=3s seq=7553984 bad_streak=0
+[2026-10-28T10:38:11Z]   soak +308s state=full build=1.0.9 peers=11 age=1s seq=7553988 bad_streak=0
+[2026-10-28T10:38:11Z]   soak PASS: 300s, validated seq +103
+  maint: window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+[2026-10-28T10:38:13Z]   validator PROMOTED in 358s
+[2026-10-28T10:38:13Z] RESULT: promoted (exit 0)
+pft-rollout exit 0
+  after:  sentry {"id":"sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e","started":"2026-10-28T10:26:23.080308476Z"}
+  after:  validator {"id":"sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e","started":"2026-10-28T10:32:21.332380776Z"}
+
+== 3b. log forwarding re-attached (sentry container log -> validator remote journal)
+  pft-rollout returned 2026-10-28T10:38:14Z; newest forwarded postfiatd-sentry line: 2026-10-28T10:38:14Z (waited 1 s, max 120)
+  relay pft-logship-dockerlog@postfiatd-sentry: ActiveState=active NRestarts=8
+
+== 4. clean up, restore, read back, verdict
+bash: line 1: /etc/postfiat-monitor.env: Permission denied
+  restored local:/etc/postfiat-monitor.env: sha256 matches pre-drill copy: yes
+bash: line 1: /etc/pft-integrity.env: Permission denied
+  restored local:/etc/pft-integrity.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-watchdog/ntfy.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-integrity.env: sha256 matches pre-drill copy: yes
+  removed drill-only local:/etc/pft-maint/ntfy.env: yes
+  removed drill-only relay:/etc/pft-maint/ntfy.env: yes
+  MAINT topic: 4 message(s)
+    {"time":"2026-10-28T10:26:20Z","title":"[MAINT] start validator","message":"pft-rollout 20261028T102612Z sentry | until 2026-10-28T11:56:19Z (ttl 5400s) | sentry copy: pushed"}
+    {"time":"2026-10-28T10:32:15Z","title":"[MAINT] end validator","message":"pft-rollout 20261028T102612Z sentry | pft-rollout 20261028T102612Z sentry done after 355s | suppressed here: watchdog=0 monitor=0 integrity=0 | sentry copy: pushed"}
+    {"time":"2026-10-28T10:32:18Z","title":"[MAINT] start validator","message":"pft-rollout 20261028T102612Z validator | until 2026-10-28T12:02:16Z (ttl 5400s) | sentry copy: pushed"}
+    {"time":"2026-10-28T10:38:13Z","title":"[MAINT] end validator","message":"pft-rollout 20261028T102612Z validator | pft-rollout 20261028T102612Z validator done after 356s | suppressed here: watchdog=0 monitor=0 integrity=0 | sentry copy: pushed"}
+  ALERT topic: 0 message(s)
+  $ pft-integrity verify (local)
+    pft-integrity verify - 2026-10-28T10:38:41Z
+    OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-10-28T09:27:34Z
+    RESULT: PASS - 78 unchanged, 0 warn, 0 fail -> exit 0
+  $ pft-integrity verify (relay)
+    pft-integrity verify - 2026-10-28T10:38:48Z
+    OS: Ubuntu 22.04.5 LTS | container: postfiatd-sentry | baseline: 2026-10-28T09:27:39Z
+    RESULT: PASS - 47 unchanged, 0 warn, 0 fail -> exit 0
+  facts: {"exit":0,"alert_msgs":0,"sentry":{"before":{"id":"sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e","started":"2026-10-28T09:24:07.541097058Z"},"after":{"id":"sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e","started":"2026-10-28T10:26:23.080308476Z"}},"validator":{"before":{"id":"sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e","started":"2026-10-28T09:25:15.441484487Z"},"after":{"id":"sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e","started":"2026-10-28T10:32:21.332380776Z"}},"logship":{"unit":"active","nrestarts":8,"newest_us":1793183894183159,"after_us":1793183894000000}}
+$ check-drill.sh noop <audit> 20261028T102612Z <facts>
+PASS audit has events for run 20261028T102612Z
+PASS audit run_start and run_end present
+PASS sentry log forwarded after the run (logship re-attached)
+PASS exit code 0
+PASS sentry host_start
+PASS sentry target == recorded prev (no-op)
+PASS sentry gate_pass
+PASS sentry soak_pass
+PASS sentry host_done promoted
+PASS sentry no rollback event
+PASS sentry restarted (StartedAt changed)
+PASS sentry same image ID before/after
+PASS validator host_start
+PASS validator target == recorded prev (no-op)
+PASS validator gate_pass
+PASS validator soak_pass
+PASS validator host_done promoted
+PASS validator no rollback event
+PASS validator restarted (StartedAt changed)
+PASS validator same image ID before/after
+PASS sentry promoted before validator started
+RESULT: PASS (21/21)
+live-run noop done 2026-10-28T10:38:49Z: pft-rollout exit 0, verdict exit 0
+exit 0

@@ -1,0 +1,26 @@
+OS: Ubuntu 22.04.5 LTS | 2026-10-28T11:08:27Z | base 268ee4f + uncommitted harness change (W16 dropped as equivalent, see run -23)
++ sha256 pft-rollout.sh: 2a3b23396c7065df82f2f4bdb34ced1a857179c66898dc8ddfb939f6f35ba504
++ sha256 drill/live-run.sh: 7042ee1d4f3df7f5bac7b1700a9a6d818c047ab48c9632b7166953038299136c
++ sha256 drill/check-drill.sh: b8697db0c628c715474b2f0351decc9484832e706ac357b120d353ace1d3d716
++ sha256 tests/test-live-run.sh: faffa4011c7121415391739561e51c0207ffed99737073973f6e1674b52fe2a5
++ sha256 tests/mutants-live-run.sh: 375d728895465dc083831ff76045b1ea6d5f5293123ab8af090f82ff0237fe25
++ shellcheck -x tests/mutants-live-run.sh
+shellcheck exit 0
++ bash tests/mutants-live-run.sh (2026-10-28T11:08:27Z)
+MUTANT W1 restore skips the backed-up env files: CAUGHT by 5 test(s): noop;badimage;badimage;noop;badimage
+MUTANT W2 no EXIT trap (early stop leaves notifiers redirected): CAUGHT by 1 test(s): badimage
+MUTANT W3 unreadable ntfy counted as 0 alerts: CAUGHT by 1 test(s): badimage
+MUTANT W4 pft-maint lock not checked: CAUGHT by 1 test(s): pft-maint data-collection lock -> exit 4 before anything is changed
+MUTANT W5 NTFY_TOKEN kept in redirected files: CAUGHT by 2 test(s): noop;badimage
+MUTANT W6 drill image not removed: CAUGHT by 1 test(s): badimage
+MUTANT W7 drill-only maint files on the ALERT topic: CAUGHT by 2 test(s): noop;badimage
+MUTANT W9 remote journal read oldest-first (no -r): CAUGHT by 3 test(s): noop;badimage;noop
+MUTANT W10 logship facts not recorded: CAUGHT by 2 test(s): noop;badimage
+MUTANT W8 existing relay pft-maint ntfy.env overwritten: CAUGHT by 1 test(s): relay pft-maint/ntfy.env already exists -> exit 3, nothing changed, file kept
+MUTANT W11 local lock list without sudo (root-only tool): CAUGHT by 11 test(s): noop;badimage;env file hash unreadable;badimage;badimage;noop;noop;badimage;relay pft-maint/ntfy.env already exists -> exit 3, nothing changed, file kept;badimage;badimage
+MUTANT W12 local integrity verify without sudo: CAUGHT by 1 test(s): noop
+MUTANT W13 no passwordless-sudo preflight: CAUGHT by 1 test(s): no passwordless sudo
+MUTANT W14 pre-drill hash read through an unprivileged < redirect: CAUGHT by 8 test(s): noop;badimage;badimage;badimage;noop;noop;badimage;badimage
+MUTANT W15 empty pre-drill hash accepted: CAUGHT by 1 test(s): env file hash unreadable
+mutants not caught/invalid: 0
+mutants exit 0 (2026-10-28T11:26:08Z)

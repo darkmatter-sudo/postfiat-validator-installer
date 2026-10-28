@@ -160,7 +160,9 @@ C1-C8 all caught, test-rollout.sh still 20/20 after the sourcing guard was added
 
 ### Live drill wrapper
 
-`sudo bash drill/live-run.sh noop|badimage` (from `rollout/`, output tee'd) runs one live drill end to end:
+`bash drill/live-run.sh noop|badimage` (from `rollout/`, output tee'd) runs one live drill end to end. Run it as the
+controller user whose ssh config reaches the relay, with passwordless sudo: every privileged command goes through
+`sudo -n` (run as root, the relay ssh alias is missing and the first live attempt stopped in preflight).
 
 1. Preflight, before anything changes: relay reachable, Alertmanager ready, no pft-maint data-collection lock, every
    notifier env file present, no leftover drill files, and (badimage) no drill tag on the relay yet.
@@ -193,6 +195,25 @@ logship check added three cases (stale line, no line, bridge unit failed; each m
 fake `journalctl`/`systemctl` stubs. Latest run: `logs/rollout/live-run-tests-2.log` (shellcheck clean, test-rollout 20/20,
 test-check-drill 25/25, live-run 11/11, C1-C11 and W1-W10 all caught). Earlier published run: `logs/rollout/live-run-tests-1.log` (shellcheck clean,
 live-run 8/8, W1-W8 all caught, test-check-drill.sh 20/20 and test-rollout.sh 20/20 with the extended stubs).
+
+Privilege fixes after the first live run (stub `sudo` now sets `STUB_SUDO`, and the stubs of root-only tools refuse
+calls without it): live-run.sh runs as the controller user (W11-W13: lock list, integrity verify and the sudo
+preflight without sudo), and env files are hashed by `sudo -n sha256sum FILE`, not through an unprivileged `<`
+redirect, which gave an empty hash and a vacuous "matches: yes" in live run noop-1 (W14, W15: an empty or non-64-hex
+pre-drill hash stops the drill before any change). A W16 mutant that drops the `-n` guard in the restore compare is
+equivalent while the W15 guard holds and is documented in the harness instead of counted.
+Runs: `logs/rollout/live-run-tests-3.log` (13/13, 20/20, 25/25, shellcheck clean; W16 shown NOT CAUGHT) and
+`logs/rollout/mutants-4.log` (W1-W15 all caught).
+
+### Live results
+
+| run | log | result |
+|---|---|---|
+| noop-1 (code 43c18b1) | `logs/rollout/live-noop-1.log` | PASS 21/21: sentry gate 44 s, validator gate 41 s, 300 s soak each, ALERT topic 0 messages, integrity PASS both hosts. Restore line "yes" for the local env files was vacuous (empty hashes, fixed in 268ee4f); `logs/rollout/live-noop-1-manual-sha.log` shows both files byte-identical to the originals, mode 600, no leftovers |
+| badimage-1 (code 268ee4f) | `logs/rollout/live-badimage-1.log` | PASS 15/15: sentry gate FAIL after 300 s (state=down), rollback to the recorded image ID, re-gate PASS after 44 s, validator image ID and StartedAt unchanged, drill image removed, ALERT topic 0 messages, every env file restored with a verified sha256, integrity PASS both hosts |
+
+The drill image build on the relay took about 4 min (legacy builder, containerd image store, 8 GB image), which counts
+toward the drill, not the gate.
 
 ## Limits
 
