@@ -184,7 +184,7 @@ check "plan reads the cfg through docker exec" 'grep -q "^docker exec postfiatd 
 PATH="$STUBS:$PATH" bash "$SCRIPT" render --role validator < "$FIX/cfg_stock/postfiatd.cfg" > "$R"
 check "render keeps every non-blank line outside the block" '[ "$(diff <(grep -v "^$" "$FIX/cfg_stock/postfiatd.cfg") <(grep -v "^$" "$R") | grep -c "^<")" = 0 ]'
 check "render keeps the commented # [crawl] docs" '[ "$(grep -c "^#.*\[crawl\]" "$R")" = 2 ]'
-check "render validator: one [crawl] with bare 0, [vl] enable=0" '[ "$(grep -c "^\[crawl\]$" "$R")" = 1 ] && grep -A1 "^\[crawl\]$" "$R" | grep -qx 0 && grep -A1 "^\[vl\]$" "$R" | grep -qx "enable=0"'
+check "render validator: one [crawl] with bare 0, [vl] enabled=0" '[ "$(grep -c "^\[crawl\]$" "$R")" = 1 ] && grep -A1 "^\[crawl\]$" "$R" | grep -qx 0 && grep -A1 "^\[vl\]$" "$R" | grep -qx "enabled=0"'
 check "render is idempotent" 'PATH="$STUBS:$PATH" bash "$SCRIPT" render --role validator < "$R" | cmp -s - "$R"'
 check "render sentry then validator = validator" 'PATH="$STUBS:$PATH" bash "$SCRIPT" render --role sentry < "$R" | PATH="$STUBS:$PATH" bash "$SCRIPT" render --role validator | cmp -s - "$R"'
 
@@ -219,6 +219,10 @@ vrun --role validator --old "$V/old.cfg" --new "$V/two-crawl.cfg"
 check "validate rejects two [crawl] sections" '[ "$RC" -eq 1 ] && grep -q "exactly one \[crawl\] section, found 2" "$OUT"'
 vrun --role validator --old "$V/old.cfg" --new "$V/no-vl.cfg"
 check "validate rejects a missing [vl] section" '[ "$RC" -eq 1 ] && grep -q "exactly one \[vl\] section, found 0" "$OUT"'
+# postfiatd reads [vl] "enabled" (OverlayImpl.cpp setup_Overlay); "enable=0" is ignored and /vl stays on (live run -21)
+vrun --role validator --old "$V/old.cfg" --new "$V/legacy-enable.cfg"
+check "validate rejects [vl] enable=0 (ignored key, effective vl=1)" '[ "$RC" -eq 1 ] && grep -q "effective settings crawl=0 overlay=1 server=1 counts=0 unl=1 vl=1 != wanted" "$OUT"'
+check "validate accepts [vl] enabled=0 (effective vl=0)" '[ "$(grep -c "^enabled=0$" "$R")" = 1 ] && PATH="$STUBS:$PATH" bash "$SCRIPT" validate --role validator --old "$V/old.cfg" --new "$R" | grep -q "^validate: OK"'
 vrun --role sentry --old "$V/old.cfg" --new "$R"
 check "validate rejects the validator block for a sentry" '[ "$RC" -eq 1 ] && grep -q "effective settings crawl=0 .* != wanted crawl=1 overlay=0" "$OUT"'
 vrun --role validator --old "$V/old.cfg"

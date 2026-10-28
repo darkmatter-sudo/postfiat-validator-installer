@@ -4,7 +4,8 @@
 # The peer port serves three HTTP handlers to anyone who can reach it:
 #   /crawl        server info (node pubkey, build, uptime), the overlay peer list (peer IPs, ports, pubkeys,
 #                 versions), optional counts, and the UNL publisher lists. Controlled by the [crawl] section.
-#   /vl/<pubkey>  the signed validator list of a publisher the node trusts. Controlled by [vl] enable.
+#   /vl/<pubkey>  the signed validator list of a publisher the node trusts. Controlled by [vl] enabled
+#               (postfiatd reads `enabled`; the `enable = <flag>` in its example config is ignored).
 #   /health       a small health object ({"info":{}} when healthy, details when not). Always served.
 # Each field is classified disclosed/restricted and compared with the role policy:
 #   validator  everything in /crawl and /vl must be restricted (a validator behind a sentry is not a public
@@ -55,7 +56,7 @@ OLD_FILE=""
 NEW_FILE=""
 CFG=/etc/postfiatd/postfiatd.cfg
 
-usage() { sed -n '2,44p' "$0" | sed 's/^# \{0,1\}//'; exit 3; }
+usage() { sed -n '2,45p' "$0" | sed 's/^# \{0,1\}//'; exit 3; }
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -190,8 +191,8 @@ read_cfg() { hx docker exec "$CONTAINER" cat "$CFG"; }
 role_block() { # ROLE -> the managed block
   echo "$MARK"
   case "$1" in
-    validator) printf '[crawl]\n0\n\n[vl]\nenable=0\n' ;;
-    sentry) printf '[crawl]\noverlay=0\nserver=1\ncounts=0\nunl=1\n\n[vl]\nenable=1\n' ;;
+    validator) printf '[crawl]\n0\n\n[vl]\nenabled=0\n' ;;
+    sentry) printf '[crawl]\noverlay=0\nserver=1\ncounts=0\nunl=1\n\n[vl]\nenabled=1\n' ;;
   esac
 }
 
@@ -224,7 +225,7 @@ effective() {
       k = tolower(substr(line, 1, index(line, "=") - 1)); val = substr(line, index(line, "=") + 1)
       val = (val == "1" || tolower(val) == "true") ? 1 : 0
       if (sec == "crawl" && (k == "overlay" || k == "server" || k == "counts" || k == "unl")) v[k] = val
-      if (sec == "vl" && k == "enable") v["vl"] = val
+      if (sec == "vl" && k == "enabled") v["vl"] = val   # OverlayImpl.cpp setup_Overlay: set(vlEnabled, "enabled"); "enable" is ignored
     }
     END { printf "crawl=%d overlay=%d server=%d counts=%d unl=%d vl=%d\n",
                   v["crawl"], v["overlay"], v["server"], v["counts"], v["unl"], v["vl"] }'

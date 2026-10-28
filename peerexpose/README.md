@@ -6,7 +6,7 @@ can reach it, and restricts them per host role with a guarded apply/rollback.
 | Handler | What it can disclose | Controlled by |
 |---|---|---|
 | `/crawl` | node pubkey, build, uptime, state accounting; the overlay peer list (peer IPs, ports, pubkeys, versions); counts; UNL publisher lists | `[crawl]` |
-| `/vl/<publisher key>` | the signed validator list the node trusts | `[vl] enable` |
+| `/vl/<publisher key>` | the signed validator list the node trusts | `[vl] enabled` |
 | `/health` | `{"info":{}}` when healthy, state details when not | always served |
 
 ## Role policy
@@ -57,8 +57,16 @@ config, once per variant, and prints only status codes and JSON key names. Resul
 | sentry block | 200 | `server`, `unl`, `version` (**no `overlay`**) | sentry: 0 violations |
 
 `/vl/<key>` answered 404 in all three variants. With no network the node never fetches a validator list, so the probe
-cannot tell an enabled `/vl` handler from a disabled one. `[vl] enable=0` is proven on the live node instead, where
-`/vl/<publisher key>` serves a list before the change.
+cannot tell an enabled `/vl` handler from a disabled one.
+
+**`[vl] enabled`, not `enable`.** postfiatd reads the key `enabled`
+(`src/xrpld/overlay/detail/OverlayImpl.cpp` at 32723c15e686a2088f2c83017a6ff909d93822cd, `setup_Overlay`:
+`set(setup.vlEnabled, "enabled", section)`, default on). The `#   enable = <flag>` line in the image's example
+`postfiatd.cfg` names a key the node ignores. Build 5 wrote `enable=0`, and the live drill (`logs/21-live.log`)
+caught it: after the validator apply the gate still saw `vl.list` served, so the tool rolled back automatically.
+`logs/23-vlkey-repro.log` reproduces it on a throwaway node WITH network (validator list loaded, ports on 127.0.0.1
+only): `enable=0` → `/vl` served (1 violation), `enabled=0` → not served (0 violations). The parser now reads
+`enabled` only, so a config with `enable=0` shows `vl=1` and is rejected by `validate` (test + mutants M26/M27).
 
 ## Plan (read-only)
 
@@ -74,8 +82,8 @@ pft-peerexpose validate --role validator --old postfiatd.cfg --new edited.cfg
 
 | Role | Managed block | Effective result |
 |---|---|---|
-| validator | `[crawl]` `0`, `[vl]` `enable=0` | `/crawl` 403, `/vl` off |
-| sentry | `[crawl]` `overlay=0 server=1 counts=0 unl=1`, `[vl]` `enable=1` | `/crawl` without the peer list |
+| validator | `[crawl]` `0`, `[vl]` `enabled=0` | `/crawl` 403, `/vl` off |
+| sentry | `[crawl]` `overlay=0 server=1 counts=0 unl=1`, `[vl]` `enabled=1` | `/crawl` without the peer list |
 
 Rendering is idempotent and switching role re-renders cleanly. Validation rejects the result unless there is exactly
 one `[crawl]` and one `[vl]` section, the effective settings (with postfiatd's defaults: crawl 1, overlay 1, server 1,
