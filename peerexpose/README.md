@@ -143,5 +143,38 @@ idempotent, drift refusal, automatic rollback when the block does not take effec
 mutants for the lock check, required peers, the audit in the gate, the automatic rollback, the `LATEST` pointer, dry
 run, the silence and the rollback drift check.
 
-_The two-host live drill (after the data-collection lock ends 2026-10-28T06:20Z) and the found → fixed → verified
-results are added in the next commit._
+## Live drill: found → fixed → verified (both hosts, 2026-10-28)
+
+`drill/live-run.sh` runs the whole sequence, sentry first, with every notifier on both hosts pointed at throwaway
+topics, redacts all output on the way out, and gets its verdict from `drill/check-drill.sh` (offline self-test:
+`bash drill/test-drill.sh`, 59/59 in `logs/24-tests.log`). If the sentry already carries a managed block (an earlier
+drill left it applied), it first rolls the sentry back to its `LATEST` pre-apply backup (`reset-sentry`), so the
+initial audit sees the original exposure; the checker requires that step if and only if it was needed.
+
+Run 25 (`logs/25-live.log`, code `d466303`, verdict `RESULT: PASS (25/25)`, line 403, exit 0):
+
+| Host (role) | Found (initial audit) | Fixed | Verified |
+|---|---|---|---|
+| sentry | 4 violations: `crawl.overlay.peer_ip/port/pubkey/version` disclosed (10 peers, incl. the validator) — lines 76-92 | `apply` → `APPLIED`, gate passed — line 140 | 0 violations (lines 143-159); rollback brings back exactly 4 (lines 186-205); re-apply 0 (235-254); final 0 (304-320) |
+| validator | 11 violations: `/crawl` served (server info, overlay of 13 peers, UNL lists) and `/vl` served — lines 95-111 | `apply` → `APPLIED` (`[crawl] 0`, `[vl] enabled=0`), gate passed — line 282 | 0 violations from the sentry host (lines 285-301), final 0 (323-339) |
+
+- Peering intact at the end, matched by node key: validator `full`, 11 peers, sees the sentry; sentry `full`, 13 peers,
+  sees the validator (lines 342-344). `logs/26-post.log`: both hosts `full`, `postfiat-health` HEALTHY.
+- Throwaway ALERT topic: 0 messages; MAINT topic: 10 window messages (5 restarts); the tool's own Alertmanager
+  silences covered every restart. Notifier files restored with matching sha256.
+- `pft-integrity verify` inside the run shows `cfgvol:postfiatd.cfg` changed on both hosts (the intended change); it
+  was accepted right after the run and verifies PASS 78/47 (`logs/26-post.log`).
+- Redaction: positive control `REDACTION CONTROL: PASS (17/17)` before any change (line 30), and
+  `REDACTION: CLEAN (0 literals, 0 pattern hits)` over the run's own log (line 406). Host addresses, peer addresses,
+  node keys, topics and the user name are replaced; every published log in `logs/` was passed through
+  `redact.py filter` and `check` (the IPv4 pattern also replaces the RFC 5737 fixture addresses in the test logs).
+
+What it took to get here (all runs are published):
+
+| Run | Result | Found / changed |
+|---|---|---|
+| `16-dry` | stopped before any change | inbound docker-proxy peers show as `172.17.0.1`: peers now matched by node key (`d02b569`) |
+| `18-dry` | DRY=1 (no pft-peerexpose step; checker FAILs by design) | `Permission denied` on the local notifier hash (lines 34/36): the sha256 compare read the file unprivileged (empty = empty); now hashed through sudo and must be 64 hex (`c1f4d79`) |
+| `21-live` | FAIL 20/23, validator apply auto-rolled back (gate worked) | sentry fully passed; the validator's `[vl] enable=0` is ignored by postfiatd |
+| `23-vlkey-repro` | throwaway container | `enable=0` → `/vl` served, `enabled=0` → not served: write `enabled` (`1a04f9a`) |
+| `25-live` | **PASS 25/25** | with the `reset-sentry` step (`d466303`) |
