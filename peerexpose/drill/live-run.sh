@@ -70,8 +70,8 @@ restore() {
   for k in "${MOVED[@]}"; do
     h="${k%%:*}"; f="${k#*:}"
     on "$h" "sudo -n mv -f $f$SUF $f" || { echo "  restore $k: mv FAILED"; RESTORE_OK=false; }
-    now_sha="$(on "$h" "sudo -n sha256sum < $f")"
-    if [ "$now_sha" = "${SHA[$k]}" ]; then echo "  restored $k: sha256 matches pre-drill copy: yes"
+    now_sha="$(on "$h" "sudo -n sha256sum -- $f" | cut -c1-64)"   # sudo reads the file (a '<' redirect would not)
+    if [ -n "$now_sha" ] && [ "$now_sha" = "${SHA[$k]}" ]; then echo "  restored $k: sha256 matches pre-drill copy: yes"
     else echo "  restored $k: sha256 matches pre-drill copy: NO"; RESTORE_OK=false; fi
   done
   for k in "${CREATED[@]}"; do
@@ -165,7 +165,9 @@ echo "  ok: relay reachable, Alertmanager ready, no locks, env files present, no
 echo; echo "== 1. redirect notifiers (ALERT and MAINT throwaway topics)"
 redirect() { # HOST PATH
   local h="$1" f="$2"
-  SHA["$h:$f"]="$(on "$h" "sudo -n sha256sum < $f")"
+  SHA["$h:$f"]="$(on "$h" "sudo -n sha256sum -- $f" | cut -c1-64)"
+  [[ "${SHA[$h:$f]}" =~ ^[0-9a-f]{64}$ ]] || { echo "  sha256 of $h:$f unreadable - stopping before any change"; exit 3; }
+  echo "  $h:$f sha256 ${SHA[$h:$f]:0:12} (before)"
   on "$h" "sudo -n cp -p $f $f$SUF" || { echo "  backup of $h:$f failed - stopping"; exit 3; }
   MOVED+=("$h:$f")
   on "$h" "sudo -n sh -c 'umask 077; { grep -vE \"^(NTFY_TOPIC|NTFY_TOKEN|NTFY_SERVER)=\" $f$SUF; printf \"NTFY_SERVER=%s\nNTFY_TOPIC=%s\n\" $NTFY $ALERT; } > $f.new && mv -f $f.new $f'" \
