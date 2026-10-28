@@ -84,6 +84,10 @@ mutant M23 "idempotence check removed (always restarts)" \
   'if cmp -s "$tmp" "$DJSON" 2>/dev/null; then' 'if false; then'
 mutant M24 "swarm state not checked" \
   '[ "$(jq -r '"'"'.Swarm.LocalNodeState'"'"' <<<"$i")" = inactive ]' 'true'
+mutant M25 "health drill does not change the candidate (no restart on an applied host)" \
+  '[ "$INJECT" = health ] && cand="$(jq '"'"'. + {"labels": ["pft.dockerd-drill=1"]}'"'"' <<<"$cand")"' ':'
+mutant M26 "no warning when the rollback target lacks live-restore" \
+  '&& echo "$(ts) rollback: WARNING the restored daemon.json' '&& : "$(ts) rollback: WARNING the restored daemon.json'
 
 echo "RESULT: $CAUGHT/$TOTAL caught, $SURVIVED survived, $NOTAPPLIED not applied"
 [ "$SURVIVED" = 0 ] && [ "$NOTAPPLIED" = 0 ]

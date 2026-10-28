@@ -83,6 +83,16 @@ mirrors). `no-new-privileges` and `log-opts` are not; they need a restart and ap
 afterwards. That is why live-restore is switched on by a reload first: the restart that follows cannot stop the
 node.
 
+Rollback caveat: a rollback restores the pre-apply file. If that file has no `live-restore` (e.g. the first apply on
+a host without `daemon.json`), the rollback restart runs with live-restore off and dockerd restarts the running
+containers. This happens only on the failure path; `do_rollback` prints a WARNING line when it is about to happen.
+
+Drill hooks (`PFT_DOCKERD_INJECT`): `bad-key` adds an unknown key, so `dockerd --validate` refuses the candidate
+and nothing is touched (exit 4). `health` adds a valid engine label (`pft.dockerd-drill=1`) so the candidate differs
+even on an already hardened host, installs it, restarts dockerd and then forces the health gate to miss, which
+exercises the automatic rollback. Run the `health` drill after the real apply, so that the rollback target already
+has live-restore and the containers keep running through both restarts.
+
 Run a planned apply inside a `pft-maint` window with an Alertmanager silence, sentry first.
 
 ## Tests

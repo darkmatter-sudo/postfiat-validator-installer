@@ -237,6 +237,9 @@ sha() { if [ -f "$1" ]; then sha256sum "$1" | cut -d' ' -f1; else echo absent; f
 
 do_rollback() { # BACKUP (or "absent") ; restores and restarts dockerd
   local b="$1"
+  # restoring a file without live-restore means this restart stops and restarts the running containers
+  { [ "$b" = absent ] || [ "$(jq -r '."live-restore" // false' "$b" 2>/dev/null)" != true ]; } \
+    && echo "$(ts) rollback: WARNING the restored daemon.json has no live-restore; this dockerd restart restarts running containers"
   if [ "$b" = absent ]; then rm -f "$DJSON"; else cp -p "$b" "$DJSON"; fi
   "$SYSTEMCTL" restart docker && wait_docker || { echo "$(ts) rollback: dockerd did not come back"; return 5; }
   echo "$(ts) rollback: daemon.json sha256 $(sha "$DJSON") (backup $([ "$b" = absent ] && echo absent || sha "$b"))"
@@ -251,6 +254,9 @@ cmd_apply() {
   [ "$dry" = 1 ] || [ -n "$R" ] || [ "$(id -u)" = 0 ] || die "apply must run as root" 4
   cand="$(candidate)" || die "cannot merge $DJSON (not valid JSON?)" 4
   [ "$INJECT" = bad-key ] && cand="$(jq '. + {"pft-injected-bad-key": true}' <<<"$cand")"
+  # health drill: a valid, harmless engine label makes the candidate differ even on an applied host, so the
+  # drill really restarts dockerd and the injected gate miss exercises the rollback against a live-restore backup
+  [ "$INJECT" = health ] && cand="$(jq '. + {"labels": ["pft.dockerd-drill=1"]}' <<<"$cand")"
   tmp="$(mktemp)"; printf '%s\n' "$cand" > "$tmp"
   echo "$(ts) apply: candidate daemon.json:"; sed 's/^/  /' "$tmp"
   out="$("$DOCKERD" --validate --config-file "$tmp" 2>&1)"; rc=$?

@@ -52,7 +52,8 @@ B
 #!/usr/bin/env bash
 # dockerd --validate --config-file F: unknown keys fail like the real daemon
 [ "$1" = --validate ] || exit 2
-bad="$(jq -r 'keys[] | select(IN("live-restore","no-new-privileges","log-driver","log-opts","icc","userland-proxy","userns-remap","hosts","iptables","debug","insecure-registries")|not)' "$3")" || { echo "invalid JSON"; exit 1; }
+bad="$(jq -r 'keys[] | select(IN("live-restore","no-new-privileges","log-driver","log-opts","icc","userland-proxy","userns-remap","hosts","iptables","debug","insecure-registries","labels")|not)' "$3")" || { echo "invalid JSON"; exit 1; }
+jq -e '(.labels // []) | all(test("^[^=]+=."))' "$3" >/dev/null || { echo "unable to configure the Docker daemon with file $3: bad attribute format"; exit 1; }
 [ -z "$bad" ] && { echo "configuration OK"; exit 0; }
 echo "unable to configure the Docker daemon with file $3: the following directives don't match any configuration option: $bad"; exit 1
 B

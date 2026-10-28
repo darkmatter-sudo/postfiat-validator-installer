@@ -95,6 +95,8 @@ fresh; echo '{"debug":false}' > "$PFT_DOCKERD_ROOT/etc/docker/daemon.json"; s0="
 PFT_DOCKERD_INJECT=bad-key run apply --yes
 expect "injected bad key -> REFUSED exit 4" 4 'REFUSED - candidate failed dockerd --validate'
 [ "$(sha256sum < "$PFT_DOCKERD_ROOT/etc/docker/daemon.json")" = "$s0" ] && ! grep -q systemctl "$STUB_S/calls" && ok "bad key: daemon.json byte-identical, dockerd untouched" || ko "bad key: file untouched" "$OUT"
+fresh; echo '{"labels":["no-equals-sign"]}' > "$PFT_DOCKERD_ROOT/etc/docker/daemon.json"; run apply --yes
+expect "label without key=value -> REFUSED exit 4 (stub mirrors dockerd)" 4 'REFUSED - candidate failed dockerd --validate'
 fresh; echo '{not json' > "$PFT_DOCKERD_ROOT/etc/docker/daemon.json"; run apply --yes
 expect "unparseable daemon.json -> refused" 4 'cannot merge'
 
@@ -123,9 +125,19 @@ PFT_DOCKERD_INJECT=health run apply --yes
 expect "injected health miss -> rollback exit 1" 1 'health gate missed -> automatic rollback'
 cmp -s "$E/pre" "$PFT_DOCKERD_ROOT/etc/docker/daemon.json" && ok "health rollback: daemon.json byte-identical" || ko "health rollback byte-identical" "$OUT"
 expect "health rollback reports byte-identical" 1 'byte-identical to the pre-apply state'
+# the live drill order: real apply first, then the injected health miss on the applied host (backup has
+# live-restore) -> the label makes the candidate differ, dockerd restarts, rollback restores the applied file
+fresh; run apply --yes; cp "$PFT_DOCKERD_ROOT/etc/docker/daemon.json" "$E/applied"; n0="$(grep -c 'systemctl restart' "$STUB_S/calls")"
+PFT_DOCKERD_INJECT=health run apply --yes
+expect "health drill on applied host -> rollback exit 1" 1 'health gate missed -> automatic rollback'
+expect "health drill candidate carries the drill label" 1 'pft\.dockerd-drill=1'
+[ "$(grep -c 'systemctl restart' "$STUB_S/calls")" = $((n0 + 2)) ] && ok "health drill restarted dockerd (apply + rollback)" || ko "health drill restarts" "$(cat "$STUB_S/calls")"
+cmp -s "$E/applied" "$PFT_DOCKERD_ROOT/etc/docker/daemon.json" && ok "health drill: applied daemon.json byte-identical after rollback" || ko "health drill byte-identical" "$OUT"
+grep -q 'no live-restore' <<<"$OUT" && ko "no live-restore warning when the backup has live-restore" "$OUT" || ok "no live-restore warning when the backup has live-restore"
 fresh; touch "$STUB_S/kill_on_restart"; run apply --yes
 expect "containers restarted by dockerd restart -> rollback" 1 'snapshot CHANGED'
 [ ! -e "$PFT_DOCKERD_ROOT/etc/docker/daemon.json" ] && ok "rollback to absent removes daemon.json" || ko "rollback to absent" "$OUT"
+expect "rollback to a file without live-restore warns" 1 'WARNING the restored daemon.json has no live-restore'
 fresh; echo stuck > "$STUB_S/state"; run apply --yes
 expect "server_state not full -> rollback" 1 'health: FAIL .*server_state=stuck'
 fresh; : > "$STUB_S/ss"; run apply --yes
