@@ -1,0 +1,976 @@
+{
+ "schema": "pft-cfglint-registry/1",
+ "source": {
+  "repo": "https://github.com/postfiatorg/postfiatd",
+  "commit": "32723c15e686a2088f2c83017a6ff909d93822cd",
+  "generator": "cfglint/extract_registry.py"
+ },
+ "parser": {
+  "site": "src/libxrpl/basics/BasicConfig.cpp:50-105",
+  "key_regex": "^\\s*([a-zA-Z][_a-zA-Z0-9]*)\\s*=\\s*(.*\\S+)\\s*$",
+  "duplicate_key": "last wins (Section::set insert_or_assign, BasicConfig.cpp:43)",
+  "duplicate_section": "lines appended to the first (parseIniFile, Config.cpp:195 emplace keeps it, :201 appends)",
+  "empty_value": "`key=` does not match key_regex: stored as a plain value, key unset"
+ },
+ "sections": {
+  "amendment_majority_time": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:46"
+   ],
+   "keys": {}
+  },
+  "amendments": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/app/main/Application.cpp:1284",
+    "src/xrpld/core/ConfigSections.h:45"
+   ],
+   "keys": {}
+  },
+  "beta_rpc_api": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:47",
+    "src/xrpld/core/detail/Config.cpp:902"
+   ],
+   "keys": {}
+  },
+  "cluster_nodes": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/app/main/Application.cpp:1380",
+    "src/xrpld/core/ConfigSections.h:48"
+   ],
+   "keys": {}
+  },
+  "compression": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:49",
+    "src/xrpld/core/detail/Config.cpp:732"
+   ],
+   "keys": {}
+  },
+  "crawl": {
+   "kind": "mixed",
+   "sites": [
+    "src/xrpld/overlay/detail/OverlayImpl.cpp:1576"
+   ],
+   "keys": {
+    "overlay": [
+     "src/xrpld/overlay/detail/OverlayImpl.cpp:1604"
+    ],
+    "server": [
+     "src/xrpld/overlay/detail/OverlayImpl.cpp:1608"
+    ],
+    "counts": [
+     "src/xrpld/overlay/detail/OverlayImpl.cpp:1612"
+    ],
+    "unl": [
+     "src/xrpld/overlay/detail/OverlayImpl.cpp:1616"
+    ]
+   }
+  },
+  "database_path": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/detail/Config.cpp:515"
+   ],
+   "keys": {}
+  },
+  "debug_logfile": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:50",
+    "src/xrpld/core/detail/Config.cpp:690"
+   ],
+   "keys": {}
+  },
+  "elb_support": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:51",
+    "src/xrpld/core/detail/Config.cpp:600"
+   ],
+   "keys": {}
+  },
+  "features": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/detail/Config.cpp:1065"
+   ],
+   "keys": {}
+  },
+  "fee_default": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:52",
+    "src/xrpld/core/detail/Config.cpp:649"
+   ],
+   "keys": {}
+  },
+  "fetch_depth": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:53",
+    "src/xrpld/core/detail/Config.cpp:663"
+   ],
+   "keys": {}
+  },
+  "hashrouter": {
+   "kind": "keys",
+   "sites": [
+    "src/xrpld/app/misc/HashRouter.cpp:142"
+   ],
+   "keys": {
+    "hold_time": [
+     "src/xrpld/app/misc/HashRouter.cpp:146"
+    ],
+    "relay_time": [
+     "src/xrpld/app/misc/HashRouter.cpp:154"
+    ]
+   }
+  },
+  "import_db": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/app/main/Application.cpp:909",
+    "src/xrpld/app/main/Main.cpp:355"
+   ],
+   "keys": {}
+  },
+  "insight": {
+   "kind": "keys",
+   "sites": [
+    "src/xrpld/app/main/Application.cpp:300",
+    "src/xrpld/core/ConfigSections.h:54"
+   ],
+   "keys": {
+    "server": [
+     "src/xrpld/app/main/CollectorManager.cpp:36"
+    ],
+    "address": [
+     "src/xrpld/app/main/CollectorManager.cpp:41"
+    ],
+    "prefix": [
+     "src/xrpld/app/main/CollectorManager.cpp:42"
+    ]
+   }
+  },
+  "io_workers": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:55",
+    "src/xrpld/core/detail/Config.cpp:712"
+   ],
+   "keys": {}
+  },
+  "ips": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:56",
+    "src/xrpld/core/detail/Config.cpp:485"
+   ],
+   "keys": {}
+  },
+  "ips_fixed": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:57",
+    "src/xrpld/core/detail/Config.cpp:488"
+   ],
+   "keys": {}
+  },
+  "ledger_history": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:58",
+    "src/xrpld/core/detail/Config.cpp:652"
+   ],
+   "keys": {}
+  },
+  "ledger_replay": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:59",
+    "src/xrpld/core/detail/Config.cpp:735"
+   ],
+   "keys": {}
+  },
+  "ledger_tx_tables": {
+   "kind": "keys",
+   "sites": [
+    "src/xrpld/core/detail/Config.cpp:419"
+   ],
+   "keys": {
+    "use_tx_tables": [
+     "src/xrpld/core/detail/Config.cpp:420"
+    ]
+   }
+  },
+  "max_transactions": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:60",
+    "src/xrpld/core/detail/Config.cpp:792"
+   ],
+   "keys": {}
+  },
+  "network_id": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:61",
+    "src/xrpld/core/detail/Config.cpp:524"
+   ],
+   "keys": {}
+  },
+  "network_quorum": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:62",
+    "src/xrpld/core/detail/Config.cpp:642"
+   ],
+   "keys": {}
+  },
+  "node_db": {
+   "kind": "keys",
+   "sites": [
+    "src/xrpld/app/main/Main.cpp:358",
+    "src/xrpld/app/misc/SHAMapStoreImp.cpp:103",
+    "src/xrpld/app/misc/SHAMapStoreImp.cpp:167",
+    "src/xrpld/app/misc/SHAMapStoreImp.cpp:430",
+    "src/xrpld/app/misc/SHAMapStoreImp.cpp:523",
+    "src/xrpld/app/misc/SHAMapStoreImp.cpp:99",
+    "src/xrpld/core/detail/Config.cpp:422"
+   ],
+   "keys": {
+    "type": [
+     "src/xrpld/app/misc/SHAMapStoreImp.cpp:108",
+     "src/xrpld/nodestore/detail/ManagerImp.cpp:51"
+    ],
+    "online_delete": [
+     "src/xrpld/app/misc/SHAMapStoreImp.cpp:121"
+    ],
+    "delete_batch": [
+     "src/xrpld/app/misc/SHAMapStoreImp.cpp:126"
+    ],
+    "back_off_milliseconds": [
+     "src/xrpld/app/misc/SHAMapStoreImp.cpp:128"
+    ],
+    "age_threshold_seconds": [
+     "src/xrpld/app/misc/SHAMapStoreImp.cpp:134"
+    ],
+    "recovery_wait_seconds": [
+     "src/xrpld/app/misc/SHAMapStoreImp.cpp:136"
+    ],
+    "advisory_delete": [
+     "src/xrpld/app/misc/SHAMapStoreImp.cpp:139"
+    ],
+    "path": [
+     "src/xrpld/app/misc/SHAMapStoreImp.cpp:431",
+     "src/xrpld/app/misc/SHAMapStoreImp.cpp:506",
+     "src/xrpld/app/misc/SHAMapStoreImp.cpp:532",
+     "src/xrpld/nodestore/backend/MemoryFactory.cpp:96",
+     "src/xrpld/nodestore/backend/NuDBFactory.cpp:68",
+     "src/xrpld/nodestore/backend/NuDBFactory.cpp:87",
+     "src/xrpld/nodestore/backend/RocksDBFactory.cpp:110"
+    ],
+    "cache_mb": [
+     "src/xrpld/app/misc/SHAMapStoreImp.cpp:110",
+     "src/xrpld/nodestore/backend/RocksDBFactory.cpp:121",
+     "src/xrpld/nodestore/backend/RocksDBFactory.cpp:119"
+    ],
+    "filter_bits": [
+     "src/xrpld/app/misc/SHAMapStoreImp.cpp:117",
+     "src/xrpld/nodestore/backend/RocksDBFactory.cpp:129"
+    ],
+    "cache_size": [
+     "src/xrpld/app/misc/SHAMapStoreImp.cpp:170",
+     "src/xrpld/nodestore/detail/DatabaseNodeImp.h:52",
+     "src/xrpld/nodestore/detail/DatabaseNodeImp.h:50"
+    ],
+    "cache_age": [
+     "src/xrpld/app/misc/SHAMapStoreImp.cpp:176",
+     "src/xrpld/nodestore/detail/DatabaseNodeImp.h:62",
+     "src/xrpld/nodestore/detail/DatabaseNodeImp.h:60"
+    ],
+    "fast_load": [
+     "src/xrpld/core/detail/Config.cpp:423"
+    ],
+    "hard_set": [
+     "src/xrpld/nodestore/backend/RocksDBFactory.cpp:117"
+    ],
+    "filter_full": [
+     "src/xrpld/nodestore/backend/RocksDBFactory.cpp:132",
+     "src/xrpld/nodestore/backend/RocksDBFactory.cpp:131"
+    ],
+    "open_files": [
+     "src/xrpld/nodestore/backend/RocksDBFactory.cpp:137"
+    ],
+    "file_size_mb": [
+     "src/xrpld/nodestore/backend/RocksDBFactory.cpp:147",
+     "src/xrpld/nodestore/backend/RocksDBFactory.cpp:145"
+    ],
+    "file_size_mult": [
+     "src/xrpld/nodestore/backend/RocksDBFactory.cpp:159"
+    ],
+    "bg_threads": [
+     "src/xrpld/nodestore/backend/RocksDBFactory.cpp:164",
+     "src/xrpld/nodestore/backend/RocksDBFactory.cpp:161"
+    ],
+    "high_threads": [
+     "src/xrpld/nodestore/backend/RocksDBFactory.cpp:169",
+     "src/xrpld/nodestore/backend/RocksDBFactory.cpp:167"
+    ],
+    "block_size": [
+     "src/xrpld/nodestore/backend/RocksDBFactory.cpp:181"
+    ],
+    "universal_compaction": [
+     "src/xrpld/nodestore/backend/RocksDBFactory.cpp:184",
+     "src/xrpld/nodestore/backend/RocksDBFactory.cpp:183"
+    ],
+    "bbt_options": [
+     "src/xrpld/nodestore/backend/RocksDBFactory.cpp:198",
+     "src/xrpld/nodestore/backend/RocksDBFactory.cpp:192"
+    ],
+    "options": [
+     "src/xrpld/nodestore/backend/RocksDBFactory.cpp:211",
+     "src/xrpld/nodestore/backend/RocksDBFactory.cpp:208"
+    ],
+    "earliest_seq": [
+     "src/xrpld/nodestore/detail/Database.cpp:41"
+    ],
+    "rq_bundle": [
+     "src/xrpld/nodestore/detail/Database.cpp:42"
+    ]
+   }
+  },
+  "node_seed": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/app/main/NodeIdentity.cpp:42",
+    "src/xrpld/app/main/NodeIdentity.cpp:45",
+    "src/xrpld/core/ConfigSections.h:63"
+   ],
+   "keys": {}
+  },
+  "node_size": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:64",
+    "src/xrpld/core/detail/Config.cpp:580"
+   ],
+   "keys": {}
+  },
+  "overlay": {
+   "kind": "keys",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:65",
+    "src/xrpld/core/detail/Config.cpp:812",
+    "src/xrpld/core/detail/Config.cpp:814",
+    "src/xrpld/overlay/detail/OverlayImpl.cpp:1549"
+   ],
+   "keys": {
+    "max_unknown_time": [
+     "src/xrpld/core/detail/Config.cpp:820"
+    ],
+    "max_diverged_time": [
+     "src/xrpld/core/detail/Config.cpp:838"
+    ],
+    "max_untrusted_count": [
+     "src/xrpld/core/detail/Config.cpp:858"
+    ],
+    "ip_limit": [
+     "src/xrpld/overlay/detail/OverlayImpl.cpp:1552"
+    ],
+    "public_ip": [
+     "src/xrpld/overlay/detail/OverlayImpl.cpp:1557"
+    ],
+    "verify_endpoints": [
+     "src/xrpld/overlay/detail/OverlayImpl.cpp:1566"
+    ]
+   }
+  },
+  "path_search": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:67",
+    "src/xrpld/core/detail/Config.cpp:683"
+   ],
+   "keys": {}
+  },
+  "path_search_fast": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:68",
+    "src/xrpld/core/detail/Config.cpp:685"
+   ],
+   "keys": {}
+  },
+  "path_search_max": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:69",
+    "src/xrpld/core/detail/Config.cpp:687"
+   ],
+   "keys": {}
+  },
+  "path_search_old": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:66",
+    "src/xrpld/core/detail/Config.cpp:681"
+   ],
+   "keys": {}
+  },
+  "peer_private": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:70",
+    "src/xrpld/core/detail/Config.cpp:536"
+   ],
+   "keys": {}
+  },
+  "peers_in_max": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:72",
+    "src/xrpld/core/detail/Config.cpp:546"
+   ],
+   "keys": {}
+  },
+  "peers_max": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:71",
+    "src/xrpld/core/detail/Config.cpp:539"
+   ],
+   "keys": {}
+  },
+  "peers_out_max": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:73",
+    "src/xrpld/core/detail/Config.cpp:556"
+   ],
+   "keys": {}
+  },
+  "perf": {
+   "kind": "keys",
+   "sites": [
+    "src/xrpld/app/main/Application.cpp:291"
+   ],
+   "keys": {
+    "perf_log": [
+     "src/xrpld/perflog/detail/PerfLogImp.cpp:504"
+    ],
+    "log_interval": [
+     "src/xrpld/perflog/detail/PerfLogImp.cpp:516"
+    ]
+   }
+  },
+  "port_grpc": {
+   "kind": "keys",
+   "sites": [
+    "src/xrpld/app/main/GRPCServer.cpp:323",
+    "src/xrpld/app/main/GRPCServer.cpp:325",
+    "src/xrpld/app/misc/NetworkOPs.cpp:3026",
+    "src/xrpld/app/misc/NetworkOPs.cpp:3028",
+    "src/xrpld/core/ConfigSections.h:74"
+   ],
+   "keys": {
+    "ip": [
+     "src/xrpld/app/main/GRPCServer.cpp:327",
+     "src/xrpld/app/misc/NetworkOPs.cpp:3030"
+    ],
+    "port": [
+     "src/xrpld/app/main/GRPCServer.cpp:331",
+     "src/xrpld/app/misc/NetworkOPs.cpp:3029"
+    ],
+    "secure_gateway": [
+     "src/xrpld/app/main/GRPCServer.cpp:349"
+    ]
+   }
+  },
+  "prefetch_workers": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:75",
+    "src/xrpld/core/detail/Config.cpp:722"
+   ],
+   "keys": {}
+  },
+  "reduce_relay": {
+   "kind": "keys",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:76",
+    "src/xrpld/core/detail/Config.cpp:738",
+    "src/xrpld/core/detail/Config.cpp:740"
+   ],
+   "keys": {
+    "vp_base_squelch_enable": [
+     "src/xrpld/core/detail/Config.cpp:748",
+     "src/xrpld/core/detail/Config.cpp:756",
+     "src/xrpld/core/detail/Config.cpp:758"
+    ],
+    "vp_enable": [
+     "src/xrpld/core/detail/Config.cpp:748",
+     "src/xrpld/core/detail/Config.cpp:759",
+     "src/xrpld/core/detail/Config.cpp:761"
+    ],
+    "vp_base_squelch_max_selected_peers": [
+     "src/xrpld/core/detail/Config.cpp:771"
+    ],
+    "tx_enable": [
+     "src/xrpld/core/detail/Config.cpp:779"
+    ],
+    "tx_metrics": [
+     "src/xrpld/core/detail/Config.cpp:780"
+    ],
+    "tx_min_peers": [
+     "src/xrpld/core/detail/Config.cpp:781"
+    ],
+    "tx_relay_percentage": [
+     "src/xrpld/core/detail/Config.cpp:782"
+    ]
+   }
+  },
+  "relational_db": {
+   "kind": "keys",
+   "sites": [
+    "src/xrpld/app/rdb/detail/RelationalDatabase.cpp:37",
+    "src/xrpld/core/ConfigSections.h:77"
+   ],
+   "keys": {
+    "backend": [
+     "src/xrpld/app/rdb/detail/RelationalDatabase.cpp:40",
+     "src/xrpld/app/rdb/detail/RelationalDatabase.cpp:48"
+    ]
+   }
+  },
+  "relay_proposals": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:78",
+    "src/xrpld/core/detail/Config.cpp:623"
+   ],
+   "keys": {}
+  },
+  "relay_validations": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:79",
+    "src/xrpld/core/detail/Config.cpp:609"
+   ],
+   "keys": {}
+  },
+  "rpc_startup": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/app/main/Application.cpp:1531",
+    "src/xrpld/core/ConfigSections.h:80"
+   ],
+   "keys": {}
+  },
+  "server": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/detail/Config.cpp:431",
+    "src/xrpld/core/detail/Config.cpp:434",
+    "src/xrpld/rpc/detail/ServerHandler.cpp:1154",
+    "src/xrpld/rpc/detail/ServerHandler.cpp:1161",
+    "src/xrpld/rpc/detail/ServerHandler.cpp:1163"
+   ],
+   "keys": {}
+  },
+  "server_domain": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:86",
+    "src/xrpld/core/detail/Config.cpp:800"
+   ],
+   "keys": {}
+  },
+  "signing_support": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:81",
+    "src/xrpld/core/detail/Config.cpp:597"
+   ],
+   "keys": {}
+  },
+  "sntp_servers": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:82"
+   ],
+   "keys": {}
+  },
+  "sqdb": {
+   "kind": "keys",
+   "sites": [
+    "src/xrpld/core/detail/SociDB.cpp:65"
+   ],
+   "keys": {
+    "backend": [
+     "src/xrpld/core/detail/SociDB.cpp:66"
+    ]
+   }
+  },
+  "sqlite": {
+   "kind": "keys",
+   "sites": [
+    "src/xrpld/core/detail/DatabaseCon.cpp:122",
+    "src/xrpld/core/detail/DatabaseCon.cpp:254",
+    "src/xrpld/core/detail/DatabaseCon.cpp:256"
+   ],
+   "keys": {
+    "safety_level": [
+     "src/xrpld/core/detail/DatabaseCon.cpp:133"
+    ],
+    "journal_mode": [
+     "src/xrpld/core/detail/DatabaseCon.cpp:153"
+    ],
+    "synchronous": [
+     "src/xrpld/core/detail/DatabaseCon.cpp:180"
+    ],
+    "temp_store": [
+     "src/xrpld/core/detail/DatabaseCon.cpp:205"
+    ],
+    "journal_size_limit": [
+     "src/xrpld/core/detail/DatabaseCon.cpp:257"
+    ],
+    "page_size": [
+     "src/xrpld/core/detail/DatabaseCon.cpp:258"
+    ]
+   }
+  },
+  "ssl_verify": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:83",
+    "src/xrpld/core/detail/Config.cpp:606"
+   ],
+   "keys": {}
+  },
+  "ssl_verify_dir": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:85",
+    "src/xrpld/core/detail/Config.cpp:604"
+   ],
+   "keys": {}
+  },
+  "ssl_verify_file": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:84",
+    "src/xrpld/core/detail/Config.cpp:603"
+   ],
+   "keys": {}
+  },
+  "sweep_interval": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:87",
+    "src/xrpld/core/detail/Config.cpp:693"
+   ],
+   "keys": {}
+  },
+  "transaction_queue": {
+   "kind": "keys",
+   "sites": [
+    "src/xrpld/app/misc/detail/TxQ.cpp:1918"
+   ],
+   "keys": {
+    "ledgers_in_queue": [
+     "src/xrpld/app/misc/detail/TxQ.cpp:1919"
+    ],
+    "minimum_queue_size": [
+     "src/xrpld/app/misc/detail/TxQ.cpp:1920"
+    ],
+    "retry_sequence_percent": [
+     "src/xrpld/app/misc/detail/TxQ.cpp:1921"
+    ],
+    "minimum_escalation_multiplier": [
+     "src/xrpld/app/misc/detail/TxQ.cpp:1923"
+    ],
+    "minimum_txn_in_ledger": [
+     "src/xrpld/app/misc/detail/TxQ.cpp:1925"
+    ],
+    "minimum_txn_in_ledger_standalone": [
+     "src/xrpld/app/misc/detail/TxQ.cpp:1927"
+    ],
+    "target_txn_in_ledger": [
+     "src/xrpld/app/misc/detail/TxQ.cpp:1929"
+    ],
+    "maximum_txn_in_ledger": [
+     "src/xrpld/app/misc/detail/TxQ.cpp:1931"
+    ],
+    "normal_consensus_increase_percent": [
+     "src/xrpld/app/misc/detail/TxQ.cpp:1960"
+    ],
+    "slow_consensus_decrease_percent": [
+     "src/xrpld/app/misc/detail/TxQ.cpp:1970"
+    ],
+    "maximum_txn_per_account": [
+     "src/xrpld/app/misc/detail/TxQ.cpp:1975"
+    ],
+    "minimum_last_ledger_buffer": [
+     "src/xrpld/app/misc/detail/TxQ.cpp:1976"
+    ]
+   }
+  },
+  "validation_seed": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/app/misc/detail/ValidatorKeys.cpp:32",
+    "src/xrpld/app/misc/detail/ValidatorKeys.cpp:72",
+    "src/xrpld/app/misc/detail/ValidatorKeys.cpp:75",
+    "src/xrpld/core/ConfigSections.h:89",
+    "src/xrpld/core/detail/Config.cpp:637",
+    "src/xrpld/core/detail/Config.cpp:678"
+   ],
+   "keys": {}
+  },
+  "validator_exclusions": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:97",
+    "src/xrpld/core/detail/Config.cpp:1078"
+   ],
+   "keys": {}
+  },
+  "validator_exclusions_interval": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:99",
+    "src/xrpld/core/detail/Config.cpp:1142"
+   ],
+   "keys": {}
+  },
+  "validator_exclusions_sources": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:98",
+    "src/xrpld/core/detail/Config.cpp:1096"
+   ],
+   "keys": {}
+  },
+  "validator_key_revocation": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/app/main/Application.cpp:1394",
+    "src/xrpld/core/ConfigSections.h:91"
+   ],
+   "keys": {}
+  },
+  "validator_keys": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:90",
+    "src/xrpld/core/detail/Config.cpp:1053",
+    "src/xrpld/core/detail/Config.cpp:981",
+    "src/xrpld/core/detail/Config.cpp:984"
+   ],
+   "keys": {}
+  },
+  "validator_list_keys": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/app/main/Application.cpp:1416",
+    "src/xrpld/core/ConfigSections.h:92",
+    "src/xrpld/core/detail/Config.cpp:1033",
+    "src/xrpld/core/detail/Config.cpp:1056",
+    "src/xrpld/core/detail/Config.cpp:993",
+    "src/xrpld/core/detail/Config.cpp:996"
+   ],
+   "keys": {}
+  },
+  "validator_list_sites": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/app/main/Application.cpp:1426",
+    "src/xrpld/core/ConfigSections.h:93",
+    "src/xrpld/core/detail/Config.cpp:1055",
+    "src/xrpld/core/detail/Config.cpp:987",
+    "src/xrpld/core/detail/Config.cpp:990"
+   ],
+   "keys": {}
+  },
+  "validator_list_threshold": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:94",
+    "src/xrpld/core/detail/Config.cpp:1002",
+    "src/xrpld/core/detail/Config.cpp:1021",
+    "src/xrpld/core/detail/Config.cpp:999"
+   ],
+   "keys": {}
+  },
+  "validator_token": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/app/misc/detail/ValidatorKeys.cpp:31",
+    "src/xrpld/app/misc/detail/ValidatorKeys.cpp:40",
+    "src/xrpld/app/misc/detail/ValidatorKeys.cpp:44",
+    "src/xrpld/core/ConfigSections.h:96",
+    "src/xrpld/core/detail/Config.cpp:637",
+    "src/xrpld/core/detail/Config.cpp:678"
+   ],
+   "keys": {}
+  },
+  "validators": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/app/main/Application.cpp:1415",
+    "src/xrpld/core/ConfigSections.h:95",
+    "src/xrpld/core/detail/Config.cpp:1052",
+    "src/xrpld/core/detail/Config.cpp:975",
+    "src/xrpld/core/detail/Config.cpp:978"
+   ],
+   "keys": {}
+  },
+  "validators_file": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:88",
+    "src/xrpld/core/detail/Config.cpp:918"
+   ],
+   "keys": {}
+  },
+  "veto_amendments": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/app/main/Application.cpp:1282",
+    "src/xrpld/core/ConfigSections.h:100"
+   ],
+   "keys": {}
+  },
+  "vl": {
+   "kind": "keys",
+   "sites": [
+    "src/xrpld/overlay/detail/OverlayImpl.cpp:1623"
+   ],
+   "keys": {
+    "enabled": [
+     "src/xrpld/overlay/detail/OverlayImpl.cpp:1625"
+    ]
+   }
+  },
+  "voting": {
+   "kind": "keys",
+   "sites": [
+    "src/xrpld/app/misc/NetworkOPs.cpp:249",
+    "src/xrpld/core/detail/Config.cpp:645"
+   ],
+   "keys": {
+    "reference_fee": [
+     "src/xrpld/core/detail/Config.cpp:1237"
+    ],
+    "account_reserve": [
+     "src/xrpld/core/detail/Config.cpp:1243"
+    ],
+    "owner_reserve": [
+     "src/xrpld/core/detail/Config.cpp:1245"
+    ]
+   }
+  },
+  "workers": {
+   "kind": "values",
+   "sites": [
+    "src/xrpld/core/ConfigSections.h:101",
+    "src/xrpld/core/detail/Config.cpp:702"
+   ],
+   "keys": {}
+  }
+ },
+ "port_section": {
+  "kind": "keys",
+  "sites": [],
+  "keys": {
+   "user": [
+    "src/libxrpl/server/Port.cpp:318"
+   ],
+   "password": [
+    "src/libxrpl/server/Port.cpp:319"
+   ],
+   "admin_user": [
+    "src/libxrpl/server/Port.cpp:320"
+   ],
+   "admin_password": [
+    "src/libxrpl/server/Port.cpp:321"
+   ],
+   "ssl_key": [
+    "src/libxrpl/server/Port.cpp:322"
+   ],
+   "ssl_cert": [
+    "src/libxrpl/server/Port.cpp:323"
+   ],
+   "ssl_chain": [
+    "src/libxrpl/server/Port.cpp:324"
+   ],
+   "ssl_ciphers": [
+    "src/libxrpl/server/Port.cpp:325"
+   ],
+   "limit": [
+    "src/libxrpl/server/Port.cpp:265"
+   ],
+   "ip": [
+    "src/libxrpl/server/Port.cpp:217"
+   ],
+   "port": [
+    "src/libxrpl/server/Port.cpp:234",
+    "src/xrpld/app/main/Application.cpp:2276",
+    "src/xrpld/core/detail/Config.cpp:440"
+   ],
+   "protocol": [
+    "src/libxrpl/server/Port.cpp:255"
+   ],
+   "send_queue_limit": [
+    "src/libxrpl/server/Port.cpp:284"
+   ],
+   "permessage_deflate": [
+    "src/libxrpl/server/Port.cpp:328"
+   ],
+   "client_max_window_bits": [
+    "src/libxrpl/server/Port.cpp:330"
+   ],
+   "server_max_window_bits": [
+    "src/libxrpl/server/Port.cpp:332"
+   ],
+   "client_no_context_takeover": [
+    "src/libxrpl/server/Port.cpp:334"
+   ],
+   "server_no_context_takeover": [
+    "src/libxrpl/server/Port.cpp:336"
+   ],
+   "compress_level": [
+    "src/libxrpl/server/Port.cpp:337"
+   ],
+   "memory_level": [
+    "src/libxrpl/server/Port.cpp:338"
+   ],
+   "admin": [
+    "src/libxrpl/server/Port.cpp:310"
+   ],
+   "secure_gateway": [
+    "src/libxrpl/server/Port.cpp:313"
+   ]
+  },
+  "note": "parse_Port(): called per name in [server] (ServerHandler.cpp setup_ServerHandler)"
+ },
+ "documented_unread": [
+  {
+   "section": "transaction_queue",
+   "key": "zero_basefee_transaction_feelevel",
+   "documented_at": "cfg/postfiatd-example.cfg:642"
+  },
+  {
+   "section": "vl",
+   "key": "enable",
+   "documented_at": "cfg/postfiatd-example.cfg:1367"
+  }
+ ]
+}
