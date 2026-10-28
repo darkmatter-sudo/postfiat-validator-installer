@@ -44,6 +44,12 @@ cat > "$WORK/bin/augenrules" <<'EOF'
 echo "augenrules $*" >> "$STUB/calls.log"
 [ "$(cat "$STUB/enabled")" = 2 ] && { echo "The audit system is in immutable mode, no rule changes allowed" >&2; exit 1; }
 all="$(cat "${RULES_DIR_ABS:-$PFT_AT_ROOT/etc/audit/rules.d}"/*.rules 2>/dev/null)"
+# STUB_BOOT=1: the load runs as auditd.service ExecStartPost. With ProtectHome=yes (Ubuntu's unit) /root and /home
+# are hidden: auditctl stops at the first watch below them (ENOENT) and the rest, -e 2 included, never loads.
+if [ "${STUB_BOOT:-0}" = 1 ] && [ "$(cat "$STUB/protecthome" 2>/dev/null || echo yes)" = yes ] && grep -qE '^-w /(root|home)/' <<<"$all"; then
+  awk '/^-w \/(root|home)\//{exit} /^-[wa] /' <<<"$all" | sed -E '/^-a /s/ -k ([^ ]+)$/ -F key=\1/' > "$STUB/rules"
+  echo "Error sending add rule data request (No such file or directory)" >&2; exit 1
+fi
 grep -E '^-[wa] ' <<<"$all" | sed -E '/^-a /s/ -k ([^ ]+)$/ -F key=\1/' > "$STUB/rules"
 grep -qx -- '-e 2' <<<"$all" && echo 2 > "$STUB/enabled"
 exit 0
@@ -111,6 +117,9 @@ case "$1 ${2:-}" in
     fi ;;
   "is-active auditd") cat "$STUB/auditd_active"; [ "$(cat "$STUB/auditd_active")" = active ] ;;
   "stop auditd") echo inactive > "$STUB/auditd_active" ;;
+  "daemon-reload ") d="${AUDITD_UNIT_DIR_ABS:-$PFT_AT_ROOT/etc/systemd/system/auditd.service.d}"
+    if grep -qx 'ProtectHome=read-only' "$d"/*.conf 2>/dev/null; then echo read-only > "$STUB/protecthome"; else echo yes > "$STUB/protecthome"; fi ;;
+  "show -p") cat "$STUB/protecthome" 2>/dev/null || echo yes ;;
 esac
 exit 0
 EOF
@@ -289,6 +298,7 @@ out="$(run check 2>&1)"; rc=$?
 reset_host; touch "$STUB/installed"; echo active > "$STUB/auditd_active"
 P="$WORK/prod"; rm -rf "$P"; mkdir -p "$P/rules.d" "$P/journald.conf.d" "$P/journal/$MID"
 prun() { env PATH="$WORK/bin:$PATH" AGENT_DIRS=/srv/agent PFT_AT_TEST=1 PFT_AT_ROOT= PFT_AT_MACHINE_ID="$MID" RULES_DIR="$P/rules.d" JOURNALD_DIR="$P/journald.conf.d" \
+  AUDITD_UNIT_DIR="$P/auditd.service.d" AUDITD_UNIT_DIR_ABS="$P/auditd.service.d" \
   JOURNAL_DIR="$P/journal" JOURNAL_DIR_ABS="$P/journal" STATE_DIR="$P/state" RULES_DIR_ABS="$P/rules.d" JOURNALD_DIR_ABS="$P/journald.conf.d" CONTAINER=none bash "$AT" "$@"; }
 out="$(prun apply --yes --key-out "$WORK/vkey3" 2>&1)"; rc=$?
 [ $rc -eq 0 ] && [ -e "$P/state/state.json" ] && ok "empty PFT_AT_ROOT: apply ok" || { bad "prod apply rc=$rc"; ind <<<"$out"; }
@@ -315,6 +325,35 @@ rm -f "$J/fss"; : > "$STUB/mixed"
 out="$(run apply --yes --key-out "$WORK/k3" 2>&1)"; rc=$?
 [ $rc -eq 0 ] && [ ! -s "$STUB/mixed" ] && [ "$(cat "$STUB/mode")" = var ] && grep -q '^sealed:' "$J/system.journal" \
   && ok "re-key while the old key is loaded: old file archived, new file sealed, no mixing" || { bad "re-key rc=$rc mixed: $(cat "$STUB/mixed" 2>/dev/null)"; ind <<<"$out"; }
+
+# --- 9. boot-time rule load (found live: sentry reboot loaded 11 of 42 rules and no -e 2) ---
+# auditd.service loads rules.d at boot as ExecStartPost with ProtectHome=true, so /root/.ssh/authorized_keys is
+# ENOENT there and auditctl aborts. apply installs a ProtectHome=read-only drop-in; check verifies it.
+boot() { : > "$STUB/rules"; echo 1 > "$STUB/enabled"; env PATH="$WORK/bin:$PATH" STUB_BOOT=1 augenrules --load 2>/dev/null; }
+reset_host; touch "$STUB/installed"; echo active > "$STUB/auditd_active"; mkdir -p "$(R /root/.ssh)"; touch "$(R /root/.ssh/authorized_keys)"
+out="$(run apply --yes --immutable --key-out "$WORK/k9" 2>&1)"; rc=$?
+DI="$(R /etc/systemd/system/auditd.service.d/pft-audittrail.conf)"
+[ $rc -eq 0 ] && grep -qx 'ProtectHome=read-only' "$DI" && grep -q "systemctl daemon-reload" "$STUB/calls.log" \
+  && grep -q -- "-w /root/.ssh/authorized_keys -p wa -k pft-ssh" "$(R /etc/audit/rules.d/pft-audittrail.rules)" \
+  && ok "apply: auditd.service drop-in ProtectHome=read-only + daemon-reload (a /root watch is in the rules)" || { bad "auditd drop-in rc=$rc"; ind <<<"$out"; }
+n="$(grep -c '^-[wa] ' "$(R /etc/audit/rules.d/pft-audittrail.rules)")"; boot
+[ "$(grep -c . "$STUB/rules")" -eq "$n" ] && [ "$(cat "$STUB/enabled")" = 2 ] \
+  && ok "simulated boot with the drop-in: all $n rules + -e 2 load inside auditd.service" || bad "boot with drop-in: $(grep -c . "$STUB/rules")/$n rules, enabled $(cat "$STUB/enabled")"
+run check >/dev/null 2>&1 && ok "check PASS after the simulated boot (immutable)" || { bad "check after boot"; run check 2>&1 | ind; }
+out="$(run check 2>&1)"; grep -q "PASS\] auditd.service ProtectHome=read-only" <<<"$out" && ok "check reports ProtectHome=read-only" || { bad "check ProtectHome line"; ind <<<"$out"; }
+# negative control: Ubuntu's stock unit (drop-in absent) -> the boot load aborts; check must see it BEFORE a reboot
+mv "$DI" "$WORK/di.bak"; env PATH="$WORK/bin:$PATH" systemctl daemon-reload; boot
+[ "$(grep -c . "$STUB/rules")" -lt "$n" ] && [ "$(cat "$STUB/enabled")" = 1 ] \
+  && ok "control: without the drop-in the simulated boot aborts ($(grep -c . "$STUB/rules")/$n rules, enabled 1)" || bad "control boot did not abort"
+out="$(run check 2>&1)"; rc=$?
+[ $rc -eq 1 ] && grep -q "auditd.service drop-in .* missing or changed" <<<"$out" && ok "check: missing auditd.service drop-in -> FAIL" || { bad "check missing drop-in rc=$rc"; ind <<<"$out"; }
+cp "$WORK/di.bak" "$DI"; echo yes > "$STUB/protecthome"   # file back, but no daemon-reload yet
+out="$(run check 2>&1)"; rc=$?
+[ $rc -eq 1 ] && grep -q "ProtectHome=yes: the boot-time rule load cannot see the /root watches" <<<"$out" \
+  && ok "check: drop-in present but not loaded (ProtectHome=yes) -> FAIL" || { bad "check daemon-reload pending rc=$rc"; ind <<<"$out"; }
+env PATH="$WORK/bin:$PATH" systemctl daemon-reload; echo 1 > "$STUB/enabled"
+out="$(run rollback --yes 2>&1)"; rc=$?
+[ $rc -eq 0 ] && [ ! -e "$DI" ] && [ "$(cat "$STUB/protecthome")" = yes ] && ok "rollback removes the auditd.service drop-in + daemon-reload" || { bad "rollback drop-in rc=$rc"; ind <<<"$out"; }
 
 echo
 echo "RESULT: $pass passed, $fail failed"

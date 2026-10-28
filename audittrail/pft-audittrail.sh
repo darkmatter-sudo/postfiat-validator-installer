@@ -64,6 +64,11 @@ AGENT_DIRS="${AGENT_DIRS:-}"   # automation/agent dirs to watch under key pft-ag
 RULES_FILE="$RULES_DIR/pft-audittrail.rules"
 IMMUTABLE_FILE="$RULES_DIR/zz-pft-audittrail-immutable.rules"   # sorts last: augenrules concatenates by name
 DROPIN="$JOURNALD_DIR/pft-audittrail.conf"
+# Ubuntu's auditd.service runs the boot-time `augenrules --load` as ExecStartPost with ProtectHome=true: /root is
+# invisible there, so `-w /root/.ssh/authorized_keys` fails with ENOENT and auditctl aborts the whole load (11 of 42
+# rules, no -e 2 after a sentry reboot; a load from a shell works). This drop-in makes /root and /home read-only
+# instead of hidden for auditd.
+AUDITD_DROPIN="${AUDITD_UNIT_DIR:-/etc/systemd/system/auditd.service.d}/pft-audittrail.conf"
 KEYS="pft-cfg pft-keys pft-ssh pft-sudo pft-docker pft-units pft-agent pft-exec pft-time pft-modules pft-canary"
 AUDITCTL="${PFT_AT_AUDITCTL:-auditctl}"
 AUSEARCH="${PFT_AT_AUSEARCH:-ausearch}"
@@ -175,6 +180,8 @@ rule_count() { grep -c '^-[wa] ' ; }
 
 # Audit=yes: journald's default (Audit=no on systemd 249) turns kernel auditing OFF whenever journald restarts
 render_dropin() { printf '# pft-audittrail: persistent, sealed journal; keep kernel auditing on\n[Journal]\nStorage=persistent\nSeal=yes\nAudit=yes\n'; }
+render_auditd_dropin() { printf '# pft-audittrail: boot-time augenrules (ExecStartPost) must see the watches under /root\n[Service]\nProtectHome=read-only\n'; }
+protect_home() { "$SYSTEMCTL" show -p ProtectHome --value auditd 2>/dev/null; }
 audit_enabled() { "$AUDITCTL" -s 2>/dev/null | awk '$1=="enabled"{print $2}'; }
 
 state_json() { cat "$R$STATE_DIR/state.json" 2>/dev/null || echo '{}'; }
@@ -189,6 +196,7 @@ print_plan() { # IMMUTABLE
   echo "== $RULES_FILE ($n rules)"; redact_paths <<<"$rules"
   if [ "$1" = 1 ]; then echo "== $IMMUTABLE_FILE"; echo "-e 2"; else echo "== immutable: off (use --immutable for -e 2)"; fi
   echo "== $DROPIN"; render_dropin
+  echo "== $AUDITD_DROPIN (+ systemctl daemon-reload)"; render_auditd_dropin
   echo "== FSS: $(if [ -e "$(fss_file)" ]; then echo "key present, kept"; else echo "keys generated (interval $SEAL_INTERVAL), verification key -> --key-out FILE only"; fi)"
 }
 
@@ -206,6 +214,7 @@ do_apply() { # YES DRY IMMUTABLE KEYOUT
     echo "== diff against installed files"
     diff -u <({ redact_paths < "$R$RULES_FILE"; } 2>/dev/null) <(redact_paths <<<"$rules") --label "installed $RULES_FILE" --label "new" || true
     diff -u "$R$DROPIN" <(echo "$dropin") --label "installed $DROPIN" --label "new" 2>/dev/null || true
+    diff -u "$R$AUDITD_DROPIN" <(render_auditd_dropin) --label "installed $AUDITD_DROPIN" --label "new" 2>/dev/null || true
     echo "dry-run: nothing changed"; return 0
   fi
   [ "$1" = 1 ] || die "apply changes audit + journald config; re-run with --yes (or --dry-run)" 4
@@ -223,6 +232,11 @@ do_apply() { # YES DRY IMMUTABLE KEYOUT
   printf '%s\n' "$rules" > "$R$RULES_FILE.tmp" && chmod 640 "$R$RULES_FILE.tmp" && mv "$R$RULES_FILE.tmp" "$R$RULES_FILE"
   if [ "$3" = 1 ]; then printf '## pft-audittrail: kernel audit config immutable until reboot\n-e 2\n' > "$R$IMMUTABLE_FILE"
   else rm -f "$R$IMMUTABLE_FILE"; fi
+  if [ "$(cat "$R$AUDITD_DROPIN" 2>/dev/null)" != "$(render_auditd_dropin)" ]; then
+    mkdir -p "$(dirname "$R$AUDITD_DROPIN")" && render_auditd_dropin > "$R$AUDITD_DROPIN" && "$SYSTEMCTL" daemon-reload \
+      || die "cannot install $AUDITD_DROPIN" 1
+    log "auditd.service drop-in installed (ProtectHome=read-only: the boot-time rule load can see /root)"
+  fi
   log "loading rules ($(rule_count <<<"$rules") in $RULES_FILE, immutable=$([ "$3" = 1 ] && echo on || echo off))"
   "$AUGENRULES" --load >/dev/null 2>&1 || die "augenrules --load failed (see: auditctl -s; immutable from an earlier -e 2?)" 1
   loaded_pft_rules > "$R$STATE_DIR/rules.loaded"
@@ -252,7 +266,7 @@ journal_verify() { # [KEYFILE] -> journalctl --verify output with the per-file p
 }
 
 do_check() { # KEYFILE
-  local st fails=0 en lost exp live jv nokey bad
+  local st fails=0 en lost exp live jv nokey bad ph
   st="$(state_json)"
   f() { echo "  [FAIL] $*"; fails=$((fails + 1)); }
   p() { echo "  [PASS] $*"; }
@@ -272,6 +286,12 @@ do_check() { # KEYFILE
   else f "loaded rules differ from apply snapshot:"; diff <(cat "$R$STATE_DIR/rules.loaded" 2>/dev/null) <(echo "$live") | grep '^[<>]' | redact_loaded | sed 's/^/      /'; fi
   if [ "$(cat "$R$DROPIN" 2>/dev/null)" = "$(render_dropin)" ]; then p "journald drop-in Storage=persistent Seal=yes"; else f "journald drop-in missing or changed"; fi
   if [ -e "$(fss_file)" ]; then p "FSS sealing key present"; else f "FSS sealing key missing"; fi
+  # a rules file that loads from a shell can still abort at boot: check what auditd.service will see
+  ph="$(protect_home)"
+  if [ "$(cat "$R$AUDITD_DROPIN" 2>/dev/null)" != "$(render_auditd_dropin)" ]; then f "auditd.service drop-in $AUDITD_DROPIN missing or changed"
+  elif grep -qE '^-w /(root|home)(/| )' "$R$RULES_FILE" 2>/dev/null && { [ "$ph" = yes ] || [ "$ph" = tmpfs ]; }; then
+    f "auditd.service ProtectHome=$ph: the boot-time rule load cannot see the /root watches (daemon-reload pending?)"
+  else p "auditd.service ProtectHome=${ph:-?} (boot-time rule load sees every watched path)"; fi
   # Without the (off-host) verification key journalctl refuses sealed files with "Required key not available"
   # before reading them: those are counted, not failed. Every other FAIL is drift. With the key, all must PASS.
   jv="$(journal_verify "${1:-}")"
@@ -291,7 +311,7 @@ do_rollback() { # YES DRY
   local st en en0
   st="$(state_json)"
   if [ "$2" = 1 ]; then
-    echo "rollback would remove: $RULES_FILE $IMMUTABLE_FILE $DROPIN $(fss_file | sed "s#^$R##") $STATE_DIR"
+    echo "rollback would remove: $RULES_FILE $IMMUTABLE_FILE $DROPIN $AUDITD_DROPIN $(fss_file | sed "s#^$R##") $STATE_DIR"
     echo "auditd: $([ "$(jq -r '.installed_auditd // false' <<<"$st")" = true ] && echo "stopped + removed (installed by apply)" || echo "kept (was installed before apply)")"
     echo "dry-run: nothing changed"; return 0
   fi
@@ -299,7 +319,8 @@ do_rollback() { # YES DRY
   en0="$(audit_enabled)"
   if [ -e "$(fss_file)" ]; then archive_sealed_active; fi
   rm -f "$R$RULES_FILE" "$R$IMMUTABLE_FILE" "$R$DROPIN" "$(fss_file)"
-  log "removed rules files, journald drop-in, FSS key"
+  if [ -e "$R$AUDITD_DROPIN" ]; then rm -f "$R$AUDITD_DROPIN"; "$SYSTEMCTL" daemon-reload; fi
+  log "removed rules files, journald drop-in, auditd.service drop-in, FSS key"
   if journald_restart_persistent; then log "journald restarted, writing to $JOURNAL_DIR (unsealed)"
   else log "WARN: journald restart/flush failed or no system.journal on $JOURNAL_DIR: check 'journalctl --header' and run 'journalctl --flush'"; fi
   en="$(audit_enabled)"
