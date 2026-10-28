@@ -1,0 +1,119 @@
+# promtool unit tests for timesync.rules.yml (1m sample interval = the metrics timer's period). Every alert has a firing
+# case with its hand-computed $value and rendered summary, and a non-firing control on nearby data.
+# Run: promtool test rules timesync.tests.yml
+rule_files:
+  - timesync.rules.yml
+evaluation_interval: 1m
+tests:
+  - name: healthy chrony host (values from the live audit) fires nothing
+    interval: 1m
+    input_series:
+      - series: 'pft_timesync_synced{job="postfiat", instance="node:9877"}'
+        values: "1x60"
+      - series: 'pft_timesync_offset_seconds{job="postfiat", instance="node:9877"}'
+        values: "-0.000680615x60"
+      - series: 'pft_timesync_nts_sources{job="postfiat", instance="node:9877"}'
+        values: "5x60"
+      - series: 'pft_timesync_state{job="postfiat", instance="node:9877"}'
+        values: "0x60"
+      - series: 'pft_timesync_collect_timestamp_seconds{job="postfiat", instance="node:9877"}'
+        values: "0+60x60"
+    alert_rule_test:
+      - {eval_time: 60m, alertname: PFTClockNotSynchronised, exp_alerts: []}
+      - {eval_time: 60m, alertname: PFTClockOffsetHigh, exp_alerts: []}
+      - {eval_time: 60m, alertname: PFTClockNTSSourcesLow, exp_alerts: []}
+      - {eval_time: 60m, alertname: PFTTimesyncAuditCritical, exp_alerts: []}
+      - {eval_time: 60m, alertname: PFTTimesyncStale, exp_alerts: []}
+
+  - name: unsynchronised fires after 5m, not after 4m
+    interval: 1m
+    input_series:
+      - series: 'pft_timesync_synced{job="postfiat", instance="node:9877"}'
+        values: "1x10 0x10"
+    alert_rule_test:
+      - {eval_time: 15m, alertname: PFTClockNotSynchronised, exp_alerts: []}
+      - eval_time: 16m
+        alertname: PFTClockNotSynchronised
+        exp_alerts:
+          - exp_labels: {severity: critical, job: postfiat, instance: "node:9877"}
+            exp_annotations:
+              summary: "host clock not synchronised (node:9877)"
+              description: "For 5m the time daemon has had no selected source (chrony) / NTPSynchronized=no (timesyncd). The clock is free-running; postfiatd's close times drift with it. Run `sudo pft-timesync audit`."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/timesync/README.md#alerts"
+
+  - name: offset +80 ms (fast) and -80 ms (slow) both fire after 10m; 40 ms does not
+    interval: 1m
+    input_series:
+      - series: 'pft_timesync_offset_seconds{job="postfiat", instance="fast:9877"}'
+        values: "0.08x20"
+      - series: 'pft_timesync_offset_seconds{job="postfiat", instance="slow:9877"}'
+        values: "-0.08x20"
+      - series: 'pft_timesync_offset_seconds{job="postfiat", instance="ok:9877"}'
+        values: "-0.04x20"
+    alert_rule_test:
+      - {eval_time: 9m, alertname: PFTClockOffsetHigh, exp_alerts: []}
+      - eval_time: 10m
+        alertname: PFTClockOffsetHigh
+        exp_alerts:
+          - exp_labels: {severity: warning, job: postfiat, instance: "fast:9877"}
+            exp_annotations:
+              summary: "host clock 80ms from NTP time"
+              description: "|offset| has been above 50 ms for 10m. chrony slews at most maxslewrate (500 ppm = 0.5 ms/s) and never steps after boot, so a large offset shrinks slowly; check `sudo chronyc -N sources` for a bad or unreachable source."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/timesync/README.md#alerts"
+          - exp_labels: {severity: warning, job: postfiat, instance: "slow:9877"}
+            exp_annotations:
+              summary: "host clock 80ms from NTP time"
+              description: "|offset| has been above 50 ms for 10m. chrony slews at most maxslewrate (500 ppm = 0.5 ms/s) and never steps after boot, so a large offset shrinks slowly; check `sudo chronyc -N sources` for a bad or unreachable source."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/timesync/README.md#alerts"
+
+  - name: 3 NTS sources fire after 15m; 4 do not
+    interval: 1m
+    input_series:
+      - series: 'pft_timesync_nts_sources{job="postfiat", instance="low:9877"}'
+        values: "3x30"
+      - series: 'pft_timesync_nts_sources{job="postfiat", instance="ok:9877"}'
+        values: "4x30"
+    alert_rule_test:
+      - {eval_time: 14m, alertname: PFTClockNTSSourcesLow, exp_alerts: []}
+      - eval_time: 15m
+        alertname: PFTClockNTSSourcesLow
+        exp_alerts:
+          - exp_labels: {severity: warning, job: postfiat, instance: "low:9877"}
+            exp_annotations:
+              summary: "only 3 NTS-authenticated time sources"
+              description: "Fewer than 4 reachable NTS-authenticated sources for 15m (NTS-KE failing, servers unreachable, or not migrated from timesyncd). With minsources 3, two more losses stop clock updates. Run `sudo chronyc -N authdata`."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/timesync/README.md#alerts"
+
+  - name: audit CRIT fires after 5m; WARN (1) never
+    interval: 1m
+    input_series:
+      - series: 'pft_timesync_state{job="postfiat", instance="crit:9877"}'
+        values: "2x20"
+      - series: 'pft_timesync_state{job="postfiat", instance="warn:9877"}'
+        values: "1x20"
+    alert_rule_test:
+      - {eval_time: 4m, alertname: PFTTimesyncAuditCritical, exp_alerts: []}
+      - eval_time: 5m
+        alertname: PFTTimesyncAuditCritical
+        exp_alerts:
+          - exp_labels: {severity: critical, job: postfiat, instance: "crit:9877"}
+            exp_annotations:
+              summary: "pft-timesync audit CRIT for 5m"
+              description: "One or more audit checks are CRIT (pft_timesync_check == 2: conflicting daemons, chronyd not answering, stratum 16, dispersion > 1 s, offset > 250 ms, leap unsynchronised). Run `sudo pft-timesync audit`."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/timesync/README.md#alerts"
+
+  - name: collector stopped at 10m -> stale fires at 17m (300 s + 2m), not at 16m
+    interval: 1m
+    input_series:
+      - series: 'pft_timesync_collect_timestamp_seconds{job="postfiat", instance="node:9877"}'
+        values: "0+60x10 600x20"
+    alert_rule_test:
+      - {eval_time: 16m, alertname: PFTTimesyncStale, exp_alerts: []}
+      - eval_time: 18m
+        alertname: PFTTimesyncStale
+        exp_alerts:
+          - exp_labels: {severity: warning, job: postfiat, instance: "node:9877"}
+            exp_annotations:
+              summary: "pft-timesync metrics are stale"
+              description: "The last collection is older than 5 min: pft-timesync.timer is not running. Check `systemctl status pft-timesync.timer`."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/timesync/README.md#alerts"

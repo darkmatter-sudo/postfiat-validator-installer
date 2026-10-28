@@ -1,0 +1,8 @@
+[Unit]
+Description=pft-timesync metrics (time daemon audit -> /var/lib/pft-exporter/textfile/pft_timesync.prom)
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/timesync
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/pft-timesync metrics
+Nice=10
