@@ -210,6 +210,7 @@ Runs: `logs/rollout/live-run-tests-3.log` (13/13, 20/20, 25/25, shellcheck clean
 | run | log | result |
 |---|---|---|
 | noop-1 (code 43c18b1) | `logs/rollout/live-noop-1.log` | PASS 21/21: sentry gate 44 s, validator gate 41 s, 300 s soak each, ALERT topic 0 messages, integrity PASS both hosts. Restore line "yes" for the local env files was vacuous (empty hashes, fixed in 268ee4f); `logs/rollout/live-noop-1-manual-sha.log` shows both files byte-identical to the originals, mode 600, no leftovers |
+| noop-2 (code 268ee4f) | `logs/rollout/live-noop-2.log` | PASS 21/21: sentry gate 45 s, validator gate 42 s, 300 s soak each, sentry promoted before the validator started, ALERT topic 0 messages, all four env files restored with a verified sha256, integrity PASS both hosts |
 | badimage-1 (code 268ee4f) | `logs/rollout/live-badimage-1.log` | PASS 15/15: sentry gate FAIL after 300 s (state=down), rollback to the recorded image ID, re-gate PASS after 44 s, validator image ID and StartedAt unchanged, drill image removed, ALERT topic 0 messages, every env file restored with a verified sha256, integrity PASS both hosts |
 
 The drill image build on the relay took about 4 min (legacy builder, containerd image store, 8 GB image), which counts
