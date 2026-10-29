@@ -43,6 +43,8 @@
 #      POLICY_FILE (/etc/apt/apt.conf.d/52pft-patch)  BACKUP_DIR (/var/lib/pft-patch/backup)
 #      Test hooks: PFT_PATCH_ROOT (path prefix for every file)  PFT_PATCH_APT_GET / _APT_CONFIG / _APT_MARK /
 #      _DPKG_QUERY / _NEEDRESTART (commands)  PFT_PATCH_NOROOT=1 (skip the root check)
+#      run: SSH_AS (default $SUDO_USER: ssh to other hosts runs as this user, because root usually has no key/alias)
+#      Test hooks (run): PFT_PATCH_SSH  PFT_PATCH_FAKEROOT=1 (take the root-only ssh path)  PFT_PATCH_NOW_FILE (fake clock)
 
 # jq programs are single-quoted on purpose.
 # shellcheck disable=SC2016
@@ -65,6 +67,7 @@ SYSTEMCTL="${PFT_PATCH_SYSTEMCTL:-systemctl}"
 NO_RESTART_RE="${NO_RESTART_RE:-^(docker|containerd|dbus|systemd-logind|user@.*|getty@.*|serial-getty@.*)\.service$}"
 CONF="${CONF:-$R/etc/pft-patch/hosts.conf}"
 SSH="${PFT_PATCH_SSH:-ssh}"
+SSH_AS="${SSH_AS-${SUDO_USER:-}}"
 PATCH_CMD="${PATCH_CMD:-pft-patch}"
 MAINT_CMD="${MAINT_CMD:-pft-maint}"
 AM="${AM:-http://127.0.0.1:9093}"
@@ -351,9 +354,13 @@ load_conf() {
   done < <(grep -v '^[[:space:]]*#' "$CONF")
   [ "${#HOSTS[@]}" -ge 1 ] || { log "$CONF lists no hosts"; exit 3; }
 }
+is_root() { [ "$(id -u)" = 0 ] || [ "${PFT_PATCH_FAKEROOT:-0}" = 1 ]; }
 hx() { # LABEL CMD... : CMD as root on that host; any ssh failure is a failure of CMD
   local h="$1"; shift
-  if [ "${H_MODE[$h]}" = ssh ]; then
+  if [ "${H_MODE[$h]}" = ssh ] && is_root && [ -n "$SSH_AS" ] && [ "$SSH_AS" != root ]; then
+    # root usually has no ssh key/alias for the sentry: connect as the user who ran sudo
+    runuser -u "$SSH_AS" -- "$SSH" -o BatchMode=yes -o ConnectTimeout=10 "${H_SSH[$h]}" "sudo -n $(printf '%q ' "$@")"
+  elif [ "${H_MODE[$h]}" = ssh ]; then
     "$SSH" -o BatchMode=yes -o ConnectTimeout=10 "${H_SSH[$h]}" "sudo -n $(printf '%q ' "$@")"
   elif [ "$(id -u)" = 0 ] || [ "${PFT_PATCH_NOROOT:-0}" = 1 ]; then "$@"
   else sudo -n "$@"; fi

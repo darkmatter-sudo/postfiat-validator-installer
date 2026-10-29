@@ -37,6 +37,7 @@ host_env "\$RUN_D" sentry
 exec bash -c "\$*"
 B
   printf '#!/usr/bin/env bash\n[ "$1" = -n ] && shift\nexec "$@"\n' > "$b/sudo"
+  printf '#!/usr/bin/env bash\necho "$STUB_HOST: runuser $*" >> "$RUN_D/calls"\n[ "$1" = -u ] && shift 2; [ "$1" = -- ] && shift\nexec "$@"\n' > "$b/runuser"
   cat > "$b/docker" <<B
 #!/usr/bin/env bash
 $rec
@@ -96,6 +97,6 @@ use_run() { # DIR TOOL -> orchestrator environment (runs as the validator)
   export RUN_D="$1" PATCH_TOOL="$2" CONF="$1/hosts.conf" STATE_DIR="$1/state" PFT_PATCH_NOW_FILE="$1/now"
   export PFT_PATCH_SSH="$1/rbin/ssh" PATCH_CMD=pft-patch AM="http://am.test:9093" PFT_PATCH_NOROOT=1
   export PATH="$1/rbin:$ORIG_PATH" POLL_SEC=10 GATE_TIMEOUT=120 REBOOT_TIMEOUT=60 SILENCE_TAIL=900
-  unset PFT_PATCH_INJECT MAINT_HOST BOOT_ID_FILE
+  unset PFT_PATCH_INJECT MAINT_HOST BOOT_ID_FILE PFT_PATCH_FAKEROOT SUDO_USER SSH_AS
   host_env "$1" validator
 }

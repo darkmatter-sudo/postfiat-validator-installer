@@ -83,6 +83,11 @@ expect "--hosts order ignored, config order used" 0 'hosts sentry validator \(in
 rfresh; sec_both; run run --yes --hosts validator
 expect "--hosts validator only" 0 'RESULT: PASS - validator patched'
 grep -q 'sentry: pft-patch upgrade' "$RD/calls" && ko "sentry not upgraded with --hosts validator" || ok "sentry not upgraded with --hosts validator"
+rfresh; sec_both; PFT_PATCH_FAKEROOT=1 SUDO_USER=opuser run run --yes
+expect "as root: run PASS with ssh as the sudo user" 0 'RESULT: PASS'
+grep -q "validator: runuser -u opuser -- $RD/rbin/ssh -o BatchMode=yes" "$RD/calls" && ok "as root: ssh runs via runuser -u SUDO_USER" || ko "ssh via runuser" "$(calls)"
+rfresh; sec_both; run run --yes
+grep -q 'runuser' "$RD/calls" && ko "not root: plain ssh" || ok "not root: plain ssh"
 rfresh; run run --yes --hosts sentry,nosuch
 expect "--hosts unknown -> 3" 3 "unknown host 'nosuch'"
 rfresh; sec_both; run run --yes --all

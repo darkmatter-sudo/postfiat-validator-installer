@@ -160,6 +160,8 @@ mutant M55 "apt-get install failure ignored" \
   '[ "$rc" = 0 ] || { echo "UPGRADE FAIL apt-get install exit $rc"; return 2; }' 'true'
 mutant M56 "pending resume record ignored by run" \
   '[ -e "$RESUME_FILE" ] && { log "REFUSED' 'false && { log "REFUSED'
+mutant M57 "ssh as root even when run through sudo (no key/alias for the sentry)" \
+  'if [ "${H_MODE[$h]}" = ssh ] && is_root && [ -n "$SSH_AS" ]' 'if false && [ -n "$SSH_AS" ]'
 
 wait
 for id in "${IDS[@]}"; do
