@@ -8,7 +8,7 @@
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 TOOL="${1:-$HERE/../pft-patch.sh}"
-# shellcheck source=tests/stubs.sh
+# shellcheck source=SCRIPTDIR/stubs.sh
 . "$HERE/stubs.sh"
 ORIG_PATH="$PATH"
 T="$(mktemp -d)"; trap 'rm -rf "${T:?}"' EXIT
@@ -138,9 +138,9 @@ run policy apply --force; expect "bad policy flag -> 3" 3 'Usage'
 run policy frob; expect "bad policy sub -> 3" 3 'Usage'
 
 # --- run mode (two-host fake)
-# shellcheck source=tests/run-stubs.sh
+# shellcheck source=SCRIPTDIR/run-stubs.sh
 . "$HERE/run-stubs.sh"
-# shellcheck source=tests/run-cases.sh
+# shellcheck source=SCRIPTDIR/run-cases.sh
 . "$HERE/run-cases.sh"
 
 echo "RESULT: $PASS passed, $FAIL failed"
