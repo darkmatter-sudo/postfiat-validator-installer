@@ -1,0 +1,58 @@
+# validator side: ship the committed tree e7989a293f42b3fc7991a523f2fb2c830678894a to a fresh temp dir on the sentry
+OS: Ubuntu 22.04.5 LTS | host: sentry-host | 2026-10-29T23:29:59Z
+$ sha256sum vulnscan/pft-vulnscan.sh vulnscan/vulnscan_parse.py vulnscan/install.sh vulnscan/systemd/pft-vulnscan.service
+26e41cec0a6c6eb8c24a768f3884b1c3c9d23ef76011f514f6c8dce0416377e7  vulnscan/pft-vulnscan.sh
+8b3b6c9cad5d9aa3af3840b596220ff4ba0bd0e4cf0d02352a9fa8af2d36e188  vulnscan/vulnscan_parse.py
+d6e45fbc61425a3fabe56081a2e7fc7bf25efdbfe444cb7e713b69be74d1e6e3  vulnscan/install.sh
+156a28dcfafab2a4ae7dee377997ed553bda2e41a0f0f19e21ab0bb22425ef21  vulnscan/systemd/pft-vulnscan.service
+(exit 0)
+$ bash vulnscan/tests/run-tests.sh | grep -E '^(FAIL|RESULT|== 9)|real oscap'
+== 9. real oscap on a fixture feed (known-old / fixed-package / absent-package controls on the installed bash)
+PASS real oscap: rc 1
+PASS real oscap: known-old USN-9001-1 (bash < 99:1.0) true with binary bash, archive
+PASS real oscap: fixed-package USN-9003-1 (bash >= 0:1.0) and absent package USN-9004-1 not reported
+RESULT: 119/119 passed
+(exit 0)
+$ sudo bash vulnscan/install.sh --host sentry
+2026-10-29T23:30:23Z OpenSCAP command line tool (oscap) 1.2.17
+2026-10-29T23:30:23Z installed /usr/local/bin/pft-vulnscan (sha256 26e41cec0a6c6eb8c24a768f3884b1c3c9d23ef76011f514f6c8dce0416377e7)
+2026-10-29T23:30:23Z installed /usr/local/lib/pft-vulnscan/vulnscan_parse.py (sha256 8b3b6c9cad5d9aa3af3840b596220ff4ba0bd0e4cf0d02352a9fa8af2d36e188)
+2026-10-29T23:30:25Z first scan (through the sandboxed unit, HOST_LABEL=sentry):
+pft_vulnscan_up{host="sentry"} 1
+pft_vulnscan_feed_timestamp_seconds{host="sentry"} 1793274245
+pft_vulnscan_affected_cves{host="sentry"} 0
+pft_vulnscan_reboot_owed{host="sentry"} 0
+Created symlink /etc/systemd/system/timers.target.wants/pft-vulnscan.timer → /etc/systemd/system/pft-vulnscan.timer.
+2026-10-29T23:31:05Z enabled pft-vulnscan.timer (daily 04:20 UTC + up to 30 min)
+2026-10-29T23:31:05Z remember: sudo pft-integrity accept --reason 'pft-vulnscan installed'
+(exit 0)
+$ TZ=UTC systemctl list-timers pft-vulnscan.timer --no-pager | head -2
+NEXT                        LEFT          LAST PASSED UNIT               ACTIVATES
+Fri 2026-10-30 04:23:44 UTC 4h 52min left n/a  n/a    pft-vulnscan.timer pft-vulnscan.service
+(exit 0)
+$ sudo journalctl -u pft-vulnscan.service --utc --no-pager -o cat -n 12 | grep -E '^(USN|RESULT|kernel|oval)'
+oval     2612 patch definitions, feed timestamp 2026-10-29T11:44:05 UTC (age 11.8 h), evaluated in 39 s
+kernel   running 5.15.0-202-generic, newest installed 5.15.0-202-generic, reboot-required flag absent -> reboot owed: no
+RESULT: 0 affected USNs (0 critical, 0 high, 0 medium, 0 low, 0 negligible, 0 none, 0 unknown; 0 fixable only via Ubuntu Pro/ESM), 0 CVEs; reboot owed: no -> exit 0
+(exit 0)
+$ sudo pft-vulnscan scan --json --no-fetch | python3 -c 'import json,sys; d=json.load(sys.stdin); print({k: d[k] for k in ("ok","host","exit_code","affected_usns","affected_cves","kernel")})'
+{'ok': True, 'host': 'sentry', 'exit_code': 0, 'affected_usns': 0, 'affected_cves': 0, 'kernel': {'newest_installed': '5.15.0-202-generic', 'outdated': False, 'reboot_owed': False, 'reboot_required_flag': False, 'running': '5.15.0-202-generic'}}
+(exit 0)
+$ pft-patch status | grep -E 'updates|reboot|kernel|RESULT'
+[OK  ] updates    0 security updates pending
+[OK  ] updates    0 other updates pending
+[OK  ] reboot     no reboot-required flag
+[OK  ] kernel     running kernel is the newest installed
+[OK  ] autoreboot Automatic-Reboot=false
+RESULT: OK
+(exit 0)
+$ cat /var/lib/pft-exporter/textfile/pft_vulnscan_sentry.prom | grep -vE '^#|affected_usns.* 0$'
+pft_vulnscan_up{host="sentry"} 1
+pft_vulnscan_last_run_timestamp_seconds{host="sentry"} 1793316666
+pft_vulnscan_last_success_timestamp_seconds{host="sentry"} 1793316666
+pft_vulnscan_feed_timestamp_seconds{host="sentry"} 1793274245
+pft_vulnscan_scan_duration_seconds{host="sentry"} 22
+pft_vulnscan_affected_cves{host="sentry"} 0
+pft_vulnscan_reboot_owed{host="sentry"} 0
+pft_vulnscan_kernel_outdated{host="sentry"} 0
+(exit 0)

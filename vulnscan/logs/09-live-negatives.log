@@ -1,0 +1,48 @@
+OS: Ubuntu 22.04.5 LTS | host: validator-host | 2026-10-29T23:33:19Z | installed /usr/local/bin/pft-vulnscan sha256 26e41cec0a6c6eb8c24a768f3884b1c3c9d23ef76011f514f6c8dce0416377e7
+# Live controls with the REAL oscap and the REAL cached Canonical feed, copied to a scratch cache; metrics go to a
+# scratch textfile dir, so the live exporter/alerts never see these runs.
+$ pft-vulnscan scan --no-fetch | tail -1
+RESULT: 0 affected USNs (0 critical, 0 high, 0 medium, 0 low, 0 negligible, 0 none, 0 unknown; 0 fixable only via Ubuntu Pro/ESM), 0 CVEs; reboot owed: no -> exit 0
+(exit 0)
+$ grep -E '^pft_vulnscan_(up|last_success_timestamp_seconds)' $TF/pft_vulnscan_validator.prom
+(exit 2)
+$ grep -E '^pft_vulnscan_(up|last_success_timestamp_seconds)' /tmp/tmp.x89IAwDIJ3/tf/pft_vulnscan_validator.prom | sed 's|/tmp/tmp.x89IAwDIJ3|<scratch>|g'
+pft_vulnscan_up{host="validator"} 1
+pft_vulnscan_last_success_timestamp_seconds{host="validator"} 1793316799
+(exit 0)
+# 1. stale feed: the same real feed evaluated with the clock 8 days ahead
+$ PFT_VS_NOW=$(($(date -u +%s) + 8 * 86400)) pft-vulnscan scan --no-fetch | tail -1
+pft-vulnscan: feed is stale: timestamp 2026-10-29T11:44:05 is 8 days old (limit 7)
+RESULT: ERROR - feed is stale: timestamp 2026-10-29T11:44:05 is 8 days old (limit 7): up 0 -> exit 2
+(exit 0)
+$ grep -E '^pft_vulnscan_(up|last_success_timestamp_seconds|feed_timestamp_seconds)|affected' /tmp/tmp.x89IAwDIJ3/tf/pft_vulnscan_validator.prom | head -5
+pft_vulnscan_up{host="validator"} 0
+pft_vulnscan_last_success_timestamp_seconds{host="validator"} 1793316799
+pft_vulnscan_feed_timestamp_seconds{host="validator"} 1793274245
+(exit 0)
+# 2. tampered cache: one byte of the real .bz2 changed
+$ pft-vulnscan scan --no-fetch | tail -1
+pft-vulnscan: cached feed sha256 e48e49cf095e77a7e8f512d9bb67a05f7e829e2b7af33edfe78dd249f4f16bd6 does not match feed.meta (21121538fa366b77aa54811d7bad4e4a7c89a483e6c59052d3119dd244977889)
+RESULT: ERROR - cached feed sha256 e48e49cf095e77a7e8f512d9bb67a05f7e829e2b7af33edfe78dd249f4f16bd6 does not match feed.meta (21121538fa366b77aa54811d7bad4e4a7c89a483e6c59052d3119dd244977889): up 0 -> exit 2
+(exit 0)
+$ grep -cE '^pft_vulnscan_affected' /tmp/tmp.x89IAwDIJ3/tf/pft_vulnscan_validator.prom; grep -E '^pft_vulnscan_up' /tmp/tmp.x89IAwDIJ3/tf/pft_vulnscan_validator.prom
+0
+pft_vulnscan_up{host="validator"} 0
+(exit 0)
+# 3. truncated feed whose feed.meta matches (as if Canonical served a cut file that still decompressed)
+$ pft-vulnscan scan --no-fetch --json
+{"ok": false, "host": "validator", "error": "oscap oval eval failed (rc 1: OpenSCAP Error: Premature end of data in tag advisory line 103139 [../../../src/source/oscap_source.c:301] Entity: line 103637: parser error : AttValue: ' expected )", "exit_code": 2}
+pft-vulnscan: oscap oval eval failed (rc 1: OpenSCAP Error: Premature end of data in tag advisory line 103139 [../../../src/source/oscap_source.c:301] Entity: line 103637: parser error : AttValue: ' expected )
+(exit 2)
+$ grep -E '^pft_vulnscan_up' /tmp/tmp.x89IAwDIJ3/tf/pft_vulnscan_validator.prom
+pft_vulnscan_up{host="validator"} 0
+(exit 0)
+# 4. restore the good copy: success again
+$ pft-vulnscan scan --no-fetch | tail -1
+RESULT: 0 affected USNs (0 critical, 0 high, 0 medium, 0 low, 0 negligible, 0 none, 0 unknown; 0 fixable only via Ubuntu Pro/ESM), 0 CVEs; reboot owed: no -> exit 0
+(exit 0)
+$ curl -s http://127.0.0.1:9877/metrics | grep -E '^pft_vulnscan_up'
+pft_vulnscan_up{host="sentry"} 1
+pft_vulnscan_up{host="validator"} 1
+(exit 0)
+NOTE (appended 2026-10-29T23:35:59Z, not part of the run): sections 1-2 and 4 piped the scan into 'tail -1', so their (exit 0) lines are tail's exit code, not the scan's; the RESULT lines show the scan's exit 2. The stray 'grep ... $TF' at the top ran before TF was set (exit 2). Log 10 repeats every case with the scan's own exit code recorded.

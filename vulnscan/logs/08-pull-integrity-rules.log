@@ -1,0 +1,81 @@
+OS: Ubuntu 22.04.5 LTS | host: validator-host | 2026-10-29T23:31:49Z | commit e7989a293f42b3fc7991a523f2fb2c830678894a
+$ sudo sed -E 's/(runuser -u )[a-z0-9_-]+/\1<operator>/; s/(ssh .* )[a-z0-9.-]+"?$/\1<sentry-alias>"/' /etc/pft-vulnscan.env
+# pft-vulnscan config (see pft-vulnscan.env.example)
+HOST_LABEL=validator
+PEER_LABEL=sentry
+PULL_SSH="runuser -u <operator> -- ssh -o BatchMode=yes -o ConnectTimeout=10 <sentry-alias>"
+(exit 0)
+$ sudo bash vulnscan/install.sh --pull
+2026-10-29T23:31:49Z installed /usr/local/bin/pft-vulnscan (sha256 26e41cec0a6c6eb8c24a768f3884b1c3c9d23ef76011f514f6c8dce0416377e7)
+2026-10-29T23:31:49Z installed /usr/local/lib/pft-vulnscan/vulnscan_parse.py (sha256 8b3b6c9cad5d9aa3af3840b596220ff4ba0bd0e4cf0d02352a9fa8af2d36e188)
+2026-10-29T23:31:50Z first pull (through the sandboxed unit):
+pft_vulnscan_up{host="sentry"} 1
+pft_vulnscan_last_run_timestamp_seconds{host="sentry"} 1793316666
+Created symlink /etc/systemd/system/timers.target.wants/pft-vulnscan-pull.timer → /etc/systemd/system/pft-vulnscan-pull.timer.
+2026-10-29T23:31:51Z enabled pft-vulnscan-pull.timer (every 15 min)
+2026-10-29T23:31:51Z remember: sudo pft-integrity accept --reason 'pft-vulnscan pull installed'
+(exit 0)
+$ TZ=UTC systemctl list-timers pft-vulnscan-pull.timer --no-pager | head -2
+NEXT                        LEFT         LAST PASSED UNIT                    ACTIVATES
+Thu 2026-10-29 23:35:00 UTC 3min 8s left n/a  n/a    pft-vulnscan-pull.timer pft-vulnscan-pull.service
+(exit 0)
+$ curl -s http://127.0.0.1:9877/metrics | grep -E '^pft_vulnscan_(up|affected_cves|reboot_owed|last_success_timestamp_seconds)'
+pft_vulnscan_up{host="sentry"} 1
+pft_vulnscan_last_success_timestamp_seconds{host="sentry"} 1793316666
+pft_vulnscan_affected_cves{host="sentry"} 0
+pft_vulnscan_reboot_owed{host="sentry"} 0
+pft_vulnscan_up{host="validator"} 1
+pft_vulnscan_last_success_timestamp_seconds{host="validator"} 1793316565
+pft_vulnscan_affected_cves{host="validator"} 0
+pft_vulnscan_reboot_owed{host="validator"} 0
+(exit 0)
+$ sudo pft-integrity verify | grep -E 'WARN|FAIL|RESULT' | sed -E 's/by [a-z0-9_-]+/by <user>/'
+  [WARN] bin:pft-vulnscan                             added    new file
+  [WARN] unit:pft-vulnscan-pull.service               added    new file
+  [WARN] unit:pft-vulnscan-pull.timer                 added    new file
+  [WARN] unit:pft-vulnscan.service                    added    new file
+  [WARN] unit:pft-vulnscan.timer                      added    new file
+RESULT: WARN - 92 unchanged, 5 warn, 0 fail -> exit 1
+(exit 0)
+$ sudo pft-integrity accept --reason 'task_c6b22dcfd723a4f0c0e3288428518507: pft-vulnscan + OpenSCAP installed, pull timer, python3-pip/venv removed' 2>&1 | tail -3 | sed -E 's/by [a-z0-9_-]+/by <user>/'
+pft-integrity accept - 2026-10-29T23:32:03Z: re-baselined 97 items by <user>
+manifest sha256: ad576e82cbbc38b65115e2b59f73c7f15456244a080ede8951af6882d525b91f -> 849c234adafb06e7e79d2ddd334c1eecb3467662883ef8b09bb2df98b6e15c6b (logged to accept.log)
+(exit 0)
+$ sudo pft-integrity verify | grep -E 'RESULT'
+RESULT: PASS - 97 unchanged, 0 warn, 0 fail -> exit 0
+(exit 0)
+$ ssh relay "sudo pft-integrity verify | grep -E 'WARN|FAIL|RESULT'"
+  [WARN] bin:pft-vulnscan                             added    new file
+  [WARN] unit:pft-vulnscan.service                    added    new file
+  [WARN] unit:pft-vulnscan.timer                      added    new file
+RESULT: WARN - 55 unchanged, 3 warn, 0 fail -> exit 1
+(exit 0)
+$ ssh relay "sudo pft-integrity accept --reason 'task_c6b22dcfd723a4f0c0e3288428518507: pft-vulnscan + OpenSCAP installed' 2>&1 | tail -3" | sed -E 's/by [a-z0-9_-]+/by <user>/'
+pft-integrity accept - 2026-10-29T23:32:23Z: re-baselined 58 items by <user>
+manifest sha256: 8674b0c532ceba3a8ee0640c8a1241e2bea9d0b96ddf362e88840b4ca1b34417 -> 1e99deaf2278a028c791bdff06d3826322e978bdef8b5762cbb58dc8637ef03f (logged to accept.log)
+(exit 0)
+$ ssh relay "sudo pft-integrity verify | grep -E 'RESULT'"
+RESULT: PASS - 58 unchanged, 0 warn, 0 fail -> exit 0
+(exit 0)
+# load alerts/vulnscan.rules.yml into the running Prometheus (config dir is this repo's alerts/, SIGHUP = reload, no restart)
+$ sudo docker kill -s HUP pft-prometheus >/dev/null; sleep 5; curl -s http://127.0.0.1:9090/api/v1/rules | jq -r '.data.groups[] | select(.name=="pft-vulnscan") | .rules[] | "\(.name) \(.health) \(.state)"'
+PFTVulnScanFailing unknown inactive
+PFTVulnScanNotRunning unknown inactive
+PFTVulnFeedStale unknown inactive
+PFTVulnHighCriticalPersistent unknown inactive
+PFTVulnRebootOwed unknown inactive
+(exit 0)
+$ sleep 20; curl -s 'http://127.0.0.1:9090/api/v1/query?query=pft_vulnscan_up' | jq -r '.data.result[] | "\(.metric.host) up=\(.value[1])"'
+validator up=1
+sentry up=1
+(exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/alerts | jq -r '[.data.alerts[] | select(.labels.alertname | startswith("PFTVuln"))] | length'
+0
+(exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/rules | jq -r '.data.groups[] | select(.name=="pft-vulnscan") | .rules[] | "\(.name) \(.health) \(.state)"'
+PFTVulnScanFailing ok inactive
+PFTVulnScanNotRunning ok inactive
+PFTVulnFeedStale ok inactive
+PFTVulnHighCriticalPersistent ok inactive
+PFTVulnRebootOwed ok inactive
+(exit 0)
