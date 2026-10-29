@@ -1,0 +1,65 @@
+# 2026-10-29T16:09:46Z drill/check.sh sha256 de1d0b039e86c5e4bed934fe4f1e48ba886fc90e99266458e2bb277229ba73a8
+# raw firing ALERTS on postfiatd-sentry, last 3d (control source):
+#   PFTMemoryGrowthToLimit 2026-10-28T07:24:19Z .. 2026-10-28T07:24:34Z
+#   PFTResourcesCollectorFailing 2026-10-28T11:18:34Z .. 2026-10-28T11:19:19Z
+## N1 sentry, last 60m, no restart -> expect C1 FAIL only, exit 1
+statewatch drill check: container=postfiatd-sentry since=1793286586 until=1793290186 window=3600s
+PASS C0-series-present: up samples=240
+FAIL C1-restart-seen: uptime resets=0 (expected >= 1)
+PASS C2-back-to-full: server_state{full}=1
+PASS C3-no-full-exit: full_exits increase=0
+PASS C4-collector-up: up=1
+PASS C5-no-state-alerts: 0 statewatch alerts fired
+RESULT: FAIL
+exit=1
+## N2 unknown container -> expect C0 FAIL and C5 'not judged' FAIL, exit 1
+statewatch drill check: container=nosuch since=1793289586 until=1793290186 window=600s
+FAIL C0-series-present: up samples=none (no statewatch data for this container)
+FAIL C1-restart-seen: uptime resets=none (expected >= 1)
+FAIL C2-back-to-full: server_state{full}=none (expected 1)
+FAIL C3-no-full-exit: full_exits increase=none (expected 0)
+FAIL C4-collector-up: up=none (expected 1)
+FAIL C5-no-state-alerts: not judged: no statewatch series (C0)
+RESULT: FAIL
+exit=1
+## P5a --alerts PFTResourcesCollectorFailing, window 2026-10-28T11:00Z..now (fired 11:18-11:19Z) -> expect C5 FAIL
+statewatch drill check: container=postfiatd-sentry since=1793185200 until=1793290186 window=104986s
+PASS C0-series-present: up samples=452
+FAIL C1-restart-seen: uptime resets=0 (expected >= 1)
+PASS C2-back-to-full: server_state{full}=1
+PASS C3-no-full-exit: full_exits increase=0
+PASS C4-collector-up: up=1
+FAIL C5-no-state-alerts: 1 statewatch alert series fired
+RESULT: FAIL
+exit=1
+## P5b --alerts PFTMemoryGrowthToLimit, window 2026-10-28T07:00Z..now (fired 07:24Z) -> expect C5 FAIL
+statewatch drill check: container=postfiatd-sentry since=1793170800 until=1793290186 window=119386s
+PASS C0-series-present: up samples=452
+FAIL C1-restart-seen: uptime resets=0 (expected >= 1)
+PASS C2-back-to-full: server_state{full}=1
+PASS C3-no-full-exit: full_exits increase=0
+PASS C4-collector-up: up=1
+FAIL C5-no-state-alerts: 1 statewatch alert series fired
+RESULT: FAIL
+exit=1
+## N5 --alerts PFTMemoryGrowthToLimit, window 2026-10-28T11:00Z..now (after it fired) -> expect C5 PASS
+statewatch drill check: container=postfiatd-sentry since=1793185200 until=1793290186 window=104986s
+PASS C0-series-present: up samples=452
+FAIL C1-restart-seen: uptime resets=0 (expected >= 1)
+PASS C2-back-to-full: server_state{full}=1
+PASS C3-no-full-exit: full_exits increase=0
+PASS C4-collector-up: up=1
+PASS C5-no-state-alerts: 0 statewatch alerts fired
+RESULT: FAIL
+exit=1
+## U1 usage
+need --container and a numeric --since
+exit=2
+## U2 until <= since
+--until must be a number > --since
+exit=2
+## E1 dead prometheus -> exit 2
+statewatch drill check: container=postfiatd since=1793289586 until=1793290186 window=600s
+curl: (7) Failed to connect to 127.0.0.1 port 1 after 0 ms: Connection refused
+prometheus request failed: count_over_time(pft_statewatch_up{container="postfiatd"}[600s])
+exit=2
