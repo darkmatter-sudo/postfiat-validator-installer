@@ -1,0 +1,38 @@
+# runlog 11: build 3 tests + shellcheck, commit 362969dc370aa6fedef6bdd1c6f66dd8b16857c9
+# Ubuntu 22.04.5 LTS | 2026-10-29T02:21:11Z
+$ git rev-parse HEAD
+362969dc370aa6fedef6bdd1c6f66dd8b16857c9
+(exit 0)
+$ bash patch/tests/run-tests.sh 2>&1 | tail -25
+ok   gate: sentry unreachable -> validator not installed
+ok   gate: sentry node never full after
+ok   gate: sentry node never full after -> validator not installed
+ok   gate: maint lock held
+ok   gate: maint lock held -> validator not installed
+ok   gate: maint start refused
+ok   gate: maint start refused -> validator not installed
+ok   gate: Alertmanager silence fails
+ok   gate: Alertmanager silence fails -> validator not installed
+ok   no silence -> sentry not installed
+ok   pre-gate fail opens no window
+ok   local host not last -> refused
+ok   pending resume -> refused
+ok   concurrent run -> refused
+ok   no config -> 3
+ok   local reboot -> exit 10
+ok   resume.json written
+ok   local reboot scheduled via systemd-run
+ok   validator window stays open over the reboot
+ok   resume: post-gate and PASS
+ok   resume: post-gate reboot flag cleared
+ok   resume.json removed
+ok   resume closes the window, keeps silence tail
+ok   resume with nothing pending
+RESULT: 193 passed, 0 failed
+(exit 0)
+$ shellcheck -x patch/pft-patch.sh patch/install.sh patch/drill/live-run.sh patch/tests/*.sh
+(exit 0)
+$ shellcheck --version | sed -n 2p
+version: 0.8.0
+(exit 0)
+# end 2026-10-29T02:24:41Z

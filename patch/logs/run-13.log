@@ -1,0 +1,129 @@
+# runlog 13: install + policy apply on both hosts, commit 362969dc370aa6fedef6bdd1c6f66dd8b16857c9
+# Ubuntu 22.04.5 LTS | 2026-10-29T02:25:07Z
+## validator host
+$ sudo bash patch/install.sh
+installed /usr/local/sbin/pft-patch sha256 86811d3829984b4fe3e84b42c67ba7f8c5463a5255a656df90c875063b3839e2
+wrote /etc/pft-patch/hosts.conf (edit it)
+Created symlink /etc/systemd/system/multi-user.target.wants/pft-patch-resume.service → /etc/systemd/system/pft-patch-resume.service.
+enabled pft-patch-resume.service (runs only when /var/lib/pft-patch/run/resume.json exists)
+(exit 0)
+$ sudo cat /etc/pft-patch/hosts.conf | grep -v '^#'
+host sentry    ssh   relay  postfiatd-sentry  5
+host validator local -      postfiatd         5
+post sentry pft-egress reapply --container postfiatd-sentry
+(exit 0)
+## sentry host
+$ ssh relay 'mkdir -p /tmp/pp-inst && cat > /tmp/pp-inst/pft-patch.sh' < patch/pft-patch.sh && ssh relay 'cat > /tmp/pp-inst/install.sh' < patch/install.sh
+(exit 0)
+$ ssh relay 'sudo bash /tmp/pp-inst/install.sh --host-only; rm -rf /tmp/pp-inst'
+installed /usr/local/sbin/pft-patch sha256 86811d3829984b4fe3e84b42c67ba7f8c5463a5255a656df90c875063b3839e2
+(exit 0)
+## validator: status before policy
+$ bash -c 'sudo pft-patch status; echo rc=$?'
+[OK  ] updates    0 security updates pending
+[WARN] updates    7 other update(s) pending (0 kernel package(s)); install with run --all
+[OK  ] holds      no held packages
+[OK  ] reboot     no reboot-required flag
+[OK  ] kernel     running kernel is the newest installed
+[WARN] services   restart needed (old libraries): packagekit.service
+[WARN] exposure   unattended-upgrades may upgrade (and restart) the Docker runtime: docker.io containerd runc not blacklisted
+[OK  ] autoreboot Automatic-Reboot=false (default)
+RESULT: WARN
+rc=1
+(exit 0)
+$ bash -c 'sudo pft-patch policy show'
+// Managed by pft-patch (postfiat-validator-installer/patch). Rollback: sudo pft-patch policy rollback --yes
+// Unattended security updates stay on; the Docker runtime and reboots go through pft-patch run instead.
+Unattended-Upgrade::Package-Blacklist {
+    "docker.io";
+    "docker-ce";
+    "docker-ce-cli";
+    "containerd";
+    "containerd.io";
+    "runc";
+};
+Unattended-Upgrade::Automatic-Reboot "false";
+(exit 0)
+## validator: policy apply
+$ bash -c 'sudo pft-patch policy apply --yes'
+backup: /var/lib/pft-patch/backup/20261029T022523Z (drop-in absent, apt-config dump sha256 462db62c845cf214893b794d75e6a641173da377326f91e63a81bd80d60799e4)
+applied: /etc/apt/apt.conf.d/52pft-patch sha256 c9a4336511ad8a0b85f66af9d7f8e4dee2d81c346ef34c6ac5f07b38322fe88c
+effective: blacklist docker.io docker-ce docker-ce-cli containerd containerd.io runc; Automatic-Reboot false; Unattended-Upgrade 1
+(exit 0)
+## validator: status after policy
+$ bash -c 'sudo pft-patch status; echo rc=$?'
+[OK  ] updates    0 security updates pending
+[WARN] updates    7 other update(s) pending (0 kernel package(s)); install with run --all
+[OK  ] holds      no held packages
+[OK  ] reboot     no reboot-required flag
+[OK  ] kernel     running kernel is the newest installed
+[WARN] services   restart needed (old libraries): packagekit.service
+[OK  ] exposure   installed Docker runtime packages are blacklisted for unattended-upgrades
+[OK  ] autoreboot Automatic-Reboot=false
+RESULT: WARN
+rc=1
+(exit 0)
+$ bash -c 'sudo pft-patch status --json' | jq -c .unattended
+{"enabled":true,"automatic_reboot":"false","runtime_exposed":[]}
+(exit 1)
+## sentry: status before policy
+$ ssh relay 'sudo pft-patch status; echo rc=$?'
+[OK  ] updates    0 security updates pending
+[WARN] updates    14 other update(s) pending (8 kernel package(s)); install with run --all
+[OK  ] holds      no held packages
+[OK  ] reboot     no reboot-required flag
+[OK  ] kernel     running kernel is the newest installed
+[OK  ] services   no service runs old libraries
+[WARN] exposure   unattended-upgrades may upgrade (and restart) the Docker runtime: docker.io containerd runc not blacklisted
+[OK  ] autoreboot Automatic-Reboot=false (default)
+RESULT: WARN
+rc=1
+(exit 0)
+$ ssh relay 'sudo pft-patch policy show'
+// Managed by pft-patch (postfiat-validator-installer/patch). Rollback: sudo pft-patch policy rollback --yes
+// Unattended security updates stay on; the Docker runtime and reboots go through pft-patch run instead.
+Unattended-Upgrade::Package-Blacklist {
+    "docker.io";
+    "docker-ce";
+    "docker-ce-cli";
+    "containerd";
+    "containerd.io";
+    "runc";
+};
+Unattended-Upgrade::Automatic-Reboot "false";
+(exit 0)
+## sentry: policy apply
+$ ssh relay 'sudo pft-patch policy apply --yes'
+backup: /var/lib/pft-patch/backup/20261029T022551Z (drop-in absent, apt-config dump sha256 e8cdd3a4f42d67ca093735c5af1f6e821cb4df3a6e6c571ebb7cbdfffe7fc075)
+applied: /etc/apt/apt.conf.d/52pft-patch sha256 c9a4336511ad8a0b85f66af9d7f8e4dee2d81c346ef34c6ac5f07b38322fe88c
+effective: blacklist docker.io docker-ce docker-ce-cli containerd containerd.io runc; Automatic-Reboot false; Unattended-Upgrade 1
+(exit 0)
+## sentry: status after policy
+$ ssh relay 'sudo pft-patch status; echo rc=$?'
+[OK  ] updates    0 security updates pending
+[WARN] updates    14 other update(s) pending (8 kernel package(s)); install with run --all
+[OK  ] holds      no held packages
+[OK  ] reboot     no reboot-required flag
+[OK  ] kernel     running kernel is the newest installed
+[OK  ] services   no service runs old libraries
+[OK  ] exposure   installed Docker runtime packages are blacklisted for unattended-upgrades
+[OK  ] autoreboot Automatic-Reboot=false
+RESULT: WARN
+rc=1
+(exit 0)
+$ ssh relay 'sudo pft-patch status --json' | jq -c .unattended
+{"enabled":true,"automatic_reboot":"false","runtime_exposed":[]}
+(exit 1)
+## integrity after install
+$ sudo pft-integrity verify | tail -8
+pft-integrity verify - 2026-10-29T02:26:24Z
+OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-10-28T22:26:34Z
+  [WARN] unit:pft-patch-resume.service                added    new file
+RESULT: WARN - 86 unchanged, 1 warn, 0 fail -> exit 1
+(exit 1)
+$ ssh relay 'sudo pft-integrity verify' | tail -8
+pft-integrity verify - 2026-10-29T02:26:35Z
+OS: Ubuntu 22.04.5 LTS | container: postfiatd-sentry | baseline: 2026-10-28T21:41:45Z
+RESULT: PASS - 52 unchanged, 0 warn, 0 fail -> exit 0
+(exit 0)
+# end 2026-10-29T02:26:35Z

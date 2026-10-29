@@ -1,0 +1,92 @@
+# 2026-10-29T03:16:03Z Ubuntu 22.04.5 LTS | alertpath maintenance hold: tests + shellcheck + mutants (commit pending, working tree)
+$ sha256sum pft-alertpath.sh tests/test-alertpath.sh tests/mutants.tsv
+edd58b46eb855eb1f8dd2a3113391c3db390250a90694df0e27fa4c5a2b9534e  pft-alertpath.sh
+24fa2c4c6861c504160dde94c53ba5f6e2a02cf01479d6e31b3decc5b805b23e  tests/test-alertpath.sh
+d6bf2bc5a11402b55e8bae5f6658ef0784f86fa943ddd0e49bd378611fa6d78b  tests/mutants.tsv
+$ bash tests/test-alertpath.sh
+PASS no snapshot -> STALE rc=2
+PASS healthy snapshot -> OK rc=0
+PASS snapshot 200s old -> STALE rc=2
+PASS watchdog delivery 300s old -> STALE rc=2
+PASS no delivery recorded -> STALE rc=2
+PASS watchdog resolved -> DEGRADED rc=1
+PASS Prometheus down -> DEGRADED rc=1
+PASS Prometheus reload failed -> DEGRADED rc=1
+PASS rule eval failures +3 -> DEGRADED rc=1
+PASS Prom notification errors -> DEGRADED rc=1
+PASS Prom notifications dropped -> DEGRADED rc=1
+PASS no Alertmanager discovered -> DEGRADED rc=1
+PASS rule group not loaded -> DEGRADED rc=1
+PASS rule group eval 300s old -> DEGRADED rc=1
+PASS Alertmanager down -> DEGRADED rc=1
+PASS Alertmanager reload failed -> DEGRADED rc=1
+PASS webhook failures +4 -> DEGRADED rc=1
+PASS bridge container stopped -> DEGRADED rc=1
+PASS bridge not listening -> DEGRADED rc=1
+PASS bridge ntfy errors +2 -> DEGRADED rc=1
+PASS mis-routed delivery -> DEGRADED rc=1
+PASS counter reset to 0 -> OK rc=0
+PASS counter reset then +2 -> DEGRADED rc=1
+PASS increase only vs. window -> OK rc=0
+PASS increase older than INC_WINDOW_SEC clears -> OK rc=0
+PASS baseline sample before the cut is used -> DEGRADED rc=1
+PASS bad HMAC alone -> STALE rc=2
+PASS replayed ts -> DEGRADED rc=1
+PASS ts 120s in the future -> STALE rc=2
+PASS wrong message type -> STALE rc=2
+PASS body swapped under a valid sig -> DEGRADED rc=1
+PASS oversize message -> STALE rc=2
+PASS spool full refused
+PASS notify sequence: [alertpath] DEGRADED|default [alertpath] STALE|high [alertpath] RECOVERED|low 
+PASS window: STALE held, nothing sent, stored OK, suppressed counted
+PASS grace: still held after the window closed
+PASS recovered inside the hold: no message
+PASS still STALE after window + grace: pages ([alertpath] STALE|high )
+PASS check without --notify is not held
+PASS no pft-maint binary: not held ([alertpath] STALE|high )
+PASS text output DEGRADED rc=1
+PASS push --print bash HMAC == openssl HMAC
+PASS snapshot parses fixture scrapes: {"rule_eval_failures":3,"wd_last_eval":1793196700,"amfail":3,"amtotal":13,"running":1,"listening":0,"ntfy_errors":1,"wd_count":3}
+PASS snapshot with everything down: [0,null,0,null,0,null]
+RESULT: 44 passed, 0 failed
+(exit 0)
+$ shellcheck pft-alertpath.sh tests/*.sh
+(exit 0)
+$ bash tests/mutate.sh
+# pft-alertpath.sh sha256 edd58b46eb855eb1f8dd2a3113391c3db390250a90694df0e27fa4c5a2b9534e
+# control: unmutated script
+RESULT: 44 passed, 0 failed
+M01 CAUGHT (snapshot age threshold x100) by 1 test(s):
+    FAIL snapshot 200s old (want STALE rc=2 /last snapshot 20[0-9]s old/, got OK rc=0: {"checked_at":1793243869,"state":"OK","reasons":[],"snapshot_age":200,"delive
+M02 CAUGHT (watchdog delivery age never stale) by 1 test(s):
+    FAIL watchdog delivery 300s old (want STALE rc=2 /last watchdog delivery 300s/, got OK rc=0: {"checked_at":1793243929,"state":"OK","reasons":[],"snapshot_age":5
+M03 CAUGHT (missing delivery record not stale) by 7 test(s):
+    FAIL no delivery recorded (want STALE rc=2 /no watchdog delivery recorded/, got OK rc=0: {"checked_at":1793243978,"state":"OK","reasons":[],"snapshot_age":6,"de
+    FAIL notify sequence: got '[alertpath] DEGRADED|default [alertpath] RECOVERED|low '
+    FAIL window hold: outbox='' state=OK err=
+    FAIL grace hold: outbox='' err=
+    FAIL after hold: held_ok=1 got ''
+    FAIL no-notify run held
+    FAIL missing pft-maint: got ''
+M04 CAUGHT (Prometheus reload failure ignored) by 1 test(s):
+    FAIL Prometheus reload failed (want DEGRADED rc=1 /Prometheus last config reload failed/, got OK rc=0: {"checked_at":1793244047,"state":"OK","reasons":[],"snaps
+M05 CAUGHT (counter reset counted as 0) by 1 test(s):
+    FAIL counter reset then +2 (want DEGRADED rc=1 /rule evaluation failures \+2/, got OK rc=0: {"checked_at":1793244118,"state":"OK","reasons":[],"snapshot_age":6,
+M06 CAUGHT (counter increase always 0) by 8 test(s):
+    FAIL rule eval failures +3 (want DEGRADED rc=1 /rule evaluation failures \+3/, got OK rc=0: {"checked_at":1793244155,"state":"OK","reasons":[],"snapshot_age":5,
+    FAIL Prom notification errors (want DEGRADED rc=1 /notification errors \+2/, got OK rc=0: {"checked_at":1793244156,"state":"OK","reasons":[],"snapshot_age":5,"d
+    FAIL Prom notifications dropped (want DEGRADED rc=1 /dropped \+1/, got OK rc=0: {"checked_at":1793244157,"state":"OK","reasons":[],"snapshot_age":5,"delivery_ag
+    FAIL webhook failures +4 (want DEGRADED rc=1 /webhook notifications failed \+4/, got OK rc=0: {"checked_at":1793244162,"state":"OK","reasons":[],"snapshot_age":
+    FAIL bridge ntfy errors +2 (want DEGRADED rc=1 /delivery errors \+2/, got OK rc=0: {"checked_at":1793244164,"state":"OK","reasons":[],"snapshot_age":5,"delivery
+    FAIL mis-routed delivery (want DEGRADED rc=1 /mis-routed/, got OK rc=0: {"checked_at":1793244165,"state":"OK","reasons":[],"snapshot_age":5,"delivery_age":30,"s
+    FAIL counter reset then +2 (want DEGRADED rc=1 /rule evaluation failures \+2/, got OK rc=0: {"checked_at":1793244167,"state":"OK","reasons":[],"snapshot_age":5,
+    FAIL baseline sample before the cut is used (want DEGRADED rc=1 /notification errors \+2/, got OK rc=0: {"checked_at":1793244170,"state":"OK","reasons":[],"snap
+M07 CAUGHT (Alertmanager down ignored) by 3 test(s):
+    FAIL Alertmanager down (want DEGRADED rc=1 /Alertmanager unreachable/, got OK rc=0: {"checked_at":1793244206,"state":"OK","reasons":[],"snapshot_age":5,"deliver
+    FAIL notify sequence: got '[alertpath] STALE|high [alertpath] RECOVERED|low '
+    FAIL text output: rc=0 2026-10-29T03:23:54Z state=OK accepted=1 rejected=0 snapshot_age=5 delivery_age=30
+M08 CAUGHT (webhook failures ignored) by 1 test(s):
+    FAIL webhook failures +4 (want DEGRADED rc=1 /webhook notifications failed \+4/, got OK rc=0: {"checked_at":1793244252,"state":"OK","reasons":[],"snapshot_age":
+M09 CAUGHT (bridge container state ignored) by 1 test(s):
+    FAIL bridge container stopped (want DEGRADED rc=1 /bridge container not running/, got DEGRADED rc=1: {"checked_at":1793244295,"state":"DEGRADED","reasons":["ntf
+STOPPED 2026-10-29T03:26:31Z: agent shell 10-min background limit; superseded by run 21 (detached, on the commit)

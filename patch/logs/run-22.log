@@ -1,0 +1,228 @@
+# 2026-10-29T03:32:51Z Ubuntu 22.04.5 LTS | pft-patch build 5 @ ceaaeee899bb1867921befa7949275f3713212a8
+$ sha256sum pft-patch.sh tests/*.sh
+3c893a4cf4aef5eca0f36cdd344de1b931d15bbaa5ce9afbde3677a9422c56b5  pft-patch.sh
+26ff004e849bd9847d856dff35c0463bba5f6ae2989bcaf1b5c31e66f8803817  tests/mutate.sh
+7f42b3c6e9087868e6a391ff11ab9b275dcadec6d0136b705bec9cc0c33dd6a8  tests/run-cases.sh
+0b8ae27aeeaee8f6b8e76d792e2d93cc59f754d2315b02428813560b5ab42da9  tests/run-stubs.sh
+f32a2ba9e7f04cebb0cfb65ce5b97783a6bb24374d76cc4eb6b151e67c65ead1  tests/run-tests.sh
+2035f3826518567471eeaa597b9819ce4387babe471903720e42158d76f5e43f  tests/stubs.sh
+$ bash tests/run-tests.sh
+ok   clean host -> OK exit 0
+ok   clean host has no WARN/CRIT
+ok   exposure OK after policy
+ok   status security update -> CRIT
+ok   status other update only -> WARN
+ok   status kernel counted as other
+ok   status third-party repo is other, not security
+ok   status mixed: CRIT wins
+ok   status simulation fails -> CRIT
+ok   status hold without update -> WARN
+ok   status held package with update -> CRIT
+ok   status reboot-required -> CRIT
+ok   status reboot-required without pkgs file
+ok   status newer kernel installed KSTA 3
+ok   status ABI kernel KSTA 2
+ok   status services on old libs -> WARN
+ok   status needrestart missing -> INFO only
+ok   status needrestart without KSTA (non-root) -> INFO
+ok   status no policy -> exposure WARN, installed only
+ok   status unattended off -> INFO, no exposure
+ok   status Automatic-Reboot true in a later file -> WARN
+ok   status prefix blacklist entry covers docker.io (re.match)
+ok   status mid-string entry does not cover (re.match is anchored)
+ok   status not-installed runtime packages ignored
+ok   --json fields and exit 2
+ok   --json clean host
+ok   status leaves the fake root unchanged
+ok   apt-get only called with -s (simulation)
+ok   no state-changing apt-mark/needrestart
+ok   apply without --yes refused
+ok   no drop-in after refusal
+ok   apply
+ok   apply backup records absent drop-in
+ok   apply reports effective blacklist
+ok   policy show == installed drop-in
+ok   security origin still allowed after apply
+ok   drop-in mode 0644
+ok   second apply is a no-op
+ok   no-op apply makes no backup
+ok   rollback without --yes refused
+ok   rollback from absent: drop-in removed
+ok   rollback from absent: byte-identical
+ok   effective config == before apply
+ok   second rollback: no backup left
+ok   apply over an existing drop-in backs it up
+ok   rollback restores previous drop-in
+ok   restored drop-in byte-identical, mode kept
+ok   rollback mismatch -> exit 5, backup kept
+ok   overridden Automatic-Reboot -> refused exit 4
+ok   refusal names the override
+ok   refused apply leaves no drop-in
+ok   refused apply leaves no backup
+ok   blacklist not visible in effective config -> refused
+ok   refused (blacklist) leaves no drop-in
+ok   no command -> usage 3
+ok   bad status flag -> 3
+ok   bad policy flag -> 3
+ok   bad policy sub -> 3
+ok   host-info format
+ok   upgrade without --yes refused
+ok   no install after refusal
+ok   security-only installs only security, not runtime/held
+ok   other update skipped in security-only
+ok   runtime package skipped without --runtime
+ok   held package skipped
+ok   new package left to dependencies
+ok   no services -> DECISION none
+ok   install command line (only-upgrade libssl3, confold)
+ok   apt-get update before install
+ok   --all adds other updates (still no runtime/held)
+ok   --runtime adds Docker runtime packages
+ok   upgrade: reboot-required after install -> reboot
+ok   upgrade: newer kernel after install -> reboot
+ok   upgrade: services -> restarted, docker deferred
+ok   upgrade: services decision line
+ok   upgrade: restart failure -> exit 2
+ok   upgrade: install failure -> exit 2
+ok   upgrade: update failure -> exit 2
+ok   upgrade: needrestart without kernel state -> exit 2
+ok   upgrade: nothing pending -> no install
+ok   docker.service never restarted
+ok   ssh.service restarted via systemctl
+ok   run without --yes refused
+ok   refused run calls nothing
+ok   run both -> PASS
+ok   security-only mode logged
+ok   sentry upgraded before validator
+ok   logged: GATE pre sentry node: PASS
+ok   logged: GATE post sentry node: PASS
+ok   logged: GATE pre validator integrity: PASS
+ok   logged: GATE post validator egress: PASS
+ok   logged: GATE post sentry audittrail: PASS
+ok   logged: GATE post validator reboot-flag: PASS
+ok   logged: STATUS before sentry:
+ok   logged: STATUS after validator:
+ok   one maint window per host
+ok   pft-maint runs on the maint host only
+ok   silence per host, expired when nothing restarted
+ok   window opened before the first install
+ok   both hosts installed
+ok   --hosts order ignored, config order used
+ok   --hosts validator only
+ok   sentry not upgraded with --hosts validator
+ok   as root: run PASS with ssh as the sudo user
+ok   as root: ssh runs via runuser -u SUDO_USER
+ok   not root: plain ssh
+ok   --hosts unknown -> 3
+ok   --all mode logged
+ok   --all passed to the host step
+ok   injected: exit 1
+ok   injected failure labelled as drill
+ok   injected: real checks still reported
+ok   injected: validator untouched proof
+ok   injected: no apt/window on the validator
+ok   failed host: silence expired (alerts flow)
+ok   failed host: window ended
+ok   changed later host -> exit 5
+ok   sentry reboot -> PASS
+ok   sentry reboot decision
+ok   sentry back with new boot id
+ok   boot id changed
+ok   post hook after reboot
+ok   validator not rebooted
+ok   restarted host: silence kept SILENCE_TAIL (updated)
+ok   restarted host: silence kept message
+ok   sentry not back -> FAIL
+ok   sentry not back: validator untouched
+ok   sentry not back: validator not touched
+ok   post-gate waits for full after reboot
+ok   silence: alertname=~".+"
+ok   silence: pipeline watchdog excluded
+ok   silence: WATCHDOG_ALERT honoured
+ok   reboot + mtime-only WARN -> accepted, PASS
+ok   accepted items named
+ok   fresh verify decides the gate
+ok   accept reason names run, host and items
+ok   verify pre + post + re-verify
+ok   integrity: mtime-only WARN at the pre-gate
+ok   integrity: mtime-only WARN at the pre-gate -> nothing accepted
+ok   integrity: mtime-only WARN at the pre-gate -> validator not installed
+ok   integrity: mtime-only WARN after an upgrade without reboot
+ok   integrity: mtime-only WARN after an upgrade without reboot -> nothing accepted
+ok   integrity: mtime-only WARN after an upgrade without reboot -> validator not installed
+ok   integrity: reboot + content change
+ok   integrity: reboot + content change -> nothing accepted
+ok   integrity: reboot + content change -> validator not installed
+ok   integrity: reboot + mtime-only and a content change
+ok   integrity: reboot + mtime-only and a content change -> nothing accepted
+ok   integrity: reboot + mtime-only and a content change -> validator not installed
+ok   accept fails -> gate fails
+ok   accept fails -> integrity FAIL
+ok   local reboot + mtime-only -> accepted at resume
+ok   egress lag after reboot -> retried, PASS
+ok   egress lag after reboot -> run PASS
+ok   egress never passes -> post-gate FAIL after GATE_TIMEOUT
+ok   egress never passes -> validator not installed
+ok   pre-gate egress checked once (no retry)
+ok   STATUS before with pending updates (status exit 2) is read
+ok   no 'unreadable' for a WARN/CRIT status
+ok   garbage status -> unreadable
+ok   injected reboot -> PASS
+ok   injected reboot labelled as drill
+ok   injected reboot: back with new boot id
+ok   injected reboot: boot id changed
+ok   injected reboot: validator not rebooted
+ok   gate: sentry not full before -> pre-gate fail
+ok   gate: sentry not full before -> pre-gate fail -> validator not installed
+ok   gate: sentry few peers
+ok   gate: sentry few peers -> validator not installed
+ok   gate: stale validated ledger
+ok   gate: stale validated ledger -> validator not installed
+ok   gate: validator integrity WARN before -> refused at validator pre
+ok   gate: validator integrity WARN before -> refused at validator pre -> validator not installed
+ok   gate: sentry integrity changes in upgrade
+ok   gate: sentry integrity changes in upgrade -> validator not installed
+ok   gate: sentry audittrail fails
+ok   gate: sentry audittrail fails -> validator not installed
+ok   gate: sentry egress fails
+ok   gate: sentry egress fails -> validator not installed
+ok   gate: sentry install fails
+ok   gate: sentry install fails -> validator not installed
+ok   gate: sentry unreachable
+ok   gate: sentry unreachable -> validator not installed
+ok   gate: sentry node never full after
+ok   gate: sentry node never full after -> validator not installed
+ok   gate: maint lock held
+ok   gate: maint lock held -> validator not installed
+ok   gate: maint start refused
+ok   gate: maint start refused -> validator not installed
+ok   gate: Alertmanager silence fails
+ok   gate: Alertmanager silence fails -> validator not installed
+ok   no silence -> sentry not installed
+ok   pre-gate fail opens no window
+ok   local host not last -> refused
+ok   pending resume -> refused
+ok   concurrent run -> refused
+ok   no config -> 3
+ok   container lost on reboot -> started once
+ok   container lost on reboot -> PASS after start
+ok   containers recorded before the host step
+ok   container not startable -> gate FAIL
+ok   container FAIL on sentry leaves validator untouched
+ok   no reboot -> no docker start
+ok   resume.json keeps the container list
+ok   resume: lost container started, PASS
+ok   resume: containers PASS
+ok   local reboot -> exit 10
+ok   resume.json written
+ok   local reboot scheduled via systemd-run
+ok   validator window stays open over the reboot
+ok   resume: post-gate and PASS
+ok   resume: post-gate reboot flag cleared
+ok   resume.json removed
+ok   resume closes the window, keeps silence tail
+ok   resume with nothing pending
+RESULT: 215 passed, 0 failed
+(exit 0)
+$ shellcheck -x pft-patch.sh tests/*.sh
+(exit 0) END

@@ -1,0 +1,12 @@
+# runlog 14: validator integrity rebaseline after the pft-patch install (run 13)
+# Ubuntu 22.04.5 LTS | 2026-10-29T02:26:44Z
+$ sudo pft-integrity accept --reason "task_cd713ac8fc0024bfe06f2485a98e8099: pft-patch install (unit pft-patch-resume.service)"
+pft-integrity accept - 2026-10-29T02:26:49Z: re-baselined 87 items by <user>
+manifest sha256: 2256bbe164ced25460aa7f4cf10e8473f61903ce4cdc17ea142c1a7057d056c1 -> 791b44deba0a2df275cb48325f8fda434f21c4d40ff253372da14e59d761d26c (logged to accept.log)
+(exit 0)
+$ sudo pft-integrity verify | tail -3
+pft-integrity verify - 2026-10-29T02:26:56Z
+OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-10-29T02:26:44Z
+RESULT: PASS - 87 unchanged, 0 warn, 0 fail -> exit 0
+(exit 0)
+# end 2026-10-29T02:26:56Z

@@ -1,0 +1,277 @@
+# runlog 15: drill A - injected sentry post-gate failure, --all, commit 362969dc370aa6fedef6bdd1c6f66dd8b16857c9
+$ INJECT=sentry-postgate WANT=1 bash patch/drill/live-run.sh --all
+pft-patch live-run - 2026-10-29T02:27:11Z - Ubuntu 22.04.5 LTS - run 20261029T022711Z
+sha256: pft-patch.sh 86811d3829984b4fe3e84b42c67ba7f8c5463a5255a656df90c875063b3839e2 | live-run.sh 9fbd64afe119919d5673031ebf4e716753cec791a8a30cf2d9971cf1df1a6b43
+        redact.py f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8
+args: PFT_PATCH_INJECT=sentry-postgate pft-patch run --yes --all | expected exit 1
+
+== 0. preflight (nothing changed yet)
+  pft-maint: no data-collection locks, no window open
+  sentry: installed /usr/local/sbin/pft-patch sha256 86811d3829984b4fe3e84b42c67ba7f8c5463a5255a656df90c875063b3839e2
+  validator: installed /usr/local/sbin/pft-patch sha256 86811d3829984b4fe3e84b42c67ba7f8c5463a5255a656df90c875063b3839e2
+  operator topics to watch: 2 (not printed)
+  sentry (postfiatd-sentry): server_state=full
+  validator (postfiatd): server_state=full
+  literals for redaction: 2 ip, 2 key, 4 topic, 1 user (values not printed)
+$ redact.py control --literals <literals>
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (18/18)
+
+== 1. redirect notifiers, outer Alertmanager silence
+  local:/etc/postfiat-monitor.env sha256 6dc3b10fb491 (before)
+  local:/etc/postfiat-monitor.env -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/postfiat-monitor.env.pre-patch-drill
+  local:/etc/pft-integrity.env sha256 b3cd1c3da7ff (before)
+  local:/etc/pft-integrity.env -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/pft-integrity.env.pre-patch-drill
+  relay:/etc/pft-watchdog/ntfy.env sha256 ddb52721a668 (before)
+  relay:/etc/pft-watchdog/ntfy.env -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/pft-watchdog/ntfy.env.pre-patch-drill
+  relay:/etc/pft-integrity.env sha256 cdd330a974d2 (before)
+  relay:/etc/pft-integrity.env -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/pft-integrity.env.pre-patch-drill
+  relay:/etc/pft-alertpath/ntfy.env sha256 ddb52721a668 (before)
+  relay:/etc/pft-alertpath/ntfy.env -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/pft-alertpath/ntfy.env.pre-patch-drill
+  local:/etc/pft-maint/ntfy.env created for the drill only -> https://ntfy.sh/<redacted> (MAINT)
+  relay:/etc/pft-maint/ntfy.env created for the drill only -> https://ntfy.sh/<redacted> (MAINT)
+  outer Alertmanager silence alertname=~".+", alertname!="PFTAlertPipelineWatchdog" until 2026-10-29T03:57:32Z (id 46065fa3)
+
+== 2. pft-patch run
+  before sentry: boot=e44b08c3 dpkg=e1469f888747 started=2026-10-28T19:15:58.719946776Z state=full
+  before validator: boot=21ccf6dd dpkg=1067f83e0f39 started=2026-10-28T11:33:11.215149204Z state=full
+
+$ sudo PFT_PATCH_INJECT=sentry-postgate pft-patch run --yes --all (2026-10-29T02:27:35Z)
+[2026-10-29T02:27:35Z] pft-patch run 20261029T022735Z: hosts sentry validator (in this order), mode all, INJECT=sentry-postgate
+[2026-10-29T02:27:37Z] PREFLIGHT sentry: boot=e44b08c3 dpkg=e1469f888747f18c3ebcec593605a3833f9f9ee8e24b7d7ed9216ed08e4ec5d2 reboot=0 StartedAt=2026-10-28T19:15:58.719946776Z
+[2026-10-29T02:27:38Z] PREFLIGHT validator: boot=21ccf6dd dpkg=1067f83e0f397453f6832c14b34fa654b8bffbc687ffb0c2571d6d71cb2a5dad reboot=0 StartedAt=2026-10-28T11:33:11.215149204Z
+[2026-10-29T02:27:38Z] === sentry (ssh, container postfiatd-sentry) ===
+[2026-10-29T02:27:46Z] STATUS before sentry: {"result":"WARN","updates":{"security":0,"other":14,"kernel":8},"holds":[],"reboot_required":false,"kernel":"1","services":[],"exposed":[],"automatic_reboot":"false"}
+unreadable
+[2026-10-29T02:27:47Z] GATE pre sentry node: PASS state=full peers=13 age=4s (+1s)
+[2026-10-29T02:27:55Z] GATE pre sentry integrity: PASS (52 unchanged)
+[2026-10-29T02:27:56Z] GATE pre sentry audittrail: PASS (check exit 0)
+[2026-10-29T02:28:00Z] GATE pre sentry egress: PASS (check exit 0)
+    maint: window started: id m1793240880-1205427 until 2026-10-29T03:58:00Z | sentry copy: pushed
+[2026-10-29T02:28:06Z] WINDOW sentry: pft-maint window + Alertmanager silence 46c0c18f until 2026-10-29T03:58:06Z
+    PLAN ubuntu-pro-client-l10n other 37.2ubuntu~22.04.1 -> 38ubuntu0~22.04
+    PLAN ubuntu-pro-client other 37.2ubuntu~22.04.1 -> 38ubuntu0~22.04
+    PLAN ubuntu-advantage-tools other 37.2ubuntu~22.04.1 -> 38ubuntu0~22.04
+    PLAN nano other 6.2-1ubuntu0.2 -> 6.2-1ubuntu0.3
+    DEP linux-headers-5.15.0-202 5.15.0-202.212 (new package, installed only as a dependency)
+    DEP linux-headers-5.15.0-202-generic 5.15.0-202.212 (new package, installed only as a dependency)
+    DEP linux-modules-5.15.0-202-generic 5.15.0-202.212 (new package, installed only as a dependency)
+    DEP linux-image-5.15.0-202-generic 5.15.0-202.212 (new package, installed only as a dependency)
+    PLAN linux-virtual other 5.15.0.198.171 -> 5.15.0.202.174
+    PLAN linux-image-virtual other 5.15.0.198.171 -> 5.15.0.202.174
+    PLAN linux-headers-virtual other 5.15.0.198.171 -> 5.15.0.202.174
+    PLAN linux-headers-generic other 5.15.0.198.171 -> 5.15.0.202.174
+    PLAN snapd other 2.76.3+ubuntu22.04.1 -> 2.77.1+ubuntu22.04.1
+    PLAN tmux other 3.2a-4ubuntu0.2 -> 3.2a-4ubuntu0.3
+      apt: Reading package lists...
+      apt: Building dependency tree...
+      apt: Reading state information...
+      apt: The following additional packages will be installed:
+      apt:   linux-headers-5.15.0-202 linux-headers-5.15.0-202-generic
+      apt:   linux-image-5.15.0-202-generic linux-modules-5.15.0-202-generic
+      apt: Suggested packages:
+      apt:   fdutils linux-doc | linux-source-5.15.0 linux-tools
+      apt:   linux-modules-extra-5.15.0-202-generic hunspell zenity | kdialog
+      apt: The following NEW packages will be installed:
+      apt:   linux-headers-5.15.0-202 linux-headers-5.15.0-202-generic
+      apt:   linux-image-5.15.0-202-generic linux-modules-5.15.0-202-generic
+      apt: The following packages will be upgraded:
+      apt:   linux-headers-generic linux-headers-virtual linux-image-virtual
+      apt:   linux-virtual nano snapd tmux ubuntu-advantage-tools ubuntu-pro-client
+      apt:   ubuntu-pro-client-l10n
+      apt: 10 upgraded, 4 newly installed, 0 to remove and 0 not upgraded.
+      apt: Need to get 84.1 MB of archives.
+      apt: After this operation, 225 MB of additional disk space will be used.
+      apt: Get:1 http://archive.ubuntu.com/ubuntu jammy-updates/main amd64 ubuntu-pro-client-l10n amd64 38ubuntu0~22.04 [20.7 kB]
+      apt: Get:2 http://archive.ubuntu.com/ubuntu jammy-updates/main amd64 ubuntu-pro-client amd64 38ubuntu0~22.04 [238 kB]
+      apt: Get:3 http://archive.ubuntu.com/ubuntu jammy-updates/main amd64 ubuntu-advantage-tools all 38ubuntu0~22.04 [10.9 kB]
+      apt: Get:4 http://archive.ubuntu.com/ubuntu jammy-updates/main amd64 nano amd64 6.2-1ubuntu0.3 [280 kB]
+      apt: Get:5 http://archive.ubuntu.com/ubuntu jammy-updates/main amd64 linux-headers-5.15.0-202 all 5.15.0-202.212 [12.5 MB]
+      apt: Get:6 http://archive.ubuntu.com/ubuntu jammy-updates/main amd64 linux-headers-5.15.0-202-generic amd64 5.15.0-202.212 [2990 kB]
+      apt: Get:7 http://archive.ubuntu.com/ubuntu jammy-updates/main amd64 linux-modules-5.15.0-202-generic amd64 5.15.0-202.212 [22.8 MB]
+      apt: Get:8 http://archive.ubuntu.com/ubuntu jammy-updates/main amd64 linux-image-5.15.0-202-generic amd64 5.15.0-202.212 [11.6 MB]
+      apt: Get:9 http://archive.ubuntu.com/ubuntu jammy-updates/main amd64 linux-virtual amd64 5.15.0.202.174 [1648 B]
+      apt: Get:10 http://archive.ubuntu.com/ubuntu jammy-updates/main amd64 linux-image-virtual amd64 5.15.0.202.174 [2428 B]
+      apt: Get:11 http://archive.ubuntu.com/ubuntu jammy-updates/main amd64 linux-headers-virtual amd64 5.15.0.202.174 [1628 B]
+      apt: Get:12 http://archive.ubuntu.com/ubuntu jammy-updates/main amd64 linux-headers-generic amd64 5.15.0.202.174 [2330 B]
+      apt: Get:13 http://archive.ubuntu.com/ubuntu jammy-updates/main amd64 snapd amd64 2.77.1+ubuntu22.04.1 [33.2 MB]
+      apt: Get:14 http://archive.ubuntu.com/ubuntu jammy-updates/main amd64 tmux amd64 3.2a-4ubuntu0.3 [428 kB]
+      apt: Preconfiguring packages ...
+      apt: Fetched 84.1 MB in 10s (8025 kB/s)
+      apt: (Reading database ... 
+(Reading database ... 5%
+(Reading database ... 10%
+(Reading database ... 15%
+(Reading database ... 20%
+(Reading database ... 25%
+(Reading database ... 30%
+(Reading database ... 35%
+(Reading database ... 40%
+(Reading database ... 45%
+(Reading database ... 50%
+(Reading database ... 55%
+(Reading database ... 60%
+(Reading database ... 65%
+(Reading database ... 70%
+(Reading database ... 75%
+(Reading database ... 80%
+(Reading database ... 85%
+(Reading database ... 90%
+(Reading database ... 95%
+(Reading database ... 100%
+(Reading database ... 95041 files and directories currently installed.)
+      apt: Preparing to unpack .../00-ubuntu-pro-client-l10n_38ubuntu0~22.04_amd64.deb ...
+      apt: Unpacking ubuntu-pro-client-l10n (38ubuntu0~22.04) over (37.2ubuntu~22.04.1) ...
+      apt: Preparing to unpack .../01-ubuntu-pro-client_38ubuntu0~22.04_amd64.deb ...
+      apt: Unpacking ubuntu-pro-client (38ubuntu0~22.04) over (37.2ubuntu~22.04.1) ...
+      apt: Preparing to unpack .../02-ubuntu-advantage-tools_38ubuntu0~22.04_all.deb ...
+      apt: Unpacking ubuntu-advantage-tools (38ubuntu0~22.04) over (37.2ubuntu~22.04.1) ...
+      apt: Preparing to unpack .../03-nano_6.2-1ubuntu0.3_amd64.deb ...
+      apt: Unpacking nano (6.2-1ubuntu0.3) over (6.2-1ubuntu0.2) ...
+      apt: Selecting previously unselected package linux-headers-5.15.0-202.
+      apt: Preparing to unpack .../04-linux-headers-5.15.0-202_5.15.0-202.212_all.deb ...
+      apt: Unpacking linux-headers-5.15.0-202 (5.15.0-202.212) ...
+      apt: Selecting previously unselected package linux-headers-5.15.0-202-generic.
+      apt: Preparing to unpack .../05-linux-headers-5.15.0-202-generic_5.15.0-202.212_amd64.deb ...
+      apt: Unpacking linux-headers-5.15.0-202-generic (5.15.0-202.212) ...
+      apt: Selecting previously unselected package linux-modules-5.15.0-202-generic.
+      apt: Preparing to unpack .../06-linux-modules-5.15.0-202-generic_5.15.0-202.212_amd64.deb ...
+      apt: Unpacking linux-modules-5.15.0-202-generic (5.15.0-202.212) ...
+      apt: Selecting previously unselected package linux-image-5.15.0-202-generic.
+      apt: Preparing to unpack .../07-linux-image-5.15.0-202-generic_5.15.0-202.212_amd64.deb ...
+      apt: Unpacking linux-image-5.15.0-202-generic (5.15.0-202.212) ...
+      apt: Preparing to unpack .../08-linux-virtual_5.15.0.202.174_amd64.deb ...
+      apt: Unpacking linux-virtual (5.15.0.202.174) over (5.15.0.198.171) ...
+      apt: Preparing to unpack .../09-linux-image-virtual_5.15.0.202.174_amd64.deb ...
+      apt: Unpacking linux-image-virtual (5.15.0.202.174) over (5.15.0.198.171) ...
+      apt: Preparing to unpack .../10-linux-headers-virtual_5.15.0.202.174_amd64.deb ...
+      apt: Unpacking linux-headers-virtual (5.15.0.202.174) over (5.15.0.198.171) ...
+      apt: Preparing to unpack .../11-linux-headers-generic_5.15.0.202.174_amd64.deb ...
+      apt: Unpacking linux-headers-generic (5.15.0.202.174) over (5.15.0.198.171) ...
+      apt: Preparing to unpack .../12-snapd_2.77.1+ubuntu22.04.1_amd64.deb ...
+      apt: Unpacking snapd (2.77.1+ubuntu22.04.1) over (2.76.3+ubuntu22.04.1) ...
+      apt: Preparing to unpack .../13-tmux_3.2a-4ubuntu0.3_amd64.deb ...
+      apt: Unpacking tmux (3.2a-4ubuntu0.3) over (3.2a-4ubuntu0.2) ...
+      apt: Setting up snapd (2.77.1+ubuntu22.04.1) ...
+      apt: Installing new version of config file /etc/apparmor.d/usr.lib.snapd.snap-confine.real ...
+      apt: snapd.failure.service is a disabled or a static unit not running, not starting it.
+      apt: snapd.gpio-chardev-setup.target is a disabled or a static unit not running, not starting it.
+      apt: snapd.snap-repair.service is a disabled or a static unit not running, not starting it.
+      apt: Setting up linux-headers-5.15.0-202 (5.15.0-202.212) ...
+      apt: Setting up nano (6.2-1ubuntu0.3) ...
+      apt: Setting up tmux (3.2a-4ubuntu0.3) ...
+      apt: Setting up ubuntu-pro-client (38ubuntu0~22.04) ...
+      apt: Installing new version of config file /etc/apparmor.d/ubuntu_pro_esm_cache ...
+      apt: Setting up linux-headers-5.15.0-202-generic (5.15.0-202.212) ...
+      apt: Setting up ubuntu-pro-client-l10n (38ubuntu0~22.04) ...
+      apt: Setting up linux-headers-generic (5.15.0.202.174) ...
+      apt: Setting up ubuntu-advantage-tools (38ubuntu0~22.04) ...
+      apt: Setting up linux-headers-virtual (5.15.0.202.174) ...
+      apt: Setting up linux-image-5.15.0-202-generic (5.15.0-202.212) ...
+      apt: I: /boot/vmlinuz.old is now a symlink to vmlinuz-5.15.0-198-generic
+      apt: I: /boot/initrd.img.old is now a symlink to initrd.img-5.15.0-198-generic
+      apt: I: /boot/vmlinuz is now a symlink to vmlinuz-5.15.0-202-generic
+      apt: I: /boot/initrd.img is now a symlink to initrd.img-5.15.0-202-generic
+      apt: Setting up linux-image-virtual (5.15.0.202.174) ...
+      apt: Setting up linux-modules-5.15.0-202-generic (5.15.0-202.212) ...
+      apt: Setting up linux-virtual (5.15.0.202.174) ...
+      apt: Processing triggers for dbus (1.12.20-2ubuntu4.1) ...
+      apt: Processing triggers for install-info (6.8-4build1) ...
+      apt: Processing triggers for man-db (2.10.2-1) ...
+      apt: Processing triggers for linux-image-5.15.0-202-generic (5.15.0-202.212) ...
+      apt: /etc/kernel/postinst.d/initramfs-tools:
+      apt: update-initramfs: Generating /boot/initrd.img-5.15.0-202-generic
+      apt: /etc/kernel/postinst.d/zz-update-grub:
+      apt: Sourcing file `/etc/default/grub'
+      apt: Sourcing file `/etc/default/grub.d/50-cloudimg-settings.cfg'
+      apt: Sourcing file `/etc/default/grub.d/init-select.cfg'
+      apt: Generating grub configuration file ...
+      apt: Found linux image: /boot/vmlinuz-5.15.0-202-generic
+      apt: Found initrd image: /boot/initrd.img-5.15.0-202-generic
+      apt: Found linux image: /boot/vmlinuz-5.15.0-198-generic
+      apt: Found initrd image: /boot/initrd.img-5.15.0-198-generic
+      apt: Found linux image: /boot/vmlinuz-5.15.0-191-generic
+      apt: Found initrd image: /boot/initrd.img-5.15.0-191-generic
+      apt: Warning: os-prober will not be executed to detect other bootable partitions.
+      apt: Systems on them will not be added to the GRUB boot configuration.
+      apt: Check GRUB_DISABLE_OS_PROBER documentation entry.
+      apt: done
+      apt: packages have been installed but needrestart is suspended
+    INSTALLED 10 package(s)
+    DECISION reboot (reboot-required by: linux-base linux-image-5.15.0-202-generic)
+[2026-10-29T02:30:35Z] DECISION sentry: reboot (reboot-required by: linux-base linux-image-5.15.0-202-generic)
+[2026-10-29T02:30:37Z] REBOOT sentry: scheduled (boot id e44b08c3)
+[2026-10-29T02:31:40Z] REBOOT sentry: back after 63s (boot id 1dc4840b)
+    post: [2026-10-29T02:31:41Z] reapply: drift found (chain changed, jump missing/moved/duplicated, or container IP now <redacted-ip>) - reloading
+    post: [2026-10-29T02:31:41Z] reapply: done
+[2026-10-29T02:31:41Z] POST sentry: hook ok
+[2026-10-29T02:32:28Z] GATE post sentry node: PASS state=full peers=10 age=3s (+46s)
+[2026-10-29T02:32:40Z] GATE post sentry integrity: accepted mtime-only item(s) after the reboot: sshd:sshd_config
+[2026-10-29T02:32:46Z] GATE post sentry integrity: PASS (52 unchanged)
+[2026-10-29T02:32:47Z] GATE post sentry audittrail: PASS (check exit 0)
+[2026-10-29T02:32:49Z] GATE post sentry egress: FAIL (pft-egress check --container postfiatd-sentry)
+[2026-10-29T02:32:49Z] GATE post sentry reboot-flag: PASS (no reboot-required left)
+[2026-10-29T02:32:49Z] GATE post sentry INJECTED-FAILURE: drill (PFT_PATCH_INJECT=sentry-postgate), not a host fault; the checks above are the real result
+    maint: window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+[2026-10-29T02:32:52Z] WINDOW sentry: closed; silence 46c0c18f expired
+[2026-10-29T02:32:57Z] STATUS after sentry: {"result":"OK","updates":{"security":0,"other":0,"kernel":0},"holds":[],"reboot_required":false,"kernel":"1","services":[],"exposed":[],"automatic_reboot":"false"}
+[2026-10-29T02:32:57Z] STOP: sentry failed (post-gate); hosts after it are not touched
+[2026-10-29T02:32:57Z] UNTOUCHED validator: boot id, dpkg.log sha256 and container StartedAt equal the run-start record (boot=21ccf6dd dpkg=1067f83e0f397453f6832c14b34fa654b8bffbc687ffb0c2571d6d71cb2a5dad reboot=0 StartedAt=2026-10-28T11:33:11.215149204Z)
+[2026-10-29T02:32:57Z] RESULT: FAIL at sentry (post-gate)
+exit 1 (2026-10-29T02:32:57Z)
+CHECK ok   pft-patch run exit 1 (got 1)
+
+  after  sentry: boot=1dc4840b dpkg=84d0232abd4f started=2026-10-29T02:31:37.957534324Z state=full
+CHECK ok   sentry server_state full after the run (full)
+  sentry rebooted (boot=e44b08c3 -> boot=1dc4840b): auditd enabled 2, 41 rules loaded, 41 compiled
+CHECK ok   sentry auditd immutable (-e 2) after the reboot (enabled 2)
+CHECK ok   sentry every compiled audit rule loaded at boot (41/41)
+  after  validator: boot=21ccf6dd dpkg=1067f83e0f39 started=2026-10-28T11:33:11.215149204Z state=full
+CHECK ok   validator server_state full after the run (full)
+CHECK ok   sentry DOCKER-USER -> PFT-EGRESS jump present once (1)
+
+== 3. restore, outer silence, read back
+  restored local:/etc/postfiat-monitor.env: sha256 matches pre-drill copy: yes
+  restored local:/etc/pft-integrity.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-watchdog/ntfy.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-integrity.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-alertpath/ntfy.env: sha256 matches pre-drill copy: yes
+  removed drill-only local:/etc/pft-maint/ntfy.env: yes
+  removed drill-only relay:/etc/pft-maint/ntfy.env: yes
+CHECK ok   notifier env files restored byte-identical, drill-only files removed
+  outer silence kept until 2026-10-29T02:56:37Z (newest container start + 25 min): HTTP 200
+  MAINT topic: 2 message(s)
+    {"time":"2026-10-29T02:28:06Z","title":"[MAINT] start validator","message":"pft-patch 20261029T022735Z sentry | until 2026-10-29T03:58:00Z (ttl 5400s) | sentry copy: pushed"}
+    {"time":"2026-10-29T02:32:51Z","title":"[MAINT] end validator","message":"pft-patch 20261029T022735Z sentry | pft-patch 20261029T022735Z sentry fail after 291s | suppressed here: watchdog=0 monitor=0 integrity=0 | sentry copy: pushed"}
+  ALERT topic: 0 message(s)
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the drill (2 topic(s), 0 with messages)
+  $ pft-integrity verify (validator host)
+    pft-integrity verify - 2026-10-29T02:33:43Z
+    OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-10-29T02:26:44Z
+    RESULT: PASS - 87 unchanged, 0 warn, 0 fail -> exit 0
+  $ pft-integrity verify (sentry host)
+    pft-integrity verify - 2026-10-29T02:33:50Z
+    OS: Ubuntu 22.04.5 LTS | container: postfiatd-sentry | baseline: 2026-10-29T02:32:35Z
+    RESULT: PASS - 52 unchanged, 0 warn, 0 fail -> exit 0
+
+live-run done 2026-10-29T02:33:50Z: 0 check(s) failed -> PASS
+(exit 0) 2026-10-29T02:33:51Z

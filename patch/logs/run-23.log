@@ -1,0 +1,32 @@
+# 2026-10-29T03:33:02Z Ubuntu 22.04.5 LTS | deploy pft-alertpath @ ceaaeee899bb1867921befa7949275f3713212a8 to the sentry
+$ sha256sum pft-alertpath.sh
+edd58b46eb855eb1f8dd2a3113391c3db390250a90694df0e27fa4c5a2b9534e  pft-alertpath.sh
+(exit 0)
+$ ssh relay 'sha256sum /usr/local/bin/pft-alertpath; test -x /usr/local/bin/pft-maint && echo pft-maint present'
+289669622bf29208b48f80f7b31fe2338782c9900866f453ba9716b52a1183c3  /usr/local/bin/pft-alertpath
+pft-maint present
+(exit 0)
+$ scp -q pft-alertpath.sh relay:/tmp/pft-alertpath.new
+(exit 0)
+$ ssh relay 'sudo install -o root -g root -m 0755 /tmp/pft-alertpath.new /usr/local/bin/pft-alertpath && rm -f /tmp/pft-alertpath.new && sha256sum /usr/local/bin/pft-alertpath'
+edd58b46eb855eb1f8dd2a3113391c3db390250a90694df0e27fa4c5a2b9534e  /usr/local/bin/pft-alertpath
+(exit 0)
+$ ssh relay 'sudo systemctl start pft-alertpath-check.service; sudo journalctl --utc -u pft-alertpath-check -n 3 --no-pager -o cat; sudo pft-alertpath status | jq -c "{state, hold_until}"'
+2026-10-29T03:33:07Z state=OK accepted=0 rejected=0 snapshot_age=31 delivery_age=24
+pft-alertpath-check.service: Deactivated successfully.
+Finished pft-alertpath check: alert-pipeline dead-man state (OK/DEGRADED/STALE), ntfy on change.
+{"state":"OK","hold_until":0}
+(exit 0)
+$ ssh relay 'sudo pft-integrity verify 2>&1 | tail -4'
+pft-integrity verify - 2026-10-29T03:33:17Z
+OS: Ubuntu 22.04.5 LTS | container: postfiatd-sentry | baseline: 2026-10-29T02:52:33Z
+  [FAIL] bin:pft-alertpath                            changed  mtime, sha256
+RESULT: FAIL - 51 unchanged, 0 warn, 1 fail -> exit 2
+(exit 0)
+$ ssh relay 'sudo pft-integrity accept --reason "task_cd713ac8: pft-alertpath maintenance hold (commit 7c47394928c44885430f7a91f7ab756d25eb6d6c)" 2>&1 | tail -2'
+pft-integrity accept - 2026-10-29T03:33:30Z: re-baselined 52 items by root
+manifest sha256: 48bb947f81bbb0a1163e07046ca8ecb73d3c767b00156c3da5c8ce2b00ab3c47 -> df1e21e95f688acf7d548fd0fe304f4f9365aca03ba441c8b280d23e82b0aaf6 (logged to accept.log)
+(exit 0)
+$ ssh relay 'sudo pft-integrity verify 2>&1 | tail -1'
+RESULT: PASS - 52 unchanged, 0 warn, 0 fail -> exit 0
+(exit 0)

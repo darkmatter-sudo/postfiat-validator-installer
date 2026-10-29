@@ -1,0 +1,28 @@
+# 2026-10-29T04:16:00Z Ubuntu 22.04.5 LTS | copy of the boot-time resume log written by pft-patch-resume.service after the drill B validator reboot (run 19)
+$ sudo cat /var/lib/pft-patch/run/resume.log
+[2026-10-29T02:59:08Z] pft-patch resume 20261029T025016Z: validator rebooted (boot 7ccb0487)
+[2026-10-29T02:59:49Z] GATE post validator node: PASS state=full peers=11 age=2s (+41s)
+[2026-10-29T03:00:06Z] GATE post validator integrity: accepted mtime-only item(s) after the reboot: sshd:sshd_config
+[2026-10-29T03:00:16Z] GATE post validator integrity: PASS (87 unchanged)
+[2026-10-29T03:00:17Z] GATE post validator audittrail: PASS (check exit 0)
+[2026-10-29T03:00:19Z] GATE post validator egress: PASS (check exit 0, attempt 1)
+[2026-10-29T03:00:19Z] GATE post validator reboot-flag: PASS (no reboot-required left)
+[2026-10-29T03:00:25Z] STATUS after validator: {"result":"OK","updates":{"security":0,"other":0,"kernel":0},"holds":[],"reboot_required":false,"kernel":"1","services":[],"exposed":[],"automatic_reboot":"false"}
+    maint: window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+[2026-10-29T03:00:27Z] WINDOW validator: closed; silence 858d9ae2 kept until 2026-10-29T03:15:27Z (restart-related alerts stay true for a while)
+[2026-10-29T03:00:27Z] DONE validator
+[2026-10-29T03:00:27Z] RESULT: PASS - validator patched, rebooted and gated
+(exit 0)
+$ journalctl -u pft-patch-resume.service -b -1 -b 0 --no-pager | tail -5
+<local-time> validator systemd[1]: Starting pft-patch: finish a patch run after this host rebooted...
+<local-time> validator systemd[1]: pft-patch-resume.service: Deactivated successfully.
+<local-time> validator systemd[1]: Finished pft-patch: finish a patch run after this host rebooted.
+<local-time> validator systemd[1]: pft-patch-resume.service: Consumed 29.615s CPU time.
+NOTE 2026-10-29T04:16:14Z: the echoed journalctl line above is wrong (echo typed by hand); the command that ran was 'sudo journalctl -u pft-patch-resume.service -b 0 --no-pager | tail -5' (local-time output). Re-run below in UTC with the command echoed by the runner itself.
+$ TZ=UTC sudo journalctl -u pft-patch-resume.service -b 0 --no-pager -o short-iso | tail -4
+2026-10-29T02:59:07+0000 validator systemd[1]: Starting pft-patch: finish a patch run after this host rebooted...
+2026-10-29T03:00:27+0000 validator systemd[1]: pft-patch-resume.service: Deactivated successfully.
+2026-10-29T03:00:27+0000 validator systemd[1]: Finished pft-patch: finish a patch run after this host rebooted.
+2026-10-29T03:00:27+0000 validator systemd[1]: pft-patch-resume.service: Consumed 29.615s CPU time.
+(exit 0)
+# 2026-10-29T04:16:14Z END

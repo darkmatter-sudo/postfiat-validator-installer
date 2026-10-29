@@ -1,0 +1,60 @@
+# 2026-10-29T04:14:23Z Ubuntu 22.04.5 LTS | deploy pft-patch build 5 to both hosts @ 2625075c679384378f6a17e33e1c15ff08b9b86b
+$ sha256sum patch/pft-patch.sh
+3c893a4cf4aef5eca0f36cdd344de1b931d15bbaa5ce9afbde3677a9422c56b5  patch/pft-patch.sh
+(exit 0)
+$ sudo bash patch/install.sh
+installed /usr/local/sbin/pft-patch sha256 3c893a4cf4aef5eca0f36cdd344de1b931d15bbaa5ce9afbde3677a9422c56b5
+enabled pft-patch-resume.service (runs only when /var/lib/pft-patch/run/resume.json exists)
+(exit 0)
+$ ssh relay 'mkdir -p /tmp/pp-inst && cat > /tmp/pp-inst/pft-patch.sh' < patch/pft-patch.sh && ssh relay 'cat > /tmp/pp-inst/install.sh' < patch/install.sh
+(exit 0)
+$ ssh relay 'sudo bash /tmp/pp-inst/install.sh --host-only; rm -rf /tmp/pp-inst'
+installed /usr/local/sbin/pft-patch sha256 3c893a4cf4aef5eca0f36cdd344de1b931d15bbaa5ce9afbde3677a9422c56b5
+(exit 0)
+$ sudo pft-integrity verify | tail -4
+pft-integrity verify - 2026-10-29T04:14:35Z
+OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-10-29T02:59:56Z
+  [WARN] unit:pft-patch-resume.service                changed  mtime
+RESULT: WARN - 86 unchanged, 1 warn, 0 fail -> exit 1
+(exit 0)
+$ ssh relay 'sudo pft-integrity verify' | tail -4
+pft-integrity verify - 2026-10-29T04:14:40Z
+OS: Ubuntu 22.04.5 LTS | container: postfiatd-sentry | baseline: 2026-10-29T03:33:25Z
+RESULT: PASS - 52 unchanged, 0 warn, 0 fail -> exit 0
+(exit 0)
+$ sudo pft-patch status; echo rc=$?
+[OK  ] updates    0 security updates pending
+[OK  ] updates    0 other updates pending
+[OK  ] holds      no held packages
+[OK  ] reboot     no reboot-required flag
+[OK  ] kernel     running kernel is the newest installed
+[OK  ] services   no service runs old libraries
+[OK  ] exposure   installed Docker runtime packages are blacklisted for unattended-upgrades
+[OK  ] autoreboot Automatic-Reboot=false
+RESULT: OK
+rc=0
+(exit 0)
+$ ssh relay 'sudo pft-patch status; echo rc=$?'
+[OK  ] updates    0 security updates pending
+[OK  ] updates    0 other updates pending
+[OK  ] holds      no held packages
+[OK  ] reboot     no reboot-required flag
+[OK  ] kernel     running kernel is the newest installed
+[OK  ] services   no service runs old libraries
+[OK  ] exposure   installed Docker runtime packages are blacklisted for unattended-upgrades
+[OK  ] autoreboot Automatic-Reboot=false
+RESULT: OK
+rc=0
+(exit 0)
+$ sudo sha256sum /etc/systemd/system/pft-patch-resume.service | cut -c1-64; sha256sum patch/pft-patch-resume.service | cut -c1-64
+77b98f272ec639de8c7ba72c57409d167efb2f9a1850f814ef659ad65410872a
+77b98f272ec639de8c7ba72c57409d167efb2f9a1850f814ef659ad65410872a
+(exit 0)
+$ sudo pft-integrity accept --reason 'task_cd713ac8fc0024bfe06f2485a98e8099: pft-patch build 5 reinstall (unit mtime only, content unchanged)' | tail -2
+pft-integrity accept - 2026-10-29T04:15:13Z: re-baselined 87 items by <user>
+manifest sha256: a0aa4da703af0f0668283b77d3c4ea2ca131e928cb1614a60308cc311046d8df -> b03bead07935a03fbe943bf80b65e2f5ab2d93e2843aca2f06b7975e95a75371 (logged to accept.log)
+(exit 0)
+$ sudo pft-integrity verify | tail -1
+RESULT: PASS - 87 unchanged, 0 warn, 0 fail -> exit 0
+(exit 0)
+# 2026-10-29T04:15:24Z END

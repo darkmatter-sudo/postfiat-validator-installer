@@ -1,0 +1,29 @@
+# 2026-10-29T00:12:14Z patch real-format probes (read-only) validator-host | Ubuntu 22.04.5 LTS
+$ apt-get -s -o Debug::NoLocking=1 dist-upgrade | grep -E '^(Inst|Conf)' | head -6
+Inst ubuntu-pro-client-l10n [37.2ubuntu~22.04.1] (38ubuntu0~22.04 Ubuntu:22.04/jammy-updates [amd64]) []
+Inst ubuntu-pro-client [37.2ubuntu~22.04.1] (38ubuntu0~22.04 Ubuntu:22.04/jammy-updates [amd64])
+Inst ubuntu-advantage-tools [37.2ubuntu~22.04.1] (38ubuntu0~22.04 Ubuntu:22.04/jammy-updates [all])
+Inst nano [6.2-1ubuntu0.2] (6.2-1ubuntu0.3 Ubuntu:22.04/jammy-updates [amd64])
+Inst gh [2.102.1] (2.103.3 gh:cli.github.com [amd64])
+Inst snapd [2.76.3+ubuntu22.04.1] (2.77.1+ubuntu22.04.1 Ubuntu:22.04/jammy-updates [amd64])
+(exit 0)
+$ sudo needrestart -b -r l
+NEEDRESTART-VER: 3.5
+NEEDRESTART-KCUR: 5.15.0-198-generic
+NEEDRESTART-KEXP: 5.15.0-198-generic
+NEEDRESTART-KSTA: 1
+NEEDRESTART-SVC: packagekit.service
+(exit 0)
+$ apt-config dump | grep -E '^Unattended-Upgrade::(Package-Blacklist|Automatic-Reboot)|^APT::Periodic'
+APT::Periodic "";
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Download-Upgradeable-Packages "0";
+APT::Periodic::AutocleanInterval "0";
+APT::Periodic::Unattended-Upgrade "1";
+(exit 0)
+$ dpkg-query -W -f='${db:Status-Abbrev} ${Package}\n' docker.io containerd runc docker-ce 2>&1
+dpkg-query: no packages found matching docker-ce
+ii  containerd
+ii  docker.io
+ii  runc
+(exit 1)

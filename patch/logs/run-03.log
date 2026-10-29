@@ -1,0 +1,70 @@
+# 2026-10-29T00:31:37Z patch offline tests + shellcheck | Ubuntu 22.04.5 LTS | commit 357f3a4f70cdef9847ec3faff42d5dc49d70a1b7 | shellcheck 0.8.0
+$ sha256sum pft-patch.sh tests/run-tests.sh tests/stubs.sh tests/mutate.sh
+9ac028680f9351086b90f43650ece089c941f4fded237d1eb0224cf2a7222bb2  pft-patch.sh
+be3dea32c9204da1b33ae8ede727199252e2cf23b3cbeaf40c00dcf337bd47f0  tests/run-tests.sh
+c5eb4300eddc2187ff5ed84b0d8bfbf2496c7eac2cb2daac30065d35a7139898  tests/stubs.sh
+7dfd3639eae2c5e5451f737c30024274c4794ac0575a9053e78c67a9250be4f4  tests/mutate.sh
+(exit 0)
+$ bash tests/run-tests.sh
+ok   clean host -> OK exit 0
+ok   clean host has no WARN/CRIT
+ok   exposure OK after policy
+ok   status security update -> CRIT
+ok   status other update only -> WARN
+ok   status kernel counted as other
+ok   status third-party repo is other, not security
+ok   status mixed: CRIT wins
+ok   status simulation fails -> CRIT
+ok   status hold without update -> WARN
+ok   status held package with update -> CRIT
+ok   status reboot-required -> CRIT
+ok   status reboot-required without pkgs file
+ok   status newer kernel installed KSTA 3
+ok   status ABI kernel KSTA 2
+ok   status services on old libs -> WARN
+ok   status needrestart missing -> INFO only
+ok   status needrestart without KSTA (non-root) -> INFO
+ok   status no policy -> exposure WARN, installed only
+ok   status unattended off -> INFO, no exposure
+ok   status Automatic-Reboot true in a later file -> WARN
+ok   status prefix blacklist entry covers docker.io (re.match)
+ok   status mid-string entry does not cover (re.match is anchored)
+ok   status not-installed runtime packages ignored
+ok   --json fields and exit 2
+ok   --json clean host
+ok   status leaves the fake root unchanged
+ok   apt-get only called with -s (simulation)
+ok   no state-changing apt-mark/needrestart
+ok   apply without --yes refused
+ok   no drop-in after refusal
+ok   apply
+ok   apply backup records absent drop-in
+ok   apply reports effective blacklist
+ok   policy show == installed drop-in
+ok   security origin still allowed after apply
+ok   drop-in mode 0644
+ok   second apply is a no-op
+ok   no-op apply makes no backup
+ok   rollback without --yes refused
+ok   rollback from absent: drop-in removed
+ok   rollback from absent: byte-identical
+ok   effective config == before apply
+ok   second rollback: no backup left
+ok   apply over an existing drop-in backs it up
+ok   rollback restores previous drop-in
+ok   restored drop-in byte-identical, mode kept
+ok   rollback mismatch -> exit 5, backup kept
+ok   overridden Automatic-Reboot -> refused exit 4
+ok   refusal names the override
+ok   refused apply leaves no drop-in
+ok   refused apply leaves no backup
+ok   blacklist not visible in effective config -> refused
+ok   refused (blacklist) leaves no drop-in
+ok   no command -> usage 3
+ok   bad status flag -> 3
+ok   bad policy flag -> 3
+ok   bad policy sub -> 3
+RESULT: 58 passed, 0 failed
+(exit 0)
+$ shellcheck -x pft-patch.sh tests/run-tests.sh tests/stubs.sh tests/mutate.sh
+(exit 0)

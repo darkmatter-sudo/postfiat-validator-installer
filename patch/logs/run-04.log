@@ -1,0 +1,30 @@
+# 2026-10-29T00:32:18Z patch mutation controls | Ubuntu 22.04.5 LTS | commit 357f3a4f70cdef9847ec3faff42d5dc49d70a1b7 | mutate.sh sha256 7dfd3639eae2c5e5451f737c30024274c4794ac0575a9053e78c67a9250be4f4 | pft-patch.sh sha256 9ac028680f9351086b90f43650ece089c941f4fded237d1eb0224cf2a7222bb2
+$ bash tests/mutate.sh
+control: unmutated copy RESULT: 58 passed, 0 failed
+M01 CAUGHT - security pocket not recognised (everything is 'other') :: 3 failing: status security update -> CRIT (rc=1 want 2, /\[CRIT\] updates +1;status mixed: CRIT wins (rc=1 want 2, /^RESULT: CRIT$/);--json fields and exit 2
+M02 CAUGHT - pending security updates only WARN :: 2 failing: status security update -> CRIT (rc=1 want 2, /\[CRIT\] updates +1;status mixed: CRIT wins (rc=1 want 2, /^RESULT: CRIT$/)
+M03 CAUGHT - kernel packages not counted :: 2 failing: status kernel counted as other (rc=1 want 1, /2 other update\(s\);--json fields and exit 2
+M04 CAUGHT - held package with a pending update only WARN :: 1 failing: status held package with update -> CRIT (rc=1 want 2, /\[CRIT\] h
+M05 CAUGHT - reboot-required flag ignored :: 3 failing: status reboot-required -> CRIT (rc=0 want 2, /\[CRIT\] reboot +re;status reboot-required without pkgs file (rc=0 want 2, /\[CRIT\] ;--json fields and exit 2
+M06 CAUGHT - KSTA 2/3 treated as current :: 2 failing: status newer kernel installed KSTA 3 (rc=0 want 1, /\[WARN\] kern;status ABI kernel KSTA 2 (rc=0 want 1, /\[WARN\] kernel .*KSTA 2/
+M07 CAUGHT - needrestart output trusted without KSTA (non-root partial run) :: 1 failing: status needrestart without KSTA (non-root) -> INFO (rc=0 want 0, 
+M08 CAUGHT - services on old libraries not reported :: 1 failing: status services on old libs -> WARN (rc=0 want 1, /\[WARN\] servi
+M09 CAUGHT - blacklist matched as substring instead of re.match :: 1 failing: status mid-string entry does not cover (re.match is anchored) (rc
+M10 CAUGHT - unattended-off check inverted :: 6 failing: exposure OK after policy (rc=0 want 0, /\[OK  \] exposure/);status no policy -> exposure WARN, installed only (rc=0 want 1, /;status unattended off -> INFO, no exposure (rc=1 want 0, /\[INFO\
+M11 CAUGHT - Automatic-Reboot true not reported :: 1 failing: status Automatic-Reboot true in a later file -> WARN (rc=0 want 1
+M12 CAUGHT - WARN does not raise the exit code :: 10 failing: status other update only -> WARN (rc=0 want 1, /\[WARN\] updates ;status kernel counted as other (rc=0 want 1, /2 other update\(s\);status third-party repo is other, not security (rc=0 want 1, /\[O
+M13 CAUGHT - status simulation without -s (would really upgrade) :: 1 failing: apt-get only called with -s
+M14 CAUGHT - apply without --yes allowed :: 5 failing: apply without --yes refused (rc=0 want 4, /add --yes/);no drop-in after refusal;apply (rc=0 want 0, /^applied: .*/52pft-patch sha256 [0-9a-f]{64}
+M15 CAUGHT - apply does not check the EFFECTIVE config :: 6 failing: overridden Automatic-Reboot -> refused exit 4 (rc=0 want 4, /REFU;refusal names the override (rc=0 want 4, /Automatic-Reboot is 'tr;refused apply leaves no drop-in
+M16 CAUGHT - refused apply does not restore the previous state :: 2 failing: refused apply leaves no drop-in;refused (blacklist) leaves no drop-in
+M17 CAUGHT - Automatic-Reboot not part of the effective check :: 4 failing: overridden Automatic-Reboot -> refused exit 4 (rc=0 want 4, /REFU;refusal names the override (rc=0 want 4, /Automatic-Reboot is 'tr;refused apply leaves no drop-in
+M18 CAUGHT - no backup of an existing drop-in :: 3 failing: apply over an existing drop-in backs it up (rc=0 want 0, /^backup;rollback restores previous drop-in (rc=5 want 0, /^rollback: byte;restored drop-in byte-identical, mode kept
+M19 CAUGHT - restore copies without preserving mode :: 1 failing: restored drop-in byte-identical, mode kept
+M20 CAUGHT - rollback does not compare the effective apt-config :: 1 failing: rollback mismatch -> exit 5, backup kept (rc=0 want 5, /rollback:
+M21 CAUGHT - rollback reuses an already rolled-back backup :: 1 failing: second rollback: no backup left (rc=0 want 2, /no backup in/)
+M22 CAUGHT - idempotence check skipped (new backup every apply) :: 2 failing: second apply is a no-op (rc=0 want 0, /^policy already applied/);no-op apply makes no backup
+M23 CAUGHT - drop-in installed with mode 0600 :: 1 failing: drop-in mode 0644
+M24 CAUGHT - runtime package not installed counted as exposed :: 4 failing: status no policy -> exposure WARN, installed only (rc=1 want 1, /;status mid-string entry does not cover (re.match is anchored) (rc;status not-installed runtime packages ignored (rc=1 want 0, /\[OK
+RESULT: 24/24 caught, 0 survived, 0 not applied
+(exit 0)
+# finished 2026-10-29T00:49:29Z

@@ -1,0 +1,57 @@
+# runlog 18: reinstall build 4 on both hosts, commit 4e2563a9d3e3d4b7e3c10deb080beda67e86d6cf
+# Ubuntu 22.04.5 LTS | 2026-10-29T02:48:51Z
+$ sudo bash patch/install.sh
+installed /usr/local/sbin/pft-patch sha256 27841ea35dc69afd3db0f6d7ad02694455e83a230c29c3648246348b9082bf6e
+enabled pft-patch-resume.service (runs only when /var/lib/pft-patch/run/resume.json exists)
+(exit 0)
+$ ssh relay 'mkdir -p /tmp/pp-inst && cat > /tmp/pp-inst/pft-patch.sh' < patch/pft-patch.sh && ssh relay 'cat > /tmp/pp-inst/install.sh' < patch/install.sh
+(exit 0)
+$ ssh relay 'sudo bash /tmp/pp-inst/install.sh --host-only; rm -rf /tmp/pp-inst'
+installed /usr/local/sbin/pft-patch sha256 27841ea35dc69afd3db0f6d7ad02694455e83a230c29c3648246348b9082bf6e
+(exit 0)
+$ sudo pft-integrity verify | tail -2
+  [WARN] unit:pft-patch-resume.service                changed  mtime
+RESULT: WARN - 86 unchanged, 1 warn, 0 fail -> exit 1
+(exit 0)
+$ ssh relay 'sudo pft-integrity verify' | tail -2
+OS: Ubuntu 22.04.5 LTS | container: postfiatd-sentry | baseline: 2026-10-29T02:32:35Z
+RESULT: PASS - 52 unchanged, 0 warn, 0 fail -> exit 0
+(exit 0)
+$ sudo pft-patch status; echo rc=$?
+[OK  ] updates    0 security updates pending
+[WARN] updates    7 other update(s) pending (0 kernel package(s)); install with run --all
+[OK  ] holds      no held packages
+[OK  ] reboot     no reboot-required flag
+[OK  ] kernel     running kernel is the newest installed
+[WARN] services   restart needed (old libraries): packagekit.service
+[OK  ] exposure   installed Docker runtime packages are blacklisted for unattended-upgrades
+[OK  ] autoreboot Automatic-Reboot=false
+RESULT: WARN
+rc=1
+(exit 0)
+$ ssh relay 'sudo pft-patch status; echo rc=$?'
+[OK  ] updates    0 security updates pending
+[OK  ] updates    0 other updates pending
+[OK  ] holds      no held packages
+[OK  ] reboot     no reboot-required flag
+[OK  ] kernel     running kernel is the newest installed
+[OK  ] services   no service runs old libraries
+[OK  ] exposure   installed Docker runtime packages are blacklisted for unattended-upgrades
+[OK  ] autoreboot Automatic-Reboot=false
+RESULT: OK
+rc=0
+(exit 0)
+# end 2026-10-29T02:49:21Z
+## validator rebaseline: install.sh re-copied the unchanged unit (mtime only)
+$ sudo sha256sum /etc/systemd/system/pft-patch-resume.service | cut -c1-64; sha256sum ~/work/postfiat-validator-installer/patch/pft-patch-resume.service | cut -c1-64
+77b98f272ec639de8c7ba72c57409d167efb2f9a1850f814ef659ad65410872a
+77b98f272ec639de8c7ba72c57409d167efb2f9a1850f814ef659ad65410872a
+(exit 0)
+$ sudo pft-integrity accept --reason "task_cd713ac8fc0024bfe06f2485a98e8099: pft-patch build 4 reinstall (unit mtime only, content unchanged)"
+pft-integrity accept - 2026-10-29T02:49:35Z: re-baselined 87 items by <user>
+manifest sha256: 791b44deba0a2df275cb48325f8fda434f21c4d40ff253372da14e59d761d26c -> cfa62067fb167a176a8d5cba8f222852843ff88836ab08510ddacae8e95a017d (logged to accept.log)
+(exit 0)
+$ sudo pft-integrity verify | tail -1
+RESULT: PASS - 87 unchanged, 0 warn, 0 fail -> exit 0
+(exit 0)
+# end 2026-10-29T02:49:42Z

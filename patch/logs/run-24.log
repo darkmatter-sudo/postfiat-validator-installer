@@ -1,0 +1,9 @@
+# 2026-10-29T04:08:25Z Ubuntu 22.04.5 LTS | alertpath mutants after M24 retarget @ ceaaeee899bb1867921befa7949275f3713212a8
+$ sha256sum pft-alertpath.sh tests/test-alertpath.sh tests/mutants.tsv
+edd58b46eb855eb1f8dd2a3113391c3db390250a90694df0e27fa4c5a2b9534e  pft-alertpath.sh
+24fa2c4c6861c504160dde94c53ba5f6e2a02cf01479d6e31b3decc5b805b23e  tests/test-alertpath.sh
+2be4c20d36789134f53352f73c20c2860c2fbc076ca34feb33470aaf73381403  tests/mutants.tsv
+(exit 0)
+$ bash tests/test-alertpath.sh | tail -3
+mktemp: write error: Broken pipe
+NOTE 2026-10-29T04:08:31Z: STOPPED by the agent - launched before the M24 fix was committed (git pull refused on the unstaged change), so the header SHA ceaaeee does not contain the tested mutants.tsv. Superseded by run 25.
