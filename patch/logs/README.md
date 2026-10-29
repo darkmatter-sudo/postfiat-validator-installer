@@ -36,6 +36,7 @@ boot ids -> first 8 hex chars, local-time syslog stamps -> `<local-time>`.
 | 24 | alertpath mutants after the M24 retarget | STOPPED: launched before the fix was committed |
 | 25 | alertpath tests + mutants @ 28e5b9d (M24 retargeted at the stored-state comparison) | 44/44, shellcheck 0, 35/35 caught, 0 not applied |
 | 27 | deploy pft-patch build 5 to both hosts @ 2625075 | both hosts `status` OK; integrity: unit mtime only, accepted, PASS |
+| 29 | **drill C**: `--all` both hosts @ 2625075, no injection (both hosts already fully patched) | every pre/post gate PASS on both hosts incl. the new containers gate; INSTALLED 0, DECISION none (no reboot required, none taken); boot ids, dpkg.log and container StartedAt unchanged; operator topics 0 messages; integrity PASS 87/52 |
 
 Drill B found two gaps, both fixed afterwards: dockerd left pft-prometheus Exited (255) after the validator reboot and
 the post-gate did not notice (build 5 containers check), and the sentry's alertpath monitor sent one STALE page to the
