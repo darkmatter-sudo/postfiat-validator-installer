@@ -1,0 +1,57 @@
+# 2026-10-29T20:17:32Z statewatch 6h baseline report (both hosts) - git HEAD 0246bb5ab29c9fbadb6bbbc556db7008797611de
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+$ mkdir -p data
+(exit 0)
+$ sudo cat /var/lib/pft-statewatch/history-postfiatd.jsonl | jq -c --argjson c 1793305052 'select(.ts <= $c)' > data/baseline-postfiatd.jsonl
+(exit 0)
+$ ssh relay sudo cat /var/lib/pft-statewatch/history-postfiatd-sentry.jsonl | jq -c --argjson c 1793305052 'select(.ts <= $c)' > data/baseline-postfiatd-sentry.jsonl
+(exit 0)
+$ sha256sum report/report.py data/baseline-postfiatd.jsonl data/baseline-postfiatd-sentry.jsonl
+afc97a0e31bba725ac8132d470e78e3303d7289156ac51a08a583ef1cc0413b2  report/report.py
+c0b36b78ac4f732cfd60aab6c6797192adba4a814e89508bdd5530fc8f505f50  data/baseline-postfiatd.jsonl
+f3ba3c09972999d1ca7892e2b1cef77551e14663bf859825399c54f67f6a23bb  data/baseline-postfiatd-sentry.jsonl
+(exit 0)
+$ wc -l data/baseline-postfiatd.jsonl data/baseline-postfiatd-sentry.jsonl
+   362 data/baseline-postfiatd.jsonl
+   362 data/baseline-postfiatd-sentry.jsonl
+   724 total
+(exit 0)
+$ python3 report/report.py --json data/baseline-report.json data/baseline-postfiatd.jsonl data/baseline-postfiatd-sentry.jsonl
+### postfiatd
+
+Window 2026-10-29T14:16:34Z .. 2026-10-29T20:17:16Z (6.01 h), 362 samples, 0 gaps > 90 s, 0 restarts.
+
+| mode | time share | time (s) | transitions |
+|---|---:|---:|---:|
+| disconnected | 0.0000% | 0.000 | 0 |
+| connected | 0.0000% | 0.000 | 0 |
+| syncing | 0.0000% | 0.000 | 0 |
+| tracking | 0.0000% | 0.000 | 0 |
+| full | 100.0000% | 21642.231 | 0 |
+
+- transitions per hour (all modes): 0.0; full exits: 0 (0.0 per hour)
+- io_latency_ms: min 1, p50 1, p90 1, p99 2, max 8; samples above 50 ms: 0; value counts {"1": 353, "2": 7, "3": 1, "8": 1}
+- peer_disconnects: +1 (0.166 per hour), max in one full clock hour: 0 (over 5 full clock hours, partial edge hours excluded); peer_disconnects_resources: +0
+- jq_trans_overflow: +0
+
+### postfiatd-sentry
+
+Window 2026-10-29T14:16:25Z .. 2026-10-29T20:17:16Z (6.01 h), 362 samples, 0 gaps > 90 s, 0 restarts.
+
+| mode | time share | time (s) | transitions |
+|---|---:|---:|---:|
+| disconnected | 0.0000% | 0.000 | 0 |
+| connected | 0.0000% | 0.000 | 0 |
+| syncing | 0.0000% | 0.000 | 0 |
+| tracking | 0.0000% | 0.000 | 0 |
+| full | 100.0000% | 21653.967 | 0 |
+
+- transitions per hour (all modes): 0.0; full exits: 0 (0.0 per hour)
+- io_latency_ms: min 1, p50 1, p90 1, p99 6, max 13; samples above 50 ms: 0; value counts {"1": 350, "2": 4, "3": 2, "5": 2, "6": 2, "11": 1, "13": 1}
+- peer_disconnects: +2 (0.333 per hour), max in one full clock hour: 0 (over 5 full clock hours, partial edge hours excluded); peer_disconnects_resources: +0
+- jq_trans_overflow: +0
+
+(exit 0)
+$ sha256sum data/baseline-report.json
+fc9dae970da75a057357b944401abcb46bf48627a2c614165db746d59c3bde2a  data/baseline-report.json
+(exit 0)
