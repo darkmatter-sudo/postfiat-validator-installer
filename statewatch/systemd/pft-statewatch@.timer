@@ -1,0 +1,10 @@
+[Unit]
+Description=Run pft-statewatch for container %i every minute
+
+[Timer]
+OnCalendar=*-*-* *:*:15
+AccuracySec=1s
+Persistent=false
+
+[Install]
+WantedBy=timers.target

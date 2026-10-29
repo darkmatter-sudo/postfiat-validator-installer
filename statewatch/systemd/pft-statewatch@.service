@@ -1,0 +1,34 @@
+[Unit]
+Description=pft-statewatch: postfiatd state/health counters for container %i
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/statewatch
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# root: needs the docker socket (docker exec ... curl server_info on the container's loopback). Read-only otherwise.
+ExecStart=/usr/local/bin/pft-statewatch collect --container %i --history /var/lib/pft-statewatch/history-%i.jsonl
+ProtectSystem=strict
+ReadWritePaths=/var/lib/pft-exporter/textfile /var/lib/pft-statewatch
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+UMask=0022
+TimeoutStartSec=40
