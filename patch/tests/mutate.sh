@@ -163,6 +163,25 @@ mutant M56 "pending resume record ignored by run" \
 mutant M57 "ssh as root even when run through sudo (no key/alias for the sentry)" \
   'if [ "${H_MODE[$h]}" = ssh ] && is_root && [ -n "$SSH_AS" ]' 'if false && [ -n "$SSH_AS" ]'
 
+mutant M58 "mtime-only items accepted without a reboot" \
+  '[ "${REBOOTED[$h]:-0}" = 1 ] && mtime_only "$out"' 'mtime_only "$out"'
+mutant M59 "any WARN/FAIL finding treated as mtime-only" \
+  "[ -n \"\$f\" ] && ! grep -qvE '^\\s*\\[WARN\\] [^ ]+ +changed +mtime\\s*\$' <<<\"\$f\"" '[ -n "$f" ]'
+mutant M60 "no fresh verify after the accept (stale WARN result decides)" \
+  '      out="$(hx "$h" pft-integrity verify 2>&1)"; rc=$?' '      rc=0'
+mutant M61 "accept failure ignored" \
+  'if hx "$h" pft-integrity accept' 'if true || hx "$h" pft-integrity accept'
+mutant M62 "remote reboot not recorded (mtime-only never accepted on the sentry)" \
+  '      REBOOTED[$h]=1' '      :'
+mutant M63 "resume does not record the local reboot" \
+  'rebooted (boot $(cut -c1-8 "$BOOT_ID_FILE" 2>/dev/null))"
+  REBOOTED[$h]=1' 'rebooted (boot $(cut -c1-8 "$BOOT_ID_FILE" 2>/dev/null))"
+  :'
+mutant M64 "pipeline watchdog silenced too (alertpath would page)" \
+  '{name:"alertname",value:$w,isRegex:false,isEqual:false}' '{name:"alertname",value:".+",isRegex:true,isEqual:true}'
+mutant M65 "WATCHDOG_ALERT ignored" \
+  '--arg w "$WATCHDOG_ALERT"' '--arg w PFTAlertPipelineWatchdog'
+
 wait
 for id in "${IDS[@]}"; do
   read -r kind line < "$W/$id.res"; echo "$line"

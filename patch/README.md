@@ -10,7 +10,7 @@ upgrade of one of them restarts dockerd/containerd, i.e. restarts postfiatd at a
 outside any maintenance window and without a health gate. Reboots needed by kernel updates are never
 taken at all unless someone notices `/var/run/reboot-required`.
 
-> Status: build 2 (`status`, `policy`, `run`, offline tests and mutants). The live two-host proof and its
+> Status: build 3 (`status`, `policy`, `run`, offline tests and mutants, live drill wrapper). The live two-host proof and its
 > logs are added to this README when they have run.
 
 ## Modes
@@ -93,13 +93,15 @@ per host, in order:
   GATE pre              node full|proposing, peers >= MIN_PEERS, validated ledger age <= 20 s;
                         pft-integrity verify exit 0; pft-audittrail check and pft-egress check (where installed)
   WINDOW                pft-maint start (validator flag, pushed to the sentry) + Alertmanager silence
+                        (every alert except the pipeline watchdog, below)
   upgrade               apt-get update; install --only-upgrade of the selected packages (below)
   DECISION              reboot | restart <services> | none (below)
   REBOOT (if decided)   remote: systemd-run --on-active=5 systemctl reboot, wait for a NEW boot id,
                         run the host's post hooks (e.g. pft-egress reapply);
                         local: write resume.json, reboot in 15 s, exit 10; resume runs the rest at boot
   GATE post             the pre-gate checks, the node check waits up to GATE_TIMEOUT (1800 s) for full,
-                        plus: no reboot-required flag left
+                        plus: no reboot-required flag left; after a reboot of THIS host, integrity items
+                        that changed only their mtime are accepted (below), then a fresh verify decides
   STATUS after, WINDOW close
 any failure -> STOP: window ended, silence expired (real alerts flow again), every later host is checked
   against its preflight record (UNTOUCHED / CHANGED), exit 1 (or 5 if a later host changed)
@@ -128,6 +130,20 @@ egress jump) covers that restart.
 | ... but the service matches `NO_RESTART_RE` | DEFERRED | docker/containerd (restarting them restarts postfiatd), dbus, logind, user/getty sessions: picked up at the next planned reboot |
 | nothing | none | no restart |
 
+**Integrity after a reboot.** A reboot rewrites some covered files with identical bytes: on the sentry,
+cloud-init's init stage touches `/etc/ssh/sshd_config` at every boot (mtime changes, sha256 does not), so
+`pft-integrity verify` WARNs `sshd:sshd_config changed mtime`. pft-integrity reports a content change as
+`sha256` (FAIL), so a finding whose only detail is `mtime` means identical content. The post-gate of a host
+that pft-patch itself rebooted in this run (or resumed after its local reboot) accepts such findings, and only
+when every finding is a `[WARN] ITEM changed mtime` line: `pft-integrity accept --reason "pft-patch <run> <host>
+reboot: mtime-only <items>"`, then verifies again and the gate uses that result. Never at the pre-gate, never
+without a reboot, never when any other finding is present.
+
+**Silence scope.** The silence matches `alertname=~".+"` and `alertname!="PFTAlertPipelineWatchdog"`
+(`WATCHDOG_ALERT`). The always-firing pipeline watchdog (`../alertpath`) must keep arriving at the sentry's
+sink: a silence that also matched it would make alertpath report STALE after 180 s and page the operator in
+the middle of every run longer than three minutes. (Found while preparing the live drill, before any live run.)
+
 The run's Alertmanager silence is expired when the host had no restart, and kept `SILENCE_TAIL` (900 s) longer
 after a reboot or service restart, because restart-related rules (e.g. a container start) stay true for a while.
 
@@ -138,23 +154,42 @@ untouched) can be proven on live hosts without breaking anything.
 Exit codes (`run`): 0 every host patched and gated, 1 a host failed (later hosts untouched), 3 usage/config,
 4 refused before any change, 5 a later host changed during a failed run, 10 the local host is rebooting
 (`resume` finishes it). Env: `CONF` `GATE_TIMEOUT` `POLL_SEC` `MAX_LEDGER_AGE` `REBOOT_TIMEOUT` `WINDOW_TTL`
-(5400) `SILENCE_TAIL` `AM` (`none` = no silence) `MAINT_CMD` (`none` = no window) `NO_RESTART_RE` `STATE_DIR`.
+(5400) `SILENCE_TAIL` `AM` (`none` = no silence) `WATCHDOG_ALERT` `MAINT_CMD` (`none` = no window) `NO_RESTART_RE` `STATE_DIR`.
 
 ## Tests
 
 ```bash
-bash patch/tests/run-tests.sh        # 167 stubbed tests: no root, no apt, no network, no ssh
-JOBS=3 bash patch/tests/mutate.sh    # 56 mutants; the unmutated control must pass first
-shellcheck -x patch/pft-patch.sh patch/install.sh patch/tests/*.sh
+bash patch/tests/run-tests.sh        # 193 stubbed tests: no root, no apt, no network, no ssh
+JOBS=3 bash patch/tests/mutate.sh    # 65 mutants; the unmutated control must pass first
+shellcheck -x patch/pft-patch.sh patch/install.sh patch/drill/live-run.sh patch/tests/*.sh
 ```
 
 The `run` tests use a two-host fake (`tests/run-stubs.sh`): the ssh stub runs the remote command with the
 sentry's fake root and stub state, the validator's commands run locally, and `systemd-run ... systemctl
 reboot` "reboots" a host at once (new boot id, flag cleared, container restarted). They cover order, every
 gate failing on its own, window/silence failures, reboot wait and timeout, post hooks, the injected failure
-with the untouched proof, a later host that does change (exit 5), the local reboot + resume path, and the
+with the untouched proof, a later host that does change (exit 5), the local reboot + resume path, the
+mtime-only integrity accept after a reboot (and every case where it must not happen: pre-gate, no reboot,
+content change, mixed findings, accept failure), the silence matchers, and the
 security-only / `--all` / `--runtime` / held / new-dependency selection.
 
 The stub `apt-config` parses the fake host's `apt.conf.d` files in name order the way apt does for the
 two forms used here (lists append, the last scalar wins), so the override and rollback tests run
 against a real effective-config computation rather than a canned answer.
+
+## Live drill wrapper
+
+`drill/live-run.sh` runs one `pft-patch run --yes ARGS` on the real hosts with every ntfy notifier on both
+hosts (postfiat-monitor, pft-integrity, pft-watchdog, pft-alertpath, drill-only pft-maint ntfy.env) pointed at
+throwaway topics, restored byte-identical on any exit; an outer Alertmanager silence (same scope as above) that
+covers alerts outliving an injected failure (that path expires pft-patch's own silence at once, on purpose)
+and is kept until the newest container start + 25 min only if a node container restarted. It records boot id,
+dpkg.log sha256, container StartedAt and server_state per host before and after, checks auditd (enabled 2, all
+compiled rules loaded) on any host that rebooted and the sentry's PFT-EGRESS jump, reads back both throwaway
+topics, counts messages on every operator topic since the start (topics never printed), and runs
+`pft-integrity verify` on both hosts. All output goes through `../peerexpose/drill/redact.py`.
+
+```bash
+INJECT=sentry-postgate WANT=1 bash patch/drill/live-run.sh --all 2>&1 | tee LOG   # injected sentry failure
+bash patch/drill/live-run.sh --all 2>&1 | tee LOG                                  # full run, both hosts
+```

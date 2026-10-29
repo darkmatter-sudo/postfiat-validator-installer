@@ -2,7 +2,7 @@
 # Two-host fake for `pft-patch run` (sourced by run-tests.sh after stubs.sh). mk_run DIR builds:
 #   DIR/sentry, DIR/validator   one mk_env host each (root, s, bin); DIR/<host>/s also holds node/gate state:
 #                 info (server_info JSON), started (container StartedAt), down_polls (N polls answer "connected"),
-#                 integrity_warn, audit_fail, egress_fail, restart_fail, ssh_down, ssh_down_after_reboot
+#                 integrity_warn, integrity_mtime (mtime-only WARN), mtime_on_reboot, accept_fail, audit_fail, egress_fail, restart_fail, ssh_down, ssh_down_after_reboot
 #   DIR/rbin      ssh sudo docker pft-integrity pft-audittrail pft-egress pft-maint systemctl systemd-run curl pft-patch
 #   DIR/calls     every stub call as "<host>: <command line>", in order
 #   DIR/hosts.conf  sentry over ssh (first), validator local
@@ -53,7 +53,12 @@ B
   cat > "$b/pft-integrity" <<B
 #!/usr/bin/env bash
 $rec
-if [ -e "\$S/integrity_warn" ]; then echo "  [WARN] sshd:effective changed: sha256"; echo "RESULT: WARN - 49 unchanged, 1 warn, 0 fail -> exit 1"; exit 1; fi
+if [ "\$1" = accept ]; then [ -e "\$S/accept_fail" ] && exit 2; rm -f "\$S/integrity_mtime"; echo "pft-integrity accept - re-baselined 50 items"; exit 0; fi
+n=0
+# real line formats, copied from a pft-integrity verify run on the sentry after a reboot
+if [ -e "\$S/integrity_mtime" ]; then echo "  [WARN] sshd:sshd_config                             changed  mtime"; n=\$((n + 1)); fi
+if [ -e "\$S/integrity_warn" ]; then echo "  [WARN] sshd:effective changed: sha256"; n=\$((n + 1)); fi
+if [ "\$n" -gt 0 ]; then echo "RESULT: WARN - \$((50 - n)) unchanged, \$n warn, 0 fail -> exit 1"; exit 1; fi
 echo "RESULT: PASS - 50 unchanged, 0 warn, 0 fail -> exit 0"
 B
   printf '#!/usr/bin/env bash\n%s\n[ ! -e "$S/audit_fail" ]\n' "$rec" > "$b/pft-audittrail"
@@ -77,6 +82,7 @@ case "\$*" in *"systemctl reboot"*)
   sed -i 's/KSTA: [23]/KSTA: 1/' "\$S/nr"
   echo "2026-10-29T02:00:00.000000000Z" > "\$S/started"
   [ -e "\$S/ssh_down_after_reboot" ] && touch "\$S/ssh_down"
+  [ -e "\$S/mtime_on_reboot" ] && touch "\$S/integrity_mtime"
   [ -e "\$S/down_after_reboot" ] && echo 2 > "\$S/down_polls" ;;
 esac
 exit 0
@@ -85,6 +91,7 @@ B
 #!/usr/bin/env bash
 m=GET; u=""; for a; do [ "$p" = -X ] && m="$a"; case "$a" in http*) u="$a" ;; esac; p="$a"; done
 echo "$STUB_HOST: curl $m $u $(printf '%s ' "$@" | grep -o '"id":"[^"]*"')" >> "$RUN_D/calls"
+n=0; for a; do [ "$n" = 1 ] && printf '%s\n' "$a" >> "$RUN_D/am_bodies"; n=0; [ "$a" = -d ] && n=1; done
 [ -e "$RUN_D/am_fail" ] && exit 7
 [ "$m" = POST ] && echo '{"silenceID":"sil0123456789"}'
 exit 0
@@ -97,6 +104,6 @@ use_run() { # DIR TOOL -> orchestrator environment (runs as the validator)
   export RUN_D="$1" PATCH_TOOL="$2" CONF="$1/hosts.conf" STATE_DIR="$1/state" PFT_PATCH_NOW_FILE="$1/now"
   export PFT_PATCH_SSH="$1/rbin/ssh" PATCH_CMD=pft-patch AM="http://am.test:9093" PFT_PATCH_NOROOT=1
   export PATH="$1/rbin:$ORIG_PATH" POLL_SEC=10 GATE_TIMEOUT=120 REBOOT_TIMEOUT=60 SILENCE_TAIL=900
-  unset PFT_PATCH_INJECT MAINT_HOST BOOT_ID_FILE PFT_PATCH_FAKEROOT SUDO_USER SSH_AS
+  unset PFT_PATCH_INJECT MAINT_HOST BOOT_ID_FILE PFT_PATCH_FAKEROOT SUDO_USER SSH_AS WATCHDOG_ALERT
   host_env "$1" validator
 }

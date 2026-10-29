@@ -128,6 +128,43 @@ vtouched && ko "sentry not back: validator not touched" || ok "sentry not back: 
 rfresh; sec_both; touch "$RD/sentry/s/install_reboot" "$RD/sentry/s/down_after_reboot"; run run --yes
 expect "post-gate waits for full after reboot" 0 'GATE post sentry node: PASS state=full peers=12 age=2s \(\+[1-9][0-9]*s\)'
 
+# --- the per-host silence covers every alert except the pipeline watchdog (alertpath pages when it stops arriving)
+rfresh; sec_both; run run --yes
+b="$(head -1 "$RD/am_bodies" 2>/dev/null)"
+jq -e '.matchers | any(.name=="alertname" and .value==".+" and .isRegex and .isEqual)' <<<"$b" >/dev/null \
+  && ok "silence: alertname=~\".+\"" || ko "silence: alertname=~\".+\"" "$b"
+jq -e '.matchers | any(.name=="alertname" and .value=="PFTAlertPipelineWatchdog" and (.isEqual|not) and (.isRegex|not))' <<<"$b" >/dev/null \
+  && ok "silence: pipeline watchdog excluded" || ko "silence: pipeline watchdog excluded" "$b"
+WATCHDOG_ALERT=MyWatchdog run run --yes
+jq -e '.matchers | any(.value=="MyWatchdog" and (.isEqual|not))' <<<"$(tail -1 "$RD/am_bodies")" >/dev/null \
+  && ok "silence: WATCHDOG_ALERT honoured" || ko "silence: WATCHDOG_ALERT honoured" "$(tail -1 "$RD/am_bodies")"
+
+# --- integrity after a reboot: mtime-only items (identical bytes) are accepted, nothing else, and only after a reboot
+rfresh; sec_both; touch "$RD/sentry/s/install_reboot" "$RD/sentry/s/mtime_on_reboot"; run run --yes
+expect "reboot + mtime-only WARN -> accepted, PASS" 0 'RESULT: PASS'
+expect "accepted items named" 0 'GATE post sentry integrity: accepted mtime-only item\(s\) after the reboot: sshd:sshd_config$'
+expect "fresh verify decides the gate" 0 'GATE post sentry integrity: PASS \(50 unchanged\)'
+grep -q 'sentry: pft-integrity accept --reason pft-patch [0-9TZ]* sentry reboot: mtime-only sshd:sshd_config' "$RD/calls" \
+  && ok "accept reason names run, host and items" || ko "accept reason" "$(calls)"
+[ "$(grep -c 'sentry: pft-integrity verify' "$RD/calls")" = 3 ] && ok "verify pre + post + re-verify" || ko "verify count" "$(calls)"
+while IFS='|' read -r name setup re; do
+  [ -z "$name" ] && continue
+  rfresh; sec_both; eval "$setup"; run run --yes
+  expect "integrity: $name" 1 "$re"
+  grep -q 'pft-integrity accept' "$RD/calls" && ko "integrity: $name -> nothing accepted" "$(calls)" || ok "integrity: $name -> nothing accepted"
+  vinstall && ko "integrity: $name -> validator not installed" || ok "integrity: $name -> validator not installed"
+done <<'CASES'
+mtime-only WARN at the pre-gate|touch "$RD/sentry/s/integrity_mtime"|GATE pre sentry integrity: FAIL exit 1
+mtime-only WARN after an upgrade without reboot|touch "$RD/sentry/s/install_mtime"|GATE post sentry integrity: FAIL exit 1
+reboot + content change|touch "$RD/sentry/s/install_reboot" "$RD/sentry/s/install_integrity"|GATE post sentry integrity: FAIL exit 1
+reboot + mtime-only and a content change|touch "$RD/sentry/s/install_reboot" "$RD/sentry/s/mtime_on_reboot" "$RD/sentry/s/install_integrity"|GATE post sentry integrity: FAIL exit 1
+CASES
+rfresh; sec_both; touch "$RD/sentry/s/install_reboot" "$RD/sentry/s/mtime_on_reboot" "$RD/sentry/s/accept_fail"; run run --yes
+expect "accept fails -> gate fails" 1 'GATE post sentry integrity: accept of mtime-only item\(s\) failed'
+expect "accept fails -> integrity FAIL" 1 'GATE post sentry integrity: FAIL exit 1'
+rfresh; sec_both; touch "$RD/validator/s/install_reboot" "$RD/validator/s/mtime_on_reboot"; run run --yes; run resume
+expect "local reboot + mtime-only -> accepted at resume" 0 'GATE post validator integrity: accepted mtime-only item\(s\) after the reboot: sshd:sshd_config$'
+
 # --- gates fail closed
 while IFS='|' read -r name setup want re; do
   [ -z "$name" ] && continue

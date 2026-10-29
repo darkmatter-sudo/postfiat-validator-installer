@@ -71,6 +71,7 @@ SSH_AS="${SSH_AS-${SUDO_USER:-}}"
 PATCH_CMD="${PATCH_CMD:-pft-patch}"
 MAINT_CMD="${MAINT_CMD:-pft-maint}"
 AM="${AM:-http://127.0.0.1:9093}"
+WATCHDOG_ALERT="${WATCHDOG_ALERT:-PFTAlertPipelineWatchdog}"
 GATE_TIMEOUT="${GATE_TIMEOUT:-1800}"
 POLL_SEC="${POLL_SEC:-10}"
 MAX_LEDGER_AGE="${MAX_LEDGER_AGE:-20}"
@@ -381,9 +382,19 @@ poll_node() { # LABEL -> 0 when full|proposing, peers >= min, validated ledger a
   POLL_LINE="$POLL_LINE FAIL(${why[*]})"; return 1
 }
 
+# mtime_only VERIFY_OUTPUT -> 0 when it lists at least one finding and every finding is "[WARN] ITEM changed mtime"
+# (pft-integrity reports a content change as sha256 = FAIL, so mtime alone means identical bytes)
+mtime_only() {
+  local f
+  f="$(grep -E '^\s*\[(WARN|FAIL)\]' <<<"$1")"
+  [ -n "$f" ] && ! grep -qvE '^\s*\[WARN\] [^ ]+ +changed +mtime\s*$' <<<"$f"
+}
+mtime_items() { grep -E '^\s*\[WARN\] [^ ]+ +changed +mtime\s*$' <<<"$1" | awk '{print $2}' | paste -sd, -; }
+declare -A REBOOTED
+
 # gate LABEL pre|post -> 0 when every check passes. One GATE line per check. post waits up to GATE_TIMEOUT for the node.
 gate() {
-  local h="$1" ph="$2" t0 fail=0 out rc
+  local h="$1" ph="$2" t0 fail=0 out rc a
   t0="$(now)"
   while ! poll_node "$h"; do
     { [ "$ph" = post ] && [ $(( $(now) - t0 )) -lt "$GATE_TIMEOUT" ]; } || break
@@ -392,6 +403,15 @@ gate() {
   if [[ "$POLL_LINE" == *FAIL* ]]; then log "GATE $ph $h node: FAIL $POLL_LINE (+$(( $(now) - t0 ))s)"; fail=1
   else log "GATE $ph $h node: PASS $POLL_LINE (+$(( $(now) - t0 ))s)"; fi
   out="$(hx "$h" pft-integrity verify 2>&1)"; rc=$?
+  if [ "$rc" = 1 ] && [ "$ph" = post ] && [ "${REBOOTED[$h]:-0}" = 1 ] && mtime_only "$out"; then
+    # a reboot rewrites some covered files with identical content (cloud-init touches sshd_config at every boot):
+    # accept those, and only those, then the gate is decided by a fresh verify
+    a="$(mtime_items "$out")"
+    if hx "$h" pft-integrity accept --reason "pft-patch $RUN_ID $h reboot: mtime-only $a" >/dev/null 2>&1; then
+      log "GATE post $h integrity: accepted mtime-only item(s) after the reboot: $a"
+      out="$(hx "$h" pft-integrity verify 2>&1)"; rc=$?
+    else log "GATE post $h integrity: accept of mtime-only item(s) failed"; fi
+  fi
   if [ "$rc" = 0 ]; then log "GATE $ph $h integrity: PASS ($(grep -o '[0-9]* unchanged' <<<"$out" | head -1))"
   else log "GATE $ph $h integrity: FAIL exit $rc"; grep -E '^\s*\[?(WARN|FAIL)' <<<"$out" | head -10 | sed 's/^/    /'; fail=1; fi
   if has "$h" pft-audittrail; then
@@ -424,8 +444,10 @@ window_open() { # LABEL
   SIL=""
   if [ "$AM" != none ]; then
     e="$(iso $(( $(now) + WINDOW_TTL )))"
+    # every alert except the always-firing pipeline watchdog: alertpath on the sentry pages when it stops arriving
     SIL_BODY="$(jq -nc --arg s "$(iso "$(now)")" --arg e "$e" --arg c "pft-patch $RUN_ID $1 planned patching" \
-      '{matchers:[{name:"alertname",value:".+",isRegex:true,isEqual:true}],startsAt:$s,endsAt:$e,createdBy:"pft-patch",comment:$c}')"
+      --arg w "$WATCHDOG_ALERT" '{matchers:[{name:"alertname",value:".+",isRegex:true,isEqual:true},
+        {name:"alertname",value:$w,isRegex:false,isEqual:false}],startsAt:$s,endsAt:$e,createdBy:"pft-patch",comment:$c}')"
     SIL="$(curl -s --max-time 10 -X POST -H 'Content-Type: application/json' "$AM/api/v2/silences" -d "$SIL_BODY" \
       | jq -r '.silenceID // empty' 2>/dev/null)"
     [ -n "$SIL" ] || { log "WINDOW $1: Alertmanager silence failed"; window_close "$1" fail; return 1; }
@@ -520,6 +542,7 @@ patch_host() { # LABEL -> returns on success, exits via stop_run on any failure 
         exit 10
       fi
       reboot_remote "$h" || { window_close "$h" fail; stop_run "$h" "reboot"; }
+      REBOOTED[$h]=1
       post_hook "$h" || { window_close "$h" fail; stop_run "$h" "post hook"; } ;;
     restart*) rs=1 ;;
   esac
@@ -590,6 +613,7 @@ cmd_resume() {
   MAINT_HOST="${MAINT_HOST:-$h}"; SEL=("$h")
   rm -f "$RESUME_FILE"
   log "pft-patch resume $RUN_ID: $h rebooted (boot $(cut -c1-8 "$BOOT_ID_FILE" 2>/dev/null))"
+  REBOOTED[$h]=1
   post_hook "$h" || { window_close "$h" fail; stop_run "$h" "post hook"; }
   if ! gate "$h" post; then window_close "$h" fail; status_line "$h" after; stop_run "$h" "post-gate"; fi
   status_line "$h" after

@@ -43,6 +43,7 @@ case " $* " in
     [ -e "$STUB_S/install_ksta3" ] && sed -i 's/KSTA: 1/KSTA: 3/' "$STUB_S/nr"
     [ -e "$STUB_S/install_svc" ] && cat "$STUB_S/install_svc" >> "$STUB_S/nr"
     [ -e "$STUB_S/install_integrity" ] && touch "$STUB_S/integrity_warn"
+    [ -e "$STUB_S/install_mtime" ] && touch "$STUB_S/integrity_mtime"
     : > "$STUB_S/sim"; exit 0 ;;
 esac
 [ -e "$STUB_S/sim_fail" ] && { echo "E: Could not open lock file"; exit 100; }
