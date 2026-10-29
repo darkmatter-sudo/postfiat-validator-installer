@@ -1,0 +1,147 @@
+statewatch sentry restart drill - 2026-10-29T20:18:17Z - Ubuntu 22.04.5 LTS - run 20261029T201817Z
+sha256: live-run.sh 50f2b1e6324b8b2b4946e0b84bb303d165be4cb3f97e927161a9fd653fd2dcf4 | check.sh de1d0b039e86c5e4bed934fe4f1e48ba886fc90e99266458e2bb277229ba73a8
+        installed sentry pft-statewatch 33ef50c80bbd3a551c46767550e36ce5f2784c3d311f6cfa909d81334a7fb62e
+        repo pft-statewatch.sh         33ef50c80bbd3a551c46767550e36ce5f2784c3d311f6cfa909d81334a7fb62e
+        statewatch.rules.yml (repo)    2781d8c6eb9e3c0192dd98048f6f65f1d077b04476f53ed87bfda3d01d746ba5
+        redact.py f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8
+
+== 0. preflight (nothing changed yet)
+  pft-maint: no window open on either host
+  bridge mounts the operator env file: yes
+  operator topics to watch: 2 (not printed)
+  postfiatd-sentry: server_state=full
+  postfiatd: server_state=full
+  Prometheus: pft_statewatch_up samples for postfiatd-sentry in the last 10 min: 40
+  firing statewatch alerts now: 0
+  literals for redaction: 2 ip, 2 key, 3 topic, 1 user (values not printed)
+$ redact.py control --literals <literals>
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (17/17)
+
+== 1. redirect notifiers, Alertmanager silence for everything except the statewatch rules
+  local:/etc/postfiat-monitor.env sha256 6dc3b10fb491 (before)
+  local:/etc/postfiat-monitor.env -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/postfiat-monitor.env.pre-statewatch-drill
+  local:/etc/pft-integrity.env sha256 b3cd1c3da7ff (before)
+  local:/etc/pft-integrity.env -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-integrity.env.pre-statewatch-drill
+  relay:/etc/pft-watchdog/ntfy.env sha256 ddb52721a668 (before)
+  relay:/etc/pft-watchdog/ntfy.env -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-watchdog/ntfy.env.pre-statewatch-drill
+  relay:/etc/pft-integrity.env sha256 cdd330a974d2 (before)
+  relay:/etc/pft-integrity.env -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-integrity.env.pre-statewatch-drill
+  relay:/etc/pft-alertpath/ntfy.env sha256 ddb52721a668 (before)
+  relay:/etc/pft-alertpath/ntfy.env -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-alertpath/ntfy.env.pre-statewatch-drill
+  2026-10-29T20:18:31Z starting pft-alert-bridge (ntfy: on)
+  2026-10-29T20:18:34Z pft-alert-bridge listening
+  bridge -> https://ntfy.sh/<redacted> (throwaway env file in a 0700 temp dir)
+  silence alertname=~".+", alertname!~"<7 statewatch rules>|PFTAlertPipelineWatchdog" until 2026-10-29T21:18:34Z (id 334b7fc4)
+  (statewatch rules NOT silenced: they are under test and must stay quiet on their own)
+
+== 2. restart postfiatd-sentry
+  before: StartedAt=2026-10-29T02:51:39.118399387Z uptime=62811s
+$ ssh relay sudo docker restart postfiatd-sentry (2026-10-29T20:18:35Z)
+  postfiatd-sentry
+  after:  StartedAt=2026-10-29T20:18:39.709656724Z
+CHECK ok   container restarted (StartedAt changed)
+  polling: pft-statewatch collect --container postfiatd-sentry --stdout every 5s (time up state uptime transitions d/c/s/t/f full_exits)
+  2026-10-29T20:18:41Z up=0 state=- uptime=- transitions=//// full_exits=-
+  2026-10-29T20:18:46Z up=1 state=connected uptime=2 transitions=2/2/0/0/0 full_exits=0
+  2026-10-29T20:18:52Z up=1 state=connected uptime=8 transitions=2/2/0/0/0 full_exits=0
+  2026-10-29T20:18:58Z up=1 state=connected uptime=14 transitions=2/2/0/0/0 full_exits=0
+  2026-10-29T20:19:05Z up=1 state=connected uptime=21 transitions=2/2/0/0/0 full_exits=0
+  2026-10-29T20:19:11Z up=1 state=connected uptime=27 transitions=2/2/0/0/0 full_exits=0
+  2026-10-29T20:19:17Z up=1 state=connected uptime=33 transitions=2/2/0/0/0 full_exits=0
+  2026-10-29T20:19:23Z up=1 state=full uptime=38 transitions=2/2/1/1/1 full_exits=0
+CHECK ok   sentry back to full within 900s (48 s after the restart)
+
+== 3. hold 15 min, then evidence
+$ drill/check.sh --container postfiatd-sentry --since 1793305115 --until 1793306063
+  statewatch drill check: container=postfiatd-sentry since=1793305115 until=1793306063 window=948s
+  PASS C0-series-present: up samples=63
+  PASS C1-restart-seen: uptime resets=1
+  PASS C2-back-to-full: server_state{full}=1
+  PASS C3-no-full-exit: full_exits increase=0
+  PASS C4-collector-up: up=1
+  PASS C5-no-state-alerts: 0 statewatch alerts fired
+  RESULT: PASS
+CHECK ok   drill/check.sh C0..C5 all pass (exit 0)
+  Prometheus increase(pft_statewatch_state_transitions_total{container="postfiatd-sentry"}[1068s]) per state:
+    container=postfiatd-sentry,instance=127.0.0.1:9877,job=postfiat,state=disconnected 0
+    container=postfiatd-sentry,instance=127.0.0.1:9877,job=postfiat,state=connected 0
+    container=postfiatd-sentry,instance=127.0.0.1:9877,job=postfiat,state=syncing 1.0171428571428571
+    container=postfiatd-sentry,instance=127.0.0.1:9877,job=postfiat,state=tracking 1.0171428571428571
+    container=postfiatd-sentry,instance=127.0.0.1:9877,job=postfiat,state=full 1.0171428571428571
+  Prometheus resets(...[1068s]) per state:
+    container=postfiatd-sentry,instance=127.0.0.1:9877,job=postfiat,state=disconnected 0
+    container=postfiatd-sentry,instance=127.0.0.1:9877,job=postfiat,state=connected 0
+    container=postfiatd-sentry,instance=127.0.0.1:9877,job=postfiat,state=syncing 1
+    container=postfiatd-sentry,instance=127.0.0.1:9877,job=postfiat,state=tracking 1
+    container=postfiatd-sentry,instance=127.0.0.1:9877,job=postfiat,state=full 1
+  firing statewatch alerts in the drill window (any container):
+    none
+CHECK ok   no statewatch alert fired on any container
+  Alertmanager alerts now (name state silenced-by):
+      1     PFTAlertPipelineWatchdog - active 0
+  report.py on the sentry history from the restart on (uptime-aware transitions of the new process):
+    history lines in window: 18
+    ### postfiatd-sentry
+    
+    Window 2026-10-29T20:17:16Z .. 2026-10-29T20:34:15Z (0.28 h), 18 samples, 0 gaps > 90 s, 1 restarts.
+    - restart seen at 2026-10-29T20:19:15Z
+    
+    | mode | time share | time (s) | transitions |
+    |---|---:|---:|---:|
+    | disconnected | 0.1342% | 1.326 | 2 |
+    | connected | 3.2538% | 32.159 | 2 |
+    | syncing | 0.2034% | 2.010 | 1 |
+    | tracking | 0.0000% | 0.000 | 1 |
+    | full | 96.4086% | 952.854 | 1 |
+    
+    - transitions per hour (all modes): 24.73; full exits: 0 (0.0 per hour)
+    - io_latency_ms: min 1, p50 1, p90 1, p99 6, max 6; samples above 50 ms: 0; value counts {"1": 17, "6": 1}
+    - peer_disconnects: +0 (0.0 per hour), max in one full clock hour: None (over 0 full clock hours, partial edge hours excluded); peer_disconnects_resources: +0
+    - jq_trans_overflow: +0
+    
+
+== 4. restore, silence tail, read back
+  restored local:/etc/postfiat-monitor.env: sha256 matches pre-drill copy: yes
+  restored local:/etc/pft-integrity.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-watchdog/ntfy.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-integrity.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-alertpath/ntfy.env: sha256 matches pre-drill copy: yes
+  2026-10-29T20:34:27Z starting pft-alert-bridge (ntfy: on)
+  2026-10-29T20:34:29Z pft-alert-bridge listening
+  restored bridge: mounts the operator env file again: yes
+CHECK ok   notifier env files restored byte-identical, bridge back on the operator env
+  silence kept until 2026-10-29T20:43:39Z (container start + 25 min), then expires by itself: HTTP 200
+  throwaway topic: 0 message(s)
+CHECK ok   throwaway topic: no statewatch alert delivered (0)
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the drill (2 topic(s), 0 with messages)
+  $ pft-integrity verify (validator host)
+    pft-integrity verify - 2026-10-29T20:34:58Z
+    OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-10-29T14:16:48Z
+    RESULT: PASS - 92 unchanged, 0 warn, 0 fail -> exit 0
+  $ pft-integrity verify (sentry host)
+    pft-integrity verify - 2026-10-29T20:35:08Z
+    OS: Ubuntu 22.04.5 LTS | container: postfiatd-sentry | baseline: 2026-10-29T14:17:29Z
+    RESULT: PASS - 55 unchanged, 0 warn, 0 fail -> exit 0
+CHECK ok   sentry full at the end (full)
+
+live-run done 2026-10-29T20:35:09Z: 0 check(s) failed -> PASS
+(exit 0)

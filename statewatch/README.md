@@ -99,7 +99,36 @@ capabilities, `IPAddressDeny=any`, `RestrictAddressFamilies=AF_UNIX`, writes onl
 
 ## Baseline and thresholds
 
-Pending: the 6-hour two-host baseline started 2026-10-29T14:16Z.
+Real values from both hosts, 2026-10-29T14:16Z .. 20:17Z (6.01 h), from the history files the units write
+(`data/baseline-postfiatd.jsonl`, `data/baseline-postfiatd-sentry.jsonl`, 362 one-minute samples each, 0 gaps
+> 90 s, 0 restarts), computed by `python3 report/report.py --json data/baseline-report.json data/*.jsonl`
+(log 11). Per-mode time is the increase of `state_accounting` duration between samples.
+
+| | validator (`postfiatd`) | sentry (`postfiatd-sentry`) |
+|---|---|---|
+| time share full / tracking / syncing / connected / disconnected | 100% / 0 / 0 / 0 / 0 | 100% / 0 / 0 / 0 / 0 |
+| state transitions per hour (all modes) | 0.0 | 0.0 |
+| full exits | 0 (0.0 per hour) | 0 (0.0 per hour) |
+| io_latency_ms min / p50 / p90 / p99 / max | 1 / 1 / 1 / 2 / 8 | 1 / 1 / 1 / 6 / 13 |
+| io_latency_ms value counts | 1: 353, 2: 7, 3: 1, 8: 1 | 1: 350, 2: 4, 3: 2, 5: 2, 6: 2, 11: 1, 13: 1 |
+| peer_disconnects | +1 (0.17 per hour), max 0 in any of 5 full clock hours | +2 (0.33 per hour), max 0 in any of 5 full clock hours |
+| peer_disconnects_resources / jq_trans_overflow | +0 / +0 | +0 / +0 |
+
+Threshold rationale (each threshold against the baseline it is compared with):
+
+| alert | threshold | baseline | why |
+|---|---|---|---|
+| PFTIOLatencyHigh | > 50 ms for 10 m | max 8 / 13 ms, p99 2 / 6 ms | ~4x the worst single sample seen; `for: 10m` ignores one-off spikes like the 11-13 ms sentry samples and fires only on a sustained job-queue IO stall |
+| PFTPeerDisconnectRateHigh | > 30 per 1 h | 0.17 / 0.33 per hour, hourly max 0 | about twice the peer count (17 / 15): every peer dropping twice in an hour, i.e. churn, not the occasional single disconnect seen here |
+| PFTNodeStateFlapping | >= 3 full exits per 1 h | 0 in 6 h on both | one exit is a warning (PFTNodeBriefFullExit); three in an hour is a pattern |
+| PFTNodeBriefFullExit | any full exit in 10 m that every sample missed | 0 | the event scrape-time monitoring cannot see; never happened in the baseline, so any occurrence is news |
+| PFTJobQueueOverflow | any increase in 15 m | +0 on both | a dropped transaction is never normal |
+| PFTStatewatchCollectorFailing / Stale | up 0 for 5 m / no collection for 300 s + 2 m | 0 gaps > 90 s in 362 samples per host | five missed 1-minute runs in a row; a single slow `docker exec` does not page |
+
+Limits: six quiet hours on two healthy nodes. The baseline shows the thresholds sit far above normal operation (no
+false positives) but contains no real fault, so it cannot show how far below a real incident they are; the fault side
+is covered by the promtool fire cases (log 07), the mutants (log 08) and the restart drill (log 12). The sentry restart
+drill itself is excluded from the baseline window (it started at 20:18Z).
 
 ## Evidence (logs/)
 
@@ -116,7 +145,33 @@ Every log is the raw output of the command shown in it (redacted: host names, us
 | 07-tests.log | build 3 (aa4a265): shellcheck, ruff, offline suite 87/87, generated promtool file up to date, promtool check + test SUCCESS, full `run-stack.sh check` |
 | 08-mutants.log | mutation run 1 @ aa4a265 over collector (14), parser (12) and rules (13): controls pass, 39/39 caught, 0 not applied, 0 broken, each with the FAIL lines / failed promtool cases it produced |
 | 09-rules-live.log | rules loaded into the live Prometheus by SIGHUP (no container restart), 7 rules health ok, 0 alerts |
+| 10-drillcheck-controls.log | drill/check.sh positive and negative controls against real Prometheus history (8 controls as expected) |
+| 11-baseline-report.log | 6.01 h two-host baseline: history extraction, sha256 + line counts of the data files, report.py output |
+| 12-sentry-restart-drill.log | live sentry restart drill (drill/live-run.sh), see below |
 
 A trial mutation run before 08 (not recorded) found that the "hung ssh" pull test did not hang: a stub
 `PULL_SSH="sleep 30 ;"` is word-split, so `;` became an argument and `sleep` failed at once, and mutant S12 (no
 timeout around ssh) survived. The test now uses a stub that really sleeps and checks the elapsed time (aa4a265).
+
+## Sentry restart drill (`drill/live-run.sh`, log 12)
+
+`bash drill/live-run.sh 2>&1 | tee LOG` (agent user, from `statewatch/`). Before anything changes it checks both nodes
+are full, no pft-maint window is open and statewatch series exist for the sentry, and runs the redaction positive
+control. It then points every ntfy notifier on both hosts (postfiat-monitor, pft-integrity, pft-watchdog,
+pft-alertpath) and the Alertmanager bridge at a random throwaway topic, and silences every alert EXCEPT the seven
+statewatch rules and the pipeline watchdog: the statewatch rules stay live because they are the thing under test.
+It restarts `postfiatd-sentry`, polls `pft-statewatch collect --stdout` every 5 s until full, holds 15 minutes
+(longer than every statewatch window a restart touches), runs `drill/check.sh`, restores everything (sha256 compared,
+bridge mount read back) and counts messages on the throwaway and every operator topic.
+
+Result of run 20261029T201817Z (log 12): PASS, 0 checks failed.
+- Restart 20:18:35Z, back to full 48 s later. The 5 s poll captured the progression: `up 0` while the RPC was down,
+  then `connected` with transitions d/c/s/t/f = 2/2/0/0/0, then `full` with 2/2/1/1/1.
+- Reset handling: `check.sh` C0-C5 all PASS (uptime resets 1, full_exits increase 0, back to full, up 1, no
+  statewatch alert fired). Prometheus saw `resets()` 1 and `increase()` ~1 for syncing/tracking/full (the 1-minute
+  collection caught the 0/0/0 intermediate); disconnected/connected came back at the same value 2, so Prometheus
+  shows no increase there, as expected. `report.py` (uptime-aware) counts all 7 transitions of the new process.
+- No statewatch alert fired on any container; the throwaway topic got 0 messages; both operator topics got 0
+  messages; all five env files restored byte-identical and the bridge mounts the operator env again; pft-integrity
+  PASS on both hosts (no rebaseline needed: no file changed). The unrelated-alert silence was kept until container
+  start + 25 min (PFTContainerRestarted's tail) and then expired by itself.
