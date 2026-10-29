@@ -37,6 +37,8 @@ boot ids -> first 8 hex chars, local-time syslog stamps -> `<local-time>`.
 | 25 | alertpath tests + mutants @ 28e5b9d (M24 retargeted at the stored-state comparison) | 44/44, shellcheck 0, 35/35 caught, 0 not applied |
 | 27 | deploy pft-patch build 5 to both hosts @ 2625075 | both hosts `status` OK; integrity: unit mtime only, accepted, PASS |
 | 29 | **drill C**: `--all` both hosts @ 2625075, no injection (both hosts already fully patched) | every pre/post gate PASS on both hosts incl. the new containers gate; INSTALLED 0, DECISION none (no reboot required, none taken); boot ids, dpkg.log and container StartedAt unchanged; operator topics 0 messages; integrity PASS 87/52 |
+| 26 | build 5 tests + shellcheck + mutants @ 2625075 | 217/217, shellcheck 0, control 217/217; **75/78 caught: M38 SURVIVED, M37 and M52 NOT APPLIED** (targets changed in build 4/5) -> fixed in 87aa9db, superseded by 31 |
+| 30 | **drill D**: injected sentry post-gate failure, security-only, nothing pending @ b230a95 (pft-patch.sh = 2625075) | every real sentry post-gate check PASS, then the labelled injected failure; STOP; validator UNTOUCHED; operator topics 0; integrity PASS 87/52 |
 
 Drill B found two gaps, both fixed afterwards: dockerd left pft-prometheus Exited (255) after the validator reboot and
 the post-gate did not notice (build 5 containers check), and the sentry's alertpath monitor sent one STALE page to the
