@@ -1,0 +1,23 @@
+OS: Ubuntu 22.04.5 LTS | host: validator-host | 2026-10-29T23:24:11Z | commit 13231dd4aef2c4dc23366bfc68e93b28ab93d0e7
+$ sha256sum vulnscan/pft-vulnscan.sh vulnscan/vulnscan_parse.py vulnscan/install.sh
+26e41cec0a6c6eb8c24a768f3884b1c3c9d23ef76011f514f6c8dce0416377e7  vulnscan/pft-vulnscan.sh
+8b3b6c9cad5d9aa3af3840b596220ff4ba0bd0e4cf0d02352a9fa8af2d36e188  vulnscan/vulnscan_parse.py
+d8d2b54b1031c95e92ddca346afe0c312e54fa80e377c560c14d9ef6d74014f8  vulnscan/install.sh
+(exit 0)
+$ sudo bash vulnscan/install.sh
+(exit 2)
+$ TZ=UTC systemctl list-timers pft-vulnscan.timer --no-pager | head -2
+NEXT LEFT LAST PASSED UNIT ACTIVATES
+
+(exit 0)
+$ sudo journalctl -u pft-vulnscan.service --utc --no-pager -o cat | grep -E '^(USN|RESULT|kernel|oval|feed)' | tail -8
+(exit 0)
+$ sudo pft-vulnscan scan
+sudo: pft-vulnscan: command not found
+(exit 1)
+$ sudo pft-vulnscan scan --json --no-fetch | python3 -m json.tool
+sudo: pft-vulnscan: command not found
+Expecting value: line 1 column 1 (char 0)
+(exit 1)
+$ curl -s http://127.0.0.1:9877/metrics | grep -E '^pft_vulnscan_(up|affected_cves|reboot_owed|feed_timestamp_seconds)|^pft_vulnscan_affected_usns.*\} [1-9]'
+(exit 1)

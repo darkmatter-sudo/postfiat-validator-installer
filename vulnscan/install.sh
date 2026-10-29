@@ -30,7 +30,8 @@ while [ $# -gt 0 ]; do
   shift
 done
 [ -z "$label" ] || [[ "$label" =~ ^[a-z][a-z0-9_-]{0,31}$ ]] || { echo "bad host label" >&2; exit 3; }
-conf_get() { sed -n "s/^$1=//p" "$CONF" 2>/dev/null | tail -1 | tr -d '"'; }
+# KEY -> value from CONF, empty if the file or key is missing (must not fail: set -e + pipefail)
+conf_get() { [ -f "$CONF" ] || return 0; sed -n "s/^$1=//p" "$CONF" | tail -1 | tr -d '"'; }
 
 install_bin() {
   install -m 755 "$HERE/pft-vulnscan.sh" /usr/local/bin/pft-vulnscan
