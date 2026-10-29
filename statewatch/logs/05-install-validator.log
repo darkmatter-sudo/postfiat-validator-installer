@@ -1,0 +1,52 @@
+OS: Ubuntu 22.04.5 LTS | 2026-10-29T14:16:32Z | statewatch install on the validator (collect + sentry pull) @ 2a0510bf81823a8f3d5b3cf74392e37ca5f712b5
+$ sha256sum statewatch/pft-statewatch.sh statewatch/statewatch_parse.py statewatch/install.sh statewatch/systemd/*
+33ef50c80bbd3a551c46767550e36ce5f2784c3d311f6cfa909d81334a7fb62e  statewatch/pft-statewatch.sh
+3d1e6b4ce5ec21ed4478d82cf23ef012ee70a018015f188688ecdee258d5ad50  statewatch/statewatch_parse.py
+a4fb73766375d49c4cd5a7eae45e6a261e5eb16c6de0bb7e524f0074ea3e90d1  statewatch/install.sh
+6a512c47b49143038dbdcb385482105beada8e34af03058adecd2c50ee38c647  statewatch/systemd/pft-statewatch-pull@.service
+fa0b2c85f4cdf55cf3a1a4393cb47836e277d5ba17ad7e000bc5d41cb061a4f8  statewatch/systemd/pft-statewatch-pull@.timer
+28d0274fd34f555c575508d7e24f38d6eee8b340d791a4d227fcda71ee2c8562  statewatch/systemd/pft-statewatch@.service
+aad10d5c4033d199f62f3296064849a313f9357791017679a6ad7c5026a3d0c2  statewatch/systemd/pft-statewatch@.timer
+(exit 0)
+$ sudo ./statewatch/install.sh --container postfiatd
+2026-10-29T14:16:33Z installed /usr/local/bin/pft-statewatch (sha256 33ef50c80bbd3a551c46767550e36ce5f2784c3d311f6cfa909d81334a7fb62e)
+2026-10-29T14:16:33Z installed /usr/local/lib/pft-statewatch/statewatch_parse.py (sha256 3d1e6b4ce5ec21ed4478d82cf23ef012ee70a018015f188688ecdee258d5ad50)
+2026-10-29T14:16:33Z first collection (through the sandboxed unit):
+pft_statewatch_up{container="postfiatd"} 1
+pft_statewatch_server_state_duration_seconds{container="postfiatd"} 40605.544182
+pft_statewatch_full_exits_total{container="postfiatd"} 0
+pft_statewatch_io_latency_ms{container="postfiatd"} 1
+Created symlink /etc/systemd/system/timers.target.wants/pft-statewatch@postfiatd.timer → /etc/systemd/system/pft-statewatch@.timer.
+2026-10-29T14:16:34Z enabled pft-statewatch@postfiatd.timer (every minute at :15)
+2026-10-29T14:16:34Z remember: sudo pft-integrity accept --reason 'pft-statewatch installed'
+(exit 0)
+$ sudo sh -c 'umask 077; grep ^PULL_SSH= /etc/pft-resources-pull.env > /etc/pft-statewatch.env' && sudo stat -c '%U %a %n' /etc/pft-statewatch.env && sudo grep -c '^PULL_SSH=' /etc/pft-statewatch.env
+root 600 /etc/pft-statewatch.env
+1
+(exit 0)
+$ sudo ./statewatch/install.sh --pull postfiatd-sentry
+2026-10-29T14:16:35Z installed /usr/local/bin/pft-statewatch (sha256 33ef50c80bbd3a551c46767550e36ce5f2784c3d311f6cfa909d81334a7fb62e)
+2026-10-29T14:16:35Z installed /usr/local/lib/pft-statewatch/statewatch_parse.py (sha256 3d1e6b4ce5ec21ed4478d82cf23ef012ee70a018015f188688ecdee258d5ad50)
+2026-10-29T14:16:35Z first pull (through the sandboxed unit):
+pft_statewatch_up{container="postfiatd-sentry"} 1
+pft_statewatch_collect_timestamp_seconds{container="postfiatd-sentry"} 1793283385
+Created symlink /etc/systemd/system/timers.target.wants/pft-statewatch-pull@postfiatd-sentry.timer → /etc/systemd/system/pft-statewatch-pull@.timer.
+2026-10-29T14:16:36Z enabled pft-statewatch-pull@postfiatd-sentry.timer (every minute at :45)
+2026-10-29T14:16:36Z remember: sudo pft-integrity accept --reason 'pft-statewatch pull installed'
+(exit 0)
+$ TZ=UTC systemctl list-timers 'pft-statewatch*' --no-pager
+NEXT                        LEFT     LAST PASSED UNIT                                       ACTIVATES
+Thu 2026-10-29 14:16:45 UTC 8s left  n/a  n/a    pft-statewatch-pull@postfiatd-sentry.timer pft-statewatch-pull@postfiatd-sentry.service
+Thu 2026-10-29 14:17:15 UTC 38s left n/a  n/a    pft-statewatch@postfiatd.timer             pft-statewatch@postfiatd.service
+
+2 timers listed.
+Pass --all to see loaded but inactive timers, too.
+(exit 0)
+$ curl -s http://127.0.0.1:9877/metrics | grep -E '^pft_statewatch_(up|full_exits_total|collect_timestamp_seconds)\{'
+pft_statewatch_up{container="postfiatd-sentry"} 1
+pft_statewatch_collect_timestamp_seconds{container="postfiatd-sentry"} 1793283385
+pft_statewatch_full_exits_total{container="postfiatd-sentry"} 0
+pft_statewatch_up{container="postfiatd"} 1
+pft_statewatch_collect_timestamp_seconds{container="postfiatd"} 1793283394
+pft_statewatch_full_exits_total{container="postfiatd"} 0
+(exit 0)

@@ -1,0 +1,29 @@
+OS: Ubuntu 22.04.5 LTS | 2026-10-29T14:16:42Z | pft-integrity rebaseline after the statewatch install (validator, then sentry)
+$ sudo pft-integrity verify | grep -E 'WARN|FAIL|RESULT'
+  [WARN] bin:pft-statewatch                           added    new file
+  [WARN] unit:pft-statewatch-pull@.service            added    new file
+  [WARN] unit:pft-statewatch-pull@.timer              added    new file
+  [WARN] unit:pft-statewatch@.service                 added    new file
+  [WARN] unit:pft-statewatch@.timer                   added    new file
+RESULT: WARN - 87 unchanged, 5 warn, 0 fail -> exit 1
+(exit 0)
+$ sudo pft-integrity accept --reason 'task_33663bf8: pft-statewatch installed (bin, parser, pft-statewatch@ + pull@ units, /etc/pft-statewatch.env)' | tail -4
+pft-integrity accept - 2026-10-29T14:16:53Z: re-baselined 92 items by <user>
+manifest sha256: b03bead07935a03fbe943bf80b65e2f5ab2d93e2843aca2f06b7975e95a75371 -> ad576e82cbbc38b65115e2b59f73c7f15456244a080ede8951af6882d525b91f (logged to accept.log)
+(exit 0)
+$ sudo pft-integrity verify | grep -E 'WARN|FAIL|RESULT'
+RESULT: PASS - 92 unchanged, 0 warn, 0 fail -> exit 0
+(exit 0)
+$ ssh relay 'sudo pft-integrity verify' | grep -E 'WARN|FAIL|RESULT'
+  [WARN] bin:pft-statewatch                           added    new file
+  [WARN] unit:pft-statewatch@.service                 added    new file
+  [WARN] unit:pft-statewatch@.timer                   added    new file
+RESULT: WARN - 52 unchanged, 3 warn, 0 fail -> exit 1
+(exit 0)
+$ ssh relay "sudo pft-integrity accept --reason 'task_33663bf8: pft-statewatch installed (bin, parser, pft-statewatch@ units)'" | tail -4
+pft-integrity accept - 2026-10-29T14:17:40Z: re-baselined 55 items by <user>
+manifest sha256: df1e21e95f688acf7d548fd0fe304f4f9365aca03ba441c8b280d23e82b0aaf6 -> 8674b0c532ceba3a8ee0640c8a1241e2bea9d0b96ddf362e88840b4ca1b34417 (logged to accept.log)
+(exit 0)
+$ ssh relay 'sudo pft-integrity verify' | grep -E 'WARN|FAIL|RESULT'
+RESULT: PASS - 55 unchanged, 0 warn, 0 fail -> exit 0
+(exit 0)

@@ -1,0 +1,43 @@
+OS: Ubuntu 22.04.5 LTS | 2026-10-29T14:34:18Z | statewatch rules go live on the validator's Prometheus (config reload, no container restart) @ aa4a265502dc85081c3c58cbdb0ecf193168eddd
+$ sudo docker inspect -f '{{.State.StartedAt}} restarts={{.RestartCount}}' pft-prometheus pft-alertmanager
+2026-10-29T03:09:31.619726397Z restarts=0
+2026-10-29T02:59:06.957846018Z restarts=0
+(exit 0)
+$ sudo docker kill -s HUP pft-prometheus >/dev/null && sleep 5 && curl -s http://127.0.0.1:9090/api/v1/status/config | jq -r '.data.yaml' | grep statewatch
+- /etc/pft-alerts/statewatch.rules.yml
+(exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/rules | jq -r '.data.groups[] | select(.name=="pft-statewatch") | .rules[] | "\(.name) health=\(.health) state=\(.state)"'
+PFTStatewatchCollectorFailing health=unknown state=inactive
+PFTStatewatchStale health=unknown state=inactive
+PFTNodeBriefFullExit health=unknown state=inactive
+PFTNodeStateFlapping health=unknown state=inactive
+PFTJobQueueOverflow health=unknown state=inactive
+PFTIOLatencyHigh health=unknown state=inactive
+PFTPeerDisconnectRateHigh health=unknown state=inactive
+(exit 0)
+$ sudo docker inspect -f '{{.State.StartedAt}} restarts={{.RestartCount}}' pft-prometheus pft-alertmanager
+2026-10-29T03:09:31.619726397Z restarts=0
+2026-10-29T02:59:06.957846018Z restarts=0
+(exit 0)
+$ curl -s 'http://127.0.0.1:9090/api/v1/query' --data-urlencode 'query=pft_statewatch_up' | jq -c '.data.result[] | {c: .metric.container, v: .value[1]}'
+{"c":"postfiatd-sentry","v":"1"}
+{"c":"postfiatd","v":"1"}
+(exit 0)
+$ curl -s 'http://127.0.0.1:9090/api/v1/query' --data-urlencode 'query=pft_statewatch_full_exits_total' | jq -c '.data.result[] | {c: .metric.container, v: .value[1]}'
+{"c":"postfiatd-sentry","v":"0"}
+{"c":"postfiatd","v":"0"}
+(exit 0)
+--- 2026-10-29T14:34:40Z after the first rule evaluations
+$ curl -s http://127.0.0.1:9090/api/v1/rules | jq ... (pft-statewatch group)
+lastEvaluation=2026-10-29T14:34:39.406811074Z
+PFTStatewatchCollectorFailing health=ok state=inactive lastError=
+PFTStatewatchStale health=ok state=inactive lastError=
+PFTNodeBriefFullExit health=ok state=inactive lastError=
+PFTNodeStateFlapping health=ok state=inactive lastError=
+PFTJobQueueOverflow health=ok state=inactive lastError=
+PFTIOLatencyHigh health=ok state=inactive lastError=
+PFTPeerDisconnectRateHigh health=ok state=inactive lastError=
+(exit 0)
+$ curl -s http://127.0.0.1:9093/api/v2/alerts | jq '[.[] | select(.labels.alertname | test("Statewatch|BriefFull|Flapping|JobQueue|IOLatency|PeerDisconnect"))] | length'
+0
+(exit 0)

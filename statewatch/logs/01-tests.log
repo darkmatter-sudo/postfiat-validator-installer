@@ -1,0 +1,110 @@
+OS: Ubuntu 22.04.5 LTS | 2026-10-29T14:13:42Z | statewatch tests run 1 @ c60ee89ea16cd55463f84824dbf1aa97fa875e6f
+$ sha256sum statewatch/pft-statewatch.sh statewatch/statewatch_parse.py statewatch/install.sh statewatch/tests/run-tests.sh
+0fb3119c66c1578dc83c026ce47087a7a7d3128292d48788c7970ba5b47c2a10  statewatch/pft-statewatch.sh
+3d1e6b4ce5ec21ed4478d82cf23ef012ee70a018015f188688ecdee258d5ad50  statewatch/statewatch_parse.py
+a4fb73766375d49c4cd5a7eae45e6a261e5eb16c6de0bb7e524f0074ea3e90d1  statewatch/install.sh
+10ca4034ad234d66cf3ee1136e227352d4b2608164ebd609bbefaf974c1c4814  statewatch/tests/run-tests.sh
+(exit 0)
+$ shellcheck --version | head -2
+ShellCheck - shell script analysis tool
+version: 0.8.0
+(exit 0)
+$ shellcheck statewatch/*.sh statewatch/tests/*.sh
+(exit 0)
+$ bash statewatch/tests/run-tests.sh
+== 1. healthy full node (real field shapes)
+PASS rc 0
+PASS up 1
+PASS timestamp from PFT_SW_NOW
+PASS state one-hot: full 1
+PASS state one-hot: exactly one 1 of 7
+PASS state duration in seconds
+PASS accounting duration (us -> s, 6 decimals)
+PASS transitions disconnected 2
+PASS transitions for all 5 modes
+PASS full_exits 0 (in full, 1 transition)
+PASS io_latency_ms 1
+PASS jq overflow 0
+PASS peer_disconnects 29 (string field)
+PASS peer_disconnects_resources 0
+PASS uptime + peers
+PASS 27 samples
+PASS file ends with a newline
+PASS file mode 644
+PASS no temp files left
+PASS admin RPC on the container loopback with --max-time
+PASS history: one JSON line with ts + state
+PASS validate accepts own output
+== 2. full_exits (derived, reset-safe)
+PASS left full twice, now tracking -> 2
+PASS back in full, 3 transitions -> 2 (no change on re-entry)
+PASS proposing counts as mode full -> 3
+PASS fresh start, never full -> 0
+PASS full with 0 full transitions is inconsistent -> up 0
+== 3. every required field: missing or malformed -> up 0, no stale values, rc 1
+PASS missing server_state: up 0 + timestamp only, rc 1, reason logged
+PASS missing server_state_duration_us: up 0 + timestamp only, rc 1, reason logged
+PASS missing state_accounting: up 0 + timestamp only, rc 1, reason logged
+PASS missing io_latency_ms: up 0 + timestamp only, rc 1, reason logged
+PASS missing jq_trans_overflow: up 0 + timestamp only, rc 1, reason logged
+PASS missing peer_disconnects: up 0 + timestamp only, rc 1, reason logged
+PASS missing peer_disconnects_resources: up 0 + timestamp only, rc 1, reason logged
+PASS missing uptime: up 0 + timestamp only, rc 1, reason logged
+PASS missing peers: up 0 + timestamp only, rc 1, reason logged
+PASS missing state_accounting.disconnected.duration_us -> up 0
+PASS missing state_accounting.disconnected.transitions -> up 0
+PASS missing state_accounting.connected.duration_us -> up 0
+PASS missing state_accounting.connected.transitions -> up 0
+PASS missing state_accounting.syncing.duration_us -> up 0
+PASS missing state_accounting.syncing.transitions -> up 0
+PASS missing state_accounting.tracking.duration_us -> up 0
+PASS missing state_accounting.tracking.transitions -> up 0
+PASS missing state_accounting.full.duration_us -> up 0
+PASS missing state_accounting.full.transitions -> up 0
+PASS missing state_accounting.full object -> up 0
+PASS malformed jq_trans_overflow "abc" -> up 0
+PASS malformed jq_trans_overflow -1 -> up 0
+PASS malformed jq_trans_overflow True -> up 0
+PASS malformed jq_trans_overflow "-5" -> up 0
+PASS malformed jq_trans_overflow "1.5" -> up 0
+PASS malformed jq_trans_overflow None -> up 0
+PASS malformed jq_trans_overflow "1e3" -> up 0
+PASS malformed jq_trans_overflow "" -> up 0
+PASS io_latency int accepted
+PASS unknown server_state -> up 0
+== 4. RPC/transport failures -> up 0
+PASS rpc error status -> up 0
+PASS non-JSON -> up 0
+PASS empty answer -> up 0
+PASS docker exec fails (container stopped) -> up 0, reason
+PASS hung docker exec ends by timeout (< 15 s) -> up 0
+PASS recovery: next good answer -> up 1, 27 samples
+== 5. history is best-effort
+PASS unwritable history: still up 1, rc 0, warning
+PASS failed parse writes no history line
+== 6. --stdout and usage
+PASS --stdout prints, writes no file
+PASS bad container name -> rc 3
+PASS unknown command -> rc 3
+== 7. validate (what the validator accepts from the sentry)
+PASS good sentry file -> 0
+PASS other container's file -> 2 (first label)
+PASS foreign metric name -> 2
+PASS trailing junk after value -> 2
+PASS non-numeric value -> 2
+PASS no up sample -> 2
+PASS no timestamp sample -> 2
+PASS non-HELP/TYPE comment -> 2
+PASS HELP/TYPE for a foreign metric -> 2
+PASS brace injection -> 2
+PASS over MAX_BYTES -> 2
+PASS empty file -> 2
+== 8. pull (stub PULL_SSH: cat of a staged remote dir)
+PASS pull ok -> 0, file identical, mode 644
+PASS invalid remote file -> 2, previous copy kept
+PASS ssh failure -> 1, previous copy kept
+PASS hung ssh -> 1 after PULL_TIMEOUT
+PASS no pull temp files left
+PASS PULL_SSH unset -> 3
+RESULT: 86/86 passed
+(exit 0)

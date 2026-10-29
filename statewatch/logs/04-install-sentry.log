@@ -1,0 +1,29 @@
+sentry-host OS: Ubuntu 22.04.5 LTS | 2026-10-29T14:16:22Z | statewatch install on the sentry (retry after runlog 02) @ 2a0510bf81823a8f3d5b3cf74392e37ca5f712b5
+$ git archive HEAD statewatch | ssh relay 'rm -rf ~/statewatch-deploy && mkdir ~/statewatch-deploy && tar -x -C ~/statewatch-deploy'
+(exit 0)
+$ ssh relay 'cd ~/statewatch-deploy/statewatch && sha256sum pft-statewatch.sh statewatch_parse.py install.sh systemd/* && sudo ./install.sh --container postfiatd-sentry'
+33ef50c80bbd3a551c46767550e36ce5f2784c3d311f6cfa909d81334a7fb62e  pft-statewatch.sh
+3d1e6b4ce5ec21ed4478d82cf23ef012ee70a018015f188688ecdee258d5ad50  statewatch_parse.py
+a4fb73766375d49c4cd5a7eae45e6a261e5eb16c6de0bb7e524f0074ea3e90d1  install.sh
+6a512c47b49143038dbdcb385482105beada8e34af03058adecd2c50ee38c647  systemd/pft-statewatch-pull@.service
+fa0b2c85f4cdf55cf3a1a4393cb47836e277d5ba17ad7e000bc5d41cb061a4f8  systemd/pft-statewatch-pull@.timer
+28d0274fd34f555c575508d7e24f38d6eee8b340d791a4d227fcda71ee2c8562  systemd/pft-statewatch@.service
+aad10d5c4033d199f62f3296064849a313f9357791017679a6ad7c5026a3d0c2  systemd/pft-statewatch@.timer
+2026-10-29T14:16:24Z installed /usr/local/bin/pft-statewatch (sha256 33ef50c80bbd3a551c46767550e36ce5f2784c3d311f6cfa909d81334a7fb62e)
+2026-10-29T14:16:24Z installed /usr/local/lib/pft-statewatch/statewatch_parse.py (sha256 3d1e6b4ce5ec21ed4478d82cf23ef012ee70a018015f188688ecdee258d5ad50)
+2026-10-29T14:16:24Z first collection (through the sandboxed unit):
+pft_statewatch_up{container="postfiatd-sentry"} 1
+pft_statewatch_server_state_duration_seconds{container="postfiatd-sentry"} 41043.168198
+pft_statewatch_full_exits_total{container="postfiatd-sentry"} 0
+pft_statewatch_io_latency_ms{container="postfiatd-sentry"} 1
+Created symlink /etc/systemd/system/timers.target.wants/pft-statewatch@postfiatd-sentry.timer → /etc/systemd/system/pft-statewatch@.timer.
+2026-10-29T14:16:26Z enabled pft-statewatch@postfiatd-sentry.timer (every minute at :15)
+2026-10-29T14:16:26Z remember: sudo pft-integrity accept --reason 'pft-statewatch installed'
+(exit 0)
+$ ssh relay 'TZ=UTC systemctl list-timers pft-statewatch@postfiatd-sentry.timer --no-pager'
+NEXT                        LEFT     LAST PASSED UNIT                                  ACTIVATES
+Thu 2026-10-29 14:17:15 UTC 48s left n/a  n/a    pft-statewatch@postfiatd-sentry.timer pft-statewatch@postfiatd-sentry.service
+
+1 timers listed.
+Pass --all to see loaded but inactive timers, too.
+(exit 0)

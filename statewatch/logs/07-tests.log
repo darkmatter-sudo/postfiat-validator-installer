@@ -1,0 +1,125 @@
+OS: Ubuntu 22.04.5 LTS | 2026-10-29T14:33:33Z | statewatch tests run 3 + promtool @ aa4a265502dc85081c3c58cbdb0ecf193168eddd
+$ sha256sum statewatch/pft-statewatch.sh statewatch/statewatch_parse.py statewatch/tests/run-tests.sh statewatch/tests/gen_rule_tests.py alerts/statewatch.rules.yml alerts/statewatch.tests.yml
+33ef50c80bbd3a551c46767550e36ce5f2784c3d311f6cfa909d81334a7fb62e  statewatch/pft-statewatch.sh
+3d1e6b4ce5ec21ed4478d82cf23ef012ee70a018015f188688ecdee258d5ad50  statewatch/statewatch_parse.py
+c122201758b373da87860a34e613ed28d88f709e5daf33c1dee05a663cccac39  statewatch/tests/run-tests.sh
+837d492e7b4ffc668a307561d74b4d7ee4a433289651398521e0f6306462afd5  statewatch/tests/gen_rule_tests.py
+2781d8c6eb9e3c0192dd98048f6f65f1d077b04476f53ed87bfda3d01d746ba5  alerts/statewatch.rules.yml
+d200d72eeb981d4f5436f9d0b356c86be1848a4c5a59395747e381c1a55f3074  alerts/statewatch.tests.yml
+(exit 0)
+$ shellcheck statewatch/*.sh statewatch/tests/*.sh
+(exit 0)
+$ ruff check --isolated --select E,F,W,B --ignore E501 statewatch/
+All checks passed!
+(exit 0)
+$ bash statewatch/tests/run-tests.sh
+== 1. healthy full node (real field shapes)
+PASS rc 0
+PASS up 1
+PASS timestamp from PFT_SW_NOW
+PASS state one-hot: full 1
+PASS state one-hot: exactly one 1 of 7
+PASS state duration in seconds
+PASS accounting duration (us -> s, 6 decimals)
+PASS transitions disconnected 2
+PASS transitions for all 5 modes
+PASS full_exits 0 (in full, 1 transition)
+PASS io_latency_ms 1
+PASS jq overflow 0
+PASS peer_disconnects 29 (string field)
+PASS peer_disconnects_resources 0
+PASS uptime + peers
+PASS 27 samples
+PASS file ends with a newline
+PASS file mode 644
+PASS no temp files left
+PASS admin RPC on the container loopback with --max-time
+PASS history: one JSON line with ts + state
+PASS validate accepts own output
+== 2. full_exits (derived, reset-safe)
+PASS left full twice, now tracking -> 2
+PASS back in full, 3 transitions -> 2 (no change on re-entry)
+PASS proposing counts as mode full -> 3
+PASS fresh start, never full -> 0
+PASS full with 0 full transitions is inconsistent -> up 0
+== 3. every required field: missing or malformed -> up 0, no stale values, rc 1
+PASS missing server_state: up 0 + timestamp only, rc 1, reason logged
+PASS missing server_state_duration_us: up 0 + timestamp only, rc 1, reason logged
+PASS missing state_accounting: up 0 + timestamp only, rc 1, reason logged
+PASS missing io_latency_ms: up 0 + timestamp only, rc 1, reason logged
+PASS missing jq_trans_overflow: up 0 + timestamp only, rc 1, reason logged
+PASS missing peer_disconnects: up 0 + timestamp only, rc 1, reason logged
+PASS missing peer_disconnects_resources: up 0 + timestamp only, rc 1, reason logged
+PASS missing uptime: up 0 + timestamp only, rc 1, reason logged
+PASS missing peers: up 0 + timestamp only, rc 1, reason logged
+PASS missing state_accounting.disconnected.duration_us -> up 0
+PASS missing state_accounting.disconnected.transitions -> up 0
+PASS missing state_accounting.connected.duration_us -> up 0
+PASS missing state_accounting.connected.transitions -> up 0
+PASS missing state_accounting.syncing.duration_us -> up 0
+PASS missing state_accounting.syncing.transitions -> up 0
+PASS missing state_accounting.tracking.duration_us -> up 0
+PASS missing state_accounting.tracking.transitions -> up 0
+PASS missing state_accounting.full.duration_us -> up 0
+PASS missing state_accounting.full.transitions -> up 0
+PASS missing state_accounting.full object -> up 0
+PASS malformed jq_trans_overflow "abc" -> up 0
+PASS malformed jq_trans_overflow -1 -> up 0
+PASS malformed jq_trans_overflow True -> up 0
+PASS malformed jq_trans_overflow "-5" -> up 0
+PASS malformed jq_trans_overflow "1.5" -> up 0
+PASS malformed jq_trans_overflow None -> up 0
+PASS malformed jq_trans_overflow "1e3" -> up 0
+PASS malformed jq_trans_overflow "" -> up 0
+PASS io_latency int accepted
+PASS unknown server_state -> up 0
+== 4. RPC/transport failures -> up 0
+PASS rpc error status -> up 0
+PASS non-JSON -> up 0
+PASS empty answer -> up 0
+PASS docker exec fails (container stopped) -> up 0, reason
+PASS hung docker exec ends by timeout (< 15 s) -> up 0
+PASS recovery: next good answer -> up 1, 27 samples
+PASS docker CLI warning on stderr (exit 0) is not part of the answer -> up 1
+== 5. history is best-effort
+PASS unwritable history: still up 1, rc 0, warning
+PASS failed parse writes no history line
+== 6. --stdout and usage
+PASS --stdout prints, writes no file
+PASS bad container name -> rc 3
+PASS unknown command -> rc 3
+== 7. validate (what the validator accepts from the sentry)
+PASS good sentry file -> 0
+PASS other container's file -> 2 (first label)
+PASS foreign metric name -> 2
+PASS trailing junk after value -> 2
+PASS non-numeric value -> 2
+PASS no up sample -> 2
+PASS no timestamp sample -> 2
+PASS non-HELP/TYPE comment -> 2
+PASS HELP/TYPE for a foreign metric -> 2
+PASS brace injection -> 2
+PASS over MAX_BYTES -> 2
+PASS empty file -> 2
+== 8. pull (stub PULL_SSH: cat of a staged remote dir)
+PASS pull ok -> 0, file identical, mode 644
+PASS invalid remote file -> 2, previous copy kept
+PASS ssh failure -> 1, previous copy kept
+PASS hung ssh -> 1 after PULL_TIMEOUT (3 s), previous copy kept
+PASS no pull temp files left
+PASS PULL_SSH unset -> 3
+RESULT: 87/87 passed
+(exit 0)
+$ python3 -I statewatch/tests/gen_rule_tests.py | cmp - alerts/statewatch.tests.yml && echo 'statewatch.tests.yml is up to date with the generator'
+statewatch.tests.yml is up to date with the generator
+(exit 0)
+$ cd alerts && sudo docker run --rm -v "$PWD:/w:ro" -w /w --entrypoint promtool prom/prometheus:v3.5.0 check rules statewatch.rules.yml && sudo docker run --rm -v "$PWD:/w:ro" -w /w --entrypoint promtool prom/prometheus:v3.5.0 test rules statewatch.tests.yml; cd ..
+Checking statewatch.rules.yml
+  SUCCESS: 7 rules found
+
+  SUCCESS
+
+(exit 0)
+$ DOCKER='sudo docker' bash alerts/run-stack.sh check 2>&1 | grep -cE 'SUCCESS'
+25
+(exit 0)

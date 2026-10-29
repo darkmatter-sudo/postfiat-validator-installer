@@ -1,0 +1,33 @@
+sentry-host OS: Ubuntu 22.04.5 LTS | 2026-10-29T14:14:05Z | statewatch install on the sentry @ c60ee89ea16cd55463f84824dbf1aa97fa875e6f
+$ git archive HEAD statewatch | ssh relay 'rm -rf ~/statewatch-deploy && mkdir ~/statewatch-deploy && tar -x -C ~/statewatch-deploy'
+(exit 0)
+$ ssh relay 'cd ~/statewatch-deploy/statewatch && sha256sum pft-statewatch.sh statewatch_parse.py install.sh && sudo ./install.sh --container postfiatd-sentry'
+0fb3119c66c1578dc83c026ce47087a7a7d3128292d48788c7970ba5b47c2a10  pft-statewatch.sh
+3d1e6b4ce5ec21ed4478d82cf23ef012ee70a018015f188688ecdee258d5ad50  statewatch_parse.py
+a4fb73766375d49c4cd5a7eae45e6a261e5eb16c6de0bb7e524f0074ea3e90d1  install.sh
+2026-10-29T14:14:07Z installed /usr/local/bin/pft-statewatch (sha256 0fb3119c66c1578dc83c026ce47087a7a7d3128292d48788c7970ba5b47c2a10)
+2026-10-29T14:14:07Z installed /usr/local/lib/pft-statewatch/statewatch_parse.py (sha256 3d1e6b4ce5ec21ed4478d82cf23ef012ee70a018015f188688ecdee258d5ad50)
+2026-10-29T14:14:08Z first collection (through the sandboxed unit):
+Job for pft-statewatch@postfiatd-sentry.service failed because the control process exited with error code.
+See "systemctl status pft-statewatch@postfiatd-sentry.service" and "journalctl -xeu pft-statewatch@postfiatd-sentry.service" for details.
+2026-10-29T14:14:09Z ERROR: first collection failed
+Oct 29 14:14:08 sentry-host systemd[1]: Starting pft-statewatch: postfiatd state/health counters for container postfiatd-sentry...
+Oct 29 14:14:09 sentry-host pft-statewatch[848437]: pft-statewatch: statewatch_parse: not JSON (2198 bytes): Expecting value: line 1 column 1 (char 0): up 0
+Oct 29 14:14:09 sentry-host systemd[1]: pft-statewatch@postfiatd-sentry.service: Main process exited, code=exited, status=1/FAILURE
+Oct 29 14:14:09 sentry-host systemd[1]: pft-statewatch@postfiatd-sentry.service: Failed with result 'exit-code'.
+Oct 29 14:14:09 sentry-host systemd[1]: Failed to start pft-statewatch: postfiatd state/health counters for container postfiatd-sentry.
+(exit 1)
+$ ssh relay 'TZ=UTC systemctl list-timers pft-statewatch@postfiatd-sentry.timer --no-pager'
+NEXT LEFT LAST PASSED UNIT ACTIVATES
+
+0 timers listed.
+Pass --all to see loaded but inactive timers, too.
+(exit 0)
+$ ssh relay 'sudo pft-integrity verify' | tail -12
+pft-integrity verify - 2026-10-29T14:14:15Z
+OS: Ubuntu 22.04.5 LTS | container: postfiatd-sentry | baseline: 2026-10-29T03:33:25Z
+  [WARN] bin:pft-statewatch                           added    new file
+  [WARN] unit:pft-statewatch@.service                 added    new file
+  [WARN] unit:pft-statewatch@.timer                   added    new file
+RESULT: WARN - 52 unchanged, 3 warn, 0 fail -> exit 1
+(exit 0)

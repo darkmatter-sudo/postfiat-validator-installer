@@ -1,0 +1,144 @@
+OS: Ubuntu 22.04.5 LTS | 2026-10-29T14:33:32Z | statewatch mutation run 1 (recorded) @ aa4a265502dc85081c3c58cbdb0ecf193168eddd
+$ python3 -u statewatch/tests/mutate.py
+# pft-statewatch.sh sha256 33ef50c80bbd3a551c46767550e36ce5f2784c3d311f6cfa909d81334a7fb62e
+# statewatch_parse.py sha256 3d1e6b4ce5ec21ed4478d82cf23ef012ee70a018015f188688ecdee258d5ad50
+# statewatch.rules.yml sha256 2781d8c6eb9e3c0192dd98048f6f65f1d077b04476f53ed87bfda3d01d746ba5
+# statewatch.tests.yml sha256 d200d72eeb981d4f5436f9d0b356c86be1848a4c5a59395747e381c1a55f3074
+# run-tests.sh sha256 c122201758b373da87860a34e613ed28d88f709e5daf33c1dee05a663cccac39
+# control sh/py: RESULT: 87/87 passed rc 0
+# control rules: promtool rc 0 (SUCCESS)
+S01 CAUGHT RESULT: 86/87 passed - docker stderr merged into the answer again (first sentry install bug)
+    FAIL docker CLI warning on stderr (exit 0) is not part of the answer -> up 1
+S02 CAUGHT RESULT: 77/87 passed - up always 1
+    FAIL full with 0 full transitions is inconsistent -> up 0
+    FAIL missing server_state: up 0 + timestamp only, rc 1, reason logged
+    FAIL missing server_state_duration_us: up 0 + timestamp only, rc 1, reason logged
+    FAIL missing state_accounting: up 0 + timestamp only, rc 1, reason logged
+    FAIL missing io_latency_ms: up 0 + timestamp only, rc 1, reason logged
+    FAIL missing jq_trans_overflow: up 0 + timestamp only, rc 1, reason logged
+    FAIL missing peer_disconnects: up 0 + timestamp only, rc 1, reason logged
+    FAIL missing peer_disconnects_resources: up 0 + timestamp only, rc 1, reason logged
+    FAIL missing uptime: up 0 + timestamp only, rc 1, reason logged
+    FAIL missing peers: up 0 + timestamp only, rc 1, reason logged
+S03 CAUGHT RESULT: 86/87 passed - write not atomic (copy, temp file left)
+    FAIL no temp files left
+S04 CAUGHT RESULT: 75/87 passed - failed collection exits 0
+    FAIL full with 0 full transitions is inconsistent -> up 0
+    FAIL missing server_state: up 0 + timestamp only, rc 1, reason logged
+    FAIL missing server_state_duration_us: up 0 + timestamp only, rc 1, reason logged
+    FAIL missing state_accounting: up 0 + timestamp only, rc 1, reason logged
+    FAIL missing io_latency_ms: up 0 + timestamp only, rc 1, reason logged
+    FAIL missing jq_trans_overflow: up 0 + timestamp only, rc 1, reason logged
+    FAIL missing peer_disconnects: up 0 + timestamp only, rc 1, reason logged
+    FAIL missing peer_disconnects_resources: up 0 + timestamp only, rc 1, reason logged
+    FAIL missing uptime: up 0 + timestamp only, rc 1, reason logged
+    FAIL missing peers: up 0 + timestamp only, rc 1, reason logged
+    FAIL empty answer -> up 0
+    FAIL hung docker exec ends by timeout (< 15 s) -> up 0
+S05 CAUGHT RESULT: 86/87 passed - no outer timeout around docker exec
+    FAIL hung docker exec ends by timeout (< 15 s) -> up 0
+S06 CAUGHT RESULT: 86/87 passed - curl without --max-time
+    FAIL admin RPC on the container loopback with --max-time
+S07 CAUGHT RESULT: 86/87 passed - validate: first label not checked
+    FAIL other container's file -> 2 (first label)
+S08 CAUGHT RESULT: 84/87 passed - validate: any value accepted
+    FAIL trailing junk after value -> 2
+    FAIL non-numeric value -> 2
+    FAIL brace injection -> 2
+S09 CAUGHT RESULT: 86/87 passed - validate: up sample not required
+    FAIL no up sample -> 2
+S10 CAUGHT RESULT: 86/87 passed - validate: size limit dropped
+    FAIL over MAX_BYTES -> 2
+S11 CAUGHT RESULT: 86/87 passed - pull: temp file kept after a validation failure
+    FAIL no pull temp files left
+S12 CAUGHT RESULT: 86/87 passed - pull: no timeout around ssh
+    FAIL hung ssh -> 1 after PULL_TIMEOUT (3 s), previous copy kept
+S13 CAUGHT RESULT: 85/87 passed - textfile without final newline
+    FAIL file ends with a newline
+    FAIL foreign metric name -> 2
+S14 CAUGHT RESULT: 85/87 passed - validate: foreign HELP/TYPE comments accepted
+    FAIL non-HELP/TYPE comment -> 2
+    FAIL HELP/TYPE for a foreign metric -> 2
+P01 CAUGHT RESULT: 84/87 passed - full_exits = raw full transitions (a restart/first sync counts as an exit)
+    FAIL full_exits 0 (in full, 1 transition)
+    FAIL back in full, 3 transitions -> 2 (no change on re-entry)
+    FAIL proposing counts as mode full -> 3
+P02 CAUGHT RESULT: 86/87 passed - proposing not treated as mode full
+    FAIL proposing counts as mode full -> 3
+P03 CAUGHT RESULT: 86/87 passed - JSON true accepted as a number
+    FAIL malformed jq_trans_overflow True -> up 0
+P04 CAUGHT RESULT: 86/87 passed - negative integers accepted
+    FAIL malformed jq_trans_overflow -1 -> up 0
+P05 CAUGHT RESULT: 86/87 passed - accounting durations divided by 1e3, not 1e6
+    FAIL accounting duration (us -> s, 6 decimals)
+P06 CAUGHT RESULT: 70/87 passed - missing field read as 0
+    FAIL missing server_state_duration_us: up 0 + timestamp only, rc 1, reason logged
+    FAIL missing io_latency_ms: up 0 + timestamp only, rc 1, reason logged
+    FAIL missing jq_trans_overflow: up 0 + timestamp only, rc 1, reason logged
+    FAIL missing peer_disconnects: up 0 + timestamp only, rc 1, reason logged
+    FAIL missing peer_disconnects_resources: up 0 + timestamp only, rc 1, reason logged
+    FAIL missing uptime: up 0 + timestamp only, rc 1, reason logged
+    FAIL missing peers: up 0 + timestamp only, rc 1, reason logged
+    FAIL missing state_accounting.disconnected.duration_us -> up 0
+    FAIL missing state_accounting.disconnected.transitions -> up 0
+    FAIL missing state_accounting.connected.duration_us -> up 0
+    FAIL missing state_accounting.connected.transitions -> up 0
+    FAIL missing state_accounting.syncing.duration_us -> up 0
+    FAIL missing state_accounting.syncing.transitions -> up 0
+    FAIL missing state_accounting.tracking.duration_us -> up 0
+    FAIL missing state_accounting.tracking.transitions -> up 0
+    FAIL missing state_accounting.full.duration_us -> up 0
+    FAIL failed parse writes no history line
+P07 CAUGHT RESULT: 86/87 passed - rpc status not checked
+    FAIL rpc error status -> up 0
+P08 CAUGHT RESULT: 85/87 passed - unknown server_state accepted
+    FAIL missing server_state: up 0 + timestamp only, rc 1, reason logged
+    FAIL unknown server_state -> up 0
+P09 CAUGHT RESULT: 86/87 passed - full with 0 full transitions accepted
+    FAIL full with 0 full transitions is inconsistent -> up 0
+P10 CAUGHT RESULT: 86/87 passed - history write error kills the collection
+    FAIL unwritable history: still up 1, rc 0, warning
+P11 CAUGHT RESULT: 86/87 passed - transitions exported from the duration field
+    FAIL transitions disconnected 2
+P12 CAUGHT RESULT: 84/87 passed - decimal strings with a sign/point accepted
+    FAIL malformed jq_trans_overflow "-5" -> up 0
+    FAIL malformed jq_trans_overflow "1.5" -> up 0
+    FAIL malformed jq_trans_overflow "1e3" -> up 0
+R01 CAUGHT - flapping counts raw transitions (restart = 7 transitions)
+    failed: flapping: 3rd exit within 1h (at 33m) fires (value 3); resolves at 70m when the 0->1 step (10m->11m) leaves (t-1h, t]
+    failed: flapping: 3rd exit within 1h (at 33m) fires (value 3); resolves at 70m when the 0->1 step (10m->11m) leaves (t-1h, t]
+    failed: exits before and after a restart add up (reset-safe increase): 2 + restart + 1 -> flapping
+R02 CAUGHT - brief-exit guard (every sample full) dropped
+    failed: visible exit (state sampled not-full for 5m) is not 'brief': PFTNodeNotFull's job
+    failed: visible exit (state sampled not-full for 5m) is not 'brief': PFTNodeNotFull's job
+R03 CAUGHT - flapping threshold 2
+    failed: flapping: 3rd exit within 1h (at 33m) fires (value 3); resolves at 70m when the 0->1 step (10m->11m) leaves (t-1h, t]
+    failed: flapping: 3rd exit within 1h (at 33m) fires (value 3); resolves at 70m when the 0->1 step (10m->11m) leaves (t-1h, t]
+    failed: 2 exits within 1h is not flapping
+    failed: 2 exits within 1h is not flapping
+R04 CAUGHT - jq overflow on the raw counter (not reset-safe, fires on old drops)
+    failed: jq overflow 0 -> 3 at 21m fires (15m window: 3 x 15/14 = 3.2 -> '3'), resolves 15m later
+R05 CAUGHT - jq overflow with delta() (a reset hides new drops)
+    failed: jq overflow after a restart: reset 7 -> 0, then 2 new drops -> fires on the 2 new ones
+R06 CAUGHT - io latency without for: 10m
+    failed: io latency 80 ms at 11m..26m fires at 21m (for 10m), not at 20m; recovers at 27m
+    failed: 9-minute io latency spike does not fire; 50 ms exactly does not fire
+R07 CAUGHT - io latency >= 50
+    failed: 9-minute io latency spike does not fire; 50 ms exactly does not fire
+R08 CAUGHT - disconnect threshold 60
+    failed: 60 disconnects/h fires ((0,60m]: 59 x 60/59 = 60), 30/h does not
+    failed: disconnect counter reset (300 -> 0, no new drops) does not fire; a real burst of 40 after it does
+R09 CAUGHT - disconnects with delta() (reset hides a burst)
+    failed: disconnect counter reset (300 -> 0, no new drops) does not fire; a real burst of 40 after it does
+R10 CAUGHT - collector failing without for: 5m
+    failed: collector failing: up 0 fires after 5m, not before; recovers
+R11 CAUGHT - stale threshold 3000 s
+    failed: stale: timestamp stops at 600 s; > 300 s old from 16m, fires 2m later; recovers when it moves again
+R12 CAUGHT - brief exit checks only the current state (instant, no 10m subquery)
+    failed: visible exit (state sampled not-full for 5m) is not 'brief': PFTNodeNotFull's job
+R13 CAUGHT - brief-exit window 1m (exit gone before the next evaluation)
+    failed: brief exit: exit counter 0 -> 1 at 31m while every sample says full -> fires, resolves after 10m
+    failed: brief exit: exit counter 0 -> 1 at 31m while every sample says full -> fires, resolves after 10m
+MUTANTS: 39/39 caught, 0 not applied, 0 broken, 0 survived
+(exit 0)
+END 2026-10-29T14:43:56Z
