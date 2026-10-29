@@ -182,6 +182,22 @@ mutant M64 "pipeline watchdog silenced too (alertpath would page)" \
 mutant M65 "WATCHDOG_ALERT ignored" \
   '--arg w "$WATCHDOG_ALERT"' '--arg w PFTAlertPipelineWatchdog'
 
+mutant M66 "post-gate egress check not retried (peers lag after a reboot fails the run)" \
+  '{ [ "$ph" = post ] && [ $(( $(now) - t0 )) -lt "$GATE_TIMEOUT" ]; } || { a=0; break; }' '{ a=0; break; }'
+mutant M67 "pre-gate egress check retried too" \
+  '{ [ "$ph" = post ] && [ $(( $(now) - t0 )) -lt "$GATE_TIMEOUT" ]; } || { a=0; break; }' '{ [ $(( $(now) - t0 )) -lt "$GATE_TIMEOUT" ]; } || { a=0; break; }'
+mutant M68 "egress retry never gives up" \
+  '{ [ "$ph" = post ] && [ $(( $(now) - t0 )) -lt "$GATE_TIMEOUT" ]; } || { a=0; break; }' '{ [ "$ph" = post ]; } || { a=0; break; }'
+mutant M69 "status exit code decides readability (WARN/CRIT read as unreadable)" \
+  'j="$(hx "$1" "$PATCH_CMD" status --json 2>/dev/null)"' 'j="$(hx "$1" "$PATCH_CMD" status --json 2>/dev/null)" || j=""'
+mutant M70 "garbage status printed as if readable" \
+  "automatic_reboot: .unattended.automatic_reboot}' <<<\"\$j\" 2>/dev/null || echo unreadable)\"" "automatic_reboot: .unattended.automatic_reboot}' <<<\"\$j\" 2>/dev/null || echo \"{}\")\""
+
+mutant M71 "injected reboot ignored" \
+  'if [ "$INJECT" = "$h-reboot" ]; then' 'if false; then'
+mutant M72 "injected reboot applies to every host" \
+  'if [ "$INJECT" = "$h-reboot" ]; then' 'if [ -n "$INJECT" ]; then'
+
 wait
 for id in "${IDS[@]}"; do
   read -r kind line < "$W/$id.res"; echo "$line"

@@ -2,7 +2,7 @@
 # Two-host fake for `pft-patch run` (sourced by run-tests.sh after stubs.sh). mk_run DIR builds:
 #   DIR/sentry, DIR/validator   one mk_env host each (root, s, bin); DIR/<host>/s also holds node/gate state:
 #                 info (server_info JSON), started (container StartedAt), down_polls (N polls answer "connected"),
-#                 integrity_warn, integrity_mtime (mtime-only WARN), mtime_on_reboot, accept_fail, audit_fail, egress_fail, restart_fail, ssh_down, ssh_down_after_reboot
+#                 integrity_warn, integrity_mtime (mtime-only WARN), mtime_on_reboot, accept_fail, audit_fail, egress_fail, egress_fail_after_reboot (N), restart_fail, ssh_down, ssh_down_after_reboot
 #   DIR/rbin      ssh sudo docker pft-integrity pft-audittrail pft-egress pft-maint systemctl systemd-run curl pft-patch
 #   DIR/calls     every stub call as "<host>: <command line>", in order
 #   DIR/hosts.conf  sentry over ssh (first), validator local
@@ -62,7 +62,16 @@ if [ "\$n" -gt 0 ]; then echo "RESULT: WARN - \$((50 - n)) unchanged, \$n warn, 
 echo "RESULT: PASS - 50 unchanged, 0 warn, 0 fail -> exit 0"
 B
   printf '#!/usr/bin/env bash\n%s\n[ ! -e "$S/audit_fail" ]\n' "$rec" > "$b/pft-audittrail"
-  printf '#!/usr/bin/env bash\n%s\n[ "$1" = check ] && [ -e "$S/egress_fail" ] && exit 1\nexit 0\n' "$rec" > "$b/pft-egress"
+  cat > "$b/pft-egress" <<B
+#!/usr/bin/env bash
+$rec
+[ "\$1" = check ] || exit 0
+[ -e "\$S/egress_fail" ] && exit 1
+# egress_fail_after_reboot N: the first N checks after a reboot fail (peers below the apply-time baseline)
+n="\$(cat "\$S/egress_lag" 2>/dev/null || echo 0)"
+if [ "\$n" -gt 0 ]; then echo \$((n - 1)) > "\$S/egress_lag"; exit 1; fi
+exit 0
+B
   cat > "$b/pft-maint" <<B
 #!/usr/bin/env bash
 $rec
@@ -83,6 +92,7 @@ case "\$*" in *"systemctl reboot"*)
   echo "2026-10-29T02:00:00.000000000Z" > "\$S/started"
   [ -e "\$S/ssh_down_after_reboot" ] && touch "\$S/ssh_down"
   [ -e "\$S/mtime_on_reboot" ] && touch "\$S/integrity_mtime"
+  [ -e "\$S/egress_fail_after_reboot" ] && cp "\$S/egress_fail_after_reboot" "\$S/egress_lag"
   [ -e "\$S/down_after_reboot" ] && echo 2 > "\$S/down_polls" ;;
 esac
 exit 0

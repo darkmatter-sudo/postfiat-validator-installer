@@ -165,6 +165,32 @@ expect "accept fails -> integrity FAIL" 1 'GATE post sentry integrity: FAIL exit
 rfresh; sec_both; touch "$RD/validator/s/install_reboot" "$RD/validator/s/mtime_on_reboot"; run run --yes; run resume
 expect "local reboot + mtime-only -> accepted at resume" 0 'GATE post validator integrity: accepted mtime-only item\(s\) after the reboot: sshd:sshd_config$'
 
+# --- post-gate egress check retried while a rebooted node's peers recover (live drill A, run 15); pre-gate never
+rfresh; sec_both; touch "$RD/sentry/s/install_reboot"; echo 3 > "$RD/sentry/s/egress_fail_after_reboot"; run run --yes
+expect "egress lag after reboot -> retried, PASS" 0 'GATE post sentry egress: PASS \(check exit 0, attempt 4\)'
+expect "egress lag after reboot -> run PASS" 0 'RESULT: PASS'
+rfresh; sec_both; touch "$RD/sentry/s/install_reboot"; echo 999 > "$RD/sentry/s/egress_fail_after_reboot"; run run --yes
+expect "egress never passes -> post-gate FAIL after GATE_TIMEOUT" 1 'GATE post sentry egress: FAIL'
+vinstall && ko "egress never passes -> validator not installed" || ok "egress never passes -> validator not installed"
+rfresh; sec_both; touch "$RD/sentry/s/egress_fail"; run run --yes
+[ "$(grep -c 'sentry: pft-egress check' "$RD/calls")" = 1 ] && ok "pre-gate egress checked once (no retry)" || ko "pre-gate egress no retry" "$(calls)"
+# --- STATUS line: a WARN status (exit 1) is still a readable status
+rfresh; sec_both; run run --yes
+expect "STATUS before with pending updates (status exit 2) is read" 0 'STATUS before sentry: \{"result":"CRIT"'
+grep -q 'unreadable' <<<"$OUT" && ko "no 'unreadable' for a WARN/CRIT status" "$OUT" || ok "no 'unreadable' for a WARN/CRIT status"
+rfresh; sec_both; printf '#!/usr/bin/env bash\necho "not json"\n' > "$RD/rbin/pft-patch.garbage"
+sed -i 's|^exec bash "$PATCH_TOOL" "$@"$|[ "$1" = status ] \&\& exec bash "$RUN_D/rbin/pft-patch.garbage"; exec bash "$PATCH_TOOL" "$@"|' "$RD/rbin/pft-patch"
+run run --yes
+expect "garbage status -> unreadable" 0 'STATUS before sentry: unreadable'
+
+# --- injected reboot: the sentry reboots although its host step decided none; the validator does not
+rfresh; sec_both; b0="$(cat "$RD/sentry/root/proc/sys/kernel/random/boot_id")"; PFT_PATCH_INJECT=sentry-reboot run run --yes
+expect "injected reboot -> PASS" 0 'RESULT: PASS'
+expect "injected reboot labelled as drill" 0 "DECISION sentry: host decided 'none'; INJECTED reboot: drill \\(PFT_PATCH_INJECT=sentry-reboot\\)"
+expect "injected reboot: back with new boot id" 0 'REBOOT sentry: back after [0-9]+s'
+[ "$(cat "$RD/sentry/root/proc/sys/kernel/random/boot_id")" != "$b0" ] && ok "injected reboot: boot id changed" || ko "injected reboot: boot id changed"
+grep -q 'validator: systemd-run' "$RD/calls" && ko "injected reboot: validator not rebooted" "$(calls)" || ok "injected reboot: validator not rebooted"
+
 # --- gates fail closed
 while IFS='|' read -r name setup want re; do
   [ -z "$name" ] && continue

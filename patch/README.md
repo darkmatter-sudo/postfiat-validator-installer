@@ -10,7 +10,7 @@ upgrade of one of them restarts dockerd/containerd, i.e. restarts postfiatd at a
 outside any maintenance window and without a health gate. Reboots needed by kernel updates are never
 taken at all unless someone notices `/var/run/reboot-required`.
 
-> Status: build 3 (`status`, `policy`, `run`, offline tests and mutants, live drill wrapper). The live two-host proof and its
+> Status: build 4 (`status`, `policy`, `run`, offline tests and mutants, live drill wrapper). The live two-host proof and its
 > logs are added to this README when they have run.
 
 ## Modes
@@ -100,7 +100,8 @@ per host, in order:
                         run the host's post hooks (e.g. pft-egress reapply);
                         local: write resume.json, reboot in 15 s, exit 10; resume runs the rest at boot
   GATE post             the pre-gate checks, the node check waits up to GATE_TIMEOUT (1800 s) for full,
-                        plus: no reboot-required flag left; after a reboot of THIS host, integrity items
+                        plus: no reboot-required flag left; the egress check is retried until GATE_TIMEOUT
+                        (it also wants peers >= its apply-time baseline); after a reboot of THIS host, integrity items
                         that changed only their mtime are accepted (below), then a fresh verify decides
   STATUS after, WINDOW close
 any failure -> STOP: window ended, silence expired (real alerts flow again), every later host is checked
@@ -147,9 +148,19 @@ the middle of every run longer than three minutes. (Found while preparing the li
 The run's Alertmanager silence is expired when the host had no restart, and kept `SILENCE_TAIL` (900 s) longer
 after a reboot or service restart, because restart-related rules (e.g. a container start) stay true for a while.
 
-**Drill hook.** `PFT_PATCH_INJECT=sentry-postgate` makes the sentry's post-gate fail AFTER all real checks ran,
+**Drill hooks.** `PFT_PATCH_INJECT=sentry-postgate` makes the sentry's post-gate fail AFTER all real checks ran,
 with its own line `GATE post sentry INJECTED-FAILURE: drill ..., not a host fault`, so the stop path (validator
-untouched) can be proven on live hosts without breaking anything.
+untouched) can be proven on live hosts without breaking anything. `PFT_PATCH_INJECT=<host>-reboot` replaces
+that host's decision with a reboot (`DECISION <host>: host decided '<real decision>'; INJECTED reboot: drill`),
+so the reboot path (wait for a new boot id, post hooks, post-gate after a reboot) can be proven when no update
+needs one. Both name one host and change nothing else.
+
+**Egress check after a reboot.** `pft-egress check` also requires peers >= the count recorded when the egress
+policy was applied. A rebooted sentry is `full` with fewer peers for a minute or two, so a single check right
+after the node gate fails although the egress rules are correct. The first live drill (log 15, build 3) hit
+exactly this (`GATE post sentry egress: FAIL` with peers 10 < 11, the check passed 90 s later). Since build 4
+the post-gate retries the egress check every POLL_SEC until GATE_TIMEOUT and prints the attempt count; the
+pre-gate checks once.
 
 Exit codes (`run`): 0 every host patched and gated, 1 a host failed (later hosts untouched), 3 usage/config,
 4 refused before any change, 5 a later host changed during a failed run, 10 the local host is rebooting
@@ -159,8 +170,8 @@ Exit codes (`run`): 0 every host patched and gated, 1 a host failed (later hosts
 ## Tests
 
 ```bash
-bash patch/tests/run-tests.sh        # 193 stubbed tests: no root, no apt, no network, no ssh
-JOBS=3 bash patch/tests/mutate.sh    # 65 mutants; the unmutated control must pass first
+bash patch/tests/run-tests.sh        # 206 stubbed tests: no root, no apt, no network, no ssh
+JOBS=3 bash patch/tests/mutate.sh    # 72 mutants; the unmutated control must pass first
 shellcheck -x patch/pft-patch.sh patch/install.sh patch/drill/live-run.sh patch/tests/*.sh
 ```
 
@@ -170,7 +181,8 @@ reboot` "reboots" a host at once (new boot id, flag cleared, container restarted
 gate failing on its own, window/silence failures, reboot wait and timeout, post hooks, the injected failure
 with the untouched proof, a later host that does change (exit 5), the local reboot + resume path, the
 mtime-only integrity accept after a reboot (and every case where it must not happen: pre-gate, no reboot,
-content change, mixed findings, accept failure), the silence matchers, and the
+content change, mixed findings, accept failure), the silence matchers, the egress retry after a reboot (and
+no retry at the pre-gate), the injected reboot, the STATUS line for WARN/CRIT and garbage output, and the
 security-only / `--all` / `--runtime` / held / new-dependency selection.
 
 The stub `apt-config` parses the fake host's `apt.conf.d` files in name order the way apt does for the

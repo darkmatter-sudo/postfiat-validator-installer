@@ -419,7 +419,14 @@ gate() {
     else log "GATE $ph $h audittrail: FAIL (pft-audittrail check)"; fail=1; fi
   fi
   if has "$h" pft-egress; then
-    if hx "$h" pft-egress check --container "${H_CONT[$h]}" >/dev/null 2>&1; then log "GATE $ph $h egress: PASS (check exit 0)"
+    # pft-egress check also wants peers >= its apply-time baseline, which a rebooted node reaches a minute or two
+    # after "full" (live drill A: peers 10 < 11): the post-gate retries it until GATE_TIMEOUT, the pre-gate never
+    a=1
+    while ! hx "$h" pft-egress check --container "${H_CONT[$h]}" >/dev/null 2>&1; do
+      { [ "$ph" = post ] && [ $(( $(now) - t0 )) -lt "$GATE_TIMEOUT" ]; } || { a=0; break; }
+      a=$((a + 1)); nap "$POLL_SEC"
+    done
+    if [ "$a" -gt 0 ]; then log "GATE $ph $h egress: PASS (check exit 0, attempt $a)"
     else log "GATE $ph $h egress: FAIL (pft-egress check --container ${H_CONT[$h]})"; fail=1; fi
   fi
   if [ "$ph" = post ]; then
@@ -491,10 +498,12 @@ post_hook() { # LABEL
   if [ "${PIPESTATUS[0]}" = 0 ]; then log "POST $1: hook ok"; return 0; fi
   log "POST $1: hook FAILED"; return 1
 }
-status_line() { # LABEL WHEN
-  log "STATUS $2 $1: $(hx "$1" "$PATCH_CMD" status --json 2>/dev/null | jq -c '{result, updates, holds, reboot_required,
+status_line() { # LABEL WHEN  (status exits 1/2 for WARN/CRIT: judge the JSON, not the exit code)
+  local j
+  j="$(hx "$1" "$PATCH_CMD" status --json 2>/dev/null)"
+  log "STATUS $2 $1: $(jq -ec '{result, updates, holds, reboot_required,
     kernel: .needrestart.ksta, services: .needrestart.services, exposed: .unattended.runtime_exposed,
-    automatic_reboot: .unattended.automatic_reboot}' 2>/dev/null || echo unreadable)"
+    automatic_reboot: .unattended.automatic_reboot}' <<<"$j" 2>/dev/null || echo unreadable)"
 }
 
 # untouched LABEL -> 0 when the host's boot id, dpkg.log and container start time equal the run-start record
@@ -529,6 +538,10 @@ patch_host() { # LABEL -> returns on success, exits via stop_run on any failure 
   printf '%s\n' "$out" | sed 's/^/    /'
   dec="$(sed -n 's/^DECISION //p' <<<"$out" | tail -1)"
   [ -n "$dec" ] || { window_close "$h" fail; stop_run "$h" "upgrade failed"; }
+  if [ "$INJECT" = "$h-reboot" ]; then
+    log "DECISION $h: host decided '$dec'; INJECTED reboot: drill (PFT_PATCH_INJECT=$INJECT), proves the reboot path live"
+    dec="reboot (INJECTED: drill)"
+  fi
   log "DECISION $h: $dec"
   case "$dec" in
     reboot*)
