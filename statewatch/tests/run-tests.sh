@@ -26,6 +26,7 @@ printf '%s\n' "\$*" > "$T/args"
 [ "\$1" = exec ] || exit 1
 [ -e "$T/hang" ] && sleep 60
 [ -e "$T/fail" ] && { echo "Error response from daemon: container is not running" >&2; exit 1; }
+[ -e "$T/warn" ] && echo "WARNING: Error loading config file: open /root/.docker/config.json: permission denied" >&2
 cat "$T/answer"
 EOF
 chmod +x "$T/bin/docker"
@@ -123,6 +124,9 @@ touch "$T/hang"; s0=$(date +%s); run; s1=$(date +%s); rm -f "$T/hang"
 check "hung docker exec ends by timeout (< 15 s) -> up 0" '[ $((s1 - s0)) -lt 15 ] && [ "$(samples)" = 2 ] && [ "$(cat "$T/rc")" = 1 ]'
 answer 'pass'; run
 check "recovery: next good answer -> up 1, 27 samples" 'has "$OUT" "pft_statewatch_up{$L} 1" && [ "$(samples)" = 27 ]'
+
+answer 'pass'; touch "$T/warn"; run; rm -f "$T/warn"
+check "docker CLI warning on stderr (exit 0) is not part of the answer -> up 1" 'has "$OUT" "pft_statewatch_up{$L} 1" && [ "$(samples)" = 27 ]'
 
 echo "== 5. history is best-effort"
 answer 'pass'; run --history "$T/nodir/hist.jsonl"

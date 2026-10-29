@@ -7,6 +7,8 @@ Requires=docker.service
 [Service]
 Type=oneshot
 # root: needs the docker socket (docker exec ... curl server_info on the container's loopback). Read-only otherwise.
+# The docker CLI cannot read /root/.docker under ProtectHome and warns on every run; an empty private /tmp silences it.
+Environment=DOCKER_CONFIG=/tmp
 ExecStart=/usr/local/bin/pft-statewatch collect --container %i --history /var/lib/pft-statewatch/history-%i.jsonl
 ProtectSystem=strict
 ReadWritePaths=/var/lib/pft-exporter/textfile /var/lib/pft-statewatch

@@ -77,19 +77,21 @@ collect() {
   L="container=\"$CONTAINER\""
   body='{"method":"server_info","params":[{}]}'
   err=""
-  # curl's own --max-time ends the request inside the container; the outer timeout only guards a hung docker exec
+  errf="$(mktemp)" || die "mktemp failed" 1
+  # curl's own --max-time ends the request inside the container; the outer timeout only guards a hung docker exec.
+  # stderr stays out of the answer: the docker CLI prints warnings there (first sentry install: "Error loading config
+  # file" under the unit's sandbox was glued to the JSON and every run read as "not JSON", runlog 02).
   if ! raw="$(timeout "$((RPC_TIMEOUT + 5))" "${DOCKER[@]}" exec "$CONTAINER" curl -s --max-time "$RPC_TIMEOUT" \
-        -H 'Content-Type: application/json' -d "$body" http://127.0.0.1:5005/ 2>&1)"; then
-    err="server_info via docker exec $CONTAINER failed: ${raw:0:120}"
+        -H 'Content-Type: application/json' -d "$body" http://127.0.0.1:5005/ 2>"$errf")"; then
+    err="server_info via docker exec $CONTAINER failed: $(head -c 120 "$errf")"
   else
-    errf="$(mktemp)" || die "mktemp failed" 1
     text="$(printf '%s' "$raw" | python3 -I "$PARSER" --container "$CONTAINER" --now "$now" \
         ${HISTORY:+--history "$HISTORY"} 2>"$errf")"; rc=$?
     if [ "$rc" != 0 ]; then err="$(head -c 200 "$errf")"; err="${err:-parser failed (rc $rc)}"
     elif [ -s "$errf" ]; then cat "$errf" >&2  # warnings only (history not written)
     fi
-    rm -f "$errf"
   fi
+  rm -f "$errf"
   local head
   head="# HELP pft_statewatch_up 1 if the last server_info collection succeeded and every field was valid
 # TYPE pft_statewatch_up gauge
