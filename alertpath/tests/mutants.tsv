@@ -21,7 +21,7 @@ M20	resolved watchdog ignored	$c.wd.status != "firing"	false
 M21	no-Alertmanager ignored	$c.prom.am_discovered < 1	false
 M22	Prometheus notification errors ignored	inc(.prom.notif_errors)	inc(.prom.notif_errors) * 0
 M23	dropped notifications ignored	inc(.prom.notif_dropped)	inc(.prom.notif_dropped) * 0
-M24	notify on every run	if [ "$state" != "$prev" ]; then	if true; then
+M24	notify on every run	if [ "$store" != "$prev" ]; then	if true; then
 M25	no RECOVERED message	OK) ntfy "[alertpath] RECOVERED"	OK) : "[alertpath] RECOVERED"
 M26	metric label filter ignored	(f == "" || index($1, f) > 0)	(1)
 M27	rule evaluation failures ignored	inc(.prom.rule_eval_failures)	inc(.prom.rule_eval_failures) * 0
