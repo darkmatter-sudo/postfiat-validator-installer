@@ -227,6 +227,27 @@ expect "concurrent run -> refused" 4 'another pft-patch run holds'
 rfresh; rm "$RD/hosts.conf"; run run --yes
 expect "no config -> 3" 3 'no hosts config'
 
+# --- post-gate containers: everything running before the host step must run again (live drill B: dockerd left
+# pft-prometheus Exited (255) after the validator reboot)
+ctrs() { printf '%s\n' "$2" pft-alertmanager pft-prometheus > "$RD/$1/s/running"; }
+rfresh; sec_both; ctrs sentry postfiatd-sentry; ctrs validator postfiatd; touch "$RD/sentry/s/install_reboot"
+echo pft-prometheus > "$RD/sentry/s/lost_on_reboot"; run run --yes
+expect "container lost on reboot -> started once" 0 'GATE post sentry containers: started pft-prometheus \(running before, not restored after the reboot\)'
+expect "container lost on reboot -> PASS after start" 0 'GATE post sentry containers: PASS \(all 3 running again: pft-alertmanager,pft-prometheus,postfiatd-sentry\)'
+expect "containers recorded before the host step" 0 'CONTAINERS sentry before: pft-alertmanager,pft-prometheus,postfiatd-sentry'
+rfresh; sec_both; ctrs sentry postfiatd-sentry; touch "$RD/sentry/s/install_reboot" "$RD/sentry/s/start_fail"
+echo pft-prometheus > "$RD/sentry/s/lost_on_reboot"; run run --yes
+expect "container not startable -> gate FAIL" 1 'GATE post sentry containers: FAIL \(not running: pft-prometheus\)'
+vinstall && ko "container FAIL on sentry leaves validator untouched" "$(vcalls)" || ok "container FAIL on sentry leaves validator untouched"
+rfresh; sec_both; ctrs sentry postfiatd-sentry; run run --yes; sed -i '/pft-prometheus/d' "$RD/sentry/s/running"
+grep -q 'docker start' "$RD/calls" && ko "no reboot -> no docker start" "$(calls)" || ok "no reboot -> no docker start"
+rfresh; sec_both; ctrs validator postfiatd; touch "$RD/validator/s/install_reboot"; echo pft-prometheus > "$RD/validator/s/lost_on_reboot"
+run run --yes
+jq -e '.ctrs=="pft-alertmanager,pft-prometheus,postfiatd"' "$RD/state/resume.json" >/dev/null && ok "resume.json keeps the container list" || ko "resume.json ctrs" "$(cat "$RD/state/resume.json")"
+run resume
+expect "resume: lost container started, PASS" 0 'GATE post validator containers: started pft-prometheus'
+expect "resume: containers PASS" 0 'GATE post validator containers: PASS \(all 3 running again'
+
 # --- validator (local) reboot: schedule + resume at boot
 rfresh; sec_both; touch "$RD/validator/s/install_reboot"; run run --yes
 expect "local reboot -> exit 10" 10 'REBOOT validator: this host reboots in 15 s'

@@ -2,7 +2,8 @@
 # Two-host fake for `pft-patch run` (sourced by run-tests.sh after stubs.sh). mk_run DIR builds:
 #   DIR/sentry, DIR/validator   one mk_env host each (root, s, bin); DIR/<host>/s also holds node/gate state:
 #                 info (server_info JSON), started (container StartedAt), down_polls (N polls answer "connected"),
-#                 integrity_warn, integrity_mtime (mtime-only WARN), mtime_on_reboot, accept_fail, audit_fail, egress_fail, egress_fail_after_reboot (N), restart_fail, ssh_down, ssh_down_after_reboot
+#                 integrity_warn, integrity_mtime (mtime-only WARN), mtime_on_reboot, accept_fail, audit_fail, egress_fail, egress_fail_after_reboot (N), restart_fail, ssh_down, ssh_down_after_reboot,
+#                 running (docker ps names), lost_on_reboot (names dockerd does not restore), start_fail
 #   DIR/rbin      ssh sudo docker pft-integrity pft-audittrail pft-egress pft-maint systemctl systemd-run curl pft-patch
 #   DIR/calls     every stub call as "<host>: <command line>", in order
 #   DIR/hosts.conf  sentry over ssh (first), validator local
@@ -48,6 +49,8 @@ case "\$1" in
     if [ "\$n" -gt 0 ]; then echo \$((n - 1)) > "\$S/down_polls"; echo '{"result":{"info":{"server_state":"connected","peers":3}}}'; exit 0; fi
     jq -c '{result:{info:.}}' "\$S/info" ;;
   inspect) cat "\$S/started" ;;
+  ps) cat "\$S/running" 2>/dev/null ;;
+  start) [ -e "\$S/start_fail" ] && exit 1; echo "\$2" >> "\$S/running" ;;
 esac
 B
   cat > "$b/pft-integrity" <<B
@@ -93,7 +96,8 @@ case "\$*" in *"systemctl reboot"*)
   [ -e "\$S/ssh_down_after_reboot" ] && touch "\$S/ssh_down"
   [ -e "\$S/mtime_on_reboot" ] && touch "\$S/integrity_mtime"
   [ -e "\$S/egress_fail_after_reboot" ] && cp "\$S/egress_fail_after_reboot" "\$S/egress_lag"
-  [ -e "\$S/down_after_reboot" ] && echo 2 > "\$S/down_polls" ;;
+  [ -e "\$S/down_after_reboot" ] && echo 2 > "\$S/down_polls"
+  [ -e "\$S/lost_on_reboot" ] && [ -e "\$S/running" ] && grep -vxFf "\$S/lost_on_reboot" "\$S/running" > "\$S/running.n" && mv "\$S/running.n" "\$S/running" ;;
 esac
 exit 0
 B

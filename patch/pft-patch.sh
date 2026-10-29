@@ -338,7 +338,7 @@ nap() { if [ -n "${PFT_PATCH_NOW_FILE:-}" ]; then echo $(( $(now) + $1 )) > "$PF
 iso() { date -u -d "@$1" +%FT%TZ; }
 log() { printf '[%s] %s\n' "$(iso "$(now)")" "$*"; }
 
-declare -A H_MODE H_SSH H_CONT H_PEERS H_POST B_INFO B_START
+declare -A H_MODE H_SSH H_CONT H_PEERS H_POST B_INFO B_START B_CTRS
 HOSTS=()
 load_conf() {
   local kw l m s c p rest
@@ -367,6 +367,7 @@ hx() { # LABEL CMD... : CMD as root on that host; any ssh failure is a failure o
   else sudo -n "$@"; fi
 }
 has() { hx "$1" bash -c "command -v $2 >/dev/null"; }
+running_ctrs() { hx "$1" docker ps --format '{{.Names}}' 2>/dev/null | sort | paste -sd, -; }
 started_at() { hx "$1" docker inspect -f '{{.State.StartedAt}}' "${H_CONT[$1]}" 2>/dev/null || echo unknown; }
 POLL_LINE=""
 poll_node() { # LABEL -> 0 when full|proposing, peers >= min, validated ledger age <= MAX_LEDGER_AGE
@@ -428,6 +429,27 @@ gate() {
     done
     if [ "$a" -gt 0 ]; then log "GATE $ph $h egress: PASS (check exit 0, attempt $a)"
     else log "GATE $ph $h egress: FAIL (pft-egress check --container ${H_CONT[$h]})"; fail=1; fi
+  fi
+  if [ "$ph" = post ] && [ -n "${B_CTRS[$h]:-}" ]; then
+    # every container that ran before the host step must run again: after a reboot dockerd once left pft-prometheus
+    # Exited (255) ("layer not mounted") while restoring the others, and nothing else checked it (live drill B)
+    local miss c started=""
+    while :; do
+      miss="$(comm -23 <(tr , '\n' <<<"${B_CTRS[$h]}") <(running_ctrs "$h" | tr , '\n') | paste -sd, -)"
+      [ -n "$miss" ] || break
+      if [ "${REBOOTED[$h]:-0}" = 1 ] && [ -z "$started" ]; then
+        started=1
+        for c in ${miss//,/ }; do
+          if hx "$h" docker start "$c" >/dev/null 2>&1; then log "GATE post $h containers: started $c (running before, not restored after the reboot)"
+          else log "GATE post $h containers: docker start $c failed"; fi
+        done
+        continue
+      fi
+      [ $(( $(now) - t0 )) -lt "$GATE_TIMEOUT" ] || break
+      nap "$POLL_SEC"
+    done
+    if [ -z "$miss" ]; then log "GATE post $h containers: PASS (all $(tr , '\n' <<<"${B_CTRS[$h]}" | wc -l) running again: ${B_CTRS[$h]})"
+    else log "GATE post $h containers: FAIL (not running: $miss)"; fail=1; fi
   fi
   if [ "$ph" = post ]; then
     out="$(hx "$h" "$PATCH_CMD" host-info 2>/dev/null)"
@@ -533,7 +555,8 @@ patch_host() { # LABEL -> returns on success, exits via stop_run on any failure 
   status_line "$h" before
   gate "$h" pre || stop_run "$h" "pre-gate"
   window_open "$h" || stop_run "$h" "maintenance window"
-  s0="$(started_at "$h")"
+  s0="$(started_at "$h")"; B_CTRS[$h]="$(running_ctrs "$h")"
+  log "CONTAINERS $h before: ${B_CTRS[$h]:-none}"
   out="$(hx "$h" "$PATCH_CMD" upgrade --yes "${UP_ARGS[@]}" 2>&1)"
   printf '%s\n' "$out" | sed 's/^/    /'
   dec="$(sed -n 's/^DECISION //p' <<<"$out" | tail -1)"
@@ -547,8 +570,8 @@ patch_host() { # LABEL -> returns on success, exits via stop_run on any failure 
     reboot*)
       rs=1
       if [ "${H_MODE[$h]}" = local ]; then
-        jq -n --arg run "$RUN_ID" --arg h "$h" --arg sil "$SIL" --arg body "$SIL_BODY" \
-          '{run:$run, host:$h, silence:$sil, silence_body:$body}' > "$RESUME_FILE"
+        jq -n --arg run "$RUN_ID" --arg h "$h" --arg sil "$SIL" --arg body "$SIL_BODY" --arg ctrs "${B_CTRS[$h]}" \
+          '{run:$run, host:$h, silence:$sil, silence_body:$body, ctrs:$ctrs}' > "$RESUME_FILE"
         hx "$h" systemd-run --on-active=15 --unit "pft-patch-reboot-$RUN_ID" systemctl reboot >/dev/null 2>&1 \
           || { rm -f "$RESUME_FILE"; window_close "$h" fail; stop_run "$h" "could not schedule the reboot"; }
         log "REBOOT $h: this host reboots in 15 s; pft-patch-resume.service runs the post-gate at boot ($RESUME_FILE)"
@@ -622,6 +645,7 @@ cmd_resume() {
   load_conf
   r="$(cat "$RESUME_FILE")"
   RUN_ID="$(jq -r .run <<<"$r")"; h="$(jq -r .host <<<"$r")"; SIL="$(jq -r .silence <<<"$r")"; SIL_BODY="$(jq -r .silence_body <<<"$r")"
+  B_CTRS[$h]="$(jq -r '.ctrs // empty' <<<"$r")"
   [ -n "${H_MODE[$h]:-}" ] || { log "resume: host $h not in $CONF"; exit 3; }
   MAINT_HOST="${MAINT_HOST:-$h}"; SEL=("$h")
   rm -f "$RESUME_FILE"
