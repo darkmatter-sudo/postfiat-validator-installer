@@ -19,6 +19,11 @@ reset() { # fresh sandbox per case
   printf '%s\n' "$KEY" > "$SB/c/conf/hmac.key"; chmod 600 "$SB/c/conf/hmac.key"
   NOW="$(date -u +%s)"
   export CONF_DIR="$SB/c/conf" STATE_DIR="$SB/c/state" SPOOL_DIR="$SB/c/spool" NTFY_OUTBOX="$SB/c/outbox"
+  # stub pft-maint: `active` exits 0 only while $SB/c/maint.on exists; `suppressed` calls are recorded
+  # shellcheck disable=SC2016  # the stub's $1/$2/$3 must stay literal
+  printf '#!/bin/sh\ncase "$1" in active) [ -e "%s/maint.on" ] ;; suppressed) echo "$2 $3" >> "%s/suppressed" ;; *) exit 3 ;; esac\n' \
+    "$SB/c" "$SB/c" > "$SB/c/pft-maint"; chmod +x "$SB/c/pft-maint"
+  export PFT_MAINT_BIN="$SB/c/pft-maint" MAINT_GRACE_SEC=300
 }
 KEY="$(openssl rand -hex 32)"
 NOW="$(date -u +%s)"
@@ -100,6 +105,30 @@ spool "$(snap 2 '.wd = null')"; run --notify; spool "$(snap 1)"; run --notify
 got="$(cut -d'|' -f1,2 "$NTFY_OUTBOX" 2>/dev/null | tr '\n' ' ')"
 if [ "$got" = "[alertpath] DEGRADED|default [alertpath] STALE|high [alertpath] RECOVERED|low " ]; then ok "notify sequence: $got"
 else bad "notify sequence: got '$got'"; fi
+# maintenance hold (pft-patch reboot of the validator): a change away from OK inside a pft-maint window is held,
+# the stored state stays the pre-window one, the hold is counted; recovery inside the hold sends nothing
+reset; spool "$(snap 5)"; run --notify; : > "$SB/c/maint.on"; spool "$(snap 4 '.wd = null')"; run --notify
+if [ ! -s "$NTFY_OUTBOX" ] && [ "$(jq -r .state "$STATE_DIR/state.json")" = OK ] && grep -qx 'alertpath STALE' "$SB/c/suppressed" \
+   && grep -q 'held (maintenance window)' "$SB/err"; then ok "window: STALE held, nothing sent, stored OK, suppressed counted"
+else bad "window hold: outbox='$(cat "$NTFY_OUTBOX" 2>/dev/null)' state=$(jq -r .state "$STATE_DIR/state.json") err=$(cat "$SB/err")"; fi
+rm -f "$SB/c/maint.on"; spool "$(snap 3 '.wd = null')"; run --notify
+if [ ! -s "$NTFY_OUTBOX" ] && grep -qE 'held \(post-maintenance grace, (29[0-9]|300)s left\)' "$SB/err"; then ok "grace: still held after the window closed"
+else bad "grace hold: outbox='$(cat "$NTFY_OUTBOX" 2>/dev/null)' err=$(cat "$SB/err")"; fi
+spool "$(snap 2)"; run --notify
+if [ ! -s "$NTFY_OUTBOX" ] && [ "$RC" -eq 0 ]; then ok "recovered inside the hold: no message"; else bad "recovery in hold: '$(cat "$NTFY_OUTBOX" 2>/dev/null)' rc=$RC"; fi
+# still STALE when the hold ends (MAINT_GRACE_SEC=0): pages at the first run after the window
+reset; export MAINT_GRACE_SEC=0; spool "$(snap 5)"; run --notify; : > "$SB/c/maint.on"; spool "$(snap 4 '.wd = null')"; run --notify
+held_ok=0; [ ! -s "$NTFY_OUTBOX" ] && held_ok=1
+rm -f "$SB/c/maint.on"; sleep 1; spool "$(snap 3 '.wd = null')"; run --notify
+got="$(cut -d'|' -f1,2 "$NTFY_OUTBOX" 2>/dev/null | tr '\n' ' ')"
+if [ "$held_ok" = 1 ] && [ "$got" = "[alertpath] STALE|high " ]; then ok "still STALE after window + grace: pages ($got)"
+else bad "after hold: held_ok=$held_ok got '$got'"; fi
+# the hold is for --notify only, and a missing pft-maint means no window (alerting stays live)
+reset; : > "$SB/c/maint.on"; spool "$(snap 5 '.wd = null')"; run
+if [ "$(jq -r .state "$STATE_DIR/state.json")" = STALE ]; then ok "check without --notify is not held"; else bad "no-notify run held"; fi
+reset; export PFT_MAINT_BIN="$SB/c/missing"; spool "$(snap 5)"; run --notify; spool "$(snap 4 '.wd = null')"; run --notify
+got="$(cut -d'|' -f1,2 "$NTFY_OUTBOX" 2>/dev/null | tr '\n' ' ')"
+if [ "$got" = "[alertpath] STALE|high " ]; then ok "no pft-maint binary: not held ($got)"; else bad "missing pft-maint: got '$got'"; fi
 # exit-code/text mode
 reset; spool "$(snap 5 '.am.up = 0')"; run
 if [ "$RC" -eq 1 ] && grep -q 'state=DEGRADED accepted=1 rejected=0' <<<"$OUT"; then ok "text output DEGRADED rc=1"; else bad "text output: rc=$RC $OUT"; fi

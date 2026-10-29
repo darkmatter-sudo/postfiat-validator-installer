@@ -30,3 +30,6 @@ M29	DEGRADED exits 2	DEGRADED) exit 1	DEGRADED) exit 2
 M30	DEGRADED outranks STALE	state:(if ($stale|length) > 0 then "STALE" elif ($degraded|length) > 0 then "DEGRADED"	state:(if ($degraded|length) > 0 then "DEGRADED" elif ($stale|length) > 0 then "STALE"
 M31	increase counted over the whole history	if $s[$i].ts >= $cut then	if true then
 M32	baseline sample before the cut ignored	if $s[$i].ts >= $cut then	if $s[$i-1].ts >= $cut then
+M33	maintenance window never detected	"$PFT_MAINT_BIN" active >/dev/null 2>&1; then	false; then
+M34	held change stored anyway (hold lost)	  store="$prev"	  store="$state"
+M35	post-maintenance grace ignored	elif [ "$hold_until" -gt "$NOW" ]; then held=	elif false; then held=

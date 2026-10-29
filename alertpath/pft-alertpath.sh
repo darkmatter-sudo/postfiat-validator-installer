@@ -21,6 +21,10 @@
 #   OK        none of the above
 # ntfy (--notify): one message per state change, RECOVERED when it returns to OK. Uses its own ntfy.env on the
 # sentry, so it still works when everything on the validator is down.
+# Maintenance windows (../maint): while `pft-maint active` (the sentry copy of the validator's window, e.g. a
+# pft-patch reboot) and for MAINT_GRACE_SEC after it, --notify HOLDS a change away from OK: the stored state stays
+# the pre-window one and the change is counted with `pft-maint suppressed alertpath`. When the hold ends, a pipeline
+# that is still not OK differs from that stored state and pages then; one that recovered in time sends nothing.
 #
 # Usage: pft-alertpath snapshot                        (validator; print the unsigned snapshot JSON)
 #        pft-alertpath push [--print]                  (validator, root; sign + send to the sentry)
@@ -34,6 +38,8 @@
 #      BRIDGE_CONTAINER (pft-alert-bridge)  BRIDGE_PORT (9095)  DOCKER ("docker")
 #      SNAP_STALE_SEC (150)  WD_STALE_SEC (180)  EVAL_STALE_SEC (120)  WINDOW_SEC (600, history kept)
 #      INC_WINDOW_SEC (180, counter increases count only this far back)  SKEW_TOL_SEC (30)
+#      PFT_MAINT_BIN (/usr/local/bin/pft-maint; missing or failing = no window, alerting stays live)
+#      MAINT_GRACE_SEC (300, hold after a maintenance window closes)
 #      NTFY_OUTBOX (if set, ntfy messages are appended to this file instead of sent; used by the tests)
 
 set -uo pipefail
@@ -54,6 +60,8 @@ EVAL_STALE_SEC="${EVAL_STALE_SEC:-120}"
 WINDOW_SEC="${WINDOW_SEC:-600}"
 INC_WINDOW_SEC="${INC_WINDOW_SEC:-180}"
 SKEW_TOL_SEC="${SKEW_TOL_SEC:-30}"
+PFT_MAINT_BIN="${PFT_MAINT_BIN:-/usr/local/bin/pft-maint}"
+MAINT_GRACE_SEC="${MAINT_GRACE_SEC:-300}"
 MAX_MSG=8192
 MAX_SPOOL=200
 
@@ -69,7 +77,7 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-usage() { sed -n '2,36p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; }
 
 # ---------- receive: forced command, unprivileged, never sees the key ----------
 if [ "$CMD" = receive ]; then
@@ -264,9 +272,24 @@ verdict="$(jq -sc --argjson now "$NOW" --argjson rejected "$rejected" \
 state="$(jq -r .state <<<"$verdict")"
 prev="$(jq -r .state "$STATE")"
 since="$(jq -r .since "$STATE")"
-[ "$state" != "$prev" ] && since="$NOW"
-jq -c --arg s "$state" --argjson since "$since" --argjson ts "$last_ts" --argjson r "$rejected" \
-  --argjson v "$verdict" '{state:$s, since:$since, last_ts:$ts, rejected:((.rejected // 0) + $r), last:$v}' "$STATE" \
+# maintenance hold (--notify only): extended on every run inside a window, ends MAINT_GRACE_SEC after it
+hold_until="$(jq -r '.hold_until // 0 | floor' "$STATE")"
+held=""
+if [ "$NOTIFY" -eq 1 ]; then
+  if [ -x "$PFT_MAINT_BIN" ] && "$PFT_MAINT_BIN" active >/dev/null 2>&1; then
+    hold_until=$((NOW + MAINT_GRACE_SEC)); held="maintenance window"
+  elif [ "$hold_until" -gt "$NOW" ]; then held="post-maintenance grace, $((hold_until - NOW))s left"
+  fi
+fi
+store="$state"
+if [ -n "$held" ] && [ "$state" != "$prev" ] && [ "$state" != OK ]; then
+  echo "transition $prev -> $state held ($held): $(jq -r '.reasons | join("; ")' <<<"$verdict")" >&2
+  "$PFT_MAINT_BIN" suppressed alertpath "$state" >/dev/null 2>&1 || true
+  store="$prev"
+fi
+[ "$store" != "$prev" ] && since="$NOW"
+jq -c --arg s "$store" --argjson since "$since" --argjson ts "$last_ts" --argjson r "$rejected" --argjson hu "$hold_until" \
+  --argjson v "$verdict" '{state:$s, since:$since, last_ts:$ts, rejected:((.rejected // 0) + $r), hold_until:$hu, last:$v}' "$STATE" \
   > "$STATE.tmp" && mv -- "$STATE.tmp" "$STATE"
 
 ntfy() { # title, priority, body
@@ -285,7 +308,7 @@ ntfy() { # title, priority, body
 }
 
 reasons="$(jq -r '.reasons | join("; ")' <<<"$verdict")"
-if [ "$state" != "$prev" ]; then
+if [ "$store" != "$prev" ]; then
   # --json keeps stdout pure JSON; the transition line then goes to stderr (journal)
   if [ "$JSON" -eq 1 ]; then exec 8>&2; else exec 8>&1; fi
   echo "transition $prev -> $state at $NOW: ${reasons:-all checks pass}" >&8
