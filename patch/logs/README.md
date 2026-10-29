@@ -34,6 +34,7 @@ boot ids -> first 8 hex chars, local-time syslog stamps -> `<local-time>`.
 | 22 | build 5 tests @ ceaaeee | 215/215, shellcheck 0 |
 | 23 | deploy pft-alertpath 7c47394 to the sentry | integrity FAIL on the new binary, accepted with reason, PASS |
 | 24 | alertpath mutants after the M24 retarget | STOPPED: launched before the fix was committed |
+| 25 | alertpath tests + mutants @ 28e5b9d (M24 retargeted at the stored-state comparison) | 44/44, shellcheck 0, 35/35 caught, 0 not applied |
 | 27 | deploy pft-patch build 5 to both hosts @ 2625075 | both hosts `status` OK; integrity: unit mtime only, accepted, PASS |
 
 Drill B found two gaps, both fixed afterwards: dockerd left pft-prometheus Exited (255) after the validator reboot and
