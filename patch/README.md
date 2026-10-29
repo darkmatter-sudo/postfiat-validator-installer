@@ -209,3 +209,58 @@ topics, counts messages on every operator topic since the start (topics never pr
 INJECT=sentry-postgate WANT=1 bash patch/drill/live-run.sh --all 2>&1 | tee LOG   # injected sentry failure
 bash patch/drill/live-run.sh --all 2>&1 | tee LOG                                  # full run, both hosts
 ```
+
+
+## Results
+
+Live runs on the real validator + sentry (Ubuntu 22.04.5 LTS, postfiatd 1.0.9), 2026-10-29. Every drill ran through
+`drill/live-run.sh` with all notifiers on both hosts pointed at throwaway topics. Logs are raw output, redacted only as
+described in [`logs/README.md`](logs/README.md).
+
+| drill | command | what happened | log |
+|---|---|---|---|
+| A | `INJECT=sentry-postgate WANT=1 live-run.sh --all` (build 3) | sentry: 10 packages incl. kernel 5.15.0-202, **real reboot** (back in 63 s), node full; post-gate egress check FAILED for a real reason (the reboot dropped the PFT-EGRESS jump and the gate did not wait for the self-heal timer) and the injected failure followed; STOP, validator **UNTOUCHED**; operator topics 0 | [run-15](logs/run-15.log) |
+| B | `INJECT=sentry-reboot WANT=0 live-run.sh --all` (build 4: egress retry) | sentry: nothing to install, injected reboot (back in 51 s), every post-gate PASS incl. egress; validator: 12 packages incl. kernel 5.15.0-202 -> **real local reboot** (exit 10 by design; the wrapper expected 0, so its CHECK says FAIL); `pft-patch-resume.service` ran the post-gate at boot: RESULT PASS | [run-19](logs/run-19.log), [run-28](logs/run-28.log) |
+| C | `live-run.sh --all` (build 5) | both hosts already patched: every pre/post gate PASS on both hosts incl. the new containers gate, INSTALLED 0, DECISION none, **no reboot required, none taken**; boot ids, dpkg.log and container StartedAt unchanged; operator topics 0; integrity PASS 87/52 | [run-29](logs/run-29.log) |
+| D | `INJECT=sentry-postgate WANT=1 live-run.sh` (build 5, security-only) | sentry: nothing to install, every real post-gate check PASS (node, integrity, audittrail, egress, containers, reboot flag), then the **injected** failure (labelled `INJECTED-FAILURE: drill ... not a host fault`); window closed, silence expired, STOP; validator **UNTOUCHED** (boot id, dpkg.log sha256, container StartedAt = run-start record); operator topics 0; integrity PASS 87/52 | [run-30](logs/run-30.log) |
+
+Drill D is the clean injected-failure proof: in drill A the sentry post-gate had already failed for a real reason
+(egress) before the injection, so A shows the STOP path on a real fault and D shows it on the injection alone.
+
+Gaps the drills found, all fixed and re-tested before this README:
+
+- drill A: egress gate did not wait for the post-reboot reapply -> build 4 retries the egress check until GATE_TIMEOUT
+  (tests + mutants; live PASS in B, C, D).
+- drill B: after the validator reboot dockerd left `pft-prometheus` Exited (255) ("layer not mounted") and the
+  resume post-gate did not notice (started by hand at 03:09Z, ~10 min without Prometheus) -> build 5 containers gate
+  (every container running before the host step must run again; one `docker start` after a reboot of that host).
+  Live PASS in C and D; the failure path is proven offline (tests + mutants M73-M78), not live.
+- drill B: the sentry's `pft-alertpath` monitor sent **one page to the operator's topic** at 02:59:17Z
+  (`[alertpath] STALE`) while the validator rebooted, because the drill had already restored the real targets
+  before the local reboot and alertpath ignored the pft-maint window -> alertpath 7c47394 holds state changes inside
+  a pft-maint window + 300 s grace (44 tests, 35/35 mutants, [run-25](logs/run-25.log)). No later drill rebooted the
+  validator, so the hold is proven offline only.
+
+- run-26 (build 5 mutants): 75/78. M38 SURVIVED (no test left the reboot flag set after a reboot) and M37/M52 NOT APPLIED
+  (their target lines had changed in builds 4/5) -> 87aa9db adds a `flag_stays` stub + 2 tests (219) and retargets M37/M52;
+  re-run in [run-31](logs/run-31.log) @ 87aa9db: 219/219, shellcheck 0, control 219/219, **78/78 caught, 0 survived,
+  0 not applied** (M37, M38 and M52 each caught).
+
+Not done live: a security-only run that actually installed a security update (none were pending on either host
+during the drills; A and B installed jammy-updates/kernel packages with `--all`), a `restart <services>` decision
+(needrestart listed none after the installs) and the `--runtime` path.
+
+### Evidence index
+
+| acceptance item | where |
+|---|---|
+| `status [--json]`, exit 0/1/2, read-only | [status](#status), tests in `tests/run-tests.sh`; live STATUS before/after lines in run-15/19/29/30 |
+| `policy apply/rollback --yes`, backups, byte-identical rollback, docker/containerd blacklist, Automatic-Reboot=false | [policy](#policy); live apply on both hosts [run-13](logs/run-13.log) |
+| `run --yes [--hosts] [--all]`, windows, gates, conditional reboots, sentry-first abort | [run](#run); drills A-D above |
+| stubbed tests, mutation control, shellcheck | [run-31](logs/run-31.log) @ 87aa9db: 219/219, shellcheck 0, control 219/219, 78/78 caught, 0 survived, 0 not applied (run-26 at 2625075: 75/78, see gaps) |
+| security-only vs `--all`, reload vs reboot | [run](#run) (two paragraphs after the flow) |
+| real reboots when required | sentry kernel reboot run-15; validator kernel reboot run-19 + resume run-28 |
+| injected sentry post-gate failure, validator untouched | run-30 (clean), run-15 |
+| throwaway topics, operator topic untouched | every drill's section 3; the one exception (B, 02:59:17Z) is disclosed above |
+| integrity rebaseline and final PASS | run-14, run-18, run-27 (accepts with reason); final verify in run-30: PASS 87/52 |
+| postfiatd full afterwards | `CHECK ok ... server_state full after the run` in every drill |
