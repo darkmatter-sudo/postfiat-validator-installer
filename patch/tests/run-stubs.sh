@@ -3,7 +3,8 @@
 #   DIR/sentry, DIR/validator   one mk_env host each (root, s, bin); DIR/<host>/s also holds node/gate state:
 #                 info (server_info JSON), started (container StartedAt), down_polls (N polls answer "connected"),
 #                 integrity_warn, integrity_mtime (mtime-only WARN), mtime_on_reboot, accept_fail, audit_fail, egress_fail, egress_fail_after_reboot (N), restart_fail, ssh_down, ssh_down_after_reboot,
-#                 running (docker ps names), lost_on_reboot (names dockerd does not restore), start_fail
+#                 running (docker ps names), lost_on_reboot (names dockerd does not restore), lost_on_install (names that stop during
+#                 the package install, no reboot), start_fail
 #   DIR/rbin      ssh sudo docker pft-integrity pft-audittrail pft-egress pft-maint systemctl systemd-run curl pft-patch
 #   DIR/calls     every stub call as "<host>: <command line>", in order
 #   DIR/hosts.conf  sentry over ssh (first), validator local

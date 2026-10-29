@@ -10,7 +10,7 @@ upgrade of one of them restarts dockerd/containerd, i.e. restarts postfiatd at a
 outside any maintenance window and without a health gate. Reboots needed by kernel updates are never
 taken at all unless someone notices `/var/run/reboot-required`.
 
-> Status: build 4 (`status`, `policy`, `run`, offline tests and mutants, live drill wrapper). The live two-host proof and its
+> Status: build 5 (`status`, `policy`, `run`, offline tests and mutants, live drill wrapper). The live two-host proof and its
 > logs are added to this README when they have run.
 
 ## Modes
@@ -103,6 +103,10 @@ per host, in order:
                         plus: no reboot-required flag left; the egress check is retried until GATE_TIMEOUT
                         (it also wants peers >= its apply-time baseline); after a reboot of THIS host, integrity items
                         that changed only their mtime are accepted (below), then a fresh verify decides
+                        containers: every container running before the host step must run again; after a
+                        reboot of THIS host each missing one gets ONE `docker start` (dockerd once left
+                        pft-prometheus Exited (255), "layer not mounted", after a reboot in live drill B); without
+                        a reboot nothing is started, the gate waits up to GATE_TIMEOUT and then fails
   STATUS after, WINDOW close
 any failure -> STOP: window ended, silence expired (real alerts flow again), every later host is checked
   against its preflight record (UNTOUCHED / CHANGED), exit 1 (or 5 if a later host changed)
@@ -170,8 +174,8 @@ Exit codes (`run`): 0 every host patched and gated, 1 a host failed (later hosts
 ## Tests
 
 ```bash
-bash patch/tests/run-tests.sh        # 206 stubbed tests: no root, no apt, no network, no ssh
-JOBS=3 bash patch/tests/mutate.sh    # 72 mutants; the unmutated control must pass first
+bash patch/tests/run-tests.sh        # 217 stubbed tests: no root, no apt, no network, no ssh
+JOBS=3 bash patch/tests/mutate.sh    # 78 mutants; the unmutated control must pass first
 shellcheck -x patch/pft-patch.sh patch/install.sh patch/drill/live-run.sh patch/tests/*.sh
 ```
 

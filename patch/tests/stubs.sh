@@ -44,6 +44,7 @@ case " $* " in
     [ -e "$STUB_S/install_svc" ] && cat "$STUB_S/install_svc" >> "$STUB_S/nr"
     [ -e "$STUB_S/install_integrity" ] && touch "$STUB_S/integrity_warn"
     [ -e "$STUB_S/install_mtime" ] && touch "$STUB_S/integrity_mtime"
+    [ -e "$STUB_S/lost_on_install" ] && [ -e "$STUB_S/running" ] && grep -vxFf "$STUB_S/lost_on_install" "$STUB_S/running" > "$STUB_S/running.n" && mv "$STUB_S/running.n" "$STUB_S/running"
     : > "$STUB_S/sim"; exit 0 ;;
 esac
 [ -e "$STUB_S/sim_fail" ] && { echo "E: Could not open lock file"; exit 100; }

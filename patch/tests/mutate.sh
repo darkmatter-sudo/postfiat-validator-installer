@@ -198,6 +198,19 @@ mutant M71 "injected reboot ignored" \
 mutant M72 "injected reboot applies to every host" \
   'if [ "$INJECT" = "$h-reboot" ]; then' 'if [ -n "$INJECT" ]; then'
 
+mutant M73 "post-gate containers check skipped" \
+  'if [ "$ph" = post ] && [ -n "${B_CTRS[$h]:-}" ]; then' 'if false; then'
+mutant M74 "lost container never started after a reboot" \
+  'if [ "${REBOOTED[$h]:-0}" = 1 ] && [ -z "$started" ]; then' 'if false; then'
+mutant M75 "lost container started without a reboot" \
+  'if [ "${REBOOTED[$h]:-0}" = 1 ] && [ -z "$started" ]; then' 'if [ -z "$started" ]; then'
+mutant M76 "missing container is not a gate failure" \
+  'else log "GATE post $h containers: FAIL (not running: $miss)"; fail=1; fi' 'else log "GATE post $h containers: FAIL (not running: $miss)"; fi'
+mutant M77 "container list not carried into resume.json" \
+  '--arg ctrs "${B_CTRS[$h]}"' '--arg ctrs ""'
+mutant M78 "resume ignores the recorded container list" \
+  'B_CTRS[$h]="$(jq -r '"'"'.ctrs // empty'"'"' <<<"$r")"' 'B_CTRS[$h]=""'
+
 wait
 for id in "${IDS[@]}"; do
   read -r kind line < "$W/$id.res"; echo "$line"

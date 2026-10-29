@@ -239,8 +239,11 @@ rfresh; sec_both; ctrs sentry postfiatd-sentry; touch "$RD/sentry/s/install_rebo
 echo pft-prometheus > "$RD/sentry/s/lost_on_reboot"; run run --yes
 expect "container not startable -> gate FAIL" 1 'GATE post sentry containers: FAIL \(not running: pft-prometheus\)'
 vinstall && ko "container FAIL on sentry leaves validator untouched" "$(vcalls)" || ok "container FAIL on sentry leaves validator untouched"
-rfresh; sec_both; ctrs sentry postfiatd-sentry; run run --yes; sed -i '/pft-prometheus/d' "$RD/sentry/s/running"
+rfresh; sec_both; ctrs sentry postfiatd-sentry; echo pft-prometheus > "$RD/sentry/s/lost_on_install"; run run --yes
+expect "container lost without a reboot -> gate FAIL after GATE_TIMEOUT" 1 'GATE post sentry containers: FAIL \(not running: pft-prometheus\)'
 grep -q 'docker start' "$RD/calls" && ko "no reboot -> no docker start" "$(calls)" || ok "no reboot -> no docker start"
+grep -c 'sentry: docker ps' "$RD/calls" | { read -r n; [ "$n" -ge 3 ] && ok "no reboot -> gate polled until GATE_TIMEOUT ($n docker ps)" || ko "no reboot -> polled" "docker ps calls: $n"; }
+vinstall && ko "lost container on sentry leaves validator untouched" "$(vcalls)" || ok "lost container on sentry leaves validator untouched"
 rfresh; sec_both; ctrs validator postfiatd; touch "$RD/validator/s/install_reboot"; echo pft-prometheus > "$RD/validator/s/lost_on_reboot"
 run run --yes
 jq -e '.ctrs=="pft-alertmanager,pft-prometheus,postfiatd"' "$RD/state/resume.json" >/dev/null && ok "resume.json keeps the container list" || ko "resume.json ctrs" "$(cat "$RD/state/resume.json")"
