@@ -174,7 +174,7 @@ Exit codes (`run`): 0 every host patched and gated, 1 a host failed (later hosts
 ## Tests
 
 ```bash
-bash patch/tests/run-tests.sh        # 217 stubbed tests: no root, no apt, no network, no ssh
+bash patch/tests/run-tests.sh        # 219 stubbed tests: no root, no apt, no network, no ssh
 JOBS=3 bash patch/tests/mutate.sh    # 78 mutants; the unmutated control must pass first
 shellcheck -x patch/pft-patch.sh patch/install.sh patch/drill/live-run.sh patch/tests/*.sh
 ```

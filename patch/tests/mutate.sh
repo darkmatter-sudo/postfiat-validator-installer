@@ -119,7 +119,7 @@ mutant M35 "integrity result ignored" \
 mutant M36 "audittrail result ignored" \
   'if hx "$h" pft-audittrail check >/dev/null 2>&1; then' 'if true; then'
 mutant M37 "egress result ignored" \
-  'if hx "$h" pft-egress check --container "${H_CONT[$h]}" >/dev/null 2>&1; then' 'if true; then'
+  'while ! hx "$h" pft-egress check --container "${H_CONT[$h]}" >/dev/null 2>&1; do' 'while false; do'
 mutant M38 "reboot flag not part of the post-gate" \
   'if [[ "$out" == *reboot=0* ]]; then' 'if true; then'
 mutant M39 "post hook not run after a reboot" \
@@ -151,7 +151,7 @@ mutant M50 "pft-maint data-collection lock ignored" \
 mutant M51 "failed host keeps its silence (alerts stay muted)" \
   '  if [ "$2" = restarted ]; then' '  if [ "$2" != ok ]; then'
 mutant M52 "local reboot without a resume record" \
-  "'{run:\$run, host:\$h, silence:\$sil, silence_body:\$body}' > \"\$RESUME_FILE\"" "'{run:\$run, host:\$h, silence:\$sil, silence_body:\$body}' > /dev/null"
+  "'{run:\$run, host:\$h, silence:\$sil, silence_body:\$body, ctrs:\$ctrs}' > \"\$RESUME_FILE\"" "'{run:\$run, host:\$h, silence:\$sil, silence_body:\$body, ctrs:\$ctrs}' > /dev/null"
 mutant M53 "upgrade without --yes allowed" \
   '[ "$yes" = 1 ] || { echo "pft-patch: upgrade installs' 'true || { echo "pft-patch: upgrade installs'
 mutant M54 "run without --yes allowed" \

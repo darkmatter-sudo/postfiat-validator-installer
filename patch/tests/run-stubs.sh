@@ -4,7 +4,7 @@
 #                 info (server_info JSON), started (container StartedAt), down_polls (N polls answer "connected"),
 #                 integrity_warn, integrity_mtime (mtime-only WARN), mtime_on_reboot, accept_fail, audit_fail, egress_fail, egress_fail_after_reboot (N), restart_fail, ssh_down, ssh_down_after_reboot,
 #                 running (docker ps names), lost_on_reboot (names dockerd does not restore), lost_on_install (names that stop during
-#                 the package install, no reboot), start_fail
+#                 the package install, no reboot), start_fail, flag_stays (a reboot leaves reboot-required in place)
 #   DIR/rbin      ssh sudo docker pft-integrity pft-audittrail pft-egress pft-maint systemctl systemd-run curl pft-patch
 #   DIR/calls     every stub call as "<host>: <command line>", in order
 #   DIR/hosts.conf  sentry over ssh (first), validator local
@@ -91,7 +91,7 @@ B
 $rec
 case "\$*" in *"systemctl reboot"*)
   echo "boot-\$RANDOM\$RANDOM" > "\$PFT_PATCH_ROOT/proc/sys/kernel/random/boot_id"
-  rm -f "\$PFT_PATCH_ROOT/var/run/reboot-required" "\$PFT_PATCH_ROOT/var/run/reboot-required.pkgs"
+  [ -e "\$S/flag_stays" ] || rm -f "\$PFT_PATCH_ROOT/var/run/reboot-required" "\$PFT_PATCH_ROOT/var/run/reboot-required.pkgs"
   sed -i 's/KSTA: [23]/KSTA: 1/' "\$S/nr"
   echo "2026-10-29T02:00:00.000000000Z" > "\$S/started"
   [ -e "\$S/ssh_down_after_reboot" ] && touch "\$S/ssh_down"

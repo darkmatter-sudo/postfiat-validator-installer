@@ -244,6 +244,9 @@ expect "container lost without a reboot -> gate FAIL after GATE_TIMEOUT" 1 'GATE
 grep -q 'docker start' "$RD/calls" && ko "no reboot -> no docker start" "$(calls)" || ok "no reboot -> no docker start"
 grep -c 'sentry: docker ps' "$RD/calls" | { read -r n; [ "$n" -ge 3 ] && ok "no reboot -> gate polled until GATE_TIMEOUT ($n docker ps)" || ko "no reboot -> polled" "docker ps calls: $n"; }
 vinstall && ko "lost container on sentry leaves validator untouched" "$(vcalls)" || ok "lost container on sentry leaves validator untouched"
+rfresh; sec_both; touch "$RD/sentry/s/install_reboot" "$RD/sentry/s/flag_stays"; run run --yes
+expect "reboot flag still set after the reboot -> post-gate FAIL" 1 'GATE post sentry reboot-flag: FAIL \(.*reboot=1'
+vinstall && ko "reboot flag left on sentry leaves validator untouched" "$(vcalls)" || ok "reboot flag left on sentry leaves validator untouched"
 rfresh; sec_both; ctrs validator postfiatd; touch "$RD/validator/s/install_reboot"; echo pft-prometheus > "$RD/validator/s/lost_on_reboot"
 run run --yes
 jq -e '.ctrs=="pft-alertmanager,pft-prometheus,postfiatd"' "$RD/state/resume.json" >/dev/null && ok "resume.json keeps the container list" || ko "resume.json ctrs" "$(cat "$RD/state/resume.json")"
