@@ -4,7 +4,7 @@
 #   bash statewatch/tests/run-tests.sh [SCRIPT [PARSER]]   (defaults ../pft-statewatch.sh ../statewatch_parse.py;
 #                                                          tests/mutate.sh passes mutants)
 # Prints one PASS/FAIL line per assertion and "RESULT: N/M passed"; exit 0 only if all passed.
-# shellcheck disable=SC2016,SC2034  # check() eval()s its single-quoted condition; L, PV, s0, s1 are read there
+# shellcheck disable=SC2016,SC2034  # check() eval()s its single-quoted condition; L, PV, s0/s1, p0/p1 are read there
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 S="${1:-$HERE/../pft-statewatch.sh}"
@@ -175,8 +175,11 @@ cp "$T/x1" "$R/pft_statewatch_postfiatd-sentry.prom"; PS="env" pl
 check "invalid remote file -> 2, previous copy kept" '[ "$(cat "$T/prc")" = 2 ] && cmp -s "$G" "$PV" && grep -q "validation failed" "$T/perr"'
 PS="false" pl
 check "ssh failure -> 1, previous copy kept" '[ "$(cat "$T/prc")" = 1 ] && cmp -s "$G" "$PV"'
-PS="sleep 30 ;" pl
-check "hung ssh -> 1 after PULL_TIMEOUT" '[ "$(cat "$T/prc")" = 1 ] && cmp -s "$G" "$PV"'
+# a real hang: a stub "ssh" that sleeps (a PULL_SSH like "sleep 30 ;" is NOT one: the ";" is word-split into an
+# argument, sleep fails at once, and mutant S12 "no timeout" survived the first mutation run)
+printf '#!/bin/sh\nsleep 30\n' > "$T/bin/hangssh"; chmod +x "$T/bin/hangssh"
+p0=$(date +%s); PS="$T/bin/hangssh" pl; p1=$(date +%s)
+check "hung ssh -> 1 after PULL_TIMEOUT (3 s), previous copy kept" '[ "$(cat "$T/prc")" = 1 ] && [ $((p1 - p0)) -lt 10 ] && cmp -s "$G" "$PV"'
 check "no pull temp files left" '[ -z "$(find "$T/vtf" -name ".pull-*")" ]'
 PS="" pl
 check "PULL_SSH unset -> 3" '[ "$(cat "$T/prc")" = 3 ]'

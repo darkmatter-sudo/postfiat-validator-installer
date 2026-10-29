@@ -1,0 +1,76 @@
+# Alert rules for pft-statewatch (../statewatch). pft-statewatch@<container>.timer writes the textfile every minute
+# (validator: local; sentry: pulled by pft-statewatch-pull@postfiatd-sentry.timer); the pft exporter serves it as
+# pft_statewatch_*{container="..."}. All counters reset when postfiatd restarts. Every rule is reset-safe:
+#  - state rules use pft_statewatch_full_exits_total (full transitions minus 1 while full), which stays 0 through a
+#    restart, never the raw state_accounting transitions (a restart re-enters disconnected/connected/syncing/
+#    tracking/full, about 7 transitions, which is a normal start and not flapping);
+#  - counter rules use increase(), which treats a drop as a reset and only adds what was counted after it.
+# Thresholds: README "Baseline and thresholds" (6h two-host baseline). Tests: statewatch.tests.yml
+# (promtool test rules statewatch.tests.yml), 1m sample interval = the timer's period.
+groups:
+  - name: pft-statewatch
+    rules:
+      - alert: PFTStatewatchCollectorFailing
+        expr: pft_statewatch_up == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pft-statewatch cannot read server_info of {{ $labels.container }}"
+          description: "For 5m every collection reported up 0 (container stopped, admin RPC not answering, or a server_info field missing/malformed). The state-counter alerts for this node are blind until it is fixed. Run `sudo pft-statewatch collect --container {{ $labels.container }} --stdout`."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/statewatch/README.md#alerts"
+      - alert: PFTStatewatchStale
+        expr: time() - pft_statewatch_collect_timestamp_seconds > 300
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pft-statewatch metrics for {{ $labels.container }} are stale"
+          description: "The last collection is older than 5 min: pft-statewatch@{{ $labels.container }}.timer (or, for the sentry, pft-statewatch-pull@{{ $labels.container }}.timer on the validator) is not running."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/statewatch/README.md#alerts"
+      - alert: PFTNodeBriefFullExit
+        # the exit counter went up although every 1-minute sample of server_state in the window said full: an exit
+        # that scrape-time monitoring (PFTNodeNotFull) cannot see
+        expr: |
+          sum by (instance, job, container) (increase(pft_statewatch_full_exits_total[10m])) > 0
+          and on (instance, job, container)
+          min_over_time((sum by (instance, job, container) (pft_statewatch_server_state{state=~"full|validating|proposing"}))[10m:1m]) == 1
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.container }} left full and came back between two checks"
+          description: "pft_statewatch_full_exits_total rose by {{ $value | printf \"%.0f\" }} within 10 min while every 1-minute sample showed server_state full. The node lost sync briefly (peer loss, slow ledger fetch, IO stall); check io_latency_ms, peers and the debug log around that time."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/statewatch/README.md#alerts"
+      - alert: PFTNodeStateFlapping
+        expr: sum by (instance, job, container) (increase(pft_statewatch_full_exits_total[1h])) >= 3
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.container }} dropped out of full {{ $value | printf \"%.0f\" }} times within 1h"
+          description: "The node keeps losing and regaining sync (>= 3 exits from mode full in 1h; the 6h baseline had 0). Restarts are not counted. Look at peers, io_latency_ms, jq overflow and host load."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/statewatch/README.md#alerts"
+      - alert: PFTJobQueueOverflow
+        expr: increase(pft_statewatch_jq_trans_overflow_total[15m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.container }} job queue dropped transactions"
+          description: "jq_trans_overflow rose within the last 15 min (about {{ $value | printf \"%.0f\" }}): the job queue was full and postfiatd discarded incoming transactions. The 6h baseline had 0. Check CPU/IO pressure (../resources) and io_latency_ms."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/statewatch/README.md#alerts"
+      - alert: PFTIOLatencyHigh
+        expr: pft_statewatch_io_latency_ms > 50
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.container }} io_latency_ms {{ $value }} ms for 10m"
+          description: "server_info io_latency_ms has been above 50 ms for 10 min (baseline: 1 ms on both hosts). The job queue's IO is slow: disk saturation, swap or CPU starvation. Check io.pressure in ../resources."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/statewatch/README.md#alerts"
+      - alert: PFTPeerDisconnectRateHigh
+        expr: increase(pft_statewatch_peer_disconnects_total[1h]) > 30
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.container }} lost {{ $value | printf \"%.0f\" }} peer connections within 1h"
+          description: "peer_disconnects rose by more than 30 within 1h (baseline: a few per hour). Peers keep dropping: network trouble, a resource limit (see pft_statewatch_peer_disconnects_resources_total) or a peer-port problem."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/statewatch/README.md#alerts"
