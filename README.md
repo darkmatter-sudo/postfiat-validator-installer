@@ -403,6 +403,19 @@ sudo alertpath/install.sh sentry --pubkey F --hmac-key F --ntfy-env F           
 sudo pft-alertpath check --json                                                          # sentry
 ```
 
+## Vulnerability audit add-on (vulnscan)
+
+[`vulnscan/`](vulnscan/README.md): evaluates Canonical's Jammy USN OVAL feed against the installed packages with
+OpenSCAP, once a day on each host. Lists every USN that still applies (priority, CVEs, packages, installed -> fixed,
+and whether the fix is in the archive or only in Ubuntu Pro/ESM), detects a reboot owed, refuses stale (> 7 days),
+tampered or truncated feeds (exit 2, `up 0`), and exports `pft_vulnscan_*` metrics with alerts
+(`../alerts/vulnscan.rules.yml`). Complements `patch/`, which only sees what apt can install.
+
+```bash
+sudo vulnscan/install.sh                  # validator (sentry: --host sentry; validator pull: --pull)
+sudo pft-vulnscan scan [--json]           # exit 0 clean, 1 findings/reboot owed, 2 scan error
+```
+
 ## Upgrade
 
 ```bash

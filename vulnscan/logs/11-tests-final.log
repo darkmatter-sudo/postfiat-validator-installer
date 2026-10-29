@@ -1,0 +1,170 @@
+OS: Ubuntu 22.04.5 LTS | host: validator-host | 2026-10-29T23:36:13Z | commit 3438c6fc8d0efe29c178a94fca604f767481385f
+$ sha256sum vulnscan/pft-vulnscan.sh vulnscan/vulnscan_parse.py vulnscan/install.sh vulnscan/systemd/*.service vulnscan/systemd/*.timer vulnscan/tests/run-tests.sh vulnscan/tests/make_fixture.py vulnscan/tests/gen_rule_tests.py alerts/vulnscan.rules.yml alerts/vulnscan.tests.yml
+26e41cec0a6c6eb8c24a768f3884b1c3c9d23ef76011f514f6c8dce0416377e7  vulnscan/pft-vulnscan.sh
+8b3b6c9cad5d9aa3af3840b596220ff4ba0bd0e4cf0d02352a9fa8af2d36e188  vulnscan/vulnscan_parse.py
+d6e45fbc61425a3fabe56081a2e7fc7bf25efdbfe444cb7e713b69be74d1e6e3  vulnscan/install.sh
+06a53b993993eae5987001fd7434a3de140cd0f5272015cfe99673af475ee8cb  vulnscan/systemd/pft-vulnscan-pull.service
+156a28dcfafab2a4ae7dee377997ed553bda2e41a0f0f19e21ab0bb22425ef21  vulnscan/systemd/pft-vulnscan.service
+235a42c17dbe61c5c880df386e44e1065eb5f1d483865281c5f947045d4dbcca  vulnscan/systemd/pft-vulnscan-pull.timer
+0abdc52cf8601728188bbbab54eced50b579210de4f1fc67678f1e1cd0dc4d3c  vulnscan/systemd/pft-vulnscan.timer
+7f953a3314ea9889b3f1f464cfe716ec7ed064128986093f7cdde130528ad9ef  vulnscan/tests/run-tests.sh
+b3ff390987fb99c5ee543efe37cee4cdbb0969237791766b232983af37f1d014  vulnscan/tests/make_fixture.py
+9252f50382680a7e7f205e8a7a50440656a671d0fc003281e98d76dea8b0a17f  vulnscan/tests/gen_rule_tests.py
+0fccc04420d173b283c3eca879ae589ef9810c13b3d222b930a1137293194c66  alerts/vulnscan.rules.yml
+458ad3a66d60820f26a5e9573bd24ac3714c06573a4cd8fb41eca12d4f5396f5  alerts/vulnscan.tests.yml
+(exit 0)
+$ sha256sum /usr/local/bin/pft-vulnscan /usr/local/lib/pft-vulnscan/vulnscan_parse.py /etc/systemd/system/pft-vulnscan.service
+26e41cec0a6c6eb8c24a768f3884b1c3c9d23ef76011f514f6c8dce0416377e7  /usr/local/bin/pft-vulnscan
+8b3b6c9cad5d9aa3af3840b596220ff4ba0bd0e4cf0d02352a9fa8af2d36e188  /usr/local/lib/pft-vulnscan/vulnscan_parse.py
+156a28dcfafab2a4ae7dee377997ed553bda2e41a0f0f19e21ab0bb22425ef21  /etc/systemd/system/pft-vulnscan.service
+(exit 0)
+$ shellcheck vulnscan/pft-vulnscan.sh vulnscan/install.sh vulnscan/tests/run-tests.sh
+(exit 0)
+$ bash vulnscan/tests/run-tests.sh
+== 1. first scan: fetch (200), stub oscap, two affected USNs
+PASS rc 1 (findings)
+PASS fetch: fetched
+PASS no --etag-compare without a cache
+PASS row USN-9001-1 high archive, 2 CVEs, both binaries
+PASS row USN-9002-1 medium esm
+PASS fixed-package USN-9003-1 not reported
+PASS RESULT line
+PASS metric up 1
+PASS metric high/archive 1
+PASS metric medium/esm 1
+PASS metric critical/archive 0
+PASS 21 affected_usns series (7 severities x 3)
+PASS metric cves 3
+PASS last_success = now
+PASS feed timestamp = fixture <oval:timestamp>
+PASS feed.meta sha256 = served file
+PASS textfile validates
+PASS no temp files left
+== 2. --json (findings-producing)
+PASS rc 1
+PASS JSON: ok, exit_code 1, 2 findings, fix fields, versions, kernel
+PASS JSON output is one line, nothing else on stdout
+== 3. ETag caching: 304 keeps the cache
+PASS rc 1
+PASS --etag-compare sent
+PASS fetch: not modified
+== 4. clean host (fixed-package controls only)
+PASS rc 0
+PASS RESULT 0 affected, exit 0
+PASS no table header
+PASS metric cves 0
+== 5. kernel / reboot owed
+PASS older running kernel: rc 1 with 0 USNs
+PASS kernel line
+PASS kernel_outdated 1, reboot_owed 1
+PASS removed (rc) kernel ignored: 5.15.0-99 is not newest by sort -V
+PASS running NEWER than installed (e.g. a removed package): not outdated
+PASS reboot-required flag: rc 1, owed 1, outdated 0
+PASS flag removed: rc 0, owed 0
+== 6. negative controls: every scan error is exit 2 + up 0, last_success carried over
+PASS stale feed (8 days): rc 2
+PASS stale feed (8 days): message 'feed is stale: timestamp 2099-01-01T00:00:00 is 8 days old (limit 7)'
+PASS stale feed (8 days): up 0, no affected series
+PASS stale feed (8 days): last_success carried (4070908800)
+PASS stale feed (8 days): last_run = this run
+PASS stale feed: feed timestamp still exported
+PASS feed exactly 7 days old: accepted (rc 1)
+PASS reset: success at NOW
+PASS results missing a definition: rc 2
+PASS results missing a definition: message 'results do not match the feed: 1 definitions without a result'
+PASS results missing a definition: up 0, no affected series
+PASS results missing a definition: last_success carried (4070908800)
+PASS results missing a definition: last_run = this run
+PASS definition evaluated to error: rc 2
+PASS definition evaluated to error: message '1 definitions evaluated to 'error''
+PASS definition evaluated to error: up 0, no affected series
+PASS definition evaluated to error: last_success carried (4070908800)
+PASS definition evaluated to error: last_run = this run
+PASS definition evaluated to unknown: rc 2
+PASS definition evaluated to unknown: message '1 definitions evaluated to 'unknown''
+PASS definition evaluated to unknown: up 0, no affected series
+PASS definition evaluated to unknown: last_success carried (4070908800)
+PASS definition evaluated to unknown: last_run = this run
+PASS inventory false (wrong release feed): rc 2
+PASS inventory false (wrong release feed): message 'inventory definition is 'false''
+PASS inventory false (wrong release feed): up 0, no affected series
+PASS inventory false (wrong release feed): last_success carried (4070908800)
+PASS inventory false (wrong release feed): last_run = this run
+PASS duplicate result: rc 2
+PASS duplicate result: message 'results hold oval:com.ubuntu.jammy:def:900010000000 twice'
+PASS duplicate result: up 0, no affected series
+PASS duplicate result: last_success carried (4070908800)
+PASS duplicate result: last_run = this run
+PASS oscap fails: rc 2
+PASS oscap fails: message 'oscap oval eval failed (rc 1: OpenSCAP Error: Unable to open file'
+PASS oscap fails: up 0, no affected series
+PASS oscap fails: last_success carried (4070908800)
+PASS oscap fails: last_run = this run
+PASS oscap not installed: rc 2
+PASS oscap not installed: message '/nonexistent/oscap not installed'
+PASS oscap not installed: up 0, no affected series
+PASS oscap not installed: last_success carried (4070908800)
+PASS oscap not installed: last_run = this run
+PASS --json on error: one JSON line, ok false, exit 2
+== 7. corrupt / truncated / tampered feeds
+PASS truncated download refused, cache kept: rc 1 on the cached feed
+PASS cache unchanged after the bad download
+PASS network failure, cache kept: rc 1, reason shown
+PASS cached feed tampered (1 byte): rc 2
+PASS cached feed tampered (1 byte): message 'does not match feed.meta'
+PASS cached feed tampered (1 byte): up 0, no affected series
+PASS cached feed tampered (1 byte): last_success carried (4070908800)
+PASS cached feed tampered (1 byte): last_run = this run
+PASS valid bz2 of a truncated XML: rc 2
+PASS valid bz2 of a truncated XML: message 'feed does not parse'
+PASS valid bz2 of a truncated XML: up 0, no affected series
+PASS valid bz2 of a truncated XML: last_success carried (4070908800)
+PASS valid bz2 of a truncated XML: last_run = this run
+PASS feed without <oval:timestamp>: rc 2
+PASS feed without <oval:timestamp>: message 'feed has no <oval:timestamp>'
+PASS feed without <oval:timestamp>: up 0, no affected series
+PASS feed without <oval:timestamp>: last_success carried (4070908800)
+PASS feed without <oval:timestamp>: last_run = this run
+PASS no timestamp: feed timestamp metric 0
+PASS no cache and no network: rc 2
+PASS no cache and no network: message 'no cached feed in /tmp/tmp.UqjDMkcNlx/cache'
+PASS no cache and no network: up 0, no affected series
+PASS no cache and no network: last_success carried (4070908800)
+PASS no cache and no network: last_run = this run
+PASS first download not bzip2: rc 2
+PASS first download not bzip2: message 'no cached feed in /tmp/tmp.UqjDMkcNlx/cache (fetch: FAILED: downloaded file is not a complete bzip2 stream'
+PASS first download not bzip2: up 0, no affected series
+PASS first download not bzip2: last_success carried (4070908800)
+PASS first download not bzip2: last_run = this run
+== 8. validate + pull
+grep: /etc/pft-vulnscan.env: Permission denied
+PASS validate: good sentry file
+grep: /etc/pft-vulnscan.env: Permission denied
+PASS validate: wrong host label -> exit 2 + reason
+grep: /etc/pft-vulnscan.env: Permission denied
+PASS validate: foreign metric
+grep: /etc/pft-vulnscan.env: Permission denied
+PASS validate: malformed value
+grep: /etc/pft-vulnscan.env: Permission denied
+PASS validate: no up sample
+PASS pull: rc 0, file copied
+PASS pull: invalid remote file -> rc 2, old file kept
+PASS pull: fetch failure -> rc 1, old file kept, no temp left
+== 9. real oscap on a fixture feed (known-old / fixed-package / absent-package controls on the installed bash)
+PASS real oscap: rc 1
+PASS real oscap: known-old USN-9001-1 (bash < 99:1.0) true with binary bash, archive
+PASS real oscap: fixed-package USN-9003-1 (bash >= 0:1.0) and absent package USN-9004-1 not reported
+RESULT: 119/119 passed
+(exit 0)
+$ python3 vulnscan/tests/gen_rule_tests.py | cmp - alerts/vulnscan.tests.yml && echo 'vulnscan.tests.yml is up to date with its generator'
+vulnscan.tests.yml is up to date with its generator
+(exit 0)
+$ sudo docker run --rm -v "$PWD/alerts:/w:ro" -w /w --entrypoint promtool prom/prometheus:v3.5.0 check rules vulnscan.rules.yml
+Checking vulnscan.rules.yml
+  SUCCESS: 5 rules found
+
+(exit 0)
+$ sudo docker run --rm -v "$PWD/alerts:/w:ro" -w /w --entrypoint promtool prom/prometheus:v3.5.0 test rules vulnscan.tests.yml
+  SUCCESS
+
+(exit 0)
