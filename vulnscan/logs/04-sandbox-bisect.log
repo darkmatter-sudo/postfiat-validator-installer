@@ -1,0 +1,9 @@
+2026-10-29T23:25:50Z sandbox bisect (systemd-run, --no-fetch, textfile in the unit's PrivateTmp)
+all directives -> RESULT: ERROR - oscap oval eval failed (rc 1: W: oscap: Can't receive message: 125, Operation canceled. E: oscap: Recv: retry limit (0) reached. ): up 0 -> exit 2
+minus SystemCallFilter -> RESULT: ERROR - oscap oval eval failed (rc 1: W: oscap: Can't receive message: 125, Operation canceled. E: oscap: Recv: retry limit (0) reached. ): up 0 -> exit 2
+minus CapabilityBoundingSet -> RESULT: ERROR - oscap oval eval failed (rc 1: W: oscap: Can't receive message: 125, Operation canceled. E: oscap: Recv: retry limit (0) reached. ): up 0 -> exit 2
+minus RestrictNamespaces -> RESULT: ERROR - oscap oval eval failed (rc 1: W: oscap: Can't receive message: 125, Operation canceled. E: oscap: Recv: retry limit (0) reached. ): up 0 -> exit 2
+minus PrivateDevices -> RESULT: ERROR - oscap oval eval failed (rc 1: W: oscap: Can't receive message: 125, Operation canceled. E: oscap: Recv: retry limit (0) reached. ): up 0 -> exit 2
+minus RestrictAddressFamilies -> RESULT: 3 affected USNs (0 critical, 0 high, 2 medium, 0 low, 0 negligible, 1 none, 0 unknown; 3 fixable only via Ubuntu Pro/ESM), 3 CVEs; reboot owed: no -> exit 1
+all directives, RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK -> RESULT: 3 affected USNs (0 critical, 0 high, 2 medium, 0 low, 0 negligible, 1 none, 0 unknown; 3 fixable only via Ubuntu Pro/ESM), 3 CVEs; reboot owed: no -> exit 1
+all directives, RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_PACKET -> RESULT: ERROR - oscap oval eval failed (rc 1: W: oscap: Can't receive message: 125, Operation canceled. E: oscap: Recv: retry limit (0) reached. ): up 0 -> exit 2

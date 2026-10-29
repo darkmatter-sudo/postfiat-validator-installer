@@ -1,0 +1,193 @@
+OS: Ubuntu 22.04.5 LTS | host: validator-host | 2026-10-29T23:24:37Z | commit 2cf33c564b4f2d3aeaff2031edc29085de6da20a
+$ sha256sum vulnscan/pft-vulnscan.sh vulnscan/vulnscan_parse.py vulnscan/install.sh
+26e41cec0a6c6eb8c24a768f3884b1c3c9d23ef76011f514f6c8dce0416377e7  vulnscan/pft-vulnscan.sh
+8b3b6c9cad5d9aa3af3840b596220ff4ba0bd0e4cf0d02352a9fa8af2d36e188  vulnscan/vulnscan_parse.py
+d6e45fbc61425a3fabe56081a2e7fc7bf25efdbfe444cb7e713b69be74d1e6e3  vulnscan/install.sh
+(exit 0)
+$ sudo bash vulnscan/install.sh
+2026-10-29T23:24:37Z OpenSCAP command line tool (oscap) 1.2.17
+2026-10-29T23:24:37Z installed /usr/local/bin/pft-vulnscan (sha256 26e41cec0a6c6eb8c24a768f3884b1c3c9d23ef76011f514f6c8dce0416377e7)
+2026-10-29T23:24:37Z installed /usr/local/lib/pft-vulnscan/vulnscan_parse.py (sha256 8b3b6c9cad5d9aa3af3840b596220ff4ba0bd0e4cf0d02352a9fa8af2d36e188)
+2026-10-29T23:24:37Z first scan (through the sandboxed unit, HOST_LABEL=validator):
+Job for pft-vulnscan.service failed because the control process exited with error code.
+See "systemctl status pft-vulnscan.service" and "journalctl -xeu pft-vulnscan.service" for details.
+2026-10-29T23:24:49Z ERROR: first scan failed
+Oct 29 23:24:48 pft-agent-01 pft-vulnscan[902132]: pft-vulnscan: oscap oval eval failed (rc 1: W: oscap: Can't receive message: 125, Operation canceled. E: oscap: Recv: retry limit (0) reached. )
+Oct 29 23:24:49 pft-agent-01 systemd[1]: pft-vulnscan.service: Main process exited, code=exited, status=2/INVALIDARGUMENT
+Oct 29 23:24:49 pft-agent-01 systemd[1]: pft-vulnscan.service: Failed with result 'exit-code'.
+Oct 29 23:24:49 pft-agent-01 systemd[1]: Failed to start pft-vulnscan: USN OVAL audit of the installed packages (writes textfile metrics).
+Oct 29 23:24:49 pft-agent-01 systemd[1]: pft-vulnscan.service: Consumed 8.236s CPU time.
+(exit 1)
+$ TZ=UTC systemctl list-timers pft-vulnscan.timer --no-pager | head -2
+NEXT LEFT LAST PASSED UNIT ACTIVATES
+
+(exit 0)
+$ sudo journalctl -u pft-vulnscan.service --utc --no-pager -o cat | grep -E '^(USN|RESULT|kernel|oval|feed)' | tail -8
+feed     https://security-metadata.canonical.com/oval/com.ubuntu.jammy.usn.oval.xml.bz2
+RESULT: ERROR - oscap oval eval failed (rc 1: W: oscap: Can't receive message: 125, Operation canceled. E: oscap: Recv: retry limit (0) reached. ): up 0 -> exit 2
+(exit 0)
+$ sudo pft-vulnscan scan
+pft-vulnscan scan - 2026-10-29T23:24:49Z  host=validator  OS: Ubuntu 22.04.5 LTS
+feed     https://security-metadata.canonical.com/oval/com.ubuntu.jammy.usn.oval.xml.bz2
+         sha256 21121538fa366b77aa54811d7bad4e4a7c89a483e6c59052d3119dd244977889  fetch: not modified
+oval     2612 patch definitions, feed timestamp 2026-10-29T11:44:05 UTC (age 11.7 h), evaluated in 25 s
+USN            SEVERITY   FIX      CVES  PACKAGES (installed -> fixed)
+USN-8344-1     medium     esm      2     python3-pip 0:22.0.2+dfsg-1ubuntu0.7 -> 22.0.2+dfsg-1ubuntu0.7+esm1, python3-pip-whl 0:22.0.2+dfsg-1ubuntu0.7 -> 22.0.2+dfsg-1ubuntu0.7+esm1
+USN-8344-3     medium     esm      1     python3-pip 0:22.0.2+dfsg-1ubuntu0.7 -> 22.0.2+dfsg-1ubuntu0.7+esm3, python3-pip-whl 0:22.0.2+dfsg-1ubuntu0.7 -> 22.0.2+dfsg-1ubuntu0.7+esm3
+USN-8344-2     none       esm      0     python3-pip 0:22.0.2+dfsg-1ubuntu0.7 -> 22.0.2+dfsg-1ubuntu0.7+esm2, python3-pip-whl 0:22.0.2+dfsg-1ubuntu0.7 -> 22.0.2+dfsg-1ubuntu0.7+esm2
+kernel   running 5.15.0-202-generic, newest installed 5.15.0-202-generic, reboot-required flag absent -> reboot owed: no
+RESULT: 3 affected USNs (0 critical, 0 high, 2 medium, 0 low, 0 negligible, 1 none, 0 unknown; 3 fixable only via Ubuntu Pro/ESM), 3 CVEs; reboot owed: no -> exit 1
+(exit 1)
+$ sudo pft-vulnscan scan --json --no-fetch | python3 -m json.tool
+{
+    "affected_cves": 3,
+    "affected_usns": 3,
+    "by_severity": {
+        "critical": {
+            "archive": 0,
+            "esm": 0,
+            "unknown": 0
+        },
+        "high": {
+            "archive": 0,
+            "esm": 0,
+            "unknown": 0
+        },
+        "low": {
+            "archive": 0,
+            "esm": 0,
+            "unknown": 0
+        },
+        "medium": {
+            "archive": 0,
+            "esm": 2,
+            "unknown": 0
+        },
+        "negligible": {
+            "archive": 0,
+            "esm": 0,
+            "unknown": 0
+        },
+        "none": {
+            "archive": 0,
+            "esm": 1,
+            "unknown": 0
+        },
+        "unknown": {
+            "archive": 0,
+            "esm": 0,
+            "unknown": 0
+        }
+    },
+    "exit_code": 1,
+    "feed": {
+        "age_seconds": 42069,
+        "definitions": 2613,
+        "patch_definitions": 2612,
+        "timestamp": "2026-10-29T11:44:05",
+        "timestamp_epoch": 1793274245
+    },
+    "feed_sha256": "21121538fa366b77aa54811d7bad4e4a7c89a483e6c59052d3119dd244977889",
+    "fetch": "skipped (--no-fetch)",
+    "findings": [
+        {
+            "cves": [
+                "CVE-2024-35195",
+                "CVE-2025-66418"
+            ],
+            "fix": "esm",
+            "id": "oval:com.ubuntu.jammy:def:834410000000",
+            "issued": "2026-05-28T19:46:16Z",
+            "packages": [
+                {
+                    "binary": "python3-pip",
+                    "fixed": "22.0.2+dfsg-1ubuntu0.7+esm1",
+                    "installed": "0:22.0.2+dfsg-1ubuntu0.7",
+                    "pocket": "esm-apps/jammy",
+                    "source": "python-pip"
+                },
+                {
+                    "binary": "python3-pip-whl",
+                    "fixed": "22.0.2+dfsg-1ubuntu0.7+esm1",
+                    "installed": "0:22.0.2+dfsg-1ubuntu0.7",
+                    "pocket": "esm-apps/jammy",
+                    "source": "python-pip"
+                }
+            ],
+            "severity": "medium",
+            "title": "USN-8344-1 -- pip vulnerabilities",
+            "usn": "USN-8344-1"
+        },
+        {
+            "cves": [
+                "CVE-2025-66471"
+            ],
+            "fix": "esm",
+            "id": "oval:com.ubuntu.jammy:def:834430000000",
+            "issued": "2026-06-03T09:16:40Z",
+            "packages": [
+                {
+                    "binary": "python3-pip",
+                    "fixed": "22.0.2+dfsg-1ubuntu0.7+esm3",
+                    "installed": "0:22.0.2+dfsg-1ubuntu0.7",
+                    "pocket": "esm-apps/jammy",
+                    "source": "python-pip"
+                },
+                {
+                    "binary": "python3-pip-whl",
+                    "fixed": "22.0.2+dfsg-1ubuntu0.7+esm3",
+                    "installed": "0:22.0.2+dfsg-1ubuntu0.7",
+                    "pocket": "esm-apps/jammy",
+                    "source": "python-pip"
+                }
+            ],
+            "severity": "medium",
+            "title": "USN-8344-3 -- pip vulnerability",
+            "usn": "USN-8344-3"
+        },
+        {
+            "cves": [],
+            "fix": "esm",
+            "id": "oval:com.ubuntu.jammy:def:834420000000",
+            "issued": "2026-05-29T19:53:25Z",
+            "packages": [
+                {
+                    "binary": "python3-pip",
+                    "fixed": "22.0.2+dfsg-1ubuntu0.7+esm2",
+                    "installed": "0:22.0.2+dfsg-1ubuntu0.7",
+                    "pocket": "esm-apps/jammy",
+                    "source": "python-pip"
+                },
+                {
+                    "binary": "python3-pip-whl",
+                    "fixed": "22.0.2+dfsg-1ubuntu0.7+esm2",
+                    "installed": "0:22.0.2+dfsg-1ubuntu0.7",
+                    "pocket": "esm-apps/jammy",
+                    "source": "python-pip"
+                }
+            ],
+            "severity": "none",
+            "title": "USN-8344-2 -- pip regression",
+            "usn": "USN-8344-2"
+        }
+    ],
+    "host": "validator",
+    "kernel": {
+        "newest_installed": "5.15.0-202-generic",
+        "outdated": false,
+        "reboot_owed": false,
+        "reboot_required_flag": false,
+        "running": "5.15.0-202-generic"
+    },
+    "ok": true,
+    "scan_seconds": 22
+}
+(exit 0)
+$ curl -s http://127.0.0.1:9877/metrics | grep -E '^pft_vulnscan_(up|affected_cves|reboot_owed|feed_timestamp_seconds)|^pft_vulnscan_affected_usns.*\} [1-9]'
+pft_vulnscan_up{host="validator"} 1
+pft_vulnscan_feed_timestamp_seconds{host="validator"} 1793274245
+pft_vulnscan_affected_usns{host="validator",severity="medium",fix="esm"} 2
+pft_vulnscan_affected_usns{host="validator",severity="none",fix="esm"} 1
+pft_vulnscan_affected_cves{host="validator"} 3
+pft_vulnscan_reboot_owed{host="validator"} 0
+(exit 0)
