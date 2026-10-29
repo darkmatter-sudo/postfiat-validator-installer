@@ -11,7 +11,8 @@
 
 mk_env() {
   local d="$1"
-  mkdir -p "$d/root/etc/apt/apt.conf.d" "$d/root/var/run" "$d/root/var/lib" "$d/s" "$d/bin"
+  mkdir -p "$d/root/etc/apt/apt.conf.d" "$d/root/var/run" "$d/root/var/lib" "$d/root/var/log" "$d/root/proc/sys/kernel/random" "$d/s" "$d/bin"
+  echo "boot-$RANDOM$RANDOM" > "$d/root/proc/sys/kernel/random/boot_id"; echo "2026-10-01 startup" > "$d/root/var/log/dpkg.log"
   cat > "$d/root/etc/apt/apt.conf.d/20auto-upgrades" <<'C'
 APT::Periodic::Update-Package-Lists "1";
 APT::Periodic::Unattended-Upgrade "1";
@@ -32,6 +33,18 @@ C
   cat > "$d/bin/apt-get" <<'B'
 #!/usr/bin/env bash
 echo "apt-get $*" >> "$STUB_S/calls"
+case " $* " in
+  *" update "*) [ -e "$STUB_S/update_fail" ] && { echo "E: update failed"; exit 100; }; exit 0 ;;
+  *" install "*)
+    [ -e "$STUB_S/install_fail" ] && { echo "E: Sub-process /usr/bin/dpkg returned an error code (1)"; exit 100; }
+    echo "Setting up ${*: -1} ..."
+    echo "$(date -u +%F) upgrade $*" >> "$PFT_PATCH_ROOT/var/log/dpkg.log"
+    [ -e "$STUB_S/install_reboot" ] && { touch "$PFT_PATCH_ROOT/var/run/reboot-required"; echo linux-base > "$PFT_PATCH_ROOT/var/run/reboot-required.pkgs"; }
+    [ -e "$STUB_S/install_ksta3" ] && sed -i 's/KSTA: 1/KSTA: 3/' "$STUB_S/nr"
+    [ -e "$STUB_S/install_svc" ] && cat "$STUB_S/install_svc" >> "$STUB_S/nr"
+    [ -e "$STUB_S/install_integrity" ] && touch "$STUB_S/integrity_warn"
+    : > "$STUB_S/sim"; exit 0 ;;
+esac
 [ -e "$STUB_S/sim_fail" ] && { echo "E: Could not open lock file"; exit 100; }
 cat "$STUB_S/sim"
 B

@@ -10,6 +10,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 TOOL="${1:-$HERE/../pft-patch.sh}"
 # shellcheck source=tests/stubs.sh
 . "$HERE/stubs.sh"
+ORIG_PATH="$PATH"
 T="$(mktemp -d)"; trap 'rm -rf "${T:?}"' EXIT
 PASS=0; FAIL=0; N=0
 ok() { PASS=$((PASS + 1)); echo "ok   $1"; }
@@ -135,6 +136,12 @@ fresh; run; expect "no command -> usage 3" 3 'Usage'
 run status --yaml; expect "bad status flag -> 3" 3 'Usage'
 run policy apply --force; expect "bad policy flag -> 3" 3 'Usage'
 run policy frob; expect "bad policy sub -> 3" 3 'Usage'
+
+# --- run mode (two-host fake)
+# shellcheck source=tests/run-stubs.sh
+. "$HERE/run-stubs.sh"
+# shellcheck source=tests/run-cases.sh
+. "$HERE/run-cases.sh"
 
 echo "RESULT: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

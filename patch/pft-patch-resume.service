@@ -1,0 +1,17 @@
+# Installed by patch/install.sh on the host that runs `pft-patch run` (the validator). It does nothing unless a run
+# rebooted this host: then it runs the post-gate, ends the maintenance window and logs the result.
+[Unit]
+Description=pft-patch: finish a patch run after this host rebooted
+ConditionPathExists=/var/lib/pft-patch/run/resume.json
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/pft-patch resume
+StandardOutput=append:/var/lib/pft-patch/run/resume.log
+StandardError=append:/var/lib/pft-patch/run/resume.log
+TimeoutStartSec=45min
+
+[Install]
+WantedBy=multi-user.target

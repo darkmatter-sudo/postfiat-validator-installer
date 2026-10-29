@@ -1,0 +1,7 @@
+# /etc/pft-patch/hosts.conf - hosts in patch order. The FIRST line is patched first (the sentry, the canary);
+# the local host (where `pft-patch run` runs) must be last, because it may reboot.
+# host LABEL local|ssh SSH_TARGET|- CONTAINER MIN_PEERS
+host sentry    ssh   relay  postfiatd-sentry  5
+host validator local -      postfiatd         5
+# post LABEL COMMAND...  run as root on that host after it rebooted (before its post-gate)
+post sentry pft-egress reapply --container postfiatd-sentry
