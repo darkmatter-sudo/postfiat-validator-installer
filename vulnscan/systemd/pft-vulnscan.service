@@ -1,0 +1,37 @@
+[Unit]
+Description=pft-vulnscan: USN OVAL audit of the installed packages (writes textfile metrics)
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/vulnscan
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# exit 1 = findings or reboot owed (reported in the metrics), not a unit failure; exit 2 (scan error) fails the unit
+SuccessExitStatus=1
+ExecStart=/usr/local/bin/pft-vulnscan scan
+CacheDirectory=pft-vulnscan
+CacheDirectoryMode=0755
+ReadWritePaths=/var/lib/pft-exporter/textfile
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+Nice=10
+IOSchedulingClass=idle
+UMask=0022
+TimeoutStartSec=20min

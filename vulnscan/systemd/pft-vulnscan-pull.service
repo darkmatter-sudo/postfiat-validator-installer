@@ -1,0 +1,33 @@
+[Unit]
+Description=pft-vulnscan pull: copy the peer host's vulnscan textfile to this host's exporter
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/vulnscan
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# root: writes into the root-owned textfile dir; the ssh itself runs as the operator account named in PULL_SSH
+# (/etc/pft-vulnscan.env, root-owned), which already holds the admin key for the peer.
+ExecStart=/usr/local/bin/pft-vulnscan pull
+ProtectSystem=strict
+ReadWritePaths=/var/lib/pft-exporter/textfile
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_AUDIT_WRITE
+UMask=0022
+TimeoutStartSec=60
