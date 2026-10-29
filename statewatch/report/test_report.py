@@ -73,6 +73,7 @@ def main():
     check("hourly max over full clock hours only (6 per hour)", s["disconnects_hourly_max"] == 6
           and len(s["disconnects_full_hours"]) == 2)
     check("markdown has the mode table", "| tracking |" in md and "restart seen at" in md)
+    check("markdown names the full-hour count", "max in one full clock hour: 6 (over 2 full clock hours" in md)
     check("pct nearest-rank", report.pct([1, 2, 3, 4], 0.5) == 2 and report.pct([1, 2, 3, 4], 0.99) == 4)
     check("inc reset", report.inc(10, 3) == 3 and report.inc(3, 10) == 7 and report.inc(2, 2, True) == 2)
     print("RESULT: %d failed" % len(FAILS))

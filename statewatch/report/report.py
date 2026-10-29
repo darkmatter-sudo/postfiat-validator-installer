@@ -129,8 +129,10 @@ def markdown(s):
           "- io_latency_ms: min %s, p50 %s, p90 %s, p99 %s, max %s; samples above %s ms: %d; value counts %s"
           % (io["min"], io["p50"], io["p90"], io["p99"], io["max"], s["thresholds"]["io_latency_ms"],
              io["above_threshold"], json.dumps(io["values"])),
-          "- peer_disconnects: +%d (%s per hour), max in one full clock hour: %s; peer_disconnects_resources: +%d"
-          % (s["peer_disconnects"], s["disconnects_per_h"], s["disconnects_hourly_max"], s["peer_disconnects_resources"]),
+          "- peer_disconnects: +%d (%s per hour), max in one full clock hour: %s (over %d full clock hours, partial"
+          " edge hours excluded); peer_disconnects_resources: +%d"
+          % (s["peer_disconnects"], s["disconnects_per_h"], s["disconnects_hourly_max"],
+             len(s["disconnects_full_hours"]), s["peer_disconnects_resources"]),
           "- jq_trans_overflow: +%d" % s["jq_trans_overflow"], ""]
     return "\n".join(o)
 
