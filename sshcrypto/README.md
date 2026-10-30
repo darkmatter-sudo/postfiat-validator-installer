@@ -262,6 +262,7 @@ stopped part-way when the code under them changed (`logs/superseded-*`, lesson: 
 | `12-host-run-validator.log`, `13-host-run-sentry.log` | before / apply / after / rollback / login-breaking auto-revert drill, 20/20 each |
 | `14-alert-drill.log` | two-host throwaway-topic alert drill, 17/17 |
 | `15-final-state.log` | final audits (JSON), status, integrity accept, rulecheck |
+| `16-verification.log` | verification answer: installed sha256 on both hosts = pinned commit, current audit OK on both |
 | `superseded-*` | recorded runs stopped when the code changed |
 
 Redaction: home directory -> `~`, the agent account -> `<user>`, the sentry's address -> `<redacted-ip>`, host names

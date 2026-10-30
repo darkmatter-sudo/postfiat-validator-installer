@@ -1,0 +1,25 @@
+pft-sshcrypto verification answer - 2026-10-30T11:22:39Z - Ubuntu 22.04.5 LTS - repo HEAD 148ea1cc54b635db76c3b192d7f72cc1b693ba53
+== validator
+$ sha256sum /usr/local/bin/pft-sshcrypto /usr/local/lib/pft-sshcrypto/sshcrypto_grade.py /usr/local/lib/pft-sshcrypto/hardened.conf
+c285cb4c6606bf181125f6858f82d59a28564cab0f39bc6afd2b4060c7db41fa  /usr/local/bin/pft-sshcrypto
+0b393b69b0f3be0654c90e08c897c452f91adf2a70c257cccefd772b6e642ea7  /usr/local/lib/pft-sshcrypto/sshcrypto_grade.py
+9600ad74cb148502024310ad3b8a80543af42ce36a3a9fdf98f597971b2d0b3b  /usr/local/lib/pft-sshcrypto/hardened.conf
+(exit 0)
+$ sudo pft-sshcrypto audit --json | jq -c '{host, result, exit, counts, probes_run, probe_mismatches, errors}'
+{"host":"validator","result":"OK","exit":0,"counts":{"FAIL":0,"OK":48,"WARN":0},"probes_run":27,"probe_mismatches":0,"errors":[]}
+(exit 0)
+== sentry
+$ ssh relay 'sha256sum /usr/local/bin/pft-sshcrypto /usr/local/lib/pft-sshcrypto/sshcrypto_grade.py /usr/local/lib/pft-sshcrypto/hardened.conf'
+c285cb4c6606bf181125f6858f82d59a28564cab0f39bc6afd2b4060c7db41fa  /usr/local/bin/pft-sshcrypto
+0b393b69b0f3be0654c90e08c897c452f91adf2a70c257cccefd772b6e642ea7  /usr/local/lib/pft-sshcrypto/sshcrypto_grade.py
+9600ad74cb148502024310ad3b8a80543af42ce36a3a9fdf98f597971b2d0b3b  /usr/local/lib/pft-sshcrypto/hardened.conf
+(exit 0)
+$ ssh relay 'pft-sshcrypto audit --json' | jq -c '{host, result, exit, counts, probes_run, probe_mismatches, errors}'
+{"host":"sentry","result":"OK","exit":0,"counts":{"FAIL":0,"OK":48,"WARN":0},"probes_run":27,"probe_mismatches":0,"errors":[]}
+(exit 0)
+== pinned commit
+$ git show 148ea1cc54b635db76c3b192d7f72cc1b693ba53:sshcrypto/pft-sshcrypto.sh | sha256sum; git show 148ea1cc54b635db76c3b192d7f72cc1b693ba53:sshcrypto/sshcrypto_grade.py | sha256sum; git show 148ea1cc54b635db76c3b192d7f72cc1b693ba53:sshcrypto/hardened.conf | sha256sum
+c285cb4c6606bf181125f6858f82d59a28564cab0f39bc6afd2b4060c7db41fa  -
+0b393b69b0f3be0654c90e08c897c452f91adf2a70c257cccefd772b6e642ea7  -
+9600ad74cb148502024310ad3b8a80543af42ce36a3a9fdf98f597971b2d0b3b  -
+(exit 0)
