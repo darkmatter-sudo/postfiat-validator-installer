@@ -249,6 +249,13 @@ MUTANTS = [
         "-o HostKeyAlias=pft-sshcrypto-loopback -o LogLevel=INFO",
         "-o HostKeyAlias=pft-sshcrypto-loopback -o LogLevel=ERROR",
     ),
+    (
+        "M34",
+        "sh",
+        "confirm ssh without -T (pty notice printed instead of the failure reason, as in live run 10)",
+        'out="$(timeout 30 "$SSH" -T -F /dev/null',
+        'out="$(timeout 30 "$SSH" -F /dev/null',
+    ),
 ]
 
 

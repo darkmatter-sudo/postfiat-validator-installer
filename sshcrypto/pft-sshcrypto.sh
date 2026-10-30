@@ -200,7 +200,8 @@ audit() {
 
 # confirm -> rc 0 if a NEW ssh session logs in with the confirm key and prints the token; reason on stdout otherwise
 # (LogLevel INFO, not ERROR: at ERROR ssh 8.9 prints nothing for "Unable to negotiate", so the reason was empty;
-# found by the first live drill, logs/08-host-run-validator-failed.log)
+# found by the first live drill, logs/08-host-run-validator-failed.log). -T: no pty request, else at INFO the first
+# output line is "Pseudo-terminal will not be allocated ..." instead of the reason (live run 10).
 confirm() {
   local t lb addr port out
   t="$(mktemp)"
@@ -209,7 +210,7 @@ confirm() {
   rm -f "$t"
   read -r addr port <<< "$lb"
   if [ ! -f "$STATE/confirm_ed25519" ] || [ ! -f "$STATE/known_hosts" ]; then echo "confirm key missing (run install.sh)"; return 1; fi
-  out="$(timeout 30 "$SSH" -F /dev/null -i "$STATE/confirm_ed25519" -o IdentitiesOnly=yes -o IdentityAgent=none \
+  out="$(timeout 30 "$SSH" -T -F /dev/null -i "$STATE/confirm_ed25519" -o IdentitiesOnly=yes -o IdentityAgent=none \
     -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$STATE/known_hosts" \
     -o GlobalKnownHostsFile=/dev/null -o HostKeyAlias=pft-sshcrypto-loopback -o LogLevel=INFO -p "$port" \
     -l root "$addr" 2>&1 < /dev/null)"

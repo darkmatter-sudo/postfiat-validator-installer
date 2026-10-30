@@ -139,7 +139,7 @@ def ssh(args):
         lacks = set(filter(None, os.environ.get("STUB_CLIENT_LACKS", "").split(",")))
         print("\n".join(a for a in CLIENT_Q[args[1]].split(",") if a not in lacks))
         return 0
-    opts, ident, port, host = {}, None, "22", None
+    opts, ident, port, host, cmd = {}, None, "22", None, []
     i = 0
     while i < len(args):
         a = args[i]
@@ -153,9 +153,18 @@ def ssh(args):
             if a == "-p":
                 port = args[i + 1]
             i += 2
+        elif a.startswith("-"):
+            i += 1
         else:
+            if host:
+                cmd.append(a)
             host = host or a
             i += 1
+    host_only = not cmd
+    loud = opts.get("loglevel", "INFO").upper() not in ("QUIET", "FATAL", "ERROR")
+    if host_only and "-T" not in args and loud:
+        # like OpenSSH: no command = a shell session, which asks for a pty; stdin is not a terminal here
+        print("Pseudo-terminal will not be allocated because stdin is not a terminal.")
     if os.environ.get("STUB_SSH_REFUSE"):
         print(f"ssh: connect to host {host} port {port}: Connection refused")
         return 255
