@@ -261,7 +261,9 @@ check "3a pulled copy STALE on the validator, judged by its content timestamp" \
   "$(case "$st" in "STALE "*"src=pft_statewatch_collect_timestamp_seconds") echo 0 ;; *) echo 1 ;; esac)" "$st"
 x "sudo -n stat -c 'mtime %Y now $(date -u +%s)' /var/lib/pft-exporter/textfile/$PULLED"
 x "R 'sudo -n systemctl start pft-rulecheck.service; sudo -n journalctl -u pft-rulecheck.service --since -1min --no-pager -o cat' | grep -E '^(STALE|MISSING|LEFTOVER|UNCONFIGURED|RESULT) '"
-check "3b sentry run: its local $PULLED STALE (mtime), RESULT FINDINGS" "$(grep -qE "^STALE +$PULLED .* mtime" <<<"$XOUT" && grep -q '^RESULT FINDINGS .*STALE 1 ' <<<"$XOUT" && echo 0 || echo 1)"
+# on the sentry the stopped collector's file ages on both clocks (mtime and collect timestamp, ~1 s apart); the
+# verdict names whichever is older, so only STALE + the single finding are asserted (run 1 wrongly required "mtime")
+check "3b sentry run: its local $PULLED STALE, RESULT FINDINGS with STALE 1" "$(grep -qE "^STALE +$PULLED " <<<"$XOUT" && grep -q '^RESULT FINDINGS .*STALE 1 ' <<<"$XOUT" && echo 0 || echo 1)"
 x "sudo -n systemctl start pft-rulecheck-pull.service && sudo -n grep -E '^pft_rulecheck_textfile_stale.*} 1$' /var/lib/pft-exporter/textfile/pft_rulecheck_sentry.prom"
 check "3c sentry result pulled to the validator (stale=1 for $PULLED)" "$(grep -q "file=\"$PULLED\",state=\"STALE\"} 1" <<<"$XOUT" && echo 0 || echo 1)"
 x "sudo -n systemctl start pft-rulecheck.service; sudo -n journalctl -u pft-rulecheck.service --since -1min --no-pager -o cat | grep -E '^(DEAD|PARTIAL|ERROR|STALE|MISSING|LEFTOVER|UNCONFIGURED|RESULT) '"
@@ -325,8 +327,8 @@ while :; do
   { [ -z "$F" ] && [ "$rd" -ge 1 ] && [ "$rs" -ge 1 ]; } && break
   w=$((w + 15)); [ "$w" -le "$NTFY_WAIT" ] || break; sleep 15
 done
-check "4e no PFTRuleDead / PFTTextfileStale alert left in Prometheus" "$([ -z "$F" ] && echo 0 || echo 1)" "$(wc -l <<<"${F:-}" | tr -d ' ') line(s)"
-check "4f [RESOLVED] PFTRuleDead + PFTTextfileStale delivered to the throwaway topic" "$([ "$rd" -ge 1 ] && [ "$rs" -ge 1 ] && echo 0 || echo 1)" "$rd/$rs"
+check "4e no PFTRuleDead / PFTTextfileStale alert left in Prometheus" "$([ -z "$F" ] && echo 0 || echo 1)" "$(grep -c . <<<"${F:-}") alert(s)"
+check "4f [RESOLVED] PFTRuleDead + PFTTextfileStale delivered to the throwaway topic" "$([ "$rd" -ge 1 ] && [ "$rs" -ge 1 ] && echo 0 || echo 1)" "PFTRuleDead $rd, PFTTextfileStale $rs"
 echo "  recovery took $(( $(date -u +%s) - t_rec ))s"
 
 echo; echo "== 5. restore, read back"
