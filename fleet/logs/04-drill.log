@@ -1,0 +1,437 @@
+pft-fleet two-host drill - 2026-10-30T06:33:47Z - Ubuntu 22.04.5 LTS - run 20261030T063347Z
+repo HEAD 2d7f30916fab9e9b1462b2f7f9473ddcb5b28554 | main 2d7f30916fab9e9b1462b2f7f9473ddcb5b28554
+sha256: live-run.sh de18e72898a8788acd84c4aaefaff904f1552687b42e286e97397be3b55d5096
+        repo pft-fleet.sh 61cafcfcdaa9363507140545c5c9b3c79a4ce641cddc4bf44020bf9804e5fa29
+        repo fleet_lib.py 809e2866557b610a7efcb3463a4b1e982bd6b3364cea2084ab9ef1262eacf19a
+        repo manifest.tsv 8678b9f1c312f523d80719cab83ef38fa0ac2feb6d7b8ba52fe7e534de895751
+        installed /usr/local/sbin/pft-fleet 61cafcfcdaa9363507140545c5c9b3c79a4ce641cddc4bf44020bf9804e5fa29
+        installed fleet_lib.py 809e2866557b610a7efcb3463a4b1e982bd6b3364cea2084ab9ef1262eacf19a manifest.tsv 8678b9f1c312f523d80719cab83ef38fa0ac2feb6d7b8ba52fe7e534de895751
+drill add-on sysctl: sentry /usr/local/bin/pft-sysctl <- sysctl/pft-sysctl.sh; OLD 2a68ebba3cf7c3428442e86fd8eb61b5bf35846a (sha256 ab06436f8afb), main (sha256 d385b58438a4)
+redact.py f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8
+
+== 0. preflight (nothing changed yet)
+  pft-maint: no window open on either host
+  operator topics to watch: 2 (not printed)
+  postfiatd-sentry: server_state=full
+  postfiatd: server_state=full
+  pft-integrity local: RESULT: PASS - 99 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity relay: RESULT: PASS - 58 unchanged, 0 warn, 0 fail -> exit 0
+  literals for redaction: 2 ip, 3 topic, 1 user (values not printed)
+$ redact.py control --literals <literals>
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (15/15)
+
+== 1. redirect every ntfy notifier on both hosts to a throwaway topic
+  local:/etc/postfiat-monitor.env sha256 6dc3b10fb491 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/postfiat-monitor.env.pre-fleet-drill
+  local:/etc/pft-integrity.env sha256 b3cd1c3da7ff -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-integrity.env.pre-fleet-drill
+  relay:/etc/pft-watchdog/ntfy.env sha256 ddb52721a668 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-watchdog/ntfy.env.pre-fleet-drill
+  relay:/etc/pft-integrity.env sha256 cdd330a974d2 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-integrity.env.pre-fleet-drill
+  relay:/etc/pft-alertpath/ntfy.env sha256 ddb52721a668 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-alertpath/ntfy.env.pre-fleet-drill
+
+== 2. maintenance window
+$ sudo -n pft-maint start --ttl 45m --reason 'pft-fleet drill 20261030T063347Z'
+window started: id m1793342053-2293977 until 2026-10-30T07:19:13Z | sentry copy: pushed
+(exit 0)
+CHECK ok   sentry has the window (via the watchdog channel) after 10s
+
+== 3A. baseline
+$ sudo -n pft-fleet skew --hosts sentry
+ref main = 2d7f30916fab9e9b1462b2f7f9473ddcb5b28554
+host sentry     role sentry    ok
+HOST       ADDON       STATE      DETAIL
+sentry     alertpath   CURRENT    
+sentry     audittrail  CURRENT    
+sentry     divergence  CURRENT    
+sentry     egress      CURRENT    
+sentry     integrity   CURRENT    
+sentry     logship     CURRENT    
+sentry     maint       CURRENT    
+sentry     patch       CURRENT    
+sentry     resources   CURRENT    
+sentry     statewatch  CURRENT    
+sentry     sysctl      CURRENT    
+sentry     timesync    CURRENT    
+sentry     vulnscan    CURRENT    
+sentry     watchdog    CURRENT    
+SUMMARY CURRENT=14 BEHIND=0 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+(exit 0)
+CHECK ok   A skew: sentry sysctl CURRENT
+  sentry /usr/local/bin/pft-sysctl sha256 d385b58438a46dfe1d3a18dd9b932e62b36f5cd6ff1ba58eb62bdac06fca0dfd
+CHECK ok   A sentry bytes = main
+
+== 3B. make the sentry BEHIND: pinned sync to 2a68ebba3cf7c3428442e86fd8eb61b5bf35846a
+$ sudo -n pft-fleet sync --addon sysctl --to 2a68ebba3cf7 --hosts sentry
+[2026-10-30T06:34:35Z] sync sysctl to 2a68ebba3cf7c3428442e86fd8eb61b5bf35846a (2026-10-23T12:21:56+02:00) REF main=2d7f30916fab9e9b1462b2f7f9473ddcb5b28554
+PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+PLAN sentry sentry /usr/local/bin/pft-sysctl 0755 CURRENT d385b58438a4 ab06436f8afb write
+[2026-10-30T06:34:35Z] order: sentry
+[2026-10-30T06:34:35Z] dry run (no --apply): nothing changed
+(exit 0)
+CHECK ok   B dry run exit 0
+CHECK ok   B dry run changed nothing
+$ sudo -n pft-fleet sync --addon sysctl --to 2a68ebba3cf7 --hosts sentry --apply --reason 'fleet drill 20261030T063347Z: step B'
+[2026-10-30T06:34:39Z] sync sysctl to 2a68ebba3cf7c3428442e86fd8eb61b5bf35846a (2026-10-23T12:21:56+02:00) REF main=2d7f30916fab9e9b1462b2f7f9473ddcb5b28554
+PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+PLAN sentry sentry /usr/local/bin/pft-sysctl 0755 CURRENT d385b58438a4 ab06436f8afb write
+[2026-10-30T06:34:39Z] order: sentry
+[2026-10-30T06:34:39Z] sentry: 1 file(s) to write
+PRE sentry pft-maint window active PASS
+PRE sentry node server_state=full PASS
+PRE sentry pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+BACKUP sentry /usr/local/bin/pft-sysctl sha256 d385b58438a4 -> /var/lib/pft-fleet/backup/20261030T063439Z-sysctl-sentry
+WRITE sentry /usr/local/bin/pft-sysctl d385b58438a4 -> ab06436f8afb mode 0755
+GATE sentry sha256 /usr/local/bin/pft-sysctl = target ab06436f8afb PASS
+GATE sentry syntax /usr/local/bin/pft-sysctl bash -n PASS
+GATE sentry addon units failed=none PASS
+GATE sentry node server_state=full PASS
+ACCEPT sentry pft-integrity baseline updated: pft-fleet sync sysctl@2a68ebba3cf7 (pft-sysctl)
+[2026-10-30T06:34:54Z] SYNCED sentry sysctl -> 2a68ebba3cf7
+[2026-10-30T06:34:54Z] sync complete
+(exit 0)
+CHECK ok   B apply exit 0
+  sentry /usr/local/bin/pft-sysctl sha256 ab06436f8afbb5bc3041c92395b6e78f657374718e950d35d74c7206be139aff
+CHECK ok   B sentry bytes = 2a68ebba3cf7c3428442e86fd8eb61b5bf35846a
+$ sudo -n pft-fleet skew
+ref main = 2d7f30916fab9e9b1462b2f7f9473ddcb5b28554
+host sentry     role sentry    ok
+host validator  role validator ok
+HOST       ADDON       STATE      DETAIL
+sentry     alertpath   CURRENT    
+sentry     audittrail  CURRENT    
+sentry     divergence  CURRENT    
+sentry     egress      CURRENT    
+sentry     integrity   CURRENT    
+sentry     logship     CURRENT    
+sentry     maint       CURRENT    
+sentry     patch       CURRENT    
+sentry     resources   CURRENT    
+sentry     statewatch  CURRENT    
+sentry     sysctl      BEHIND     /usr/local/bin/pft-sysctl BEHIND @2a68ebba3cf7 (-1)
+sentry     timesync    CURRENT    
+sentry     vulnscan    CURRENT    
+sentry     watchdog    CURRENT    
+validator  alertpath   BEHIND     /usr/local/bin/pft-alertpath BEHIND @067704c9fdde (-1)
+validator  audittrail  CURRENT    
+validator  backup      BEHIND     /usr/local/sbin/pft-backup.sh BEHIND @10b1fee6aed0 (-1)
+validator  divergence  CURRENT    
+validator  egress      CURRENT    
+validator  exporter    CURRENT    
+validator  fleet       CURRENT    
+validator  integrity   CURRENT    
+validator  logship     CURRENT    
+validator  maint       CURRENT    
+validator  monitor     CURRENT    
+validator  patch       CURRENT    
+validator  resources   CURRENT    
+validator  retention   CURRENT    
+validator  statewatch  CURRENT    
+validator  sysctl      CURRENT    
+validator  timesync    CURRENT    
+validator  vulnscan    CURRENT    
+validator  watchdog    CURRENT    
+*          alertpath   DIVERGED   /usr/local/bin/pft-alertpath
+*          sysctl      DIVERGED   /usr/local/bin/pft-sysctl
+SUMMARY CURRENT=30 BEHIND=3 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=2
+(exit 1)
+CHECK ok   B skew exit 1 (drift)
+CHECK ok   B skew: sentry sysctl BEHIND
+CHECK ok   B skew: sysctl DIVERGED
+
+== 3C. injected gate failure: sync to main, gate fails on the sentry, rollback
+$ sudo -n env PFT_FLEET_INJECT_GATE_FAIL=sentry pft-fleet sync --addon sysctl --to main --hosts sentry --apply
+[2026-10-30T06:35:08Z] sync sysctl to 2d7f30916fab9e9b1462b2f7f9473ddcb5b28554 (2026-10-30T07:26:26+01:00) REF main=2d7f30916fab9e9b1462b2f7f9473ddcb5b28554
+PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+PLAN sentry sentry /usr/local/bin/pft-sysctl 0755 BEHIND ab06436f8afb d385b58438a4 write
+[2026-10-30T06:35:08Z] order: sentry
+[2026-10-30T06:35:08Z] sentry: 1 file(s) to write
+PRE sentry pft-maint window active PASS
+PRE sentry node server_state=full PASS
+PRE sentry pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+BACKUP sentry /usr/local/bin/pft-sysctl sha256 ab06436f8afb -> /var/lib/pft-fleet/backup/20261030T063508Z-sysctl-sentry
+WRITE sentry /usr/local/bin/pft-sysctl ab06436f8afb -> d385b58438a4 mode 0755
+GATE sentry sha256 /usr/local/bin/pft-sysctl = target d385b58438a4 PASS
+GATE sentry syntax /usr/local/bin/pft-sysctl bash -n PASS
+GATE sentry addon units failed=none PASS
+GATE sentry node server_state=full PASS
+GATE sentry injected failure (PFT_FLEET_INJECT_GATE_FAIL) FAIL
+[2026-10-30T06:35:22Z] GATE FAILED on sentry - rolling back
+ROLLBACK sentry /usr/local/bin/pft-sysctl sha256 ab06436f8afb = original PASS
+[2026-10-30T06:35:23Z] ROLLED BACK sentry: every file has its original sha256; later hosts untouched
+(exit 5)
+CHECK ok   C exit 5 (rolled back)
+  sentry /usr/local/bin/pft-sysctl sha256 before C ab06436f8afbb5bc3041c92395b6e78f657374718e950d35d74c7206be139aff / after C ab06436f8afbb5bc3041c92395b6e78f657374718e950d35d74c7206be139aff
+CHECK ok   C original sha256 restored
+$ R 'sudo -n pft-integrity verify' | tail -2
+OS: Ubuntu 22.04.5 LTS | container: postfiatd-sentry | baseline: 2026-10-30T06:34:50Z
+RESULT: PASS - 58 unchanged, 0 warn, 0 fail -> exit 0
+(exit 0)
+CHECK ok   C sentry pft-integrity PASS without an accept (cp -p restore)
+$ sudo -n pft-fleet skew --hosts sentry
+ref main = 2d7f30916fab9e9b1462b2f7f9473ddcb5b28554
+host sentry     role sentry    ok
+HOST       ADDON       STATE      DETAIL
+sentry     alertpath   CURRENT    
+sentry     audittrail  CURRENT    
+sentry     divergence  CURRENT    
+sentry     egress      CURRENT    
+sentry     integrity   CURRENT    
+sentry     logship     CURRENT    
+sentry     maint       CURRENT    
+sentry     patch       CURRENT    
+sentry     resources   CURRENT    
+sentry     statewatch  CURRENT    
+sentry     sysctl      BEHIND     /usr/local/bin/pft-sysctl BEHIND @2a68ebba3cf7 (-1)
+sentry     timesync    CURRENT    
+sentry     vulnscan    CURRENT    
+sentry     watchdog    CURRENT    
+SUMMARY CURRENT=13 BEHIND=1 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+(exit 1)
+CHECK ok   C skew: sentry sysctl still BEHIND
+
+== 3D. health-gated sync back to main
+$ sudo -n pft-fleet sync --addon sysctl --to main --hosts sentry --apply --reason 'fleet drill 20261030T063347Z: step D'
+[2026-10-30T06:35:38Z] sync sysctl to 2d7f30916fab9e9b1462b2f7f9473ddcb5b28554 (2026-10-30T07:26:26+01:00) REF main=2d7f30916fab9e9b1462b2f7f9473ddcb5b28554
+PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+PLAN sentry sentry /usr/local/bin/pft-sysctl 0755 BEHIND ab06436f8afb d385b58438a4 write
+[2026-10-30T06:35:38Z] order: sentry
+[2026-10-30T06:35:38Z] sentry: 1 file(s) to write
+PRE sentry pft-maint window active PASS
+PRE sentry node server_state=full PASS
+PRE sentry pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+BACKUP sentry /usr/local/bin/pft-sysctl sha256 ab06436f8afb -> /var/lib/pft-fleet/backup/20261030T063538Z-sysctl-sentry
+WRITE sentry /usr/local/bin/pft-sysctl ab06436f8afb -> d385b58438a4 mode 0755
+GATE sentry sha256 /usr/local/bin/pft-sysctl = target d385b58438a4 PASS
+GATE sentry syntax /usr/local/bin/pft-sysctl bash -n PASS
+GATE sentry addon units failed=none PASS
+GATE sentry node server_state=full PASS
+ACCEPT sentry pft-integrity baseline updated: pft-fleet sync sysctl@2d7f30916fab (pft-sysctl)
+[2026-10-30T06:35:54Z] SYNCED sentry sysctl -> 2d7f30916fab
+[2026-10-30T06:35:54Z] sync complete
+(exit 0)
+CHECK ok   D exit 0
+CHECK ok   D sentry bytes = main
+$ sudo -n pft-fleet skew --hosts sentry
+ref main = 2d7f30916fab9e9b1462b2f7f9473ddcb5b28554
+host sentry     role sentry    ok
+HOST       ADDON       STATE      DETAIL
+sentry     alertpath   CURRENT    
+sentry     audittrail  CURRENT    
+sentry     divergence  CURRENT    
+sentry     egress      CURRENT    
+sentry     integrity   CURRENT    
+sentry     logship     CURRENT    
+sentry     maint       CURRENT    
+sentry     patch       CURRENT    
+sentry     resources   CURRENT    
+sentry     statewatch  CURRENT    
+sentry     sysctl      CURRENT    
+sentry     timesync    CURRENT    
+sentry     vulnscan    CURRENT    
+sentry     watchdog    CURRENT    
+SUMMARY CURRENT=14 BEHIND=0 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+(exit 0)
+CHECK ok   D skew: sentry sysctl CURRENT
+
+== 3E. uncommitted hand edit on the sentry
+$ R "echo '# pft-fleet drill 20261030T063347Z: uncommitted hand edit' | sudo -n tee -a /usr/local/bin/pft-sysctl >/dev/null"
+
+(exit 0)
+$ sudo -n pft-fleet skew
+ref main = 2d7f30916fab9e9b1462b2f7f9473ddcb5b28554
+host sentry     role sentry    ok
+host validator  role validator ok
+HOST       ADDON       STATE      DETAIL
+sentry     alertpath   CURRENT    
+sentry     audittrail  CURRENT    
+sentry     divergence  CURRENT    
+sentry     egress      CURRENT    
+sentry     integrity   CURRENT    
+sentry     logship     CURRENT    
+sentry     maint       CURRENT    
+sentry     patch       CURRENT    
+sentry     resources   CURRENT    
+sentry     statewatch  CURRENT    
+sentry     sysctl      MODIFIED   /usr/local/bin/pft-sysctl MODIFIED
+sentry     timesync    CURRENT    
+sentry     vulnscan    CURRENT    
+sentry     watchdog    CURRENT    
+validator  alertpath   BEHIND     /usr/local/bin/pft-alertpath BEHIND @067704c9fdde (-1)
+validator  audittrail  CURRENT    
+validator  backup      BEHIND     /usr/local/sbin/pft-backup.sh BEHIND @10b1fee6aed0 (-1)
+validator  divergence  CURRENT    
+validator  egress      CURRENT    
+validator  exporter    CURRENT    
+validator  fleet       CURRENT    
+validator  integrity   CURRENT    
+validator  logship     CURRENT    
+validator  maint       CURRENT    
+validator  monitor     CURRENT    
+validator  patch       CURRENT    
+validator  resources   CURRENT    
+validator  retention   CURRENT    
+validator  statewatch  CURRENT    
+validator  sysctl      CURRENT    
+validator  timesync    CURRENT    
+validator  vulnscan    CURRENT    
+validator  watchdog    CURRENT    
+*          alertpath   DIVERGED   /usr/local/bin/pft-alertpath
+*          sysctl      DIVERGED   /usr/local/bin/pft-sysctl
+SUMMARY CURRENT=30 BEHIND=2 MODIFIED=1 MISSING=0 UNEXPECTED=0 DIVERGED=2
+(exit 2)
+CHECK ok   E skew exit 2
+CHECK ok   E skew: sentry sysctl MODIFIED
+
+== 3F. sync the hand-edited copy back to main
+$ sudo -n pft-fleet sync --addon sysctl --to main --hosts sentry --apply --reason 'fleet drill 20261030T063347Z: step F'
+[2026-10-30T06:36:11Z] sync sysctl to 2d7f30916fab9e9b1462b2f7f9473ddcb5b28554 (2026-10-30T07:26:26+01:00) REF main=2d7f30916fab9e9b1462b2f7f9473ddcb5b28554
+PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+PLAN sentry sentry /usr/local/bin/pft-sysctl 0755 MODIFIED a1ca323f3b90 d385b58438a4 write
+[2026-10-30T06:36:11Z] order: sentry
+[2026-10-30T06:36:11Z] sentry: 1 file(s) to write
+PRE sentry pft-maint window active PASS
+PRE sentry node server_state=full PASS
+PRE sentry pft-integrity FAIL (1 findings, all on files this sync rewrites) PASS
+BACKUP sentry /usr/local/bin/pft-sysctl sha256 a1ca323f3b90 -> /var/lib/pft-fleet/backup/20261030T063611Z-sysctl-sentry
+WRITE sentry /usr/local/bin/pft-sysctl a1ca323f3b90 -> d385b58438a4 mode 0755
+GATE sentry sha256 /usr/local/bin/pft-sysctl = target d385b58438a4 PASS
+GATE sentry syntax /usr/local/bin/pft-sysctl bash -n PASS
+GATE sentry addon units failed=none PASS
+GATE sentry node server_state=full PASS
+ACCEPT sentry pft-integrity baseline updated: pft-fleet sync sysctl@2d7f30916fab (pft-sysctl)
+[2026-10-30T06:36:30Z] SYNCED sentry sysctl -> 2d7f30916fab
+[2026-10-30T06:36:30Z] sync complete
+(exit 0)
+CHECK ok   F exit 0
+CHECK ok   F sentry bytes = main
+
+== 3G. real drift from the first live skew: alertpath backup
+$ sudo -n pft-fleet sync --addon alertpath --to main --apply --reason 'fleet drill 20261030T063347Z: real drift fixed'
+[2026-10-30T06:36:37Z] sync alertpath to 2d7f30916fab9e9b1462b2f7f9473ddcb5b28554 (2026-10-30T07:26:26+01:00) REF main=2d7f30916fab9e9b1462b2f7f9473ddcb5b28554
+PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+PLAN sentry sentry /usr/local/bin/pft-alertpath 0755 CURRENT edd58b46eb85 edd58b46eb85 keep
+PLAN sentry sentry /etc/systemd/system/pft-alertpath-check.service 0644 CURRENT 368d1765750e 368d1765750e keep
+PLAN sentry sentry /etc/systemd/system/pft-alertpath-check.timer 0644 CURRENT 378b3ea6f804 378b3ea6f804 keep
+PLAN validator validator /usr/local/bin/pft-alertpath 0755 BEHIND 289669622bf2 edd58b46eb85 write
+PLAN validator validator /usr/local/lib/pft-alertpath/alertpath_sink.py 0644 CURRENT 091f8cad2440 091f8cad2440 keep
+PLAN validator validator /etc/systemd/system/pft-alertpath-push.service 0644 CURRENT 3119ffc13d6a 3119ffc13d6a keep
+PLAN validator validator /etc/systemd/system/pft-alertpath-push.timer 0644 CURRENT 612b131f2e9f 612b131f2e9f keep
+PLAN validator validator /etc/systemd/system/pft-alertpath-sink.service 0644 CURRENT 0a4c18b96959 0a4c18b96959 keep
+[2026-10-30T06:36:37Z] order: sentry validator
+[2026-10-30T06:36:37Z] sentry: every alertpath file already at 2d7f30916fab - nothing to do
+[2026-10-30T06:36:37Z] validator: 1 file(s) to write
+PRE validator pft-maint window active PASS
+PRE validator node server_state=full PASS
+PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+BACKUP validator /usr/local/bin/pft-alertpath sha256 289669622bf2 -> /var/lib/pft-fleet/backup/20261030T063637Z-alertpath-validator
+WRITE validator /usr/local/bin/pft-alertpath 289669622bf2 -> edd58b46eb85 mode 0755
+GATE validator sha256 /usr/local/bin/pft-alertpath = target edd58b46eb85 PASS
+GATE validator syntax /usr/local/bin/pft-alertpath bash -n PASS
+GATE validator addon units failed=none PASS
+GATE validator node server_state=full PASS
+ACCEPT validator pft-integrity baseline updated: pft-fleet sync alertpath@2d7f30916fab (pft-alertpath)
+[2026-10-30T06:36:49Z] SYNCED validator alertpath -> 2d7f30916fab
+[2026-10-30T06:36:49Z] sync complete
+(exit 0)
+CHECK ok   G alertpath sync exit 0
+$ sudo -n pft-fleet sync --addon backup --to main --apply --reason 'fleet drill 20261030T063347Z: real drift fixed'
+[2026-10-30T06:36:55Z] sync backup to 2d7f30916fab9e9b1462b2f7f9473ddcb5b28554 (2026-10-30T07:26:26+01:00) REF main=2d7f30916fab9e9b1462b2f7f9473ddcb5b28554
+PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+PLAN validator validator /usr/local/sbin/pft-backup.sh 0755 BEHIND 25d99a9f9242 6243c3d8a7e1 write
+PLAN validator validator /etc/systemd/system/pft-backup.service 0644 CURRENT 7c751d65f3f2 7c751d65f3f2 keep
+PLAN validator validator /etc/systemd/system/pft-backup.timer 0644 CURRENT 928b03c5c0ff 928b03c5c0ff keep
+[2026-10-30T06:36:55Z] order: sentry validator
+[2026-10-30T06:36:55Z] sentry: every backup file already at 2d7f30916fab - nothing to do
+[2026-10-30T06:36:55Z] validator: 1 file(s) to write
+PRE validator pft-maint window active PASS
+PRE validator node server_state=full PASS
+PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+BACKUP validator /usr/local/sbin/pft-backup.sh sha256 25d99a9f9242 -> /var/lib/pft-fleet/backup/20261030T063655Z-backup-validator
+WRITE validator /usr/local/sbin/pft-backup.sh 25d99a9f9242 -> 6243c3d8a7e1 mode 0755
+GATE validator sha256 /usr/local/sbin/pft-backup.sh = target 6243c3d8a7e1 PASS
+GATE validator syntax /usr/local/sbin/pft-backup.sh bash -n PASS
+GATE validator addon units failed=none PASS
+GATE validator node server_state=full PASS
+ACCEPT validator pft-integrity baseline updated: pft-fleet sync backup@2d7f30916fab (pft-backup.sh)
+[2026-10-30T06:37:09Z] SYNCED validator backup -> 2d7f30916fab
+[2026-10-30T06:37:09Z] sync complete
+(exit 0)
+CHECK ok   G backup sync exit 0
+$ sudo -n pft-fleet skew
+ref main = 2d7f30916fab9e9b1462b2f7f9473ddcb5b28554
+host sentry     role sentry    ok
+host validator  role validator ok
+HOST       ADDON       STATE      DETAIL
+sentry     alertpath   CURRENT    
+sentry     audittrail  CURRENT    
+sentry     divergence  CURRENT    
+sentry     egress      CURRENT    
+sentry     integrity   CURRENT    
+sentry     logship     CURRENT    
+sentry     maint       CURRENT    
+sentry     patch       CURRENT    
+sentry     resources   CURRENT    
+sentry     statewatch  CURRENT    
+sentry     sysctl      CURRENT    
+sentry     timesync    CURRENT    
+sentry     vulnscan    CURRENT    
+sentry     watchdog    CURRENT    
+validator  alertpath   CURRENT    
+validator  audittrail  CURRENT    
+validator  backup      CURRENT    
+validator  divergence  CURRENT    
+validator  egress      CURRENT    
+validator  exporter    CURRENT    
+validator  fleet       CURRENT    
+validator  integrity   CURRENT    
+validator  logship     CURRENT    
+validator  maint       CURRENT    
+validator  monitor     CURRENT    
+validator  patch       CURRENT    
+validator  resources   CURRENT    
+validator  retention   CURRENT    
+validator  statewatch  CURRENT    
+validator  sysctl      CURRENT    
+validator  timesync    CURRENT    
+validator  vulnscan    CURRENT    
+validator  watchdog    CURRENT    
+SUMMARY CURRENT=33 BEHIND=0 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+(exit 0)
+CHECK ok   G final skew exit 0 (every add-on CURRENT on both hosts, nothing DIVERGED)
+
+== 4. end window, restore, read back
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+  restored local:/etc/postfiat-monitor.env: sha256 matches pre-drill copy: yes
+  restored local:/etc/pft-integrity.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-watchdog/ntfy.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-integrity.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-alertpath/ntfy.env: sha256 matches pre-drill copy: yes
+CHECK ok   notifier env files restored byte-identical
+  throwaway topic: 2 message(s)
+    {"time":"2026-10-30T06:34:15Z","title":"[MAINT] start validator","message":"pft-fleet drill 20261030T063347Z | until 2026-10-30T07:19:13Z (ttl 2700s) | sentry copy: pushed"}
+    {"time":"2026-10-30T06:37:16Z","title":"[MAINT] end validator","message":"pft-fleet drill 20261030T063347Z | ended by operator after 183s | suppressed here: watchdog=0 monitor=0 integrity=0 | sentry copy: pushed"}
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the drill (2 topic(s), 0 with messages)
+  pft-integrity local: RESULT: PASS - 99 unchanged, 0 warn, 0 fail -> exit 0
+CHECK ok   pft-integrity PASS on local at the end
+  pft-integrity relay: RESULT: PASS - 58 unchanged, 0 warn, 0 fail -> exit 0
+CHECK ok   pft-integrity PASS on relay at the end
+CHECK ok   postfiatd-sentry full at the end (full)
+CHECK ok   postfiatd full at the end (full)
+
+live-run done 2026-10-30T06:37:54Z: 0 check(s) failed -> PASS

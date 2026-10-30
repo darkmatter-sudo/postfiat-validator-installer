@@ -1,0 +1,239 @@
+pft-fleet tests - 2026-10-30T06:26:39Z - Ubuntu 22.04.5 LTS
+commit 2d7f30916fab9e9b1462b2f7f9473ddcb5b28554 | git status --short: 0 changed
+$ sha256sum fleet/pft-fleet.sh fleet/fleet_lib.py fleet/manifest.tsv fleet/install.sh fleet/systemd/pft-fleet.service fleet/systemd/pft-fleet.timer alerts/fleet.rules.yml alerts/fleet.tests.yml
+61cafcfcdaa9363507140545c5c9b3c79a4ce641cddc4bf44020bf9804e5fa29  fleet/pft-fleet.sh
+809e2866557b610a7efcb3463a4b1e982bd6b3364cea2084ab9ef1262eacf19a  fleet/fleet_lib.py
+8678b9f1c312f523d80719cab83ef38fa0ac2feb6d7b8ba52fe7e534de895751  fleet/manifest.tsv
+2482e620d784a01d1a10fcea47858bf470830048c63aa248c722f821148eabfa  fleet/install.sh
+3105a2f0a144d32eea4a7aba32d9af64331908111bd8d5771b003f4e72955641  fleet/systemd/pft-fleet.service
+79839ee00a8157fd50cf95e954bf133a509b68532cda9f40f54c38d23fa182e3  fleet/systemd/pft-fleet.timer
+302316e80c3d4ed598fe54900f1a5c94ad98b361a1e45c590368bc1a77366af2  alerts/fleet.rules.yml
+f7b19b7cbaad1db698133469e7a0c47121c01e932d50f3f6fad4ce5773a0b588  alerts/fleet.tests.yml
+(exit 0)
+$ shellcheck fleet/pft-fleet.sh fleet/install.sh fleet/tests/run-tests.sh fleet/tests/mutate.sh fleet/drill/live-run.sh
+(exit 0)
+$ python3 -m pyflakes fleet/fleet_lib.py 2>/dev/null || python3 -m py_compile fleet/fleet_lib.py
+(exit 0)
+$ bash fleet/tests/run-tests.sh
+PASS all current: exit 0
+PASS all current: SUMMARY CURRENT=3 none else
+PASS sentry at v2: exit 1
+PASS sentry at v2: sentry demo BEHIND
+PASS sentry at v2: BEHIND names v2 and 2 newer commits
+PASS sentry at v2: validator demo CURRENT
+PASS sentry at v2: DIVERGED demo pft-demo path
+PASS json: sentry/demo BEHIND, exit_code 1
+PASS both at v1 (same bytes): BEHIND both, exit 1
+PASS both at v1: no DIVERGED
+PASS both at v1: newest matching commit is v1, 3 newer commits touch the file (-3)
+PASS v1 vs v2: DIVERGED although both BEHIND
+PASS hand edit: exit 2
+PASS hand edit: sentry demo MODIFIED
+PASS missing unit: exit 2
+PASS missing unit: validator demo MISSING
+PASS sentry-only add-on on validator: exit 1
+PASS sentry-only add-on on validator: UNEXPECTED
+PASS BEHIND + MISSING on one host: worst (MISSING) wins
+PASS sentry unreachable: exit 2
+PASS sentry unreachable: host line error
+PASS sentry unreachable: pft_fleet_up 0
+PASS sentry unreachable: host_up sentry 0
+PASS metrics: state series BEHIND
+PASS metrics: exit code 1
+PASS metrics: diverged 1
+PASS metrics: drift since 1000
+PASS metrics: drift clock kept on the next run (1000, not 5000)
+PASS metrics: last run 5000
+PASS metrics: drift clock survives a run where the host was unreadable
+PASS metrics: back to CURRENT clears the drift clock
+PASS metrics: exit code 0 after fix
+PASS inventory: exit 0
+PASS inventory: sha256 of sentry pft-demo
+PASS inventory: unit row
+PASS dry run: exit 0
+PASS dry run: plan writes sentry pft-demo
+PASS dry run: file untouched
+PASS unreviewed commit (not in main): exit 3
+PASS unknown add-on: exit 3
+PASS no maintenance window: exit 4
+PASS no maintenance window: file untouched
+PASS node not full: exit 4
+PASS unrelated integrity finding: exit 4
+PASS unrelated integrity finding: named
+PASS unrelated integrity finding: file untouched
+PASS sync BEHIND -> CURRENT: exit 0
+PASS sync: integrity finding on the rewritten file is allowed
+PASS sync: sentry file now v5 bytes
+PASS sync: mode 0755
+PASS sync: backup kept
+PASS sync: gate lines PASS
+PASS sync: integrity accept with reason on sentry
+PASS sync: validator had nothing to do
+PASS sync: no accept on validator
+PASS after sync: all CURRENT
+PASS both hosts behind: exit 0
+PASS both hosts: sentry written before validator
+PASS both hosts: daemon-reload on each
+PASS both hosts: accept on both
+PASS injected gate failure: exit 5
+PASS injected gate failure: GATE line
+PASS rollback: sentry sha256 restored
+PASS rollback: ROLLBACK PASS line
+PASS rollback: mtime restored
+PASS rollback: mode restored
+PASS rollback: validator untouched (stops before next host)
+PASS rollback: no WRITE on validator
+PASS rollback: no integrity accept
+PASS validator gate fails after sentry synced: exit 5
+PASS validator rolled back to v2
+PASS sentry keeps its passed sync (v5)
+PASS broken script (bash -n) at v3: exit 5
+PASS broken script: syntax GATE FAIL
+PASS broken script: rolled back to v2
+PASS unit not loaded after write: exit 5
+PASS unit not loaded: GATE FAIL
+PASS unit not loaded: unit restored
+PASS failed unit after write: exit 5
+PASS failed unit: GATE FAIL names it
+PASS file absent before sync: rollback removes it (exit 5)
+PASS file absent before sync: gone after rollback
+PASS file absent before sync: ROLLBACK PASS (-)
+PASS bytes on disk differ from the commit after write: exit 5
+PASS bad write: sha256 GATE FAIL
+PASS bad write: unit restored to v4
+PASS node leaves full after the write: exit 5
+PASS node leaves full: GATE node FAIL
+PASS restore impossible: exit 6 (rollback mismatch)
+PASS restore impossible: ROLLBACK FAIL line
+PASS restore impossible: names the backup dir
+RESULT: 91 passed, 0 failed
+(exit 0)
+$ JOBS=4 bash fleet/tests/mutate.sh
+sha256 pft-fleet.sh 61cafcfcdaa9363507140545c5c9b3c79a4ce641cddc4bf44020bf9804e5fa29
+sha256 fleet_lib.py 809e2866557b610a7efcb3463a4b1e982bd6b3364cea2084ab9ef1262eacf19a
+sha256 run-tests.sh 52fd397264f3ca6d8723782d6c46619cb8363da669e3920a9211cca0c3b2d0fb
+control: unmutated copy RESULT: 91 passed, 0 failed
+M01 CAUGHT - fleet_lib.py: CURRENT for any present expected file :: 12 failing, e.g. sentry at v2: sentry demo BEHIND;sentry at v2: BEHIND names v2 and 2 newer commits
+M02 CAUGHT - fleet_lib.py: no BEHIND: older committed bytes fall through to MODIFIED :: 10 failing, e.g. sentry at v2: exit 1;sentry at v2: sentry demo BEHIND
+M03 CAUGHT - fleet_lib.py: no UNEXPECTED: role check ignored for present files :: 2 failing, e.g. sentry-only add-on on validator: exit 1;sentry-only add-on on validator: UNEXPECTED
+M04 CAUGHT - fleet_lib.py: absent expected file is skipped instead of MISSING :: 3 failing, e.g. missing unit: exit 2;missing unit: validator demo MISSING
+M05 CAUGHT - fleet_lib.py: DIVERGED needs three different versions :: 4 failing, e.g. sentry at v2: DIVERGED demo pft-demo path;json: sentry/demo BEHIND, exit_code 1
+M06 CAUGHT - fleet_lib.py: MISSING no longer exit 2 :: 1 failing, e.g. missing unit: exit 2
+M07 CAUGHT - fleet_lib.py: best file state wins instead of worst :: 12 failing, e.g. sentry at v2: sentry demo BEHIND;json: sentry/demo BEHIND, exit_code 1
+M08 CAUGHT - fleet_lib.py: drift clock restarts every run :: 2 failing, e.g. metrics: drift clock kept on the next run (1000, not 5000);metrics: drift clock survives a run where the host was unreadable
+M09 CAUGHT - fleet_lib.py: UNEXPECTED no longer exit 1 :: 1 failing, e.g. sentry-only add-on on validator: exit 1
+M10 CAUGHT - pft-fleet.sh: validator synced before the sentry :: 30 failing, e.g. no maintenance window: exit 4;node not full: exit 4
+M11 CAUGHT - pft-fleet.sh: maintenance window not enforced :: 9 failing, e.g. no maintenance window: exit 4;no maintenance window: file untouched
+M12 CAUGHT - pft-fleet.sh: rollback does not restore the backup :: 15 failing, e.g. injected gate failure: exit 5;rollback: sentry sha256 restored
+M13 CAUGHT - pft-fleet.sh: rollback reported as success (exit 0) :: 8 failing, e.g. injected gate failure: exit 5;validator gate fails after sentry synced: exit 5
+M14 CAUGHT - pft-fleet.sh: gate ignores the installed sha256 :: 3 failing, e.g. bytes on disk differ from the commit after write: exit 5;bad write: sha256 GATE FAIL
+M15 CAUGHT - pft-fleet.sh: commits outside REF accepted :: 1 failing, e.g. unreviewed commit (not in main): exit 3
+M16 CAUGHT - pft-fleet.sh: unrelated integrity findings allowed :: 6 failing, e.g. unrelated integrity finding: exit 4;unrelated integrity finding: named
+M17 CAUGHT - pft-fleet.sh: backup made without cp -p (mtime/mode lost on rollback) :: 1 failing, e.g. rollback: mtime restored
+M18 CAUGHT - pft-fleet.sh: bash -n syntax gate disabled :: 3 failing, e.g. broken script (bash -n) at v3: exit 5;broken script: syntax GATE FAIL
+M19 CAUGHT - pft-fleet.sh: rollback mismatch reported as a clean rollback :: 1 failing, e.g. restore impossible: exit 6 (rollback mismatch)
+M20 CAUGHT - pft-fleet.sh: post-write node check ignored :: 2 failing, e.g. node leaves full after the write: exit 5;node leaves full: GATE node FAIL
+MUTANTS 20: caught 20, survived 0, not applied 0
+(exit 0)
+$ docker run --rm -v "$PWD/alerts:/w:ro" -w /w --entrypoint promtool prom/prometheus:v3.5.0 check rules fleet.rules.yml
+Checking fleet.rules.yml
+  SUCCESS: 3 rules found
+
+(exit 0)
+$ docker run --rm -v "$PWD/alerts:/w:ro" -w /w --entrypoint promtool prom/prometheus:v3.5.0 test rules fleet.tests.yml
+  SUCCESS
+
+(exit 0)
+$ DOCKER=docker alerts/run-stack.sh check
+2026-10-30T06:29:55Z promtool check rules
+Checking postfiat.rules.yml
+  SUCCESS: 16 rules found
+
+Checking divergence.rules.yml
+  SUCCESS: 2 rules found
+
+Checking logship.rules.yml
+  SUCCESS: 1 rules found
+
+Checking resources.rules.yml
+  SUCCESS: 10 rules found
+
+Checking alertpath.rules.yml
+  SUCCESS: 1 rules found
+
+Checking timesync.rules.yml
+  SUCCESS: 5 rules found
+
+Checking statewatch.rules.yml
+  SUCCESS: 7 rules found
+
+Checking vulnscan.rules.yml
+  SUCCESS: 5 rules found
+
+Checking fleet.rules.yml
+  SUCCESS: 3 rules found
+
+2026-10-30T06:29:56Z promtool test rules
+  SUCCESS
+
+  SUCCESS
+
+  SUCCESS
+
+  SUCCESS
+
+  SUCCESS
+
+  SUCCESS
+
+  SUCCESS
+
+  SUCCESS
+
+  SUCCESS
+
+2026-10-30T06:30:38Z promtool check config (prometheus.yml + slo rules at /etc/pft-slo)
+Checking /etc/pft-alerts/prometheus.yml
+  SUCCESS: 10 rule files found
+ SUCCESS: /etc/pft-alerts/prometheus.yml is valid prometheus config file syntax
+
+Checking /etc/pft-alerts/postfiat.rules.yml
+  SUCCESS: 16 rules found
+
+Checking /etc/pft-alerts/divergence.rules.yml
+  SUCCESS: 2 rules found
+
+Checking /etc/pft-alerts/logship.rules.yml
+  SUCCESS: 1 rules found
+
+Checking /etc/pft-alerts/resources.rules.yml
+  SUCCESS: 10 rules found
+
+Checking /etc/pft-alerts/alertpath.rules.yml
+  SUCCESS: 1 rules found
+
+Checking /etc/pft-alerts/timesync.rules.yml
+  SUCCESS: 5 rules found
+
+Checking /etc/pft-alerts/statewatch.rules.yml
+  SUCCESS: 7 rules found
+
+Checking /etc/pft-alerts/vulnscan.rules.yml
+  SUCCESS: 5 rules found
+
+Checking /etc/pft-alerts/fleet.rules.yml
+  SUCCESS: 3 rules found
+
+Checking /etc/pft-slo/slo.rules.yml
+  SUCCESS: 17 rules found
+
+2026-10-30T06:30:39Z amtool check-config
+Checking '/w/alertmanager.yml'  SUCCESS
+Found:
+ - global config
+ - route
+ - 2 inhibit rules
+ - 2 receivers
+ - 0 templates
+
+(exit 0)

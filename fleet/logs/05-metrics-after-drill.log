@@ -1,0 +1,39 @@
+pft-fleet metrics after the drill - 2026-10-30T06:38:12Z - Ubuntu 22.04.5 LTS
+$ sudo -n systemctl start pft-fleet.service; systemctl show -p Result,ExecMainStatus pft-fleet.service
+Result=success
+ExecMainStatus=0
+(exit 0)
+$ grep -v '^#' /var/lib/pft-exporter/textfile/pft_fleet.prom | grep -vE 'addon_state\{.*CURRENT|addon_diverged\{.*\} 0$'
+pft_fleet_up 1
+pft_fleet_last_run_timestamp_seconds 1793342299
+pft_fleet_exit_code 0
+pft_fleet_host_up{host="sentry"} 1
+pft_fleet_host_up{host="validator"} 1
+(exit 0)
+$ sudo -n cat /var/lib/pft-fleet/drift.json
+{}
+(exit 0)
+$ sleep 75; curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=pft_fleet_exit_code or pft_fleet_up or count(pft_fleet_drift_since_timestamp_seconds) or vector(0)' | jq -c '.data.result[] | {m: (.metric.__name__ // "count drift series (or 0)"), v: .value[1]}'
+{"m":"pft_fleet_exit_code","v":"0"}
+{"m":"count drift series (or 0)","v":"0"}
+(exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=count by (state) (pft_fleet_addon_state)' | jq -c '.data.result[] | {state: .metric.state, addons: .value[1]}'
+{"state":"CURRENT","addons":"33"}
+(exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/rules | jq -c '.data.groups[] | select(.name=="pft-fleet") | .rules[] | {name, health, state}'
+{"name":"PFTFleetDriftStale","health":"ok","state":"inactive"}
+{"name":"PFTFleetCheckStale","health":"ok","state":"inactive"}
+{"name":"PFTFleetHostUnreadable","health":"ok","state":"inactive"}
+(exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/alerts | jq -c '[.data.alerts[] | select(.labels.alertname | startswith("PFTFleet"))] | length'
+0
+(exit 0)
+$ sudo -n pft-integrity verify | tail -1; ssh relay 'sudo -n pft-integrity verify | tail -1'
+RESULT: PASS - 99 unchanged, 0 warn, 0 fail -> exit 0
+RESULT: PASS - 58 unchanged, 0 warn, 0 fail -> exit 0
+(exit 0)
+$ sudo -n pft-maint status | head -2; ssh relay 'sudo -n pft-maint status | head -1'
+no maintenance window (alerting is live)
+no data-collection locks
+no maintenance window (alerting is live)
+(exit 0)

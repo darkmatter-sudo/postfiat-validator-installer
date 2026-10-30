@@ -1,0 +1,109 @@
+pft-fleet install on the validator - 2026-10-30T06:31:00Z - Ubuntu 22.04.5 LTS
+commit 2d7f30916fab9e9b1462b2f7f9473ddcb5b28554 | git status --short: 0 changed
+$ sudo -n sed -E 's#^REPO=.*#REPO=<repo checkout>#; s#^SSH_AS=.*#SSH_AS=<operator>#' /etc/pft-fleet/fleet.conf
+REPO=<repo checkout>
+REF=main
+HOSTS_CONF=/etc/pft-fleet/hosts.conf
+TEXTFILE_DIR=/var/lib/pft-exporter/textfile
+STATE_DIR=/var/lib/pft-fleet
+SSH_AS=<operator>
+(exit 0)
+$ sudo -n cat /etc/pft-fleet/hosts.conf | grep -v '^#'
+host sentry    ssh   relay  postfiatd-sentry  sentry
+host validator local -      postfiatd         validator
+(exit 0)
+$ sudo -n ./fleet/install.sh
+2026-10-30T06:31:00Z installed pft-fleet.sh sha256 61cafcfcdaa9363507140545c5c9b3c79a4ce641cddc4bf44020bf9804e5fa29
+2026-10-30T06:31:00Z installed fleet_lib.py sha256 809e2866557b610a7efcb3463a4b1e982bd6b3364cea2084ab9ef1262eacf19a
+2026-10-30T06:31:00Z installed manifest.tsv sha256 8678b9f1c312f523d80719cab83ef38fa0ac2feb6d7b8ba52fe7e534de895751
+2026-10-30T06:31:01Z first skew through the sandboxed unit:
+pam_limits(runuser:session): Could not set limit for 'memlock' to soft=1040355328, hard=1040355328: Operation not permitted; uid=0,euid=0
+pam_unix(runuser:session): session opened for user <user>(uid=1001) by (uid=0)
+pam_unix(runuser:session): session closed for user <user>
+ref main = 2d7f30916fab9e9b1462b2f7f9473ddcb5b28554
+host sentry     role sentry    ok
+host validator  role validator ok
+HOST       ADDON       STATE      DETAIL
+sentry     alertpath   CURRENT
+sentry     audittrail  CURRENT
+sentry     divergence  CURRENT
+sentry     egress      CURRENT
+sentry     integrity   CURRENT
+sentry     logship     CURRENT
+sentry     maint       CURRENT
+sentry     patch       CURRENT
+sentry     resources   CURRENT
+sentry     statewatch  CURRENT
+sentry     sysctl      CURRENT
+sentry     timesync    CURRENT
+sentry     vulnscan    CURRENT
+sentry     watchdog    CURRENT
+validator  alertpath   BEHIND     /usr/local/bin/pft-alertpath BEHIND @067704c9fdde (-1)
+validator  audittrail  CURRENT
+validator  backup      BEHIND     /usr/local/sbin/pft-backup.sh BEHIND @10b1fee6aed0 (-1)
+validator  divergence  CURRENT
+validator  egress      CURRENT
+validator  exporter    CURRENT
+validator  fleet       CURRENT
+validator  integrity   CURRENT
+validator  logship     CURRENT
+validator  maint       CURRENT
+validator  monitor     CURRENT
+validator  patch       CURRENT
+validator  resources   CURRENT
+validator  retention   CURRENT
+validator  statewatch  CURRENT
+validator  sysctl      CURRENT
+validator  timesync    CURRENT
+validator  vulnscan    CURRENT
+validator  watchdog    CURRENT
+*          alertpath   DIVERGED   /usr/local/bin/pft-alertpath
+SUMMARY CURRENT=31 BEHIND=2 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=1
+pft-fleet.service: Deactivated successfully.
+Finished pft-fleet skew: compare installed add-on files on every host with the repo, write textfile metrics.
+pft-fleet.service: Consumed 5.764s CPU time.
+Created symlink /etc/systemd/system/timers.target.wants/pft-fleet.timer → /etc/systemd/system/pft-fleet.timer.
+2026-10-30T06:31:13Z pft-fleet.timer enabled: Fri 2026-10-30 08:19:55 CET
+(exit 0)
+$ sudo -n sha256sum /usr/local/sbin/pft-fleet /usr/local/lib/pft-fleet/fleet_lib.py /usr/local/lib/pft-fleet/manifest.tsv /etc/systemd/system/pft-fleet.service /etc/systemd/system/pft-fleet.timer
+61cafcfcdaa9363507140545c5c9b3c79a4ce641cddc4bf44020bf9804e5fa29  /usr/local/sbin/pft-fleet
+809e2866557b610a7efcb3463a4b1e982bd6b3364cea2084ab9ef1262eacf19a  /usr/local/lib/pft-fleet/fleet_lib.py
+8678b9f1c312f523d80719cab83ef38fa0ac2feb6d7b8ba52fe7e534de895751  /usr/local/lib/pft-fleet/manifest.tsv
+3105a2f0a144d32eea4a7aba32d9af64331908111bd8d5771b003f4e72955641  /etc/systemd/system/pft-fleet.service
+79839ee00a8157fd50cf95e954bf133a509b68532cda9f40f54c38d23fa182e3  /etc/systemd/system/pft-fleet.timer
+(exit 0)
+$ sudo -n pft-integrity verify | grep -E '\[(WARN|FAIL)\]|^RESULT'
+  [WARN] unit:pft-fleet.service                       added    new file
+  [WARN] unit:pft-fleet.timer                         added    new file
+RESULT: WARN - 97 unchanged, 2 warn, 0 fail -> exit 1
+(exit 0)
+$ sudo -n pft-integrity accept --reason 'task_55e9c36d19527ba9b29a641bb81e1b52: pft-fleet installed (sbin/pft-fleet, lib/pft-fleet, pft-fleet.service/.timer)' | tail -3
+pft-integrity accept - 2026-10-30T06:31:30Z: re-baselined 99 items by <user>
+manifest sha256: 849c234adafb06e7e79d2ddd334c1eecb3467662883ef8b09bb2df98b6e15c6b -> 124f4eb599503e510987610eb8a0b9a5279f2ef6ce926fe8914be5563c9e5c8b (logged to accept.log)
+(exit 0)
+$ sudo -n pft-integrity verify | tail -1
+RESULT: PASS - 99 unchanged, 0 warn, 0 fail -> exit 0
+(exit 0)
+$ ssh relay 'sudo -n pft-integrity verify | tail -1'
+RESULT: PASS - 58 unchanged, 0 warn, 0 fail -> exit 0
+(exit 0)
+$ docker kill -s HUP pft-prometheus >/dev/null && sleep 5 && curl -s http://127.0.0.1:9090/api/v1/rules | jq -c '.data.groups[] | select(.name=="pft-fleet") | .rules[] | {name, health, state}'
+{"name":"PFTFleetDriftStale","health":"unknown","state":"inactive"}
+{"name":"PFTFleetCheckStale","health":"unknown","state":"inactive"}
+{"name":"PFTFleetHostUnreadable","health":"unknown","state":"inactive"}
+(exit 0)
+$ sleep 70; curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query={__name__=~"pft_fleet_(up|exit_code|host_up)"}' | jq -c '.data.result[] | {m: .metric.__name__, host: .metric.host, v: .value[1]}'
+{"m":"pft_fleet_up","host":null,"v":"1"}
+{"m":"pft_fleet_exit_code","host":null,"v":"1"}
+{"m":"pft_fleet_host_up","host":"sentry","v":"1"}
+{"m":"pft_fleet_host_up","host":"validator","v":"1"}
+(exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=pft_fleet_drift_since_timestamp_seconds' | jq -c '.data.result[] | {host: .metric.host, addon: .metric.addon, since: (.value[1] | tonumber | todate)}'
+{"host":"*","addon":"alertpath","since":"2026-10-30T06:31:12Z"}
+{"host":"validator","addon":"alertpath","since":"2026-10-30T06:31:12Z"}
+{"host":"validator","addon":"backup","since":"2026-10-30T06:31:12Z"}
+(exit 0)
+$ systemctl list-timers pft-fleet.timer --no-pager | head -2
+NEXT                        LEFT       LAST PASSED UNIT            ACTIVATES
+Fri 2026-10-30 08:19:55 CET 46min left n/a  n/a    pft-fleet.timer pft-fleet.service
+(exit 0)

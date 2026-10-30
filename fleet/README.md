@@ -133,3 +133,18 @@ BEHIND, MODIFIED or UNEXPECTED, which already gives exit >= 1), so it is not in 
 - The maintenance window is required on each host before it is written; on the sentry it arrives over the
   watchdog channel within one `pft-watchdog` run.
 - Template units (`name@.service`) are checked by file and by their loaded instances' states, not `LoadState`.
+
+## Live proof (validator + sentry, 2026-10-30)
+
+| Step | Result | Log |
+|---|---|---|
+| tests at 2d7f309 | shellcheck 0, `run-tests.sh` 91/91, mutants 20/20 caught (0 survived, 0 not applied), promtool check 3 rules + test SUCCESS, `../alerts/run-stack.sh check` SUCCESS | [`logs/01-tests.log`](logs/01-tests.log) |
+| install on the validator | first skew through the sandboxed unit read both hosts (`Result=success`); timer enabled; `pft-integrity accept` for the two new units, PASS on both hosts; Prometheus loaded the 3 rules; `pft_fleet_up 1` scraped | [`logs/02-install.log`](logs/02-install.log) |
+| live inventory + skew | 89 files, 31 add-on/host pairs CURRENT, **2 BEHIND on the validator** (`pft-alertpath` one commit behind the sentry's copy, `pft-backup.sh` one commit behind), alertpath **DIVERGED**, exit 1; dry-run plans for both | [`logs/03-live-inventory-skew.log`](logs/03-live-inventory-skew.log) |
+| two-host drill (add-on `sysctl` on the sentry) | 0 of 29 checks failed: A baseline CURRENT; B dry run changes nothing, pinned sync to 2a68ebb -> sentry BEHIND + DIVERGED (exit 1); C injected gate failure -> exit 5, original sha256 restored, sentry pft-integrity PASS without an accept; D health-gated sync -> CURRENT; E hand edit -> MODIFIED (exit 2); F sync -> CURRENT (integrity finding on the rewritten file allowed, accepted with reason); G the two real BEHIND files synced on the validator, final skew 33 CURRENT, exit 0. Throwaway topic got exactly the two [MAINT] messages, operator topics 0, notifier env files restored sha256-identical, both nodes full, integrity PASS on both | [`logs/04-drill.log`](logs/04-drill.log) |
+| metrics after the drill | unit exit 0, `pft_fleet_exit_code 0`, drift clock empty (0 drift series in Prometheus), 33 add-ons CURRENT, rules health ok, 0 PFTFleet alerts, no maintenance window left open | [`logs/05-metrics-after-drill.log`](logs/05-metrics-after-drill.log) |
+
+Logs are the raw output of the commands they print (`$ ...` lines, exit code after each). Redacted on the way out:
+the home directory as `~`, the operator account as `<user>`, ntfy topics as `<redacted>` (the drill's redact.py
+also covers host addresses and node keys); a grep for host names, public addresses, topics, `/home/` and the account
+name over the published logs finds nothing. The sentry is reached through the ssh alias `relay`.
