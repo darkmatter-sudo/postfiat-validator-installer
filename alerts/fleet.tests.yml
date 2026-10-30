@@ -4,10 +4,12 @@ rule_files:
   - fleet.rules.yml
 evaluation_interval: 1m
 tests:
-  - name: "drift seen at t=0 and still there: nothing at 24h, fires after 24h + 10m, not for the CURRENT add-on"
+  - name: "drift seen at t=60s and still there: nothing at 24h, fires after 24h + 10m, not for the CURRENT add-on (0)"
     interval: 1m
     input_series:
       - series: 'pft_fleet_drift_since_timestamp_seconds{host="sentry",addon="statewatch"}'
+        values: '60x1500'
+      - series: 'pft_fleet_drift_since_timestamp_seconds{host="sentry",addon="vulnscan"}'
         values: '0x1500'
       - series: 'pft_fleet_addon_state{host="sentry",addon="vulnscan",state="CURRENT"}'
         values: '1x1500'
@@ -22,7 +24,7 @@ tests:
       - eval_time: 24h5m
         alertname: PFTFleetDriftStale
         exp_alerts: []
-      - eval_time: 24h12m
+      - eval_time: 24h13m
         alertname: PFTFleetDriftStale
         exp_alerts:
           - exp_labels: {severity: warning, host: sentry, addon: statewatch}
@@ -30,14 +32,14 @@ tests:
               summary: "add-on statewatch on sentry has not matched the repo for over 24h"
               description: "pft-fleet has seen statewatch as BEHIND, MODIFIED, MISSING or UNEXPECTED on sentry (host=* means the hosts run different versions) for more than a day. Run `sudo pft-fleet skew` to see which file, then finish the rollout with `sudo pft-fleet sync --addon statewatch --to <commit> --apply` inside a pft-maint window, or explain the hand edit and commit it."
               runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/fleet/README.md#alerts"
-      - eval_time: 24h12m
+      - eval_time: 24h13m
         alertname: PFTFleetCheckStale
         exp_alerts: []
-  - name: "drift fixed after 20h (series disappears): never fires; DIVERGED (host=*) drift fires on its own clock"
+  - name: "drift fixed after 20h (clock back to 0): never fires; DIVERGED (host=*) drift fires on its own clock"
     interval: 1m
     input_series:
       - series: 'pft_fleet_drift_since_timestamp_seconds{host="validator",addon="alertpath"}'
-        values: '0x1200 _x400'
+        values: '60x1200 0x400'
       - series: 'pft_fleet_drift_since_timestamp_seconds{host="*",addon="backup"}'
         values: '3600x1600'
       - series: 'pft_fleet_last_run_timestamp_seconds'

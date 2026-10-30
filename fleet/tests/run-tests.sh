@@ -205,7 +205,9 @@ touch "$S/ssh_down"; PFT_FLEET_NOW=6000 fl skew --metrics; rm "$S/ssh_down"
 check "metrics: drift clock survives a run where the host was unreadable" grep -qx 'pft_fleet_drift_since_timestamp_seconds{host="sentry",addon="demo"} 1000' "$P"
 put sentry /usr/local/bin/pft-demo "$V5" demo/pft-demo.sh
 PFT_FLEET_NOW=9000 fl skew --metrics
-check "metrics: back to CURRENT clears the drift clock" bash -c "! grep -q 'drift_since_timestamp_seconds{host=\"sentry\"' '$P'"
+check "metrics: back to CURRENT resets the drift clock to 0" grep -qx 'pft_fleet_drift_since_timestamp_seconds{host="sentry",addon="demo"} 0' "$P"
+check "metrics: no drift clock other than 0 after the fix" bash -c "! grep -E '^pft_fleet_drift_since_timestamp_seconds\\{.*\\} [1-9]' '$P'"
+check "metrics: */demo series present with 0 (selector never empty)" grep -qx 'pft_fleet_drift_since_timestamp_seconds{host="\*",addon="demo"} 0' "$P"
 check "metrics: exit code 0 after fix" grep -qx 'pft_fleet_exit_code 0' "$P"
 
 # ---------- inventory ----------

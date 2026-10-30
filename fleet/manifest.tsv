@@ -70,3 +70,9 @@ watchdog    watchdog/pft-heartbeat.timer                       /etc/systemd/syst
 watchdog    watchdog/pft-watchdog.sh                           /usr/local/bin/pft-watchdog                         0755 sentry
 watchdog    watchdog/pft-watchdog.service                      /etc/systemd/system/pft-watchdog.service            0644 sentry
 watchdog    watchdog/pft-watchdog.timer                        /etc/systemd/system/pft-watchdog.timer              0644 sentry
+rulecheck   rulecheck/pft-rulecheck.sh                         /usr/local/bin/pft-rulecheck                        0755 both
+rulecheck   rulecheck/rulecheck_lib.py                         /usr/local/lib/pft-rulecheck/rulecheck_lib.py       0644 both
+rulecheck   rulecheck/systemd/pft-rulecheck.service            /etc/systemd/system/pft-rulecheck.service           0644 both
+rulecheck   rulecheck/systemd/pft-rulecheck.timer              /etc/systemd/system/pft-rulecheck.timer             0644 both
+rulecheck   rulecheck/systemd/pft-rulecheck-pull.service       /etc/systemd/system/pft-rulecheck-pull.service      0644 validator
+rulecheck   rulecheck/systemd/pft-rulecheck-pull.timer         /etc/systemd/system/pft-rulecheck-pull.timer        0644 validator

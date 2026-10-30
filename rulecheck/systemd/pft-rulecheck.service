@@ -1,0 +1,42 @@
+[Unit]
+Description=pft-rulecheck: dead alert rules + stale textfile inputs (writes textfile metrics)
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/rulecheck
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+# exit 1 = findings (reported in the metrics), not a unit failure; exit 2 (check could not run) fails the unit
+SuccessExitStatus=1
+ExecStart=/usr/local/bin/pft-rulecheck run
+# root without capabilities: the textfile dir is root-owned, nothing else is written
+ReadWritePaths=/var/lib/pft-exporter/textfile
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+# AF_INET/AF_INET6: Prometheus on 127.0.0.1 only (IPAddressAllow below)
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+CapabilityBoundingSet=
+UMask=0022
+Nice=10
+TimeoutStartSec=5min

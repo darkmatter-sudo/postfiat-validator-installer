@@ -1,7 +1,8 @@
 # Alert rules for pft-fleet (../fleet). pft-fleet.timer runs `pft-fleet skew --metrics` on the validator every hour
 # (it reads the sentry over ssh) and writes pft_fleet_*{host,addon} to the textfile dir; the pft exporter serves it.
 # pft_fleet_drift_since_timestamp_seconds{host,addon} is the first run that saw that add-on not CURRENT on that host
-# (host="*" for a cross-host DIVERGED add-on); the series disappears when a run sees it CURRENT again.
+# (host="*" for a cross-host DIVERGED add-on); it is 0 for every pair that is CURRENT (so the selector is never empty
+# while pft-fleet runs and ../rulecheck can tell a renamed metric from "no drift"), hence the "> 0" guard.
 # Drift is normal for a few hours during a rollout (sentry first, then the validator); it is only worth a page when
 # nobody finished the job: PFTFleetDriftStale fires after 24h.
 # Tests: fleet.tests.yml (promtool test rules fleet.tests.yml).
@@ -9,7 +10,7 @@ groups:
   - name: pft-fleet
     rules:
       - alert: PFTFleetDriftStale
-        expr: time() - pft_fleet_drift_since_timestamp_seconds > 86400
+        expr: pft_fleet_drift_since_timestamp_seconds > 0 and time() - pft_fleet_drift_since_timestamp_seconds > 86400
         for: 10m
         labels:
           severity: warning

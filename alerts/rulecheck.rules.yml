@@ -1,0 +1,37 @@
+# Alert rules for pft-rulecheck (../rulecheck). pft-rulecheck.timer runs `pft-rulecheck run` every hour on each host:
+# the validator checks every rule in this Prometheus (selector liveness) and every textfile in the exporter's dir;
+# the sentry (no Prometheus) checks its own textfile dir, and pft-rulecheck-pull copies that result here.
+#   pft_rulecheck_rule_dead{host,group,rule,idx,state}  1 for a DEAD / PARTIAL / ERROR rule, 0 for LIVE / IGNORED
+#   pft_rulecheck_textfile_stale{host,file,state}       1 for a STALE / MISSING / LEFTOVER / UNCONFIGURED file
+#   pft_rulecheck_up{host}, pft_rulecheck_last_run_timestamp_seconds{host}
+# Tests: rulecheck.tests.yml (promtool test rules rulecheck.tests.yml).
+groups:
+  - name: pft-rulecheck
+    rules:
+      - alert: PFTRuleDead
+        expr: pft_rulecheck_rule_dead == 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "alert rule {{ $labels.rule }} ({{ $labels.group }}) is {{ $labels.state }}: it cannot fire as written"
+          description: "pft-rulecheck on {{ $labels.host }} found that the selectors of {{ $labels.group }}/{{ $labels.rule }} match no series (DEAD), only some do (PARTIAL), or Prometheus reports the rule unhealthy (ERROR). A collector stopped, a metric was renamed or a label changed. Run `sudo pft-rulecheck check` to see which selector."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/rulecheck/README.md#alerts"
+      - alert: PFTTextfileStale
+        expr: pft_rulecheck_textfile_stale == 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "textfile {{ $labels.file }} on {{ $labels.host }} is {{ $labels.state }}"
+          description: "pft-rulecheck found {{ $labels.file }} {{ $labels.state }}: STALE = not refreshed within its max age (for a pulled copy: the collector on the peer stopped), MISSING = required but absent, LEFTOVER = an interrupted pull/collector left a temp file, UNCONFIGURED = no max age set. The metrics in a stale file keep their last values, so the alerts built on them stay quiet. Run `sudo pft-rulecheck check`."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/rulecheck/README.md#alerts"
+      - alert: PFTRulecheckNotRunning
+        expr: time() - pft_rulecheck_last_run_timestamp_seconds > 3 * 3600 or pft_rulecheck_up == 0 or absent(pft_rulecheck_last_run_timestamp_seconds{host="validator"})
+        for: 65m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pft-rulecheck has not completed a check{{ with $labels.host }} on {{ . }}{{ end }} for over an hour"
+          description: "No fresh run for 3h, the last runs could not read Prometheus or the textfile dir (up 0 for two hourly runs), or the validator never wrote its file. Dead rules and stale collectors are not being detected. Check `systemctl list-timers pft-rulecheck.timer` and `journalctl -u pft-rulecheck.service`."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/rulecheck/README.md#alerts"

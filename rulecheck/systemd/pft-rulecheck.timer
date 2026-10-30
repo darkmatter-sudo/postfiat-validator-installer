@@ -1,0 +1,11 @@
+[Unit]
+Description=Run pft-rulecheck every hour
+
+[Timer]
+OnCalendar=*-*-* *:17:00
+RandomizedDelaySec=60
+AccuracySec=10s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

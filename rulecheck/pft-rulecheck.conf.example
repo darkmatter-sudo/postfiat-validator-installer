@@ -1,0 +1,36 @@
+# pft-rulecheck config (/etc/pft-rulecheck.conf). One directive per line; '#' starts a comment.
+#   textfile GLOB MAX_AGE [TS_METRIC|-]   max age for matching *.prom files. With TS_METRIC the age is the larger of
+#                                         the file mtime and (now - smallest TS_METRIC value in the file), so a
+#                                         pulled copy that is re-written every minute but carries an old collector
+#                                         timestamp still reads STALE. First matching line wins.
+#   require FILE                          FILE must exist in the textfile dir (else MISSING)
+#   ignore-rule GROUP/RULE REASON...      skip a rule (state IGNORED, not a finding)
+#   ignore-metric METRIC REASON...        selectors of METRIC are expected to be empty when healthy
+#   leftover-age DURATION                 temp / non-.prom files older than this are LEFTOVER (default 600s)
+# Durations: 300, 300s, 5m, 2h, 1d. Defaults below = 2-3x each collector's own interval.
+
+# 1-minute collectors (local and pulled from the sentry)
+textfile pft_statewatch_*.prom   5m   pft_statewatch_collect_timestamp_seconds
+textfile pft_resources_*.prom    5m   pft_resources_collect_timestamp_seconds
+textfile pft_timesync*.prom      5m   pft_timesync_collect_timestamp_seconds
+textfile pft_divergence.prom     10m  pft_divergence_check_timestamp
+textfile pft_logship.prom        5m   -
+# hourly / daily collectors
+textfile pft_fleet.prom          3h   pft_fleet_last_run_timestamp_seconds
+textfile pft_rulecheck_*.prom    3h   pft_rulecheck_last_run_timestamp_seconds
+textfile pft_vulnscan_*.prom     36h  pft_vulnscan_last_run_timestamp_seconds
+
+# local collectors
+require pft_statewatch_postfiatd.prom
+require pft_resources_postfiatd.prom
+require pft_timesync.prom
+require pft_divergence.prom
+require pft_logship.prom
+require pft_fleet.prom
+require pft_vulnscan_validator.prom
+# pulled from the sentry (their content timestamps are the sentry collectors' own)
+require pft_statewatch_postfiatd-sentry.prom
+require pft_resources_postfiatd-sentry.prom
+require pft_timesync_peer_sentry.prom
+require pft_vulnscan_sentry.prom
+require pft_rulecheck_sentry.prom

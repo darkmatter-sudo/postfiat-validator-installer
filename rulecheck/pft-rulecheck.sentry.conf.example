@@ -1,0 +1,15 @@
+# pft-rulecheck config for a sentry without Prometheus (textfile checks only); see pft-rulecheck.conf.example.
+textfile pft_statewatch_*.prom   5m   pft_statewatch_collect_timestamp_seconds
+textfile pft_resources_*.prom    5m   pft_resources_collect_timestamp_seconds
+textfile pft_timesync*.prom      5m   pft_timesync_collect_timestamp_seconds
+textfile pft_divergence.prom     10m  pft_divergence_check_timestamp
+textfile pft_logship.prom        5m   -
+textfile pft_rulecheck_*.prom    3h   pft_rulecheck_last_run_timestamp_seconds
+textfile pft_vulnscan_*.prom     36h  pft_vulnscan_last_run_timestamp_seconds
+
+require pft_statewatch_postfiatd-sentry.prom
+require pft_resources_postfiatd-sentry.prom
+require pft_timesync.prom
+require pft_divergence.prom
+require pft_logship.prom
+require pft_vulnscan_sentry.prom

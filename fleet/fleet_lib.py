@@ -243,9 +243,16 @@ def metrics(rep, path, state_path, now, code):
     for addon in sorted({a["addon"] for a in rep["addons"]}):
         lines.append('pft_fleet_addon_diverged{addon="%s"} %d' % (esc(addon), 1 if addon in div else 0))
     lines += ["# HELP pft_fleet_drift_since_timestamp_seconds first run that saw this host/add-on (or */add-on "
-              "for DIVERGED) not CURRENT, without a CURRENT run since",
+              "for DIVERGED) not CURRENT, without a CURRENT run since; 0 = no drift",
               "# TYPE pft_fleet_drift_since_timestamp_seconds gauge"]
-    for k, v in sorted(new.items()):
+    # every host/add-on pair (and */add-on) gets a series: 0 = no drift, so the alert's selector is never empty
+    # while pft-fleet runs and a renamed metric shows up in pft-rulecheck as a DEAD rule
+    pairs = dict(new)
+    for a in rep["addons"]:
+        pairs.setdefault("%s/%s" % (a["host"], a["addon"]), 0)
+    for addon in {a["addon"] for a in rep["addons"]}:
+        pairs.setdefault("*/%s" % addon, 0)
+    for k, v in sorted(pairs.items()):
         h, addon = k.split("/", 1)
         lines.append('pft_fleet_drift_since_timestamp_seconds{host="%s",addon="%s"} %d' % (esc(h), esc(addon), v))
     for p, text in ((state_path, json.dumps(new, sort_keys=True) + "\n"), (path, "\n".join(lines) + "\n")):

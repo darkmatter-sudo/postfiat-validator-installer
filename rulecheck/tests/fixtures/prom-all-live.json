@@ -1,0 +1,60 @@
+{
+ "mode": "ok",
+ "groups": [
+  {
+   "name": "g-live",
+   "file": "/etc/pft-alerts/live.rules.yml",
+   "rules": [
+    {
+     "type": "alerting",
+     "name": "LiveOne",
+     "query": "up{job=\"postfiat\"} == 0",
+     "health": "ok"
+    },
+    {
+     "type": "alerting",
+     "name": "Const",
+     "query": "vector(1)",
+     "health": "ok"
+    },
+    {
+     "type": "alerting",
+     "name": "AbsentOnly",
+     "query": "absent(pft_missing_metric{job=\"postfiat\"})",
+     "health": "ok"
+    },
+    {
+     "type": "alerting",
+     "name": "AlertsOnly",
+     "query": "count(ALERTS{alertstate=\"firing\"}) > 0",
+     "health": "ok"
+    },
+    {
+     "type": "recording",
+     "name": "job:pft_x:rate5m",
+     "query": "sum by (job) (rate(pft_x_total[5m]))",
+     "health": "ok"
+    },
+    {
+     "type": "alerting",
+     "name": "Matchers",
+     "query": "pft_lab{a=\"x\\\"y\",b=~\"p|q\"} > 0 unless on (job) group_left () pft_x_total offset 5m",
+     "health": "ok"
+    },
+    {
+     "type": "alerting",
+     "name": "SameTwice",
+     "query": "pft_a > 0 or pft_a < -1",
+     "health": "ok"
+    }
+   ]
+  }
+ ],
+ "series": {
+  "up{job=\"postfiat\"}": 1,
+  "pft_x_total": 2,
+  "pft_lab{a=\"x\\\"y\",b=~\"p|q\"}": 1,
+  "pft_a": 3,
+  "pft_b": 0
+ }
+}

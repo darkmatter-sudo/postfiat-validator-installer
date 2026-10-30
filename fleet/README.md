@@ -92,7 +92,7 @@ gate fail on that host; `PFT_FLEET_ROOT_<label>` puts a host's files under a pre
 | `pft_fleet_last_run_timestamp_seconds`, `pft_fleet_exit_code` | last skew run and its exit code |
 | `pft_fleet_addon_state{host,addon,state}` | 1 for the add-on's state on that host |
 | `pft_fleet_addon_diverged{addon}` | 1 when an installed file differs between hosts |
-| `pft_fleet_drift_since_timestamp_seconds{host,addon}` | first run that saw the add-on not CURRENT (host `*` for DIVERGED); gone when it is CURRENT again; kept while the host is unreadable |
+| `pft_fleet_drift_since_timestamp_seconds{host,addon}` | first run that saw the add-on not CURRENT (host `*` for DIVERGED); 0 when it is CURRENT (every pair always has a series, so ../rulecheck sees the alert selector as live); kept while the host is unreadable |
 
 ### Alerts
 
