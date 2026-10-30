@@ -1,0 +1,319 @@
+$ sudo bash sshcrypto/drill/host-run.sh validator 60
+pft-sshcrypto host run (validator) - 2026-10-30T10:57:16Z - Ubuntu 22.04.5 LTS - OpenSSH_8.9p1 Ubuntu-3ubuntu0.18, OpenSSL 3.0.2 15 Mar 2022
+sha256: host-run.sh 6f798b72ea5ec584ea56770ed907693e663f4a465cda3ee8f7371e51400fe59d
+        installed pft-sshcrypto c285cb4c6606bf181125f6858f82d59a28564cab0f39bc6afd2b4060c7db41fa
+        installed sshcrypto_grade.py 0b393b69b0f3be0654c90e08c897c452f91adf2a70c257cccefd772b6e642ea7
+        installed hardened.conf 9600ad74cb148502024310ad3b8a80543af42ce36a3a9fdf98f597971b2d0b3b
+        policy-broken.conf 048512c9de3727b246bcf1676e0a72db4070dcbfcf2b0ecae30dbdf8b5a2c625
+
+== 0. preflight
+$ pft-sshcrypto status
+  state: none
+  snapshot: none
+  revert timer: not armed
+  drop-in: absent
+  (exit 0)
+CHECK ok   0a nothing applied, no snapshot, no armed timer
+M0 (sha256 of sshd_config + sshd_config.d/*):
+  e1a240065dc58f0145fca6bb72ce29810819c72717cf741169a1d6bf9c12c464  sshd_config
+  e45010096d186fde4fecf206da8b7856da5322fe6b51342e33d2ce9c0200ada9  sshd_config.d/40-pft-hardening.conf
+  474ef6932d6b998ec97b122a9d86af024b988d64c243f3caf01dd9e5ed41618e  sshd_config.d/50-cloud-init.conf
+  474ef6932d6b998ec97b122a9d86af024b988d64c243f3caf01dd9e5ed41618e  sshd_config.d/60-cloudimg-settings.conf
+E0 (sha256 of sshd -T): bcd1c0aebac950e06c4f1088f7f0225865190936012a28f837bea4c53292ed08
+
+== 1. before audit
+$ pft-sshcrypto audit
+  pft-sshcrypto audit - 2026-10-30T10:57:19Z host=validator
+    kex      OK    curve25519-sha256                          X25519
+    kex      OK    curve25519-sha256@libssh.org               X25519 (pre-RFC name)
+    kex      WARN  ecdh-sha2-nistp256                         NIST P-curves
+    kex      WARN  ecdh-sha2-nistp384                         NIST P-curves
+    kex      WARN  ecdh-sha2-nistp521                         NIST P-curves
+    kex      OK    sntrup761x25519-sha512@openssh.com         hybrid post-quantum + X25519
+    kex      WARN  diffie-hellman-group-exchange-sha256       group exchange can use 2048-bit moduli
+    kex      OK    diffie-hellman-group16-sha512              4096-bit fixed group
+    kex      OK    diffie-hellman-group18-sha512              8192-bit fixed group
+    kex      WARN  diffie-hellman-group14-sha256              2048-bit group
+    cipher   OK    chacha20-poly1305@openssh.com              AEAD
+    cipher   OK    aes128-ctr                                 CTR (MAC must be EtM)
+    cipher   OK    aes192-ctr                                 CTR (MAC must be EtM)
+    cipher   OK    aes256-ctr                                 CTR (MAC must be EtM)
+    cipher   OK    aes128-gcm@openssh.com                     AEAD
+    cipher   OK    aes256-gcm@openssh.com                     AEAD
+    mac      WARN  umac-64-etm@openssh.com                    64-bit tag
+    mac      OK    umac-128-etm@openssh.com                   encrypt-then-MAC
+    mac      OK    hmac-sha2-256-etm@openssh.com              encrypt-then-MAC
+    mac      OK    hmac-sha2-512-etm@openssh.com              encrypt-then-MAC
+    mac      FAIL  hmac-sha1-etm@openssh.com                  SHA-1
+    mac      FAIL  umac-64@openssh.com                        64-bit tag, encrypt-and-MAC
+    mac      WARN  umac-128@openssh.com                       encrypt-and-MAC
+    mac      WARN  hmac-sha2-256                              encrypt-and-MAC
+    mac      WARN  hmac-sha2-512                              encrypt-and-MAC
+    mac      FAIL  hmac-sha1                                  SHA-1
+    hostkey  OK    ssh-ed25519-cert-v01@openssh.com           Ed25519 certificate
+    hostkey  WARN  ecdsa-sha2-nistp256-cert-v01@openssh.com   NIST P-curves
+    hostkey  WARN  ecdsa-sha2-nistp384-cert-v01@openssh.com   NIST P-curves
+    hostkey  WARN  ecdsa-sha2-nistp521-cert-v01@openssh.com   NIST P-curves
+    hostkey  OK    sk-ssh-ed25519-cert-v01@openssh.com        Ed25519 (FIDO)
+    hostkey  WARN  sk-ecdsa-sha2-nistp256-cert-v01@openssh.com NIST P-curves (FIDO)
+    hostkey  OK    rsa-sha2-512-cert-v01@openssh.com          RSA/SHA-512 (key size graded separately)
+    hostkey  OK    rsa-sha2-256-cert-v01@openssh.com          RSA/SHA-256 (key size graded separately)
+    hostkey  OK    ssh-ed25519                                Ed25519
+    hostkey  WARN  ecdsa-sha2-nistp256                        NIST P-curves
+    hostkey  WARN  ecdsa-sha2-nistp384                        NIST P-curves
+    hostkey  WARN  ecdsa-sha2-nistp521                        NIST P-curves
+    hostkey  OK    sk-ssh-ed25519@openssh.com                 Ed25519 (FIDO)
+    hostkey  WARN  sk-ecdsa-sha2-nistp256@openssh.com         NIST P-curves (FIDO)
+    hostkey  OK    rsa-sha2-512                               RSA/SHA-512 (key size graded separately)
+    hostkey  OK    rsa-sha2-256                               RSA/SHA-256 (key size graded separately)
+    pubkey   OK    ssh-ed25519-cert-v01@openssh.com           user-key algorithms: only SHA-1/DSA graded
+    pubkey   OK    ecdsa-sha2-nistp256-cert-v01@openssh.com   user-key algorithms: only SHA-1/DSA graded
+    pubkey   OK    ecdsa-sha2-nistp384-cert-v01@openssh.com   user-key algorithms: only SHA-1/DSA graded
+    pubkey   OK    ecdsa-sha2-nistp521-cert-v01@openssh.com   user-key algorithms: only SHA-1/DSA graded
+    pubkey   OK    sk-ssh-ed25519-cert-v01@openssh.com        user-key algorithms: only SHA-1/DSA graded
+    pubkey   OK    sk-ecdsa-sha2-nistp256-cert-v01@openssh.com user-key algorithms: only SHA-1/DSA graded
+    pubkey   OK    rsa-sha2-512-cert-v01@openssh.com          user-key algorithms: only SHA-1/DSA graded
+    pubkey   OK    rsa-sha2-256-cert-v01@openssh.com          user-key algorithms: only SHA-1/DSA graded
+    pubkey   OK    ssh-ed25519                                user-key algorithms: only SHA-1/DSA graded
+    pubkey   OK    ecdsa-sha2-nistp256                        user-key algorithms: only SHA-1/DSA graded
+    pubkey   OK    ecdsa-sha2-nistp384                        user-key algorithms: only SHA-1/DSA graded
+    pubkey   OK    ecdsa-sha2-nistp521                        user-key algorithms: only SHA-1/DSA graded
+    pubkey   OK    sk-ssh-ed25519@openssh.com                 user-key algorithms: only SHA-1/DSA graded
+    pubkey   OK    sk-ecdsa-sha2-nistp256@openssh.com         user-key algorithms: only SHA-1/DSA graded
+    pubkey   OK    rsa-sha2-512                               user-key algorithms: only SHA-1/DSA graded
+    pubkey   OK    rsa-sha2-256                               user-key algorithms: only SHA-1/DSA graded
+    casig    OK    ssh-ed25519                                CA signature algorithms: only SHA-1/DSA graded
+    casig    OK    ecdsa-sha2-nistp256                        CA signature algorithms: only SHA-1/DSA graded
+    casig    OK    ecdsa-sha2-nistp384                        CA signature algorithms: only SHA-1/DSA graded
+    casig    OK    ecdsa-sha2-nistp521                        CA signature algorithms: only SHA-1/DSA graded
+    casig    OK    sk-ssh-ed25519@openssh.com                 CA signature algorithms: only SHA-1/DSA graded
+    casig    OK    sk-ecdsa-sha2-nistp256@openssh.com         CA signature algorithms: only SHA-1/DSA graded
+    casig    OK    rsa-sha2-512                               CA signature algorithms: only SHA-1/DSA graded
+    casig    OK    rsa-sha2-256                               CA signature algorithms: only SHA-1/DSA graded
+    hostkey-file OK    RSA 3072                                   RSA >= 3072 bits
+    hostkey-file WARN  ECDSA 256                                  NIST P-curve
+    hostkey-file OK    ED25519 256                                Ed25519
+    probe    kex     curve25519-sha256                          expected offered, negotiated: match
+    probe    kex     diffie-hellman-group1-sha1                 expected absent, rejected: match
+    probe    kex     diffie-hellman-group14-sha1                expected absent, rejected: match
+    probe    kex     diffie-hellman-group-exchange-sha1         expected absent, rejected: match
+    probe    kex     diffie-hellman-group14-sha256              expected offered, negotiated: match
+    probe    kex     ecdh-sha2-nistp256                         expected offered, negotiated: match
+    probe    kex     ecdh-sha2-nistp384                         expected offered, negotiated: match
+    probe    kex     ecdh-sha2-nistp521                         expected offered, negotiated: match
+    probe    cipher  chacha20-poly1305@openssh.com              expected offered, negotiated: match
+    probe    cipher  3des-cbc                                   expected absent, rejected: match
+    probe    cipher  aes128-cbc                                 expected absent, rejected: match
+    probe    cipher  aes192-cbc                                 expected absent, rejected: match
+    probe    cipher  aes256-cbc                                 expected absent, rejected: match
+    probe    mac     umac-128-etm@openssh.com                   expected offered, negotiated: match
+    probe    mac     hmac-sha1                                  expected offered, negotiated: match
+    probe    mac     hmac-sha1-etm@openssh.com                  expected offered, negotiated: match
+    probe    mac     hmac-md5                                   expected absent, rejected: match
+    probe    mac     umac-64@openssh.com                        expected offered, negotiated: match
+    probe    mac     umac-64-etm@openssh.com                    expected offered, negotiated: match
+    probe    mac     hmac-sha2-256                              expected offered, negotiated: match
+    probe    mac     hmac-sha2-512                              expected offered, negotiated: match
+    probe    mac     umac-128@openssh.com                       expected offered, negotiated: match
+    probe    hostkey ssh-ed25519                                expected offered, negotiated: match
+    probe    hostkey ssh-rsa                                    expected absent, rejected: match
+    probe    hostkey ecdsa-sha2-nistp256                        expected offered, negotiated: match
+    probe    hostkey ecdsa-sha2-nistp384                        expected absent, rejected: match
+    probe    hostkey ecdsa-sha2-nistp521                        expected absent, rejected: match
+  RESULT: FAIL - 48 ok, 18 warn, 3 fail, 27 probes, 0 probe mismatches, 0 errors -> exit 1
+  (exit 1)
+CHECK ok   1a before: exit 1 (findings) (RESULT: FAIL - 48 ok, 18 warn, 3 fail, 27 probes, 0 probe mismatches, 0 errors -> exit 1)
+
+== 2. apply the hardened policy
+$ pft-sshcrypto apply
+  2026-10-30T10:57:20Z snapshot: 4 files, sshd -T sha256 bcd1c0aebac950e06c4f1088f7f0225865190936012a28f837bea4c53292ed08
+  2026-10-30T10:57:20Z drop-in written and validated (sshd -t OK, sshd -T matches the policy), sha256 0024634c8a49d283f2b8c3343edf0c08c8a81c97ed064bf55b620d675dcfa152
+  2026-10-30T10:57:20Z revert armed: pft-sshcrypto-revert.timer fires at 2026-10-30T10:59:20Z (120s)
+  2026-10-30T10:57:20Z reloaded ssh (existing sessions untouched)
+  2026-10-30T10:57:21Z confirmed: new session logged in (default client algorithms, strict host key check)
+  RESULT: OK - 48 ok, 0 warn, 0 fail, 27 probes, 0 probe mismatches, 0 errors -> exit 0
+  2026-10-30T10:57:23Z APPLIED: revert timer stopped, policy committed (rollback: sudo pft-sshcrypto rollback)
+  (exit 0)
+CHECK ok   2a apply exit 0, APPLIED
+$ cat /etc/ssh/sshd_config.d/10-pft-sshcrypto.conf
+  # pft-sshcrypto policy - managed file (same bytes on every apply), remove with: sudo pft-sshcrypto rollback
+  KexAlgorithms sntrup761x25519-sha512@openssh.com,curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512
+  Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr
+  MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com
+  HostKeyAlgorithms ssh-ed25519,ssh-ed25519-cert-v01@openssh.com,sk-ssh-ed25519@openssh.com,sk-ssh-ed25519-cert-v01@openssh.com,rsa-sha2-512,rsa-sha2-512-cert-v01@openssh.com,rsa-sha2-256,rsa-sha2-256-cert-v01@openssh.com
+  (exit 0)
+
+== 3. after audit
+$ pft-sshcrypto audit
+  pft-sshcrypto audit - 2026-10-30T10:57:25Z host=validator
+    kex      OK    sntrup761x25519-sha512@openssh.com         hybrid post-quantum + X25519
+    kex      OK    curve25519-sha256                          X25519
+    kex      OK    curve25519-sha256@libssh.org               X25519 (pre-RFC name)
+    kex      OK    diffie-hellman-group16-sha512              4096-bit fixed group
+    kex      OK    diffie-hellman-group18-sha512              8192-bit fixed group
+    cipher   OK    chacha20-poly1305@openssh.com              AEAD
+    cipher   OK    aes256-gcm@openssh.com                     AEAD
+    cipher   OK    aes128-gcm@openssh.com                     AEAD
+    cipher   OK    aes256-ctr                                 CTR (MAC must be EtM)
+    cipher   OK    aes192-ctr                                 CTR (MAC must be EtM)
+    cipher   OK    aes128-ctr                                 CTR (MAC must be EtM)
+    mac      OK    hmac-sha2-512-etm@openssh.com              encrypt-then-MAC
+    mac      OK    hmac-sha2-256-etm@openssh.com              encrypt-then-MAC
+    mac      OK    umac-128-etm@openssh.com                   encrypt-then-MAC
+    hostkey  OK    ssh-ed25519                                Ed25519
+    hostkey  OK    ssh-ed25519-cert-v01@openssh.com           Ed25519 certificate
+    hostkey  OK    sk-ssh-ed25519@openssh.com                 Ed25519 (FIDO)
+    hostkey  OK    sk-ssh-ed25519-cert-v01@openssh.com        Ed25519 (FIDO)
+    hostkey  OK    rsa-sha2-512                               RSA/SHA-512 (key size graded separately)
+    hostkey  OK    rsa-sha2-512-cert-v01@openssh.com          RSA/SHA-512 (key size graded separately)
+    hostkey  OK    rsa-sha2-256                               RSA/SHA-256 (key size graded separately)
+    hostkey  OK    rsa-sha2-256-cert-v01@openssh.com          RSA/SHA-256 (key size graded separately)
+    pubkey   OK    ssh-ed25519-cert-v01@openssh.com           user-key algorithms: only SHA-1/DSA graded
+    pubkey   OK    ecdsa-sha2-nistp256-cert-v01@openssh.com   user-key algorithms: only SHA-1/DSA graded
+    pubkey   OK    ecdsa-sha2-nistp384-cert-v01@openssh.com   user-key algorithms: only SHA-1/DSA graded
+    pubkey   OK    ecdsa-sha2-nistp521-cert-v01@openssh.com   user-key algorithms: only SHA-1/DSA graded
+    pubkey   OK    sk-ssh-ed25519-cert-v01@openssh.com        user-key algorithms: only SHA-1/DSA graded
+    pubkey   OK    sk-ecdsa-sha2-nistp256-cert-v01@openssh.com user-key algorithms: only SHA-1/DSA graded
+    pubkey   OK    rsa-sha2-512-cert-v01@openssh.com          user-key algorithms: only SHA-1/DSA graded
+    pubkey   OK    rsa-sha2-256-cert-v01@openssh.com          user-key algorithms: only SHA-1/DSA graded
+    pubkey   OK    ssh-ed25519                                user-key algorithms: only SHA-1/DSA graded
+    pubkey   OK    ecdsa-sha2-nistp256                        user-key algorithms: only SHA-1/DSA graded
+    pubkey   OK    ecdsa-sha2-nistp384                        user-key algorithms: only SHA-1/DSA graded
+    pubkey   OK    ecdsa-sha2-nistp521                        user-key algorithms: only SHA-1/DSA graded
+    pubkey   OK    sk-ssh-ed25519@openssh.com                 user-key algorithms: only SHA-1/DSA graded
+    pubkey   OK    sk-ecdsa-sha2-nistp256@openssh.com         user-key algorithms: only SHA-1/DSA graded
+    pubkey   OK    rsa-sha2-512                               user-key algorithms: only SHA-1/DSA graded
+    pubkey   OK    rsa-sha2-256                               user-key algorithms: only SHA-1/DSA graded
+    casig    OK    ssh-ed25519                                CA signature algorithms: only SHA-1/DSA graded
+    casig    OK    ecdsa-sha2-nistp256                        CA signature algorithms: only SHA-1/DSA graded
+    casig    OK    ecdsa-sha2-nistp384                        CA signature algorithms: only SHA-1/DSA graded
+    casig    OK    ecdsa-sha2-nistp521                        CA signature algorithms: only SHA-1/DSA graded
+    casig    OK    sk-ssh-ed25519@openssh.com                 CA signature algorithms: only SHA-1/DSA graded
+    casig    OK    sk-ecdsa-sha2-nistp256@openssh.com         CA signature algorithms: only SHA-1/DSA graded
+    casig    OK    rsa-sha2-512                               CA signature algorithms: only SHA-1/DSA graded
+    casig    OK    rsa-sha2-256                               CA signature algorithms: only SHA-1/DSA graded
+    hostkey-file OK    RSA 3072                                   RSA >= 3072 bits
+    hostkey-file UNUSED ECDSA 256                                  no offered algorithm uses this key
+    hostkey-file OK    ED25519 256                                Ed25519
+    probe    kex     sntrup761x25519-sha512@openssh.com         expected offered, negotiated: match
+    probe    kex     diffie-hellman-group1-sha1                 expected absent, rejected: match
+    probe    kex     diffie-hellman-group14-sha1                expected absent, rejected: match
+    probe    kex     diffie-hellman-group-exchange-sha1         expected absent, rejected: match
+    probe    kex     diffie-hellman-group14-sha256              expected absent, rejected: match
+    probe    kex     ecdh-sha2-nistp256                         expected absent, rejected: match
+    probe    kex     ecdh-sha2-nistp384                         expected absent, rejected: match
+    probe    kex     ecdh-sha2-nistp521                         expected absent, rejected: match
+    probe    cipher  chacha20-poly1305@openssh.com              expected offered, negotiated: match
+    probe    cipher  3des-cbc                                   expected absent, rejected: match
+    probe    cipher  aes128-cbc                                 expected absent, rejected: match
+    probe    cipher  aes192-cbc                                 expected absent, rejected: match
+    probe    cipher  aes256-cbc                                 expected absent, rejected: match
+    probe    mac     hmac-sha2-512-etm@openssh.com              expected offered, negotiated: match
+    probe    mac     hmac-sha1                                  expected absent, rejected: match
+    probe    mac     hmac-sha1-etm@openssh.com                  expected absent, rejected: match
+    probe    mac     hmac-md5                                   expected absent, rejected: match
+    probe    mac     umac-64@openssh.com                        expected absent, rejected: match
+    probe    mac     umac-64-etm@openssh.com                    expected absent, rejected: match
+    probe    mac     hmac-sha2-256                              expected absent, rejected: match
+    probe    mac     hmac-sha2-512                              expected absent, rejected: match
+    probe    mac     umac-128@openssh.com                       expected absent, rejected: match
+    probe    hostkey ssh-ed25519                                expected offered, negotiated: match
+    probe    hostkey ssh-rsa                                    expected absent, rejected: match
+    probe    hostkey ecdsa-sha2-nistp256                        expected absent, rejected: match
+    probe    hostkey ecdsa-sha2-nistp384                        expected absent, rejected: match
+    probe    hostkey ecdsa-sha2-nistp521                        expected absent, rejected: match
+  RESULT: OK - 48 ok, 0 warn, 0 fail, 27 probes, 0 probe mismatches, 0 errors -> exit 0
+  (exit 0)
+CHECK ok   3a after: exit 0, RESULT OK, 0 warn, 0 fail, 0 mismatches
+
+== 4. rollback (byte-identical)
+$ pft-sshcrypto rollback
+  2026-10-30T10:57:25Z files: 4 sha256-identical to the snapshot; sshd -T sha256 bcd1c0aebac950e06c4f1088f7f0225865190936012a28f837bea4c53292ed08 identical
+  2026-10-30T10:57:26Z confirmed: new session logged in after the rollback
+  2026-10-30T10:57:26Z ROLLBACK OK
+  (exit 0)
+CHECK ok   4a rollback exit 0, ROLLBACK OK
+M1:
+  e1a240065dc58f0145fca6bb72ce29810819c72717cf741169a1d6bf9c12c464  sshd_config
+  e45010096d186fde4fecf206da8b7856da5322fe6b51342e33d2ce9c0200ada9  sshd_config.d/40-pft-hardening.conf
+  474ef6932d6b998ec97b122a9d86af024b988d64c243f3caf01dd9e5ed41618e  sshd_config.d/50-cloud-init.conf
+  474ef6932d6b998ec97b122a9d86af024b988d64c243f3caf01dd9e5ed41618e  sshd_config.d/60-cloudimg-settings.conf
+E1: bcd1c0aebac950e06c4f1088f7f0225865190936012a28f837bea4c53292ed08
+CHECK ok   4b manifest after rollback == M0
+CHECK ok   4c sshd -T sha256 after rollback == E0
+CHECK ok   4d drop-in gone
+
+== 5. login-breaking drill (automatic revert after 60s)
+$ open_lifeline && ssh -S $SOCK -O check x
+  Master running (pid=3552191)
+  (exit 0)
+CHECK ok   5a lifeline session open (ControlMaster over loopback)
+$ lifeline
+  pft-sshcrypto-confirm-ok
+  (exit 0)
+CHECK ok   5b lifeline runs a command before the drill
+$ pft-sshcrypto apply --policy tests/fixtures/policy-broken.conf --revert-after 60
+  2026-10-30T10:57:26Z snapshot: 4 files, sshd -T sha256 bcd1c0aebac950e06c4f1088f7f0225865190936012a28f837bea4c53292ed08
+  2026-10-30T10:57:26Z drop-in written and validated (sshd -t OK, sshd -T matches the policy), sha256 8b448ee9346c6840ef8b44dff8b4908a6ee01d085772d3b0678edc8f09284f13
+  2026-10-30T10:57:26Z revert armed: pft-sshcrypto-revert.timer fires at 2026-10-30T10:58:26Z (60s)
+  2026-10-30T10:57:27Z reloaded ssh (existing sessions untouched)
+  2026-10-30T10:57:27Z CONFIRM FAILED: new session: Unable to negotiate with 127.0.0.1 port 22: no matching cipher found. Their offer: aes128-cbc
+  2026-10-30T10:57:27Z not committed: pft-sshcrypto-revert.timer rolls back at 2026-10-30T10:58:26Z
+  (exit 3)
+CHECK ok   5c broken policy: apply exit 3, CONFIRM FAILED (no matching cipher), not committed
+$ pft-sshcrypto status
+  state: pending (revert at 2026-10-30T10:58:26Z)
+  snapshot: taken 2026-10-30T10:57:26Z, 4 files
+  revert timer: armed
+  drop-in: present, sha256 8b448ee9346c6840ef8b44dff8b4908a6ee01d085772d3b0678edc8f09284f13
+  (exit 0)
+CHECK ok   5d pending, revert timer armed
+$ newsession | sed 's/Their offer:.*/Their offer: .../'
+  Pseudo-terminal will not be allocated because stdin is not a terminal.
+  Unable to negotiate with 127.0.0.1 port 22: no matching cipher found. Their offer: aes128-cbc
+  (exit 255)
+CHECK ok   5e a NEW session fails while the broken policy is live
+$ ssh -S $SOCK -O check x && lifeline
+  Master running (pid=3552191)
+  pft-sshcrypto-confirm-ok
+  (exit 0)
+CHECK ok   5f the EXISTING session still runs commands
+  waiting for the timer (no command from here until the revert)
+  2026-10-30T10:58:32Z pending cleared 66s after the apply started
+$ journalctl --utc -o short-iso --no-pager -u pft-sshcrypto-revert.service --since @1793357846
+  2026-10-30T10:58:26+0000 <host> systemd[1]: Started pft-sshcrypto automatic revert.
+  2026-10-30T10:58:27+0000 <host> pft-sshcrypto[3560392]: 2026-10-30T10:58:27Z automatic revert (timer) - applied policy was not confirmed
+  2026-10-30T10:58:27+0000 <host> pft-sshcrypto[3560392]: 2026-10-30T10:58:27Z files: 4 sha256-identical to the snapshot; sshd -T sha256 bcd1c0aebac950e06c4f1088f7f0225865190936012a28f837bea4c53292ed08 identical
+  2026-10-30T10:58:28+0000 <host> pft-sshcrypto[3560392]: 2026-10-30T10:58:28Z confirmed: new session logged in after the rollback
+  2026-10-30T10:58:28+0000 <host> pft-sshcrypto[3560392]: 2026-10-30T10:58:28Z ROLLBACK OK
+  2026-10-30T10:58:28+0000 <host> systemd[1]: pft-sshcrypto-revert.service: Deactivated successfully.
+  (exit 0)
+CHECK ok   5g the timer ran rollback --auto by itself: ROLLBACK OK in its journal
+M2:
+  e1a240065dc58f0145fca6bb72ce29810819c72717cf741169a1d6bf9c12c464  sshd_config
+  e45010096d186fde4fecf206da8b7856da5322fe6b51342e33d2ce9c0200ada9  sshd_config.d/40-pft-hardening.conf
+  474ef6932d6b998ec97b122a9d86af024b988d64c243f3caf01dd9e5ed41618e  sshd_config.d/50-cloud-init.conf
+  474ef6932d6b998ec97b122a9d86af024b988d64c243f3caf01dd9e5ed41618e  sshd_config.d/60-cloudimg-settings.conf
+E2: bcd1c0aebac950e06c4f1088f7f0225865190936012a28f837bea4c53292ed08
+CHECK ok   5h manifest after the automatic revert == M0
+CHECK ok   5i sshd -T sha256 after the automatic revert == E0
+$ newsession
+  Pseudo-terminal will not be allocated because stdin is not a terminal.
+  pft-sshcrypto-confirm-ok
+  (exit 0)
+CHECK ok   5j a NEW session works again
+$ ssh -S $SOCK -O check x && lifeline
+  Master running (pid=3552191)
+  pft-sshcrypto-confirm-ok
+  (exit 0)
+CHECK ok   5k lifeline still up after the revert
+$ pft-sshcrypto status
+  state: none
+  snapshot: none
+  revert timer: not armed
+  drop-in: absent
+  (exit 0)
+CHECK ok   5l state none, timer gone
+
+host run (validator) done 2026-10-30T10:58:33Z: 0 check(s) failed -> PASS
+(exit 0)

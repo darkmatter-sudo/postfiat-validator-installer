@@ -1,0 +1,25 @@
+pft-sshcrypto lint - 2026-10-30T11:19:47Z - Ubuntu 22.04.5 LTS - repo HEAD 43694c6d3a97de626d99c85b28f027b1e33a9400
+$ shellcheck --version | sed -n 2p
+version: 0.8.0
+(exit 0)
+$ shellcheck sshcrypto/pft-sshcrypto.sh sshcrypto/install.sh sshcrypto/tests/run-tests.sh sshcrypto/drill/host-run.sh sshcrypto/drill/live-alert-drill.sh && echo 'shellcheck: 0 findings in 5 scripts'
+shellcheck: 0 findings in 5 scripts
+(exit 0)
+$ ruff --version && ruff check sshcrypto && ruff format --check sshcrypto
+ruff 0.17.1
+All checks passed!
+4 files already formatted
+(exit 0)
+$ docker run --rm -v "$PWD/alerts:/w:ro" -w /w --entrypoint promtool prom/prometheus:v3.5.0 check rules sshcrypto.rules.yml
+Checking sshcrypto.rules.yml
+  SUCCESS: 6 rules found
+
+(exit 0)
+$ docker run --rm -v "$PWD/alerts:/w:ro" -w /w --entrypoint promtool prom/prometheus:v3.5.0 test rules sshcrypto.tests.yml
+  SUCCESS
+
+(exit 0)
+$ docker run --rm -v "$PWD/alerts:/etc/pft-alerts:ro" -v "$PWD/slo:/etc/pft-slo:ro" --entrypoint promtool prom/prometheus:v3.5.0 check config /etc/pft-alerts/prometheus.yml | grep -A1 sshcrypto
+Checking /etc/pft-alerts/sshcrypto.rules.yml
+  SUCCESS: 6 rules found
+(exit 0)

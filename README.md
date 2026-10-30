@@ -469,3 +469,21 @@ sudo rulecheck/install.sh --no-prom       # sentry: textfile checks only
 sudo rulecheck/install.sh --pull          # validator: pull the sentry's result (PEER_LABEL + PULL_SSH in /etc/pft-rulecheck.env)
 sudo pft-rulecheck check [--json]         # exit 0 all LIVE/FRESH, 1 findings, 2 could not check
 ```
+
+## SSH crypto-policy audit and safe hardening (sshcrypto)
+
+[`sshcrypto/`](sshcrypto/README.md): grades every key exchange, cipher, MAC and host key algorithm sshd offers
+(`sshd -T`) plus the host key sizes OK / WARN / FAIL against a written policy, and proves with loopback-only
+handshakes that the running daemon negotiates exactly what its config says (a mismatch means a missed reload).
+`apply` installs a hardened drop-in safely: `sshd -t` and an effective-value check first, a revert timer armed before
+the `reload` (never a restart), then a new-session login check; if that check fails the timer rolls the change back
+by itself. `rollback` is byte-identical (sha256 of every sshd config file and of `sshd -T`). Text/JSON output with
+exit 0/1/2, `pft_sshcrypto_*` metrics, six alerts in `../alerts/sshcrypto.rules.yml`, hourly sandboxed audit on
+both hosts, and the validator pulls the sentry's result.
+
+```bash
+sudo sshcrypto/install.sh                 # validator (sentry: --host sentry; validator pull: --pull). Changes no sshd setting
+sudo pft-sshcrypto audit [--json]         # exit 0 all OK, 1 WARN/FAIL or probe mismatch, 2 audit error
+sudo pft-sshcrypto apply                  # exit 0 confirmed, 3 not confirmed (auto-revert armed), 2 refused
+sudo pft-sshcrypto rollback               # restore the pre-apply files byte-identically
+```

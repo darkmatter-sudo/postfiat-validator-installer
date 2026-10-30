@@ -1,0 +1,189 @@
+$ bash sshcrypto/drill/live-alert-drill.sh
+pft-sshcrypto alert drill - 2026-10-30T11:10:30Z - Ubuntu 22.04.5 LTS - run 20261030T111030Z
+repo HEAD 43694c6d3a97de626d99c85b28f027b1e33a9400
+sha256: live-alert-drill.sh 0629ab686cca2da5d95f58204fc78b7e810f722f6d6d8cd83df9b9b944d261a2
+        repo pft-sshcrypto.sh c285cb4c6606bf181125f6858f82d59a28564cab0f39bc6afd2b4060c7db41fa sshcrypto_grade.py 0b393b69b0f3be0654c90e08c897c452f91adf2a70c257cccefd772b6e642ea7
+        installed validator c285cb4c6606bf181125f6858f82d59a28564cab0f39bc6afd2b4060c7db41fa 0b393b69b0f3be0654c90e08c897c452f91adf2a70c257cccefd772b6e642ea7
+        installed sentry    c285cb4c6606bf181125f6858f82d59a28564cab0f39bc6afd2b4060c7db41fa 0b393b69b0f3be0654c90e08c897c452f91adf2a70c257cccefd772b6e642ea7
+        sshcrypto.rules.yml (repo, loaded by Prometheus) 1adad51c8bc0306fb835d9fbb6f49381d8f037c938e5c094d47e8271e74af004
+        redact.py f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8
+
+== 0. preflight (nothing changed yet)
+  pft-maint: no window open on either host
+  bridge mounts the operator env file: yes
+  active silences covering the sshcrypto alerts: 0
+  local: state: none
+  relay: state: none
+  operator topics to watch: 2 (not printed)
+  postfiatd-sentry: server_state=full
+  postfiatd: server_state=full
+  pft-integrity local: RESULT: PASS - 109 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity relay: RESULT: PASS - 64 unchanged, 0 warn, 0 fail -> exit 0
+  literals for redaction: 2 ip, 3 topic, 1 user (values not printed)
+$ redact.py control --literals <literals>
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (15/15)
+
+== 1. bridge -> throwaway topic, silence everything except the sshcrypto alerts
+  2026-10-30T11:11:03Z starting pft-alert-bridge (ntfy: on)
+  2026-10-30T11:11:06Z pft-alert-bridge listening
+  bridge -> https://ntfy.sh/<redacted> (throwaway env file in a 0700 temp dir)
+  silence alertname=~".+", alertname!~"PFTSSHCrypto[A-Za-z]+|PFTAlertPipelineWatchdog" until 2026-10-30T11:56:06Z (id 3affb836)
+
+== 2. load the rules, audit both hosts through the units
+$ grep -n sshcrypto ~/work/postfiat-validator-installer/alerts/prometheus.yml
+  16:  - /etc/pft-alerts/sshcrypto.rules.yml    # ../sshcrypto (SSH algorithm/host key grades, probe mismatches, revert pending)
+  (exit 0)
+$ sudo -n docker kill -s HUP pft-prometheus >/dev/null && sleep 20 && curl -s http://127.0.0.1:9090/api/v1/rules | jq -r '.data.groups[] | select(.name == "pft-sshcrypto") | .rules[] | [.name, .health] | @tsv'
+  PFTSSHCryptoFailGrade	ok
+  PFTSSHCryptoProbeMismatch	ok
+  PFTSSHCryptoWarnGrade	ok
+  PFTSSHCryptoAuditFailing	ok
+  PFTSSHCryptoNotRunning	ok
+  PFTSSHCryptoRevertPending	ok
+  (exit 0)
+CHECK ok   2a pft-sshcrypto rule group loaded (6 rules, health ok)
+$ sudo -n systemctl start pft-sshcrypto.service; sudo -n journalctl -u pft-sshcrypto.service --since -1min --no-pager -o cat | grep '^RESULT'
+  RESULT: FAIL - 48 ok, 18 warn, 3 fail, 27 probes, 0 probe mismatches, 0 errors -> exit 1
+  (exit 0)
+CHECK ok   2b validator audit (unit): RESULT FAIL
+$ R 'systemctl start pft-sshcrypto.service; journalctl -u pft-sshcrypto.service --since -1min --no-pager -o cat | grep ^RESULT'
+  RESULT: FAIL - 48 ok, 18 warn, 3 fail, 27 probes, 0 probe mismatches, 0 errors -> exit 1
+  (exit 0)
+CHECK ok   2c sentry audit (unit): RESULT FAIL
+$ sudo -n systemctl start pft-sshcrypto-pull.service && grep -E '^pft_sshcrypto_(up|probes|probe_mismatches)|grade="fail"' /var/lib/pft-exporter/textfile/pft_sshcrypto_validator.prom /var/lib/pft-exporter/textfile/pft_sshcrypto_sentry.prom
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_validator.prom:pft_sshcrypto_up{host="validator"} 1
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_validator.prom:pft_sshcrypto_findings{host="validator",kind="kex",grade="fail"} 0
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_validator.prom:pft_sshcrypto_findings{host="validator",kind="cipher",grade="fail"} 0
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_validator.prom:pft_sshcrypto_findings{host="validator",kind="mac",grade="fail"} 3
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_validator.prom:pft_sshcrypto_findings{host="validator",kind="hostkey",grade="fail"} 0
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_validator.prom:pft_sshcrypto_findings{host="validator",kind="pubkey",grade="fail"} 0
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_validator.prom:pft_sshcrypto_findings{host="validator",kind="casig",grade="fail"} 0
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_validator.prom:pft_sshcrypto_findings{host="validator",kind="hostkey-file",grade="fail"} 0
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_validator.prom:pft_sshcrypto_probe_mismatches{host="validator"} 0
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_validator.prom:pft_sshcrypto_probes{host="validator"} 27
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_sentry.prom:pft_sshcrypto_up{host="sentry"} 1
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_sentry.prom:pft_sshcrypto_findings{host="sentry",kind="kex",grade="fail"} 0
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_sentry.prom:pft_sshcrypto_findings{host="sentry",kind="cipher",grade="fail"} 0
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_sentry.prom:pft_sshcrypto_findings{host="sentry",kind="mac",grade="fail"} 3
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_sentry.prom:pft_sshcrypto_findings{host="sentry",kind="hostkey",grade="fail"} 0
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_sentry.prom:pft_sshcrypto_findings{host="sentry",kind="pubkey",grade="fail"} 0
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_sentry.prom:pft_sshcrypto_findings{host="sentry",kind="casig",grade="fail"} 0
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_sentry.prom:pft_sshcrypto_findings{host="sentry",kind="hostkey-file",grade="fail"} 0
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_sentry.prom:pft_sshcrypto_probe_mismatches{host="sentry"} 0
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_sentry.prom:pft_sshcrypto_probes{host="sentry"} 27
+  (exit 0)
+$ sleep 20; pq 'sum by (host) (pft_sshcrypto_findings{grade="fail"})'
+  host=validator 3
+  host=sentry 3
+  (exit 0)
+CHECK ok   2d Prometheus sees FAIL findings for host=validator and host=sentry
+
+== 3. detect
+  waiting for PFTSSHCryptoFailGrade (host=validator, host=sentry) to fire (for: 5m; max 600s, poll 20s)
+  2026-10-30T11:16:17Z firing (261s after the audits):
+    alertname=PFTSSHCryptoFailGrade,alertstate=firing,host=validator,instance=127.0.0.1:9877,job=postfiat,severity=critical 1
+    alertname=PFTSSHCryptoFailGrade,alertstate=firing,host=sentry,instance=127.0.0.1:9877,job=postfiat,severity=critical 1
+CHECK ok   3a PFTSSHCryptoFailGrade firing for host=validator and host=sentry (2/2)
+  waiting for both [FIRING] messages on the throwaway topic (max 240s)
+CHECK ok   3b [FIRING] PFTSSHCryptoFailGrade for validator and sentry delivered to the throwaway topic (validator 1, sentry 1)
+
+== 4. fix: apply the hardened policy on both hosts
+$ sudo -n pft-sshcrypto apply
+  2026-10-30T11:16:34Z snapshot: 4 files, sshd -T sha256 bcd1c0aebac950e06c4f1088f7f0225865190936012a28f837bea4c53292ed08
+  2026-10-30T11:16:35Z drop-in written and validated (sshd -t OK, sshd -T matches the policy), sha256 0024634c8a49d283f2b8c3343edf0c08c8a81c97ed064bf55b620d675dcfa152
+  2026-10-30T11:16:35Z revert armed: pft-sshcrypto-revert.timer fires at 2026-10-30T11:18:35Z (120s)
+  2026-10-30T11:16:35Z reloaded ssh (existing sessions untouched)
+  2026-10-30T11:16:36Z confirmed: new session logged in (default client algorithms, strict host key check)
+  RESULT: OK - 48 ok, 0 warn, 0 fail, 27 probes, 0 probe mismatches, 0 errors -> exit 0
+  2026-10-30T11:16:38Z APPLIED: revert timer stopped, policy committed (rollback: sudo pft-sshcrypto rollback)
+  (exit 0)
+CHECK ok   4a validator apply exit 0
+$ R 'pft-sshcrypto apply'
+  2026-10-30T11:16:40Z snapshot: 4 files, sshd -T sha256 bcd1c0aebac950e06c4f1088f7f0225865190936012a28f837bea4c53292ed08
+  2026-10-30T11:16:41Z drop-in written and validated (sshd -t OK, sshd -T matches the policy), sha256 0024634c8a49d283f2b8c3343edf0c08c8a81c97ed064bf55b620d675dcfa152
+  2026-10-30T11:16:41Z revert armed: pft-sshcrypto-revert.timer fires at 2026-10-30T11:18:41Z (120s)
+  2026-10-30T11:16:41Z reloaded ssh (existing sessions untouched)
+  2026-10-30T11:16:41Z confirmed: new session logged in (default client algorithms, strict host key check)
+  RESULT: OK - 48 ok, 0 warn, 0 fail, 27 probes, 0 probe mismatches, 0 errors -> exit 0
+  2026-10-30T11:16:47Z APPLIED: revert timer stopped, policy committed (rollback: sudo pft-sshcrypto rollback)
+  (exit 0)
+CHECK ok   4b sentry apply exit 0
+$ R true && echo 'new ssh session validator -> sentry after the apply: OK'
+  new ssh session validator -> sentry after the apply: OK
+  (exit 0)
+CHECK ok   4c new ssh session from the validator to the sentry works after the apply
+$ sudo -n systemctl start pft-sshcrypto.service; sudo -n journalctl -u pft-sshcrypto.service --since -1min --no-pager -o cat | grep '^RESULT'
+  RESULT: OK - 48 ok, 0 warn, 0 fail, 27 probes, 0 probe mismatches, 0 errors -> exit 0
+  (exit 0)
+CHECK ok   4d validator audit (unit): RESULT OK
+$ R 'systemctl start pft-sshcrypto.service; journalctl -u pft-sshcrypto.service --since -1min --no-pager -o cat | grep ^RESULT'
+  RESULT: OK - 48 ok, 0 warn, 0 fail, 27 probes, 0 probe mismatches, 0 errors -> exit 0
+  (exit 0)
+CHECK ok   4e sentry audit (unit): RESULT OK
+$ sudo -n systemctl start pft-sshcrypto-pull.service && grep -E '^pft_sshcrypto_(up|probes|probe_mismatches|policy_applied)|grade="fail"' /var/lib/pft-exporter/textfile/pft_sshcrypto_validator.prom /var/lib/pft-exporter/textfile/pft_sshcrypto_sentry.prom
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_validator.prom:pft_sshcrypto_up{host="validator"} 1
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_validator.prom:pft_sshcrypto_findings{host="validator",kind="kex",grade="fail"} 0
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_validator.prom:pft_sshcrypto_findings{host="validator",kind="cipher",grade="fail"} 0
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_validator.prom:pft_sshcrypto_findings{host="validator",kind="mac",grade="fail"} 0
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_validator.prom:pft_sshcrypto_findings{host="validator",kind="hostkey",grade="fail"} 0
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_validator.prom:pft_sshcrypto_findings{host="validator",kind="pubkey",grade="fail"} 0
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_validator.prom:pft_sshcrypto_findings{host="validator",kind="casig",grade="fail"} 0
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_validator.prom:pft_sshcrypto_findings{host="validator",kind="hostkey-file",grade="fail"} 0
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_validator.prom:pft_sshcrypto_probe_mismatches{host="validator"} 0
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_validator.prom:pft_sshcrypto_probes{host="validator"} 27
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_validator.prom:pft_sshcrypto_policy_applied{host="validator"} 1
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_sentry.prom:pft_sshcrypto_up{host="sentry"} 1
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_sentry.prom:pft_sshcrypto_findings{host="sentry",kind="kex",grade="fail"} 0
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_sentry.prom:pft_sshcrypto_findings{host="sentry",kind="cipher",grade="fail"} 0
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_sentry.prom:pft_sshcrypto_findings{host="sentry",kind="mac",grade="fail"} 0
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_sentry.prom:pft_sshcrypto_findings{host="sentry",kind="hostkey",grade="fail"} 0
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_sentry.prom:pft_sshcrypto_findings{host="sentry",kind="pubkey",grade="fail"} 0
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_sentry.prom:pft_sshcrypto_findings{host="sentry",kind="casig",grade="fail"} 0
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_sentry.prom:pft_sshcrypto_findings{host="sentry",kind="hostkey-file",grade="fail"} 0
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_sentry.prom:pft_sshcrypto_probe_mismatches{host="sentry"} 0
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_sentry.prom:pft_sshcrypto_probes{host="sentry"} 27
+  /var/lib/pft-exporter/textfile/pft_sshcrypto_sentry.prom:pft_sshcrypto_policy_applied{host="sentry"} 1
+  (exit 0)
+  waiting for the alerts to leave Prometheus and both [RESOLVED] messages (max 240s)
+CHECK ok   4f no PFTSSHCrypto* alert left in Prometheus (0 alert(s))
+CHECK ok   4g [RESOLVED] PFTSSHCryptoFailGrade for validator and sentry delivered (validator 1, sentry 1)
+  fix to resolved took 59s
+$ pq 'max_over_time(ALERTS{alertname="PFTSSHCryptoFailGrade",alertstate="firing"}[30m])'
+  alertname=PFTSSHCryptoFailGrade,alertstate=firing,host=validator,instance=127.0.0.1:9877,job=postfiat,severity=critical 1
+  alertname=PFTSSHCryptoFailGrade,alertstate=firing,host=sentry,instance=127.0.0.1:9877,job=postfiat,severity=critical 1
+  (exit 0)
+
+== 5. restore, read back
+  2026-10-30T11:17:36Z starting pft-alert-bridge (ntfy: on)
+  2026-10-30T11:17:39Z pft-alert-bridge listening
+  restored bridge: mounts the operator env file again: yes
+  drill silence expired: HTTP 200
+CHECK ok   bridge back on the operator env file
+  throwaway topic: 4 message(s)
+    {"time":"2026-10-30T11:16:27Z","title":"[FIRING] PFTSSHCryptoFailGrade","message":"sshd on sentry offers 3 FAIL-grade algorithm(s) or host key(s)"}
+    {"time":"2026-10-30T11:16:28Z","title":"[FIRING] PFTSSHCryptoFailGrade","message":"sshd on validator offers 3 FAIL-grade algorithm(s) or host key(s)"}
+    {"time":"2026-10-30T11:17:27Z","title":"[RESOLVED] PFTSSHCryptoFailGrade","message":"sshd on sentry offers 3 FAIL-grade algorithm(s) or host key(s)"}
+    {"time":"2026-10-30T11:17:28Z","title":"[RESOLVED] PFTSSHCryptoFailGrade","message":"sshd on validator offers 3 FAIL-grade algorithm(s) or host key(s)"}
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the drill (2 topic(s), 0 with messages)
+CHECK ok   postfiatd-sentry full at the end (full)
+CHECK ok   postfiatd full at the end (full)
+
+live-alert-drill done 2026-10-30T11:18:07Z: 0 check(s) failed -> PASS
+(exit 0)

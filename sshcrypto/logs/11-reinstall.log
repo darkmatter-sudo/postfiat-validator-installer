@@ -1,0 +1,45 @@
+pft-sshcrypto reinstall after the confirm -T fix - 2026-10-30T10:55:57Z - repo HEAD 2de089a9482fcf2c62588222fa06696c8f3932d3
+$ sudo bash sshcrypto/install.sh 2>&1 | grep -E 'installed|confirm login|up\{|ERROR'
+2026-10-30T10:55:57Z installed /usr/local/bin/pft-sshcrypto (sha256 c285cb4c6606bf181125f6858f82d59a28564cab0f39bc6afd2b4060c7db41fa)
+2026-10-30T10:55:57Z installed /usr/local/lib/pft-sshcrypto/sshcrypto_grade.py (sha256 0b393b69b0f3be0654c90e08c897c452f91adf2a70c257cccefd772b6e642ea7)
+2026-10-30T10:55:57Z installed /usr/local/lib/pft-sshcrypto/hardened.conf (sha256 9600ad74cb148502024310ad3b8a80543af42ce36a3a9fdf98f597971b2d0b3b)
+2026-10-30T10:55:59Z confirm login OK
+pft_sshcrypto_up{host="validator"} 1
+2026-10-30T10:56:05Z remember: sudo pft-integrity accept --reason 'pft-sshcrypto installed'
+(exit 0)
+$ ssh relay 'rm -rf /root/pft-sc && mkdir -p /root/pft-sc' && git archive HEAD sshcrypto | ssh relay 'tar -x -C /root/pft-sc'
+(exit 0)
+$ ssh relay 'bash /root/pft-sc/sshcrypto/install.sh --host sentry' 2>&1 | grep -E 'installed|confirm login|up\{|ERROR'
+2026-10-30T10:56:09Z installed /usr/local/bin/pft-sshcrypto (sha256 c285cb4c6606bf181125f6858f82d59a28564cab0f39bc6afd2b4060c7db41fa)
+2026-10-30T10:56:09Z installed /usr/local/lib/pft-sshcrypto/sshcrypto_grade.py (sha256 0b393b69b0f3be0654c90e08c897c452f91adf2a70c257cccefd772b6e642ea7)
+2026-10-30T10:56:09Z installed /usr/local/lib/pft-sshcrypto/hardened.conf (sha256 9600ad74cb148502024310ad3b8a80543af42ce36a3a9fdf98f597971b2d0b3b)
+2026-10-30T10:56:11Z confirm login OK
+pft_sshcrypto_up{host="sentry"} 1
+2026-10-30T10:56:19Z remember: sudo pft-integrity accept --reason 'pft-sshcrypto installed'
+(exit 0)
+$ sudo pft-integrity verify | grep -E 'WARN|FAIL|RESULT'
+  [FAIL] bin:pft-sshcrypto                            changed  mtime, sha256
+  [WARN] unit:pft-sshcrypto.service                   changed  mtime
+  [WARN] unit:pft-sshcrypto.timer                     changed  mtime
+RESULT: FAIL - 106 unchanged, 2 warn, 1 fail -> exit 2
+(exit 0)
+$ ssh relay 'pft-integrity verify' | grep -E 'WARN|FAIL|RESULT'
+  [FAIL] bin:pft-sshcrypto                            changed  mtime, sha256
+  [WARN] unit:pft-sshcrypto.service                   changed  mtime
+  [WARN] unit:pft-sshcrypto.timer                     changed  mtime
+RESULT: FAIL - 61 unchanged, 2 warn, 1 fail -> exit 2
+(exit 0)
+$ sudo pft-integrity accept --reason 'task_687efd64: pft-sshcrypto reinstalled (confirm -T fix)' | tail -2
+pft-integrity accept - 2026-10-30T10:56:40Z: re-baselined 109 items by <user>
+manifest sha256: 9d1cc02f72caecf41ef4a64e35dc265160015d77adbdc6c8a22f4eeec47ee515 -> 42422994b2da1c405b8ff383dd5bd425bff236613d57702a62cbb25b49b18dd7 (logged to accept.log)
+(exit 0)
+$ ssh relay "pft-integrity accept --reason 'task_687efd64: pft-sshcrypto reinstalled (confirm -T fix)'" | tail -2
+pft-integrity accept - 2026-10-30T10:56:47Z: re-baselined 64 items by root
+manifest sha256: de77c0549616317f9c63e94b56a249873b7e43482f88f58cc8a51cc493c6320e -> 93a41b458dff566aa3de61684261012c97e6cc879a8a5037564162fedf73e7df (logged to accept.log)
+(exit 0)
+$ sudo pft-integrity verify | grep '^RESULT'
+RESULT: PASS - 109 unchanged, 0 warn, 0 fail -> exit 0
+(exit 0)
+$ ssh relay 'pft-integrity verify' | grep '^RESULT'
+RESULT: PASS - 64 unchanged, 0 warn, 0 fail -> exit 0
+(exit 0)

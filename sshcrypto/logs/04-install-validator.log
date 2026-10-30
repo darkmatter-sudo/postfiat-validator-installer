@@ -1,0 +1,31 @@
+pft-sshcrypto install (validator) - 2026-10-30T10:45:11Z - Ubuntu 22.04.5 LTS - OpenSSH_8.9p1 Ubuntu-3ubuntu0.18, OpenSSL 3.0.2 15 Mar 2022
+repo HEAD bf9889c2ba722c43fbe39bc3fe0aa822f992b592
+$ sudo bash sshcrypto/install.sh
+2026-10-30T10:45:11Z installed /usr/local/bin/pft-sshcrypto (sha256 cd5d07ce7f1563643a056d0266433362caf06809abbb07e37bf316d45cca7ca5)
+2026-10-30T10:45:11Z installed /usr/local/lib/pft-sshcrypto/sshcrypto_grade.py (sha256 0b393b69b0f3be0654c90e08c897c452f91adf2a70c257cccefd772b6e642ea7)
+2026-10-30T10:45:11Z installed /usr/local/lib/pft-sshcrypto/hardened.conf (sha256 9600ad74cb148502024310ad3b8a80543af42ce36a3a9fdf98f597971b2d0b3b)
+2026-10-30T10:45:11Z created the loopback-only confirm key
+2026-10-30T10:45:11Z added the restricted confirm key to root's authorized_keys (loopback only, forced command)
+2026-10-30T10:45:11Z added the pft_sshcrypto textfile line to /etc/pft-rulecheck.conf
+2026-10-30T10:45:12Z confirm session (new loopback login with the confirm key):
+2026-10-30T10:45:15Z confirm login OK
+2026-10-30T10:45:15Z first audit (through the sandboxed unit, HOST_LABEL=validator):
+pft_sshcrypto_up{host="validator"} 1
+pft_sshcrypto_probe_mismatches{host="validator"} 0
+pft_sshcrypto_probes{host="validator"} 27
+pft_sshcrypto_policy_applied{host="validator"} 0
+Created symlink /etc/systemd/system/timers.target.wants/pft-sshcrypto.timer → /etc/systemd/system/pft-sshcrypto.timer.
+2026-10-30T10:45:20Z enabled pft-sshcrypto.timer (hourly + up to 10 min)
+2026-10-30T10:45:20Z remember: sudo pft-integrity accept --reason 'pft-sshcrypto installed'
+(exit 0)
+$ sudo pft-sshcrypto status
+state: none
+snapshot: none
+revert timer: not armed
+drop-in: absent
+(exit 0)
+$ TZ=UTC systemctl list-timers --no-pager 'pft-sshcrypto*' | head -3
+NEXT                        LEFT       LAST PASSED UNIT                ACTIVATES
+Fri 2026-10-30 11:06:49 UTC 21min left n/a  n/a    pft-sshcrypto.timer pft-sshcrypto.service
+
+(exit 0)

@@ -1,0 +1,49 @@
+pft-sshcrypto final state on both hosts - 2026-10-30T11:18:16Z - Ubuntu 22.04.5 LTS - repo HEAD 43694c6d3a97de626d99c85b28f027b1e33a9400
+$ sudo pft-sshcrypto status
+state: applied
+snapshot: taken 2026-10-30T11:16:34Z, 4 files
+revert timer: not armed
+drop-in: present, sha256 0024634c8a49d283f2b8c3343edf0c08c8a81c97ed064bf55b620d675dcfa152
+(exit 0)
+$ sudo pft-sshcrypto audit --json | jq -c '{host, result, exit, counts, probes_run, probe_mismatches, errors, hostkeys: [.hostkeys[] | {type, bits, offered, grade}]}'
+{"host":"validator","result":"OK","exit":0,"counts":{"FAIL":0,"OK":48,"WARN":0},"probes_run":27,"probe_mismatches":0,"errors":[],"hostkeys":[{"type":"RSA","bits":3072,"offered":true,"grade":"OK"},{"type":"ECDSA","bits":256,"offered":false,"grade":"UNUSED"},{"type":"ED25519","bits":256,"offered":true,"grade":"OK"}]}
+(exit 0)
+$ ssh relay 'pft-sshcrypto status'
+state: applied
+snapshot: taken 2026-10-30T11:16:40Z, 4 files
+revert timer: not armed
+drop-in: present, sha256 0024634c8a49d283f2b8c3343edf0c08c8a81c97ed064bf55b620d675dcfa152
+(exit 0)
+$ ssh relay 'pft-sshcrypto audit --json' | jq -c '{host, result, exit, counts, probes_run, probe_mismatches, errors, hostkeys: [.hostkeys[] | {type, bits, offered, grade}]}'
+{"host":"sentry","result":"OK","exit":0,"counts":{"FAIL":0,"OK":48,"WARN":0},"probes_run":27,"probe_mismatches":0,"errors":[],"hostkeys":[{"type":"RSA","bits":3072,"offered":true,"grade":"OK"},{"type":"ECDSA","bits":256,"offered":false,"grade":"UNUSED"},{"type":"ED25519","bits":256,"offered":true,"grade":"OK"}]}
+(exit 0)
+$ sudo pft-integrity verify | grep -E 'WARN|FAIL|RESULT'
+  [FAIL] sshd:effective                               changed  sha256
+  [WARN] sshd:sshd_config.d/10-pft-sshcrypto.conf     added    new file
+RESULT: FAIL - 108 unchanged, 1 warn, 1 fail -> exit 2
+(exit 0)
+$ ssh relay 'pft-integrity verify' | grep -E 'WARN|FAIL|RESULT'
+  [FAIL] sshd:effective                               changed  sha256
+  [WARN] sshd:sshd_config.d/10-pft-sshcrypto.conf     added    new file
+RESULT: FAIL - 63 unchanged, 1 warn, 1 fail -> exit 2
+(exit 0)
+$ sudo pft-integrity accept --reason 'task_687efd64: pft-sshcrypto hardened policy applied (sshd_config.d/10-pft-sshcrypto.conf)' | tail -2
+pft-integrity accept - 2026-10-30T11:19:06Z: re-baselined 110 items by <user>
+manifest sha256: 42422994b2da1c405b8ff383dd5bd425bff236613d57702a62cbb25b49b18dd7 -> 62b3255401bba5c6c70ff9353c927536bdad66b1416c9c4ebd0119dd5e788cd8 (logged to accept.log)
+(exit 0)
+$ ssh relay "pft-integrity accept --reason 'task_687efd64: pft-sshcrypto hardened policy applied (sshd_config.d/10-pft-sshcrypto.conf)'" | tail -2
+pft-integrity accept - 2026-10-30T11:19:13Z: re-baselined 65 items by root
+manifest sha256: 93a41b458dff566aa3de61684261012c97e6cc879a8a5037564162fedf73e7df -> 4d27a404efdb487b5a96280cd7e192fbafd02c93f426a2c282fad63d75fb52d1 (logged to accept.log)
+(exit 0)
+$ sudo pft-integrity verify | grep '^RESULT'
+RESULT: PASS - 110 unchanged, 0 warn, 0 fail -> exit 0
+(exit 0)
+$ ssh relay 'pft-integrity verify' | grep '^RESULT'
+RESULT: PASS - 65 unchanged, 0 warn, 0 fail -> exit 0
+(exit 0)
+$ sudo systemctl start pft-rulecheck.service; sudo journalctl -u pft-rulecheck.service --since -1min --no-pager -o cat | grep -E '^(DEAD|PARTIAL|STALE|UNCONFIGURED|MISSING|RESULT)'
+RESULT OK - rules: LIVE 76 PARTIAL 0 DEAD 0 ERROR 0 IGNORED 0 | textfiles: FRESH 15 STALE 0 MISSING 0 LEFTOVER 0 UNCONFIGURED 0 -> exit 0
+(exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/alerts | jq -r '.data.alerts[] | select(.labels.alertname | startswith("PFTSSHCrypto")) | [.labels.alertname, .labels.host, .state] | @tsv' | wc -l
+0
+(exit 0)

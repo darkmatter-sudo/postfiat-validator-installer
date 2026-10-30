@@ -1,0 +1,33 @@
+pft-integrity after the pft-sshcrypto install - 2026-10-30T10:45:46Z
+$ sudo pft-integrity verify | grep -vE '^\s*(OK|unchanged)' | tail -25
+pft-integrity verify - 2026-10-30T10:45:55Z
+OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-10-30T07:43:39Z
+  [WARN] bin:pft-sshcrypto                            added    new file
+  [WARN] unit:pft-sshcrypto-pull.service              added    new file
+  [WARN] unit:pft-sshcrypto-pull.timer                added    new file
+  [WARN] unit:pft-sshcrypto.service                   added    new file
+  [WARN] unit:pft-sshcrypto.timer                     added    new file
+RESULT: WARN - 104 unchanged, 5 warn, 0 fail -> exit 1
+(exit 0)
+$ ssh relay 'pft-integrity verify' | grep -vE '^\s*(OK|unchanged)' | tail -25
+pft-integrity verify - 2026-10-30T10:46:01Z
+OS: Ubuntu 22.04.5 LTS | container: postfiatd-sentry | baseline: 2026-10-30T07:43:45Z
+  [WARN] bin:pft-sshcrypto                            added    new file
+  [WARN] unit:pft-sshcrypto.service                   added    new file
+  [WARN] unit:pft-sshcrypto.timer                     added    new file
+RESULT: WARN - 61 unchanged, 3 warn, 0 fail -> exit 1
+(exit 0)
+$ sudo pft-integrity accept --reason 'task_687efd64: pft-sshcrypto installed (bin + audit/pull units)' | tail -3
+pft-integrity accept - 2026-10-30T10:46:14Z: re-baselined 109 items by <user>
+manifest sha256: 35112ed286be1866fe09188d2f5d20cd02efe84c05afcf0c2ae4905fe3922f6a -> 5c3a041e9d0a4d06d753ef00c198c94fb6dcbc013e77759ac5e559c62b97d0b1 (logged to accept.log)
+(exit 0)
+$ ssh relay "pft-integrity accept --reason 'task_687efd64: pft-sshcrypto installed (bin + audit units)'" | tail -3
+pft-integrity accept - 2026-10-30T10:46:19Z: re-baselined 64 items by root
+manifest sha256: 2a681d39ca3484da16d4606f0876f56bffe8140b6d3a1f1a82771a15ca9f934f -> 36506bb7857cbbbfb1012b34790d59477c517490b4b1e73fdc4b560fc99f4745 (logged to accept.log)
+(exit 0)
+$ sudo pft-integrity verify | grep '^RESULT'
+RESULT: PASS - 109 unchanged, 0 warn, 0 fail -> exit 0
+(exit 0)
+$ ssh relay 'pft-integrity verify' | grep '^RESULT'
+RESULT: PASS - 64 unchanged, 0 warn, 0 fail -> exit 0
+(exit 0)

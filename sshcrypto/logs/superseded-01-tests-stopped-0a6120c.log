@@ -1,0 +1,103 @@
+pft-sshcrypto tests - 2026-10-30T10:52:45Z - Ubuntu 22.04.5 LTS - repo HEAD 0a6120c8d98735474c2866fd45873049e3ddcd58
+$ bash sshcrypto/tests/run-tests.sh
+== audit: Ubuntu 22.04 / OpenSSH 8.9 defaults
+PASS A1 defaults: exit 1, RESULT FAIL
+PASS A2 hmac-sha1 and hmac-sha1-etm graded FAIL
+PASS A3 umac-64@openssh.com FAIL, umac-64-etm WARN
+PASS A4 ecdh-sha2-nistp256 and group14-sha256 WARN
+PASS A5 group-exchange WARN with 2048-bit moduli
+PASS A6 curve25519/sntrup/chacha20/etm OK
+PASS A7 host key files: RSA 3072 OK, ECDSA 256 WARN, ED25519 OK
+PASS A8 counts: 3 fail (hmac-sha1, hmac-sha1-etm, umac-64)
+PASS A9 27 probes, 0 mismatches, 0 errors
+PASS A10 probe positive controls negotiated (hostkey control is ssh-ed25519, not a cert)
+PASS A11 absent weak algorithms rejected by the handshake
+PASS A12 offered weak MAC negotiated over a non-AEAD cipher
+PASS A13 ecdsa-sha2-nistp384 listed but no P-384 key: expected absent, rejected (no false mismatch)
+PASS A14 output never prints host key paths or fingerprints
+PASS A15 metrics: up 1, mac fail 3, probes 27, mismatches 0, policy_applied 0, pending 0
+PASS A16 metrics: hostkey_bits for offered keys only
+PASS A17 textfile passes validate for its host and fails for another
+PASS A18 no temp file left in the textfile dir
+PASS A19 --json: valid JSON, result FAIL, exit field = rc 1, counts.FAIL 3
+PASS A20 --json: hostkeys carry type/bits only (no path)
+== audit: moduli >= 3072, legacy config, key sizes
+PASS B1 group-exchange OK when every modulus >= 3072 bits
+PASS B2 --no-probe: 0 probes, still graded
+PASS B3 legacy: CBC, 3DES, group1/14-sha1, hmac-md5 FAIL
+PASS B4 legacy: ssh-rsa / ssh-dss host key algorithms FAIL
+PASS B5 legacy: RSA 1024 and DSA host key files FAIL
+PASS B6 legacy: user-key ssh-rsa and CA ssh-dss FAIL, ssh-ed25519 user key OK
+PASS B7 legacy: probes on the configured port 2222 / 127.0.0.1, offered CBC negotiated
+PASS B8 RSA 2048 graded WARN
+PASS B9 hardened policy: exit 0, RESULT OK, 0 warn, 0 fail, 0 mismatches
+PASS B10 hardened: ECDSA key file UNUSED (not offered, not counted)
+PASS B11 hardened: every weak probe rejected (ecdh, hmac-sha1, umac-64, ecdsa host key)
+PASS B12 unknown algorithm graded WARN (not in policy)
+== audit: errors and mismatches
+PASS C1 sshd -T fails: exit 2, RESULT ERROR
+PASS C2 sshd -T fails: up 0 and no findings series
+PASS C3 host key unreadable: exit 2
+PASS C4 probe cannot connect: exit 2 with the reason
+PASS C5 no loopback/wildcard listener: exit 2
+PASS C6 same with --no-probe: graded, exit 1
+PASS C7 IPv6-only wildcard listener: probes run against ::1
+PASS C8 config on disk not reloaded: probe MISMATCH, exit 1, RESULT FAIL
+PASS C9 mismatch counted in metrics
+PASS C10 algorithm the local client lacks: skipped, not a mismatch
+PASS C11 AEAD-only ciphers: MAC probes skipped (MACs never negotiated)
+== apply / confirm / commit
+PASS D1 apply hardened: exit 0, APPLIED
+PASS D2 drop-in = header + hardened.conf directives
+PASS D3 revert timer armed before the reload, 120 s, runs rollback --auto
+PASS D4 reload, never restart
+PASS D5 confirmed: timer stopped, no pending, applied recorded
+PASS D6 snapshot: manifest of 2 files + drop-in absent + sshd -T sha
+PASS D7 metrics after apply: policy_applied 1, fail 0
+PASS D8 status: applied, drop-in present
+PASS D2b a second apply writes the same bytes (deterministic drop-in)
+PASS D9 rollback: exit 0, 3 checks logged, drop-in gone
+PASS D10 rollback: sshd -T identical, applied cleared, snapshot kept as last-rollback
+PASS D11 second rollback: nothing to roll back, exit 2
+== login-breaking policy: confirm fails, timer reverts
+PASS E1 broken policy: exit 3, CONFIRM FAILED: no matching cipher
+PASS E2 not committed: timer still armed, pending set, drop-in still in place
+PASS E3 timer armed for 60 s
+PASS E4 metrics while waiting: revert_pending 1
+PASS E5 apply refused while a revert is armed
+PASS E6 timer action = rollback --auto: exit 0, automatic revert logged
+PASS E7 after revert: sshd_config(.d) sha256 identical to before apply
+PASS E8 after revert: new session confirmed, pending cleared
+PASS E9 --auto does not stop its own (already elapsed) timer
+== refusals and restores
+PASS F1 policy with a non-crypto directive refused before writing
+PASS F2 sshd -t fails: exit 2, drop-in removed again, no timer, no reload
+PASS F3 policy shadowed by an earlier drop-in: exit 2, restored, no reload
+PASS F4 sshd_config without the Include: refused
+PASS F5 --revert-after below 30 s refused
+PASS F6 revert timer cannot be armed: exit 2, restored, no reload
+PASS F7 daemon did not pick up the change (probe mismatch): exit 3, not committed
+PASS F8 new session denied: exit 3, timer left armed
+PASS F9 reload fails: exit 3, timer left armed to restore
+== rollback byte-identity
+PASS G1 second apply keeps the first snapshot
+PASS G2 pre-existing file restored byte-identically with its mtime
+PASS G3 someone else changed sshd_config.d meanwhile: ROLLBACK FAILED, exit 2, diff shown
+PASS G4 restored but new session fails: exit 2
+PASS G5 files identical but sshd -T differs from the snapshot (defaults changed): ROLLBACK FAILED, exit 2
+== config, validate, pull
+PASS H1 unknown key in the env file refused
+PASS H2 REVERT_AFTER below 30 refused
+PASS H3 validate accepts a sentry file for sentry
+PASS H4 validate rejects a foreign metric
+PASS H5 validate rejects a file without the up sample
+PASS H6 pull copies a valid peer file into place
+PASS H7 pull of an invalid file: exit 2, old copy kept, no temp left
+PASS H8 pull transport failure: exit 1
+PASS H9 hanging pull is cut by PULL_TIMEOUT (exit 1 within 10 s)
+PASS H10 policy table lists every policy row + fallback
+RESULT: 88 passed, 0 failed
+(exit 0)
+
+regression control: the same suite against pft-sshcrypto.sh from bf9889c (confirm at LogLevel ERROR, live run 08) must FAIL E1
+$ git show bf9889c:sshcrypto/pft-sshcrypto.sh > old.sh && bash sshcrypto/tests/run-tests.sh old.sh | grep -E '^(FAIL|RESULT)'

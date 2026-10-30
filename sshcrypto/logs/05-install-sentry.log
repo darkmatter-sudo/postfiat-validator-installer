@@ -1,0 +1,31 @@
+pft-sshcrypto install (sentry) - 2026-10-30T10:45:27Z Ubuntu 22.04.5 LTS OpenSSH_8.9p1 Ubuntu-3ubuntu0.18, OpenSSL 3.0.2 15 Mar 2022 
+repo HEAD bf9889c2ba722c43fbe39bc3fe0aa822f992b592 (git archive HEAD sshcrypto -> the sentry's working copy)
+$ ssh relay 'cd /root/pft-sc && sha256sum sshcrypto/pft-sshcrypto.sh sshcrypto/sshcrypto_grade.py sshcrypto/hardened.conf'
+cd5d07ce7f1563643a056d0266433362caf06809abbb07e37bf316d45cca7ca5  sshcrypto/pft-sshcrypto.sh
+0b393b69b0f3be0654c90e08c897c452f91adf2a70c257cccefd772b6e642ea7  sshcrypto/sshcrypto_grade.py
+9600ad74cb148502024310ad3b8a80543af42ce36a3a9fdf98f597971b2d0b3b  sshcrypto/hardened.conf
+(exit 0)
+$ ssh relay 'bash /root/pft-sc/sshcrypto/install.sh --host sentry'
+2026-10-30T10:45:28Z installed /usr/local/bin/pft-sshcrypto (sha256 cd5d07ce7f1563643a056d0266433362caf06809abbb07e37bf316d45cca7ca5)
+2026-10-30T10:45:28Z installed /usr/local/lib/pft-sshcrypto/sshcrypto_grade.py (sha256 0b393b69b0f3be0654c90e08c897c452f91adf2a70c257cccefd772b6e642ea7)
+2026-10-30T10:45:28Z installed /usr/local/lib/pft-sshcrypto/hardened.conf (sha256 9600ad74cb148502024310ad3b8a80543af42ce36a3a9fdf98f597971b2d0b3b)
+2026-10-30T10:45:28Z created the loopback-only confirm key
+2026-10-30T10:45:28Z added the restricted confirm key to root's authorized_keys (loopback only, forced command)
+2026-10-30T10:45:28Z added the pft_sshcrypto textfile line to /etc/pft-rulecheck.conf
+2026-10-30T10:45:28Z confirm session (new loopback login with the confirm key):
+2026-10-30T10:45:29Z confirm login OK
+2026-10-30T10:45:29Z first audit (through the sandboxed unit, HOST_LABEL=sentry):
+pft_sshcrypto_up{host="sentry"} 1
+pft_sshcrypto_probe_mismatches{host="sentry"} 0
+pft_sshcrypto_probes{host="sentry"} 27
+pft_sshcrypto_policy_applied{host="sentry"} 0
+Created symlink /etc/systemd/system/timers.target.wants/pft-sshcrypto.timer → /etc/systemd/system/pft-sshcrypto.timer.
+2026-10-30T10:45:33Z enabled pft-sshcrypto.timer (hourly + up to 10 min)
+2026-10-30T10:45:33Z remember: sudo pft-integrity accept --reason 'pft-sshcrypto installed'
+(exit 0)
+$ ssh relay 'pft-sshcrypto status'
+state: none
+snapshot: none
+revert timer: not armed
+drop-in: absent
+(exit 0)

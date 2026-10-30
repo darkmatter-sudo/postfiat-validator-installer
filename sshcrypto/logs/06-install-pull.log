@@ -1,0 +1,25 @@
+pft-sshcrypto pull install (validator) - 2026-10-30T10:45:39Z - Ubuntu 22.04.5 LTS
+repo HEAD bf9889c2ba722c43fbe39bc3fe0aa822f992b592; PULL_SSH copied from /etc/pft-vulnscan.env (runs as the operator account; value not printed)
+$ sudo grep -c '^PULL_SSH=' /etc/pft-sshcrypto.env
+1
+(exit 0)
+$ sudo bash sshcrypto/install.sh --pull
+2026-10-30T10:45:40Z installed /usr/local/bin/pft-sshcrypto (sha256 cd5d07ce7f1563643a056d0266433362caf06809abbb07e37bf316d45cca7ca5)
+2026-10-30T10:45:40Z installed /usr/local/lib/pft-sshcrypto/sshcrypto_grade.py (sha256 0b393b69b0f3be0654c90e08c897c452f91adf2a70c257cccefd772b6e642ea7)
+2026-10-30T10:45:40Z installed /usr/local/lib/pft-sshcrypto/hardened.conf (sha256 9600ad74cb148502024310ad3b8a80543af42ce36a3a9fdf98f597971b2d0b3b)
+2026-10-30T10:45:40Z first pull (through the sandboxed unit):
+pft_sshcrypto_up{host="sentry"} 1
+pft_sshcrypto_last_run_timestamp_seconds{host="sentry"} 1793357132
+Created symlink /etc/systemd/system/timers.target.wants/pft-sshcrypto-pull.timer → /etc/systemd/system/pft-sshcrypto-pull.timer.
+2026-10-30T10:45:42Z enabled pft-sshcrypto-pull.timer (every 15 min)
+(exit 0)
+$ sudo pft-sshcrypto validate /var/lib/pft-exporter/textfile/pft_sshcrypto_sentry.prom sentry
+(exit 0)
+$ curl -s http://127.0.0.1:9877/metrics | grep -E '^pft_sshcrypto_(up|probes|probe_mismatches)\{'
+pft_sshcrypto_up{host="sentry"} 1
+pft_sshcrypto_probe_mismatches{host="sentry"} 0
+pft_sshcrypto_probes{host="sentry"} 27
+pft_sshcrypto_up{host="validator"} 1
+pft_sshcrypto_probe_mismatches{host="validator"} 0
+pft_sshcrypto_probes{host="validator"} 27
+(exit 0)
