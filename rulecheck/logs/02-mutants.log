@@ -1,0 +1,52 @@
+# pft-rulecheck 02: mutation tables (rulecheck 22 mutants; fleet 20 mutants re-run after the drift-series change)
+OS: Ubuntu 22.04.5 LTS | host: validator | 2026-10-30T07:33:43Z | repo HEAD 0541475abd671b2e3d5c6575f1f6f462ae8cb6d1
+$ python3 -I rulecheck/tests/mutate.py
+CONTROL PASS - unmodified copies: RESULT: 111 passed, 0 failed
+M01 CAUGHT - rulecheck_lib.py: absent() context ignored: absent() arguments counted as live-required selectors :: 9 failing, e.g. selectors: absent() argument marked; selectors: absent_over_time() marked
+M02 CAUGHT - rulecheck_lib.py: by()/on()/without() label lists parsed as metric names :: 13 failing, e.g. selectors: aggregation by() labels are not metrics; selectors: trailing by() after the call
+M03 CAUGHT - rulecheck_lib.py: ALERTS/ALERTS_FOR_STATE not excluded (healthy-empty series reported dead) :: 7 failing, e.g. LIVE: ALERTS-only rule is not dead; query cache: each distinct selector queried once
+M04 CAUGHT - rulecheck_lib.py: PARTIAL folded into DEAD (any dead selector = DEAD) :: 5 failing, e.g. PARTIAL: one side empty, names the dead selector; RESULT line counts
+M05 CAUGHT - rulecheck_lib.py: Prometheus rule health 'err' ignored :: 3 failing, e.g. ERROR: Prometheus health err with lastError; RESULT line counts
+M06 CAUGHT - rulecheck_lib.py: content timestamp ignored (pulled copy judged by mtime only) :: 6 failing, e.g. STALE: pulled copy fresh but content 15m old (source = ts metric); textfile RESULT counts
+M07 CAUGHT - rulecheck_lib.py: LEFTOVER temp files reported as FRESH :: 4 failing, e.g. LEFTOVER: interrupted pull temp file 15m old; LEFTOVER: old non-.prom file
+M08 CAUGHT - rulecheck_lib.py: required files never reported MISSING :: 3 failing, e.g. MISSING: required file absent; textfile RESULT counts
+M09 CAUGHT - rulecheck_lib.py: check error reported as findings (exit 1 instead of 2) :: 10 failing, e.g. Prometheus HTTP 500 -> exit 2; Prometheus answers non-JSON -> exit 2
+M10 CAUGHT - rulecheck_lib.py: selector cache off (every rule re-queries every selector) :: 1 failing, e.g. query cache: each distinct selector queried once
+M11 CAUGHT - rulecheck_lib.py: last matching textfile line wins instead of the first :: 9 failing, e.g. FRESH: local file, content ts 30s; STALE: pulled copy fresh but content 15m old (source = ts metric)
+M12 CAUGHT - rulecheck_lib.py: ignore-rule not honoured :: 7 failing, e.g. IGNORED: ignore-rule with reason; query cache: each distinct selector queried once
+M13 CAUGHT - rulecheck_lib.py: failed run still writes rule series (would read as 'all fine' / stale verdicts) :: 1 failing, e.g. run: Prometheus fine but textfile dir unreadable -> exit 2, up 0, no rule series either
+M14 CAUGHT - rulecheck_lib.py: metric rule_dead only 1 for DEAD (PARTIAL/ERROR rules never alert) :: 1 failing, e.g. metrics: PARTIAL and ERROR rules = 1
+M15 CAUGHT - rulecheck_lib.py: symlinked .prom files followed :: 1 failing, e.g. symlinked .prom is skipped
+M16 CAUGHT - rulecheck_lib.py: young in-flight temp files reported LEFTOVER :: 2 failing, e.g. young temp file (in-flight pull) not reported; textfile RESULT counts
+M17 CAUGHT - rulecheck_lib.py: duplicate selector within one rule counted twice :: 1 failing, e.g. LIVE: same selector twice counted once
+M18 CAUGHT - pft-rulecheck.sh: pull skips validation of the peer's file :: 1 failing, e.g. pull: invalid remote file -> exit 2, old copy kept, no temp left
+M19 CAUGHT - pft-rulecheck.sh: pull without timeout (a hanging ssh blocks the unit) :: 1 failing, e.g. pull: hanging ssh stopped by PULL_TIMEOUT (exit 1 within 10s)
+M20 CAUGHT - pft-rulecheck.sh: unknown env keys accepted silently :: 1 failing, e.g. unknown env key -> exit 2, nothing evaluated
+M21 CAUGHT - pft-rulecheck.sh: validate does not check the host label :: 1 failing, e.g. validate: wrong host refused
+M22 CAUGHT - pft-rulecheck.sh: check --lookback value not validated :: 1 failing, e.g. --lookback 0m refused by the wrapper (empty range) -> exit 2
+MUTANTS 22: caught 22, survived 0, not applied 0
+(exit 0)
+$ bash fleet/tests/mutate.sh | tail -22
+control: unmutated copy RESULT: 93 passed, 0 failed
+M01 CAUGHT - fleet_lib.py: CURRENT for any present expected file :: 12 failing, e.g. sentry at v2: sentry demo BEHIND;sentry at v2: BEHIND names v2 and 2 newer commits
+M02 CAUGHT - fleet_lib.py: no BEHIND: older committed bytes fall through to MODIFIED :: 10 failing, e.g. sentry at v2: exit 1;sentry at v2: sentry demo BEHIND
+M03 CAUGHT - fleet_lib.py: no UNEXPECTED: role check ignored for present files :: 2 failing, e.g. sentry-only add-on on validator: exit 1;sentry-only add-on on validator: UNEXPECTED
+M04 CAUGHT - fleet_lib.py: absent expected file is skipped instead of MISSING :: 3 failing, e.g. missing unit: exit 2;missing unit: validator demo MISSING
+M05 CAUGHT - fleet_lib.py: DIVERGED needs three different versions :: 4 failing, e.g. sentry at v2: DIVERGED demo pft-demo path;json: sentry/demo BEHIND, exit_code 1
+M06 CAUGHT - fleet_lib.py: MISSING no longer exit 2 :: 1 failing, e.g. missing unit: exit 2
+M07 CAUGHT - fleet_lib.py: best file state wins instead of worst :: 12 failing, e.g. sentry at v2: sentry demo BEHIND;json: sentry/demo BEHIND, exit_code 1
+M08 CAUGHT - fleet_lib.py: drift clock restarts every run :: 2 failing, e.g. metrics: drift clock kept on the next run (1000, not 5000);metrics: drift clock survives a run where the host was unreadable
+M09 CAUGHT - fleet_lib.py: UNEXPECTED no longer exit 1 :: 1 failing, e.g. sentry-only add-on on validator: exit 1
+M10 CAUGHT - pft-fleet.sh: validator synced before the sentry :: 30 failing, e.g. no maintenance window: exit 4;node not full: exit 4
+M11 CAUGHT - pft-fleet.sh: maintenance window not enforced :: 9 failing, e.g. no maintenance window: exit 4;no maintenance window: file untouched
+M12 CAUGHT - pft-fleet.sh: rollback does not restore the backup :: 15 failing, e.g. injected gate failure: exit 5;rollback: sentry sha256 restored
+M13 CAUGHT - pft-fleet.sh: rollback reported as success (exit 0) :: 8 failing, e.g. injected gate failure: exit 5;validator gate fails after sentry synced: exit 5
+M14 CAUGHT - pft-fleet.sh: gate ignores the installed sha256 :: 3 failing, e.g. bytes on disk differ from the commit after write: exit 5;bad write: sha256 GATE FAIL
+M15 CAUGHT - pft-fleet.sh: commits outside REF accepted :: 1 failing, e.g. unreviewed commit (not in main): exit 3
+M16 CAUGHT - pft-fleet.sh: unrelated integrity findings allowed :: 6 failing, e.g. unrelated integrity finding: exit 4;unrelated integrity finding: named
+M17 CAUGHT - pft-fleet.sh: backup made without cp -p (mtime/mode lost on rollback) :: 1 failing, e.g. rollback: mtime restored
+M18 CAUGHT - pft-fleet.sh: bash -n syntax gate disabled :: 3 failing, e.g. broken script (bash -n) at v3: exit 5;broken script: syntax GATE FAIL
+M19 CAUGHT - pft-fleet.sh: rollback mismatch reported as a clean rollback :: 1 failing, e.g. restore impossible: exit 6 (rollback mismatch)
+M20 CAUGHT - pft-fleet.sh: post-write node check ignored :: 2 failing, e.g. node leaves full after the write: exit 5;node leaves full: GATE node FAIL
+MUTANTS 20: caught 20, survived 0, not applied 0
+(exit 0)

@@ -1,0 +1,195 @@
+# pft-rulecheck 01: test suite, lint, promtool (rulecheck + changed fleet rules), fleet suite after the drift-series change
+OS: Ubuntu 22.04.5 LTS | host: validator | 2026-10-30T07:32:57Z | repo HEAD 0541475abd671b2e3d5c6575f1f6f462ae8cb6d1
+$ sha256sum rulecheck/pft-rulecheck.sh rulecheck/rulecheck_lib.py rulecheck/install.sh rulecheck/systemd/* alerts/rulecheck.rules.yml alerts/fleet.rules.yml fleet/fleet_lib.py
+5659e0169c3bfead4f2a28ae8074ed1e19c345e61df87a5e5f9d65686994b4a1  rulecheck/pft-rulecheck.sh
+2e73cd052ddc6accd8c84e086f062e232726244989390e51cc7a81e9dacf0345  rulecheck/rulecheck_lib.py
+1ab5f795cf4978ce50fc3976837cfffc7381a08db3e8b787475a16d12cfaf268  rulecheck/install.sh
+ea84a6189a3ba71fe163c3e38c3c2fc05713b0cc1e532c87e4d3909604b7e887  rulecheck/systemd/pft-rulecheck-pull.service
+3ac35085a6ee10698e4404cf1213a19e9a92edc9ab8cebefcb0f1cbb91c7f634  rulecheck/systemd/pft-rulecheck-pull.timer
+9571246a80043777d052391187dfde1168ef3dbb8e0a86978036aaa36e287ebf  rulecheck/systemd/pft-rulecheck.service
+f13c3df1fad6d42c1791334b442e075849791fc1d797ac3093e76224c65abd07  rulecheck/systemd/pft-rulecheck.timer
+fa7de498f91d03d1247fab44549431959c3bc0d81b6e1c88e569d3925d430eac  alerts/rulecheck.rules.yml
+ffb98646ac9567f1d4da99445535c9ab0403e1ead1e3016d84dcf91ab61d8b09  alerts/fleet.rules.yml
+dcb37d26f33f2d7009832828d44e7068c1aea1af0813cc1542a87c71c1489c52  fleet/fleet_lib.py
+(exit 0)
+$ bash rulecheck/tests/run-tests.sh
+PASS selectors: aggregation by() labels are not metrics
+PASS selectors: trailing by() after the call
+PASS selectors: on()/group_left() labels skipped, both sides kept
+PASS selectors: ignoring()/without() labels skipped
+PASS selectors: absent() argument marked
+PASS selectors: absent_over_time() marked
+PASS selectors: constants have no selector
+PASS selectors: Inf/NaN are numbers
+PASS selectors: strings in label_replace ignored
+PASS selectors: offset and @ end() stripped
+PASS selectors: subquery range skipped
+PASS selectors: recording-rule names with colons
+PASS selectors: bare {__name__=~} matcher
+PASS selectors: quoted metric name (Prometheus 3)
+PASS selectors: single-quoted value with escaped quote
+PASS selectors: braces inside a label value
+PASS selectors: keywords and/or/unless/bool are not metrics
+PASS selectors: count_values string + ALERTS
+PASS selectors: topk param + metric
+PASS selectors: comment ignored
+PASS selectors: unbalanced paren -> exit 2
+PASS selectors: unclosed brace -> exit 2
+PASS mixed: exit 1 (findings)
+PASS LIVE: plain selector
+PASS LIVE: constant rule (no selector)
+PASS LIVE: absent()-only rule is not dead
+PASS LIVE: ALERTS-only rule is not dead
+PASS LIVE: recording rule
+PASS LIVE: escaped quote + regex matcher queried verbatim
+PASS LIVE: same selector twice counted once
+PASS DEAD: renamed metric
+PASS PARTIAL: one side empty, names the dead selector
+PASS ERROR: Prometheus health err with lastError
+PASS ERROR: unparsable expression
+PASS IGNORED: ignore-rule with reason
+PASS ignore-metric: rule with only that selector is LIVE 0/0
+PASS same rule name in two groups listed twice
+PASS query cache: each distinct selector queried once
+PASS queries use count(last_over_time(SEL[10m]))
+PASS absent()/ALERTS/ignored selectors never queried
+PASS RESULT line counts
+PASS --lookback passed to the query
+PASS bad --lookback -> exit 2
+PASS --lookback 0m refused by the wrapper (empty range) -> exit 2
+PASS no-prom: rules skipped
+PASS FRESH: local file, content ts 30s
+PASS STALE: mtime 400s > 5m
+PASS STALE: pulled copy fresh but content 15m old (source = ts metric)
+PASS STALE: ts metric missing from the file
+PASS FRESH: mtime-only line, 590s < 10m
+PASS first matching line wins (catch-all 1h only for the rest)
+PASS UNCONFIGURED: no line matches
+PASS LEFTOVER: interrupted pull temp file 15m old
+PASS LEFTOVER: old non-.prom file
+PASS young temp file (in-flight pull) not reported
+PASS MISSING: required file absent
+PASS required file present is not MISSING
+PASS no-prom textfile findings -> exit 1
+PASS textfile RESULT counts
+PASS symlinked .prom is skipped
+PASS all LIVE + all FRESH -> exit 0
+PASS Prometheus HTTP 500 -> exit 2
+PASS Prometheus answers non-JSON -> exit 2
+PASS rules API error status -> exit 2 with its message
+PASS query API error -> exit 2 (not DEAD)
+PASS malformed sample -> exit 2
+PASS Prometheus unreachable -> exit 2
+PASS bad duration in config -> exit 2 naming the line
+PASS unknown config directive -> exit 2
+PASS missing textfile dir -> exit 2
+PASS unknown env key -> exit 2, nothing evaluated
+PASS bad HOST_LABEL -> exit 2
+PASS non-http PROM_URL refused
+PASS unknown check argument -> exit 2
+PASS json: valid, exit 1, summary counts
+PASS json: dead selector listed on the rule
+PASS json: textfile row has age/max_age/source
+PASS json: error run still one object with exit 2
+PASS run: exit 1 with findings, metrics written
+PASS metrics: up 1
+PASS metrics: last run = PFT_RC_NOW
+PASS metrics: DEAD rule = 1 with state label
+PASS metrics: PARTIAL and ERROR rules = 1
+PASS metrics: LIVE and IGNORED rules = 0
+PASS metrics: duplicate rule names keep distinct series (group/idx)
+PASS metrics: escaped label value
+PASS metrics: STALE textfile = 1
+PASS metrics: FRESH textfile = 0
+PASS metrics: LEFTOVER + MISSING = 1
+PASS metrics: age series (content age for the pulled copy)
+PASS metrics: rule state counts
+PASS metrics: own file checked on the next run, no temp file left
+PASS metrics: file mode 0644
+PASS run: Prometheus down -> exit 2, up 0, no rule/textfile series (not 'all fine')
+PASS run: textfile dir missing -> exit 2, nothing written
+PASS run: Prometheus fine but textfile dir unreadable -> exit 2, up 0, no rule series either
+PASS metrics: promtool-style parse (every sample line well formed)
+PASS validate: own run output accepted
+PASS validate: wrong host refused
+PASS validate: foreign metric refused
+PASS validate: missing last_run refused
+PASS validate: empty refused
+PASS validate: > 256 KiB refused
+PASS pull: ok -> exit 0, copy identical, mode 0644
+PASS pull: ssh fails -> exit 1, old copy kept, no temp left
+PASS pull: invalid remote file -> exit 2, old copy kept, no temp left
+PASS pull: hanging ssh stopped by PULL_TIMEOUT (exit 1 within 10s)
+PASS pull: arguments refused
+PASS pull: PULL_SSH unset -> exit 2
+PASS version
+PASS unknown command -> exit 2
+RESULT: 111 passed, 0 failed
+(exit 0)
+$ shellcheck rulecheck/pft-rulecheck.sh rulecheck/install.sh rulecheck/tests/run-tests.sh && echo "shellcheck: 0 findings"
+shellcheck: 0 findings
+(exit 0)
+$ ruff check --isolated --select E,F,W,B --line-length 120 rulecheck/rulecheck_lib.py rulecheck/tests/stub_prom.py rulecheck/tests/mutate.py
+All checks passed!
+(exit 0)
+$ cd alerts && sudo docker run --rm -v "$PWD:/w:ro" -w /w --entrypoint promtool prom/prometheus:v3.5.0 check rules rulecheck.rules.yml fleet.rules.yml
+Checking rulecheck.rules.yml
+  SUCCESS: 3 rules found
+
+Checking fleet.rules.yml
+  SUCCESS: 3 rules found
+
+(exit 0)
+$ cd alerts && sudo docker run --rm -v "$PWD:/w:ro" -w /w --entrypoint promtool prom/prometheus:v3.5.0 test rules rulecheck.tests.yml fleet.tests.yml
+  SUCCESS
+
+  SUCCESS
+
+(exit 0)
+$ cd alerts && sudo docker run --rm -v "$PWD:/etc/pft-alerts:ro" -v "$PWD/../slo:/etc/pft-slo:ro" --entrypoint promtool prom/prometheus:v3.5.0 check config /etc/pft-alerts/prometheus.yml
+Checking /etc/pft-alerts/prometheus.yml
+  SUCCESS: 11 rule files found
+ SUCCESS: /etc/pft-alerts/prometheus.yml is valid prometheus config file syntax
+
+Checking /etc/pft-alerts/postfiat.rules.yml
+  SUCCESS: 16 rules found
+
+Checking /etc/pft-alerts/divergence.rules.yml
+  SUCCESS: 2 rules found
+
+Checking /etc/pft-alerts/logship.rules.yml
+  SUCCESS: 1 rules found
+
+Checking /etc/pft-alerts/resources.rules.yml
+  SUCCESS: 10 rules found
+
+Checking /etc/pft-alerts/alertpath.rules.yml
+  SUCCESS: 1 rules found
+
+Checking /etc/pft-alerts/timesync.rules.yml
+  SUCCESS: 5 rules found
+
+Checking /etc/pft-alerts/statewatch.rules.yml
+  SUCCESS: 7 rules found
+
+Checking /etc/pft-alerts/vulnscan.rules.yml
+  SUCCESS: 5 rules found
+
+Checking /etc/pft-alerts/fleet.rules.yml
+  SUCCESS: 3 rules found
+
+Checking /etc/pft-alerts/rulecheck.rules.yml
+  SUCCESS: 3 rules found
+
+Checking /etc/pft-slo/slo.rules.yml
+  SUCCESS: 17 rules found
+
+(exit 0)
+$ bash fleet/tests/run-tests.sh | grep -E "^(FAIL|RESULT)|drift"
+PASS metrics: drift since 1000
+PASS metrics: drift clock kept on the next run (1000, not 5000)
+PASS metrics: drift clock survives a run where the host was unreadable
+PASS metrics: back to CURRENT resets the drift clock to 0
+PASS metrics: no drift clock other than 0 after the fix
+RESULT: 93 passed, 0 failed
+(exit 0)

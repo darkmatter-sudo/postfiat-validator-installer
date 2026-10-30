@@ -1,0 +1,16 @@
+# pft-rulecheck 05: pft-integrity accept of the rollout on both hosts (every WARN item is this rollout)
+OS: Ubuntu 22.04.5 LTS | host: validator | 2026-10-30T07:43:39Z | repo HEAD 0541475abd671b2e3d5c6575f1f6f462ae8cb6d1
+$ sudo pft-integrity accept --reason "task_ef86586c1e2379e1813d00bef945eb34: pft-rulecheck bin + units + pull units; pft-fleet reinstall (drift series always present, manifest + rulecheck)" 2>&1 | tail -3
+pft-integrity accept - 2026-10-30T07:43:44Z: re-baselined 104 items by <user>
+manifest sha256: fcd7914cfe704c04565390b17d6fed5b447bdf940059f62b42f9676ee23040d0 -> 35112ed286be1866fe09188d2f5d20cd02efe84c05afcf0c2ae4905fe3922f6a (logged to accept.log)
+(exit 0)
+$ ssh relay 'sudo pft-integrity accept --reason "task_ef86586c1e2379e1813d00bef945eb34: pft-rulecheck bin + units" 2>&1 | tail -3'
+pft-integrity accept - 2026-10-30T07:43:51Z: re-baselined 61 items by root
+manifest sha256: 5fbc414ab646d417723a2d4df78b7a6b73256dc41a21fdad30a9aabe2255cadf -> 2a681d39ca3484da16d4606f0876f56bffe8140b6d3a1f1a82771a15ca9f934f (logged to accept.log)
+(exit 0)
+$ sudo pft-integrity verify | grep ^RESULT
+RESULT: PASS - 104 unchanged, 0 warn, 0 fail -> exit 0
+(exit 0)
+$ ssh relay 'sudo pft-integrity verify | grep ^RESULT'
+RESULT: PASS - 61 unchanged, 0 warn, 0 fail -> exit 0
+(exit 0)

@@ -451,3 +451,21 @@ sudo fleet/install.sh                                        # validator; needs 
 sudo pft-fleet skew                                          # exit 0 current, 1 drift, 2 modified/missing/unreadable
 sudo pft-fleet sync --addon statewatch --to <commit> [--apply]
 ```
+
+## Dead-rule and stale-input checker (rulecheck)
+
+[`rulecheck/`](rulecheck/README.md): finds alert rules that cannot fire and collector inputs that stopped updating.
+For every rule in Prometheus it queries each PromQL selector (skipping `absent()` arguments and `ALERTS`) and grades
+the rule LIVE / PARTIAL / DEAD / ERROR. For every file in the exporter's textfile dir it grades FRESH / STALE /
+MISSING / LEFTOVER / UNCONFIGURED. Pulled copies are judged by the collector timestamp inside the file, so a sentry
+collector that stopped shows up even though the validator re-copies the file every minute. Output is a table or
+JSON with exit 0/1/2, plus `pft_rulecheck_*` metrics. Three alerts are defined in `../alerts/rulecheck.rules.yml`:
+PFTRuleDead, PFTTextfileStale and PFTRulecheckNotRunning. An hourly sandboxed timer runs on both hosts, and the
+validator pulls the sentry's result.
+
+```bash
+sudo rulecheck/install.sh                 # validator (Prometheus host)
+sudo rulecheck/install.sh --no-prom       # sentry: textfile checks only
+sudo rulecheck/install.sh --pull          # validator: pull the sentry's result (PEER_LABEL + PULL_SSH in /etc/pft-rulecheck.env)
+sudo pft-rulecheck check [--json]         # exit 0 all LIVE/FRESH, 1 findings, 2 could not check
+```

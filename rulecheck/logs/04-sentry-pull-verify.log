@@ -1,0 +1,73 @@
+# pft-rulecheck 04: sentry install (committed tree shipped to a fresh temp dir), validator pull, final checks on both hosts
+OS: Ubuntu 22.04.5 LTS | host: validator | 2026-10-30T07:42:26Z | repo HEAD 0541475abd671b2e3d5c6575f1f6f462ae8cb6d1
+## E. sentry: ship the committed tree 0541475abd671b2e3d5c6575f1f6f462ae8cb6d1 and install with --no-prom (textfile checks only)
+$ git archive 0541475abd671b2e3d5c6575f1f6f462ae8cb6d1 rulecheck | ssh relay 'd=$(mktemp -d /tmp/rc-install.XXXXXX) && tar -x -C $d && cd $d && sha256sum rulecheck/pft-rulecheck.sh rulecheck/rulecheck_lib.py && sudo bash rulecheck/install.sh --no-prom; r=$?; rm -rf $d; exit $r'
+5659e0169c3bfead4f2a28ae8074ed1e19c345e61df87a5e5f9d65686994b4a1  rulecheck/pft-rulecheck.sh
+2e73cd052ddc6accd8c84e086f062e232726244989390e51cc7a81e9dacf0345  rulecheck/rulecheck_lib.py
+2026-10-30T07:42:27Z installed /usr/local/bin/pft-rulecheck (sha256 5659e0169c3bfead4f2a28ae8074ed1e19c345e61df87a5e5f9d65686994b4a1)
+2026-10-30T07:42:27Z installed /usr/local/lib/pft-rulecheck/rulecheck_lib.py (sha256 2e73cd052ddc6accd8c84e086f062e232726244989390e51cc7a81e9dacf0345)
+2026-10-30T07:42:27Z wrote /etc/pft-rulecheck.env (HOST_LABEL=sentry NO_PROM=1)
+2026-10-30T07:42:27Z wrote /etc/pft-rulecheck.conf from pft-rulecheck.sentry.conf.example
+2026-10-30T07:42:27Z first check (through the sandboxed unit; exit 1 = findings is a success for the unit):
+RESULT OK - rules: skipped | textfiles: FRESH 6 STALE 0 MISSING 0 LEFTOVER 0 UNCONFIGURED 0 -> exit 0
+Created symlink /etc/systemd/system/timers.target.wants/pft-rulecheck.timer → /etc/systemd/system/pft-rulecheck.timer.
+2026-10-30T07:42:29Z pft-rulecheck.timer enabled: Fri 2026-10-30 09:17:10 CET
+(exit 0)
+$ ssh relay 'sudo pft-rulecheck check' | grep -vE '^FRESH '
+STATE         TEXTFILE                                          AGE      MAX  SOURCE / DETAIL
+
+RESULT OK - rules: skipped | textfiles: FRESH 7 STALE 0 MISSING 0 LEFTOVER 0 UNCONFIGURED 0 -> exit 0
+(exit 0)
+
+## F. validator: pull the sentry's result every 15 min (PEER_LABEL + PULL_SSH copied from /etc/pft-vulnscan.env; not printed)
+$ sudo sh -c "grep -E \"^(PEER_LABEL|PULL_SSH)=\" /etc/pft-vulnscan.env >> /etc/pft-rulecheck.env" && sudo grep -c . /etc/pft-rulecheck.env && sudo stat -c "%U:%G %a" /etc/pft-rulecheck.env
+5
+root:root 600
+(exit 0)
+$ sudo bash rulecheck/install.sh --pull
+2026-10-30T07:42:31Z first pull (through the sandboxed unit):
+Created symlink /etc/systemd/system/timers.target.wants/pft-rulecheck-pull.timer → /etc/systemd/system/pft-rulecheck-pull.timer.
+2026-10-30T07:42:32Z pft-rulecheck-pull.timer enabled: Fri 2026-10-30 08:49:00 CET
+(exit 0)
+$ sudo grep -E "^pft_rulecheck_(up|last_run)" /var/lib/pft-exporter/textfile/pft_rulecheck_sentry.prom
+pft_rulecheck_up{host="sentry"} 1
+pft_rulecheck_last_run_timestamp_seconds{host="sentry"} 1793346148
+(exit 0)
+
+## G. verified: fresh run through the unit on the validator (after Prometheus scraped both rulecheck files)
+$ sleep 30; sudo systemctl start pft-rulecheck.service; sudo journalctl -u pft-rulecheck.service --since "-1min" --no-pager -o cat | grep -E "^(DEAD|PARTIAL|ERROR|IGNORED|STALE|MISSING|LEFTOVER|UNCONFIGURED|RESULT) "
+RESULT OK - rules: LIVE 70 PARTIAL 0 DEAD 0 ERROR 0 IGNORED 0 | textfiles: FRESH 13 STALE 0 MISSING 0 LEFTOVER 0 UNCONFIGURED 0 -> exit 0
+(exit 0)
+$ sudo pft-rulecheck check --json | jq -c "{exit, summary}"
+{"exit":0,"summary":{"rules":{"LIVE":70},"textfiles":{"FRESH":13}}}
+(exit 0)
+$ sudo pft-rulecheck check | grep -E "PFTFleetDriftStale|PFTRuleDead|PFTTextfileStale|PFTRulecheckNotRunning|pft_rulecheck_"
+LIVE     pft-fleet/PFTFleetDriftStale                                   1/1         
+LIVE     pft-rulecheck/PFTRuleDead                                      1/1         
+LIVE     pft-rulecheck/PFTTextfileStale                                 1/1         
+LIVE     pft-rulecheck/PFTRulecheckNotRunning                           2/2         
+FRESH         pft_rulecheck_sentry.prom                         35s    3h00m  pft_rulecheck_last_run_timestamp_seconds
+FRESH         pft_rulecheck_validator.prom                       1s    3h00m  pft_rulecheck_last_run_timestamp_seconds
+(exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode "query=pft_rulecheck_up or pft_rulecheck_rules{state=~\"DEAD|PARTIAL|ERROR\"} or pft_rulecheck_textfiles{state!=\"FRESH\"}" | jq -r ".data.result[] | [.metric.__name__, .metric.host, (.metric.state // \"-\"), .value[1]] | @tsv"
+pft_rulecheck_up	validator	-	1
+pft_rulecheck_up	sentry	-	1
+pft_rulecheck_rules	validator	PARTIAL	0
+pft_rulecheck_rules	validator	DEAD	0
+pft_rulecheck_rules	validator	ERROR	0
+pft_rulecheck_textfiles	validator	STALE	0
+pft_rulecheck_textfiles	validator	MISSING	0
+pft_rulecheck_textfiles	validator	LEFTOVER	0
+pft_rulecheck_textfiles	validator	UNCONFIGURED	0
+pft_rulecheck_textfiles	sentry	STALE	0
+pft_rulecheck_textfiles	sentry	MISSING	0
+pft_rulecheck_textfiles	sentry	LEFTOVER	0
+pft_rulecheck_textfiles	sentry	UNCONFIGURED	0
+(exit 0)
+$ sudo pft-fleet skew --hosts sentry,validator | grep -E "rulecheck|fleet|SUMMARY"; echo "skew exit ${PIPESTATUS[0]}"
+sentry     rulecheck   CURRENT    
+validator  fleet       CURRENT    
+validator  rulecheck   CURRENT    
+SUMMARY CURRENT=35 BEHIND=0 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+skew exit 0
+(exit 0)

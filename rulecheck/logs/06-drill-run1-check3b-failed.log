@@ -1,0 +1,166 @@
+pft-rulecheck two-host drill - 2026-10-30T07:47:50Z - Ubuntu 22.04.5 LTS - run 20261030T074750Z
+repo HEAD 839ea9520c24c57dc33f6495bfca3c1aac266558
+sha256: live-run.sh c279631059dde84d9f11253cafea86cd2e255ab29ec53cf90aafb35fce67342c
+        repo pft-rulecheck.sh 5659e0169c3bfead4f2a28ae8074ed1e19c345e61df87a5e5f9d65686994b4a1 rulecheck_lib.py 2e73cd052ddc6accd8c84e086f062e232726244989390e51cc7a81e9dacf0345
+        installed validator 5659e0169c3bfead4f2a28ae8074ed1e19c345e61df87a5e5f9d65686994b4a1 2e73cd052ddc6accd8c84e086f062e232726244989390e51cc7a81e9dacf0345
+        installed sentry    5659e0169c3bfead4f2a28ae8074ed1e19c345e61df87a5e5f9d65686994b4a1 2e73cd052ddc6accd8c84e086f062e232726244989390e51cc7a81e9dacf0345
+        rulecheck.rules.yml (repo, loaded by Prometheus) fa7de498f91d03d1247fab44549431959c3bc0d81b6e1c88e569d3925d430eac
+        redact.py f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8
+
+== 0. preflight (nothing changed yet)
+  pft-maint: no window open on either host
+  bridge mounts the operator env file: yes
+  Prometheus loads /etc/pft-slo/*.rules.yml from the repo's slo/ dir: yes; no leftover drill rule
+  active silences covering the rulecheck alerts: 0
+  sentry pft-statewatch@postfiatd-sentry.timer: active
+  operator topics to watch: 2 (not printed)
+  postfiatd-sentry: server_state=full
+  postfiatd: server_state=full
+  pft-integrity local: RESULT: PASS - 104 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity relay: RESULT: PASS - 61 unchanged, 0 warn, 0 fail -> exit 0
+  literals for redaction: 2 ip, 2 key, 3 topic, 1 user (values not printed)
+$ redact.py control --literals <literals>
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (17/17)
+$ sudo -n pft-rulecheck check | tail -1
+  RESULT OK - rules: LIVE 70 PARTIAL 0 DEAD 0 ERROR 0 IGNORED 0 | textfiles: FRESH 13 STALE 0 MISSING 0 LEFTOVER 0 UNCONFIGURED 0 -> exit 0
+  (exit 0)
+CHECK ok   baseline: validator pft-rulecheck exit 0
+$ R 'sudo -n pft-rulecheck check' | tail -1
+  RESULT OK - rules: skipped | textfiles: FRESH 7 STALE 0 MISSING 0 LEFTOVER 0 UNCONFIGURED 0 -> exit 0
+  (exit 0)
+CHECK ok   baseline: sentry pft-rulecheck exit 0
+
+== 1. redirect notifiers + bridge, silence everything except the rulecheck alerts, maintenance window
+  local:/etc/postfiat-monitor.env sha256 6dc3b10fb491 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/postfiat-monitor.env.pre-rulecheck-drill
+  local:/etc/pft-integrity.env sha256 b3cd1c3da7ff -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-integrity.env.pre-rulecheck-drill
+  relay:/etc/pft-watchdog/ntfy.env sha256 ddb52721a668 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-watchdog/ntfy.env.pre-rulecheck-drill
+  relay:/etc/pft-integrity.env sha256 cdd330a974d2 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-integrity.env.pre-rulecheck-drill
+  relay:/etc/pft-alertpath/ntfy.env sha256 ddb52721a668 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-alertpath/ntfy.env.pre-rulecheck-drill
+  2026-10-30T07:48:26Z starting pft-alert-bridge (ntfy: on)
+  2026-10-30T07:48:29Z pft-alert-bridge listening
+  bridge -> https://ntfy.sh/<redacted> (throwaway env file in a 0700 temp dir)
+  silence alertname=~".+", alertname!~"PFTRuleDead|PFTTextfileStale|PFTRulecheckNotRunning|PFTAlertPipelineWatchdog" until 2026-10-30T08:38:29Z (id 47c176f7)
+$ sudo -n pft-maint start --ttl 45m --reason 'pft-rulecheck drill 20261030T074750Z'
+  window started: id m1793346509-2772842 until 2026-10-30T08:33:29Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   sentry has the window (via the watchdog channel) after 10s
+
+== 2. faults
+$ R 'sudo -n systemctl stop pft-statewatch@postfiatd-sentry.timer && systemctl is-active pft-statewatch@postfiatd-sentry.timer'
+  inactive
+  (exit 3)
+CHECK ok   2a sentry collector timer stopped
+$ sudo -n docker kill -s HUP pft-prometheus && sleep 20 && curl -s http://127.0.0.1:9090/api/v1/rules | jq -r '.data.groups[] | select(.name == "pft-rulecheck-drill") | .rules[] | [.name, .health, .query] | @tsv'
+  pft-prometheus
+  PFTRulecheckDrillDeadRule	ok	pft_rulecheck_drill_renamed_metric_total > 0
+  (exit 0)
+CHECK ok   2b drill rule loaded by Prometheus
+
+== 3. detect
+  waiting for the validator's pulled pft_statewatch_postfiatd-sentry.prom to read STALE by content (max 600s, poll 30s)
+  2026-10-30T07:53:37Z validator pft_statewatch_postfiatd-sentry.prom: STALE age=322 src=pft_statewatch_collect_timestamp_seconds (295s after the stop)
+CHECK ok   3a pulled copy STALE on the validator, judged by its content timestamp (STALE age=322 src=pft_statewatch_collect_timestamp_seconds)
+$ sudo -n stat -c 'mtime %Y now 1793346817' /var/lib/pft-exporter/textfile/pft_statewatch_postfiatd-sentry.prom
+  mtime 1793346766 now 1793346817
+  (exit 0)
+$ R 'sudo -n systemctl start pft-rulecheck.service; sudo -n journalctl -u pft-rulecheck.service --since -1min --no-pager -o cat' | grep -E '^(STALE|MISSING|LEFTOVER|UNCONFIGURED|RESULT) '
+  STALE         pft_statewatch_postfiatd-sentry.prom            5m23s    5m00s  pft_statewatch_collect_timestamp_seconds
+  RESULT FINDINGS - rules: skipped | textfiles: FRESH 6 STALE 1 MISSING 0 LEFTOVER 0 UNCONFIGURED 0 -> exit 1
+  (exit 0)
+CHECK FAIL 3b sentry run: its local pft_statewatch_postfiatd-sentry.prom STALE (mtime), RESULT FINDINGS
+$ sudo -n systemctl start pft-rulecheck-pull.service && sudo -n grep -E '^pft_rulecheck_textfile_stale.*} 1$' /var/lib/pft-exporter/textfile/pft_rulecheck_sentry.prom
+  pft_rulecheck_textfile_stale{host="sentry",file="pft_statewatch_postfiatd-sentry.prom",state="STALE"} 1
+  (exit 0)
+CHECK ok   3c sentry result pulled to the validator (stale=1 for pft_statewatch_postfiatd-sentry.prom)
+$ sudo -n systemctl start pft-rulecheck.service; sudo -n journalctl -u pft-rulecheck.service --since -1min --no-pager -o cat | grep -E '^(DEAD|PARTIAL|ERROR|STALE|MISSING|LEFTOVER|UNCONFIGURED|RESULT) '
+  DEAD     pft-rulecheck-drill/PFTRulecheckDrillDeadRule                  0/1         pft_rulecheck_drill_renamed_metric_total
+  STALE         pft_statewatch_postfiatd-sentry.prom            5m24s    5m00s  pft_statewatch_collect_timestamp_seconds
+  RESULT FINDINGS - rules: LIVE 70 PARTIAL 0 DEAD 1 ERROR 0 IGNORED 0 | textfiles: FRESH 12 STALE 1 MISSING 0 LEFTOVER 0 UNCONFIGURED 0 -> exit 1
+  (exit 0)
+CHECK ok   3d validator run: exactly 1 DEAD (the drill rule) and 1 STALE (the pulled copy)
+  waiting for PFTRuleDead + PFTTextfileStale (validator + sentry) to fire in Prometheus (for: 5m; max 600s, poll 20s)
+  2026-10-30T07:59:01Z firing (321s after the runs):
+    alertname=PFTRuleDead,alertstate=firing,group=pft-rulecheck-drill,host=validator,idx=0,instance=127.0.0.1:9877,job=postfiat,rule=PFTRulecheckDrillDeadRule,severity=warning,state=DEAD 1
+    alertname=PFTTextfileStale,alertstate=firing,file=pft_statewatch_postfiatd-sentry.prom,host=sentry,instance=127.0.0.1:9877,job=postfiat,severity=warning,state=STALE 1
+    alertname=PFTTextfileStale,alertstate=firing,file=pft_statewatch_postfiatd-sentry.prom,host=validator,instance=127.0.0.1:9877,job=postfiat,severity=warning,state=STALE 1
+CHECK ok   3e PFTRuleDead (drill rule) + PFTTextfileStale (host=validator, host=sentry) firing (3/3)
+  waiting for [FIRING] delivery on the throwaway topic (max 180s)
+CHECK ok   3f [FIRING] PFTRuleDead naming PFTRulecheckDrillDeadRule delivered to the throwaway topic (1)
+CHECK ok   3g [FIRING] PFTTextfileStale naming pft_statewatch_postfiatd-sentry.prom delivered to the throwaway topic (2)
+
+== 4. recover
+$ sudo -n docker kill -s HUP pft-prometheus && sleep 20 && curl -s http://127.0.0.1:9090/api/v1/rules | jq '[.data.groups[] | select(.name == "pft-rulecheck-drill")] | length'
+  pft-prometheus
+  0
+  (exit 0)
+CHECK ok   4a drill rule gone from Prometheus
+$ R 'sudo -n systemctl start pft-statewatch@postfiatd-sentry.timer && sudo -n systemctl start pft-statewatch@postfiatd-sentry.service && systemctl is-active pft-statewatch@postfiatd-sentry.timer'
+  active
+  (exit 0)
+CHECK ok   4b sentry collector timer active again
+  waiting for the validator's pull to carry a fresh collection (statewatch pull runs every minute)
+  2026-10-30T07:59:55Z validator pft_statewatch_postfiatd-sentry.prom: FRESH age=32
+$ R 'sudo -n systemctl start pft-rulecheck.service; sudo -n journalctl -u pft-rulecheck.service --since -1min --no-pager -o cat' | grep -E '^RESULT '
+  RESULT OK - rules: skipped | textfiles: FRESH 7 STALE 0 MISSING 0 LEFTOVER 0 UNCONFIGURED 0 -> exit 0
+  (exit 0)
+CHECK ok   4c sentry run exit 0 (RESULT OK)
+$ sudo -n systemctl start pft-rulecheck-pull.service && sudo -n systemctl start pft-rulecheck.service; sudo -n journalctl -u pft-rulecheck.service --since -1min --no-pager -o cat | grep -E '^RESULT '
+  RESULT OK - rules: LIVE 70 PARTIAL 0 DEAD 0 ERROR 0 IGNORED 0 | textfiles: FRESH 13 STALE 0 MISSING 0 LEFTOVER 0 UNCONFIGURED 0 -> exit 0
+  (exit 0)
+CHECK ok   4d validator run exit 0 (RESULT OK)
+  waiting for the alerts to leave Prometheus and [RESOLVED] to reach the throwaway topic (max 180s)
+CHECK ok   4e no PFTRuleDead / PFTTextfileStale alert left in Prometheus (1 line(s))
+CHECK ok   4f [RESOLVED] PFTRuleDead + PFTTextfileStale delivered to the throwaway topic (1/2)
+  recovery took 119s
+
+== 5. restore, read back
+  $ sudo -n pft-maint end
+    window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+  restored local:/etc/postfiat-monitor.env: sha256 matches pre-drill copy: yes
+  restored local:/etc/pft-integrity.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-watchdog/ntfy.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-integrity.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-alertpath/ntfy.env: sha256 matches pre-drill copy: yes
+  2026-10-30T08:01:13Z starting pft-alert-bridge (ntfy: on)
+  2026-10-30T08:01:14Z pft-alert-bridge listening
+  restored bridge: mounts the operator env file again: yes
+  drill silence expired: HTTP 200
+CHECK ok   drill rule removed, collector timer active, env files byte-identical, bridge on the operator env, window ended
+  throwaway topic: 8 message(s)
+    {"time":"2026-10-30T07:48:30Z","title":"[MAINT] start validator","message":"pft-rulecheck drill 20261030T074750Z | until 2026-10-30T08:33:29Z (ttl 2700s) | sentry copy: pushed"}
+    {"time":"2026-10-30T07:58:59Z","title":"[FIRING] PFTTextfileStale","message":"textfile pft_statewatch_postfiatd-sentry.prom on sentry is STALE"}
+    {"time":"2026-10-30T07:58:59Z","title":"[FIRING] PFTTextfileStale","message":"textfile pft_statewatch_postfiatd-sentry.prom on validator is STALE"}
+    {"time":"2026-10-30T07:59:00Z","title":"[FIRING] PFTRuleDead","message":"alert rule PFTRulecheckDrillDeadRule (pft-rulecheck-drill) is DEAD: it cannot fire as written"}
+    {"time":"2026-10-30T08:00:59Z","title":"[RESOLVED] PFTRuleDead","message":"alert rule PFTRulecheckDrillDeadRule (pft-rulecheck-drill) is DEAD: it cannot fire as written"}
+    {"time":"2026-10-30T08:00:59Z","title":"[RESOLVED] PFTTextfileStale","message":"textfile pft_statewatch_postfiatd-sentry.prom on sentry is STALE"}
+    {"time":"2026-10-30T08:01:00Z","title":"[RESOLVED] PFTTextfileStale","message":"textfile pft_statewatch_postfiatd-sentry.prom on validator is STALE"}
+    {"time":"2026-10-30T08:01:06Z","title":"[MAINT] end validator","message":"pft-rulecheck drill 20261030T074750Z | ended by operator after 756s | suppressed here: watchdog=0 monitor=0 integrity=0 | sentry copy: pushed"}
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the drill (2 topic(s), 0 with messages)
+  pft-integrity local: RESULT: PASS - 104 unchanged, 0 warn, 0 fail -> exit 0
+CHECK ok   pft-integrity PASS on local at the end
+  pft-integrity relay: RESULT: PASS - 61 unchanged, 0 warn, 0 fail -> exit 0
+CHECK ok   pft-integrity PASS on relay at the end
+CHECK ok   postfiatd-sentry full at the end (full)
+CHECK ok   postfiatd full at the end (full)
+
+live-run done 2026-10-30T08:01:52Z: 1 check(s) failed -> FAIL
+exit 1

@@ -1,0 +1,92 @@
+# pft-rulecheck 03: step 1 on the validator - baseline (found) -> fixes -> install -> re-check (verified)
+OS: Ubuntu 22.04.5 LTS | host: validator | 2026-10-30T07:41:19Z | repo HEAD 0541475abd671b2e3d5c6575f1f6f462ae8cb6d1
+## A. baseline: read-only check from the repo copy, before any change (pft_rulecheck_sentry.prom is MISSING because rulecheck is not installed yet)
+$ python3 -I rulecheck/rulecheck_lib.py check --textfile-dir /var/lib/pft-exporter/textfile --conf rulecheck/pft-rulecheck.conf.example | grep -vE "^LIVE "
+STATE    GROUP/RULE                                                     LIVE/TOTAL  DETAIL
+DEAD     pft-fleet/PFTFleetDriftStale                                   0/1         pft_fleet_drift_since_timestamp_seconds
+
+STATE         TEXTFILE                                          AGE      MAX  SOURCE / DETAIL
+LEFTOVER      .pull-postfiatd-sentry.DeowRw                   1d04h   10m00s  mtime - temp/non-.prom file older than leftover-age
+FRESH         pft_divergence.prom                               43s   10m00s  pft_divergence_check_timestamp
+FRESH         pft_fleet.prom                                 20m29s    3h00m  pft_fleet_last_run_timestamp_seconds
+FRESH         pft_logship.prom                                  47s    5m00s  mtime
+FRESH         pft_resources_postfiatd-sentry.prom             1m20s    5m00s  pft_resources_collect_timestamp_seconds
+FRESH         pft_resources_postfiatd.prom                      19s    5m00s  pft_resources_collect_timestamp_seconds
+FRESH         pft_statewatch_postfiatd-sentry.prom            1m05s    5m00s  pft_statewatch_collect_timestamp_seconds
+FRESH         pft_statewatch_postfiatd.prom                      4s    5m00s  pft_statewatch_collect_timestamp_seconds
+FRESH         pft_timesync.prom                                 48s    5m00s  pft_timesync_collect_timestamp_seconds
+FRESH         pft_timesync_peer_sentry.prom                     52s    5m00s  pft_timesync_collect_timestamp_seconds
+FRESH         pft_vulnscan_sentry.prom                        3h17m    1d12h  pft_vulnscan_last_run_timestamp_seconds
+FRESH         pft_vulnscan_validator.prom                     3h04m    1d12h  pft_vulnscan_last_run_timestamp_seconds
+MISSING       pft_rulecheck_sentry.prom                           -        -  - - required by the config, not present
+
+RESULT FINDINGS - rules: LIVE 66 PARTIAL 0 DEAD 1 ERROR 0 IGNORED 0 | textfiles: FRESH 11 STALE 0 MISSING 1 LEFTOVER 1 UNCONFIGURED 0 -> exit 1
+(exit 0)
+$ sudo TZ=UTC ls -la --time-style=+%FT%TZ /var/lib/pft-exporter/textfile | grep -E "^total|\.pull-"
+total 68
+-rw------- 1 root root    0 2026-10-29T02:56:30Z .pull-postfiatd-sentry.DeowRw
+(exit 0)
+$ journalctl --list-boots --utc --no-pager | tail -3
+Hint: You are currently not seeing messages from other users and the system.
+      Users in groups 'adm', 'systemd-journal' can see all messages.
+      Pass -q to turn off this notice.
+-1 21ccf6ddad6b45e883e4b5907ceeaaae Wed 2026-10-28 14:32:48 UTC—Thu 2026-10-29 02:56:32 UTC
+ 0 7ccb0487586944b6aabfccb2eec9699e Thu 2026-10-29 02:59:08 UTC—Fri 2026-10-30 07:41:20 UTC
+(exit 0)
+$ grep -n "mktemp" resources/pft-resources-pull.sh
+75:  tmp="$(mktemp "$TEXTFILE_DIR/.pull-$name.XXXXXX")" || die "cannot create temp file in $TEXTFILE_DIR" 1
+(exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode "query=count(pft_fleet_drift_since_timestamp_seconds) or vector(0)" | jq -c ".data.result[0].value[1]"
+"0"
+(exit 0)
+
+## B. fix 1: remove the temp file a pft-resources pull left when the host rebooted (2026-10-29 pft-patch drill B)
+$ sudo rm -v -- /var/lib/pft-exporter/textfile/.pull-postfiatd-sentry.DeowRw
+removed '/var/lib/pft-exporter/textfile/.pull-postfiatd-sentry.DeowRw'
+(exit 0)
+
+## C. fix 2: pft-fleet emits the drift series for every pair (0 = no drift); PFTFleetDriftStale guards with > 0
+$ sudo bash fleet/install.sh 2>&1 | grep -vE "^ *(validator|sentry) +[a-z]+ +CURRENT"
+2026-10-30T07:41:20Z installed pft-fleet.sh sha256 61cafcfcdaa9363507140545c5c9b3c79a4ce641cddc4bf44020bf9804e5fa29
+2026-10-30T07:41:20Z installed fleet_lib.py sha256 dcb37d26f33f2d7009832828d44e7068c1aea1af0813cc1542a87c71c1489c52
+2026-10-30T07:41:20Z installed manifest.tsv sha256 d74437f4c627f074b43efa9b7d09fd056b4bd04d82af1b4f5a385ef6dd80c0a4
+2026-10-30T07:41:21Z first skew through the sandboxed unit:
+pam_unix(runuser:session): session opened for user <user>(uid=1001) by (uid=0)
+pam_unix(runuser:session): session closed for user <user>
+ref main = 0541475abd671b2e3d5c6575f1f6f462ae8cb6d1
+host sentry     role sentry    ok
+host validator  role validator ok
+HOST       ADDON       STATE      DETAIL
+sentry     rulecheck   MISSING    /usr/local/bin/pft-rulecheck MISSING; /usr/local/lib/pft-rulecheck/rulecheck_lib.py MISSING; /etc/systemd/system/pft-rulecheck.service MISSING; /etc/systemd/system/pft-rulecheck.timer MISSING
+validator  rulecheck   MISSING    /usr/local/bin/pft-rulecheck MISSING; /usr/local/lib/pft-rulecheck/rulecheck_lib.py MISSING; /etc/systemd/system/pft-rulecheck.service MISSING; /etc/systemd/system/pft-rulecheck.timer MISSING; /etc/systemd/system/pft-rulecheck-pull.service MISSING; /etc/systemd/system/pft-rulecheck-pull.timer MISSING
+SUMMARY CURRENT=33 BEHIND=0 MODIFIED=0 MISSING=2 UNEXPECTED=0 DIVERGED=0
+pft-fleet.service: Deactivated successfully.
+Finished pft-fleet skew: compare installed add-on files on every host with the repo, write textfile metrics.
+pft-fleet.service: Consumed 4.512s CPU time.
+2026-10-30T07:41:28Z pft-fleet.timer enabled: Fri 2026-10-30 09:20:04 CET
+(exit 0)
+$ sudo grep -E "^pft_fleet_drift_since_timestamp_seconds" /var/lib/pft-exporter/textfile/pft_fleet.prom | awk "{print \$2}" | sort | uniq -c
+     53 0
+      2 1793346087
+(exit 0)
+
+## D. install pft-rulecheck on the validator (first run through the sandboxed unit)
+$ sudo bash rulecheck/install.sh
+2026-10-30T07:41:28Z installed /usr/local/bin/pft-rulecheck (sha256 5659e0169c3bfead4f2a28ae8074ed1e19c345e61df87a5e5f9d65686994b4a1)
+2026-10-30T07:41:28Z installed /usr/local/lib/pft-rulecheck/rulecheck_lib.py (sha256 2e73cd052ddc6accd8c84e086f062e232726244989390e51cc7a81e9dacf0345)
+2026-10-30T07:41:28Z wrote /etc/pft-rulecheck.env (HOST_LABEL=validator NO_PROM=0)
+2026-10-30T07:41:28Z wrote /etc/pft-rulecheck.conf from pft-rulecheck.conf.example
+2026-10-30T07:41:29Z first check (through the sandboxed unit; exit 1 = findings is a success for the unit):
+RESULT FINDINGS - rules: LIVE 66 PARTIAL 0 DEAD 1 ERROR 0 IGNORED 0 | textfiles: FRESH 11 STALE 0 MISSING 1 LEFTOVER 0 UNCONFIGURED 0 -> exit 1
+Created symlink /etc/systemd/system/timers.target.wants/pft-rulecheck.timer → /etc/systemd/system/pft-rulecheck.timer.
+2026-10-30T07:41:30Z pft-rulecheck.timer enabled: Fri 2026-10-30 09:17:14 CET
+(exit 0)
+$ sudo docker kill -s HUP pft-prometheus && sleep 40 && curl -s http://127.0.0.1:9090/api/v1/rules | jq -r ".data.groups[] | select(.name == \"pft-rulecheck\" or .name == \"pft-fleet\") | .rules[] | [.name, .health, .query] | @tsv"
+pft-prometheus
+PFTFleetDriftStale	ok	pft_fleet_drift_since_timestamp_seconds > 0 and time() - pft_fleet_drift_since_timestamp_seconds > 86400
+PFTFleetCheckStale	ok	time() - pft_fleet_last_run_timestamp_seconds > 3 * 3600
+PFTFleetHostUnreadable	ok	pft_fleet_host_up == 0
+PFTRuleDead	ok	pft_rulecheck_rule_dead == 1
+PFTTextfileStale	ok	pft_rulecheck_textfile_stale == 1
+PFTRulecheckNotRunning	ok	time() - pft_rulecheck_last_run_timestamp_seconds > 3 * 3600 or pft_rulecheck_up == 0 or absent(pft_rulecheck_last_run_timestamp_seconds{host="validator"})
+(exit 0)
