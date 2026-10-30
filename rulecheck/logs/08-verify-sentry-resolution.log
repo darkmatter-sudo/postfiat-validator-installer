@@ -1,0 +1,52 @@
+# pft-rulecheck 08: verification - PFTTextfileStale host=sentry resolution after drill run 2 (run 2 window 08:02:22Z-08:17:13Z)
+OS: Ubuntu 22.04.5 LTS | host: validator | 2026-10-30T08:20:33Z | repo HEAD 558f52bafc0176f34b2532a4bcc3fa09ae5ce7a5
+## sentry host: no Prometheus/Alertmanager runs there (the host=sentry alerts are evaluated by the validator's Prometheus from the pulled pft_rulecheck_sentry.prom)
+$ ssh relay 'ss -Htln | grep -cE ":(9090|9093) "; curl -s -m 5 -o /dev/null -w "localhost:9090 -> HTTP %{http_code}\n" http://localhost:9090/api/v1/alerts'
+0
+localhost:9090 -> HTTP 000
+(exit 7)
+$ ssh relay 'sudo pft-rulecheck check | grep -E "pft_statewatch_postfiatd-sentry|^RESULT"; sudo grep -E "^pft_rulecheck_(up|last_run)|pft_statewatch_postfiatd-sentry" /var/lib/pft-exporter/textfile/pft_rulecheck_sentry.prom'
+FRESH         pft_statewatch_postfiatd-sentry.prom              19s    5m00s  pft_statewatch_collect_timestamp_seconds
+RESULT OK - rules: skipped | textfiles: FRESH 7 STALE 0 MISSING 0 LEFTOVER 0 UNCONFIGURED 0 -> exit 0
+pft_rulecheck_up{host="sentry"} 1
+pft_rulecheck_last_run_timestamp_seconds{host="sentry"} 1793348229
+pft_rulecheck_textfile_stale{host="sentry",file="pft_statewatch_postfiatd-sentry.prom",state="FRESH"} 0
+pft_rulecheck_textfile_age_seconds{host="sentry",file="pft_statewatch_postfiatd-sentry.prom"} 54
+(exit 0)
+## validator: the pulled copy of the sentry result, current alerts, Alertmanager
+$ sudo grep -E "^pft_rulecheck_(up|last_run)|pft_statewatch_postfiatd-sentry" /var/lib/pft-exporter/textfile/pft_rulecheck_sentry.prom
+pft_rulecheck_up{host="sentry"} 1
+pft_rulecheck_last_run_timestamp_seconds{host="sentry"} 1793348229
+pft_rulecheck_textfile_stale{host="sentry",file="pft_statewatch_postfiatd-sentry.prom",state="FRESH"} 0
+pft_rulecheck_textfile_age_seconds{host="sentry",file="pft_statewatch_postfiatd-sentry.prom"} 54
+(exit 0)
+$ curl -s localhost:9090/api/v1/alerts | jq -c ".data.alerts[] | {alertname: .labels.alertname, host: .labels.host, state}" | grep -cE "PFTTextfileStale|PFTRuleDead"
+0
+(exit 1)
+$ curl -s localhost:9090/api/v1/alerts | jq -c "[.data.alerts[].labels.alertname]"
+["PFTAlertPipelineWatchdog"]
+(exit 0)
+$ sudo docker exec pft-alertmanager amtool alert query --alertmanager.url=http://127.0.0.1:9093
+Alertname                 Starts At                Summary                                                                       State   
+PFTAlertPipelineWatchdog  2026-10-29 03:09:41 UTC  Alert pipeline heartbeat (always firing; never routed to the operator topic)  active  
+(exit 0)
+$ curl -s localhost:9090/api/v1/query --data-urlencode "query=pft_rulecheck_textfile_stale{file=\"pft_statewatch_postfiatd-sentry.prom\"}" | jq -c ".data.result[] | [.metric.host, .metric.state, .value[1]]"
+["validator","FRESH","0"]
+["sentry","FRESH","0"]
+(exit 0)
+## when it cleared: ALERTS samples for PFTTextfileStale/PFTRuleDead during run 2 (15s steps), first/last timestamp per series
+$ curl -s localhost:9090/api/v1/query_range --data-urlencode "query=ALERTS{alertname=~\"PFTTextfileStale|PFTRuleDead\"}" --data-urlencode start=2026-10-30T08:02:00Z --data-urlencode end=2026-10-30T08:25:00Z --data-urlencode step=15s | jq -r ".data.result[] | [.metric.alertname, (.metric.host // \"-\"), .metric.alertstate, (.values[0][0] | todate), (.values[-1][0] | todate), (.values | length)] | @tsv"
+PFTRuleDead	validator	firing	2026-10-30T08:13:45Z	2026-10-30T08:15:00Z	6
+PFTRuleDead	validator	pending	2026-10-30T08:08:45Z	2026-10-30T08:13:30Z	20
+PFTTextfileStale	sentry	firing	2026-10-30T08:13:45Z	2026-10-30T08:15:00Z	6
+PFTTextfileStale	validator	firing	2026-10-30T08:13:45Z	2026-10-30T08:15:00Z	6
+PFTTextfileStale	sentry	pending	2026-10-30T08:08:45Z	2026-10-30T08:13:30Z	20
+PFTTextfileStale	validator	pending	2026-10-30T08:08:45Z	2026-10-30T08:13:30Z	20
+(exit 0)
+$ curl -s localhost:9090/api/v1/query_range --data-urlencode "query=pft_rulecheck_textfile_stale{file=\"pft_statewatch_postfiatd-sentry.prom\",state=\"STALE\"}" --data-urlencode start=2026-10-30T08:02:00Z --data-urlencode end=2026-10-30T08:25:00Z --data-urlencode step=15s | jq -r ".data.result[] | [.metric.host, (.values[0][0] | todate), (.values[-1][0] | todate)] | @tsv"
+sentry	2026-10-30T08:08:45Z	2026-10-30T08:15:00Z
+validator	2026-10-30T08:08:45Z	2026-10-30T08:15:00Z
+(exit 0)
+$ sudo docker logs pft-alert-bridge 2>&1 | grep -c "webhook status="
+0
+(exit 1)

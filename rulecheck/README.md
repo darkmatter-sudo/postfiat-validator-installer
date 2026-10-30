@@ -208,6 +208,7 @@ the operator topics stayed at 0. Check 4f requires at least one `[RESOLVED]` per
 | `logs/05-integrity.log` | pft-integrity accept + verify PASS on both hosts |
 | `logs/06-drill-run1-check3b-failed.log` | drill run 1 (23/24, harness check 3b) |
 | `logs/07-drill-run2-pass.log` | drill run 2 (24/24) |
+| `logs/08-verify-sentry-resolution.log` | after run 2: the host=sentry PFTTextfileStale left Prometheus in the same evaluation as the others (last firing sample 08:15:00Z), current alerts on both hosts, 0 webhooks to the restored bridge |
 
 ## Limits
 
