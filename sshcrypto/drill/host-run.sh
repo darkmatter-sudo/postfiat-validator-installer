@@ -14,7 +14,8 @@
 # The host ends in its pre-apply state; the alert drill (live-alert-drill.sh) applies the policy for good.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
-FIX="$HERE/../tests/fixtures"
+cd "$HERE/.." || exit 3       # relative paths in every printed command (no home directory in the log)
+FIX=tests/fixtures
 LABEL="${1:?usage: host-run.sh LABEL [REVERT_SECS]}"; RS="${2:-60}"
 ST=/var/lib/pft-sshcrypto
 SOCK="$(mktemp -u /run/pft-sshcrypto-lifeline.XXXXXX)"
@@ -45,7 +46,7 @@ cleanup() { [ -S "$SOCK" ] && ssh -S "$SOCK" -O exit x 2>/dev/null; rm -f "$SOCK
 trap cleanup EXIT
 
 echo "pft-sshcrypto host run ($LABEL) - $(ts) - $(grep PRETTY_NAME /etc/os-release | cut -d'"' -f2) - $(ssh -V 2>&1)"
-echo "sha256: host-run.sh $(sha256sum < "$0" | cut -c1-64)"
+echo "sha256: host-run.sh $(sha256sum < "$HERE/host-run.sh" | cut -c1-64)"
 echo "        installed pft-sshcrypto $(sha256sum < /usr/local/bin/pft-sshcrypto | cut -c1-64)"
 echo "        installed sshcrypto_grade.py $(sha256sum < /usr/local/lib/pft-sshcrypto/sshcrypto_grade.py | cut -c1-64)"
 echo "        installed hardened.conf $(sha256sum < /usr/local/lib/pft-sshcrypto/hardened.conf | cut -c1-64)"

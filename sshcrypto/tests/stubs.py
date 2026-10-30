@@ -10,6 +10,7 @@ State lives under $PFT_SC_ROOT (a temp dir):
 Knobs: STUB_SSHD_T_FAIL=1, STUB_RELOAD_NOOP=1 (reload does not update running), STUB_SSH_REFUSE=1 (connection
 refused), STUB_CLIENT_LACKS=alg1,alg2, STUB_KEYS="RSA:3072,ECDSA:256,ED25519:256" (by key file name),
 STUB_KEYGEN_FAIL=1, STUB_CONFIRM_DENY=1, STUB_RELOAD_FAIL=1, STUB_RUN_FAIL=1.
+ssh honours -o LogLevel: at ERROR/QUIET/FATAL a failed negotiation prints nothing (as OpenSSH 8.9 does).
 """
 
 import glob
@@ -181,6 +182,9 @@ def ssh(args):
             if cipher.startswith(("chacha20", "aes128-gcm", "aes256-gcm")):
                 continue  # AEAD: no MAC negotiated
         if not any(c in server for c in client):
+            # like OpenSSH 8.9: "Unable to negotiate" is logged at INFO, so LogLevel ERROR/QUIET prints nothing
+            if opts.get("loglevel", "INFO").upper() in ("QUIET", "FATAL", "ERROR"):
+                return 255
             print(
                 f"Unable to negotiate with {host} port {port}: no matching {NOMATCH[key]} found. "
                 f"Their offer: {','.join(server)}"

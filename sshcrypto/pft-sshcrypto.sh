@@ -199,6 +199,8 @@ audit() {
 }
 
 # confirm -> rc 0 if a NEW ssh session logs in with the confirm key and prints the token; reason on stdout otherwise
+# (LogLevel INFO, not ERROR: at ERROR ssh 8.9 prints nothing for "Unable to negotiate", so the reason was empty;
+# found by the first live drill, logs/08-host-run-validator-failed.log)
 confirm() {
   local t lb addr port out
   t="$(mktemp)"
@@ -209,7 +211,7 @@ confirm() {
   if [ ! -f "$STATE/confirm_ed25519" ] || [ ! -f "$STATE/known_hosts" ]; then echo "confirm key missing (run install.sh)"; return 1; fi
   out="$(timeout 30 "$SSH" -F /dev/null -i "$STATE/confirm_ed25519" -o IdentitiesOnly=yes -o IdentityAgent=none \
     -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$STATE/known_hosts" \
-    -o GlobalKnownHostsFile=/dev/null -o HostKeyAlias=pft-sshcrypto-loopback -o LogLevel=ERROR -p "$port" \
+    -o GlobalKnownHostsFile=/dev/null -o HostKeyAlias=pft-sshcrypto-loopback -o LogLevel=INFO -p "$port" \
     -l root "$addr" 2>&1 < /dev/null)"
   if [ "$(printf '%s' "$out" | tr -d '\r' | tail -1)" = "$TOKEN" ]; then return 0; fi
   printf '%s' "$out" | tr -d '\r' | head -1 | cut -c1-160

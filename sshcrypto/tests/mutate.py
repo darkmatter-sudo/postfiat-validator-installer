@@ -242,6 +242,13 @@ MUTANTS = [
         "grep -qvE '^[[:space:]]*(#|$|(KexAlgorithms|Ciphers|MACs|HostKeyAlgorithms)[[:space:]])' \"$policy\"",
         "false",
     ),
+    (
+        "M33",
+        "sh",
+        "confirm ssh at LogLevel ERROR (the failure reason is lost, as in live run 08)",
+        "-o HostKeyAlias=pft-sshcrypto-loopback -o LogLevel=INFO",
+        "-o HostKeyAlias=pft-sshcrypto-loopback -o LogLevel=ERROR",
+    ),
 ]
 
 
