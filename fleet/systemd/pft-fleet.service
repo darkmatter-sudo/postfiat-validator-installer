@@ -1,0 +1,35 @@
+[Unit]
+Description=pft-fleet skew: compare installed add-on files on every host with the repo, write textfile metrics
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/fleet
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Exit 1 (drift) and 2 (modified/missing/host unreadable) are results, reported through the metrics and alerts.
+ExecStart=/usr/local/sbin/pft-fleet skew --metrics
+SuccessExitStatus=1 2
+# root: reads root-only add-on files and writes the root-owned textfile dir; ssh to the sentry runs as SSH_AS
+# (/etc/pft-fleet/fleet.conf), which holds the admin key. Read-only everywhere else; never writes add-on files.
+ProtectSystem=strict
+ReadWritePaths=/var/lib/pft-exporter/textfile /var/lib/pft-fleet
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_AUDIT_WRITE CAP_DAC_READ_SEARCH
+UMask=0022
+TimeoutStartSec=300

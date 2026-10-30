@@ -436,3 +436,18 @@ Back up any validator keys before deleting `/opt/postfiatd`.
 ## Test run log
 
 See [`logs/test-run.log`](logs/test-run.log) for a full run on a clean Ubuntu 22.04 host.
+
+## Add-on inventory, version skew and pinned sync (fleet)
+
+[`fleet/`](fleet/README.md): compares the installed bytes of every add-on file on the validator and the sentry with
+this repo's git history. `inventory` lists each file's sha256, the commit those bytes came from and the unit states;
+`skew` grades each add-on per host CURRENT / BEHIND / MODIFIED / MISSING / UNEXPECTED plus cross-host DIVERGED (exit
+0/1/2) and exports `pft_fleet_*` metrics with a stale-drift alert (`../alerts/fleet.rules.yml`). `sync` installs one
+add-on exactly as it is at a pinned commit: dry run by default, sentry first, only inside a `pft-maint` window,
+health-gated per host with automatic rollback, and a reasoned `pft-integrity accept`.
+
+```bash
+sudo fleet/install.sh                                        # validator; needs /etc/pft-fleet/{fleet,hosts}.conf
+sudo pft-fleet skew                                          # exit 0 current, 1 drift, 2 modified/missing/unreadable
+sudo pft-fleet sync --addon statewatch --to <commit> [--apply]
+```

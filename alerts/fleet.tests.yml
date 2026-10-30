@@ -1,0 +1,88 @@
+# promtool unit tests for fleet.rules.yml. Run: promtool test rules fleet.tests.yml
+# Time 0 = 1970-01-01T00:00Z; the timer writes a fresh last_run every 60 samples (1m interval = hourly runs).
+rule_files:
+  - fleet.rules.yml
+evaluation_interval: 1m
+tests:
+  - name: "drift seen at t=0 and still there: nothing at 24h, fires after 24h + 10m, not for the CURRENT add-on"
+    interval: 1m
+    input_series:
+      - series: 'pft_fleet_drift_since_timestamp_seconds{host="sentry",addon="statewatch"}'
+        values: '0x1500'
+      - series: 'pft_fleet_addon_state{host="sentry",addon="vulnscan",state="CURRENT"}'
+        values: '1x1500'
+      - series: 'pft_fleet_last_run_timestamp_seconds'
+        values: '0+60x1500'
+      - series: 'pft_fleet_host_up{host="sentry"}'
+        values: '1x1500'
+    alert_rule_test:
+      - eval_time: 24h
+        alertname: PFTFleetDriftStale
+        exp_alerts: []
+      - eval_time: 24h5m
+        alertname: PFTFleetDriftStale
+        exp_alerts: []
+      - eval_time: 24h12m
+        alertname: PFTFleetDriftStale
+        exp_alerts:
+          - exp_labels: {severity: warning, host: sentry, addon: statewatch}
+            exp_annotations:
+              summary: "add-on statewatch on sentry has not matched the repo for over 24h"
+              description: "pft-fleet has seen statewatch as BEHIND, MODIFIED, MISSING or UNEXPECTED on sentry (host=* means the hosts run different versions) for more than a day. Run `sudo pft-fleet skew` to see which file, then finish the rollout with `sudo pft-fleet sync --addon statewatch --to <commit> --apply` inside a pft-maint window, or explain the hand edit and commit it."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/fleet/README.md#alerts"
+      - eval_time: 24h12m
+        alertname: PFTFleetCheckStale
+        exp_alerts: []
+  - name: "drift fixed after 20h (series disappears): never fires; DIVERGED (host=*) drift fires on its own clock"
+    interval: 1m
+    input_series:
+      - series: 'pft_fleet_drift_since_timestamp_seconds{host="validator",addon="alertpath"}'
+        values: '0x1200 _x400'
+      - series: 'pft_fleet_drift_since_timestamp_seconds{host="*",addon="backup"}'
+        values: '3600x1600'
+      - series: 'pft_fleet_last_run_timestamp_seconds'
+        values: '0+60x1600'
+    alert_rule_test:
+      - eval_time: 25h
+        alertname: PFTFleetDriftStale
+        exp_alerts: []
+      - eval_time: 25h12m
+        alertname: PFTFleetDriftStale
+        exp_alerts:
+          - exp_labels: {severity: warning, host: "*", addon: backup}
+            exp_annotations:
+              summary: "add-on backup on * has not matched the repo for over 24h"
+              description: "pft-fleet has seen backup as BEHIND, MODIFIED, MISSING or UNEXPECTED on * (host=* means the hosts run different versions) for more than a day. Run `sudo pft-fleet skew` to see which file, then finish the rollout with `sudo pft-fleet sync --addon backup --to <commit> --apply` inside a pft-maint window, or explain the hand edit and commit it."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/fleet/README.md#alerts"
+  - name: "timer stops at 1h: check stale fires after 3h + 10m; host unreadable for 2h fires"
+    interval: 1m
+    input_series:
+      - series: 'pft_fleet_last_run_timestamp_seconds'
+        values: '0+60x60 3600x300'
+      - series: 'pft_fleet_host_up{host="sentry"}'
+        values: '1x60 0x300'
+      - series: 'pft_fleet_host_up{host="validator"}'
+        values: '1x360'
+    alert_rule_test:
+      - eval_time: 4h
+        alertname: PFTFleetCheckStale
+        exp_alerts: []
+      - eval_time: 4h11m
+        alertname: PFTFleetCheckStale
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations:
+              summary: "pft-fleet skew has not run for 3 hours"
+              description: "pft-fleet.timer runs hourly; without fresh runs, add-on drift is not detected and PFTFleetDriftStale cannot fire. Check `systemctl list-timers pft-fleet.timer` and `journalctl -u pft-fleet.service`."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/fleet/README.md#alerts"
+      - eval_time: 2h59m
+        alertname: PFTFleetHostUnreadable
+        exp_alerts: []
+      - eval_time: 3h2m
+        alertname: PFTFleetHostUnreadable
+        exp_alerts:
+          - exp_labels: {severity: warning, host: sentry}
+            exp_annotations:
+              summary: "pft-fleet cannot read the add-on files on sentry"
+              description: "The inventory over ssh failed for two hours (ssh key, sudo -n, or the host is down). Drift on that host is not being checked; its drift clocks are kept from the last good run."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/fleet/README.md#alerts"

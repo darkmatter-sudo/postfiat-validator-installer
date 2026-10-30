@@ -1,0 +1,11 @@
+[Unit]
+Description=pft-fleet skew every hour
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/fleet
+
+[Timer]
+OnCalendar=*-*-* *:17:00
+RandomizedDelaySec=300
+Persistent=true
+
+[Install]
+WantedBy=timers.target
