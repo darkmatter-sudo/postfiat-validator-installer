@@ -1,0 +1,34 @@
+[Unit]
+Description=pft-sshcrypto audit: grade sshd algorithms + host keys, loopback handshake probes (writes textfile metrics)
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/sshcrypto
+After=ssh.service
+
+[Service]
+Type=oneshot
+# exit 1 = WARN/FAIL findings (reported in the metrics), not a unit failure; exit 2 (audit error) fails the unit
+SuccessExitStatus=1
+ExecStart=/usr/local/bin/pft-sshcrypto audit
+ReadWritePaths=/var/lib/pft-exporter/textfile
+ProtectSystem=strict
+# read-only, not yes: the ssh client of the probes looks up root's home directory
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+UMask=0022
+TimeoutStartSec=5min

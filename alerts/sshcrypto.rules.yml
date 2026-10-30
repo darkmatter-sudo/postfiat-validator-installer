@@ -1,0 +1,62 @@
+# Alert rules for pft-sshcrypto (../sshcrypto). pft-sshcrypto.timer audits once an hour (+ up to 10 min) and writes
+# pft_sshcrypto_*{host="..."} to the textfile dir (validator: local; sentry: pulled by pft-sshcrypto-pull.timer every
+# 15 min); the pft exporter serves it. A failed audit writes up 0 and drops the findings/probe series, so
+# PFTSSHCryptoAuditFailing covers that gap. The sentry runs no Prometheus: every host="sentry" alert is evaluated here.
+# Tests: sshcrypto.tests.yml (promtool test rules sshcrypto.tests.yml).
+groups:
+  - name: pft-sshcrypto
+    rules:
+      - alert: PFTSSHCryptoFailGrade
+        expr: sum by (instance, job, host) (pft_sshcrypto_findings{grade="fail"}) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "sshd on {{ $labels.host }} offers {{ $value }} FAIL-grade algorithm(s) or host key(s)"
+          description: "The hourly pft-sshcrypto audit graded at least one offered SSH algorithm or host key FAIL (SHA-1, CBC, MD5, 64-bit tag, DSA, RSA < 2048). Run `sudo pft-sshcrypto audit` to list them; `sudo pft-sshcrypto apply` installs the hardened policy with automatic revert."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/sshcrypto/README.md#alerts"
+      - alert: PFTSSHCryptoProbeMismatch
+        expr: pft_sshcrypto_probe_mismatches > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "sshd on {{ $labels.host }} negotiates differently from its config ({{ $value }} probe mismatch(es))"
+          description: "A loopback handshake negotiated an algorithm that sshd -T does not list, or was refused one it lists: the running daemon is not serving the config on disk (missed reload, second sshd, socket activation). Run `sudo pft-sshcrypto audit` and read the MISMATCH lines."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/sshcrypto/README.md#alerts"
+      - alert: PFTSSHCryptoWarnGrade
+        expr: sum by (instance, job, host) (pft_sshcrypto_findings{grade="warn"}) > 0
+        for: 24h
+        labels:
+          severity: warning
+        annotations:
+          summary: "sshd on {{ $labels.host }} has offered {{ $value }} WARN-grade algorithm(s)/host key(s) for 24h"
+          description: "WARN items (NIST curves, 2048-bit groups, encrypt-and-MAC, RSA < 3072) are not broken but are below the policy. `sudo pft-sshcrypto apply` removes them (see ../sshcrypto/README.md#policy)."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/sshcrypto/README.md#alerts"
+      - alert: PFTSSHCryptoAuditFailing
+        expr: pft_sshcrypto_up == 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pft-sshcrypto audit fails on {{ $labels.host }}"
+          description: "The last audit exited 2 (sshd -T failed, a host key could not be read, a probe could not run or sshd has no loopback listener). SSH crypto status is unknown. Run `sudo pft-sshcrypto audit` and read the ERROR lines."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/sshcrypto/README.md#alerts"
+      - alert: PFTSSHCryptoNotRunning
+        expr: time() - pft_sshcrypto_last_run_timestamp_seconds > 3 * 3600
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pft-sshcrypto has not audited {{ $labels.host }} for 3 hours"
+          description: "The hourly audit missed three runs: pft-sshcrypto.timer is stopped (or, for the sentry, pft-sshcrypto-pull.timer cannot copy its textfile). Check `systemctl list-timers 'pft-sshcrypto*'`."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/sshcrypto/README.md#alerts"
+      - alert: PFTSSHCryptoRevertPending
+        expr: pft_sshcrypto_revert_pending == 1
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "an unconfirmed sshd policy change on {{ $labels.host }} was neither confirmed nor reverted"
+          description: "pft-sshcrypto apply armed a revert timer that should have fired within minutes; the policy is still pending (timer lost by a reboot, or the rollback failed). Check `sudo pft-sshcrypto status` and `journalctl -u pft-sshcrypto-revert`; run `sudo pft-sshcrypto rollback`."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/sshcrypto/README.md#alerts"
