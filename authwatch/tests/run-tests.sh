@@ -135,7 +135,8 @@ check "next run: invalid_user +1 exactly" '[ "$(val "$OUT" "pft_authwatch_ssh_fa
 check "no temp files left in the textfile dir" '[ -z "$(find "$T/tf" -name ".authwatch-*")" ]'
 
 echo "== 5. allowlist: import, dedupe, classify, remove"
-fp1="$(jq -r '.MESSAGE' "$FXV" | grep -oE 'SHA256:[A-Za-z0-9+/]{43}' | head -1)"
+# the key of the NEWEST login: then last_unknown_login must skip the newest Accepted entry (mutant P06)
+fp1="$(jq -r '.MESSAGE' "$FXV" | grep -oE 'SHA256:[A-Za-z0-9+/]{43}' | tail -1)"
 printf '# keys\nssh-ed25519 %s op\nssh-ed25519 %s again\n' "$fp1" "$fp1" > "$T/ak"
 check "import adds 1 (duplicate skipped)" '[ "$(aw allow import "$T/ak")" = "allowlist: 1 added, 1 total" ]'
 check "import again adds 0" '[ "$(aw allow import "$T/ak")" = "allowlist: 0 added, 1 total" ]'
@@ -188,6 +189,8 @@ check "pull copies a valid sentry file" '"${PULLENV[@]}" bash "$S" pull --host s
 check "pulled file mode 644" '[ "$(stat -c %a "$T/tf/pft_authwatch_sentry.prom")" = 644 ]'
 sed 's/host="sentry"/host="validator"/' "$T/tf/pft_authwatch_sentry.prom" > "$T/remote.prom"
 check "wrong host label -> exit 2, old file kept" '"${PULLENV[@]}" bash "$S" pull --host sentry --textfile-dir "$T/tf" 2>/dev/null; [ $? = 2 ] && grep -q "host=\"sentry\"" "$T/tf/pft_authwatch_sentry.prom"'
+grep -v '^pft_authwatch_up{' "$T/tf/pft_authwatch_sentry.prom" > "$T/remote.prom"
+check "no up sample -> exit 2" '"${PULLENV[@]}" bash "$S" pull --host sentry --textfile-dir "$T/tf" 2>/dev/null; [ $? = 2 ]'
 printf 'garbage\n' > "$T/remote.prom"
 check "garbage -> exit 2" '"${PULLENV[@]}" bash "$S" pull --host sentry --textfile-dir "$T/tf" 2>/dev/null; [ $? = 2 ]'
 touch "$T/shang"; t0=$(date +%s)
