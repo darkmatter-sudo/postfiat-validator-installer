@@ -144,7 +144,7 @@ shreds the keys and repeats the live checks.
 
 ## Live proof
 
-Recorded on pft-agent's validator host (Ubuntu 22.04.5) against commit `385e764` (sha256 of every file in each log
+Recorded on the validator host (Ubuntu 22.04.5) against commit `385e764` (sha256 of every file in each log
 header). The live validator and sentry were only read; neither has a validator token yet.
 
 | Log | What | Result |
