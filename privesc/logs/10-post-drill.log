@@ -1,0 +1,113 @@
+privesc post-drill - 2026-10-31T19:21:24Z - Ubuntu 22.04.5 LTS - repo HEAD 4f1cfdbaba723839748c1339ef58ec7558a88a52
+
+== 1. state after the drills: apply manifest present, nothing to fix, agent sudo intact
+$ sudo -n pft-privesc status; R 'sudo -n pft-privesc status'
+  applied changes: 7
+    PE-SUID-UNNEEDED	suid-remove	/usr/bin/chfn	0755
+    PE-SUID-UNNEEDED	suid-remove	/usr/bin/pkexec	0755
+    PE-SUID-UNNEEDED	suid-remove	/usr/bin/chsh	0755
+    PE-SUID-UNNEEDED	suid-remove	/usr/bin/fusermount3	0755
+    PE-SUID-UNNEEDED	suid-remove	/usr/lib/openssh/ssh-keysign	0755
+    PE-SUID-UNNEEDED	suid-remove	/usr/libexec/polkit-agent-helper-1	0755
+    PE-CAP-UNNEEDED	cap-remove	/usr/lib/x86_64-linux-gnu/gstreamer1.0/gstreamer-1.0/gst-ptp-helper	cap_net_bind_service,cap_net_admin=ep
+  last undo: 10 change(s) restored
+  applied changes: 7
+    PE-SUID-UNNEEDED	suid-remove	/usr/bin/chfn	0755
+    PE-SUID-UNNEEDED	suid-remove	/usr/bin/pkexec	0755
+    PE-SUID-UNNEEDED	suid-remove	/usr/bin/chsh	0755
+    PE-SUID-UNNEEDED	suid-remove	/usr/bin/fusermount3	0755
+    PE-SUID-UNNEEDED	suid-remove	/usr/lib/openssh/ssh-keysign	0755
+    PE-SUID-UNNEEDED	suid-remove	/usr/libexec/polkit-agent-helper-1	0755
+    PE-CAP-UNNEEDED	cap-remove	/usr/lib/x86_64-linux-gnu/gstreamer1.0/gstreamer-1.0/gst-ptp-helper	cap_net_bind_service,cap_net_admin=ep
+  last undo: 10 change(s) restored
+  (exit 0)
+$ sudo -n pft-privesc apply --dry-run | tail -2; R 'sudo -n pft-privesc apply --dry-run | tail -2'
+  2026-10-31T19:21:33Z nothing to apply (0 protected skipped)
+  2026-10-31T19:21:38Z nothing to apply (0 protected skipped)
+  (exit 0)
+$ sudo -n true && echo validator sudo ok; R 'sudo -n true && echo sentry sudo ok'
+  validator sudo ok
+  sentry sudo ok
+  (exit 0)
+CHECK ok   agent sudo works on both hosts
+$ dpkg-statoverride --list | sort; R 'dpkg-statoverride --list | sort'
+  _chrony _chrony 750 /var/lib/chrony
+  _chrony _chrony 750 /var/log/chrony
+  root crontab 2755 /usr/bin/crontab
+  root messagebus 4754 /usr/lib/dbus-1.0/dbus-daemon-launch-helper
+  root root 755 /bin/fusermount3
+  root root 755 /usr/bin/chfn
+  root root 755 /usr/bin/chsh
+  root root 755 /usr/bin/pkexec
+  root root 755 /usr/lib/openssh/ssh-keysign
+  root root 755 /usr/libexec/polkit-agent-helper-1
+  _chrony _chrony 750 /var/lib/chrony
+  _chrony _chrony 750 /var/log/chrony
+  root crontab 2755 /usr/bin/crontab
+  root messagebus 4754 /usr/lib/dbus-1.0/dbus-daemon-launch-helper
+  root root 755 /bin/fusermount3
+  root root 755 /usr/bin/chfn
+  root root 755 /usr/bin/chsh
+  root root 755 /usr/bin/pkexec
+  root root 755 /usr/lib/openssh/ssh-keysign
+  root root 755 /usr/libexec/polkit-agent-helper-1
+  (exit 0)
+
+== 2. integrity: the WARN items are exactly the permission changes apply made; accept them
+$ sudo -n pft-integrity verify | grep -E '^(WARN|FAIL|RESULT)' | sed -E 's/ +sha256.*//'
+  RESULT: PASS - 120 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+$ sudo -n pft-integrity accept --reason 'task_0ea90375: privesc 4f1cfdb apply (SUID off chfn chsh pkexec fusermount3 ssh-keysign polkit-agent-helper-1 via statoverride, setcap -r gst-ptp-helper)' | tail -2
+  pft-integrity accept - 2026-10-31T19:21:52Z: re-baselined 120 items by <user>
+  manifest sha256: fbfe5759238c38e4f0924a7194294cb0dc20718bb26eb721172d8438a76fbcd9 -> d0fa93f086ce480622cbf95e438ef011eb190a9fbbedb3a14463253bc62347da (logged to accept.log)
+  (exit 0)
+$ R 'sudo -n pft-integrity verify' | grep -E '^(WARN|FAIL|RESULT)' | sed -E 's/ +sha256.*//'
+  RESULT: PASS - 71 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+$ R "sudo -n pft-integrity accept --reason 'task_0ea90375: privesc 4f1cfdb apply (SUID off chfn chsh pkexec fusermount3 ssh-keysign polkit-agent-helper-1 via statoverride, setcap -r gst-ptp-helper)'" | tail -2
+  pft-integrity accept - 2026-10-31T19:22:03Z: re-baselined 71 items by root
+  manifest sha256: 4aeff33380d9f8a3bcf5c75d7fb03dfc4f32934f850aa1f39ff8a2583994fd5f -> 665d82a8de4dc99f0d0e975481d54444e31bbad7d89661507dbb616a33d0a60f (logged to accept.log)
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 120 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 71 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts
+
+== 3. fresh audit through the units, pull, Prometheus
+$ sudo -n systemctl start pft-privesc.service; R 'sudo -n systemctl start pft-privesc.service'; sudo -n systemctl start pft-privesc-pull.service; echo started
+  started
+  (exit 0)
+$ sleep 75; curl -s http://<redacted-ip>:9090/api/v1/query --data-urlencode 'query=sum by (host, grade) (pft_privesc_findings)' | jq -r '.data.result[] | "\(.metric.host) \(.metric.grade) \(.value[1])"' | sort
+  sentry fail 0
+  sentry info 5
+  sentry pass 28
+  sentry warn 0
+  validator fail 0
+  validator info 7
+  validator pass 28
+  validator warn 0
+  (exit 0)
+CHECK ok   Prometheus: 0 fail and 0 warn findings for validator and sentry
+$ curl -s http://<redacted-ip>:9090/api/v1/query --data-urlencode 'query=pft_privesc_up' | jq -r '.data.result[] | "\(.metric.host) \(.value[1])"' | sort
+  sentry 1
+  validator 1
+  (exit 0)
+CHECK ok   pft_privesc_up 1 for both hosts
+$ curl -s http://<redacted-ip>:9090/api/v1/query --data-urlencode 'query=ALERTS{alertname=~"PFTPrivesc.*|PFTRuleDead|PFTTextfileStale|PFTFleet.*"}' | jq -r '.data.result | length'
+  0
+  (exit 0)
+CHECK ok   no PFTPrivesc*/PFTRuleDead/PFTTextfileStale/PFTFleet* alert pending or firing
+
+== 4. expire the rollout silence, nodes full
+$ curl -s --max-time 10 -o /dev/null -w 'HTTP %{http_code}\n' -X DELETE http://<redacted-ip>:9093/api/v2/silence/600371f8-80f2-49d5-af68-a0ba6c8e8fdf
+  HTTP 200
+  (exit 0)
+CHECK ok   rollout silence expired
+$ sudo -n docker exec postfiatd curl -s -m 10 -d '{"method":"server_info"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state; R "sudo -n docker exec postfiatd-sentry curl -s -m 10 -d '{\"method\":\"server_info\"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state"
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full
+
+post-run done 2026-10-31T19:23:48Z: 0 check(s) failed -> PASS

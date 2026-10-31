@@ -1,0 +1,248 @@
+privesc two-host install - 2026-10-31T19:11:18Z - Ubuntu 22.04.5 LTS - repo HEAD 4f1cfdbaba723839748c1339ef58ec7558a88a52 (clean: yes)
+
+== 0. preflight
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 115 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 68 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts before install
+$ sudo -n docker exec postfiatd curl -s -m 10 -d '{"method":"server_info"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state; R "sudo -n docker exec postfiatd-sentry curl -s -m 10 -d '{\"method\":\"server_info\"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state"
+  full
+  full
+  (exit 0)
+$ ls /usr/local/bin/pft-privesc /etc/pft-privesc.env 2>&1; R 'ls /usr/local/bin/pft-privesc /etc/pft-privesc.env 2>&1'
+  ls: cannot access '/usr/local/bin/pft-privesc': No such file or directory
+  ls: cannot access '/etc/pft-privesc.env': No such file or directory
+  ls: cannot access '/usr/local/bin/pft-privesc': No such file or directory
+  ls: cannot access '/etc/pft-privesc.env': No such file or directory
+  (exit 2)
+CHECK ok   not installed yet on either host
+
+== 1. rollout silence (new rules + install + both drills; rulecheck/fleet see new files)
+CHECK ok   Alertmanager silence created (PFTPrivesc*, PFTRuleDead, PFTTextfileStale, PFTRulecheck*, PFTFleet*) until 2026-10-31T20:31:33Z
+
+== 2. sentry: install
+$ git archive 4f1cfdbaba723839748c1339ef58ec7558a88a52 privesc | R 'rm -rf /tmp/pft-privesc-4f1cfdb && mkdir -m 700 /tmp/pft-privesc-4f1cfdb && tar -x -C /tmp/pft-privesc-4f1cfdb'
+  
+  (exit 0)
+$ R 'sudo -n /tmp/pft-privesc-4f1cfdb/privesc/install.sh --host sentry'
+  2026-10-31T19:11:34Z installed /usr/local/bin/pft-privesc (sha256 3ae4146f26bb1e1121d58ad74fec3ac21c163b86d378018542451115930a45e5)
+  2026-10-31T19:11:34Z installed /usr/local/lib/pft-privesc/privesc_classify.py (sha256 289bc9f2ab006d7e5f77c2e7767b947c831aeafc47c77681268f9a45e3cab8ca)
+  2026-10-31T19:11:34Z added the pft_privesc textfile line to /etc/pft-rulecheck.conf
+  2026-10-31T19:11:36Z first audit (through the sandboxed unit, HOST_LABEL=sentry):
+  pft_privesc_up{host="sentry"} 1
+  pft_privesc_fixable{host="sentry"} 7
+  pft_privesc_backup_entries{host="sentry"} 0
+  Created symlink /etc/systemd/system/timers.target.wants/pft-privesc.timer → /etc/systemd/system/pft-privesc.timer.
+  2026-10-31T19:11:53Z enabled pft-privesc.timer (hourly + up to 10 min)
+  2026-10-31T19:11:53Z remember: sudo pft-integrity accept --reason 'pft-privesc installed'
+  (exit 0)
+CHECK ok   sentry install exit 0, up 1
+$ R 'sudo -n /tmp/pft-privesc-4f1cfdb/privesc/install.sh --host sentry'
+  2026-10-31T19:11:53Z installed /usr/local/bin/pft-privesc (sha256 3ae4146f26bb1e1121d58ad74fec3ac21c163b86d378018542451115930a45e5)
+  2026-10-31T19:11:53Z installed /usr/local/lib/pft-privesc/privesc_classify.py (sha256 289bc9f2ab006d7e5f77c2e7767b947c831aeafc47c77681268f9a45e3cab8ca)
+  2026-10-31T19:11:54Z first audit (through the sandboxed unit, HOST_LABEL=sentry):
+  pft_privesc_up{host="sentry"} 1
+  pft_privesc_fixable{host="sentry"} 7
+  pft_privesc_backup_entries{host="sentry"} 0
+  2026-10-31T19:12:06Z enabled pft-privesc.timer (hourly + up to 10 min)
+  2026-10-31T19:12:06Z remember: sudo pft-integrity accept --reason 'pft-privesc installed'
+  (exit 0)
+CHECK ok   sentry second install exit 0 (idempotent)
+$ R 'sudo -n stat -c "%a %U %n" /etc/pft-privesc.env /usr/local/bin/pft-privesc /usr/local/lib/pft-privesc/privesc_classify.py; sudo -n grep -c ^AGENT_USER= /etc/pft-privesc.env; sudo -n grep -n privesc /etc/pft-rulecheck.conf'
+  600 root /etc/pft-privesc.env
+  755 root /usr/local/bin/pft-privesc
+  644 root /usr/local/lib/pft-privesc/privesc_classify.py
+  1
+  21:# pft-privesc (hourly audit; sentry copy pulled every 15 min)
+  22:textfile pft_privesc_*.prom   3h   pft_privesc_last_run_timestamp_seconds
+  (exit 0)
+
+== 3. validator: install
+$ sudo -n privesc/install.sh
+  2026-10-31T19:12:07Z installed /usr/local/bin/pft-privesc (sha256 3ae4146f26bb1e1121d58ad74fec3ac21c163b86d378018542451115930a45e5)
+  2026-10-31T19:12:07Z installed /usr/local/lib/pft-privesc/privesc_classify.py (sha256 289bc9f2ab006d7e5f77c2e7767b947c831aeafc47c77681268f9a45e3cab8ca)
+  2026-10-31T19:12:07Z added the pft_privesc textfile line to /etc/pft-rulecheck.conf
+  2026-10-31T19:12:08Z first audit (through the sandboxed unit, HOST_LABEL=validator):
+  pft_privesc_up{host="validator"} 1
+  pft_privesc_fixable{host="validator"} 7
+  pft_privesc_backup_entries{host="validator"} 0
+  Created symlink /etc/systemd/system/timers.target.wants/pft-privesc.timer → /etc/systemd/system/pft-privesc.timer.
+  2026-10-31T19:12:30Z enabled pft-privesc.timer (hourly + up to 10 min)
+  2026-10-31T19:12:30Z remember: sudo pft-integrity accept --reason 'pft-privesc installed'
+  (exit 0)
+CHECK ok   validator install exit 0, up 1
+$ sudo -n privesc/install.sh
+  2026-10-31T19:12:30Z installed /usr/local/bin/pft-privesc (sha256 3ae4146f26bb1e1121d58ad74fec3ac21c163b86d378018542451115930a45e5)
+  2026-10-31T19:12:30Z installed /usr/local/lib/pft-privesc/privesc_classify.py (sha256 289bc9f2ab006d7e5f77c2e7767b947c831aeafc47c77681268f9a45e3cab8ca)
+  2026-10-31T19:12:31Z first audit (through the sandboxed unit, HOST_LABEL=validator):
+  pft_privesc_up{host="validator"} 1
+  pft_privesc_fixable{host="validator"} 7
+  pft_privesc_backup_entries{host="validator"} 0
+  2026-10-31T19:12:42Z enabled pft-privesc.timer (hourly + up to 10 min)
+  2026-10-31T19:12:42Z remember: sudo pft-integrity accept --reason 'pft-privesc installed'
+  (exit 0)
+CHECK ok   validator second install exit 0 (idempotent)
+$ sudo -n stat -c '%a %U %n' /etc/pft-privesc.env /usr/local/bin/pft-privesc /usr/local/lib/pft-privesc/privesc_classify.py; sudo -n grep -n privesc /etc/pft-rulecheck.conf
+  600 root /etc/pft-privesc.env
+  755 root /usr/local/bin/pft-privesc
+  644 root /usr/local/lib/pft-privesc/privesc_classify.py
+  43:# pft-privesc (hourly audit; sentry copy pulled every 15 min)
+  44:textfile pft_privesc_*.prom   3h   pft_privesc_last_run_timestamp_seconds
+  (exit 0)
+
+== 4. validator: pull of the sentry file (PULL_SSH copied from /etc/pft-statewatch.env, not printed)
+$ sudo -n grep -q '^PULL_SSH=' /etc/pft-privesc.env || sudo -n sh -c 'grep "^PULL_SSH=" /etc/pft-statewatch.env >> /etc/pft-privesc.env'; sudo -n grep -c '^PULL_SSH=' /etc/pft-privesc.env; sudo -n stat -c '%a %U' /etc/pft-privesc.env
+  1
+  600 root
+  (exit 0)
+$ sudo -n privesc/install.sh --pull
+  2026-10-31T19:12:42Z installed /usr/local/bin/pft-privesc (sha256 3ae4146f26bb1e1121d58ad74fec3ac21c163b86d378018542451115930a45e5)
+  2026-10-31T19:12:42Z installed /usr/local/lib/pft-privesc/privesc_classify.py (sha256 289bc9f2ab006d7e5f77c2e7767b947c831aeafc47c77681268f9a45e3cab8ca)
+  2026-10-31T19:12:43Z first pull (through the sandboxed unit):
+  pft_privesc_up{host="sentry"} 1
+  pft_privesc_last_run_timestamp_seconds{host="sentry"} 1793473925
+  Created symlink /etc/systemd/system/timers.target.wants/pft-privesc-pull.timer → /etc/systemd/system/pft-privesc-pull.timer.
+  2026-10-31T19:12:44Z enabled pft-privesc-pull.timer (every 15 min)
+  (exit 0)
+CHECK ok   pull install exit 0, sentry file present on the validator
+$ for f in validator sentry; do sudo -n grep -qx "require pft_privesc_$f.prom" /etc/pft-rulecheck.conf || echo "require pft_privesc_$f.prom" | sudo -n tee -a /etc/pft-rulecheck.conf; done; sudo -n grep -n privesc /etc/pft-rulecheck.conf
+  require pft_privesc_validator.prom
+  require pft_privesc_sentry.prom
+  43:# pft-privesc (hourly audit; sentry copy pulled every 15 min)
+  44:textfile pft_privesc_*.prom   3h   pft_privesc_last_run_timestamp_seconds
+  45:require pft_privesc_validator.prom
+  46:require pft_privesc_sentry.prom
+  (exit 0)
+$ R "sudo -n grep -qx 'require pft_privesc_sentry.prom' /etc/pft-rulecheck.conf || echo 'require pft_privesc_sentry.prom' | sudo -n tee -a /etc/pft-rulecheck.conf; sudo -n grep -n privesc /etc/pft-rulecheck.conf"
+  require pft_privesc_sentry.prom
+  21:# pft-privesc (hourly audit; sentry copy pulled every 15 min)
+  22:textfile pft_privesc_*.prom   3h   pft_privesc_last_run_timestamp_seconds
+  23:require pft_privesc_sentry.prom
+  (exit 0)
+
+== 5. load the alert rules (alerts/ is mounted at /etc/pft-alerts) and check them
+$ sudo -n docker kill -s HUP pft-prometheus >/dev/null && sleep 30 && curl -s http://<redacted-ip>:9090/api/v1/rules | jq -r '.data.groups[] | select(.name == "pft-privesc") | .rules[] | [.name, .health, .state] | @tsv'
+  PFTPrivescFail	ok	inactive
+  PFTPrivescWarn	ok	pending
+  PFTPrivescAuditFailing	ok	inactive
+  PFTPrivescStale	ok	inactive
+  (exit 0)
+CHECK ok   4 privesc rules loaded, health ok
+$ curl -s http://<redacted-ip>:9090/api/v1/query --data-urlencode 'query=pft_privesc_up' | jq -r '.data.result[] | "\(.metric.host) \(.value[1])"' | sort
+  sentry 1
+  validator 1
+  (exit 0)
+CHECK ok   Prometheus scrapes pft_privesc_up for validator and sentry
+$ curl -s http://<redacted-ip>:9090/api/v1/query --data-urlencode 'query=sum by (host, grade) (pft_privesc_findings)' | jq -r '.data.result[] | "\(.metric.host) \(.metric.grade) \(.value[1])"' | sort
+  sentry fail 0
+  sentry info 5
+  sentry pass 22
+  sentry warn 7
+  validator fail 0
+  validator info 7
+  validator pass 22
+  validator warn 7
+  (exit 0)
+
+== 6. integrity: accept the new files on both hosts, verify
+$ sudo -n pft-integrity verify | grep -E '^(WARN|FAIL|RESULT)' | sed -E 's/ +sha256.*//' | head -20
+  RESULT: WARN - 115 unchanged, 5 warn, 0 fail -> exit 1
+  (exit 1)
+$ sudo -n pft-integrity accept --reason 'task_0ea90375: privesc 4f1cfdb installed (script, classifier, units, env, rulecheck.conf)' | tail -2
+  pft-integrity accept - 2026-10-31T19:13:29Z: re-baselined 120 items by <user>
+  manifest sha256: e83f94c0f307246879301c0ff376f3e5ebeb098f37f769149fc4d1896fc0588b -> 39f94a9414bea12cdb6974470d05fdbb6e50ff5adc51e2268a7d1f13752457ad (logged to accept.log)
+  (exit 0)
+$ R 'sudo -n pft-integrity verify' | grep -E '^(WARN|FAIL|RESULT)' | sed -E 's/ +sha256.*//' | head -20
+  RESULT: WARN - 68 unchanged, 3 warn, 0 fail -> exit 1
+  (exit 1)
+$ R "sudo -n pft-integrity accept --reason 'task_0ea90375: privesc 4f1cfdb installed (script, classifier, units, env, rulecheck.conf)'" | tail -2
+  pft-integrity accept - 2026-10-31T19:13:40Z: re-baselined 71 items by root
+  manifest sha256: 0af67bf845d81509af10c87be0d318bbfe9cb8db53cee41e3914764890ae87aa -> 4aeff33380d9f8a3bcf5c75d7fb03dfc4f32934f850aa1f39ff8a2583994fd5f (logged to accept.log)
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 120 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 71 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts
+
+== 7. fleet: sync the fleet add-on (manifest.tsv) to HEAD, then skew
+$ sudo -n pft-fleet sync --addon fleet --to 4f1cfdbaba723839748c1339ef58ec7558a88a52 --apply --reason 'task_0ea90375 privesc manifest lines'
+  [2026-10-31T19:14:05Z] sync fleet to 4f1cfdbaba723839748c1339ef58ec7558a88a52 (2026-10-31T19:10:20+00:00) REF main=4f1cfdbaba723839748c1339ef58ec7558a88a52
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN validator validator /usr/local/sbin/pft-fleet 0755 CURRENT 61cafcfcdaa9 61cafcfcdaa9 keep
+  PLAN validator validator /usr/local/lib/pft-fleet/fleet_lib.py 0644 CURRENT dcb37d26f33f dcb37d26f33f keep
+  PLAN validator validator /usr/local/lib/pft-fleet/manifest.tsv 0644 BEHIND 82cbbafb9608 7aa32e80586a write
+  PLAN validator validator /etc/systemd/system/pft-fleet.service 0644 CURRENT 3105a2f0a144 3105a2f0a144 keep
+  PLAN validator validator /etc/systemd/system/pft-fleet.timer 0644 CURRENT 79839ee00a81 79839ee00a81 keep
+  [2026-10-31T19:14:05Z] order: sentry validator
+  [2026-10-31T19:14:05Z] sentry: every fleet file already at 4f1cfdbaba72 - nothing to do
+  [2026-10-31T19:14:05Z] validator: 1 file(s) to write
+  [2026-10-31T19:14:05Z] REFUSED validator: no active pft-maint window (sudo pft-maint start --ttl 30m --reason ...)
+  (exit 4)
+CHECK FAIL fleet sync exit 0
+$ sudo -n pft-fleet skew
+  ref main = 4f1cfdbaba723839748c1339ef58ec7558a88a52
+  host sentry     role sentry    ok
+  host validator  role validator ok
+  HOST       ADDON       STATE      DETAIL
+  sentry     alertpath   CURRENT    
+  sentry     audittrail  CURRENT    
+  sentry     authwatch   CURRENT    
+  sentry     divergence  CURRENT    
+  sentry     egress      CURRENT    
+  sentry     integrity   CURRENT    
+  sentry     logship     CURRENT    
+  sentry     maint       CURRENT    
+  sentry     patch       CURRENT    
+  sentry     resources   CURRENT    
+  sentry     rulecheck   CURRENT    
+  sentry     statewatch  CURRENT    
+  sentry     sysctl      CURRENT    
+  sentry     timesync    CURRENT    
+  sentry     vulnscan    CURRENT    
+  sentry     watchdog    CURRENT    
+  validator  alertpath   CURRENT    
+  validator  audittrail  CURRENT    
+  validator  authwatch   CURRENT    
+  validator  backup      CURRENT    
+  validator  divergence  CURRENT    
+  validator  egress      CURRENT    
+  validator  exporter    CURRENT    
+  validator  fleet       BEHIND     /usr/local/lib/pft-fleet/manifest.tsv BEHIND @65afaf38b42a (-1)
+  validator  integrity   CURRENT    
+  validator  logship     CURRENT    
+  validator  maint       CURRENT    
+  validator  monitor     CURRENT    
+  validator  patch       CURRENT    
+  validator  resources   CURRENT    
+  validator  retention   CURRENT    
+  validator  rulecheck   CURRENT    
+  validator  statewatch  CURRENT    
+  validator  sysctl      CURRENT    
+  validator  timesync    CURRENT    
+  validator  vulnscan    CURRENT    
+  validator  watchdog    CURRENT    
+  SUMMARY CURRENT=36 BEHIND=1 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 1)
+CHECK FAIL pft-fleet skew exit 0 (privesc CURRENT on both hosts)
+$ sudo -n systemctl start pft-rulecheck.service; sudo -n journalctl -u pft-rulecheck.service --since -1min --no-pager -o cat | grep -E '^RESULT '
+  RESULT OK - rules: LIVE 83 PARTIAL 0 DEAD 0 ERROR 0 IGNORED 0 | textfiles: FRESH 19 STALE 0 MISSING 0 LEFTOVER 0 UNCONFIGURED 0 -> exit 0
+  (exit 0)
+CHECK ok   validator pft-rulecheck RESULT OK (privesc rules LIVE, textfiles FRESH)
+$ R 'sudo -n systemctl start pft-rulecheck.service; sudo -n journalctl -u pft-rulecheck.service --since -1min --no-pager -o cat' | grep -E '^RESULT '
+  RESULT OK - rules: skipped | textfiles: FRESH 10 STALE 0 MISSING 0 LEFTOVER 0 UNCONFIGURED 0 -> exit 0
+  (exit 0)
+CHECK ok   sentry pft-rulecheck RESULT OK
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 120 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 71 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts after the sync
+$ TZ=UTC systemctl is-active pft-privesc.timer pft-privesc-pull.timer; R 'systemctl is-active pft-privesc.timer'
+  active
+  active
+  active
+  (exit 0)
+
+install-run done 2026-10-31T19:14:31Z: 2 check(s) failed -> FAIL

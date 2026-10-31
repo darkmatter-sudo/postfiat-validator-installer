@@ -1,0 +1,189 @@
+pft-privesc drill/host-run.sh - 2026-10-31T19:16:29Z - Ubuntu 22.04.5 LTS - pft-privesc 1.0.0
+sha256 3ae4146f26bb1e1121d58ad74fec3ac21c163b86d378018542451115930a45e5 /usr/local/bin/pft-privesc
+sha256 289bc9f2ab006d7e5f77c2e7767b947c831aeafc47c77681268f9a45e3cab8ca privesc_classify.py
+== 1 audit (found)
+$ /usr/local/bin/pft-privesc audit --textfile-dir /tmp/tmp.IVjS6I7BBK > /tmp/tmp.IVjS6I7BBK/a1.txt
+(exit 1)
+pft-privesc audit - 2026-10-31T19:16:45Z host=validator
+WARN PE-SUID-UNNEEDED     /usr/bin/chfn: SUID mode 4755 (passwd), not needed on a headless node  -> sudo pft-privesc apply (dpkg-statoverride, survives upgrades)
+WARN PE-SUID-UNNEEDED     /usr/bin/pkexec: SUID mode 4755 (pkexec), not needed on a headless node  -> sudo pft-privesc apply (dpkg-statoverride, survives upgrades)
+WARN PE-SUID-UNNEEDED     /usr/bin/chsh: SUID mode 4755 (passwd), not needed on a headless node  -> sudo pft-privesc apply (dpkg-statoverride, survives upgrades)
+WARN PE-SUID-UNNEEDED     /usr/bin/fusermount3: SUID mode 4755 (fuse3), not needed on a headless node  -> sudo pft-privesc apply (dpkg-statoverride, survives upgrades)
+WARN PE-SUID-UNNEEDED     /usr/lib/openssh/ssh-keysign: SUID mode 4755 (openssh-client), not needed on a headless node  -> sudo pft-privesc apply (dpkg-statoverride, survives upgrades)
+WARN PE-SUID-UNNEEDED     /usr/libexec/polkit-agent-helper-1: SUID mode 4755 (polkitd), not needed on a headless node  -> sudo pft-privesc apply (dpkg-statoverride, survives upgrades)
+WARN PE-CAP-UNNEEDED      /usr/lib/x86_64-linux-gnu/gstreamer1.0/gstreamer-1.0/gst-ptp-helper: cap_net_bind_service,cap_net_admin=ep (libgstreamer1.0-0:amd64), not needed on a headless node  -> sudo pft-privesc apply (setcap -r; a package upgrade restores it, the audit then WARNs again)
+INFO PE-SUDO-ADMIN        sudoers: full-root rule for account acct-3ecc85d0
+INFO PE-SUDO-ADMIN        sudoers: full-root rule for account acct-f2822198
+INFO PE-SUDO-ADMIN        sudoers: full-root rule for group %admin
+INFO PE-SUDO-ADMIN        sudoers: full-root rule for group %sudo
+INFO PE-ROOTEQ-ADMIN      docker: account acct-3ecc85d0 is in docker and already has full sudo
+INFO PE-ROOTEQ-SERVICE    lxd: service account acct-de2373dc (no login shell) is in lxd
+INFO PE-ROOTEQ-ADMIN      lxd: account acct-f2822198 is in lxd and already has full sudo
+RESULT: WARN - 0 fail, 7 warn, 7 fixable by apply, 0 errors -> exit 1
+== 2 apply real findings (fixed), re-audit (verified)
+$ /usr/local/bin/pft-privesc apply
+  before: WARN PE-SUID-UNNEEDED     /usr/bin/chfn: SUID mode 4755 (passwd), not needed on a headless node  -> sudo pft-privesc apply (dpkg-statoverride, survives upgrades)
+  before: WARN PE-SUID-UNNEEDED     /usr/bin/pkexec: SUID mode 4755 (pkexec), not needed on a headless node  -> sudo pft-privesc apply (dpkg-statoverride, survives upgrades)
+  before: WARN PE-SUID-UNNEEDED     /usr/bin/chsh: SUID mode 4755 (passwd), not needed on a headless node  -> sudo pft-privesc apply (dpkg-statoverride, survives upgrades)
+  before: WARN PE-SUID-UNNEEDED     /usr/bin/fusermount3: SUID mode 4755 (fuse3), not needed on a headless node  -> sudo pft-privesc apply (dpkg-statoverride, survives upgrades)
+  before: WARN PE-SUID-UNNEEDED     /usr/lib/openssh/ssh-keysign: SUID mode 4755 (openssh-client), not needed on a headless node  -> sudo pft-privesc apply (dpkg-statoverride, survives upgrades)
+  before: WARN PE-SUID-UNNEEDED     /usr/libexec/polkit-agent-helper-1: SUID mode 4755 (polkitd), not needed on a headless node  -> sudo pft-privesc apply (dpkg-statoverride, survives upgrades)
+  before: WARN PE-CAP-UNNEEDED      /usr/lib/x86_64-linux-gnu/gstreamer1.0/gstreamer-1.0/gst-ptp-helper: cap_net_bind_service,cap_net_admin=ep (libgstreamer1.0-0:amd64), not needed on a headless node  -> sudo pft-privesc apply (setcap -r; a package upgrade restores it, the audit then WARNs again)
+2026-10-31T19:16:54Z plan: 7 change(s)
+2026-10-31T19:16:54Z   PE-SUID-UNNEEDED suid-remove 0755 /usr/bin/chfn
+2026-10-31T19:16:54Z   PE-SUID-UNNEEDED suid-remove 0755 /usr/bin/pkexec
+2026-10-31T19:16:54Z   PE-SUID-UNNEEDED suid-remove 0755 /usr/bin/chsh
+2026-10-31T19:16:54Z   PE-SUID-UNNEEDED suid-remove 0755 /usr/bin/fusermount3
+2026-10-31T19:16:54Z   PE-SUID-UNNEEDED suid-remove 0755 /usr/lib/openssh/ssh-keysign
+2026-10-31T19:16:54Z   PE-SUID-UNNEEDED suid-remove 0755 /usr/libexec/polkit-agent-helper-1
+2026-10-31T19:16:54Z   PE-CAP-UNNEEDED cap-remove cap_net_bind_service,cap_net_admin=ep /usr/lib/x86_64-linux-gnu/gstreamer1.0/gstreamer-1.0/gst-ptp-helper
+2026-10-31T19:16:54Z applied   PE-SUID-UNNEEDED suid-remove 0755 /usr/bin/chfn (was 4755 0 0)
+2026-10-31T19:16:54Z applied   PE-SUID-UNNEEDED suid-remove 0755 /usr/bin/pkexec (was 4755 0 0)
+2026-10-31T19:16:55Z applied   PE-SUID-UNNEEDED suid-remove 0755 /usr/bin/chsh (was 4755 0 0)
+2026-10-31T19:16:55Z applied   PE-SUID-UNNEEDED suid-remove 0755 /usr/bin/fusermount3 (was 4755 0 0)
+2026-10-31T19:16:55Z applied   PE-SUID-UNNEEDED suid-remove 0755 /usr/lib/openssh/ssh-keysign (was 4755 0 0)
+2026-10-31T19:16:55Z applied   PE-SUID-UNNEEDED suid-remove 0755 /usr/libexec/polkit-agent-helper-1 (was 4755 0 0)
+2026-10-31T19:16:55Z applied   PE-CAP-UNNEEDED cap-remove cap_net_bind_service,cap_net_admin=ep /usr/lib/x86_64-linux-gnu/gstreamer1.0/gstreamer-1.0/gst-ptp-helper (was 755 0 0)
+2026-10-31T19:16:55Z visudo -c OK, agent sudo -n true OK
+2026-10-31T19:16:55Z re-audit:
+  after: RESULT: PASS - 0 fail, 0 warn, 0 fixable by apply, 0 errors -> exit 0
+2026-10-31T19:17:16Z APPLIED: 7 change(s) recorded in the backup manifest (undo: sudo pft-privesc undo)
+(exit 0)
+$ /usr/local/bin/pft-privesc audit --textfile-dir /tmp/tmp.IVjS6I7BBK > /tmp/tmp.IVjS6I7BBK/a2.txt
+(exit 0)
+RESULT: PASS - 0 fail, 0 warn, 0 fixable by apply, 0 errors -> exit 0
+CHECK PASS 1 the original audit had findings (exit 1)
+CHECK PASS 2 after apply: RESULT PASS, exit 0
+== 3 plant fixtures
+$ install -m 4755 /usr/bin/true /usr/local/sbin/pft-privesc-drill-suid
+(exit 0)
+$ printf '# pft-privesc drill fixture: comment only, never runs\n' > /etc/cron.d/pft-privesc-drill && chmod 0666 /etc/cron.d/pft-privesc-drill
+(exit 0)
+$ printf '#!/bin/sh\necho drill\n' > /usr/local/bin/pft-privesc-drill-path && chmod 0777 /usr/local/bin/pft-privesc-drill-path
+(exit 0)
+== 4 audit: fixtures FAIL
+$ /usr/local/bin/pft-privesc audit --textfile-dir /tmp/tmp.IVjS6I7BBK > /tmp/tmp.IVjS6I7BBK/a4.txt
+(exit 1)
+FAIL PE-SUID-UNPKG        /usr/local/sbin/pft-privesc-drill-suid: SUID mode 4755, not owned by any package  -> remove it, or list it in REMOVE_SUID for apply to strip the bit
+FAIL PE-EXEC-CRON         /etc/cron.d/pft-privesc-drill: /etc/cron.d/pft-privesc-drill world-writable (mode 0666)  -> chmod go-w it
+FAIL PE-PATH-FILE         /usr/local/bin/pft-privesc-drill-path: /usr/local/bin/pft-privesc-drill-path world-writable (mode 0777)  -> chmod go-w (or chown root) it
+RESULT: FAIL - 3 fail, 0 warn, 2 fixable by apply, 0 errors -> exit 1
+CHECK PASS 3 planted SUID: FAIL PE-SUID-UNPKG
+CHECK PASS 4 planted cron file: FAIL PE-EXEC-CRON
+CHECK PASS 5 planted PATH script: FAIL PE-PATH-FILE
+== 5 apply fixtures (REMOVE_SUID=/usr/local/sbin/pft-privesc-drill-suid for this run), re-audit
+$ PFT_PE_CONF=/tmp/tmp.gBffuTaeig /usr/local/bin/pft-privesc apply
+  before: FAIL PE-SUID-UNPKG        /usr/local/sbin/pft-privesc-drill-suid: SUID mode 4755, not owned by any package  -> remove it, or list it in REMOVE_SUID for apply to strip the bit
+  before: FAIL PE-EXEC-CRON         /etc/cron.d/pft-privesc-drill: /etc/cron.d/pft-privesc-drill world-writable (mode 0666)  -> chmod go-w it
+  before: FAIL PE-PATH-FILE         /usr/local/bin/pft-privesc-drill-path: /usr/local/bin/pft-privesc-drill-path world-writable (mode 0777)  -> chmod go-w (or chown root) it
+2026-10-31T19:18:05Z plan: 3 change(s)
+2026-10-31T19:18:05Z   PE-SUID-UNPKG suid-remove 0755 /usr/local/sbin/pft-privesc-drill-suid
+2026-10-31T19:18:05Z   PE-EXEC-CRON chmod 0644 /etc/cron.d/pft-privesc-drill
+2026-10-31T19:18:05Z   PE-PATH-FILE chmod 0755 /usr/local/bin/pft-privesc-drill-path
+2026-10-31T19:18:05Z applied   PE-SUID-UNPKG suid-remove 0755 /usr/local/sbin/pft-privesc-drill-suid (was 4755 0 0)
+2026-10-31T19:18:05Z applied   PE-EXEC-CRON chmod 0644 /etc/cron.d/pft-privesc-drill (was 666 0 0)
+2026-10-31T19:18:06Z applied   PE-PATH-FILE chmod 0755 /usr/local/bin/pft-privesc-drill-path (was 777 0 0)
+2026-10-31T19:18:06Z visudo -c OK, agent sudo -n true OK
+2026-10-31T19:18:06Z re-audit:
+  after: RESULT: PASS - 0 fail, 0 warn, 0 fixable by apply, 0 errors -> exit 0
+2026-10-31T19:18:15Z APPLIED: 10 change(s) recorded in the backup manifest (undo: sudo pft-privesc undo)
+(exit 0)
+$ PFT_PE_CONF=/tmp/tmp.gBffuTaeig /usr/local/bin/pft-privesc audit --textfile-dir /tmp/tmp.IVjS6I7BBK > /tmp/tmp.IVjS6I7BBK/a5.txt
+(exit 0)
+RESULT: PASS - 0 fail, 0 warn, 0 fixable by apply, 0 errors -> exit 0
+CHECK PASS 6 after apply: RESULT PASS, exit 0
+CHECK PASS 7 fixture modes: suid 755, cron 644, script 755
+$ /usr/local/bin/pft-privesc status
+applied changes: 10
+  PE-SUID-UNNEEDED	suid-remove	/usr/bin/chfn	0755
+  PE-SUID-UNNEEDED	suid-remove	/usr/bin/pkexec	0755
+  PE-SUID-UNNEEDED	suid-remove	/usr/bin/chsh	0755
+  PE-SUID-UNNEEDED	suid-remove	/usr/bin/fusermount3	0755
+  PE-SUID-UNNEEDED	suid-remove	/usr/lib/openssh/ssh-keysign	0755
+  PE-SUID-UNNEEDED	suid-remove	/usr/libexec/polkit-agent-helper-1	0755
+  PE-CAP-UNNEEDED	cap-remove	/usr/lib/x86_64-linux-gnu/gstreamer1.0/gstreamer-1.0/gst-ptp-helper	cap_net_bind_service,cap_net_admin=ep
+  PE-SUID-UNPKG	suid-remove	/usr/local/sbin/pft-privesc-drill-suid	0755
+  PE-EXEC-CRON	chmod	/etc/cron.d/pft-privesc-drill	0644
+  PE-PATH-FILE	chmod	/usr/local/bin/pft-privesc-drill-path	0755
+(exit 0)
+== 6 undo
+$ PFT_PE_CONF=/tmp/tmp.gBffuTaeig /usr/local/bin/pft-privesc undo
+2026-10-31T19:18:24Z undo: 10 recorded change(s), newest first
+2026-10-31T19:18:24Z restored  chmod /usr/local/bin/pft-privesc-drill-path 777
+2026-10-31T19:18:25Z restored  chmod /etc/cron.d/pft-privesc-drill 666
+2026-10-31T19:18:25Z restored  suid-remove /usr/local/sbin/pft-privesc-drill-suid 4755
+2026-10-31T19:18:25Z restored  cap-remove /usr/lib/x86_64-linux-gnu/gstreamer1.0/gstreamer-1.0/gst-ptp-helper 755
+2026-10-31T19:18:25Z restored  suid-remove /usr/libexec/polkit-agent-helper-1 4755
+2026-10-31T19:18:25Z restored  suid-remove /usr/lib/openssh/ssh-keysign 4755
+2026-10-31T19:18:25Z restored  suid-remove /usr/bin/fusermount3 4755
+2026-10-31T19:18:26Z restored  suid-remove /usr/bin/chsh 4755
+2026-10-31T19:18:26Z restored  suid-remove /usr/bin/pkexec 4755
+2026-10-31T19:18:26Z restored  suid-remove /usr/bin/chfn 4755
+2026-10-31T19:18:36Z UNDO OK: every entry stat-identical to the record, contents unchanged, visudo -c OK, agent sudo OK
+(exit 0)
+CHECK PASS 8 undo exit 0
+== 7 audit after undo: original findings and fixtures back
+$ /usr/local/bin/pft-privesc audit --textfile-dir /tmp/tmp.IVjS6I7BBK > /tmp/tmp.IVjS6I7BBK/a7.txt
+(exit 1)
+FAIL PE-SUID-UNPKG        /usr/local/sbin/pft-privesc-drill-suid: SUID mode 4755, not owned by any package  -> remove it, or list it in REMOVE_SUID for apply to strip the bit
+WARN PE-SUID-UNNEEDED     /usr/bin/chfn: SUID mode 4755 (passwd), not needed on a headless node  -> sudo pft-privesc apply (dpkg-statoverride, survives upgrades)
+WARN PE-SUID-UNNEEDED     /usr/bin/pkexec: SUID mode 4755 (pkexec), not needed on a headless node  -> sudo pft-privesc apply (dpkg-statoverride, survives upgrades)
+WARN PE-SUID-UNNEEDED     /usr/bin/chsh: SUID mode 4755 (passwd), not needed on a headless node  -> sudo pft-privesc apply (dpkg-statoverride, survives upgrades)
+WARN PE-SUID-UNNEEDED     /usr/bin/fusermount3: SUID mode 4755 (fuse3), not needed on a headless node  -> sudo pft-privesc apply (dpkg-statoverride, survives upgrades)
+WARN PE-SUID-UNNEEDED     /usr/lib/openssh/ssh-keysign: SUID mode 4755 (openssh-client), not needed on a headless node  -> sudo pft-privesc apply (dpkg-statoverride, survives upgrades)
+WARN PE-SUID-UNNEEDED     /usr/libexec/polkit-agent-helper-1: SUID mode 4755 (polkitd), not needed on a headless node  -> sudo pft-privesc apply (dpkg-statoverride, survives upgrades)
+WARN PE-CAP-UNNEEDED      /usr/lib/x86_64-linux-gnu/gstreamer1.0/gstreamer-1.0/gst-ptp-helper: cap_net_bind_service,cap_net_admin=ep (libgstreamer1.0-0:amd64), not needed on a headless node  -> sudo pft-privesc apply (setcap -r; a package upgrade restores it, the audit then WARNs again)
+FAIL PE-EXEC-CRON         /etc/cron.d/pft-privesc-drill: /etc/cron.d/pft-privesc-drill world-writable (mode 0666)  -> chmod go-w it
+FAIL PE-PATH-FILE         /usr/local/bin/pft-privesc-drill-path: /usr/local/bin/pft-privesc-drill-path world-writable (mode 0777)  -> chmod go-w (or chown root) it
+RESULT: FAIL - 3 fail, 7 warn, 9 fixable by apply, 0 errors -> exit 1
+CHECK PASS 9 stat + caps of every touched path and the statoverride list equal step 1 (fixtures excepted)
+CHECK PASS 10 fixtures back to 4755 / 0666 / 0777
+CHECK PASS 11 the step-1 WARN/FAIL lines are all present again
+== 8 remove fixtures, apply the real fixes again, final audit
+$ rm -f /usr/local/sbin/pft-privesc-drill-suid /etc/cron.d/pft-privesc-drill /usr/local/bin/pft-privesc-drill-path
+(exit 0)
+$ /usr/local/bin/pft-privesc apply
+  before: WARN PE-SUID-UNNEEDED     /usr/bin/chfn: SUID mode 4755 (passwd), not needed on a headless node  -> sudo pft-privesc apply (dpkg-statoverride, survives upgrades)
+  before: WARN PE-SUID-UNNEEDED     /usr/bin/pkexec: SUID mode 4755 (pkexec), not needed on a headless node  -> sudo pft-privesc apply (dpkg-statoverride, survives upgrades)
+  before: WARN PE-SUID-UNNEEDED     /usr/bin/chsh: SUID mode 4755 (passwd), not needed on a headless node  -> sudo pft-privesc apply (dpkg-statoverride, survives upgrades)
+  before: WARN PE-SUID-UNNEEDED     /usr/bin/fusermount3: SUID mode 4755 (fuse3), not needed on a headless node  -> sudo pft-privesc apply (dpkg-statoverride, survives upgrades)
+  before: WARN PE-SUID-UNNEEDED     /usr/lib/openssh/ssh-keysign: SUID mode 4755 (openssh-client), not needed on a headless node  -> sudo pft-privesc apply (dpkg-statoverride, survives upgrades)
+  before: WARN PE-SUID-UNNEEDED     /usr/libexec/polkit-agent-helper-1: SUID mode 4755 (polkitd), not needed on a headless node  -> sudo pft-privesc apply (dpkg-statoverride, survives upgrades)
+  before: WARN PE-CAP-UNNEEDED      /usr/lib/x86_64-linux-gnu/gstreamer1.0/gstreamer-1.0/gst-ptp-helper: cap_net_bind_service,cap_net_admin=ep (libgstreamer1.0-0:amd64), not needed on a headless node  -> sudo pft-privesc apply (setcap -r; a package upgrade restores it, the audit then WARNs again)
+2026-10-31T19:18:55Z plan: 7 change(s)
+2026-10-31T19:18:55Z   PE-SUID-UNNEEDED suid-remove 0755 /usr/bin/chfn
+2026-10-31T19:18:55Z   PE-SUID-UNNEEDED suid-remove 0755 /usr/bin/pkexec
+2026-10-31T19:18:55Z   PE-SUID-UNNEEDED suid-remove 0755 /usr/bin/chsh
+2026-10-31T19:18:55Z   PE-SUID-UNNEEDED suid-remove 0755 /usr/bin/fusermount3
+2026-10-31T19:18:55Z   PE-SUID-UNNEEDED suid-remove 0755 /usr/lib/openssh/ssh-keysign
+2026-10-31T19:18:55Z   PE-SUID-UNNEEDED suid-remove 0755 /usr/libexec/polkit-agent-helper-1
+2026-10-31T19:18:55Z   PE-CAP-UNNEEDED cap-remove cap_net_bind_service,cap_net_admin=ep /usr/lib/x86_64-linux-gnu/gstreamer1.0/gstreamer-1.0/gst-ptp-helper
+2026-10-31T19:18:55Z applied   PE-SUID-UNNEEDED suid-remove 0755 /usr/bin/chfn (was 4755 0 0)
+2026-10-31T19:18:55Z applied   PE-SUID-UNNEEDED suid-remove 0755 /usr/bin/pkexec (was 4755 0 0)
+2026-10-31T19:18:55Z applied   PE-SUID-UNNEEDED suid-remove 0755 /usr/bin/chsh (was 4755 0 0)
+2026-10-31T19:18:55Z applied   PE-SUID-UNNEEDED suid-remove 0755 /usr/bin/fusermount3 (was 4755 0 0)
+2026-10-31T19:18:55Z applied   PE-SUID-UNNEEDED suid-remove 0755 /usr/lib/openssh/ssh-keysign (was 4755 0 0)
+2026-10-31T19:18:55Z applied   PE-SUID-UNNEEDED suid-remove 0755 /usr/libexec/polkit-agent-helper-1 (was 4755 0 0)
+2026-10-31T19:18:55Z applied   PE-CAP-UNNEEDED cap-remove cap_net_bind_service,cap_net_admin=ep /usr/lib/x86_64-linux-gnu/gstreamer1.0/gstreamer-1.0/gst-ptp-helper (was 755 0 0)
+2026-10-31T19:18:55Z visudo -c OK, agent sudo -n true OK
+2026-10-31T19:18:55Z re-audit:
+  after: RESULT: PASS - 0 fail, 0 warn, 0 fixable by apply, 0 errors -> exit 0
+2026-10-31T19:19:06Z APPLIED: 7 change(s) recorded in the backup manifest (undo: sudo pft-privesc undo)
+(exit 0)
+$ /usr/local/bin/pft-privesc audit --textfile-dir /tmp/tmp.IVjS6I7BBK > /tmp/tmp.IVjS6I7BBK/a8.txt
+(exit 0)
+RESULT: PASS - 0 fail, 0 warn, 0 fixable by apply, 0 errors -> exit 0
+CHECK PASS 12 final: RESULT PASS, exit 0, no fixture left
+CHECK PASS 13 final permissions equal the step-2 fixed state
+$ /usr/local/bin/pft-privesc status
+applied changes: 7
+  PE-SUID-UNNEEDED	suid-remove	/usr/bin/chfn	0755
+  PE-SUID-UNNEEDED	suid-remove	/usr/bin/pkexec	0755
+  PE-SUID-UNNEEDED	suid-remove	/usr/bin/chsh	0755
+  PE-SUID-UNNEEDED	suid-remove	/usr/bin/fusermount3	0755
+  PE-SUID-UNNEEDED	suid-remove	/usr/lib/openssh/ssh-keysign	0755
+  PE-SUID-UNNEEDED	suid-remove	/usr/libexec/polkit-agent-helper-1	0755
+  PE-CAP-UNNEEDED	cap-remove	/usr/lib/x86_64-linux-gnu/gstreamer1.0/gstreamer-1.0/gst-ptp-helper	cap_net_bind_service,cap_net_admin=ep
+last undo: 10 change(s) restored
+(exit 0)
+RESULT: 13 checks passed, 0 failed

@@ -26,8 +26,8 @@ question an attacker with a local unprivileged shell asks: **which path gets me 
 Not repeated here: `docker.sock` mode/group (`../audit` `docker.socket`), privileged containers and capabilities
 (`../audit`), sandboxing of the pft-* units (`../unitguard`).
 
-Target: Ubuntu 22.04.5 (sudo 1.9.9, systemd 249, dpkg 1.21.1) on a validator host and a sentry host. The live two-host
-proof (audit, apply, re-audit, planted-fixture undo drill) is added with its logs in `logs/`.
+Target: Ubuntu 22.04.5 (sudo 1.9.9, systemd 249, dpkg 1.21.1) on a validator host and a sentry host. Live two-host
+proof (install, audit, apply, re-audit, planted-fixture undo drill): [Live proof](#live-proof).
 
 **One Prometheus for both hosts** (same design as `../sshcrypto`, `../vulnscan`): each host audits itself every
 hour; `pft-privesc pull` on the validator copies the sentry's textfile over the existing admin ssh link (validated,
@@ -181,3 +181,43 @@ tests/mutate.py           mutation check: each mutant must make one of the suite
 
 The test user stands in for root inside the fake root (`PFT_PE_ROOT_UID`), so ownership by another uid cannot be
 built there; `test_owner.py` covers those cases by patching `os.lstat`/`os.stat`.
+
+## Live proof
+
+Run on 2026-10-31 on the validator and the sentry (Ubuntu 22.04.5), code as in commit `550d325` (installed
+`pft-privesc` sha256 `3ae4146f...`, classifier `289bc9f2...`, the same digests as the offline logs 01-05; full
+digests in the log headers). Logs in `logs/`; the runner scripts are in `drill/` byte-identical to what ran
+(`install-run.sh` -> 06, `fleet-run.sh` -> 07, `host-run.sh` -> 08/09, `post-run.sh` -> 10). Logs 06, 07 and 10
+pass every output line and echoed command through a redaction filter (home dir, user name, IPv4 addresses), which
+also masks the loopback address `127.0.0.1` as `<redacted-ip>`.
+
+| log | what | result |
+|---|---|---|
+| 06-install-two-hosts | rollout silence, install on sentry then validator (twice each), validator pull of the sentry file, rules loaded (HUP), Prometheus sees `pft_privesc_up` 1 for both hosts, integrity accept, rulecheck | 14 ok, **2 FAIL**: `pft-fleet sync` REFUSED (no pft-maint window), so skew stayed BEHIND for the fleet manifest |
+| 07-fleet-sync | the fix: pft-maint window (its `[MAINT]` messages sent to a throwaway topic and read back), `pft-fleet sync --addon fleet`, skew exit 0 (privesc CURRENT on both hosts), real target restored | 7/7 ok |
+| 08-drill-validator | `drill/host-run.sh` on the validator | 13/13 checks PASS |
+| 09-drill-sentry | the same script on the sentry | 13/13 checks PASS |
+| 10-post-drill | applied state on both hosts, agent sudo works, integrity PASS, fresh audits through the units + pull, Prometheus `fail 0 / warn 0` for both hosts, no privesc alert pending/firing, silence expired, both nodes `full` | 7/7 ok |
+| 11-lint-runners | shellcheck of the tool + the four drill runners (the three new runners only report SC1091 info: sourcing `/etc/os-release`), `git diff --stat 550d325 HEAD` over the code, units, tests and rules = empty, ruff | clean |
+
+**Found -> fixed -> verified** (identical on both hosts, logs 08 and 09 step 1-2): the first audit graded
+`RESULT: WARN - 0 fail, 7 warn, 7 fixable by apply` (exit 1): SUID bits a headless node does not need on `chfn`,
+`chsh`, `pkexec`, `fusermount3`, `ssh-keysign`, `polkit-agent-helper-1` (PE-SUID-UNNEEDED) and the file capabilities
+of `gst-ptp-helper` (PE-CAP-UNNEEDED). No FAIL item on either host. `apply` removed them (SUID via
+`dpkg-statoverride --update`, so package upgrades keep the change; `setcap -r` for the capability), and the
+re-audit printed `RESULT: PASS - 0 fail, 0 warn` (exit 0). The applied state is kept on both hosts (log 10:
+`applied changes: 7`, `apply --dry-run`: nothing to apply).
+
+**Planted-fixture undo drill** (steps 3-8): an unpackaged SUID copy of `/usr/bin/true`, a world-writable
+`/etc/cron.d` file (comment only) and a world-writable script in `/usr/local/bin` were each graded FAIL with the
+expected ID (PE-SUID-UNPKG, PE-EXEC-CRON, PE-PATH-FILE; `3 fail, 2 fixable`: an unpackaged SUID file is only stripped
+when listed in `REMOVE_SUID`, which the drill adds for step 5 only). apply fixed all three (PASS), `undo` restored
+all 10 recorded changes, and the post-undo audit showed the original 7 WARN lines and the 3 fixtures again, with
+mode, owner, capabilities and the statoverride list equal to step 1. Then the fixtures were removed, the real fixes
+re-applied and the final state compared equal to the step-2 fixed state.
+
+pft-integrity tracks none of the changed binaries (verify stayed PASS); log 10 still records an accept after the
+apply. The alert rules were not drilled live: they are covered by `promtool test rules` (log 05); during the
+rollout and both drills an Alertmanager silence covered `PFTPrivesc*`, `PFTRuleDead`, `PFTTextfileStale`,
+`PFTRulecheck*` and `PFTFleet*` (expired in log 10).
+

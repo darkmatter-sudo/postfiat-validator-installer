@@ -1,0 +1,22 @@
+# 11 lint of the drill runners + code unchanged since the offline runs - 2026-10-31T19:24:58Z - Ubuntu 22.04.5 LTS - HEAD 4f1cfdbaba723839748c1339ef58ec7558a88a52 (+ working tree: logs 06-11, drill/*-run.sh, README)
+$ shellcheck privesc/pft-privesc.sh privesc/install.sh privesc/drill/host-run.sh privesc/tests/run-tests.sh
+(exit 0)
+$ shellcheck -e SC1091 privesc/drill/install-run.sh privesc/drill/fleet-run.sh privesc/drill/post-run.sh
+(exit 0)
+$ shellcheck privesc/drill/install-run.sh privesc/drill/fleet-run.sh privesc/drill/post-run.sh | grep -c 'SC1091 (info)'
+3
+(exit 0)
+$ git diff --stat 550d325fae5afffdf497a7460c1bba3e73ea4b20 HEAD -- privesc/pft-privesc.sh privesc/privesc_classify.py privesc/install.sh privesc/systemd privesc/tests privesc/drill/host-run.sh alerts/privesc.rules.yml alerts/privesc.tests.yml
+(exit 0)
+$ sha256sum privesc/pft-privesc.sh privesc/privesc_classify.py privesc/drill/*.sh
+3ae4146f26bb1e1121d58ad74fec3ac21c163b86d378018542451115930a45e5  privesc/pft-privesc.sh
+289bc9f2ab006d7e5f77c2e7767b947c831aeafc47c77681268f9a45e3cab8ca  privesc/privesc_classify.py
+0f794d03adc1a9cea73e811c47f6c7611cabd9f689355dcc62c38dddc200964a  privesc/drill/fleet-run.sh
+52f43bc3535a3f19b0311d84b44109b271d1c205149e19d199179b9f5bbabe4f  privesc/drill/host-run.sh
+a110564c93651ccc25540bdf666bdcd0dd21db0b1377a5eb4ffee96a34a133f6  privesc/drill/install-run.sh
+49617f673710f70fd3841e8adfb905ebd4c8bf0d58fda5c461341a621f89820e  privesc/drill/post-run.sh
+(exit 0)
+$ ruff check privesc && ruff format --check privesc
+All checks passed!
+5 files already formatted
+(exit 0)
