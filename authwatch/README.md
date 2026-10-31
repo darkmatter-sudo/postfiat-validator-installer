@@ -132,10 +132,49 @@ deterministically by `tests/make_fixtures.py`: RFC 5737 / 2001:db8 addresses, `u
 fingerprints and cursors, and `/usr/bin/true` for sudo commands. The tests compare the parser's counts with
 independent `grep` counts over the same fixture messages.
 
+## Live proof (two hosts, throwaway ntfy topic)
+
+`drill/live-run.sh` (`logs/11-live-drill.log`, 35 checks ok, 0 failed) is built from the rulecheck drill
+framework. It points every notifier and the Alertmanager bridge at a throwaway topic, with the sha256 of every env
+file restored and compared on any exit. It silences every alert except the three under test (plus the pipeline
+watchdog) and opens a pft-maint window. Then it runs:
+
+| Fault (both hosts) | Proof in the log |
+|---|---|
+| unknown-key login: a throwaway ed25519 key is added to one authorized_keys file per host, used once, then removed | login ok on both hosts. Validator file removed, sentry file sha256 identical to the pre-drill copy. The key's fingerprint is in no authorized_keys file sshd reads, and a second login with it is refused (exit 255). Journal: 1 accepted login per host. Counter `key_class="unknown"` +1 per host |
+| failed burst: 500 sequential loopback connections as a nonexistent user, no auth method offered | `attempts=500 succeeded=0` on both hosts. Journal: 500 `Invalid user` lines per host. `invalid_user` +504 (validator) / +501 (sentry, pulled copy) |
+| stale: `pft-authwatch.timer` stopped on both hosts | PFTAuthwatchStale firing for both 385 s after the stop (collect age 423/424 s) |
+
+All 6 (alert, host) pairs fired in Prometheus and were delivered as `[FIRING]`. After recovery, all 6 left
+Prometheus and delivered `[RESOLVED]` before anything was restored. `ALERTS` query_range shows first/last firing
+sample per series. The operator topics received 0 messages, pft-integrity is PASS on both hosts afterwards and
+both nodes stayed `full`. Alertmanager re-sends a group when one of its alerts resolves, which is why the topic
+shows a second `[FIRING]` for the host that was still firing.
+
+Run 09 (`logs/09-drill-stopped-at-bridge-swap.log`) stopped before any fault, at the bridge swap.
+`alerts/run-stack.sh` preflighted the exporter with `curl | grep -q` under `pipefail`. After authwatch the
+`/metrics` body is 77895 bytes, larger than a pipe buffer, and `pft_up` sits at byte 76038. When `grep -q` exits
+at the match, curl's last write can hit a closed pipe (exit 23). The drill restored every env file
+(sha256-checked) and the bridge, and stopped. It is a race: it failed once and passed 0/20 in
+`logs/10-runstack-preflight-fix.log`. The fix captures the body first. It is applied in run-stack.sh and in the
+same pattern in `divergence/install.sh` and `slo/install.sh`, and run 11 used it.
+
 ## Logs
+
+Published copies are redacted with one sed: home path -> `~`, the agent user name -> `<user>`, every
+`SHA256:<43 chars>` -> `SHA256:<redacted-fp>` (the drill key's fingerprint appears in two echoed command lines of
+run 11; the key itself was deleted), and the local UTC offset of one git commit date in log 06 -> `<tz>`.
+The drill scripts already redact topics, addresses and node keys with `../peerexpose/drill/redact.py`.
 
 | Log | What |
 |---|---|
 | `01-fixture-capture.log` | first fixture capture (superseded by 02: sudo `(command continued)` lines were not redacted yet) |
 | `02-fixture-capture.log` | fixture capture on both hosts, line counts and sha256 of the committed fixtures |
 | `04-baseline-scan.log` | baseline scan of both journals (table above). Run 03 was the same scan, but it printed the journal range in the host's local time zone; it is not published |
+| `05-tests-mutants.log` | shellcheck, py_compile, suite 59/59, promtool check + test, mutants 23/25: S10 and P06 survived |
+| `06-install-two-hosts.log` | install on sentry + validator + pull, each run twice (second run `changed=false`), rulecheck conf, rules loaded, pft-integrity accept, `pft-fleet sync` of the manifest, `pft-fleet skew` exit 0, rulecheck OK on both hosts |
+| `07-integrity-accepted-items.log` | the items re-baselined by run 06 (authwatch binary + units only), PASS on both hosts |
+| `08-tests-mutants.log` | after two new tests: shellcheck, suite 60/60, promtool test, mutants 25/25 caught |
+| `09-drill-stopped-at-bridge-swap.log` | first drill: stopped at the bridge swap (run-stack.sh preflight race, see above), everything restored |
+| `10-runstack-preflight-fix.log` | exporter body size, `pft_up` offset, old pipeline vs captured body |
+| `11-live-drill.log` | the two-host drill: 35 checks ok, 0 failed |

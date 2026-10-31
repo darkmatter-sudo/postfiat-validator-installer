@@ -487,3 +487,19 @@ sudo pft-sshcrypto audit [--json]         # exit 0 all OK, 1 WARN/FAIL or probe 
 sudo pft-sshcrypto apply                  # exit 0 confirmed, 3 not confirmed (auto-revert armed), 2 refused
 sudo pft-sshcrypto rollback               # restore the pre-apply files byte-identically
 ```
+
+## SSH/sudo login monitoring (authwatch)
+
+[`authwatch/`](authwatch/README.md): reads the sshd and sudo journal entries every minute, resuming from a saved
+cursor so nothing is counted twice. It exports privacy-safe counters: accepted logins by key class (the key's
+fingerprint is in a local allowlist or not), failed attempts by reason, refused negotiations and sudo results. The
+metrics carry no user names, addresses or fingerprints. Three alerts in `../alerts/authwatch.rules.yml`: a login
+with a key that is not allowlisted, a burst of failed attempts above the measured internet background, and a
+stopped collector. A sandboxed timer runs on both hosts, and the validator pulls the sentry's file.
+
+```bash
+sudo authwatch/install.sh                 # validator (sentry: --host sentry; validator pull: --pull); imports today's authorized_keys
+sudo pft-authwatch allow add SHA256:...   # allow a new key on purpose (list | count | remove | import FILE)
+sudo pft-authwatch status                 # timer, allowlist size, counters (no identities)
+sudo pft-authwatch scan --since -24h      # totals + largest failed count per 10 min (threshold baseline)
+```

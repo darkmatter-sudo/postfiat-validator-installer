@@ -1,0 +1,182 @@
+# authwatch tests 2026-10-31T04:52:13Z repo HEAD 0e715e2a6d8ad14d93ba0cc82b116431f93a9f0e (clean tree; supersedes the suite/mutant part of log 05: S10 and P06 survived there)
+$ shellcheck authwatch/pft-authwatch.sh authwatch/install.sh authwatch/tests/run-tests.sh
+(exit 0)
+$ bash authwatch/tests/run-tests.sh
+== 1. message classes (real fixture shapes)
+PASS every Accepted publickey line -> accepted/publickey
+PASS every 'Invalid user' line -> failed/invalid_user
+PASS every '... authenticating user ... [preauth]' line -> failed/preauth_abort
+PASS max auth attempts -> failed/max_auth
+PASS Unable to negotiate -> negotiate (not a failed auth)
+PASS companion lines of an invalid user are not counted twice
+PASS sudo COMMAND lines -> sudo/ok
+PASS session open/close lines are not counted
+PASS the fixtures cover >= 6 counted classes
+PASS synthetic: Failed password / Failed publickey / password login / 3 sudo failures / noise
+== 2. first run takes the journal tail as cursor and counts nothing
+PASS rc 0
+PASS journalctl asked for -n 1 (no cursor yet)
+PASS journalctl filtered to sshd + sudo
+PASS cursor = last fixture entry
+PASS up 1, timestamp from PFT_AW_NOW
+PASS all counters 0 after baseline
+== 3. new entries are counted exactly once (resume from cursor)
+PASS rc 0
+PASS journalctl resumed with --after-cursor <line 1 cursor>
+PASS invalid_user = grep count (9)
+PASS preauth_abort = grep count (15)
+PASS accepted publickey (unknown, empty allowlist) = grep count (5)
+PASS sudo ok = grep count (7)
+PASS entries_total = new lines (174)
+PASS a run with no new entries changes no counter
+PASS last_unknown_login = newest Accepted entry time
+== 4. a run that dies after the state write does not double count
+PASS crash run exits non-zero
+PASS next run: invalid_user +1 exactly
+PASS no temp files left in the textfile dir
+== 5. allowlist: import, dedupe, classify, remove
+PASS import adds 1 (duplicate skipped)
+PASS import again adds 0
+PASS allowlist file mode 600
+PASS add rejects a malformed fingerprint (exit 3)
+PASS logins with the allowlisted key -> allowlisted (2)
+PASS other keys stay unknown (3)
+PASS allowlist_entries 1
+PASS last_unknown_login ignores allowlisted logins
+PASS remove -> 0 total
+== 6. privacy: no identity reaches the textfile or the state file
+PASS pft_authwatch_validator.prom: no address, user name or fingerprint
+PASS pft_authwatch_sentry.prom: no address, user name or fingerprint
+PASS state-validator.json: no address, user name or fingerprint
+PASS state-sentry.json: no address, user name or fingerprint
+PASS only label keys host/method/key_class/reason/kind/result/version
+PASS sentry file carries host="sentry" and passes validate
+PASS the sentry fixtures count accepted logins
+== 7. journal errors, --stdout dry run, odd messages
+PASS journalctl failure -> exit 1 with its message
+PASS journalctl failure leaves the state untouched
+PASS hung journalctl -> killed by JOURNAL_TIMEOUT, exit 1 within 10 s, state untouched
+PASS --stdout prints the textfile with the new entry counted
+PASS --stdout changed neither state nor textfile
+PASS byte-array MESSAGE (non-UTF-8) is decoded and counted; a non-JSON line is skipped
+PASS bad --host is a usage error (3)
+== 8. pull: validate and rename, reject a bad or failed copy
+PASS pull copies a valid sentry file
+PASS pulled file mode 644
+PASS wrong host label -> exit 2, old file kept
+PASS no up sample -> exit 2
+PASS garbage -> exit 2
+PASS hung ssh -> killed by PULL_TIMEOUT, exit 1 within 10 s
+PASS ssh failure -> exit 1
+PASS no temp files left after failed pulls
+PASS pull without PULL_SSH -> exit 3
+RESULT: 60/60 passed
+(exit 0)
+$ sudo docker run --rm -v "$PWD/alerts:/w:ro" -w /w --entrypoint promtool prom/prometheus:v3.5.0 test rules authwatch.tests.yml
+  SUCCESS
+
+(exit 0)
+$ python3 -u authwatch/tests/mutate.py
+# pft-authwatch.sh sha256 851110f4d15a81bc93825aa3eb27fc9f647865c65e6f2d22a49d53b921837a52
+# authwatch_parse.py sha256 e814843e5f8f048c289353a22bad18cdb5a7ffd307c13418221582e23e6c8068
+# authwatch.rules.yml sha256 6d06e117b3c74ef5c0128224432f57c426d22fa9c2d831589dbcba068b37a011
+# authwatch.tests.yml sha256 49d194df11a268f63e26b71c486fe36f3b7e8b7239f8749c3a61bbe97a353ad5
+# run-tests.sh sha256 c8162023419bb29c26e59fa2e7e5055d006f545c8a35002280861fb1cdbd213b
+# control sh/py: RESULT: 60/60 passed rc 0
+# control rules: promtool rc 0 (SUCCESS)
+S01 CAUGHT RESULT: 45/60 passed - saved cursor ignored (always -n 1)
+    FAIL journalctl resumed with --after-cursor <line 1 cursor>
+    FAIL invalid_user = grep count (9)
+    FAIL preauth_abort = grep count (15)
+    FAIL accepted publickey (unknown, empty allowlist) = grep count (5)
+    FAIL sudo ok = grep count (7)
+    FAIL entries_total = new lines (174)
+    FAIL a run with no new entries changes no counter
+    FAIL last_unknown_login = newest Accepted entry time
+    FAIL next run: invalid_user +1 exactly
+    FAIL logins with the allowlisted key -> allowlisted (2)
+    FAIL other keys stay unknown (3)
+    FAIL last_unknown_login ignores allowlisted logins
+    FAIL the sentry fixtures count accepted logins
+    FAIL --stdout prints the textfile with the new entry counted
+    FAIL byte-array MESSAGE (non-UTF-8) is decoded and counted; a non-JSON line is skipped
+S02 CAUGHT RESULT: 58/60 passed - journalctl errors ignored
+    FAIL journalctl failure -> exit 1 with its message
+    FAIL hung journalctl -> killed by JOURNAL_TIMEOUT, exit 1 within 10 s, state untouched
+S03 CAUGHT RESULT: 56/60 passed - no timeout around journalctl --after-cursor
+    FAIL hung journalctl -> killed by JOURNAL_TIMEOUT, exit 1 within 10 s, state untouched
+    FAIL --stdout prints the textfile with the new entry counted
+    FAIL --stdout changed neither state nor textfile
+    FAIL byte-array MESSAGE (non-UTF-8) is decoded and counted; a non-JSON line is skipped
+S04 CAUGHT RESULT: 59/60 passed - journal filter drops sudo
+    FAIL journalctl filtered to sshd + sudo
+S05 CAUGHT RESULT: 59/60 passed - validate: host label not checked
+    FAIL wrong host label -> exit 2, old file kept
+S06 CAUGHT RESULT: 59/60 passed - pull: temp file kept after a validation failure
+    FAIL no temp files left after failed pulls
+S07 CAUGHT RESULT: 59/60 passed - --stdout works on the real state
+    FAIL --stdout changed neither state nor textfile
+S08 CAUGHT RESULT: 58/60 passed - allowlist import does not dedupe
+    FAIL import adds 1 (duplicate skipped)
+    FAIL import again adds 0
+S09 CAUGHT RESULT: 59/60 passed - pull: no timeout around ssh
+    FAIL hung ssh -> killed by PULL_TIMEOUT, exit 1 within 10 s
+S10 CAUGHT RESULT: 59/60 passed - validate: up sample not required
+    FAIL no up sample -> exit 2
+P01 CAUGHT RESULT: 58/60 passed - companion lines of an invalid user counted as aborted auth (double count)
+    FAIL companion lines of an invalid user are not counted twice
+    FAIL preauth_abort = grep count (15)
+P02 CAUGHT RESULT: 57/60 passed - allowlist ignored
+    FAIL logins with the allowlisted key -> allowlisted (2)
+    FAIL other keys stay unknown (3)
+    FAIL last_unknown_login ignores allowlisted logins
+P03 CAUGHT RESULT: 56/60 passed - cursor not advanced (re-run double counts)
+    FAIL a run with no new entries changes no counter
+    FAIL next run: invalid_user +1 exactly
+    FAIL --stdout prints the textfile with the new entry counted
+    FAIL byte-array MESSAGE (non-UTF-8) is decoded and counted; a non-JSON line is skipped
+P04 CAUGHT RESULT: 57/60 passed - baseline run counts history
+    FAIL all counters 0 after baseline
+    FAIL sudo ok = grep count (7)
+    FAIL entries_total = new lines (174)
+P05 CAUGHT RESULT: 58/60 passed - byte-array MESSAGE dropped
+    FAIL --stdout prints the textfile with the new entry counted
+    FAIL byte-array MESSAGE (non-UTF-8) is decoded and counted; a non-JSON line is skipped
+P06 CAUGHT RESULT: 59/60 passed - allowlisted logins move last_unknown_login
+    FAIL last_unknown_login ignores allowlisted logins
+P07 CAUGHT RESULT: 45/60 passed - algorithm negotiation failures counted as failed auth
+    FAIL Unable to negotiate -> negotiate (not a failed auth)
+    FAIL rc 0
+    FAIL invalid_user = grep count (9)
+    FAIL preauth_abort = grep count (15)
+    FAIL accepted publickey (unknown, empty allowlist) = grep count (5)
+    FAIL sudo ok = grep count (7)
+    FAIL entries_total = new lines (174)
+    FAIL last_unknown_login = newest Accepted entry time
+    FAIL next run: invalid_user +1 exactly
+    FAIL logins with the allowlisted key -> allowlisted (2)
+    FAIL other keys stay unknown (3)
+    FAIL last_unknown_login ignores allowlisted logins
+    FAIL the sentry fixtures count accepted logins
+    FAIL --stdout prints the textfile with the new entry counted
+    FAIL byte-array MESSAGE (non-UTF-8) is decoded and counted; a non-JSON line is skipped
+P08 CAUGHT RESULT: 59/60 passed - write not atomic (temp file left behind)
+    FAIL no temp files left in the textfile dir
+P09 CAUGHT RESULT: 59/60 passed - sudo wrong-password lines counted as ok
+    FAIL synthetic: Failed password / Failed publickey / password login / 3 sudo failures / noise
+P10 CAUGHT RESULT: 59/60 passed - password login classed allowlisted
+    FAIL synthetic: Failed password / Failed publickey / password login / 3 sudo failures / noise
+R01 CAUGHT - unknown-key alert ignores keyless (password) logins
+    failed: password login (key_class none) on the sentry fires too
+R02 CAUGHT - burst threshold below the background peak
+    failed: failed burst: summed over reasons, > 400 per 10m fires, background (337 peak) does not, resolves
+    failed: failed burst: summed over reasons, > 400 per 10m fires, background (337 peak) does not, resolves
+    failed: failed burst: summed over reasons, > 400 per 10m fires, background (337 peak) does not, resolves
+R03 CAUGHT - burst per reason instead of summed
+    failed: failed burst: summed over reasons, > 400 per 10m fires, background (337 peak) does not, resolves
+R04 CAUGHT - stale after 10 min instead of 5
+    failed: stale: fires 2m after the timestamp is 5m old, per host; a fresh host stays quiet; resolves on collection
+R05 CAUGHT - stale without for: 2m
+    failed: stale: fires 2m after the timestamp is 5m old, per host; a fresh host stays quiet; resolves on collection
+MUTANTS: 25/25 caught, 0 not applied, 0 broken, 0 survived
+(exit 0)

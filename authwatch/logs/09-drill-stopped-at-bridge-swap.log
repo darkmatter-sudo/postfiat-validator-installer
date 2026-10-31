@@ -1,0 +1,69 @@
+pft-authwatch two-host alert drill - 2026-10-31T04:57:10Z - Ubuntu 22.04.5 LTS - run 20261031T045710Z
+repo HEAD e76cab461d463e2ab34be4a7428317544109a286
+sha256: live-run.sh 5f2780641ed378f4712110cdca4eea8459a2999b46d6e59681f783245f8e0833
+        repo pft-authwatch.sh 851110f4d15a81bc93825aa3eb27fc9f647865c65e6f2d22a49d53b921837a52 authwatch_parse.py e814843e5f8f048c289353a22bad18cdb5a7ffd307c13418221582e23e6c8068
+        installed validator 851110f4d15a81bc93825aa3eb27fc9f647865c65e6f2d22a49d53b921837a52 e814843e5f8f048c289353a22bad18cdb5a7ffd307c13418221582e23e6c8068
+        installed sentry    851110f4d15a81bc93825aa3eb27fc9f647865c65e6f2d22a49d53b921837a52 e814843e5f8f048c289353a22bad18cdb5a7ffd307c13418221582e23e6c8068
+        authwatch.rules.yml (repo, loaded by Prometheus) 6d06e117b3c74ef5c0128224432f57c426d22fa9c2d831589dbcba068b37a011
+        redact.py f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8
+
+== 0. preflight (nothing changed yet)
+  pft-maint: no window open on either host
+  bridge mounts the operator env file: yes
+  active silences covering the authwatch alerts: 0
+  authwatch alerts pending/firing: 0
+  pft-authwatch.timer active on both hosts, pft-authwatch-pull.timer active on the validator
+  pft_authwatch_up 1 for validator and sentry
+  operator topics to watch: 2 (not printed)
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+  postfiatd-sentry: server_state=full
+  postfiatd: server_state=full
+  pft-integrity local: RESULT: PASS - 115 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity relay: RESULT: PASS - 68 unchanged, 0 warn, 0 fail -> exit 0
+  throwaway ed25519 key generated in the 0700 temp dir (fingerprint not printed)
+CHECK ok   drill key not in any authorized_keys file on local before the drill (0)
+CHECK ok   drill key not in any authorized_keys file on relay before the drill (0)
+CHECK ok   drill key not in either allowlist
+  literals for redaction: 3 ip, 3 key, 3 topic, 1 user (values not printed)
+$ redact.py control --literals <literals>
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (19/19)
+
+== 1. redirect notifiers + bridge, silence everything except the authwatch alerts, maintenance window
+  local:/etc/postfiat-monitor.env sha256 6dc3b10fb491 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/postfiat-monitor.env.pre-authwatch-drill
+  local:/etc/pft-integrity.env sha256 b3cd1c3da7ff -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-integrity.env.pre-authwatch-drill
+  relay:/etc/pft-watchdog/ntfy.env sha256 ddb52721a668 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-watchdog/ntfy.env.pre-authwatch-drill
+  relay:/etc/pft-integrity.env sha256 cdd330a974d2 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-integrity.env.pre-authwatch-drill
+  relay:/etc/pft-alertpath/ntfy.env sha256 ddb52721a668 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-alertpath/ntfy.env.pre-authwatch-drill
+  curl: (23) Failed writing body
+  2026-10-31T04:58:07Z ERROR: exporter not answering on 127.0.0.1:9877 (install ../exporter first)
+  bridge not pointed at the throwaway env - stopping
+  restored local:/etc/postfiat-monitor.env: sha256 matches pre-drill copy: yes
+  restored local:/etc/pft-integrity.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-watchdog/ntfy.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-integrity.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-alertpath/ntfy.env: sha256 matches pre-drill copy: yes
+  2026-10-31T04:58:12Z starting pft-alert-bridge (ntfy: on)
+  2026-10-31T04:58:15Z pft-alert-bridge listening
+  restored bridge: mounts the operator env file again: yes
+exit 3

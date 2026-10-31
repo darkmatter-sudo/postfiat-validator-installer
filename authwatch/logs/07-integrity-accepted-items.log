@@ -1,0 +1,22 @@
+# authwatch: pft-integrity items accepted by run 06, 2026-10-31T04:52:12Z
+$ sudo tail -2 /var/lib/pft-integrity/accept.log | cut -f1,5
+2026-10-31T04:48:54Z	reason=task_8c46a09f: authwatch efa8f55 installed (script, parser, units, env, allowlist, rulecheck.conf) 
+2026-10-31T04:49:58Z	reason=pft-fleet sync fleet@efa8f557e815 on validator: manifest.tsv (task_8c46a09f authwatch manifest lines) 
+(exit 0)
+$ sudo grep -E 'authwatch' /var/lib/pft-integrity/manifest.tsv | cut -f1 | sort -u
+bin:pft-authwatch
+unit:pft-authwatch-pull.service
+unit:pft-authwatch-pull.timer
+unit:pft-authwatch.service
+unit:pft-authwatch.timer
+(exit 0)
+$ ssh relay "sudo tail -1 /var/lib/pft-integrity/accept.log | cut -f1,5; sudo grep -E 'authwatch' /var/lib/pft-integrity/manifest.tsv | cut -f1 | sort -u"
+2026-10-31T04:49:05Z	reason=task_8c46a09f: authwatch efa8f55 installed (script, parser, units, env, allowlist, rulecheck.conf) 
+bin:pft-authwatch
+unit:pft-authwatch.service
+unit:pft-authwatch.timer
+(exit 0)
+$ sudo pft-integrity verify | tail -1; ssh relay 'sudo pft-integrity verify | tail -1'
+RESULT: PASS - 115 unchanged, 0 warn, 0 fail -> exit 0
+RESULT: PASS - 68 unchanged, 0 warn, 0 fail -> exit 0
+(exit 0)

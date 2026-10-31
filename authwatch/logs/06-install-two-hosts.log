@@ -1,0 +1,340 @@
+authwatch two-host install - 2026-10-31T04:44:54Z - repo HEAD efa8f557e8155bf5326957da6d56929b3b75d4db (clean: yes)
+
+== 0. preflight
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 110 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 65 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+$ sudo -n pft-fleet skew | tail -3
+  validator  vulnscan    CURRENT    
+  validator  watchdog    CURRENT    
+  SUMMARY CURRENT=34 BEHIND=1 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 1)
+$ sudo -n docker exec postfiatd curl -s -m 10 -d '{"method":"server_info"}' http://127.0.0.1:5005 | jq -r .result.info.server_state; R "sudo -n docker exec postfiatd-sentry curl -s -m 10 -d '{\"method\":\"server_info\"}' http://127.0.0.1:5005 | jq -r .result.info.server_state"
+  full
+  full
+  (exit 0)
+
+== 1. maintenance window + rollout silence (new rules; rulecheck/fleet see new files)
+CHECK ok   Alertmanager silence created (PFTAuth*, PFTRuleDead, PFTTextfileStale, PFTRulecheck*, PFTFleet*) until 2026-10-31T05:30:29Z
+$ sudo -n pft-maint start --ttl 45m --reason 'task_8c46a09f authwatch install efa8f55'
+  window started: id m1793421930-3464193 until 2026-10-31T05:30:30Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint window open on the validator
+
+== 2. rulecheck: freshness line for pft_authwatch_*.prom on both hosts (before any file exists)
+$ sudo -n grep -qxF 'textfile pft_authwatch_*.prom   5m   pft_authwatch_collect_timestamp_seconds' /etc/pft-rulecheck.conf || printf '%s\n' '# pft-authwatch (1-minute collector; sentry copy pulled every minute)' 'textfile pft_authwatch_*.prom   5m   pft_authwatch_collect_timestamp_seconds' | sudo -n tee -a /etc/pft-rulecheck.conf; sudo -n grep -n 'authwatch' /etc/pft-rulecheck.conf
+  # pft-authwatch (1-minute collector; sentry copy pulled every minute)
+  textfile pft_authwatch_*.prom   5m   pft_authwatch_collect_timestamp_seconds
+  39:# pft-authwatch (1-minute collector; sentry copy pulled every minute)
+  40:textfile pft_authwatch_*.prom   5m   pft_authwatch_collect_timestamp_seconds
+  (exit 0)
+$ R "sudo -n grep -qxF 'textfile pft_authwatch_*.prom   5m   pft_authwatch_collect_timestamp_seconds' /etc/pft-rulecheck.conf || printf '%s\n' '# pft-authwatch (1-minute collector)' 'textfile pft_authwatch_*.prom   5m   pft_authwatch_collect_timestamp_seconds' | sudo -n tee -a /etc/pft-rulecheck.conf; sudo -n grep -n authwatch /etc/pft-rulecheck.conf"
+  # pft-authwatch (1-minute collector)
+  textfile pft_authwatch_*.prom   5m   pft_authwatch_collect_timestamp_seconds
+  18:# pft-authwatch (1-minute collector)
+  19:textfile pft_authwatch_*.prom   5m   pft_authwatch_collect_timestamp_seconds
+  (exit 0)
+
+== 3. sentry: install (twice: the second run must change nothing)
+$ git archive efa8f557e8155bf5326957da6d56929b3b75d4db authwatch | R 'rm -rf /tmp/pft-authwatch-efa8f55 && mkdir -m 700 /tmp/pft-authwatch-efa8f55 && tar -x -C /tmp/pft-authwatch-efa8f55'
+  
+  (exit 0)
+$ R 'sudo -n /tmp/pft-authwatch-efa8f55/authwatch/install.sh --host sentry'
+  2026-10-31T04:45:33Z installed /usr/local/bin/pft-authwatch (sha256 851110f4d15a81bc93825aa3eb27fc9f647865c65e6f2d22a49d53b921837a52)
+  2026-10-31T04:45:33Z installed /usr/local/lib/pft-authwatch/authwatch_parse.py (sha256 e814843e5f8f048c289353a22bad18cdb5a7ffd307c13418221582e23e6c8068)
+  2026-10-31T04:45:33Z set HOST_LABEL=sentry in /etc/pft-authwatch.env
+  2026-10-31T04:45:33Z installed /etc/systemd/system/pft-authwatch.service (sha256 57c92241a77635a9b6845dc868f739b44de5698cc4aecd7e4b08e03e15d3f2d4)
+  2026-10-31T04:45:33Z installed /etc/systemd/system/pft-authwatch.timer (sha256 2c4a9f01b48dc93e5ebb5c529d62a38073a2242c0a48d57bf91f48787cac8ce4)
+  2026-10-31T04:45:33Z allowlist import from 4 authorized_keys file(s): allowlist: 5 added, 5 total
+  2026-10-31T04:45:34Z first collection (through the sandboxed unit):
+  pft_authwatch_up{host="sentry"} 1
+  pft_authwatch_collect_timestamp_seconds{host="sentry"} 1793421934
+  pft_authwatch_allowlist_entries{host="sentry"} 5
+    Created symlink /etc/systemd/system/timers.target.wants/pft-authwatch.timer → /etc/systemd/system/pft-authwatch.timer.
+  2026-10-31T04:45:35Z pft-authwatch.timer active (every minute at :25); changed=true
+  2026-10-31T04:45:35Z remember: sudo pft-integrity accept --reason 'pft-authwatch installed'
+  (exit 0)
+CHECK ok   sentry install exit 0, up 1
+$ R 'sudo -n /tmp/pft-authwatch-efa8f55/authwatch/install.sh --host sentry'
+  2026-10-31T04:45:35Z unchanged /usr/local/bin/pft-authwatch
+  2026-10-31T04:45:35Z unchanged /usr/local/lib/pft-authwatch/authwatch_parse.py
+  2026-10-31T04:45:35Z unchanged /etc/systemd/system/pft-authwatch.service
+  2026-10-31T04:45:35Z unchanged /etc/systemd/system/pft-authwatch.timer
+  2026-10-31T04:45:35Z allowlist import from 4 authorized_keys file(s): allowlist: 0 added, 5 total
+  2026-10-31T04:45:36Z first collection (through the sandboxed unit):
+  pft_authwatch_up{host="sentry"} 1
+  pft_authwatch_collect_timestamp_seconds{host="sentry"} 1793421936
+  pft_authwatch_allowlist_entries{host="sentry"} 5
+  2026-10-31T04:45:37Z pft-authwatch.timer active (every minute at :25); changed=false
+  2026-10-31T04:45:37Z remember: sudo pft-integrity accept --reason 'pft-authwatch installed'
+  (exit 0)
+CHECK ok   sentry second install: changed=false
+
+== 4. validator: install (twice)
+$ sudo -n authwatch/install.sh
+  2026-10-31T04:45:37Z installed /usr/local/bin/pft-authwatch (sha256 851110f4d15a81bc93825aa3eb27fc9f647865c65e6f2d22a49d53b921837a52)
+  2026-10-31T04:45:37Z installed /usr/local/lib/pft-authwatch/authwatch_parse.py (sha256 e814843e5f8f048c289353a22bad18cdb5a7ffd307c13418221582e23e6c8068)
+  2026-10-31T04:45:37Z set HOST_LABEL=validator in /etc/pft-authwatch.env
+  2026-10-31T04:45:37Z installed /etc/systemd/system/pft-authwatch.service (sha256 57c92241a77635a9b6845dc868f739b44de5698cc4aecd7e4b08e03e15d3f2d4)
+  2026-10-31T04:45:37Z installed /etc/systemd/system/pft-authwatch.timer (sha256 2c4a9f01b48dc93e5ebb5c529d62a38073a2242c0a48d57bf91f48787cac8ce4)
+  2026-10-31T04:45:37Z allowlist import from 2 authorized_keys file(s): allowlist: 2 added, 2 total
+  2026-10-31T04:45:38Z first collection (through the sandboxed unit):
+  pft_authwatch_up{host="validator"} 1
+  pft_authwatch_collect_timestamp_seconds{host="validator"} 1793421938
+  pft_authwatch_allowlist_entries{host="validator"} 2
+    Created symlink /etc/systemd/system/timers.target.wants/pft-authwatch.timer → /etc/systemd/system/pft-authwatch.timer.
+  2026-10-31T04:45:40Z pft-authwatch.timer active (every minute at :25); changed=true
+  2026-10-31T04:45:40Z remember: sudo pft-integrity accept --reason 'pft-authwatch installed'
+  (exit 0)
+CHECK ok   validator install exit 0, up 1
+$ sudo -n authwatch/install.sh
+  2026-10-31T04:45:40Z unchanged /usr/local/bin/pft-authwatch
+  2026-10-31T04:45:40Z unchanged /usr/local/lib/pft-authwatch/authwatch_parse.py
+  2026-10-31T04:45:40Z unchanged /etc/systemd/system/pft-authwatch.service
+  2026-10-31T04:45:40Z unchanged /etc/systemd/system/pft-authwatch.timer
+  2026-10-31T04:45:40Z allowlist import from 2 authorized_keys file(s): allowlist: 0 added, 2 total
+  2026-10-31T04:45:42Z first collection (through the sandboxed unit):
+  pft_authwatch_up{host="validator"} 1
+  pft_authwatch_collect_timestamp_seconds{host="validator"} 1793421943
+  pft_authwatch_allowlist_entries{host="validator"} 2
+  2026-10-31T04:45:44Z pft-authwatch.timer active (every minute at :25); changed=false
+  2026-10-31T04:45:44Z remember: sudo pft-integrity accept --reason 'pft-authwatch installed'
+  (exit 0)
+CHECK ok   validator second install: changed=false
+
+== 5. validator: pull of the sentry file (PULL_SSH copied from /etc/pft-statewatch.env, not printed)
+$ sudo -n grep -q '^PULL_SSH=' /etc/pft-authwatch.env || sudo -n sh -c 'grep "^PULL_SSH=" /etc/pft-statewatch.env >> /etc/pft-authwatch.env'; sudo -n grep -c '^PULL_SSH=' /etc/pft-authwatch.env; sudo -n stat -c '%a %U' /etc/pft-authwatch.env
+  1
+  600 root
+  (exit 0)
+$ sudo -n authwatch/install.sh --pull
+  2026-10-31T04:45:44Z unchanged /usr/local/bin/pft-authwatch
+  2026-10-31T04:45:44Z unchanged /usr/local/lib/pft-authwatch/authwatch_parse.py
+  2026-10-31T04:45:44Z installed /etc/systemd/system/pft-authwatch-pull.service (sha256 c8e96d2ea4690776f2eef9901417056021aada3106293731b4e16b1565b852e7)
+  2026-10-31T04:45:44Z installed /etc/systemd/system/pft-authwatch-pull.timer (sha256 7b64d358669baf6629075b2862db4f3d4a5004332f9b21e0be6ec863072c69de)
+  2026-10-31T04:45:45Z first pull (through the sandboxed unit):
+  pft_authwatch_up{host="sentry"} 1
+  pft_authwatch_collect_timestamp_seconds{host="sentry"} 1793421936
+  pft_authwatch_allowlist_entries{host="sentry"} 5
+    Created symlink /etc/systemd/system/timers.target.wants/pft-authwatch-pull.timer → /etc/systemd/system/pft-authwatch-pull.timer.
+  2026-10-31T04:45:47Z pft-authwatch-pull.timer active (every minute at :50); changed=true
+  (exit 0)
+CHECK ok   pull install exit 0, sentry file present on the validator
+$ sudo -n authwatch/install.sh --pull
+  2026-10-31T04:45:47Z unchanged /usr/local/bin/pft-authwatch
+  2026-10-31T04:45:47Z unchanged /usr/local/lib/pft-authwatch/authwatch_parse.py
+  2026-10-31T04:45:47Z unchanged /etc/systemd/system/pft-authwatch-pull.service
+  2026-10-31T04:45:47Z unchanged /etc/systemd/system/pft-authwatch-pull.timer
+  2026-10-31T04:45:49Z first pull (through the sandboxed unit):
+  pft_authwatch_up{host="sentry"} 1
+  pft_authwatch_collect_timestamp_seconds{host="sentry"} 1793421936
+  pft_authwatch_allowlist_entries{host="sentry"} 5
+  2026-10-31T04:45:50Z pft-authwatch-pull.timer active (every minute at :50); changed=false
+  (exit 0)
+CHECK ok   second pull install: changed=false
+
+== 6. rulecheck: require both files
+$ for f in validator sentry; do sudo -n grep -qx "require pft_authwatch_$f.prom" /etc/pft-rulecheck.conf || echo "require pft_authwatch_$f.prom" | sudo -n tee -a /etc/pft-rulecheck.conf; done; sudo -n grep -n authwatch /etc/pft-rulecheck.conf
+  require pft_authwatch_validator.prom
+  require pft_authwatch_sentry.prom
+  39:# pft-authwatch (1-minute collector; sentry copy pulled every minute)
+  40:textfile pft_authwatch_*.prom   5m   pft_authwatch_collect_timestamp_seconds
+  41:require pft_authwatch_validator.prom
+  42:require pft_authwatch_sentry.prom
+  (exit 0)
+$ R "sudo -n grep -qx 'require pft_authwatch_sentry.prom' /etc/pft-rulecheck.conf || echo 'require pft_authwatch_sentry.prom' | sudo -n tee -a /etc/pft-rulecheck.conf; sudo -n grep -n authwatch /etc/pft-rulecheck.conf"
+  require pft_authwatch_sentry.prom
+  18:# pft-authwatch (1-minute collector)
+  19:textfile pft_authwatch_*.prom   5m   pft_authwatch_collect_timestamp_seconds
+  20:require pft_authwatch_sentry.prom
+  (exit 0)
+
+== 7. two collections later: every login since install is allowlisted on both hosts
+$ sleep 130; sudo -n pft-authwatch status; R 'sudo -n pft-authwatch status'
+  pft-authwatch 1.0.0 host=validator
+  timer: active
+  allowlist entries: 2
+  textfile age: 35s
+  pft_authwatch_ssh_accepted_total{method="publickey",key_class="allowlisted"} 0
+  pft_authwatch_ssh_accepted_total{method="publickey",key_class="unknown"} 0
+  pft_authwatch_ssh_accepted_total{method="publickey",key_class="none"} 0
+  pft_authwatch_ssh_accepted_total{method="password",key_class="allowlisted"} 0
+  pft_authwatch_ssh_accepted_total{method="password",key_class="unknown"} 0
+  pft_authwatch_ssh_accepted_total{method="password",key_class="none"} 0
+  pft_authwatch_ssh_accepted_total{method="other",key_class="allowlisted"} 0
+  pft_authwatch_ssh_accepted_total{method="other",key_class="unknown"} 0
+  pft_authwatch_ssh_accepted_total{method="other",key_class="none"} 0
+  pft_authwatch_ssh_failed_total{reason="invalid_user"} 1
+  pft_authwatch_ssh_failed_total{reason="failed_password"} 0
+  pft_authwatch_ssh_failed_total{reason="failed_publickey"} 0
+  pft_authwatch_ssh_failed_total{reason="failed_other"} 0
+  pft_authwatch_ssh_failed_total{reason="max_auth"} 0
+  pft_authwatch_ssh_failed_total{reason="preauth_abort"} 3
+  pft_authwatch_sudo_total{result="ok"} 111
+  pft_authwatch_sudo_total{result="auth_failure"} 0
+  pft_authwatch_sudo_total{result="denied"} 0
+  pft_authwatch_last_unknown_login_timestamp_seconds 0
+  pft_authwatch_last_failed_timestamp_seconds 1793422037
+  pft_authwatch_allowlist_entries 2
+  pft-authwatch 1.0.0 host=sentry
+  timer: active
+  allowlist entries: 5
+  textfile age: 37s
+  pft_authwatch_ssh_accepted_total{method="publickey",key_class="allowlisted"} 21
+  pft_authwatch_ssh_accepted_total{method="publickey",key_class="unknown"} 0
+  pft_authwatch_ssh_accepted_total{method="publickey",key_class="none"} 0
+  pft_authwatch_ssh_accepted_total{method="password",key_class="allowlisted"} 0
+  pft_authwatch_ssh_accepted_total{method="password",key_class="unknown"} 0
+  pft_authwatch_ssh_accepted_total{method="password",key_class="none"} 0
+  pft_authwatch_ssh_accepted_total{method="other",key_class="allowlisted"} 0
+  pft_authwatch_ssh_accepted_total{method="other",key_class="unknown"} 0
+  pft_authwatch_ssh_accepted_total{method="other",key_class="none"} 0
+  pft_authwatch_ssh_failed_total{reason="invalid_user"} 0
+  pft_authwatch_ssh_failed_total{reason="failed_password"} 0
+  pft_authwatch_ssh_failed_total{reason="failed_publickey"} 0
+  pft_authwatch_ssh_failed_total{reason="failed_other"} 0
+  pft_authwatch_ssh_failed_total{reason="max_auth"} 0
+  pft_authwatch_ssh_failed_total{reason="preauth_abort"} 2
+  pft_authwatch_sudo_total{result="ok"} 10
+  pft_authwatch_sudo_total{result="auth_failure"} 0
+  pft_authwatch_sudo_total{result="denied"} 0
+  pft_authwatch_last_unknown_login_timestamp_seconds 0
+  pft_authwatch_last_failed_timestamp_seconds 1793422015
+  pft_authwatch_allowlist_entries 5
+  (exit 0)
+CHECK ok   unknown/keyless logins since install: 0 on both hosts (sentry allowlisted logins: 21) (unknown 0)
+
+== 8. load the alert rules (alerts/ is mounted at /etc/pft-alerts) and check them
+$ sudo -n docker kill -s HUP pft-prometheus >/dev/null && sleep 30 && curl -s http://127.0.0.1:9090/api/v1/rules | jq -r '.data.groups[] | select(.name == "pft-authwatch") | .rules[] | [.name, .health, .state] | @tsv'
+  PFTAuthUnknownKeyLogin	ok	inactive
+  PFTAuthFailedBurst	ok	inactive
+  PFTAuthwatchStale	ok	inactive
+  (exit 0)
+CHECK ok   3 authwatch rules loaded, health ok, inactive
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=pft_authwatch_up' | jq -r '.data.result[] | "\(.metric.host) \(.value[1])"' | sort
+  sentry 1
+  validator 1
+  (exit 0)
+CHECK ok   Prometheus scrapes pft_authwatch_up for validator and sentry
+
+== 9. integrity: accept the new files on both hosts (pft-fleet sync needs a clean verify), verify
+$ sudo -n pft-integrity verify | grep -E '^(WARN|FAIL|RESULT)' | sed -E 's/ +sha256.*//' | head -20
+  RESULT: WARN - 110 unchanged, 5 warn, 0 fail -> exit 1
+  (exit 1)
+$ sudo -n pft-integrity accept --reason 'task_8c46a09f: authwatch efa8f55 installed (script, parser, units, env, allowlist, rulecheck.conf)' | tail -2
+  pft-integrity accept - 2026-10-31T04:48:54Z: re-baselined 115 items by <user>
+  manifest sha256: 62b3255401bba5c6c70ff9353c927536bdad66b1416c9c4ebd0119dd5e788cd8 -> 0e162eb3c1600ef864277e356a2d18bd342bba2325a7e0c0f88c8db831d66d4e (logged to accept.log)
+  (exit 0)
+$ R 'sudo -n pft-integrity verify' | grep -E '^(WARN|FAIL|RESULT)' | sed -E 's/ +sha256.*//' | head -20
+  RESULT: WARN - 65 unchanged, 3 warn, 0 fail -> exit 1
+  (exit 1)
+$ R "sudo -n pft-integrity accept --reason 'task_8c46a09f: authwatch efa8f55 installed (script, parser, units, env, allowlist, rulecheck.conf)'" | tail -2
+  pft-integrity accept - 2026-10-31T04:49:05Z: re-baselined 68 items by root
+  manifest sha256: 4d27a404efdb487b5a96280cd7e192fbafd02c93f426a2c282fad63d75fb52d1 -> 0af67bf845d81509af10c87be0d318bbfe9cb8db53cee41e3914764890ae87aa (logged to accept.log)
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 115 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 68 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts
+
+== 10. fleet: sync the fleet add-on (manifest.tsv) to HEAD, then skew
+$ sudo -n pft-fleet sync --addon fleet --to efa8f557e8155bf5326957da6d56929b3b75d4db --apply --reason 'task_8c46a09f authwatch manifest lines'
+  [2026-10-31T04:49:36Z] sync fleet to efa8f557e8155bf5326957da6d56929b3b75d4db (2026-10-31T05:43:34<tz>) REF main=efa8f557e8155bf5326957da6d56929b3b75d4db
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN validator validator /usr/local/sbin/pft-fleet 0755 CURRENT 61cafcfcdaa9 61cafcfcdaa9 keep
+  PLAN validator validator /usr/local/lib/pft-fleet/fleet_lib.py 0644 CURRENT dcb37d26f33f dcb37d26f33f keep
+  PLAN validator validator /usr/local/lib/pft-fleet/manifest.tsv 0644 BEHIND d74437f4c627 82cbbafb9608 write
+  PLAN validator validator /etc/systemd/system/pft-fleet.service 0644 CURRENT 3105a2f0a144 3105a2f0a144 keep
+  PLAN validator validator /etc/systemd/system/pft-fleet.timer 0644 CURRENT 79839ee00a81 79839ee00a81 keep
+  [2026-10-31T04:49:36Z] order: sentry validator
+  [2026-10-31T04:49:36Z] sentry: every fleet file already at efa8f557e815 - nothing to do
+  [2026-10-31T04:49:36Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/lib/pft-fleet/manifest.tsv sha256 d74437f4c627 -> /var/lib/pft-fleet/backup/20261031T044936Z-fleet-validator
+  WRITE validator /usr/local/lib/pft-fleet/manifest.tsv d74437f4c627 -> 82cbbafb9608 mode 0644
+  GATE validator sha256 /usr/local/lib/pft-fleet/manifest.tsv = target 82cbbafb9608 PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync fleet@efa8f557e815 (manifest.tsv)
+  [2026-10-31T04:49:58Z] SYNCED validator fleet -> efa8f557e815
+  [2026-10-31T04:49:58Z] sync complete
+  (exit 0)
+CHECK ok   fleet sync exit 0
+$ sudo -n pft-fleet skew
+  ref main = efa8f557e8155bf5326957da6d56929b3b75d4db
+  host sentry     role sentry    ok
+  host validator  role validator ok
+  HOST       ADDON       STATE      DETAIL
+  sentry     alertpath   CURRENT    
+  sentry     audittrail  CURRENT    
+  sentry     authwatch   CURRENT    
+  sentry     divergence  CURRENT    
+  sentry     egress      CURRENT    
+  sentry     integrity   CURRENT    
+  sentry     logship     CURRENT    
+  sentry     maint       CURRENT    
+  sentry     patch       CURRENT    
+  sentry     resources   CURRENT    
+  sentry     rulecheck   CURRENT    
+  sentry     statewatch  CURRENT    
+  sentry     sysctl      CURRENT    
+  sentry     timesync    CURRENT    
+  sentry     vulnscan    CURRENT    
+  sentry     watchdog    CURRENT    
+  validator  alertpath   CURRENT    
+  validator  audittrail  CURRENT    
+  validator  authwatch   CURRENT    
+  validator  backup      CURRENT    
+  validator  divergence  CURRENT    
+  validator  egress      CURRENT    
+  validator  exporter    CURRENT    
+  validator  fleet       CURRENT    
+  validator  integrity   CURRENT    
+  validator  logship     CURRENT    
+  validator  maint       CURRENT    
+  validator  monitor     CURRENT    
+  validator  patch       CURRENT    
+  validator  resources   CURRENT    
+  validator  retention   CURRENT    
+  validator  rulecheck   CURRENT    
+  validator  statewatch  CURRENT    
+  validator  sysctl      CURRENT    
+  validator  timesync    CURRENT    
+  validator  vulnscan    CURRENT    
+  validator  watchdog    CURRENT    
+  SUMMARY CURRENT=37 BEHIND=0 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 0)
+CHECK ok   pft-fleet skew exit 0 (authwatch CURRENT on both hosts)
+$ sudo -n systemctl start pft-rulecheck.service; sudo -n journalctl -u pft-rulecheck.service --since -1min --no-pager -o cat | grep -E '^RESULT '
+  RESULT OK - rules: LIVE 79 PARTIAL 0 DEAD 0 ERROR 0 IGNORED 0 | textfiles: FRESH 17 STALE 0 MISSING 0 LEFTOVER 0 UNCONFIGURED 0 -> exit 0
+  (exit 0)
+CHECK ok   validator pft-rulecheck RESULT OK (rules LIVE, authwatch textfiles FRESH)
+$ R 'sudo -n systemctl start pft-rulecheck.service; sudo -n journalctl -u pft-rulecheck.service --since -1min --no-pager -o cat' | grep -E '^RESULT '
+  RESULT OK - rules: skipped | textfiles: FRESH 9 STALE 0 MISSING 0 LEFTOVER 0 UNCONFIGURED 0 -> exit 0
+  (exit 0)
+CHECK ok   sentry pft-rulecheck RESULT OK
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 115 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 68 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts after the sync (it accepts its own write)
+
+== 11. end window, expire silence, nothing authwatch-related pending or firing
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+  rollout silence expired: HTTP 200
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=ALERTS{alertname=~"PFTAuth.*|PFTRuleDead|PFTTextfileStale|PFTFleet.*"}' | jq '.data.result | length'
+  0
+  (exit 0)
+CHECK ok   no PFTAuth*/PFTRuleDead/PFTTextfileStale/PFTFleet* alert pending or firing
+$ systemctl is-active pft-authwatch.timer pft-authwatch-pull.timer; R 'systemctl is-active pft-authwatch.timer'
+  active
+  active
+  active
+  (exit 0)
+
+install-run done 2026-10-31T04:50:47Z: 0 check(s) failed -> PASS

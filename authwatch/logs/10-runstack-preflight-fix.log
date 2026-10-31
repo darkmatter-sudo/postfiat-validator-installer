@@ -1,0 +1,15 @@
+# run-stack.sh exporter preflight: old pipeline vs fixed capture, live exporter, 2026-10-31T04:59:02Z HEAD e411b7f601967f1813fa89e7b792425fd5f6ab2a
+$ curl -fsS --max-time 5 http://127.0.0.1:9877/metrics | wc -c
+77895
+(exit 0)
+$ set -o pipefail; f=0; for i in $(seq 20); do curl -fsS --max-time 5 http://127.0.0.1:9877/metrics 2>/dev/null | grep -q '^pft_up ' || f=$((f + 1)); done; echo "old pipeline failed $f/20"
+old pipeline failed 0/20
+(exit 0)
+$ set -o pipefail; f=0; for i in $(seq 20); do { m="$(curl -fsS --max-time 5 http://127.0.0.1:9877/metrics)" && grep -q '^pft_up ' <<<"$m"; } || f=$((f + 1)); done; echo "fixed capture failed $f/20"
+fixed capture failed 0/20
+(exit 0)
+# where the match sits: grep -q exits at pft_up, curl still has the bytes after it to write; with a body larger than the pipe buffer that last write can hit a closed pipe (curl 23, as in run 09). A race: 0/20 above, so the fix removes it by construction rather than by retry
+$ curl -fsS http://127.0.0.1:9877/metrics | grep -bn '^pft_up ' | cut -d: -f1,2; curl -fsS http://127.0.0.1:9877/metrics | wc -c
+1056:76038
+77896
+(exit 0)

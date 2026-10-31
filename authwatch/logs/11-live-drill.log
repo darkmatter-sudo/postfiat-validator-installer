@@ -1,0 +1,224 @@
+pft-authwatch two-host alert drill - 2026-10-31T04:59:45Z - Ubuntu 22.04.5 LTS - run 20261031T045945Z
+repo HEAD e411b7f601967f1813fa89e7b792425fd5f6ab2a
+sha256: live-run.sh 5f2780641ed378f4712110cdca4eea8459a2999b46d6e59681f783245f8e0833
+        repo pft-authwatch.sh 851110f4d15a81bc93825aa3eb27fc9f647865c65e6f2d22a49d53b921837a52 authwatch_parse.py e814843e5f8f048c289353a22bad18cdb5a7ffd307c13418221582e23e6c8068
+        installed validator 851110f4d15a81bc93825aa3eb27fc9f647865c65e6f2d22a49d53b921837a52 e814843e5f8f048c289353a22bad18cdb5a7ffd307c13418221582e23e6c8068
+        installed sentry    851110f4d15a81bc93825aa3eb27fc9f647865c65e6f2d22a49d53b921837a52 e814843e5f8f048c289353a22bad18cdb5a7ffd307c13418221582e23e6c8068
+        authwatch.rules.yml (repo, loaded by Prometheus) 6d06e117b3c74ef5c0128224432f57c426d22fa9c2d831589dbcba068b37a011
+        redact.py f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8
+
+== 0. preflight (nothing changed yet)
+  pft-maint: no window open on either host
+  bridge mounts the operator env file: yes
+  active silences covering the authwatch alerts: 0
+  authwatch alerts pending/firing: 0
+  pft-authwatch.timer active on both hosts, pft-authwatch-pull.timer active on the validator
+  pft_authwatch_up 1 for validator and sentry
+  operator topics to watch: 2 (not printed)
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+  postfiatd-sentry: server_state=full
+  postfiatd: server_state=full
+  pft-integrity local: RESULT: PASS - 115 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity relay: RESULT: PASS - 68 unchanged, 0 warn, 0 fail -> exit 0
+  throwaway ed25519 key generated in the 0700 temp dir (fingerprint not printed)
+CHECK ok   drill key not in any authorized_keys file on local before the drill (0)
+CHECK ok   drill key not in any authorized_keys file on relay before the drill (0)
+CHECK ok   drill key not in either allowlist
+  literals for redaction: 3 ip, 3 key, 3 topic, 1 user (values not printed)
+$ redact.py control --literals <literals>
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (19/19)
+
+== 1. redirect notifiers + bridge, silence everything except the authwatch alerts, maintenance window
+  local:/etc/postfiat-monitor.env sha256 6dc3b10fb491 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/postfiat-monitor.env.pre-authwatch-drill
+  local:/etc/pft-integrity.env sha256 b3cd1c3da7ff -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-integrity.env.pre-authwatch-drill
+  relay:/etc/pft-watchdog/ntfy.env sha256 ddb52721a668 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-watchdog/ntfy.env.pre-authwatch-drill
+  relay:/etc/pft-integrity.env sha256 cdd330a974d2 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-integrity.env.pre-authwatch-drill
+  relay:/etc/pft-alertpath/ntfy.env sha256 ddb52721a668 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-alertpath/ntfy.env.pre-authwatch-drill
+  2026-10-31T05:01:02Z starting pft-alert-bridge (ntfy: on)
+  2026-10-31T05:01:05Z pft-alert-bridge listening
+  bridge -> https://ntfy.sh/<redacted> (throwaway env file in a 0700 temp dir)
+  silence alertname=~".+", alertname!~"PFTAuthUnknownKeyLogin|PFTAuthFailedBurst|PFTAuthwatchStale|PFTAlertPipelineWatchdog" until 2026-10-31T06:06:05Z (id c7be0699)
+$ sudo -n pft-maint start --ttl 60m --reason 'pft-authwatch drill 20261031T045945Z'
+  window started: id m1793422865-3534795 until 2026-10-31T06:01:05Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   sentry has the window (via the watchdog channel) after 40s
+
+== 2. unknown-key login + failed-login burst on both hosts
+  before: validator unknown=0 invalid=6 ts=1793422887 | sentry unknown=0 invalid=6 ts=1793422886
+$ ssh -F /dev/null -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=10 -i $SEC/drillkey -p 22 $(id -un)@127.0.0.1 'echo drill-login-ok'
+  drill-login-ok
+  (exit 0)
+CHECK ok   2a validator: login with the throwaway key succeeded
+$ ssh -F /dev/null -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=10 -i $SEC/drillkey -p 22 root@$RHOST 'echo drill-login-ok'
+  drill-login-ok
+  (exit 0)
+CHECK ok   2b sentry: login with the throwaway key succeeded
+  removing the throwaway key from both hosts
+CHECK ok   2c validator authorized_keys (created for the drill) removed
+CHECK ok   2d sentry /root/.ssh/authorized_keys restored byte-identical
+CHECK ok   2e drill key fingerprint in no authorized_keys file on local (0)
+CHECK ok   2e drill key fingerprint in no authorized_keys file on relay (0)
+$ ssh -F /dev/null -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=10 -i $SEC/drillkey -p 22 $(id -un)@127.0.0.1 true
+  <user>@127.0.0.1: Permission denied (publickey).
+  (exit 255)
+CHECK ok   2f validator: the throwaway key is refused now
+$ ssh -F /dev/null -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=10 -i $SEC/drillkey -p 22 root@$RHOST true
+  root@<redacted-ip>: Permission denied (publickey).
+  (exit 255)
+CHECK ok   2g sentry: the throwaway key is refused now
+  burst script (run as-is on each host, via stdin): n=0; ok=0; for i in $(seq 500); do ssh -F /dev/null -o BatchMode=yes -o PubkeyAuthentication=no -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=QUIET -o ConnectTimeout=5 authwatch-drill-nouser@127.0.0.1 true </dev/null && ok=$((ok + 1)); n=$((n + 1)); done; echo "attempts=$n succeeded=$ok"
+$ bash -s <<<"$burst"
+  attempts=500 succeeded=0
+  (exit 0)
+CHECK ok   2h validator burst: 500 attempts, 0 succeeded
+$ R 'bash -s' <<<"$burst"
+  attempts=500 succeeded=0
+  (exit 0)
+CHECK ok   2i sentry burst: 500 attempts, 0 succeeded
+$ sudo -n journalctl -t sshd --since @1793422921 --no-pager -o cat | grep -c 'Invalid user authwatch-drill-nouser from 127.0.0.1 port'
+  500
+  (exit 0)
+CHECK ok   2j validator journal: 'Invalid user authwatch-drill-nouser' lines > 400 (of 500) (500)
+$ R "sudo -n journalctl -t sshd --since @1793422921 --no-pager -o cat | grep -c 'Invalid user authwatch-drill-nouser from 127.0.0.1 port'"
+  500
+  (exit 0)
+CHECK ok   2k sentry journal: 'Invalid user authwatch-drill-nouser' lines > 400 (of 500) (500)
+$ sudo -n journalctl -t sshd --since @1793422801 --no-pager -o cat | grep -E '^Accepted publickey for .* from 127\.0\.0\.1 ' | grep -c 'SHA256:<redacted-fp>'
+  1
+  (exit 0)
+CHECK ok   2l validator journal: 1 accepted login with the drill key
+$ R "sudo -n journalctl -t sshd --since @1793422801 --no-pager -o cat | grep -E '^Accepted publickey for ' | grep -c 'SHA256:<redacted-fp>'"
+  1
+  (exit 0)
+CHECK ok   2m sentry journal: 1 accepted login with the drill key
+  waiting for the next collection on both hosts + the pull (max 150 s)
+  after:  validator unknown=1 invalid=510 ts=1793423126 | sentry unknown=1 invalid=507 ts=1793423126
+CHECK ok   2n validator counters: unknown +1, invalid_user >= +500 (journal count) (unknown +1, invalid_user +504)
+CHECK ok   2o sentry counters (pulled copy): unknown +1, invalid_user >= +500 (journal count) (unknown +1, invalid_user +501)
+$ sudo -n grep -E '^pft_authwatch_(ssh_accepted_total|last_unknown_login).*' /var/lib/pft-exporter/textfile/pft_authwatch_validator.prom /var/lib/pft-exporter/textfile/pft_authwatch_sentry.prom | grep -vE '} 0$' | sed 's#^/var/lib/pft-exporter/textfile/##'
+  pft_authwatch_validator.prom:pft_authwatch_ssh_accepted_total{host="validator",method="publickey",key_class="unknown"} 1
+  pft_authwatch_validator.prom:pft_authwatch_last_unknown_login_timestamp_seconds{host="validator"} 1793422917
+  pft_authwatch_sentry.prom:pft_authwatch_ssh_accepted_total{host="sentry",method="publickey",key_class="allowlisted"} 302
+  pft_authwatch_sentry.prom:pft_authwatch_ssh_accepted_total{host="sentry",method="publickey",key_class="unknown"} 1
+  pft_authwatch_sentry.prom:pft_authwatch_last_unknown_login_timestamp_seconds{host="sentry"} 1793422920
+  (exit 0)
+  waiting for PFTAuthUnknownKeyLogin + PFTAuthFailedBurst firing for both hosts (max 420s, poll 15s)
+  2026-10-31T05:06:12Z firing (251s after the logins):
+    alertname=PFTAuthUnknownKeyLogin,alertstate=firing,host=validator,instance=127.0.0.1:9877,job=postfiat,severity=critical 1
+    alertname=PFTAuthUnknownKeyLogin,alertstate=firing,host=sentry,instance=127.0.0.1:9877,job=postfiat,severity=critical 1
+    alertname=PFTAuthFailedBurst,alertstate=firing,host=validator,instance=127.0.0.1:9877,job=postfiat,severity=warning 1
+    alertname=PFTAuthFailedBurst,alertstate=firing,host=sentry,instance=127.0.0.1:9877,job=postfiat,severity=warning 1
+CHECK ok   2p PFTAuthUnknownKeyLogin + PFTAuthFailedBurst firing for validator and sentry (4/4)
+  waiting for [FIRING] delivery on the throwaway topic (max 180s)
+CHECK ok   2q [FIRING] PFTAuthUnknownKeyLogin delivered for validator and sentry (validator 2, sentry 1 (all: 3))
+CHECK ok   2r [FIRING] PFTAuthFailedBurst delivered for validator and sentry (validator 2, sentry 1 (all: 3))
+
+== 3. stopped collector on both hosts
+$ sudo -n systemctl stop pft-authwatch.timer && systemctl is-active pft-authwatch.timer; R 'sudo -n systemctl stop pft-authwatch.timer && systemctl is-active pft-authwatch.timer'
+  inactive
+  inactive
+  (exit 3)
+CHECK ok   3a pft-authwatch.timer inactive on both hosts (validator pull keeps running)
+  waiting for PFTAuthwatchStale firing for both hosts (> 300 s old + for 2m; max 720s, poll 20s)
+  2026-10-31T05:13:29Z firing (385s after the stop):
+    alertname=PFTAuthwatchStale,alertstate=firing,host=sentry,instance=127.0.0.1:9877,job=postfiat,severity=warning 1
+    alertname=PFTAuthwatchStale,alertstate=firing,host=validator,instance=127.0.0.1:9877,job=postfiat,severity=warning 1
+CHECK ok   3b PFTAuthwatchStale firing for validator and sentry (2/2)
+$ for h in validator sentry; do echo "$h collect age $(( $(date +%s) - $(sudo -n awk '/^pft_authwatch_collect_timestamp_seconds/ { print $NF }' /var/lib/pft-exporter/textfile/pft_authwatch_$h.prom) ))s"; done
+  validator collect age 423s
+  sentry collect age 424s
+  (exit 0)
+CHECK ok   3c [FIRING] PFTAuthwatchStale delivered for validator and sentry (validator 1, sentry 1)
+
+== 4. recover: timers on, wait for every (alert, host) pair to resolve and deliver [RESOLVED]
+$ sudo -n systemctl start pft-authwatch.timer pft-authwatch.service && systemctl is-active pft-authwatch.timer; R 'sudo -n systemctl start pft-authwatch.timer pft-authwatch.service && systemctl is-active pft-authwatch.timer'; sudo -n systemctl start pft-authwatch-pull.service; echo pulled
+  active
+  active
+  pulled
+  (exit 0)
+CHECK ok   4a pft-authwatch.timer active on both hosts
+  unknown-key resolves ~15 min after the login (2026-10-31T05:02:01Z), burst ~10 min after the burst (max 1500s, poll 30s)
+  2026-10-31T05:19:08Z: 6/6 pairs resolved in Prometheus with [RESOLVED] delivered (1027s after the logins)
+    [RESOLVED] PFTAuthFailedBurst/sentry: 1
+    [RESOLVED] PFTAuthFailedBurst/validator: 1
+    [RESOLVED] PFTAuthUnknownKeyLogin/sentry: 1
+    [RESOLVED] PFTAuthUnknownKeyLogin/validator: 2
+    [RESOLVED] PFTAuthwatchStale/sentry: 1
+    [RESOLVED] PFTAuthwatchStale/validator: 1
+CHECK ok   4b every (alert, host) pair left Prometheus and delivered [RESOLVED] (6/6)
+$ curl -s -G http://127.0.0.1:9090/api/v1/query_range --data-urlencode 'query=ALERTS{alertname=~"PFTAuthUnknownKeyLogin|PFTAuthFailedBurst|PFTAuthwatchStale",alertstate="firing"}' --data-urlencode start=1793422785 --data-urlencode end=1793423948 --data-urlencode step=15 | jq -r '.data.result[] | "\(.metric.alertname) host=\(.metric.host) first=\(.values[0][0] | todate) last=\(.values[-1][0] | todate) samples=\(.values | length)"' | sort
+  PFTAuthFailedBurst host=sentry first=2026-10-31T05:06:15Z last=2026-10-31T05:14:45Z samples=35
+  PFTAuthFailedBurst host=validator first=2026-10-31T05:03:45Z last=2026-10-31T05:13:15Z samples=39
+  PFTAuthUnknownKeyLogin host=sentry first=2026-10-31T05:03:15Z last=2026-10-31T05:17:45Z samples=59
+  PFTAuthUnknownKeyLogin host=validator first=2026-10-31T05:02:45Z last=2026-10-31T05:17:15Z samples=59
+  PFTAuthwatchStale host=sentry first=2026-10-31T05:13:30Z last=2026-10-31T05:14:00Z samples=3
+  PFTAuthwatchStale host=validator first=2026-10-31T05:13:30Z last=2026-10-31T05:13:45Z samples=2
+  (exit 0)
+CHECK ok   4c query_range shows all 6 (alert, host) series firing during the drill
+
+== 5. restore, read back
+  $ sudo -n pft-maint end
+    window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+  restored local:/etc/postfiat-monitor.env: sha256 matches pre-drill copy: yes
+  restored local:/etc/pft-integrity.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-watchdog/ntfy.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-integrity.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-alertpath/ntfy.env: sha256 matches pre-drill copy: yes
+  2026-10-31T05:19:19Z starting pft-alert-bridge (ntfy: on)
+  2026-10-31T05:19:22Z pft-alert-bridge listening
+  restored bridge: mounts the operator env file again: yes
+  drill silence expired: HTTP 200
+CHECK ok   authwatch timers active, env files byte-identical, bridge on the operator env, window ended, drill key gone
+  throwaway topic: 19 message(s)
+    {"time":"2026-10-31T05:01:09Z","title":"[MAINT] start validator","message":"pft-authwatch drill 20261031T045945Z | until 2026-10-31T06:01:05Z (ttl 3600s) | sentry copy: pushed"}
+    {"time":"2026-10-31T05:02:53Z","title":"[FIRING] PFTAuthUnknownKeyLogin","message":"validator: SSH login with a key that is not allowlisted"}
+    {"time":"2026-10-31T05:03:53Z","title":"[FIRING] PFTAuthFailedBurst","message":"validator: 449 failed SSH attempts in 10 min"}
+    {"time":"2026-10-31T05:03:53Z","title":"[FIRING] PFTAuthUnknownKeyLogin","message":"sentry: SSH login with a key that is not allowlisted"}
+    {"time":"2026-10-31T05:03:54Z","title":"[FIRING] PFTAuthUnknownKeyLogin","message":"validator: SSH login with a key that is not allowlisted"}
+    {"time":"2026-10-31T05:06:53Z","title":"[FIRING] PFTAuthFailedBurst","message":"sentry: 519 failed SSH attempts in 10 min"}
+    {"time":"2026-10-31T05:06:54Z","title":"[FIRING] PFTAuthFailedBurst","message":"validator: 531 failed SSH attempts in 10 min"}
+    {"time":"2026-10-31T05:13:38Z","title":"[FIRING] PFTAuthwatchStale","message":"pft-authwatch metrics for sentry are stale"}
+    {"time":"2026-10-31T05:13:38Z","title":"[FIRING] PFTAuthwatchStale","message":"pft-authwatch metrics for validator are stale"}
+    {"time":"2026-10-31T05:13:53Z","title":"[FIRING] PFTAuthFailedBurst","message":"sentry: 515 failed SSH attempts in 10 min"}
+    {"time":"2026-10-31T05:13:53Z","title":"[RESOLVED] PFTAuthFailedBurst","message":"validator: 456 failed SSH attempts in 10 min"}
+    {"time":"2026-10-31T05:14:38Z","title":"[RESOLVED] PFTAuthwatchStale","message":"pft-authwatch metrics for sentry are stale"}
+    {"time":"2026-10-31T05:14:38Z","title":"[RESOLVED] PFTAuthwatchStale","message":"pft-authwatch metrics for validator are stale"}
+    {"time":"2026-10-31T05:15:53Z","title":"[RESOLVED] PFTAuthFailedBurst","message":"sentry: 517 failed SSH attempts in 10 min"}
+    {"time":"2026-10-31T05:17:54Z","title":"[FIRING] PFTAuthUnknownKeyLogin","message":"sentry: SSH login with a key that is not allowlisted"}
+    {"time":"2026-10-31T05:17:54Z","title":"[RESOLVED] PFTAuthUnknownKeyLogin","message":"validator: SSH login with a key that is not allowlisted"}
+    {"time":"2026-10-31T05:18:53Z","title":"[RESOLVED] PFTAuthUnknownKeyLogin","message":"sentry: SSH login with a key that is not allowlisted"}
+    {"time":"2026-10-31T05:18:54Z","title":"[RESOLVED] PFTAuthUnknownKeyLogin","message":"validator: SSH login with a key that is not allowlisted"}
+    {"time":"2026-10-31T05:19:11Z","title":"[MAINT] end validator","message":"pft-authwatch drill 20261031T045945Z | ended by operator after 1085s | suppressed here: watchdog=0 monitor=0 integrity=0 | sentry copy: pushed"}
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the drill (2 topic(s), 0 with messages)
+  pft-integrity local: RESULT: PASS - 115 unchanged, 0 warn, 0 fail -> exit 0
+CHECK ok   pft-integrity PASS on local at the end
+  pft-integrity relay: RESULT: PASS - 68 unchanged, 0 warn, 0 fail -> exit 0
+CHECK ok   pft-integrity PASS on relay at the end
+CHECK ok   postfiatd-sentry full at the end (full)
+CHECK ok   postfiatd full at the end (full)
+
+live-run done 2026-10-31T05:20:01Z: 0 check(s) failed -> PASS
+exit 0
