@@ -74,8 +74,9 @@ sudo authwatch/install.sh --pull
 sudo pft-integrity accept --reason "pft-authwatch installed"
 ```
 
-`install.sh` imports the fingerprint of every key in `/root/.ssh/authorized_keys` and
-`/home/*/.ssh/authorized_keys`, the keys that are allowed today. Later keys are added on purpose:
+`install.sh` imports the fingerprint of every key sshd accepts today: the `AuthorizedKeysFile` patterns from
+`sshd -T`, for every account in passwd. That includes service accounts whose home is outside `/home`, such as
+the sentry's watchdog and alertpath accounts. Later keys are added on purpose:
 
 ```sh
 sudo pft-authwatch allow add SHA256:<43 chars> "laptop 2026-11"

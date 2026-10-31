@@ -3,9 +3,9 @@
 #   sudo ./install.sh [--host NAME]   script -> /usr/local/bin/pft-authwatch, parser ->
 #       /usr/local/lib/pft-authwatch/authwatch_parse.py, pft-authwatch.service/.timer, state dir /var/lib/pft-authwatch
 #       (0700), allowlist /etc/pft-authwatch/allowlist (0600). NAME (default validator; sentry on the sentry) goes to
-#       HOST_LABEL in /etc/pft-authwatch.env. Imports the fingerprints of every key in /root/.ssh/authorized_keys and
-#       /home/*/.ssh/authorized_keys (the keys that are allowed today), runs one collection through the sandboxed
-#       unit (must give up 1), then enables pft-authwatch.timer.
+#       HOST_LABEL in /etc/pft-authwatch.env. Imports the fingerprints of every key sshd accepts today: the
+#       AuthorizedKeysFile patterns of `sshd -T`, for every account in passwd (service accounts outside /home too).
+#       Runs one collection through the sandboxed unit (must give up 1), then enables pft-authwatch.timer.
 #   sudo ./install.sh --pull [--host sentry]   on the host that runs ../alerts: pft-authwatch-pull.service/.timer;
 #       needs PULL_SSH in /etc/pft-authwatch.env (see pft-authwatch.env.example). Runs one pull (must exit 0), then
 #       enables pft-authwatch-pull.timer (every minute at :50; the peer collects at :25).
@@ -91,9 +91,21 @@ install -d -m 700 "$STATEDIR" "$ALLOWDIR"
 conf_set HOST_LABEL "$host"
 put "$HERE/systemd/pft-authwatch.service" /etc/systemd/system/pft-authwatch.service 644
 put "$HERE/systemd/pft-authwatch.timer" /etc/systemd/system/pft-authwatch.timer 644
-shopt -s nullglob
-keys=()
-for f in /root/.ssh/authorized_keys /home/*/.ssh/authorized_keys; do [ -f "$f" ] && keys+=("$f"); done
+ak_files() { # every authorized_keys file sshd reads (sshd -T AuthorizedKeysFile, %h/%u/%%), for every passwd account
+  local pats u h p f
+  pats="$(sshd -T 2>/dev/null | awk '$1 == "authorizedkeysfile" { $1 = ""; print }')"
+  [ -n "$pats" ] || pats=".ssh/authorized_keys .ssh/authorized_keys2"
+  while IFS=: read -r u _ _ _ _ h _; do
+    [ -n "$h" ] || continue
+    for p in $pats; do
+      [ "$p" = none ] && continue
+      f="${p//%h/$h}"; f="${f//%u/$u}"; f="${f//%%/%}"
+      case "$f" in /*) ;; *) f="$h/$f" ;; esac
+      if [ -f "$f" ]; then printf '%s\n' "$f"; fi
+    done
+  done < <(getent passwd) | sort -u
+}
+mapfile -t keys < <(ak_files)
 if [ ${#keys[@]} -gt 0 ]; then
   log "allowlist import from ${#keys[@]} authorized_keys file(s): $(/usr/local/bin/pft-authwatch allow import "${keys[@]}")"
 else
