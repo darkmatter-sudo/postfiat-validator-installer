@@ -10,6 +10,12 @@ alertpath   alertpath/pft-alertpath-sink.service               /etc/systemd/syst
 alertpath   alertpath/pft-alertpath-check.service              /etc/systemd/system/pft-alertpath-check.service     0644 sentry
 alertpath   alertpath/pft-alertpath-check.timer                /etc/systemd/system/pft-alertpath-check.timer       0644 sentry
 audittrail  audittrail/pft-audittrail.sh                       /usr/local/sbin/pft-audittrail                      0755 both
+authwatch   authwatch/pft-authwatch.sh                         /usr/local/bin/pft-authwatch                        0755 both
+authwatch   authwatch/authwatch_parse.py                       /usr/local/lib/pft-authwatch/authwatch_parse.py     0644 both
+authwatch   authwatch/systemd/pft-authwatch.service            /etc/systemd/system/pft-authwatch.service           0644 both
+authwatch   authwatch/systemd/pft-authwatch.timer              /etc/systemd/system/pft-authwatch.timer             0644 both
+authwatch   authwatch/systemd/pft-authwatch-pull.service       /etc/systemd/system/pft-authwatch-pull.service      0644 validator
+authwatch   authwatch/systemd/pft-authwatch-pull.timer         /etc/systemd/system/pft-authwatch-pull.timer        0644 validator
 backup      backup/pft-backup.sh                               /usr/local/sbin/pft-backup.sh                       0755 validator
 backup      backup/pft-backup.service                          /etc/systemd/system/pft-backup.service              0644 validator
 backup      backup/pft-backup.timer                            /etc/systemd/system/pft-backup.timer                0644 validator
