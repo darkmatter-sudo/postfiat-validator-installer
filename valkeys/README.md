@@ -141,3 +141,24 @@ The drill (`drill/drill.sh`) uses real `validator-keys` and a throwaway standalo
 checked, rotation to seq 2, the old seq-1 token put back (regression FAIL + metric), revocation with the double
 confirmation (and its refusals), a scan of its own log for every secret string and generic secret patterns, then it
 shreds the keys and repeats the live checks.
+
+## Live proof
+
+Recorded on pft-agent's validator host (Ubuntu 22.04.5) against commit `385e764` (sha256 of every file in each log
+header). The live validator and sentry were only read; neither has a validator token yet.
+
+| Log | What | Result |
+|---|---|---|
+| [`logs/01-tests.log`](logs/01-tests.log) | offline suite (parsing, sequence compare, permission grading, refusals, fixture audits, state/textfile) | 95 passed, 0 failed |
+| [`logs/02-lint.log`](logs/02-lint.log) | shellcheck of the tool, tests and drill; `bash -n` | exit 0 |
+| [`logs/03-promtool.log`](logs/03-promtool.log) | promtool 3.5.0 `check rules` (3 rules) + `test rules` | SUCCESS |
+| [`logs/04-drill.log`](logs/04-drill.log) | isolated drill: seq 1 -> seq 2 -> old-token regression -> revocation, secret scan, shred | 30 pass, 0 fail |
+| [`logs/05-secret-scan.log`](logs/05-secret-scan.log) | scan of logs 01-04 before commit: base64 runs >= 60 chars (sha256 digests excluded), key/token/seed/PEM markers, IPv4, home paths | 0 matches (`grep -c` exit 1 = none) |
+
+Drill highlights (`logs/04-drill.log`): the live validator and sentry were `full` before and after, with the same
+config sha256 and `pft-integrity verify` PASS on both; `check` on both live nodes exited 0 (not a validator,
+config 644 with no secret). On the throwaway node, seq 1 was recorded, seq 2 showed `advanced from 1`, the seq-1
+token put back gave `FAIL seq ... LOWER than the highest seen (2)` with `pft_valkeys_sequence_regression 1`, and the
+revocation config gave `WARN conf.revocation` with the node no longer validating. The drill compared all 19 secret
+strings of its throwaway key (master `secret_key` + every token/revocation line) with its own log: 0 matches. The
+key directory and the drill container were then destroyed.

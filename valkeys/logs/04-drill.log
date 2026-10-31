@@ -1,0 +1,277 @@
+# valkeys drill - 2026-10-31T21:18:56Z - Ubuntu 22.04.5 LTS - commit 385e764cd7883950acc312bae0073dca03df4416
+# sha256 f2b876d77557aa639179b33fb86d449f9f0e99b9125e1ce9ec8f9126c071a42d  valkeys/pft-valkeys.sh
+# sha256 6d40c59ed266c3712c90115ef61a6046941fe03ef204ea214d6559a16c091728  valkeys/drill/drill.sh
+# image agtipft/postfiatd:testnet-light-latest sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+# throwaway dir /tmp/valkeys-drill.djQPyh (mode 700), shredded at the end
+=== 1. live nodes before (read-only)
+--- live before: validator
+$ sh -c sudo docker exec postfiatd postfiatd --conf /etc/postfiatd/postfiatd.cfg server_info 2>/dev/null | jq -r '.result.info.server_state'
+full
+(exit 0)
+$ sh -c sudo docker exec postfiatd sha256sum /etc/postfiatd/postfiatd.cfg | cut -c1-64
+52c42f6c6aeec6adef9addc3acc728585e2ce0a401051e35595d8114f3f3cf93
+(exit 0)
+$ sh -c sudo pft-integrity verify 2>&1 | grep RESULT
+RESULT: PASS - 120 unchanged, 0 warn, 0 fail -> exit 0
+(exit 0)
+--- live before: sentry
+$ ssh relay sudo docker exec postfiatd-sentry postfiatd --conf /etc/postfiatd/postfiatd.cfg server_info 2>/dev/null | jq -r '.result.info.server_state'
+full
+(exit 0)
+$ ssh relay sudo docker exec postfiatd-sentry sha256sum /etc/postfiatd/postfiatd.cfg | cut -c1-64
+aef4f1ff544a56881bbd1e55fdbe99db990d14ea9be3a87d8dfab5b794b8c586
+(exit 0)
+$ ssh relay sudo pft-integrity verify 2>&1 | grep RESULT
+RESULT: PASS - 71 unchanged, 0 warn, 0 fail -> exit 0
+(exit 0)
+$ sudo valkeys/pft-valkeys.sh check --container postfiatd
+INFO conf.perms         /etc/postfiatd/postfiatd.cfg mode 644; holds no validator secret
+OK   keys.online        no master key file under /etc/postfiatd or /var/lib/postfiatd
+INFO rpc                server_state full
+INFO validator          not configured as a validator (no [validator_token]); sequence checks skipped
+RESULT: OK
+(exit 0)
+CHECK PASS live validator check read-only (exit 0)
+$ ssh relay 'sudo bash -s -- check --container postfiatd-sentry' < valkeys/pft-valkeys.sh
+INFO conf.perms         /etc/postfiatd/postfiatd.cfg mode 644; holds no validator secret
+OK   keys.online        no master key file under /etc/postfiatd or /var/lib/postfiatd
+INFO rpc                server_state full
+INFO validator          not configured as a validator (no [validator_token]); sequence checks skipped
+RESULT: OK
+(exit 0)
+CHECK PASS live sentry check read-only (exit 0)
+=== 2. keys create (network-isolated container) + refusals
+$ valkeys/pft-valkeys.sh keys create --dir /tmp/valkeys-drill.djQPyh/keys
+created   /tmp/valkeys-drill.djQPyh/keys/validator-keys.json (mode 600)
+public_key nHUhpxC8EahYVyV18eq2buwutAzfa8V9jcXv2FkrHy9KirWHZhks (ed25519)
+next: pft-valkeys token rotate --dir /tmp/valkeys-drill.djQPyh/keys ; keep this directory offline and backed up
+(exit 0)
+CHECK PASS keys create (exit 0)
+$ stat -c %a %n /tmp/valkeys-drill.djQPyh/keys /tmp/valkeys-drill.djQPyh/keys/validator-keys.json
+700 /tmp/valkeys-drill.djQPyh/keys
+600 /tmp/valkeys-drill.djQPyh/keys/validator-keys.json
+(exit 0)
+CHECK PASS key dir 700, key file 600
+$ valkeys/pft-valkeys.sh keys create --dir /tmp/valkeys-drill.djQPyh/keys
+pft-valkeys: refusing to overwrite /tmp/valkeys-drill.djQPyh/keys/validator-keys.json
+(exit 2)
+CHECK PASS refuse overwrite of existing key file (exit 2)
+$ valkeys/pft-valkeys.sh keys create --dir /tmp/valkeys-drill.djQPyh/loose
+pft-valkeys: refusing: /tmp/valkeys-drill.djQPyh/loose has mode 755, need 700
+(exit 2)
+CHECK PASS refuse key dir with mode 755 (exit 2)
+$ valkeys/pft-valkeys.sh token rotate --dir /tmp/valkeys-drill.djQPyh/link
+pft-valkeys: refusing: /tmp/valkeys-drill.djQPyh/link is a symlink
+(exit 2)
+CHECK PASS refuse symlinked key dir (exit 2)
+=== 3. token seq 1
+$ valkeys/pft-valkeys.sh token rotate --dir /tmp/valkeys-drill.djQPyh/keys
+rotated   nHUhpxC8EahYVyV18eq2buwutAzfa8V9jcXv2FkrHy9KirWHZhks token sequence 0 -> 1
+token     /tmp/valkeys-drill.djQPyh/keys/token-seq1.cfg (mode 600, 8 lines; not printed)
+next: replace the [validator_token] section of postfiatd.cfg with this file, restart postfiatd, then
+      pft-valkeys check --state FILE should report sequence 1; shred the file once installed
+(exit 0)
+CHECK PASS token rotate 0 -> 1 (exit 0)
+$ stat -c %a %n /tmp/valkeys-drill.djQPyh/keys/token-seq1.cfg
+600 /tmp/valkeys-drill.djQPyh/keys/token-seq1.cfg
+(exit 0)
+$ valkeys/pft-valkeys.sh token rotate --dir /tmp/valkeys-drill.djQPyh/keys --out /tmp/valkeys-drill.djQPyh/keys/token-seq1.cfg
+pft-valkeys: refusing to overwrite /tmp/valkeys-drill.djQPyh/keys/token-seq1.cfg
+(exit 2)
+CHECK PASS refuse overwrite of existing token file (exit 2)
+$ jq -r .token_sequence /tmp/valkeys-drill.djQPyh/keys/validator-keys.json
+1
+(exit 0)
+$ docker run -d --name pft-valkeys-drill --network none -v /tmp/valkeys-drill.djQPyh/node:/etc/postfiatd:ro agtipft/postfiatd:testnet-light-latest (standalone, config = base + token-seq1.cfg)
+node up after 2s
+$ valkeys/pft-valkeys.sh check --container pft-valkeys-drill --state /tmp/valkeys-drill.djQPyh/state.json --textfile-dir /tmp/valkeys-drill.djQPyh/tf --host drill
+OK   conf.perms         /etc/postfiatd/postfiatd.cfg mode 600 owner uid 1001
+OK   keys.online        no master key file under /etc/postfiatd or /var/lib/postfiatd
+INFO rpc                server_state validating
+OK   validator          master key nHUhpxC8EahY... loaded (server_info pubkey_validator nHUhpxC8EahY...)
+OK   ephemeral          ephemeral key n9JF8HSmBPBn... (signing key from the token)
+OK   seq                manifest seq 1 (first record for this key)
+RESULT: OK
+(exit 0)
+CHECK PASS check seq 1 (first record) (exit 0)
+$ grep -v '^#' /tmp/valkeys-drill.djQPyh/tf/pft_valkeys_drill.prom
+pft_valkeys_up{host="drill"} 1
+pft_valkeys_validator_configured{host="drill"} 1
+pft_valkeys_manifest_sequence{host="drill",master="nHUhpxC8EahY"} 1
+pft_valkeys_manifest_sequence_max{host="drill",master="nHUhpxC8EahY"} 1
+pft_valkeys_sequence_regression{host="drill"} 0
+pft_valkeys_findings{host="drill",grade="warn"} 0
+pft_valkeys_findings{host="drill",grade="fail"} 0
+pft_valkeys_last_run_timestamp_seconds{host="drill"} 1793481558
+CHECK PASS metric sequence 1
+=== 4. rotate to seq 2 + restart
+$ valkeys/pft-valkeys.sh token rotate --dir /tmp/valkeys-drill.djQPyh/keys
+rotated   nHUhpxC8EahYVyV18eq2buwutAzfa8V9jcXv2FkrHy9KirWHZhks token sequence 1 -> 2
+token     /tmp/valkeys-drill.djQPyh/keys/token-seq2.cfg (mode 600, 8 lines; not printed)
+next: replace the [validator_token] section of postfiatd.cfg with this file, restart postfiatd, then
+      pft-valkeys check --state FILE should report sequence 2; shred the file once installed
+(exit 0)
+CHECK PASS token rotate 1 -> 2 (exit 0)
+$ docker run -d --name pft-valkeys-drill --network none -v /tmp/valkeys-drill.djQPyh/node:/etc/postfiatd:ro agtipft/postfiatd:testnet-light-latest (standalone, config = base + token-seq2.cfg)
+node up after 2s
+$ valkeys/pft-valkeys.sh check --container pft-valkeys-drill --state /tmp/valkeys-drill.djQPyh/state.json --textfile-dir /tmp/valkeys-drill.djQPyh/tf --host drill
+OK   conf.perms         /etc/postfiatd/postfiatd.cfg mode 600 owner uid 1001
+OK   keys.online        no master key file under /etc/postfiatd or /var/lib/postfiatd
+INFO rpc                server_state validating
+OK   validator          master key nHUhpxC8EahY... loaded (server_info pubkey_validator nHUhpxC8EahY...)
+OK   ephemeral          ephemeral key n9KmiDu6vkQ1... (signing key from the token)
+OK   seq                manifest seq 2 advanced from 1 (rotation recorded)
+RESULT: OK
+(exit 0)
+CHECK PASS check seq 2 (advanced) (exit 0)
+$ grep -v '^#' /tmp/valkeys-drill.djQPyh/tf/pft_valkeys_drill.prom
+pft_valkeys_up{host="drill"} 1
+pft_valkeys_validator_configured{host="drill"} 1
+pft_valkeys_manifest_sequence{host="drill",master="nHUhpxC8EahY"} 2
+pft_valkeys_manifest_sequence_max{host="drill",master="nHUhpxC8EahY"} 2
+pft_valkeys_sequence_regression{host="drill"} 0
+pft_valkeys_findings{host="drill",grade="warn"} 0
+pft_valkeys_findings{host="drill",grade="fail"} 0
+pft_valkeys_last_run_timestamp_seconds{host="drill"} 1793481562
+CHECK PASS metric sequence 2, regression 0
+$ jq -c map_values(.) /tmp/valkeys-drill.djQPyh/state.json
+{"nHUhpxC8EahYVyV18eq2buwutAzfa8V9jcXv2FkrHy9KirWHZhks":2}
+(exit 0)
+=== 5. regression: old seq-1 token reinstalled
+$ docker run -d --name pft-valkeys-drill --network none -v /tmp/valkeys-drill.djQPyh/node:/etc/postfiatd:ro agtipft/postfiatd:testnet-light-latest (standalone, config = base + token-seq1.cfg)
+node up after 2s
+$ valkeys/pft-valkeys.sh check --container pft-valkeys-drill --state /tmp/valkeys-drill.djQPyh/state.json --textfile-dir /tmp/valkeys-drill.djQPyh/tf --host drill
+OK   conf.perms         /etc/postfiatd/postfiatd.cfg mode 600 owner uid 1001
+OK   keys.online        no master key file under /etc/postfiatd or /var/lib/postfiatd
+INFO rpc                server_state validating
+OK   validator          master key nHUhpxC8EahY... loaded (server_info pubkey_validator nHUhpxC8EahY...)
+OK   ephemeral          ephemeral key n9JF8HSmBPBn... (signing key from the token)
+FAIL seq                manifest seq 1 is LOWER than the highest seen (2): old token in use
+RESULT: FAIL - 1 fail, 0 warn
+(exit 2)
+CHECK PASS check detects old token (seq 1 < 2) (exit 2)
+$ grep -v '^#' /tmp/valkeys-drill.djQPyh/tf/pft_valkeys_drill.prom
+pft_valkeys_up{host="drill"} 1
+pft_valkeys_validator_configured{host="drill"} 1
+pft_valkeys_manifest_sequence{host="drill",master="nHUhpxC8EahY"} 1
+pft_valkeys_manifest_sequence_max{host="drill",master="nHUhpxC8EahY"} 2
+pft_valkeys_sequence_regression{host="drill"} 1
+pft_valkeys_findings{host="drill",grade="warn"} 0
+pft_valkeys_findings{host="drill",grade="fail"} 1
+pft_valkeys_last_run_timestamp_seconds{host="drill"} 1793481565
+CHECK PASS metric regression 1, max 2
+=== 6. revoke (double confirmation)
+$ valkeys/pft-valkeys.sh revoke --dir /tmp/valkeys-drill.djQPyh/keys
+pft-valkeys: refusing: --confirm-key must equal the master public key in /tmp/valkeys-drill.djQPyh/keys/validator-keys.json
+(exit 2)
+CHECK PASS refuse revoke without --confirm-key (exit 2)
+$ valkeys/pft-valkeys.sh revoke --dir /tmp/valkeys-drill.djQPyh/keys --confirm-key nHwrongkey --confirm-phrase REVOKE nHwrongkey
+pft-valkeys: refusing: --confirm-key must equal the master public key in /tmp/valkeys-drill.djQPyh/keys/validator-keys.json
+(exit 2)
+CHECK PASS refuse revoke with wrong key (exit 2)
+$ valkeys/pft-valkeys.sh revoke --dir /tmp/valkeys-drill.djQPyh/keys --confirm-key nHUhpxC8EahYVyV18eq2buwutAzfa8V9jcXv2FkrHy9KirWHZhks
+pft-valkeys: refusing: stdin is not a terminal; pass --confirm-phrase "REVOKE nHUhpxC8EahYVyV18eq2buwutAzfa8V9jcXv2FkrHy9KirWHZhks"
+(exit 2)
+CHECK PASS refuse revoke without phrase (stdin not a terminal) (exit 2)
+$ valkeys/pft-valkeys.sh revoke --dir /tmp/valkeys-drill.djQPyh/keys --confirm-key nHUhpxC8EahYVyV18eq2buwutAzfa8V9jcXv2FkrHy9KirWHZhks --confirm-phrase REVOKE
+pft-valkeys: refusing: confirmation phrase does not match
+(exit 2)
+CHECK PASS refuse revoke with wrong phrase (exit 2)
+$ jq -r .revoked /tmp/valkeys-drill.djQPyh/keys/validator-keys.json
+false
+(exit 0)
+$ valkeys/pft-valkeys.sh revoke --dir /tmp/valkeys-drill.djQPyh/keys --confirm-key nHUhpxC8EahYVyV18eq2buwutAzfa8V9jcXv2FkrHy9KirWHZhks --confirm-phrase REVOKE nHUhpxC8EahYVyV18eq2buwutAzfa8V9jcXv2FkrHy9KirWHZhks
+revoked   nHUhpxC8EahYVyV18eq2buwutAzfa8V9jcXv2FkrHy9KirWHZhks
+revocation /tmp/valkeys-drill.djQPyh/keys/revocation.cfg (mode 600; not printed)
+next: put this section in postfiatd.cfg in place of [validator_token], restart, and create a new master key
+(exit 0)
+CHECK PASS revoke with key + phrase (exit 0)
+$ stat -c %a %n /tmp/valkeys-drill.djQPyh/keys/revocation.cfg
+600 /tmp/valkeys-drill.djQPyh/keys/revocation.cfg
+(exit 0)
+$ jq -r .revoked /tmp/valkeys-drill.djQPyh/keys/validator-keys.json
+true
+(exit 0)
+$ valkeys/pft-valkeys.sh token rotate --dir /tmp/valkeys-drill.djQPyh/keys
+pft-valkeys: refusing: key nHUhpxC8EahYVyV18eq2buwutAzfa8V9jcXv2FkrHy9KirWHZhks is revoked
+(exit 2)
+CHECK PASS refuse token rotate on revoked key (exit 2)
+$ valkeys/pft-valkeys.sh revoke --dir /tmp/valkeys-drill.djQPyh/keys --confirm-key nHUhpxC8EahYVyV18eq2buwutAzfa8V9jcXv2FkrHy9KirWHZhks --confirm-phrase REVOKE nHUhpxC8EahYVyV18eq2buwutAzfa8V9jcXv2FkrHy9KirWHZhks
+pft-valkeys: refusing: key nHUhpxC8EahYVyV18eq2buwutAzfa8V9jcXv2FkrHy9KirWHZhks is already revoked
+(exit 2)
+CHECK PASS refuse second revoke (exit 2)
+$ valkeys/pft-valkeys.sh check --container pft-valkeys-drill --keydir /tmp/valkeys-drill.djQPyh/keys --host drill
+OK   conf.perms         /etc/postfiatd/postfiatd.cfg mode 600 owner uid 1001
+OK   keys.online        no master key file under /etc/postfiatd or /var/lib/postfiatd
+OK   keys.perms         /tmp/valkeys-drill.djQPyh/keys 700, every file 600
+INFO rpc                server_state validating
+OK   validator          master key nHUhpxC8EahY... loaded (server_info pubkey_validator nHUhpxC8EahY...)
+OK   ephemeral          ephemeral key n9JF8HSmBPBn... (signing key from the token)
+OK   seq                manifest seq 1 (no --state: regression vs. history not checked)
+RESULT: OK
+(exit 0)
+CHECK PASS keydir audit 700/600 (exit 0)
+$ valkeys/pft-valkeys.sh check --container pft-valkeys-drill --keydir /tmp/valkeys-drill.djQPyh/keys --host drill
+OK   conf.perms         /etc/postfiatd/postfiatd.cfg mode 600 owner uid 1001
+OK   keys.online        no master key file under /etc/postfiatd or /var/lib/postfiatd
+FAIL keys.perms         token-seq2.cfg mode 644, need 600
+INFO rpc                server_state validating
+OK   validator          master key nHUhpxC8EahY... loaded (server_info pubkey_validator nHUhpxC8EahY...)
+OK   ephemeral          ephemeral key n9JF8HSmBPBn... (signing key from the token)
+OK   seq                manifest seq 1 (no --state: regression vs. history not checked)
+RESULT: FAIL - 1 fail, 0 warn
+(exit 2)
+CHECK PASS keydir audit flags a 644 token file (exit 2)
+$ docker run -d --name pft-valkeys-drill --network none -v /tmp/valkeys-drill.djQPyh/node:/etc/postfiatd:ro agtipft/postfiatd:testnet-light-latest (standalone, config = base + revocation.cfg)
+node up after 2s
+$ valkeys/pft-valkeys.sh check --container pft-valkeys-drill --state /tmp/valkeys-drill.djQPyh/state.json --textfile-dir /tmp/valkeys-drill.djQPyh/tf --host drill
+INFO conf.perms         /etc/postfiatd/postfiatd.cfg mode 600; holds no validator secret
+WARN conf.revocation    /etc/postfiatd/postfiatd.cfg has [validator_key_revocation]: this node announces a revoked key and does not validate
+OK   keys.online        no master key file under /etc/postfiatd or /var/lib/postfiatd
+INFO rpc                server_state full
+INFO validator          not configured as a validator (no [validator_token]); sequence checks skipped
+RESULT: WARN - 1 warn
+(exit 1)
+CHECK PASS check flags revocation config, node not validating (exit 1)
+$ grep -v '^#' /tmp/valkeys-drill.djQPyh/tf/pft_valkeys_drill.prom
+pft_valkeys_up{host="drill"} 1
+pft_valkeys_validator_configured{host="drill"} 0
+pft_valkeys_sequence_regression{host="drill"} 0
+pft_valkeys_findings{host="drill",grade="warn"} 1
+pft_valkeys_findings{host="drill",grade="fail"} 0
+pft_valkeys_last_run_timestamp_seconds{host="drill"} 1793481573
+CHECK PASS metric validator_configured 0 after revoke
+=== 7. secret scan of this log
+secret strings collected: 19 (master secret_key + every token/revocation line of >= 12 chars)
+exact secret matches in log: 0
+CHECK PASS no secret string in the log
+generic pattern matches: 0 base64 runs >= 60 chars (sha256 hex digests excluded) + 0 secret_key/seed/token/revocation lines
+CHECK PASS no generic secret pattern in the log
+=== 8. destroy throwaway keys
+$ sh -c docker ps -a --filter name=pft-valkeys-drill --format '{{.Names}}' | wc -l
+0
+(exit 0)
+files before shred: 8
+CHECK PASS throwaway dir shredded and removed
+=== 9. live nodes after (read-only)
+--- live after: validator
+$ sh -c sudo docker exec postfiatd postfiatd --conf /etc/postfiatd/postfiatd.cfg server_info 2>/dev/null | jq -r '.result.info.server_state'
+full
+(exit 0)
+$ sh -c sudo docker exec postfiatd sha256sum /etc/postfiatd/postfiatd.cfg | cut -c1-64
+52c42f6c6aeec6adef9addc3acc728585e2ce0a401051e35595d8114f3f3cf93
+(exit 0)
+$ sh -c sudo pft-integrity verify 2>&1 | grep RESULT
+RESULT: PASS - 120 unchanged, 0 warn, 0 fail -> exit 0
+(exit 0)
+--- live after: sentry
+$ ssh relay sudo docker exec postfiatd-sentry postfiatd --conf /etc/postfiatd/postfiatd.cfg server_info 2>/dev/null | jq -r '.result.info.server_state'
+full
+(exit 0)
+$ ssh relay sudo docker exec postfiatd-sentry sha256sum /etc/postfiatd/postfiatd.cfg | cut -c1-64
+aef4f1ff544a56881bbd1e55fdbe99db990d14ea9be3a87d8dfab5b794b8c586
+(exit 0)
+$ ssh relay sudo pft-integrity verify 2>&1 | grep RESULT
+RESULT: PASS - 71 unchanged, 0 warn, 0 fail -> exit 0
+(exit 0)
+DRILL RESULT: 30 pass, 0 fail

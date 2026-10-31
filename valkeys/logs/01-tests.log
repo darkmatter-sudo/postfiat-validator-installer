@@ -1,0 +1,111 @@
+# 01 offline tests - 2026-10-31T21:18:26Z - Ubuntu 22.04.5 LTS - commit 385e764cd7883950acc312bae0073dca03df4416
+# sha256 f2b876d77557aa639179b33fb86d449f9f0e99b9125e1ce9ec8f9126c071a42d  valkeys/pft-valkeys.sh
+# sha256 3d92df77dfe83c8dd43f36b0c6a2c4ffc72384bcd27879c3a46b91021ecca0b5  valkeys/tests/run-tests.sh
+# sha256 6a4a393909bd88598270e3542da3e7bcacb43dbd25d4d885f869f227de28c0d4  valkeys/tests/stub-docker.sh
+# sha256 a645fc74fad5312704428c35c3fe68fe8ce7cbf2ec6b9ac1f235ca71d97d444b  valkeys/alerts/valkeys.rules.yml
+# sha256 185f003f67a4d2de25caeeb9c94464e520621006861e8438d067118baaba762e  valkeys/alerts/valkeys.tests.yml
+# sha256 6d40c59ed266c3712c90115ef61a6046941fe03ef204ea214d6559a16c091728  valkeys/drill/drill.sh
+$ valkeys/tests/run-tests.sh
+== argument parsing
+PASS no args -> usage exit 3
+PASS keys without create -> 3
+PASS token create (not rotate) -> 3
+PASS keys create without --dir -> 3
+PASS unknown option -> 3
+PASS check unknown option -> 3
+PASS check bad --host label -> 3
+PASS check empty --container -> 3
+PASS version -> 0
+== sequence comparison / permission grading (sourced)
+PASS seq_compare '1' '' = first
+PASS seq_compare '2' '2' = same
+PASS seq_compare '3' '2' = advanced
+PASS seq_compare '1' '2' = regression
+PASS seq_compare '9' '10' = regression
+PASS seq_compare '10' '9' = advanced
+PASS seq_compare '4294967295' '3' = advanced
+PASS seq_compare 'x' '1' = invalid
+PASS seq_compare '1' 'x' = invalid
+PASS seq_compare '' '1' = invalid
+PASS seq_compare '-1' '2' = invalid
+PASS perm_grade 600 secret=1 = ok
+PASS perm_grade 400 secret=1 = ok
+PASS perm_grade 640 secret=1 = warn
+PASS perm_grade 660 secret=1 = warn
+PASS perm_grade 644 secret=1 = fail
+PASS perm_grade 604 secret=1 = fail
+PASS perm_grade 755 secret=1 = fail
+PASS perm_grade 644 secret=0 = ok
+PASS perm_grade 777 secret=0 = ok
+== keys create / token rotate / revoke (stub validator-keys)
+PASS create: exit 0
+PASS create: dir 700, key file 600
+PASS create: prints public key
+PASS create: secret not on stdout
+PASS create: container isolated (network none, read-only, cap-drop, no-new-privileges)
+PASS create: no temp output file left
+PASS create: refuse existing key file (2)
+PASS create: refuse dir mode 755 (2)
+PASS create: refuse symlinked dir (2)
+PASS create: refuse non-directory (2)
+PASS create: validator-keys failure -> 2, no temp file left
+PASS rotate: 0 -> 1, exit 0
+PASS rotate: token file 600 with header + lines
+PASS rotate: token not on stdout
+PASS rotate: only the token block is kept (no banner text)
+PASS rotate: 1 -> 2 into token-seq2.cfg
+PASS rotate: refuse existing --out (2)
+PASS rotate: refused run did not bump the sequence
+PASS rotate: refuse --out in group/other-writable dir (2)
+PASS rotate: sequence jump 2 -> 4 refused (2), no token file
+PASS rotate: refuse key file mode 644 (2)
+PASS rotate: refuse missing dir (2)
+PASS rotate: refuse non-validator-keys json (2)
+PASS revoke: no --confirm-key -> refused (2)
+PASS revoke: wrong key -> refused (2)
+PASS revoke: no phrase, stdin not a tty -> refused (2)
+PASS revoke: wrong phrase -> refused (2)
+PASS revoke: refusals never called validator-keys
+PASS revoke: key + phrase -> 0, revocation.cfg 600
+PASS revoke: revocation blob not on stdout
+PASS revoke: already revoked -> refused (2)
+PASS rotate: refuse revoked key (2)
+== check: config permission / section audit (fixtures)
+PASS no token, 644: INFO, exit 0
+PASS token 600: OK, exit 0
+PASS token 640: WARN group-readable, exit 1
+PASS token 644: FAIL world-readable, exit 2
+PASS validation_seed: WARN seed online + secret perms OK
+PASS validation_seed 644: FAIL perms
+PASS two token sections: FAIL
+PASS revocation only: WARN, exit 1
+PASS token + revocation: FAIL
+PASS master key json in container: WARN keys.online
+PASS container down: FAIL, exit 2, textfile up 0
+PASS check: never reads config contents (no cat/sed/awk exec)
+== check: key directory audit
+PASS keydir 700/600: OK
+PASS keydir: 644 token file FAIL naming the file
+PASS keydir mode 750: FAIL
+PASS keydir: leftover 644 temp output FAIL
+PASS keydir missing: FAIL
+== check: manifest sequence, ephemeral key, state + textfile
+PASS seq 3 first record: OK, state written
+PASS textfile: sequence 3, regression 0, configured 1
+PASS textfile: mode 644, no temp left
+PASS seq 3 again: same
+PASS seq 4: advanced, state 4
+PASS seq 3 after 4: FAIL regression, exit 2
+PASS regression: state keeps 4, textfile regression 1 max 4
+PASS textfile findings fail = 1
+PASS node knows newer manifest (5 > 3) without state: FAIL seq.network
+PASS manifest seq equal: no seq.network finding
+PASS seq 0xFFFFFFFF: FAIL revoked
+PASS missing ephemeral key: FAIL
+PASS ephemeral == master: FAIL
+PASS token configured but not loaded: FAIL
+PASS server_info / validator_info master mismatch: FAIL
+PASS unreadable state: FAIL, file untouched
+PASS --host label names the textfile
+RESULT: 95 passed, 0 failed
+(exit 0)

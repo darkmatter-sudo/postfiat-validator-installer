@@ -1,0 +1,15 @@
+# 03 promtool - 2026-10-31T21:18:50Z - Ubuntu 22.04.5 LTS - commit 385e764cd7883950acc312bae0073dca03df4416
+# sha256 a645fc74fad5312704428c35c3fe68fe8ce7cbf2ec6b9ac1f235ca71d97d444b  valkeys/alerts/valkeys.rules.yml
+# sha256 185f003f67a4d2de25caeeb9c94464e520621006861e8438d067118baaba762e  valkeys/alerts/valkeys.tests.yml
+$ docker run --rm -v "$PWD:/w:ro" -w /w --entrypoint promtool prom/prometheus:v3.5.0 --version | head -1
+promtool, version 3.5.0 (branch: HEAD, revision: 8be3a9560fbdd18a94dedec4b747c35178177202)
+(exit 0)
+$ docker run --rm -v "$PWD:/w:ro" -w /w --entrypoint promtool prom/prometheus:v3.5.0 check rules valkeys.rules.yml
+Checking valkeys.rules.yml
+  SUCCESS: 3 rules found
+
+(exit 0)
+$ docker run --rm -v "$PWD:/w:ro" -w /w --entrypoint promtool prom/prometheus:v3.5.0 test rules valkeys.tests.yml
+  SUCCESS
+
+(exit 0)
