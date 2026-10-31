@@ -1,0 +1,104 @@
+# 01 stubbed suite - 2026-10-31T18:15:10Z - Ubuntu 22.04.5 LTS - commit 550d325fae5afffdf497a7460c1bba3e73ea4b20
+# sha256 3ae4146f26bb1e1121d58ad74fec3ac21c163b86d378018542451115930a45e5 privesc/pft-privesc.sh
+# sha256 289bc9f2ab006d7e5f77c2e7767b947c831aeafc47c77681268f9a45e3cab8ca privesc/privesc_classify.py
+# sha256 f56f0c7ac74c880f19733f12e577145f1a2b3a1b2270bc443d06a4ecab397a65 privesc/tests/run-tests.sh
+# sha256 3ef8ff36eea79c585f1b8e0b23c0318af36fbc80a7f8a9364db9b3dd7522ab3e privesc/tests/test_owner.py
+# sha256 b9aa854374071ef776d3549070e196f61e83e72aff2a2be123b36c7fc6e2d9bb privesc/tests/mutate.py
+$ bash privesc/tests/run-tests.sh
+== audit: baseline (Ubuntu-like, stock SUID set)
+PASS B1 baseline: exit 1, RESULT WARN, 0 fail, 4 warn, 4 fixable
+PASS B2 sudo, passwd, crontab (SGID) PASS PE-SUID-OK
+PASS B3 pkexec, chfn, ssh-keysign WARN PE-SUID-UNNEEDED
+PASS B4 gst-ptp-helper WARN PE-CAP-UNNEEDED, ping PASS PE-CAP-OK
+PASS B5 sudoers, exec, path, rooteq PASS
+PASS B6 agent in docker with full sudo = INFO, names hashed
+PASS B7 metrics: up 1, last_run, suid warn 4, fixable 4, backup 0
+PASS B8 textfile passes validate
+PASS B9 --show-names prints the account
+PASS B10 --json: result WARN, exit 1, 4 fixable, findings list
+PASS B11 account hash keyed by /etc/machine-id (bare sha256 of the name never printed)
+== audit: suid area
+PASS S1 unpackaged SUID: FAIL PE-SUID-UNPKG, not fixable
+PASS S2 ... listed in REMOVE_SUID: fixable
+PASS S3 dpkg --verify md5 change: FAIL PE-SUID-MODIFIED
+PASS S4 world-writable SUID: FAIL PE-SUID-WRITABLE with chmod 4755
+PASS S5 writable parent dir of a SUID file: FAIL names the dir
+PASS S6 sticky world-writable parent: not a finding
+PASS S7 usrmerge: /usr/bin/fusermount3 owned via /bin/fusermount3 (fuse3) -> UNNEEDED
+PASS S8 dpkg-owned SUID on neither list: WARN PE-SUID-REVIEW, not fixable
+PASS S9 capabilities on an unpackaged file: FAIL PE-CAP-UNPKG
+== audit: sudoers area
+PASS U1 world-writable sudoers.d file: FAIL PE-SUDO-PERM, fixable
+PASS U2 visudo -c fails: FAIL PE-SUDO-SYNTAX
+PASS U3 env_keep LD_PRELOAD: FAIL PE-SUDO-ENV
+PASS U4 NOPASSWD vim via Cmnd_Alias: WARN PE-SUDO-SHELLESC
+PASS U5 command in a world-writable dir: FAIL PE-SUDO-CMD-WRITABLE
+PASS U6 wildcard args: WARN PE-SUDO-WILDCARD; relative command: FAIL
+PASS U7 !env_reset FAIL; secure_path + use_pty missing WARN; #includedir still read
+PASS U8 includedir skips names with a dot or ending in ~ (like sudo)
+PASS U9 continuation line + NOPASSWD:ALL tag still a full-root rule
+== audit: exec area (units + cron)
+PASS E1 root unit ExecStart world-writable: FAIL PE-EXEC-UNIT, chmod 0755 action
+PASS E2 ... and the cron.d line that runs it: FAIL PE-EXEC-CRON
+PASS E3 non-root units are skipped (User=nobody)
+PASS E4 world-writable unit file: FAIL PE-EXEC-UNITFILE
+PASS E5 script argument checked, data-file argument not
+PASS E6 bare ExecStart name resolved in the systemd search path
+PASS E7 writable cron.d file and run-parts script: FAIL PE-EXEC-CRON x2
+PASS E8 symlinked ExecStart: the resolved target is checked
+== audit: path area
+PASS P1 world-writable PATH dir: FAIL PE-PATH-DIR
+PASS P2 world-writable file in a PATH dir: FAIL PE-PATH-FILE
+PASS P3 relative entry in /etc/environment PATH: FAIL PE-PATH-REL
+PASS P4 symlink in a PATH dir to a writable target: FAIL PE-PATH-FILE
+PASS P5 missing PATH dir whose parent is writable: FAIL PE-PATH-DIR
+PASS P6 sticky bit on the FILE itself does not exempt it (only parent dirs)
+PASS P7 sticky world-writable PATH dir is still a FAIL (anyone can add a file root runs)
+== audit: rooteq area
+PASS R1 docker member without sudo: FAIL PE-ROOTEQ-GROUP (hashed name)
+PASS R2 member of %sudo (group rule) counts as full sudo: INFO
+PASS R3 primary group disk counts as membership: FAIL
+PASS R4 lxd daemon account (/bin/false, primary lxd) = INFO service
+PASS R5 containerd.sock 0666: FAIL PE-ROOTEQ-SOCK, fixable
+PASS R6 container bind-mounting docker.sock: FAIL PE-ROOTEQ-MOUNT (data mount ignored)
+== audit: errors
+PASS X1 getent group fails: exit 2, RESULT ERROR, up 0
+PASS X2 statoverride list unparsable lines are skipped, not fatal
+== apply
+PASS A1 --dry-run: exit 0, plan lists 7 changes (pft-tool once), nothing changed
+PASS A2 apply: exit 0, APPLIED, 7 entries in the manifest
+PASS A3 modes after: pft-tool 755, sudoers file 440, pkexec 755, chfn 755
+PASS A4 statoverrides: pkexec added, fusermount3 under dpkg path /bin/fusermount3, ssh-keysign replaced
+PASS A5 gst-ptp-helper capabilities removed (setcap -r)
+PASS A6 re-audit after apply: RESULT PASS, PE-SUID-REMOVED for 4
+PASS A7 sudoers change ran visudo -c + agent sudo check after it
+PASS A8 crontab (needed SGID) and sudo untouched
+PASS A9 metric backup_entries 7 after apply
+PASS A10 second apply: nothing to apply
+== undo
+PASS D1 undo: exit 0, UNDO OK, 7 restored
+PASS D2 mode/uid/gid of every touched file identical to before apply
+PASS D3 statoverride list identical to before (old ssh-keysign override re-added)
+PASS D4 capabilities restored
+PASS D5 manifest moved to last-undo; second undo: nothing to undo (exit 2)
+PASS D6 content changed after apply: UNDO FAILED, exit 2, manifest kept
+== apply guards
+PASS G1 visudo -c fails before: refused, exit 2, nothing changed
+PASS G2 agent cannot sudo before: refused, exit 2
+PASS G3 no AGENT_USER: refused
+PASS G4 agent sudo lost after a sudoers change: exit 3, run rolled back
+PASS G5 ... and the manifest holds no entry of the failed run
+PASS G6 PROTECTED: a world-writable /usr/bin/sudo is reported, never changed by apply
+PASS G7 --only PE-CAP-UNNEEDED: only the capability removed
+PASS G8 PROTECTED by resolved path: unit runs /bin/sudo (usrmerge alias), apply skips it
+== undo: order and stat verification
+PASS D7 two applies on one file: chmod 4777->4755, then statoverride 4755->0755
+PASS D8 undo newest-first returns pkexec to the original 4777
+PASS D9 restored owner differs from the record (chown had no effect): UNDO FAILED
+== validate
+PASS V1 extra line rejected
+PASS V2 wrong host label rejected
+PASS V4 foreign metric name rejected
+PASS V3 no up sample rejected
+RESULT: 83 passed, 0 failed
+(exit 0)

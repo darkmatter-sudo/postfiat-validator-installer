@@ -1,0 +1,108 @@
+# 03 mutants - 2026-10-31T18:17:08Z - Ubuntu 22.04.5 LTS - commit 550d325fae5afffdf497a7460c1bba3e73ea4b20
+# sha256 3ae4146f26bb1e1121d58ad74fec3ac21c163b86d378018542451115930a45e5 privesc/pft-privesc.sh
+# sha256 289bc9f2ab006d7e5f77c2e7767b947c831aeafc47c77681268f9a45e3cab8ca privesc/privesc_classify.py
+# sha256 f56f0c7ac74c880f19733f12e577145f1a2b3a1b2270bc443d06a4ecab397a65 privesc/tests/run-tests.sh
+# sha256 3ef8ff36eea79c585f1b8e0b23c0318af36fbc80a7f8a9364db9b3dd7522ab3e privesc/tests/test_owner.py
+# sha256 b9aa854374071ef776d3549070e196f61e83e72aff2a2be123b36c7fc6e2d9bb privesc/tests/mutate.py
+$ python3 -u privesc/tests/mutate.py
+control (unmodified): RESULT lines present, 0 FAIL lines
+M31 CAUGHT: account hash not keyed by machine-id
+      FAIL B11 account hash keyed by /etc/machine-id (bare sha256 of the name never printed)
+M01 CAUGHT: world-writable bit ignored
+      FAIL S4 world-writable SUID: FAIL PE-SUID-WRITABLE with chmod 4755
+      FAIL S5 writable parent dir of a SUID file: FAIL names the dir
+      FAIL U5 command in a world-writable dir: FAIL PE-SUDO-CMD-WRITABLE
+      FAIL E1 root unit ExecStart world-writable: FAIL PE-EXEC-UNIT, chmod 0755 action
+      ... 21 more FAIL lines
+M02 CAUGHT: group-writable bit ignored
+      FAIL test_owner: FAIL: test_group_writable_by_non_root_group (__main__.Owner)
+M03 CAUGHT: sticky exemption also applied to the file itself (i > 0 dropped)
+      FAIL P7 sticky world-writable PATH dir is still a FAIL (anyone can add a file root runs)
+M04 CAUGHT: sticky dirs not exempted
+      FAIL S6 sticky world-writable parent: not a finding
+M05 CAUGHT: unpackaged SUID treated as packaged
+      FAIL S1 unpackaged SUID: FAIL PE-SUID-UNPKG, not fixable
+      FAIL S2 ... listed in REMOVE_SUID: fixable
+M06 CAUGHT: dpkg --verify md5 changes ignored
+      FAIL S3 dpkg --verify md5 change: FAIL PE-SUID-MODIFIED
+M07 CAUGHT: unneeded list ignored (pkexec -> REVIEW)
+      FAIL B1 baseline: exit 1, RESULT WARN, 0 fail, 4 warn, 4 fixable
+      FAIL B3 pkexec, chfn, ssh-keysign WARN PE-SUID-UNNEEDED
+      FAIL B7 metrics: up 1, last_run, suid warn 4, fixable 4, backup 0
+      FAIL B10 --json: result WARN, exit 1, 4 fixable, findings list
+      ... 16 more FAIL lines
+M08 CAUGHT: sudo's includedir reads names with a dot
+      FAIL U8 includedir skips names with a dot or ending in ~ (like sudo)
+M09 CAUGHT: !env_reset not detected
+      FAIL U7 !env_reset FAIL; secure_path + use_pty missing WARN; #includedir still read
+M10 CAUGHT: NOPASSWD shell-escape check off
+      FAIL U4 NOPASSWD vim via Cmnd_Alias: WARN PE-SUDO-SHELLESC
+M11 CAUGHT: non-root units checked too (User= filter dropped)
+      FAIL E3 non-root units are skipped (User=nobody)
+M12 CAUGHT: relative PATH entries accepted
+      FAIL P3 relative entry in /etc/environment PATH: FAIL PE-PATH-REL
+M13 CAUGHT: nologin service accounts graded like logins
+      FAIL B1 baseline: exit 1, RESULT WARN, 0 fail, 4 warn, 4 fixable
+      FAIL B5 sudoers, exec, path, rooteq PASS
+      FAIL B10 --json: result WARN, exit 1, 4 fixable, findings list
+      FAIL S1 unpackaged SUID: FAIL PE-SUID-UNPKG, not fixable
+      ... 4 more FAIL lines
+M14 CAUGHT: full-sudo members of root-equivalent groups graded FAIL
+      FAIL B1 baseline: exit 1, RESULT WARN, 0 fail, 4 warn, 4 fixable
+      FAIL B5 sudoers, exec, path, rooteq PASS
+      FAIL B6 agent in docker with full sudo = INFO, names hashed
+      FAIL B10 --json: result WARN, exit 1, 4 fixable, findings list
+      ... 6 more FAIL lines
+M15 CAUGHT: runtime socket other-bits ignored
+      FAIL R5 containerd.sock 0666: FAIL PE-ROOTEQ-SOCK, fixable
+M16 CAUGHT: container docker.sock mounts ignored
+      FAIL R6 container bind-mounting docker.sock: FAIL PE-ROOTEQ-MOUNT (data mount ignored)
+M17 CAUGHT: full-root rule detection off (agent in docker -> FAIL)
+      FAIL B1 baseline: exit 1, RESULT WARN, 0 fail, 4 warn, 4 fixable
+      FAIL B5 sudoers, exec, path, rooteq PASS
+      FAIL B6 agent in docker with full sudo = INFO, names hashed
+      FAIL B10 --json: result WARN, exit 1, 4 fixable, findings list
+      ... 6 more FAIL lines
+M18 CAUGHT: actions not deduplicated per (type, path)
+      FAIL A1 --dry-run: exit 0, plan lists 7 changes (pft-tool once), nothing changed
+      FAIL A2 apply: exit 0, APPLIED, 7 entries in the manifest
+      FAIL A9 metric backup_entries 7 after apply
+      FAIL A10 second apply: nothing to apply
+      ... 1 more FAIL lines
+M19 CAUGHT: PROTECTED check by resolved path dropped (/bin/sudo slips through)
+      FAIL G8 PROTECTED by resolved path: unit runs /bin/sudo (usrmerge alias), apply skips it
+M20 CAUGHT: visudo pre-check off
+      FAIL G1 visudo -c fails before: refused, exit 2, nothing changed
+M21 CAUGHT: agent sudo pre-check off
+      FAIL G2 agent cannot sudo before: refused, exit 2
+      FAIL G3 no AGENT_USER: refused
+      FAIL G4 agent sudo lost after a sudoers change: exit 3, run rolled back
+M22 CAUGHT: no agent/visudo check after a sudoers change
+      FAIL G4 agent sudo lost after a sudoers change: exit 3, run rolled back
+M23 CAUGHT: undo does not verify stat
+      FAIL D9 restored owner differs from the record (chown had no effect): UNDO FAILED
+M24 CAUGHT: undo does not verify content sha256
+      FAIL D6 content changed after apply: UNDO FAILED, exit 2, manifest kept
+M25 CAUGHT: undo walks the manifest oldest-first
+      FAIL D8 undo newest-first returns pkexec to the original 4777
+M26 CAUGHT: statoverride of a replaced override not removed first
+      FAIL A2 apply: exit 0, APPLIED, 7 entries in the manifest
+      FAIL A3 modes after: pft-tool 755, sudoers file 440, pkexec 755, chfn 755
+      FAIL A4 statoverrides: pkexec added, fusermount3 under dpkg path /bin/fusermount3, ssh-keysign replaced
+      FAIL A5 gst-ptp-helper capabilities removed (setcap -r)
+      ... 6 more FAIL lines
+M27 CAUGHT: suid-remove via plain chmod (no statoverride)
+      FAIL A4 statoverrides: pkexec added, fusermount3 under dpkg path /bin/fusermount3, ssh-keysign replaced
+      FAIL A6 re-audit after apply: RESULT PASS, PE-SUID-REMOVED for 4
+M28 CAUGHT: failed run's entries left in the manifest after rollback
+      FAIL G5 ... and the manifest holds no entry of the failed run
+M29 CAUGHT: validate accepts any metric name
+      FAIL V4 foreign metric name rejected
+M30 CAUGHT: dry run changes files
+      FAIL A1 --dry-run: exit 0, plan lists 7 changes (pft-tool once), nothing changed
+      FAIL A2 apply: exit 0, APPLIED, 7 entries in the manifest
+      FAIL A6 re-audit after apply: RESULT PASS, PE-SUID-REMOVED for 4
+      FAIL D2 mode/uid/gid of every touched file identical to before apply
+      ... 2 more FAIL lines
+RESULT: 31/31 mutants caught
+(exit 0)

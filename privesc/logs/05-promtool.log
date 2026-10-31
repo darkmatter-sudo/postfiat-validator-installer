@@ -1,0 +1,18 @@
+# 05 promtool - 2026-10-31T18:16:56Z - Ubuntu 22.04.5 LTS - commit 550d325fae5afffdf497a7460c1bba3e73ea4b20
+# sha256 3ae4146f26bb1e1121d58ad74fec3ac21c163b86d378018542451115930a45e5 privesc/pft-privesc.sh
+# sha256 289bc9f2ab006d7e5f77c2e7767b947c831aeafc47c77681268f9a45e3cab8ca privesc/privesc_classify.py
+# sha256 f56f0c7ac74c880f19733f12e577145f1a2b3a1b2270bc443d06a4ecab397a65 privesc/tests/run-tests.sh
+# sha256 3ef8ff36eea79c585f1b8e0b23c0318af36fbc80a7f8a9364db9b3dd7522ab3e privesc/tests/test_owner.py
+# sha256 b9aa854374071ef776d3549070e196f61e83e72aff2a2be123b36c7fc6e2d9bb privesc/tests/mutate.py
+$ sudo docker run --rm -v "$PWD/alerts:/w:ro" -w /w --entrypoint promtool prom/prometheus:v3.5.0 --version | head -1
+promtool, version 3.5.0 (branch: HEAD, revision: 8be3a9560fbdd18a94dedec4b747c35178177202)
+(exit 0)
+$ sudo docker run --rm -v "$PWD/alerts:/w:ro" -w /w --entrypoint promtool prom/prometheus:v3.5.0 check rules privesc.rules.yml
+Checking privesc.rules.yml
+  SUCCESS: 4 rules found
+
+(exit 0)
+$ sudo docker run --rm -v "$PWD/alerts:/w:ro" -w /w --entrypoint promtool prom/prometheus:v3.5.0 test rules privesc.tests.yml
+  SUCCESS
+
+(exit 0)
