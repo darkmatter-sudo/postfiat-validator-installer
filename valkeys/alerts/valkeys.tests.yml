@@ -1,0 +1,79 @@
+# promtool unit tests for valkeys.rules.yml. Run: promtool test rules valkeys.tests.yml
+# Time 0 = 1970-01-01T00:00Z; 1m input intervals.
+rule_files:
+  - valkeys.rules.yml
+evaluation_interval: 1m
+tests:
+  - name: "regression fires at once on the regressed host only; clears when the newest token is back"
+    interval: 1m
+    input_series:
+      - series: 'pft_valkeys_sequence_regression{host="validator"}'
+        values: '0 0 1 1 1 0 0'
+      - series: 'pft_valkeys_sequence_regression{host="sentry"}'
+        values: '0x6'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: PFTValkeysSequenceRegression
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: PFTValkeysSequenceRegression
+        exp_alerts:
+          - exp_labels: {severity: critical, host: validator}
+            exp_annotations:
+              summary: "validator runs a validator token older than one already seen"
+              description: "The running [validator_token] has a lower manifest sequence than the highest recorded for this master key (or than the manifest the node itself knows). An old token was reinstalled, e.g. from a backup: peers ignore it, so the validator's signatures are not trusted. Install the newest token (or rotate again) and restart. `pft-valkeys check --state FILE` shows both numbers."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/valkeys/README.md#alerts"
+      - eval_time: 6m
+        alertname: PFTValkeysSequenceRegression
+        exp_alerts: []
+  - name: "FAIL findings or up 0 fire after 15m; WARN-only and short blips do not"
+    interval: 1m
+    input_series:
+      - series: 'pft_valkeys_findings{host="validator",grade="fail"}'
+        values: '1x20'
+      - series: 'pft_valkeys_findings{host="validator",grade="warn"}'
+        values: '3x20'
+      - series: 'pft_valkeys_up{host="validator"}'
+        values: '1x20'
+      - series: 'pft_valkeys_findings{host="sentry",grade="fail"}'
+        values: '0 1 1 0x17'
+      - series: 'pft_valkeys_up{host="sentry"}'
+        values: '1x20'
+      - series: 'pft_valkeys_up{host="drill"}'
+        values: '0x20'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: PFTValkeysCheckFailing
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: PFTValkeysCheckFailing
+        exp_alerts:
+          - exp_labels: {severity: warning, host: validator, grade: fail}
+            exp_annotations:
+              summary: "pft-valkeys check on validator reports FAIL findings or cannot read the node"
+              description: "A key/config check failed for 15 minutes: secret file permissions, a token configured but not loaded, a missing ephemeral key, a revoked sequence, or the node container could not be read. Run `sudo pft-valkeys check` on the host."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/valkeys/README.md#alerts"
+          - exp_labels: {severity: warning, host: drill}
+            exp_annotations:
+              summary: "pft-valkeys check on drill reports FAIL findings or cannot read the node"
+              description: "A key/config check failed for 15 minutes: secret file permissions, a token configured but not loaded, a missing ephemeral key, a revoked sequence, or the node container could not be read. Run `sudo pft-valkeys check` on the host."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/valkeys/README.md#alerts"
+  - name: "stale: fires when the last run is > 2h old for 10m"
+    interval: 1m
+    input_series:
+      - series: 'pft_valkeys_last_run_timestamp_seconds{host="validator"}'
+        values: '0x200'
+      - series: 'pft_valkeys_last_run_timestamp_seconds{host="sentry"}'
+        values: '0+60x200'
+    alert_rule_test:
+      - eval_time: 125m
+        alertname: PFTValkeysCheckStale
+        exp_alerts: []
+      - eval_time: 131m
+        alertname: PFTValkeysCheckStale
+        exp_alerts:
+          - exp_labels: {severity: warning, host: validator}
+            exp_annotations:
+              summary: "pft-valkeys check on validator has not run for over 2h"
+              description: "The textfile was last written 2h 11m 0s ago, so a token regression would go unnoticed. Check the timer or cron entry that runs `pft-valkeys check`."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/valkeys/README.md#alerts"

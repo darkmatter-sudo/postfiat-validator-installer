@@ -503,3 +503,18 @@ sudo pft-authwatch allow add SHA256:...   # allow a new key on purpose (list | c
 sudo pft-authwatch status                 # timer, allowlist size, counters (no identities)
 sudo pft-authwatch scan --since -24h      # totals + largest failed count per 10 min (threshold baseline)
 ```
+
+## Validator master-key and token lifecycle (valkeys)
+
+[`valkeys/`](valkeys/README.md): `keys create`, `token rotate` and `revoke` wrap the `validator-keys` binary from the
+postfiatd image in a throwaway container (`--network none`, read-only, no capabilities). Every output file is 0600,
+nothing is overwritten, no secret is printed, and revocation needs the master public key twice. `check` is
+read-only: it reports the running manifest sequence, the ephemeral key and key/config permissions, keeps the highest
+sequence seen per master key, and flags an old token put back as a regression (`pft_valkeys_*` metrics, three alerts
+in `valkeys/alerts/valkeys.rules.yml`). Includes rotation and revocation runbooks and an isolated drill.
+
+```bash
+valkeys/pft-valkeys.sh keys create --dir DIR        # offline machine; prints the public key only
+valkeys/pft-valkeys.sh token rotate --dir DIR       # DIR/token-seq<N>.cfg, 0600
+sudo valkeys/pft-valkeys.sh check --state FILE      # validator; exit 0 OK, 1 WARN, 2 FAIL (e.g. sequence regression)
+```
