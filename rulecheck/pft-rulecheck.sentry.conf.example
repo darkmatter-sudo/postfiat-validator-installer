@@ -13,3 +13,8 @@ require pft_timesync.prom
 require pft_divergence.prom
 require pft_logship.prom
 require pft_vulnscan_sentry.prom
+# pft-sshcrypto (hourly audit; sentry copy pulled every 15 min)
+textfile pft_sshcrypto_*.prom   3h   pft_sshcrypto_last_run_timestamp_seconds
+# pft-authwatch (1-minute collector)
+textfile pft_authwatch_*.prom   5m   pft_authwatch_collect_timestamp_seconds
+require pft_authwatch_sentry.prom

@@ -1,0 +1,33 @@
+[Unit]
+Description=pft-authwatch: count SSH/sudo authentication events from the journal (privacy-safe textfile)
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/authwatch
+
+[Service]
+Type=oneshot
+# root without capabilities: reads the root-owned journal files and allowlist, writes its own state and textfile
+ExecStart=/usr/local/bin/pft-authwatch collect
+ProtectSystem=strict
+ReadWritePaths=/var/lib/pft-exporter/textfile /var/lib/pft-authwatch
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateNetwork=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+UMask=0022
+TimeoutStartSec=50

@@ -34,3 +34,9 @@ require pft_resources_postfiatd-sentry.prom
 require pft_timesync_peer_sentry.prom
 require pft_vulnscan_sentry.prom
 require pft_rulecheck_sentry.prom
+# pft-sshcrypto (hourly audit; sentry copy pulled every 15 min)
+textfile pft_sshcrypto_*.prom   3h   pft_sshcrypto_last_run_timestamp_seconds
+# pft-authwatch (1-minute collector; sentry copy pulled every minute)
+textfile pft_authwatch_*.prom   5m   pft_authwatch_collect_timestamp_seconds
+require pft_authwatch_validator.prom
+require pft_authwatch_sentry.prom

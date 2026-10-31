@@ -1,0 +1,113 @@
+# promtool unit tests for authwatch.rules.yml. Run: promtool test rules authwatch.tests.yml
+# Time 0 = 1970-01-01T00:00Z; 1m input intervals (the collector's timer period).
+rule_files:
+  - authwatch.rules.yml
+evaluation_interval: 1m
+tests:
+  - name: "unknown-key login fires at once, sums method/class series, resolves 15m later; allowlisted logins never fire"
+    interval: 1m
+    input_series:
+      - series: 'pft_authwatch_ssh_accepted_total{host="validator",method="publickey",key_class="unknown"}'
+        values: '0x4 1x30'
+      - series: 'pft_authwatch_ssh_accepted_total{host="validator",method="password",key_class="none"}'
+        values: '0x30'
+      - series: 'pft_authwatch_ssh_accepted_total{host="validator",method="publickey",key_class="allowlisted"}'
+        values: '0+5x30'
+      - series: 'pft_authwatch_ssh_accepted_total{host="sentry",method="publickey",key_class="allowlisted"}'
+        values: '0+60x30'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: PFTAuthUnknownKeyLogin
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: PFTAuthUnknownKeyLogin
+        exp_alerts:
+          - exp_labels: {severity: critical, host: validator}
+            exp_annotations:
+              summary: "validator: SSH login with a key that is not allowlisted"
+              description: "1 accepted SSH login(s) in the last 15 min used a key that is not in /etc/pft-authwatch/allowlist (or no key at all). If this was not you, treat the host as compromised: `sudo journalctl -t sshd --since -20min | grep Accepted` shows the user, source and fingerprint. If it was a new key of yours: `sudo pft-authwatch allow add SHA256:...`."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/authwatch/README.md#alerts"
+      # window (3m,18m] still holds the 0 -> 1 step at 4m -> 5m; at 19m the 4m sample has left the window
+      - eval_time: 18m
+        alertname: PFTAuthUnknownKeyLogin
+        exp_alerts:
+          - exp_labels: {severity: critical, host: validator}
+            exp_annotations:
+              summary: "validator: SSH login with a key that is not allowlisted"
+              description: "1 accepted SSH login(s) in the last 15 min used a key that is not in /etc/pft-authwatch/allowlist (or no key at all). If this was not you, treat the host as compromised: `sudo journalctl -t sshd --since -20min | grep Accepted` shows the user, source and fingerprint. If it was a new key of yours: `sudo pft-authwatch allow add SHA256:...`."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/authwatch/README.md#alerts"
+      - eval_time: 19m
+        alertname: PFTAuthUnknownKeyLogin
+        exp_alerts: []
+  - name: "password login (key_class none) on the sentry fires too"
+    interval: 1m
+    input_series:
+      - series: 'pft_authwatch_ssh_accepted_total{host="sentry",method="password",key_class="none"}'
+        values: '0x2 2x10'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: PFTAuthUnknownKeyLogin
+        exp_alerts:
+          - exp_labels: {severity: critical, host: sentry}
+            exp_annotations:
+              summary: "sentry: SSH login with a key that is not allowlisted"
+              description: "2 accepted SSH login(s) in the last 15 min used a key that is not in /etc/pft-authwatch/allowlist (or no key at all). If this was not you, treat the host as compromised: `sudo journalctl -t sshd --since -20min | grep Accepted` shows the user, source and fingerprint. If it was a new key of yours: `sudo pft-authwatch allow add SHA256:...`."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/authwatch/README.md#alerts"
+  - name: "a counter reset (state file deleted) is not a login"
+    interval: 1m
+    input_series:
+      - series: 'pft_authwatch_ssh_accepted_total{host="validator",method="publickey",key_class="unknown"}'
+        values: '3x5 0x10'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: PFTAuthUnknownKeyLogin
+        exp_alerts: []
+  - name: "failed burst: summed over reasons, > 400 per 10m fires, background (337 peak) does not, resolves"
+    interval: 1m
+    input_series:
+      # background: 30/min for 10 min = 300 per 10 min, then a burst of +200/min for 3 min, then background again
+      - series: 'pft_authwatch_ssh_failed_total{host="validator",reason="invalid_user"}'
+        values: '0+20x10 200+120x3 560+20x30'
+      - series: 'pft_authwatch_ssh_failed_total{host="validator",reason="preauth_abort"}'
+        values: '0+10x10 100+80x3 340+10x30'
+      - series: 'pft_authwatch_ssh_failed_total{host="sentry",reason="invalid_user"}'
+        values: '0+33x40'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: PFTAuthFailedBurst
+        exp_alerts: []
+      # (3m,13m]: invalid_user 80 -> 440, preauth_abort 40 -> 260 = 580 over a 9m sample span, extrapolated x10/9
+      - eval_time: 13m
+        alertname: PFTAuthFailedBurst
+        exp_alerts:
+          - exp_labels: {severity: warning, host: validator}
+            exp_annotations:
+              summary: "validator: 644 failed SSH attempts in 10 min"
+              description: "Failed SSH authentication attempts (invalid user, rejected key, max tries, aborted auth) exceeded 400 per 10 min, above the highest 10-min count of the README baseline. Password login is off, so this is noise until a key leaks; check that the source is not one of your own hosts (a broken key in a timer) with `sudo pft-authwatch scan --since -15min`."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/authwatch/README.md#alerts"
+      - eval_time: 30m
+        alertname: PFTAuthFailedBurst
+        exp_alerts: []
+  - name: "stale: fires 2m after the timestamp is 5m old, per host; a fresh host stays quiet; resolves on collection"
+    interval: 1m
+    input_series:
+      # sample value = collection time: fresh every minute, then frozen at 600 s (timer stopped) until 20m, then fresh
+      - series: 'pft_authwatch_collect_timestamp_seconds{host="sentry"}'
+        values: '0+60x10 600x10 1260+60x10'
+      - series: 'pft_authwatch_collect_timestamp_seconds{host="validator"}'
+        values: '0+60x30'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: PFTAuthwatchStale
+        exp_alerts: []
+      - eval_time: 18m
+        alertname: PFTAuthwatchStale
+        exp_alerts:
+          - exp_labels: {severity: warning, host: sentry}
+            exp_annotations:
+              summary: "pft-authwatch metrics for sentry are stale"
+              description: "The last collection is older than 5 min: pft-authwatch.timer on sentry (or, for the sentry, pft-authwatch-pull.timer on the validator) is not running, so unknown-key logins would go unnoticed. `systemctl status pft-authwatch.timer pft-authwatch.service`."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/authwatch/README.md#alerts"
+      - eval_time: 22m
+        alertname: PFTAuthwatchStale
+        exp_alerts: []

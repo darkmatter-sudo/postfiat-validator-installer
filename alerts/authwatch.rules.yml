@@ -1,0 +1,36 @@
+# Alert rules for pft-authwatch (../authwatch). pft-authwatch.timer writes pft_authwatch_<host>.prom every minute
+# (validator: local; sentry: collected there and pulled by pft-authwatch-pull.timer on the validator, because the
+# sentry runs no Prometheus). Counters live in the collector's state file, so they survive reboots and only reset
+# if that file is deleted; increase() treats a reset as a restart and only adds what was counted after it.
+# Thresholds: authwatch/README.md "Baseline and thresholds". Tests: authwatch.tests.yml
+# (promtool test rules authwatch.tests.yml), 1m sample interval = the timer's period.
+groups:
+  - name: pft-authwatch
+    rules:
+      - alert: PFTAuthUnknownKeyLogin
+        # any accepted login whose key is not in the allowlist, or a login without a key (password, PAM)
+        expr: sum by (instance, job, host) (increase(pft_authwatch_ssh_accepted_total{key_class!="allowlisted"}[15m])) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.host }}: SSH login with a key that is not allowlisted"
+          description: "{{ $value | printf \"%.0f\" }} accepted SSH login(s) in the last 15 min used a key that is not in /etc/pft-authwatch/allowlist (or no key at all). If this was not you, treat the host as compromised: `sudo journalctl -t sshd --since -20min | grep Accepted` shows the user, source and fingerprint. If it was a new key of yours: `sudo pft-authwatch allow add SHA256:...`."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/authwatch/README.md#alerts"
+      - alert: PFTAuthFailedBurst
+        # internet background on both hosts peaked at 337 failed attempts per 10 min (README baseline)
+        expr: sum by (instance, job, host) (increase(pft_authwatch_ssh_failed_total[10m])) > 400
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.host }}: {{ $value | printf \"%.0f\" }} failed SSH attempts in 10 min"
+          description: "Failed SSH authentication attempts (invalid user, rejected key, max tries, aborted auth) exceeded 400 per 10 min, above the highest 10-min count of the README baseline. Password login is off, so this is noise until a key leaks; check that the source is not one of your own hosts (a broken key in a timer) with `sudo pft-authwatch scan --since -15min`."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/authwatch/README.md#alerts"
+      - alert: PFTAuthwatchStale
+        expr: time() - pft_authwatch_collect_timestamp_seconds > 300
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pft-authwatch metrics for {{ $labels.host }} are stale"
+          description: "The last collection is older than 5 min: pft-authwatch.timer on {{ $labels.host }} (or, for the sentry, pft-authwatch-pull.timer on the validator) is not running, so unknown-key logins would go unnoticed. `systemctl status pft-authwatch.timer pft-authwatch.service`."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/authwatch/README.md#alerts"

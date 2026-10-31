@@ -1,0 +1,13 @@
+# authwatch fixture capture 2026-10-31T04:30:07Z repo HEAD 11ab5ff8e80af412b79bf0e50e176cad6c53c07f (uncommitted authwatch/; supersedes log 01: make_fixtures.py now also redacts sudo '(command continued)' lines) make_fixtures.py sha256 e2feb0f898e0bcf9046be8803b70d548212c04b2ccd407196418b2eebe463101
+$ sudo journalctl -o json --no-pager -q SYSLOG_IDENTIFIER=sshd SYSLOG_IDENTIFIER=sudo --since -3d | python3 -I tests/make_fixtures.py --per-class 3 > tests/fixtures/journal-validator.jsonl
+175 entries, 66 shapes
+(exit 0)
+$ ssh relay 'sudo journalctl -o json --no-pager -q SYSLOG_IDENTIFIER=sshd SYSLOG_IDENTIFIER=sudo --since -3d' | python3 -I tests/make_fixtures.py --per-class 3 > tests/fixtures/journal-sentry.jsonl
+163 entries, 62 shapes
+(exit 0)
+$ wc -l tests/fixtures/*.jsonl; sha256sum tests/fixtures/*.jsonl
+  163 tests/fixtures/journal-sentry.jsonl
+  175 tests/fixtures/journal-validator.jsonl
+  338 total
+a4efef7786656f5864a9a8554f659018ff8248d3a24d5f8cfc976da96117a9fa  tests/fixtures/journal-sentry.jsonl
+2053d2f1701c00bc0a1a2cf20d67fb00da99e96c86e39edde50e9841732f1e79  tests/fixtures/journal-validator.jsonl

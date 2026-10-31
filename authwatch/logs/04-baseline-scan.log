@@ -1,0 +1,98 @@
+# authwatch baseline scan 2026-10-31T04:38:47Z repo HEAD 11ab5ff8e80af412b79bf0e50e176cad6c53c07f (uncommitted authwatch/) authwatch_parse.py sha256 e814843e5f8f048c289353a22bad18cdb5a7ffd307c13418221582e23e6c8068 (supersedes log 03: journal range now printed in UTC)
+# whole retained journal of each host, empty allowlist (every accepted login counts as unknown here), 600 s windows
+$ sudo journalctl --utc -q -t sshd -o short-iso --no-pager | sed -n '1p;$p' | cut -d' ' -f1
+2026-10-29T17:40:49+0000
+2026-10-31T04:38:44+0000
+(exit 0)
+$ sudo journalctl -o json --no-pager -q SYSLOG_IDENTIFIER=sshd SYSLOG_IDENTIFIER=sudo | python3 -I authwatch/authwatch_parse.py scan --window 600
+{
+ "accepted": {
+  "other|allowlisted": 0,
+  "other|none": 0,
+  "other|unknown": 0,
+  "password|allowlisted": 0,
+  "password|none": 0,
+  "password|unknown": 0,
+  "publickey|allowlisted": 0,
+  "publickey|none": 0,
+  "publickey|unknown": 21
+ },
+ "entries_total": 493085,
+ "failed": {
+  "failed_other": 0,
+  "failed_password": 0,
+  "failed_publickey": 0,
+  "invalid_user": 1799,
+  "max_auth": 37,
+  "preauth_abort": 2213
+ },
+ "last_entry_seconds": 1793421589,
+ "last_failed_seconds": 1793421570,
+ "last_unknown_login_seconds": 1793404491,
+ "max_failed_per_window": 199,
+ "negotiate": {
+  "cipher": 157,
+  "hostkey": 143,
+  "kex": 224,
+  "mac": 230
+ },
+ "p99_failed_per_window": 99,
+ "sudo": {
+  "auth_failure": 0,
+  "denied": 0,
+  "ok": 161672
+ },
+ "unmatched_total": 326589,
+ "version": 1,
+ "window_seconds": 600,
+ "windows_with_failures": 210
+}
+(exit 0)
+$ ssh relay "sudo journalctl --utc -q -t sshd -o short-iso --no-pager | sed -n '1p;\$p' | cut -d' ' -f1"
+2026-10-29T09:59:38+0000
+2026-10-31T04:39:50+0000
+(exit 0)
+$ ssh relay 'sudo journalctl -o json --no-pager -q SYSLOG_IDENTIFIER=sshd SYSLOG_IDENTIFIER=sudo' | python3 -I authwatch/authwatch_parse.py scan --window 600
+{
+ "accepted": {
+  "other|allowlisted": 0,
+  "other|none": 0,
+  "other|unknown": 0,
+  "password|allowlisted": 0,
+  "password|none": 0,
+  "password|unknown": 0,
+  "publickey|allowlisted": 0,
+  "publickey|none": 0,
+  "publickey|unknown": 23154
+ },
+ "entries_total": 148815,
+ "failed": {
+  "failed_other": 0,
+  "failed_password": 0,
+  "failed_publickey": 0,
+  "invalid_user": 2262,
+  "max_auth": 0,
+  "preauth_abort": 1698
+ },
+ "last_entry_seconds": 1793421602,
+ "last_failed_seconds": 1793421546,
+ "last_unknown_login_seconds": 1793421601,
+ "max_failed_per_window": 337,
+ "negotiate": {
+  "cipher": 134,
+  "hostkey": 116,
+  "kex": 185,
+  "mac": 197
+ },
+ "p99_failed_per_window": 90,
+ "sudo": {
+  "auth_failure": 0,
+  "denied": 0,
+  "ok": 7972
+ },
+ "unmatched_total": 113097,
+ "version": 1,
+ "window_seconds": 600,
+ "windows_with_failures": 253
+}
+(exit 0)
