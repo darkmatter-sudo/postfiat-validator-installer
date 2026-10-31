@@ -72,7 +72,7 @@ log "first check exit $rc (0 AGREE, 1 UNKNOWN, 2 DIVERGED)"
 systemctl enable --now pft-divergence.timer
 log "enabled pft-divergence.timer (every 60 s)"
 if [ -f /opt/pft-exporter/pft_exporter.py ]; then
-  for _ in $(seq 1 10); do curl -fsS --max-time 2 http://127.0.0.1:9877/metrics 2>/dev/null | grep -q '^pft_divergence_check_timestamp ' && break; sleep 1; done
+  for _ in $(seq 1 10); do m="$(curl -fsS --max-time 2 http://127.0.0.1:9877/metrics 2>/dev/null)" && grep -q '^pft_divergence_check_timestamp ' <<<"$m" && break; sleep 1; done
   curl -fsS --max-time 2 http://127.0.0.1:9877/metrics | grep -E '^pft_(divergence_(state|overall_state|last_agree_ledger)|textfile_errors)' \
     || { log "ERROR: exporter does not expose pft_divergence_*"; exit 1; }
 fi

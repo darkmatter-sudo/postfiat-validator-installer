@@ -18,7 +18,7 @@ log "slo install: repo $(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || ec
 log "1/3 exporter: install pft_exporter.py (sha256 $(sha256sum "$ROOT/exporter/pft_exporter.py" | cut -c1-12))"
 sudo install -m 0644 -o root -g root "$ROOT/exporter/pft_exporter.py" /opt/pft-exporter/pft_exporter.py
 sudo systemctl restart pft-exporter
-for _ in $(seq 1 15); do curl -fsS --max-time 2 http://127.0.0.1:9877/metrics 2>/dev/null | grep -q '^pft_maint_active ' && break; sleep 1; done
+for _ in $(seq 1 15); do m="$(curl -fsS --max-time 2 http://127.0.0.1:9877/metrics 2>/dev/null)" && grep -q '^pft_maint_active ' <<<"$m" && break; sleep 1; done
 curl -fsS http://127.0.0.1:9877/metrics | grep -E '^pft_(up|maint_active|maint_flag_malformed) ' || die "exporter has no pft_maint_active"
 
 log "2/3 alert stack: run-stack.sh up (SLO rules mounted)"
