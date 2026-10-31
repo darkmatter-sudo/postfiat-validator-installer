@@ -1,0 +1,44 @@
+# Alert rules for pft-privesc (../privesc). pft-privesc.timer audits once an hour (+ up to 10 min) and writes
+# pft_privesc_*{host="..."} to the textfile dir (validator: local; sentry: pulled by pft-privesc-pull.timer every
+# 15 min); the pft exporter serves it. A failed audit writes up 0 with zero counts, so PFTPrivescAuditFailing covers
+# that gap. The sentry runs no Prometheus: every host="sentry" alert is evaluated here.
+# Tests: privesc.tests.yml (promtool test rules privesc.tests.yml).
+groups:
+  - name: pft-privesc
+    rules:
+      - alert: PFTPrivescFail
+        expr: sum by (instance, job, host) (pft_privesc_findings{grade="fail"}) > 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $value }} privilege-escalation path(s) graded FAIL on {{ $labels.host }}"
+          description: "The hourly pft-privesc audit found an unpackaged or modified SUID/SGID file, a writable file or directory that root runs (unit, cron, PATH, sudo command), a bad sudoers file, or hidden root-equivalent access (docker/lxd/disk member without sudo, open runtime socket, container mounting it). Run `sudo pft-privesc audit` to list them; `sudo pft-privesc apply --dry-run` shows what apply would fix."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/privesc/README.md#alerts"
+      - alert: PFTPrivescWarn
+        expr: sum by (instance, job, host) (pft_privesc_findings{grade="warn"}) > 0
+        for: 6h
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} privilege-escalation hardening item(s) graded WARN on {{ $labels.host }} for 6h"
+          description: "WARN items (SUID bits or file capabilities a headless node does not need, NOPASSWD shell-escape commands, missing sudo Defaults) are not open holes but widen the attack surface. A package upgrade can bring a removed capability back. `sudo pft-privesc apply` fixes the reversible ones (undo: `sudo pft-privesc undo`)."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/privesc/README.md#alerts"
+      - alert: PFTPrivescAuditFailing
+        expr: pft_privesc_up == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pft-privesc audit fails on {{ $labels.host }}"
+          description: "The last audit exited 2 (a fact could not be collected: dpkg-statoverride, systemctl show, getent or docker ps failed). Privilege-escalation status is unknown. Run `sudo pft-privesc audit` and read the ERROR lines."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/privesc/README.md#alerts"
+      - alert: PFTPrivescStale
+        expr: time() - pft_privesc_last_run_timestamp_seconds > 3 * 3600
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pft-privesc has not audited {{ $labels.host }} for 3 hours"
+          description: "The hourly audit missed three runs: pft-privesc.timer is stopped (or, for the sentry, pft-privesc-pull.timer cannot copy its textfile). Check `systemctl list-timers 'pft-privesc*'`."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/privesc/README.md#alerts"
