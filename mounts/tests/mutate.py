@@ -5,6 +5,7 @@ except the ones listed in EQUIVALENT, where no input can reach the difference (r
 Usage: python3 -I tests/mutate.py [-j JOBS] [--timeout SEC] [IDS...]"""
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -85,6 +86,8 @@ def run(m, src, timeout):
         verdict = f"KILLED ({len(fails)} failed: {fails[0][5:60] if fails else 'rc=' + str(p.returncode)})" if p.returncode != 0 else "SURVIVED"
     except subprocess.TimeoutExpired:
         verdict = f"KILLED (timeout {timeout}s)"
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
     return mid, desc, verdict, time.time() - t0
 
 
