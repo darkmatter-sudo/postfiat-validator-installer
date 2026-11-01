@@ -113,6 +113,22 @@ real field shapes, malformed JSON (truncated, HTML, list, empty), missing or mal
 divisions by zero), RPC errors, a stopped container, a hung `docker exec` (bounded by the timeout), a docker CLI
 warning on stderr, recovery after failure, `replay` (no RPC, refuses real node names), and `pull` validation.
 
+## Live install (validator + sentry)
+
+`drill/install-run.sh` installs on both hosts at a pushed, clean HEAD and checks every step
+(`logs/04-install-two-hosts.log`: 22 checks ok, 0 failed). In order: integrity PASS before; pft-maint window with
+its `[MAINT]` messages sent to a throwaway topic; an Alertmanager silence scoped to the feewatch, rulecheck and
+fleet alerts; install on the sentry, then the validator (each twice, to show it is idempotent); the validator pulls
+the sentry's file; rulecheck freshness lines on both hosts; Prometheus reload with 4 rules `ok`; `pft_feewatch_up 1`
+scraped for both containers; `pft-integrity accept` + PASS on both hosts; `pft-fleet sync` of the manifest with
+`feewatch CURRENT` on both hosts; rulecheck `RESULT OK` on both. At the end it restores the real pft-maint target
+(read back by sha256 / absence), checks the throwaway topic got both `[MAINT]` messages, and expires the silence
+once no covered alert is pending.
+
+Offline tests on the same code: `logs/03-tests.log` (shellcheck and ruff clean, `RESULT: 151/151 passed`, promtool `SUCCESS`).
+Fixture capture: `logs/01-fixture-capture.log`, and `logs/02-fixture-capture.log`, which re-captured the fixtures
+after `ports` was added to the scrub list. Only the 02 fixtures are committed.
+
 ## Logs
 
 `logs/` holds the raw runs, redacted (home directory -> `~`, user -> `<user>`, IPs -> `<redacted-ip>`, throwaway

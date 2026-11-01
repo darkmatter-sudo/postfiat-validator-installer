@@ -1,0 +1,195 @@
+feewatch offline tests - 2026-11-01T00:20:09Z - Ubuntu 22.04.5 LTS - repo HEAD eeae0a6b45132b31c35b79c321d27eab14955411
+$ sha256sum feewatch/pft-feewatch.sh feewatch/feewatch_parse.py feewatch/tests/run-tests.sh alerts/feewatch.rules.yml alerts/feewatch.tests.yml
+0f8df9086646ef53ee5b9ba5d97535e9fc3789b469d7acb726fe44a88aebb051  feewatch/pft-feewatch.sh
+4e53f6506e1672018cfaf172730b2a1469efa4865be6f5d7e7ac0e0efb01da65  feewatch/feewatch_parse.py
+5a447082ead99efa940c6e98ee08ca2c61814a3fbf36e1739cca486ed3552d19  feewatch/tests/run-tests.sh
+d128ec133b280ea9642e8f21a138e9ef92f538e0a589b9b3b8f2ed886b333fc0  alerts/feewatch.rules.yml
+60e35a73a0fa8b0cc80be641ba88ae7b5cd17171b233adc4443809e1c186f288  alerts/feewatch.tests.yml
+(exit 0)
+$ shellcheck --version | head -2
+ShellCheck - shell script analysis tool
+version: 0.8.0
+(exit 0)
+$ shellcheck feewatch/pft-feewatch.sh feewatch/install.sh feewatch/tests/run-tests.sh feewatch/tests/capture_fixtures.sh feewatch/drill/install-run.sh
+(exit 0)
+$ ruff --version
+ruff 0.17.1
+(exit 0)
+$ ruff check feewatch && ruff format --check feewatch
+All checks passed!
+2 files already formatted
+(exit 0)
+$ bash feewatch/tests/run-tests.sh
+== 1. validator, real idle answers (admin)
+PASS rc 0
+PASS up 1
+PASS timestamp from PFT_FW_NOW
+PASS admin 1 (info.load present)
+PASS queue size 0 / max 2000 / fill 0
+PASS expected_ledger_size 32
+PASS drops: base 10, median 5000, open_ledger 10
+PASS levels: reference 256, median 128000
+PASS escalation multiple 1, threshold 4 (default)
+PASS all 7 load_factor sources = 1 (omitted fields read as default)
+PASS local_load_exceeds_net 0
+PASS 28 samples
+PASS file ends with a newline, mode 644, no temp files
+PASS both RPCs on the container loopback with --max-time
+PASS history: one JSON line with ts, queue, multiple, sources
+PASS validate accepts own output
+== 2. sentry, real idle answers
+PASS rc 0 + up 1 + admin 1
+== 3. non-admin server_info (real answer from the host-mapped port): admin-only fields absent
+PASS rc 0, up 1
+PASS admin 0
+PASS no guessed local/net/cluster/fee_escalation
+PASS total/server/fee_queue still exported
+PASS no local_load_exceeds_net
+PASS non-admin: present breakdown field is exported, server = total when omitted
+== 4. loaded node: escalation, queue, local overload (synthetic values in real field shapes)
+PASS rc 0
+PASS fill 0.85
+PASS multiple 5.2 (open_ledger_fee / base_fee)
+PASS local 2.5, net 1 (omitted), exceeds 1
+PASS total 5.2, server 2.5, fee_escalation 5.199219, fee_queue 1.5
+PASS network-wide load (local == net): exceeds 0
+PASS base_fee 0: multiple from levels (1536/256 = 6)
+PASS no max_queue_size (unlimited queue): up 1, queue_limited 0, no fill ratio
+PASS ESCALATION_THRESHOLD=10 is exported
+PASS ESCALATION_THRESHOLD=1 (would always fire): up 0, rc 1
+PASS ESCALATION_THRESHOLD=abc: usage error rc 3
+== 5. malformed JSON
+PASS truncated fee answer: rc 1
+PASS truncated fee answer: up 0
+PASS truncated fee answer: timestamp still written
+PASS truncated fee answer: no stale values (only up + timestamp samples)
+PASS truncated fee answer: reason on stderr (fee: not JSON)
+PASS HTML instead of server_info JSON: rc 1
+PASS HTML instead of server_info JSON: up 0
+PASS HTML instead of server_info JSON: timestamp still written
+PASS HTML instead of server_info JSON: no stale values (only up + timestamp samples)
+PASS HTML instead of server_info JSON: reason on stderr (server_info: not JSON)
+PASS fee answer is a JSON list: rc 1
+PASS fee answer is a JSON list: up 0
+PASS fee answer is a JSON list: timestamp still written
+PASS fee answer is a JSON list: no stale values (only up + timestamp samples)
+PASS fee answer is a JSON list: reason on stderr (fee: no result object)
+PASS empty server_info answer: rc 1
+PASS empty server_info answer: up 0
+PASS empty server_info answer: timestamp still written
+PASS empty server_info answer: no stale values (only up + timestamp samples)
+PASS empty server_info answer: reason on stderr (server_info: not JSON (0 bytes))
+== 6. missing or malformed fields
+PASS fee without current_queue_size: rc 1
+PASS fee without current_queue_size: up 0
+PASS fee without current_queue_size: timestamp still written
+PASS fee without current_queue_size: no stale values (only up + timestamp samples)
+PASS fee without current_queue_size: reason on stderr (missing fee.current_queue_size)
+PASS fee without drops: rc 1
+PASS fee without drops: up 0
+PASS fee without drops: timestamp still written
+PASS fee without drops: no stale values (only up + timestamp samples)
+PASS fee without drops: reason on stderr (missing fee.drops)
+PASS fee without levels.reference_level: rc 1
+PASS fee without levels.reference_level: up 0
+PASS fee without levels.reference_level: timestamp still written
+PASS fee without levels.reference_level: no stale values (only up + timestamp samples)
+PASS fee without levels.reference_level: reason on stderr (missing fee.levels.reference_level)
+PASS negative open_ledger_fee: rc 1
+PASS negative open_ledger_fee: up 0
+PASS negative open_ledger_fee: timestamp still written
+PASS negative open_ledger_fee: no stale values (only up + timestamp samples)
+PASS negative open_ledger_fee: reason on stderr (malformed fee.drops.open_ledger_fee)
+PASS boolean expected_ledger_size: rc 1
+PASS boolean expected_ledger_size: up 0
+PASS boolean expected_ledger_size: timestamp still written
+PASS boolean expected_ledger_size: no stale values (only up + timestamp samples)
+PASS boolean expected_ledger_size: reason on stderr (malformed fee.expected_ledger_size)
+PASS max_queue_size 0 (division): rc 1
+PASS max_queue_size 0 (division): up 0
+PASS max_queue_size 0 (division): timestamp still written
+PASS max_queue_size 0 (division): no stale values (only up + timestamp samples)
+PASS max_queue_size 0 (division): reason on stderr (malformed fee.max_queue_size: 0)
+PASS reference_level 0 (division): rc 1
+PASS reference_level 0 (division): up 0
+PASS reference_level 0 (division): timestamp still written
+PASS reference_level 0 (division): no stale values (only up + timestamp samples)
+PASS reference_level 0 (division): reason on stderr (reference_level: 0)
+PASS server_info without load_factor: rc 1
+PASS server_info without load_factor: up 0
+PASS server_info without load_factor: timestamp still written
+PASS server_info without load_factor: no stale values (only up + timestamp samples)
+PASS server_info without load_factor: reason on stderr (missing info.load_factor)
+PASS load_factor_local as a string: rc 1
+PASS load_factor_local as a string: up 0
+PASS load_factor_local as a string: timestamp still written
+PASS load_factor_local as a string: no stale values (only up + timestamp samples)
+PASS load_factor_local as a string: reason on stderr (malformed info.load_factor_local)
+PASS negative load_factor_net: rc 1
+PASS negative load_factor_net: up 0
+PASS negative load_factor_net: timestamp still written
+PASS negative load_factor_net: no stale values (only up + timestamp samples)
+PASS negative load_factor_net: reason on stderr (malformed info.load_factor_net)
+PASS server_info without info: rc 1
+PASS server_info without info: up 0
+PASS server_info without info: timestamp still written
+PASS server_info without info: no stale values (only up + timestamp samples)
+PASS server_info without info: reason on stderr (missing result.info)
+== 7. RPC errors and outages
+PASS fee rpc error (non-admin): rc 1
+PASS fee rpc error (non-admin): up 0
+PASS fee rpc error (non-admin): timestamp still written
+PASS fee rpc error (non-admin): no stale values (only up + timestamp samples)
+PASS fee rpc error (non-admin): reason on stderr (fee: status 'error' (error 'noPermission'))
+PASS server_info rpc error: rc 1
+PASS server_info rpc error: up 0
+PASS server_info rpc error: timestamp still written
+PASS server_info rpc error: no stale values (only up + timestamp samples)
+PASS server_info rpc error: reason on stderr (server_info: status 'error')
+PASS container stopped (fee): rc 1
+PASS container stopped (fee): up 0
+PASS container stopped (fee): timestamp still written
+PASS container stopped (fee): no stale values (only up + timestamp samples)
+PASS container stopped (fee): reason on stderr (fee via docker exec postfiatd failed)
+PASS container stopped: server_info not attempted after fee failed
+PASS server_info call fails after fee succeeded: rc 1
+PASS server_info call fails after fee succeeded: up 0
+PASS server_info call fails after fee succeeded: timestamp still written
+PASS server_info call fails after fee succeeded: no stale values (only up + timestamp samples)
+PASS server_info call fails after fee succeeded: reason on stderr (server_info via docker exec postfiatd failed)
+PASS hung docker exec: rc 1
+PASS hung docker exec: up 0
+PASS hung docker exec: timestamp still written
+PASS hung docker exec: no stale values (only up + timestamp samples)
+PASS hung docker exec: reason on stderr (fee via docker exec postfiatd failed)
+PASS hung docker exec ended by the timeout (RPC_TIMEOUT 2 + 5 s): 7s < 15s
+PASS docker CLI warning on stderr is not glued to the JSON: up 1
+== 8. after a failure the next good run restores every value
+PASS recovered: up 1, 28 samples
+== 9. replay (drill mode: fixture files, no RPC)
+PASS replay: rc 0, up 1, label drill-fw, given timestamp
+PASS replay: no RPC (docker never called)
+PASS replay refuses a real node name (rc 3, real textfile untouched)
+PASS replay of a broken fixture: rc 1, up 0
+== 10. pull + validate (sentry textfile copied to the validator)
+PASS pull: rc 0, file copied byte for byte
+PASS pull: a sample for another container is rejected (rc 2), old copy kept
+PASS pull: a foreign metric is rejected (rc 2)
+PASS pull: a file without pft_feewatch_up is rejected (rc 2)
+PASS pull: a non-numeric value is rejected (rc 2)
+PASS pull: unreachable/missing remote file -> rc 1, old copy kept, no temp files
+PASS pull: hung ssh ended by PULL_TIMEOUT (3 s): rc 1 after 3s
+== 11. lint
+PASS shellcheck pft-feewatch.sh
+PASS parser compiles
+RESULT: 151/151 passed
+(exit 0)
+$ cd alerts && sudo docker run --rm -v "$PWD:/w:ro" -w /w --entrypoint promtool prom/prometheus:v3.5.0 check rules feewatch.rules.yml
+Checking feewatch.rules.yml
+  SUCCESS: 4 rules found
+
+(exit 0)
+$ cd alerts && sudo docker run --rm -v "$PWD:/w:ro" -w /w --entrypoint promtool prom/prometheus:v3.5.0 test rules feewatch.tests.yml
+  SUCCESS
+
+(exit 0)
