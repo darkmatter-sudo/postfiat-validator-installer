@@ -129,6 +129,39 @@ Offline tests on the same code: `logs/03-tests.log` (shellcheck and ruff clean, 
 Fixture capture: `logs/01-fixture-capture.log`, and `logs/02-fixture-capture.log`, which re-captured the fixtures
 after `ports` was added to the scrub list. Only the 02 fixtures are committed.
 
+## Alert drill (no network load)
+
+`drill/live-run.sh` proves every alert end to end without sending a single transaction. `drill/make_drill_fixtures.py`
+builds the inputs from the real validator answers (`drill/fixtures/`). A refresher feeds them every 20 s to the
+**installed** `pft-feewatch replay`, which writes drill-only textfiles (`container="drill-*"`; `replay` refuses any
+other name):
+
+| drill series | input | alert |
+|---|---|---|
+| `drill-queue` | `current_queue_size` 1800 of 2000 (fill 0.9) | `PFTTxQueueNearFull` |
+| `drill-escalated` | open ledger 40 > 32 tx, `open_ledger_fee` 60 drops (6x) | `PFTFeeEscalated` |
+| `drill-localload` | `load_factor_local` 3, net 1 | `PFTLocalLoadHigh` |
+| `drill-failing` | `server_info` cut off mid-answer (up 0) | `PFTFeewatchStale` |
+| `drill-stale` | healthy answers, collect timestamp 600 s old | `PFTFeewatchStale` |
+
+Before any change the harness redirects every notifier on both hosts and the Alertmanager bridge to a throwaway ntfy
+topic (sha256 of each env file recorded). It silences every other alert and opens a pft-maint window. It then waits
+until exactly these five (alert, container) pairs fire, and none fire for the real nodes. Next it replays healthy
+answers, waits for each pair to resolve, and removes the drill files. Finally it restores everything and reads it
+back (env files sha256-identical, bridge mount source, window ended, silence expired), and reads every operator
+topic.
+
+`logs/06-live-drill.log`: 18 checks ok, 0 failed. The throwaway topic received 12 messages: `[MAINT]`
+start/end, then `[FIRING]` and `[RESOLVED]` for all five pairs. Every operator topic received 0 messages. An
+`ALERTS` query_range lists the five firing series with their first and last samples.
+
+`logs/05-live-drill-aborted.log` is the first attempt, kept as evidence. All five pairs fired and were delivered
+(2c-2f ok). Check 3a then read the files 5 s after the switch to healthy answers, before the refresher's next
+20 s round, and failed. I saved the fix into the script while that run was still executing, and bash, which reads
+scripts incrementally, stopped with a syntax error. Its EXIT trap restored everything (logged), and no drill
+message reached an operator topic (checked separately). Run 06 is the fixed script (commit `e035ce9`), run
+unmodified.
+
 ## Logs
 
 `logs/` holds the raw runs, redacted (home directory -> `~`, user -> `<user>`, IPs -> `<redacted-ip>`, throwaway
