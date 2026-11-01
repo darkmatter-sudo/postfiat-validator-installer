@@ -15,6 +15,7 @@ rule_files:
   - /etc/pft-alerts/rulecheck.rules.yml    # ../rulecheck (dead alert rules + stale textfile inputs)
   - /etc/pft-alerts/sshcrypto.rules.yml    # ../sshcrypto (SSH algorithm/host key grades, probe mismatches, revert pending)
   - /etc/pft-alerts/authwatch.rules.yml    # ../authwatch (SSH/sudo auth: unknown-key logins, failed bursts, stale collector)
+  - /etc/pft-alerts/feewatch.rules.yml     # ../feewatch (TxQ fill, open-ledger fee escalation, local vs network load, stale collector)
   - /etc/pft-alerts/privesc.rules.yml      # ../privesc (local privilege-escalation paths: SUID/caps, sudoers, exec chains, root-equivalent access)
   - /etc/pft-slo/*.rules.yml    # ../slo (availability SLO + burn-rate alerts); run-stack.sh mounts it
 alerting:

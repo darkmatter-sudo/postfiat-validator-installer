@@ -1,0 +1,172 @@
+# promtool unit tests for feewatch.rules.yml. Run: promtool test rules feewatch.tests.yml
+# Every rule has positive cases (fires, with exact labels/annotation value) and negative cases (boundary values,
+# blips shorter than `for`, the configurable threshold, network-wide load, non-admin answers, recovery).
+rule_files:
+  - feewatch.rules.yml
+evaluation_interval: 1m
+tests:
+  - name: healthy node for 2h (real idle values from both hosts) fires nothing
+    interval: 1m
+    input_series:
+      - series: pft_feewatch_up{job="postfiat", instance="node:9877", container="postfiatd"}
+        values: 1x120
+      - series: pft_feewatch_collect_timestamp_seconds{job="postfiat", instance="node:9877", container="postfiatd"}
+        values: 0+60x120
+      - series: pft_feewatch_queue_fill_ratio{job="postfiat", instance="node:9877", container="postfiatd"}
+        values: 0x120
+      - series: pft_feewatch_escalation_multiple{job="postfiat", instance="node:9877", container="postfiatd"}
+        values: 1x120
+      - series: pft_feewatch_escalation_alert_threshold{job="postfiat", instance="node:9877", container="postfiatd"}
+        values: 4x120
+      - series: pft_feewatch_load_factor{job="postfiat", instance="node:9877", container="postfiatd", source="local"}
+        values: 1x120
+      - series: pft_feewatch_load_factor{job="postfiat", instance="node:9877", container="postfiatd", source="net"}
+        values: 1x120
+    alert_rule_test:
+      - {eval_time: 60m, alertname: PFTTxQueueNearFull, exp_alerts: []}
+      - {eval_time: 60m, alertname: PFTFeeEscalated, exp_alerts: []}
+      - {eval_time: 60m, alertname: PFTLocalLoadHigh, exp_alerts: []}
+      - {eval_time: 60m, alertname: PFTFeewatchStale, exp_alerts: []}
+      - {eval_time: 120m, alertname: PFTTxQueueNearFull, exp_alerts: []}
+      - {eval_time: 120m, alertname: PFTFeeEscalated, exp_alerts: []}
+      - {eval_time: 120m, alertname: PFTLocalLoadHigh, exp_alerts: []}
+      - {eval_time: 120m, alertname: PFTFeewatchStale, exp_alerts: []}
+
+  - name: PFTTxQueueNearFull fires after 10m above 0.8 and resolves when the queue drains
+    interval: 1m
+    input_series:
+      # minutes 0-9 at 0.1, 10-39 at 0.9, 40-60 at 0.2
+      - series: pft_feewatch_queue_fill_ratio{job="postfiat", instance="node:9877", container="postfiatd"}
+        values: 0.1x9 0.9x29 0.2x20
+    alert_rule_test:
+      - {eval_time: 19m, alertname: PFTTxQueueNearFull, exp_alerts: []}
+      - eval_time: 21m
+        alertname: PFTTxQueueNearFull
+        exp_alerts:
+          - exp_labels: {severity: warning, job: postfiat, instance: "node:9877", container: postfiatd}
+            exp_annotations:
+              summary: "postfiatd transaction queue is 90% full"
+              description: "The TxQ has held more than 80% of max_queue_size for 10 min. When it is full, postfiatd rejects new transactions that do not pay more than the cheapest queued one (telCAN_NOT_QUEUE_FULL). Check pft_feewatch_current_queue_size, the open-ledger fee and whether ledgers are closing (expected_ledger_size)."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/feewatch/README.md#alerts"
+      - {eval_time: 41m, alertname: PFTTxQueueNearFull, exp_alerts: []}
+
+  - name: PFTTxQueueNearFull negatives - exactly 0.8 for 1h, and a 9-minute burst, do not fire
+    interval: 1m
+    input_series:
+      - series: pft_feewatch_queue_fill_ratio{job="postfiat", instance="node:9877", container="postfiatd"}
+        values: 0.8x60
+      - series: pft_feewatch_queue_fill_ratio{job="postfiat", instance="node:9877", container="postfiatd-sentry"}
+        values: 0x9 0.95x8 0x40
+    alert_rule_test:
+      - {eval_time: 18m, alertname: PFTTxQueueNearFull, exp_alerts: []}
+      - {eval_time: 60m, alertname: PFTTxQueueNearFull, exp_alerts: []}
+
+  - name: PFTFeeEscalated fires after 15m at or above the threshold, resolves when the fee drops
+    interval: 1m
+    input_series:
+      # minutes 0-9 at 1, 10-39 at 4 (== threshold), 40-60 at 1
+      - series: pft_feewatch_escalation_multiple{job="postfiat", instance="node:9877", container="postfiatd-sentry"}
+        values: 1x9 4x29 1x20
+      - series: pft_feewatch_escalation_alert_threshold{job="postfiat", instance="node:9877", container="postfiatd-sentry"}
+        values: 4x60
+    alert_rule_test:
+      - {eval_time: 24m, alertname: PFTFeeEscalated, exp_alerts: []}
+      - eval_time: 26m
+        alertname: PFTFeeEscalated
+        exp_alerts:
+          - exp_labels: {severity: warning, job: postfiat, instance: "node:9877", container: postfiatd-sentry}
+            exp_annotations:
+              summary: "postfiatd-sentry open-ledger fee is 4.0x the base fee"
+              description: "For 15 min the fee to get into the open ledger has been at least the configured multiple of the base fee: more transactions arrive than expected_ledger_size allows per ledger, so fee escalation is pricing out normal-fee transactions. Look at current_ledger_size vs expected_ledger_size and the queue size."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/feewatch/README.md#alerts"
+      - {eval_time: 41m, alertname: PFTFeeEscalated, exp_alerts: []}
+
+  - name: PFTFeeEscalated negatives - just below the threshold, and a host with a higher configured threshold
+    interval: 1m
+    input_series:
+      - series: pft_feewatch_escalation_multiple{job="postfiat", instance="node:9877", container="postfiatd"}
+        values: 3.9x60
+      - series: pft_feewatch_escalation_alert_threshold{job="postfiat", instance="node:9877", container="postfiatd"}
+        values: 4x60
+      - series: pft_feewatch_escalation_multiple{job="postfiat", instance="node:9877", container="postfiatd-sentry"}
+        values: 8x60
+      - series: pft_feewatch_escalation_alert_threshold{job="postfiat", instance="node:9877", container="postfiatd-sentry"}
+        values: 10x60
+    alert_rule_test:
+      - {eval_time: 60m, alertname: PFTFeeEscalated, exp_alerts: []}
+
+  - name: PFTLocalLoadHigh fires after 10m of local > net and resolves when the local load drops
+    interval: 1m
+    input_series:
+      - series: pft_feewatch_load_factor{job="postfiat", instance="node:9877", container="postfiatd"}
+        values: 1x60
+      - series: pft_feewatch_load_factor{job="postfiat", instance="node:9877", container="postfiatd", source="local"}
+        values: 1x9 2.5x20 1x30
+      - series: pft_feewatch_load_factor{job="postfiat", instance="node:9877", container="postfiatd", source="net"}
+        values: 1x60
+    alert_rule_test:
+      - {eval_time: 19m, alertname: PFTLocalLoadHigh, exp_alerts: []}
+      - eval_time: 21m
+        alertname: PFTLocalLoadHigh
+        exp_alerts:
+          - exp_labels: {severity: warning, job: postfiat, instance: "node:9877", container: postfiatd}
+            exp_annotations:
+              summary: "postfiatd local load factor 2.50 is above the network's"
+              description: "For 10 min load_factor_local has been above load_factor_net: this node is overloaded relative to the network and charges a higher fee to submit transactions through it. Check CPU/IO (../resources), io_latency_ms and the job queue (../statewatch)."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/feewatch/README.md#alerts"
+      - {eval_time: 31m, alertname: PFTLocalLoadHigh, exp_alerts: []}
+
+  - name: PFTLocalLoadHigh negatives - network-wide load (local == net), and a non-admin answer without local/net
+    interval: 1m
+    input_series:
+      - series: pft_feewatch_load_factor{job="postfiat", instance="node:9877", container="postfiatd", source="local"}
+        values: 3x60
+      - series: pft_feewatch_load_factor{job="postfiat", instance="node:9877", container="postfiatd", source="net"}
+        values: 3x60
+      - series: pft_feewatch_load_factor{job="postfiat", instance="node:9877", container="postfiatd-sentry", source="total"}
+        values: 5x60
+      - series: pft_feewatch_load_factor{job="postfiat", instance="node:9877", container="postfiatd-sentry", source="server"}
+        values: 5x60
+    alert_rule_test:
+      - {eval_time: 60m, alertname: PFTLocalLoadHigh, exp_alerts: []}
+
+  - name: PFTFeewatchStale fires when the timestamp freezes (timer stopped) and resolves when it moves again
+    interval: 1m
+    input_series:
+      # collects every minute until 10m, frozen until 25m, then every minute again
+      - series: pft_feewatch_collect_timestamp_seconds{job="postfiat", instance="node:9877", container="postfiatd-sentry"}
+        values: 0+60x10 600x15 1560+60x20
+      - series: pft_feewatch_up{job="postfiat", instance="node:9877", container="postfiatd-sentry"}
+        values: 1x45
+    alert_rule_test:
+      - {eval_time: 16m, alertname: PFTFeewatchStale, exp_alerts: []}
+      - eval_time: 18m
+        alertname: PFTFeewatchStale
+        exp_alerts:
+          - exp_labels: {severity: warning, job: postfiat, instance: "node:9877", container: postfiatd-sentry}
+            exp_annotations:
+              summary: "pft-feewatch for postfiatd-sentry is stale or failing"
+              description: "Either the last collection is older than 5 min (pft-feewatch@postfiatd-sentry.timer, or for the sentry pft-feewatch-pull@postfiatd-sentry.timer on the validator, is not running) or the last collections failed (pft_feewatch_up 0: container stopped, RPC not answering, or a fee/server_info field missing or malformed). The fee alerts for this node are blind. Run `sudo pft-feewatch collect --container postfiatd-sentry --stdout`."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/feewatch/README.md#alerts"
+      - {eval_time: 27m, alertname: PFTFeewatchStale, exp_alerts: []}
+
+  - name: PFTFeewatchStale fires on failed collections (up 0, fresh timestamp); a single failed minute does not
+    interval: 1m
+    input_series:
+      - series: pft_feewatch_collect_timestamp_seconds{job="postfiat", instance="node:9877", container="postfiatd"}
+        values: 0+60x60
+      # one failed minute at 5m, then failing from 20m to 39m (promtool: "1x4" = 5 samples, minutes 0-4)
+      - series: pft_feewatch_up{job="postfiat", instance="node:9877", container="postfiatd"}
+        values: 1x4 0 1x13 0x19 1x20
+    alert_rule_test:
+      - {eval_time: 7m, alertname: PFTFeewatchStale, exp_alerts: []}
+      - {eval_time: 21m, alertname: PFTFeewatchStale, exp_alerts: []}
+      - eval_time: 23m
+        alertname: PFTFeewatchStale
+        exp_alerts:
+          - exp_labels: {severity: warning, job: postfiat, instance: "node:9877", container: postfiatd}
+            exp_annotations:
+              summary: "pft-feewatch for postfiatd is stale or failing"
+              description: "Either the last collection is older than 5 min (pft-feewatch@postfiatd.timer, or for the sentry pft-feewatch-pull@postfiatd.timer on the validator, is not running) or the last collections failed (pft_feewatch_up 0: container stopped, RPC not answering, or a fee/server_info field missing or malformed). The fee alerts for this node are blind. Run `sudo pft-feewatch collect --container postfiatd --stdout`."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/feewatch/README.md#alerts"
+      - {eval_time: 41m, alertname: PFTFeewatchStale, exp_alerts: []}

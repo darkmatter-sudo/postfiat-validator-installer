@@ -1,0 +1,53 @@
+# Alert rules for pft-feewatch (../feewatch). pft-feewatch@<container>.timer writes the textfile every minute
+# (validator: local; sentry: pulled by pft-feewatch-pull@postfiatd-sentry.timer); the pft exporter serves it as
+# pft_feewatch_*{container="..."}. Every metric is a gauge read from the `fee` / `server_info` RPC at that minute.
+# Tests: feewatch.tests.yml (promtool test rules feewatch.tests.yml), 1m sample interval = the timer's period.
+groups:
+  - name: pft-feewatch
+    rules:
+      - alert: PFTTxQueueNearFull
+        # max_queue_size is reported only when the queue has a limit; without it there is no fill ratio and this
+        # rule is silent (pft_feewatch_queue_limited 0 says so)
+        expr: pft_feewatch_queue_fill_ratio > 0.8
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.container }} transaction queue is {{ $value | humanizePercentage }} full"
+          description: "The TxQ has held more than 80% of max_queue_size for 10 min. When it is full, postfiatd rejects new transactions that do not pay more than the cheapest queued one (telCAN_NOT_QUEUE_FULL). Check pft_feewatch_current_queue_size, the open-ledger fee and whether ledgers are closing (expected_ledger_size)."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/feewatch/README.md#alerts"
+      - alert: PFTFeeEscalated
+        # the threshold is a metric (ESCALATION_THRESHOLD in /etc/pft-feewatch.env), so each host can tune it
+        # without editing rules
+        expr: |
+          pft_feewatch_escalation_multiple
+          >= on (instance, job, container) pft_feewatch_escalation_alert_threshold
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.container }} open-ledger fee is {{ $value | printf \"%.1f\" }}x the base fee"
+          description: "For 15 min the fee to get into the open ledger has been at least the configured multiple of the base fee: more transactions arrive than expected_ledger_size allows per ledger, so fee escalation is pricing out normal-fee transactions. Look at current_ledger_size vs expected_ledger_size and the queue size."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/feewatch/README.md#alerts"
+      - alert: PFTLocalLoadHigh
+        # local > net means this server raised its OWN load fee above what the network reports: the bottleneck is
+        # this host (CPU, IO, job queue), not the network. Only admin answers carry local/net.
+        expr: |
+          pft_feewatch_load_factor{source="local"}
+          > ignoring (source) pft_feewatch_load_factor{source="net"}
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.container }} local load factor {{ $value | printf \"%.2f\" }} is above the network's"
+          description: "For 10 min load_factor_local has been above load_factor_net: this node is overloaded relative to the network and charges a higher fee to submit transactions through it. Check CPU/IO (../resources), io_latency_ms and the job queue (../statewatch)."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/feewatch/README.md#alerts"
+      - alert: PFTFeewatchStale
+        expr: time() - pft_feewatch_collect_timestamp_seconds > 300 or pft_feewatch_up == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pft-feewatch for {{ $labels.container }} is stale or failing"
+          description: "Either the last collection is older than 5 min (pft-feewatch@{{ $labels.container }}.timer, or for the sentry pft-feewatch-pull@{{ $labels.container }}.timer on the validator, is not running) or the last collections failed (pft_feewatch_up 0: container stopped, RPC not answering, or a fee/server_info field missing or malformed). The fee alerts for this node are blind. Run `sudo pft-feewatch collect --container {{ $labels.container }} --stdout`."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/feewatch/README.md#alerts"
