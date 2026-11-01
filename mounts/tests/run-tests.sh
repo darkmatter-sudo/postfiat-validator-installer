@@ -246,6 +246,24 @@ fresh; printf '// local\nAPT::ExtractTemplates::TempDir "/srv/x";\n' > "$E/root/
 run apply --yes; R1=$RC; run rollback --yes
 [ "$R1" = 0 ] && [ "$RC" = 0 ] && cmp -s "$E/root/etc/apt/apt.conf.d/50pft-mounts" "$E/s/apt.orig" && ok "rollback: pre-existing apt conf restored byte-identical" || ko "rollback: apt restore ($R1/$RC)" "$OUT"
 
+# default HIDEPID=0: /proc is reported (INFO) but neither graded nor touched; no group is created
+fresh; export HIDEPID=0; cp "$E/root/etc/fstab" "$E/s/fstab.orig"; cp "$E/root/proc/1/mountinfo" "$E/s/mi.orig"
+run audit
+expect "hidepid off by default: INFO, not graded" proc:hidepid INFO 'not graded \(opt-in HIDEPID=1\); live: off'
+grep -q 'RESULT: FAIL - 11 finding' <<<"$OUT" && ok "default: 11 findings (no hidepid finding)" || ko "default: count" "$(tail -1 <<<"$OUT")"
+run plan
+! grep -q '/proc' <<<"$OUT" && ok "default plan: no /proc line or step" || ko "default plan" "$OUT"
+run apply --yes
+[ "$RC" = 0 ] && ! grep -q '^proc ' "$E/root/etc/fstab" && [ "$(calls groupadd)" = 0 ] \
+  && [ "$(grep ' /proc ' "$E/root/proc/1/mountinfo")" = "$(grep ' /proc ' "$E/s/mi.orig")" ] && ok "default apply: /proc untouched, no group, no fstab proc line" || ko "default apply rc=$RC" "$OUT"
+run audit
+[ "$RC" = 0 ] && ok "default: audit PASS after apply" || ko "default: audit after apply" "$OUT"
+run rollback --yes
+[ "$RC" = 0 ] && cmp -s "$E/root/etc/fstab" "$E/s/fstab.orig" && cmp -s "$E/root/proc/1/mountinfo" "$E/s/mi.orig" && ok "default rollback: byte-identical" || ko "default rollback rc=$RC" "$OUT"
+printf 'HIDEPID=1\n' > "$E/root/etc/pft-mounts.env"; unset HIDEPID; run audit
+expect "HIDEPID=1 from the env file: graded" proc:hidepid FAIL 'off'
+export HIDEPID=1
+
 # re-apply over an existing (older) managed block: still exactly one block, nothing else touched
 fresh; printf '%s\n' "# BEGIN pft-mounts (managed; edit with pft-mounts, see mounts/README.md)" '/tmp /tmp none bind,nodev 0 0' '# END pft-mounts' >> "$E/root/etc/fstab"
 run apply --yes

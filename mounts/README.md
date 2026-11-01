@@ -4,14 +4,15 @@
 mount options**, which decide whether a local foothold can run a dropped binary from a world-writable directory,
 create device nodes, or use a SUID file planted in the ledger data. `pft-mounts.sh` grades the mounts that
 CIS Ubuntu Linux 22.04 LTS Benchmark v2.0.0 section 1.1.2 covers, plus two Post Fiat specific ones, and fixes them
-through `/etc/fstab` and live remounts: **no reboot, no postfiatd restart**.
+through `/etc/fstab` and live remounts: **no reboot, no postfiatd restart**. `/proc` hidepid is graded and applied
+only when opted in (`HIDEPID=1`, [below](#proc-hidepid-opt-in)).
 
 | check id | CIS | what |
 |---|---|---|
 | `/tmp:separate`, `:nodev`, `:nosuid`, `:noexec` | 1.1.2.1.1-4 | `/tmp` is its own mount with nodev,nosuid,noexec |
 | `/dev/shm:separate`, `:nodev`, `:nosuid`, `:noexec` | 1.1.2.2.1-4 | same for `/dev/shm` |
 | `/var/tmp:separate`, `:nodev`, `:nosuid`, `:noexec` | 1.1.2.5.1-4 | same for `/var/tmp` |
-| `proc:hidepid` | - | `/proc` with `hidepid=invisible` (other users' processes and command lines hidden) |
+| `proc:hidepid` | - | `HIDEPID=1` only: `/proc` with `hidepid=invisible` (otherwise INFO with the live state) |
 | `data:nodev`, `data:nosuid` | - | postfiatd's ledger directory (`/var/lib/postfiatd/db`) **as the container sees it** |
 | `apt:tempdir` | - | with a noexec `/tmp`, apt's `APT::ExtractTemplates::TempDir` must point at an exec mount |
 | `fstab-dup:<target>` | - | more than one fstab line for one mount point |
@@ -50,7 +51,7 @@ of the host. Docker volume paths are printed as `<docker-volume:NAME>`, never as
 /tmp /tmp none bind,nodev,nosuid,noexec 0 0
 /var/tmp /var/tmp none bind,nodev,nosuid,noexec 0 0
 tmpfs /dev/shm tmpfs defaults,nodev,nosuid,noexec 0 0
-proc /proc proc defaults,hidepid=invisible,gid=<pft-procview> 0 0
+proc /proc proc defaults,hidepid=invisible,gid=<pft-procview> 0 0      (HIDEPID=1 only)
 <docker-volume:NAME> <docker-volume:NAME> none bind,nodev,nosuid 0 0
 # END pft-mounts
 ```
@@ -64,12 +65,11 @@ proc /proc proc defaults,hidepid=invisible,gid=<pft-procview> 0 0
    directory and executes it; with the default `/tmp` and `noexec` the script fails with exit 126 and the package's
    questions are skipped. A pre-existing file of that name is saved and restored by rollback.
 4. **live, no reboot**: `/tmp` and `/var/tmp` get a self-bind (contents stay on disk, unlike a tmpfs `tmp.mount`)
-   and `remount,bind,nodev,nosuid,noexec`; `/dev/shm` `remount,...,nodev,nosuid,noexec`; `/proc`
+   and `remount,bind,nodev,nosuid,noexec`; `/dev/shm` `remount,...,nodev,nosuid,noexec`; with `HIDEPID=1`, `/proc`
    `remount,<current flags>,hidepid=invisible,gid=<pft-procview>` (the current nosuid,nodev,noexec are passed back:
    a `remount,hidepid=...` alone clears them); the data volume directory gets a host self-bind with nodev,nosuid
    (inherited by every later container start) **and** the same remount inside the running container's mount
-   namespace (`nsenter -t <pid> -m`), so postfiatd gets it now without a restart. `pft-procview` is a new system
-   group with no members: add an account to it to let it see every process again.
+   namespace (`nsenter -t <pid> -m`), so postfiatd gets it now without a restart.
 5. **health gate** (budget `HEALTH_BUDGET`, 300 s): postfiatd `StartedAt` unchanged, `server_state` full, peer port
    listening, `sshd -t` + `:22` listening + a new SSH handshake, every timer-driven pft oneshot matching
    `GATE_PATTERN` re-run with `Result=success` under the new mounts (that is how a unit that breaks under hidepid or
@@ -80,6 +80,23 @@ proc /proc proc defaults,hidepid=invisible,gid=<pft-procview> 0 0
 order (self-binds unmounted, remounted options put back, `/proc` back to `hidepid=off`, the container's data mount
 back to its old flags), removes or restores the apt file, then runs the same gate minus the StartedAt check.
 
+## /proc hidepid (opt-in)
+
+`hidepid=invisible` hides other users' processes, and for **root** processes it also hides them from root processes
+that hold fewer capabilities (the kernel's ptrace access check). Several sandboxed pft units run as root with a
+reduced `CapabilityBoundingSet` and read other processes' `/proc` entries: on the hosts this was built on,
+`pft-resources@.service` reads `/proc/<postfiatd pid>/cgroup` (2 capabilities) and `pft-privesc.service` runs
+`ps -q` (1 capability). With hidepid on, they would lose that view. So the default does not change `/proc`, and
+`proc:hidepid` is INFO. To enable it: give each such unit `SupplementaryGroups=pft-procview` (the member-less exempt
+group apply creates) or `CAP_SYS_PTRACE`, set `HIDEPID=1` in `/etc/pft-mounts.env`, then run apply; the health gate
+re-runs the timer oneshots matching `GATE_PATTERN` and rolls back if one of them fails. `pft-mounts.service` already
+keeps `CAP_SYS_PTRACE` for this reason. To list candidates on a host:
+
+```
+for u in $(systemctl list-units --all --no-legend --plain 'pft-*.service' | awk '{print $1}'); do
+  echo "$u caps=$(systemctl show -p CapabilityBoundingSet --value "$u" | wc -w)"; done
+```
+
 ## Install, metrics, alert
 
 ```
@@ -89,7 +106,7 @@ sudo ./install.sh --pull                # validator: copy the sentry's textfile 
 ```
 
 The hourly `pft-mounts.service` is sandboxed (ProtectSystem=strict, no network, `CAP_DAC_READ_SEARCH
-CAP_SYS_PTRACE` only: the second keeps `/proc/1` and postfiatd's `/proc/<pid>` visible once hidepid is on). It writes
+CAP_SYS_PTRACE` only: the second keeps `/proc/1` and postfiatd's `/proc/<pid>` visible if hidepid is enabled). It writes
 `pft_mounts_<host>.prom`:
 
 ```
@@ -116,7 +133,8 @@ edit fake mountinfo files through `tests/fake_mount.py`, and the gate's commands
 while the fake `/tmp` is noexec (like a fault apply caused). Cases: absent tmpfs, self-binds, `tmp.mount`
 enabled/disabled, duplicate/commented/`UUID=`/escaped fstab lines, hidepid variants, root-fs and dedicated-fs data
 directories, container down, apt TempDir variants, `--json`, `--prom`, `--textfile`, validate and pull, plan,
-apply/rollback byte-identity of fstab and both mount tables, every gate. On a host where `/tmp` is already noexec, set
+apply/rollback byte-identity of fstab and both mount tables, every gate, and the default (`HIDEPID=0`: `/proc`
+untouched, no group created). Most cases run with `HIDEPID=1` so the opt-in path is covered too. On a host where `/tmp` is already noexec, set
 `TMPDIR` to an exec directory before running the suites (their stubs are executed from a temp dir).
 
 ## Live proof

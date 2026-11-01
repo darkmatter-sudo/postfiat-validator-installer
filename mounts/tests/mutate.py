@@ -54,6 +54,11 @@ MUTANTS = [
     ("A10", "audit: host path printed (no volume label)", "sed -E 's#^/var/lib/docker/volumes/([^/]+)/_data$#<docker-volume:\\1>#' <<<\"$1\"", 'cat <<<"$1"'),
     ("A11", "audit: \\040 not decoded in fstab", 't = $2; gsub(/\\\\040/, " ", t); s = $1', 't = $2; s = $1'),
     ("A12", "audit: reads its own (sandboxed) mount table", 'MOUNTINFO="$R/proc/1/mountinfo"', 'MOUNTINFO="$R/proc/self/mountinfo"'),
+    # opt-in hidepid
+    ("H1", "default: fstab gets the proc line without HIDEPID=1", '[ "$HIDEPID" = 1 ] && echo "proc /proc', 'echo "proc /proc'),
+    ("H2", "default: /proc remounted without HIDEPID=1", 'if [ "$HIDEPID" = 1 ]; then\n    po=', 'if true; then\n    po='),
+    ("H3", "default: group created without HIDEPID=1", 'if [ "$HIDEPID" = 1 ] && [ -z "$gid" ]; then', 'if [ -z "$gid" ]; then'),
+    ("H4", "default: hidepid graded without HIDEPID=1", 'if [ "$HIDEPID" != 1 ]; then\n    res INFO', 'if false; then\n    res INFO'),
     # textfile / pull
     ("P1", "validate: foreign lines accepted", '[ "$n" -eq 0 ] || { echo "$n unexpected lines"; return 1; }', 'true'),
     ("P2", "pull: rejected file still installed", 'rm -f "$tmp"; die "pulled file rejected: $why" 2', 'mv -f "$tmp" "$TEXTFILE_DIR/pft_mounts_$PEER_LABEL.prom"; die "pulled file rejected: $why" 2'),

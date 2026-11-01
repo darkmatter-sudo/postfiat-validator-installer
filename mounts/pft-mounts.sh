@@ -2,7 +2,7 @@
 # pft-mounts: audit and harden HOST filesystem mount options on a Post Fiat validator or sentry host (Ubuntu 22.04,
 # postfiatd in Docker). confine/ hardens the container and sysctl/ the kernel; this covers the host mounts that
 # CIS Ubuntu Linux 22.04 LTS Benchmark v2.0.0 section 1.1.2 grades (/tmp, /dev/shm, /var/tmp), plus /proc
-# hidepid and nodev/nosuid on postfiatd's ledger data directory as the container sees it.
+# nodev/nosuid on postfiatd's ledger data directory as the container sees it, and (opt-in, HIDEPID=1) /proc hidepid.
 #
 # Usage: pft-mounts audit [--json] [--prom FILE | --textfile]
 #        sudo pft-mounts pull                 (validator: copy the peer's textfile, see install.sh --pull)
@@ -23,7 +23,7 @@
 #               /tmp, /var/tmp   self-bind (mount --bind X X) unless already a mount, then
 #                                mount -o remount,bind,nodev,nosuid,noexec X  (contents stay, disk-backed)
 #               /dev/shm         mount -o remount,nodev,nosuid,noexec /dev/shm
-#               /proc            mount -o remount,hidepid=invisible,gid=PROC_GROUP /proc  (group created if absent)
+#               /proc            HIDEPID=1 only: remount,<flags>,hidepid=invisible,gid=PROC_GROUP (group created)
 #               data dir         host: self-bind of the volume's _data dir with nodev,nosuid (future container
 #                                starts inherit it); container: the same remount inside postfiatd's mount
 #                                namespace (nsenter -m), so the running node gets it now.
@@ -39,6 +39,8 @@
 # Exit codes: 0 PASS / applied, 1 findings / rolled back, 2 error, 3 usage, 4 refused (not root, no --yes,
 #             candidate fstab invalid), 5 rollback failed.
 # Config: /etc/pft-mounts.env (KEY=VALUE, read, never sourced): HOST_LABEL (validator), PEER_LABEL (sentry),
+#      HIDEPID (0; 1 = grade and apply /proc hidepid=invisible: first give every sandboxed unit that reads other
+#      processes' /proc entries SupplementaryGroups=PROC_GROUP or CAP_SYS_PTRACE, see README),
 #      PULL_SSH (validator only: command prefix that reaches the peer, e.g. "runuser -u OP -- ssh -o BatchMode=yes X")
 # Env: CONTAINER (auto: postfiatd or postfiatd-sentry)  DATA_DEST (/var/lib/postfiatd/db)  PEER_PORT (2559)
 #      APT_TMP (/var/lib/pft-mounts/apt-tmp)  PROC_GROUP (pft-procview)  HEALTH_BUDGET (300)  POLL_SEC (5)  BACKUP_DIR (/var/lib/pft-mounts)
@@ -80,6 +82,7 @@ conf_get() { [ -f "$CONF" ] && sed -n "s/^$1=//p" "$CONF" | tail -1 | sed -E 's/
 HOST_LABEL="$(conf_get HOST_LABEL)"; HOST_LABEL="${HOST_LABEL:-validator}"
 PEER_LABEL="$(conf_get PEER_LABEL)"; PEER_LABEL="${PEER_LABEL:-sentry}"
 PULL_SSH="$(conf_get PULL_SSH)"; PULL_TIMEOUT="${PULL_TIMEOUT:-30}"
+HIDEPID="${HIDEPID:-$(conf_get HIDEPID)}"; HIDEPID="${HIDEPID:-0}"
 valid_label() { [[ "$1" =~ ^[a-z][a-z0-9_-]{0,31}$ ]]; }
 TMPUNIT="$R/etc/systemd/system/tmp.mount"
 TMPWANT="$R/etc/systemd/system/local-fs.target.wants/tmp.mount"
@@ -225,7 +228,9 @@ audit_checks() {
   # /proc hidepid (not in the CIS benchmark; hides other users' processes and command lines from local accounts)
   top="$(mi_top "$mi" /proc)"
   line="$(fs_last "$fs" /proc)"
-  if [ -z "$top" ]; then res FAIL n/a proc:hidepid "/proc not mounted?"
+  if [ "$HIDEPID" != 1 ]; then
+    res INFO n/a proc:hidepid "not graded (opt-in HIDEPID=1); live: $(hidepid_on "$(cut -f5 <<<"$top")" && echo on || echo off)"
+  elif [ -z "$top" ]; then res FAIL n/a proc:hidepid "/proc not mounted?"
   elif ! hidepid_on "$(cut -f5 <<<"$top")"; then res FAIL n/a proc:hidepid "off (any local account can list every process and its command line)"
   elif [ -z "$line" ] || ! hidepid_on "$(cut -f4 <<<"$line")"; then res WARN n/a proc:hidepid "on live but not in fstab (lost at the next boot)"
   else res PASS n/a proc:hidepid "$(grep -oE 'hidepid=[a-z0-9]+(,gid=[0-9]+)?' <<<"$(cut -f5 <<<"$top"),$(cut -f5 <<<"$top")" | head -1 | sed 's/,gid=[0-9]*/ (exempt gid set)/') live and in fstab"; fi
@@ -314,7 +319,7 @@ block() { # SRC GID -> the managed fstab block (SRC: data volume host path, may 
   echo "/tmp /tmp none bind,nodev,nosuid,noexec 0 0"
   echo "/var/tmp /var/tmp none bind,nodev,nosuid,noexec 0 0"
   echo "tmpfs /dev/shm tmpfs defaults,nodev,nosuid,noexec 0 0"
-  echo "proc /proc proc defaults,hidepid=invisible${gid:+,gid=$gid} 0 0"
+  [ "$HIDEPID" = 1 ] && echo "proc /proc proc defaults,hidepid=invisible${gid:+,gid=$gid} 0 0"
   [ -n "$src" ] && echo "${src// /\\040} ${src// /\\040} none bind,$DATA_OPTS 0 0"
   echo "$END_MARK"
 }
@@ -325,7 +330,7 @@ candidate() { # SRC GID -> fstab with the old managed block (if any) replaced; a
 managed_conflicts() { # targets the block manages that also have an UNMANAGED fstab line (apply refuses)
   local src="$1" t
   [ -f "$FSTAB" ] || return 0
-  for t in /tmp /var/tmp /dev/shm /proc ${src:+"$src"}; do
+  for t in /tmp /var/tmp /dev/shm $([ "$HIDEPID" = 1 ] && echo /proc) ${src:+"$src"}; do
     awk -v b="$BEGIN_MARK" -v e="$END_MARK" -v t="$t" '$0 == b { skip = 1; next } skip && $0 == e { skip = 0; next }
       !skip && !/^[ \t]*(#|$)/ { x = $2; gsub(/\\040/, " ", x); if (x == t) print "line " NR ": " $0 }' "$FSTAB"
   done
@@ -340,7 +345,8 @@ do_plan() {
   echo "live:"
   echo "  /tmp, /var/tmp: self-bind if not a mount, then remount,bind,nodev,nosuid,noexec"
   echo "  apt: /etc/apt/apt.conf.d/50pft-mounts APT::ExtractTemplates::TempDir \"$APT_TMP\" (0700)"
-  echo "  /dev/shm: remount,nodev,nosuid,noexec   /proc: remount,hidepid=invisible,gid=<$PROC_GROUP>"
+  echo "  /dev/shm: remount,nodev,nosuid,noexec"
+  [ "$HIDEPID" = 1 ] && echo "  /proc: remount,<current flags>,hidepid=invisible,gid=<$PROC_GROUP>"
   [ -n "$src" ] && echo "  $(label_path "$src"): self-bind + remount,bind,$DATA_OPTS on the host and inside $c ($DATA_DEST)"
   local cf; cf="$(managed_conflicts "$src")"
   [ -n "$cf" ] && { echo "REFUSE: unmanaged fstab entries for managed targets (move them into the block by hand first):"; printf '  %s\n' "${cf//$'\n'/$'\n'  }"; return 4; }
@@ -415,9 +421,11 @@ live_apply() { # SRC PID GID: records every step in live.state for rollback
   echo "remount /dev/shm $(mi_top "$(mi_parse "$MOUNTINFO")" /dev/shm | cut -f2)" >> "$st"
   "$MOUNT" --options-mode ignore -o "remount,$(cut -f2 <<<"$(mi_top "$(mi_parse "$MOUNTINFO")" /dev/shm)"),nodev,nosuid,noexec" /dev/shm || return 1; echo "$(ts) live: /dev/shm nodev,nosuid,noexec"
   # a remount without the per-mount flags would CLEAR /proc's nosuid,nodev,noexec: always pass them back
-  po="$(mi_top "$(mi_parse "$MOUNTINFO")" /proc | cut -f2)"
-  echo "proc /proc $po" >> "$st"
-  "$MOUNT" --options-mode ignore -o "remount,$po,hidepid=invisible${gid:+,gid=$gid}" /proc || return 1; echo "$(ts) live: /proc hidepid=invisible (gid $PROC_GROUP)"
+  if [ "$HIDEPID" = 1 ]; then
+    po="$(mi_top "$(mi_parse "$MOUNTINFO")" /proc | cut -f2)"
+    echo "proc /proc $po" >> "$st"
+    "$MOUNT" --options-mode ignore -o "remount,$po,hidepid=invisible${gid:+,gid=$gid}" /proc || return 1; echo "$(ts) live: /proc hidepid=invisible (gid $PROC_GROUP)"
+  fi
   if [ -n "$src" ] && [ -n "$pid" ] && [ "$pid" != 0 ]; then
     if is_mount "$src"; then echo "remount $src $(mi_top "$(mi_parse "$MOUNTINFO")" "$src" | cut -f2)" >> "$st"
     else "$MOUNT" --bind "$src" "$src" || return 1; echo "created $src" >> "$st"; fi
@@ -470,7 +478,7 @@ do_apply() {
   [ -n "$src" ] || echo "$(ts) apply: $c has no $DATA_DEST mount; data dir step skipped"
   do_plan > /dev/null || { do_plan; return 4; }
   gid="$(proc_gid)"
-  if [ -z "$gid" ]; then
+  if [ "$HIDEPID" = 1 ] && [ -z "$gid" ]; then
     [ "$dry" = 1 ] && gid="<new>" || { "$GROUPADD" --system "$PROC_GROUP" || die "groupadd $PROC_GROUP failed" 2; gid="$(proc_gid)"; echo "$(ts) apply: created system group $PROC_GROUP (gid $gid, no members)"; }
   fi
   mkdir -p "$BACKUP_DIR" && chmod 0700 "$BACKUP_DIR"
