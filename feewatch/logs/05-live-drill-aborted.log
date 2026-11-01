@@ -1,0 +1,140 @@
+pft-feewatch alert drill (fixture replay, no network load) - 2026-11-01T00:29:01Z - Ubuntu 22.04.5 LTS - run 20261101T002901Z
+repo HEAD 3ddf341ec091677d93c8516df0608c881694916d
+sha256: live-run.sh 2e60422500d5e7acfb48dcc10e45628a7f160c8b05d3c0843f94f7522079f91c
+        repo pft-feewatch.sh 0f8df9086646ef53ee5b9ba5d97535e9fc3789b469d7acb726fe44a88aebb051 feewatch_parse.py 4e53f6506e1672018cfaf172730b2a1469efa4865be6f5d7e7ac0e0efb01da65
+        installed validator 0f8df9086646ef53ee5b9ba5d97535e9fc3789b469d7acb726fe44a88aebb051 4e53f6506e1672018cfaf172730b2a1469efa4865be6f5d7e7ac0e0efb01da65
+        installed sentry    0f8df9086646ef53ee5b9ba5d97535e9fc3789b469d7acb726fe44a88aebb051 4e53f6506e1672018cfaf172730b2a1469efa4865be6f5d7e7ac0e0efb01da65
+        feewatch.rules.yml (repo, loaded by Prometheus) d128ec133b280ea9642e8f21a138e9ef92f538e0a589b9b3b8f2ed886b333fc0
+        redact.py f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8
+        fixtures: eeaa275c7981d57f32acfc57f9d6fb3c608dbeeac51cdfb97fb9f55b98401884 (sha256 of 'sha256sum ./*.json')
+
+== 0. preflight (nothing changed yet)
+  pft-maint: no window open on either host
+  bridge mounts the operator env file: yes
+  active silences covering the feewatch alerts: 0
+  feewatch alerts pending/firing: 0
+  drill textfiles present: 0
+  pft-feewatch@ timers active on both hosts, pft-feewatch-pull@postfiatd-sentry.timer active on the validator
+  pft_feewatch_up 1 for postfiatd and postfiatd-sentry
+  operator topics to watch: 2 (not printed)
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+  postfiatd-sentry: server_state=full
+  postfiatd: server_state=full
+  pft-integrity local: RESULT: PASS - 125 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity relay: RESULT: PASS - 74 unchanged, 0 warn, 0 fail -> exit 0
+  literals for redaction: 3 ip, 2 key, 3 topic, 1 user (values not printed)
+$ redact.py control --literals <literals>
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (18/18)
+
+== 1. redirect notifiers + bridge, silence everything except the feewatch alerts, maintenance window
+  local:/etc/postfiat-monitor.env sha256 6dc3b10fb491 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/postfiat-monitor.env.pre-feewatch-drill
+  local:/etc/pft-integrity.env sha256 b3cd1c3da7ff -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-integrity.env.pre-feewatch-drill
+  relay:/etc/pft-watchdog/ntfy.env sha256 ddb52721a668 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-watchdog/ntfy.env.pre-feewatch-drill
+  relay:/etc/pft-integrity.env sha256 cdd330a974d2 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-integrity.env.pre-feewatch-drill
+  relay:/etc/pft-alertpath/ntfy.env sha256 ddb52721a668 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-alertpath/ntfy.env.pre-feewatch-drill
+  2026-11-01T00:29:31Z starting pft-alert-bridge (ntfy: on)
+  2026-11-01T00:29:34Z pft-alert-bridge listening
+  bridge -> https://ntfy.sh/<redacted> (throwaway env file in a 0700 temp dir)
+  silence alertname=~".+", alertname!~"PFTTxQueueNearFull|PFTFeeEscalated|PFTLocalLoadHigh|PFTFeewatchStale|PFTAlertPipelineWatchdog" until 2026-11-01T01:29:34Z (id 5a62f8a8)
+$ sudo -n pft-maint start --ttl 60m --reason 'pft-feewatch drill 20261101T002901Z'
+  window started: id m1793492974-208141 until 2026-11-01T01:29:34Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   sentry has the window (via the watchdog channel) after 10s
+
+== 2. fire: replay the five drill series every 20s (installed /usr/local/bin/pft-feewatch replay, fixtures only)
+$ for n in drill-queue drill-escalated drill-localload drill-failing drill-stale; do sudo -n grep -E '^pft_feewatch_(up|collect_timestamp_seconds|queue_fill_ratio|escalation_multiple|escalation_alert_threshold|local_load_exceeds_net)\{' /var/lib/pft-exporter/textfile/pft_feewatch_$n.prom; done
+  pft_feewatch_up{container="drill-queue"} 1
+  pft_feewatch_collect_timestamp_seconds{container="drill-queue"} 1793492988
+  pft_feewatch_queue_fill_ratio{container="drill-queue"} 0.9
+  pft_feewatch_escalation_multiple{container="drill-queue"} 1
+  pft_feewatch_escalation_alert_threshold{container="drill-queue"} 4
+  pft_feewatch_local_load_exceeds_net{container="drill-queue"} 0
+  pft_feewatch_up{container="drill-escalated"} 1
+  pft_feewatch_collect_timestamp_seconds{container="drill-escalated"} 1793492988
+  pft_feewatch_queue_fill_ratio{container="drill-escalated"} 0
+  pft_feewatch_escalation_multiple{container="drill-escalated"} 6
+  pft_feewatch_escalation_alert_threshold{container="drill-escalated"} 4
+  pft_feewatch_local_load_exceeds_net{container="drill-escalated"} 0
+  pft_feewatch_up{container="drill-localload"} 1
+  pft_feewatch_collect_timestamp_seconds{container="drill-localload"} 1793492988
+  pft_feewatch_queue_fill_ratio{container="drill-localload"} 0
+  pft_feewatch_escalation_multiple{container="drill-localload"} 1
+  pft_feewatch_escalation_alert_threshold{container="drill-localload"} 4
+  pft_feewatch_local_load_exceeds_net{container="drill-localload"} 1
+  pft_feewatch_up{container="drill-failing"} 0
+  pft_feewatch_collect_timestamp_seconds{container="drill-failing"} 1793492988
+  pft_feewatch_up{container="drill-stale"} 1
+  pft_feewatch_collect_timestamp_seconds{container="drill-stale"} 1793492388
+  pft_feewatch_queue_fill_ratio{container="drill-stale"} 0
+  pft_feewatch_escalation_multiple{container="drill-stale"} 1
+  pft_feewatch_escalation_alert_threshold{container="drill-stale"} 4
+  pft_feewatch_local_load_exceeds_net{container="drill-stale"} 0
+  (exit 0)
+CHECK ok   2a drill textfiles written: up 1 x4, up 0 for drill-failing
+CHECK ok   2b inputs: fill 0.9, multiple 6 (threshold 4), local over net 1
+  waiting for the five (alert, container) pairs to fire (Escalated needs 15m; max 1380s, poll 30s)
+  2026-11-01T00:45:26Z firing (938s after the first replay):
+    alertname=PFTFeewatchStale,alertstate=firing,container=drill-failing,instance=127.0.0.1:9877,job=postfiat,severity=warning 1
+    alertname=PFTFeewatchStale,alertstate=firing,container=drill-stale,instance=127.0.0.1:9877,job=postfiat,severity=warning 1
+    alertname=PFTTxQueueNearFull,alertstate=firing,container=drill-queue,instance=127.0.0.1:9877,job=postfiat,severity=warning 1
+    alertname=PFTLocalLoadHigh,alertstate=firing,container=drill-localload,instance=127.0.0.1:9877,job=postfiat,severity=warning 1
+    alertname=PFTFeeEscalated,alertstate=firing,container=drill-escalated,instance=127.0.0.1:9877,job=postfiat,severity=warning 1
+CHECK ok   2c all five (alert, container) pairs firing (5/5)
+CHECK ok   2d exactly five feewatch alerts firing (no other container or rule)
+CHECK ok   2e no feewatch alert for the real nodes
+CHECK ok   2f [FIRING] delivered to the throwaway topic for all five pairs (5/5)
+
+== 3. recover: every drill series replays the healthy answers with a fresh timestamp
+$ for n in drill-queue drill-escalated drill-localload drill-failing drill-stale; do sudo -n grep -E '^pft_feewatch_(up|queue_fill_ratio|escalation_multiple|local_load_exceeds_net)\{' /var/lib/pft-exporter/textfile/pft_feewatch_$n.prom; done
+  pft_feewatch_up{container="drill-queue"} 1
+  pft_feewatch_queue_fill_ratio{container="drill-queue"} 0.9
+  pft_feewatch_escalation_multiple{container="drill-queue"} 1
+  pft_feewatch_local_load_exceeds_net{container="drill-queue"} 0
+  pft_feewatch_up{container="drill-escalated"} 1
+  pft_feewatch_queue_fill_ratio{container="drill-escalated"} 0
+  pft_feewatch_escalation_multiple{container="drill-escalated"} 6
+  pft_feewatch_local_load_exceeds_net{container="drill-escalated"} 0
+  pft_feewatch_up{container="drill-localload"} 1
+  pft_feewatch_queue_fill_ratio{container="drill-localload"} 0
+  pft_feewatch_escalation_multiple{container="drill-localload"} 1
+  pft_feewatch_local_load_exceeds_net{container="drill-localload"} 1
+  pft_feewatch_up{container="drill-failing"} 0
+  pft_feewatch_up{container="drill-stale"} 1
+  pft_feewatch_queue_fill_ratio{container="drill-stale"} 0
+  pft_feewatch_escalation_multiple{container="drill-stale"} 1
+  pft_feewatch_local_load_exceeds_net{container="drill-stale"} 0
+  (exit 0)
+CHECK FAIL 3a every drill series healthy: up 1 x5, fill 0, multiple 1, exceeds 0
+feewatch/drill/live-run.sh: line 319: syntax error near unexpected token `done'
+feewatch/drill/live-run.sh: line 319: `  done <<<"$PAIRS"'
+  drill textfiles removed: yes
+  $ sudo -n pft-maint end
+    window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+  restored local:/etc/postfiat-monitor.env: sha256 matches pre-drill copy: yes
+  restored local:/etc/pft-integrity.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-watchdog/ntfy.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-integrity.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-alertpath/ntfy.env: sha256 matches pre-drill copy: yes
+  2026-11-01T00:46:55Z starting pft-alert-bridge (ntfy: on)
+  2026-11-01T00:46:57Z pft-alert-bridge listening
+  restored bridge: mounts the operator env file again: yes
+  drill silence expired: HTTP 200
+rc=2
