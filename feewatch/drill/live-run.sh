@@ -298,7 +298,9 @@ check "2f [FIRING] delivered to the throwaway topic for all five pairs" "$([ "$d
 echo; echo "== 3. recover: every drill series replays the healthy answers with a fresh timestamp"
 echo recover > "$SEC/phase"
 t_rec="$(date -u +%s)"
-sleep 5
+# the refresher sleeps REFRESH s between rounds: wait one full round before reading the files back (run 05 read them
+# 5 s after the switch and still saw the fire-phase values: check 3a failed on the harness, not the tool)
+sleep $((REFRESH + 10))
 x "for n in drill-queue drill-escalated drill-localload drill-failing drill-stale; do sudo -n grep -E '^pft_feewatch_(up|queue_fill_ratio|escalation_multiple|local_load_exceeds_net)\\{' $TF/pft_feewatch_\$n.prom; done"
 check "3a every drill series healthy: up 1 x5, fill 0, multiple 1, exceeds 0" "$(ok_if '[ "$(grep -c "^pft_feewatch_up{container=\"drill-[a-z]*\"} 1$" <<<"$XOUT")" = 5 ] && ! grep -qE "fill_ratio\{.*\} 0\.9|multiple\{.*\} 6|exceeds_net\{.*\} 1" <<<"$XOUT"')"
 declare -A RES=()
