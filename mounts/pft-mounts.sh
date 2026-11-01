@@ -4,12 +4,16 @@
 # CIS Ubuntu Linux 22.04 LTS Benchmark v2.0.0 section 1.1.2 grades (/tmp, /dev/shm, /var/tmp), plus /proc
 # hidepid and nodev/nosuid on postfiatd's ledger data directory as the container sees it.
 #
-# Usage: pft-mounts audit [--json] [--prom FILE]
+# Usage: pft-mounts audit [--json] [--prom FILE | --textfile]
+#        sudo pft-mounts pull                 (validator: copy the peer's textfile, see install.sh --pull)
+#        pft-mounts validate FILE HOST        (the check pull applies to a fetched textfile)
 #        pft-mounts plan                      (read-only: the fstab block and live remounts apply would do)
 #        sudo pft-mounts apply --yes [--dry-run]
 #        sudo pft-mounts rollback --yes       (restore the newest fstab backup, undo the live mounts)
 #
-#  audit   read-only. One line per check: PASS / FAIL (live option missing) / WARN (live OK but not persistent:
+#  audit   read-only, reads the HOST mount table from /proc/1/mountinfo (a sandboxed unit's own /proc/self view
+#          has private /tmp and read-only binds). --textfile writes TEXTFILE_DIR/pft_mounts_HOST_LABEL.prom.
+#          One line per check: PASS / FAIL (live option missing) / WARN (live OK but not persistent:
 #          lost at the next boot; or a duplicate fstab target) / INFO. Persistence is read from /etc/fstab, or for
 #          /tmp from an enabled /etc/systemd/system/tmp.mount (that unit file overrides an fstab line).
 #  apply   1. writes a marked block (# BEGIN pft-mounts ... # END pft-mounts) to a candidate fstab, keeping every
@@ -34,10 +38,12 @@
 #
 # Exit codes: 0 PASS / applied, 1 findings / rolled back, 2 error, 3 usage, 4 refused (not root, no --yes,
 #             candidate fstab invalid), 5 rollback failed.
+# Config: /etc/pft-mounts.env (KEY=VALUE, read, never sourced): HOST_LABEL (validator), PEER_LABEL (sentry),
+#      PULL_SSH (validator only: command prefix that reaches the peer, e.g. "runuser -u OP -- ssh -o BatchMode=yes X")
 # Env: CONTAINER (auto: postfiatd or postfiatd-sentry)  DATA_DEST (/var/lib/postfiatd/db)  PEER_PORT (2559)
 #      APT_TMP (/var/lib/pft-mounts/apt-tmp)  PROC_GROUP (pft-procview)  HEALTH_BUDGET (300)  POLL_SEC (5)  BACKUP_DIR (/var/lib/pft-mounts)
 #      GATE_UNITS (space-separated oneshot services re-run by the gate; default: the pft-*.service units with an
-#      active timer whose name matches GATE_PATTERN)  GATE_PATTERN (heartbeat|statewatch|resources|rulecheck|authwatch)
+#      active timer whose name matches GATE_PATTERN)  GATE_PATTERN (heartbeat|statewatch|resources|rulecheck|authwatch|mounts)
 #      Test hooks: PFT_MOUNTS_ROOT (path prefix for every file)  PFT_MOUNTS_DOCKER / _MOUNT / _NSENTER / _FINDMNT /
 #      _SYSTEMCTL / _SS / _SSHD / _KEYSCAN / _GROUPADD / _GETENT / _RPC (commands)  PFT_MOUNTS_INJECT (health)
 
@@ -64,10 +70,17 @@ PEER_PORT="${PEER_PORT:-2559}"
 PROC_GROUP="${PROC_GROUP:-pft-procview}"
 HEALTH_BUDGET="${HEALTH_BUDGET:-300}"
 POLL_SEC="${POLL_SEC:-5}"
-GATE_PATTERN="${GATE_PATTERN:-heartbeat|statewatch|resources|rulecheck|authwatch}"
+GATE_PATTERN="${GATE_PATTERN:-heartbeat|statewatch|resources|rulecheck|authwatch|mounts}"
 FSTAB="$R/etc/fstab"
 BACKUP_DIR="${BACKUP_DIR:-$R/var/lib/pft-mounts}"
-MOUNTINFO="$R/proc/self/mountinfo"
+MOUNTINFO="$R/proc/1/mountinfo"
+CONF="${PFT_MOUNTS_CONF:-$R/etc/pft-mounts.env}"
+TEXTFILE_DIR="${TEXTFILE_DIR:-$R/var/lib/pft-exporter/textfile}"
+conf_get() { [ -f "$CONF" ] && sed -n "s/^$1=//p" "$CONF" | tail -1 | sed -E 's/^"(.*)"$/\1/'; return 0; }
+HOST_LABEL="$(conf_get HOST_LABEL)"; HOST_LABEL="${HOST_LABEL:-validator}"
+PEER_LABEL="$(conf_get PEER_LABEL)"; PEER_LABEL="${PEER_LABEL:-sentry}"
+PULL_SSH="$(conf_get PULL_SSH)"; PULL_TIMEOUT="${PULL_TIMEOUT:-30}"
+valid_label() { [[ "$1" =~ ^[a-z][a-z0-9_-]{0,31}$ ]]; }
 TMPUNIT="$R/etc/systemd/system/tmp.mount"
 TMPWANT="$R/etc/systemd/system/local-fs.target.wants/tmp.mount"
 APT_TMP="${APT_TMP:-/var/lib/pft-mounts/apt-tmp}"
@@ -254,19 +267,41 @@ print_results() {
 }
 
 write_prom() { # FILE: node_exporter textfile, written atomically
-  local f="$1" tmp
+  local f="$1" tmp h="$HOST_LABEL"
   tmp="$(mktemp "${f}.XXXXXX")" || return 2
   {
     echo "# HELP pft_mounts_check 1 if the mount check passes (PASS/INFO), 0 if FAIL or WARN."
     echo "# TYPE pft_mounts_check gauge"
-    printf '%s' "$RESULTS" | awk -F'\t' '$1 != "INFO" { gsub(/"/, "", $3); printf "pft_mounts_check{check=\"%s\",cis=\"%s\",status=\"%s\"} %d\n", $3, $2, $1, ($1 == "PASS") }'
+    printf '%s' "$RESULTS" | awk -F'\t' -v h="$h" '$1 != "INFO" { gsub(/"/, "", $3); printf "pft_mounts_check{host=\"%s\",check=\"%s\",cis=\"%s\",status=\"%s\"} %d\n", h, $3, $2, $1, ($1 == "PASS") }'
     echo "# HELP pft_mounts_findings Number of FAIL + WARN mount checks."
     echo "# TYPE pft_mounts_findings gauge"
-    echo "pft_mounts_findings $FINDINGS"
+    echo "pft_mounts_findings{host=\"$h\"} $FINDINGS"
     echo "# HELP pft_mounts_last_run_timestamp_seconds Unix time of the last completed audit."
     echo "# TYPE pft_mounts_last_run_timestamp_seconds gauge"
-    echo "pft_mounts_last_run_timestamp_seconds $(date +%s)"
+    echo "pft_mounts_last_run_timestamp_seconds{host=\"$h\"} $(date +%s)"
   } > "$tmp" && chmod 0644 "$tmp" && mv -f "$tmp" "$f"
+}
+
+validate() { # FILE HOST -> rc 0, or rc 1 with the first reason on stdout (a pulled file must look like ours)
+  local f="$1" h="$2" n
+  [ -f "$f" ] || { echo "missing"; return 1; }
+  [ "$(stat -c %s "$f")" -le 65536 ] || { echo "larger than 65536 bytes"; return 1; }
+  n="$(grep -cvE '^(# (HELP|TYPE) pft_mounts_.*|pft_mounts_[a-z_]+\{host="'"$h"'"(,[a-z]+="[A-Za-z0-9_./:-]+")*\} [0-9.e+-]+)$' "$f")"
+  [ "$n" -eq 0 ] || { echo "$n unexpected lines"; return 1; }
+  grep -qE '^pft_mounts_last_run_timestamp_seconds\{host="'"$h"'"\} [0-9]+$' "$f" || { echo "no last_run sample"; return 1; }
+  return 0
+}
+do_pull() {
+  local tmp why
+  valid_label "$PEER_LABEL" || die "bad PEER_LABEL"
+  [ -n "$PULL_SSH" ] || die "PULL_SSH not set (see $CONF)"
+  tmp="$TEXTFILE_DIR/.pft_mounts_$PEER_LABEL.prom.pull"
+  # shellcheck disable=SC2086 # PULL_SSH is a command line from the root-owned conf
+  if ! timeout "$PULL_TIMEOUT" $PULL_SSH cat -- "/var/lib/pft-exporter/textfile/pft_mounts_$PEER_LABEL.prom" > "$tmp" 2>/dev/null; then
+    rm -f "$tmp"; die "pull from $PEER_LABEL failed" 1
+  fi
+  if ! why="$(validate "$tmp" "$PEER_LABEL")"; then rm -f "$tmp"; die "pulled file rejected: $why" 2; fi
+  chmod 0644 "$tmp" && mv -f "$tmp" "$TEXTFILE_DIR/pft_mounts_$PEER_LABEL.prom"
 }
 
 # ---- plan / apply ------------------------------------------------------------------------------------------
@@ -475,11 +510,17 @@ do_rollback() {
 }
 
 cmd="${1:-}"; shift || true
+valid_label "$HOST_LABEL" || die "bad HOST_LABEL in $CONF" 2
+if [ "$cmd" = validate ]; then # validate FILE HOST: the check pull applies, for tests and by hand
+  [ $# -eq 2 ] && valid_label "$2" || die "usage: pft-mounts validate FILE HOST" 3
+  why="$(validate "$1" "$2")" && exit 0; echo "$why"; exit 2
+fi
 YES=0; DRY=0; JSON=0; PROM=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --yes) YES=1 ;; --dry-run) DRY=1 ;; --json) JSON=1 ;;
     --prom) PROM="${2:-}"; [ -n "$PROM" ] || die "--prom needs a file" 3; shift ;;
+    --textfile) PROM="$TEXTFILE_DIR/pft_mounts_$HOST_LABEL.prom" ;;
     *) die "unknown option $1" 3 ;;
   esac
   shift
@@ -490,6 +531,8 @@ case "$cmd" in
     [ -n "$PROM" ] && { write_prom "$PROM" || die "cannot write $PROM" 2; }
     [ "$FINDINGS" = 0 ] && exit 0 || exit 1 ;;
   plan) do_plan; exit $? ;;
+  pull) [ "$(id -u)" = 0 ] || [ -n "$R" ] || die "pull needs root" 4
+        do_pull; exit $? ;;
   apply) [ "$YES" = 1 ] || [ "$DRY" = 1 ] || die "apply changes /etc/fstab and live mounts; pass --yes (or --dry-run)" 4
          do_apply "$DRY"; exit $? ;;
   rollback) [ "$YES" = 1 ] || die "rollback changes /etc/fstab and live mounts; pass --yes" 4

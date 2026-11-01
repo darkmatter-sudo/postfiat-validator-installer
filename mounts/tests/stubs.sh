@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Stub commands for run-tests.sh. Sourced; mk_env DIR builds a fake host in DIR:
-#   DIR/root   PFT_MOUNTS_ROOT: etc/fstab, proc/self/mountinfo (host), proc/4242/mountinfo (postfiatd)
+#   DIR/root   PFT_MOUNTS_ROOT: etc/fstab, proc/1/mountinfo (host), proc/4242/mountinfo (postfiatd)
 #   DIR/s      stub state: group, started (StartedAt), state (server_state), units, results, calls
 #   DIR/bin    one executable per stubbed command
 # mount/umount (also inside nsenter) edit the fake mountinfo files through fake_mount.py.
@@ -9,7 +9,7 @@
 
 STUBS_HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Bare Ubuntu 22.04 cloud image host, as on both production hosts before apply.
+# Bare Ubuntu 22.04 cloud image defaults (no separate /tmp, /var/tmp; /dev/shm without noexec; /proc without hidepid).
 HOST_MI='22 1 8:1 / / rw,relatime shared:1 - ext4 /dev/sda1 rw,discard,errors=remount-ro
 23 22 0:5 / /dev rw,nosuid,relatime shared:2 - devtmpfs udev rw,size=4010000k,inode64
 24 23 0:21 / /dev/shm rw,nosuid,nodev shared:3 - tmpfs tmpfs rw,inode64
@@ -23,8 +23,8 @@ LABEL=UEFI	/boot/efi	vfat	umask=0077	0 1'
 
 mk_env() {
   local d="$1"
-  mkdir -p "$d/root/etc/systemd/system" "$d/root/etc/apt/apt.conf.d" "$d/root/proc/self" "$d/root/proc/4242" "$d/s" "$d/bin"
-  printf '%s\n' "$HOST_MI" > "$d/root/proc/self/mountinfo"
+  mkdir -p "$d/root/etc/systemd/system" "$d/root/etc/apt/apt.conf.d" "$d/root/proc/1" "$d/root/proc/4242" "$d/s" "$d/bin"
+  printf '%s\n' "$HOST_MI" > "$d/root/proc/1/mountinfo"
   printf '%s\n' "$CONT_MI" > "$d/root/proc/4242/mountinfo"
   printf '%s\n' "$FSTAB_BARE" > "$d/root/etc/fstab"
   echo 'docker:x:999:' > "$d/s/group"
@@ -33,12 +33,12 @@ mk_env() {
   echo full > "$d/s/state"
   printf 'pft-heartbeat.service\npft-statewatch@postfiatd.service\n' > "$d/s/oneshots"
   printf 'pft-exporter.service\n' > "$d/s/daemons"
-  : > "$d/s/failunits"; : > "$d/s/calls"
+  : > "$d/s/failunits"; : > "$d/s/resultfail"; : > "$d/s/calls"
   # hardened: 0 while the fake host's /tmp is a noexec mount. Gate faults below fire only then, like a fault that
   # apply caused (and rollback cures).
   cat > "$d/bin/hardened" <<'B'
 #!/usr/bin/env bash
-grep -qE ' /tmp [^ ]*noexec' "$STUB_R/proc/self/mountinfo"
+grep -qE ' /tmp [^ ]*noexec' "$STUB_R/proc/1/mountinfo"
 B
 
   cat > "$d/bin/docker" <<'B'
@@ -55,11 +55,11 @@ esac
 B
   cat > "$d/bin/mount" <<'B'
 #!/usr/bin/env bash
-exec python3 "$STUB_HERE/fake_mount.py" "$STUB_R/proc/self/mountinfo" mount "$@"
+exec python3 "$STUB_HERE/fake_mount.py" "$STUB_R/proc/1/mountinfo" mount "$@"
 B
   cat > "$d/bin/umount" <<'B'
 #!/usr/bin/env bash
-exec python3 "$STUB_HERE/fake_mount.py" "$STUB_R/proc/self/mountinfo" umount "$@"
+exec python3 "$STUB_HERE/fake_mount.py" "$STUB_R/proc/1/mountinfo" umount "$@"
 B
   cat > "$d/bin/nsenter" <<'B'
 #!/usr/bin/env bash
@@ -84,7 +84,7 @@ case "$1" in
   list-timers) sed 's/^/Sat 2026-11-01 00:00:00 UTC 1min left n\/a n\/a x.timer /' "$S/oneshots" ;;
   list-units) sed 's/$/ loaded active running x/' "$S/daemons" ;;
   start) grep -qx "$2" "$S/failunits" && "$STUB_BIN/hardened" && exit 1; exit 0 ;;
-  show) u="${!#}"; grep -qx "$u" "$S/failunits" && "$STUB_BIN/hardened" && echo exit-code || echo success ;;
+  show) u="${!#}"; { grep -qx "$u" "$S/failunits" || grep -qx "$u" "$S/resultfail"; } && "$STUB_BIN/hardened" && echo exit-code || echo success ;;
   is-active) [ -f "$S/daemon-down" ] && "$STUB_BIN/hardened" && echo failed || echo active ;;
 esac
 B

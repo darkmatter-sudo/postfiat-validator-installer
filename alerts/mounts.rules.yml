@@ -1,0 +1,18 @@
+# Alert rule for pft-mounts (../mounts). pft-mounts.timer audits once an hour (+ up to 10 min) and writes
+# pft_mounts_*{host="..."} to the textfile dir (validator: local; sentry: pulled by pft-mounts-pull.timer every 15 min).
+# One alert: any FAIL or WARN mount check (a hardened option dropped by a remount, an fstab edit, a package that
+# re-enables tmp.mount, or a data-dir option lost on container re-creation). A stopped audit is caught by
+# pft-rulecheck (textfile pft_mounts_*.prom 3h) and PFTTextfileStale, not by a second rule here.
+# The sentry runs no Prometheus: every host="sentry" alert is evaluated here. Tests: mounts.tests.yml.
+groups:
+  - name: pft-mounts
+    rules:
+      - alert: PFTMountHardeningDrift
+        expr: max by (instance, job, host) (pft_mounts_findings) > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} host mount check(s) FAIL/WARN on {{ $labels.host }}"
+          description: "The hourly pft-mounts audit graded a mount option missing live or not persistent: /tmp, /var/tmp or /dev/shm without nodev/nosuid/noexec, /proc without hidepid, the postfiatd data dir without nodev/nosuid, or apt's TempDir on a noexec mount. Run `sudo pft-mounts audit` to list them; `sudo pft-mounts plan` shows what apply would set."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/mounts/README.md#alert"

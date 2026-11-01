@@ -23,7 +23,7 @@ expect() { # NAME CHECK STATUS [DETAIL-REGEX]
   local s; s="$(st "$2")"
   if [ "$s" = "$3" ] && { [ -z "${4:-}" ] || line "$2" | grep -qE "$4"; }; then ok "$1"; else ko "$1 (want $3${4:+ /$4/}, got '${s}')" "$(line "$2")"; fi
 }
-mi_add() { echo "$1" >> "$E/root/proc/self/mountinfo"; }
+mi_add() { echo "$1" >> "$E/root/proc/1/mountinfo"; }
 fs_add() { printf '%s\n' "$1" >> "$E/root/etc/fstab"; }
 calls() { grep -c "$1" "$E/s/calls"; }
 
@@ -52,9 +52,35 @@ run audit --json --prom "$E/s/m.prom"
 J="$(sed -n '/^{/,$p' <<<"$OUT")"
 [ "$RC" = 1 ] && [ "$(jq -r '.findings' <<<"$J")" = 12 ] && [ "$(jq -r '.result' <<<"$J")" = FAIL ] \
   && [ "$(jq -r '[.checks[] | select(.id=="/tmp:noexec")][0].status' <<<"$J")" = FAIL ] && ok "json: findings 12, /tmp:noexec FAIL" || ko "json" "$OUT"
-grep -qx 'pft_mounts_findings 12' "$E/s/m.prom" && grep -q 'pft_mounts_check{check="/tmp:noexec",cis="1.1.2.1.4",status="FAIL"} 0' "$E/s/m.prom" \
+grep -qx 'pft_mounts_findings{host="validator"} 12' "$E/s/m.prom" && grep -q 'pft_mounts_check{host="validator",check="/tmp:noexec",cis="1.1.2.1.4",status="FAIL"} 0' "$E/s/m.prom" \
   && ! grep -q 'data:mount' "$E/s/m.prom" && ok "prom: findings 12, per-check 0, INFO not exported" || ko "prom" "$(cat "$E/s/m.prom")"
 [ "$(stat -c %a "$E/s/m.prom")" = 644 ] && [ -z "$(find "$E/s" -name 'm.prom.*')" ] && ok "prom: 0644, no temp left" || ko "prom: mode/temp" "$(ls -l "$E/s")"
+
+# --textfile: TEXTFILE_DIR/pft_mounts_<HOST_LABEL>.prom, label from /etc/pft-mounts.env; the file passes validate
+mkdir -p "$E/root/var/lib/pft-exporter/textfile"; printf 'HOST_LABEL=sentry\n' > "$E/root/etc/pft-mounts.env"
+run audit --textfile; TF="$E/root/var/lib/pft-exporter/textfile/pft_mounts_sentry.prom"
+[ "$RC" = 1 ] && grep -qx 'pft_mounts_findings{host="sentry"} 12' "$TF" && ok "textfile: pft_mounts_sentry.prom, host label from the env file" || ko "textfile" "$OUT"
+run validate "$TF" sentry; [ "$RC" = 0 ] && ok "validate: own sentry textfile accepted" || ko "validate own: rc=$RC" "$OUT"
+run validate "$TF" validator; [ "$RC" = 2 ] && grep -q 'unexpected lines' <<<"$OUT" && ok "validate: wrong host label rejected" || ko "validate host: rc=$RC" "$OUT"
+cp "$TF" "$E/s/bad.prom"; echo 'node_load1 9' >> "$E/s/bad.prom"; run validate "$E/s/bad.prom" sentry
+[ "$RC" = 2 ] && grep -q '1 unexpected lines' <<<"$OUT" && ok "validate: foreign metric rejected" || ko "validate foreign: rc=$RC" "$OUT"
+grep -v last_run "$TF" > "$E/s/bad.prom"; run validate "$E/s/bad.prom" sentry
+[ "$RC" = 2 ] && grep -q 'no last_run' <<<"$OUT" && ok "validate: missing last_run rejected" || ko "validate last_run: rc=$RC" "$OUT"
+printf 'HOST_LABEL="Bad Label"\n' > "$E/root/etc/pft-mounts.env"; run audit
+[ "$RC" = 2 ] && grep -q 'bad HOST_LABEL' <<<"$OUT" && ok "conf: invalid HOST_LABEL -> exit 2" || ko "conf label: rc=$RC" "$OUT"
+
+# pull (validator): copies the peer's file through PULL_SSH, rejects a bad one and keeps the last good copy
+fresh; TD="$E/root/var/lib/pft-exporter/textfile"; mkdir -p "$TD"
+printf '#!/usr/bin/env bash\n[ "$1" = cat ] && [ "$3" = /var/lib/pft-exporter/textfile/pft_mounts_sentry.prom ] && cat "%s/peer.prom"\n' "$E/s" > "$E/bin/peer"; chmod +x "$E/bin/peer"
+printf 'HOST_LABEL=validator\nPULL_SSH="%s"\n' "$E/bin/peer" > "$E/root/etc/pft-mounts.env"
+printf 'HOST_LABEL=sentry\n' > "$E/s/sentry.env"; PFT_MOUNTS_CONF="$E/s/sentry.env" bash "$TOOL" audit --prom "$E/s/peer.prom" >/dev/null 2>&1
+run pull; [ "$RC" = 0 ] && cmp -s "$E/s/peer.prom" "$TD/pft_mounts_sentry.prom" && [ "$(stat -c %a "$TD/pft_mounts_sentry.prom")" = 644 ] \
+  && ok "pull: peer textfile copied (0644)" || ko "pull: rc=$RC" "$OUT"
+cp "$TD/pft_mounts_sentry.prom" "$E/s/good.prom"; echo 'evil 1' >> "$E/s/peer.prom"; run pull
+[ "$RC" = 2 ] && cmp -s "$E/s/good.prom" "$TD/pft_mounts_sentry.prom" && [ -z "$(find "$TD" -name '.*pull')" ] \
+  && ok "pull: tampered file rejected, last good copy kept, no temp left" || ko "pull tampered: rc=$RC" "$OUT"
+printf 'HOST_LABEL=validator\n' > "$E/root/etc/pft-mounts.env"; run pull
+[ "$RC" = 2 ] && grep -q 'PULL_SSH not set' <<<"$OUT" && ok "pull: refuses without PULL_SSH" || ko "pull no ssh: rc=$RC" "$OUT"
 
 # --- audit: grading edge cases -----------------------------------------------------------------------------
 # live-only: self-binds + options live, fstab untouched -> WARN (not persistent), never PASS
@@ -91,6 +117,7 @@ mi_add '40 22 8:1 /tmp /tmp rw,nosuid,nodev,noexec,relatime shared:20 - ext4 /de
 mi_add '41 22 8:2 / /var/tmp rw,nosuid,nodev,noexec,relatime shared:21 - ext4 /dev/sdb1 rw'
 run audit
 expect "comment: commented /tmp line ignored" /tmp:noexec WARN 'not persistent'
+expect "comment: commented line is no persistence" /tmp:separate WARN 'gone after the next boot'
 expect "uuid: /var/tmp from UUID= line" /var/tmp:noexec PASS 'fstab:5'
 expect "uuid: /var/tmp separate" /var/tmp:separate PASS 'ext4 mount'
 
@@ -109,10 +136,10 @@ rm "$E/root/etc/systemd/system/local-fs.target.wants/tmp.mount"; run audit
 expect "tmp.mount disabled: fstab is the source" /tmp:noexec PASS 'fstab:3'
 
 # absent tmpfs: /dev/shm not mounted at all
-fresh; sed -i '/ \/dev\/shm /d' "$E/root/proc/self/mountinfo"; run audit
+fresh; sed -i '/ \/dev\/shm /d' "$E/root/proc/1/mountinfo"; run audit
 expect "no /dev/shm: separate FAIL" /dev/shm:separate FAIL 'not a separate mount \(on /dev\)'
 # /dev/shm noexec live but no fstab entry: systemd's default lacks noexec -> WARN
-fresh; sed -i 's#^24 23 0:21 / /dev/shm rw,nosuid,nodev #24 23 0:21 / /dev/shm rw,nosuid,nodev,noexec #' "$E/root/proc/self/mountinfo"; run audit
+fresh; sed -i 's#^24 23 0:21 / /dev/shm rw,nosuid,nodev #24 23 0:21 / /dev/shm rw,nosuid,nodev,noexec #' "$E/root/proc/1/mountinfo"; run audit
 expect "shm: noexec live only WARN" /dev/shm:noexec WARN 'not persistent'
 
 # escaped mount points (\040 = space) are decoded on both sides
@@ -123,9 +150,9 @@ run audit
 expect "escaped: /var/tmp from a spaced source" /var/tmp:noexec PASS 'fstab:3'
 
 # hidepid: ptraceable does not hide; invisible live without fstab -> WARN; both -> PASS
-fresh; sed -i 's#- proc proc rw$#- proc proc rw,hidepid=ptraceable#' "$E/root/proc/self/mountinfo"; run audit
+fresh; sed -i 's#- proc proc rw$#- proc proc rw,hidepid=ptraceable#' "$E/root/proc/1/mountinfo"; run audit
 expect "hidepid=ptraceable FAIL" proc:hidepid FAIL
-fresh; sed -i 's#- proc proc rw$#- proc proc rw,hidepid=invisible,gid=998#' "$E/root/proc/self/mountinfo"; run audit
+fresh; sed -i 's#- proc proc rw$#- proc proc rw,hidepid=invisible,gid=998#' "$E/root/proc/1/mountinfo"; run audit
 expect "hidepid live only WARN" proc:hidepid WARN 'not in fstab'
 fs_add 'proc /proc proc defaults,hidepid=2,gid=998 0 0'; run audit
 expect "hidepid live + fstab PASS" proc:hidepid PASS 'hidepid=invisible \(exempt gid set\)'
@@ -139,6 +166,15 @@ sed -i 's#^901 900 8:1 [^ ]* /var/lib/postfiatd/db rw,relatime #901 900 8:3 /pos
 run audit
 expect "dedicated fs: data mount INFO" data:mount INFO 'on host mount /data$'
 expect "dedicated fs: nodev via the fs's fstab line" data:nodev PASS 'fstab:3'
+unset STUB_DATA_SRC
+# data dir whose host path has a space: fstab \040 and mountinfo \040 decode to the same path
+fresh
+export STUB_DATA_SRC="/srv/pft data"
+mi_add '44 22 8:1 /srv/pft\040data /srv/pft\040data rw,nosuid,nodev,relatime shared:24 - ext4 /dev/sda1 rw'
+fs_add '/srv/pft\040data /srv/pft\040data none bind,nodev,nosuid 0 0'
+sed -i 's#^901 900 8:1 [^ ]* /var/lib/postfiatd/db rw,relatime #901 900 8:1 /srv/pft\\040data /var/lib/postfiatd/db rw,nosuid,nodev,relatime #' "$E/root/proc/4242/mountinfo"
+run audit
+expect "escaped data path: nodev via its \\040 fstab line" data:nodev PASS 'fstab:3'
 unset STUB_DATA_SRC
 # data flags set inside the container only (no host entry) -> WARN: the next container start loses them
 fresh; sed -i 's#/var/lib/postfiatd/db rw,relatime #/var/lib/postfiatd/db rw,nosuid,nodev,relatime #' "$E/root/proc/4242/mountinfo"; run audit
@@ -169,14 +205,14 @@ fs_add '/tmp /tmp none bind,nodev 0 0'; run plan
 [ "$RC" = 4 ] && grep -q 'REFUSE: unmanaged.*' <<<"$OUT" && grep -q 'line 3: /tmp /tmp none bind,nodev 0 0' <<<"$OUT" && ok "plan: refuses an unmanaged /tmp line" || ko "plan: unmanaged" "$OUT"
 
 # --- apply / rollback -------------------------------------------------------------------------------------
-snap() { cat "$E/root/etc/fstab" "$E/root/proc/self/mountinfo" "$E/root/proc/4242/mountinfo" | sha256sum | cut -c1-16; }
+snap() { cat "$E/root/etc/fstab" "$E/root/proc/1/mountinfo" "$E/root/proc/4242/mountinfo" | sha256sum | cut -c1-16; }
 fresh; run apply
 [ "$RC" = 4 ] && grep -q 'pass --yes' <<<"$OUT" && ok "apply: refuses without --yes" || ko "apply: no --yes" "$OUT"
 S0="$(snap)"; run apply --dry-run
 [ "$RC" = 0 ] && [ "$(snap)" = "$S0" ] && [ "$(calls '^mount\|^nsenter\|groupadd')" = 0 ] && grep -q '^+/tmp /tmp none bind' <<<"$OUT" \
   && ok "apply --dry-run: diff shown, nothing changed" || ko "apply --dry-run" "$OUT"
 
-fresh; cp "$E/root/etc/fstab" "$E/s/fstab.orig"; cp "$E/root/proc/self/mountinfo" "$E/s/mi.orig"; cp "$E/root/proc/4242/mountinfo" "$E/s/cmi.orig"
+fresh; cp "$E/root/etc/fstab" "$E/s/fstab.orig"; cp "$E/root/proc/1/mountinfo" "$E/s/mi.orig"; cp "$E/root/proc/4242/mountinfo" "$E/s/cmi.orig"
 run apply --yes
 [ "$RC" = 0 ] && grep -q 'health: PASS' <<<"$OUT" && ok "apply: exit 0, gate PASS" || ko "apply: exit $RC" "$OUT"
 [ "$(head -2 "$E/root/etc/fstab")" = "$(cat "$E/s/fstab.orig")" ] && [ "$(grep -c '^# BEGIN pft-mounts' "$E/root/etc/fstab")" = 1 ] \
@@ -192,14 +228,16 @@ grep -q 'systemctl start pft-heartbeat.service' "$E/s/calls" && grep -q 'systemc
   && ok "apply: apt TempDir conf 0644 + dir 0700" || ko "apply: apt conf" "$(ls -lR "$E/root/etc/apt" "$E/root/var/lib/pft-mounts")"
 grep -n 'live: apt TempDir' <<<"$OUT" | grep -q '' && [ "$(grep -n 'live: apt TempDir' <<<"$OUT" | cut -d: -f1)" -lt "$(grep -n 'live: /tmp ' <<<"$OUT" | cut -d: -f1)" ] \
   && ok "apply: apt conf written before the first remount" || ko "apply: apt order" "$OUT"
+grep -E ' /proc ' "$E/root/proc/1/mountinfo" | grep -qE ' /proc rw,nosuid,nodev,noexec,relatime .*[ ,]hidepid=invisible,gid=998$' \
+  && ok "apply: /proc keeps nosuid,nodev,noexec next to hidepid" || ko "apply: /proc flags" "$(grep ' /proc ' "$E/root/proc/1/mountinfo")"
 run audit
 [ "$RC" = 0 ] && grep -q 'RESULT: PASS' <<<"$OUT" && ok "after apply: audit PASS (exit 0)" || ko "after apply: audit" "$OUT"
 C0="$(calls '^mount')"; run apply --yes
 [ "$RC" = 0 ] && grep -q 'already applied' <<<"$OUT" && [ "$(calls '^mount')" = "$C0" ] && ok "apply again: idempotent, no mount calls" || ko "apply again" "$OUT"
 run rollback --yes
-[ "$RC" = 0 ] && cmp -s "$E/root/etc/fstab" "$E/s/fstab.orig" && cmp -s "$E/root/proc/self/mountinfo" "$E/s/mi.orig" && cmp -s "$E/root/proc/4242/mountinfo" "$E/s/cmi.orig" \
+[ "$RC" = 0 ] && cmp -s "$E/root/etc/fstab" "$E/s/fstab.orig" && cmp -s "$E/root/proc/1/mountinfo" "$E/s/mi.orig" && cmp -s "$E/root/proc/4242/mountinfo" "$E/s/cmi.orig" \
   && [ ! -e "$E/root/etc/apt/apt.conf.d/50pft-mounts" ] && [ ! -e "$E/root/var/lib/pft-mounts/apt-tmp" ] \
-  && ok "rollback: fstab + both mount tables byte-identical to before apply, apt conf + dir removed" || ko "rollback: rc=$RC" "$OUT"$'\n'"$(diff "$E/s/mi.orig" "$E/root/proc/self/mountinfo"; diff "$E/s/cmi.orig" "$E/root/proc/4242/mountinfo")"
+  && ok "rollback: fstab + both mount tables byte-identical to before apply, apt conf + dir removed" || ko "rollback: rc=$RC" "$OUT"$'\n'"$(diff "$E/s/mi.orig" "$E/root/proc/1/mountinfo"; diff "$E/s/cmi.orig" "$E/root/proc/4242/mountinfo")"
 run rollback
 [ "$RC" = 4 ] && ok "rollback: refuses without --yes" || ko "rollback: no --yes rc=$RC" "$OUT"
 
@@ -215,11 +253,11 @@ run apply --yes
 
 # gates: each miss -> automatic rollback, exit 1, fstab and mount tables back byte-identical
 gate_case() { # NAME SETUP
-  fresh; cp "$E/root/etc/fstab" "$E/s/fstab.orig"; cp "$E/root/proc/self/mountinfo" "$E/s/mi.orig"; cp "$E/root/proc/4242/mountinfo" "$E/s/cmi.orig"
+  fresh; cp "$E/root/etc/fstab" "$E/s/fstab.orig"; cp "$E/root/proc/1/mountinfo" "$E/s/mi.orig"; cp "$E/root/proc/4242/mountinfo" "$E/s/cmi.orig"
   eval "$2"
   run apply --yes
   if [ "$RC" = 1 ] && grep -q 'automatic rollback' <<<"$OUT" && cmp -s "$E/root/etc/fstab" "$E/s/fstab.orig" \
-     && cmp -s "$E/root/proc/self/mountinfo" "$E/s/mi.orig" && cmp -s "$E/root/proc/4242/mountinfo" "$E/s/cmi.orig" \
+     && cmp -s "$E/root/proc/1/mountinfo" "$E/s/mi.orig" && cmp -s "$E/root/proc/4242/mountinfo" "$E/s/cmi.orig" \
      && [ ! -e "$E/root/etc/apt/apt.conf.d/50pft-mounts" ]; then ok "gate: $1 -> rolled back"
   else ko "gate: $1 (rc=$RC)" "$OUT"; fi
   unset PFT_MOUNTS_INJECT FAKE_FAIL FAKE_NS_FAIL
@@ -227,6 +265,7 @@ gate_case() { # NAME SETUP
 gate_case "injected health miss" 'export PFT_MOUNTS_INJECT=health'
 gate_case "server_state not full" 'echo syncing > "$E/s/state"'
 gate_case "oneshot unit fails" 'echo pft-statewatch@postfiatd.service > "$E/s/failunits"'
+gate_case "oneshot starts but Result!=success" 'echo pft-heartbeat.service > "$E/s/resultfail"'
 gate_case "daemon goes inactive" 'touch "$E/s/daemon-down"'
 gate_case "ssh handshake fails" 'touch "$E/s/ssh-down"'
 gate_case "postfiatd restarted (StartedAt changed)" 'echo 1 > "$E/s/restart-after"'
@@ -234,6 +273,10 @@ gate_case "live remount fails (/var/tmp)" 'export FAKE_FAIL="noexec /var/tmp"'
 gate_case "container remount fails" 'export FAKE_NS_FAIL=remount'
 fresh; OUT="$(PFT_MOUNTS_INJECT=health bash "$TOOL" apply --yes 2>&1)"
 grep -q 'injected=health' <<<"$OUT" && ok "gate: FAIL line names the injection" || ko "gate: injection label"
+
+# a failed oneshot fails the gate at once, not after the whole budget
+fresh; echo pft-statewatch@postfiatd.service > "$E/s/failunits"; OUT="$(HEALTH_BUDGET=60 bash "$TOOL" apply --yes 2>&1)"
+grep -qE 'health: FAIL after [0-4] s .*failed units: pft-statewatch' <<<"$OUT" && ok "gate: failed oneshot fails fast (budget 60 s)" || ko "gate: fail fast" "$(grep 'health:' <<<"$OUT")"
 
 # candidate rejected by findmnt --verify -> exit 4, nothing touched
 fresh; S0="$(snap)"; touch "$E/s/verify-fail"; run apply --yes

@@ -1,0 +1,63 @@
+# promtool unit tests for mounts.rules.yml. Run: promtool test rules mounts.tests.yml
+# Time 0 = 1970-01-01T00:00Z; 1m input intervals.
+rule_files:
+  - mounts.rules.yml
+evaluation_interval: 1m
+tests:
+  - name: "findings fire after 30m with the count, per host; a host with 0 never fires"
+    interval: 1m
+    input_series:
+      - series: 'pft_mounts_findings{host="validator"}'
+        values: '12x40'
+      - series: 'pft_mounts_findings{host="sentry"}'
+        values: '0x40'
+    alert_rule_test:
+      - eval_time: 29m
+        alertname: PFTMountHardeningDrift
+        exp_alerts: []
+      - eval_time: 31m
+        alertname: PFTMountHardeningDrift
+        exp_alerts:
+          - exp_labels: {severity: warning, host: validator}
+            exp_annotations:
+              summary: "12 host mount check(s) FAIL/WARN on validator"
+              description: "The hourly pft-mounts audit graded a mount option missing live or not persistent: /tmp, /var/tmp or /dev/shm without nodev/nosuid/noexec, /proc without hidepid, the postfiatd data dir without nodev/nosuid, or apt's TempDir on a noexec mount. Run `sudo pft-mounts audit` to list them; `sudo pft-mounts plan` shows what apply would set."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/mounts/README.md#alert"
+  - name: "resolves once the next audit (after apply) reports 0"
+    interval: 1m
+    input_series:
+      - series: 'pft_mounts_findings{host="sentry"}'
+        values: '1x35 0x10'
+    alert_rule_test:
+      - eval_time: 33m
+        alertname: PFTMountHardeningDrift
+        exp_alerts:
+          - exp_labels: {severity: warning, host: sentry}
+            exp_annotations:
+              summary: "1 host mount check(s) FAIL/WARN on sentry"
+              description: "The hourly pft-mounts audit graded a mount option missing live or not persistent: /tmp, /var/tmp or /dev/shm without nodev/nosuid/noexec, /proc without hidepid, the postfiatd data dir without nodev/nosuid, or apt's TempDir on a noexec mount. Run `sudo pft-mounts audit` to list them; `sudo pft-mounts plan` shows what apply would set."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/mounts/README.md#alert"
+      - eval_time: 38m
+        alertname: PFTMountHardeningDrift
+        exp_alerts: []
+  - name: "a bad audit fixed within 30m does not page"
+    interval: 1m
+    input_series:
+      - series: 'pft_mounts_findings{host="validator"}'
+        values: '0x5 2x20 0x30'
+    alert_rule_test:
+      - eval_time: 26m
+        alertname: PFTMountHardeningDrift
+        exp_alerts: []
+      - eval_time: 50m
+        alertname: PFTMountHardeningDrift
+        exp_alerts: []
+  - name: "per-check series alone (no findings gauge) never fire"
+    interval: 1m
+    input_series:
+      - series: 'pft_mounts_check{host="validator",check="/tmp:noexec",cis="1.1.2.1.4",status="FAIL"}'
+        values: '0x40'
+    alert_rule_test:
+      - eval_time: 35m
+        alertname: PFTMountHardeningDrift
+        exp_alerts: []

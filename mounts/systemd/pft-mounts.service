@@ -1,0 +1,37 @@
+[Unit]
+Description=pft-mounts audit: host mount options (/tmp, /var/tmp, /dev/shm, /proc hidepid, postfiatd data dir)
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/mounts
+After=docker.service
+
+[Service]
+Type=oneshot
+# exit 1 = FAIL/WARN findings (exported as metrics), not a unit failure; exit 2 (cannot read a mount table) fails it
+SuccessExitStatus=1
+# reads the HOST table from /proc/1/mountinfo, so this unit's own private /tmp and read-only binds do not count
+ExecStart=/usr/local/bin/pft-mounts audit --textfile
+ReadWritePaths=/var/lib/pft-exporter/textfile
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+# AF_UNIX: docker.sock (docker inspect) only; no network
+RestrictAddressFamilies=AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+# CAP_SYS_PTRACE: /proc/1 and postfiatd's /proc/PID stay visible to this unit once hidepid=invisible is live
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE
+UMask=0022
+Nice=10
+TimeoutStartSec=2min
