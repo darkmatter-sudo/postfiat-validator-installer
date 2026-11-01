@@ -40,6 +40,7 @@ expect "bare: hidepid off" proc:hidepid FAIL 'off'
 expect "bare: data on root fs" data:mount INFO 'docker-volume:postfiatd_postfiatd-data.*root fs'
 expect "bare: data nodev" data:nodev FAIL 'inside postfiatd'
 expect "bare: data nosuid" data:nosuid FAIL
+expect "bare: apt TempDir not needed yet" apt:tempdir INFO 'unset; /tmp allows exec'
 grep -q 'RESULT: FAIL - 12 finding' <<<"$OUT" && ok "bare: 12 findings" || ko "bare: count" "$(tail -1 <<<"$OUT")"
 grep -q '/var/lib/docker' <<<"$OUT" && ko "bare: host path printed" "$(grep /var/lib/docker <<<"$OUT")" || ok "bare: no host volume path in output"
 CODES="$(grep -oE '\] [0-9.]+ ' <<<"$OUT" | awk '{print $2}' | sort -u | paste -sd' ' -)"
@@ -147,6 +148,19 @@ fresh; echo 0 > "$E/s/pid"; run audit
 expect "data: container down INFO" data:mount INFO 'skipped'
 [ -z "$(line data:nodev)" ] && ok "data: no data checks when skipped" || ko "data: checks when skipped" "$OUT"
 
+# apt TempDir: noexec /tmp without it, a TempDir that is missing or on a noexec mount, a later conf part overriding
+fresh; mi_add '40 22 8:1 /tmp /tmp rw,nosuid,nodev,noexec,relatime shared:20 - ext4 /dev/sda1 rw'; run audit
+expect "apt: noexec /tmp, TempDir unset FAIL" apt:tempdir FAIL 'exit 126'
+echo 'APT::ExtractTemplates::TempDir "/srv/apt-x";' > "$E/root/etc/apt/apt.conf.d/50pft-mounts"; run audit
+expect "apt: TempDir missing FAIL" apt:tempdir FAIL 'does not exist'
+mkdir -p "$E/root/var/tmp/apt-x"; echo 'APT::ExtractTemplates::TempDir "/var/tmp/apt-x";' > "$E/root/etc/apt/apt.conf.d/50pft-mounts"
+mi_add '41 22 8:1 /var/tmp /var/tmp rw,nosuid,nodev,noexec,relatime shared:21 - ext4 /dev/sda1 rw'; run audit
+expect "apt: TempDir on a noexec mount FAIL" apt:tempdir FAIL 'noexec mount /var/tmp'
+mkdir -p "$E/root/srv/apt-x"; echo 'APT::ExtractTemplates::TempDir "/srv/apt-x";' > "$E/root/etc/apt/apt.conf.d/50pft-mounts"; run audit
+expect "apt: TempDir on an exec mount PASS" apt:tempdir PASS 'exec mount /\)'
+mkdir -p "$E/root/tmp"; echo 'APT::ExtractTemplates::TempDir "/tmp";' > "$E/root/etc/apt/apt.conf.d/99local"; run audit
+expect "apt: a later conf part wins" apt:tempdir FAIL 'TempDir /tmp is on noexec mount /tmp'
+
 # --- plan -------------------------------------------------------------------------------------------------
 fresh; run plan
 [ "$RC" = 0 ] && grep -q '/tmp /tmp none bind,nodev,nosuid,noexec 0 0' <<<"$OUT" && grep -q '<docker-volume:postfiatd_postfiatd-data> <docker-volume:postfiatd_postfiatd-data> none bind,nodev,nosuid' <<<"$OUT" \
@@ -173,15 +187,26 @@ grep -q 'nsenter -t 4242 -m -- mount --options-mode ignore -o remount,bind,rw,re
   && ok "apply: container remount inside postfiatd's namespace" || ko "apply: nsenter" "$(grep nsenter "$E/s/calls")"
 grep -q 'systemctl start pft-heartbeat.service' "$E/s/calls" && grep -q 'systemctl start pft-statewatch@postfiatd.service' "$E/s/calls" \
   && ok "apply: gate re-ran the timer oneshots" || ko "apply: gate units" "$(grep 'systemctl start' "$E/s/calls")"
+[ "$(sed -n 2p "$E/root/etc/apt/apt.conf.d/50pft-mounts")" = 'APT::ExtractTemplates::TempDir "/var/lib/pft-mounts/apt-tmp";' ] \
+  && [ "$(stat -c %a "$E/root/var/lib/pft-mounts/apt-tmp")" = 700 ] && [ "$(stat -c %a "$E/root/etc/apt/apt.conf.d/50pft-mounts")" = 644 ] \
+  && ok "apply: apt TempDir conf 0644 + dir 0700" || ko "apply: apt conf" "$(ls -lR "$E/root/etc/apt" "$E/root/var/lib/pft-mounts")"
+grep -n 'live: apt TempDir' <<<"$OUT" | grep -q '' && [ "$(grep -n 'live: apt TempDir' <<<"$OUT" | cut -d: -f1)" -lt "$(grep -n 'live: /tmp ' <<<"$OUT" | cut -d: -f1)" ] \
+  && ok "apply: apt conf written before the first remount" || ko "apply: apt order" "$OUT"
 run audit
 [ "$RC" = 0 ] && grep -q 'RESULT: PASS' <<<"$OUT" && ok "after apply: audit PASS (exit 0)" || ko "after apply: audit" "$OUT"
 C0="$(calls '^mount')"; run apply --yes
 [ "$RC" = 0 ] && grep -q 'already applied' <<<"$OUT" && [ "$(calls '^mount')" = "$C0" ] && ok "apply again: idempotent, no mount calls" || ko "apply again" "$OUT"
 run rollback --yes
 [ "$RC" = 0 ] && cmp -s "$E/root/etc/fstab" "$E/s/fstab.orig" && cmp -s "$E/root/proc/self/mountinfo" "$E/s/mi.orig" && cmp -s "$E/root/proc/4242/mountinfo" "$E/s/cmi.orig" \
-  && ok "rollback: fstab + both mount tables byte-identical to before apply" || ko "rollback: rc=$RC" "$OUT"$'\n'"$(diff "$E/s/mi.orig" "$E/root/proc/self/mountinfo"; diff "$E/s/cmi.orig" "$E/root/proc/4242/mountinfo")"
+  && [ ! -e "$E/root/etc/apt/apt.conf.d/50pft-mounts" ] && [ ! -e "$E/root/var/lib/pft-mounts/apt-tmp" ] \
+  && ok "rollback: fstab + both mount tables byte-identical to before apply, apt conf + dir removed" || ko "rollback: rc=$RC" "$OUT"$'\n'"$(diff "$E/s/mi.orig" "$E/root/proc/self/mountinfo"; diff "$E/s/cmi.orig" "$E/root/proc/4242/mountinfo")"
 run rollback
 [ "$RC" = 4 ] && ok "rollback: refuses without --yes" || ko "rollback: no --yes rc=$RC" "$OUT"
+
+# a pre-existing 50pft-mounts (e.g. edited by hand) comes back byte-identical after rollback
+fresh; printf '// local\nAPT::ExtractTemplates::TempDir "/srv/x";\n' > "$E/root/etc/apt/apt.conf.d/50pft-mounts"; cp "$E/root/etc/apt/apt.conf.d/50pft-mounts" "$E/s/apt.orig"
+run apply --yes; R1=$RC; run rollback --yes
+[ "$R1" = 0 ] && [ "$RC" = 0 ] && cmp -s "$E/root/etc/apt/apt.conf.d/50pft-mounts" "$E/s/apt.orig" && ok "rollback: pre-existing apt conf restored byte-identical" || ko "rollback: apt restore ($R1/$RC)" "$OUT"
 
 # re-apply over an existing (older) managed block: still exactly one block, nothing else touched
 fresh; printf '%s\n' "# BEGIN pft-mounts (managed; edit with pft-mounts, see mounts/README.md)" '/tmp /tmp none bind,nodev 0 0' '# END pft-mounts' >> "$E/root/etc/fstab"
@@ -194,7 +219,8 @@ gate_case() { # NAME SETUP
   eval "$2"
   run apply --yes
   if [ "$RC" = 1 ] && grep -q 'automatic rollback' <<<"$OUT" && cmp -s "$E/root/etc/fstab" "$E/s/fstab.orig" \
-     && cmp -s "$E/root/proc/self/mountinfo" "$E/s/mi.orig" && cmp -s "$E/root/proc/4242/mountinfo" "$E/s/cmi.orig"; then ok "gate: $1 -> rolled back"
+     && cmp -s "$E/root/proc/self/mountinfo" "$E/s/mi.orig" && cmp -s "$E/root/proc/4242/mountinfo" "$E/s/cmi.orig" \
+     && [ ! -e "$E/root/etc/apt/apt.conf.d/50pft-mounts" ]; then ok "gate: $1 -> rolled back"
   else ko "gate: $1 (rc=$RC)" "$OUT"; fi
   unset PFT_MOUNTS_INJECT FAKE_FAIL FAKE_NS_FAIL
 }

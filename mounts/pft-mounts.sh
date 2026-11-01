@@ -23,6 +23,9 @@
 #               data dir         host: self-bind of the volume's _data dir with nodev,nosuid (future container
 #                                starts inherit it); container: the same remount inside postfiatd's mount
 #                                namespace (nsenter -m), so the running node gets it now.
+#             Before the remounts: /etc/apt/apt.conf.d/50pft-mounts sets APT::ExtractTemplates::TempDir to APT_TMP
+#             (0700, on an exec mount), because dpkg-preconfigure runs package config scripts from that directory
+#             and a noexec /tmp makes them fail (exit 126) during apt upgrades.
 #          4. health gate: postfiatd StartedAt unchanged, server_state full, :PEER_PORT listening, sshd config
 #             valid + :22 listening + a new SSH handshake, every GATE_UNITS oneshot re-run with Result=success and
 #             every long-running pft unit still active. A miss -> automatic rollback (exit 1; 5 if that fails).
@@ -32,7 +35,7 @@
 # Exit codes: 0 PASS / applied, 1 findings / rolled back, 2 error, 3 usage, 4 refused (not root, no --yes,
 #             candidate fstab invalid), 5 rollback failed.
 # Env: CONTAINER (auto: postfiatd or postfiatd-sentry)  DATA_DEST (/var/lib/postfiatd/db)  PEER_PORT (2559)
-#      PROC_GROUP (pft-procview)  HEALTH_BUDGET (300)  POLL_SEC (5)  BACKUP_DIR (/var/lib/pft-mounts)
+#      APT_TMP (/var/lib/pft-mounts/apt-tmp)  PROC_GROUP (pft-procview)  HEALTH_BUDGET (300)  POLL_SEC (5)  BACKUP_DIR (/var/lib/pft-mounts)
 #      GATE_UNITS (space-separated oneshot services re-run by the gate; default: the pft-*.service units with an
 #      active timer whose name matches GATE_PATTERN)  GATE_PATTERN (heartbeat|statewatch|resources|rulecheck|authwatch)
 #      Test hooks: PFT_MOUNTS_ROOT (path prefix for every file)  PFT_MOUNTS_DOCKER / _MOUNT / _NSENTER / _FINDMNT /
@@ -67,6 +70,8 @@ BACKUP_DIR="${BACKUP_DIR:-$R/var/lib/pft-mounts}"
 MOUNTINFO="$R/proc/self/mountinfo"
 TMPUNIT="$R/etc/systemd/system/tmp.mount"
 TMPWANT="$R/etc/systemd/system/local-fs.target.wants/tmp.mount"
+APT_TMP="${APT_TMP:-/var/lib/pft-mounts/apt-tmp}"
+APTCONF="$R/etc/apt/apt.conf.d/50pft-mounts"
 BEGIN_MARK="# BEGIN pft-mounts (managed; edit with pft-mounts, see mounts/README.md)"
 END_MARK="# END pft-mounts"
 
@@ -145,6 +150,13 @@ persist_opts() {
   return 0
 }
 
+apt_tempdir() { # last APT::ExtractTemplates::TempDir in apt.conf + apt.conf.d (apt reads the parts in lexical order)
+  local f
+  for f in "$R/etc/apt/apt.conf.d/"* "$R/etc/apt/apt.conf"; do
+    [ -f "$f" ] && sed -nE 's#^[ \t]*APT::ExtractTemplates::TempDir[ \t]+"([^"]+)";.*#\1#p' "$f"
+  done | tail -1
+}
+
 data_source() { # CONTAINER -> host path of the volume/bind mounted at DATA_DEST
   "$DOCKER" inspect -f "{{range .Mounts}}{{if eq .Destination \"$DATA_DEST\"}}{{.Source}}{{end}}{{end}}" "$1" 2>/dev/null
 }
@@ -184,6 +196,18 @@ audit_checks() {
       c=$((c + 1))
     done
   done <<<"$TARGETS"
+
+  # apt: with noexec /tmp, dpkg-preconfigure must extract config scripts somewhere executable
+  local ad am
+  ad="$(apt_tempdir)"
+  if [ -n "$ad" ]; then
+    am="$(mi_covering "$mi" "$ad")"
+    if [ ! -d "$R$ad" ]; then res FAIL n/a apt:tempdir "APT::ExtractTemplates::TempDir $ad does not exist (package config scripts fail)"
+    elif has_opt "$(cut -f2 <<<"$am")" noexec; then res FAIL n/a apt:tempdir "APT::ExtractTemplates::TempDir $ad is on noexec mount $(cut -f1 <<<"$am")"
+    else res PASS n/a apt:tempdir "APT::ExtractTemplates::TempDir $ad (exec mount $(cut -f1 <<<"$am"))"; fi
+  elif has_opt "$(cut -f2 <<<"$(mi_top "$mi" /tmp)")" noexec; then
+    res FAIL n/a apt:tempdir "/tmp is noexec and APT::ExtractTemplates::TempDir is unset: package config scripts fail (exit 126)"
+  else res INFO n/a apt:tempdir "unset; /tmp allows exec (apply sets it before making /tmp noexec)"; fi
 
   # /proc hidepid (not in the CIS benchmark; hides other users' processes and command lines from local accounts)
   top="$(mi_top "$mi" /proc)"
@@ -280,6 +304,7 @@ do_plan() {
   block "$src" "${gid:-<gid of $PROC_GROUP, created by apply>}" | sed -E 's#/var/lib/docker/volumes/([^/ ]+)/_data#<docker-volume:\1>#g; s/^/  /'
   echo "live:"
   echo "  /tmp, /var/tmp: self-bind if not a mount, then remount,bind,nodev,nosuid,noexec"
+  echo "  apt: /etc/apt/apt.conf.d/50pft-mounts APT::ExtractTemplates::TempDir \"$APT_TMP\" (0700)"
   echo "  /dev/shm: remount,nodev,nosuid,noexec   /proc: remount,hidepid=invisible,gid=<$PROC_GROUP>"
   [ -n "$src" ] && echo "  $(label_path "$src"): self-bind + remount,bind,$DATA_OPTS on the host and inside $c ($DATA_DEST)"
   local cf; cf="$(managed_conflicts "$src")"
@@ -339,6 +364,13 @@ sha() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
 live_apply() { # SRC PID GID: records every step in live.state for rollback
   local src="$1" pid="$2" gid="$3" t co po st="$BACKUP_DIR/live.state"
   : > "$st"
+  # apt first: from the first remount on, dpkg-preconfigure must not need /tmp
+  if [ -f "$APTCONF" ]; then cp -p "$APTCONF" "$BACKUP_DIR/aptconf.orig" || return 1; echo "aptconf saved" >> "$st"
+  else echo "aptconf new" >> "$st"; fi
+  mkdir -p "$R$APT_TMP" && chmod 0700 "$R$APT_TMP" || return 1
+  printf '// managed by pft-mounts: noexec /tmp, so dpkg-preconfigure extracts config scripts here\nAPT::ExtractTemplates::TempDir "%s";\n' "$APT_TMP" > "$APTCONF" \
+    && chmod 0644 "$APTCONF" || return 1
+  echo "$(ts) live: apt TempDir $APT_TMP (0700)"
   for t in /tmp /var/tmp; do
     if is_mount "$t"; then echo "remount $t $(mi_top "$(mi_parse "$MOUNTINFO")" "$t" | cut -f2)" >> "$st"
     else "$MOUNT" --bind "$t" "$t" || return 1; echo "created $t" >> "$st"; fi
@@ -378,6 +410,8 @@ live_revert() { # undo live.state in reverse order
       remount) "$MOUNT" --options-mode ignore -o "remount,$( [ "$a" = /dev/shm ] || echo bind,)$(inverse "$b")" "$a" \
                  && echo "$(ts) rollback: $(label_path "$a") options back to $b" || rc=1 ;;
       proc)    "$MOUNT" --options-mode ignore -o "remount,$b,hidepid=off,gid=0" /proc && echo "$(ts) rollback: /proc hidepid=off (flags $b kept)" || rc=1 ;;
+      aptconf) if [ "$a" = saved ]; then cp -p "$BACKUP_DIR/aptconf.orig" "$APTCONF" && echo "$(ts) rollback: apt conf restored" || rc=1
+               elif rm -f "$APTCONF"; then rmdir "$R$APT_TMP" 2>/dev/null; echo "$(ts) rollback: apt conf removed"; else rc=1; fi ;;
       container) "$NSENTER" -t "$a" -m -- mount --options-mode ignore -o "remount,bind,$(inverse "${b#* }")" "${b%% *}" \
                    && echo "$(ts) rollback: ${b%% *} back to ${b#* } inside the container" || rc=1 ;;
     esac

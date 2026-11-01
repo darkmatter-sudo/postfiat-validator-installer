@@ -23,7 +23,7 @@ LABEL=UEFI	/boot/efi	vfat	umask=0077	0 1'
 
 mk_env() {
   local d="$1"
-  mkdir -p "$d/root/etc/systemd/system" "$d/root/proc/self" "$d/root/proc/4242" "$d/s" "$d/bin"
+  mkdir -p "$d/root/etc/systemd/system" "$d/root/etc/apt/apt.conf.d" "$d/root/proc/self" "$d/root/proc/4242" "$d/s" "$d/bin"
   printf '%s\n' "$HOST_MI" > "$d/root/proc/self/mountinfo"
   printf '%s\n' "$CONT_MI" > "$d/root/proc/4242/mountinfo"
   printf '%s\n' "$FSTAB_BARE" > "$d/root/etc/fstab"
