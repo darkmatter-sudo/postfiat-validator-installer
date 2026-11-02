@@ -40,6 +40,7 @@ import hashlib
 import json
 import random
 import sys
+import time
 import urllib.request
 
 FEE_SETTINGS = "4BC50C9B0D8515D3EAAE1E74B29A95804346C491EE1A95BF25E4AAB854A6A651"  # keylet::fees(), space 'e'
@@ -229,6 +230,36 @@ def rpc(url, method, params):
         return json.loads(r.read(1 << 22))["result"]
 
 
+RETRY_DELAYS = (
+    2,
+    4,
+    8,
+)  # the public RPC sometimes answers lgrNotFound for a ledger it has, then succeeds
+
+
+def rpc_retry(url, method, params, want, retries):
+    """rpc() until the result has key `want`; every retry is printed and counted in retries[0]."""
+    for n, delay in enumerate((*RETRY_DELAYS, None)):
+        try:
+            res = rpc(url, method, params)
+            if want in res:
+                return res
+            why = res.get("error", f"no {want} in the answer")
+        except (OSError, ValueError, KeyError) as e:
+            why = f"{type(e).__name__}: {str(e)[:80]}"
+        if delay is None:
+            raise ValueError(
+                f"{method} {params.get('ledger_index')}: {why} after {n + 1} tries"
+            )
+        retries[0] += 1
+        print(
+            f"RETRY    {method} ledger {params.get('ledger_index')}: {why}; again in {delay}s",
+            flush=True,
+        )
+        time.sleep(delay)
+    return None
+
+
 def base_fee_of(node):
     if node.get("BaseFeeDrops") is not None:
         return int(node["BaseFeeDrops"])
@@ -309,13 +340,18 @@ def crosscheck(a):
         return 0 if fails == 0 else 1
     sample = draw(rows, a.sample, a.seed)
     entries = []
+    retries = [0]
     for s in sample:
         try:
-            led = rpc(a.rpc, "ledger", {"ledger_index": s["ledger"] - 1})["ledger"]
-            fs = rpc(
+            led = rpc_retry(
+                a.rpc, "ledger", {"ledger_index": s["ledger"] - 1}, "ledger", retries
+            )["ledger"]
+            fs = rpc_retry(
                 a.rpc,
                 "ledger_entry",
                 {"index": FEE_SETTINGS, "ledger_index": s["ledger"] - 1},
+                "node",
+                retries,
             )["node"]
             ans = {
                 "ledger_index": int(led["ledger_index"]),
@@ -352,13 +388,15 @@ def crosscheck(a):
         "history_sha256": history_digest(rows),
         "ok": n_ok,
         "checks": n_all,
+        "retries": retries[0],
         "entries": entries,
     }
     with open(a.json, "w", encoding="utf-8") as f:
         json.dump(out, f, indent=1, sort_keys=True)
         f.write("\n")
     print(
-        f"RESULT {n_ok}/{n_all} OK ({len(entries)} samples{', NEGATIVE control' if a.negative else ''})"
+        f"RESULT {n_ok}/{n_all} OK ({len(entries)} samples, {retries[0]} RPC retries"
+        f"{', NEGATIVE control' if a.negative else ''})"
     )
     if a.negative:
         return 0 if n_ok == 0 else 1

@@ -181,6 +181,9 @@ check("window end is exclusive", rf.read_history([hist], T0, T0 + 12)[0] == [])
 class Stub(BaseHTTPRequestHandler):
     truth: ClassVar[dict] = {}
     fail: ClassVar[set] = set()
+    flaky: ClassVar[
+        dict
+    ] = {}  # ledger -> number of lgrNotFound answers before the real one
 
     def log_message(self, *a):
         pass
@@ -189,7 +192,10 @@ class Stub(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         p = body["params"][0]
         idx = p["ledger_index"]
-        if idx in Stub.fail:
+        if Stub.flaky.get(idx, 0) > 0:
+            Stub.flaky[idx] -= 1
+            res = {"error": "lgrNotFound", "status": "error"}
+        elif idx in Stub.fail:
             res = {"error": "lgrNotFound", "status": "error"}
         elif body["method"] == "ledger":
             ts = Stub.truth[idx]
@@ -229,7 +235,7 @@ base = [
 rc, out = run(base + ["--json", CX])
 cx = rjson(CX)
 check("crosscheck exit 0, 20/20 OK", rc == 0 and cx["ok"] == 20 and cx["checks"] == 20)
-check("crosscheck prints RESULT 20/20 OK", "RESULT 20/20 OK (10 samples)" in out)
+check("crosscheck prints RESULT 20/20 OK", "RESULT 20/20 OK (10 samples, 0 RPC retries)" in out)
 rc, out = run(["crosscheck", "--offline", CX, "--history", hist])
 check(
     "offline re-check exit 0, 0 differences",
@@ -293,11 +299,24 @@ check(
     "close lag 5 s > --max-lag 4 -> exit 1, 10/20 OK",
     rc == 1 and "RESULT 10/20 OK" in out,
 )
+rf.RETRY_DELAYS = (0, 0, 0)  # no real sleeps in the suite
+Stub.flaky = {cx["entries"][1]["ledger"] - 1: 2}
+rc, out = run([*base, "--json", C2])
+c2 = rjson(C2)
+check(
+    "transient lgrNotFound x2: exit 0, 20/20 OK, 2 retries printed and recorded",
+    rc == 0
+    and c2["ok"] == 20
+    and c2["retries"] == 2
+    and out.count("RETRY    ledger") == 2,
+)
 Stub.fail = {cx["entries"][0]["ledger"] - 1}
 rc, out = run(base + ["--json", C2])
 check(
     "RPC error on one sample -> exit 1, MISMATCH rpc",
-    rc == 1 and ": rpc: " in out and "RESULT 18/19 OK" in out,
+    rc == 1
+    and ": rpc: " in out
+    and "RESULT 18/19 OK (10 samples, 3 RPC retries)" in out,
 )
 Stub.fail = set()
 srv.shutdown()
