@@ -16,7 +16,8 @@
 #          One line per check: PASS / FAIL (live option missing) / WARN (live OK but not persistent:
 #          lost at the next boot; or a duplicate fstab target) / INFO. Persistence is read from /etc/fstab, or for
 #          /tmp from an enabled /etc/systemd/system/tmp.mount (that unit file overrides an fstab line).
-#  apply   1. writes a marked block (# BEGIN pft-mounts ... # END pft-mounts) to a candidate fstab, keeping every
+#  apply   0. refuses (exit 4) unless a pft-maint window is active (`pft-maint active` exit 0), like rollback.
+#          1. writes a marked block (# BEGIN pft-mounts ... # END pft-mounts) to a candidate fstab, keeping every
 #             other line byte-for-byte, and refuses (exit 4) unless `findmnt --verify --tab-file` accepts it.
 #          2. backs the old fstab up, installs the candidate, `systemctl daemon-reload`.
 #          3. live, no reboot, no container restart:
@@ -47,7 +48,7 @@
 #      GATE_UNITS (space-separated oneshot services re-run by the gate; default: the pft-*.service units with an
 #      active timer whose name matches GATE_PATTERN)  GATE_PATTERN (heartbeat|statewatch|resources|rulecheck|authwatch|mounts)
 #      Test hooks: PFT_MOUNTS_ROOT (path prefix for every file)  PFT_MOUNTS_DOCKER / _MOUNT / _NSENTER / _FINDMNT /
-#      _SYSTEMCTL / _SS / _SSHD / _KEYSCAN / _GROUPADD / _GETENT / _RPC (commands)  PFT_MOUNTS_INJECT (health)
+#      _SYSTEMCTL / _SS / _SSHD / _KEYSCAN / _GROUPADD / _GETENT / _RPC / _MAINT (commands)  PFT_MOUNTS_INJECT (health)
 
 # jq programs are single-quoted on purpose. "A && B || C" is intended where C only reports or returns.
 # shellcheck disable=SC2016,SC2015
@@ -67,6 +68,7 @@ KEYSCAN="${PFT_MOUNTS_KEYSCAN:-ssh-keyscan}"
 GROUPADD="${PFT_MOUNTS_GROUPADD:-groupadd}"
 GETENT="${PFT_MOUNTS_GETENT:-getent}"
 INJECT="${PFT_MOUNTS_INJECT:-}"
+MAINT="${PFT_MOUNTS_MAINT:-pft-maint}"
 DATA_DEST="${DATA_DEST:-/var/lib/postfiatd/db}"
 PEER_PORT="${PEER_PORT:-2559}"
 PROC_GROUP="${PROC_GROUP:-pft-procview}"
@@ -477,6 +479,7 @@ do_apply() {
   c="$(detect_container)"; src="$(data_source "$c")"; pid="$(container_pid "$c")"
   [ -n "$src" ] || echo "$(ts) apply: $c has no $DATA_DEST mount; data dir step skipped"
   do_plan > /dev/null || { do_plan; return 4; }
+  [ "$dry" = 1 ] || maint_window apply || return 4 # before the first change (groupadd, backup dir)
   gid="$(proc_gid)"
   if [ "$HIDEPID" = 1 ] && [ -z "$gid" ]; then
     [ "$dry" = 1 ] && gid="<new>" || { "$GROUPADD" --system "$PROC_GROUP" || die "groupadd $PROC_GROUP failed" 2; gid="$(proc_gid)"; echo "$(ts) apply: created system group $PROC_GROUP (gid $gid, no members)"; }
@@ -488,7 +491,7 @@ do_apply() {
     echo "$(ts) apply: REFUSED - findmnt --verify rejects the candidate fstab (installed fstab untouched)"; sed 's/^/  /' "$BACKUP_DIR/verify.out"; return 4
   fi
   echo "$(ts) apply: candidate fstab verified ($(grep -c . "$BACKUP_DIR/verify.out") findmnt lines, 0 errors)"
-  if [ "$dry" = 1 ]; then diff -u "$FSTAB" "$cand" | sed -E 's#/var/lib/docker/volumes/([^/ ]+)/_data#<docker-volume:\1>#g'; echo "$(ts) apply: dry run, nothing changed"; return 0; fi
+  if [ "$dry" = 1 ]; then diff -u --label /etc/fstab --label fstab.candidate "$FSTAB" "$cand" | sed -E 's#/var/lib/docker/volumes/([^/ ]+)/_data#<docker-volume:\1>#g'; echo "$(ts) apply: dry run, nothing changed"; return 0; fi
   if cmp -s "$FSTAB" "$cand" && audit_quiet; then echo "$(ts) apply: already applied (fstab block current, audit PASS) - nothing to do"; return 0; fi
   before="$(started_at "$c")"; daemons="$(daemon_units)"
   b="$BACKUP_DIR/fstab.$(date -u +%Y%m%dT%H%M%SZ)"
@@ -503,6 +506,11 @@ do_apply() {
   fi
   echo "$(ts) apply: done"
 }
+maint_window() { # WHAT -> 0 if a pft-maint window is active; planned mount changes run inside one
+  "$MAINT" active >/dev/null 2>&1 && { echo "$(ts) $1: pft-maint window active"; return 0; }
+  echo "$(ts) $1: REFUSED - no active pft-maint window (sudo pft-maint start --ttl 30m --reason ...); nothing changed"
+  return 1
+}
 audit_quiet() { RESULTS=""; FINDINGS=0; audit_checks; [ "$FINDINGS" = 0 ]; }
 
 do_rollback() {
@@ -510,6 +518,7 @@ do_rollback() {
   [ "$(id -u)" = 0 ] || [ -n "$R" ] || die "rollback needs root" 4
   b="$(find "$BACKUP_DIR" -maxdepth 1 -name 'fstab.2*' 2>/dev/null | sort | tail -1)"
   [ -n "$b" ] || die "no fstab backup in $BACKUP_DIR" 2
+  maint_window rollback || return 4
   c="$(detect_container)"; before="$(started_at "$c")"; daemons="$(daemon_units)"
   live_revert || return 5
   restore_fstab "$b" || return 5

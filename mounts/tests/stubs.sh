@@ -112,6 +112,11 @@ B
 #!/usr/bin/env bash
 if "$STUB_BIN/hardened"; then cat "$STUB_S/state"; else echo full; fi
 B
+  cat > "$d/bin/pft-maint" <<'B'
+#!/usr/bin/env bash
+echo "pft-maint $*" >> "$STUB_S/calls"
+[ "$1" = active ] && [ ! -f "$STUB_S/no-window" ]
+B
   chmod +x "$d/bin/"*
 }
 
@@ -122,7 +127,7 @@ use_env() { # DIR: point the tool at the fake host
   export PFT_MOUNTS_UMOUNT="$d/bin/umount" PFT_MOUNTS_NSENTER="$d/bin/nsenter" PFT_MOUNTS_FINDMNT="$d/bin/findmnt"
   export PFT_MOUNTS_SYSTEMCTL="$d/bin/systemctl" PFT_MOUNTS_SS="$d/bin/ss" PFT_MOUNTS_SSHD="$d/bin/sshd"
   export PFT_MOUNTS_KEYSCAN="$d/bin/ssh-keyscan" PFT_MOUNTS_GETENT="$d/bin/getent" PFT_MOUNTS_GROUPADD="$d/bin/groupadd"
-  export PFT_MOUNTS_RPC="$d/bin/rpc" CONTAINER=postfiatd HEALTH_BUDGET=2 POLL_SEC=1 FAKE_CALLS="$d/s/calls"
+  export PFT_MOUNTS_RPC="$d/bin/rpc" PFT_MOUNTS_MAINT="$d/bin/pft-maint" CONTAINER=postfiatd HEALTH_BUDGET=2 POLL_SEC=1 FAKE_CALLS="$d/s/calls"
   export HIDEPID=1 # most cases cover the opt-in /proc path too; the default (HIDEPID unset/0) has its own cases
   unset PFT_MOUNTS_INJECT GATE_UNITS FAKE_FAIL FAKE_NS_FAIL
 }

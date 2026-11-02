@@ -211,6 +211,18 @@ fresh; run apply
 S0="$(snap)"; run apply --dry-run
 [ "$RC" = 0 ] && [ "$(snap)" = "$S0" ] && [ "$(calls '^mount\|^nsenter\|groupadd')" = 0 ] && grep -q '^+/tmp /tmp none bind' <<<"$OUT" \
   && ok "apply --dry-run: diff shown, nothing changed" || ko "apply --dry-run" "$OUT"
+grep -qx -- '--- /etc/fstab' <<<"$OUT" && grep -qx -- '+++ fstab.candidate' <<<"$OUT" \
+  && ok "apply --dry-run: diff headers are fixed labels (no file times in the local timezone)" || ko "dry-run diff labels" "$(grep -E '^(---|\+\+\+) ' <<<"$OUT")"
+# no pft-maint window: apply and rollback refuse before any change (dry-run needs none)
+touch "$E/s/no-window"; S0="$(snap)"; run apply --yes
+[ "$RC" = 4 ] && grep -q 'apply: REFUSED - no active pft-maint window' <<<"$OUT" && [ "$(snap)" = "$S0" ] \
+  && [ "$(calls '^mount\|^nsenter\|groupadd\|daemon-reload')" = 0 ] && [ ! -e "$E/root/etc/apt/apt.conf.d/50pft-mounts" ] && [ ! -e "$E/root/var/lib/pft-mounts/live.state" ] \
+  && ok "apply: refuses without a pft-maint window (exit 4, nothing changed)" || ko "apply: no window rc=$RC" "$OUT"
+run apply --dry-run; [ "$RC" = 0 ] && grep -q 'dry run, nothing changed' <<<"$OUT" && ok "apply --dry-run: needs no window" || ko "dry-run no window rc=$RC" "$OUT"
+rm -f "$E/s/no-window"; run apply --yes; R1=$RC; touch "$E/s/no-window"; S1="$(snap)"; run rollback --yes
+[ "$R1" = 0 ] && [ "$RC" = 4 ] && grep -q 'rollback: REFUSED - no active pft-maint window' <<<"$OUT" && [ "$(snap)" = "$S1" ] && [ -e "$E/root/var/lib/pft-mounts/live.state" ] \
+  && ok "rollback: refuses without a pft-maint window (exit 4, mounts and fstab kept)" || ko "rollback: no window ($R1/$RC)" "$OUT"
+rm -f "$E/s/no-window"; run rollback --yes; [ "$RC" = 0 ] && [ "$(snap)" = "$S0" ] && ok "rollback in a window: back to before apply" || ko "rollback window rc=$RC" "$OUT"
 
 fresh; cp "$E/root/etc/fstab" "$E/s/fstab.orig"; cp "$E/root/proc/1/mountinfo" "$E/s/mi.orig"; cp "$E/root/proc/4242/mountinfo" "$E/s/cmi.orig"
 run apply --yes

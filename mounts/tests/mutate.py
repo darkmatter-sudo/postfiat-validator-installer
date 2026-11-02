@@ -33,6 +33,10 @@ MUTANTS = [
     ("G13", "rollback: sha256 compare dropped", '[ "$(sha "$b")" = "$(sha "$FSTAB")" ] ||', 'true ||'),
     ("G14", "rollback: live.state replayed in apply order", 'done < <(tac "$st")', 'done < "$st"'),
     ("G15", "rollback: rollback failure not reported (exit 5)", 'health_gate "$before" "$c" "$daemons" rollback || return 5\n    return 1', 'health_gate "$before" "$c" "$daemons" rollback || return 1\n    return 1'),
+    ("W1", "apply: runs without a pft-maint window", '[ "$dry" = 1 ] || maint_window apply || return 4', 'true'),
+    ("W2", "rollback: runs without a pft-maint window", '  maint_window rollback || return 4\n', ''),
+    ("W3", "window check: exit status of pft-maint active ignored", '"$MAINT" active >/dev/null 2>&1 && {', '{ "$MAINT" active >/dev/null 2>&1; } ; {'),
+    ("W4", "dry run: diff headers carry file times (local timezone)", 'diff -u --label /etc/fstab --label fstab.candidate "$FSTAB"', 'diff -u "$FSTAB"'),
     # live steps
     ("L1", "live: /proc remount drops its per-mount flags", '"remount,$po,hidepid=invisible', '"remount,hidepid=invisible'),
     ("L2", "live: /tmp never self-bound", 'else "$MOUNT" --bind "$t" "$t" || return 1; echo "created $t"', 'else echo "created $t"'),

@@ -34,7 +34,7 @@ die() { log "ERROR: $*"; exit 1; }
 
 check() {
   log "promtool check rules"
-  "${DOCKER[@]}" run --rm -v "$HERE:/w:ro" -w /w --entrypoint promtool "$PROM_IMAGE" check rules postfiat.rules.yml divergence.rules.yml logship.rules.yml resources.rules.yml alertpath.rules.yml timesync.rules.yml statewatch.rules.yml vulnscan.rules.yml fleet.rules.yml rulecheck.rules.yml sshcrypto.rules.yml authwatch.rules.yml privesc.rules.yml feewatch.rules.yml
+  "${DOCKER[@]}" run --rm -v "$HERE:/w:ro" -w /w --entrypoint promtool "$PROM_IMAGE" check rules postfiat.rules.yml divergence.rules.yml logship.rules.yml resources.rules.yml alertpath.rules.yml timesync.rules.yml statewatch.rules.yml vulnscan.rules.yml fleet.rules.yml rulecheck.rules.yml sshcrypto.rules.yml authwatch.rules.yml privesc.rules.yml feewatch.rules.yml mounts.rules.yml
   log "promtool test rules"
   "${DOCKER[@]}" run --rm -v "$HERE:/w:ro" -w /w --entrypoint promtool "$PROM_IMAGE" test rules tests.yml divergence.tests.yml logship.tests.yml resources.tests.yml alertpath.tests.yml timesync.tests.yml statewatch.tests.yml vulnscan.tests.yml fleet.tests.yml rulecheck.tests.yml sshcrypto.tests.yml authwatch.tests.yml privesc.tests.yml
   log "promtool check config (prometheus.yml${SLO_DIR:+ + slo rules at /etc/pft-slo})"

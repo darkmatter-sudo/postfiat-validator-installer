@@ -56,6 +56,10 @@ proc /proc proc defaults,hidepid=invisible,gid=<pft-procview> 0 0      (HIDEPID=
 # END pft-mounts
 ```
 
+0. **Maintenance window.** `apply --yes` and `rollback --yes` refuse (exit 4, nothing changed) unless
+   `pft-maint active` exits 0, so a planned mount change always runs inside a window and the alerters on both
+   hosts suppress what it may trip. `--dry-run` needs no window. Open one with
+   `sudo pft-maint start --ttl 30m --reason "pft-mounts apply"`.
 1. **Refusals before any change.** An unmanaged fstab line for a managed target (exit 4: move it into the block by
    hand), or a candidate fstab that `findmnt --verify --tab-file` rejects (exit 4, installed fstab untouched).
 2. **fstab**: backup to `/var/lib/pft-mounts/fstab.<UTC>`, install the candidate, `systemctl daemon-reload`.
@@ -123,7 +127,7 @@ The sentry runs no Prometheus: its alert is evaluated on the validator from the 
 
 | what | command |
 |---|---|
-| lint | `shellcheck mounts/pft-mounts.sh mounts/install.sh mounts/tests/*.sh`, `ruff check mounts/tests` |
+| lint | `shellcheck mounts/pft-mounts.sh mounts/install.sh mounts/tests/*.sh mounts/drill/*.sh`, `ruff check mounts/tests` |
 | offline suite (fake hosts, no root, no real mounts) | `TMPDIR=$HOME/.cache/tmp bash mounts/tests/run-tests.sh` |
 | mutants (every gate, live step and grading edge case) | `TMPDIR=$HOME/.cache/tmp python3 -I mounts/tests/mutate.py -j 4` |
 | alert rule | `promtool test rules alerts/mounts.tests.yml` |
