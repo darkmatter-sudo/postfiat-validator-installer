@@ -1,0 +1,361 @@
+feewatch 24h baseline - 2026-11-02T00:22:39Z - Ubuntu 22.04.5 LTS - repo HEAD da24b1e6bbfb4d350cba8caf3827bb7dd3bbf868 (clean: yes)
+window [1793492460, 1793578860) = 2026-11-01T00:21:00Z .. 2026-11-02T00:21:00Z
+
+== 1. offline suites
+$ sha256sum feewatch/report_feewatch.py feewatch/tests/test_report_feewatch.py feewatch/pft-feewatch.sh feewatch/feewatch_parse.py feewatch/baseline/run-baseline.sh
+  c2639e394e08f521aa3fc80d6495e38f5c8ff718a913e6dc16c4bbdff8d57bd6  feewatch/report_feewatch.py
+  de26aeb5f81005ac25e331578bce35461eaaa7ba70645d3203100ce49ceaa86e  feewatch/tests/test_report_feewatch.py
+  0f8df9086646ef53ee5b9ba5d97535e9fc3789b469d7acb726fe44a88aebb051  feewatch/pft-feewatch.sh
+  4e53f6506e1672018cfaf172730b2a1469efa4865be6f5d7e7ac0e0efb01da65  feewatch/feewatch_parse.py
+  88241e571c78e96c6d71dc2e9d19cd907ed839d9a2925102e472e0498dff2d1f  feewatch/baseline/run-baseline.sh
+  (exit 0)
+$ python3 -u feewatch/tests/test_report_feewatch.py | tail -3
+  PASS direct: queue limit absent vs recorded 2000 -> exit 1
+  PASS direct: unknown container -> exit 1
+  RESULT: 37/37 passed
+  (exit 0)
+CHECK ok   report/crosscheck/direct suite passes (RESULT: 37/37 passed)
+$ bash feewatch/tests/run-tests.sh | tail -1
+  RESULT: 151/151 passed
+  (exit 0)
+CHECK ok   collector suite passes (RESULT: 151/151 passed)
+$ shellcheck feewatch/baseline/run-baseline.sh feewatch/pft-feewatch.sh && echo shellcheck clean
+  shellcheck clean
+  (exit 0)
+CHECK ok   shellcheck clean
+
+== 2. direct answers, fetched by hand from each node's admin RPC (container loopback)
+$ sudo -n docker exec postfiatd curl -s --max-time 10 -H Content-Type:application/json -d '{"method":"fee","params":[{}]}' http://<redacted-ip>:5005/ > $PRIV/validator-fee.json && sudo -n docker exec postfiatd curl -s --max-time 10 -H Content-Type:application/json -d '{"method":"server_info","params":[{}]}' http://<redacted-ip>:5005/ > $PRIV/validator-info.json && date +%s > $PRIV/validator-now
+  
+  (exit 0)
+CHECK ok   validator answers fetched
+$ R 'sudo -n docker exec -i postfiatd-sentry curl -s --max-time 10 -H Content-Type:application/json -d @- http://<redacted-ip>:5005/' <<< '{"method":"fee","params":[{}]}' > $PRIV/sentry-fee.json && R 'sudo -n docker exec -i postfiatd-sentry curl -s --max-time 10 -H Content-Type:application/json -d @- http://<redacted-ip>:5005/' <<< '{"method":"server_info","params":[{}]}' > $PRIV/sentry-info.json && date +%s > $PRIV/sentry-now
+  
+  (exit 0)
+CHECK ok   sentry answers fetched
+$ jq -e '.result.status == "success"' $PRIV/validator-fee.json $PRIV/validator-info.json && cp $PRIV/validator-fee.json feewatch/data/direct-validator-fee.json && jq '{result: {info: {load_factor: .result.info.load_factor}}}' $PRIV/validator-info.json > feewatch/data/direct-validator-info-reduced.json && cat feewatch/data/direct-validator-fee.json && echo && cat feewatch/data/direct-validator-info-reduced.json && echo now=$(cat $PRIV/validator-now)
+  true
+  true
+  {"result":{"current_ledger_size":"0","current_queue_size":"0","drops":{"base_fee":"10","median_fee":"5000","minimum_fee":"10","open_ledger_fee":"10"},"expected_ledger_size":"32","ledger_current_index":7684525,"levels":{"median_level":"128000","minimum_level":"256","open_ledger_level":"256","reference_level":"256"},"max_queue_size":"2000","status":"success"}}
+  
+  
+  {
+    "result": {
+      "info": {
+        "load_factor": 1
+      }
+    }
+  }
+  now=1793578979
+  (exit 0)
+CHECK ok   validator answers are status success, published copies written
+$ jq -e '.result.status == "success"' $PRIV/sentry-fee.json $PRIV/sentry-info.json && cp $PRIV/sentry-fee.json feewatch/data/direct-sentry-fee.json && jq '{result: {info: {load_factor: .result.info.load_factor}}}' $PRIV/sentry-info.json > feewatch/data/direct-sentry-info-reduced.json && cat feewatch/data/direct-sentry-fee.json && echo && cat feewatch/data/direct-sentry-info-reduced.json && echo now=$(cat $PRIV/sentry-now)
+  true
+  true
+  {"result":{"current_ledger_size":"0","current_queue_size":"0","drops":{"base_fee":"10","median_fee":"5000","minimum_fee":"10","open_ledger_fee":"10"},"expected_ledger_size":"32","ledger_current_index":7684525,"levels":{"median_level":"128000","minimum_level":"256","open_ledger_level":"256","reference_level":"256"},"max_queue_size":"2000","status":"success"}}
+  
+  
+  {
+    "result": {
+      "info": {
+        "load_factor": 1
+      }
+    }
+  }
+  now=1793578981
+  (exit 0)
+CHECK ok   sentry answers are status success, published copies written
+
+== 3. history files copied from both hosts (root-only dirs)
+$ sudo -n cat /var/lib/pft-feewatch/history-postfiatd.jsonl > feewatch/data/history-postfiatd.jsonl && R 'sudo -n cat /var/lib/pft-feewatch/history-postfiatd-sentry.jsonl' > feewatch/data/history-postfiatd-sentry.jsonl && wc -l feewatch/data/history-*.jsonl && sha256sum feewatch/data/history-*.jsonl
+     1444 feewatch/data/history-postfiatd-sentry.jsonl
+     1444 feewatch/data/history-postfiatd.jsonl
+     2888 total
+  83fd1e4322d61681e06664018187f277b257bc3bc2e57d4d170aad1ed60aee27  feewatch/data/history-postfiatd-sentry.jsonl
+  ad3a89dcf727695d0cd90c49653d1b01d42c1d4b18aa45ace8fff9f7ced34110  feewatch/data/history-postfiatd.jsonl
+  (exit 0)
+CHECK ok   history files copied
+$ grep -Ec '([0-9]{1,3}\.){3}[0-9]{1,3}|/home/|<user>' feewatch/data/history-*.jsonl feewatch/data/direct-*.json; echo positive control: $(echo 'x <redacted-ip> /home/x' | grep -Ec '([0-9]{1,3}\.){3}[0-9]{1,3}|/home/')
+  feewatch/data/history-postfiatd-sentry.jsonl:0
+  feewatch/data/history-postfiatd.jsonl:0
+  feewatch/data/direct-sentry-fee.json:0
+  feewatch/data/direct-sentry-info-reduced.json:0
+  feewatch/data/direct-validator-fee.json:0
+  feewatch/data/direct-validator-info-reduced.json:0
+  positive control: 1
+  (exit 0)
+CHECK ok   no IPv4 / home path / username in the published data (positive control matches 1)
+
+== 4. direct answers vs the newest history line
+$ python3 -u feewatch/report_feewatch.py direct --history feewatch/data/history-postfiatd.jsonl --container postfiatd --fee feewatch/data/direct-validator-fee.json --info feewatch/data/direct-validator-info-reduced.json --now $(cat $PRIV/validator-now)
+  OK       postfiatd ts=1793578946: history line age: latest history line 33s before the direct answer (0..90s)
+  OK       postfiatd ts=1793578946: base_fee: direct 10 vs recorded 10
+  OK       postfiatd ts=1793578946: max_queue_size: direct 2000 vs recorded 2000
+  OK       postfiatd ts=1793578946: expected_ledger_size: direct 32 vs recorded 32
+  OK       postfiatd ts=1793578946: reference_level: direct 256 vs recorded 256
+  OK       postfiatd ts=1793578946: minimum_level: direct 256 vs recorded 256
+  OK       postfiatd ts=1793578946: load_factor: direct 1.0 vs recorded 1.0
+  OK       postfiatd ts=1793578946: ledger_current_index: direct 7684525, recorded 7684514 (+11, allowed 0..18)
+  RESULT 8/8 OK (direct RPC vs latest history line)
+  (exit 0)
+CHECK ok   validator direct RPC = newest history line (RESULT 8/8 OK (direct RPC vs latest history line))
+$ python3 -u feewatch/report_feewatch.py direct --history feewatch/data/history-postfiatd.jsonl --container postfiatd --fee feewatch/data/direct-validator-fee.json --info feewatch/data/direct-validator-info-reduced.json --now $(cat $PRIV/validator-now) --negative
+  MISMATCH postfiatd ts=1793578946: history line age: latest history line -967s before the direct answer (0..90s)
+  MISMATCH postfiatd ts=1793578946: base_fee: direct 10 vs recorded 11
+  MISMATCH postfiatd ts=1793578946: max_queue_size: direct 2000 vs recorded 2001
+  MISMATCH postfiatd ts=1793578946: expected_ledger_size: direct 32 vs recorded 33
+  MISMATCH postfiatd ts=1793578946: reference_level: direct 256 vs recorded 257
+  MISMATCH postfiatd ts=1793578946: minimum_level: direct 256 vs recorded 257
+  MISMATCH postfiatd ts=1793578946: load_factor: direct 1.0 vs recorded 2.0
+  MISMATCH postfiatd ts=1793578946: ledger_current_index: direct 7684525, recorded 7685514 (+-989, allowed 0..-482)
+  RESULT 0/8 OK (direct RPC vs latest history line, NEGATIVE control)
+  (exit 0)
+CHECK ok   validator direct negative control: every check MISMATCH (RESULT 0/8 OK (direct RPC vs latest history line, NEGATIVE control))
+$ python3 -u feewatch/report_feewatch.py direct --history feewatch/data/history-postfiatd-sentry.jsonl --container postfiatd-sentry --fee feewatch/data/direct-sentry-fee.json --info feewatch/data/direct-sentry-info-reduced.json --now $(cat $PRIV/sentry-now)
+  OK       postfiatd-sentry ts=1793578946: history line age: latest history line 35s before the direct answer (0..90s)
+  OK       postfiatd-sentry ts=1793578946: base_fee: direct 10 vs recorded 10
+  OK       postfiatd-sentry ts=1793578946: max_queue_size: direct 2000 vs recorded 2000
+  OK       postfiatd-sentry ts=1793578946: expected_ledger_size: direct 32 vs recorded 32
+  OK       postfiatd-sentry ts=1793578946: reference_level: direct 256 vs recorded 256
+  OK       postfiatd-sentry ts=1793578946: minimum_level: direct 256 vs recorded 256
+  OK       postfiatd-sentry ts=1793578946: load_factor: direct 1.0 vs recorded 1.0
+  OK       postfiatd-sentry ts=1793578946: ledger_current_index: direct 7684525, recorded 7684513 (+12, allowed 0..19)
+  RESULT 8/8 OK (direct RPC vs latest history line)
+  (exit 0)
+CHECK ok   sentry direct RPC = newest history line (RESULT 8/8 OK (direct RPC vs latest history line))
+$ python3 -u feewatch/report_feewatch.py direct --history feewatch/data/history-postfiatd-sentry.jsonl --container postfiatd-sentry --fee feewatch/data/direct-sentry-fee.json --info feewatch/data/direct-sentry-info-reduced.json --now $(cat $PRIV/sentry-now) --negative
+  MISMATCH postfiatd-sentry ts=1793578946: history line age: latest history line -965s before the direct answer (0..90s)
+  MISMATCH postfiatd-sentry ts=1793578946: base_fee: direct 10 vs recorded 11
+  MISMATCH postfiatd-sentry ts=1793578946: max_queue_size: direct 2000 vs recorded 2001
+  MISMATCH postfiatd-sentry ts=1793578946: expected_ledger_size: direct 32 vs recorded 33
+  MISMATCH postfiatd-sentry ts=1793578946: reference_level: direct 256 vs recorded 257
+  MISMATCH postfiatd-sentry ts=1793578946: minimum_level: direct 256 vs recorded 257
+  MISMATCH postfiatd-sentry ts=1793578946: load_factor: direct 1.0 vs recorded 2.0
+  MISMATCH postfiatd-sentry ts=1793578946: ledger_current_index: direct 7684525, recorded 7685513 (+-988, allowed 0..-481)
+  RESULT 0/8 OK (direct RPC vs latest history line, NEGATIVE control)
+  (exit 0)
+CHECK ok   sentry direct negative control: every check MISMATCH (RESULT 0/8 OK (direct RPC vs latest history line, NEGATIVE control))
+
+== 5. public RPC probe (one server_info, 20 s timeout)
+$ curl -s --max-time 20 -H Content-Type:application/json -d '{"method":"server_info","params":[{}]}' https://rpc.testnet.postfiat.org/ | jq -c '{build: .result.info.build_version, complete_ledgers: .result.info.complete_ledgers, state: .result.info.server_state}'
+  {"build":"1.0.9","complete_ledgers":"7600054-7684527","state":"full"}
+  (exit 0)
+CHECK ok   public RPC answers
+
+== 6. 24h report over [START, END)
+$ python3 -u feewatch/report_feewatch.py report --history feewatch/data/history-postfiatd.jsonl feewatch/data/history-postfiatd-sentry.jsonl --start 1793492460 --end 1793578860 --json feewatch/data/baseline-24h.json --md feewatch/data/baseline-24h.md
+  # pft-feewatch baseline
+  
+  History rows used: 2884 (unparseable lines skipped: 0). Escalation threshold: 4.
+  
+  ## postfiatd
+  
+  - window 1793492460..1793578860 (1440 min), samples 1442, coverage 1.0000, gaps > 2 min: 0, admin answers 1.0000
+  - ledgers 7655934..7684474
+  - minutes with open ledger > expected: 0; escalation > 1: 0; >= threshold: 0; local > net: 0
+  - observed base fee {'10': 1442}, max_queue_size {'2000': 1442}, expected_ledger_size {'32': 1442}
+  
+  | metric | n | min | p50 | p95 | p99 | max | mean |
+  |---|---|---|---|---|---|---|---|
+  | queue size | 1442 | 0 | 0 | 0 | 0 | 0 | 0 |
+  | queue fill ratio | 1442 | 0 | 0 | 0 | 0 | 0 | 0 |
+  | open ledger size | 1442 | 0 | 0 | 3 | 4 | 5 | 0.478502 |
+  | escalation multiple | 1442 | 1 | 1 | 1 | 1 | 1 | 1 |
+  | load_factor total | 1442 | 1 | 1 | 1 | 1 | 1 | 1 |
+  | load_factor server | 1442 | 1 | 1 | 1 | 1 | 1 | 1 |
+  | load_factor local | 1442 | 1 | 1 | 1 | 1 | 1 | 1 |
+  | load_factor net | 1442 | 1 | 1 | 1 | 1 | 1 | 1 |
+  | load_factor cluster | 1442 | 1 | 1 | 1 | 1 | 1 | 1 |
+  | load_factor fee_escalation | 1442 | 1 | 1 | 1 | 1 | 1 | 1 |
+  | load_factor fee_queue | 1442 | 1 | 1 | 1 | 1 | 1 | 1 |
+  | drops base_fee | 1442 | 10 | 10 | 10 | 10 | 10 | 10 |
+  | drops median_fee | 1442 | 5000 | 5000 | 5000 | 5000 | 5000 | 5000 |
+  | drops minimum_fee | 1442 | 10 | 10 | 10 | 10 | 10 | 10 |
+  | drops open_ledger_fee | 1442 | 10 | 10 | 10 | 10 | 10 | 10 |
+  
+  Minutes with a load_factor source above 1: none
+  
+  ## postfiatd-sentry
+  
+  - window 1793492460..1793578860 (1440 min), samples 1442, coverage 1.0000, gaps > 2 min: 0, admin answers 1.0000
+  - ledgers 7655932..7684474
+  - minutes with open ledger > expected: 0; escalation > 1: 0; >= threshold: 0; local > net: 0
+  - observed base fee {'10': 1442}, max_queue_size {'2000': 1442}, expected_ledger_size {'32': 1442}
+  
+  | metric | n | min | p50 | p95 | p99 | max | mean |
+  |---|---|---|---|---|---|---|---|
+  | queue size | 1442 | 0 | 0 | 0 | 0 | 0 | 0 |
+  | queue fill ratio | 1442 | 0 | 0 | 0 | 0 | 0 | 0 |
+  | open ledger size | 1442 | 0 | 0 | 3 | 4 | 5 | 0.453537 |
+  | escalation multiple | 1442 | 1 | 1 | 1 | 1 | 1 | 1 |
+  | load_factor total | 1442 | 1 | 1 | 1 | 1 | 1 | 1 |
+  | load_factor server | 1442 | 1 | 1 | 1 | 1 | 1 | 1 |
+  | load_factor local | 1442 | 1 | 1 | 1 | 1 | 1 | 1 |
+  | load_factor net | 1442 | 1 | 1 | 1 | 1 | 1 | 1 |
+  | load_factor cluster | 1442 | 1 | 1 | 1 | 1 | 1 | 1 |
+  | load_factor fee_escalation | 1442 | 1 | 1 | 1 | 1 | 1 | 1 |
+  | load_factor fee_queue | 1442 | 1 | 1 | 1 | 1 | 1 | 1 |
+  | drops base_fee | 1442 | 10 | 10 | 10 | 10 | 10 | 10 |
+  | drops median_fee | 1442 | 5000 | 5000 | 5000 | 5000 | 5000 | 5000 |
+  | drops minimum_fee | 1442 | 10 | 10 | 10 | 10 | 10 | 10 |
+  | drops open_ledger_fee | 1442 | 10 | 10 | 10 | 10 | 10 | 10 |
+  
+  Minutes with a load_factor source above 1: none
+  (exit 0)
+CHECK ok   report written
+
+== 7. public-RPC crosscheck (seeded sample of 30) + negative control + offline re-checks
+$ python3 -u feewatch/report_feewatch.py crosscheck --history feewatch/data/history-postfiatd.jsonl feewatch/data/history-postfiatd-sentry.jsonl --start 1793492460 --end 1793578860 --rpc https://rpc.testnet.postfiat.org/ --sample 30 --seed 1 --json feewatch/data/crosscheck-24h.json
+  OK       postfiatd ts=1793492845 ledger=7656058: closed ledger before the sample: ledger 7656057 closed 4s before the sample (expected 7656057, 0..30s)
+  OK       postfiatd ts=1793492845 ledger=7656058: FeeSettings base fee: FeeSettings 10 drops vs recorded 10
+  OK       postfiatd ts=1793497826 ledger=7657699: closed ledger before the sample: ledger 7657698 closed 4s before the sample (expected 7657698, 0..30s)
+  OK       postfiatd ts=1793497826 ledger=7657699: FeeSettings base fee: FeeSettings 10 drops vs recorded 10
+  OK       postfiatd ts=1793498606 ledger=7657957: closed ledger before the sample: ledger 7657956 closed 5s before the sample (expected 7657956, 0..30s)
+  OK       postfiatd ts=1793498606 ledger=7657957: FeeSettings base fee: FeeSettings 10 drops vs recorded 10
+  OK       postfiatd ts=1793499325 ledger=7658196: closed ledger before the sample: ledger 7658195 closed 3s before the sample (expected 7658195, 0..30s)
+  OK       postfiatd ts=1793499325 ledger=7658196: FeeSettings base fee: FeeSettings 10 drops vs recorded 10
+  OK       postfiatd ts=1793499866 ledger=7658375: closed ledger before the sample: ledger 7658374 closed 5s before the sample (expected 7658374, 0..30s)
+  OK       postfiatd ts=1793499866 ledger=7658375: FeeSettings base fee: FeeSettings 10 drops vs recorded 10
+  OK       postfiatd ts=1793507846 ledger=7661012: closed ledger before the sample: ledger 7661011 closed 4s before the sample (expected 7661011, 0..30s)
+  OK       postfiatd ts=1793507846 ledger=7661012: FeeSettings base fee: FeeSettings 10 drops vs recorded 10
+  OK       postfiatd ts=1793515406 ledger=7663513: closed ledger before the sample: ledger 7663512 closed 4s before the sample (expected 7663512, 0..30s)
+  OK       postfiatd ts=1793515406 ledger=7663513: FeeSettings base fee: FeeSettings 10 drops vs recorded 10
+  OK       postfiatd ts=1793517446 ledger=7664188: closed ledger before the sample: ledger 7664187 closed 4s before the sample (expected 7664187, 0..30s)
+  OK       postfiatd ts=1793517446 ledger=7664188: FeeSettings base fee: FeeSettings 10 drops vs recorded 10
+  OK       postfiatd ts=1793521286 ledger=7665457: closed ledger before the sample: ledger 7665456 closed 4s before the sample (expected 7665456, 0..30s)
+  OK       postfiatd ts=1793521286 ledger=7665457: FeeSettings base fee: FeeSettings 10 drops vs recorded 10
+  OK       postfiatd ts=1793525366 ledger=7666807: closed ledger before the sample: ledger 7666806 closed 4s before the sample (expected 7666806, 0..30s)
+  OK       postfiatd ts=1793525366 ledger=7666807: FeeSettings base fee: FeeSettings 10 drops vs recorded 10
+  OK       postfiatd ts=1793543905 ledger=7672934: closed ledger before the sample: ledger 7672933 closed 3s before the sample (expected 7672933, 0..30s)
+  OK       postfiatd ts=1793543905 ledger=7672934: FeeSettings base fee: FeeSettings 10 drops vs recorded 10
+  OK       postfiatd ts=1793548586 ledger=7674483: closed ledger before the sample: ledger 7674482 closed 4s before the sample (expected 7674482, 0..30s)
+  OK       postfiatd ts=1793548586 ledger=7674483: FeeSettings base fee: FeeSettings 10 drops vs recorded 10
+  OK       postfiatd ts=1793555006 ledger=7676605: closed ledger before the sample: ledger 7676604 closed 4s before the sample (expected 7676604, 0..30s)
+  OK       postfiatd ts=1793555006 ledger=7676605: FeeSettings base fee: FeeSettings 10 drops vs recorded 10
+  OK       postfiatd ts=1793557765 ledger=7677517: closed ledger before the sample: ledger 7677516 closed 3s before the sample (expected 7677516, 0..30s)
+  OK       postfiatd ts=1793557765 ledger=7677517: FeeSettings base fee: FeeSettings 10 drops vs recorded 10
+  OK       postfiatd ts=1793570366 ledger=7681680: closed ledger before the sample: ledger 7681679 closed 4s before the sample (expected 7681679, 0..30s)
+  OK       postfiatd ts=1793570366 ledger=7681680: FeeSettings base fee: FeeSettings 10 drops vs recorded 10
+  OK       postfiatd-sentry ts=1793499085 ledger=7658116: closed ledger before the sample: ledger 7658115 closed 4s before the sample (expected 7658115, 0..30s)
+  OK       postfiatd-sentry ts=1793499085 ledger=7658116: FeeSettings base fee: FeeSettings 10 drops vs recorded 10
+  OK       postfiatd-sentry ts=1793501605 ledger=7658949: closed ledger before the sample: ledger 7658948 closed 3s before the sample (expected 7658948, 0..30s)
+  OK       postfiatd-sentry ts=1793501605 ledger=7658949: FeeSettings base fee: FeeSettings 10 drops vs recorded 10
+  OK       postfiatd-sentry ts=1793512165 ledger=7662441: closed ledger before the sample: ledger 7662440 closed 4s before the sample (expected 7662440, 0..30s)
+  OK       postfiatd-sentry ts=1793512165 ledger=7662441: FeeSettings base fee: FeeSettings 10 drops vs recorded 10
+  OK       postfiatd-sentry ts=1793515285 ledger=7663473: closed ledger before the sample: ledger 7663472 closed 4s before the sample (expected 7663472, 0..30s)
+  OK       postfiatd-sentry ts=1793515285 ledger=7663473: FeeSettings base fee: FeeSettings 10 drops vs recorded 10
+  OK       postfiatd-sentry ts=1793516305 ledger=7663811: closed ledger before the sample: ledger 7663810 closed 3s before the sample (expected 7663810, 0..30s)
+  OK       postfiatd-sentry ts=1793516305 ledger=7663811: FeeSettings base fee: FeeSettings 10 drops vs recorded 10
+  OK       postfiatd-sentry ts=1793521885 ledger=7665655: closed ledger before the sample: ledger 7665654 closed 4s before the sample (expected 7665654, 0..30s)
+  OK       postfiatd-sentry ts=1793521885 ledger=7665655: FeeSettings base fee: FeeSettings 10 drops vs recorded 10
+  OK       postfiatd-sentry ts=1793525725 ledger=7666927: closed ledger before the sample: ledger 7666926 closed 3s before the sample (expected 7666926, 0..30s)
+  OK       postfiatd-sentry ts=1793525725 ledger=7666927: FeeSettings base fee: FeeSettings 10 drops vs recorded 10
+  OK       postfiatd-sentry ts=1793527585 ledger=7667542: closed ledger before the sample: ledger 7667541 closed 3s before the sample (expected 7667541, 0..30s)
+  OK       postfiatd-sentry ts=1793527585 ledger=7667542: FeeSettings base fee: FeeSettings 10 drops vs recorded 10
+  OK       postfiatd-sentry ts=1793538865 ledger=7671269: closed ledger before the sample: ledger 7671268 closed 3s before the sample (expected 7671268, 0..30s)
+  OK       postfiatd-sentry ts=1793538865 ledger=7671269: FeeSettings base fee: FeeSettings 10 drops vs recorded 10
+  OK       postfiatd-sentry ts=1793545705 ledger=7673531: closed ledger before the sample: ledger 7673530 closed 4s before the sample (expected 7673530, 0..30s)
+  OK       postfiatd-sentry ts=1793545705 ledger=7673531: FeeSettings base fee: FeeSettings 10 drops vs recorded 10
+  OK       postfiatd-sentry ts=1793551105 ledger=7675316: closed ledger before the sample: ledger 7675315 closed 3s before the sample (expected 7675315, 0..30s)
+  OK       postfiatd-sentry ts=1793551105 ledger=7675316: FeeSettings base fee: FeeSettings 10 drops vs recorded 10
+  OK       postfiatd-sentry ts=1793555125 ledger=7676645: closed ledger before the sample: ledger 7676644 closed 3s before the sample (expected 7676644, 0..30s)
+  OK       postfiatd-sentry ts=1793555125 ledger=7676645: FeeSettings base fee: FeeSettings 10 drops vs recorded 10
+  OK       postfiatd-sentry ts=1793565445 ledger=7680052: closed ledger before the sample: ledger 7680051 closed 3s before the sample (expected 7680051, 0..30s)
+  OK       postfiatd-sentry ts=1793565445 ledger=7680052: FeeSettings base fee: FeeSettings 10 drops vs recorded 10
+  OK       postfiatd-sentry ts=1793565925 ledger=7680211: closed ledger before the sample: ledger 7680210 closed 3s before the sample (expected 7680210, 0..30s)
+  OK       postfiatd-sentry ts=1793565925 ledger=7680211: FeeSettings base fee: FeeSettings 10 drops vs recorded 10
+  OK       postfiatd-sentry ts=1793576845 ledger=7683817: closed ledger before the sample: ledger 7683816 closed 4s before the sample (expected 7683816, 0..30s)
+  OK       postfiatd-sentry ts=1793576845 ledger=7683817: FeeSettings base fee: FeeSettings 10 drops vs recorded 10
+  RESULT 60/60 OK (30 samples, 0 RPC retries)
+  (exit 0)
+CHECK ok   crosscheck: every check OK (RESULT 60/60 OK (30 samples, 0 RPC retries))
+$ python3 -u feewatch/report_feewatch.py crosscheck --history feewatch/data/history-postfiatd.jsonl feewatch/data/history-postfiatd-sentry.jsonl --start 1793492460 --end 1793578860 --rpc https://rpc.testnet.postfiat.org/ --sample 30 --seed 1 --negative --json feewatch/data/crosscheck-24h-negative.json
+  MISMATCH postfiatd ts=1793492845 ledger=7656058: closed ledger before the sample: ledger 7656057 closed 4s before the sample (expected 7657057, 0..30s)
+  MISMATCH postfiatd ts=1793492845 ledger=7656058: FeeSettings base fee: FeeSettings 10 drops vs recorded 11
+  MISMATCH postfiatd ts=1793497826 ledger=7657699: closed ledger before the sample: ledger 7657698 closed 4s before the sample (expected 7658698, 0..30s)
+  MISMATCH postfiatd ts=1793497826 ledger=7657699: FeeSettings base fee: FeeSettings 10 drops vs recorded 11
+  MISMATCH postfiatd ts=1793498606 ledger=7657957: closed ledger before the sample: ledger 7657956 closed 5s before the sample (expected 7658956, 0..30s)
+  MISMATCH postfiatd ts=1793498606 ledger=7657957: FeeSettings base fee: FeeSettings 10 drops vs recorded 11
+  MISMATCH postfiatd ts=1793499325 ledger=7658196: closed ledger before the sample: ledger 7658195 closed 3s before the sample (expected 7659195, 0..30s)
+  MISMATCH postfiatd ts=1793499325 ledger=7658196: FeeSettings base fee: FeeSettings 10 drops vs recorded 11
+  MISMATCH postfiatd ts=1793499866 ledger=7658375: closed ledger before the sample: ledger 7658374 closed 5s before the sample (expected 7659374, 0..30s)
+  MISMATCH postfiatd ts=1793499866 ledger=7658375: FeeSettings base fee: FeeSettings 10 drops vs recorded 11
+  MISMATCH postfiatd ts=1793507846 ledger=7661012: closed ledger before the sample: ledger 7661011 closed 4s before the sample (expected 7662011, 0..30s)
+  MISMATCH postfiatd ts=1793507846 ledger=7661012: FeeSettings base fee: FeeSettings 10 drops vs recorded 11
+  MISMATCH postfiatd ts=1793515406 ledger=7663513: closed ledger before the sample: ledger 7663512 closed 4s before the sample (expected 7664512, 0..30s)
+  MISMATCH postfiatd ts=1793515406 ledger=7663513: FeeSettings base fee: FeeSettings 10 drops vs recorded 11
+  MISMATCH postfiatd ts=1793517446 ledger=7664188: closed ledger before the sample: ledger 7664187 closed 4s before the sample (expected 7665187, 0..30s)
+  MISMATCH postfiatd ts=1793517446 ledger=7664188: FeeSettings base fee: FeeSettings 10 drops vs recorded 11
+  MISMATCH postfiatd ts=1793521286 ledger=7665457: closed ledger before the sample: ledger 7665456 closed 4s before the sample (expected 7666456, 0..30s)
+  MISMATCH postfiatd ts=1793521286 ledger=7665457: FeeSettings base fee: FeeSettings 10 drops vs recorded 11
+  MISMATCH postfiatd ts=1793525366 ledger=7666807: closed ledger before the sample: ledger 7666806 closed 4s before the sample (expected 7667806, 0..30s)
+  MISMATCH postfiatd ts=1793525366 ledger=7666807: FeeSettings base fee: FeeSettings 10 drops vs recorded 11
+  MISMATCH postfiatd ts=1793543905 ledger=7672934: closed ledger before the sample: ledger 7672933 closed 3s before the sample (expected 7673933, 0..30s)
+  MISMATCH postfiatd ts=1793543905 ledger=7672934: FeeSettings base fee: FeeSettings 10 drops vs recorded 11
+  MISMATCH postfiatd ts=1793548586 ledger=7674483: closed ledger before the sample: ledger 7674482 closed 4s before the sample (expected 7675482, 0..30s)
+  MISMATCH postfiatd ts=1793548586 ledger=7674483: FeeSettings base fee: FeeSettings 10 drops vs recorded 11
+  MISMATCH postfiatd ts=1793555006 ledger=7676605: closed ledger before the sample: ledger 7676604 closed 4s before the sample (expected 7677604, 0..30s)
+  MISMATCH postfiatd ts=1793555006 ledger=7676605: FeeSettings base fee: FeeSettings 10 drops vs recorded 11
+  MISMATCH postfiatd ts=1793557765 ledger=7677517: closed ledger before the sample: ledger 7677516 closed 3s before the sample (expected 7678516, 0..30s)
+  MISMATCH postfiatd ts=1793557765 ledger=7677517: FeeSettings base fee: FeeSettings 10 drops vs recorded 11
+  MISMATCH postfiatd ts=1793570366 ledger=7681680: closed ledger before the sample: ledger 7681679 closed 4s before the sample (expected 7682679, 0..30s)
+  MISMATCH postfiatd ts=1793570366 ledger=7681680: FeeSettings base fee: FeeSettings 10 drops vs recorded 11
+  MISMATCH postfiatd-sentry ts=1793499085 ledger=7658116: closed ledger before the sample: ledger 7658115 closed 4s before the sample (expected 7659115, 0..30s)
+  MISMATCH postfiatd-sentry ts=1793499085 ledger=7658116: FeeSettings base fee: FeeSettings 10 drops vs recorded 11
+  MISMATCH postfiatd-sentry ts=1793501605 ledger=7658949: closed ledger before the sample: ledger 7658948 closed 3s before the sample (expected 7659948, 0..30s)
+  MISMATCH postfiatd-sentry ts=1793501605 ledger=7658949: FeeSettings base fee: FeeSettings 10 drops vs recorded 11
+  MISMATCH postfiatd-sentry ts=1793512165 ledger=7662441: closed ledger before the sample: ledger 7662440 closed 4s before the sample (expected 7663440, 0..30s)
+  MISMATCH postfiatd-sentry ts=1793512165 ledger=7662441: FeeSettings base fee: FeeSettings 10 drops vs recorded 11
+  MISMATCH postfiatd-sentry ts=1793515285 ledger=7663473: closed ledger before the sample: ledger 7663472 closed 4s before the sample (expected 7664472, 0..30s)
+  MISMATCH postfiatd-sentry ts=1793515285 ledger=7663473: FeeSettings base fee: FeeSettings 10 drops vs recorded 11
+  MISMATCH postfiatd-sentry ts=1793516305 ledger=7663811: closed ledger before the sample: ledger 7663810 closed 3s before the sample (expected 7664810, 0..30s)
+  MISMATCH postfiatd-sentry ts=1793516305 ledger=7663811: FeeSettings base fee: FeeSettings 10 drops vs recorded 11
+  MISMATCH postfiatd-sentry ts=1793521885 ledger=7665655: closed ledger before the sample: ledger 7665654 closed 4s before the sample (expected 7666654, 0..30s)
+  MISMATCH postfiatd-sentry ts=1793521885 ledger=7665655: FeeSettings base fee: FeeSettings 10 drops vs recorded 11
+  MISMATCH postfiatd-sentry ts=1793525725 ledger=7666927: closed ledger before the sample: ledger 7666926 closed 3s before the sample (expected 7667926, 0..30s)
+  MISMATCH postfiatd-sentry ts=1793525725 ledger=7666927: FeeSettings base fee: FeeSettings 10 drops vs recorded 11
+  MISMATCH postfiatd-sentry ts=1793527585 ledger=7667542: closed ledger before the sample: ledger 7667541 closed 3s before the sample (expected 7668541, 0..30s)
+  MISMATCH postfiatd-sentry ts=1793527585 ledger=7667542: FeeSettings base fee: FeeSettings 10 drops vs recorded 11
+  MISMATCH postfiatd-sentry ts=1793538865 ledger=7671269: closed ledger before the sample: ledger 7671268 closed 3s before the sample (expected 7672268, 0..30s)
+  MISMATCH postfiatd-sentry ts=1793538865 ledger=7671269: FeeSettings base fee: FeeSettings 10 drops vs recorded 11
+  MISMATCH postfiatd-sentry ts=1793545705 ledger=7673531: closed ledger before the sample: ledger 7673530 closed 4s before the sample (expected 7674530, 0..30s)
+  MISMATCH postfiatd-sentry ts=1793545705 ledger=7673531: FeeSettings base fee: FeeSettings 10 drops vs recorded 11
+  MISMATCH postfiatd-sentry ts=1793551105 ledger=7675316: closed ledger before the sample: ledger 7675315 closed 3s before the sample (expected 7676315, 0..30s)
+  MISMATCH postfiatd-sentry ts=1793551105 ledger=7675316: FeeSettings base fee: FeeSettings 10 drops vs recorded 11
+  MISMATCH postfiatd-sentry ts=1793555125 ledger=7676645: closed ledger before the sample: ledger 7676644 closed 3s before the sample (expected 7677644, 0..30s)
+  MISMATCH postfiatd-sentry ts=1793555125 ledger=7676645: FeeSettings base fee: FeeSettings 10 drops vs recorded 11
+  MISMATCH postfiatd-sentry ts=1793565445 ledger=7680052: closed ledger before the sample: ledger 7680051 closed 3s before the sample (expected 7681051, 0..30s)
+  MISMATCH postfiatd-sentry ts=1793565445 ledger=7680052: FeeSettings base fee: FeeSettings 10 drops vs recorded 11
+  MISMATCH postfiatd-sentry ts=1793565925 ledger=7680211: closed ledger before the sample: ledger 7680210 closed 3s before the sample (expected 7681210, 0..30s)
+  MISMATCH postfiatd-sentry ts=1793565925 ledger=7680211: FeeSettings base fee: FeeSettings 10 drops vs recorded 11
+  MISMATCH postfiatd-sentry ts=1793576845 ledger=7683817: closed ledger before the sample: ledger 7683816 closed 4s before the sample (expected 7684816, 0..30s)
+  MISMATCH postfiatd-sentry ts=1793576845 ledger=7683817: FeeSettings base fee: FeeSettings 10 drops vs recorded 11
+  RESULT 0/60 OK (30 samples, 0 RPC retries, NEGATIVE control)
+  (exit 0)
+CHECK ok   crosscheck negative control: every check MISMATCH (RESULT 0/60 OK (30 samples, 0 RPC retries, NEGATIVE control))
+$ python3 -u feewatch/report_feewatch.py crosscheck --offline feewatch/data/crosscheck-24h.json --history feewatch/data/history-postfiatd.jsonl feewatch/data/history-postfiatd-sentry.jsonl
+  history sha256 matches the recorded one (c4ce0b9df51a7f6f)
+  re-drawn sample (30 rows, seed 1) equals the recorded one
+  offline: 30 entries re-compared, 60/60 OK as recorded; differences: 0
+  (exit 0)
+CHECK ok   offline re-check of the crosscheck (offline: 30 entries re-compared, 60/60 OK as recorded; differences: 0)
+$ python3 -u feewatch/report_feewatch.py crosscheck --offline feewatch/data/crosscheck-24h-negative.json --history feewatch/data/history-postfiatd.jsonl feewatch/data/history-postfiatd-sentry.jsonl
+  history sha256 matches the recorded one (c4ce0b9df51a7f6f)
+  re-drawn sample (30 rows, seed 1) equals the recorded one
+  offline: 30 entries re-compared, 0/60 OK as recorded; differences: 0
+  (exit 0)
+CHECK ok   offline re-check of the negative control (offline: 30 entries re-compared, 0/60 OK as recorded; differences: 0)
+$ sha256sum feewatch/data/*
+  efeb0cc6994afe29aaa5c77d2d10fee8395357a41e738120e53eb6b355d41a07  feewatch/data/baseline-24h.json
+  5ecae31430718efb8604de2910f7f49e0c3dc37954a82fef01f2832983774ac6  feewatch/data/baseline-24h.md
+  c671569b49bbdafbee68bf69c2737e6d082d43c40abe02dd196c5408279746f0  feewatch/data/crosscheck-24h-negative.json
+  836f29527cd0ce06f6cbf1185c03cdb3ceb02d081d219ad000ed1bb5ad57b7db  feewatch/data/crosscheck-24h.json
+  5080993d370c4c7f6d079e43aeed2a26172571f6ea30398577ea465415169bf7  feewatch/data/direct-sentry-fee.json
+  85cee22f4a8d7520c151964d5ef9f2793e26539aa8d0478e0860e9d845146b5a  feewatch/data/direct-sentry-info-reduced.json
+  5080993d370c4c7f6d079e43aeed2a26172571f6ea30398577ea465415169bf7  feewatch/data/direct-validator-fee.json
+  85cee22f4a8d7520c151964d5ef9f2793e26539aa8d0478e0860e9d845146b5a  feewatch/data/direct-validator-info-reduced.json
+  83fd1e4322d61681e06664018187f277b257bc3bc2e57d4d170aad1ed60aee27  feewatch/data/history-postfiatd-sentry.jsonl
+  ad3a89dcf727695d0cd90c49653d1b01d42c1d4b18aa45ace8fff9f7ced34110  feewatch/data/history-postfiatd.jsonl
+  (exit 0)
+
+RESULT: 0 failed checks

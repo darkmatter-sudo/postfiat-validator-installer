@@ -25,6 +25,10 @@ never generates network load. The drill (below) uses recorded and synthetic answ
 | `tests/run-tests.sh` | offline suite with a stub docker that answers `fee` / `server_info` from fixtures |
 | `tests/capture_fixtures.sh`, `tests/fixtures/` | real answers from the validator and the sentry, plus a real non-admin answer |
 | `../alerts/feewatch.rules.yml`, `../alerts/feewatch.tests.yml` | the four alerts and their promtool unit tests |
+| `report_feewatch.py` | `report` (24h baseline JSON + Markdown), `crosscheck` (public RPC, `--negative`, `--offline`), `direct` (raw node answers vs the newest history line) |
+| `tests/test_report_feewatch.py` | offline suite for `report_feewatch.py` (stub RPC server on loopback) |
+| `baseline/run-baseline.sh` | the recorded, read-only 24h baseline run (`logs/07-baseline.log`) |
+| `data/` | the two history files, the baseline report, the crosscheck results and the direct answers |
 
 ## How the collector reads the node
 
@@ -105,7 +109,8 @@ Each install runs one collection through the sandboxed unit and refuses to enabl
 ```bash
 bash feewatch/tests/run-tests.sh                         # offline, no root, stub docker
 (cd alerts && promtool test rules feewatch.tests.yml)    # alert rules
-shellcheck feewatch/*.sh feewatch/tests/*.sh && ruff check feewatch
+python3 -u feewatch/tests/test_report_feewatch.py          # report / crosscheck / --offline / direct, offline
+shellcheck feewatch/*.sh feewatch/tests/*.sh feewatch/baseline/*.sh && ruff check feewatch
 ```
 
 The offline suite covers real idle answers from both hosts, a real non-admin answer, synthetic loaded answers in
@@ -161,6 +166,48 @@ start/end, then `[FIRING]` and `[RESOLVED]` for all five pairs. Every operator t
 scripts incrementally, stopped with a syntax error. Its EXIT trap restored everything (logged), and no drill
 message reached an operator topic (checked separately). Run 06 is the fixed script (commit `e035ce9`), run
 unmodified.
+
+## 24-hour baseline (2026-11-01T00:21Z .. 2026-11-02T00:21Z)
+
+Recorded by `baseline/run-baseline.sh 1793492460 1793578860` at commit `da24b1e6bbfb4d350cba8caf3827bb7dd3bbf868`,
+log `logs/07-baseline.log` (19 checks ok, 0 failed). Read-only: no node was stopped and no notifier touched. Report:
+`data/baseline-24h.md` / `.json`.
+
+| | validator (`postfiatd`) | sentry (`postfiatd-sentry`) |
+|---|---|---|
+| samples in the window / coverage / gaps > 2 min | 1442 / 1.0000 / 0 | 1442 / 1.0000 / 0 |
+| admin answers | 1.0000 | 1.0000 |
+| queue size max (of `max_queue_size` 2000) | 0 | 0 |
+| open ledger size p50 / p95 / max (expected 32) | 0 / 3 / 5 | 0 / 3 / 5 |
+| minutes with escalation multiple > 1 | 0 | 0 |
+| minutes with any load_factor source > 1 | 0 | 0 |
+| base / median / minimum / open-ledger fee (drops) | 10 / 5000 / 10 / 10 | 10 / 5000 / 10 / 10 |
+
+1442 samples in 1440 minutes: the first minute (00:21) holds three, the manual collects of the install run plus the
+first timer run; every other minute holds one. The testnet was idle for fee purposes all day: no queue, no
+escalation, every load factor 1. That is the baseline the four alerts compare against. The values come from the
+history files `data/history-postfiatd.jsonl` (1444 lines, sha256
+`ad3a89dcf727695d0cd90c49653d1b01d42c1d4b18aa45ace8fff9f7ced34110`) and `data/history-postfiatd-sentry.jsonl`
+(1444 lines, sha256 `83fd1e4322d61681e06664018187f277b257bc3bc2e57d4d170aad1ed60aee27`); 2884 of the 2888 lines
+fall in the window (the rest were written after 00:21Z, before the copy).
+
+Crosschecks (all in `logs/07-baseline.log`):
+
+- **Direct RPC, each node** (`direct`): `fee` + `server_info` fetched by hand from each node's admin RPC (not
+  through pft-feewatch) and compared with the newest history line: 8/8 OK on both hosts (line age, base fee, queue
+  limit, expected ledger size, reference and minimum level, load_factor, open-ledger index). Negative control
+  (every recorded value altered): 0/8 OK on both. `server_info` carries host-identifying fields, so only
+  `{result:{info:{load_factor}}}` is published (`data/direct-*-info-reduced.json`) and the check runs on that copy.
+- **Public RPC** (`crosscheck`, `https://rpc.testnet.postfiat.org/`, seed 1, 30 samples: 15 per host): for each
+  sampled line the closed ledger before it (index, close time 0..30 s before the sample) and the FeeSettings base
+  fee at that ledger: 60/60 OK, 0 retries (`data/crosscheck-24h.json`). Negative control: 0/60 OK
+  (`data/crosscheck-24h-negative.json`).
+- **Offline** (`crosscheck --offline`): both recorded crosschecks re-drawn from (seed, committed history) and
+  re-compared with no RPC: 0 differences each.
+
+Queue size, open-ledger size and the load-factor sources are live values that no RPC returns for the past, so the
+direct check at the end of the window is their crosscheck; the public RPC checks the ledger timeline and base fee
+of 30 points spread over the whole day.
 
 ## Logs
 
