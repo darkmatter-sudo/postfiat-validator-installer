@@ -138,7 +138,7 @@ x "docker exec $C setpriv --reuid=0 --regid=0 --init-groups true"; res "cron ide
 x "docker exec $C sh -c 'cd / && run-parts --report /etc/cron.hourly'"; res "run-parts /etc/cron.hourly" "$XRC"
 x "docker exec $C logrotate -d -s /var/log/postfiatd/.logrotate.status /etc/logrotate.d/postfiatd 2>&1 | tail -3"; res "logrotate config check (-d, no rotation)" "$XRC"
 x "docker exec $C ls /var/log/postfiatd /var/lib/postfiatd/db | wc -l"; res "list log + data dirs" "$XRC"
-x "docker exec $C sh -c 'echo ok > /var/log/postfiatd/.pft-aa-probe && cat /var/log/postfiatd/.pft-aa-probe && rm /var/log/postfiatd/.pft-aa-probe'"
+x "docker exec $C sh -c 'echo ok > /var/log/postfiatd/.pft-aa-probe && grep -x ok /var/log/postfiatd/.pft-aa-probe && rm /var/log/postfiatd/.pft-aa-probe'"
 res "write + delete in the log volume" "$(ok_if '[ "$XRC" = 0 ] && [ "$XOUT" = ok ]')"
 x "docker exec $C ps -eo pid,comm | head -8"; res "ps (ptrace read on the same profile)" "$XRC"
 sleep 3
@@ -152,16 +152,16 @@ neg() { # LABEL PATH COMMAND
   res "negative: $1 (fails + DENIED logged)" "$(ok_if '[ "$rc" != 0 ] && [ "$n" -ge 1 ]')"
 }
 neg "write a NEW file in the /etc/postfiatd volume (rw mount)" /etc/postfiatd/pft-aa-probe ': > /etc/postfiatd/pft-aa-probe'
-neg "read /etc/gshadow" /etc/gshadow 'cat /etc/gshadow'
+neg "read /etc/gshadow" /etc/gshadow 'grep -c . /etc/gshadow'
 neg "exec an unlisted binary (/usr/bin/id)" /usr/bin/id '/usr/bin/id'
-x "docker exec $C sh -c 'cp /etc/cron.daily/dpkg /var/log/postfiatd/.pft-aa-exec && ls -l /var/log/postfiatd/.pft-aa-exec'"
+x "docker exec $C sh -c 'cp /etc/cron.daily/dpkg /var/log/postfiatd/.pft-aa-exec && stat -c %a /var/log/postfiatd/.pft-aa-exec'"
 res "exec control setup: copy a 0755 cron.daily script into the log volume (read + write there are allowed; /bin/true is not readable under the profile, dev probe 17)" "$XRC"
 neg "exec from the log volume (rw, exec-capable mount)" /var/log/postfiatd/.pft-aa-exec '/var/log/postfiatd/.pft-aa-exec'
 x "docker exec $C rm -f /var/log/postfiatd/.pft-aa-exec; docker exec $C ls -a /etc/postfiatd /var/log/postfiatd | grep -c pft-aa-"
 res "no probe file left (log volume cleaned, nothing created in /etc/postfiatd)" "$(ok_if '[ "$(tail -1 <<<"$XOUT")" = 0 ]')"
 echo "-- blocked by an earlier layer (no AppArmor record expected; reported, not counted as AppArmor proof)"
 x "docker exec $C sh -c 'echo x > /usr/bin/pft-aa-probe'"; res "write into /usr fails (read-only root, EROFS)" "$(ok_if '[ "$XRC" != 0 ]')"
-x "docker exec $C sh -c 'cp /etc/cron.daily/dpkg /tmp/t && ls -l /tmp/t && /tmp/t'"; docker exec "$C" rm -f /tmp/t; res "exec from /tmp fails (noexec tmpfs)" "$(ok_if '[ "$XRC" != 0 ]')"
+x "docker exec $C sh -c 'cp /etc/cron.daily/dpkg /tmp/t && stat -c %a /tmp/t && /tmp/t'"; docker exec "$C" rm -f /tmp/t; res "exec from /tmp fails (noexec tmpfs)" "$(ok_if '[ "$XRC" != 0 ]')"
 s="$(state)"; res "node still full after the controls" "$(ok_if '[ "$s" = full ]')" "$s"
 x "$PA ack-denials --reason 'task_faf99695 live drill: deliberate negative controls on $HOST (gshadow, unlisted exec, volume write, volume exec)' --yes"
 res "ack-denials for the deliberate records" "$XRC"

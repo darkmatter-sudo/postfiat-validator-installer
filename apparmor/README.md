@@ -168,9 +168,11 @@ stop, each of which must fail **and** log a matching DENIED record (new file in 
 blocked by an earlier layer (write to `/usr`: read-only root; exec from `/tmp`: noexec); `ack-denials`; an enforced
 `docker restart`; and on the sentry an explicit rollback and re-apply. The validator applies the sentry's P1 (sha256
 compared). Then metrics, integrity/fleet baselines, rulecheck, restore and a read-back of every operator topic.
-It refuses while a data collector or a `pft-maint` lock is active. A dev probe of the exact control commands on a
-network-less throwaway (runlog 17) showed `/bin/true` is not readable under the profile, so the exec controls copy a
-0755 `cron.daily` script instead (runlog 18: all controls PASS).
+It refuses while a data collector or a `pft-maint` lock is active. Dev probes of the exact control commands on a
+network-less throwaway: runlog 17 showed `/bin/true` is not readable under the profile, so the exec controls copy a
+0755 `cron.daily` script; runlog 21, with P0 from the recorded sentry learn (340 events), showed that profile also
+denies `cat` and `ls` from a shell (the node never runs them), so the controls use only allowed tools (`grep`, `stat`,
+`cp`, `rm`; `ls`/`ps` only as direct `docker exec` targets); runlog 22: all positive and negative controls PASS on P0.
 
 ## Tests
 
