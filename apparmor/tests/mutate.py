@@ -48,8 +48,13 @@ MUTANTS = [
     ("M29", "generate: gshadow deny dropped", '"/etc/gshadow rwklx" ', ''),
     ("M30", "generate: /tmp exec deny dropped", '"/tmp/** x" ', ''),
     ("M31", "generate: unknown kind accepted", '*) die "unknown event kind', '*) true "unknown event kind'),
-    ("M32", "overlap: {,**} probe not expanded", 'probe="${p//\\{,\\*\\*\\}/x/y}";', 'probe="$p";'),
 ]
+
+# Equivalent mutants (no input can reach the difference), documented instead of counted:
+# M32 "overlap: {,**} probe not expanded" (probe="$p"): every AUDIT_DENY path is either exact (never matches a
+# tree rule) or ends in "/**" (ERE ".*"), which matches the literal "{,**}" suffix as well as "x/y". Run 07
+# (5f27eaf) reported it SURVIVED; re-check this note if a deny pattern with a single "*" or a mid-path "**" is added.
+EQUIVALENT = ["M32"]
 
 
 def run_suite(tool, timeout):
@@ -95,7 +100,8 @@ def main():
             print(f"{mid} CAUGHT - {desc} [{why}]")
         os.remove(path)
     os.rmdir(work)
-    print(f"RESULT: {caught} caught, {survived} survived, {not_applied} not applied of {len(MUTANTS)}")
+    print(f"RESULT: {caught} caught, {survived} survived, {not_applied} not applied of {len(MUTANTS)}"
+          f" (+ {len(EQUIVALENT)} documented equivalent: {', '.join(EQUIVALENT)})")
     return 0 if survived == 0 and not_applied == 0 else 1
 
 

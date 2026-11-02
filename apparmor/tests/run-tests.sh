@@ -269,6 +269,11 @@ printf 'extra\t/usr/bin/flock\tx\n' >> "$T/ev-mask.tsv"
 gen --events "$T/ev-mask.tsv"
 has "/var/log/postfiatd/{,**} wk,"
 has "/usr/bin/flock ix,"
+printf 'file\t/var/cache/pft-c\tc\nfile\t/var/cache/pft-d\td\nfile\t/var/cache/pft-a\ta\n' > "$T/ev-acd.tsv"
+gen --events "$T/ev-acd.tsv"
+has "/var/cache/pft-c w,"
+has "/var/cache/pft-d w,"
+has "/var/cache/pft-a w,"
 
 # ---- real parser: the generated profiles compile ---------------------------------------------------------
 if command -v apparmor_parser >/dev/null 2>&1 && [ -r "$FIX/events-explore.tsv" ]; then

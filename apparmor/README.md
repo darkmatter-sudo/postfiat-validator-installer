@@ -87,7 +87,7 @@ and `pft_apparmor_last_run_timestamp_seconds`. Alert: `PFTAppArmorDrift` (`alert
 
 ```
 bash apparmor/tests/run-tests.sh            # offline suite: stub docker/parser/systemctl, fake /sys + audit logs
-python3 -u apparmor/tests/mutate.py         # 32 mutants, each must make the suite fail (timeout = caught)
+python3 -u apparmor/tests/mutate.py         # 31 mutants (+1 documented equivalent), each must make the suite fail (timeout = caught)
 promtool test rules alerts/apparmor.tests.yml
 ```
 
