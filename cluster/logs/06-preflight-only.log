@@ -1,0 +1,43 @@
+pft-cluster two-host live run (sentry first) - 2026-11-02T06:14:16Z - Ubuntu 22.04.5 LTS - run 20261102T061416Z
+repo HEAD 4eca1b89b387264bc2763f4d93411f7a5531c722 (clean: yes)
+sha256 ca9c77b9f4fd59cc0c12d00e41a6a0b150462c3b492c8b35d1acb04c991771af cluster/drill/live-run.sh
+sha256 3319ef9700ea87ce34730bb487dd52ff5080d6615d9ab9f99755dd08e80402fc cluster/drill/recreate.sh
+sha256 a31db6d4d9779e399e020dd1f371ff2c7f678ed05e3dc45e477d9becdcdf0975 cluster/pft-cluster.sh
+sha256 35b3af6829c61b3645114843e5b8390fa4d444ed1c2f83795d5b4b113225c517 cluster/install.sh
+sha256 a6e04b17f40072302f2458f72e75c79363777357d4bd0c70c69b378f987a13ff alerts/cluster.rules.yml
+sha256 f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8 peerexpose/drill/redact.py
+
+== 0. preflight (nothing changed yet)
+  pft-payflow-tx.service is collecting from the validator's node - a real run would stop here
+  pft-senders-tx.service is collecting from the validator's node - a real run would stop here
+  alerts/prometheus.yml has no /etc/pft-alerts/cluster.rules.yml line - a real run would stop here (add it in the run commit)
+  fleet/manifest.tsv has no cluster/pft-cluster.sh line - a real run would stop here (add it in the run commit)
+  pft-maint: no window on either host; collectors inactive + run-commit lines present: NO, see above
+  operator topics to watch: 2 (not printed)
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+  postfiatd-sentry: server_state=full
+  postfiatd: server_state=full
+  pft-integrity local: RESULT: PASS - 130 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity relay: RESULT: PASS - 77 unchanged, 0 warn, 0 fail -> exit 0
+$ redact.py control --literals <literals>
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (18/18)
+
+PREFLIGHT_ONLY: stopping before step 1, nothing changed (ready: no, see the would-stop lines above)
