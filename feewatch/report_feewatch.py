@@ -460,7 +460,8 @@ def compare_direct(row, fee, info, now, max_age, negative):
 
 def direct(a):
     rows, _ = read_history(a.history)
-    rows = [d for d in rows if d["container"] == a.container]
+    # newest line at or before the direct answer (the collector may have run again before the history was copied)
+    rows = [d for d in rows if d["container"] == a.container and d["ts"] <= a.now]
     if not rows:
         print(f"no history rows for {a.container}", file=sys.stderr)
         return 1

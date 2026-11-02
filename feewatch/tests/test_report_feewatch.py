@@ -235,7 +235,10 @@ base = [
 rc, out = run(base + ["--json", CX])
 cx = rjson(CX)
 check("crosscheck exit 0, 20/20 OK", rc == 0 and cx["ok"] == 20 and cx["checks"] == 20)
-check("crosscheck prints RESULT 20/20 OK", "RESULT 20/20 OK (10 samples, 0 RPC retries)" in out)
+check(
+    "crosscheck prints RESULT 20/20 OK",
+    "RESULT 20/20 OK (10 samples, 0 RPC retries)" in out,
+)
 rc, out = run(["crosscheck", "--offline", CX, "--history", hist])
 check(
     "offline re-check exit 0, 0 differences",
@@ -349,6 +352,10 @@ with open(hist3, "w", encoding="utf-8") as f:
         + json.dumps(last)
         + "\n"
         + json.dumps(row(59, container="other"))
+        + "\n"
+        + json.dumps(
+            {**last, "ts": last["ts"] + 61, "ledger": 1}
+        )  # after --now: ignored
         + "\n"
     )
 FEE, INFO = os.path.join(tmp, "fee.json"), os.path.join(tmp, "info.json")
