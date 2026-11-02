@@ -9,7 +9,7 @@
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 TOOL="${1:-$HERE/../pft-mounts.sh}"
-# shellcheck source=tests/stubs.sh
+# shellcheck source-path=SCRIPTDIR source=stubs.sh
 . "$HERE/stubs.sh"
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 PASS=0; FAIL=0; N=0
