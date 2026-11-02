@@ -1,0 +1,20 @@
+# Alert rule for pft-cluster (../cluster). pft-cluster.timer audits every 5 min and writes pft_cluster_*{host="..."} to
+# the textfile dir (validator: local; sentry: pulled by pft-cluster-pull.timer every 5 min).
+# One alert: any FAIL or WARN cluster check, i.e. the validator<->sentry cluster is missing or degraded: the peer is not
+# connected as a cluster member or sends no cluster reports (it does not list this node), the running node is not on
+# its pinned key (node_seed lost, or a restart pending), the config block or seed storage is wrong, or the seed shows
+# up in docker inspect / process args / logs / textfiles. A stopped audit is caught by pft-rulecheck
+# (textfile pft_cluster_*.prom 20m) and PFTTextfileStale, not by a second rule here.
+# The sentry runs no Prometheus: every host="sentry" alert is evaluated here. Tests: cluster.tests.yml.
+groups:
+  - name: pft-cluster
+    rules:
+      - alert: PFTClusterMissing
+        expr: max by (instance, job, host) (pft_cluster_findings) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} cluster check(s) FAIL/WARN on {{ $labels.host }}"
+          description: "The pft-cluster audit says the validator<->sentry cluster is missing or degraded on this host (peer not connected as a cluster member, no cluster reports from it, node not on its pinned key, config/seed storage wrong, or the seed exposed). Run `sudo pft-cluster audit` to list the failing checks."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/cluster/README.md#alert"

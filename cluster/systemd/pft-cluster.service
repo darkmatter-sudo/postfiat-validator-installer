@@ -1,0 +1,36 @@
+[Unit]
+Description=pft-cluster audit: pinned node identity and validator<->sentry cluster membership
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/cluster
+After=docker.service
+
+[Service]
+Type=oneshot
+# exit 1 = FAIL/WARN findings (exported as metrics), not a unit failure; exit 2 (no config / no docker) fails it
+SuccessExitStatus=1
+ExecStart=/usr/local/bin/pft-cluster audit --textfile
+ReadWritePaths=/var/lib/pft-exporter/textfile
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+# AF_UNIX: docker.sock only (inspect, logs, exec of curl to the node's own loopback admin RPC); no network
+RestrictAddressFamilies=AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+# reads the root-owned 0600 seed and config as their owner; CAP_SYS_PTRACE keeps `ps` complete under hidepid
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_SYS_PTRACE
+UMask=0022
+Nice=10
+TimeoutStartSec=2min

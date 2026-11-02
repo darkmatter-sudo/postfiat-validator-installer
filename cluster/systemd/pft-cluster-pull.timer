@@ -1,0 +1,10 @@
+[Unit]
+Description=Copy the peer's pft-cluster textfile every 5 minutes
+
+[Timer]
+OnCalendar=*:2/5:30
+AccuracySec=10s
+Persistent=false
+
+[Install]
+WantedBy=timers.target
