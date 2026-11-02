@@ -1,0 +1,15 @@
+cap	chown	-
+cap	setgid	-
+exec	/usr/bin/savelog	x
+exec	/usr/sbin/cron	x
+file	/etc/postfiatd/postfiatd.cfg	r
+file	/etc/shadow	r
+file	/proc/123/stat	r
+file	/proc/123/task/456/comm	r
+file	/proc/sys/kernel/pid_max	r
+file	/usr/bin/savelog	r
+file	/var/lib/postfiatd/db/ledger.db	rwck
+file	/var/lib/postfiatd/db/nudb/postfiatdb.ea40/nudb.log	rwacd
+file	/var/log/postfiatd/debug.log	rwac
+file	/var/log/postfiatd/.logrotate.status	rwck
+net	inet stream	-

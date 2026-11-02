@@ -1,0 +1,28 @@
+[
+  {
+    "Name": "/postfiatd",
+    "AppArmorProfile": "pft-postfiatd",
+    "Config": {
+      "Image": "agtipft/postfiatd:testnet-light-latest",
+      "Cmd": ["--conf", "/etc/postfiatd/postfiatd.cfg"],
+      "User": "0:0",
+      "Labels": {
+        "com.docker.compose.project.working_dir": "/opt/postfiatd",
+        "com.docker.compose.project.config_files": "/opt/postfiatd/docker-compose.yml,/opt/postfiatd/docker-compose.apparmor.yml",
+        "com.docker.compose.service": "postfiatd"
+      }
+    },
+    "HostConfig": {
+      "CapDrop": ["ALL"],
+      "CapAdd": ["CAP_SETGID", "CAP_SETUID"],
+      "ReadonlyRootfs": true,
+      "SecurityOpt": ["no-new-privileges:true", "apparmor=pft-postfiatd"],
+      "PidsLimit": 256,
+      "Memory": 2415919104,
+      "Tmpfs": {"/tmp": "rw,noexec,nosuid,size=64m", "/run": "rw,noexec,nosuid,size=64m"}
+    },
+    "Mounts": [
+      {"Destination": "/etc/postfiatd"}, {"Destination": "/var/lib/postfiatd/db"}, {"Destination": "/var/log/postfiatd"}
+    ]
+  }
+]

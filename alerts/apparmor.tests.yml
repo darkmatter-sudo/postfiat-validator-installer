@@ -1,0 +1,61 @@
+# promtool unit tests for apparmor.rules.yml. Run: promtool test rules apparmor.tests.yml
+# Time 0 = 1970-01-01T00:00Z; 1m input intervals. Expected annotations are written out by hand.
+rule_files:
+  - apparmor.rules.yml
+evaluation_interval: 1m
+tests:
+  - name: "findings fire after 30m with the count, per host; a host with 0 never fires"
+    interval: 1m
+    input_series:
+      - series: 'pft_apparmor_findings{host="validator"}'
+        values: '2x40'
+      - series: 'pft_apparmor_findings{host="sentry"}'
+        values: '0x40'
+    alert_rule_test:
+      - eval_time: 29m
+        alertname: PFTAppArmorDrift
+        exp_alerts: []
+      - eval_time: 31m
+        alertname: PFTAppArmorDrift
+        exp_alerts:
+          - exp_labels: {severity: warning, host: validator}
+            exp_annotations:
+              summary: "2 AppArmor check(s) FAIL/WARN on validator"
+              description: "The hourly pft-apparmor audit graded the postfiatd container's AppArmor confinement: kernel support, the pft-postfiatd profile loaded and in enforce mode, the container running under it (not docker-default), the profile file + apparmor.service for the next boot, the compose/run re-create path, confine/ options, or DENIED events in the last 24h. Run `sudo pft-apparmor audit` to list them."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/apparmor/README.md#alert"
+  - name: "a short complain/learn window (< 30m) never fires; resolves after the next clean audit"
+    interval: 1m
+    input_series:
+      - series: 'pft_apparmor_findings{host="sentry"}'
+        values: '0x5 1x20 0x10 1x40 0x10'
+    alert_rule_test:
+      - eval_time: 28m
+        alertname: PFTAppArmorDrift
+        exp_alerts: []
+      - eval_time: 70m
+        alertname: PFTAppArmorDrift
+        exp_alerts:
+          - exp_labels: {severity: warning, host: sentry}
+            exp_annotations:
+              summary: "1 AppArmor check(s) FAIL/WARN on sentry"
+              description: "The hourly pft-apparmor audit graded the postfiatd container's AppArmor confinement: kernel support, the pft-postfiatd profile loaded and in enforce mode, the container running under it (not docker-default), the profile file + apparmor.service for the next boot, the compose/run re-create path, confine/ options, or DENIED events in the last 24h. Run `sudo pft-apparmor audit` to list them."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/apparmor/README.md#alert"
+      - eval_time: 80m
+        alertname: PFTAppArmorDrift
+        exp_alerts: []
+  - name: "max by host: two scrapes of the same host give one alert with the larger count"
+    interval: 1m
+    input_series:
+      - series: 'pft_apparmor_findings{host="validator",instance="a",job="node"}'
+        values: '3x40'
+      - series: 'pft_apparmor_findings{host="validator",instance="a",job="node",extra="x"}'
+        values: '1x40'
+    alert_rule_test:
+      - eval_time: 35m
+        alertname: PFTAppArmorDrift
+        exp_alerts:
+          - exp_labels: {severity: warning, host: validator, instance: a, job: node}
+            exp_annotations:
+              summary: "3 AppArmor check(s) FAIL/WARN on validator"
+              description: "The hourly pft-apparmor audit graded the postfiatd container's AppArmor confinement: kernel support, the pft-postfiatd profile loaded and in enforce mode, the container running under it (not docker-default), the profile file + apparmor.service for the next boot, the compose/run re-create path, confine/ options, or DENIED events in the last 24h. Run `sudo pft-apparmor audit` to list them."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/apparmor/README.md#alert"

@@ -1,0 +1,10 @@
+type=AVC msg=audit(1793603300.100:10): apparmor="ALLOWED" operation="open" profile="pft-aa-learn" name="/before-t0" pid=1 comm="x" requested_mask="r" denied_mask="r" fsuid=0 ouid=0
+type=AVC msg=audit(1793603391.520:11): apparmor="ALLOWED" operation="open" profile="pft-aa-learn" name="/etc/passwd" pid=866966 comm="docker-entrypoi" requested_mask="r" denied_mask="r" fsuid=0 ouid=0FSUID="root" OUID="root"
+type=AVC msg=audit(1793603391.521:12): apparmor="ALLOWED" operation="open" profile="pft-aa-learn" name="/etc/passwd" pid=866967 comm="cron" requested_mask="r" denied_mask="r" fsuid=0 ouid=0FSUID="root" OUID="root"
+type=AVC msg=audit(1793603391.556:13): apparmor="ALLOWED" operation="exec" profile="pft-aa-learn" name="/usr/sbin/cron" pid=867000 comm="docker-entrypoi" requested_mask="x" denied_mask="x" fsuid=0 ouid=0 target="pft-aa-learn//null-/usr/sbin/cron"FSUID="root" OUID="root"
+type=AVC msg=audit(1793603392.000:14): apparmor="ALLOWED" operation="capable" profile="pft-aa-learn" pid=867000 comm="cron" capability=6  capname="setgid"
+type=AVC msg=audit(1793603393.000:15): apparmor="ALLOWED" operation="sendmsg" profile="pft-aa-learn" pid=866966 comm=696F20737663202331 laddr=172.17.0.2 lport=40834 faddr=192.0.2.10 fport=2559 family="inet" sock_type="stream" protocol=6 requested_mask="send" denied_mask="send"
+type=AVC msg=audit(1793603394.000:16): apparmor="DENIED" operation="open" profile="pft-aa-learn" name="/denied-in-learn" pid=1 comm="x" requested_mask="r" denied_mask="r" fsuid=0 ouid=0
+type=AVC msg=audit(1793603395.000:17): apparmor="ALLOWED" operation="open" profile="pft-other" name="/other-profile" pid=1 comm="x" requested_mask="r" denied_mask="r" fsuid=0 ouid=0
+type=SYSCALL msg=audit(1793603395.000:17): arch=c000003e syscall=257 success=yes exit=3 ppid=1 pid=2 comm="x" exe="/usr/bin/x" subj=pft-aa-learn key=(null)
+type=EXECVE msg=audit(1793603396.000:18): argc=2 a0="docker" a1="profile=\"pft-aa-learn\""

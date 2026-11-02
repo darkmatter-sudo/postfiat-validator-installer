@@ -1,0 +1,20 @@
+# Alert rule for pft-apparmor (../apparmor). pft-apparmor.timer audits once an hour and writes
+# pft_apparmor_*{host="..."} to the textfile dir (validator: local; sentry: pulled like pft-mounts).
+# One alert for every graded check: AppArmor off in the kernel, parser missing, pft-postfiatd not loaded, the
+# container back on docker-default/unconfined (e.g. a re-create without the compose override), complain mode left on,
+# the profile file or apparmor.service missing for the next boot, confine/ options lost, or DENIED events in the last
+# 24h (the profile blocked something postfiatd, cron or logrotate tried). A stopped audit is caught by pft-rulecheck
+# and PFTTextfileStale, not by a second rule here. The sentry runs no Prometheus: host="sentry" is evaluated here.
+# Tests: apparmor.tests.yml.
+groups:
+  - name: pft-apparmor
+    rules:
+      - alert: PFTAppArmorDrift
+        expr: max by (instance, job, host) (pft_apparmor_findings) > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} AppArmor check(s) FAIL/WARN on {{ $labels.host }}"
+          description: "The hourly pft-apparmor audit graded the postfiatd container's AppArmor confinement: kernel support, the pft-postfiatd profile loaded and in enforce mode, the container running under it (not docker-default), the profile file + apparmor.service for the next boot, the compose/run re-create path, confine/ options, or DENIED events in the last 24h. Run `sudo pft-apparmor audit` to list them."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/apparmor/README.md#alert"
