@@ -5,6 +5,7 @@ State lives in $STUB_DIR: containers/<name>.json (one `docker inspect` object ea
 compose_base.json (what `docker compose up` creates before the override files are applied), calls (log).
 Knobs (files in $STUB_DIR): rpc_bad_profile (containers under this AppArmor profile answer server_state
 "connected"), drop_on_recreate (HostConfig key removed from every container created by run/compose up),
+profile_on_recreate (every created container reports this AppArmorProfile, as if the apparmor= option were ignored),
 fail_run, fail_compose_up (one-shot), deny_on_exercise (run-parts appends a DENIED record to $AUDIT_LOG).
 `docker run` builds the new container from its ARGUMENTS, so the tests check that apply's run args really
 reproduce the old container (a lost flag shows up as a confine signature change).
@@ -51,6 +52,9 @@ def after_create(c):
     k = knob("drop_on_recreate")
     if k:
         c["HostConfig"].pop(k, None)
+    p = knob("profile_on_recreate")
+    if p:
+        c["AppArmorProfile"] = p
     c["State"] = {"Running": True, "StartedAt": tick()}
     return c
 

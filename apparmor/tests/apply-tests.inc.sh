@@ -179,6 +179,11 @@ auto_rb() { # NAME: apply exit 1, previous container back, profile gone, state r
 mk_apply run; echo ReadonlyRootfs > "$A/d/drop_on_recreate"; arun apply --profile-file "$A/profile" --yes
 grep -q 'confine changed: read_only' <<<"$OUT" && ok "auto: lost read-only named by the gate" || ko "auto: lost read-only" "$OUT"
 rm "$A/d/drop_on_recreate"; auto_rb "auto: lost read-only"
+for m in run compose; do # the runtime ignores apparmor=: the node is healthy but still unconfined by the new profile
+  mk_apply "$m"; echo docker-default > "$A/d/profile_on_recreate"; arun apply --profile-file "$A/profile" --yes
+  grep -q "health FAIL .*profile 'docker-default' want pft-postfiatd;" <<<"$OUT" && ok "auto $m: wrong container profile named by the gate" || ko "auto $m: wrong profile" "$OUT"
+  rm "$A/d/profile_on_recreate"; auto_rb "auto $m: wrong container profile"
+done
 mk_apply run; echo pft-postfiatd > "$A/d/rpc_bad_profile"; arun apply --profile-file "$A/profile" --yes
 grep -q 'server_state connected' <<<"$OUT" && ok "auto: node not full under the profile named" || ko "auto: not full" "$OUT"; auto_rb "auto: not full"
 mk_apply run
