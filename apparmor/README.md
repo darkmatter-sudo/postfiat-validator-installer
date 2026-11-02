@@ -1,8 +1,8 @@
 # pft-apparmor: a tailored AppArmor profile for the postfiatd container
 
-> Work in progress. `audit`, `learn`, `events`, `generate`, `check`, the offline suite, the mutant harness and the
-> alert rule are in place. `apply` / `rollback` (pft-maint window, health gates, integrity/fleet baselines) and the
-> two-host live proof come next; this README gets the found → fixed → verified table with the live run.
+> Work in progress. `audit`, `learn`, `events`, `generate`, `check`, `apply`, `rollback`, the offline suite, the
+> mutant harness and the alert rule are in place. The two-host live proof (sentry first, then validator) comes next;
+> this README gets the found → fixed → verified table with the live run.
 
 Docker starts every container under `docker-default`, a generic profile that allows **any** file access, any
 capability the container holds and any executable. `pft-apparmor` replaces it for postfiatd with `pft-postfiatd`, a
@@ -19,6 +19,8 @@ sudo pft-apparmor learn --out FILE [--minutes N]       # throwaway container und
 sudo pft-apparmor events [--since-epoch T] [--profile P]   # normalized learn events (TSV) from the audit log
 pft-apparmor generate --events FILE [--caps "SETGID SETUID"] [--name P] > pft-postfiatd
 pft-apparmor check FILE                                 # apparmor_parser -Q -K: compile, load nothing
+sudo pft-apparmor apply --profile-file FILE [--complain] --yes   # inside a pft-maint window
+sudo pft-apparmor rollback --yes                        # undo the last apply, inside a pft-maint window
 ```
 
 Exit codes: 0 PASS/ok, 1 findings, 2 error, 3 usage, 4 refused. Config: `/etc/pft-apparmor.env`
@@ -61,6 +63,38 @@ and `pft_apparmor_last_run_timestamp_seconds`. Alert: `PFTAppArmorDrift` (`alert
    raw inet sockets, packet sockets, pivot_root, umount and the admin capabilities. `generate` refuses (exit 4) if
    any learned allow overlaps an explicit deny, so a deny can never silently break a path the node used.
 
+## apply and rollback
+
+`apply` changes nothing and exits 4 unless: `--yes` is given; a `pft-maint` window is active with room for an apply
+**and** a rollback (`2 × HEALTH_BUDGET + MAINT_MARGIN`, 2100 s by default) and no data-collection lock is held; the
+node is `full`; the container is confined (read-only root + no-new-privileges, i.e. confine/ was applied); the
+profile file defines `pft-postfiatd` and compiles; and the previous apply is not still in place. Then:
+
+1. **Profile.** An existing `/etc/apparmor.d/pft-postfiatd` is backed up; the new file is installed there (so
+   `apparmor.service` loads it at boot, before docker starts the container) and loaded with `apparmor_parser -r -W`.
+   `--complain` sets the complain flag for a bounded learn window on the live node; plain `apply` strips it.
+2. **Re-create.** compose (validator): `docker-compose.apparmor.yml` with `security_opt: apparmor=pft-postfiatd`
+   is added to `COMPOSE_FILE` in `.env` (backed up first), then `docker compose up -d`. Compose merges
+   `security_opt` lists, so confine's `no-new-privileges:true` stays (checked with `docker compose config` on a
+   scratch copy of the validator's compose files). `docker run` (sentry): the container is stopped and kept as
+   `NAME-preaa-<id>` with restart=no, and a new one is started with the **old container's own arguments** read from
+   `docker inspect` (confine/'s recreate set plus its runtime profile) and `apparmor=pft-postfiatd`.
+3. **Gate.** Within `HEALTH_BUDGET` (900 s): the container was re-created, runs under the profile, the kernel has
+   the profile in the wanted mode, `server_state` is `full`, peers ≥ `MIN_PEERS`, every pft-* service that was
+   running is still active, and the **confine signature** is unchanged: image, cmd, entrypoint, user, env, caps,
+   read-only, tmpfs, pids, memory, security_opt (minus the AppArmor entry), mounts, ports, network and logging.
+   A recreate that loses one flag fails here and names the field. Then the live exercise (RPC, cron's identity
+   switch, the hourly cron run, `ps`) and **0 DENIED** records for the profile since the start.
+4. Any failed step, a failed gate or SIGINT/SIGTERM rolls back automatically (exit 1, or 6 when interrupted).
+   On PASS, `pft-integrity accept` runs only if every changed item is `container:NAME` or the compose `.env` /
+   override; anything else is left for the operator.
+
+`rollback` restores the previous container (compose: `.env` byte-identical and the override removed; run: the
+kept `NAME-preaa-<id>` renamed back with its restart policy), restores the previous profile file or removes and
+unloads `pft-postfiatd`, and runs the same gate for the previous profile (exit 5 if it does not pass).
+Commands printed by `apply` mask env values and IPv4 addresses. `PFT_AA_INJECT=health` makes the apply gate fail,
+for a live automatic-rollback drill.
+
 ## Design notes (from probes on throwaway containers, 2026-11-02)
 
 - **No separate sub-profile for the daemon.** The plan was to run `/usr/local/bin/postfiatd` in a child profile
@@ -87,6 +121,8 @@ and `pft_apparmor_last_run_timestamp_seconds`. Alert: `PFTAppArmorDrift` (`alert
 
 ```
 bash apparmor/tests/run-tests.sh            # offline suite: stub docker/parser/systemctl, fake /sys + audit logs
+                                            # (apply/rollback: tests/stub_docker.py builds each new container from
+                                            #  its `docker run` arguments, so a lost flag is caught by the gate)
 python3 -u apparmor/tests/mutate.py         # 31 mutants (+1 documented equivalent), each must make the suite fail (timeout = caught)
 promtool test rules alerts/apparmor.tests.yml
 ```

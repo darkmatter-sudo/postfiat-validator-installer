@@ -1,0 +1,16 @@
+{"Name": "/postfiatd", "AppArmorProfile": "docker-default",
+ "State": {"Running": true, "StartedAt": "2026-10-30T08:00:00.000000000Z"},
+ "Config": {"Image": "agtipft/postfiatd:testnet-light-latest", "Cmd": ["--conf", "/etc/postfiatd/postfiatd.cfg"],
+            "Entrypoint": ["/usr/local/bin/docker-entrypoint.sh"], "User": "",
+            "Env": ["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"],
+            "Labels": {"com.docker.compose.project.working_dir": "/opt/postfiatd", "com.docker.compose.service": "postfiatd",
+                       "com.docker.compose.project.config_files": "/opt/postfiatd/docker-compose.yml,/opt/postfiatd/docker-compose.override.yml,/opt/postfiatd/docker-compose.confine.yml"}},
+ "HostConfig": {"CapAdd": ["CAP_SETGID", "CAP_SETUID"], "CapDrop": ["ALL"], "ReadonlyRootfs": true,
+   "SecurityOpt": ["no-new-privileges:true"], "PidsLimit": 256, "Memory": 2415919104, "MemorySwap": 2415919104,
+   "Tmpfs": {"/run": "rw,noexec,nosuid,size=64m", "/tmp": "rw,noexec,nosuid,size=64m"},
+   "PortBindings": {"2559/tcp": [{"HostIp": "", "HostPort": "2559"}], "5005/tcp": [{"HostIp": "127.0.0.1", "HostPort": "5005"}]},
+   "LogConfig": {"Type": "json-file", "Config": {"max-size": "100m"}},
+   "RestartPolicy": {"Name": "unless-stopped", "MaximumRetryCount": 0}, "NetworkMode": "postfiatd_default"},
+ "Mounts": [
+   {"Type": "volume", "Name": "postfiatd_config", "Source": "/var/lib/docker/volumes/postfiatd_config/_data", "Destination": "/etc/postfiatd", "RW": true},
+   {"Type": "volume", "Name": "postfiatd_data", "Source": "/var/lib/docker/volumes/postfiatd_data/_data", "Destination": "/var/lib/postfiatd/db", "RW": true}]}

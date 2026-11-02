@@ -292,5 +292,9 @@ else
   echo "skip apparmor_parser compile tests (no apparmor_parser or fixture)"
 fi
 
+# ---- apply / rollback ------------------------------------------------------------------------------------
+# shellcheck source=SCRIPTDIR/apply-tests.inc.sh
+. "$HERE/apply-tests.inc.sh"
+
 echo "RESULT: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

@@ -9,6 +9,8 @@
 #        pft-apparmor events [--since-epoch T] [--profile P]  (normalized learn events from the audit log, TSV)
 #        pft-apparmor generate --events FILE [--caps "SETGID SETUID"] [--name P]   (profile on stdout)
 #        pft-apparmor check FILE                            (apparmor_parser -Q -K: parse + compile, load nothing)
+#        sudo pft-apparmor apply --profile-file FILE [--complain] --yes   (inside a pft-maint window)
+#        sudo pft-apparmor rollback --yes                   (undo the last apply; inside a pft-maint window)
 #
 #  audit     read-only. One line per check: PASS / FAIL / WARN / INFO.
 #              kernel     /sys/module/apparmor/parameters/enabled = Y
@@ -38,13 +40,35 @@
 #            learned + --caps; plus EXTRA_EXEC (error-path-only binaries). Then the docker-default deny block (verbatim) and an explicit `audit deny` block
 #            (shadow files, writes to /usr /etc /boot, exec from writable trees, mount/ptrace/raw sockets...).
 #            Refuses (exit 4) if any learned allow overlaps an explicit deny.
+#  apply     refuses (exit 4, nothing changed) without --yes, without an active pft-maint window holding
+#            2*HEALTH_BUDGET+MAINT_MARGIN s and no data-collection lock, when the node is not full, when the
+#            container is not confined (read-only root + no-new-privileges), when FILE does not define PROFILE or
+#            does not compile, or when the last apply is still in place. Then: backs up an existing
+#            /etc/apparmor.d/PROFILE, installs FILE there (enforce; --complain adds the complain flag for a
+#            bounded learn window) and loads it (-r -W), and re-creates the container with apparmor=PROFILE:
+#            compose = docker-compose.apparmor.yml + COMPOSE_FILE in .env (backed up), `docker compose up -d`;
+#            docker run = stop, rename to NAME-preaa-<id> (kept, restart=no), `docker run` with the old
+#            container's own arguments (name, restart, user, logging, network, ports, volumes, env, caps,
+#            read-only, tmpfs, pids, memory, security_opt). Gate (HEALTH_BUDGET s, every POLL_SEC s): re-created,
+#            runs under PROFILE in the wanted kernel mode, server_state full, peers >= MIN_PEERS, the confine
+#            signature (every field above except the AppArmor profile) unchanged, every running pft-* service
+#            still active; then RPC + cron identity switch + the hourly cron run + ps, and 0 DENIED records for
+#            PROFILE since the start. Any failure, a failed step or SIGINT/SIGTERM -> automatic rollback.
+#            Finally pft-integrity accept, only if every changed item is the container or its compose files.
+#  rollback  restores the previous container (compose: .env byte-identical, override removed; run: the kept
+#            NAME-preaa-<id>), the previous profile file (or removes + unloads PROFILE), and runs the same gate
+#            for the previous profile. Exit 5 if the rollback gate does not pass.
 #
-# Exit codes: 0 PASS / ok, 1 findings, 2 error, 3 usage, 4 refused.
+# Exit codes: 0 PASS / ok, 1 findings (audit) / gate failed and rolled back (apply), 2 error, 3 usage, 4 refused,
+#             5 rollback did not pass its gate, 6 interrupted (rolled back).
 # Config: /etc/pft-apparmor.env (KEY=VALUE, read, never sourced): HOST_LABEL (validator), PROFILE (pft-postfiatd)
 # Env: CONTAINER (auto: postfiatd or postfiatd-sentry)  TEXTFILE_DIR  LEARN_DIR (/var/lib/pft-apparmor)
 #      TREES (directories collapsed to DIR/{,**})  EXTRA_EXEC (/usr/bin/logger)
 #      SYNC_BUDGET (1200 s for the throwaway to reach full)
-#      Test hooks: PFT_AA_ROOT (path prefix for every file)  PFT_AA_DOCKER / _PARSER / _SYSTEMCTL (commands)
+#      STATE_DIR (LEARN_DIR: apply-CONTAINER.json, backup/)  HEALTH_BUDGET (900)  POLL_SEC (10)
+#      MAINT_MARGIN (300)  MIN_PEERS (1)  PFT_AA_INJECT=health (apply's gate fails: live automatic-rollback drill)
+#      Test hooks: PFT_AA_ROOT (path prefix for every file)  PFT_AA_DOCKER / _PARSER / _SYSTEMCTL / _MAINT /
+#      _INTEGRITY (commands)
 #      PFT_AA_NOW (unix time)
 
 # jq programs are single-quoted on purpose. "A && B || C" is intended where C only reports or returns.
@@ -60,6 +84,15 @@ CONF="$R/etc/pft-apparmor.env"
 TEXTFILE_DIR="${TEXTFILE_DIR:-$R/var/lib/pft-exporter/textfile}"
 LEARN_DIR="${LEARN_DIR:-$R/var/lib/pft-apparmor}"
 SYNC_BUDGET="${SYNC_BUDGET:-1200}"
+MAINT="${PFT_AA_MAINT:-pft-maint}"
+INTEGRITY="${PFT_AA_INTEGRITY:-pft-integrity}"
+STATE_DIR="${STATE_DIR:-$LEARN_DIR}"
+HEALTH_BUDGET="${HEALTH_BUDGET:-900}"
+POLL_SEC="${POLL_SEC:-10}"
+MAINT_MARGIN="${MAINT_MARGIN:-300}"
+MIN_PEERS="${MIN_PEERS:-1}"
+INJECT="${PFT_AA_INJECT:-}" # "health": apply's gate fails (live automatic-rollback drill)
+NOJ='{}'
 # Executables a learn run cannot see because only error paths call them: /etc/cron.daily/logrotate runs
 # `logger` only when logrotate fails (enforce probe 04 denied it).
 EXTRA_EXEC="${EXTRA_EXEC-/usr/bin/logger}" # set and empty = none
@@ -424,7 +457,7 @@ rpc_state() { # CONTAINER -> server_state or ""
     | jq -r '.result.info.server_state // empty' 2>/dev/null
 }
 
-lx() { echo "\$ $*"; "$@"; echo "(exit $?)"; }
+lx() { local rc; echo "\$ $*"; "$@"; rc=$?; echo "(exit $rc)"; return "$rc"; }
 
 exercise() { # CONTAINER
   local c="$1" lr
@@ -477,9 +510,277 @@ do_learn() { # OUT MINUTES
   echo "$(ts) learn: done, $(wc -l < "$out") distinct events -> $out; throwaway removed, $lp unloaded"
 }
 
+# ---------------------------------------------------------------------------------------------------- apply
+inspect0() { "$DOCKER" inspect "$1" 2>/dev/null | jq -c '.[0] // empty' 2>/dev/null; }
+
+# Everything a re-create must keep, i.e. all of confine/'s runtime profile and the container's identity, but NOT the
+# AppArmor profile. Canonical JSON: apply's gate requires it unchanged, so a lost flag rolls back.
+confine_sig() { # INSPECT0
+  jq -cS '{image: .Config.Image, cmd: (.Config.Cmd // []), entrypoint: (.Config.Entrypoint // []),
+    user: (.Config.User // ""), env: (.Config.Env // [] | sort),
+    cap_add: (.HostConfig.CapAdd // [] | map(ascii_upcase | sub("^CAP_"; "")) | sort),
+    cap_drop: (.HostConfig.CapDrop // [] | map(ascii_upcase) | sort),
+    read_only: (.HostConfig.ReadonlyRootfs // false), tmpfs: (.HostConfig.Tmpfs // {}),
+    pids: (.HostConfig.PidsLimit // 0), memory: (.HostConfig.Memory // 0), memory_swap: (.HostConfig.MemorySwap // 0),
+    security_opt: (.HostConfig.SecurityOpt // [] | map(select(startswith("apparmor") | not)
+                   | sub("^no-new-privileges([:=]true)?$"; "no-new-privileges")) | sort),
+    mounts: (.Mounts // [] | map({type: .Type, name: (if .Type == "volume" then .Name else null end),
+             source: (if .Type == "bind" then .Source else null end), dest: .Destination, rw: .RW}) | sort_by(.dest)),
+    ports: (.HostConfig.PortBindings // {}), network: (.HostConfig.NetworkMode // ""), log: (.HostConfig.LogConfig // {})}' <<<"$1"
+}
+sig_diff() { # SIG_A SIG_B -> names of the keys that differ (values are not printed: env may hold secrets)
+  jq -rn --argjson a "$1" --argjson b "$2" '[($a + $b) | keys[] | select($a[.] != $b[.])] | join(",")'
+}
+
+# docker run arguments that re-create a `docker run` container exactly (confine/'s recreate set: name, restart, user,
+# logging, network, ports, volumes, env beyond the image's; plus its runtime profile: caps, read-only, tmpfs, pids,
+# memory, security_opt) with apparmor=PROFILE instead of the current AppArmor profile. Image + cmd last.
+run_args() { # INSPECT0 IMAGE_ENV_JSON PROFILE
+  jq -r --argjson ienv "$2" --arg p "$3" '
+    "--name=\(.Name[1:])",
+    "--restart=\(.HostConfig.RestartPolicy.Name)\(if .HostConfig.RestartPolicy.Name == "on-failure" then ":\(.HostConfig.RestartPolicy.MaximumRetryCount)" else "" end)",
+    (if (.Config.User // "") != "" then "--user=\(.Config.User)" else empty end),
+    "--log-driver=\(.HostConfig.LogConfig.Type)",
+    ((.HostConfig.LogConfig.Config // {}) | to_entries[] | "--log-opt=\(.key)=\(.value)"),
+    (if (.HostConfig.NetworkMode // "default") != "default" then "--network=\(.HostConfig.NetworkMode)" else empty end),
+    ((.HostConfig.PortBindings // {}) | to_entries[] | .key as $k | .value[]
+      | "--publish=\(if (.HostIp // "") != "" then .HostIp + ":" else "" end)\(.HostPort):\($k | sub("/tcp$"; ""))"),
+    (.Mounts // [] | .[] | if .Type == "volume" then "--volume=\(.Name):\(.Destination)\(if .RW then "" else ":ro" end)"
+                           elif .Type == "bind" then "--volume=\(.Source):\(.Destination)\(if .RW then "" else ":ro" end)"
+                           else empty end),
+    (.Config.Env // [] | map(select(. as $e | $ienv | index($e) | not)) | .[] | "--env=\(.)"),
+    (.HostConfig.CapDrop // [] | .[] | "--cap-drop=\(.)"),
+    (.HostConfig.CapAdd // [] | .[] | "--cap-add=\(.)"),
+    (if .HostConfig.ReadonlyRootfs then "--read-only" else empty end),
+    (.HostConfig.Tmpfs // {} | to_entries[] | "--tmpfs=\(.key):\(.value)"),
+    (if (.HostConfig.PidsLimit // 0) > 0 then "--pids-limit=\(.HostConfig.PidsLimit)" else empty end),
+    (if (.HostConfig.Memory // 0) > 0 then "--memory=\(.HostConfig.Memory)" else empty end),
+    (if (.HostConfig.MemorySwap // 0) != 0 then "--memory-swap=\(.HostConfig.MemorySwap)" else empty end),
+    (.HostConfig.SecurityOpt // [] | map(select(startswith("apparmor") | not))[] | "--security-opt=\(.)"),
+    "--security-opt=apparmor=\($p)",
+    .Config.Image, (.Config.Cmd // [])[]' <<<"$1"
+}
+show_args() { # args on stdin, one per line -> one line, env values and IPv4 addresses masked (publishable)
+  sed -E 's/^(--env=[^=]*)=.*/\1=<value>/; s/([0-9]{1,3}\.){3}[0-9]{1,3}/<redacted-ip>/g' | paste -sd' '
+}
+
+maint_gate() { # -> "ok <remaining>" or "refuse <reason>"; apply + a possible rollback must fit the window
+  local j w rem nl need=$((2 * HEALTH_BUDGET + MAINT_MARGIN))
+  j="$("$MAINT" status --json 2>/dev/null)" || { echo "refuse pft-maint status failed (is pft-maint installed?)"; return; }
+  w="$(jq -r '.window // "none"' <<<"$j" 2>/dev/null)"
+  rem="$(jq -r '.remaining_sec // 0' <<<"$j" 2>/dev/null)"; [[ "$rem" =~ ^[0-9]+$ ]] || rem=0
+  nl="$(jq -r '.locks | length' <<<"$j" 2>/dev/null)"; [[ "$nl" =~ ^[0-9]+$ ]] || nl=1
+  if [ "$w" != active ]; then echo "refuse no active pft-maint window (window=${w:-none}); run: sudo pft-maint start --ttl 45m --reason ..."
+  elif [ "$rem" -lt "$need" ]; then echo "refuse window has ${rem}s left, needs 2*HEALTH_BUDGET+MAINT_MARGIN=${need}s"
+  elif [ "$nl" -gt 0 ]; then echo "refuse $nl pft-maint data-collection lock(s) held: $(jq -r '.locks | join("; ")' <<<"$j")"
+  else echo "ok $rem"; fi
+}
+daemon_units() { # long-running pft units that are active now; the gate requires them to stay active
+  "$SYSTEMCTL" list-units --type=service --state=running --no-legend 'pft-*' 2>/dev/null | awk '{print $1}' | grep -E '^pft-' | sort -u
+}
+sha() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
+count_events() { # SINCE_EPOCH PROFILE KIND(DENIED|ALLOWED) -> number of audit records
+  local f files=()
+  for f in "$R"/var/log/audit/audit.log*; do [ -r "$f" ] && files+=("$f"); done
+  [ ${#files[@]} -gt 0 ] || { echo 0; return 1; }
+  cat -- "${files[@]}" | awk -v t="$1" -v q="$2" -v k="$3" '
+    index($0, "apparmor=\"" k "\"") && (index($0, "profile=\"" q "\"") || index($0, "profile=\"" q "//")) {
+      if (match($0, /audit\([0-9]+/) && substr($0, RSTART + 6, RLENGTH - 6) + 0 >= t + 0) n++ }
+    END { print n + 0 }'
+}
+
+# Health gate after a re-create. apply: the container is new (StartedAt changed), runs under PROFILE, the profile
+# is loaded in the wanted mode, server_state full, peers >= MIN_PEERS, confine signature unchanged, every pft
+# daemon still active; then the live exercise (RPC, cron identity switch, the hourly cron run, ps) and 0 DENIED
+# records for PROFILE since T0. rollback: the same with the pre-apply profile and no exercise/denial part.
+health_gate() { # MODE(apply|rollback) CONTAINER BEFORE_STARTED_AT WANT_PROFILE WANT_MODE SIG DAEMONS T0
+  local mode="$1" c="$2" before="$3" wp="$4" wm="$5" sig="$6" daemons="$7" t0="$8" i n ins sa prof km st peers why u dn al
+  n=$(( HEALTH_BUDGET / POLL_SEC )); [ "$n" -ge 1 ] || n=1
+  for ((i = 1; i <= n; i++)); do
+    ins="$(inspect0 "$c")"; why=""
+    sa="$(jq -r '.State.StartedAt // ""' <<<"${ins:-$NOJ}" 2>/dev/null)"
+    prof="$(jq -r '.AppArmorProfile // ""' <<<"${ins:-$NOJ}" 2>/dev/null)"
+    km="$(loaded_mode "$wp")"
+    st="$(rpc_state "$c")"
+    peers="$("$DOCKER" exec "$c" curl -s -m 10 -X POST -d '{"method":"server_info"}' http://127.0.0.1:5005 2>/dev/null \
+      | jq -r '.result.info.peers // 0' 2>/dev/null)"; [[ "$peers" =~ ^[0-9]+$ ]] || peers=0
+    [ -n "$ins" ] || why+=" container missing;"
+    [ -n "$sa" ] && [ "$sa" != "$before" ] || why+=" not re-created (StartedAt unchanged);"
+    [ "$prof" = "$wp" ] || why+=" profile '${prof:-none}' want $wp;"
+    [ "$km" = "$wm" ] || why+=" kernel mode '${km:-not loaded}' want $wm;"
+    [ "$st" = full ] || why+=" server_state ${st:-none};"
+    [ "$peers" -ge "$MIN_PEERS" ] || why+=" peers $peers < $MIN_PEERS;"
+    [ -n "$ins" ] && [ "$(confine_sig "$ins")" = "$sig" ] || why+=" confine changed: $(sig_diff "$sig" "$(confine_sig "${ins:-$NOJ}")");"
+    for u in $daemons; do [ "$("$SYSTEMCTL" is-active "$u" 2>/dev/null)" = active ] || why+=" $u inactive;"; done
+    [ "$mode" = apply ] && [ "$INJECT" = health ] && why+=" injected failure (PFT_AA_INJECT=health);"
+    [ -z "$why" ] && break
+    [ "$i" -lt "$n" ] && sleep "$POLL_SEC"
+  done
+  if [ -n "$why" ]; then echo "$(ts) $mode: health FAIL after $i poll(s):$why"; return 1; fi
+  echo "$(ts) $mode: health PASS after $i poll(s) ($c re-created, profile $prof ($wm), server_state full, peers $peers, confine signature unchanged, $(wc -w <<<"$daemons") pft daemons active)"
+  [ "$mode" = apply ] || return 0
+  exercise_live "$c" | sed 's/^/  | /'
+  dn="$(count_events "$t0" "$wp" DENIED)"; al="$(count_events "$t0" "$wp" ALLOWED)"
+  if [ "$wm" = enforce ] && [ "$dn" != 0 ]; then
+    echo "$(ts) apply: gate FAIL - $dn DENIED record(s) for $wp since T0: $(denials "$t0" "$wp" | cut -f2)"; return 1
+  fi
+  echo "$(ts) apply: gate PASS - exercise done, DENIED since T0: $dn, ALLOWED (complain) since T0: $al"
+}
+exercise_live() { # CONTAINER: what the live node does on its own (no forced rotation, no restart: the live node is not a throwaway)
+  local c="$1"
+  lx "$DOCKER" exec "$c" curl -s -m 10 -o /dev/null -w '%{http_code}\n' -X POST -d '{"method":"server_info"}' http://127.0.0.1:5005
+  lx "$DOCKER" exec "$c" curl -s -m 10 -o /dev/null -w '%{http_code}\n' -X POST -d '{"method":"peers"}' http://127.0.0.1:5005
+  lx "$DOCKER" exec "$c" setpriv --reuid=0 --regid=0 --init-groups true
+  lx "$DOCKER" exec "$c" sh -c 'cd / && run-parts --report /etc/cron.hourly'
+  lx "$DOCKER" exec "$c" ps -eo pid,comm
+}
+
+integrity_accept() { # CONTAINER REASON: accept a new baseline only if every changed item is ours
+  command -v "$INTEGRITY" >/dev/null 2>&1 || { echo "$(ts) integrity: pft-integrity not installed, skipped"; return 0; }
+  local out items other
+  out="$("$INTEGRITY" verify 2>&1)"
+  items="$(grep -E '^  \[(WARN|FAIL)\] ' <<<"$out" | awk '{print $2}' | sort -u)"
+  [ -n "$items" ] || { echo "$(ts) integrity: baseline already current"; return 0; }
+  other="$(grep -vxE "container:$1|compose:\.env|compose:docker-compose\.apparmor\.yml" <<<"$items")"
+  if [ -n "$other" ]; then
+    echo "$(ts) integrity: NOT accepted - changed items besides the container/compose: $(paste -sd' ' <<<"$other")"
+    return 1
+  fi
+  "$INTEGRITY" accept --reason "$2" >/dev/null 2>&1 && echo "$(ts) integrity: accepted ($(paste -sd' ' <<<"$items")): $2" \
+    || { echo "$(ts) integrity: accept FAILED"; return 1; }
+}
+
+profile_text() { # FILE MODE -> profile text for that mode (complain adds the flag; enforce removes it)
+  if [ "$2" = complain ]; then
+    sed -E "s/^(profile $PROFILE flags=\()/\1complain,/; s/^(profile $PROFILE flags=\(complain,)complain,/\1/" "$1"
+  else
+    sed -E "s/^(profile $PROFILE flags=\()complain,/\1/" "$1"
+  fi
+}
+
+do_apply() { # PROFILE_FILE MODE
+  local src="$1" pm="$2" c ins sig before daemons gate id st wd svc cfgs files eb ov pf pb pre_prof iimg ienv old rp t0
+  [ "$(id -u)" = 0 ] || [ -n "$R" ] || die "apply needs root" 4
+  [ "$YES" = 1 ] || { echo "$(ts) apply: REFUSED - apply re-creates the container; re-run with --yes"; return 4; }
+  [ -r "$src" ] || die "cannot read --profile-file $src" 2
+  grep -qE "^profile $PROFILE flags=\([a-z_,]*\) \{$" "$src" || { echo "$(ts) apply: REFUSED - $src does not define profile $PROFILE (generate --name $PROFILE)"; return 4; }
+  c="$(pick_container)"; ins="$(inspect0 "$c")"; [ -n "$ins" ] || die "container $c not found" 2
+  pre_prof="$(jq -r '.AppArmorProfile // ""' <<<"$ins")"
+  gate="$(maint_gate)"
+  case "$gate" in ok*) ;; *) echo "$(ts) apply: REFUSED - ${gate#refuse }; nothing changed"; return 4 ;; esac
+  st="$(rpc_state "$c")"; [ "$st" = full ] || { echo "$(ts) apply: REFUSED - node is ${st:-down}, not full; nothing changed"; return 4; }
+  jq -e '.HostConfig.SecurityOpt // [] | map(select(test("^no-new-privileges"))) | length > 0' <<<"$ins" >/dev/null \
+    && jq -e '.HostConfig.ReadonlyRootfs == true' <<<"$ins" >/dev/null \
+    || { echo "$(ts) apply: REFUSED - $c is not confined (confine/ first: read-only root + no-new-privileges)"; return 4; }
+  [ -f "$STATE_FILE" ] && [ "$(jq -r '.rolled_back // false' "$STATE_FILE" 2>/dev/null)" != true ] && [ "$pre_prof" = "$PROFILE" ] \
+    && { echo "$(ts) apply: REFUSED - $c already runs under $PROFILE (state $STATE_FILE); rollback first to re-apply"; return 4; }
+  id="$(date -u -d "@$(now)" +%Y%m%dT%H%M%SZ)"; t0="$(now)"
+  sig="$(confine_sig "$ins")"; before="$(jq -r '.State.StartedAt // ""' <<<"$ins")"; daemons="$(daemon_units)"
+  mkdir -p "$STATE_DIR/backup" && chmod 0700 "$STATE_DIR" || die "cannot create $STATE_DIR" 2
+  echo "$(ts) apply $id on $c (host $HOST_LABEL): mode $pm, maintenance gate: $gate; before: profile ${pre_prof:-none}, server_state $st"
+  echo "$(ts) apply: confine signature sha256 $(sha256sum <<<"$sig" | cut -c1-12) ($(jq -r 'keys | length' <<<"$sig") keys); $(wc -w <<<"$daemons") pft daemons active"
+  # 1. profile into /etc/apparmor.d (boot) and the kernel; compiled first, so a bad file changes nothing
+  pf="$R/etc/apparmor.d/$PROFILE"; pb=""
+  profile_text "$src" "$pm" > "$STATE_DIR/candidate" || die "cannot write candidate" 2
+  lx "$PARSER" -Q -K "$STATE_DIR/candidate" || { echo "$(ts) apply: REFUSED - candidate profile does not compile; nothing changed"; return 4; }
+  if [ -f "$pf" ]; then pb="$STATE_DIR/backup/$PROFILE.$id"; cp -p "$pf" "$pb" || die "backup of $pf failed" 2; fi
+  jq -n --arg id "$id" --arg c "$c" --arg pf "$pf" --arg pb "$pb" --arg pp "$pre_prof" --arg pm "$pm" --arg sig "$sig" \
+    '{id:$id, container:$c, profile_file:$pf, profile_backup:$pb, pre_profile:$pp, mode:$pm, sig:$sig, phase:"profile"}' > "$STATE_FILE"
+  install -m 0644 "$STATE_DIR/candidate" "$pf" || { do_rollback auto; return 5; }
+  echo "$(ts) apply: installed $pf (sha256 $(sha "$pf" | cut -c1-12), $pm)${pb:+; previous file kept as backup/$(basename "$pb")}"
+  lx "$PARSER" -r -W "$pf" || { echo "$(ts) apply: profile load failed -> automatic rollback"; do_rollback auto; return 1; }
+  echo "$(ts) apply: kernel: $PROFILE ($(loaded_mode "$PROFILE"))"
+  # 2. re-create the container with apparmor=PROFILE
+  trap 'echo "$(ts) apply: interrupted -> automatic rollback"; do_rollback auto; exit 6' INT TERM
+  cfgs="$(jq -r '.Config.Labels["com.docker.compose.project.config_files"] // ""' <<<"$ins")"
+  if [ -n "$cfgs" ]; then
+    wd="$(jq -r '.Config.Labels["com.docker.compose.project.working_dir"] // ""' <<<"$ins")"
+    svc="$(jq -r '.Config.Labels["com.docker.compose.service"] // ""' <<<"$ins")"
+    [ -d "$R$wd" ] && [ -n "$svc" ] || { do_rollback auto; die "compose working dir/service unknown" 2; }
+    files="$(tr ',' '\n' <<<"$cfgs" | sed 's#.*/##' | grep -vx 'docker-compose.apparmor.yml' | paste -sd:)"
+    eb="$STATE_DIR/backup/env.$id"; ov="$R$wd/docker-compose.apparmor.yml"
+    touch "$R$wd/.env"; cp -p "$R$wd/.env" "$eb" || { do_rollback auto; die "cannot back up .env" 2; }
+    jq --arg wd "$wd" --arg eb "$eb" --arg ov "$ov" '. + {kind:"compose", working_dir:$wd, env_backup:$eb, override:$ov, phase:"container"}' \
+      "$STATE_FILE" > "$STATE_FILE.tmp" && mv -f "$STATE_FILE.tmp" "$STATE_FILE"
+    printf '# written by pft-apparmor apply; remove with: sudo pft-apparmor rollback --yes\nservices:\n  %s:\n    security_opt:\n      - "apparmor=%s"\n' \
+      "$svc" "$PROFILE" > "$ov"
+    { grep -v '^COMPOSE_FILE=' "$eb"; echo "COMPOSE_FILE=$files:docker-compose.apparmor.yml"; } > "$R$wd/.env"
+    chmod --reference="$eb" "$R$wd/.env" 2>/dev/null
+    echo "$(ts) apply: wrote $wd/docker-compose.apparmor.yml; .env backed up, COMPOSE_FILE=$files:docker-compose.apparmor.yml"
+    ( cd "$R$wd" && "$DOCKER" compose config -q ) || { echo "$(ts) apply: compose config invalid -> automatic rollback"; do_rollback auto; return 1; }
+    ( cd "$R$wd" && "$DOCKER" compose up -d 2>&1 ) | sed 's/^/  | /'
+    [ "${PIPESTATUS[0]}" = 0 ] || { echo "$(ts) apply: compose up failed -> automatic rollback"; do_rollback auto; return 1; }
+  else
+    iimg="$(jq -r .Config.Image <<<"$ins")"
+    ienv="$("$DOCKER" image inspect "$iimg" 2>/dev/null | jq -c '.[0].Config.Env // []' 2>/dev/null)"; [ -n "$ienv" ] || ienv='[]'
+    old="$c-preaa-$id"; rp="$(jq -r '.HostConfig.RestartPolicy.Name' <<<"$ins")"
+    mapfile -t A < <(run_args "$ins" "$ienv" "$PROFILE")
+    jq --arg o "$old" --arg rp "$rp" '. + {kind:"run", old_container:$o, restart:$rp, phase:"container"}' \
+      "$STATE_FILE" > "$STATE_FILE.tmp" && mv -f "$STATE_FILE.tmp" "$STATE_FILE"
+    echo "$(ts) apply: recreate: docker run -d $(printf '%s\n' "${A[@]}" | show_args)"
+    "$DOCKER" stop -t 60 "$c" >/dev/null && "$DOCKER" rename "$c" "$old" && "$DOCKER" update --restart=no "$old" >/dev/null \
+      || { echo "$(ts) apply: could not stop/rename $c -> automatic rollback"; do_rollback auto; return 1; }
+    echo "$(ts) apply: previous container kept as $old (stopped, restart=no)"
+    "$DOCKER" run -d "${A[@]}" >/dev/null || { echo "$(ts) apply: docker run failed -> automatic rollback"; do_rollback auto; return 1; }
+  fi
+  # 3. gate
+  if ! health_gate apply "$c" "$before" "$PROFILE" "$pm" "$sig" "$daemons" "$t0"; then
+    echo "$(ts) apply: gate failed -> automatic rollback"; do_rollback auto; local rc=$?; trap - INT TERM
+    [ "$rc" = 0 ] && return 1; return "$rc"
+  fi
+  trap - INT TERM
+  jq --arg t "$(ts)" '. + {phase:"applied", applied_at:$t, rolled_back:false}' "$STATE_FILE" > "$STATE_FILE.tmp" && mv -f "$STATE_FILE.tmp" "$STATE_FILE"
+  integrity_accept "$c" "pft-apparmor apply $id: $c re-created under $PROFILE ($pm)" || true
+  echo "$(ts) apply RESULT: PASS - $c runs under $PROFILE ($pm), node full (state $STATE_FILE)"
+}
+
+do_rollback() { # auto|manual: undo the last apply from the state file
+  local how="$1" s c kind before ins sig daemons pp pf pb old
+  [ -f "$STATE_FILE" ] || { echo "$(ts) rollback: no apply state ($STATE_FILE)"; return 2; }
+  s="$(cat "$STATE_FILE")"; c="$(jq -r .container <<<"$s")"; kind="$(jq -r '.kind // ""' <<<"$s")"
+  [ "$(jq -r '.rolled_back // false' <<<"$s")" = true ] && { echo "$(ts) rollback: apply $(jq -r .id <<<"$s") already rolled back"; return 0; }
+  pp="$(jq -r '.pre_profile' <<<"$s")"; [ -n "$pp" ] || pp=unconfined
+  pf="$(jq -r .profile_file <<<"$s")"; pb="$(jq -r '.profile_backup // ""' <<<"$s")"; sig="$(jq -r .sig <<<"$s")"
+  echo "$(ts) rollback ($how) of apply $(jq -r .id <<<"$s") on $c: back to $pp"
+  ins="$(inspect0 "$c")"; before="$(jq -r '.State.StartedAt // ""' <<<"${ins:-$NOJ}")"; daemons="$(daemon_units)"
+  case "$kind" in
+    compose)
+      local wd; wd="$(jq -r .working_dir <<<"$s")"
+      cp -p -- "$(jq -r .env_backup <<<"$s")" "$R$wd/.env" && rm -f -- "$(jq -r .override <<<"$s")" \
+        || { echo "$(ts) ROLLBACK FAILED: cannot restore .env / remove override"; return 5; }
+      echo "$(ts) rollback: .env restored, docker-compose.apparmor.yml removed"
+      ( cd "$R$wd" && "$DOCKER" compose up -d 2>&1 ) | sed 's/^/  | /'
+      [ "${PIPESTATUS[0]}" = 0 ] || { echo "$(ts) ROLLBACK FAILED: compose up"; return 5; } ;;
+    run)
+      old="$(jq -r .old_container <<<"$s")"
+      if inspect0 "$old" >/dev/null && [ -n "$(inspect0 "$old")" ]; then
+        "$DOCKER" rm -f "$c" >/dev/null 2>&1
+        "$DOCKER" rename "$old" "$c" && "$DOCKER" update --restart="$(jq -r .restart <<<"$s")" "$c" >/dev/null \
+          && "$DOCKER" start "$c" >/dev/null || { echo "$(ts) ROLLBACK FAILED: could not restore $old as $c"; return 5; }
+        echo "$(ts) rollback: previous container $old restored as $c (restart=$(jq -r .restart <<<"$s"))"
+      else
+        echo "$(ts) ROLLBACK FAILED: previous container $old is gone"; return 5
+      fi ;;
+    *) echo "$(ts) rollback: container was not touched yet" ;;
+  esac
+  if [ -n "$pb" ] && [ -f "$pb" ]; then
+    cp -p "$pb" "$pf" && lx "$PARSER" -r -W "$pf" >/dev/null || { echo "$(ts) ROLLBACK FAILED: profile restore"; return 5; }
+    echo "$(ts) rollback: previous $pf restored (sha256 $(sha "$pf" | cut -c1-12)) and loaded"
+  else
+    if [ -f "$pf" ]; then "$PARSER" -R "$pf" >/dev/null 2>&1; rm -f "$pf"; fi
+    echo "$(ts) rollback: $pf removed and $PROFILE unloaded (kernel: $(loaded_mode "$PROFILE"))"
+  fi
+  if [ -n "$kind" ]; then
+    health_gate rollback "$c" "$before" "$pp" "$(loaded_mode "$pp")" "$sig" "$daemons" 0 || return 5
+  fi
+  jq --arg t "$(ts)" --arg h "$how" '. + {rolled_back:true, rolled_back_at:$t, rollback:$h}' <<<"$s" > "$STATE_FILE"
+  integrity_accept "$c" "pft-apparmor rollback ($how) of apply $(jq -r .id <<<"$s"): $c back to $pp" || true
+  echo "$(ts) rollback RESULT: PASS - $c back under $pp"
+}
+
 # ---------------------------------------------------------------------------------------------------- main
 cmd="${1:-}"; shift || true
-JSON=0; PROM=""; SINCE=86400; OUT=""; MIN=65; EV=""; CAPS=""; NAME="$PROFILE"; SE=0; PP="$PROFILE"
+JSON=0; PROM=""; SINCE=86400; OUT=""; MIN=65; EV=""; CAPS=""; NAME="$PROFILE"; SE=0; PP="$PROFILE"; YES=0; PF=""; PMODE=enforce
 while [ $# -gt 0 ]; do
   case "$1" in
     --json) JSON=1 ;;
@@ -493,6 +794,9 @@ while [ $# -gt 0 ]; do
     --events) EV="${2:-}"; [ -n "$EV" ] || die "--events needs a file" 3; shift ;;
     --caps) CAPS="${2:-}"; shift ;;
     --name) NAME="${2:-}"; valid_label "$NAME" || die "bad --name" 3; shift ;;
+    --profile-file) PF="${2:-}"; [ -n "$PF" ] || die "--profile-file needs a file" 3; shift ;;
+    --complain) PMODE=complain ;;
+    --yes) YES=1 ;;
     -*) die "unknown option $1" 3 ;;
     *) ARG="$1" ;;
   esac
@@ -509,6 +813,13 @@ case "$cmd" in
             do_generate "$EV" "$CAPS" "$NAME"; exit 0 ;;
   check) [ -n "${ARG:-}" ] || die "usage: pft-apparmor check FILE" 3
          "$PARSER" -Q -K "$ARG"; exit $? ;;
+  apply) [ -n "$PF" ] || die "usage: pft-apparmor apply --profile-file FILE [--complain] --yes" 3
+         STATE_FILE="$STATE_DIR/apply-$(pick_container).json"; do_apply "$PF" "$PMODE"; exit $? ;;
+  rollback) [ "$YES" = 1 ] || { echo "pft-apparmor: rollback re-creates the container; re-run with --yes" >&2; exit 4; }
+            [ "$(id -u)" = 0 ] || [ -n "$R" ] || die "rollback needs root" 4
+            STATE_FILE="$STATE_DIR/apply-$(pick_container).json"
+            gate="$(maint_gate)"; case "$gate" in ok*) ;; *) echo "$(ts) rollback: REFUSED - ${gate#refuse }; nothing changed"; exit 4 ;; esac
+            do_rollback manual; exit $? ;;
   learn) [ -n "$OUT" ] || die "usage: pft-apparmor learn --out FILE [--minutes N]" 3
          do_learn "$OUT" "$MIN"; exit $? ;;
   *) sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 3 ;;
