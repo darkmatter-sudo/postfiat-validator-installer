@@ -11,6 +11,9 @@
 #        pft-apparmor check FILE                            (apparmor_parser -Q -K: parse + compile, load nothing)
 #        sudo pft-apparmor apply --profile-file FILE [--complain] --yes   (inside a pft-maint window)
 #        sudo pft-apparmor rollback --yes                   (undo the last apply; inside a pft-maint window)
+#        sudo pft-apparmor pull                             (validator: copy the peer's textfile, see install.sh --pull)
+#        pft-apparmor validate FILE HOST                    (the check pull applies to a fetched textfile)
+#        sudo pft-apparmor ack-denials --reason TEXT [--until EPOCH] --yes   (after investigating DENIED records)
 #
 #  audit     read-only. One line per check: PASS / FAIL / WARN / INFO.
 #              kernel     /sys/module/apparmor/parameters/enabled = Y
@@ -24,7 +27,8 @@
 #                         security_opt apparmor=PROFILE; docker run = the container's own HostConfig (restart keeps it)
 #              confine:*  cap_drop ALL, read-only root, no-new-privileges still set (confine/ must not be undone)
 #              denials    apparmor="DENIED" events for PROFILE in /var/log/audit/audit.log* during the last --since
-#                         seconds (default 86400). WARN with the top three operation+path pairs.
+#                         seconds (default 86400). WARN with the top three operation+path pairs. Records up to
+#                         an acknowledged time (ack-denials) are not counted; a malformed ack file is a FAIL.
 #  learn     loads a COMPLAIN copy of a seed profile (abstractions/base + network, nothing else) as PROFILE-learn,
 #            starts a throwaway container with the live container's confine arguments (same image, caps, tmpfs,
 #            read-only, pids/memory) but fresh anonymous volumes, no published ports, under PROFILE-learn; waits for
@@ -55,13 +59,21 @@
 #            still active; then RPC + cron identity switch + the hourly cron run + ps, and 0 DENIED records for
 #            PROFILE since the start. Any failure, a failed step or SIGINT/SIGTERM -> automatic rollback.
 #            Finally pft-integrity accept, only if every changed item is the container or its compose files.
+#  ack-denials  records in STATE_DIR/denials-ack.json that the DENIED records for PROFILE up to --until (default
+#            now, never in the future) were investigated (--reason, required, printed by every later audit). Used
+#            after a drill's deliberate negative controls, so they do not hold the denials check at WARN for 24 h.
+#  pull      runs PULL_SSH cat <peer's pft_apparmor_PEER_LABEL.prom> into TEXTFILE_DIR; the file must pass validate
+#            (only pft_apparmor_* samples for that host label, a last_run sample, <= 64 KiB), else the last good
+#            copy is kept (exit 2). The sentry runs no Prometheus: its alerts are evaluated from this copy.
 #  rollback  restores the previous container (compose: .env byte-identical, override removed; run: the kept
 #            NAME-preaa-<id>), the previous profile file (or removes + unloads PROFILE), and runs the same gate
 #            for the previous profile. Exit 5 if the rollback gate does not pass.
 #
 # Exit codes: 0 PASS / ok, 1 findings (audit) / gate failed and rolled back (apply), 2 error, 3 usage, 4 refused,
 #             5 rollback did not pass its gate, 6 interrupted (rolled back).
-# Config: /etc/pft-apparmor.env (KEY=VALUE, read, never sourced): HOST_LABEL (validator), PROFILE (pft-postfiatd)
+# Config: /etc/pft-apparmor.env (KEY=VALUE, read, never sourced): HOST_LABEL (validator), PROFILE (pft-postfiatd),
+#         PEER_LABEL (sentry), PULL_SSH (validator only: command prefix that reaches the peer, e.g.
+#         "runuser -u OP -- ssh -o BatchMode=yes X")  PULL_TIMEOUT (30 s, env)
 # Env: CONTAINER (auto: postfiatd or postfiatd-sentry)  TEXTFILE_DIR  LEARN_DIR (/var/lib/pft-apparmor)
 #      TREES (directories collapsed to DIR/{,**})  EXTRA_EXEC (/usr/bin/logger)
 #      SYNC_BUDGET (1200 s for the throwaway to reach full)
@@ -110,6 +122,9 @@ valid_label() { [[ "$1" =~ ^[a-z][a-z0-9-]{0,31}$ ]]; }
 HOST_LABEL="$(conf_get HOST_LABEL validator)"
 PROFILE="$(conf_get PROFILE pft-postfiatd)"
 valid_label "$PROFILE" || die "bad PROFILE in $CONF" 2
+ACK_FILE="$STATE_DIR/denials-ack.json"
+PEER_LABEL="$(conf_get PEER_LABEL sentry)"
+PULL_SSH="$(conf_get PULL_SSH "")"; PULL_TIMEOUT="${PULL_TIMEOUT:-30}"
 
 pick_container() {
   [ -n "${CONTAINER:-}" ] && { echo "$CONTAINER"; return; }
@@ -121,7 +136,7 @@ pick_container() {
 }
 
 # ---------------------------------------------------------------------------------------------------- audit
-RESULTS=""; FINDINGS=0; DENIED=0
+RESULTS=""; FINDINGS=0; DENIED=0; ACKED_UNTIL=0
 add() { # STATUS CHECK DETAIL
   RESULTS+="$1"$'\t'"$2"$'\t'"$3"$'\n'
   case "$1" in FAIL|WARN) FINDINGS=$((FINDINGS + 1)) ;; esac
@@ -210,11 +225,24 @@ audit_checks() {
   elif ! "$SYSTEMCTL" is-enabled apparmor.service >/dev/null 2>&1; then add FAIL boot "apparmor.service not enabled"
   else add PASS boot "$f parses; apparmor.service enabled"
   fi
-  if ! d="$(denials "$since" "$PROFILE")"; then DENIED=0; add FAIL denials "${d#*$'\t'} (run as root)"
+  local eff="$since" note="" au
+  if [ -e "$ACK_FILE" ]; then
+    if ! au="$(jq -er --arg p "$PROFILE" 'select(type == "object" and .profile == $p and (.until | type) == "number" and (.reason | type) == "string") | .until' "$ACK_FILE" 2>/dev/null)" \
+      || ! [[ "$au" =~ ^[0-9]+$ ]]; then
+      add FAIL denials-ack "$ACK_FILE unreadable, malformed or for another profile: no DENIED record is treated as acknowledged"
+    else
+      ACKED_UNTIL="$au"
+      if [ "$au" -ge "$since" ]; then
+        eff=$((au + 1))
+        note="; up to $(date -u -d "@$au" +%FT%TZ) acknowledged: $(jq -r '.reason' "$ACK_FILE" | tr -cd '[:print:]' | cut -c1-120)"
+      fi
+    fi
+  fi
+  if ! d="$(denials "$eff" "$PROFILE")"; then DENIED=0; add FAIL denials "${d#*$'\t'} (run as root)"
   else
     DENIED="${d%%$'\t'*}"
-    if [ "$DENIED" = 0 ]; then add PASS denials "0 DENIED events in the last $(( $(now) - since ))s"
-    else add WARN denials "$DENIED DENIED event(s) in the last $(( $(now) - since ))s: ${d#*$'\t'}"
+    if [ "$DENIED" = 0 ]; then add PASS denials "0 DENIED events in the last $(( $(now) - since ))s$note"
+    else add WARN denials "$DENIED DENIED event(s) in the last $(( $(now) - since ))s: ${d#*$'\t'}$note"
     fi
   fi
 }
@@ -223,8 +251,8 @@ print_results() {
   local c="$1"
   if [ "$JSON" = 1 ]; then
     printf '%s' "$RESULTS" | jq -R -s --arg h "$HOST_LABEL" --arg c "$c" --arg p "$PROFILE" --arg t "$(ts)" \
-      --argjson n "$FINDINGS" --argjson d "$DENIED" '
-      {host: $h, container: $c, profile: $p, time: $t, findings: $n, denied_events: $d,
+      --argjson n "$FINDINGS" --argjson d "$DENIED" --argjson a "$ACKED_UNTIL" '
+      {host: $h, container: $c, profile: $p, time: $t, findings: $n, denied_events: $d, denied_acknowledged_until: $a,
        checks: (split("\n") | map(select(length > 0) | split("\t") | {status: .[0], check: .[1], detail: .[2]}))}'
   else
     echo "pft-apparmor audit - $(ts) | host $HOST_LABEL | container $c | profile $PROFILE"
@@ -250,6 +278,48 @@ write_prom() { # FILE: node_exporter textfile, written atomically
     echo "# TYPE pft_apparmor_last_run_timestamp_seconds gauge"
     echo "pft_apparmor_last_run_timestamp_seconds{host=\"$h\"} $(now)"
   } > "$tmp" && chmod 0644 "$tmp" && mv -f "$tmp" "$f"
+}
+
+validate() { # FILE HOST -> rc 0, or rc 1 with the first reason on stdout (a pulled file must look like ours)
+  local f="$1" h="$2" n
+  [ -f "$f" ] || { echo "missing"; return 1; }
+  [ "$(stat -c %s "$f")" -le 65536 ] || { echo "larger than 65536 bytes"; return 1; }
+  n="$(grep -cvE '^(# (HELP|TYPE) pft_apparmor_.*|pft_apparmor_[a-z_]+\{host="'"$h"'"(,[a-z]+="[A-Za-z0-9_./:-]+")*\} [0-9.e+-]+)$' "$f")"
+  [ "$n" -eq 0 ] || { echo "$n unexpected lines"; return 1; }
+  grep -qE '^pft_apparmor_last_run_timestamp_seconds\{host="'"$h"'"\} [0-9]+$' "$f" || { echo "no last_run sample"; return 1; }
+  return 0
+}
+
+do_pull() { # validator: the peer's textfile through PULL_SSH; a file that fails validate never replaces the last good one
+  local tmp why
+  valid_label "$PEER_LABEL" || die "bad PEER_LABEL"
+  [ -n "$PULL_SSH" ] || die "PULL_SSH not set (see $CONF)"
+  tmp="$TEXTFILE_DIR/.pft_apparmor_$PEER_LABEL.prom.pull"
+  # shellcheck disable=SC2086 # PULL_SSH is a command line from the root-owned conf
+  if ! timeout "$PULL_TIMEOUT" $PULL_SSH cat -- "/var/lib/pft-exporter/textfile/pft_apparmor_$PEER_LABEL.prom" > "$tmp" 2>/dev/null; then
+    rm -f "$tmp"; die "pull from $PEER_LABEL failed" 1
+  fi
+  if ! why="$(validate "$tmp" "$PEER_LABEL")"; then rm -f "$tmp"; die "pulled file rejected: $why" 2; fi
+  chmod 0644 "$tmp" && mv -f "$tmp" "$TEXTFILE_DIR/pft_apparmor_$PEER_LABEL.prom"
+}
+
+do_ack() { # UNTIL REASON: acknowledge the DENIED records up to UNTIL
+  local u="$1" why="$2" prev=0 a b n tmp
+  [[ "$u" =~ ^[0-9]+$ ]] && [ "$u" -le "$(now)" ] || die "--until must be a unix time, not in the future" 3
+  [ -n "$why" ] && [ "${#why}" -le 200 ] && [[ "$why" != *[![:print:]]* ]] || die "--reason: 1-200 printable characters" 3
+  if [ -e "$ACK_FILE" ]; then
+    prev="$(jq -er --arg p "$PROFILE" 'select(.profile == $p) | .until | select(type == "number")' "$ACK_FILE" 2>/dev/null)" || prev=0
+  fi
+  [ "$u" -gt "$prev" ] || die "already acknowledged up to $prev" 4
+  a="$(denials "$((prev + 1))" "$PROFILE")" || die "audit log unreadable (run as root)" 2
+  b="$(denials "$((u + 1))" "$PROFILE")" || die "audit log unreadable (run as root)" 2
+  n=$(( ${a%%$'\t'*} - ${b%%$'\t'*} ))
+  mkdir -p "$STATE_DIR" || die "cannot create $STATE_DIR" 2
+  tmp="$(mktemp "$ACK_FILE.XXXXXX")" || die "cannot write $ACK_FILE" 2
+  jq -n --arg p "$PROFILE" --argjson u "$u" --argjson n "$n" --arg r "$why" --arg t "$(ts)" \
+    '{profile: $p, until: $u, records: $n, reason: $r, at: $t}' > "$tmp" && chmod 0644 "$tmp" && mv -f "$tmp" "$ACK_FILE" \
+    || { rm -f "$tmp"; die "cannot write $ACK_FILE" 2; }
+  echo "$(ts) ack-denials: $n DENIED record(s) for $PROFILE after $prev up to $u ($(date -u -d "@$u" +%FT%TZ)) acknowledged: $why"
 }
 
 # ---------------------------------------------------------------------------------------------------- events
@@ -780,7 +850,7 @@ do_rollback() { # auto|manual: undo the last apply from the state file
 
 # ---------------------------------------------------------------------------------------------------- main
 cmd="${1:-}"; shift || true
-JSON=0; PROM=""; SINCE=86400; OUT=""; MIN=65; EV=""; CAPS=""; NAME="$PROFILE"; SE=0; PP="$PROFILE"; YES=0; PF=""; PMODE=enforce
+ARG=""; ARG2=""; JSON=0; PROM=""; SINCE=86400; OUT=""; MIN=65; EV=""; CAPS=""; NAME="$PROFILE"; SE=0; PP="$PROFILE"; YES=0; PF=""; PMODE=enforce; UNTIL=""; REASON=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --json) JSON=1 ;;
@@ -796,9 +866,11 @@ while [ $# -gt 0 ]; do
     --name) NAME="${2:-}"; valid_label "$NAME" || die "bad --name" 3; shift ;;
     --profile-file) PF="${2:-}"; [ -n "$PF" ] || die "--profile-file needs a file" 3; shift ;;
     --complain) PMODE=complain ;;
+    --until) UNTIL="${2:-}"; [[ "$UNTIL" =~ ^[0-9]+$ ]] || die "--until needs a unix time" 3; shift ;;
+    --reason) REASON="${2:-}"; shift ;;
     --yes) YES=1 ;;
     -*) die "unknown option $1" 3 ;;
-    *) ARG="$1" ;;
+    *) if [ -z "$ARG" ]; then ARG="$1"; elif [ -z "$ARG2" ]; then ARG2="$1"; else die "too many arguments" 3; fi ;;
   esac
   shift
 done
@@ -820,6 +892,13 @@ case "$cmd" in
             STATE_FILE="$STATE_DIR/apply-$(pick_container).json"
             gate="$(maint_gate)"; case "$gate" in ok*) ;; *) echo "$(ts) rollback: REFUSED - ${gate#refuse }; nothing changed"; exit 4 ;; esac
             do_rollback manual; exit $? ;;
+  validate) [ -n "$ARG" ] && [ -n "$ARG2" ] && valid_label "$ARG2" || die "usage: pft-apparmor validate FILE HOST" 3
+            why="$(validate "$ARG" "$ARG2")" && exit 0; echo "$why"; exit 2 ;;
+  ack-denials) [ "$YES" = 1 ] || { echo "pft-apparmor: ack-denials hides DENIED records from the audit; re-run with --yes" >&2; exit 4; }
+               [ "$(id -u)" = 0 ] || [ -n "$R" ] || die "ack-denials needs root" 4
+               do_ack "${UNTIL:-$(now)}" "$REASON"; exit 0 ;;
+  pull) [ "$(id -u)" = 0 ] || [ -n "$R" ] || die "pull needs root" 4
+        do_pull; exit 0 ;;
   learn) [ -n "$OUT" ] || die "usage: pft-apparmor learn --out FILE [--minutes N]" 3
          do_learn "$OUT" "$MIN"; exit $? ;;
   *) sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 3 ;;

@@ -21,10 +21,13 @@ pft-apparmor generate --events FILE [--caps "SETGID SETUID"] [--name P] > pft-po
 pft-apparmor check FILE                                 # apparmor_parser -Q -K: compile, load nothing
 sudo pft-apparmor apply --profile-file FILE [--complain] --yes   # inside a pft-maint window
 sudo pft-apparmor rollback --yes                        # undo the last apply, inside a pft-maint window
+sudo pft-apparmor pull                                  # validator: copy the sentry's textfile (install.sh --pull)
+pft-apparmor validate FILE HOST                         # the check pull applies to a fetched textfile
+sudo pft-apparmor ack-denials --reason TEXT [--until EPOCH] --yes   # after investigating DENIED records
 ```
 
 Exit codes: 0 PASS/ok, 1 findings, 2 error, 3 usage, 4 refused. Config: `/etc/pft-apparmor.env`
-(`HOST_LABEL`, `PROFILE`), read, never sourced.
+(`HOST_LABEL`, `PROFILE`, `PEER_LABEL`, `PULL_SSH`; see `pft-apparmor.env.example`), read, never sourced.
 
 ### audit checks
 
@@ -40,9 +43,39 @@ Exit codes: 0 PASS/ok, 1 findings, 2 error, 3 usage, 4 refused. Config: `/etc/pf
 | `confine:*` | cap_drop ALL, read-only root and no-new-privileges are still set |
 | `denials` | no `apparmor="DENIED"` event for the profile in `/var/log/audit/audit.log*` during `--since` (default 24 h); WARN lists the top three operation + path pairs |
 
+`ack-denials` records in `/var/lib/pft-apparmor/denials-ack.json` that the DENIED records for the profile up to
+`--until` (default now; never in the future, never before the previous ack) were investigated, with a required
+reason that every later audit prints. Records after that time still count. It exists for the live drill: its
+negative controls create DENIED records on purpose, and without an ack they would hold `denials` at WARN, and
+`PFTAppArmorDrift` would fire, for 24 h. A malformed ack file, or one for another profile, is its own FAIL
+(`denials-ack`) and hides nothing.
+
 `--textfile` writes `pft_apparmor_check{host,check,status}`, `pft_apparmor_findings`, `pft_apparmor_denied_events`
 and `pft_apparmor_last_run_timestamp_seconds`. Alert: `PFTAppArmorDrift` (`alerts/apparmor.rules.yml`), findings
 > 0 for 30 min, so a bounded complain/learn window does not page.
+
+## Install
+
+```
+sudo apparmor/install.sh                  # validator: tool, /etc/pft-apparmor.env, hourly audit timer
+sudo apparmor/install.sh --host sentry    # sentry: same, HOST_LABEL=sentry
+sudo apparmor/install.sh --pull           # validator: copy the sentry's textfile every 15 min (needs PULL_SSH)
+sudo apparmor/install.sh [--pull] --uninstall   # refuses while an apply is in place (rollback first)
+```
+
+Installing loads no profile and re-creates no container; only `apply` does. The first audit runs through the
+sandboxed unit (`systemd/pft-apparmor.service`: root with only `CAP_DAC_READ_SEARCH` for `/var/log/audit`,
+`AF_UNIX` only, read-only filesystem except the textfile dir), and install stops (exit 1, timer not enabled) if
+that run fails or its textfile does not pass `pft-apparmor validate`. A probe of the same sandbox on the validator
+(private runlog, published with the live run) read the kernel profile list, the audit log, compiled a stock
+profile with `apparmor_parser -Q -K` and got `systemctl is-enabled` answers, and gave the same 11 check lines as an
+unsandboxed root run.
+
+The sentry runs no Prometheus. `pft-apparmor pull` on the validator copies the sentry's
+`pft_apparmor_sentry.prom` through `PULL_SSH` and keeps it only if it passes `validate` (nothing but
+`pft_apparmor_*` samples for that host label, a `last_run` sample, ≤ 64 KiB); otherwise the last good copy stays
+and the unit fails. `PFTAppArmorDrift` for `host="sentry"` is evaluated on the validator from that copy, and
+pft-rulecheck's `textfile pft_apparmor_*.prom 3h` line (added by install) flags a copy that stops updating.
 
 ## How the profile is built
 
@@ -122,8 +155,11 @@ for a live automatic-rollback drill.
 ```
 bash apparmor/tests/run-tests.sh            # offline suite: stub docker/parser/systemctl, fake /sys + audit logs
                                             # (apply/rollback: tests/stub_docker.py builds each new container from
-                                            #  its `docker run` arguments, so a lost flag is caught by the gate)
-python3 -u apparmor/tests/mutate.py         # 31 mutants (+1 documented equivalent), each must make the suite fail (timeout = caught)
+                                            #  its `docker run` arguments, so a lost flag is caught by the gate;
+                                            #  tests/pull-install-tests.inc.sh: validate, pull with a fake ssh
+                                            #  that can fail or hang, install.sh against a fake root)
+python3 -u apparmor/tests/mutate.py         # mutants of pft-apparmor.sh and install.sh (+1 documented equivalent),
+                                            # each must make the suite fail (timeout = caught)
 promtool test rules alerts/apparmor.tests.yml
 ```
 

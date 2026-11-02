@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Mutation harness for pft-apparmor.sh: apply each mutant (exactly one textual match) to a copy of the tool, run
+"""Mutation harness for pft-apparmor.sh and install.sh: apply each mutant (exactly one textual match) to a copy of the tool, run
 tests/run-tests.sh against it with a timeout, and count it CAUGHT if the suite fails (or hangs: a hang is a
 caught mutant, never a stuck harness). An unmutated control run must pass first; a mutant whose text does not
-match exactly once is NOT APPLIED and fails the harness.
-Usage: python3 -u tests/mutate.py [--timeout SEC]
+match exactly once is NOT APPLIED and fails the harness. Mutants with a 5th field "install" mutate install.sh; the
+suite then runs the unmutated tool with PFT_AA_INSTALL pointing at the mutated copy.
+Usage: python3 -u tests/mutate.py [--timeout SEC] [--only M01,I02,...]   (--only: a dev subset; the RESULT line says so)
 Temp files go under TEST_TMPDIR (default ~/.cache): /tmp is noexec on the hardened hosts.
 """
 import os
@@ -14,8 +15,9 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOOL = os.path.join(HERE, "..", "pft-apparmor.sh")
 SUITE = os.path.join(HERE, "run-tests.sh")
+INSTALL = os.path.join(HERE, "..", "install.sh")
 
-# (id, description, old text, new text)
+# (id, description, old text, new text[, "install"])
 MUTANTS = [
     ("M01", "kernel check accepts any value", '[ "$en" = Y ] && add PASS kernel', '[ -n "$en$en" ] || [ -z "$en" ] && add PASS kernel'),
     ("M02", "docker-default graded PASS", 'docker-default) add FAIL container', 'docker-default) add PASS container'),
@@ -77,18 +79,52 @@ MUTANTS = [
     ("M59", "apply: previous container keeps its restart policy", ' && "$DOCKER" update --restart=no "$old" >/dev/null', ''),
     ("M61", "gate: DENIED of other profiles with the same prefix counted", 'index($0, "profile=\\"" q "\\"") || index($0, "profile=\\"" q "//")', 'index($0, "profile=\\"" q)'),
     ("M60", "apply: gate failure does not roll back", 'echo "$(ts) apply: gate failed -> automatic rollback"; do_rollback auto; local rc=$?', 'echo "$(ts) apply: gate failed -> automatic rollback"; local rc=0'),
+    # validate / pull
+    ("M62", "validate: host label not enforced", 'pft_apparmor_[a-z_]+\\{host="\'"$h"\'"(,', 'pft_apparmor_[a-z_]+\\{host="[a-z-]+"(,'),
+    ("M63", "validate: foreign lines accepted", '[ "$n" -eq 0 ] || { echo "$n unexpected lines"; return 1; }', 'true'),
+    ("M64", "validate: size limit removed", '[ "$(stat -c %s "$f")" -le 65536 ] || { echo "larger than 65536 bytes"; return 1; }', 'true'),
+    ("M65", "validate: last_run not required", "grep -qE '^pft_apparmor_last_run_timestamp_seconds\\{host=\"'\"$h\"'\"\\} [0-9]+$' \"$f\" || { echo \"no last_run sample\"; return 1; }", 'true'),
+    ("M66", "pull: rejected file still replaces the last good copy", 'if ! why="$(validate "$tmp" "$PEER_LABEL")"; then rm -f "$tmp"; die "pulled file rejected: $why" 2; fi', 'true'),
+    ("M67", "pull: no timeout on the ssh", 'if ! timeout "$PULL_TIMEOUT" $PULL_SSH cat', 'if ! $PULL_SSH cat'),
+    ("M68", "pull: failed ssh leaves the temp file", '    rm -f "$tmp"; die "pull from $PEER_LABEL failed" 1', '    die "pull from $PEER_LABEL failed" 1'),
+    ("M70", "cli: ARG from the environment used", 'ARG=""; ARG2=""; JSON=0;', 'ARG="${ARG:-}"; ARG2="${ARG2:-}"; JSON=0;'),
+    # ack-denials
+    ("M71", "audit: ack file ignored", '      eff=$((au + 1))', '      eff=$since'),
+    ("M72", "audit: ack hides records after --until", '      eff=$((au + 1))', '      eff=$(now)'),
+    ("M73", "audit: malformed ack file accepted", "select(type == \"object\" and .profile == $p and (.until | type) == \"number\" and (.reason | type) == \"string\") | .until", '.until // 0'),
+    ("M74", "ack: future --until accepted", '[ "$u" -le "$(now)" ] || die "--until must be', 'true || die "--until must be'),
+    ("M75", "ack: older --until accepted", '[ "$u" -gt "$prev" ] || die "already acknowledged up to $prev" 4', 'true'),
+    ("M76", "ack: count includes records after --until", 'n=$(( ${a%%$\'\\t\'*} - ${b%%$\'\\t\'*} ))', 'n=${a%%$\'\\t\'*}'),
+    ("M77", "ack: runs without --yes", '[ "$YES" = 1 ] || { echo "pft-apparmor: ack-denials hides', 'true || { echo "pft-apparmor: ack-denials hides'),
+    ("M78", "ack: reason not checked", '[ -n "$why" ] && [ "${#why}" -le 200 ] && [[ "$why" != *[![:print:]]* ]] || die', 'true || die'),
+    # install.sh
+    ("I01", "install: failed first audit still enables the timer", 'log "ERROR: first audit failed"; "$JOURNALCTL" -u pft-apparmor.service -n 5 --no-pager --utc; exit 1', 'true', "install"),
+    ("I02", "install: textfile not validated", '"$BIN" validate "$TEXTDIR/pft_apparmor_$host.prom" "$host" || { log "ERROR: textfile rejected"; exit 1; }', 'true', "install"),
+    ("I03", "install: env file left world-readable", 'chmod 600 "$CONF"\nif [ -f "$RC_CONF" ]', 'if [ -f "$RC_CONF" ]', "install"),
+    ("I04", "install: rulecheck line added twice", '[ -f "$RC_CONF" ] && ! grep -q \'pft_apparmor_\' "$RC_CONF"', '[ -f "$RC_CONF" ]', "install"),
+    ("I05", "install: --host ignored", 'host="${label:-$(conf_get HOST_LABEL)}"', 'host="$(conf_get HOST_LABEL)"', "install"),
+    ("I06", "uninstall: does not refuse while an apply is in place", "jq -e '.rolled_back != true' \"$f\" >/dev/null 2>&1 && { echo \"$f\"; return 0; }", 'true', "install"),
+    ("I07", "install --pull: failed first pull still enables the timer", 'log "ERROR: first pull failed"; "$JOURNALCTL" -u pft-apparmor-pull.service -n 5 --no-pager --utc; exit 1', 'true', "install"),
+    ("I08", "install --pull: runs without PULL_SSH", "&& grep -q '^PULL_SSH=' \"$CONF\"; }; then", '; }; then', "install"),
+    ("I09", "install: label not validated", '[ -z "$label" ] || [[ "$label" =~ ^[a-z][a-z0-9-]{0,31}$ ]] || { echo "bad host label" >&2; exit 3; }', 'true', "install"),
 ]
 
 # Equivalent mutants (no input can reach the difference), documented instead of counted:
+# M69 "pull: copied file not made world-readable" (drop `chmod 0644 "$tmp"` in do_pull): the script sets umask 022
+# at the top, so the `> "$tmp"` redirect already creates the file 0644; the chmod only guards a future umask
+# change. Dev run 2026-11-02 reported it SURVIVED.
 # M32 "overlap: {,**} probe not expanded" (probe="$p"): every AUDIT_DENY path is either exact (never matches a
 # tree rule) or ends in "/**" (ERE ".*"), which matches the literal "{,**}" suffix as well as "x/y". Run 07
 # (5f27eaf) reported it SURVIVED; re-check this note if a deny pattern with a single "*" or a mid-path "**" is added.
-EQUIVALENT = ["M32"]
+EQUIVALENT = ["M32", "M69"]
 
 
-def run_suite(tool, timeout):
+def run_suite(tool, timeout, install=None):
+    env = dict(os.environ)
+    if install:
+        env["PFT_AA_INSTALL"] = install
     try:
-        r = subprocess.run(["bash", SUITE, tool], capture_output=True, text=True, timeout=timeout)
+        r = subprocess.run(["bash", SUITE, tool], capture_output=True, text=True, timeout=timeout, env=env)
     except subprocess.TimeoutExpired:
         return "HANG", ""
     return ("PASS" if r.returncode == 0 else "FAIL"), r.stdout
@@ -98,7 +134,10 @@ def main():
     timeout = 300
     if "--timeout" in sys.argv:
         timeout = int(sys.argv[sys.argv.index("--timeout") + 1])
-    src = open(TOOL).read()
+    only = None
+    if "--only" in sys.argv:
+        only = set(sys.argv[sys.argv.index("--only") + 1].split(","))
+    srcs = {"tool": open(TOOL).read(), "install": open(INSTALL).read()}
     base = os.environ.get("TEST_TMPDIR", os.path.expanduser("~/.cache"))
     os.makedirs(base, exist_ok=True)
     work = tempfile.mkdtemp(prefix="pft-aa-mut.", dir=base)
@@ -109,7 +148,10 @@ def main():
         print("RESULT: control run failed, mutants not run")
         return 2
     caught = survived = not_applied = 0
-    for mid, desc, old, new in MUTANTS:
+    selected = [m for m in MUTANTS if only is None or m[0] in only]
+    for mid, desc, old, new, *tgt in selected:
+        target = tgt[0] if tgt else "tool"
+        src = srcs[target]
         n = src.count(old)
         if n != 1:
             print(f"{mid} NOT APPLIED ({n} matches) - {desc}")
@@ -118,7 +160,10 @@ def main():
         path = os.path.join(work, f"{mid}.sh")
         with open(path, "w") as f:
             f.write(src.replace(old, new, 1))
-        st, out = run_suite(path, timeout)
+        if target == "install":
+            st, out = run_suite(TOOL, timeout, install=path)
+        else:
+            st, out = run_suite(path, timeout)
         fails = [ln[5:] for ln in out.splitlines() if ln.startswith("FAIL ")]
         if st == "PASS":
             survived += 1
@@ -129,7 +174,8 @@ def main():
             print(f"{mid} CAUGHT - {desc} [{why}]")
         os.remove(path)
     os.rmdir(work)
-    print(f"RESULT: {caught} caught, {survived} survived, {not_applied} not applied of {len(MUTANTS)}"
+    subset = f" (--only subset of {len(MUTANTS)})" if only is not None else ""
+    print(f"RESULT: {caught} caught, {survived} survived, {not_applied} not applied of {len(selected)}{subset}"
           f" (+ {len(EQUIVALENT)} documented equivalent: {', '.join(EQUIVALENT)})")
     return 0 if survived == 0 and not_applied == 0 else 1
 

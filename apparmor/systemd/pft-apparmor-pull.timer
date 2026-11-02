@@ -1,0 +1,10 @@
+[Unit]
+Description=Copy the peer's pft-apparmor textfile every 15 minutes
+
+[Timer]
+OnCalendar=*-*-* *:13/15:00
+AccuracySec=10s
+Persistent=false
+
+[Install]
+WantedBy=timers.target

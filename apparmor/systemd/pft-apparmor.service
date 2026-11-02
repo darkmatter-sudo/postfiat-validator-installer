@@ -1,0 +1,36 @@
+[Unit]
+Description=pft-apparmor audit: tailored AppArmor profile on the postfiatd container (kernel, profile, mode, boot, recreate, confine, DENIED events)
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/apparmor
+After=docker.service apparmor.service
+
+[Service]
+Type=oneshot
+# exit 1 = FAIL/WARN findings (exported as metrics), not a unit failure; exit 2 (cannot write the textfile) fails it
+SuccessExitStatus=1
+ExecStart=/usr/local/bin/pft-apparmor audit --textfile
+ReadWritePaths=/var/lib/pft-exporter/textfile
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+# AF_UNIX: docker.sock (docker inspect) and systemd (systemctl is-enabled); no network
+RestrictAddressFamilies=AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+# CAP_DAC_READ_SEARCH: /var/log/audit (root:adm 0750, files 0600); nothing is loaded into the kernel
+# (apparmor_parser runs with -Q -K), so no CAP_MAC_ADMIN
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH
+UMask=0022
+Nice=10
+TimeoutStartSec=3min

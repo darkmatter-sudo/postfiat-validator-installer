@@ -296,5 +296,13 @@ fi
 # shellcheck source=SCRIPTDIR/apply-tests.inc.sh
 . "$HERE/apply-tests.inc.sh"
 
+# ---- validate / pull / install.sh -----------------------------------------------------------------------
+# shellcheck source=SCRIPTDIR/pull-install-tests.inc.sh
+. "$HERE/pull-install-tests.inc.sh"
+
+# ---- ack-denials -----------------------------------------------------------------------------------------
+# shellcheck source=SCRIPTDIR/ack-tests.inc.sh
+. "$HERE/ack-tests.inc.sh"
+
 echo "RESULT: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]
