@@ -7,6 +7,8 @@ Usage:
   report_feewatch.py crosscheck --history FILE [FILE ...] [--start EPOCH] [--end EPOCH] --rpc URL
                             [--sample N] [--seed S] [--max-lag S] [--negative] --json OUT.json
   report_feewatch.py crosscheck --offline OUT.json --history FILE [FILE ...]
+  report_feewatch.py direct --history FILE --container NAME --fee FEE.json --info INFO.json --now EPOCH
+                            [--max-age S] [--negative]
 
 History files: one JSON line per successful collection, written by feewatch_parse.py --history (the unit passes
 /var/lib/pft-feewatch/history-<container>.jsonl). Stdlib only, read-only.
@@ -26,6 +28,11 @@ crosscheck  INDEPENDENT of the node that was sampled: for a seeded random sample
             --offline re-checks a recorded crosscheck JSON against the committed history with no RPC: the same
             sample is drawn again from (seed, history), every recorded answer is re-compared and the result must
             equal the recorded one.
+direct      the values the public RPC cannot answer for the past (queue limit, expected ledger size, fee levels,
+            load_factor) checked against the node itself: `fee` and `server_info` answers fetched by hand (not
+            through pft-feewatch) are compared with the newest history line, which must be at most --max-age
+            (default 90) s older; the open ledger may have advanced by at most age/2 + 2. --negative alters every
+            recorded value, so every value check must MISMATCH.
 """
 
 import argparse
@@ -358,11 +365,99 @@ def crosscheck(a):
     return 0 if n_ok == n_all and n_all > 0 else 1
 
 
+def compare_direct(row, fee, info, now, max_age, negative):
+    """Raw `fee` + `server_info` answers (fetched by hand, not through pft-feewatch) vs one history line."""
+    f, i = fee["result"], info["result"]["info"]
+    rec = {
+        "ts": row["ts"],
+        "base_fee": row["drops"]["base_fee"],
+        "max_queue_size": row["max_queue"],
+        "expected_ledger_size": row["exp_ledger"],
+        "reference_level": row["levels"]["reference_level"],
+        "minimum_level": row["levels"]["minimum_level"],
+        "load_factor": row["load_factor"],
+        "ledger": row["ledger"],
+    }
+    if negative:  # every recorded value altered: every check must MISMATCH
+        rec = {
+            k: (-1 if v is None else v + (1000 if k in ("ledger", "ts") else 1))
+            for k, v in rec.items()
+        }
+    age = now - rec["ts"]
+    got = {
+        "base_fee": int(f["drops"]["base_fee"]),
+        "max_queue_size": int(f["max_queue_size"]) if "max_queue_size" in f else None,
+        "expected_ledger_size": int(f["expected_ledger_size"]),
+        "reference_level": int(f["levels"]["reference_level"]),
+        "minimum_level": int(f["levels"]["minimum_level"]),
+        "load_factor": float(i["load_factor"]),
+    }
+    res = [
+        {
+            "check": "history line age",
+            "result": "OK" if 0 <= age <= max_age else "MISMATCH",
+            "detail": f"latest history line {age}s before the direct answer (0..{max_age}s)",
+        }
+    ]
+    for k, v in got.items():
+        res.append(
+            {
+                "check": k,
+                "result": "OK" if v == rec[k] else "MISMATCH",
+                "detail": f"direct {v} vs recorded {rec[k]}",
+            }
+        )
+    # ledgers close every ~3-4 s: the open ledger may have moved on by at most age/2 + 2 ledgers
+    led = int(f["ledger_current_index"])
+    adv = led - rec["ledger"]
+    res.append(
+        {
+            "check": "ledger_current_index",
+            "result": "OK" if 0 <= adv <= age // 2 + 2 else "MISMATCH",
+            "detail": f"direct {led}, recorded {rec['ledger']} (+{adv}, allowed 0..{age // 2 + 2})",
+        }
+    )
+    return res
+
+
+def direct(a):
+    rows, _ = read_history(a.history)
+    rows = [d for d in rows if d["container"] == a.container]
+    if not rows:
+        print(f"no history rows for {a.container}", file=sys.stderr)
+        return 1
+    with open(a.fee, encoding="utf-8") as f:
+        fee = json.load(f)
+    with open(a.info, encoding="utf-8") as f:
+        info = json.load(f)
+    row = max(rows, key=lambda d: d["ts"])
+    checks = compare_direct(row, fee, info, a.now, a.max_age, a.negative)
+    for r in checks:
+        print(
+            f"{r['result']:<8} {a.container} ts={row['ts']}: {r['check']}: {r['detail']}"
+        )
+    n_ok = sum(1 for r in checks if r["result"] == "OK")
+    print(
+        f"RESULT {n_ok}/{len(checks)} OK (direct RPC vs latest history line{', NEGATIVE control' if a.negative else ''})"
+    )
+    if a.negative:
+        return 0 if n_ok == 0 else 1
+    return 0 if n_ok == len(checks) else 1
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("report")
     c = sub.add_parser("crosscheck")
+    dr = sub.add_parser("direct")
+    dr.add_argument("--history", nargs="+", required=True)
+    dr.add_argument("--container", required=True)
+    dr.add_argument("--fee", required=True)
+    dr.add_argument("--info", required=True)
+    dr.add_argument("--now", type=int, required=True)
+    dr.add_argument("--max-age", type=int, default=90)
+    dr.add_argument("--negative", action="store_true")
     for p in (r, c):
         p.add_argument("--history", nargs="+", required=True)
         p.add_argument("--start", type=int)
@@ -378,6 +473,8 @@ def main(argv=None):
     c.add_argument("--json")
     c.add_argument("--offline")
     a = ap.parse_args(argv)
+    if a.cmd == "direct":
+        return direct(a)
     if a.cmd == "report":
         rows, bad = read_history(a.history, a.start, a.end)
         if not rows:
