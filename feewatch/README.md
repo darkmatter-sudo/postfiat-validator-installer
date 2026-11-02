@@ -205,6 +205,10 @@ Crosschecks (all in `logs/07-baseline.log`):
 - **Offline** (`crosscheck --offline`): both recorded crosschecks re-drawn from (seed, committed history) and
   re-compared with no RPC: 0 differences each.
 
+Log 07 is redacted like the others, and that includes the echoed command of its data-leak check (line 78): it ran
+with the agent's username and the control string `x 10.1.2.3 /home/x`, which print as `<user>` and
+`x <redacted-ip> /home/x`. The control matched 1, as expected.
+
 Queue size, open-ledger size and the load-factor sources are live values that no RPC returns for the past, so the
 direct check at the end of the window is their crosscheck; the public RPC checks the ledger timeline and base fee
 of 30 points spread over the whole day.
