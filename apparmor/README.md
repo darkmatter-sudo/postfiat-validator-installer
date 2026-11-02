@@ -150,6 +150,28 @@ for a live automatic-rollback drill.
   are denied; `ps` needs `ptrace (read,readby)` on the same profile; `cron.daily/logrotate` calls `logger` only when
   logrotate fails, so a learn run never sees it → `EXTRA_EXEC` (default `/usr/bin/logger`).
 
+## Live proof runner (`drill/`)
+
+```
+PREFLIGHT_ONLY=1 bash apparmor/drill/live-run.sh LEARN_EVENTS    # step 0 only, changes nothing (exit 0 ready, 4 not)
+bash apparmor/drill/live-run.sh LEARN_EVENTS 2>&1 | tee LOG       # LEARN_EVENTS: the sentry's recorded learn output
+```
+
+`live-run.sh` (validator, agent user) points every notifier on both hosts at a throwaway topic, silences all alerts
+until the last node start + 25 min, opens a `pft-maint` window, installs on both hosts, then runs `host-run.sh` as
+root on each host, sentry first: before audit; P0 from the throwaway learn; an injected gate failure
+(`PFT_AA_INJECT=health`) that must roll back by itself; a bounded complain window on the live sentry (`CMIN`, 20 min),
+explicit rollback, P1 from learn + complain events; enforce; positive controls (RPC, peers, cron's identity switch,
+hourly run-parts, `logrotate -d`, log-volume write, `ps`) with 0 DENIED; negative controls that only the profile can
+stop, each of which must fail **and** log a matching DENIED record (new file in the `/etc/postfiatd` volume,
+`/etc/gshadow`, the unlisted `/usr/bin/id`, exec of a script copied into the log volume); two controls reported as
+blocked by an earlier layer (write to `/usr`: read-only root; exec from `/tmp`: noexec); `ack-denials`; an enforced
+`docker restart`; and on the sentry an explicit rollback and re-apply. The validator applies the sentry's P1 (sha256
+compared). Then metrics, integrity/fleet baselines, rulecheck, restore and a read-back of every operator topic.
+It refuses while a data collector or a `pft-maint` lock is active. A dev probe of the exact control commands on a
+network-less throwaway (runlog 17) showed `/bin/true` is not readable under the profile, so the exec controls copy a
+0755 `cron.daily` script instead (runlog 18: all controls PASS).
+
 ## Tests
 
 ```
