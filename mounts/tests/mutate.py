@@ -26,7 +26,7 @@ MUTANTS = [
     ("G6", "gate: oneshot Result not checked", '[ "$("$SYSTEMCTL" show -p Result --value "$u" 2>/dev/null)" = success ]', 'true'),
     ("G7", "gate: ignore inactive daemons", '[ -z "$dbad" ] && [ "$sshok"', 'true && [ "$sshok"'),
     ("G8", "gate: ignore the injected miss", '{ [ "$INJECT" != health ] || [ "$mode" = rollback ]; }', 'true'),
-    ("G9", "apply: no automatic rollback on a gate miss", 'echo "$(ts) apply: live step or health gate failed -> automatic rollback"\n    live_revert && restore_fstab "$b"', 'echo "$(ts) apply: live step or health gate failed -> automatic rollback"\n    true'),
+    ("G9", "apply: no automatic rollback on a gate miss", 'echo "$(ts) apply: live step or health gate failed -> automatic rollback"\n    restore_fstab "$b" && live_revert && "$SYSTEMCTL" daemon-reload && health_gate', 'echo "$(ts) apply: live step or health gate failed -> automatic rollback"\n    true && health_gate'),
     ("G10", "apply: findmnt --verify result ignored", 'if ! "$FINDMNT" --verify', 'if false && "$FINDMNT" --verify'),
     ("G11", "apply: refuse-on-conflict dropped", '[ -n "$cf" ] && { echo "REFUSE', 'false && { echo "REFUSE'),
     ("G12", "apply: idempotency check dropped", 'if cmp -s "$FSTAB" "$cand" && audit_quiet; then', 'if false; then'),

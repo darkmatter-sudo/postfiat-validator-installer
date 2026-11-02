@@ -145,6 +145,46 @@ apply/rollback byte-identity of fstab and both mount tables, every gate, and the
 untouched, no group created). Most cases run with `HIDEPID=1` so the opt-in path is covered too. On a host where `/tmp` is already noexec, set
 `TMPDIR` to an exec directory before running the suites (their stubs are executed from a temp dir).
 
-## Live proof
+## Live proof (validator + sentry, Ubuntu 22.04, postfiatd 1.0.9 in Docker)
 
-Pending: sentry first, then validator (see the commit that adds `mounts/logs/`).
+Recorded with `drill/live-run.sh` (orchestrator, agent account on the validator) and `drill/host-run.sh` (root, on each
+host), inside one pft-maint window, notifiers on a throwaway topic, an Alertmanager silence for the new add-on's
+alerts. No reboot, no postfiatd restart. Final run: [`logs/09-live-run.log`](logs/09-live-run.log), 24 orchestrator
+checks ok / 0 failed, sentry host-run 43 PASS / 0 FAIL, validator host-run 29 PASS / 0 FAIL.
+
+**Found -> fixed -> verified** (both hosts had the same stock layout):
+
+| check | before (both hosts) | after apply | verified by |
+|---|---|---|---|
+| `/tmp`, `/var/tmp` separate + nodev, nosuid, noexec (CIS 1.1.2.1.x, 1.1.2.5.x) | FAIL (8 checks: not a separate mount) | PASS | audit exit 0; exec of a copied `/bin/true` exits 126; a mknod'd char device cannot be opened |
+| `/dev/shm` noexec (CIS 1.1.2.2.4) | FAIL | PASS | exec refused (126); nodev control |
+| data dir `/var/lib/postfiatd/db` nodev, nosuid (inside the container) | FAIL (2) | PASS | container mount table shows nodev,nosuid; a SUID-root `id` run as uid 65534 from the volume keeps euid 65534 |
+| total findings | 11 | 0 | `audit --json` findings 0; Prometheus `pft_mounts_findings` 0 for both hosts; PFTMountHardeningDrift neither pending nor firing |
+
+Every negative control has a positive control in a root-fs directory without the option (same binary runs, same
+device reads 1 byte, same SUID binary gives euid 0). Persistence without a reboot: `findmnt --verify` accepts
+`/etc/fstab`; `findmnt -s` lists the block; systemd's fstab-generator units (`/run/systemd/generator/*.mount`, what the
+next boot mounts) carry the options with `SourcePath=/etc/fstab`; `/dev/shm` (an API mount, handled at boot by
+`systemd-remount-fs`) is proven by dropping noexec live and restoring it with an fstab-only `mount -o remount /dev/shm`.
+Health: postfiatd `StartedAt` unchanged on both hosts, `server_state` full, sshd -t + :22, every gate oneshot
+`Result=success`.
+
+Sentry only (`--drill`): an injected gate miss (`PFT_MOUNTS_INJECT=health`) rolled back on its own (exit 1, fstab
+sha256 and every live option as before, still so 75 s later), then apply, then an explicit `rollback --yes` (same
+checks), then re-apply. Afterwards: pft-integrity accept on both hosts, `pft-fleet sync` of the manifest,
+`pft-fleet skew` exit 0 (mounts CURRENT on both), pft-rulecheck RESULT OK on both, operator topics 0 messages.
+
+The way there, kept as evidence: run 05 ([log](logs/05-live-run-stopped.log)) stopped on a checker bug (it expected
+a `dev-shm.mount` unit and read live options from `systemctl show`); probe 06 established the real boot paths. Run 07
+([log](logs/07-live-run-stopped.log)) found a **real rollback bug**: rollback unmounted the self-binds before restoring
+fstab, and systemd mounted its generated `tmp.mount`/`var-tmp.mount` again 1 s later. Log 08 is the manual reset of the
+sentry; the fix (fstab + daemon-reload first, each unmount verified, offline stub that models systemd's queued start,
+mutants R1-R3) is in the commit before run 09. Run 09's integrity step filtered only `RESULT` lines, so it does not
+name the items it accepted; they were the reinstalled `/usr/local/bin/pft-mounts` (content changed since run 05's
+install: the only sha256 change, 1 FAIL item per host) and its units (mtime only: 4 WARN validator, 2 sentry).
+
+| log | what |
+|---|---|
+| 01-lint, 02-tests, 03-mutants (03a: G9 not applied after the fix, retargeted), 04-promtool | shellcheck + ruff, offline suite, mutant harness, rule check + rule tests |
+| 05, 05b, 06, 07, 08 | stopped runs, integrity rebaseline after 05, persistence probe, manual sentry reset |
+| 09-live-run | the passing two-host run |
