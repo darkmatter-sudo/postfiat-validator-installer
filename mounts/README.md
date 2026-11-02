@@ -188,3 +188,5 @@ install: the only sha256 change, 1 FAIL item per host) and its units (mtime only
 | 01-lint, 02-tests, 03-mutants (03a: G9 not applied after the fix, retargeted), 04-promtool | shellcheck + ruff, offline suite, mutant harness, rule check + rule tests |
 | 05, 05b, 06, 07, 08 | stopped runs, integrity rebaseline after 05, persistence probe, manual sentry reset |
 | 09-live-run | the passing two-host run |
+
+Offline: suite 104/104 (log 02); mutants 46 killed + 2 documented equivalent of 48, 0 survived or not applied (log 03).

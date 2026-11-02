@@ -1,0 +1,57 @@
+# 03 mutants - 2026-11-02T03:00:34Z - Ubuntu 22.04.5 LTS - commit cbfdca2473266e831b92c98afb3bc58aa31691cc
+# sha256 e63184f32d99974192c832d49d23c40d7fa906a5da47bc256743da19c9980054 mounts/pft-mounts.sh
+# sha256 e636ee542040483a7ac5afdaaf9dd8c8687d51c55a44dfa64cf8c48ecd5d2b3a mounts/tests/run-tests.sh
+# sha256 80086de1cf5c4e634de521911fb3fee94ef781a3b80341584ec90d2f6ebcc096 mounts/tests/stubs.sh
+# sha256 d2629ba5095b22047c30c31d24b9e36f8d27990daeaf67a8a222b99599b7dfca mounts/tests/fake_mount.py
+# sha256 1f3d8e6de2e8673f2b97a55f4306e95b01775862a1c08529427780cbb76688a5 mounts/tests/mutate.py
+$ TMPDIR=$HOME/.cache/tmp python3 -I mounts/tests/mutate.py -j 4 --timeout 300
+G1   KILLED (1 failed: gate: postfiatd restarted (StartedAt chang    75s  gate: ignore a postfiatd restart (StartedAt)
+G2   KILLED (1 failed: gate: server_state not full (rc=0))           75s  gate: accept any server_state
+G3   KILLED (14 failed: rollback: no window (5/4))                  136s  gate: skip the peer-port check
+G4   KILLED (1 failed: gate: ssh handshake fails (rc=0))             77s  gate: ignore the ssh handshake
+G5   KILLED (1 failed: gate: fail fast)                             127s  gate: ignore failed oneshot units
+G6   KILLED (1 failed: gate: oneshot starts but Result!=success (    60s  gate: oneshot Result not checked
+G7   KILLED (1 failed: gate: daemon goes inactive (rc=0))            59s  gate: ignore inactive daemons
+G8   KILLED (3 failed: gate: injected health miss (rc=0))            54s  gate: ignore the injected miss
+G9   KILLED (10 failed: gate: injected health miss (rc=1))           60s  apply: no automatic rollback on a gate miss
+G10  KILLED (1 failed: verify fail rc=0)                             63s  apply: findmnt --verify result ignored
+G11  KILLED (1 failed: plan: unmanaged)                              60s  apply: refuse-on-conflict dropped
+G12  KILLED (2 failed: apply again)                                  63s  apply: idempotency check dropped
+G13  EQUIVALENT (documented)                                         62s  rollback: sha256 compare dropped - cp -p succeeded => bytes equal; no test input reaches the sha256 mismatch branch
+G14  EQUIVALENT (documented)                                         63s  rollback: live.state replayed in apply order - every live.state line names a different mount; undo order is unobservable
+G15  KILLED (1 failed: rollback failure: rc=1)                       71s  rollback: rollback failure not reported (exit 5)
+W1   KILLED (1 failed: apply: no window rc=0)                        74s  apply: runs without a pft-maint window
+W2   KILLED (1 failed: rollback: no window (0/0))                    76s  rollback: runs without a pft-maint window
+W3   KILLED (2 failed: apply: no window rc=0)                        74s  window check: exit status of pft-maint active ignored
+W4   KILLED (1 failed: dry-run diff labels)                          62s  dry run: diff headers carry file times (local timezone)
+R1   KILLED (4 failed: rollback window rc=0)                         59s  rollback: umount before the fstab restore + daemon-reload (systemd re-mounts tmp.mount)
+R2   KILLED (9 failed: gate: injected health miss (rc=1))            67s  auto rollback: umount before the fstab restore + daemon-reload
+R3   KILLED (1 failed: rollback stacked (0/0))                       59s  rollback: a mount still present after umount counted as unmounted
+L1   KILLED (1 failed: apply: /proc flags)                           60s  live: /proc remount drops its per-mount flags
+L2   KILLED (19 failed: rollback: no window (1/4))                   32s  live: /tmp never self-bound
+L3   KILLED (11 failed: after apply: audit)                          50s  live: noexec missing on /tmp,/var/tmp
+L4   KILLED (6 failed: apply: nsenter)                               57s  live: container remount skipped
+L5   KILLED (29 failed: rollback: no window (1/4))                   38s  live: apt conf not written
+L6   KILLED (1 failed: rollback: apt restore (0/0))                  60s  rollback: pre-existing apt conf not restored
+L7   KILLED (10 failed: rollback: rc=0)                              60s  rollback: apt conf left behind
+A1   KILLED (1 failed: dup: WARN for /tmp (want WARN /2 fstab ent    66s  audit: duplicate fstab targets not warned
+A2   KILLED (2 failed: dup: last line wins (noexec not persistent    65s  audit: first duplicate wins instead of last
+A3   KILLED (1 failed: comment: commented line is no persistence     79s  audit: commented fstab lines parsed
+A4   KILLED (1 failed: tmp.mount disabled: fstab is the source (w    73s  audit: tmp.mount enablement ignored
+A5   KILLED (1 failed: hidepid=ptraceable FAIL (want FAIL, got 'W    73s  audit: hidepid=ptraceable counted as hiding
+A6   KILLED (2 failed: bare: /tmp not separate (want FAIL /not a     72s  audit: /dev/shm absent graded by covering mount
+A7   KILLED (1 failed: dedicated fs: nodev via the fs's fstab lin    72s  audit: dedicated data fs entry not consulted
+A8   KILLED (5 failed: live-only: /tmp noexec WARN (want WARN /no    72s  audit: live-only option graded PASS
+A9   KILLED (2 failed: apt: TempDir on a noexec mount FAIL (want     68s  audit: apt TempDir on a noexec mount accepted
+A10  KILLED (3 failed: bare: data on root fs (want INFO /docker-v    69s  audit: host path printed (no volume label)
+A11  KILLED (1 failed: escaped data path: nodev via its \040 fsta    67s  audit: \040 not decoded in fstab
+A12  KILLED (72 failed: bare: exit 2)                                55s  audit: reads its own (sandboxed) mount table
+H1   KILLED (2 failed: default plan)                                 67s  default: fstab gets the proc line without HIDEPID=1
+H2   KILLED (1 failed: default apply rc=0)                           66s  default: /proc remounted without HIDEPID=1
+H3   KILLED (1 failed: default apply rc=0)                           62s  default: group created without HIDEPID=1
+H4   KILLED (3 failed: hidepid off by default: INFO, not graded (    60s  default: hidepid graded without HIDEPID=1
+P1   KILLED (3 failed: validate host: rc=2)                          64s  validate: foreign lines accepted
+P2   KILLED (1 failed: pull tampered: rc=2)                          65s  pull: rejected file still installed
+P3   KILLED (7 failed: prom)                                         61s  prom: host label missing on findings
+RESULT: 46 killed + 2 documented equivalent of 48, 0 survived or not applied
+(exit 0)
