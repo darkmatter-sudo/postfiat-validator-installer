@@ -1,0 +1,128 @@
+vulnscan fleet sync - 2026-11-02T19:18:37Z - Ubuntu 22.04.5 LTS - repo HEAD ff20d81393993bbb081d4a6549c5f6ac9e8030ba (clean: yes)
+
+== 1. point pft-maint at a throwaway topic (real file kept with mode/owner/mtime as $BK)
+real /etc/pft-maint/ntfy.env present before: 0
+$ { [ $HAD = 0 ] || sudo -n cp -p $NE $BK; } && printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' "$TT" | sudo -n tee $NE >/dev/null && sudo -n chmod 600 $NE && sudo -n stat -c '%a %U' $NE
+  600 root
+  (exit 0)
+CHECK ok   throwaway target installed
+
+== 2. window + sync of the vulnscan add-on (stale-304 refetch, 1.1.0)
+$ sudo -n pft-maint start --ttl 25m --reason 'vulnscan 1.1.0 stale-304 fix deploy'
+  window started: id m1793647117-3539605 until 2026-11-02T19:43:37Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint window open
+CHECK ok   sentry has the window (via the watchdog channel) after 0s
+$ sudo -n pft-fleet sync --addon vulnscan --to ff20d81393993bbb081d4a6549c5f6ac9e8030ba --apply --reason 'vulnscan 1.1.0: refetch on stale 304'
+  [2026-11-02T19:18:51Z] sync vulnscan to ff20d81393993bbb081d4a6549c5f6ac9e8030ba (2026-11-02T19:18:34+00:00) REF main=ff20d81393993bbb081d4a6549c5f6ac9e8030ba
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN sentry sentry /usr/local/bin/pft-vulnscan 0755 BEHIND 26e41cec0a6c 2208113eb65c write
+  PLAN sentry sentry /usr/local/lib/pft-vulnscan/vulnscan_parse.py 0644 CURRENT 8b3b6c9cad5d 8b3b6c9cad5d keep
+  PLAN sentry sentry /etc/systemd/system/pft-vulnscan.service 0644 CURRENT 156a28dcfafa 156a28dcfafa keep
+  PLAN sentry sentry /etc/systemd/system/pft-vulnscan.timer 0644 CURRENT 0abdc52cf860 0abdc52cf860 keep
+  PLAN validator validator /usr/local/bin/pft-vulnscan 0755 BEHIND 26e41cec0a6c 2208113eb65c write
+  PLAN validator validator /usr/local/lib/pft-vulnscan/vulnscan_parse.py 0644 CURRENT 8b3b6c9cad5d 8b3b6c9cad5d keep
+  PLAN validator validator /etc/systemd/system/pft-vulnscan.service 0644 CURRENT 156a28dcfafa 156a28dcfafa keep
+  PLAN validator validator /etc/systemd/system/pft-vulnscan.timer 0644 CURRENT 0abdc52cf860 0abdc52cf860 keep
+  PLAN validator validator /etc/systemd/system/pft-vulnscan-pull.service 0644 CURRENT 06a53b993993 06a53b993993 keep
+  PLAN validator validator /etc/systemd/system/pft-vulnscan-pull.timer 0644 CURRENT 235a42c17dbe 235a42c17dbe keep
+  [2026-11-02T19:18:52Z] order: sentry validator
+  [2026-11-02T19:18:52Z] sentry: 1 file(s) to write
+  PRE sentry pft-maint window active PASS
+  PRE sentry node server_state=full PASS
+  PRE sentry pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP sentry /usr/local/bin/pft-vulnscan sha256 26e41cec0a6c -> /var/lib/pft-fleet/backup/20261102T191852Z-vulnscan-sentry
+  WRITE sentry /usr/local/bin/pft-vulnscan 26e41cec0a6c -> 2208113eb65c mode 0755
+  GATE sentry sha256 /usr/local/bin/pft-vulnscan = target 2208113eb65c PASS
+  GATE sentry syntax /usr/local/bin/pft-vulnscan bash -n PASS
+  GATE sentry addon units failed=none PASS
+  GATE sentry node server_state=full PASS
+  ACCEPT sentry pft-integrity baseline updated: pft-fleet sync vulnscan@ff20d8139399 (pft-vulnscan)
+  [2026-11-02T19:19:22Z] SYNCED sentry vulnscan -> ff20d8139399
+  [2026-11-02T19:19:22Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/bin/pft-vulnscan sha256 26e41cec0a6c -> /var/lib/pft-fleet/backup/20261102T191852Z-vulnscan-validator
+  WRITE validator /usr/local/bin/pft-vulnscan 26e41cec0a6c -> 2208113eb65c mode 0755
+  GATE validator sha256 /usr/local/bin/pft-vulnscan = target 2208113eb65c PASS
+  GATE validator syntax /usr/local/bin/pft-vulnscan bash -n PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync vulnscan@ff20d8139399 (pft-vulnscan)
+  [2026-11-02T19:19:35Z] SYNCED validator vulnscan -> ff20d8139399
+  [2026-11-02T19:19:35Z] sync complete
+  (exit 0)
+CHECK ok   fleet sync exit 0
+$ sudo -n pft-fleet skew
+  ref main = ff20d81393993bbb081d4a6549c5f6ac9e8030ba
+  host sentry     role sentry    ok
+  host validator  role validator ok
+  HOST       ADDON       STATE      DETAIL
+  sentry     alertpath   CURRENT    
+  sentry     audittrail  CURRENT    
+  sentry     authwatch   CURRENT    
+  sentry     divergence  CURRENT    
+  sentry     egress      CURRENT    
+  sentry     feewatch    CURRENT    
+  sentry     integrity   CURRENT    
+  sentry     logship     CURRENT    
+  sentry     maint       CURRENT    
+  sentry     mounts      CURRENT    
+  sentry     patch       CURRENT    
+  sentry     privesc     CURRENT    
+  sentry     resources   CURRENT    
+  sentry     rulecheck   CURRENT    
+  sentry     statewatch  CURRENT    
+  sentry     sysctl      CURRENT    
+  sentry     timesync    CURRENT    
+  sentry     vulnscan    CURRENT    
+  sentry     watchdog    CURRENT    
+  validator  alertpath   CURRENT    
+  validator  audittrail  CURRENT    
+  validator  authwatch   CURRENT    
+  validator  backup      CURRENT    
+  validator  divergence  CURRENT    
+  validator  egress      CURRENT    
+  validator  exporter    CURRENT    
+  validator  feewatch    CURRENT    
+  validator  fleet       CURRENT    
+  validator  integrity   CURRENT    
+  validator  logship     CURRENT    
+  validator  maint       CURRENT    
+  validator  monitor     CURRENT    
+  validator  mounts      CURRENT    
+  validator  patch       CURRENT    
+  validator  privesc     CURRENT    
+  validator  resources   CURRENT    
+  validator  retention   CURRENT    
+  validator  rulecheck   CURRENT    
+  validator  statewatch  CURRENT    
+  validator  sysctl      CURRENT    
+  validator  timesync    CURRENT    
+  validator  vulnscan    CURRENT    
+  validator  watchdog    CURRENT    
+  SUMMARY CURRENT=43 BEHIND=0 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 0)
+CHECK ok   pft-fleet skew exit 0, vulnscan CURRENT on both hosts
+
+== 3. end window, restore the real target, compare
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+$ sudo -n rm -f $NE   (no ntfy.env before: pft-maint falls back to the real monitor target again)
+CHECK ok   pft-maint target back to its pre-run state (/etc/pft-maint/ntfy.env: absent again)
+$ sudo -n test ! -e $BK && echo backup gone
+  backup gone
+  (exit 0)
+$ sleep 5; curl -s --max-time 15 "https://ntfy.sh/$TT/json?poll=1&since=10m" | jq -r '.title'
+  [MAINT] start validator
+  [MAINT] end validator
+  (exit 0)
+CHECK ok   the [MAINT] start and end messages reached the throwaway topic
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 130 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 77 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts
+
+fleet-run done 2026-11-02T19:20:19Z: 0 check(s) failed -> PASS

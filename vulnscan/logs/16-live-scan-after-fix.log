@@ -1,0 +1,15 @@
+OS: Ubuntu 22.04.5 LTS | 2026-11-02T19:20:28Z
+$ sudo systemctl start pft-vulnscan.service (validator)
+(exit 0)
+         sha256 d5118a4de25b806ed483412019201cbf2080abf5c25c001dee974b696fd2c28f  fetch: fetched
+oval     2613 patch definitions, feed timestamp 2026-11-02T12:16:17 UTC (age 7.1 h), evaluated in 26 s
+RESULT: 0 affected USNs (0 critical, 0 high, 0 medium, 0 low, 0 negligible, 0 none, 0 unknown; 0 fixable only via Ubuntu Pro/ESM), 0 CVEs; reboot owed: no -> exit 0
+== sentry
+(exit 0)
+         sha256 d5118a4de25b806ed483412019201cbf2080abf5c25c001dee974b696fd2c28f  fetch: fetched
+oval     2613 patch definitions, feed timestamp 2026-11-02T12:16:17 UTC (age 7.1 h), evaluated in 55 s
+RESULT: 0 affected USNs (0 critical, 0 high, 0 medium, 0 low, 0 negligible, 0 none, 0 unknown; 0 fixable only via Ubuntu Pro/ESM), 0 CVEs; reboot owed: no -> exit 0
+$ sudo systemctl start pft-vulnscan-pull.service
+(exit 0)
+pft_vulnscan_feed_timestamp_seconds{host="sentry"} 1793621777
+pft_vulnscan_feed_timestamp_seconds{host="validator"} 1793621777
