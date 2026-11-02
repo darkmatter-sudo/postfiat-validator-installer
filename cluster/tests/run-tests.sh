@@ -178,6 +178,8 @@ printf 'HOST_LABEL=validator\nPEER_LABEL=sentry\nPEER_PUBKEY=%s\nPEER_TAG=sentry
 # a seed the node rejects (here: one validation_create never made) -> postfiatd does not start -> rollback
 echo "sNotMadeByThisNodexxxxxxxxxxxx" > "$ST/node_seed"; run apply --yes
 [ "$RC" = 1 ] && cmp -s "$CFG" "$E/s/orig.cfg" && grep -q 'server_state=unknown' <<<"$OUT" && ok "gate: node does not start with the new config -> rolled back" || ko "nostart rc=$RC" "$OUT"
+fresh; applied; chmod 644 "$CFG"; touch "$E/s/restart_noop"; run apply --yes
+[ "$RC" = 5 ] && grep -q 'health: FAIL.*restarted=NO' <<<"$OUT" && ok "gate: docker restart exit 0 but no restart -> gate FAIL (then rollback cannot restart either: exit 5)" || ko "restart noop rc=$RC" "$OUT"
 fresh; keyed; peer_pinned; cp -p "$CFG" "$E/s/orig.cfg"; touch "$E/s/no_cluster"; run apply --yes
 [ "$RC" = 1 ] && cmp -s "$CFG" "$E/s/orig.cfg" && grep -q 'member=0' <<<"$OUT" && ok "gate: node ignores [cluster_nodes] -> rolled back" || ko "no_cluster rc=$RC" "$OUT"
 fresh; keyed; peer_pinned; cp -p "$CFG" "$E/s/orig.cfg"; echo "$PEER_OLD" > "$ST/node_pub"; echo "$PEER_NEW" > "$E/s/peer_pub"
@@ -225,6 +227,7 @@ fresh; applied; echo 900 > "$E/s/peer_age"; run audit; expect "audit: stale repo
 fresh; applied; rm "$E/s/peer_connected"; run audit; expect "audit: peer disconnected" live:peer FAIL 'not connected'
 expect "audit: disconnected -> no report" live:reports FAIL
 fresh; applied; echo "$PEER_OLD" > "$E/s/peer_pub"; run audit; expect "audit: peer runs another key" live:peer FAIL 'not connected'
+fresh; applied; touch "$E/s/no_cluster"; run audit; expect "audit: peer connected without the cluster flag" live:peer FAIL 'not as a cluster member'
 fresh; applied; sed '/^# BEGIN pft-cluster/,$d' "$CFG" > "$E/s/loaded.cfg"
 run audit; expect "audit: config written, restart pending" live:pubkey FAIL 'restart pending'
 expect "audit: member not loaded" live:cluster FAIL 'not loaded'

@@ -16,6 +16,7 @@ State dir S (files):
   bad_when_seeded  server_state "connected" while the loaded config has a [node_seed] (a fault apply causes)
   bad_always     server_state "connected" after the next restart (rollback cannot cure it)
   restart_fail   docker restart fails
+  restart_noop   docker restart exits 0 but the node does not restart
   no_cluster     the node ignores [cluster_nodes]
   vc_bad         validation_create answers an error
 Usage: fake_node.py S rpc METHOD | fake_node.py S restart
@@ -63,7 +64,7 @@ def node(s):
     # no_cluster: the node ignores the section (as postfiatd ignores a misspelled section name)
     for v in ([] if os.path.exists(os.path.join(s, "no_cluster")) else sec.get("cluster_nodes", [])):
         m = re.fullmatch(r"\s*([A-Za-z0-9]+)(?:\s+(?:(.*\S)\s*)?)?", v)
-        if not m or not re.fullmatch(r"n[%s]{50,51}" % B58, m.group(1)):
+        if not m or not re.fullmatch(rf"n[{B58}]{{50,51}}", m.group(1)):
             return None  # Cluster::load fails -> the node does not start
         members.append((m.group(1), m.group(2) or ""))
     pub = rd(s, "wallet_pub")
@@ -128,6 +129,8 @@ def rpc(s, method):
 def restart(s):
     if os.path.exists(os.path.join(s, "restart_fail")):
         return 1
+    if os.path.exists(os.path.join(s, "restart_noop")):
+        return 0  # docker said OK, nothing restarted (StartedAt and the loaded config stay)
     with open(rd(s, "cfg")) as f:
         body = f.read()
     with open(os.path.join(s, "loaded.cfg"), "w") as f:
@@ -136,7 +139,7 @@ def restart(s):
     with open(os.path.join(s, "restarts"), "w") as f:
         f.write(str(n))
     with open(os.path.join(s, "started"), "w") as f:
-        f.write("2026-11-02T00:%02d:00.000000001Z\n" % n)
+        f.write(f"2026-11-02T00:{n:02d}:00.000000001Z\n")
     if os.path.exists(os.path.join(s, "bad_always")):
         open(os.path.join(s, "bad_now"), "w").close()
     return 0

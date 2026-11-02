@@ -143,3 +143,12 @@ promtool tests: `../alerts/cluster.tests.yml`.
 - `tests/mutate.py`: mutant harness; each mutant is one exact replacement that must match once; an unmutated control
   run must pass first; every suite run has a timeout (a hang counts as killed); documented equivalents are listed with
   the reason.
+- `drill/identity-control.sh`: the source facts above, checked on **throwaway containers** (same image as the running
+  node, `--network none`, a fresh anonymous data volume per run, `--memory 2g`; the live nodes and their volumes are
+  never touched): the stock config twice gives two different `pubkey_node` values; the stock config plus a
+  `[node_seed]` from `validation_create` gives the same key twice, equal to `validation_public_key`; a malformed
+  `[cluster_nodes]` entry stops postfiatd (`Overlay:ERR Malformed entry` / `Application:FTL Invalid entry in cluster
+  configuration`), which is why apply validates entries and the gate rolls back a node that does not come up.
+- `drill/recreate.sh`: re-creates the sentry container with its full runtime profile (pft-confine's `recreate_args`
+  plus caps, read-only root, tmpfs, pids/memory limits, security_opt read back from HostConfig), refuses if the image
+  tag now names another image, compares a config summary before/after and restores the old container on any mismatch.
