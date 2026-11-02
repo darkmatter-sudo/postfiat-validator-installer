@@ -21,6 +21,8 @@
 # 11 sentry-only rollback, then re-apply --require-peer.
 # 12 metrics (units, pull, Prometheus), 13 baselines (integrity, fleet, rulecheck), 14 restore + read-back.
 # Env: RELAY (relay)  NTFY (https://ntfy.sh)  AM  PROM  LOCAL_ENVS  REMOTE_ENVS  TTL (150m)  SIL_TTL (180, min)
+#      PREFLIGHT_ONLY=1: run step 0 only and exit before any change (an active data collector is reported as
+#      "would stop" instead of stopping, so the rest of the preflight still runs); exit 0 = ready, 4 = not ready.
 # shellcheck disable=SC2016,SC2034,SC2015  # ok_if conditions are evaluated later; A && B || C only reports
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -32,7 +34,7 @@ LOCAL_ENVS="${LOCAL_ENVS:-/etc/postfiat-monitor.env /etc/pft-integrity.env}"
 REMOTE_ENVS="${REMOTE_ENVS:-/etc/pft-watchdog/ntfy.env /etc/pft-integrity.env /etc/pft-alertpath/ntfy.env}"
 BRIDGE_ENV="${BRIDGE_ENV:-$HOME/.config/pft-alerts/ntfy.env}"; AGENT_ENV="${AGENT_ENV:-/opt/pft-agent/config.env}"
 MAINT_ENV=/etc/pft-maint/ntfy.env
-TTL="${TTL:-150m}"; SIL_TTL="${SIL_TTL:-180}"
+TTL="${TTL:-150m}"; SIL_TTL="${SIL_TTL:-180}"; PREFLIGHT_ONLY="${PREFLIGHT_ONLY:-0}"; NOT_READY=0
 COLLECTORS="${COLLECTORS:-pft-payflow-tx.service pft-senders-tx.service}"
 TASK=task_01cd4e81
 SUF=.pre-cluster-live
@@ -109,9 +111,18 @@ curl -s --max-time 5 -o /dev/null "$PROM/-/ready" || { echo "  Prometheus not re
 sudo -n pft-maint active >/dev/null 2>&1 && { echo "  a pft-maint window is open on the validator - stopping" >&2; exit 4; }
 R "sudo -n pft-maint active" >/dev/null 2>&1 && { echo "  a pft-maint window is open on the relay - stopping" >&2; exit 4; }
 for u in $COLLECTORS; do
-  systemctl is-active -q "$u" && { echo "  $u is collecting from the validator's node - stopping (restarts would cut its window)" >&2; exit 4; }
+  systemctl is-active -q "$u" || continue
+  if [ "$PREFLIGHT_ONLY" = 1 ]; then echo "  $u is collecting from the validator's node - a real run would stop here"; NOT_READY=1
+  else echo "  $u is collecting from the validator's node - stopping (restarts would cut its window)" >&2; exit 4; fi
 done
-echo "  pft-maint: no window on either host; data collectors inactive ($COLLECTORS)"
+# The rule line and the manifest lines ship in the run commit, not earlier: the live Prometheus reads this tree, so a
+# loaded rule with no pft_cluster_* series yet would page PFTRuleDead, and manifest lines would make pft-fleet skew MISSING.
+for need in "alerts/prometheus.yml:/etc/pft-alerts/cluster.rules.yml" "fleet/manifest.tsv:cluster/pft-cluster.sh"; do
+  grep -qF "${need#*:}" "${need%%:*}" && continue
+  if [ "$PREFLIGHT_ONLY" = 1 ]; then echo "  ${need%%:*} has no ${need#*:} line - a real run would stop here (add it in the run commit)"; NOT_READY=1
+  else echo "  ${need%%:*} has no ${need#*:} line - stopping (add it in the run commit)" >&2; exit 3; fi
+done
+echo "  pft-maint: no window on either host; collectors inactive + run-commit lines present: $([ "$NOT_READY" = 0 ] && echo yes || echo "NO, see above")"
 sudo -n test -e "$MAINT_ENV" && { echo "  $MAINT_ENV exists (this runner expects it absent) - stopping" >&2; exit 3; }
 for f in $LOCAL_ENVS; do
   L "sudo -n test -f $f" || { echo "  local $f missing - stopping" >&2; exit 3; }
@@ -146,6 +157,10 @@ done
 echo "\$ redact.py control --literals <literals>"
 python3 -u "$REDACT" control --literals "$LIT" | sed 's/^/  /'; RCTL="${PIPESTATUS[0]}"
 [ "$RCTL" -eq 0 ] || { echo "  redaction positive control FAILED - stopping before any change" >&2; exit 3; }
+if [ "$PREFLIGHT_ONLY" = 1 ]; then
+  echo; echo "PREFLIGHT_ONLY: stopping before step 1, nothing changed (ready: $([ "$NOT_READY" = 0 ] && echo yes || echo "no, see the would-stop lines above"))"
+  exit $(( NOT_READY ? 4 : 0 ))
+fi
 
 echo; echo "== 1. redirect notifiers, silence every alert, maintenance window"
 redirect() { # HOST PATH

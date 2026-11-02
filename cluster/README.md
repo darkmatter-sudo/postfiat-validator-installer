@@ -120,6 +120,8 @@ sudo ./install.sh --host sentry   # sentry (PEER_LABEL=validator)
 sudo ./install.sh --pull          # validator: pull the sentry's textfile (PULL_SSH in /etc/pft-cluster.env)
 ```
 
+Config keys: [`pft-cluster.env.example`](pft-cluster.env.example) (`/etc/pft-cluster.env`, root 0600, never sourced).
+
 `pft-cluster.timer` audits every 5 minutes into `pft_cluster_<host>.prom`: `pft_cluster_check{host,check,status}`,
 `pft_cluster_peer_clustered{host}` (1 = connected member that reports to us), `pft_cluster_findings{host}`,
 `pft_cluster_last_run_timestamp_seconds{host}`. The unit is sandboxed (`ProtectSystem=strict`, AF_UNIX only for
