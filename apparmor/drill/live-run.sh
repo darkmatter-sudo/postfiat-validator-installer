@@ -127,6 +127,13 @@ for need in "alerts/prometheus.yml:/etc/pft-alerts/apparmor.rules.yml" "fleet/ma
   if [ "$PREFLIGHT_ONLY" = 1 ]; then echo "  ${need%%:*} has no ${need#*:} line - a real run would stop here (add it in the run commit)"; NOT_READY=1
   else echo "  ${need%%:*} has no ${need#*:} line - stopping (add it in the run commit)" >&2; exit 3; fi
 done
+# pft-integrity (and anything else that auto-detects "the" node) takes the first running container with a postfiatd
+# image, i.e. the newest: a leftover throwaway would make it grade the wrong container (seen during the learn run).
+for h in local relay; do
+  n="$(on "$h" "sudo -n docker ps --format '{{.Names}} {{.Image}}'" | awk -v c="$(cn "$h")" '$2 ~ /postfiatd/ && $1 != c' | wc -l)"
+  [ "$n" = 0 ] || { echo "  $h: $n running postfiatd-image container(s) besides $(cn "$h") (learn throwaway?) - stopping" >&2; exit 3; }
+done
+echo "  no extra postfiatd-image container running on either host"
 x "R 'sudo -n cat $LEARN_EVENTS | wc -l; sudo -n cat $LEARN_EVENTS | sha256sum | cut -c1-64; sudo -n cut -f1 $LEARN_EVENTS | sort | uniq -c'"
 if ! { [ "$XRC" = 0 ] && [ "$(head -1 <<<"$XOUT")" -gt 0 ] 2>/dev/null; }; then
   if [ "$PREFLIGHT_ONLY" = 1 ]; then echo "  learn events missing or empty on the sentry - a real run would stop here"; NOT_READY=1
