@@ -1,0 +1,35 @@
+# probe: persistence mechanism on the sentry 2026-11-02T02:27:19Z
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+== /run/systemd/generator/-.mount
+Where=/
+What=/dev/disk/by-label/cloudimg-rootfs
+Type=ext4
+Options=discard,errors=remount-ro
+== /run/systemd/generator/boot-efi.mount
+Where=/boot/efi
+What=/dev/disk/by-label/UEFI
+Type=vfat
+Options=umask=0077
+== /run/systemd/generator/tmp.mount
+Where=/tmp
+What=/tmp
+Type=none
+Options=bind,nodev,nosuid,noexec
+== /run/systemd/generator/var-lib-docker-volumes-<v>
+Where=<docker-volume:pft-sentry-data>
+What=<docker-volume:pft-sentry-data>
+Type=none
+Options=bind,nodev,nosuid
+== /run/systemd/generator/var-tmp.mount
+Where=/var/tmp
+What=/var/tmp
+Type=none
+Options=bind,nodev,nosuid,noexec
+ls: cannot access '/run/systemd/generator/dev-shm.mount': No such file or directory
+== /dev/shm via systemd-remount-fs path: drop noexec live, then fstab-driven remount
+rw,nosuid,nodev,noexec,inode64
+rc=0
+rw,nosuid,nodev,inode64
+rc=0
+rw,nosuid,nodev,noexec,inode64
+{ path=/lib/systemd/systemd-remount-fs ; argv[]=/lib/systemd/systemd-remount-fs ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }

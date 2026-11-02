@@ -1,0 +1,14 @@
+# 05b integrity rebaseline after live run 05 (stopped on a checker bug) - 2026-11-02T02:28:21Z - Ubuntu 22.04.5 LTS
+$ sudo -n pft-integrity verify | grep -E "^(WARN|FAIL|RESULT)"
+RESULT: WARN - 125 unchanged, 5 warn, 0 fail -> exit 1
+$ sudo -n pft-integrity accept --reason "task_17c7c414: pft-mounts installed by live run 05 (script, units, env, rulecheck.conf)" | tail -2
+pft-integrity accept - 2026-11-02T02:28:34Z: re-baselined 130 items by <user>
+manifest sha256: 09f245b19044acfe6c8974b78d147f6d3de96ec1c49d68612284a0479c20fc82 -> 56e9fe3ffea7e27074c949509a22440e5d6f82f0102e235f17f824a6235d8ced (logged to accept.log)
+$ R "sudo -n pft-integrity verify" | grep -E "^(WARN|FAIL|RESULT)"
+RESULT: WARN - 74 unchanged, 3 warn, 0 fail -> exit 1
+$ R "sudo -n pft-integrity accept --reason ..." | tail -2
+pft-integrity accept - 2026-11-02T02:28:50Z: re-baselined 77 items by root
+manifest sha256: 4915731b1130955f36242aaf9f9e6d531ec199bfb7f159f712b2933a45cacba3 -> 522ede64c3111bbc4561d8a6698df8baf54bb28575fc847d2cbe62a55da35d9a (logged to accept.log)
+$ verify both
+RESULT: PASS - 130 unchanged, 0 warn, 0 fail -> exit 0
+RESULT: PASS - 77 unchanged, 0 warn, 0 fail -> exit 0

@@ -112,7 +112,7 @@ for f in $REMOTE_ENVS; do
   ! R "sudo -n test -e $f$SUF" || { echo "  leftover relay $f$SUF - stopping" >&2; exit 3; }
 done
 x "ls /usr/local/bin/pft-mounts /etc/pft-mounts.env 2>&1; R 'ls /usr/local/bin/pft-mounts /etc/pft-mounts.env 2>&1'"
-check "pft-mounts not installed yet on either host" "$(ok_if '[ "$(grep -c "No such file" <<<"$XOUT")" = 4 ]')"
+echo "  (informational: an earlier run may have installed it; install.sh is idempotent and step 1b resets an applied host)"
 { for f in $LOCAL_ENVS; do L "sudo -n sed -n 's/^NTFY_TOPIC=//p' $f"; done
   for f in $REMOTE_ENVS; do R "sudo -n sed -n 's/^NTFY_TOPIC=//p' $f"; done
   sed -n 's|^NTFY_URL=.*/||p' "$BRIDGE_ENV" 2>/dev/null
@@ -169,6 +169,17 @@ w=0
 until R "sudo -n pft-maint active" >/dev/null 2>&1; do w=$((w + 10)); [ "$w" -le 420 ] || break; sleep 10; done
 R "sudo -n pft-maint active" >/dev/null 2>&1; check "sentry has the window (via the watchdog channel) after ${w}s" "$?"
 [ "$FAILS" = 0 ] || exit 4
+
+echo; echo "== 1b. reset: a host an earlier run left applied is rolled back first (checked), so step 0 of host-run sees the original state"
+for h in relay local; do
+  if on "$h" "sudo -n grep -q '^# BEGIN pft-mounts' /etc/fstab"; then
+    x "on $h 'sudo -n pft-mounts rollback --yes'"
+    check "$h: rollback of the earlier run exit 0, fstab block gone" "$(ok_if '[ "$XRC" = 0 ] && ! on "$h" "sudo -n grep -q \"^# BEGIN pft-mounts\" /etc/fstab"')"
+    x "on $h 'sudo -n pft-mounts audit | tail -1'"
+    check "$h: audit shows the original findings again" "$(ok_if '[ "$XRC" = 1 ] && grep -q "FAIL - " <<<"$XOUT"')"
+  else echo "  $h: no pft-mounts fstab block (nothing to reset)"; fi
+done
+[ "$FAILS" = 0 ] || { echo "  reset failed - stopping"; exit 4; }
 
 echo; echo "== 2. install (sentry first, then validator, then the validator's pull of the sentry file)"
 x "git archive $SHA_HEAD mounts | R 'rm -rf $RDIR && mkdir -m 700 $RDIR && tar -x -C $RDIR'"

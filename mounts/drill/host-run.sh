@@ -100,9 +100,18 @@ v "findmnt --verify accepts /etc/fstab" '[ "$XRC" = 0 ]'
 x "findmnt -s -n -o TARGET,SOURCE,FSTYPE,OPTIONS /tmp; findmnt -s -n -o TARGET,SOURCE,FSTYPE,OPTIONS /var/tmp; findmnt -s -n -o TARGET,SOURCE,FSTYPE,OPTIONS /dev/shm; findmnt -s -n -o TARGET,OPTIONS '$SRC'"
 v "fstab entries (findmnt -s) for /tmp /var/tmp /dev/shm carry nodev,nosuid,noexec; data dir nodev,nosuid" \
   '[ "$(grep -cE "nodev,nosuid,noexec" <<<"$XOUT")" = 3 ] && grep -qE "^<?.*bind,nodev,nosuid$" <<<"$(tail -1 <<<"$XOUT")"'
-x "for u in tmp.mount var-tmp.mount dev-shm.mount; do echo \"\$u \$(systemctl show -p Options --value \$u) \$(systemctl show -p SourcePath --value \$u)\"; done"
-v "systemd's fstab-generator built the mount units from /etc/fstab with the options (what the next boot mounts)" \
-  '[ "$(grep -cE "nodev,nosuid,noexec /etc/fstab$" <<<"$XOUT")" = 3 ]'
+# boot path 1: systemd-fstab-generator turns fstab lines into mount units (/run/systemd/generator). It skips API
+# mounts such as /dev/shm, so there is no dev-shm.mount (run 05's check expected one, and read `systemctl show
+# -p Options`, which is the LIVE kernel option string in kernel order: harness bug, kept in log 05).
+x "for f in /run/systemd/generator/tmp.mount /run/systemd/generator/var-tmp.mount \$(grep -l '^Where=$SRC\$' /run/systemd/generator/*.mount); do echo \"== \${f##*/}\"; grep -E '^(SourcePath|Where|Options)=' \$f; done; ls /run/systemd/generator/dev-shm.mount 2>&1"
+v "fstab-generator units (what the next boot mounts): /tmp, /var/tmp bind,nodev,nosuid,noexec; data dir bind,nodev,nosuid; all from /etc/fstab" \
+  '[ "$(grep -c "^Options=bind,nodev,nosuid,noexec$" <<<"$XOUT")" = 2 ] && [ "$(grep -c "^Options=bind,nodev,nosuid$" <<<"$XOUT")" = 1 ] && [ "$(grep -c "^SourcePath=/etc/fstab$" <<<"$XOUT")" = 3 ]'
+# boot path 2: /dev/shm gets its fstab options from systemd-remount-fs (mount -o remount <api mount> reads fstab).
+# Proof without a reboot: drop noexec live, then a remount that names only the mount point must bring it back.
+x "systemctl show -p ExecStart --value systemd-remount-fs.service | grep -o 'path=[^ ]*'; findmnt -n -o OPTIONS /dev/shm; mount -o remount,exec /dev/shm && findmnt -n -o OPTIONS /dev/shm; mount -o remount /dev/shm && findmnt -n -o OPTIONS /dev/shm"
+findmnt -n -o OPTIONS /dev/shm | grep -qE '(^|,)noexec(,|$)' || mount -o remount,noexec /dev/shm  # never leave it exec
+v "/dev/shm: noexec dropped live, then an fstab-only remount (the systemd-remount-fs path) restores nodev,nosuid,noexec" \
+  '[ "$XRC" = 0 ] && ! grep -qE "(^|,)noexec(,|$)" <<<"$(sed -n 3p <<<"$XOUT")" && ( for o in nodev nosuid noexec; do grep -qE "(^|,)$o(,|$)" <<<"$(sed -n 4p <<<"$XOUT")" || exit 1; done )'
 x "cat /etc/apt/apt.conf.d/50pft-mounts; stat -c '%a %U %n' /var/lib/pft-mounts/apt-tmp; apt-config dump | grep -i ExtractTemplates::TempDir"
 v "apt TempDir points at the 0700 exec directory" '[ "$XRC" = 0 ] && grep -q "^700 root" <<<"$XOUT"'
 

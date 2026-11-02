@@ -1,0 +1,498 @@
+pft-mounts two-host live run (sentry first) - 2026-11-02T02:23:06Z - Ubuntu 22.04.5 LTS - run 20261102T022306Z
+repo HEAD b835397998fc4b76850e4d90cff3d1b3ba5f121f (clean: yes)
+sha256: live-run.sh 889f1cd96ee962f6eae932519e3ff6d676886ddab9dceb1ffc61c96972d03c91 host-run.sh 2c58ae3569539303379777bab0977d81927f6565cd45f196572d75b091aedf68
+        pft-mounts.sh 38b1ddf78f621c8bbd711e8609c44cb464ef52228b5039b3afbf20dca1222c54 install.sh e39c5c92421dfaad2c1d53f1fe6e8d9687a8f9eaf19ea9bc3c5791e96943b2e5
+        mounts.rules.yml ab1bddc970d33c3c8a74dee345631f93517e5a1b7f4a9d173c802d182a44fd69 redact.py f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8
+
+== 0. preflight (nothing changed yet)
+  pft-maint: no window open on either host
+  /etc/pft-maint/ntfy.env absent (pft-maint falls back to the monitor target): will be created with the throwaway topic
+$ ls /usr/local/bin/pft-mounts /etc/pft-mounts.env 2>&1; R 'ls /usr/local/bin/pft-mounts /etc/pft-mounts.env 2>&1'
+  ls: cannot access '/usr/local/bin/pft-mounts': No such file or directory
+  ls: cannot access '/etc/pft-mounts.env': No such file or directory
+  ls: cannot access '/usr/local/bin/pft-mounts': No such file or directory
+  ls: cannot access '/etc/pft-mounts.env': No such file or directory
+  (exit 2)
+CHECK ok   pft-mounts not installed yet on either host
+  operator topics to watch: 2 (not printed)
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+  postfiatd-sentry: server_state=full
+  postfiatd: server_state=full
+  pft-integrity local: RESULT: PASS - 125 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity relay: RESULT: PASS - 74 unchanged, 0 warn, 0 fail -> exit 0
+  literals for redaction: 3 ip, 2 key, 3 topic, 1 user (values not printed)
+$ redact.py control --literals <literals>
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (18/18)
+
+== 1. redirect notifiers, silence the add-on alerts, maintenance window
+  local:/etc/postfiat-monitor.env sha256 6dc3b10fb491 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/postfiat-monitor.env.pre-mounts-live
+  local:/etc/pft-integrity.env sha256 b3cd1c3da7ff -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-integrity.env.pre-mounts-live
+  relay:/etc/pft-watchdog/ntfy.env sha256 ddb52721a668 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-watchdog/ntfy.env.pre-mounts-live
+  relay:/etc/pft-integrity.env sha256 cdd330a974d2 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-integrity.env.pre-mounts-live
+  relay:/etc/pft-alertpath/ntfy.env sha256 ddb52721a668 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-alertpath/ntfy.env.pre-mounts-live
+CHECK ok   /etc/pft-maint/ntfy.env created with the throwaway topic (0600)
+CHECK ok   Alertmanager silence alertname=~"PFTMount.*|PFTRuleDead|PFTTextfileStale|PFTRulecheck.*|PFTFleet.*" until 2026-11-02T04:03:40Z
+$ sudo -n pft-maint start --ttl 75m --reason 'task_17c7c414 pft-mounts live run 20261102T022306Z'
+  window started: id m1793586220-1266135 until 2026-11-02T03:38:40Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   sentry has the window (via the watchdog channel) after 30s
+
+== 2. install (sentry first, then validator, then the validator's pull of the sentry file)
+$ git archive b835397998fc4b76850e4d90cff3d1b3ba5f121f mounts | R 'rm -rf /var/tmp/pft-mounts-live-b835397 && mkdir -m 700 /var/tmp/pft-mounts-live-b835397 && tar -x -C /var/tmp/pft-mounts-live-b835397'
+  
+  (exit 0)
+$ R 'sudo -n bash /var/tmp/pft-mounts-live-b835397/mounts/install.sh --host sentry'
+  2026-11-02T02:24:17Z installed /usr/local/bin/pft-mounts (sha256 38b1ddf78f621c8bbd711e8609c44cb464ef52228b5039b3afbf20dca1222c54)
+  2026-11-02T02:24:17Z added the pft_mounts textfile line to /etc/pft-rulecheck.conf
+  2026-11-02T02:24:18Z first audit (through the sandboxed unit, HOST_LABEL=sentry):
+  pft_mounts_findings{host="sentry"} 11
+  pft_mounts_last_run_timestamp_seconds{host="sentry"} 1793586259
+  Created symlink /etc/systemd/system/timers.target.wants/pft-mounts.timer → /etc/systemd/system/pft-mounts.timer.
+  2026-11-02T02:24:20Z enabled pft-mounts.timer (hourly + up to 10 min)
+  2026-11-02T02:24:20Z remember: sudo pft-integrity accept --reason 'pft-mounts installed'
+  (exit 0)
+CHECK ok   sentry install exit 0, first audit textfile valid
+$ sudo -n bash mounts/install.sh
+  2026-11-02T02:24:21Z installed /usr/local/bin/pft-mounts (sha256 38b1ddf78f621c8bbd711e8609c44cb464ef52228b5039b3afbf20dca1222c54)
+  2026-11-02T02:24:21Z added the pft_mounts textfile line to /etc/pft-rulecheck.conf
+  2026-11-02T02:24:21Z first audit (through the sandboxed unit, HOST_LABEL=validator):
+  pft_mounts_findings{host="validator"} 11
+  pft_mounts_last_run_timestamp_seconds{host="validator"} 1793586262
+  Created symlink /etc/systemd/system/timers.target.wants/pft-mounts.timer → /etc/systemd/system/pft-mounts.timer.
+  2026-11-02T02:24:23Z enabled pft-mounts.timer (hourly + up to 10 min)
+  2026-11-02T02:24:23Z remember: sudo pft-integrity accept --reason 'pft-mounts installed'
+  (exit 0)
+CHECK ok   validator install exit 0, first audit textfile valid
+$ sudo -n grep -q '^PULL_SSH=' /etc/pft-mounts.env || sudo -n sh -c 'grep "^PULL_SSH=" /etc/pft-statewatch.env >> /etc/pft-mounts.env'; sudo -n grep -c '^PULL_SSH=' /etc/pft-mounts.env; sudo -n stat -c '%a %U' /etc/pft-mounts.env
+  1
+  600 root
+  (exit 0)
+$ sudo -n bash mounts/install.sh --pull
+  2026-11-02T02:24:23Z installed /usr/local/bin/pft-mounts (sha256 38b1ddf78f621c8bbd711e8609c44cb464ef52228b5039b3afbf20dca1222c54)
+  2026-11-02T02:24:23Z first pull (through the sandboxed unit):
+  pft_mounts_findings{host="sentry"} 11
+  pft_mounts_last_run_timestamp_seconds{host="sentry"} 1793586259
+  Created symlink /etc/systemd/system/timers.target.wants/pft-mounts-pull.timer → /etc/systemd/system/pft-mounts-pull.timer.
+  2026-11-02T02:24:25Z enabled pft-mounts-pull.timer (every 15 min)
+  (exit 0)
+CHECK ok   pull install exit 0, sentry file present on the validator
+$ sudo -n grep -n pft_mounts /etc/pft-rulecheck.conf; R 'sudo -n grep -n pft_mounts /etc/pft-rulecheck.conf'
+  52:textfile pft_mounts_*.prom   3h   pft_mounts_last_run_timestamp_seconds
+  28:textfile pft_mounts_*.prom   3h   pft_mounts_last_run_timestamp_seconds
+  (exit 0)
+$ sudo -n docker kill -s HUP pft-prometheus >/dev/null && sleep 30 && curl -s http://127.0.0.1:9090/api/v1/rules | jq -r '.data.groups[] | select(.name == "pft-mounts") | .rules[] | [.name, .health, .state] | @tsv'
+  PFTMountHardeningDrift	ok	pending
+  (exit 0)
+CHECK ok   PFTMountHardeningDrift loaded, health ok
+
+== 3. sentry: before, injected gate miss, apply, after, persistence, negative controls, rollback drill, re-apply
+$ R 'sudo -n bash /var/tmp/pft-mounts-live-b835397/mounts/drill/host-run.sh sentry --drill'
+  # pft-mounts host run (sentry, with injected gate miss + rollback drill) 2026-11-02T02:24:57Z
+  PRETTY_NAME="Ubuntu 22.04.5 LTS"
+  tool /usr/local/bin/pft-mounts sha256 38b1ddf78f621c8bbd711e8609c44cb464ef52228b5039b3afbf20dca1222c54; host-run.sh sha256 2c58ae3569539303379777bab0977d81927f6565cd45f196572d75b091aedf68
+  container postfiatd-sentry, data dir /var/lib/postfiatd/db <- <docker-volume:pft-sentry-data>
+  $ pft-maint active
+    
+    (exit 0)
+  PASS pft-maint window active on this host
+  
+  == 0. before
+    postfiatd-sentry StartedAt 2026-10-29T20:18:39.709656724Z, server_state full, fstab sha256 66bc37972ee65b83fa0ea301d7c51584db9955542467b4529197fb440f76a59f
+    live: host /tmp (not a mount)
+    live: host /var/tmp (not a mount)
+    live: host /dev/shm rw,nosuid,nodev
+    live: host <data-volume> (not a mount)
+    live: postfiatd-sentry /var/lib/postfiatd/db rw,relatime
+  $ /usr/local/bin/pft-mounts audit
+    pft-mounts audit - 2026-11-02T02:24:58Z
+      [FAIL] 1.1.2.1.1 /tmp:separate          not a separate mount (on /)
+      [FAIL] 1.1.2.1.2 /tmp:nodev             no separate mount, so no nodev
+      [FAIL] 1.1.2.1.3 /tmp:nosuid            no separate mount, so no nosuid
+      [FAIL] 1.1.2.1.4 /tmp:noexec            no separate mount, so no noexec
+      [PASS] 1.1.2.2.1 /dev/shm:separate      tmpfs mounted by systemd at boot
+      [PASS] 1.1.2.2.2 /dev/shm:nodev         set live (systemd default)
+      [PASS] 1.1.2.2.3 /dev/shm:nosuid        set live (systemd default)
+      [FAIL] 1.1.2.2.4 /dev/shm:noexec        not set live
+      [FAIL] 1.1.2.5.1 /var/tmp:separate      not a separate mount (on /)
+      [FAIL] 1.1.2.5.2 /var/tmp:nodev         no separate mount, so no nodev
+      [FAIL] 1.1.2.5.3 /var/tmp:nosuid        no separate mount, so no nosuid
+      [FAIL] 1.1.2.5.4 /var/tmp:noexec        no separate mount, so no noexec
+      [INFO] n/a       apt:tempdir            unset; /tmp allows exec (apply sets it before making /tmp noexec)
+      [INFO] n/a       proc:hidepid           not graded (opt-in HIDEPID=1); live: off
+      [INFO] n/a       data:mount             postfiatd-sentry:/var/lib/postfiatd/db <- <docker-volume:pft-sentry-data> on host mount / (root fs: fixed with a self-bind, / itself is not changed)
+      [FAIL] n/a       data:nodev             not set on /var/lib/postfiatd/db inside postfiatd-sentry
+      [FAIL] n/a       data:nosuid            not set on /var/lib/postfiatd/db inside postfiatd-sentry
+    RESULT: FAIL - 11 finding(s)
+    (exit 1)
+  PASS before: audit exit 1 with findings (11)
+  $ /usr/local/bin/pft-mounts audit --json | jq -c '{findings, result, failing: [.checks[] | select(.status == "FAIL" or .status == "WARN") | .id]}'
+    {"findings":11,"result":"FAIL","failing":["/tmp:separate","/tmp:nodev","/tmp:nosuid","/tmp:noexec","/dev/shm:noexec","/var/tmp:separate","/var/tmp:nodev","/var/tmp:nosuid","/var/tmp:noexec","data:nodev","data:nosuid"]}
+    (exit 1)
+  PASS before: --json findings equals the text count
+  $ /usr/local/bin/pft-mounts plan
+    pft-mounts plan - 2026-11-02T02:25:00Z (container postfiatd-sentry)
+    fstab block (other lines unchanged):
+      # BEGIN pft-mounts (managed; edit with pft-mounts, see mounts/README.md)
+      /tmp /tmp none bind,nodev,nosuid,noexec 0 0
+      /var/tmp /var/tmp none bind,nodev,nosuid,noexec 0 0
+      tmpfs /dev/shm tmpfs defaults,nodev,nosuid,noexec 0 0
+      <docker-volume:pft-sentry-data> <docker-volume:pft-sentry-data> none bind,nodev,nosuid 0 0
+      # END pft-mounts
+    live:
+      /tmp, /var/tmp: self-bind if not a mount, then remount,bind,nodev,nosuid,noexec
+      apt: /etc/apt/apt.conf.d/50pft-mounts APT::ExtractTemplates::TempDir "/var/lib/pft-mounts/apt-tmp" (0700)
+      /dev/shm: remount,nodev,nosuid,noexec
+      <docker-volume:pft-sentry-data>: self-bind + remount,bind,nodev,nosuid on the host and inside postfiatd-sentry (/var/lib/postfiatd/db)
+    (exit 0)
+  PASS plan exit 0 (no unmanaged fstab line for a managed target)
+  $ /usr/local/bin/pft-mounts apply --dry-run
+    2026-11-02T02:25:05Z apply: candidate fstab verified (1 findmnt lines, 0 errors)
+    --- /etc/fstab
+    +++ fstab.candidate
+    @@ -1,2 +1,8 @@
+     LABEL=cloudimg-rootfs	/	 ext4	discard,errors=remount-ro	0 1
+     LABEL=UEFI	/boot/efi	vfat	umask=0077	0 1
+    +# BEGIN pft-mounts (managed; edit with pft-mounts, see mounts/README.md)
+    +/tmp /tmp none bind,nodev,nosuid,noexec 0 0
+    +/var/tmp /var/tmp none bind,nodev,nosuid,noexec 0 0
+    +tmpfs /dev/shm tmpfs defaults,nodev,nosuid,noexec 0 0
+    +<docker-volume:pft-sentry-data> <docker-volume:pft-sentry-data> none bind,nodev,nosuid 0 0
+    +# END pft-mounts
+    2026-11-02T02:25:05Z apply: dry run, nothing changed
+    (exit 0)
+  PASS dry run exit 0, fstab unchanged
+  
+  == 1. injected gate miss: PFT_MOUNTS_INJECT=health HEALTH_BUDGET=20 apply --yes (must roll back on its own)
+  $ PFT_MOUNTS_INJECT=health HEALTH_BUDGET=20 /usr/local/bin/pft-mounts apply --yes
+    2026-11-02T02:25:08Z apply: pft-maint window active
+    2026-11-02T02:25:08Z apply: candidate fstab verified (1 findmnt lines, 0 errors)
+    2026-11-02T02:25:09Z apply: fstab installed (backup fstab.20261102T022508Z, sha256 66bc37972ee6 -> 9a463c828ddf)
+    2026-11-02T02:25:10Z live: apt TempDir /var/lib/pft-mounts/apt-tmp (0700)
+    2026-11-02T02:25:10Z live: /tmp bind,nodev,nosuid,noexec
+    2026-11-02T02:25:10Z live: /var/tmp bind,nodev,nosuid,noexec
+    2026-11-02T02:25:10Z live: /dev/shm nodev,nosuid,noexec
+    2026-11-02T02:25:11Z live: data dir nodev,nosuid (host self-bind + inside the container)
+    2026-11-02T02:25:12Z health: unit pft-authwatch.service ran, Result=success
+    2026-11-02T02:25:15Z health: unit pft-mounts.service ran, Result=success
+    2026-11-02T02:25:17Z health: unit pft-resources@postfiatd-sentry.service ran, Result=success
+    2026-11-02T02:25:17Z health: unit pft-rulecheck.service ran, Result=success
+    2026-11-02T02:25:18Z health: unit pft-statewatch@postfiatd-sentry.service ran, Result=success
+    2026-11-02T02:25:35Z health: FAIL after 24 s (server_state=full; StartedAt unchanged; ssh=1; failed units: none; inactive daemons: none; injected=health)
+    2026-11-02T02:25:35Z apply: live step or health gate failed -> automatic rollback
+    2026-11-02T02:25:35Z rollback: /var/lib/postfiatd/db back to rw,relatime inside the container
+    2026-11-02T02:25:35Z rollback: unmounted self-bind <docker-volume:pft-sentry-data>
+    2026-11-02T02:25:35Z rollback: /dev/shm options back to rw,nosuid,nodev
+    2026-11-02T02:25:35Z rollback: unmounted self-bind /var/tmp
+    2026-11-02T02:25:35Z rollback: unmounted self-bind /tmp
+    2026-11-02T02:25:36Z rollback: apt conf removed
+    2026-11-02T02:25:36Z rollback: fstab restored byte-identical (sha256 66bc37972ee6)
+    2026-11-02T02:25:37Z rollback: health: unit pft-authwatch.service ran, Result=success
+    2026-11-02T02:25:39Z rollback: health: unit pft-mounts.service ran, Result=success
+    2026-11-02T02:25:40Z rollback: health: unit pft-resources@postfiatd-sentry.service ran, Result=success
+    2026-11-02T02:25:40Z rollback: health: unit pft-rulecheck.service ran, Result=success
+    2026-11-02T02:25:41Z rollback: health: unit pft-statewatch@postfiatd-sentry.service ran, Result=success
+    2026-11-02T02:25:41Z rollback: health: PASS after 4 s (postfiatd-sentry StartedAt unchanged, server_state full, :2559 listening, sshd -t ok + :22 handshake, 1 pft daemons active)
+    (exit 1)
+  PASS injected apply exit 1 (automatic rollback)
+  PASS fstab byte-identical after the automatic rollback (66bc37972ee6)
+    live: host /tmp (not a mount)
+    live: host /var/tmp (not a mount)
+    live: host /dev/shm rw,nosuid,nodev
+    live: host <data-volume> (not a mount)
+    live: postfiatd-sentry /var/lib/postfiatd/db rw,relatime
+  PASS every live option back to step 0
+  $ /usr/local/bin/pft-mounts audit
+    pft-mounts audit - 2026-11-02T02:25:42Z
+      [FAIL] 1.1.2.1.1 /tmp:separate          not a separate mount (on /)
+      [FAIL] 1.1.2.1.2 /tmp:nodev             no separate mount, so no nodev
+      [FAIL] 1.1.2.1.3 /tmp:nosuid            no separate mount, so no nosuid
+      [FAIL] 1.1.2.1.4 /tmp:noexec            no separate mount, so no noexec
+      [PASS] 1.1.2.2.1 /dev/shm:separate      tmpfs mounted by systemd at boot
+      [PASS] 1.1.2.2.2 /dev/shm:nodev         set live (systemd default)
+      [PASS] 1.1.2.2.3 /dev/shm:nosuid        set live (systemd default)
+      [FAIL] 1.1.2.2.4 /dev/shm:noexec        not set live
+      [FAIL] 1.1.2.5.1 /var/tmp:separate      not a separate mount (on /)
+      [FAIL] 1.1.2.5.2 /var/tmp:nodev         no separate mount, so no nodev
+      [FAIL] 1.1.2.5.3 /var/tmp:nosuid        no separate mount, so no nosuid
+      [FAIL] 1.1.2.5.4 /var/tmp:noexec        no separate mount, so no noexec
+      [INFO] n/a       apt:tempdir            unset; /tmp allows exec (apply sets it before making /tmp noexec)
+      [INFO] n/a       proc:hidepid           not graded (opt-in HIDEPID=1); live: off
+      [INFO] n/a       data:mount             postfiatd-sentry:/var/lib/postfiatd/db <- <docker-volume:pft-sentry-data> on host mount / (root fs: fixed with a self-bind, / itself is not changed)
+      [FAIL] n/a       data:nodev             not set on /var/lib/postfiatd/db inside postfiatd-sentry
+      [FAIL] n/a       data:nosuid            not set on /var/lib/postfiatd/db inside postfiatd-sentry
+    RESULT: FAIL - 11 finding(s)
+    (exit 1)
+  PASS audit shows the same 11 findings again
+  PASS apt TempDir file removed by the rollback
+  
+  == 2. apply --yes
+  $ /usr/local/bin/pft-mounts apply --yes
+    2026-11-02T02:25:43Z apply: pft-maint window active
+    2026-11-02T02:25:43Z apply: candidate fstab verified (1 findmnt lines, 0 errors)
+    2026-11-02T02:25:44Z apply: fstab installed (backup fstab.20261102T022543Z, sha256 66bc37972ee6 -> 9a463c828ddf)
+    2026-11-02T02:25:44Z live: apt TempDir /var/lib/pft-mounts/apt-tmp (0700)
+    2026-11-02T02:25:44Z live: /tmp bind,nodev,nosuid,noexec
+    2026-11-02T02:25:44Z live: /var/tmp bind,nodev,nosuid,noexec
+    2026-11-02T02:25:44Z live: /dev/shm nodev,nosuid,noexec
+    2026-11-02T02:25:44Z live: data dir nodev,nosuid (host self-bind + inside the container)
+    2026-11-02T02:25:45Z health: unit pft-authwatch.service ran, Result=success
+    2026-11-02T02:25:47Z health: unit pft-mounts.service ran, Result=success
+    2026-11-02T02:25:47Z health: unit pft-resources@postfiatd-sentry.service ran, Result=success
+    2026-11-02T02:25:48Z health: unit pft-rulecheck.service ran, Result=success
+    2026-11-02T02:25:49Z health: unit pft-statewatch@postfiatd-sentry.service ran, Result=success
+    2026-11-02T02:25:49Z health: PASS after 5 s (postfiatd-sentry StartedAt unchanged, server_state full, :2559 listening, sshd -t ok + :22 handshake, 1 pft daemons active)
+    2026-11-02T02:25:49Z apply: done
+    (exit 0)
+  PASS apply exit 0, health gate PASS
+  
+  == 3. after: audit, persistence without a reboot
+    live: host /tmp rw,nosuid,nodev,noexec,relatime
+    live: host /var/tmp rw,nosuid,nodev,noexec,relatime
+    live: host /dev/shm rw,nosuid,nodev,noexec
+    live: host <data-volume> rw,nosuid,nodev,relatime
+    live: postfiatd-sentry /var/lib/postfiatd/db rw,nosuid,nodev,relatime
+  $ /usr/local/bin/pft-mounts audit
+    pft-mounts audit - 2026-11-02T02:25:50Z
+      [PASS] 1.1.2.1.1 /tmp:separate          ext4 mount, persistent via fstab:4
+      [PASS] 1.1.2.1.2 /tmp:nodev             set live and in fstab:4
+      [PASS] 1.1.2.1.3 /tmp:nosuid            set live and in fstab:4
+      [PASS] 1.1.2.1.4 /tmp:noexec            set live and in fstab:4
+      [PASS] 1.1.2.2.1 /dev/shm:separate      tmpfs mount, persistent via fstab:6
+      [PASS] 1.1.2.2.2 /dev/shm:nodev         set live and in fstab:6
+      [PASS] 1.1.2.2.3 /dev/shm:nosuid        set live and in fstab:6
+      [PASS] 1.1.2.2.4 /dev/shm:noexec        set live and in fstab:6
+      [PASS] 1.1.2.5.1 /var/tmp:separate      ext4 mount, persistent via fstab:5
+      [PASS] 1.1.2.5.2 /var/tmp:nodev         set live and in fstab:5
+      [PASS] 1.1.2.5.3 /var/tmp:nosuid        set live and in fstab:5
+      [PASS] 1.1.2.5.4 /var/tmp:noexec        set live and in fstab:5
+      [PASS] n/a       apt:tempdir            APT::ExtractTemplates::TempDir /var/lib/pft-mounts/apt-tmp (exec mount /)
+      [INFO] n/a       proc:hidepid           not graded (opt-in HIDEPID=1); live: off
+      [INFO] n/a       data:mount             postfiatd-sentry:/var/lib/postfiatd/db <- <docker-volume:pft-sentry-data> on host mount <docker-volume:pft-sentry-data>
+      [PASS] n/a       data:nodev             set inside postfiatd-sentry and in fstab:7
+      [PASS] n/a       data:nosuid            set inside postfiatd-sentry and in fstab:7
+    RESULT: PASS
+    (exit 0)
+  PASS after: audit exit 0, RESULT: PASS
+  $ /usr/local/bin/pft-mounts audit --json | jq -c '{findings, result}'
+    {"findings":0,"result":"PASS"}
+    (exit 0)
+  PASS after: --json findings 0
+  $ findmnt --verify
+    Success, no errors or warnings detected
+    (exit 0)
+  PASS findmnt --verify accepts /etc/fstab
+  $ findmnt -s -n -o TARGET,SOURCE,FSTYPE,OPTIONS /tmp; findmnt -s -n -o TARGET,SOURCE,FSTYPE,OPTIONS /var/tmp; findmnt -s -n -o TARGET,SOURCE,FSTYPE,OPTIONS /dev/shm; findmnt -s -n -o TARGET,OPTIONS '<docker-volume:pft-sentry-data>'
+    /tmp   /tmp   none   bind,nodev,nosuid,noexec
+    /var/tmp /var/tmp none   bind,nodev,nosuid,noexec
+    /dev/shm tmpfs  tmpfs  defaults,nodev,nosuid,noexec
+    <docker-volume:pft-sentry-data> bind,nodev,nosuid
+    (exit 0)
+  PASS fstab entries (findmnt -s) for /tmp /var/tmp /dev/shm carry nodev,nosuid,noexec; data dir nodev,nosuid
+  $ for u in tmp.mount var-tmp.mount dev-shm.mount; do echo "$u $(systemctl show -p Options --value $u) $(systemctl show -p SourcePath --value $u)"; done
+    tmp.mount rw,nosuid,nodev,noexec,relatime,discard,errors=remount-ro /etc/fstab
+    var-tmp.mount rw,nosuid,nodev,noexec,relatime,discard,errors=remount-ro /etc/fstab
+    dev-shm.mount  
+    (exit 0)
+  FAIL systemd's fstab-generator built the mount units from /etc/fstab with the options (what the next boot mounts)
+  $ cat /etc/apt/apt.conf.d/50pft-mounts; stat -c '%a %U %n' /var/lib/pft-mounts/apt-tmp; apt-config dump | grep -i ExtractTemplates::TempDir
+    // managed by pft-mounts: noexec /tmp, so dpkg-preconfigure extracts config scripts here
+    APT::ExtractTemplates::TempDir "/var/lib/pft-mounts/apt-tmp";
+    700 root /var/lib/pft-mounts/apt-tmp
+    APT::ExtractTemplates::TempDir "/var/lib/pft-mounts/apt-tmp";
+    (exit 0)
+  PASS apt TempDir points at the 0700 exec directory
+  
+  == 4. negative controls (positive control: a root-fs directory without the option, removed afterwards)
+  $ /tmp/negctl-3811629.true
+    /var/tmp/pft-mounts-live-b835397/mounts/drill/host-run.sh: line 53: /tmp/negctl-3811629.true: Permission denied
+    (exit 126)
+  PASS noexec /tmp: exec refused (126)
+  $ /var/tmp/negctl-3811629.true
+    /var/tmp/pft-mounts-live-b835397/mounts/drill/host-run.sh: line 53: /var/tmp/negctl-3811629.true: Permission denied
+    (exit 126)
+  PASS noexec /var/tmp: exec refused (126)
+  $ /dev/shm/negctl-3811629.true
+    /var/tmp/pft-mounts-live-b835397/mounts/drill/host-run.sh: line 53: /dev/shm/negctl-3811629.true: Permission denied
+    (exit 126)
+  PASS noexec /dev/shm: exec refused (126)
+  $ /usr/local/lib/pft-mounts-negctl.PH4by2/true
+    
+    (exit 0)
+  PASS positive control: the same binary in a root-fs dir runs (0)
+  $ head -c 1 /tmp/negctl-3811629.zero | wc -c
+    head: cannot open '/tmp/negctl-3811629.zero' for reading: Permission denied
+    0
+    (exit 1)
+  PASS nodev /tmp: device node made by mknod cannot be opened
+  $ head -c 1 /var/tmp/negctl-3811629.zero | wc -c
+    head: cannot open '/var/tmp/negctl-3811629.zero' for reading: Permission denied
+    0
+    (exit 1)
+  PASS nodev /var/tmp: device node made by mknod cannot be opened
+  $ head -c 1 /dev/shm/negctl-3811629.zero | wc -c
+    head: cannot open '/dev/shm/negctl-3811629.zero' for reading: Permission denied
+    0
+    (exit 1)
+  PASS nodev /dev/shm: device node made by mknod cannot be opened
+  $ head -c 1 '<docker-volume:pft-sentry-data>/.negctl-3811629.zero' | wc -c
+    head: cannot open '<docker-volume:pft-sentry-data>/.negctl-3811629.zero' for reading: Permission denied
+    0
+    (exit 1)
+  PASS nodev data dir (host side): device node cannot be opened
+  $ head -c 1 /usr/local/lib/pft-mounts-negctl.PH4by2/zero | wc -c
+    1
+    (exit 0)
+  PASS positive control: the same device in a root-fs dir reads 1 byte
+  $ stat -c '%A %U %n' '<docker-volume:pft-sentry-data>/.negctl-3811629.id' /usr/local/lib/pft-mounts-negctl.PH4by2/id
+    -rwsr-xr-x root <docker-volume:pft-sentry-data>/.negctl-3811629.id
+    -rwsr-xr-x root /usr/local/lib/pft-mounts-negctl.PH4by2/id
+    (exit 0)
+  $ exec 3< '<docker-volume:pft-sentry-data>/.negctl-3811629.id'; setpriv --reuid=65534 --regid=65534 --clear-groups /proc/self/fd/3 -u
+    65534
+    (exit 0)
+  PASS nosuid data dir: a SUID-root binary run as uid 65534 keeps euid 65534
+  $ exec 3< /usr/local/lib/pft-mounts-negctl.PH4by2/id; setpriv --reuid=65534 --regid=65534 --clear-groups /proc/self/fd/3 -u
+    0
+    (exit 0)
+  PASS positive control: the same SUID binary in a root-fs dir gives euid 0
+  $ awk -v t=/var/lib/postfiatd/db '$5 == t { print $5, $6 }' /proc/$(docker inspect -f '{{.State.Pid}}' postfiatd-sentry)/mountinfo
+    /var/lib/postfiatd/db rw,relatime
+    /var/lib/postfiatd/db rw,nosuid,nodev,relatime
+    (exit 0)
+  PASS inside postfiatd-sentry: /var/lib/postfiatd/db mounted nodev,nosuid (the running node has it, no restart)
+  $ ls -A /tmp /var/tmp /dev/shm '<docker-volume:pft-sentry-data>' 2>/dev/null | grep -c 'negctl-3811629' || true
+    0
+    (exit 0)
+  PASS every control file removed
+  
+  == 5. explicit rollback, then apply again
+  $ /usr/local/bin/pft-mounts rollback --yes
+    2026-11-02T02:25:53Z rollback: pft-maint window active
+    2026-11-02T02:25:54Z rollback: /var/lib/postfiatd/db back to rw,relatime inside the container
+    2026-11-02T02:25:54Z rollback: unmounted self-bind <docker-volume:pft-sentry-data>
+    2026-11-02T02:25:54Z rollback: /dev/shm options back to rw,nosuid,nodev
+    2026-11-02T02:25:54Z rollback: unmounted self-bind /var/tmp
+    2026-11-02T02:25:54Z rollback: unmounted self-bind /tmp
+    2026-11-02T02:25:54Z rollback: apt conf removed
+    2026-11-02T02:25:54Z rollback: fstab restored byte-identical (sha256 66bc37972ee6)
+    2026-11-02T02:25:56Z rollback: health: unit pft-authwatch.service ran, Result=success
+    2026-11-02T02:25:57Z rollback: health: unit pft-mounts.service ran, Result=success
+    2026-11-02T02:25:58Z rollback: health: unit pft-resources@postfiatd-sentry.service ran, Result=success
+    2026-11-02T02:25:59Z rollback: health: unit pft-rulecheck.service ran, Result=success
+    2026-11-02T02:26:00Z rollback: health: unit pft-statewatch@postfiatd-sentry.service ran, Result=success
+    2026-11-02T02:26:01Z rollback: health: PASS after 5 s (postfiatd-sentry StartedAt unchanged, server_state full, :2559 listening, sshd -t ok + :22 handshake, 1 pft daemons active)
+    2026-11-02T02:26:01Z rollback: done (fstab.20261102T022543Z)
+    (exit 0)
+  PASS rollback exit 0
+  PASS fstab byte-identical to step 0 (66bc37972ee6)
+    live: host /tmp (not a mount)
+    live: host /var/tmp (not a mount)
+    live: host /dev/shm rw,nosuid,nodev
+    live: host <data-volume> (not a mount)
+    live: postfiatd-sentry /var/lib/postfiatd/db rw,relatime
+  PASS every live option back to step 0
+  $ /usr/local/bin/pft-mounts audit
+    pft-mounts audit - 2026-11-02T02:26:03Z
+      [FAIL] 1.1.2.1.1 /tmp:separate          not a separate mount (on /)
+      [FAIL] 1.1.2.1.2 /tmp:nodev             no separate mount, so no nodev
+      [FAIL] 1.1.2.1.3 /tmp:nosuid            no separate mount, so no nosuid
+      [FAIL] 1.1.2.1.4 /tmp:noexec            no separate mount, so no noexec
+      [PASS] 1.1.2.2.1 /dev/shm:separate      tmpfs mounted by systemd at boot
+      [PASS] 1.1.2.2.2 /dev/shm:nodev         set live (systemd default)
+      [PASS] 1.1.2.2.3 /dev/shm:nosuid        set live (systemd default)
+      [FAIL] 1.1.2.2.4 /dev/shm:noexec        not set live
+      [FAIL] 1.1.2.5.1 /var/tmp:separate      not a separate mount (on /)
+      [FAIL] 1.1.2.5.2 /var/tmp:nodev         no separate mount, so no nodev
+      [FAIL] 1.1.2.5.3 /var/tmp:nosuid        no separate mount, so no nosuid
+      [FAIL] 1.1.2.5.4 /var/tmp:noexec        no separate mount, so no noexec
+      [INFO] n/a       apt:tempdir            unset; /tmp allows exec (apply sets it before making /tmp noexec)
+      [INFO] n/a       proc:hidepid           not graded (opt-in HIDEPID=1); live: off
+      [INFO] n/a       data:mount             postfiatd-sentry:/var/lib/postfiatd/db <- <docker-volume:pft-sentry-data> on host mount / (root fs: fixed with a self-bind, / itself is not changed)
+      [FAIL] n/a       data:nodev             not set on /var/lib/postfiatd/db inside postfiatd-sentry
+      [FAIL] n/a       data:nosuid            not set on /var/lib/postfiatd/db inside postfiatd-sentry
+    RESULT: FAIL - 11 finding(s)
+    (exit 1)
+  PASS audit shows the step-0 findings again (11)
+  $ /usr/local/bin/pft-mounts apply --yes
+    2026-11-02T02:26:04Z apply: pft-maint window active
+    2026-11-02T02:26:04Z apply: candidate fstab verified (1 findmnt lines, 0 errors)
+    2026-11-02T02:26:06Z apply: fstab installed (backup fstab.20261102T022604Z, sha256 66bc37972ee6 -> 9a463c828ddf)
+    2026-11-02T02:26:06Z live: apt TempDir /var/lib/pft-mounts/apt-tmp (0700)
+    2026-11-02T02:26:06Z live: /tmp bind,nodev,nosuid,noexec
+    2026-11-02T02:26:06Z live: /var/tmp bind,nodev,nosuid,noexec
+    2026-11-02T02:26:06Z live: /dev/shm nodev,nosuid,noexec
+    2026-11-02T02:26:07Z live: data dir nodev,nosuid (host self-bind + inside the container)
+    2026-11-02T02:26:08Z health: unit pft-authwatch.service ran, Result=success
+    2026-11-02T02:26:11Z health: unit pft-mounts.service ran, Result=success
+    2026-11-02T02:26:13Z health: unit pft-resources@postfiatd-sentry.service ran, Result=success
+    2026-11-02T02:26:13Z health: unit pft-rulecheck.service ran, Result=success
+    2026-11-02T02:26:14Z health: unit pft-statewatch@postfiatd-sentry.service ran, Result=success
+    2026-11-02T02:26:15Z health: PASS after 7 s (postfiatd-sentry StartedAt unchanged, server_state full, :2559 listening, sshd -t ok + :22 handshake, 1 pft daemons active)
+    2026-11-02T02:26:15Z apply: done
+    (exit 0)
+  PASS re-apply exit 0, gate PASS
+  $ /usr/local/bin/pft-mounts audit
+    pft-mounts audit - 2026-11-02T02:26:16Z
+      [PASS] 1.1.2.1.1 /tmp:separate          ext4 mount, persistent via fstab:4
+      [PASS] 1.1.2.1.2 /tmp:nodev             set live and in fstab:4
+      [PASS] 1.1.2.1.3 /tmp:nosuid            set live and in fstab:4
+      [PASS] 1.1.2.1.4 /tmp:noexec            set live and in fstab:4
+      [PASS] 1.1.2.2.1 /dev/shm:separate      tmpfs mount, persistent via fstab:6
+      [PASS] 1.1.2.2.2 /dev/shm:nodev         set live and in fstab:6
+      [PASS] 1.1.2.2.3 /dev/shm:nosuid        set live and in fstab:6
+      [PASS] 1.1.2.2.4 /dev/shm:noexec        set live and in fstab:6
+      [PASS] 1.1.2.5.1 /var/tmp:separate      ext4 mount, persistent via fstab:5
+      [PASS] 1.1.2.5.2 /var/tmp:nodev         set live and in fstab:5
+      [PASS] 1.1.2.5.3 /var/tmp:nosuid        set live and in fstab:5
+      [PASS] 1.1.2.5.4 /var/tmp:noexec        set live and in fstab:5
+      [PASS] n/a       apt:tempdir            APT::ExtractTemplates::TempDir /var/lib/pft-mounts/apt-tmp (exec mount /)
+      [INFO] n/a       proc:hidepid           not graded (opt-in HIDEPID=1); live: off
+      [INFO] n/a       data:mount             postfiatd-sentry:/var/lib/postfiatd/db <- <docker-volume:pft-sentry-data> on host mount <docker-volume:pft-sentry-data>
+      [PASS] n/a       data:nodev             set inside postfiatd-sentry and in fstab:7
+      [PASS] n/a       data:nosuid            set inside postfiatd-sentry and in fstab:7
+    RESULT: PASS
+    (exit 0)
+  PASS after re-apply: audit PASS
+  PASS live options after re-apply equal those after the first apply
+  
+  == end
+  $ sshd -t && echo sshd config ok; ss -Hltn | awk '{print $4}' | grep -cE ':22$'
+    sshd config ok
+    2
+    (exit 0)
+  PASS sshd -t ok, :22 listening
+  PASS postfiatd-sentry StartedAt unchanged (2026-10-29T20:18:39.709656724Z)
+  PASS server_state full
+  RESULT: FAIL (1) 2026-11-02T02:26:17Z
+  (exit 1)
+CHECK FAIL sentry host-run RESULT: PASS (39 PASS, 1 FAIL)
+  sentry did not pass - validator NOT changed; stopping
+  $ sudo -n pft-maint end
+    window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+  removed /etc/pft-maint/ntfy.env (absent before the run: pft-maint falls back to the monitor target again)
+  restored local:/etc/postfiat-monitor.env: sha256 matches pre-run copy: yes
+  restored local:/etc/pft-integrity.env: sha256 matches pre-run copy: yes
+  restored relay:/etc/pft-watchdog/ntfy.env: sha256 matches pre-run copy: yes
+  restored relay:/etc/pft-integrity.env: sha256 matches pre-run copy: yes
+  restored relay:/etc/pft-alertpath/ntfy.env: sha256 matches pre-run copy: yes
+  silence expired: HTTP 200
+(runner exit 1)
+# NOTE (appended after the run, 2026-11-02T02:29:27Z): stopped by its own checker. The one FAIL (host-run section 3, 'fstab-generator built the mount units') is a harness bug: it read 'systemctl show -p Options' (the LIVE kernel option string, kernel order nosuid,nodev,noexec) and expected a dev-shm.mount, which systemd never generates (API mount; /dev/shm gets its fstab options from systemd-remount-fs). Every tool check passed (39/40). The sentry was left applied; log 07 resets it (step 1b) and reruns. See 06-probe-persistence.log.
