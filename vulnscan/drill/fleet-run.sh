@@ -38,9 +38,13 @@ x "{ [ \$HAD = 0 ] || sudo -n cp -p \$NE \$BK; } && printf 'NTFY_SERVER=https://
 check "throwaway target installed" "$XRC"
 
 echo; echo "== 2. window + sync of the vulnscan add-on (stale-304 refetch, 1.1.0)"
-x "sudo -n pft-maint start --ttl 15m --reason 'vulnscan 1.1.0 stale-304 fix deploy'"
+x "sudo -n pft-maint start --ttl 25m --reason 'vulnscan 1.1.0 stale-304 fix deploy'"
 [ "$XRC" = 0 ] && MAINT=1
 check "pft-maint window open" "$XRC"
+# the sentry gets the window through the watchdog channel (next tick, up to a few minutes); pft-fleet refuses a
+# host without one (first run of this script: REFUSED sentry 22 s after start, nothing written)
+w=0; until R "sudo -n pft-maint active" >/dev/null 2>&1; do w=$((w + 10)); [ "$w" -le 420 ] || break; sleep 10; done
+R "sudo -n pft-maint active" >/dev/null 2>&1; check "sentry has the window (via the watchdog channel) after ${w}s" "$?"
 x "sudo -n pft-fleet sync --addon vulnscan --to $SHA --apply --reason 'vulnscan 1.1.0: refetch on stale 304'"
 check "fleet sync exit 0" "$XRC"
 x "sudo -n pft-fleet skew"
