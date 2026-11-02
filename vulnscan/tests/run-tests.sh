@@ -11,7 +11,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 S="${1:-$HERE/../pft-vulnscan.sh}"
 P="${2:-$HERE/../vulnscan_parse.py}"
 MK="$HERE/make_fixture.py"
-T="$(mktemp -d)"; trap 'rm -rf "${T:?}"' EXIT
+T="$(mktemp -d -p "${TEST_TMPDIR:-$HOME/.cache}")"; trap 'rm -rf "${T:?}"' EXIT
 pass=0; total=0
 ok()  { total=$((total + 1)); pass=$((pass + 1)); printf 'PASS %s\n' "$1"; }
 bad() { total=$((total + 1)); printf 'FAIL %s\n' "$1"; }
@@ -21,16 +21,20 @@ NOW=4070908800    # 2099-01-01T00:00:00Z = the fixture feed's default <oval:time
 L='host="validator"'
 mkdir -p "$T/bin" "$T/tf" "$T/cache" "$T/srv"
 
-# stub curl: mode in $T/curl_mode (200 | 304 | fail); serves $T/srv/feed.xml.bz2; records its args in $T/curl_args
+# stub curl: mode in $T/curl_mode (200 | 304 | fail | 304stale | 304fail); serves $T/srv/feed.xml.bz2; records its args
+# in $T/curl_args (last call) and appends them to $T/curl_calls. 304stale/304fail: 304 to a request with an ETag (a
+# content cache holding an old copy), 200 / network failure to one without.
 cat > "$T/bin/curl" <<EOF
 #!/bin/bash
-printf '%s\n' "\$*" > "$T/curl_args"
-out=""; esave=""
+printf '%s\n' "\$*" > "$T/curl_args"; printf '%s\n' "\$*" >> "$T/curl_calls"
+out=""; esave=""; cond=0
 while [ \$# -gt 0 ]; do
-  case "\$1" in -o) out="\$2"; shift ;; --etag-save) esave="\$2"; shift ;; --etag-compare|-w|--max-time) shift ;; esac
+  case "\$1" in -o) out="\$2"; shift ;; --etag-save) esave="\$2"; shift ;; --etag-compare) cond=1; shift ;; -w|--max-time|-H) shift ;; esac
   shift
 done
-case "\$(cat "$T/curl_mode")" in
+mode="\$(cat "$T/curl_mode")"
+case "\$mode" in 304stale) [ \$cond = 1 ] && mode=304 || mode=200 ;; 304fail) [ \$cond = 1 ] && mode=304 || mode=fail ;; esac
+case "\$mode" in
   200) cp "$T/srv/feed.xml.bz2" "\$out"; echo '"etag-1"' > "\$esave"; printf 200 ;;
   304) : > "\$esave"; printf 304 ;;
   fail) echo "curl: (6) Could not resolve host: security-metadata.canonical.com" >&2; printf 000; exit 6 ;;
@@ -231,6 +235,32 @@ assert f[\"USN-9002-1\"][\"fix\"] == \"esm\" and f[\"USN-9001-1\"][\"packages\"]
 else
   bad "real oscap: oscap not installed (section 9 needs it)"
 fi
+
+echo "== 10. stale 304: a cache answers 304 for an old copy -> one unconditional GET (REFETCH_AGE_HOURS, default 24)"
+rm -rf "$T/cache"; mkdir "$T/cache"; rm -f "$T/oscap_args"
+serve; echo 200 > "$T/curl_mode"; run                                   # cache: feed with <oval:timestamp> = NOW
+check "seed: fetched" 'rc 1 && grep -q "fetch: fetched" "$T/out"'
+cp "$T/srv/feed.xml.bz2" "$T/old.bz2"
+serve --ts 2099-01-02T01:00:00                                          # the origin now has a newer feed
+echo 304stale > "$T/curl_mode"; : > "$T/curl_calls"; NOWV=$((NOW + 23 * 3600)) run
+check "cached feed 23 h old: 304 accepted, one request, cache kept" 'rc 1 && grep -q "fetch: not modified$" "$T/out" && [ "$(wc -l < "$T/curl_calls")" = 1 ] && cmp -s "$T/old.bz2" "$T/cache/feed.xml.bz2"'
+: > "$T/curl_calls"; NOWV=$((NOW + 25 * 3600)) run
+check "cached feed 25 h old: message names the age and the refetch" 'grep -q "fetch: not modified, but cached feed is 25 h old (> 24 h) -> unconditional GET: fetched$" "$T/out"'
+check "two requests: first with the ETag, second without it and with Cache-Control: no-cache" '[ "$(wc -l < "$T/curl_calls")" = 2 ] && sed -n 1p "$T/curl_calls" | grep -q -- "--etag-compare" && sed -n 2p "$T/curl_calls" | grep -v -q -- "--etag-compare" && sed -n 2p "$T/curl_calls" | grep -q -- "-H Cache-Control: no-cache"'
+check "cache replaced by the newer feed, meta sha256 matches" 'cmp -s "$T/srv/feed.xml.bz2" "$T/cache/feed.xml.bz2" && grep -qx "sha256=$(sha256sum < "$T/srv/feed.xml.bz2" | cut -c1-64)" "$T/cache/feed.meta"'
+check "feed timestamp metric = the newer feed" 'has "$OUT" "pft_vulnscan_feed_timestamp_seconds{$L} $((NOW + 25 * 3600))"'
+check "scan still succeeds (up 1, rc 1 findings)" 'rc 1 && has "$OUT" "pft_vulnscan_up{$L} 1"'
+cp "$T/old.bz2" "$T/srv/feed.xml.bz2"; echo 200 > "$T/curl_mode"; run    # back to the old cached copy
+echo 304fail > "$T/curl_mode"; : > "$T/curl_calls"; NOWV=$((NOW + 30 * 3600)) run
+check "stale 304 + unconditional GET fails: FAILED with both reasons, cached feed still used" 'rc 1 && grep -q "fetch: FAILED: not modified, but cached feed is 30 h old (> 24 h) -> unconditional GET: download failed (curl rc 6" "$T/out" && cmp -s "$T/old.bz2" "$T/cache/feed.xml.bz2" && has "$OUT" "pft_vulnscan_up{$L} 1"'
+printf 'CACHE_DIR=%s\nTEXTFILE_DIR=%s\nREFETCH_AGE_HOURS=48\n' "$T/cache" "$T/tf" > "$T/conf"
+echo 304stale > "$T/curl_mode"; : > "$T/curl_calls"; NOWV=$((NOW + 30 * 3600)) run
+check "REFETCH_AGE_HOURS=48 from the config: 30 h old copy accepted on 304" 'grep -q "fetch: not modified$" "$T/out" && [ "$(wc -l < "$T/curl_calls")" = 1 ]'
+printf 'CACHE_DIR=%s\nTEXTFILE_DIR=%s\n' "$T/cache" "$T/tf" > "$T/conf"
+python3 -I "$MK" feed "$T/nots.xml" --ts ""; python3 -I -c 'import bz2, sys; open(sys.argv[2], "wb").write(bz2.compress(open(sys.argv[1], "rb").read()))' "$T/nots.xml" "$T/cache/feed.xml.bz2"
+printf 'sha256=%s\n' "$(sha256sum < "$T/cache/feed.xml.bz2" | cut -c1-64)" > "$T/cache/feed.meta"
+: > "$T/curl_calls"; run
+check "cached feed without a timestamp: 304 is not trusted, unconditional GET" 'grep -q "fetch: not modified, but cached feed timestamp unreadable -> unconditional GET: fetched$" "$T/out" && [ "$(wc -l < "$T/curl_calls")" = 2 ]'
 
 echo "RESULT: $pass/$total passed"
 [ "$pass" = "$total" ]

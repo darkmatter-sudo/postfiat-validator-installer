@@ -49,6 +49,11 @@ RESULT: 3 affected USNs (0 critical, 0 high, 2 medium, 0 low, 0 negligible, 1 no
    it only if the download is a complete bzip2 stream. `/var/cache/pft-vulnscan/feed.meta` records the sha256 of the
    `.bz2`, `fetched_at` and `last_checked`. A failed download keeps the old cache and is shown in the output
    (`fetch: FAILED: ...`); the age check below decides whether the cache is still usable.
+   **Stale 304:** if the answer is 304 but the cached feed's own `<oval:timestamp>` is older than
+   `REFETCH_AGE_HOURS` (default 24) or unreadable, one unconditional GET follows (no ETag, `Cache-Control: no-cache`)
+   and the output says so (`fetch: not modified, but cached feed is 63 h old (> 24 h) -> unconditional GET: fetched`).
+   Why: from 2026-10-31 to 2026-11-02 Canonical's content caches answered 304 to the cached ETag on both hosts while
+   the origin already served newer feeds, so the cache stayed on the 2026-10-30 feed and `PFTVulnFeedStale` fired.
 2. **Cache integrity.** The cached `.bz2` must match the sha256 in `feed.meta`, else exit 2.
 3. **Freshness.** The feed's own `<oval:timestamp>` must be at most `MAX_FEED_AGE_DAYS` (7) old, else exit 2. A
    stale feed would silently miss every USN published since, so it is never used.
@@ -119,7 +124,9 @@ pull: every 15 min.
 - **positive controls:** a known-old package (high, archive fix, 2 CVEs, 2 binaries) and an ESM-only one are
   reported with the right table row, RESULT line, metrics and `--json`; a fixed package and an absent package are not;
 - kernel: older running kernel, newer running kernel, `rc` (removed) packages, the reboot-required flag;
-- ETag caching (`--etag-compare` only with a cache; 304 keeps it);
+- ETag caching (`--etag-compare` only with a cache; 304 keeps it); stale 304 (section 10: a 23 h old copy is kept
+  with one request, a 25 h old copy triggers exactly one unconditional GET that replaces it, a failing refetch keeps the
+  cache and shows both reasons, `REFETCH_AGE_HOURS` from the config, a cached feed without a timestamp is refetched);
 - **negative controls, each proving exit 2 + `up 0` + no affected series + `last_success` carried over + the
   specific message:** stale feed (8 days; exactly 7 is accepted), missing result, duplicate result, `error` and
   `unknown` results, inventory false, oscap failure, oscap missing, 1-byte tampered cache, valid bzip2 of a truncated

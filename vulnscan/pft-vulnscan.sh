@@ -13,6 +13,9 @@
 #  fetch  curl FEED_URL into CACHE_DIR/feed.xml.bz2 with the saved ETag (If-None-Match): 304 keeps the cached copy,
 #         200 is accepted only if it decompresses as bzip2 and then replaces the cache atomically. CACHE_DIR/feed.meta
 #         records sha256 (of the .bz2), fetched_at and last_checked (UTC epoch). A failed fetch keeps the cache.
+#         Stale 304: if the server says "not modified" but the cached feed's own <oval:timestamp> is older than
+#         REFETCH_AGE_HOURS (24), one unconditional GET (no ETag, Cache-Control: no-cache) follows. Canonical's
+#         content caches answered 304 to an old ETag for 3 days while the origin had newer feeds (2026-10-31..11-02).
 #  scan   1. fetch (unless --no-fetch); if that fails a cached feed is still used (the age check below decides).
 #         2. the cached .bz2 must match the sha256 in feed.meta (else exit 2: cache changed behind our back).
 #         3. decompress, `oscap oval eval --results`, then vulnscan_parse.py: refuses (exit 2) a feed older than
@@ -34,6 +37,7 @@
 # Config: /etc/pft-vulnscan.env (KEY=VALUE, root-owned; PFT_VS_CONF overrides the path): HOST_LABEL (validator),
 #   PEER_LABEL (sentry), FEED_URL (Canonical jammy USN OVAL .bz2), MAX_FEED_AGE_DAYS (7), CACHE_DIR
 #   (/var/cache/pft-vulnscan), TEXTFILE_DIR (/var/lib/pft-exporter/textfile), REMOTE_DIR (same), FETCH_TIMEOUT (120),
+#   REFETCH_AGE_HOURS (24),
 #   OSCAP_TIMEOUT (900), PULL_SSH, PULL_TIMEOUT (30).
 # Test hooks: PFT_VS_OSCAP PFT_VS_CURL PFT_VS_DPKG_QUERY PFT_VS_PARSER (commands/paths), PFT_VS_NOW (epoch),
 #   PFT_VS_UNAME_R (running kernel), PFT_VS_ROOT (prefix for /var/run/reboot-required).
@@ -41,22 +45,23 @@
 # shellcheck disable=SC2016,SC1091
 set -uo pipefail
 umask 022
-VERSION=1.0.0
+VERSION=1.1.0
 
 HOST_LABEL=validator; PEER_LABEL=sentry
 FEED_URL=https://security-metadata.canonical.com/oval/com.ubuntu.jammy.usn.oval.xml.bz2
 MAX_FEED_AGE_DAYS=7; CACHE_DIR=/var/cache/pft-vulnscan; TEXTFILE_DIR=/var/lib/pft-exporter/textfile
-REMOTE_DIR=/var/lib/pft-exporter/textfile; FETCH_TIMEOUT=120; OSCAP_TIMEOUT=900; PULL_SSH=""; PULL_TIMEOUT=30
+REMOTE_DIR=/var/lib/pft-exporter/textfile; FETCH_TIMEOUT=120; REFETCH_AGE_HOURS=24; OSCAP_TIMEOUT=900; PULL_SSH=""; PULL_TIMEOUT=30
 MAX_BYTES=16384
 CONF="${PFT_VS_CONF:-/etc/pft-vulnscan.env}"
 if [ -f "$CONF" ]; then
   while IFS='=' read -r k v; do
     case "$k" in
-      HOST_LABEL|PEER_LABEL|FEED_URL|MAX_FEED_AGE_DAYS|CACHE_DIR|TEXTFILE_DIR|REMOTE_DIR|FETCH_TIMEOUT|OSCAP_TIMEOUT|PULL_SSH|PULL_TIMEOUT)
+      HOST_LABEL|PEER_LABEL|FEED_URL|MAX_FEED_AGE_DAYS|CACHE_DIR|TEXTFILE_DIR|REMOTE_DIR|FETCH_TIMEOUT|REFETCH_AGE_HOURS|OSCAP_TIMEOUT|PULL_SSH|PULL_TIMEOUT)
         v="${v%\"}"; v="${v#\"}"; printf -v "$k" '%s' "$v" ;;
     esac
   done < <(grep -E '^[A-Z_]+=' "$CONF")
 fi
+[[ "$REFETCH_AGE_HOURS" =~ ^[0-9]{1,4}$ ]] || die "REFETCH_AGE_HOURS must be a whole number of hours (got: $REFETCH_AGE_HOURS)"
 OSCAP="${PFT_VS_OSCAP:-oscap}"
 CURL="${PFT_VS_CURL:-curl}"
 DPKG_QUERY="${PFT_VS_DPKG_QUERY:-dpkg-query}"
@@ -77,12 +82,23 @@ with bz2.open(sys.argv[1]) as s, open(sys.argv[2], "wb") as d:
     shutil.copyfileobj(s, d)' "$1" "$2" 2>/dev/null
 }
 
-# fetch -> rc 0 (stdout: "fetched" | "not modified"), rc 1 with the reason on stdout
+# feed_ts FILE.bz2 -> the feed's own <oval:timestamp> as UTC epoch on stdout (rc 1 if unreadable)
+feed_ts() {
+  python3 -I -c 'import bz2, calendar, re, sys, time
+head = bz2.open(sys.argv[1]).read(65536).decode("utf-8", "replace")
+m = re.search(r"<oval:timestamp>([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})", head)
+sys.exit(1) if not m else print(calendar.timegm(time.strptime(m.group(1), "%Y-%m-%dT%H:%M:%S")))' "$1" 2>/dev/null
+}
+
+# fetch [force] -> rc 0 (stdout: "fetched" | "not modified" | "not modified, ... -> unconditional GET: fetched"),
+# rc 1 with the reason on stdout. force = no ETag and Cache-Control: no-cache.
 fetch() {
-  local tmp etag_args=() code
+  local force="${1:-}" tmp etag_args=() code fts age
   mkdir -p "$CACHE_DIR" || { echo "cannot create $CACHE_DIR"; return 1; }
   tmp="$(mktemp -d "$CACHE_DIR/.fetch.XXXXXX")" || { echo "cannot create a temp dir in $CACHE_DIR"; return 1; }
-  if [ -s "$CACHE_DIR/feed.xml.bz2" ] && [ -s "$CACHE_DIR/feed.etag" ]; then
+  if [ -n "$force" ]; then
+    etag_args=(-H "Cache-Control: no-cache")
+  elif [ -s "$CACHE_DIR/feed.xml.bz2" ] && [ -s "$CACHE_DIR/feed.etag" ]; then
     etag_args=(--etag-compare "$CACHE_DIR/feed.etag")
   fi
   code="$("$CURL" -sS -f --max-time "$FETCH_TIMEOUT" "${etag_args[@]}" --etag-save "$tmp/etag" \
@@ -91,9 +107,17 @@ fetch() {
   if [ "$rc" -ne 0 ]; then
     echo "download failed (curl rc $rc, http ${code:-none}: $(head -c 200 "$tmp/err" | tr '\n' ' '))"; rm -rf "$tmp"; return 1
   fi
-  if [ "$code" = 304 ]; then
-    sed -i "s/^last_checked=.*/last_checked=$(now)/" "$CACHE_DIR/feed.meta"
-    rm -rf "$tmp"; echo "not modified"; return 0
+  if [ "$code" = 304 ] && [ -z "$force" ]; then
+    rm -rf "$tmp"
+    fts="$(feed_ts "$CACHE_DIR/feed.xml.bz2")" || fts=""
+    if [[ "$fts" =~ ^[0-9]+$ ]] && age=$(( $(now) - fts )) && [ "$age" -lt $(( REFETCH_AGE_HOURS * 3600 )) ]; then
+      sed -i "s/^last_checked=.*/last_checked=$(now)/" "$CACHE_DIR/feed.meta"
+      echo "not modified"; return 0
+    fi
+    local why="cached feed timestamp unreadable"
+    [[ "$fts" =~ ^[0-9]+$ ]] && why="cached feed is $(( age / 3600 )) h old (> ${REFETCH_AGE_HOURS} h)"
+    local msg; msg="$(fetch force)"; rc=$?
+    echo "not modified, but $why -> unconditional GET: $msg"; return "$rc"
   fi
   if [ "$code" != 200 ]; then echo "unexpected HTTP $code"; rm -rf "$tmp"; return 1; fi
   if ! unbz2 "$tmp/feed.xml.bz2" "$tmp/check.xml"; then
