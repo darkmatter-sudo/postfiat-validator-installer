@@ -451,7 +451,8 @@ live_revert() { # undo live.state in reverse order
   [ -f "$st" ] || { echo "$(ts) rollback: no live.state, live mounts untouched"; return 0; }
   while read -r kind a b; do
     case "$kind" in
-      created) "$UMOUNT" "$a" && echo "$(ts) rollback: unmounted self-bind $(label_path "$a")" || rc=1 ;;
+      created) if "$UMOUNT" "$a" && ! is_mount "$a"; then echo "$(ts) rollback: unmounted self-bind $(label_path "$a")"
+               else echo "$(ts) rollback: $(label_path "$a") is still a mount after umount (stacked mount?)"; rc=1; fi ;;
       remount) "$MOUNT" --options-mode ignore -o "remount,$( [ "$a" = /dev/shm ] || echo bind,)$(inverse "$b")" "$a" \
                  && echo "$(ts) rollback: $(label_path "$a") options back to $b" || rc=1 ;;
       proc)    "$MOUNT" --options-mode ignore -o "remount,$b,hidepid=off,gid=0" /proc && echo "$(ts) rollback: /proc hidepid=off (flags $b kept)" || rc=1 ;;
@@ -501,7 +502,7 @@ do_apply() {
   echo "$(ts) apply: fstab installed (backup $(basename "$b"), sha256 $(sha "$b" | cut -c1-12) -> $(sha "$FSTAB" | cut -c1-12))"
   if ! live_apply "$src" "$pid" "$gid" || ! health_gate "$before" "$c" "$daemons"; then
     echo "$(ts) apply: live step or health gate failed -> automatic rollback"
-    live_revert && restore_fstab "$b" && health_gate "$before" "$c" "$daemons" rollback || return 5
+    restore_fstab "$b" && live_revert && "$SYSTEMCTL" daemon-reload && health_gate "$before" "$c" "$daemons" rollback || return 5
     return 1
   fi
   echo "$(ts) apply: done"
@@ -520,8 +521,12 @@ do_rollback() {
   [ -n "$b" ] || die "no fstab backup in $BACKUP_DIR" 2
   maint_window rollback || return 4
   c="$(detect_container)"; before="$(started_at "$c")"; daemons="$(daemon_units)"
-  live_revert || return 5
+  # fstab + daemon-reload FIRST: while the managed block is loaded, systemd's fstab-generator units (tmp.mount,
+  # var-tmp.mount) exist, and a unit start right after an umount (PrivateTmp= pulls in RequiresMountsFor=/tmp) mounts
+  # them again from the old block (seen live on the sentry, run 07 step 1b)
   restore_fstab "$b" || return 5
+  live_revert || return 5
+  "$SYSTEMCTL" daemon-reload
   health_gate "$before" "$c" "$daemons" rollback || return 5
   echo "$(ts) rollback: done ($(basename "$b"))"
 }

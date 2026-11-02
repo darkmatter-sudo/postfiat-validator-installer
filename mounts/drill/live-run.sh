@@ -175,8 +175,9 @@ for h in relay local; do
   if on "$h" "sudo -n grep -q '^# BEGIN pft-mounts' /etc/fstab"; then
     x "on $h 'sudo -n pft-mounts rollback --yes'"
     check "$h: rollback of the earlier run exit 0, fstab block gone" "$(ok_if '[ "$XRC" = 0 ] && ! on "$h" "sudo -n grep -q \"^# BEGIN pft-mounts\" /etc/fstab"')"
-    x "on $h 'sudo -n pft-mounts audit | tail -1'"
-    check "$h: audit shows the original findings again" "$(ok_if '[ "$XRC" = 1 ] && grep -q "FAIL - " <<<"$XOUT"')"
+    # the exit code is echoed on the host: through ssh a trailing `| tail -1` returned tail's 0 (run 07)
+    x "on $h 'sudo -n pft-mounts audit > /dev/null; echo audit-exit=\$?; sudo -n pft-mounts audit | tail -1'"
+    check "$h: audit shows findings again (exit 1)" "$(ok_if 'grep -qx "audit-exit=1" <<<"$XOUT" && grep -q "FAIL - " <<<"$XOUT"')"
   else echo "  $h: no pft-mounts fstab block (nothing to reset)"; fi
 done
 [ "$FAILS" = 0 ] || { echo "  reset failed - stopping"; exit 4; }

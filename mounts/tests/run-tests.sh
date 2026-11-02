@@ -315,6 +315,16 @@ fresh; S0="$(snap)"; touch "$E/s/verify-fail"; run apply --yes
 # rollback itself fails -> exit 5
 fresh; export PFT_MOUNTS_INJECT=health FAKE_FAIL="umount /var/tmp"; run apply --yes
 [ "$RC" = 5 ] && ok "rollback failure: exit 5" || ko "rollback failure: rc=$RC" "$OUT"
+# a mount stacked on top of the self-bind (e.g. systemd mounting tmp.mount over it): one umount leaves /tmp a mount;
+# rollback must say so and exit 5, never report "unmounted"
+fresh; run apply --yes; R1=$RC; STK="$(grep -E '^[^ ]+ [^ ]+ [^ ]+ [^ ]+ /tmp ' "$E/root/proc/1/mountinfo" | tail -1 | sed 's/^[0-9]*/990/')"; echo "$STK" >> "$E/root/proc/1/mountinfo"
+run rollback --yes
+[ "$R1" = 0 ] && [ "$RC" = 5 ] && grep -q 'rollback: /tmp is still a mount after umount' <<<"$OUT" && ! grep -q 'unmounted self-bind /tmp' <<<"$OUT" \
+  && ok "rollback: a stacked /tmp mount is reported (exit 5), not counted as unmounted" || ko "rollback stacked ($R1/$RC)" "$OUT"
+# order: fstab restored + daemon-reload before the first umount (systemd would re-mount a generator unit otherwise)
+fresh; run apply --yes; : > "$E/s/calls"; run rollback --yes
+[ "$RC" = 0 ] && awk '/^systemctl daemon-reload/ && !r { r = NR } /^umount/ && !u { u = NR } END { exit !(r && u && r < u) }' "$E/s/calls" && ! grep -q 'systemd: mounted' "$E/s/calls" \
+  && ok "rollback: daemon-reload of the restored fstab before the first umount, systemd mounted nothing" || ko "rollback order rc=$RC" "$(grep -nE '^(systemctl daemon|umount|systemd:)' "$E/s/calls")"
 unset PFT_MOUNTS_INJECT FAKE_FAIL
 
 echo "RESULT: $PASS passed, $FAIL failed"

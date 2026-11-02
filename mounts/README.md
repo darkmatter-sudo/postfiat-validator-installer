@@ -80,7 +80,11 @@ proc /proc proc defaults,hidepid=invisible,gid=<pft-procview> 0 0      (HIDEPID=
    a noexec `/tmp` is caught), every running pft daemon still active. A miss or a failed live step rolls back
    automatically (exit 1).
 
-`rollback` restores the newest fstab backup (sha256 compared), reverts every live step from `live.state` in reverse
+`rollback` restores the newest fstab backup (sha256 compared) and runs `systemctl daemon-reload` **before** it
+unmounts anything: while the managed block is loaded, systemd's fstab-generator has `tmp.mount`/`var-tmp.mount`, and a
+unit start right after an umount (any `PrivateTmp=` unit pulls in `RequiresMountsFor=/tmp`) mounts them again. The
+first live rollback on the sentry hit exactly that (log 07/08). Each unmounted self-bind is checked (still a mount
+afterwards = exit 5). Then it reverts every live step from `live.state` in reverse
 order (self-binds unmounted, remounted options put back, `/proc` back to `hidepid=off`, the container's data mount
 back to its old flags), removes or restores the apt file, then runs the same gate minus the StartedAt check.
 

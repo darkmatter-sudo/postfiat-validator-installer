@@ -37,6 +37,9 @@ MUTANTS = [
     ("W2", "rollback: runs without a pft-maint window", '  maint_window rollback || return 4\n', ''),
     ("W3", "window check: exit status of pft-maint active ignored", '"$MAINT" active >/dev/null 2>&1 && {', '{ "$MAINT" active >/dev/null 2>&1; } ; {'),
     ("W4", "dry run: diff headers carry file times (local timezone)", 'diff -u --label /etc/fstab --label fstab.candidate "$FSTAB"', 'diff -u "$FSTAB"'),
+    ("R1", "rollback: umount before the fstab restore + daemon-reload (systemd re-mounts tmp.mount)", '  restore_fstab "$b" || return 5\n  live_revert || return 5\n', '  live_revert || return 5\n  restore_fstab "$b" || return 5\n'),
+    ("R2", "auto rollback: umount before the fstab restore + daemon-reload", 'restore_fstab "$b" && live_revert && "$SYSTEMCTL" daemon-reload && health_gate', 'live_revert && restore_fstab "$b" && health_gate'),
+    ("R3", "rollback: a mount still present after umount counted as unmounted", 'if "$UMOUNT" "$a" && ! is_mount "$a"; then', 'if "$UMOUNT" "$a"; then'),
     # live steps
     ("L1", "live: /proc remount drops its per-mount flags", '"remount,$po,hidepid=invisible', '"remount,hidepid=invisible'),
     ("L2", "live: /tmp never self-bound", 'else "$MOUNT" --bind "$t" "$t" || return 1; echo "created $t"', 'else echo "created $t"'),

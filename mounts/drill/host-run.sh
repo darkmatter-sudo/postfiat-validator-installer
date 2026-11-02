@@ -81,6 +81,8 @@ if [ "$DRILL" = 1 ]; then
   v "fstab byte-identical after the automatic rollback ($(fsha | cut -c1-12))" '[ "$(fsha)" = "$H0" ]'
   L1="$(live)"; printf '%s\n' "$L1" | sed 's/^/  live: /'
   v "every live option back to step 0" '[ "$L1" = "$L0" ]'
+  sleep 75; L1b="$(live)"   # one full timer period: a unit start must not mount anything again (run 07 step 1b)
+  v "75 s later still back to step 0 (no systemd re-mount)" '[ "$L1b" = "$L0" ]'
   x "$T audit"; v "audit shows the same $N0 findings again" '[ "$XRC" = 1 ] && [ "$(nfind "$XOUT")" = "$N0" ]'
   v "apt TempDir file removed by the rollback" '[ ! -e /etc/apt/apt.conf.d/50pft-mounts ]'
 fi
@@ -153,6 +155,8 @@ if [ "$DRILL" = 1 ]; then
   v "fstab byte-identical to step 0 ($(fsha | cut -c1-12))" '[ "$(fsha)" = "$H0" ]'
   L3="$(live)"; printf '%s\n' "$L3" | sed 's/^/  live: /'
   v "every live option back to step 0" '[ "$L3" = "$L0" ]'
+  sleep 75; L3b="$(live)"
+  v "75 s later still back to step 0 (no systemd re-mount)" '[ "$L3b" = "$L0" ]'
   x "$T audit"; v "audit shows the step-0 findings again ($N0)" '[ "$XRC" = 1 ] && [ "$(nfind "$XOUT")" = "$N0" ]'
   x "$T apply --yes"
   v "re-apply exit 0, gate PASS" '[ "$XRC" = 0 ] && grep -q "health: PASS" <<<"$XOUT"'

@@ -80,7 +80,14 @@ B
 #!/usr/bin/env bash
 S="$STUB_S"; echo "systemctl $*" >> "$S/calls"
 case "$1" in
-  daemon-reload) exit 0 ;;
+  daemon-reload) # like systemd: a start job queued against the OLD unit set (fstab as of the previous reload) still
+                 # mounts a generator unit (bind /tmp from the managed block) that is not mounted now
+    if grep -q '^/tmp /tmp none bind,' "$S/fstab.loaded" 2>/dev/null && ! grep -qE '^[^ ]+ [^ ]+ [^ ]+ [^ ]+ /tmp ' "$STUB_R/proc/1/mountinfo"; then
+      python3 "$STUB_HERE/fake_mount.py" "$STUB_R/proc/1/mountinfo" mount --bind /tmp /tmp
+      python3 "$STUB_HERE/fake_mount.py" "$STUB_R/proc/1/mountinfo" mount -o remount,bind,nodev,nosuid,noexec /tmp
+      echo "systemd: mounted tmp.mount from the old unit set" >> "$S/calls"
+    fi
+    cp "$STUB_R/etc/fstab" "$S/fstab.loaded"; exit 0 ;;
   list-timers) sed 's/^/Sat 2026-11-01 00:00:00 UTC 1min left n\/a n\/a x.timer /' "$S/oneshots" ;;
   list-units) sed 's/$/ loaded active running x/' "$S/daemons" ;;
   start) grep -qx "$2" "$S/failunits" && "$STUB_BIN/hardened" && exit 1; exit 0 ;;

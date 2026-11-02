@@ -1,0 +1,93 @@
+pft-mounts two-host live run (sentry first) - 2026-11-02T02:29:34Z - Ubuntu 22.04.5 LTS - run 20261102T022934Z
+repo HEAD 8b8ea2e717dc8c09e3bbad5dbfaaaa09bab337dc (clean: yes)
+sha256: live-run.sh 0a06b4708678c9148d5a3966e62d79449f2f0651ef820cabfa5d993e137e6095 host-run.sh 10a86d5d8b42e2812660b8616006e2896f8f7133ced739a089bea4e9d497c530
+        pft-mounts.sh 38b1ddf78f621c8bbd711e8609c44cb464ef52228b5039b3afbf20dca1222c54 install.sh e39c5c92421dfaad2c1d53f1fe6e8d9687a8f9eaf19ea9bc3c5791e96943b2e5
+        mounts.rules.yml ab1bddc970d33c3c8a74dee345631f93517e5a1b7f4a9d173c802d182a44fd69 redact.py f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8
+
+== 0. preflight (nothing changed yet)
+  pft-maint: no window open on either host
+  /etc/pft-maint/ntfy.env absent (pft-maint falls back to the monitor target): will be created with the throwaway topic
+$ ls /usr/local/bin/pft-mounts /etc/pft-mounts.env 2>&1; R 'ls /usr/local/bin/pft-mounts /etc/pft-mounts.env 2>&1'
+  /etc/pft-mounts.env
+  /usr/local/bin/pft-mounts
+  /etc/pft-mounts.env
+  /usr/local/bin/pft-mounts
+  (exit 0)
+  (informational: an earlier run may have installed it; install.sh is idempotent and step 1b resets an applied host)
+  operator topics to watch: 2 (not printed)
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+  postfiatd-sentry: server_state=full
+  postfiatd: server_state=full
+  pft-integrity local: RESULT: PASS - 130 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity relay: RESULT: PASS - 77 unchanged, 0 warn, 0 fail -> exit 0
+  literals for redaction: 3 ip, 2 key, 3 topic, 1 user (values not printed)
+$ redact.py control --literals <literals>
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (18/18)
+
+== 1. redirect notifiers, silence the add-on alerts, maintenance window
+  local:/etc/postfiat-monitor.env sha256 6dc3b10fb491 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/postfiat-monitor.env.pre-mounts-live
+  local:/etc/pft-integrity.env sha256 b3cd1c3da7ff -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-integrity.env.pre-mounts-live
+  relay:/etc/pft-watchdog/ntfy.env sha256 ddb52721a668 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-watchdog/ntfy.env.pre-mounts-live
+  relay:/etc/pft-integrity.env sha256 cdd330a974d2 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-integrity.env.pre-mounts-live
+  relay:/etc/pft-alertpath/ntfy.env sha256 ddb52721a668 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-alertpath/ntfy.env.pre-mounts-live
+CHECK ok   /etc/pft-maint/ntfy.env created with the throwaway topic (0600)
+CHECK ok   Alertmanager silence alertname=~"PFTMount.*|PFTRuleDead|PFTTextfileStale|PFTRulecheck.*|PFTFleet.*" until 2026-11-02T04:10:03Z
+$ sudo -n pft-maint start --ttl 75m --reason 'task_17c7c414 pft-mounts live run 20261102T022934Z'
+  window started: id m1793586603-1476340 until 2026-11-02T03:45:03Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   sentry has the window (via the watchdog channel) after 10s
+
+== 1b. reset: a host an earlier run left applied is rolled back first (checked), so step 0 of host-run sees the original state
+$ on relay 'sudo -n pft-mounts rollback --yes'
+  2026-11-02T02:30:24Z rollback: pft-maint window active
+  2026-11-02T02:30:24Z rollback: /var/lib/postfiatd/db back to rw,relatime inside the container
+  2026-11-02T02:30:24Z rollback: unmounted self-bind <docker-volume:pft-sentry-data>
+  2026-11-02T02:30:24Z rollback: /dev/shm options back to rw,nosuid,nodev
+  2026-11-02T02:30:24Z rollback: unmounted self-bind /var/tmp
+  2026-11-02T02:30:24Z rollback: unmounted self-bind /tmp
+  2026-11-02T02:30:24Z rollback: apt conf removed
+  2026-11-02T02:30:24Z rollback: fstab restored byte-identical (sha256 66bc37972ee6)
+  2026-11-02T02:30:26Z rollback: health: unit pft-authwatch.service ran, Result=success
+  2026-11-02T02:30:27Z rollback: health: unit pft-mounts.service ran, Result=success
+  2026-11-02T02:30:29Z rollback: health: unit pft-resources@postfiatd-sentry.service ran, Result=success
+  2026-11-02T02:30:29Z rollback: health: unit pft-rulecheck.service ran, Result=success
+  2026-11-02T02:30:30Z rollback: health: unit pft-statewatch@postfiatd-sentry.service ran, Result=success
+  2026-11-02T02:30:31Z rollback: health: PASS after 5 s (postfiatd-sentry StartedAt unchanged, server_state full, :2559 listening, sshd -t ok + :22 handshake, 1 pft daemons active)
+  2026-11-02T02:30:31Z rollback: done (fstab.20261102T022604Z)
+  (exit 0)
+CHECK ok   relay: rollback of the earlier run exit 0, fstab block gone
+$ on relay 'sudo -n pft-mounts audit | tail -1'
+  RESULT: FAIL - 12 finding(s)
+  (exit 0)
+CHECK FAIL relay: audit shows the original findings again
+  local: no pft-mounts fstab block (nothing to reset)
+  reset failed - stopping
+  $ sudo -n pft-maint end
+    window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+  removed /etc/pft-maint/ntfy.env (absent before the run: pft-maint falls back to the monitor target again)
+  restored local:/etc/postfiat-monitor.env: sha256 matches pre-run copy: yes
+  restored local:/etc/pft-integrity.env: sha256 matches pre-run copy: yes
+  restored relay:/etc/pft-watchdog/ntfy.env: sha256 matches pre-run copy: yes
+  restored relay:/etc/pft-integrity.env: sha256 matches pre-run copy: yes
+  restored relay:/etc/pft-alertpath/ntfy.env: sha256 matches pre-run copy: yes
+  silence expired: HTTP 200
+(runner exit 4)
+# NOTE (appended after the run, 2026-11-02T02:40:39Z): stopped at step 1b. Two findings: (1) harness bug: the reset check read the exit code of 'pft-mounts audit | tail -1' through ssh (tail's 0); (2) REAL tool bug: rollback unmounted the /tmp and /var/tmp self-binds before restoring fstab + daemon-reload, and systemd mounted its fstab-generator tmp.mount/var-tmp.mount again 1 s later (12 findings instead of 11: /tmp, /var/tmp noexec live but not persistent). Fixed in the next commit (fstab + daemon-reload first, every unmount verified); manual reset of the sentry in log 08.
