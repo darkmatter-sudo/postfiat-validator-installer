@@ -33,7 +33,8 @@
 #            starts a throwaway container with the live container's confine arguments (same image, caps, tmpfs,
 #            read-only, pids/memory) but fresh anonymous volumes, no published ports, under PROFILE-learn; waits for
 #            server_state full, exercises it (RPC, cron's identity switch, every cron.daily job, the hourly cron
-#            line, the crontab logrotate line, a forced rotation, e2scrub's cron lines, a container restart), keeps
+#            line, the crontab logrotate line, a forced rotation, e2scrub's cron lines, a container restart, and the
+#            read-only commands host add-ons run in the node: retention du/df/ls, egress cat + /dev/tcp, cfg greps), keeps
 #            it running --minutes (default 65, so real cron ticks at :00 and :17 run), then writes the normalized
 #            events to --out, removes the container and unloads PROFILE-learn. The live container is not touched.
 #            The seed allows inet/inet6/unix/netlink sockets: in complain mode every unlisted sendmsg/recvmsg is
@@ -96,6 +97,8 @@ CONF="$R/etc/pft-apparmor.env"
 TEXTFILE_DIR="${TEXTFILE_DIR:-$R/var/lib/pft-exporter/textfile}"
 LEARN_DIR="${LEARN_DIR:-$R/var/lib/pft-apparmor}"
 SYNC_BUDGET="${SYNC_BUDGET:-1200}"
+CFG_DIR="${CFG_DIR:-/etc/postfiatd}"   # inside the container (exercise_addons)
+DB_DIR="${DB_DIR:-/var/lib/postfiatd/db}"
 MAINT="${PFT_AA_MAINT:-pft-maint}"
 INTEGRITY="${PFT_AA_INTEGRITY:-pft-integrity}"
 STATE_DIR="${STATE_DIR:-$LEARN_DIR}"
@@ -529,6 +532,24 @@ rpc_state() { # CONTAINER -> server_state or ""
 
 lx() { local rc; echo "\$ $*"; "$@"; rc=$?; echo "(exit $rc)"; return "$rc"; }
 
+# The read-only commands the host add-ons run inside the node (docker exec), so learn records them and the apply gate
+# proves them: pft-retention sample (du/df/ls/stat/cat), pft-egress (cat of cfg/resolv.conf/validators file, bash
+# /dev/tcp probe), pft-upgradewatch (grep of the cfg), pft-mounts/pft-timesync (sh -c curl). Output is reduced to
+# counts so no config text reaches a log. Paths are the image's defaults (CFG_DIR, DB_DIR).
+exercise_addons() { # CONTAINER
+  local c="$1"
+  lx "$DOCKER" exec "$c" sh -c 'command -v curl >/dev/null'
+  lx "$DOCKER" exec "$c" sh -c 'curl -s -m 5 -o /dev/null -w "%{http_code}\n" -d "{\"method\":\"server_info\"}" http://127.0.0.1:${RPC_PORT:-5005}/'
+  lx "$DOCKER" exec "$c" stat -c %a "$CFG_DIR/postfiatd.cfg"
+  lx "$DOCKER" exec "$c" sh -c 'cat "$1/postfiatd.cfg" /etc/resolv.conf "$1/validators.txt" | wc -l' sh "$CFG_DIR"
+  lx "$DOCKER" exec "$c" sh -c 'grep -cE "^\[" "$1/postfiatd.cfg"' sh "$CFG_DIR"
+  lx "$DOCKER" exec "$c" sh -c 'du -sb "$1/nudb" | cut -f1' sh "$DB_DIR"
+  lx "$DOCKER" exec "$c" sh -c 'du -cb "$1"/*.db "$1"/*.db-* "$1"/*.sqlite 2>/dev/null | tail -n1' sh "$DB_DIR"
+  lx "$DOCKER" exec "$c" df -B1 -P "$DB_DIR"
+  lx "$DOCKER" exec "$c" sh -c 'ls -1 "$1/nudb" 2>/dev/null | wc -l' sh "$DB_DIR"
+  lx "$DOCKER" exec "$c" timeout 5 bash -c 'exec 3<>/dev/tcp/127.0.0.1/5005'
+}
+
 exercise() { # CONTAINER
   local c="$1" lr
   lx "$DOCKER" exec "$c" curl -s -m 10 -o /dev/null -w '%{http_code}\n' -X POST -d '{"method":"server_info"}' http://127.0.0.1:5005
@@ -541,6 +562,7 @@ exercise() { # CONTAINER
   lx "$DOCKER" exec "$c" sh -c 'logrotate -f -s /var/log/postfiatd/.logrotate.status /etc/logrotate.d/postfiatd'
   lx "$DOCKER" exec "$c" sh -c 'test -e /run/systemd/system || SERVICE_MODE=1 /sbin/e2scrub_all -A -r'
   lx "$DOCKER" exec "$c" sh -c 'test -e /run/systemd/system || SERVICE_MODE=1 /usr/lib/x86_64-linux-gnu/e2fsprogs/e2scrub_all_cron'
+  exercise_addons "$c"
   lx "$DOCKER" exec "$c" ps -eo pid,comm
 }
 
@@ -661,8 +683,8 @@ count_events() { # SINCE_EPOCH PROFILE KIND(DENIED|ALLOWED) -> number of audit r
 
 # Health gate after a re-create. apply: the container is new (StartedAt changed), runs under PROFILE, the profile
 # is loaded in the wanted mode, server_state full, peers >= MIN_PEERS, confine signature unchanged, every pft
-# daemon still active; then the live exercise (RPC, cron identity switch, the hourly cron run, ps) and 0 DENIED
-# records for PROFILE since T0. rollback: the same with the pre-apply profile and no exercise/denial part.
+# daemon still active; then the live exercise (RPC, cron identity switch, the hourly cron run, the add-ons' read-only
+# commands, ps) and 0 DENIED records for PROFILE since T0. rollback: the same with the pre-apply profile and no exercise/denial part.
 health_gate() { # MODE(apply|rollback) CONTAINER BEFORE_STARTED_AT WANT_PROFILE WANT_MODE SIG DAEMONS T0
   local mode="$1" c="$2" before="$3" wp="$4" wm="$5" sig="$6" daemons="$7" t0="$8" i n ins sa prof km st peers why u dn al
   n=$(( HEALTH_BUDGET / POLL_SEC )); [ "$n" -ge 1 ] || n=1
@@ -702,6 +724,7 @@ exercise_live() { # CONTAINER: what the live node does on its own (no forced rot
   lx "$DOCKER" exec "$c" curl -s -m 10 -o /dev/null -w '%{http_code}\n' -X POST -d '{"method":"peers"}' http://127.0.0.1:5005
   lx "$DOCKER" exec "$c" setpriv --reuid=0 --regid=0 --init-groups true
   lx "$DOCKER" exec "$c" sh -c 'cd / && run-parts --report /etc/cron.hourly'
+  exercise_addons "$c"
   lx "$DOCKER" exec "$c" ps -eo pid,comm
 }
 

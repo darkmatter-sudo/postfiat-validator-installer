@@ -97,6 +97,7 @@ MUTANTS = [
     ("M76", "ack: count includes records after --until", 'n=$(( ${a%%$\'\\t\'*} - ${b%%$\'\\t\'*} ))', 'n=${a%%$\'\\t\'*}'),
     ("M77", "ack: runs without --yes", '[ "$YES" = 1 ] || { echo "pft-apparmor: ack-denials hides', 'true || { echo "pft-apparmor: ack-denials hides'),
     ("M78", "ack: reason not checked", '[ -n "$why" ] && [ "${#why}" -le 200 ] && [[ "$why" != *[![:print:]]* ]] || die', 'true || die'),
+    ("M79", "apply gate skips the add-ons' read-only commands", '  exercise_addons "$c"\n  lx "$DOCKER" exec "$c" ps -eo pid,comm\n}\n\nintegrity_accept', '  lx "$DOCKER" exec "$c" ps -eo pid,comm\n}\n\nintegrity_accept'),
     # install.sh
     ("I01", "install: failed first audit still enables the timer", 'log "ERROR: first audit failed"; "$JOURNALCTL" -u pft-apparmor.service -n 5 --no-pager --utc; exit 1', 'true', "install"),
     ("I02", "install: textfile not validated", '"$BIN" validate "$TEXTDIR/pft_apparmor_$host.prom" "$host" || { log "ERROR: textfile rejected"; exit 1; }', 'true', "install"),

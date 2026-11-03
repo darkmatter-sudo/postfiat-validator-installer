@@ -6,7 +6,8 @@ compose_base.json (what `docker compose up` creates before the override files ar
 Knobs (files in $STUB_DIR): rpc_bad_profile (containers under this AppArmor profile answer server_state
 "connected"), drop_on_recreate (HostConfig key removed from every container created by run/compose up),
 profile_on_recreate (every created container reports this AppArmorProfile, as if the apparmor= option were ignored),
-fail_run, fail_compose_up (one-shot), deny_on_exercise (run-parts appends a DENIED record to $AUDIT_LOG).
+fail_run, fail_compose_up (one-shot), deny_on_exercise (run-parts appends a DENIED record to $AUDIT_LOG), deny_on_addon (the same for
+exercise_addons' `du -sb`, as pft-retention sample was denied on the validator).
 `docker run` builds the new container from its ARGUMENTS, so the tests check that apply's run args really
 reproduce the old container (a lost flag shows up as a confine signature change).
 """
@@ -185,12 +186,14 @@ def do_exec(args):
     if c is None or not c["State"]["Running"]:
         return 1
     cmd = " ".join(args[1:])
-    if "run-parts" in cmd and knob("deny_on_exercise") is not None:
-        with open(os.environ["AUDIT_LOG"], "a") as f:
-            now, prof = os.environ.get("PFT_AA_NOW", "0"), c["AppArmorProfile"]
-            f.write(f'type=AVC msg=audit({now}.500:9): apparmor="DENIED" operation="open" profile="{prof}" '
-                    'name="/etc/cron.hourly/x" pid=9 comm="run-parts" requested_mask="r" denied_mask="r" '
-                    'fsuid=0 ouid=0\n')
+    for trig, kn, comm, name in (("run-parts", "deny_on_exercise", "run-parts", "/etc/cron.hourly/x"),
+                                 ("du -sb", "deny_on_addon", "sh", "/usr/bin/du")):
+        if trig in cmd and knob(kn) is not None:
+            with open(os.environ["AUDIT_LOG"], "a") as f:
+                now, prof = os.environ.get("PFT_AA_NOW", "0"), c["AppArmorProfile"]
+                f.write(f'type=AVC msg=audit({now}.500:9): apparmor="DENIED" operation="open" profile="{prof}" '
+                        f'name="{name}" pid=9 comm="{comm}" requested_mask="r" denied_mask="r" '
+                        'fsuid=0 ouid=0\n')
     if "server_info" in cmd and "-w" not in args:
         st = "connected" if knob("rpc_bad_profile") == c["AppArmorProfile"] else "full"
         print(json.dumps({"result": {"info": {"server_state": st, "peers": 5}}}))

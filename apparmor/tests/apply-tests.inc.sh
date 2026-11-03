@@ -101,6 +101,8 @@ grep -q '203\.0\.113\.7' <<<"$OUT" && ko "apply run: host IP printed" "$(grep 20
 grep -q 'NETWORK=testnet' <<<"$OUT" && ko "apply run: env value printed" "$OUT" || ok "apply run: env values masked in output"
 grep -q -- '--publish=<redacted-ip>:2560:2559' <<<"$OUT" && ok "apply run: publish arg shown masked" || ko "apply run: publish arg" "$OUT"
 grep -q 'gate PASS - exercise done, DENIED since T0: 0' <<<"$OUT" && ok "apply run: gate exercised the node, 0 DENIED" || ko "apply run: gate line" "$OUT"
+grep -q 'exec postfiatd-sentry sh -c du -sb "$1/nudb" | cut -f1 sh /var/lib/postfiatd/db' "$A/d/calls" && grep -q 'exec postfiatd-sentry timeout 5 bash -c exec 3<>/dev/tcp/127.0.0.1/5005' "$A/d/calls" \
+  && ok "apply run: gate ran the add-ons' read-only commands (retention du, egress /dev/tcp)" || ko "apply run: add-on exercise" "$(grep ' exec ' "$A/d/calls")"
 [ "$(stf .phase)" = applied ] && [ "$(stf .kind)" = run ] && ok "apply run: state applied" || ko "apply run: state" "$(cat "$A"/root/var/lib/pft-apparmor/apply-*.json)"
 arun audit
 grep -qE '^\s*\[PASS\] container ' <<<"$OUT" && grep -qE '^\s*\[PASS\] recreate ' <<<"$OUT" && grep -qE '^\s*\[PASS\] mode ' <<<"$OUT" \
@@ -192,6 +194,8 @@ arun apply --profile-file "$A/profile" --yes
 [ "$RC" = 0 ] && ok "gate: DENIED of another profile (pft-postfiatd-learn) not counted" || ko "gate: other-profile DENIED rc=$RC" "$OUT"
 mk_apply run; touch "$A/d/deny_on_exercise"; arun apply --profile-file "$A/profile" --yes
 grep -q 'gate FAIL - 1 DENIED record' <<<"$OUT" && ok "auto: DENIED during the exercise fails the gate" || ko "auto: DENIED" "$OUT"; auto_rb "auto: DENIED"
+mk_apply run; touch "$A/d/deny_on_addon"; arun apply --profile-file "$A/profile" --yes
+grep -q 'gate FAIL - 1 DENIED record.*/usr/bin/du' <<<"$OUT" && ok "auto: DENIED on an add-on command (retention du) fails the gate" || ko "auto: add-on DENIED" "$OUT"; auto_rb "auto: add-on DENIED"
 mk_apply run; touch "$A/d/fail_run"; arun apply --profile-file "$A/profile" --yes
 rm "$A/d/fail_run"; auto_rb "auto: docker run failed"
 mk_apply run; PFT_AA_INJECT=health arun apply --profile-file "$A/profile" --yes
