@@ -102,6 +102,8 @@ check "all 9: oldest links prev and next" 'grep -A1 "seq 7729001 fetched" <<<"$O
 if [ "${SHOW_FIXTURE:-0}" = 1 ]; then # print the drill transcript for the published evidence log
   echo "--- fixture drill transcript (repair --apply --max-ledgers 50, exit $RC):"
   while IFS= read -r l; do echo "    $l"; done <<<"$OUT"; echo "---"
+  echo "--- every stub call of that run, in order (docker = node via loopback admin RPC, curl = public RPC):"
+  while IFS= read -r l; do echo "    $l"; done < "$STUB_CALLS"; echo "---"
 fi
 
 # 4. ledger_request is re-sent at most every 5 polls
