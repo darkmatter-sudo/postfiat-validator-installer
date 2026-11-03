@@ -1,0 +1,36 @@
+# keyescrow 15 - journald:fss evolves in place between escrows - 2026-11-03T21:53:46Z - commit 9c9792df0930f2dc5f40923c6be987416768bd43 - Ubuntu 22.04.5 LTS
+## the escrow unit's own inventory line for journald:fss, every run so far (journal, UTC)
+$ sudo -n journalctl -u pft-keyescrow-escrow.service --utc -o short-iso --no-pager | grep -E 'journald:fss|RESULT: PASS - both' | sed -E 's/^([^ ]+) [^ ]+ /\1 <host> /'
+2026-11-03T21:22:46+0000 <host> pft-keyescrow[893073]:   |     item journald:fss ok
+2026-11-03T21:22:48+0000 <host> pft-keyescrow[894597]:       item journald:fss ok
+2026-11-03T21:22:49+0000 <host> pft-keyescrow[891578]: RESULT: PASS - both directions sealed, held and verified
+2026-11-03T21:22:51+0000 <host> pft-keyescrow[896057]:   [ok]       journald:fss       escrow same  fp 31fc04dde4343b8b mode 600, owner ok, group ok  (audittrail/pft-audittrail.sh:87)
+2026-11-03T21:22:52+0000 <host> pft-keyescrow[896463]:     item journald:fss ok
+2026-11-03T21:32:56+0000 <host> pft-keyescrow[1033619]:   |     item journald:fss ok
+2026-11-03T21:32:58+0000 <host> pft-keyescrow[1034969]:       item journald:fss ok
+2026-11-03T21:32:59+0000 <host> pft-keyescrow[1031727]: RESULT: PASS - both directions sealed, held and verified
+2026-11-03T21:33:03+0000 <host> pft-keyescrow[1036050]:   [ok]       journald:fss       escrow same  fp 9f9ceaf1ef3a1397 mode 600, owner ok, group ok  (audittrail/pft-audittrail.sh:87)
+2026-11-03T21:33:04+0000 <host> pft-keyescrow[1036437]:     item journald:fss ok
+2026-11-03T21:44:48+0000 <host> pft-keyescrow[1311916]:   |     item journald:fss ok
+2026-11-03T21:44:50+0000 <host> pft-keyescrow[1312032]:       item journald:fss ok
+2026-11-03T21:44:50+0000 <host> pft-keyescrow[1311363]: RESULT: PASS - both directions sealed, held and verified
+2026-11-03T21:44:52+0000 <host> pft-keyescrow[1312326]:   [ok]       journald:fss       escrow same  fp 9f9ceaf1ef3a1397 mode 600, owner ok, group ok  (audittrail/pft-audittrail.sh:87)
+2026-11-03T21:44:52+0000 <host> pft-keyescrow[1312390]:     item journald:fss ok
+(exit 0)
+## the fss file changes at every seal interval (mtime; size stays the same), nothing else touches it
+$ sudo -n env TZ=UTC stat -c '%y %s bytes' /var/log/journal/$(cat /etc/machine-id)/fss
+2026-11-03 21:44:59.997289671 +0000 482 bytes
+(exit 0)
+$ sudo -n journalctl --header --file=$(sudo -n ls /var/log/journal/$(cat /etc/machine-id)/system.journal) 2>/dev/null | grep -iE 'seal|compatible'
+Compatible flags: SEALED
+Incompatible flags: COMPRESSED-ZSTD KEYED-HASH
+(exit 0)
+## inventory now (hourly unit view): fss reported as evolving, not drift; drift_items stays 0
+$ sudo -n pft-keyescrow inventory | grep -E 'journald:fss|^RESULT'
+  [ok]       journald:fss       escrow evolving fp d0ae40a1937636e6 mode 600, owner ok, group ok  (audittrail/pft-audittrail.sh:87)
+RESULT: ok 11, perm 0, missing 0, unreadable 0, absent(optional) 2; escrow drift 0, new 0, evolving 1 -> exit 0
+(exit 0)
+$ grep -h '^pft_keyescrow_drift_items' /var/lib/pft-exporter/textfile/pft_keyescrow.prom /var/lib/pft-exporter/textfile/pft_keyescrow_sentry.prom
+pft_keyescrow_drift_items{node="validator"} 0
+pft_keyescrow_drift_items{node="sentry"} 0
+(exit 0)

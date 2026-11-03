@@ -10,9 +10,12 @@ either host can be rebuilt from the other one. Plaintext is never written to dis
 the source host packs and encrypts in one pipe, the peer stores ciphertext only, and the peer checks a generation by
 decrypting it in memory with its own age identity (root-only, 0600).
 
-Status: **steps 1-3 of the task are done and tested offline (inventory, metrics, alert rules; keygen, seal,
-two-way escrow, receive + in-memory verify, tamper detection, pft-maint-gated restore with backups; mutation run)**.
-Install and the live two-host proof (step 4) come next. This README covers only what exists now.
+Status: steps 1-3 are done and tested offline (inventory, metrics, alert rules; keygen, seal, two-way escrow,
+receive + in-memory verify, tamper detection, pft-maint-gated restore with backups; mutation runs). Step 4 so far:
+**installed on both hosts, live two-way escrow + verify PASS (logs 10, 12), pull of the sentry metrics, zero-leak
+check on both hosts, alert rules loaded (log 13)**. Still to come: the one-byte tamper drill with the alert on a
+throwaway topic, the sentry node_seed restore keeping pubkey_node, and the first nightly timer run.
+This README covers only what exists now.
 
 ## Inventory (read-only)
 
@@ -62,7 +65,21 @@ by hashing guesses. The inventory compares it with the fingerprint recorded at t
 
 Exit codes: 0 everything ok and escrowed, 1 drift / not escrowed, 2 perm / missing / unreadable, 3 usage.
 
+Expected-evolving items: journald evolves the FSS sealing key **in place** at every seal interval (forward-secure
+sealing), so the live `journald:fss` fingerprint moved minutes after each escrow (log 15: the escrow unit's own
+inventory lines from the journal, and the fss mtime moving while nothing else changes). Counted as drift, that would hold
+`PFTKeyEscrowStale reason=drift` firing for ever. Items listed in conf `EVOLVING` (default `journald:fss`) report
+escrow `evolving` instead: not drift and not alerted, while "never escrowed" still counts as `new`. The nightly
+escrow keeps a copy at most a day old. Restoring an older FSS state is a restore of the sealing key as of that
+night (journald seeks it forward to the current epoch); the verification key stays off-host as `../audittrail`
+requires.
+
 ## Metrics and alerts
+
+Pull (validator): `sudo pft-keyescrow pull` runs `serve textfile pft_keyescrow|pft_keyescrow_held` on the sentry
+through `PEER_SSH` (no other file can be named) and installs the copies as `pft_keyescrow_sentry.prom` /
+`pft_keyescrow_held_sentry.prom` only if every line is a `pft_keyescrow_*` HELP/TYPE line or an integer sample with
+`node="sentry"`, the file is at most 64 KiB and has its timestamp sample (a rejected file keeps the previous copy).
 
 `--textfile` writes `pft_keyescrow_items{node,state}`, `pft_keyescrow_drift_items{node}`,
 `pft_keyescrow_last_escrow_timestamp_seconds{node}` (0 = never), `pft_keyescrow_inventory_exit_code{node}` and
@@ -74,11 +91,13 @@ Exit codes: 0 everything ok and escrowed, 1 drift / not escrowed, 2 perm / missi
 - `PFTKeyEscrowStale` `reason=age`: last escrow older than 36 h, or never.
 - `PFTKeyEscrowStale` `reason=drift`: an item changed or appeared after the last escrow and stayed that way for 2 h.
 - `PFTKeyEscrowInventoryFailed`: inventory exit 2 (missing / wrong permissions / unreadable) for 15 min.
+- `PFTKeyEscrowVerifyFailed`: the newest generation a host holds for its peer failed the ciphertext sha256 or the
+  in-memory decrypt + MANIFEST check, or none is held, for 5 min (`pft_keyescrow_held_verify_ok == 0`).
 
 The rules file is listed in `../alerts/prometheus.yml` since the live install (log 13): it was added only after
 both hosts exported metrics, so Prometheus never loaded a rule whose metric had no series.
 
-## Escrow (offline-tested; not installed yet)
+## Escrow
 
 ```sh
 sudo pft-keyescrow keygen          # both hosts: STATE_DIR/fp_key + age identity (0600), prints the age recipient
@@ -111,7 +130,7 @@ also rewrites the meta's hash, age's authentication fails on decrypt. Both cases
 `--textfile` writes `pft_keyescrow_held_generations`, `pft_keyescrow_held_newest_timestamp_seconds`,
 `pft_keyescrow_held_verify_ok` and `pft_keyescrow_verify_timestamp_seconds` (per `node`, `peer`).
 
-## Restore (offline-tested; not installed yet)
+## Restore (offline-tested; live restore drill pending)
 
 ```sh
 sudo pft-maint start --ttl 30m --reason "restore sentry node_seed"     # on the TARGET host
@@ -132,13 +151,35 @@ old identity is not needed. The target decrypts in memory and `keyescrow_tar.py 
   in its own directory, fsynced, chowned/chmodded to the MANIFEST's uid/gid/mode, then renamed into place.
 - After applying, the inventory runs again and prints each item's state.
 
+## Install
+
+```sh
+sudo keyescrow/install.sh --host validator      # and on the sentry: --host sentry (keygen if no identity yet)
+sudo pft-keyescrow set-peer <the other host's age recipient>       # on each host
+#   validator /etc/pft-keyescrow.env: PEER_SSH="runuser -u OPERATOR -- ssh -o BatchMode=yes -o ConnectTimeout=10 SENTRY"
+sudo keyescrow/install.sh --escrow-host         # validator: first escrow through the unit, then the timers
+sudo keyescrow/install.sh --enable              # each host, after the first escrow: hourly inventory + verify
+sudo pft-integrity accept --reason "pft-keyescrow installed"
+```
+
+Units (`systemd/`, sandboxed: ProtectSystem=strict, read-only home, only the state and textfile dirs writable,
+capabilities limited to reading other users' secret files and, for the ssh units, runuser):
+- `pft-keyescrow.timer` (both hosts, hourly): `inventory --textfile` + `verify --textfile`.
+- `pft-keyescrow-escrow.timer` (validator, nightly 02:40 UTC): `escrow` (both directions), then inventory, verify
+  and pull. A failed direction fails the unit and leaves the last-escrow time unchanged (PFTKeyEscrowStale after 36 h).
+- `pft-keyescrow-pull.timer` (validator, every 15 min): `pull`.
+
+The rules are evaluated on the validator only: the sentry runs no Prometheus, and its metrics arrive by `pull`.
+
 ## Tests
 
 ```sh
 bash keyescrow/tests/run-tests.sh          # inventory: fake root, no root/network needed
 bash keyescrow/tests/run-escrow-tests.sh   # keygen/seal/escrow/verify/tamper/restore with real age, two fake hosts
 promtool test rules alerts/keyescrow.tests.yml
-python3 keyescrow/tests/mutate.py -j 3     # 44 mutants over every refusal and integrity check (both files)
+python3 keyescrow/tests/mutate.py -j 3     # 56 mutants over every refusal and integrity check (both files)
+sudo python3 -I keyescrow/drill/leakcheck.py --tool /usr/local/bin/pft-keyescrow --conf /etc/pft-keyescrow.env \
+  --host validator --scan /var/lib/pft-keyescrow --scan /var/lib/pft-exporter/textfile   # live zero-leak check
 ```
 
 `tests/mutate.py`: each mutant is one exact text replacement in `pft-keyescrow.sh` or `keyescrow_tar.py` (it must
@@ -146,6 +187,11 @@ match exactly once, else NOT APPLIED = harness failure). An unmutated control ru
 a timeout and runs in its own session with stdin from /dev/null, and on timeout the whole process group is killed.
 After the run no process from a mutant copy may be left. One mutant is documented as equivalent: P11
 (`O_NOFOLLOW` in pack), because the inventory refuses symlinks before pack is called.
+
+`drill/leakcheck.py` reads the installed registry, takes up to three 16-byte probes (start, middle, end) of every
+present secret and searches them in every scanned file; it prints item ids and counts only. Its controls: each
+probe must be found in the secret file itself, and log 08 shows a clean scan dir (exit 0) and the same dir with a
+planted copy of the secret (`leaks 3  FAIL`, exit 1).
 
 ## Results so far (all from the logs in `logs/`)
 
@@ -158,6 +204,17 @@ After the run no process from a mutant copy may be left. One mutant is documente
 | `logs/05a-dev-mutants-1.log` | first mutant pass (dev) | 3 survivors: S4 (l.17), E2 (l.19), E3 (l.20); `40 killed + 1 documented equivalent of 44` (l.47) |
 | `logs/05b-dev-mutants-2.log` | the 3 former survivors after 3 new tests | `3 killed` (l.6) |
 | `logs/05-mutants.log` | recorded mutant run on the commit in its header | control 67/67 + 76/76 (l.10); `ORPHANS: 0` (l.55); `43 killed + 1 documented equivalent of 44, 0 survived` (l.56) |
+
+| `logs/05c-dev-mutants-3.log` | dev pass, new pull mutants U1-U8 | `8 killed` (l.11) |
+| `logs/05d-dev-mutants-4-dupid.log` | dev pass, evolving mutants (first named V1-V4, which collided with existing ids; renamed F1-F4) | harness ran both V4s (l.5, l.9) |
+| `logs/05e-dev-mutants-5.log` | dev pass, F1-F4 | `4 killed` (l.7) |
+| `logs/06-mutants-stopped.log`, `09-...`, `11-...` | recorded runs stopped / superseded (annotated at the end of each): 06 and 09 because a code fix followed, 11 because its control run failed 1 escrow test that 7 later runs did not reproduce (the harness now names failing control tests) | not evidence |
+| `logs/07-install-live.log` | live install on both hosts + first two-way escrow | escrow itself worked (verify on both holders l.161, l.179; inventory after exit 0), but `RESULT: FAIL - 3 failed check(s)` (l.302): install.sh printed none of the unit's output (l.134-136; a finished oneshot has no InvocationID), fixed in 533a222 |
+| `logs/08-offline.log` | suites, lint, promtool, fix-reverted control, leakcheck controls | 67/67 (l.32), 90/90 (l.51); the die() test FAILS on the parent commit's tool (l.55-56); promtool `SUCCESS: 4 rules found` (l.60) + tests `SUCCESS` (l.64); leakcheck clean rc=0 (l.72), planted copy rc=1 (l.76) |
+| `logs/10-reinstall-live.log` | re-install + second two-way escrow through the unit | `RESULT: PASS - 0 failed check(s)` (l.309); it also showed `sort: write error` (l.114, fixed with IgnoreSIGPIPE=no) and led to the EVOLVING fix |
+| `logs/12-reinstall-live.log` | re-install (EVOLVING, units) + third two-way escrow | escrow PASS (l.115); 3 generations held and verified on each side (l.195, l.239); inventory both hosts `drift 0, new 0, evolving 0 -> exit 0` (l.243-244); held ok=1 each way (l.260, l.263); leak check 11 + 10 secrets, 0 leaks (l.295, l.311); `RESULT: PASS - 0 failed check(s)` (l.333) |
+| `logs/13-rules-live.log` | rules loaded in the live Prometheus | all 4 rules `ok inactive` (l.6-9) with live series for both nodes |
+| `logs/15-fss-evolving.log` | why journald:fss is EVOLVING | the escrow unit recorded fss fp `31fc04dd...` at 21:22Z (l.7) and `9f9ceaf1...` at 21:33Z (l.12); the fss mtime moved again at 21:44:59Z (l.22), 7 s after the third escrow (l.17), and inventory now reports `escrow evolving` with `drift 0, ... evolving 1 -> exit 0` (l.30-31), drift_items 0 on both nodes (l.34-35) |
 
 05a/05b are the raw harness output of dev passes (no header line); 05 is the recorded run. In 05, l.5 is
 `sha256sum` skipping the ignored `tests/__pycache__` directory (harmless).
