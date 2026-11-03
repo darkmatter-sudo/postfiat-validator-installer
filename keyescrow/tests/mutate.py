@@ -529,6 +529,15 @@ def main():
         flush=True,
     )
     if rc != 0:
+        # name every failing test and its detail lines, so a control failure can be diagnosed from the log alone
+        lines = out.splitlines()
+        for i, ln in enumerate(lines):
+            if ln.startswith("FAIL "):
+                print(f"  {ln}")
+                for d in lines[i + 1 : i + 31]:
+                    if not d.startswith("     | "):
+                        break
+                    print(f"  {d}")
         print("RESULT: control run failed - no mutant counted")
         sys.exit(2)
     ms = [m for m in MUTANTS if not a.ids or m[0] in a.ids]
