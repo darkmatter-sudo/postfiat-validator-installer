@@ -1,0 +1,49 @@
+pft-backfill two-host live run (sentry gap + repair + alert drill) - 2026-11-03T16:32:55Z - Ubuntu 22.04.5 LTS - run 20261103T163255Z
+repo HEAD ef1f851314fac001dbd5d67d6d1d7ca28a654b0b (clean: yes)
+sha256 6a3891757da387f64b2692f207954682278733d0705f53de85c6f46a00ab8a1e backfill/drill/live-run.sh
+sha256 b674c31a38049ee08c3ffb49450aaa5ef0c0be3b809c039780e13a381ca162b1 backfill/pft-backfill.sh
+sha256 eb5b357448f4398209609ce5d5b34d26cf23c2040f7d70f218f9817584bd6034 backfill/backfill_parse.py
+sha256 61b43daba41d8780cbecf9e9ca941f5c94b367d195aa5b019632452103e03055 backfill/install.sh
+sha256 1cf784039a5e87a06dd3c23957e7b1dcbc31540a6773e152eb58ba01f4a70e22 alerts/backfill.rules.yml
+sha256 f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8 peerexpose/drill/redact.py
+
+== 0. preflight (nothing changed yet)
+  alerts/prometheus.yml has no /etc/pft-alerts/backfill.rules.yml line - a real run would stop here (add it in the run commit)
+  fleet/manifest.tsv has no backfill/pft-backfill.sh line - a real run would stop here (add it in the run commit)
+  pft-maint: no window on either host; collectors inactive + run-commit lines present: NO, see above
+  local pft-maint status --json window: none
+  local -> public RPC complete_ledgers: 7650054-7732304
+  relay pft-maint status --json window: none
+  relay -> public RPC complete_ledgers: 7650054-7732306
+  bridge mounts the operator env file: yes
+  silences covering the backfill alerts: 0; backfill alerts pending/firing: 0; drill textfile: none
+  operator topics to watch: 2 (not printed)
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+  postfiatd-sentry: server_state=full
+  postfiatd: server_state=full
+  pft-integrity local: RESULT: PASS - 146 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity relay: RESULT: PASS - 86 unchanged, 0 warn, 0 fail -> exit 0
+$ redact.py control --literals <literals>
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (18/18)
+
+PREFLIGHT_ONLY: stopping before step 1, nothing changed (ready: no, see the would-stop lines above)
+  drill textfile removed: yes
+  backfill alerts still pending/firing/active before the bridge restore: 0 (0s)

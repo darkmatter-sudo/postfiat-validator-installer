@@ -99,6 +99,10 @@ setup ok 0 1
 run repair --apply --max-ledgers 50
 check "all 9: PASS + after has no interior gap" '[ "$RC" = 0 ] && grep -q "missing interior 0, edge 0" <<<"$OUT"'
 check "all 9: oldest links prev and next" 'grep -A1 "seq 7729001 fetched" <<<"$OUT" | grep -q "prev ok next ok public ok"'
+if [ "${SHOW_FIXTURE:-0}" = 1 ]; then # print the drill transcript for the published evidence log
+  echo "--- fixture drill transcript (repair --apply --max-ledgers 50, exit $RC):"
+  while IFS= read -r l; do echo "    $l"; done <<<"$OUT"; echo "---"
+fi
 
 # 4. ledger_request is re-sent at most every 5 polls
 setup ok 0 12

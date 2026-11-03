@@ -1,0 +1,190 @@
+# backfill offline tests, promtool, mutants - 2026-11-03T17:11:19Z - Ubuntu 22.04.5 LTS - commit 0188866054fc4594d74549d386a1887d1093eecc (clean: yes)
+sha256 b674c31a38049ee08c3ffb49450aaa5ef0c0be3b809c039780e13a381ca162b1 backfill/pft-backfill.sh
+sha256 eb5b357448f4398209609ce5d5b34d26cf23c2040f7d70f218f9817584bd6034 backfill/backfill_parse.py
+sha256 fd44cb9bb1d169f5c0a24db40b8e1d1cd0fc8d6eccfc89dfc82e21745daa56d8 backfill/install.sh
+sha256 5678ba7eaf1c7bf69a435d632b8003ce1ec566472e52663e5543e3d0383475a2 backfill/tests/run-tests.sh
+sha256 79f8e16e06d460172374bb793b452368cb9d0631e388969469266c0a3fe4a91b backfill/tests/run-repair-tests.sh
+sha256 782abfc283e1a7ec675825536604f67058c7645036b46b3483be9e4b882830f6 backfill/tests/stub_node.py
+sha256 1b312e93983662d052383bce5ad778c0305f0c5cd6d00d33115157301494f9db backfill/tests/mutate.py
+sha256 934f01599dcf21dbda448d9b86d2e4dc633ee98c84e592f005a5a44b6062ebb5 backfill/tests/test_backfill_parse.py
+sha256 1cf784039a5e87a06dd3c23957e7b1dcbc31540a6773e152eb58ba01f4a70e22 alerts/backfill.rules.yml
+sha256 cfedeaa243dd998a619dab17e8cd1125c675afbae6b759c14658cc886bdf9a18 alerts/backfill.tests.yml
+$ shellcheck backfill/pft-backfill.sh backfill/install.sh backfill/tests/run-tests.sh backfill/tests/run-repair-tests.sh backfill/drill/live-run.sh backfill/drill/capture.sh
+(exit 0)
+$ ruff check backfill && ruff format --check backfill
+All checks passed!
+5 files already formatted
+(exit 0)
+$ python3 -m unittest discover -s backfill/tests -p 'test_*.py' 2>&1 | tail -3
+Ran 26 tests in 0.019s
+
+OK
+(exit 0)
+$ bash backfill/tests/run-tests.sh
+ok   live fixture: exit 0
+ok   live fixture: RESULT PASS
+ok   live fixture: window = validated-511..validated
+ok   live fixture: missing 0/0
+ok   only curl is exec'd in the container (no sh, no cat)
+ok   json: host label + fields
+ok   control: the fake cfg does hold the seed
+ok   parser gets [node_db] only (seed section never copied)
+ok   seed never in output (text or json)
+ok   interior gap: exit 1
+ok   interior gap: 9 missing
+ok   interior gap: listed
+ok   prom: file written 0644
+ok   prom: interior 9
+ok   prom: up 1
+ok   prom: no temp file left
+ok   plan: newest first, capped
+ok   plan: interior before edge, all 9
+ok   edge gap: exit 1, edge 362
+ok   not full: exit 1 even without a gap
+ok   no online_delete: exit 0, nothing to account
+ok   execfail: exit 2
+ok   execfail: textfile up 0
+ok   empty: exit 2
+ok   empty: textfile up 0
+ok   garbage: exit 2
+ok   garbage: textfile up 0
+ok   inspectfail: exit 2
+ok   inspectfail: textfile up 0
+ok   nomount: exit 2
+ok   nomount: textfile up 0
+ok   garbage answer: message names the RPC
+ok   cfg missing: exit 2
+ok   bad HOST_LABEL: exit 2
+ok   bad CONTAINER: exit 2
+ok   sentry conf: container + label used
+ok   no command: exit 3
+ok   unknown command: exit 3
+ok   unknown option: exit 3
+ok   plan non-numeric cap: exit 3
+ok   plan cap 0: exit 2 (parser range 1..10000)
+ok   no work dir left behind
+RESULT: 42 passed, 0 failed
+(exit 0)
+$ bash backfill/tests/run-repair-tests.sh
+ok   dry run: exit 0, DRY RUN result
+ok   dry run: plan newest first
+ok   dry run: 0 ledger_request calls
+ok   dry run: before line shows the gap
+ok   apply: exit 0 PASS
+ok   apply: counts
+ok   apply: first seq links to held seq+1, prev n/a
+ok   apply: after shows fewer missing
+ok   apply: only allowlisted methods reach the node
+ok   apply: only curl is exec'd
+ok   apply: public rpc asked once per ledger
+ok   apply: interval sleeps happen (rate cap)
+ok   all 9: PASS + after has no interior gap
+ok   all 9: oldest links prev and next
+ok   rate: 3 ledger_request calls for 13 polls
+ok   badhash: exit 2 + chain MISMATCH
+ok   badhash: next link MISMATCH too
+ok   badhash: other seq still verified
+ok   badlink: held seq+1 parent mismatch -> exit 2
+ok   public mismatch: exit 2
+ok   ledger_request error: exit 2, named
+ok   hash changed between ledger_request calls: exit 2
+ok   prev link: held seq-1 hash differs from the arrived parent -> MISMATCH, exit 2
+ok   no held neighbour servable: UNVERIFIED (chain alone is not enough), exit 1
+ok   ledger answer for another sequence is not taken as arrival (times out), exit 1
+ok   public down: 3 tries printed, n/a, exit 0
+ok   public lgrNotFound: retried, n/a
+ok   no chain hash: UNVERIFIED, exit 1
+ok   timeout: exit 1 INCOMPLETE, 2 timeouts
+ok   runtime cap: first skipped while waiting, rest skipped
+ok   runtime cap: fake clock stopped near the cap
+ok   runtime cap: no ledger_request after the cap (3 for the first ledger only)
+ok   not full: refused, 0 requests
+ok   maint window active: refused
+ok   maint window expired: refused
+ok   pft-maint fails: refused (fail closed)
+ok   pft-maint garbage: refused
+ok   pft-maint missing: refused
+ok   concurrent repair (lock held): refused, 0 requests
+ok   control: same run once the lock is free
+ok   cap/usage '--max-ledgers 257': exit 3, nothing requested
+ok   cap/usage '--max-ledgers 0': exit 3, nothing requested
+ok   cap/usage '--interval 0': exit 3, nothing requested
+ok   cap/usage '--interval 61': exit 3, nothing requested
+ok   cap/usage '--wait 601': exit 3, nothing requested
+ok   cap/usage '--max-runtime 1801': exit 3, nothing requested
+ok   cap/usage '--wait x': exit 3, nothing requested
+ok   cap/usage '--bogus': exit 3, nothing requested
+ok   cap edge: 256 accepted
+ok   no gap: PASS nothing to repair
+ok   textfile: verified 2, exit 0, dry_run 0
+ok   textfile: timeout run exit_code 1
+ok   textfile: dry run marked
+ok   seed never printed
+ok   public rpc off: PUBLIC_RPC=none
+ok   pull: status file installed, no repair file yet
+ok   pull: pulled file is byte-identical
+ok   pull: repair file installed too
+ok   validate: a real status textfile passes
+ok   validate: wrong node fails exit 1
+ok   pull: foreign metric line rejected, old file kept
+ok   pull: wrong node label rejected
+ok   pull: missing timestamp sample rejected
+ok   pull: ssh down -> exit 1
+ok   pull: status file absent on peer -> exit 1
+ok   pull: PULL_SSH unset -> exit 2
+RESULT: 66 passed, 0 failed
+(exit 0)
+$ sudo -n docker run --rm -v "$PWD/alerts:/w:ro" -w /w --entrypoint promtool prom/prometheus:v3.5.0 check rules backfill.rules.yml
+Checking backfill.rules.yml
+  SUCCESS: 2 rules found
+
+(exit 0)
+$ sudo -n docker run --rm -v "$PWD/alerts:/w:ro" -w /w --entrypoint promtool prom/prometheus:v3.5.0 test rules backfill.tests.yml
+  SUCCESS
+
+(exit 0)
+$ python3 -u backfill/tests/mutate.py -j 4 --timeout 600
+CONTROL (unmutated) rc=0 RESULT: 42 passed, 0 failed | RESULT: 66 passed, 0 failed 181s
+R1   KILLED (1 failed: not full: refused, 0 requests ([ "$RC" = 4 ] && grep -   228s  repair: runs on a node that is not full
+R2   KILLED (2 failed: maint window active: refused ([ "$RC" = 4 ] && grep -q   253s  repair: runs inside a pft-maint window
+R3   KILLED (1 failed: pft-maint fails: refused (fail closed) ([ "$RC" = 4 ]    229s  repair: pft-maint failure read as no window (fail open)
+R4   KILLED (1 failed: pft-maint missing: refused ([ "$RC" = 4 ] && grep -q "   239s  repair: missing pft-maint read as no window
+R5   KILLED (1 failed: concurrent repair (lock held): refused, 0 requests ([    227s  repair: concurrent runs allowed (lock ignored)
+R6   KILLED (3 failed: dry run: exit 0, DRY RUN result ([ "$RC" = 0 ] && grep   238s  repair: --apply by default (no dry run)
+R7   KILLED (8 failed: cap/usage '--max-ledgers 257': exit 3, nothing request   220s  cap: --max-ledgers upper bound dropped
+R8   KILLED (6 failed: cap/usage '--interval 0': exit 3, nothing requested ([   220s  cap: --interval 0 accepted
+R9   KILLED (4 failed: cap/usage '--wait 601': exit 3, nothing requested ([ "   217s  cap: --wait upper bound dropped
+R10  KILLED (3 failed: cap/usage '--max-runtime 1801': exit 3, nothing reques   220s  cap: --max-runtime upper bound dropped
+R11  KILLED (3 failed: runtime cap: first skipped while waiting, rest skipped   326s  runtime cap not checked while waiting
+R12  KILLED (1 failed: runtime cap: no ledger_request after the cap (3 for th   223s  runtime cap not checked between ledgers
+R13  KILLED (3 failed: ledger answer for another sequence is not taken as arr   495s  per-ledger wait never times out
+R14  KILLED (2 failed: rate: 3 ledger_request calls for 13 polls ([ "$(lr_cal   205s  ledger_request re-sent on every poll (rate cap)
+R15  KILLED (timeout 600s)                                                      600s  no pause between polls
+V1   KILLED (1 failed: badhash: exit 2 + chain MISMATCH ([ "$RC" = 2 ] && gre   183s  chain: mismatching arrived hash accepted
+V2   KILLED (1 failed: prev link: held seq-1 hash differs from the arrived pa   184s  prev link: parent mismatch accepted
+V3   KILLED (2 failed: badhash: next link MISMATCH too (grep -q "next MISMATC   175s  next link: parent mismatch accepted
+V4   KILLED (1 failed: public mismatch: exit 2 ([ "$RC" = 2 ] && grep -q "pub   164s  public: mismatch accepted
+V5   KILLED (1 failed: no held neighbour servable: UNVERIFIED (chain alone is   158s  verified without any held-neighbour link
+V6   KILLED (1 failed: no chain hash: UNVERIFIED, exit 1 ([ "$RC" = 1 ] && gr   157s  verified without a validated-chain hash
+V7   KILLED (5 failed: badhash: exit 2 + chain MISMATCH ([ "$RC" = 2 ] && gre   161s  mismatch does not fail the ledger
+V8   KILLED (1 failed: hash changed between ledger_request calls: exit 2 ([ "   184s  hash change between ledger_request calls ignored
+V9   KILLED (1 failed: ledger_request error: exit 2, named ([ "$RC" = 2 ] &&    186s  ledger_request errors ignored
+V10  KILLED (1 failed: no chain hash: UNVERIFIED, exit 1 ([ "$RC" = 1 ] && gr   192s  lgrNotFound acquiring hash (reference ledger) used as the expected hash
+V11  KILLED (2 failed: public down: 3 tries printed, n/a, exit 0 ([ "$RC" = 0   194s  public RPC not retried
+V12  KILLED (6 failed: apply: first seq links to held seq+1, prev n/a (grep -   171s  public RPC check skipped
+V13  KILLED (1 failed: ledger answer for another sequence is not taken as arr   173s  local ledger answer for another sequence accepted
+A1   KILLED (6 failed: badhash: exit 2 + chain MISMATCH ([ "$RC" = 2 ] && gre   169s  MISMATCH run exits 0
+A2   KILLED (6 failed: no held neighbour servable: UNVERIFIED (chain alone is   174s  incomplete run reported PASS
+A3   KILLED (3 failed: ledger answer for another sequence is not taken as arr   182s  timeouts not counted
+A4   KILLED (1 failed: textfile: timeout run exit_code 1 (grep -qx "pft_backf   176s  repair textfile records exit 0 always
+A5   KILLED (1 failed: textfile: dry run marked (grep -qx "pft_backfill_repai   179s  repair textfile dry_run flag inverted
+N1   EQUIVALENT (documented)                                                    173s  allowlist dropped - no code path calls rpc() with a method outside the allowlist; the suite checks every method actually sent
+N2   KILLED (1 failed: empty: textfile up 0 (grep -qx "pft_backfill_up{node=\   169s  rpc: empty answer accepted
+N3   KILLED (1 failed: parser gets [node_db] only (seed section never copied)   171s  cfg: whole postfiatd.cfg (with the seed) handed to the parser
+P1   KILLED (2 failed: pull: foreign metric line rejected, old file kept ([ "   172s  pull: foreign metric lines accepted
+P2   KILLED (1 failed: pull: missing timestamp sample rejected ([ "$RC" = 2 ]   169s  pull: missing timestamp sample accepted
+P3   KILLED (1 failed: pull: ssh down -> exit 1 ([ "$RC" = 1 ] && grep -q "pu   149s  pull: ssh failure read as 'no repair file yet'
+P4   KILLED (1 failed: pull: wrong node label rejected ([ "$RC" = 2 ] && grep   143s  pull: node label not checked
+RESULT: 39 killed + 1 documented equivalent of 40, 0 survived, not applied or errored
+(exit 0)
+# done 2026-11-03T17:52:53Z

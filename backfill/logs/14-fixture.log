@@ -1,0 +1,106 @@
+# backfill fixture repair drill - 2026-11-03T18:17:40Z - commit 0188866054fc4594d74549d386a1887d1093eecc + working tree
+$ SHOW_FIXTURE=1 bash backfill/tests/run-repair-tests.sh
+ok   dry run: exit 0, DRY RUN result
+ok   dry run: plan newest first
+ok   dry run: 0 ledger_request calls
+ok   dry run: before line shows the gap
+ok   apply: exit 0 PASS
+ok   apply: counts
+ok   apply: first seq links to held seq+1, prev n/a
+ok   apply: after shows fewer missing
+ok   apply: only allowlisted methods reach the node
+ok   apply: only curl is exec'd
+ok   apply: public rpc asked once per ledger
+ok   apply: interval sleeps happen (rate cap)
+ok   all 9: PASS + after has no interior gap
+ok   all 9: oldest links prev and next
+--- fixture drill transcript (repair --apply --max-ledgers 50, exit 0):
+    pft-backfill repair - 2026-11-03T18:17:48Z | host sentry | container postfiatd | APPLY
+      caps: max-ledgers 50, interval 2 s, wait 90 s, max-runtime 600 s, public rpc on
+      before: complete_ledgers 7728938-7729000,7729010-7729449 | window 7728938-7729449 | missing interior 9, edge 0
+      plan: 9 ledger(s), newest first: 7729009 7729008 7729007 7729006 7729005 7729004 7729003 7729002 7729001 
+      seq 7729009 fetched: arrived after 2 s
+        hash B08B9938FC0267E183BA951F199EAC5E9B51F2E12E06129F6DC336F51D09CA47 chain ok prev n/a next ok public ok
+        -> VERIFIED
+      seq 7729008 fetched: arrived after 2 s
+        hash 8362B05311140189101F7EC52288F8158E54E9401E7D8600B728DE7D825A20DC chain ok prev n/a next ok public ok
+        -> VERIFIED
+      seq 7729007 fetched: arrived after 2 s
+        hash 9D8FDB4CF8259FECD2BC7237D9EF122BA4B113B9010AE8D7419A1D837D5F449F chain ok prev n/a next ok public ok
+        -> VERIFIED
+      seq 7729006 fetched: arrived after 2 s
+        hash E7A6911C130E30C4BD1BF5635289C3A479DE24289E363B5F50C4F14B28923C1A chain ok prev n/a next ok public ok
+        -> VERIFIED
+      seq 7729005 fetched: arrived after 2 s
+        hash F035FF8B9C6A623DD3D347BC321E8F472A48BD257DA61D9D1CBF116C54D14DE2 chain ok prev n/a next ok public ok
+        -> VERIFIED
+      seq 7729004 fetched: arrived after 2 s
+        hash 6CD593ED28FDF95DCE8B0D72DAB2F253640925687261550001C5FF32703F8D2D chain ok prev n/a next ok public ok
+        -> VERIFIED
+      seq 7729003 fetched: arrived after 2 s
+        hash A234DFE4FEF8DD25136A7C1148EA1C6C2DED2AF878095BBD7BEFDC06D1268772 chain ok prev n/a next ok public ok
+        -> VERIFIED
+      seq 7729002 fetched: arrived after 2 s
+        hash E6F4E646AF45926782A4E0D2DF4E6765C15BEE6093B1C6B4606CBEB554ECDB8F chain ok prev n/a next ok public ok
+        -> VERIFIED
+      seq 7729001 fetched: arrived after 2 s
+        hash E7C175E1C6B472619485701D91F333BE4CA59AE2ACEE40A462CFECAAF06AFF44 chain ok prev ok next ok public ok
+        -> VERIFIED
+      after:  complete_ledgers 7728938-7729449 | missing interior 0, edge 0
+      counts: planned 9 fetched 9 verified 9 failed 0 timeout 0 skipped 0 (ledger_request calls 9)
+    RESULT: PASS - every planned ledger fetched and verified
+---
+ok   rate: 3 ledger_request calls for 13 polls
+ok   badhash: exit 2 + chain MISMATCH
+ok   badhash: next link MISMATCH too
+ok   badhash: other seq still verified
+ok   badlink: held seq+1 parent mismatch -> exit 2
+ok   public mismatch: exit 2
+ok   ledger_request error: exit 2, named
+ok   hash changed between ledger_request calls: exit 2
+ok   prev link: held seq-1 hash differs from the arrived parent -> MISMATCH, exit 2
+ok   no held neighbour servable: UNVERIFIED (chain alone is not enough), exit 1
+ok   ledger answer for another sequence is not taken as arrival (times out), exit 1
+ok   public down: 3 tries printed, n/a, exit 0
+ok   public lgrNotFound: retried, n/a
+ok   no chain hash: UNVERIFIED, exit 1
+ok   timeout: exit 1 INCOMPLETE, 2 timeouts
+ok   runtime cap: first skipped while waiting, rest skipped
+ok   runtime cap: fake clock stopped near the cap
+ok   runtime cap: no ledger_request after the cap (3 for the first ledger only)
+ok   not full: refused, 0 requests
+ok   maint window active: refused
+ok   maint window expired: refused
+ok   pft-maint fails: refused (fail closed)
+ok   pft-maint garbage: refused
+ok   pft-maint missing: refused
+ok   concurrent repair (lock held): refused, 0 requests
+ok   control: same run once the lock is free
+ok   cap/usage '--max-ledgers 257': exit 3, nothing requested
+ok   cap/usage '--max-ledgers 0': exit 3, nothing requested
+ok   cap/usage '--interval 0': exit 3, nothing requested
+ok   cap/usage '--interval 61': exit 3, nothing requested
+ok   cap/usage '--wait 601': exit 3, nothing requested
+ok   cap/usage '--max-runtime 1801': exit 3, nothing requested
+ok   cap/usage '--wait x': exit 3, nothing requested
+ok   cap/usage '--bogus': exit 3, nothing requested
+ok   cap edge: 256 accepted
+ok   no gap: PASS nothing to repair
+ok   textfile: verified 2, exit 0, dry_run 0
+ok   textfile: timeout run exit_code 1
+ok   textfile: dry run marked
+ok   seed never printed
+ok   public rpc off: PUBLIC_RPC=none
+ok   pull: status file installed, no repair file yet
+ok   pull: pulled file is byte-identical
+ok   pull: repair file installed too
+ok   validate: a real status textfile passes
+ok   validate: wrong node fails exit 1
+ok   pull: foreign metric line rejected, old file kept
+ok   pull: wrong node label rejected
+ok   pull: missing timestamp sample rejected
+ok   pull: ssh down -> exit 1
+ok   pull: status file absent on peer -> exit 1
+ok   pull: PULL_SSH unset -> exit 2
+RESULT: 66 passed, 0 failed
+(exit 0)

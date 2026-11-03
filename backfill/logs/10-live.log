@@ -1,0 +1,464 @@
+pft-backfill two-host live run (sentry gap + repair + alert drill) - 2026-11-03T17:10:49Z - Ubuntu 22.04.5 LTS - run 20261103T171049Z
+repo HEAD 0188866054fc4594d74549d386a1887d1093eecc (clean: yes)
+sha256 d117a1178f6a7b3ce3631ad2baf8d0e0f77c4b298a376781ab58dc68ee109e53 backfill/drill/live-run.sh
+sha256 b674c31a38049ee08c3ffb49450aaa5ef0c0be3b809c039780e13a381ca162b1 backfill/pft-backfill.sh
+sha256 eb5b357448f4398209609ce5d5b34d26cf23c2040f7d70f218f9817584bd6034 backfill/backfill_parse.py
+sha256 fd44cb9bb1d169f5c0a24db40b8e1d1cd0fc8d6eccfc89dfc82e21745daa56d8 backfill/install.sh
+sha256 1cf784039a5e87a06dd3c23957e7b1dcbc31540a6773e152eb58ba01f4a70e22 alerts/backfill.rules.yml
+sha256 f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8 peerexpose/drill/redact.py
+
+== 0. preflight (nothing changed yet)
+  pft-maint: no window on either host; collectors inactive + run-commit lines present: yes
+  local pft-maint status --json window: none
+  local -> public RPC complete_ledgers: 7650054-7733054
+  relay pft-maint status --json window: none
+  relay -> public RPC complete_ledgers: 7650054-7733055
+  bridge mounts the operator env file: yes
+  silences covering the backfill alerts: 0; backfill alerts pending/firing: 0; drill textfile: none
+  operator topics to watch: 2 (not printed)
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+  postfiatd-sentry: server_state=full
+  postfiatd: server_state=full
+  pft-integrity local: RESULT: PASS - 146 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity relay: RESULT: PASS - 86 unchanged, 0 warn, 0 fail -> exit 0
+$ redact.py control --literals <literals>
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (18/18)
+
+== 1. redirect notifiers + bridge, silence every alert except the backfill alerts and the watchdog, window
+  local:/etc/postfiat-monitor.env sha256 6dc3b10fb491 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/postfiat-monitor.env.pre-backfill-live
+  local:/etc/pft-integrity.env sha256 b3cd1c3da7ff -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-integrity.env.pre-backfill-live
+  relay:/etc/pft-watchdog/ntfy.env sha256 ddb52721a668 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-watchdog/ntfy.env.pre-backfill-live
+  relay:/etc/pft-integrity.env sha256 cdd330a974d2 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-integrity.env.pre-backfill-live
+  relay:/etc/pft-alertpath/ntfy.env sha256 ddb52721a668 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-alertpath/ntfy.env.pre-backfill-live
+CHECK ok   /etc/pft-maint/ntfy.env created with the throwaway topic (0600)
+  2026-11-03T17:11:46Z starting pft-alert-bridge (ntfy: on)
+  2026-11-03T17:11:49Z pft-alert-bridge listening
+  bridge -> https://ntfy.sh/<redacted> (throwaway env file in a 0700 temp dir)
+CHECK ok   Alertmanager silence alertname=~".+", alertname!~"PFTBackfillGap|PFTBackfillCheckFailed|PFTAlertPipelineWatchdog" until 2026-11-03T21:11:50Z
+$ sudo -n pft-maint start --ttl 150m --reason 'task_b2987318 pft-backfill live run 20261103T171049Z'
+  window started: id m1793725910-2919377 until 2026-11-03T19:41:50Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   sentry has the window (via the watchdog channel) after 20s
+
+== 2. install (sentry first, then validator, then the validator's pull of the sentry files)
+$ git archive 0188866054fc4594d74549d386a1887d1093eecc backfill | R 'rm -rf /var/tmp/pft-backfill-live-0188866 && mkdir -m 700 /var/tmp/pft-backfill-live-0188866 && tar -x -C /var/tmp/pft-backfill-live-0188866'
+  
+  (exit 0)
+$ R 'sudo -n bash /var/tmp/pft-backfill-live-0188866/backfill/install.sh --host sentry'
+  2026-11-03T17:12:18Z installed /usr/local/bin/pft-backfill (sha256 b674c31a38049ee08c3ffb49450aaa5ef0c0be3b809c039780e13a381ca162b1)
+  2026-11-03T17:12:18Z installed /usr/local/lib/pft-backfill/backfill_parse.py (sha256 eb5b357448f4398209609ce5d5b34d26cf23c2040f7d70f218f9817584bd6034)
+  2026-11-03T17:12:18Z added the pft_backfill textfile lines to /etc/pft-rulecheck.conf
+  2026-11-03T17:12:18Z first status check (through the sandboxed unit, HOST_LABEL=sentry, CONTAINER=postfiatd-sentry):
+  pft_backfill_up{node="sentry"} 1
+  pft_backfill_node_full{node="sentry"} 1
+  pft_backfill_missing_ledgers{node="sentry",kind="interior"} 0
+  pft_backfill_missing_ledgers{node="sentry",kind="edge"} 0
+  Created symlink /etc/systemd/system/timers.target.wants/pft-backfill.timer → /etc/systemd/system/pft-backfill.timer.
+  2026-11-03T17:12:20Z enabled pft-backfill.timer (every 5 min)
+  2026-11-03T17:12:20Z pft-backfill-repair.timer installed, NOT enabled (opt-in: --enable-repair)
+  2026-11-03T17:12:20Z remember: sudo pft-integrity accept --reason 'pft-backfill installed'
+  (exit 0)
+CHECK ok   sentry install exit 0, first status textfile valid
+$ sudo -n bash backfill/install.sh
+  2026-11-03T17:12:20Z installed /usr/local/bin/pft-backfill (sha256 b674c31a38049ee08c3ffb49450aaa5ef0c0be3b809c039780e13a381ca162b1)
+  2026-11-03T17:12:20Z installed /usr/local/lib/pft-backfill/backfill_parse.py (sha256 eb5b357448f4398209609ce5d5b34d26cf23c2040f7d70f218f9817584bd6034)
+  2026-11-03T17:12:20Z added the pft_backfill textfile lines to /etc/pft-rulecheck.conf
+  2026-11-03T17:12:22Z first status check (through the sandboxed unit, HOST_LABEL=validator, CONTAINER=postfiatd):
+  pft_backfill_up{node="validator"} 1
+  pft_backfill_node_full{node="validator"} 1
+  pft_backfill_missing_ledgers{node="validator",kind="interior"} 0
+  pft_backfill_missing_ledgers{node="validator",kind="edge"} 0
+  Created symlink /etc/systemd/system/timers.target.wants/pft-backfill.timer → /etc/systemd/system/pft-backfill.timer.
+  2026-11-03T17:12:24Z enabled pft-backfill.timer (every 5 min)
+  2026-11-03T17:12:24Z pft-backfill-repair.timer installed, NOT enabled (opt-in: --enable-repair)
+  2026-11-03T17:12:24Z remember: sudo pft-integrity accept --reason 'pft-backfill installed'
+  (exit 0)
+CHECK ok   validator install exit 0, first status textfile valid
+$ sudo -n grep -q '^PULL_SSH=' /etc/pft-backfill.env || sudo -n sh -c 'grep "^PULL_SSH=" /etc/pft-statewatch.env >> /etc/pft-backfill.env'; sudo -n grep -c '^PULL_SSH=' /etc/pft-backfill.env; sudo -n stat -c '%a %U' /etc/pft-backfill.env
+  1
+  600 root
+  (exit 0)
+$ sudo -n bash backfill/install.sh --pull
+  2026-11-03T17:12:25Z installed /usr/local/bin/pft-backfill (sha256 b674c31a38049ee08c3ffb49450aaa5ef0c0be3b809c039780e13a381ca162b1)
+  2026-11-03T17:12:25Z installed /usr/local/lib/pft-backfill/backfill_parse.py (sha256 eb5b357448f4398209609ce5d5b34d26cf23c2040f7d70f218f9817584bd6034)
+  2026-11-03T17:12:26Z first pull (through the sandboxed unit):
+  pft_backfill_up{node="sentry"} 1
+  pft_backfill_missing_ledgers{node="sentry",kind="interior"} 0
+  pft_backfill_missing_ledgers{node="sentry",kind="edge"} 0
+  Created symlink /etc/systemd/system/timers.target.wants/pft-backfill-pull.timer → /etc/systemd/system/pft-backfill-pull.timer.
+  2026-11-03T17:12:28Z enabled pft-backfill-pull.timer (every 5 min)
+  (exit 0)
+CHECK ok   pull install exit 0, sentry status file present on the validator
+$ systemctl is-enabled pft-backfill.timer pft-backfill-pull.timer pft-backfill-repair.timer; R 'systemctl is-enabled pft-backfill.timer pft-backfill-repair.timer'
+  enabled
+  enabled
+  disabled
+  enabled
+  disabled
+  (exit 0)
+CHECK ok   status timers enabled on both hosts, pull enabled, repair timers installed but NOT enabled (opt-in)
+$ grep -n backfill.rules.yml alerts/prometheus.yml; sudo -n docker kill -s HUP pft-prometheus >/dev/null && sleep 30 && curl -s http://127.0.0.1:9090/api/v1/rules | jq -r '.data.groups[] | select(.name == "pft-backfill") | .rules[] | [.name, .health] | @tsv'
+  24:  - /etc/pft-alerts/backfill.rules.yml    # ../backfill (interior ledger gap in the online_delete window; status unreadable / repair MISMATCH)
+  PFTBackfillGap	ok
+  PFTBackfillCheckFailed	ok
+  (exit 0)
+CHECK ok   PFTBackfillGap + PFTBackfillCheckFailed loaded, health ok
+
+== 3. before: status on both hosts; repair refused inside the window; alert drill starts
+$ on relay 'sudo -n pft-backfill status; echo status-exit=$?'
+  pft-backfill status - 2026-11-03T17:13:01Z | host sentry | container postfiatd-sentry
+    server_state     full
+    validated        7733095
+    online_delete    512
+    complete_ledgers 7732452-7733095
+    window           7732584-7733095
+    held in window   512
+    missing          interior 0, edge 0
+  RESULT: PASS
+  status-exit=0
+  (exit 0)
+  --json: {"host":"sentry","server_state":"full","ranges":[[7732452,7733096]],"window":[7732585,7733096],"missing_interior":0,"missing_edge":0}
+$ on local 'sudo -n pft-backfill status; echo status-exit=$?'
+  pft-backfill status - 2026-11-03T17:13:04Z | host validator | container postfiatd
+    server_state     full
+    validated        7733096
+    online_delete    512
+    complete_ledgers 7732353-7733096
+    window           7732585-7733096
+    held in window   512
+    missing          interior 0, edge 0
+  RESULT: PASS
+  status-exit=0
+  (exit 0)
+  --json: {"host":"validator","server_state":"full","ranges":[[7732353,7733096]],"window":[7732585,7733096],"missing_interior":0,"missing_edge":0}
+$ R 'sudo -n pft-backfill repair --apply --max-ledgers 1; echo repair-exit=$?'
+  pft-backfill repair - 2026-11-03T17:13:07Z | host sentry | container postfiatd-sentry | APPLY
+    caps: max-ledgers 1, interval 2 s, wait 90 s, max-runtime 600 s, public rpc on
+    before: complete_ledgers 7732452-7733097 | window 7732586-7733097 | missing interior 0, edge 0
+  pft-backfill: refused: pft-maint window is open (window=active) 4
+  repair-exit=4
+  (exit 0)
+CHECK ok   sentry repair --apply inside the window: REFUSED (exit 4, window named), nothing requested
+$ sudo -n cat /var/lib/pft-exporter/textfile/pft_backfill_drill.prom
+  # drill textfile written by backfill/drill/live-run.sh (20261103T171049Z); removed at the end of the run
+  pft_backfill_up{node="drill-gap"} 1
+  pft_backfill_node_full{node="drill-gap"} 1
+  pft_backfill_missing_ledgers{node="drill-gap",kind="interior"} 37
+  pft_backfill_missing_ledgers{node="drill-gap",kind="edge"} 0
+  pft_backfill_status_timestamp_seconds{node="drill-gap"} 1793725988
+  pft_backfill_up{node="drill-down"} 0
+  pft_backfill_status_timestamp_seconds{node="drill-down"} 1793725988
+  (exit 0)
+CHECK ok   drill textfile written: drill-gap 37 interior on a full node, drill-down up 0
+
+== 4. live gap on the sentry: stop postfiatd-sentry for 1080s, start, wait for full
+$ R 'sudo -n docker exec postfiatd-sentry curl -s -m 10 -d "{\"method\":\"server_info\"}" http://127.0.0.1:5005' | jq -c '.result.info | {server_state, complete_ledgers, validated: .validated_ledger.seq}'
+  {"server_state":"full","complete_ledgers":"7732452-7733100","validated":7733100}
+  (exit 0)
+$ R 'sudo -n docker stop -t 60 postfiatd-sentry'
+  postfiatd-sentry
+  (exit 0)
+CHECK ok   sentry stopped
+$ R 'sudo -n docker start postfiatd-sentry'
+  postfiatd-sentry
+  (exit 0)
+CHECK ok   sentry started after 1085s
+CHECK ok   sentry full 40s after the start
+CHECK ok   validator full again 0s later
+  2026-11-03T17:32:10Z sentry status: {"server_state":"full","ranges":[[7733295,7733476]],"window":[7732965,7733476],"missing_interior":0,"missing_edge":330,"gaps":[{"hi":7733294,"kind":"edge","lo":7732965,"size":330}]}
+  2026-11-03T17:32:32Z sentry status: {"server_state":"full","ranges":[[7733199,7733483]],"window":[7732972,7733483],"missing_interior":0,"missing_edge":227,"gaps":[{"hi":7733198,"kind":"edge","lo":7732972,"size":227}]}
+  2026-11-03T17:32:54Z sentry status: {"server_state":"full","ranges":[[7733190,7733490]],"window":[7732979,7733490],"missing_interior":0,"missing_edge":211,"gaps":[{"hi":7733189,"kind":"edge","lo":7732979,"size":211}]}
+
+== 5. drill alerts: both pairs firing and delivered
+  2026-11-03T17:33:44Z firing (1236s after the first drill write):
+    alertname=PFTBackfillCheckFailed,alertstate=firing,node=drill-down,severity=warning 1
+    alertname=PFTBackfillCheckFailed,alertstate=firing,node=sentry,severity=warning 1
+    alertname=PFTBackfillGap,alertstate=firing,node=drill-gap,severity=warning 1
+CHECK ok   both drill pairs firing (PFTBackfillGap drill-gap, PFTBackfillCheckFailed drill-down) (2/2)
+CHECK ok   no backfill alert for the validator
+CHECK ok   [FIRING] delivered to the throwaway topic for both drill pairs (2/2)
+
+== 6. end the window, then the live repair on the sentry
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+  (exit 0)
+$ R 'sudo -n pft-maint status --json' | jq -c '{window}'
+  {"window":"none"}
+  (exit 0)
+CHECK ok   window ended on both hosts (sentry after 30s)
+$ R 'sudo -n pft-backfill status; echo status-exit=$?'
+  pft-backfill status - 2026-11-03T17:34:30Z | host sentry | container postfiatd-sentry
+    server_state     full
+    validated        7733522
+    online_delete    512
+    complete_ledgers 7732965-7733522
+    window           7733011-7733522
+    held in window   512
+    missing          interior 0, edge 0
+  RESULT: PASS
+  status-exit=0
+  (exit 0)
+$ R 'sudo -n pft-backfill repair --max-ledgers 32 --interval 1 --wait 120 --max-runtime 900; echo repair-exit=$?'
+  pft-backfill repair - 2026-11-03T17:34:30Z | host sentry | container postfiatd-sentry | DRY RUN
+    caps: max-ledgers 32, interval 1 s, wait 120 s, max-runtime 900 s, public rpc on
+    before: complete_ledgers 7732965-7733522 | window 7733011-7733522 | missing interior 0, edge 0
+    plan: 0 ledger(s), newest first:  
+  RESULT: DRY RUN - nothing requested (add --apply)
+  repair-exit=0
+  (exit 0)
+CHECK ok   sentry repair dry run: exit 0, nothing requested
+  NOTE: normal sync closed every gap in the window before the repair could run; the repair path is proven by the
+  offline suite (fixture fallback, backfill/tests/run-repair-tests.sh) and the dry run above.
+$ sudo -n pft-backfill repair; echo repair-exit=$?
+  pft-backfill repair - 2026-11-03T17:34:32Z | host validator | container postfiatd | DRY RUN
+    caps: max-ledgers 16, interval 2 s, wait 90 s, max-runtime 600 s, public rpc on
+    before: complete_ledgers 7732865-7733523 | window 7733012-7733523 | missing interior 0, edge 0
+    plan: 0 ledger(s), newest first:  
+  RESULT: DRY RUN - nothing requested (add --apply)
+  repair-exit=0
+  (exit 0)
+CHECK ok   validator repair dry run exit 0
+
+== 7. recover: drill series healthy, every backfill alert clears
+$ sudo -n cat /var/lib/pft-exporter/textfile/pft_backfill_drill.prom
+  # drill textfile written by backfill/drill/live-run.sh (20261103T171049Z); removed at the end of the run
+  pft_backfill_up{node="drill-gap"} 1
+  pft_backfill_node_full{node="drill-gap"} 1
+  pft_backfill_missing_ledgers{node="drill-gap",kind="interior"} 0
+  pft_backfill_missing_ledgers{node="drill-gap",kind="edge"} 0
+  pft_backfill_status_timestamp_seconds{node="drill-gap"} 1793727287
+  pft_backfill_up{node="drill-down"} 1
+  pft_backfill_status_timestamp_seconds{node="drill-down"} 1793727287
+  (exit 0)
+    [RESOLVED] PFTBackfillCheckFailed/drill-down: 1
+    [RESOLVED] PFTBackfillGap/drill-gap: 1
+CHECK ok   both drill pairs left Prometheus with [RESOLVED] delivered (2/2)
+CHECK ok   no backfill alert pending/firing for any node (0 left)
+CHECK ok   refresher stopped, drill textfile removed
+$ curl -s -G http://127.0.0.1:9090/api/v1/query_range --data-urlencode 'query=ALERTS{alertname=~"PFTBackfillGap|PFTBackfillCheckFailed"}' --data-urlencode start=1793725849 --data-urlencode end=1793727530 --data-urlencode step=15 | jq -r '.data.result[] | "\(.metric.alertname) node=\(.metric.node) \(.metric.alertstate) first=\(.values[0][0] | todate) last=\(.values[-1][0] | todate) samples=\(.values | length)"' | sort
+  PFTBackfillCheckFailed node=drill-down firing first=2026-11-03T17:23:34Z last=2026-11-03T17:34:49Z samples=46
+  PFTBackfillCheckFailed node=drill-down pending first=2026-11-03T17:13:34Z last=2026-11-03T17:23:19Z samples=40
+  PFTBackfillCheckFailed node=sentry firing first=2026-11-03T17:28:49Z last=2026-11-03T17:38:34Z samples=40
+  PFTBackfillCheckFailed node=sentry pending first=2026-11-03T17:18:49Z last=2026-11-03T17:28:34Z samples=40
+  PFTBackfillGap node=drill-gap firing first=2026-11-03T17:33:34Z last=2026-11-03T17:34:49Z samples=6
+  PFTBackfillGap node=drill-gap pending first=2026-11-03T17:13:34Z last=2026-11-03T17:33:19Z samples=80
+  (exit 0)
+CHECK ok   query_range: both drill pairs firing during the run
+  live: PFTBackfillCheckFailed node=sentry while the sentry was stopped: 1 firing series (expected 1 for a 1080s stop)
+$ topic_msgs <redacted> | jq -r 'select(.title | test("PFTBackfill")) | "\(.time | todate) \(.title) \(.message)"'
+  2026-11-03T17:23:30Z [FIRING] PFTBackfillCheckFailed pft-backfill check failed on drill-down
+  2026-11-03T17:29:29Z [FIRING] PFTBackfillCheckFailed pft-backfill check failed on drill-down
+  2026-11-03T17:29:30Z [FIRING] PFTBackfillCheckFailed pft-backfill check failed on sentry
+  2026-11-03T17:33:30Z [FIRING] PFTBackfillGap 37 ledger(s) missing inside the online_delete window on drill-gap
+  2026-11-03T17:35:30Z [RESOLVED] PFTBackfillGap 37 ledger(s) missing inside the online_delete window on drill-gap
+  2026-11-03T17:35:30Z [RESOLVED] PFTBackfillCheckFailed pft-backfill check failed on drill-down
+  2026-11-03T17:35:31Z [FIRING] PFTBackfillCheckFailed pft-backfill check failed on sentry
+  (exit 0)
+
+== 8. metrics: units on both hosts, pull, Prometheus
+$ R 'sudo -n systemctl start pft-backfill.service; systemctl show -p Result --value pft-backfill.service'
+  success
+  (exit 0)
+$ sudo -n systemctl start pft-backfill.service pft-backfill-pull.service; systemctl show -p Result --value pft-backfill.service pft-backfill-pull.service; grep -hE '^pft_backfill_(up|missing_ledgers|repair_ledgers)' /var/lib/pft-exporter/textfile/pft_backfill*.prom
+  success
+  
+  success
+  pft_backfill_up{node="validator"} 1
+  pft_backfill_missing_ledgers{node="validator",kind="interior"} 0
+  pft_backfill_missing_ledgers{node="validator",kind="edge"} 0
+  pft_backfill_up{node="sentry"} 1
+  pft_backfill_missing_ledgers{node="sentry",kind="interior"} 0
+  pft_backfill_missing_ledgers{node="sentry",kind="edge"} 0
+  (exit 0)
+CHECK ok   units Result success, textfiles up 1 for validator and sentry
+$ sleep 45; curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=pft_backfill_up' | jq -r '.data.result[] | "\(.metric.node) \(.value[1])"' | sort
+  sentry 1
+  validator 1
+  (exit 0)
+CHECK ok   Prometheus: pft_backfill_up 1 for sentry and validator, no drill series left
+
+== 9. baselines: integrity accept on both hosts, fleet manifest sync, skew, rulecheck
+$ sudo -n pft-integrity verify | grep -E '^  \[(WARN|FAIL)\]|^RESULT' | sed -E 's/ +sha256.*//' | head -30
+    [WARN] bin:pft-backfill                             added    new file
+    [WARN] unit:pft-backfill-pull.service               added    new file
+    [WARN] unit:pft-backfill-pull.timer                 added    new file
+    [WARN] unit:pft-backfill-repair.service             added    new file
+    [WARN] unit:pft-backfill-repair.timer               added    new file
+    [WARN] unit:pft-backfill.service                    added    new file
+    [WARN] unit:pft-backfill.timer                      added    new file
+  RESULT: WARN - 146 unchanged, 7 warn, 0 fail -> exit 1
+  (exit 1)
+$ sudo -n pft-integrity accept --reason 'task_b2987318: pft-backfill 0188866 installed (script, parser, units, env, rulecheck.conf)' | tail -2
+  pft-integrity accept - 2026-11-03T17:40:27Z: re-baselined 153 items by <user>
+  manifest sha256: d1386d8dd2ce3ef1b60d1d7e9b5ec6223592bf7cdbd8182dee44d8f39781f9c6 -> f8061e4b10048d75dea2143ae34730c9e05ac89b278da93ad78996c5db636823 (logged to accept.log)
+  (exit 0)
+$ R 'sudo -n pft-integrity verify' | grep -E '^  \[(WARN|FAIL)\]|^RESULT' | sed -E 's/ +sha256.*//' | head -30
+    [WARN] bin:pft-backfill                             added    new file
+    [WARN] unit:pft-backfill-repair.service             added    new file
+    [WARN] unit:pft-backfill-repair.timer               added    new file
+    [WARN] unit:pft-backfill.service                    added    new file
+    [WARN] unit:pft-backfill.timer                      added    new file
+  RESULT: WARN - 86 unchanged, 5 warn, 0 fail -> exit 1
+  (exit 1)
+$ R "sudo -n pft-integrity accept --reason 'task_b2987318: pft-backfill 0188866 installed (script, parser, units, env); planned sentry stop/start'" | tail -2
+  pft-integrity accept - 2026-11-03T17:40:39Z: re-baselined 91 items by root
+  manifest sha256: 4a4a6dc65a1e0a80c0c50654d37cef71868a7c8dcdbd901f55452708bdc97486 -> 3d7a1c68d564be9befc01f44baddfbbba4ed9d7efb402d72497a93b8695db8ea (logged to accept.log)
+  (exit 0)
+$ sudo -n pft-maint start --ttl 20m --reason 'task_b2987318 pft-backfill live run 20261103T171049Z: fleet manifest sync'
+  window started: id m1793727639-3271653 until 2026-11-03T18:00:39Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   second window for the fleet sync
+$ sudo -n pft-fleet sync --addon fleet --to 0188866054fc4594d74549d386a1887d1093eecc --apply --reason 'task_b2987318 backfill manifest lines'
+  [2026-11-03T17:41:08Z] sync fleet to 0188866054fc4594d74549d386a1887d1093eecc (2026-11-03T17:10:46+00:00) REF main=0188866054fc4594d74549d386a1887d1093eecc
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN validator validator /usr/local/sbin/pft-fleet 0755 CURRENT 61cafcfcdaa9 61cafcfcdaa9 keep
+  PLAN validator validator /usr/local/lib/pft-fleet/fleet_lib.py 0644 CURRENT dcb37d26f33f dcb37d26f33f keep
+  PLAN validator validator /usr/local/lib/pft-fleet/manifest.tsv 0644 BEHIND 75a5ed4f8d8f b3cd5f91f36a write
+  PLAN validator validator /etc/systemd/system/pft-fleet.service 0644 CURRENT 3105a2f0a144 3105a2f0a144 keep
+  PLAN validator validator /etc/systemd/system/pft-fleet.timer 0644 CURRENT 79839ee00a81 79839ee00a81 keep
+  [2026-11-03T17:41:08Z] order: sentry validator
+  [2026-11-03T17:41:08Z] sentry: every fleet file already at 0188866054fc - nothing to do
+  [2026-11-03T17:41:08Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/lib/pft-fleet/manifest.tsv sha256 75a5ed4f8d8f -> /var/lib/pft-fleet/backup/20261103T174108Z-fleet-validator
+  WRITE validator /usr/local/lib/pft-fleet/manifest.tsv 75a5ed4f8d8f -> b3cd5f91f36a mode 0644
+  GATE validator sha256 /usr/local/lib/pft-fleet/manifest.tsv = target b3cd5f91f36a PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync fleet@0188866054fc (manifest.tsv)
+  [2026-11-03T17:41:49Z] SYNCED validator fleet -> 0188866054fc
+  [2026-11-03T17:41:49Z] sync complete
+  (exit 0)
+CHECK ok   fleet sync of the manifest exit 0
+$ sudo -n pft-fleet skew
+  ref main = 0188866054fc4594d74549d386a1887d1093eecc
+  host sentry     role sentry    ok
+  host validator  role validator ok
+  HOST       ADDON       STATE      DETAIL
+  sentry     alertpath   CURRENT    
+  sentry     apparmor    CURRENT    
+  sentry     audittrail  CURRENT    
+  sentry     authwatch   CURRENT    
+  sentry     backfill    CURRENT    
+  sentry     cluster     CURRENT    
+  sentry     divergence  CURRENT    
+  sentry     egress      CURRENT    
+  sentry     feewatch    CURRENT    
+  sentry     integrity   CURRENT    
+  sentry     logship     CURRENT    
+  sentry     maint       CURRENT    
+  sentry     mounts      CURRENT    
+  sentry     patch       CURRENT    
+  sentry     privesc     CURRENT    
+  sentry     resources   CURRENT    
+  sentry     rulecheck   CURRENT    
+  sentry     statewatch  CURRENT    
+  sentry     sysctl      CURRENT    
+  sentry     timesync    CURRENT    
+  sentry     upgradewatch CURRENT    
+  sentry     vulnscan    CURRENT    
+  sentry     watchdog    CURRENT    
+  validator  alertpath   CURRENT    
+  validator  apparmor    CURRENT    
+  validator  audittrail  CURRENT    
+  validator  authwatch   CURRENT    
+  validator  backfill    CURRENT    
+  validator  backup      CURRENT    
+  validator  cluster     CURRENT    
+  validator  divergence  CURRENT    
+  validator  egress      CURRENT    
+  validator  exporter    CURRENT    
+  validator  feewatch    CURRENT    
+  validator  fleet       CURRENT    
+  validator  integrity   CURRENT    
+  validator  logship     CURRENT    
+  validator  maint       CURRENT    
+  validator  monitor     CURRENT    
+  validator  mounts      CURRENT    
+  validator  patch       CURRENT    
+  validator  privesc     CURRENT    
+  validator  resources   CURRENT    
+  validator  retention   CURRENT    
+  validator  rulecheck   CURRENT    
+  validator  statewatch  CURRENT    
+  validator  sysctl      CURRENT    
+  validator  timesync    CURRENT    
+  validator  upgradewatch CURRENT    
+  validator  vulnscan    CURRENT    
+  validator  watchdog    CURRENT    
+  SUMMARY CURRENT=51 BEHIND=0 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 0)
+CHECK ok   pft-fleet skew exit 0, backfill CURRENT on both hosts
+$ sudo -n systemctl start pft-rulecheck.service; sudo -n journalctl -u pft-rulecheck.service --since -1min --no-pager -o cat | grep -E '^RESULT '
+  RESULT OK - rules: LIVE 97 PARTIAL 0 DEAD 0 ERROR 0 IGNORED 0 | textfiles: FRESH 31 STALE 0 MISSING 0 LEFTOVER 0 UNCONFIGURED 0 -> exit 0
+  (exit 0)
+CHECK ok   validator pft-rulecheck RESULT OK
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 153 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 91 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts after accept + sync
+
+== 10. restore, read back
+  drill textfile removed: yes
+  $ sudo -n pft-maint end
+    window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+  backfill alerts still pending/firing/active before the bridge restore: 0 (0s)
+  removed /etc/pft-maint/ntfy.env (absent before the run)
+  restored local:/etc/postfiat-monitor.env: sha256 matches pre-run copy: yes
+  restored local:/etc/pft-integrity.env: sha256 matches pre-run copy: yes
+  restored relay:/etc/pft-watchdog/ntfy.env: sha256 matches pre-run copy: yes
+  restored relay:/etc/pft-integrity.env: sha256 matches pre-run copy: yes
+  restored relay:/etc/pft-alertpath/ntfy.env: sha256 matches pre-run copy: yes
+  2026-11-03T17:42:57Z starting pft-alert-bridge (ntfy: on)
+  2026-11-03T17:43:00Z pft-alert-bridge listening
+  restored bridge: mounts the operator env file again: yes
+  catch-all holds no other active alert (0s)
+  narrow silence alertname=PFTContainerRestarted until last node start 17:31:20Z + 25 min (800s); expires by itself
+  catch-all silence expired: HTTP 200
+CHECK ok   env files byte-identical, bridge on the operator env, pft-maint env removed, window ended, drill file gone
+  throwaway topic: 13 message(s)
+    {"time":"2026-11-03T17:11:52Z","title":"[MAINT] start validator","message":"task_b2987318 pft-backfill live run 20261103T171049Z | until 2026-11-03T19:41:50Z (ttl 9000s) | sentry copy: pushed"}
+    {"time":"2026-11-03T17:23:30Z","title":"[FIRING] PFTBackfillCheckFailed","message":"pft-backfill check failed on drill-down"}
+    {"time":"2026-11-03T17:29:29Z","title":"[FIRING] PFTBackfillCheckFailed","message":"pft-backfill check failed on drill-down"}
+    {"time":"2026-11-03T17:29:30Z","title":"[FIRING] PFTBackfillCheckFailed","message":"pft-backfill check failed on sentry"}
+    {"time":"2026-11-03T17:33:30Z","title":"[FIRING] PFTBackfillGap","message":"37 ledger(s) missing inside the online_delete window on drill-gap"}
+    {"time":"2026-11-03T17:33:50Z","title":"[MAINT] end validator","message":"task_b2987318 pft-backfill live run 20261103T171049Z | ended by operator after 1319s | suppressed here: watchdog=0 monitor=0 integrity=0 | sentry copy: pushed"}
+    {"time":"2026-11-03T17:35:30Z","title":"[RESOLVED] PFTBackfillGap","message":"37 ledger(s) missing inside the online_delete window on drill-gap"}
+    {"time":"2026-11-03T17:35:30Z","title":"[RESOLVED] PFTBackfillCheckFailed","message":"pft-backfill check failed on drill-down"}
+    {"time":"2026-11-03T17:35:31Z","title":"[FIRING] PFTBackfillCheckFailed","message":"pft-backfill check failed on sentry"}
+    {"time":"2026-11-03T17:39:30Z","title":"[RESOLVED] PFTBackfillCheckFailed","message":"pft-backfill check failed on drill-down"}
+    {"time":"2026-11-03T17:39:30Z","title":"[RESOLVED] PFTBackfillCheckFailed","message":"pft-backfill check failed on sentry"}
+    {"time":"2026-11-03T17:40:41Z","title":"[MAINT] start validator","message":"task_b2987318 pft-backfill live run 20261103T171049Z: fleet manifest sync | until 2026-11-03T18:00:39Z (ttl 1200s) | sentry copy: pushed"}
+    {"time":"2026-11-03T17:42:51Z","title":"[MAINT] end validator","message":"task_b2987318 pft-backfill live run 20261103T171049Z: fleet manifest sync | ended by operator after 131s | suppressed here: watchdog=0 monitor=0 integrity=0 | sentry copy: pushed"}
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the run (2 topic(s), 0 with messages)
+  pft-integrity local: RESULT: PASS - 153 unchanged, 0 warn, 0 fail -> exit 0
+CHECK ok   pft-integrity PASS on local at the end
+CHECK ok   postfiatd full at the end (full)
+  pft-integrity relay: RESULT: PASS - 91 unchanged, 0 warn, 0 fail -> exit 0
+CHECK ok   pft-integrity PASS on relay at the end
+CHECK ok   postfiatd-sentry full at the end (full)
+
+live-run done 2026-11-03T17:46:07Z: 0 check(s) failed -> PASS

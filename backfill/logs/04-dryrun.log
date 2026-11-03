@@ -1,0 +1,19 @@
+pft-backfill repair dry run (read-only) - 2026-11-03T16:17:57Z - Ubuntu 22.04.5 LTS | commit 87938e868dbbb8d92bb1905a361dbf20388129b6 + working tree
+$ sha256sum backfill/pft-backfill.sh backfill/backfill_parse.py
+b2d86d52d2a573dc94f637852bd4dee94a75bf41357fb71dc48d73959aee8396  backfill/pft-backfill.sh
+eb5b357448f4398209609ce5d5b34d26cf23c2040f7d70f218f9817584bd6034  backfill/backfill_parse.py
+(exit 0)
+$ sudo bash backfill/pft-backfill.sh repair --max-ledgers 8
+pft-backfill repair - 2026-11-03T16:17:57Z | host validator | container postfiatd | DRY RUN
+  caps: max-ledgers 8, interval 2 s, wait 90 s, max-runtime 600 s, public rpc on
+  before: complete_ledgers 7731329-7732009 | window 7731498-7732009 | missing interior 0, edge 0
+  plan: 0 ledger(s), newest first:  
+RESULT: DRY RUN - nothing requested (add --apply)
+(exit 0)
+$ sudo bash backfill/pft-backfill.sh repair --apply --max-ledgers 8
+pft-backfill repair - 2026-11-03T16:17:59Z | host validator | container postfiatd | APPLY
+  caps: max-ledgers 8, interval 2 s, wait 90 s, max-runtime 600 s, public rpc on
+  before: complete_ledgers 7731329-7732010 | window 7731499-7732010 | missing interior 0, edge 0
+  plan: 0 ledger(s), newest first:  
+RESULT: PASS - nothing to repair
+(exit 0)

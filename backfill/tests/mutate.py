@@ -10,6 +10,7 @@ Usage: python3 tests/mutate.py [-j JOBS] [--timeout SEC] [IDS...]"""
 import argparse
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -265,15 +266,23 @@ def suite(path, timeout):
     try:
         for s in SUITES:
             env = dict(os.environ, SCRIPT=path)
-            p = subprocess.run(
+            # own session, so a timeout kills the whole tree (a hung mutant's
+            # grandchildren were left running when only the suite bash was killed)
+            p = subprocess.Popen(
                 ["bash", os.path.join(HERE, s)],
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                timeout=max(1, timeout - (time.time() - t0)),
-                check=False,
                 env=env,
+                start_new_session=True,
             )
-            out_all += p.stdout
+            try:
+                stdout, _ = p.communicate(timeout=max(1, timeout - (time.time() - t0)))
+            except subprocess.TimeoutExpired:
+                os.killpg(p.pid, signal.SIGKILL)
+                p.communicate()
+                raise
+            out_all += stdout
             rcs.append(p.returncode)
         return max(rcs), out_all, time.time() - t0
     except subprocess.TimeoutExpired:
