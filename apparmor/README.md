@@ -9,6 +9,15 @@ still blocks writes to the image, execution from writable directories and anythi
 
 ## Live proof (2026-11-03): found → fixed → verified
 
+> **Status 2026-11-03T09:15Z: the validator is back on `docker-default`; the sentry stays enforced.** About 10 min
+> after the validator apply, its hourly audit showed new DENIED records (`exec /usr/bin/du`, `tail`, `ls`; `df`
+> reading `/proc/*/mountinfo`): `pft-retention sample` (validator only, every 10 min) runs those inside the container.
+> The profile was learned on the sentry, which runs no retention sampler, and the gate's DENIED window ended before
+> the next sampler tick. The validator was rolled back with `pft-apparmor rollback --yes` in a pft-maint window
+> (health PASS, retention sample working again, 0 DENIED), and its audit timer is paused until a profile that also
+> covers the validator's own add-ons passes a gate that spans at least one tick of every timer that execs into the
+> container. The table below is the recorded run as it happened; the validator rows are not the current state.
+
 Recorded run [`logs/05-live-run.log`](logs/05-live-run.log) (`drill/live-run.sh`, sentry first, then validator,
 commit 50ff6dec044f2f1c870472724edc07c71b8f8187, clean tree). Header sha256 values (lines 3-6): `pft-apparmor.sh`
 `eaee2749…f468`, `install.sh` `aecd1140…c8da`, `drill/host-run.sh` `49408332…5dce`, `drill/live-run.sh`
