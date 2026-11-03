@@ -73,7 +73,11 @@ It also prints the steady-state size of the current setting (`2 x online_delete 
 4. Edits only `online_delete`/`advisory_delete` inside `[node_db]`, then validates the result: exactly one
    `[node_db]`, the new values present, `path` still set, `ledger_history <= online_delete`, and no other line
    changed (diff).
-5. Prints the diff, installs the file atomically with its original mode and checks its sha256.
+5. Prints the diff, installs the file atomically with its original mode and owner and checks its sha256. When the
+   config directory is a mount (the compose volume on the validator, the sentry's named volume), the file is written
+   through the mount's **host** path (`docker inspect` `Mounts[].Source`, after checking that the host file is the
+   container's file), never from inside the container: [`apparmor/`](../apparmor/)'s enforced profile denies the node
+   writes to its own config, as a read-only mount would. Without such a mount it falls back to an in-container rename.
 6. Restarts the container once and waits for `server_state=full` (`--timeout`, default 900 s). If the node does not
    reach `full` in time, it restores the backup, restarts again and exits non-zero.
 
@@ -96,6 +100,10 @@ stub `curl`), never against the live node: apply 1024, 0600 backup, no-op re-app
 adding `advisory_delete=1`, rejected values (`online_delete` 100, `ledger_history` > `online_delete`), and
 auto-rollback when the node never reaches `full` (11/11 PASS). Log:
 [`logs/retention/1-sandbox-apply-rollback.log`](../logs/retention/1-sandbox-apply-rollback.log).
+Since cf382cb the sandbox mounts `/etc/postfiatd` as a **read-only** named volume, so the node cannot write its own
+config: two more checks (the container's write fails; apply logged "via host mount"), 13/13 PASS, and a mutant that
+restores the old in-container write fails 4 checks:
+[`logs/retention/2-sandbox-readonly-cfg.log`](../logs/retention/2-sandbox-readonly-cfg.log).
 
 ## Live proof
 

@@ -1,0 +1,150 @@
+# retention sandbox (read-only config volume) - 2026-11-03T10:10:33Z
+OS: Ubuntu 22.04.5 LTS
+commit: cf382cb4a422e63bdb74d1c1d500c53dab69c7b8 (clean: 0 changes)
+1115f0717f9444631d5903363972d5fd83f0d08c7bb6c3df48f34e531466e122  retention/pft-retention.sh
+a6f063b1962d35c5a2112c8424bf4f51cf894ee25a499f68fa91e3cc661c8f62  retention/test-sandbox.sh
+$ sudo ./test-sandbox.sh
+OS: Ubuntu 22.04.5 LTS
+sandbox container up; initial [node_db]:
+type=NuDB
+online_delete=512
+advisory_delete=0
+---- container cannot write cfg: sh -c ! docker exec pft-retention-sandbox sh -c 'echo >> /etc/postfiatd/postfiatd.cfg' 2>/dev/null
+PASS container cannot write cfg (exit 0)
+---- apply 1024: bash -c ./pft-retention.sh apply --online-delete 1024 --timeout 60 2>&1 | tee "$0"; exit "${PIPESTATUS[0]}" /tmp/tmp.t7X1Y4cILc/apply1.out
+[2026-11-03T10:10:39Z] OS: Ubuntu 22.04.5 LTS
+[2026-11-03T10:10:40Z] validate: OK ([node_db] single section, online_delete=1024, ledger_history=unset, only node_db keys changed)
+[2026-11-03T10:10:40Z] before -> after ([node_db] lines only):
+4c4
+< online_delete=512
+---
+> online_delete=1024
+[2026-11-03T10:10:40Z] backup: /tmp/tmp.t7X1Y4cILc/backups/postfiatd.cfg.20261103T101040Z (600, sha256 39617a5949109ffb...)
+[2026-11-03T10:10:44Z] installed /etc/postfiatd/postfiatd.cfg in pft-retention-sandbox (via host mount, mode 644, sha256 302aa1dad97bb7b7...)
+[2026-11-03T10:10:44Z] restarting container pft-retention-sandbox (once)
+[2026-11-03T10:10:56Z] server_state=full
+[2026-11-03T10:10:56Z] apply OK: server_state full with online_delete=1024
+PASS apply 1024 (exit 0)
+---- apply wrote via host mount: grep -q via host mount /tmp/tmp.t7X1Y4cILc/apply1.out
+PASS apply wrote via host mount (exit 0)
+type=NuDB
+online_delete=1024
+advisory_delete=0
+---- backup is 0600: test 600 = 600
+PASS backup is 0600 (exit 0)
+---- apply 1024 again (no-op): ./pft-retention.sh apply --online-delete 1024
+[2026-11-03T10:10:57Z] OS: Ubuntu 22.04.5 LTS
+[2026-11-03T10:10:58Z] no change: [node_db] already has online_delete=1024; nothing to do (no restart).
+[node_db]
+type=NuDB
+path=/var/lib/postfiatd/db/nudb
+online_delete=1024
+advisory_delete=0
+
+PASS apply 1024 again (no-op) (exit 0)
+---- rollback: ./pft-retention.sh rollback --timeout 60
+[2026-11-03T10:10:58Z] OS: Ubuntu 22.04.5 LTS
+[2026-11-03T10:10:59Z] rollback to /tmp/tmp.t7X1Y4cILc/backups/postfiatd.cfg.20261103T101040Z; current -> restored ([node_db] lines only):
+4c4
+< online_delete=1024
+---
+> online_delete=512
+[2026-11-03T10:10:59Z] pre-rollback copy: /tmp/tmp.t7X1Y4cILc/backups/postfiatd.cfg.pre-rollback.20261103T101059Z (600)
+[2026-11-03T10:11:00Z] installed /etc/postfiatd/postfiatd.cfg in pft-retention-sandbox (via host mount, mode 644, sha256 39617a5949109ffb...)
+[2026-11-03T10:11:00Z] restarting container pft-retention-sandbox (once)
+[2026-11-03T10:11:14Z] server_state=full
+[2026-11-03T10:11:14Z] rollback OK: server_state full
+PASS rollback (exit 0)
+type=NuDB
+online_delete=512
+advisory_delete=0
+---- rollback again (no-op): ./pft-retention.sh rollback
+[2026-11-03T10:11:14Z] OS: Ubuntu 22.04.5 LTS
+[2026-11-03T10:11:15Z] no change: running config already equals /tmp/tmp.t7X1Y4cILc/backups/postfiatd.cfg.20261103T101040Z (no restart).
+PASS rollback again (no-op) (exit 0)
+---- reject online_delete 100: ./pft-retention.sh apply --online-delete 100
+[2026-11-03T10:11:15Z] OS: Ubuntu 22.04.5 LTS
+[2026-11-03T10:11:15Z] ERROR: --online-delete must be an integer >= 256.
+PASS reject online_delete 100 (exit 2)
+---- add advisory_delete=1: ./pft-retention.sh apply --online-delete 512 --advisory-delete 1 --timeout 60
+[2026-11-03T10:11:15Z] OS: Ubuntu 22.04.5 LTS
+[2026-11-03T10:11:15Z] validate: OK ([node_db] single section, online_delete=512, advisory_delete=1, ledger_history=unset, only node_db keys changed)
+[2026-11-03T10:11:15Z] before -> after ([node_db] lines only):
+5c5
+< advisory_delete=0
+---
+> advisory_delete=1
+[2026-11-03T10:11:15Z] backup: /tmp/tmp.t7X1Y4cILc/backups/postfiatd.cfg.20261103T101115Z (600, sha256 39617a5949109ffb...)
+[2026-11-03T10:11:16Z] installed /etc/postfiatd/postfiatd.cfg in pft-retention-sandbox (via host mount, mode 644, sha256 333d0c2023e3968f...)
+[2026-11-03T10:11:16Z] restarting container pft-retention-sandbox (once)
+[2026-11-03T10:11:27Z] server_state=full
+[2026-11-03T10:11:27Z] apply OK: server_state full with online_delete=512 advisory_delete=1
+PASS add advisory_delete=1 (exit 0)
+type=NuDB
+online_delete=512
+advisory_delete=1
+---- rollback advisory: ./pft-retention.sh rollback --timeout 60
+[2026-11-03T10:11:28Z] OS: Ubuntu 22.04.5 LTS
+[2026-11-03T10:11:28Z] rollback to /tmp/tmp.t7X1Y4cILc/backups/postfiatd.cfg.20261103T101115Z; current -> restored ([node_db] lines only):
+5c5
+< advisory_delete=1
+---
+> advisory_delete=0
+[2026-11-03T10:11:28Z] pre-rollback copy: /tmp/tmp.t7X1Y4cILc/backups/postfiatd.cfg.pre-rollback.20261103T101128Z (600)
+[2026-11-03T10:11:29Z] installed /etc/postfiatd/postfiatd.cfg in pft-retention-sandbox (via host mount, mode 644, sha256 39617a5949109ffb...)
+[2026-11-03T10:11:29Z] restarting container pft-retention-sandbox (once)
+[2026-11-03T10:11:42Z] server_state=full
+[2026-11-03T10:11:42Z] rollback OK: server_state full
+PASS rollback advisory (exit 0)
+---- reject ledger_history>od: ./pft-retention.sh apply --online-delete 1024
+[2026-11-03T10:11:42Z] OS: Ubuntu 22.04.5 LTS
+[2026-11-03T10:11:42Z] ERROR: validate: [ledger_history] 4000 > online_delete 1024 (postfiatd refuses to start).
+PASS reject ledger_history>od (exit 2)
+---- never-full -> auto-rollback: ./pft-retention.sh apply --online-delete 2048 --timeout 30
+[2026-11-03T10:11:42Z] OS: Ubuntu 22.04.5 LTS
+[2026-11-03T10:11:43Z] validate: OK ([node_db] single section, online_delete=2048, ledger_history=unset, only node_db keys changed)
+[2026-11-03T10:11:43Z] before -> after ([node_db] lines only):
+4c4
+< online_delete=512
+---
+> online_delete=2048
+[2026-11-03T10:11:43Z] backup: /tmp/tmp.t7X1Y4cILc/backups/postfiatd.cfg.20261103T101143Z (600, sha256 39617a5949109ffb...)
+[2026-11-03T10:11:44Z] installed /etc/postfiatd/postfiatd.cfg in pft-retention-sandbox (via host mount, mode 644, sha256 8a2085439afe730c...)
+[2026-11-03T10:11:44Z] restarting container pft-retention-sandbox (once)
+[2026-11-03T10:11:56Z] server_state=connected
+[2026-11-03T10:12:27Z] node not full within 30s: rolling back to /tmp/tmp.t7X1Y4cILc/backups/postfiatd.cfg.20261103T101143Z
+[2026-11-03T10:12:28Z] installed /etc/postfiatd/postfiatd.cfg in pft-retention-sandbox (via host mount, mode 644, sha256 39617a5949109ffb...)
+[2026-11-03T10:12:28Z] restarting container pft-retention-sandbox (once)
+[2026-11-03T10:12:39Z] server_state=full
+[2026-11-03T10:12:39Z] ERROR: apply failed and was rolled back.
+PASS never-full -> auto-rollback (exit 2)
+type=NuDB
+online_delete=512
+advisory_delete=0
+---- config back at 512: sh -c docker exec pft-retention-sandbox grep -qx 'online_delete=512' /etc/postfiatd/postfiatd.cfg
+PASS config back at 512 (exit 0)
+backups kept: 5 (dir mode 700)
+RESULT: 13 passed, 0 failed
+(exit 0)
+
+## mutant: install_cfg forced to the old in-container write (hd=""); the suite must FAIL
+327c327
+<   hd="$(cfg_host_dir)"
+---
+>   hd=""  # MUTANT: old in-container write
+$ sudo ./test-sandbox.sh   # mutant copy
+PASS container cannot write cfg (exit 0)
+FAIL apply 1024 (exit 2, want 0)
+FAIL apply wrote via host mount (exit 1, want 0)
+PASS backup is 0600 (exit 0)
+FAIL apply 1024 again (no-op) (exit 2, want 0)
+PASS rollback (exit 0)
+PASS rollback again (no-op) (exit 0)
+PASS reject online_delete 100 (exit 2)
+FAIL add advisory_delete=1 (exit 2, want 0)
+PASS rollback advisory (exit 0)
+PASS reject ledger_history>od (exit 2)
+PASS never-full -> auto-rollback (exit 2)
+PASS config back at 512 (exit 0)
+RESULT: 9 passed, 4 failed
+(exit 1)
