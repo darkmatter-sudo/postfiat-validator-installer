@@ -1,0 +1,139 @@
+# keyescrow 03 - offline suites (inventory + escrow with real age), lint - 2026-11-03T19:32:54Z - commit 9a120cefcd0209b9508ce3bd62672a6aa1a1ff66 - Ubuntu 22.04.5 LTS
+$ sha256sum keyescrow/pft-keyescrow.sh keyescrow/keyescrow_tar.py keyescrow/tests/run-tests.sh keyescrow/tests/run-escrow-tests.sh
+6b7acd6118d871b3cf3413fdffbb9b3dd4805e80970aa741b16530a390359cbc  keyescrow/pft-keyescrow.sh
+64f6e2c84c801ab58b2bdc6faaa9a1c48b7ffcd1ea6e0f901d6a305687e7089b  keyescrow/keyescrow_tar.py
+dfd6b78480eb1d304826582e80c1854cb5b78daaa883485e3f259a343d2610ec  keyescrow/tests/run-tests.sh
+71a812929f7d60c32d9f09e716b59a20d330cfe873f6042ef2956a3d9241a374  keyescrow/tests/run-escrow-tests.sh
+(exit 0)
+$ age --version; dpkg-query -W age
+1.0.0
+age	1.0.0-1ubuntu0.1
+(exit 0)
+$ shellcheck keyescrow/pft-keyescrow.sh keyescrow/tests/run-tests.sh keyescrow/tests/run-escrow-tests.sh
+(exit 0)
+$ ruff check keyescrow/keyescrow_tar.py && ruff format --check keyescrow/keyescrow_tar.py
+All checks passed!
+1 file already formatted
+(exit 0)
+$ nice -n 15 timeout 300 bash keyescrow/tests/run-tests.sh </dev/null
+ok   bare: exit 2
+ok   bare: required items missing
+ok   bare: optional item absent, not missing
+ok   bare: result line counts
+ok   bare: last escrow never
+ok   validator: sentry-only item not listed
+ok   sentry: validator-only item not listed, sentry-only listed
+ok   present: exit 1 (never escrowed)
+ok   present: all ok
+ok   present: no fp_key -> fp n/a, escrow new
+ok   present: counts
+ok   present: owners never printed
+ok   mode 644 (want 600): perm, exit 2
+ok   owner differs: perm, owner BAD, name not printed
+ok   group differs: perm, group BAD
+ok   group '-' is not checked (a:key)
+ok   symlink: perm 'not a regular file'
+ok   directory in place of an optional file: perm
+ok   unreadable: state + exit 2, no fingerprint
+ok   bad machine-id: fss missing (no path guessed), exit 2
+ok   fp_key: 16-hex fingerprints
+ok   fingerprint is keyed: differs from sha256(file)
+ok   fingerprint = sha256(fp_key || file)
+ok   escrowed + unchanged: exit 0, all same
+ok   last escrow time printed (UTC)
+ok   one byte appended: drift, exit 1
+ok   drift counted
+ok   item missing from the escrow manifest: new
+ok   garbage escrowed_at: treated as never
+ok   json: valid, host, exit
+ok   json: one object per applicable item
+ok   json: item fields
+ok   json: optional absent item
+ok   json: perm finding carries exit 2 and detail
+ok   textfile: written, 0644
+ok   textfile: state counts
+ok   textfile: drift items (never escrowed = 4 new)
+ok   textfile: last escrow 0, exit code 2
+ok   textfile: collect timestamp recent
+ok   textfile: no temp file left
+ok   textfile: every sample line has a HELP'd metric
+ok   textfile dir not writable: exit 2, named
+ok   positive control: the marker is in the secret files
+ok   positive control: a grep for the marker finds it in a string that has it
+ok   no secret bytes in text, json, textfile output
+ok   fp_key bytes never printed
+ok   unknown option: exit 3
+ok   bad HOST_LABEL: exit 3
+ok   no command: exit 3 + usage
+ok   registry: 15 rows, 8 tab-separated fields each
+ok   registry: unique ids
+ok   registry: modes are 3 octal digits, need is req|opt, hosts both|validator|sentry
+ok   cite cluster:node_seed: cluster/pft-cluster.sh:78 names node_seed
+ok   cite cluster:fp_key: cluster/pft-cluster.sh:80 names fp_key
+ok   cite cluster:env: cluster/install.sh:17 names pft-cluster.env
+ok   cite logship:env: logship/pft-logship.sh:40 names pft-logship.env
+ok   cite logship:host_key: logship/pft-logship.sh:115 names host.key
+ok   cite logship:ca_key: logship/pft-logship.sh:237 names ca.key
+ok   cite journald:fss: audittrail/pft-audittrail.sh:87 names fss
+ok   cite alertpath:hmac: alertpath/pft-alertpath.sh:168 names hmac.key
+ok   cite watchdog:hmac: watchdog/pft-heartbeat.sh:14 names hmac.key
+ok   cite ntfy:monitor: monitor/install-monitor.sh:15 names postfiat-monitor.env
+ok   cite ntfy:maint: maint/install.sh:36 names ntfy.env
+ok   cite ntfy:alertpath: alertpath/pft-alertpath.sh:300 names ntfy.env
+ok   cite ntfy:watchdog: watchdog/install.sh:12 names ntfy.env
+ok   cite ntfy:alerts: alerts/run-stack.sh:13 names NTFY_ENV_FILE
+ok   cite valkeys:keys: valkeys/pft-valkeys.sh:33 names validator-keys.json
+RESULT: 67 passed, 0 failed
+(exit 0)
+$ nice -n 15 timeout 600 bash keyescrow/tests/run-escrow-tests.sh </dev/null
+age 1.0.0
+ok   keygen: exit 0, recipient printed
+ok   keygen: identity + fp_key 0600, state dir 0700
+ok   keygen: identity never printed
+ok   keygen again: refused (exit 4), identity unchanged
+ok   pubkey: both hosts, different
+ok   set-peer: malformed refused (exit 3)
+ok   set-peer: own recipient refused
+ok   seal without a peer: refused (exit 4)
+ok   set-peer: conf line written, conf 0600
+ok   seal: exit 0, 4 items
+ok   seal: outbox gen committed (age + meta), no temp files
+ok   seal: meta fields
+ok   seal: ciphertext and meta hold no secret bytes, meta no plain sha256 of a secret
+ok   positive control: the marker is in the source secret
+ok   seal: only the PEER can decrypt (sentry identity ok, validator identity fails)
+ok   decrypted payload carries the exact secret bytes (in memory)
+ok   seal with a perm finding: refused (exit 4), item named, nothing new
+ok   escrow: refused without PEER_SSH (exit 4)
+ok   escrow: PASS both directions
+ok   escrow: sentry verified the validator gen in memory (4 items ok)
+ok   escrow: validator verified the sentry gen (4 items ok) and the sentry acked
+ok   escrow: each side holds one verified generation of the other
+ok   after escrow: validator inventory exit 0, all same
+ok   after escrow: sentry inventory exit 0, all same
+ok   no plaintext secret anywhere in either STATE_DIR (outbox, store, escrowed.tsv)
+ok   positive control: the same recursive grep finds the marker in a secret dir
+ok   no secret bytes in the escrow output
+ok   held generations 0600 in 0700 dirs
+ok   changed secret: drift, exit 1
+ok   re-escrow: drift gone, exit 0
+ok   KEEP=2 on the sentry: 2 generations held after 3 escrows
+ok   KEEP default 7 on the validator: 3 held
+ok   verify: newest ok, exit 0, textfile ok=1 generations=2
+ok   tamper fixture: exactly one byte differs
+ok   one-byte tamper: sha256 MISMATCH, exit 2, textfile ok=0
+ok   tamper + re-hashed meta: age authentication fails, VERIFY FAILED, exit 2
+ok   restored: --all checks both generations, exit 0
+ok   receive: extra member rejected
+ok   receive: size differs from meta rejected
+ok   receive: a generation already held is rejected
+ok   receive refusals: held set unchanged, no temp files
+ok   serve receive with the host's own label: refused (exit 3)
+ok   serve: unknown verb refused (exit 3)
+ok   serve ack of a generation never sealed: refused (exit 4)
+ok   serve export of a non-generation name: refused (exit 4)
+ok   wrong recipient: escrow FAIL (exit 2), sentry VERIFY FAILED
+ok   wrong recipient: escrowed.tsv not updated
+ok   wrong recipient: the undecryptable generation was discarded, good ones kept
+RESULT: 48 passed, 0 failed
+(exit 0)
