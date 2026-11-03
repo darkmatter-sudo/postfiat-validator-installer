@@ -176,11 +176,29 @@ delivered as `[FIRING]`, switches every series to the healthy set, waits for eve
 delivered as `[RESOLVED]`, then restores and reads back the operator topics (count only, never printed).
 `PREFLIGHT_ONLY=1` runs step 0 alone (nothing changed).
 
-Recorded run (log 10): 19 checks ok, 0 failed. All 7 pairs fired (940 s after the first replay, the 15 min
-`PFTNodeVersionLag` hold being the longest) and all 7 resolved 74 s after the healthy replay. The throwaway topic got
-16 messages (7 `[FIRING]`, 7 `[RESOLVED]`, 2 `[MAINT]`); both operator topics got 0. The sentry runs no
-Prometheus/Alertmanager: `host=sentry` alerts are evaluated on the validator from the pulled textfile, so the drill
-runs there.
+Because `pft-rulecheck` grades every textfile, the back-dated `drill-stale` file is also `PFTTextfileStale` there
+(held by the drill silence). Before the silence expires, `restore()` re-runs `pft-rulecheck` and waits until no
+alert in Prometheus or Alertmanager names a drill file. It then waits `READBACK_WAIT` (150 s) before counting the
+messages on the operator topics.
+
+Recorded runs, all three published:
+
+- **Run 10 (log 10)**, at `adfa4c4`: 19 checks ok, 0 failed, all 7 pairs FIRING then RESOLVED. **It still leaked
+  one alert.** restore() expired the silence before rulecheck's next run, so one `[FIRING] PFTTextfileStale`
+  (`file=pft_upgradewatch_drill-stale.prom`) reached the operator topic at 05:32:44Z. That was 20 s after the
+  read-back had counted 0, so the log cannot show it. I silenced that one series, it cleared at 05:36:28Z, and the
+  harness was fixed in `6c20ae5` (rulecheck re-run + clear wait + longer read-back).
+- **Run 12 (log 12)**, at `6c20ae5`: 18 ok, **1 FAIL**. The 7 pairs and the new clear step passed ("0 (0s)"). The
+  operator-topic check failed on 2 messages that I caused outside the drill, 17-23 s after it started (05:37:11Z):
+  my own notification to the operator explaining the run-10 alert, and Alertmanager's `[RESOLVED] PFTTextfileStale`
+  for that alert, released when I expired my cleanup silence.
+- **Run 13 (log 13)**, at `6c20ae5`, nothing else running: **19 checks ok, 0 failed**. All 7 pairs fired 939 s after
+  the first replay (the 15 min `PFTNodeVersionLag` hold is the longest) and resolved 95 s after the healthy replay.
+  Drill-file alerts were cleared after 20 s. The throwaway topic got 16 messages (7 `[FIRING]`, 7 `[RESOLVED]`,
+  2 `[MAINT]`), and both operator topics got 0.
+
+The sentry runs no Prometheus/Alertmanager: `host=sentry` alerts are evaluated on the validator from the pulled
+textfile, so the drill runs there.
 
 ## Logs
 
@@ -198,5 +216,7 @@ Raw output of the commands run on the validator and the sentry (Ubuntu 22.04.5 L
 | [`07-mutants.log`](logs/07-mutants.log) | recorded mutant run at `0e80c1a` (control first) | `59 killed ... of 59, 0 survived` |
 | [`08-install.log`](logs/08-install.log) | two-host install at `55bc1e5` through pft-fleet in a pft-maint window ([MAINT] to a throwaway topic) | 28 checks ok, 0 failed |
 | [`09-drill-preflight.log`](logs/09-drill-preflight.log) | `PREFLIGHT_ONLY=1 drill/live-run.sh`: step 0 only, fixture dry run, redaction control. Smoke run before the commit: same `live-run.sh` sha256 as log 10; `make_drill_fixtures.py` was `ruff format`ted afterwards (sha256 `df16c489...` here, `9e76aee2...` in log 10) | 1 check ok, nothing changed |
-| [`10-live-drill.log`](logs/10-live-drill.log) | recorded alert drill at `adfa4c4` | 7/7 pairs FIRING then RESOLVED, operator topics 0 messages, 19 checks ok, 0 failed |
+| [`10-live-drill.log`](logs/10-live-drill.log) | recorded alert drill at `adfa4c4` | 7/7 pairs FIRING then RESOLVED, 19 checks ok; **one PFTTextfileStale leaked to the operator 20 s after its read-back** (see Alert drill) |
 | [`11-live-values.log`](logs/11-live-values.log) | `drill/live-values.sh` after the drill | `up 1`, not blocked, 0 unsupported majorities, majority time 259200 s, build 1.0.9 = foundation, 19 / 16 versioned peers, 0 newer; 0 upgradewatch alerts |
+| [`12-live-drill-fail.log`](logs/12-live-drill-fail.log) | drill re-run at `6c20ae5` (rulecheck clear step) | 18 ok, 1 FAIL: 2 operator messages I caused right after the start (not drill output) |
+| [`13-live-drill.log`](logs/13-live-drill.log) | drill re-run at `6c20ae5`, nothing else running | 7/7 pairs FIRING then RESOLVED, drill-file alerts cleared, operator topics 0 messages, 19 checks ok, 0 failed |
