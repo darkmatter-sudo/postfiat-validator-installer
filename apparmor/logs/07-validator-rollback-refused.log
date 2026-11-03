@@ -1,0 +1,41 @@
+# validator rollback - 2026-11-03T09:12:53Z - Ubuntu 22.04.5 LTS - pft-apparmor sha256 eaee2749b42865135ddd98682282a0bbed9803b7a3642ef1149320c3fb91f468
+pft-maint ntfy -> throwaway topic (not printed)
+AM silence 994e675a-205b-4e8c-ae4d-b42b24832838 alertname!=PFTAlertPipelineWatchdog until 2026-11-03T09:52:53Z
+$ sudo pft-maint start --ttl 30m --reason "task_faf99695 pft-apparmor validator rollback (profile blocks pft-retention sample)"
+window started: id m1793697173-2223131 until 2026-11-03T09:42:53Z | sentry copy: pushed
+(exit 0)
+$ sudo pft-apparmor audit | tail -3
+  [PASS] boot               /etc/apparmor.d/pft-postfiatd parses; apparmor.service enabled
+  [WARN] denials            16 DENIED event(s) in the last 86402s: exec /usr/bin/tail x4; exec /usr/bin/ls x4; exec /usr/bin/du x4; up to 2026-11-03T08:54:17Z acknowledged: task_faf99695 live drill: deliberate negative controls on validator (gshadow, unlisted exec, volume write, volume exec)
+RESULT: FAIL - 1 finding(s)
+(exit 1)
+$ sudo pft-apparmor rollback --yes
+2026-11-03T09:13:01Z rollback: REFUSED - window has 1794s left, needs 2*HEALTH_BUDGET+MAINT_MARGIN=2100s; nothing changed
+(exit 4)
+$ sudo docker inspect postfiatd --format "{{.AppArmorProfile}} {{.State.Status}} {{.HostConfig.CpuShares}} {{.HostConfig.MemoryReservation}}"
+pft-postfiatd running 8192 1610612736
+(exit 0)
+$ sudo docker exec postfiatd curl -s -m 10 -d "{\"method\":\"server_info\"}" http://127.0.0.1:5005 | jq -r ".result.info | [.server_state, .peers] | @tsv"
+full	11
+(exit 0)
+$ sudo systemctl start pft-retention-sample.service; sudo journalctl -u pft-retention-sample.service --since "-1min" --no-pager -o cat | grep -vE "^(Start|Finish|pft-retention-sample)"
+WARNING: Error loading config file: open /root/.docker/config.json: permission denied
+WARNING: Error loading config file: open /root/.docker/config.json: permission denied
+WARNING: Error loading config file: open /root/.docker/config.json: permission denied
+WARNING: Error loading config file: open /root/.docker/config.json: permission denied
+WARNING: Error loading config file: open /root/.docker/config.json: permission denied
+sh: 1: tail: Permission denied
+WARNING: Error loading config file: open /root/.docker/config.json: permission denied
+df: Warning: cannot read table of mounted file systems: Permission denied
+WARNING: Error loading config file: open /root/.docker/config.json: permission denied
+1793697186,2026-11-03T09:13:06Z,full,7723592,7722625,7723592,14330917,0,76998987776,103865303040,none
+(exit 0)
+$ sudo ausearch --input-logs -m AVC -ts $(date -d @1793697182 +'%m/%d/%y %H:%M:%S') -i </dev/null 2>/dev/null | grep -c DENIED
+8
+(exit 0)
+$ sudo pft-maint end --reason "rollback done"
+window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+(exit 0)
+$ sudo rm -f /etc/pft-maint/ntfy.env
+(exit 0)
+rollback rc=4  end 2026-11-03T09:13:10Z

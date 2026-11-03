@@ -1,0 +1,153 @@
+fleet sync retention,apparmor - 2026-11-03T10:25:46Z - Ubuntu 22.04.5 LTS - repo HEAD 3dbd44748be2a7766ad4ec4ad3c37739d2778225 (clean: yes)
+
+== 1. point pft-maint at a throwaway topic (real file kept with mode/owner/mtime as $BK)
+real /etc/pft-maint/ntfy.env present before: 0
+$ { [ $HAD = 0 ] || sudo -n cp -p $NE $BK; } && printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' "$TT" | sudo -n tee $NE >/dev/null && sudo -n chmod 600 $NE && sudo -n stat -c '%a %U' $NE
+  600 root
+  (exit 0)
+CHECK ok   throwaway target installed
+
+== 2. window + sync of retention,apparmor to HEAD
+$ sudo -n pft-maint start --ttl 15m --reason 'task_faf99695 fleet sync retention,apparmor'
+  window started: id m1793701546-2407942 until 2026-11-03T10:40:46Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint window open
+$ sudo -n pft-fleet sync --addon retention --to 3dbd44748be2a7766ad4ec4ad3c37739d2778225 --apply --reason 'task_faf99695 retention host-side cfg write + apparmor add-on exercise'
+  [2026-11-03T10:25:57Z] sync retention to 3dbd44748be2a7766ad4ec4ad3c37739d2778225 (2026-11-03T10:24:55+00:00) REF main=3dbd44748be2a7766ad4ec4ad3c37739d2778225
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN validator validator /usr/local/bin/pft-retention 0755 BEHIND 40f2a68bf1d6 1115f0717f94 write
+  PLAN validator validator /etc/systemd/system/pft-retention-sample.service 0644 CURRENT 042112e8955b 042112e8955b keep
+  PLAN validator validator /etc/systemd/system/pft-retention-sample.timer 0644 CURRENT 821789a43832 821789a43832 keep
+  [2026-11-03T10:25:57Z] order: sentry validator
+  [2026-11-03T10:25:57Z] sentry: every retention file already at 3dbd44748be2 - nothing to do
+  [2026-11-03T10:25:57Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/bin/pft-retention sha256 40f2a68bf1d6 -> /var/lib/pft-fleet/backup/20261103T102557Z-retention-validator
+  WRITE validator /usr/local/bin/pft-retention 40f2a68bf1d6 -> 1115f0717f94 mode 0755
+  GATE validator sha256 /usr/local/bin/pft-retention = target 1115f0717f94 PASS
+  GATE validator syntax /usr/local/bin/pft-retention bash -n PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync retention@3dbd44748be2 (pft-retention)
+  [2026-11-03T10:26:16Z] SYNCED validator retention -> 3dbd44748be2
+  [2026-11-03T10:26:16Z] sync complete
+  (exit 0)
+CHECK ok   fleet sync retention exit 0
+$ sudo -n pft-fleet sync --addon apparmor --to 3dbd44748be2a7766ad4ec4ad3c37739d2778225 --apply --reason 'task_faf99695 retention host-side cfg write + apparmor add-on exercise'
+  [2026-11-03T10:26:26Z] sync apparmor to 3dbd44748be2a7766ad4ec4ad3c37739d2778225 (2026-11-03T10:24:55+00:00) REF main=3dbd44748be2a7766ad4ec4ad3c37739d2778225
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN sentry sentry /usr/local/bin/pft-apparmor 0755 BEHIND eaee2749b428 30397bba3441 write
+  PLAN sentry sentry /etc/systemd/system/pft-apparmor.service 0644 CURRENT 174a14db9bf3 174a14db9bf3 keep
+  PLAN sentry sentry /etc/systemd/system/pft-apparmor.timer 0644 CURRENT 5e3efcdd1fcb 5e3efcdd1fcb keep
+  PLAN validator validator /usr/local/bin/pft-apparmor 0755 BEHIND eaee2749b428 30397bba3441 write
+  PLAN validator validator /etc/systemd/system/pft-apparmor.service 0644 CURRENT 174a14db9bf3 174a14db9bf3 keep
+  PLAN validator validator /etc/systemd/system/pft-apparmor.timer 0644 CURRENT 5e3efcdd1fcb 5e3efcdd1fcb keep
+  PLAN validator validator /etc/systemd/system/pft-apparmor-pull.service 0644 CURRENT 8d57fcb42933 8d57fcb42933 keep
+  PLAN validator validator /etc/systemd/system/pft-apparmor-pull.timer 0644 CURRENT a3fd2a7f1349 a3fd2a7f1349 keep
+  [2026-11-03T10:26:26Z] order: sentry validator
+  [2026-11-03T10:26:26Z] sentry: 1 file(s) to write
+  PRE sentry pft-maint window active PASS
+  PRE sentry node server_state=full PASS
+  PRE sentry pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP sentry /usr/local/bin/pft-apparmor sha256 eaee2749b428 -> /var/lib/pft-fleet/backup/20261103T102626Z-apparmor-sentry
+  WRITE sentry /usr/local/bin/pft-apparmor eaee2749b428 -> 30397bba3441 mode 0755
+  GATE sentry sha256 /usr/local/bin/pft-apparmor = target 30397bba3441 PASS
+  GATE sentry syntax /usr/local/bin/pft-apparmor bash -n PASS
+  GATE sentry addon units failed=none PASS
+  GATE sentry node server_state=full PASS
+  ACCEPT sentry pft-integrity baseline updated: pft-fleet sync apparmor@3dbd44748be2 (pft-apparmor)
+  [2026-11-03T10:26:43Z] SYNCED sentry apparmor -> 3dbd44748be2
+  [2026-11-03T10:26:43Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/bin/pft-apparmor sha256 eaee2749b428 -> /var/lib/pft-fleet/backup/20261103T102626Z-apparmor-validator
+  WRITE validator /usr/local/bin/pft-apparmor eaee2749b428 -> 30397bba3441 mode 0755
+  GATE validator sha256 /usr/local/bin/pft-apparmor = target 30397bba3441 PASS
+  GATE validator syntax /usr/local/bin/pft-apparmor bash -n PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync apparmor@3dbd44748be2 (pft-apparmor)
+  [2026-11-03T10:26:59Z] SYNCED validator apparmor -> 3dbd44748be2
+  [2026-11-03T10:26:59Z] sync complete
+  (exit 0)
+CHECK ok   fleet sync apparmor exit 0
+$ sudo -n pft-fleet skew
+  ref main = 3dbd44748be2a7766ad4ec4ad3c37739d2778225
+  host sentry     role sentry    ok
+  host validator  role validator ok
+  HOST       ADDON       STATE      DETAIL
+  sentry     alertpath   CURRENT    
+  sentry     apparmor    CURRENT    
+  sentry     audittrail  CURRENT    
+  sentry     authwatch   CURRENT    
+  sentry     divergence  CURRENT    
+  sentry     egress      CURRENT    
+  sentry     feewatch    CURRENT    
+  sentry     integrity   CURRENT    
+  sentry     logship     CURRENT    
+  sentry     maint       CURRENT    
+  sentry     mounts      CURRENT    
+  sentry     patch       CURRENT    
+  sentry     privesc     CURRENT    
+  sentry     resources   CURRENT    
+  sentry     rulecheck   CURRENT    
+  sentry     statewatch  CURRENT    
+  sentry     sysctl      CURRENT    
+  sentry     timesync    CURRENT    
+  sentry     upgradewatch CURRENT    
+  sentry     vulnscan    CURRENT    
+  sentry     watchdog    CURRENT    
+  validator  alertpath   CURRENT    
+  validator  apparmor    CURRENT    
+  validator  audittrail  CURRENT    
+  validator  authwatch   CURRENT    
+  validator  backup      CURRENT    
+  validator  divergence  CURRENT    
+  validator  egress      CURRENT    
+  validator  exporter    CURRENT    
+  validator  feewatch    CURRENT    
+  validator  fleet       CURRENT    
+  validator  integrity   CURRENT    
+  validator  logship     CURRENT    
+  validator  maint       CURRENT    
+  validator  monitor     CURRENT    
+  validator  mounts      CURRENT    
+  validator  patch       CURRENT    
+  validator  privesc     CURRENT    
+  validator  resources   CURRENT    
+  validator  retention   CURRENT    
+  validator  rulecheck   CURRENT    
+  validator  statewatch  CURRENT    
+  validator  sysctl      CURRENT    
+  validator  timesync    CURRENT    
+  validator  upgradewatch CURRENT    
+  validator  vulnscan    CURRENT    
+  validator  watchdog    CURRENT    
+  SUMMARY CURRENT=47 BEHIND=0 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 0)
+CHECK ok   pft-fleet skew: retention CURRENT on every host that has it (1/1)
+CHECK ok   pft-fleet skew: apparmor CURRENT on every host that has it (2/2)
+
+== 3. end window, restore the real target, compare
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+$ sudo -n rm -f $NE   (no ntfy.env before: pft-maint falls back to the real monitor target again)
+CHECK ok   pft-maint target back to its pre-run state (/etc/pft-maint/ntfy.env: absent again)
+$ sudo -n test ! -e $BK && echo backup gone
+  backup gone
+  (exit 0)
+$ sleep 5; curl -s --max-time 15 "https://ntfy.sh/$TT/json?poll=1&since=10m" | jq -r '.title'
+  [MAINT] start validator
+  [MAINT] end validator
+  (exit 0)
+CHECK ok   the [MAINT] start and end messages reached the throwaway topic
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 140 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 83 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts
+
+fleet-run done 2026-11-03T10:27:38Z: 0 check(s) failed -> PASS

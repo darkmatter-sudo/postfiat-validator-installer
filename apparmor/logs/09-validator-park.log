@@ -1,0 +1,10 @@
+# park validator pft-apparmor audit after rollback - 2026-11-03T09:15:53Z
+$ sudo systemctl disable --now pft-apparmor.timer
+Removed /etc/systemd/system/timers.target.wants/pft-apparmor.timer.
+(exit 0)
+$ sudo rm -f /var/lib/pft-exporter/textfile/pft_apparmor_validator.prom
+(exit 0)
+$ sudo systemctl start pft-rulecheck.service; journalctl RESULT
+RESULT OK - rules: LIVE 94 PARTIAL 0 DEAD 0 ERROR 0 IGNORED 0 | textfiles: FRESH 26 STALE 0 MISSING 0 LEFTOVER 0 UNCONFIGURED 0 -> exit 0
+$ sudo pft-integrity verify
+RESULT: PASS - 140 unchanged, 0 warn, 0 fail -> exit 0

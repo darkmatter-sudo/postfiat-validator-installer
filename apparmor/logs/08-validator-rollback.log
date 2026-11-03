@@ -1,0 +1,50 @@
+# validator rollback - 2026-11-03T09:13:16Z - Ubuntu 22.04.5 LTS - pft-apparmor sha256 eaee2749b42865135ddd98682282a0bbed9803b7a3642ef1149320c3fb91f468
+pft-maint ntfy -> throwaway topic (not printed)
+AM silence bf26991a-f4a3-440e-a495-7bbedd01f19f alertname!=PFTAlertPipelineWatchdog until 2026-11-03T10:08:16Z
+$ sudo pft-maint start --ttl 45m --reason "task_faf99695 pft-apparmor validator rollback (profile blocks pft-retention sample)"
+window started: id m1793697197-2224223 until 2026-11-03T09:58:17Z | sentry copy: pushed
+(exit 0)
+$ sudo pft-apparmor audit | tail -3
+  [PASS] boot               /etc/apparmor.d/pft-postfiatd parses; apparmor.service enabled
+  [WARN] denials            24 DENIED event(s) in the last 86402s: exec /usr/bin/tail x6; exec /usr/bin/ls x6; exec /usr/bin/du x6; up to 2026-11-03T08:54:17Z acknowledged: task_faf99695 live drill: deliberate negative controls on validator (gshadow, unlisted exec, volume write, volume exec)
+RESULT: FAIL - 1 finding(s)
+(exit 1)
+$ sudo pft-apparmor rollback --yes
+2026-11-03T09:13:23Z rollback (manual) of apply 20261103T085222Z on postfiatd: back to docker-default
+2026-11-03T09:13:23Z rollback: .env restored, docker-compose.apparmor.yml removed
+  | time="2026-11-03T10:13:23+01:00" level=warning msg="/opt/postfiatd/docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+  |  Container postfiatd  Recreate
+  |  Container postfiatd  Recreated
+  |  Container postfiatd  Starting
+  |  Container postfiatd  Started
+2026-11-03T09:13:29Z rollback: /etc/apparmor.d/pft-postfiatd removed and pft-postfiatd unloaded (kernel: )
+2026-11-03T09:14:17Z rollback: health PASS after 5 poll(s) (postfiatd re-created, profile docker-default (enforce), server_state full, peers 11, confine signature unchanged, 3 pft daemons active)
+2026-11-03T09:14:49Z integrity: accepted (compose:.env compose:docker-compose.apparmor.yml container:postfiatd): pft-apparmor rollback (manual) of apply 20261103T085222Z: postfiatd back to docker-default
+2026-11-03T09:14:49Z rollback RESULT: PASS - postfiatd back under docker-default
+(exit 0)
+$ sudo docker inspect postfiatd --format "{{.AppArmorProfile}} {{.State.Status}} {{.HostConfig.CpuShares}} {{.HostConfig.MemoryReservation}}"
+docker-default running 0 0
+(exit 0)
+$ sudo docker exec postfiatd curl -s -m 10 -d "{\"method\":\"server_info\"}" http://127.0.0.1:5005 | jq -r ".result.info | [.server_state, .peers] | @tsv"
+full	11
+(exit 0)
+$ sudo systemctl start pft-retention-sample.service; sudo journalctl -u pft-retention-sample.service --since "-1min" --no-pager -o cat | grep -vE "^(Start|Finish|pft-retention-sample)"
+WARNING: Error loading config file: open /root/.docker/config.json: permission denied
+WARNING: Error loading config file: open /root/.docker/config.json: permission denied
+WARNING: Error loading config file: open /root/.docker/config.json: permission denied
+WARNING: Error loading config file: open /root/.docker/config.json: permission denied
+WARNING: Error loading config file: open /root/.docker/config.json: permission denied
+WARNING: Error loading config file: open /root/.docker/config.json: permission denied
+WARNING: Error loading config file: open /root/.docker/config.json: permission denied
+1793697293,2026-11-03T09:14:53Z,full,7723627,7722625,7723627,14760839,2765496,77012459520,103865303040,postfiatdb.989d+postfiatdb.cad9
+(exit 0)
+$ sudo ausearch --input-logs -m AVC -ts $(date -d @1793697289 +'%m/%d/%y %H:%M:%S') -i </dev/null 2>/dev/null | grep -c DENIED
+0
+(exit 1)
+$ sudo pft-maint end --reason "rollback done"
+window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+(exit 0)
+$ sudo rm -f /etc/pft-maint/ntfy.env
+(exit 0)
+rollback rc=0  end 2026-11-03T09:14:57Z
+res 8192 1610612736

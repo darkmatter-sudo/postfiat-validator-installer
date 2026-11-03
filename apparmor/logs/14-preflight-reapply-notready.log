@@ -1,0 +1,50 @@
+pft-apparmor two-host live run (sentry first) - 2026-11-03T11:34:49Z - Ubuntu 22.04.5 LTS - run 20261103T113448Z
+repo HEAD ab4a5b8f4f221bfe0ba9fbc5a545096f17ec5abf (clean: yes)
+sha256 fd81f020f386cdeb78a1daf6d6867db8837ca56fe7bafc8014750f1aeb3b5a8b apparmor/drill/live-run.sh
+sha256 21ce01ba7416fcc763d603e77fd5822f17e51339b07e918f6a0650c149d24848 apparmor/drill/host-run.sh
+sha256 30397bba344150bcc48d0a034b61404a3de04c8407c96d2c30687ae75004466b apparmor/pft-apparmor.sh
+sha256 aecd1140226c3429aa37b910065bba783d52927b9c36e025c6f1f41193c1c8da apparmor/install.sh
+sha256 2c1daea18383d8fbb1c62f6fd2f8fd87e19dfbdf87b85fbeb29ea7f4a43fcc99 alerts/apparmor.rules.yml
+sha256 f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8 peerexpose/drill/redact.py
+
+== 0. preflight (nothing changed yet)
+  no extra postfiatd-image container running on either host
+$ sudo -n pft-apparmor check '/var/lib/pft-apparmor/pft-postfiatd.merged' && sudo -n sha256sum < '/var/lib/pft-apparmor/pft-postfiatd.merged' | cut -c1-64 && sudo -n grep -c . '/var/lib/pft-apparmor/pft-postfiatd.merged'
+  apparmor/drill/live-run.sh: line 67: /var/lib/pft-apparmor/pft-postfiatd.merged: Permission denied
+  (exit 1)
+  PROFILE_FILE missing or does not compile - a real run would stop here
+$ on local 'sudo -n test -f /var/lib/pft-apparmor/apply-postfiatd.json && sudo -n jq -c "{id, mode, rolled_back}" /var/lib/pft-apparmor/apply-postfiatd.json'; R 'sudo -n test -f /var/lib/pft-apparmor/apply-postfiatd-sentry.json && sudo -n jq -c "{id, mode, rolled_back}" /var/lib/pft-apparmor/apply-postfiatd-sentry.json'
+  {"id":"20261103T085222Z","mode":"enforce","rolled_back":true}
+  {"id":"20261103T085117Z","mode":"enforce","rolled_back":false}
+  (exit 0)
+  (informational: apply state from an earlier run, if any; step 1b rolls back an apply still in place)
+  pft-maint: no window on either host; collectors inactive, no locks, run-commit lines present: NO, see above
+  operator topics to watch: 2 (not printed)
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+  postfiatd-sentry: server_state=full
+  postfiatd: server_state=full
+  pft-integrity local: RESULT: PASS - 140 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity relay: RESULT: PASS - 83 unchanged, 0 warn, 0 fail -> exit 0
+  literals for redaction: 3 ip, 2 key, 3 topic, 1 user (values not printed)
+$ redact.py control --literals <literals>
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (18/18)
+
+PREFLIGHT_ONLY: stopping before step 1, nothing changed (ready: no, see the would-stop lines above)

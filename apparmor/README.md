@@ -7,7 +7,54 @@ SETUID, read-only root, noexec tmpfs, no-new-privileges) and the mounts/ host op
 under those: if one of them is ever lost (a re-create without `--read-only`, a tmpfs without noexec), the profile
 still blocks writes to the image, execution from writable directories and anything outside the allow-list.
 
-## Live proof (2026-11-03): found → fixed → verified
+## Current state (2026-11-03T12:30Z): both hosts enforced with profile P2
+
+Recorded re-apply run [`logs/16-live-reapply.log`](logs/16-live-reapply.log) (`PROFILE_FILE=... drill/live-run.sh`,
+sentry first, then validator, commit 2d7378e950e853e1b0c6a3b2064f799a4708335e, clean tree, exit file `0`). Header
+sha256 values (lines 3-6): `drill/live-run.sh` `de3592ba…ad9d`, `drill/host-run.sh` `21ce01ba…4824`,
+`pft-apparmor.sh` `30397bba…466b`, `install.sh` `aecd1140…c8da`. The same `pft-apparmor.sh` sha256 is in the
+validator learn log (11, line 2) and the P2 generate log (13, line 2), and each host-run prints it again (l.129,
+l.424). P2 = `generate` over the sentry's P1 events + a recorded learn on the validator that also ran every host
+add-on's in-container commands (log 11); diff vs P1 = 8 `ix` exec rules (`bash cat curl cut du ls tail wc`) and
+`@{PROC}/@{pid}/mountinfo r` (log 13). [`profile/pft-postfiatd`](profile/pft-postfiatd) is P2, sha256
+`f3a023fc…0e34`, byte-identical to `/etc/apparmor.d/pft-postfiatd` on both hosts (log 16 l.126, l.739).
+
+| Host | Found | Fixed by | Verified (after) |
+|---|---|---|---|
+| validator | Run 1 (below) enforced P1, learned on the sentry only. ~10 min later `pft-retention sample` (validator-only timer) was blocked: 24 DENIED (`exec du/tail/ls`, `df` reading mountinfo), still visible in this run's before audit, l.439 (`RESULT: FAIL - 5 finding(s)`, l.440) | rolled back at once (logs 07-09: the first rollback refused, window too short, nothing changed; the second PASS, 0 DENIED); `pft-apparmor learn`/apply gate now run the host add-ons' read-only commands (commit 3dbd447); re-learn on the validator (log 11); P2 (log 13); `apply` (enforce), l.512-514 | every add-on unit that execs into the node ran under P2, Result=success (l.631-667); retention read the store, nudb_bytes > 0 (l.671); a **real timer tick** ran under the profile (l.678); 0 DENIED from add-ons + tick (l.679); audit PASS l.696, after enforced restart l.726 |
+| validator | before audit: profile not loaded, container under `docker-default`, compose recreate drops it, no boot copy (l.431-438) | same P2 via compose override, l.512 | audit `RESULT: PASS` l.622, l.693, l.723 |
+| sentry | before audit `RESULT: FAIL - 4 finding(s)` l.145 (run 1's apply rolled back by step 1b, l.66-72) | P2 `apply` (enforce), l.213-215 | audit `RESULT: PASS` l.323, l.377, l.407 |
+
+| Control (enforced P2) | sentry (log 16) | validator (log 16) |
+|---|---|---|
+| positive: RPC, peers, cron identity switch, hourly run-parts, `logrotate -d`, log-volume write, `ps`; 0 DENIED | l.227-261 | l.526-560 |
+| negative: new file in the `/etc/postfiatd` volume → fails + DENIED | l.268 | l.567 |
+| negative: read `/etc/gshadow` → fails + DENIED | l.274 | l.573 |
+| negative: exec unlisted `/usr/bin/id` → fails + DENIED | l.280 | l.579 |
+| negative: exec a script copied into the log volume → fails + DENIED | l.290 | l.589 |
+| earlier layers still in place: write to `/usr` (EROFS), exec from `/tmp` (noexec) | l.299, l.304 | l.598, l.603 |
+| host add-on units under the profile, Result=success, 0 DENIED | l.333-363 | l.631-679 |
+| enforced `docker restart`: still pft-postfiatd enforce, full, 0 DENIED | l.386-391 | l.702-707 |
+| host-run result | l.416: 39 PASS, 0 FAIL | l.732: 43 PASS, 0 FAIL |
+
+Injected-gate automatic rollback, the sentry complain window and the explicit rollback → re-apply on the sentry are
+in run 1 (log 05, below); run 2 re-applied a finished profile and did not repeat them. Run-level: Prometheus
+`pft_apparmor_findings 0` for both hosts, PFTAppArmorDrift neither pending nor firing (l.754-763); integrity diff
+shown, then accepted (l.765-873); fleet skew CURRENT (l.860); rulecheck OK on both (l.864, l.868); operator topics
+received nothing (l.898); both nodes full at the end (l.903-904); `live-run done ...: 0 check(s) failed -> PASS`
+(l.906). The run's Alertmanager silence excluded PFTAlertPipelineWatchdog (l.57), so run 1's dead-man-switch leak
+did not recur. After the run the live-only CPU/memory reservations were re-applied (log 17).
+
+Logs: [07 rollback, refused](logs/07-validator-rollback-refused.log) · [08 rollback](logs/08-validator-rollback.log) ·
+[09 validator audit parked](logs/09-validator-park.log) · [10 fleet sync of the fix](logs/10-fleet-sync.log) ·
+[11 validator learn](logs/11-learn-validator.log) · [12 generate, superseded](logs/12-generate-p2-superseded.log)
+(unprivileged redirects; files were fine, re-run as 13) · [13 generate P2](logs/13-generate-p2.log) ·
+[14 preflight, not ready](logs/14-preflight-reapply-notready.log) (caught a `sudo sha256sum < FILE` bug, fixed in
+fd9bbd8) · [15 preflight, ready](logs/15-preflight-reapply.log) · [16 live re-apply](logs/16-live-reapply.log) ·
+[17 resources re-applied](logs/17-resources-reapply.log). The retention-side fix has its own proof in
+[`../logs/retention/2-sandbox-readonly-cfg.log`](../logs/retention/2-sandbox-readonly-cfg.log).
+
+## Run 1 (2026-11-03, 08:10Z): found → fixed → verified
 
 > **Status 2026-11-03T09:15Z: the validator is back on `docker-default`; the sentry stays enforced.** About 10 min
 > after the validator apply, its hourly audit showed new DENIED records (`exec /usr/bin/du`, `tail`, `ls`; `df`

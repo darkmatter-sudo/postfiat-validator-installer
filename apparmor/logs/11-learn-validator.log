@@ -1,0 +1,150 @@
+OS: Ubuntu 22.04.5 LTS | 2026-11-03T10:27:56Z | validator-host | recorded learn (throwaway container), run 20261103T102756Z
+# pft-apparmor installed by pft-fleet sync at commit 3dbd44748be2a7766ad4ec4ad3c37739d2778225; sha256 30397bba344150bcc48d0a034b61404a3de04c8407c96d2c30687ae75004466b /usr/local/bin/pft-apparmor (repo apparmor/pft-apparmor.sh: 30397bba344150bcc48d0a034b61404a3de04c8407c96d2c30687ae75004466b)
+# pft-integrity.timer paused for the learn window (the throwaway would be picked as 'the' node); re-armed by a transient timer at +100 min
+$ sudo systemctl stop pft-integrity.timer; sudo systemd-run --unit=pft-aa-rearm-integrity --on-active=100m /bin/systemctl start pft-integrity.timer   (exit 0)
+$ sudo pft-apparmor learn --out /var/lib/pft-apparmor/learn-validator-20261103T102756Z.tsv   (default --minutes 65)
+2026-11-03T10:27:57Z learn: seed pft-postfiatd-learn (complain), throwaway postfiatd-aalearn-20261103102757 from postfiatd's confine arguments; T0=1793701677
+  | #include <tunables/global>
+  | profile pft-postfiatd-learn flags=(attach_disconnected,mediate_deleted,complain) {
+  |   #include <abstractions/base>
+  |   network inet stream,
+  |   network inet6 stream,
+  |   network inet dgram,
+  |   network inet6 dgram,
+  |   network netlink raw,
+  |   network unix,
+  |   signal (receive) peer=unconfined,
+  |   signal (send,receive) peer=pft-postfiatd-learn,
+  | }
+$ apparmor_parser -r -W /var/lib/pft-apparmor/pft-postfiatd-learn
+(exit 0)
+$ docker run -d --name postfiatd-aalearn-20261103102757 --security-opt=apparmor=pft-postfiatd-learn --security-opt=no-new-privileges:true --cap-drop=ALL --cap-add=CAP_SETGID --cap-add=CAP_SETUID --read-only --tmpfs=/run:rw,noexec,nosuid,size=64m --tmpfs=/tmp:rw,noexec,nosuid,size=64m --tmpfs=/var/backups:rw,noexec,nosuid,size=64m --tmpfs=/var/lib/apt:rw,noexec,nosuid,size=64m --tmpfs=/var/lib/logrotate:rw,noexec,nosuid,size=64m --tmpfs=/var/opt/postfiat:rw,noexec,nosuid,size=64m --volume=/etc/postfiatd --volume=/var/lib/postfiatd/db --volume=/var/log/postfiatd --pids-limit=256 --memory=2415919104 --user=0:0 agtipft/postfiatd:testnet-light-latest --conf /etc/postfiatd/postfiatd.cfg
+2026-11-03T10:27:57Z profile: pft-postfiatd-learn
+2026-11-03T10:28:48Z throwaway server_state: full (after ~50s)
+$ docker exec postfiatd-aalearn-20261103102757 curl -s -m 10 -o /dev/null -w %{http_code}\n -X POST -d {"method":"server_info"} http://127.0.0.1:5005
+200
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 curl -s -m 10 -o /dev/null -w %{http_code}\n -X POST -d {"method":"peers"} http://127.0.0.1:5005
+200
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 setpriv --reuid=0 --regid=0 --init-groups true
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 sh -c cd / && run-parts --report /etc/cron.hourly
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 sh -c for j in /etc/cron.daily/*; do [ "${j##*/}" = apt-compat ] && continue; echo "cron.daily/${j##*/}"; "$j"; done
+cron.daily/dpkg
+cron.daily/logrotate
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 sh -c /usr/sbin/logrotate -s /var/log/postfiatd/.logrotate.status /etc/logrotate.d/postfiatd
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 sh -c logrotate -f -s /var/log/postfiatd/.logrotate.status /etc/logrotate.d/postfiatd
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 sh -c test -e /run/systemd/system || SERVICE_MODE=1 /sbin/e2scrub_all -A -r
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 sh -c test -e /run/systemd/system || SERVICE_MODE=1 /usr/lib/x86_64-linux-gnu/e2fsprogs/e2scrub_all_cron
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 sh -c command -v curl >/dev/null
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 sh -c curl -s -m 5 -o /dev/null -w "%{http_code}\n" -d "{\"method\":\"server_info\"}" http://127.0.0.1:${RPC_PORT:-5005}/
+200
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 stat -c %a /etc/postfiatd/postfiatd.cfg
+644
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 sh -c cat "$1/postfiatd.cfg" /etc/resolv.conf "$1/validators.txt" | wc -l sh /etc/postfiatd
+1668
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 sh -c grep -cE "^\[" "$1/postfiatd.cfg" sh /etc/postfiatd
+18
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 sh -c du -sb "$1/nudb" | cut -f1 sh /var/lib/postfiatd/db
+3638316
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 sh -c du -cb "$1"/*.db "$1"/*.db-* "$1"/*.sqlite 2>/dev/null | tail -n1 sh /var/lib/postfiatd/db
+1424672	total
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 df -B1 -P /var/lib/postfiatd/db
+Filesystem         1-blocks        Used   Available Capacity Mounted on
+/dev/sda1      103865303040 27110604800 76737921024      27% /var/lib/postfiatd/db
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 sh -c ls -1 "$1/nudb" 2>/dev/null | wc -l sh /var/lib/postfiatd/db
+2
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 timeout 5 bash -c exec 3<>/dev/tcp/127.0.0.1/5005
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 ps -eo pid,comm
+    PID COMMAND
+      1 postfiatd
+      8 cron
+    301 ps
+(exit 0)
+2026-11-03T10:29:34Z after restart server_state: full
+$ docker exec postfiatd-aalearn-20261103102757 curl -s -m 10 -o /dev/null -w %{http_code}\n -X POST -d {"method":"server_info"} http://127.0.0.1:5005
+200
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 curl -s -m 10 -o /dev/null -w %{http_code}\n -X POST -d {"method":"peers"} http://127.0.0.1:5005
+200
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 setpriv --reuid=0 --regid=0 --init-groups true
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 sh -c cd / && run-parts --report /etc/cron.hourly
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 sh -c for j in /etc/cron.daily/*; do [ "${j##*/}" = apt-compat ] && continue; echo "cron.daily/${j##*/}"; "$j"; done
+cron.daily/dpkg
+cron.daily/logrotate
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 sh -c /usr/sbin/logrotate -s /var/log/postfiatd/.logrotate.status /etc/logrotate.d/postfiatd
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 sh -c logrotate -f -s /var/log/postfiatd/.logrotate.status /etc/logrotate.d/postfiatd
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 sh -c test -e /run/systemd/system || SERVICE_MODE=1 /sbin/e2scrub_all -A -r
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 sh -c test -e /run/systemd/system || SERVICE_MODE=1 /usr/lib/x86_64-linux-gnu/e2fsprogs/e2scrub_all_cron
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 sh -c command -v curl >/dev/null
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 sh -c curl -s -m 5 -o /dev/null -w "%{http_code}\n" -d "{\"method\":\"server_info\"}" http://127.0.0.1:${RPC_PORT:-5005}/
+200
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 stat -c %a /etc/postfiatd/postfiatd.cfg
+644
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 sh -c cat "$1/postfiatd.cfg" /etc/resolv.conf "$1/validators.txt" | wc -l sh /etc/postfiatd
+1668
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 sh -c grep -cE "^\[" "$1/postfiatd.cfg" sh /etc/postfiatd
+18
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 sh -c du -sb "$1/nudb" | cut -f1 sh /var/lib/postfiatd/db
+11910704
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 sh -c du -cb "$1"/*.db "$1"/*.db-* "$1"/*.sqlite 2>/dev/null | tail -n1 sh /var/lib/postfiatd/db
+4589568	total
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 df -B1 -P /var/lib/postfiatd/db
+Filesystem         1-blocks        Used   Available Capacity Mounted on
+/dev/sda1      103865303040 27138744320 76709781504      27% /var/lib/postfiatd/db
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 sh -c ls -1 "$1/nudb" 2>/dev/null | wc -l sh /var/lib/postfiatd/db
+2
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 timeout 5 bash -c exec 3<>/dev/tcp/127.0.0.1/5005
+(exit 0)
+$ docker exec postfiatd-aalearn-20261103102757 ps -eo pid,comm
+    PID COMMAND
+      1 postfiatd
+      7 cron
+   4887 ps
+(exit 0)
+2026-11-03T11:33:11Z collecting events since T0 for profile prefix pft-postfiatd-learn
+  cap 2
+  exec 39
+  file 311
+2026-11-03T11:33:13Z learn: done, 352 distinct events -> /var/lib/pft-apparmor/learn-validator-20261103T102756Z.tsv; throwaway removed, pft-postfiatd-learn unloaded
+(exit 0) end 2026-11-03T11:33:13Z
+$ sudo systemctl start pft-integrity.timer; sudo systemctl stop pft-aa-rearm-integrity.timer   (throwaway gone: restore the hourly timer now, drop the safety re-arm)
+(exit 0)
+$ sudo pft-integrity verify | tail -1
+RESULT: PASS - 140 unchanged, 0 warn, 0 fail -> exit 0
+$ sudo docker ps --format '{{.Names}}' | grep -c aalearn
+0

@@ -1,0 +1,906 @@
+pft-apparmor two-host live run (sentry first) - 2026-11-03T12:08:18Z - Ubuntu 22.04.5 LTS - run 20261103T120818Z
+repo HEAD 2d7378e950e853e1b0c6a3b2064f799a4708335e (clean: yes)
+sha256 de3592baace751c19abc625e1da63bb348970cde838925a6e10267feffa3ad9d apparmor/drill/live-run.sh
+sha256 21ce01ba7416fcc763d603e77fd5822f17e51339b07e918f6a0650c149d24848 apparmor/drill/host-run.sh
+sha256 30397bba344150bcc48d0a034b61404a3de04c8407c96d2c30687ae75004466b apparmor/pft-apparmor.sh
+sha256 aecd1140226c3429aa37b910065bba783d52927b9c36e025c6f1f41193c1c8da apparmor/install.sh
+sha256 2c1daea18383d8fbb1c62f6fd2f8fd87e19dfbdf87b85fbeb29ea7f4a43fcc99 alerts/apparmor.rules.yml
+sha256 f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8 peerexpose/drill/redact.py
+
+== 0. preflight (nothing changed yet)
+  no extra postfiatd-image container running on either host
+$ sudo -n pft-apparmor check '/var/lib/pft-apparmor/pft-postfiatd.merged' && sudo -n cat '/var/lib/pft-apparmor/pft-postfiatd.merged' | sha256sum | cut -c1-64 && sudo -n grep -c . '/var/lib/pft-apparmor/pft-postfiatd.merged'
+  f3a023fc14cd46ae856dc3e118cdca7b233e2896be123f8ec9b3973180830e34
+  165
+  (exit 0)
+$ on local 'sudo -n test -f /var/lib/pft-apparmor/apply-postfiatd.json && sudo -n jq -c "{id, mode, rolled_back}" /var/lib/pft-apparmor/apply-postfiatd.json'; R 'sudo -n test -f /var/lib/pft-apparmor/apply-postfiatd-sentry.json && sudo -n jq -c "{id, mode, rolled_back}" /var/lib/pft-apparmor/apply-postfiatd-sentry.json'
+  {"id":"20261103T085222Z","mode":"enforce","rolled_back":true}
+  {"id":"20261103T085117Z","mode":"enforce","rolled_back":false}
+  (exit 0)
+  (informational: apply state from an earlier run, if any; step 1b rolls back an apply still in place)
+  pft-maint: no window on either host; collectors inactive, no locks, run-commit lines present: yes
+  operator topics to watch: 2 (not printed)
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+  postfiatd-sentry: server_state=full
+  postfiatd: server_state=full
+  pft-integrity local: RESULT: PASS - 140 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity relay: RESULT: PASS - 83 unchanged, 0 warn, 0 fail -> exit 0
+  literals for redaction: 3 ip, 2 key, 3 topic, 1 user (values not printed)
+$ redact.py control --literals <literals>
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (18/18)
+
+== 1. redirect notifiers, silence every alert, maintenance window
+  local:/etc/postfiat-monitor.env sha256 6dc3b10fb491 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/postfiat-monitor.env.pre-apparmor-live
+  local:/etc/pft-integrity.env sha256 b3cd1c3da7ff -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-integrity.env.pre-apparmor-live
+  relay:/etc/pft-watchdog/ntfy.env sha256 ddb52721a668 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-watchdog/ntfy.env.pre-apparmor-live
+  relay:/etc/pft-integrity.env sha256 cdd330a974d2 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-integrity.env.pre-apparmor-live
+  relay:/etc/pft-alertpath/ntfy.env sha256 ddb52721a668 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-alertpath/ntfy.env.pre-apparmor-live
+CHECK ok   /etc/pft-maint/ntfy.env created with the throwaway topic (0600)
+CHECK ok   Alertmanager silence alertname=~".+", alertname!=PFTAlertPipelineWatchdog (the dead-man switch keeps flowing), until 2026-11-03T16:08:50Z
+$ sudo -n pft-maint start --ttl 3h --reason 'task_faf99695 pft-apparmor live run 20261103T120818Z'
+  window started: id m1793707730-3609462 until 2026-11-03T15:08:50Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   sentry has the window (via the watchdog channel) after 40s
+
+== 1b. reset: an apply an earlier run left in place is rolled back first
+$ on relay 'sudo -n pft-apparmor rollback --yes'
+  2026-11-03T12:09:42Z rollback (manual) of apply 20261103T085117Z on postfiatd-sentry: back to docker-default
+  2026-11-03T12:09:45Z rollback: previous container postfiatd-sentry-preaa-20261103T085117Z restored as postfiatd-sentry (restart=unless-stopped)
+  2026-11-03T12:09:45Z rollback: /etc/apparmor.d/pft-postfiatd removed and pft-postfiatd unloaded (kernel: )
+  2026-11-03T12:10:31Z rollback: health PASS after 5 poll(s) (postfiatd-sentry re-created, profile docker-default (enforce), server_state full, peers 10, confine signature unchanged, 1 pft daemons active)
+  2026-11-03T12:10:45Z integrity: accepted (container:postfiatd-sentry): pft-apparmor rollback (manual) of apply 20261103T085117Z: postfiatd-sentry back to docker-default
+  2026-11-03T12:10:45Z rollback RESULT: PASS - postfiatd-sentry back under docker-default
+  (exit 0)
+CHECK ok   relay: rollback of the earlier apply -> PASS
+  local: no apply in place (nothing to reset)
+
+== 2. install (sentry first, then validator, then the validator's pull of the sentry file)
+$ git archive 2d7378e950e853e1b0c6a3b2064f799a4708335e apparmor | R 'rm -rf /var/tmp/pft-apparmor-live-2d7378e && mkdir -m 700 /var/tmp/pft-apparmor-live-2d7378e && tar -x -C /var/tmp/pft-apparmor-live-2d7378e'
+  
+  (exit 0)
+$ R 'sudo -n bash /var/tmp/pft-apparmor-live-2d7378e/apparmor/install.sh --host sentry'
+  2026-11-03T12:10:47Z installed /usr/local/bin/pft-apparmor (sha256 30397bba344150bcc48d0a034b61404a3de04c8407c96d2c30687ae75004466b)
+  2026-11-03T12:10:48Z first audit (through the sandboxed unit, HOST_LABEL=sentry):
+  pft_apparmor_findings{host="sentry"} 4
+  pft_apparmor_last_run_timestamp_seconds{host="sentry"} 1793707849
+  2026-11-03T12:10:50Z enabled pft-apparmor.timer (hourly + up to 10 min)
+  2026-11-03T12:10:50Z remember: sudo pft-integrity accept --reason 'pft-apparmor installed'
+  (exit 0)
+CHECK ok   sentry install exit 0, first audit textfile valid
+$ sudo -n bash apparmor/install.sh
+  2026-11-03T12:10:50Z installed /usr/local/bin/pft-apparmor (sha256 30397bba344150bcc48d0a034b61404a3de04c8407c96d2c30687ae75004466b)
+  2026-11-03T12:10:51Z first audit (through the sandboxed unit, HOST_LABEL=validator):
+  pft_apparmor_findings{host="validator"} 5
+  pft_apparmor_last_run_timestamp_seconds{host="validator"} 1793707852
+  Created symlink /etc/systemd/system/timers.target.wants/pft-apparmor.timer → /etc/systemd/system/pft-apparmor.timer.
+  2026-11-03T12:10:53Z enabled pft-apparmor.timer (hourly + up to 10 min)
+  2026-11-03T12:10:53Z remember: sudo pft-integrity accept --reason 'pft-apparmor installed'
+  (exit 0)
+CHECK ok   validator install exit 0, first audit textfile valid
+$ sudo -n grep -q '^PULL_SSH=' /etc/pft-apparmor.env || sudo -n sh -c 'grep "^PULL_SSH=" /etc/pft-statewatch.env >> /etc/pft-apparmor.env'; sudo -n grep -c '^PULL_SSH=' /etc/pft-apparmor.env; sudo -n stat -c '%a %U' /etc/pft-apparmor.env
+  1
+  600 root
+  (exit 0)
+$ sudo -n bash apparmor/install.sh --pull
+  2026-11-03T12:10:53Z installed /usr/local/bin/pft-apparmor (sha256 30397bba344150bcc48d0a034b61404a3de04c8407c96d2c30687ae75004466b)
+  2026-11-03T12:10:54Z first pull (through the sandboxed unit):
+  pft_apparmor_findings{host="sentry"} 4
+  pft_apparmor_last_run_timestamp_seconds{host="sentry"} 1793707849
+  2026-11-03T12:10:55Z enabled pft-apparmor-pull.timer (every 15 min)
+  (exit 0)
+CHECK ok   pull install exit 0, sentry file present on the validator
+$ sudo -n grep -n pft_apparmor /etc/pft-rulecheck.conf; R 'sudo -n grep -n pft_apparmor /etc/pft-rulecheck.conf'
+  58:textfile pft_apparmor_*.prom   3h   pft_apparmor_last_run_timestamp_seconds
+  33:textfile pft_apparmor_*.prom   3h   pft_apparmor_last_run_timestamp_seconds
+  (exit 0)
+$ grep -n apparmor.rules.yml alerts/prometheus.yml; sudo -n docker kill -s HUP pft-prometheus >/dev/null && sleep 30 && curl -s http://127.0.0.1:9090/api/v1/rules | jq -r '.data.groups[] | select(.name == "pft-apparmor") | .rules[] | [.name, .health] | @tsv'
+  22:  - /etc/pft-alerts/apparmor.rules.yml    # ../apparmor (kernel support, container profile + mode, boot persistence, recent DENIED events)
+  PFTAppArmorDrift	ok
+  (exit 0)
+CHECK ok   PFTAppArmorDrift loaded, health ok
+
+== 3. sentry: before, P0, injected gate miss, complain window, P1, enforce, controls, restart, rollback, re-apply
+  re-apply mode: PROFILE_FILE -> /var/lib/pft-apparmor/pft-postfiatd.reapply on both hosts, then host-run.sh sentry --profile (no drill)
+$ sudo -n install -m 0644 '/var/lib/pft-apparmor/pft-postfiatd.merged' /var/lib/pft-apparmor/pft-postfiatd.reapply && sudo -n cat /var/lib/pft-apparmor/pft-postfiatd.reapply | R 'sudo -n sh -c "umask 022; cat > /var/lib/pft-apparmor/pft-postfiatd.reapply"' && sudo -n cat /var/lib/pft-apparmor/pft-postfiatd.reapply | sha256sum | cut -c1-64; R 'sudo -n cat /var/lib/pft-apparmor/pft-postfiatd.reapply | sha256sum | cut -c1-64'
+  f3a023fc14cd46ae856dc3e118cdca7b233e2896be123f8ec9b3973180830e34
+  f3a023fc14cd46ae856dc3e118cdca7b233e2896be123f8ec9b3973180830e34
+  (exit 0)
+CHECK ok   profile copied, sha256 identical on both hosts
+$ R 'sudo -n bash /var/tmp/pft-apparmor-live-2d7378e/apparmor/drill/host-run.sh sentry --profile /var/lib/pft-apparmor/pft-postfiatd.reapply'
+  host-run sentry - 2026-11-03T12:11:29Z - Ubuntu 22.04.5 LTS - container postfiatd-sentry
+  sha256: host-run.sh 21ce01ba7416fcc763d603e77fd5822f17e51339b07e918f6a0650c149d24848 pft-apparmor 30397bba344150bcc48d0a034b61404a3de04c8407c96d2c30687ae75004466b
+  
+  == 0. before
+  $ /usr/local/bin/pft-apparmor audit; echo audit-exit=$?
+    pft-apparmor audit - 2026-11-03T12:11:31Z | host sentry | container postfiatd-sentry | profile pft-postfiatd
+      [PASS] kernel             AppArmor enabled in the kernel
+      [PASS] parser             apparmor_parser present
+      [FAIL] loaded             pft-postfiatd not loaded
+      [FAIL] container          postfiatd-sentry runs under docker-default (generic profile)
+      [INFO] mode               not graded: container not under pft-postfiatd
+      [FAIL] recreate           docker run container not created with apparmor=pft-postfiatd
+      [PASS] confine:cap_drop   cap_drop ALL
+      [PASS] confine:read_only  read-only root fs
+      [PASS] confine:nnp        no-new-privileges
+      [FAIL] boot               /etc/apparmor.d/pft-postfiatd missing: the profile is gone after a reboot
+      [PASS] denials            0 DENIED events in the last 86401s; up to 2026-11-03T08:49:29Z acknowledged: task_faf99695 live drill: deliberate negative controls on sentry (gshadow, unlisted exec, volume write, volume exec)
+    RESULT: FAIL - 4 finding(s)
+    audit-exit=1
+    (exit 0)
+  PASS before: container not under pft-postfiatd (docker-default or unconfined) -> audit FAIL (docker-default)
+  PASS before: postfiatd-sentry server_state full (full)
+  
+  == 4. apply (enforce)
+    profile sha256 f3a023fc14cd46ae856dc3e118cdca7b233e2896be123f8ec9b3973180830e34
+  $ /usr/local/bin/pft-apparmor apply --profile-file '/var/lib/pft-apparmor/pft-postfiatd.reapply' --yes
+    2026-11-03T12:11:35Z apply 20261103T121134Z on postfiatd-sentry (host sentry): mode enforce, maintenance gate: ok 10637; before: profile docker-default, server_state full
+    2026-11-03T12:11:35Z apply: confine signature sha256 19a40e8ae4d6 (17 keys); 1 pft daemons active
+    $ apparmor_parser -Q -K /var/lib/pft-apparmor/candidate
+    (exit 0)
+    2026-11-03T12:11:35Z apply: installed /etc/apparmor.d/pft-postfiatd (sha256 f3a023fc14cd, enforce)
+    $ apparmor_parser -r -W /etc/apparmor.d/pft-postfiatd
+    (exit 0)
+    2026-11-03T12:11:35Z apply: kernel: pft-postfiatd (enforce)
+    2026-11-03T12:11:36Z apply: recreate: docker run -d --name=postfiatd-sentry --restart=unless-stopped --user=0:0 --log-driver=json-file --log-opt=max-file=10 --log-opt=max-size=100m --network=bridge --publish=<redacted-ip>:2560:2559 --volume=pft-sentry-data:/var/lib/postfiatd/db --volume=7f505992998799bdc092cfb03d16aaae688a0190738c4429bb66f05355511ec9:/var/log/postfiatd --volume=pft-sentry-config:/etc/postfiatd --cap-drop=ALL --cap-add=CAP_SETGID --cap-add=CAP_SETUID --read-only --tmpfs=/run:rw,noexec,nosuid,size=64m --tmpfs=/tmp:rw,noexec,nosuid,size=64m --tmpfs=/var/backups:rw,noexec,nosuid,size=64m --tmpfs=/var/lib/apt:rw,noexec,nosuid,size=64m --tmpfs=/var/lib/logrotate:rw,noexec,nosuid,size=64m --pids-limit=256 --memory=2147483648 --memory-swap=2147483648 --security-opt=no-new-privileges --security-opt=apparmor=pft-postfiatd agtipft/postfiatd:testnet-light-latest --conf /etc/postfiatd/postfiatd.cfg
+    2026-11-03T12:11:37Z apply: previous container kept as postfiatd-sentry-preaa-20261103T121134Z (stopped, restart=no)
+    2026-11-03T12:12:22Z apply: health PASS after 5 poll(s) (postfiatd-sentry re-created, profile pft-postfiatd (enforce), server_state full, peers 10, confine signature unchanged, 1 pft daemons active)
+      | $ docker exec postfiatd-sentry curl -s -m 10 -o /dev/null -w %{http_code}\n -X POST -d {"method":"server_info"} http://127.0.0.1:5005
+      | 200
+      | (exit 0)
+      | $ docker exec postfiatd-sentry curl -s -m 10 -o /dev/null -w %{http_code}\n -X POST -d {"method":"peers"} http://127.0.0.1:5005
+      | 200
+      | (exit 0)
+      | $ docker exec postfiatd-sentry setpriv --reuid=0 --regid=0 --init-groups true
+      | (exit 0)
+      | $ docker exec postfiatd-sentry sh -c cd / && run-parts --report /etc/cron.hourly
+      | (exit 0)
+      | $ docker exec postfiatd-sentry sh -c command -v curl >/dev/null
+      | (exit 0)
+      | $ docker exec postfiatd-sentry sh -c curl -s -m 5 -o /dev/null -w "%{http_code}\n" -d "{\"method\":\"server_info\"}" http://127.0.0.1:${RPC_PORT:-5005}/
+      | 200
+      | (exit 0)
+      | $ docker exec postfiatd-sentry stat -c %a /etc/postfiatd/postfiatd.cfg
+      | 644
+      | (exit 0)
+      | $ docker exec postfiatd-sentry sh -c cat "$1/postfiatd.cfg" /etc/resolv.conf "$1/validators.txt" | wc -l sh /etc/postfiatd
+      | 1676
+      | (exit 0)
+      | $ docker exec postfiatd-sentry sh -c grep -cE "^\[" "$1/postfiatd.cfg" sh /etc/postfiatd
+      | 20
+      | (exit 0)
+      | $ docker exec postfiatd-sentry sh -c du -sb "$1/nudb" | cut -f1 sh /var/lib/postfiatd/db
+      | 12911648
+      | (exit 0)
+      | $ docker exec postfiatd-sentry sh -c du -cb "$1"/*.db "$1"/*.db-* "$1"/*.sqlite 2>/dev/null | tail -n1 sh /var/lib/postfiatd/db
+      | 2427344	total
+      | (exit 0)
+      | $ docker exec postfiatd-sentry df -B1 -P /var/lib/postfiatd/db
+      | Filesystem         1-blocks        Used   Available Capacity Mounted on
+      | /dev/sda1      103865303040 23344279552 80504246272      23% /var/lib/postfiatd/db
+      | (exit 0)
+      | $ docker exec postfiatd-sentry sh -c ls -1 "$1/nudb" 2>/dev/null | wc -l sh /var/lib/postfiatd/db
+      | 2
+      | (exit 0)
+      | $ docker exec postfiatd-sentry timeout 5 bash -c exec 3<>/dev/tcp/127.0.0.1/5005
+      | (exit 0)
+      | $ docker exec postfiatd-sentry ps -eo pid,comm
+      |     PID COMMAND
+      |       1 postfiatd
+      |       7 cron
+      |     267 ps
+      |     274 runc:[2:INIT]
+      | (exit 0)
+    2026-11-03T12:12:27Z apply: gate PASS - exercise done, DENIED since T0: 0, ALLOWED (complain) since T0: 0
+    2026-11-03T12:12:35Z integrity: NOT accepted - changed items besides the container/compose: bin:pft-apparmor unit:pft-apparmor.service unit:pft-apparmor.timer
+    2026-11-03T12:12:35Z apply RESULT: PASS - postfiatd-sentry runs under pft-postfiatd (enforce), node full (state /var/lib/pft-apparmor/apply-postfiatd-sentry.json)
+    (exit 0)
+  PASS apply (enforce) -> PASS
+  
+  == 5. after: positive controls, negative controls, ack, audit
+  PASS container under pft-postfiatd, kernel mode enforce, node full (pft-postfiatd, enforce, full)
+  $ docker inspect -f '{{.HostConfig.SecurityOpt}} RO={{.HostConfig.ReadonlyRootfs}} CapDrop={{.HostConfig.CapDrop}} CapAdd={{.HostConfig.CapAdd}}' postfiatd-sentry
+    [no-new-privileges apparmor=pft-postfiatd] RO=true CapDrop=[ALL] CapAdd=[CAP_SETGID CAP_SETUID]
+    (exit 0)
+  PASS confine/ kept: no-new-privileges, read-only root, cap_drop ALL
+  -- positive controls (what the node needs)
+  $ docker exec postfiatd-sentry curl -s -m 10 -o /dev/null -w '%{http_code}' -d '{"method":"server_info"}' http://127.0.0.1:5005
+    200
+    (exit 0)
+  PASS RPC server_info HTTP 200
+  $ docker exec postfiatd-sentry curl -s -m 10 -d '{"method":"peers"}' http://127.0.0.1:5005 | jq '.result.peers | length'
+    10
+    (exit 0)
+  PASS peers >= 1 (10)
+  $ docker exec postfiatd-sentry setpriv --reuid=0 --regid=0 --init-groups true
+    
+    (exit 0)
+  PASS cron identity switch (setpriv --init-groups)
+  $ docker exec postfiatd-sentry sh -c 'cd / && run-parts --report /etc/cron.hourly'
+    
+    (exit 0)
+  PASS run-parts /etc/cron.hourly
+  $ docker exec postfiatd-sentry logrotate -d -s /var/log/postfiatd/.logrotate.status /etc/logrotate.d/postfiatd 2>&1 | tail -3
+      Now: 2026-11-03 12:12
+      Last rotated at 2026-11-03 12:11
+      log does not need rotating (log size is below the 'size' threshold)
+    (exit 0)
+  PASS logrotate config check (-d, no rotation)
+  $ docker exec postfiatd-sentry ls /var/log/postfiatd /var/lib/postfiatd/db | wc -l
+    20
+    (exit 0)
+  PASS list log + data dirs
+  $ docker exec postfiatd-sentry sh -c 'echo ok > /var/log/postfiatd/.pft-aa-probe && grep -x ok /var/log/postfiatd/.pft-aa-probe && rm /var/log/postfiatd/.pft-aa-probe'
+    ok
+    (exit 0)
+  PASS write + delete in the log volume
+  $ docker exec postfiatd-sentry ps -eo pid,comm | head -8
+        PID COMMAND
+          1 postfiatd
+          7 cron
+        352 ps
+    (exit 0)
+  PASS ps (ptrace read on the same profile)
+  PASS 0 DENIED records from the positive controls (0)
+  -- negative controls (only the profile can block these: each must fail AND log a matching DENIED record)
+  $ docker exec postfiatd-sentry sh -c ': > /etc/postfiatd/pft-aa-probe'
+    sh: 1: cannot create /etc/postfiatd/pft-aa-probe: Permission denied
+    (exit 2)
+    DENIED records with name="/etc/postfiatd/pft-aa-probe" since 1793707961: 1
+      apparmor="DENIED" operation="mknod" profile="pft-postfiatd" name="/etc/postfiatd/pft-aa-probe" requested_mask="c" denied_mask="c"
+  PASS negative: write a NEW file in the /etc/postfiatd volume (rw mount) (fails + DENIED logged)
+  $ docker exec postfiatd-sentry sh -c 'grep -c . /etc/gshadow'
+    grep: /etc/gshadow: Permission denied
+    (exit 2)
+    DENIED records with name="/etc/gshadow" since 1793707964: 1
+      apparmor="DENIED" operation="open" profile="pft-postfiatd" name="/etc/gshadow" requested_mask="r" denied_mask="r"
+  PASS negative: read /etc/gshadow (fails + DENIED logged)
+  $ docker exec postfiatd-sentry sh -c '/usr/bin/id'
+    sh: 1: /usr/bin/id: Permission denied
+    (exit 126)
+    DENIED records with name="/usr/bin/id" since 1793707967: 1
+      apparmor="DENIED" operation="exec" profile="pft-postfiatd" name="/usr/bin/id" requested_mask="x" denied_mask="x"
+  PASS negative: exec an unlisted binary (/usr/bin/id) (fails + DENIED logged)
+  $ docker exec postfiatd-sentry sh -c 'cp /etc/cron.daily/dpkg /var/log/postfiatd/.pft-aa-exec && stat -c %a /var/log/postfiatd/.pft-aa-exec'
+    755
+    (exit 0)
+  PASS exec control setup: copy a 0755 cron.daily script into the log volume (read + write there are allowed; /bin/true is not readable under the profile, dev probe 17)
+  $ docker exec postfiatd-sentry sh -c '/var/log/postfiatd/.pft-aa-exec'
+    sh: 1: /var/log/postfiatd/.pft-aa-exec: Permission denied
+    (exit 126)
+    DENIED records with name="/var/log/postfiatd/.pft-aa-exec" since 1793707971: 1
+      apparmor="DENIED" operation="exec" profile="pft-postfiatd" name="/var/log/postfiatd/.pft-aa-exec" requested_mask="x" denied_mask="x"
+  PASS negative: exec from the log volume (rw, exec-capable mount) (fails + DENIED logged)
+  $ docker exec postfiatd-sentry rm -f /var/log/postfiatd/.pft-aa-exec; docker exec postfiatd-sentry ls -a /etc/postfiatd /var/log/postfiatd | grep -c pft-aa-
+    0
+    (exit 1)
+  PASS no probe file left (log volume cleaned, nothing created in /etc/postfiatd)
+  -- blocked by an earlier layer (no AppArmor record expected; reported, not counted as AppArmor proof)
+  $ docker exec postfiatd-sentry sh -c 'echo x > /usr/bin/pft-aa-probe'
+    sh: 1: cannot create /usr/bin/pft-aa-probe: Read-only file system
+    (exit 2)
+  PASS write into /usr fails (read-only root, EROFS)
+  $ docker exec postfiatd-sentry sh -c 'cp /etc/cron.daily/dpkg /tmp/t && stat -c %a /tmp/t && /tmp/t'
+    755
+    sh: 1: /tmp/t: Permission denied
+    (exit 126)
+  PASS exec from /tmp fails (noexec tmpfs)
+  PASS node still full after the controls (full)
+  $ /usr/local/bin/pft-apparmor ack-denials --reason 'task_faf99695 live drill: deliberate negative controls on sentry (gshadow, unlisted exec, volume write, volume exec)' --yes
+    2026-11-03T12:12:57Z ack-denials: 4 DENIED record(s) for pft-postfiatd after 1793695769 up to 1793707976 (2026-11-03T12:12:56Z) acknowledged: task_faf99695 live drill: deliberate negative controls on sentry (gshadow, unlisted exec, volume write, volume exec)
+    (exit 0)
+  PASS ack-denials for the deliberate records
+  $ /usr/local/bin/pft-apparmor audit; echo audit-exit=$?
+    pft-apparmor audit - 2026-11-03T12:12:59Z | host sentry | container postfiatd-sentry | profile pft-postfiatd
+      [PASS] kernel             AppArmor enabled in the kernel
+      [PASS] parser             apparmor_parser present
+      [PASS] loaded             pft-postfiatd loaded (enforce)
+      [PASS] container          postfiatd-sentry runs under pft-postfiatd
+      [PASS] mode               pft-postfiatd enforce
+      [PASS] recreate           docker run container: HostConfig keeps pft-postfiatd across restarts
+      [PASS] confine:cap_drop   cap_drop ALL
+      [PASS] confine:read_only  read-only root fs
+      [PASS] confine:nnp        no-new-privileges
+      [PASS] boot               /etc/apparmor.d/pft-postfiatd parses; apparmor.service enabled
+      [PASS] denials            0 DENIED events in the last 86402s; up to 2026-11-03T12:12:56Z acknowledged: task_faf99695 live drill: deliberate negative controls on sentry (gshadow, unlisted exec, volume write, volume exec)
+    RESULT: PASS
+    audit-exit=0
+    (exit 0)
+  PASS audit after apply + ack: RESULT PASS
+  
+  == 5b. host add-ons that docker exec into the node: run each by hand, then wait for a real retention tick
+    pft-retention-sample.service: not installed on this host, skipped
+  $ systemctl start pft-statewatch@postfiatd-sentry.service; systemctl show -p Result --value pft-statewatch@postfiatd-sentry.service
+    success
+    (exit 0)
+  PASS add-on pft-statewatch@postfiatd-sentry.service ran under the profile: Result=success
+  $ systemctl start pft-feewatch@postfiatd-sentry.service; systemctl show -p Result --value pft-feewatch@postfiatd-sentry.service
+    success
+    (exit 0)
+  PASS add-on pft-feewatch@postfiatd-sentry.service ran under the profile: Result=success
+  $ systemctl start pft-upgradewatch@postfiatd-sentry.service; systemctl show -p Result --value pft-upgradewatch@postfiatd-sentry.service
+    success
+    (exit 0)
+  PASS add-on pft-upgradewatch@postfiatd-sentry.service ran under the profile: Result=success
+  $ systemctl start pft-mounts.service; systemctl show -p Result --value pft-mounts.service
+    success
+    (exit 0)
+  PASS add-on pft-mounts.service ran under the profile: Result=success
+  $ systemctl start pft-timesync.service; systemctl show -p Result --value pft-timesync.service
+    success
+    (exit 0)
+  PASS add-on pft-timesync.service ran under the profile: Result=success
+  $ systemctl start pft-divergence.service; systemctl show -p Result --value pft-divergence.service
+    success
+    (exit 0)
+  PASS add-on pft-divergence.service ran under the profile: Result=success
+    postfiat-monitor.service: not installed on this host, skipped
+  $ systemctl start pft-egress-reapply@postfiatd-sentry.service; systemctl show -p Result --value pft-egress-reapply@postfiatd-sentry.service
+    success
+    (exit 0)
+  PASS add-on pft-egress-reapply@postfiatd-sentry.service ran under the profile: Result=success
+  $ systemctl start pft-maint-tick.service; systemctl show -p Result --value pft-maint-tick.service
+    success
+    (exit 0)
+  PASS add-on pft-maint-tick.service ran under the profile: Result=success
+  PASS 0 DENIED records from the add-ons and the timer tick (0)
+  $ /usr/local/bin/pft-apparmor audit; echo audit-exit=$?
+    pft-apparmor audit - 2026-11-03T12:13:17Z | host sentry | container postfiatd-sentry | profile pft-postfiatd
+      [PASS] kernel             AppArmor enabled in the kernel
+      [PASS] parser             apparmor_parser present
+      [PASS] loaded             pft-postfiatd loaded (enforce)
+      [PASS] container          postfiatd-sentry runs under pft-postfiatd
+      [PASS] mode               pft-postfiatd enforce
+      [PASS] recreate           docker run container: HostConfig keeps pft-postfiatd across restarts
+      [PASS] confine:cap_drop   cap_drop ALL
+      [PASS] confine:read_only  read-only root fs
+      [PASS] confine:nnp        no-new-privileges
+      [PASS] boot               /etc/apparmor.d/pft-postfiatd parses; apparmor.service enabled
+      [PASS] denials            0 DENIED events in the last 86400s; up to 2026-11-03T12:12:56Z acknowledged: task_faf99695 live drill: deliberate negative controls on sentry (gshadow, unlisted exec, volume write, volume exec)
+    RESULT: PASS
+    audit-exit=0
+    (exit 0)
+  PASS audit after the add-on runs: RESULT PASS
+  
+  == 6. enforced restart
+  $ docker restart -t 60 postfiatd-sentry
+    postfiatd-sentry
+    (exit 0)
+  PASS restarted (StartedAt changed), still under pft-postfiatd enforce, full (pft-postfiatd, enforce, full)
+  $ docker exec postfiatd-sentry ps -eo pid,comm | grep -c postfiatd
+    1
+    (exit 0)
+  PASS postfiatd running
+  PASS 0 DENIED records since the restart (0)
+  
+  == final
+  $ /usr/local/bin/pft-apparmor audit; echo audit-exit=$?
+    pft-apparmor audit - 2026-11-03T12:14:07Z | host sentry | container postfiatd-sentry | profile pft-postfiatd
+      [PASS] kernel             AppArmor enabled in the kernel
+      [PASS] parser             apparmor_parser present
+      [PASS] loaded             pft-postfiatd loaded (enforce)
+      [PASS] container          postfiatd-sentry runs under pft-postfiatd
+      [PASS] mode               pft-postfiatd enforce
+      [PASS] recreate           docker run container: HostConfig keeps pft-postfiatd across restarts
+      [PASS] confine:cap_drop   cap_drop ALL
+      [PASS] confine:read_only  read-only root fs
+      [PASS] confine:nnp        no-new-privileges
+      [PASS] boot               /etc/apparmor.d/pft-postfiatd parses; apparmor.service enabled
+      [PASS] denials            0 DENIED events in the last 86401s; up to 2026-11-03T12:12:56Z acknowledged: task_faf99695 live drill: deliberate negative controls on sentry (gshadow, unlisted exec, volume write, volume exec)
+    RESULT: PASS
+    audit-exit=0
+    (exit 0)
+  PASS final audit RESULT PASS
+  $ ls /etc/apparmor.d/pft-postfiatd && sha256sum < /etc/apparmor.d/pft-postfiatd | cut -c1-64 && systemctl is-enabled apparmor.service
+    /etc/apparmor.d/pft-postfiatd
+    f3a023fc14cd46ae856dc3e118cdca7b233e2896be123f8ec9b3973180830e34
+    enabled
+    (exit 0)
+  host-run sentry done 2026-11-03T12:14:07Z (157s): 39 PASS, 0 FAIL
+  RESULT: PASS
+  (exit 0)
+CHECK ok   sentry host-run RESULT: PASS (39 PASS, 0 FAIL)
+
+== 4. validator: P1 from the sentry, before, enforce, controls, restart
+$ sudo -n bash apparmor/drill/host-run.sh validator --profile /var/lib/pft-apparmor/pft-postfiatd.reapply
+  host-run validator - 2026-11-03T12:14:07Z - Ubuntu 22.04.5 LTS - container postfiatd
+  sha256: host-run.sh 21ce01ba7416fcc763d603e77fd5822f17e51339b07e918f6a0650c149d24848 pft-apparmor 30397bba344150bcc48d0a034b61404a3de04c8407c96d2c30687ae75004466b
+  
+  == 0. before
+  $ /usr/local/bin/pft-apparmor audit; echo audit-exit=$?
+    pft-apparmor audit - 2026-11-03T12:14:08Z | host validator | container postfiatd | profile pft-postfiatd
+      [PASS] kernel             AppArmor enabled in the kernel
+      [PASS] parser             apparmor_parser present
+      [FAIL] loaded             pft-postfiatd not loaded
+      [FAIL] container          postfiatd runs under docker-default (generic profile)
+      [INFO] mode               not graded: container not under pft-postfiatd
+      [FAIL] recreate           no listed compose file sets apparmor=pft-postfiatd: the next 'docker compose up' drops it
+      [PASS] confine:cap_drop   cap_drop ALL
+      [PASS] confine:read_only  read-only root fs
+      [PASS] confine:nnp        no-new-privileges
+      [FAIL] boot               /etc/apparmor.d/pft-postfiatd missing: the profile is gone after a reboot
+      [WARN] denials            24 DENIED event(s) in the last 86401s: exec /usr/bin/tail x6; exec /usr/bin/ls x6; exec /usr/bin/du x6; up to 2026-11-03T08:54:17Z acknowledged: task_faf99695 live drill: deliberate negative controls on validator (gshadow, unlisted exec, volume write, volume exec)
+    RESULT: FAIL - 5 finding(s)
+    audit-exit=1
+    (exit 0)
+  PASS before: container not under pft-postfiatd (docker-default or unconfined) -> audit FAIL (docker-default)
+  PASS before: postfiatd server_state full (full)
+  
+  == 4. apply (enforce)
+    profile sha256 f3a023fc14cd46ae856dc3e118cdca7b233e2896be123f8ec9b3973180830e34
+  $ /usr/local/bin/pft-apparmor apply --profile-file '/var/lib/pft-apparmor/pft-postfiatd.reapply' --yes
+    2026-11-03T12:14:10Z apply 20261103T121410Z on postfiatd (host validator): mode enforce, maintenance gate: ok 10481; before: profile docker-default, server_state full
+    2026-11-03T12:14:10Z apply: confine signature sha256 763f41a9b824 (17 keys); 3 pft daemons active
+    $ apparmor_parser -Q -K /var/lib/pft-apparmor/candidate
+    (exit 0)
+    2026-11-03T12:14:10Z apply: installed /etc/apparmor.d/pft-postfiatd (sha256 f3a023fc14cd, enforce)
+    $ apparmor_parser -r -W /etc/apparmor.d/pft-postfiatd
+    (exit 0)
+    2026-11-03T12:14:10Z apply: kernel: pft-postfiatd (enforce)
+    2026-11-03T12:14:11Z apply: wrote /opt/postfiatd/docker-compose.apparmor.yml; .env backed up, COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.confine.yml:docker-compose.apparmor.yml
+    time="2026-11-03T13:14:11+01:00" level=warning msg="/opt/postfiatd/docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+      | time="2026-11-03T13:14:12+01:00" level=warning msg="/opt/postfiatd/docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+      |  Container postfiatd  Recreate
+      |  Container postfiatd  Recreated
+      |  Container postfiatd  Starting
+      |  Container postfiatd  Started
+    2026-11-03T12:15:12Z apply: health PASS after 6 poll(s) (postfiatd re-created, profile pft-postfiatd (enforce), server_state full, peers 11, confine signature unchanged, 3 pft daemons active)
+      | $ docker exec postfiatd curl -s -m 10 -o /dev/null -w %{http_code}\n -X POST -d {"method":"server_info"} http://127.0.0.1:5005
+      | 200
+      | (exit 0)
+      | $ docker exec postfiatd curl -s -m 10 -o /dev/null -w %{http_code}\n -X POST -d {"method":"peers"} http://127.0.0.1:5005
+      | 200
+      | (exit 0)
+      | $ docker exec postfiatd setpriv --reuid=0 --regid=0 --init-groups true
+      | (exit 0)
+      | $ docker exec postfiatd sh -c cd / && run-parts --report /etc/cron.hourly
+      | (exit 0)
+      | $ docker exec postfiatd sh -c command -v curl >/dev/null
+      | (exit 0)
+      | $ docker exec postfiatd sh -c curl -s -m 5 -o /dev/null -w "%{http_code}\n" -d "{\"method\":\"server_info\"}" http://127.0.0.1:${RPC_PORT:-5005}/
+      | 200
+      | (exit 0)
+      | $ docker exec postfiatd stat -c %a /etc/postfiatd/postfiatd.cfg
+      | 644
+      | (exit 0)
+      | $ docker exec postfiatd sh -c cat "$1/postfiatd.cfg" /etc/resolv.conf "$1/validators.txt" | wc -l sh /etc/postfiatd
+      | 1680
+      | (exit 0)
+      | $ docker exec postfiatd sh -c grep -cE "^\[" "$1/postfiatd.cfg" sh /etc/postfiatd
+      | 21
+      | (exit 0)
+      | $ docker exec postfiatd sh -c du -sb "$1/nudb" | cut -f1 sh /var/lib/postfiatd/db
+      | 14674747
+      | (exit 0)
+      | $ docker exec postfiatd sh -c du -cb "$1"/*.db "$1"/*.db-* "$1"/*.sqlite 2>/dev/null | tail -n1 sh /var/lib/postfiatd/db
+      | 7639456	total
+      | (exit 0)
+      | $ docker exec postfiatd df -B1 -P /var/lib/postfiatd/db
+      | Filesystem         1-blocks        Used   Available Capacity Mounted on
+      | /dev/sda1      103865303040 27090350080 76758175744      27% /var/lib/postfiatd/db
+      | (exit 0)
+      | $ docker exec postfiatd sh -c ls -1 "$1/nudb" 2>/dev/null | wc -l sh /var/lib/postfiatd/db
+      | 2
+      | (exit 0)
+      | $ docker exec postfiatd timeout 5 bash -c exec 3<>/dev/tcp/127.0.0.1/5005
+      | (exit 0)
+      | $ docker exec postfiatd ps -eo pid,comm
+      |     PID COMMAND
+      |       1 postfiatd
+      |       8 cron
+      |     327 ps
+      | (exit 0)
+    2026-11-03T12:15:21Z apply: gate PASS - exercise done, DENIED since T0: 0, ALLOWED (complain) since T0: 0
+    2026-11-03T12:15:36Z integrity: NOT accepted - changed items besides the container/compose: bin:pft-apparmor unit:pft-apparmor-pull.service unit:pft-apparmor-pull.timer unit:pft-apparmor.service unit:pft-apparmor.timer
+    2026-11-03T12:15:36Z apply RESULT: PASS - postfiatd runs under pft-postfiatd (enforce), node full (state /var/lib/pft-apparmor/apply-postfiatd.json)
+    (exit 0)
+  PASS apply (enforce) -> PASS
+  
+  == 5. after: positive controls, negative controls, ack, audit
+  PASS container under pft-postfiatd, kernel mode enforce, node full (pft-postfiatd, enforce, full)
+  $ docker inspect -f '{{.HostConfig.SecurityOpt}} RO={{.HostConfig.ReadonlyRootfs}} CapDrop={{.HostConfig.CapDrop}} CapAdd={{.HostConfig.CapAdd}}' postfiatd
+    [no-new-privileges:true apparmor=pft-postfiatd] RO=true CapDrop=[ALL] CapAdd=[CAP_SETGID CAP_SETUID]
+    (exit 0)
+  PASS confine/ kept: no-new-privileges, read-only root, cap_drop ALL
+  -- positive controls (what the node needs)
+  $ docker exec postfiatd curl -s -m 10 -o /dev/null -w '%{http_code}' -d '{"method":"server_info"}' http://127.0.0.1:5005
+    200
+    (exit 0)
+  PASS RPC server_info HTTP 200
+  $ docker exec postfiatd curl -s -m 10 -d '{"method":"peers"}' http://127.0.0.1:5005 | jq '.result.peers | length'
+    11
+    (exit 0)
+  PASS peers >= 1 (11)
+  $ docker exec postfiatd setpriv --reuid=0 --regid=0 --init-groups true
+    
+    (exit 0)
+  PASS cron identity switch (setpriv --init-groups)
+  $ docker exec postfiatd sh -c 'cd / && run-parts --report /etc/cron.hourly'
+    
+    (exit 0)
+  PASS run-parts /etc/cron.hourly
+  $ docker exec postfiatd logrotate -d -s /var/log/postfiatd/.logrotate.status /etc/logrotate.d/postfiatd 2>&1 | tail -3
+      Now: 2026-11-03 12:15
+      Last rotated at 2026-11-03 12:14
+      log does not need rotating (log size is below the 'size' threshold)
+    (exit 0)
+  PASS logrotate config check (-d, no rotation)
+  $ docker exec postfiatd ls /var/log/postfiatd /var/lib/postfiatd/db | wc -l
+    20
+    (exit 0)
+  PASS list log + data dirs
+  $ docker exec postfiatd sh -c 'echo ok > /var/log/postfiatd/.pft-aa-probe && grep -x ok /var/log/postfiatd/.pft-aa-probe && rm /var/log/postfiatd/.pft-aa-probe'
+    ok
+    (exit 0)
+  PASS write + delete in the log volume
+  $ docker exec postfiatd ps -eo pid,comm | head -8
+        PID COMMAND
+          1 postfiatd
+          8 cron
+        435 ps
+    (exit 0)
+  PASS ps (ptrace read on the same profile)
+  PASS 0 DENIED records from the positive controls (0)
+  -- negative controls (only the profile can block these: each must fail AND log a matching DENIED record)
+  $ docker exec postfiatd sh -c ': > /etc/postfiatd/pft-aa-probe'
+    sh: 1: cannot create /etc/postfiatd/pft-aa-probe: Permission denied
+    (exit 2)
+    DENIED records with name="/etc/postfiatd/pft-aa-probe" since 1793708142: 1
+      apparmor="DENIED" operation="mknod" profile="pft-postfiatd" name="/etc/postfiatd/pft-aa-probe" requested_mask="c" denied_mask="c"
+  PASS negative: write a NEW file in the /etc/postfiatd volume (rw mount) (fails + DENIED logged)
+  $ docker exec postfiatd sh -c 'grep -c . /etc/gshadow'
+    grep: /etc/gshadow: Permission denied
+    (exit 2)
+    DENIED records with name="/etc/gshadow" since 1793708145: 1
+      apparmor="DENIED" operation="open" profile="pft-postfiatd" name="/etc/gshadow" requested_mask="r" denied_mask="r"
+  PASS negative: read /etc/gshadow (fails + DENIED logged)
+  $ docker exec postfiatd sh -c '/usr/bin/id'
+    sh: 1: /usr/bin/id: Permission denied
+    (exit 126)
+    DENIED records with name="/usr/bin/id" since 1793708149: 1
+      apparmor="DENIED" operation="exec" profile="pft-postfiatd" name="/usr/bin/id" requested_mask="x" denied_mask="x"
+  PASS negative: exec an unlisted binary (/usr/bin/id) (fails + DENIED logged)
+  $ docker exec postfiatd sh -c 'cp /etc/cron.daily/dpkg /var/log/postfiatd/.pft-aa-exec && stat -c %a /var/log/postfiatd/.pft-aa-exec'
+    755
+    (exit 0)
+  PASS exec control setup: copy a 0755 cron.daily script into the log volume (read + write there are allowed; /bin/true is not readable under the profile, dev probe 17)
+  $ docker exec postfiatd sh -c '/var/log/postfiatd/.pft-aa-exec'
+    sh: 1: /var/log/postfiatd/.pft-aa-exec: Permission denied
+    (exit 126)
+    DENIED records with name="/var/log/postfiatd/.pft-aa-exec" since 1793708153: 1
+      apparmor="DENIED" operation="exec" profile="pft-postfiatd" name="/var/log/postfiatd/.pft-aa-exec" requested_mask="x" denied_mask="x"
+  PASS negative: exec from the log volume (rw, exec-capable mount) (fails + DENIED logged)
+  $ docker exec postfiatd rm -f /var/log/postfiatd/.pft-aa-exec; docker exec postfiatd ls -a /etc/postfiatd /var/log/postfiatd | grep -c pft-aa-
+    0
+    (exit 1)
+  PASS no probe file left (log volume cleaned, nothing created in /etc/postfiatd)
+  -- blocked by an earlier layer (no AppArmor record expected; reported, not counted as AppArmor proof)
+  $ docker exec postfiatd sh -c 'echo x > /usr/bin/pft-aa-probe'
+    sh: 1: cannot create /usr/bin/pft-aa-probe: Read-only file system
+    (exit 2)
+  PASS write into /usr fails (read-only root, EROFS)
+  $ docker exec postfiatd sh -c 'cp /etc/cron.daily/dpkg /tmp/t && stat -c %a /tmp/t && /tmp/t'
+    755
+    sh: 1: /tmp/t: Permission denied
+    (exit 126)
+  PASS exec from /tmp fails (noexec tmpfs)
+  PASS node still full after the controls (full)
+  $ /usr/local/bin/pft-apparmor ack-denials --reason 'task_faf99695 live drill: deliberate negative controls on validator (gshadow, unlisted exec, volume write, volume exec)' --yes
+    2026-11-03T12:16:02Z ack-denials: 28 DENIED record(s) for pft-postfiatd after 1793696057 up to 1793708160 (2026-11-03T12:16:00Z) acknowledged: task_faf99695 live drill: deliberate negative controls on validator (gshadow, unlisted exec, volume write, volume exec)
+    (exit 0)
+  PASS ack-denials for the deliberate records
+  $ /usr/local/bin/pft-apparmor audit; echo audit-exit=$?
+    pft-apparmor audit - 2026-11-03T12:16:04Z | host validator | container postfiatd | profile pft-postfiatd
+      [PASS] kernel             AppArmor enabled in the kernel
+      [PASS] parser             apparmor_parser present
+      [PASS] loaded             pft-postfiatd loaded (enforce)
+      [PASS] container          postfiatd runs under pft-postfiatd
+      [PASS] mode               pft-postfiatd enforce
+      [PASS] recreate           compose file sets apparmor=pft-postfiatd
+      [PASS] confine:cap_drop   cap_drop ALL
+      [PASS] confine:read_only  read-only root fs
+      [PASS] confine:nnp        no-new-privileges
+      [PASS] boot               /etc/apparmor.d/pft-postfiatd parses; apparmor.service enabled
+      [PASS] denials            0 DENIED events in the last 86402s; up to 2026-11-03T12:16:00Z acknowledged: task_faf99695 live drill: deliberate negative controls on validator (gshadow, unlisted exec, volume write, volume exec)
+    RESULT: PASS
+    audit-exit=0
+    (exit 0)
+  PASS audit after apply + ack: RESULT PASS
+  
+  == 5b. host add-ons that docker exec into the node: run each by hand, then wait for a real retention tick
+  $ systemctl start pft-retention-sample.service; systemctl show -p Result --value pft-retention-sample.service
+    success
+    (exit 0)
+  PASS add-on pft-retention-sample.service ran under the profile: Result=success
+  $ systemctl start pft-statewatch@postfiatd.service; systemctl show -p Result --value pft-statewatch@postfiatd.service
+    success
+    (exit 0)
+  PASS add-on pft-statewatch@postfiatd.service ran under the profile: Result=success
+  $ systemctl start pft-feewatch@postfiatd.service; systemctl show -p Result --value pft-feewatch@postfiatd.service
+    success
+    (exit 0)
+  PASS add-on pft-feewatch@postfiatd.service ran under the profile: Result=success
+  $ systemctl start pft-upgradewatch@postfiatd.service; systemctl show -p Result --value pft-upgradewatch@postfiatd.service
+    success
+    (exit 0)
+  PASS add-on pft-upgradewatch@postfiatd.service ran under the profile: Result=success
+  $ systemctl start pft-mounts.service; systemctl show -p Result --value pft-mounts.service
+    success
+    (exit 0)
+  PASS add-on pft-mounts.service ran under the profile: Result=success
+  $ systemctl start pft-timesync.service; systemctl show -p Result --value pft-timesync.service
+    success
+    (exit 0)
+  PASS add-on pft-timesync.service ran under the profile: Result=success
+  $ systemctl start pft-divergence.service; systemctl show -p Result --value pft-divergence.service
+    success
+    (exit 0)
+  PASS add-on pft-divergence.service ran under the profile: Result=success
+  $ systemctl start postfiat-monitor.service; systemctl show -p Result --value postfiat-monitor.service
+    success
+    (exit 0)
+  PASS add-on postfiat-monitor.service ran under the profile: Result=success
+  $ systemctl start pft-egress-reapply@postfiatd.service; systemctl show -p Result --value pft-egress-reapply@postfiatd.service
+    success
+    (exit 0)
+  PASS add-on pft-egress-reapply@postfiatd.service ran under the profile: Result=success
+  $ systemctl start pft-maint-tick.service; systemctl show -p Result --value pft-maint-tick.service
+    success
+    (exit 0)
+  PASS add-on pft-maint-tick.service ran under the profile: Result=success
+  $ tail -1 /var/lib/pft-retention/samples.csv | cut -d, -f2,3,7,8,9
+    2026-11-03T12:16:07Z,full,14985880,6518784,76756447232
+    (exit 0)
+  PASS pft-retention sample read the store (nudb_bytes > 0, the field P1 zeroed)
+    2026-11-03T12:16:30Z waiting for the next real pft-retention-sample.timer tick (InvocationID changes and the run ends), up to 12 min
+  $ TZ=UTC systemctl show -p Result -p ExecMainExitTimestamp pft-retention-sample.service; tail -1 /var/lib/pft-retention/samples.csv | cut -d, -f2,3,7
+    Result=success
+    ExecMainExitTimestamp=Tue 2026-11-03 12:26:13 UTC
+    2026-11-03T12:26:13Z,full,11403339
+    (exit 0)
+  PASS a real timer tick ran under the profile: new invocation, Result=success, nudb_bytes > 0
+  PASS 0 DENIED records from the add-ons and the timer tick (0)
+  $ /usr/local/bin/pft-apparmor audit; echo audit-exit=$?
+    pft-apparmor audit - 2026-11-03T12:26:18Z | host validator | container postfiatd | profile pft-postfiatd
+      [PASS] kernel             AppArmor enabled in the kernel
+      [PASS] parser             apparmor_parser present
+      [PASS] loaded             pft-postfiatd loaded (enforce)
+      [PASS] container          postfiatd runs under pft-postfiatd
+      [PASS] mode               pft-postfiatd enforce
+      [PASS] recreate           compose file sets apparmor=pft-postfiatd
+      [PASS] confine:cap_drop   cap_drop ALL
+      [PASS] confine:read_only  read-only root fs
+      [PASS] confine:nnp        no-new-privileges
+      [PASS] boot               /etc/apparmor.d/pft-postfiatd parses; apparmor.service enabled
+      [PASS] denials            0 DENIED events in the last 86401s; up to 2026-11-03T12:16:00Z acknowledged: task_faf99695 live drill: deliberate negative controls on validator (gshadow, unlisted exec, volume write, volume exec)
+    RESULT: PASS
+    audit-exit=0
+    (exit 0)
+  PASS audit after the add-on runs: RESULT PASS
+  
+  == 6. enforced restart
+  $ docker restart -t 60 postfiatd
+    postfiatd
+    (exit 0)
+  PASS restarted (StartedAt changed), still under pft-postfiatd enforce, full (pft-postfiatd, enforce, full)
+  $ docker exec postfiatd ps -eo pid,comm | grep -c postfiatd
+    1
+    (exit 0)
+  PASS postfiatd running
+  PASS 0 DENIED records since the restart (0)
+  
+  == final
+  $ /usr/local/bin/pft-apparmor audit; echo audit-exit=$?
+    pft-apparmor audit - 2026-11-03T12:27:11Z | host validator | container postfiatd | profile pft-postfiatd
+      [PASS] kernel             AppArmor enabled in the kernel
+      [PASS] parser             apparmor_parser present
+      [PASS] loaded             pft-postfiatd loaded (enforce)
+      [PASS] container          postfiatd runs under pft-postfiatd
+      [PASS] mode               pft-postfiatd enforce
+      [PASS] recreate           compose file sets apparmor=pft-postfiatd
+      [PASS] confine:cap_drop   cap_drop ALL
+      [PASS] confine:read_only  read-only root fs
+      [PASS] confine:nnp        no-new-privileges
+      [PASS] boot               /etc/apparmor.d/pft-postfiatd parses; apparmor.service enabled
+      [PASS] denials            0 DENIED events in the last 86402s; up to 2026-11-03T12:16:00Z acknowledged: task_faf99695 live drill: deliberate negative controls on validator (gshadow, unlisted exec, volume write, volume exec)
+    RESULT: PASS
+    audit-exit=0
+    (exit 0)
+  PASS final audit RESULT PASS
+  $ ls /etc/apparmor.d/pft-postfiatd && sha256sum < /etc/apparmor.d/pft-postfiatd | cut -c1-64 && systemctl is-enabled apparmor.service
+    /etc/apparmor.d/pft-postfiatd
+    f3a023fc14cd46ae856dc3e118cdca7b233e2896be123f8ec9b3973180830e34
+    enabled
+    (exit 0)
+  host-run validator done 2026-11-03T12:27:11Z (784s): 43 PASS, 0 FAIL
+  RESULT: PASS
+  (exit 0)
+CHECK ok   validator host-run RESULT: PASS (43 PASS, 0 FAIL)
+$ R 'sudo -n cat /etc/apparmor.d/pft-postfiatd' | sudo -n diff /etc/apparmor.d/pft-postfiatd - && echo identical
+  identical
+  (exit 0)
+CHECK ok   boot copy /etc/apparmor.d/pft-postfiatd identical on both hosts
+
+== 5. metrics: hourly unit on both hosts, pull, Prometheus
+$ R 'sudo -n systemctl start pft-apparmor.service; systemctl show -p Result --value pft-apparmor.service; sudo -n grep -E "^pft_apparmor_(findings|last_run)" /var/lib/pft-exporter/textfile/pft_apparmor_sentry.prom'
+  success
+  pft_apparmor_findings{host="sentry"} 0
+  pft_apparmor_last_run_timestamp_seconds{host="sentry"} 1793708835
+  (exit 0)
+$ sudo -n systemctl start pft-apparmor.service pft-apparmor-pull.service; systemctl show -p Result --value pft-apparmor.service pft-apparmor-pull.service; grep -hE '^pft_apparmor_findings' /var/lib/pft-exporter/textfile/pft_apparmor_*.prom
+  success
+  
+  success
+  pft_apparmor_findings{host="sentry"} 0
+  pft_apparmor_findings{host="validator"} 0
+  (exit 0)
+CHECK ok   textfiles: findings 0 for validator and sentry
+$ sleep 45; curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=pft_apparmor_findings' | jq -r '.data.result[] | "\(.metric.host) \(.value[1])"' | sort
+  sentry 0
+  validator 0
+  (exit 0)
+CHECK ok   Prometheus: pft_apparmor_findings 0 for sentry and validator
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=ALERTS{alertname="PFTAppArmorDrift"}' | jq -r '.data.result | length'
+  0
+  (exit 0)
+CHECK ok   PFTAppArmorDrift neither pending nor firing
+
+== 6. baselines: integrity accept on both hosts, fleet manifest sync, skew, rulecheck
+$ sudo -n pft-integrity verify | grep -E '^(  \[(WARN|FAIL)\]|RESULT)' | sed -E 's/ +sha256.*//' | head -20
+    [WARN] bin:pft-apparmor                             changed  mtime
+    [FAIL] compose:.env                                 changed  mtime,
+    [WARN] compose:docker-compose.apparmor.yml          added    new file
+    [FAIL] container:postfiatd                          changed  labels, security_opt
+    [WARN] unit:pft-apparmor-pull.service               changed  mtime
+    [WARN] unit:pft-apparmor-pull.timer                 changed  mtime
+    [WARN] unit:pft-apparmor.service                    changed  mtime
+    [WARN] unit:pft-apparmor.timer                      changed  mtime
+  RESULT: FAIL - 133 unchanged, 6 warn, 2 fail -> exit 2
+  (exit 2)
+$ sudo -n pft-integrity accept --reason 'task_faf99695: pft-apparmor 2d7378e installed + applied (script, units, env, rulecheck.conf, profile, compose override)' | tail -2
+  pft-integrity accept - 2026-11-03T12:28:26Z: re-baselined 141 items by <user>
+  manifest sha256: ea6eda8ebd2523845aaa28cfa0feaa24d4162561558b13596251871411abb83d -> 9dd95d38f62e21d0813e27c7dd53a9cc2e8a47c96300e962c175936564c279eb (logged to accept.log)
+  (exit 0)
+$ R 'sudo -n pft-integrity verify' | grep -E '^(  \[(WARN|FAIL)\]|RESULT)' | sed -E 's/ +sha256.*//' | head -20
+    [WARN] bin:pft-apparmor                             changed  mtime
+    [FAIL] container:postfiatd-sentry                   changed  security_opt
+    [WARN] unit:pft-apparmor.service                    changed  mtime
+    [WARN] unit:pft-apparmor.timer                      changed  mtime
+  RESULT: FAIL - 79 unchanged, 3 warn, 1 fail -> exit 2
+  (exit 2)
+$ R "sudo -n pft-integrity accept --reason 'task_faf99695: pft-apparmor 2d7378e installed + applied (script, units, env, rulecheck.conf, profile, container)'" | tail -2
+  pft-integrity accept - 2026-11-03T12:28:39Z: re-baselined 83 items by root
+  manifest sha256: 9c4389adc74436e07f9504a5b2162106d95edd968729c017136bcf33b3b4796d -> bddc9a8cc45d1af07741a4afb5690b116375fc3bf94d1c36bada15b546a86f13 (logged to accept.log)
+  (exit 0)
+$ sudo -n pft-fleet sync --addon fleet --to 2d7378e950e853e1b0c6a3b2064f799a4708335e --apply --reason 'task_faf99695 apparmor manifest lines'
+  [2026-11-03T12:28:53Z] sync fleet to 2d7378e950e853e1b0c6a3b2064f799a4708335e (2026-11-03T11:35:44+00:00) REF main=2d7378e950e853e1b0c6a3b2064f799a4708335e
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN validator validator /usr/local/sbin/pft-fleet 0755 CURRENT 61cafcfcdaa9 61cafcfcdaa9 keep
+  PLAN validator validator /usr/local/lib/pft-fleet/fleet_lib.py 0644 CURRENT dcb37d26f33f dcb37d26f33f keep
+  PLAN validator validator /usr/local/lib/pft-fleet/manifest.tsv 0644 CURRENT a471c942eac9 a471c942eac9 keep
+  PLAN validator validator /etc/systemd/system/pft-fleet.service 0644 CURRENT 3105a2f0a144 3105a2f0a144 keep
+  PLAN validator validator /etc/systemd/system/pft-fleet.timer 0644 CURRENT 79839ee00a81 79839ee00a81 keep
+  [2026-11-03T12:28:53Z] order: sentry validator
+  [2026-11-03T12:28:53Z] sentry: every fleet file already at 2d7378e950e8 - nothing to do
+  [2026-11-03T12:28:53Z] validator: every fleet file already at 2d7378e950e8 - nothing to do
+  [2026-11-03T12:28:53Z] sync complete
+  (exit 0)
+CHECK ok   fleet sync of the manifest exit 0
+$ sudo -n pft-fleet skew
+  ref main = 2d7378e950e853e1b0c6a3b2064f799a4708335e
+  host sentry     role sentry    ok
+  host validator  role validator ok
+  HOST       ADDON       STATE      DETAIL
+  sentry     alertpath   CURRENT    
+  sentry     apparmor    CURRENT    
+  sentry     audittrail  CURRENT    
+  sentry     authwatch   CURRENT    
+  sentry     divergence  CURRENT    
+  sentry     egress      CURRENT    
+  sentry     feewatch    CURRENT    
+  sentry     integrity   CURRENT    
+  sentry     logship     CURRENT    
+  sentry     maint       CURRENT    
+  sentry     mounts      CURRENT    
+  sentry     patch       CURRENT    
+  sentry     privesc     CURRENT    
+  sentry     resources   CURRENT    
+  sentry     rulecheck   CURRENT    
+  sentry     statewatch  CURRENT    
+  sentry     sysctl      CURRENT    
+  sentry     timesync    CURRENT    
+  sentry     upgradewatch CURRENT    
+  sentry     vulnscan    CURRENT    
+  sentry     watchdog    CURRENT    
+  validator  alertpath   CURRENT    
+  validator  apparmor    CURRENT    
+  validator  audittrail  CURRENT    
+  validator  authwatch   CURRENT    
+  validator  backup      CURRENT    
+  validator  divergence  CURRENT    
+  validator  egress      CURRENT    
+  validator  exporter    CURRENT    
+  validator  feewatch    CURRENT    
+  validator  fleet       CURRENT    
+  validator  integrity   CURRENT    
+  validator  logship     CURRENT    
+  validator  maint       CURRENT    
+  validator  monitor     CURRENT    
+  validator  mounts      CURRENT    
+  validator  patch       CURRENT    
+  validator  privesc     CURRENT    
+  validator  resources   CURRENT    
+  validator  retention   CURRENT    
+  validator  rulecheck   CURRENT    
+  validator  statewatch  CURRENT    
+  validator  sysctl      CURRENT    
+  validator  timesync    CURRENT    
+  validator  upgradewatch CURRENT    
+  validator  vulnscan    CURRENT    
+  validator  watchdog    CURRENT    
+  SUMMARY CURRENT=47 BEHIND=0 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 0)
+CHECK ok   pft-fleet skew exit 0, apparmor CURRENT on both hosts
+$ sudo -n systemctl start pft-rulecheck.service; sudo -n journalctl -u pft-rulecheck.service --since -1min --no-pager -o cat | grep -E '^RESULT '
+  RESULT OK - rules: LIVE 94 PARTIAL 0 DEAD 0 ERROR 0 IGNORED 0 | textfiles: FRESH 27 STALE 0 MISSING 0 LEFTOVER 0 UNCONFIGURED 0 -> exit 0
+  (exit 0)
+CHECK ok   validator pft-rulecheck RESULT OK
+$ R 'sudo -n systemctl start pft-rulecheck.service; sudo -n journalctl -u pft-rulecheck.service --since -1min --no-pager -o cat' | grep -E '^RESULT '
+  RESULT OK - rules: skipped | textfiles: FRESH 14 STALE 0 MISSING 0 LEFTOVER 0 UNCONFIGURED 0 -> exit 0
+  (exit 0)
+CHECK ok   sentry pft-rulecheck RESULT OK
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 141 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 83 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts after accept + sync
+$ systemctl is-active pft-apparmor.timer pft-apparmor-pull.timer; R 'systemctl is-active pft-apparmor.timer'
+  active
+  active
+  active
+  (exit 0)
+CHECK ok   timers active (validator audit + pull, sentry audit)
+
+== 7. restore, read back
+  $ sudo -n pft-maint end
+    window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+  removed /etc/pft-maint/ntfy.env (absent before the run)
+  restored local:/etc/postfiat-monitor.env: sha256 matches pre-run copy: yes
+  restored local:/etc/pft-integrity.env: sha256 matches pre-run copy: yes
+  restored relay:/etc/pft-watchdog/ntfy.env: sha256 matches pre-run copy: yes
+  restored relay:/etc/pft-integrity.env: sha256 matches pre-run copy: yes
+  restored relay:/etc/pft-alertpath/ntfy.env: sha256 matches pre-run copy: yes
+  narrow silence alertname=PFTContainerRestarted until last node start 12:27:11Z + 25 min (1357s); expires by itself
+  catch-all silence expired: HTTP 200
+CHECK ok   env files byte-identical, pft-maint env removed, window ended
+  throwaway topic: 2 message(s)
+    {"time":"2026-11-03T12:08:51Z","title":"[MAINT] start validator","message":"task_faf99695 pft-apparmor live run 20261103T120818Z | until 2026-11-03T15:08:50Z (ttl 10800s) | sentry copy: pushed"}
+    {"time":"2026-11-03T12:29:30Z","title":"[MAINT] end validator","message":"task_faf99695 pft-apparmor live run 20261103T120818Z | ended by operator after 1239s | suppressed here: watchdog=0 monitor=0 integrity=0 | sentry copy: pushed"}
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the run (2 topic(s), 0 with messages)
+  pft-integrity local: RESULT: PASS - 141 unchanged, 0 warn, 0 fail -> exit 0
+CHECK ok   pft-integrity PASS on local at the end
+  pft-integrity relay: RESULT: PASS - 83 unchanged, 0 warn, 0 fail -> exit 0
+CHECK ok   pft-integrity PASS on relay at the end
+CHECK ok   postfiatd-sentry full at the end (full)
+CHECK ok   postfiatd full at the end (full)
+
+live-run done 2026-11-03T12:30:31Z: 0 check(s) failed -> PASS
