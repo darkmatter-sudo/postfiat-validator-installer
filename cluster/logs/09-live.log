@@ -1,0 +1,562 @@
+pft-cluster two-host live run (sentry first) - 2026-11-03T13:11:21Z - Ubuntu 22.04.5 LTS - run 20261103T131121Z
+repo HEAD 4d375983bc361ed40698d38fdc0044230514832c (clean: yes)
+sha256 e3c2a0257646de2569764031513489736e2acca06c664b4fc82a470ec548dd9b cluster/drill/live-run.sh
+sha256 3319ef9700ea87ce34730bb487dd52ff5080d6615d9ab9f99755dd08e80402fc cluster/drill/recreate.sh
+sha256 a31db6d4d9779e399e020dd1f371ff2c7f678ed05e3dc45e477d9becdcdf0975 cluster/pft-cluster.sh
+sha256 35b3af6829c61b3645114843e5b8390fa4d444ed1c2f83795d5b4b113225c517 cluster/install.sh
+sha256 a6e04b17f40072302f2458f72e75c79363777357d4bd0c70c69b378f987a13ff alerts/cluster.rules.yml
+sha256 f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8 peerexpose/drill/redact.py
+
+== 0. preflight (nothing changed yet)
+  pft-maint: no window on either host; collectors inactive + run-commit lines present: yes
+  operator topics to watch: 2 (not printed)
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+  postfiatd-sentry: server_state=full
+  postfiatd: server_state=full
+  pft-integrity local: RESULT: PASS - 141 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity relay: RESULT: PASS - 83 unchanged, 0 warn, 0 fail -> exit 0
+$ redact.py control --literals <literals>
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (18/18)
+
+== 1. redirect notifiers, silence every alert, maintenance window
+  local:/etc/postfiat-monitor.env sha256 6dc3b10fb491 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/postfiat-monitor.env.pre-cluster-live
+  local:/etc/pft-integrity.env sha256 b3cd1c3da7ff -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-integrity.env.pre-cluster-live
+  relay:/etc/pft-watchdog/ntfy.env sha256 ddb52721a668 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-watchdog/ntfy.env.pre-cluster-live
+  relay:/etc/pft-integrity.env sha256 cdd330a974d2 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-integrity.env.pre-cluster-live
+  relay:/etc/pft-alertpath/ntfy.env sha256 ddb52721a668 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-alertpath/ntfy.env.pre-cluster-live
+CHECK ok   /etc/pft-maint/ntfy.env created with the throwaway topic (0600)
+CHECK ok   Alertmanager silence alertname=~".+", alertname!=PFTAlertPipelineWatchdog (the dead-man switch keeps flowing), until 2026-11-03T16:11:59Z
+$ sudo -n pft-maint start --ttl 150m --reason 'task_01cd4e81 pft-cluster live run 20261103T131121Z'
+  window started: id m1793711519-20057 until 2026-11-03T15:41:59Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   sentry has the window (via the watchdog channel) after 30s
+
+== 2. install (sentry first, then validator, then the validator's pull of the sentry file)
+$ git archive 4d375983bc361ed40698d38fdc0044230514832c cluster | R 'rm -rf /var/tmp/pft-cluster-live-4d37598 && mkdir -m 700 /var/tmp/pft-cluster-live-4d37598 && tar -x -C /var/tmp/pft-cluster-live-4d37598'
+  
+  (exit 0)
+$ R 'sudo -n bash /var/tmp/pft-cluster-live-4d37598/cluster/install.sh --host sentry'
+  2026-11-03T13:12:40Z installed /usr/local/bin/pft-cluster (sha256 a31db6d4d9779e399e020dd1f371ff2c7f678ed05e3dc45e477d9becdcdf0975)
+  2026-11-03T13:12:40Z added the pft_cluster textfile line to /etc/pft-rulecheck.conf
+  2026-11-03T13:12:41Z first audit (through the sandboxed unit, HOST_LABEL=sentry):
+  pft_cluster_findings{host="sentry"} 7
+  pft_cluster_last_run_timestamp_seconds{host="sentry"} 1793711562
+  Created symlink /etc/systemd/system/timers.target.wants/pft-cluster.timer → /etc/systemd/system/pft-cluster.timer.
+  2026-11-03T13:12:42Z enabled pft-cluster.timer (every 5 min)
+  2026-11-03T13:12:42Z remember: sudo pft-integrity accept --reason 'pft-cluster installed'
+  (exit 0)
+CHECK ok   sentry install exit 0, first audit textfile valid
+$ sudo -n bash cluster/install.sh
+  2026-11-03T13:12:43Z installed /usr/local/bin/pft-cluster (sha256 a31db6d4d9779e399e020dd1f371ff2c7f678ed05e3dc45e477d9becdcdf0975)
+  2026-11-03T13:12:43Z added the pft_cluster textfile line to /etc/pft-rulecheck.conf
+  2026-11-03T13:12:44Z first audit (through the sandboxed unit, HOST_LABEL=validator):
+  pft_cluster_findings{host="validator"} 7
+  pft_cluster_last_run_timestamp_seconds{host="validator"} 1793711565
+  Created symlink /etc/systemd/system/timers.target.wants/pft-cluster.timer → /etc/systemd/system/pft-cluster.timer.
+  2026-11-03T13:12:46Z enabled pft-cluster.timer (every 5 min)
+  2026-11-03T13:12:46Z remember: sudo pft-integrity accept --reason 'pft-cluster installed'
+  (exit 0)
+CHECK ok   validator install exit 0, first audit textfile valid
+$ sudo -n grep -q '^PULL_SSH=' /etc/pft-cluster.env || sudo -n sh -c 'grep "^PULL_SSH=" /etc/pft-statewatch.env >> /etc/pft-cluster.env'; sudo -n grep -c '^PULL_SSH=' /etc/pft-cluster.env; sudo -n stat -c '%a %U' /etc/pft-cluster.env
+  1
+  600 root
+  (exit 0)
+$ sudo -n bash cluster/install.sh --pull
+  2026-11-03T13:12:47Z installed /usr/local/bin/pft-cluster (sha256 a31db6d4d9779e399e020dd1f371ff2c7f678ed05e3dc45e477d9becdcdf0975)
+  2026-11-03T13:12:48Z first pull (through the sandboxed unit):
+  pft_cluster_findings{host="sentry"} 7
+  pft_cluster_last_run_timestamp_seconds{host="sentry"} 1793711562
+  Created symlink /etc/systemd/system/timers.target.wants/pft-cluster-pull.timer → /etc/systemd/system/pft-cluster-pull.timer.
+  2026-11-03T13:12:50Z enabled pft-cluster-pull.timer (every 5 min)
+  (exit 0)
+CHECK ok   pull install exit 0, sentry file present on the validator
+$ grep -n cluster.rules.yml alerts/prometheus.yml; sudo -n docker kill -s HUP pft-prometheus >/dev/null && sleep 30 && curl -s http://127.0.0.1:9090/api/v1/rules | jq -r '.data.groups[] | select(.name == "pft-cluster") | .rules[] | [.name, .health] | @tsv'
+  23:  - /etc/pft-alerts/cluster.rules.yml     # ../cluster (validator<->sentry cluster missing or degraded: any FAIL/WARN audit check)
+  PFTClusterMissing	ok
+  (exit 0)
+CHECK ok   PFTClusterMissing loaded, health ok
+
+== 3. keys (validation_create on each node; only fingerprints are printed)
+$ sudo -n pft-cluster keygen
+  2026-11-03T13:13:21Z keygen: seed stored (0600), pinned key node:b708657d9318
+  (exit 0)
+CHECK ok   validator keygen exit 0
+$ sudo -n cat /var/lib/pft-cluster/fp_key | R 'sudo -n sh -c "umask 077; mkdir -p /var/lib/pft-cluster && chmod 700 /var/lib/pft-cluster && cat > /var/lib/pft-cluster/fp_key"'; sudo -n cat /var/lib/pft-cluster/fp_key | sha256sum | cut -c1-12; R 'sudo -n cat /var/lib/pft-cluster/fp_key | sha256sum | cut -c1-12'
+  582c974d67d5
+  582c974d67d5
+  (exit 0)
+CHECK ok   fp_key identical on both hosts (sha256 prefix)
+$ R 'sudo -n pft-cluster keygen'
+  2026-11-03T13:13:25Z keygen: seed stored (0600), pinned key node:001a67fe0285
+  (exit 0)
+CHECK ok   sentry keygen exit 0
+CHECK ok   both pinned keys read (52 chars, n...), not printed
+  validator pinned node:b708657d9318 (running node:4aa29396ffb3), sentry pinned node:001a67fe0285 (running node:1ddc9abb8b42)
+$ sudo -n pft-cluster set-peer "$SKEY" sentry; R "sudo -n pft-cluster set-peer $VKEY validator"
+  2026-11-03T13:13:27Z set-peer: PEER_PUBKEY=node:001a67fe0285 tag sentry
+  2026-11-03T13:13:28Z set-peer: PEER_PUBKEY=node:b708657d9318 tag validator
+  (exit 0)
+CHECK ok   set-peer on both hosts
+$ on relay 'sudo -n stat -c "%a %U %n" /var/lib/pft-cluster /var/lib/pft-cluster/node_seed /var/lib/pft-cluster/fp_key /etc/pft-cluster.env'; sudo -n stat -c '%a %U %n' /var/lib/pft-cluster /var/lib/pft-cluster/node_seed /var/lib/pft-cluster/fp_key /etc/pft-cluster.env
+  700 root /var/lib/pft-cluster
+  600 root /var/lib/pft-cluster/node_seed
+  600 root /var/lib/pft-cluster/fp_key
+  600 root /etc/pft-cluster.env
+  700 root /var/lib/pft-cluster
+  600 root /var/lib/pft-cluster/node_seed
+  600 root /var/lib/pft-cluster/fp_key
+  600 root /etc/pft-cluster.env
+  (exit 0)
+CHECK ok   seed storage 0700/0600 root on both hosts
+
+== 4. before: not clustered (text + --json on both hosts)
+$ on relay 'sudo -n pft-cluster audit; echo audit-exit=$?'
+  pft-cluster audit - 2026-11-03T13:13:31Z (host sentry)
+    [PASS] seed:stored        seed 0600 in a 0700 dir; pinned key node:001a67fe0285
+    [FAIL] cfg:node_seed      no [node_seed] (identity comes from wallet.db and changes with the data volume)
+    [INFO] cfg:mode           postfiatd.cfg 644 (holds no seed)
+    [FAIL] cfg:cluster_nodes  no [cluster_nodes] section
+    [FAIL] live:pubkey        pubkey_node node:1ddc9abb8b42 is not the pinned key node:001a67fe0285 (not applied, or restart pending)
+    [FAIL] live:cluster       validator node:b708657d9318 not in peers.cluster (config not loaded)
+    [FAIL] live:peer          validator node:b708657d9318 not connected
+    [FAIL] live:reports       no cluster report from validator (it does not list this node in its [cluster_nodes])
+    [PASS] secret:exposure    seed absent from docker inspect, process args, last 5000 log lines, textfiles
+  RESULT: FAIL - 6 finding(s)
+  audit-exit=1
+  (exit 0)
+CHECK ok   relay before: audit exit 1 (findings)
+  --json: {"host":"sentry","findings":6,"result":"FAIL","failing":["cfg:node_seed","cfg:cluster_nodes","live:pubkey","live:cluster","live:peer","live:reports"]}
+CHECK ok   relay before: cfg:node_seed and live:peer FAIL in --json
+$ on local 'sudo -n pft-cluster audit; echo audit-exit=$?'
+  pft-cluster audit - 2026-11-03T13:13:37Z (host validator)
+    [PASS] seed:stored        seed 0600 in a 0700 dir; pinned key node:b708657d9318
+    [FAIL] cfg:node_seed      no [node_seed] (identity comes from wallet.db and changes with the data volume)
+    [INFO] cfg:mode           postfiatd.cfg 644 (holds no seed)
+    [FAIL] cfg:cluster_nodes  no [cluster_nodes] section
+    [FAIL] live:pubkey        pubkey_node node:4aa29396ffb3 is not the pinned key node:b708657d9318 (not applied, or restart pending)
+    [FAIL] live:cluster       sentry node:001a67fe0285 not in peers.cluster (config not loaded)
+    [FAIL] live:peer          sentry node:001a67fe0285 not connected
+    [FAIL] live:reports       no cluster report from sentry (it does not list this node in its [cluster_nodes])
+    [PASS] secret:exposure    seed absent from docker inspect, process args, last 5000 log lines, textfiles
+  RESULT: FAIL - 6 finding(s)
+  audit-exit=1
+  (exit 0)
+CHECK ok   local before: audit exit 1 (findings)
+  --json: {"host":"validator","findings":6,"result":"FAIL","failing":["cfg:node_seed","cfg:cluster_nodes","live:pubkey","live:cluster","live:peer","live:reports"]}
+CHECK ok   local before: cfg:node_seed and live:peer FAIL in --json
+$ on local "sudo -n docker exec postfiatd curl -s -m 10 -d '{\"method\":\"peers\"}' http://127.0.0.1:5005" | jq -c '{cluster: (.result.cluster | length), peers_with_cluster_flag: [.result.peers[] | select(.cluster == true)] | length}'
+  {"cluster":0,"peers_with_cluster_flag":0}
+  (exit 0)
+
+== 5. sentry: injected gate miss -> automatic rollback
+$ R 'sudo -n env HEALTH_BUDGET=600 PFT_CLUSTER_INJECT=health pft-cluster apply --yes'
+  2026-11-03T13:13:42Z apply: pft-maint window active
+  2026-11-03T13:13:42Z apply: backup postfiatd.cfg.20261103T131342Z (sha256 aef4f1ff544a, pre-apply pubkey_node node:1ddc9abb8b42)
+  2026-11-03T13:13:42Z apply: config installed (sha256 aef4f1ff544a -> c776ff0442a3, mode 600)
+  2026-11-03T13:13:44Z restart: postfiatd-sentry restarted
+  2026-11-03T13:23:48Z health: FAIL after 604 s (restarted=yes; server_state=full; pubkey_node node:001a67fe0285 want node:001a67fe0285; member=1; peer_cluster=0; report_age=none; ssh=1; inactive daemons: none; injected=health)
+  2026-11-03T13:23:48Z apply: restart or health gate failed -> automatic rollback
+  2026-11-03T13:23:49Z rollback: postfiatd.cfg restored byte-identical (sha256 aef4f1ff544a, mode 644)
+  2026-11-03T13:23:51Z restart: postfiatd-sentry restarted
+  2026-11-03T13:24:33Z rollback: health: PASS after 42 s (postfiatd-sentry restarted, server_state full, pubkey_node node:1ddc9abb8b42, :2559 listening, sshd -t ok + :22 handshake, 1 pft daemons active)
+  2026-11-03T13:24:41Z integrity: NOT accepted - changed items besides the config: bin:pft-cluster unit:pft-cluster.service unit:pft-cluster.timer
+  (exit 1)
+CHECK ok   injected miss: exit 1, automatic rollback, rollback gate PASS
+CHECK ok   injected miss: sentry config sha256 back to the pre-run file (aef4f1ff544a -> aef4f1ff544a)
+CHECK ok   injected miss: sentry pubkey_node back to its pre-run key
+
+== 6. sentry apply (its gate cannot require the validator yet: the validator still runs its old key)
+$ R 'sudo -n env HEALTH_BUDGET=900 pft-cluster apply --yes'
+  2026-11-03T13:24:44Z apply: pft-maint window active
+  2026-11-03T13:24:45Z apply: backup postfiatd.cfg.20261103T132445Z (sha256 aef4f1ff544a, pre-apply pubkey_node node:1ddc9abb8b42)
+  2026-11-03T13:24:45Z apply: config installed (sha256 aef4f1ff544a -> c776ff0442a3, mode 600)
+  2026-11-03T13:24:47Z restart: postfiatd-sentry restarted
+  2026-11-03T13:25:31Z health: PASS after 43 s (postfiatd-sentry restarted, server_state full, pubkey_node node:001a67fe0285, validator node:b708657d9318 a loaded member, :2559 listening, sshd -t ok + :22 handshake, 1 pft daemons active)
+  2026-11-03T13:25:39Z integrity: NOT accepted - changed items besides the config: bin:pft-cluster unit:pft-cluster.service unit:pft-cluster.timer
+  2026-11-03T13:25:39Z apply: done
+  (exit 0)
+CHECK ok   sentry apply exit 0, gate PASS
+CHECK ok   sentry runs its pinned key
+
+== 7. validator apply --require-peer
+$ sudo -n env HEALTH_BUDGET=900 pft-cluster apply --yes --require-peer
+  2026-11-03T13:25:41Z apply: pft-maint window active
+  2026-11-03T13:25:42Z apply: backup postfiatd.cfg.20261103T132542Z (sha256 52c42f6c6aee, pre-apply pubkey_node node:4aa29396ffb3)
+  2026-11-03T13:25:42Z apply: config installed (sha256 52c42f6c6aee -> 75237ae12a41, mode 600)
+  2026-11-03T13:25:45Z restart: postfiatd restarted
+  2026-11-03T13:26:35Z health: PASS after 49 s (postfiatd restarted, server_state full, pubkey_node node:b708657d9318, sentry node:001a67fe0285 a loaded member, connected cluster=true, report 8 s ago, :2559 listening, sshd -t ok + :22 handshake, 3 pft daemons active)
+  2026-11-03T13:26:48Z integrity: NOT accepted - changed items besides the config: bin:pft-cluster unit:pft-cluster-pull.service unit:pft-cluster-pull.timer unit:pft-cluster.service unit:pft-cluster.timer
+  2026-11-03T13:26:48Z apply: done
+  (exit 0)
+CHECK ok   validator apply exit 0, gate PASS incl. sentry connected as member + reporting
+CHECK ok   validator runs its pinned key
+
+== 8. after: both directions from both sides
+$ on relay 'sudo -n pft-cluster audit; echo audit-exit=$?'
+  pft-cluster audit - 2026-11-03T13:26:53Z (host sentry)
+    [PASS] seed:stored        seed 0600 in a 0700 dir; pinned key node:001a67fe0285
+    [PASS] cfg:node_seed      managed [node_seed] = stored seed
+    [PASS] cfg:mode           postfiatd.cfg 0600
+    [PASS] cfg:cluster_nodes  validator node:b708657d9318 listed
+    [PASS] live:pubkey        pubkey_node node:001a67fe0285 = pinned key
+    [PASS] live:cluster       validator node:b708657d9318 is a loaded cluster member
+    [PASS] live:peer          validator connected, cluster=true
+    [PASS] live:reports       cluster report from validator 7 s ago (it counts this node as a member)
+    [PASS] secret:exposure    seed absent from docker inspect, process args, last 5000 log lines, textfiles
+  RESULT: PASS
+  audit-exit=0
+  (exit 0)
+CHECK ok   after relay: audit PASS (exit 0), live:peer + live:reports PASS
+$ on local 'sudo -n pft-cluster audit; echo audit-exit=$?'
+  pft-cluster audit - 2026-11-03T13:26:58Z (host validator)
+    [PASS] seed:stored        seed 0600 in a 0700 dir; pinned key node:b708657d9318
+    [PASS] cfg:node_seed      managed [node_seed] = stored seed
+    [PASS] cfg:mode           postfiatd.cfg 0600
+    [PASS] cfg:cluster_nodes  sentry node:001a67fe0285 listed
+    [PASS] live:pubkey        pubkey_node node:b708657d9318 = pinned key
+    [PASS] live:cluster       sentry node:001a67fe0285 is a loaded cluster member
+    [PASS] live:peer          sentry connected, cluster=true
+    [PASS] live:reports       cluster report from sentry 1 s ago (it counts this node as a member)
+    [PASS] secret:exposure    seed absent from docker inspect, process args, last 5000 log lines, textfiles
+  RESULT: PASS
+  audit-exit=0
+  (exit 0)
+CHECK ok   after local: audit PASS (exit 0), live:peer + live:reports PASS
+$ on local "sudo -n docker exec postfiatd curl -s -m 10 -d '{\"method\":\"peers\"}' http://127.0.0.1:5005" | jq -c '{cluster: (.result.cluster | to_entries | map({key: .key, tag: .value.tag, age: .value.age})), member_peers: [.result.peers[] | select(.cluster == true) | {public_key, cluster}]}'
+  {"cluster":[{"key":"<redacted-key>","tag":"sentry","age":5}],"member_peers":[{"public_key":"<redacted-key>","cluster":true}]}
+  (exit 0)
+$ on relay "sudo -n docker exec postfiatd-sentry curl -s -m 10 -d '{\"method\":\"peers\"}' http://127.0.0.1:5005" | jq -c '{cluster: (.result.cluster | to_entries | map({key: .key, tag: .value.tag, age: .value.age})), member_peers: [.result.peers[] | select(.cluster == true) | {public_key, cluster}]}'
+  {"cluster":[{"key":"<redacted-key>","tag":"validator","age":8}],"member_peers":[{"public_key":"<redacted-key>","cluster":true}]}
+  (exit 0)
+
+== 9. secrets: the seed is nowhere it should not be
+$ on local 'sudo -n sh -c "S=/var/lib/pft-cluster/node_seed; c=postfiatd; printf \"inspect %s ps %s log %s textfile %s\n\" \$(docker inspect \$c | grep -cFf \$S) \$(ps -eo args | grep -cFf \$S) \$(docker logs --tail 20000 \$c 2>&1 | grep -cFf \$S) \$(cat /var/lib/pft-exporter/textfile/*.prom | grep -cFf \$S)"'
+  inspect 0 ps 0 log 0 textfile 0
+  (exit 0)
+CHECK ok   local: seed found 0 times in docker inspect, ps, last 20000 log lines, textfiles
+$ on relay 'sudo -n sh -c "S=/var/lib/pft-cluster/node_seed; c=postfiatd-sentry; printf \"inspect %s ps %s log %s textfile %s\n\" \$(docker inspect \$c | grep -cFf \$S) \$(ps -eo args | grep -cFf \$S) \$(docker logs --tail 20000 \$c 2>&1 | grep -cFf \$S) \$(cat /var/lib/pft-exporter/textfile/*.prom | grep -cFf \$S)"'
+  inspect 0 ps 0 log 0 textfile 0
+  (exit 0)
+CHECK ok   relay: seed found 0 times in docker inspect, ps, last 20000 log lines, textfiles
+
+== 10. sentry container re-creation: identity and cluster survive
+$ R 'sudo -n docker inspect -f "{{.Id}}" postfiatd-sentry | cut -c1-12'
+  8b9a8200d56e
+  (exit 0)
+$ R 'sudo -n bash /var/tmp/pft-cluster-live-4d37598/cluster/drill/recreate.sh postfiatd-sentry'
+  2026-11-03T13:27:14Z recreate: postfiatd-sentry image cc139becfe50, 28 run args:
+    --cap-drop=ALL
+    --cap-add=CAP_SETGID
+    --cap-add=CAP_SETUID
+    --read-only
+    --tmpfs=/run:rw,noexec,nosuid,size=64m
+    --tmpfs=/tmp:rw,noexec,nosuid,size=64m
+    --tmpfs=/var/backups:rw,noexec,nosuid,size=64m
+    --tmpfs=/var/lib/apt:rw,noexec,nosuid,size=64m
+    --tmpfs=/var/lib/logrotate:rw,noexec,nosuid,size=64m
+    --pids-limit=256
+    --memory=2147483648
+    --memory-swap=2147483648
+    --security-opt=no-new-privileges
+    --security-opt=apparmor=pft-postfiatd
+    --name=postfiatd-sentry
+    --restart=unless-stopped
+    --user=0:0
+    --log-driver=json-file
+    --log-opt=max-file=10
+    --log-opt=max-size=100m
+    --network=bridge
+    --publish=<redacted-ip>:2560:2559
+    --volume=pft-sentry-data:/var/lib/postfiatd/db
+    --volume=<anonymous volume>:/var/log/postfiatd
+    --volume=pft-sentry-config:/etc/postfiatd
+    agtipft/postfiatd:testnet-light-latest
+    --conf
+    /etc/postfiatd/postfiatd.cfg
+  2026-11-03T13:27:16Z recreate: stopped, kept as postfiatd-sentry-prerecreate-20261103T132714Z (restart=no)
+  2026-11-03T13:27:17Z recreate: new container f3874051771a started (old 20261103T132714Z)
+  2026-11-03T13:27:17Z recreate: config summary identical (image, cmd, user, env, mounts, ports, restart/log policy, network, caps, read-only, tmpfs, pids/memory limits, security_opt)
+  2026-11-03T13:27:17Z recreate: container Id changed 8b9a8200d56e -> f3874051771a (a new container, not a restart)
+  2026-11-03T13:27:17Z recreate: old container postfiatd-sentry-prerecreate-20261103T132714Z removed (volumes kept)
+  (exit 0)
+CHECK ok   recreate exit 0, config summary identical
+CHECK ok   re-created sentry full after 40s
+CHECK ok   re-created sentry: new container Id, same pinned pubkey_node
+$ on relay 'sudo -n pft-cluster audit; echo audit-exit=$?'
+  pft-cluster audit - 2026-11-03T13:28:10Z (host sentry)
+    [PASS] seed:stored        seed 0600 in a 0700 dir; pinned key node:001a67fe0285
+    [PASS] cfg:node_seed      managed [node_seed] = stored seed
+    [PASS] cfg:mode           postfiatd.cfg 0600
+    [PASS] cfg:cluster_nodes  validator node:b708657d9318 listed
+    [PASS] live:pubkey        pubkey_node node:001a67fe0285 = pinned key
+    [PASS] live:cluster       validator node:b708657d9318 is a loaded cluster member
+    [PASS] live:peer          validator connected, cluster=true
+    [PASS] live:reports       cluster report from validator 4 s ago (it counts this node as a member)
+    [PASS] secret:exposure    seed absent from docker inspect, process args, last 5000 log lines, textfiles
+  RESULT: PASS
+  audit-exit=0
+  (exit 0)
+CHECK ok   after re-creation relay: audit PASS (exit 0), live:peer + live:reports PASS
+$ on local 'sudo -n pft-cluster audit; echo audit-exit=$?'
+  pft-cluster audit - 2026-11-03T13:28:14Z (host validator)
+    [PASS] seed:stored        seed 0600 in a 0700 dir; pinned key node:b708657d9318
+    [PASS] cfg:node_seed      managed [node_seed] = stored seed
+    [PASS] cfg:mode           postfiatd.cfg 0600
+    [PASS] cfg:cluster_nodes  sentry node:001a67fe0285 listed
+    [PASS] live:pubkey        pubkey_node node:b708657d9318 = pinned key
+    [PASS] live:cluster       sentry node:001a67fe0285 is a loaded cluster member
+    [PASS] live:peer          sentry connected, cluster=true
+    [PASS] live:reports       cluster report from sentry 7 s ago (it counts this node as a member)
+    [PASS] secret:exposure    seed absent from docker inspect, process args, last 5000 log lines, textfiles
+  RESULT: PASS
+  audit-exit=0
+  (exit 0)
+CHECK ok   after re-creation local: audit PASS (exit 0), live:peer + live:reports PASS
+
+== 11. sentry-only rollback, then re-apply
+$ R 'sudo -n env HEALTH_BUDGET=900 pft-cluster rollback --yes'
+  2026-11-03T13:28:16Z rollback: pft-maint window active
+  2026-11-03T13:28:16Z rollback: postfiatd.cfg restored byte-identical (sha256 aef4f1ff544a, mode 644)
+  2026-11-03T13:28:18Z restart: postfiatd-sentry restarted
+  2026-11-03T13:29:04Z rollback: health: PASS after 44 s (postfiatd-sentry restarted, server_state full, pubkey_node node:1ddc9abb8b42, :2559 listening, sshd -t ok + :22 handshake, 1 pft daemons active)
+  2026-11-03T13:29:11Z integrity: NOT accepted - changed items besides the config: bin:pft-cluster unit:pft-cluster.service unit:pft-cluster.timer
+  2026-11-03T13:29:11Z rollback: done (postfiatd.cfg.20261103T132445Z)
+  (exit 0)
+CHECK ok   sentry rollback exit 0, back on its pre-apply key
+$ R 'sudo -n pft-cluster audit; echo audit-exit=$?'
+  pft-cluster audit - 2026-11-03T13:29:14Z (host sentry)
+    [PASS] seed:stored        seed 0600 in a 0700 dir; pinned key node:001a67fe0285
+    [FAIL] cfg:node_seed      no [node_seed] (identity comes from wallet.db and changes with the data volume)
+    [INFO] cfg:mode           postfiatd.cfg 644 (holds no seed)
+    [FAIL] cfg:cluster_nodes  no [cluster_nodes] section
+    [FAIL] live:pubkey        pubkey_node node:1ddc9abb8b42 is not the pinned key node:001a67fe0285 (not applied, or restart pending)
+    [FAIL] live:cluster       validator node:b708657d9318 not in peers.cluster (config not loaded)
+    [FAIL] live:peer          validator connected but not as a cluster member
+    [FAIL] live:reports       no cluster report from validator (it does not list this node in its [cluster_nodes])
+    [PASS] secret:exposure    seed absent from docker inspect, process args, last 5000 log lines, textfiles
+  RESULT: FAIL - 6 finding(s)
+  audit-exit=1
+  (exit 0)
+CHECK ok   sentry after rollback: findings again (exit 1)
+CHECK ok   validator sees the sentry gone from the cluster (live:peer FAIL)
+$ R 'sudo -n env HEALTH_BUDGET=900 pft-cluster apply --yes --require-peer'
+  2026-11-03T13:29:16Z apply: pft-maint window active
+  2026-11-03T13:29:16Z apply: backup postfiatd.cfg.20261103T132916Z (sha256 aef4f1ff544a, pre-apply pubkey_node node:1ddc9abb8b42)
+  2026-11-03T13:29:16Z apply: config installed (sha256 aef4f1ff544a -> c776ff0442a3, mode 600)
+  2026-11-03T13:29:17Z restart: postfiatd-sentry restarted
+  2026-11-03T13:30:05Z health: PASS after 45 s (postfiatd-sentry restarted, server_state full, pubkey_node node:001a67fe0285, validator node:b708657d9318 a loaded member, connected cluster=true, report 9 s ago, :2559 listening, sshd -t ok + :22 handshake, 1 pft daemons active)
+  2026-11-03T13:30:18Z integrity: NOT accepted - changed items besides the config: bin:pft-cluster unit:pft-cluster.service unit:pft-cluster.timer
+  2026-11-03T13:30:18Z apply: done
+  (exit 0)
+CHECK ok   sentry re-apply --require-peer exit 0
+$ on relay 'sudo -n pft-cluster audit; echo audit-exit=$?'
+  pft-cluster audit - 2026-11-03T13:30:23Z (host sentry)
+    [PASS] seed:stored        seed 0600 in a 0700 dir; pinned key node:001a67fe0285
+    [PASS] cfg:node_seed      managed [node_seed] = stored seed
+    [PASS] cfg:mode           postfiatd.cfg 0600
+    [PASS] cfg:cluster_nodes  validator node:b708657d9318 listed
+    [PASS] live:pubkey        pubkey_node node:001a67fe0285 = pinned key
+    [PASS] live:cluster       validator node:b708657d9318 is a loaded cluster member
+    [PASS] live:peer          validator connected, cluster=true
+    [PASS] live:reports       cluster report from validator 6 s ago (it counts this node as a member)
+    [PASS] secret:exposure    seed absent from docker inspect, process args, last 5000 log lines, textfiles
+  RESULT: PASS
+  audit-exit=0
+  (exit 0)
+CHECK ok   after re-apply relay: audit PASS (exit 0), live:peer + live:reports PASS
+$ on local 'sudo -n pft-cluster audit; echo audit-exit=$?'
+  pft-cluster audit - 2026-11-03T13:30:30Z (host validator)
+    [PASS] seed:stored        seed 0600 in a 0700 dir; pinned key node:b708657d9318
+    [PASS] cfg:node_seed      managed [node_seed] = stored seed
+    [PASS] cfg:mode           postfiatd.cfg 0600
+    [PASS] cfg:cluster_nodes  sentry node:001a67fe0285 listed
+    [PASS] live:pubkey        pubkey_node node:b708657d9318 = pinned key
+    [PASS] live:cluster       sentry node:001a67fe0285 is a loaded cluster member
+    [PASS] live:peer          sentry connected, cluster=true
+    [PASS] live:reports       cluster report from sentry 1 s ago (it counts this node as a member)
+    [PASS] secret:exposure    seed absent from docker inspect, process args, last 5000 log lines, textfiles
+  RESULT: PASS
+  audit-exit=0
+  (exit 0)
+CHECK ok   after re-apply local: audit PASS (exit 0), live:peer + live:reports PASS
+
+== 12. metrics: units on both hosts, pull, Prometheus
+$ R 'sudo -n systemctl start pft-cluster.service; systemctl show -p Result --value pft-cluster.service'
+  success
+  (exit 0)
+$ sudo -n systemctl start pft-cluster.service pft-cluster-pull.service; systemctl show -p Result --value pft-cluster.service pft-cluster-pull.service; grep -hE '^pft_cluster_(findings|peer_clustered)' /var/lib/pft-exporter/textfile/pft_cluster_*.prom
+  success
+  
+  success
+  pft_cluster_peer_clustered{host="sentry"} 1
+  pft_cluster_findings{host="sentry"} 0
+  pft_cluster_peer_clustered{host="validator"} 1
+  pft_cluster_findings{host="validator"} 0
+  (exit 0)
+CHECK ok   textfiles: findings 0 and peer_clustered 1 for validator and sentry
+$ sleep 45; curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=pft_cluster_findings' | jq -r '.data.result[] | "\(.metric.host) \(.value[1])"' | sort
+  sentry 0
+  validator 0
+  (exit 0)
+CHECK ok   Prometheus: pft_cluster_findings 0 for sentry and validator
+
+== 13. baselines: integrity accept on both hosts, fleet manifest sync, skew, rulecheck
+$ sudo -n pft-integrity verify | grep -E '^  \[(WARN|FAIL)\]|^RESULT' | sed -E 's/ +sha256.*//' | head -30
+    [WARN] bin:pft-cluster                              added    new file
+    [FAIL] cfgvol:postfiatd.cfg                         changed  mode 644->600, mtime,
+    [WARN] unit:pft-cluster-pull.service                added    new file
+    [WARN] unit:pft-cluster-pull.timer                  added    new file
+    [WARN] unit:pft-cluster.service                     added    new file
+    [WARN] unit:pft-cluster.timer                       added    new file
+  RESULT: FAIL - 140 unchanged, 5 warn, 1 fail -> exit 2
+  (exit 2)
+$ sudo -n pft-integrity accept --reason 'task_01cd4e81: pft-cluster 4d37598 installed (script, units, env, rulecheck.conf)' | tail -2
+  pft-integrity accept - 2026-11-03T13:31:43Z: re-baselined 146 items by <user>
+  manifest sha256: 9dd95d38f62e21d0813e27c7dd53a9cc2e8a47c96300e962c175936564c279eb -> 25d482704650501c33009a0ba84e9ebe3ae068af31617efea97c9594acb6d5e0 (logged to accept.log)
+  (exit 0)
+$ R 'sudo -n pft-integrity verify' | grep -E '^  \[(WARN|FAIL)\]|^RESULT' | sed -E 's/ +sha256.*//' | head -30
+    [WARN] bin:pft-cluster                              added    new file
+    [FAIL] cfgvol:postfiatd.cfg                         changed  mode 644->600, mtime,
+    [WARN] unit:pft-cluster.service                     added    new file
+    [WARN] unit:pft-cluster.timer                       added    new file
+  RESULT: FAIL - 82 unchanged, 3 warn, 1 fail -> exit 2
+  (exit 2)
+$ R "sudo -n pft-integrity accept --reason 'task_01cd4e81: pft-cluster 4d37598 installed (script, units, env, rulecheck.conf); sentry container re-created'" | tail -2
+  pft-integrity accept - 2026-11-03T13:32:02Z: re-baselined 86 items by root
+  manifest sha256: bddc9a8cc45d1af07741a4afb5690b116375fc3bf94d1c36bada15b546a86f13 -> 4a4a6dc65a1e0a80c0c50654d37cef71868a7c8dcdbd901f55452708bdc97486 (logged to accept.log)
+  (exit 0)
+$ sudo -n pft-fleet sync --addon fleet --to 4d375983bc361ed40698d38fdc0044230514832c --apply --reason 'task_01cd4e81 cluster manifest lines'
+  [2026-11-03T13:32:20Z] sync fleet to 4d375983bc361ed40698d38fdc0044230514832c (2026-11-03T14:10:29+01:00) REF main=4d375983bc361ed40698d38fdc0044230514832c
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN validator validator /usr/local/sbin/pft-fleet 0755 CURRENT 61cafcfcdaa9 61cafcfcdaa9 keep
+  PLAN validator validator /usr/local/lib/pft-fleet/fleet_lib.py 0644 CURRENT dcb37d26f33f dcb37d26f33f keep
+  PLAN validator validator /usr/local/lib/pft-fleet/manifest.tsv 0644 BEHIND a471c942eac9 75a5ed4f8d8f write
+  PLAN validator validator /etc/systemd/system/pft-fleet.service 0644 CURRENT 3105a2f0a144 3105a2f0a144 keep
+  PLAN validator validator /etc/systemd/system/pft-fleet.timer 0644 CURRENT 79839ee00a81 79839ee00a81 keep
+  [2026-11-03T13:32:20Z] order: sentry validator
+  [2026-11-03T13:32:20Z] sentry: every fleet file already at 4d375983bc36 - nothing to do
+  [2026-11-03T13:32:20Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/lib/pft-fleet/manifest.tsv sha256 a471c942eac9 -> /var/lib/pft-fleet/backup/20261103T133220Z-fleet-validator
+  WRITE validator /usr/local/lib/pft-fleet/manifest.tsv a471c942eac9 -> 75a5ed4f8d8f mode 0644
+  GATE validator sha256 /usr/local/lib/pft-fleet/manifest.tsv = target 75a5ed4f8d8f PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync fleet@4d375983bc36 (manifest.tsv)
+  [2026-11-03T13:32:38Z] SYNCED validator fleet -> 4d375983bc36
+  [2026-11-03T13:32:38Z] sync complete
+  (exit 0)
+CHECK ok   fleet sync of the manifest exit 0
+$ sudo -n pft-fleet skew
+  ref main = 4d375983bc361ed40698d38fdc0044230514832c
+  host sentry     role sentry    ok
+  host validator  role validator ok
+  HOST       ADDON       STATE      DETAIL
+  sentry     alertpath   CURRENT    
+  sentry     apparmor    CURRENT    
+  sentry     audittrail  CURRENT    
+  sentry     authwatch   CURRENT    
+  sentry     cluster     CURRENT    
+  sentry     divergence  CURRENT    
+  sentry     egress      CURRENT    
+  sentry     feewatch    CURRENT    
+  sentry     integrity   CURRENT    
+  sentry     logship     CURRENT    
+  sentry     maint       CURRENT    
+  sentry     mounts      CURRENT    
+  sentry     patch       CURRENT    
+  sentry     privesc     CURRENT    
+  sentry     resources   CURRENT    
+  sentry     rulecheck   CURRENT    
+  sentry     statewatch  CURRENT    
+  sentry     sysctl      CURRENT    
+  sentry     timesync    CURRENT    
+  sentry     upgradewatch CURRENT    
+  sentry     vulnscan    CURRENT    
+  sentry     watchdog    CURRENT    
+  validator  alertpath   CURRENT    
+  validator  apparmor    CURRENT    
+  validator  audittrail  CURRENT    
+  validator  authwatch   CURRENT    
+  validator  backup      CURRENT    
+  validator  cluster     CURRENT    
+  validator  divergence  CURRENT    
+  validator  egress      CURRENT    
+  validator  exporter    CURRENT    
+  validator  feewatch    CURRENT    
+  validator  fleet       CURRENT    
+  validator  integrity   CURRENT    
+  validator  logship     CURRENT    
+  validator  maint       CURRENT    
+  validator  monitor     CURRENT    
+  validator  mounts      CURRENT    
+  validator  patch       CURRENT    
+  validator  privesc     CURRENT    
+  validator  resources   CURRENT    
+  validator  retention   CURRENT    
+  validator  rulecheck   CURRENT    
+  validator  statewatch  CURRENT    
+  validator  sysctl      CURRENT    
+  validator  timesync    CURRENT    
+  validator  upgradewatch CURRENT    
+  validator  vulnscan    CURRENT    
+  validator  watchdog    CURRENT    
+  SUMMARY CURRENT=49 BEHIND=0 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 0)
+CHECK ok   pft-fleet skew exit 0, cluster CURRENT on both hosts
+$ sudo -n systemctl start pft-rulecheck.service; sudo -n journalctl -u pft-rulecheck.service --since -1min --no-pager -o cat | grep -E '^RESULT '
+  RESULT OK - rules: LIVE 95 PARTIAL 0 DEAD 0 ERROR 0 IGNORED 0 | textfiles: FRESH 29 STALE 0 MISSING 0 LEFTOVER 0 UNCONFIGURED 0 -> exit 0
+  (exit 0)
+CHECK ok   validator pft-rulecheck RESULT OK
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 146 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 86 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts after accept + sync
+
+== 14. restore, read back
+  $ sudo -n pft-maint end
+    window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+  removed /etc/pft-maint/ntfy.env (absent before the run)
+  restored local:/etc/postfiat-monitor.env: sha256 matches pre-run copy: yes
+  restored local:/etc/pft-integrity.env: sha256 matches pre-run copy: yes
+  restored relay:/etc/pft-watchdog/ntfy.env: sha256 matches pre-run copy: yes
+  restored relay:/etc/pft-integrity.env: sha256 matches pre-run copy: yes
+  restored relay:/etc/pft-alertpath/ntfy.env: sha256 matches pre-run copy: yes
+  narrow silence alertname=PFTContainerRestarted until last node start 13:30:18Z + 25 min (1312s); expires by itself
+  catch-all silence expired: HTTP 200
+CHECK ok   env files byte-identical, pft-maint env removed, window ended
+  throwaway topic: 2 message(s)
+    {"time":"2026-11-03T13:12:02Z","title":"[MAINT] start validator","message":"task_01cd4e81 pft-cluster live run 20261103T131121Z | until 2026-11-03T15:41:59Z (ttl 9000s) | sentry copy: pushed"}
+    {"time":"2026-11-03T13:33:20Z","title":"[MAINT] end validator","message":"task_01cd4e81 pft-cluster live run 20261103T131121Z | ended by operator after 1280s | suppressed here: watchdog=0 monitor=0 integrity=0 | sentry copy: pushed"}
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the run (2 topic(s), 0 with messages)
+  pft-integrity local: RESULT: PASS - 146 unchanged, 0 warn, 0 fail -> exit 0
+CHECK ok   pft-integrity PASS on local at the end
+CHECK ok   postfiatd full at the end (full)
+  pft-integrity relay: RESULT: PASS - 86 unchanged, 0 warn, 0 fail -> exit 0
+CHECK ok   pft-integrity PASS on relay at the end
+CHECK ok   postfiatd-sentry full at the end (full)
+
+live-run done 2026-11-03T13:34:13Z: 0 check(s) failed -> PASS

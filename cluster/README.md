@@ -32,6 +32,34 @@ So "the peer counts **us** as a member" is visible locally: `cluster[<peer key>]
 us cluster reports, and it only sends them to nodes in its own `[cluster_nodes]`. The audit uses that as the
 second direction (`live:reports`); `live:peer` is the first (we list it and it is connected as a member).
 
+## Live proof (run 1, 2026-11-03T13:11Z): 51/51 checks, both hosts clustered
+
+Recorded with `drill/live-run.sh` at commit `4d375983bc361ed40698d38fdc0044230514832c` (the run commit adds the
+`cluster.rules.yml` line to `alerts/prometheus.yml` and the five `fleet/manifest.tsv` lines). Both nodes ran under
+the enforced `pft-postfiatd` AppArmor profile (`../apparmor`). Node keys appear only as `node:` fingerprints
+(sha256 with a per-cluster key, first 12 hex); seeds are never printed. Script sha256 values are in the log header
+(`pft-cluster.sh` `a31db6d4d9779e399e020dd1f371ff2c7f678ed05e3dc45e477d9becdcdf0975`).
+
+| step (`logs/09-live.log`) | result |
+|---|---|
+| 0 preflight (also `logs/07`, rc 4: run-commit lines absent; `logs/08`, rc 0: ready) | both nodes full, integrity PASS on both, redaction control 18/18 |
+| 1 notifiers on a throwaway topic, silence excluding `PFTAlertPipelineWatchdog`, `pft-maint` window | 3/3 |
+| 2 install on both hosts + the validator's pull of the sentry file; `PFTClusterMissing` loaded | 4/4 |
+| 3 `keygen` (`validation_create`) on each node, seed 0700/0600 root, `set-peer` both ways | 6/6 |
+| 4 before: `cfg:node_seed` and `live:peer` FAIL on both hosts (not clustered) | 4/4 |
+| 5 sentry apply with an injected gate miss: exit 1, automatic rollback, config sha256 `aef4f1ff544a` and `pubkey_node` back | 3/3 |
+| 6 sentry apply, 7 validator apply `--require-peer` (gate: sentry connected with `cluster=true`, report 8 s old) | 4/4 |
+| 8 after: `live:peer` + `live:reports` PASS from both sides (both directions) | 2/2 |
+| 9 seed found 0 times in `docker inspect`, `ps`, last 20000 log lines, textfiles, on both hosts | 2/2 |
+| 10 sentry container re-created (Id `8b9a8200d56e` -> `f3874051771a`): `pubkey_node` unchanged `node:001a67fe0285`, cluster re-formed | 5/5 |
+| 11 sentry-only rollback (back to `node:1ddc9abb8b42`, validator sees it gone), re-apply `--require-peer` | 6/6 |
+| 12 textfiles `findings 0` / `peer_clustered 1`, Prometheus `pft_cluster_findings 0` for both | 2/2 |
+| 13 integrity accept on both, fleet sync + skew (`cluster` CURRENT on both), rulecheck OK | 4/4 |
+| 14 restore: env files byte-identical, window ended, operator topics 0 messages, integrity PASS, both nodes full | 6/6 |
+
+The sentry re-creation drops runtime `docker update` settings, so `logs/10-resources-reapply.log` puts the
+sentry's cpu-shares / memory reservation back (the same values as before the run).
+
 ## Usage
 
 ```
