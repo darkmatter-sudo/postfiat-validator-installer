@@ -61,6 +61,30 @@ caught](logs/02-suite-mutants.log) · [03 recorded sentry learn](logs/03-learn-s
 [06 resource tuning re-applied](logs/06-resources-reapply.log). Logs are published as recorded; IPs, usernames,
 hostnames, node keys and notification topics are redacted by the run itself (redaction control: log 04).
 
+Pinned raw URLs (commit 44901a02e92fedd76df8e138204efd04a2fcce61, the commit that added the logs and the profile):
+
+- `apparmor/pft-apparmor.sh`: https://raw.githubusercontent.com/darkmatter-sudo/postfiat-validator-installer/44901a02e92fedd76df8e138204efd04a2fcce61/apparmor/pft-apparmor.sh
+- `apparmor/install.sh`: https://raw.githubusercontent.com/darkmatter-sudo/postfiat-validator-installer/44901a02e92fedd76df8e138204efd04a2fcce61/apparmor/install.sh
+- `apparmor/profile/pft-postfiatd`: https://raw.githubusercontent.com/darkmatter-sudo/postfiat-validator-installer/44901a02e92fedd76df8e138204efd04a2fcce61/apparmor/profile/pft-postfiatd
+- `alerts/apparmor.rules.yml`: https://raw.githubusercontent.com/darkmatter-sudo/postfiat-validator-installer/44901a02e92fedd76df8e138204efd04a2fcce61/alerts/apparmor.rules.yml
+- `alerts/apparmor.tests.yml`: https://raw.githubusercontent.com/darkmatter-sudo/postfiat-validator-installer/44901a02e92fedd76df8e138204efd04a2fcce61/alerts/apparmor.tests.yml
+- `apparmor/tests/run-tests.sh`: https://raw.githubusercontent.com/darkmatter-sudo/postfiat-validator-installer/44901a02e92fedd76df8e138204efd04a2fcce61/apparmor/tests/run-tests.sh
+- `apparmor/tests/apply-tests.inc.sh`: https://raw.githubusercontent.com/darkmatter-sudo/postfiat-validator-installer/44901a02e92fedd76df8e138204efd04a2fcce61/apparmor/tests/apply-tests.inc.sh
+- `apparmor/tests/ack-tests.inc.sh`: https://raw.githubusercontent.com/darkmatter-sudo/postfiat-validator-installer/44901a02e92fedd76df8e138204efd04a2fcce61/apparmor/tests/ack-tests.inc.sh
+- `apparmor/tests/pull-install-tests.inc.sh`: https://raw.githubusercontent.com/darkmatter-sudo/postfiat-validator-installer/44901a02e92fedd76df8e138204efd04a2fcce61/apparmor/tests/pull-install-tests.inc.sh
+- `apparmor/tests/stub_docker.py`: https://raw.githubusercontent.com/darkmatter-sudo/postfiat-validator-installer/44901a02e92fedd76df8e138204efd04a2fcce61/apparmor/tests/stub_docker.py
+- `apparmor/tests/mutate.py`: https://raw.githubusercontent.com/darkmatter-sudo/postfiat-validator-installer/44901a02e92fedd76df8e138204efd04a2fcce61/apparmor/tests/mutate.py
+- `apparmor/drill/live-run.sh`: https://raw.githubusercontent.com/darkmatter-sudo/postfiat-validator-installer/44901a02e92fedd76df8e138204efd04a2fcce61/apparmor/drill/live-run.sh
+- `apparmor/drill/host-run.sh`: https://raw.githubusercontent.com/darkmatter-sudo/postfiat-validator-installer/44901a02e92fedd76df8e138204efd04a2fcce61/apparmor/drill/host-run.sh
+- `apparmor/logs/01-lint.log`: https://raw.githubusercontent.com/darkmatter-sudo/postfiat-validator-installer/44901a02e92fedd76df8e138204efd04a2fcce61/apparmor/logs/01-lint.log
+- `apparmor/logs/02-suite-mutants.log`: https://raw.githubusercontent.com/darkmatter-sudo/postfiat-validator-installer/44901a02e92fedd76df8e138204efd04a2fcce61/apparmor/logs/02-suite-mutants.log
+- `apparmor/logs/03-learn-sentry.log`: https://raw.githubusercontent.com/darkmatter-sudo/postfiat-validator-installer/44901a02e92fedd76df8e138204efd04a2fcce61/apparmor/logs/03-learn-sentry.log
+- `apparmor/logs/04-preflight.log`: https://raw.githubusercontent.com/darkmatter-sudo/postfiat-validator-installer/44901a02e92fedd76df8e138204efd04a2fcce61/apparmor/logs/04-preflight.log
+- `apparmor/logs/05-live-run.log`: https://raw.githubusercontent.com/darkmatter-sudo/postfiat-validator-installer/44901a02e92fedd76df8e138204efd04a2fcce61/apparmor/logs/05-live-run.log
+- `apparmor/logs/05-live-run.log.exit`: https://raw.githubusercontent.com/darkmatter-sudo/postfiat-validator-installer/44901a02e92fedd76df8e138204efd04a2fcce61/apparmor/logs/05-live-run.log.exit
+- `apparmor/logs/06-resources-reapply.log`: https://raw.githubusercontent.com/darkmatter-sudo/postfiat-validator-installer/44901a02e92fedd76df8e138204efd04a2fcce61/apparmor/logs/06-resources-reapply.log
+
+
 ## Usage
 
 ```
