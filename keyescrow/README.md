@@ -214,6 +214,7 @@ planted copy of the secret (`leaks 3  FAIL`, exit 1).
 | `logs/10-reinstall-live.log` | re-install + second two-way escrow through the unit | `RESULT: PASS - 0 failed check(s)` (l.309); it also showed `sort: write error` (l.114, fixed with IgnoreSIGPIPE=no) and led to the EVOLVING fix |
 | `logs/12-reinstall-live.log` | re-install (EVOLVING, units) + third two-way escrow | escrow PASS (l.115); 3 generations held and verified on each side (l.195, l.239); inventory both hosts `drift 0, new 0, evolving 0 -> exit 0` (l.243-244); held ok=1 each way (l.260, l.263); leak check 11 + 10 secrets, 0 leaks (l.295, l.311); `RESULT: PASS - 0 failed check(s)` (l.333) |
 | `logs/13-rules-live.log` | rules loaded in the live Prometheus | all 4 rules `ok inactive` (l.6-9) with live series for both nodes |
+| `logs/14-mutants.log` | recorded mutant run on the commit in its header (56 mutants: + U1-U8 pull, F1-F4 evolving) | control 74/74 + 90/90 (l.9); `ORPHANS: 0` (l.66); `55 killed + 1 documented equivalent of 56, 0 survived` (l.67) |
 | `logs/15-fss-evolving.log` | why journald:fss is EVOLVING | the escrow unit recorded fss fp `31fc04dd...` at 21:22Z (l.7) and `9f9ceaf1...` at 21:33Z (l.12); the fss mtime moved again at 21:44:59Z (l.22), 7 s after the third escrow (l.17), and inventory now reports `escrow evolving` with `drift 0, ... evolving 1 -> exit 0` (l.30-31), drift_items 0 on both nodes (l.34-35) |
 
 05a/05b are the raw harness output of dev passes (no header line); 05 is the recorded run. In 05, l.5 is

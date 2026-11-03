@@ -1,0 +1,70 @@
+# keyescrow 14 - recorded mutant run - 2026-11-03T21:50:39Z - commit 3c24238e5fc61d6b01db98d5d3db7e19fa00cc00 - Ubuntu 22.04.5 LTS
+$ sha256sum keyescrow/pft-keyescrow.sh keyescrow/keyescrow_tar.py keyescrow/tests/*.sh keyescrow/tests/*.py
+be558e05196f9ee5b65f1758f3a1b699a4a33964bd142f3b3c881584b18ab686  keyescrow/pft-keyescrow.sh
+45d0bbeaf7728564159440690d88f493e5be9eedd89423825b87edd8143286f2  keyescrow/keyescrow_tar.py
+4c6374025d109dd6d5875e63a17fb0e01413aac85065bdcd1d9b4959eb249f62  keyescrow/tests/run-escrow-tests.sh
+b3e578530e6cec2ac0c78f4385d6b7487b4303ffc4a291065e777bfc7d11364c  keyescrow/tests/run-tests.sh
+cdbae95d5cbe4a8f25fe5960e05dfe8af153b725d2642fd0b4920b6d7432ef30  keyescrow/tests/mutate.py
+$ nice -n 15 python3 -u keyescrow/tests/mutate.py -j 3 --timeout 600
+CONTROL (unmutated) rc=0 RESULT: 74 passed, 0 failed | RESULT: 90 passed, 0 failed 52s
+I1   KILLED (6 failed: mode 644 (want 600): perm, exit 2)                        51s  inventory: wrong mode accepted
+I2   KILLED (1 failed: owner differs: perm, owner BAD, name not printed)         51s  inventory: owner not checked
+I3   KILLED (1 failed: group differs: perm, group BAD)                           50s  inventory: group not checked
+I4   KILLED (1 failed: symlink: perm 'not a regular file')                       70s  inventory: symlink / non-file accepted
+I5   KILLED (4 failed: bare: exit 2)                                             71s  inventory: missing required item read as optional
+I6   KILLED (6 failed: one byte appended: drift, exit 1)                         70s  inventory: drift not detected
+I7   KILLED (9 failed: present: exit 1 (never escrowed))                         68s  inventory: never escrowed / new items exit 0
+I8   KILLED (3 failed: fingerprint is keyed: differs from sha256(file))          68s  inventory: fingerprint not keyed
+I9   KILLED (1 failed: unreadable: state + exit 2, no fingerprint)               68s  inventory: unreadable item read as ok
+K1   KILLED (1 failed: keygen again: refused (exit 4), identity unchanged)       58s  keygen: replaces an existing identity
+K2   KILLED (4 failed: set-peer: own recipient refused)                          58s  set-peer: own recipient accepted
+K3   KILLED (1 failed: set-peer: malformed refused (exit 3))                     57s  set-peer: malformed recipient accepted
+S1   KILLED (2 failed: seal with a perm finding: refused (exit 4), item named    64s  seal: inventory FAIL items do not refuse
+S2   KILLED (2 failed: seal without a peer: refused (exit 4))                    64s  seal: missing/malformed PEER_RECIPIENT not refused
+S3   KILLED (1 failed: seal: age failing in the pipe -> exit 2, nothing commi    65s  seal: a failing pack/age pipe is committed
+S4   KILLED (1 failed: seal without fp_key: refused (exit 4), nothing new)       51s  seal: no fp_key not refused
+E1   KILLED (2 failed: wrong recipient: escrow FAIL (exit 2), sentry VERIFY F    51s  escrow: recorded as escrowed without the peer's VERIFIED
+E2   KILLED (3 failed: sentry sealed to a wrong recipient: pull/verify FAIL h    52s  escrow: pulled generation acked without local verify
+E3   KILLED (1 failed: ack fails: escrow FAIL (exit 2), sentry escrowed.tsv u    51s  escrow: a failed ack is not a failure
+E4   KILLED (1 failed: escrow: refused without PEER_SSH (exit 4))                52s  escrow: PEER_SSH unset not refused
+V1   KILLED (1 failed: one-byte tamper: sha256 MISMATCH, exit 2, textfile ok=    50s  verify: ciphertext sha256 not compared
+V2   KILLED (10 failed: tamper + re-hashed meta: age authentication fails, VE    56s  verify: in-memory check result ignored
+V3   KILLED (4 failed: wrong recipient: the undecryptable generation was disc    56s  receive: a generation that failed its check is kept (can displace good ones)
+V4   KILLED (4 failed: KEEP=2 on the sentry: 2 generations held after 3 escro    56s  receive: KEEP ignored
+V5   KILLED (1 failed: serve receive with the host's own label: refused (exit    65s  receive: the host's own label accepted
+V6   KILLED (1 failed: serve: unknown verb refused (exit 3))                     68s  serve: unknown verb not refused
+V7   KILLED (1 failed: serve ack of a generation never sealed: refused (exit     67s  ack: a generation never sealed is recorded
+X1   KILLED (1 failed: restore without --yes: refused (exit 3))                  80s  restore: no --yes needed
+X2   KILLED (5 failed: restore outside a window: refused on the sentry, FAIL,    75s  restore: no maintenance window needed
+X3   KILLED (3 failed: restore with an EXPIRED window: refused)                  77s  restore: an expired window accepted
+X4   KILLED (1 failed: restore: pft-maint missing -> refused (fail closed))      70s  restore: missing pft-maint read as an open window
+X5   KILLED (2 failed: restore --dry-run (no window needed): plan only, nothi    69s  restore: dry run writes
+X6   KILLED (1 failed: tampered held copy: reseal refused, restore FAIL, noth    69s  reseal: a held copy that fails its check is still sent
+P1   KILLED (1 failed: check: an item whose bytes differ from its MANIFEST sh    85s  check: item sha256 mismatch accepted
+P2   KILLED (1 failed: check: an extra member -> bad, exit 2)                    85s  check: extra member accepted
+P3   KILLED (1 failed: forged payload (allowed id, foreign path): refused, fo    84s  apply: path outside this host's registry accepted
+P4   KILLED (1 failed: restore-apply: a payload for ANOTHER host is refused)     75s  apply: payload for another host accepted
+P5   KILLED (1 failed: restore-apply: a setuid mode in the MANIFEST is refuse    75s  apply: setuid/setgid/sticky mode accepted
+P6   KILLED (2 failed: restore all items over a corrupted seed: seed restored    74s  apply: replaced file not backed up
+P7   KILLED (1 failed: unknown item: refused, nothing changed)                   73s  apply: unknown item ignored
+P8   KILLED (1 failed: receive: ciphertext that differs from its meta sha256     72s  receive: ciphertext sha256 not compared
+P9   KILLED (1 failed: receive: a generation already held is rejected)           72s  receive: a generation already held is overwritten
+P10  KILLED (1 failed: receive: size differs from meta rejected)                 53s  receive: ciphertext size not compared
+F1   KILLED (4 failed: EVOLVING item changed: escrow evolving, not drift, exi    53s  evolving: never recognised (always drift)
+F2   KILLED (3 failed: EVOLVING item changed: escrow evolving, not drift, exi    53s  evolving: still counted as drift
+F3   KILLED (1 failed: EVOLVING matches whole ids only (j:fs and xj:fss do no    60s  evolving: substring match
+F4   KILLED (1 failed: default EVOLVING (no conf line) is journald:fss)          61s  evolving: no default
+U1   KILLED (4 failed: pull: a foreign metric line is rejected (exit 2), old     60s  pull: foreign lines accepted
+U2   KILLED (1 failed: pull: samples labelled as another node are rejected (e    67s  pull: node label not checked
+U3   KILLED (2 failed: pull: a file without its timestamp sample is rejected     68s  pull: timestamp sample not required
+U4   KILLED (1 failed: pull: a file over 64 KiB is rejected (exit 2))            68s  pull: size limit dropped
+U5   KILLED (6 failed: pull: a foreign metric line is rejected (exit 2), old     79s  pull: rejected file installed anyway
+U6   KILLED (1 failed: pull: a missing file on the peer fails (exit 1), old c    76s  pull: failed remote read not detected
+U7   KILLED (1 failed: serve textfile: any other name is refused (exit 3), no    75s  serve textfile: any name served
+U8   KILLED (2 failed: pull: refused without PEER_SSH (exit 4))                  54s  pull: runs without PEER_SSH
+P11  EQUIVALENT (documented)                                                     53s  pack: follows symlinks - inventory refuses symlinks (I4) before pack is ever called, so no input reaches pack with a symlink; O_NOFOLLOW is defence in depth
+ORPHANS: 0 process(es) from mutant copies left running
+RESULT: 55 killed + 1 documented equivalent of 56, 0 survived, not applied or errored
+(exit 0)
+$ ps -eo pid,args | grep -c "[p]ft-keyescrow-mut-"
+0
