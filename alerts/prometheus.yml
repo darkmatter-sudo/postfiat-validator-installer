@@ -20,6 +20,7 @@ rule_files:
   - /etc/pft-alerts/mounts.rules.yml       # ../mounts (host mount options: /tmp, /var/tmp, /dev/shm, data dir nodev/nosuid)
   - /etc/pft-alerts/upgradewatch.rules.yml # ../upgradewatch (amendment blocked, unsupported majority + activation ETA, version lag, stale collector)
   - /etc/pft-alerts/apparmor.rules.yml    # ../apparmor (kernel support, container profile + mode, boot persistence, recent DENIED events)
+  - /etc/pft-alerts/cluster.rules.yml     # ../cluster (validator<->sentry cluster missing or degraded: any FAIL/WARN audit check)
   - /etc/pft-slo/*.rules.yml    # ../slo (availability SLO + burn-rate alerts); run-stack.sh mounts it
 alerting:
   alertmanagers:
