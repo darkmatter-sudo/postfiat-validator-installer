@@ -9,7 +9,7 @@
 #    window; no data collector reading the validator's node; notifier env files present, no leftovers; both nodes
 #    full; pft-integrity PASS on both; redaction positive control. Topics, user, addresses and node keys go into a
 #    0600 literals file for redact.py and are never printed.
-# 1  redirect notifiers to a throwaway topic, silence alertname=~".+" , pft-maint window (sentry gets it too).
+# 1  redirect notifiers to a throwaway topic, silence alertname=~".+" except PFTAlertPipelineWatchdog , pft-maint window (sentry gets it too).
 # 2  install on both hosts (+ the validator's pull of the sentry file); Prometheus loads PFTClusterMissing.
 # 3  keys: keygen on the validator (creates fp_key), fp_key copied to the sentry, keygen there; pubkey/set-peer
 #    exchange (keys go to the literals file, never printed).
@@ -88,7 +88,15 @@ restore() {
   if [ -n "$SIL" ]; then
     left=$(( LAST_START + 25 * 60 - $(date -u +%s) ))
     if [ "$left" -gt 0 ]; then
-      echo "  silence kept: last node start $(date -u -d "@$LAST_START" +%TZ) + 25 min is ${left}s away (PFTContainerRestarted window); it expires by itself at its end time"
+      # Keep only what the restarts still need: a silence for PFTContainerRestarted alone (15-min resets() window),
+      # never the catch-all, which would also hold PFTAlertPipelineWatchdog past the window (lesson: alertpath STALE).
+      nb="$(jq -nc --arg s "$(ts)" --arg e "$(date -u -d "@$(( LAST_START + 25 * 60 ))" +%FT%TZ)" --arg c "$TASK post-run: PFTContainerRestarted only" \
+        '{matchers: [{name: "alertname", value: "PFTContainerRestarted", isRegex: false, isEqual: true}], startsAt: $s, endsAt: $e, createdBy: "cluster-live", comment: $c}')"
+      SIL2="$(curl -s --max-time 10 -H 'Content-Type: application/json' -X POST "$AM/api/v2/silences" -d "$nb" | jq -r '.silenceID // empty')"
+      if [ -n "$SIL2" ]; then
+        echo "  narrow silence alertname=PFTContainerRestarted until last node start $(date -u -d "@$LAST_START" +%TZ) + 25 min (${left}s); expires by itself"
+        curl -s --max-time 10 -o /dev/null -w "  catch-all silence expired: HTTP %{http_code}\n" -X DELETE "$AM/api/v2/silence/$SIL"
+      else echo "  narrow silence FAILED: catch-all kept (it excludes PFTAlertPipelineWatchdog) until its end time"; RESTORE_OK=false; fi
     else curl -s --max-time 10 -o /dev/null -w "  silence expired: HTTP %{http_code}\n" -X DELETE "$AM/api/v2/silence/$SIL"; fi
   fi
   R "rm -rf $RDIR" || true
@@ -179,9 +187,9 @@ sudo -n sh -c "umask 077; printf 'NTFY_SERVER=%s\nNTFY_TOPIC=%s\n' $NTFY $ALERT 
 check "$MAINT_ENV created with the throwaway topic (0600)" "$(ok_if '[ "$MAINT_ENV_MADE" = 1 ] && [ "$(sudo -n stat -c %a "$MAINT_ENV")" = 600 ]')"
 ends="$(date -u -d "+$SIL_TTL min" +%FT%TZ)"
 SBODY="$(jq -nc --arg s "$(ts)" --arg e "$ends" --arg c "$TASK pft-cluster live run $RUN (planned restarts of both nodes)" \
-  '{matchers: [{name: "alertname", value: ".+", isRegex: true, isEqual: true}], startsAt: $s, endsAt: $e, createdBy: "cluster-live", comment: $c}')"
+  '{matchers: [{name: "alertname", value: ".+", isRegex: true, isEqual: true}, {name: "alertname", value: "PFTAlertPipelineWatchdog", isRegex: false, isEqual: false}], startsAt: $s, endsAt: $e, createdBy: "cluster-live", comment: $c}')"
 SIL="$(curl -s --max-time 10 -H 'Content-Type: application/json' -X POST "$AM/api/v2/silences" -d "$SBODY" | jq -r '.silenceID // empty')"
-check "Alertmanager silence alertname=~\".+\" until $ends" "$(ok_if '[ -n "$SIL" ]')"
+check "Alertmanager silence alertname=~\".+\", alertname!=PFTAlertPipelineWatchdog (the dead-man switch keeps flowing), until $ends" "$(ok_if '[ -n "$SIL" ]')"
 x "sudo -n pft-maint start --ttl $TTL --reason '$TASK pft-cluster live run $RUN'"
 [ "$XRC" = 0 ] || { echo "  pft-maint start failed - stopping"; exit 4; }
 MAINT_STARTED=1
