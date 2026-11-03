@@ -10,9 +10,9 @@ either host can be rebuilt from the other one. Plaintext is never written to dis
 the source host packs and encrypts in one pipe, the peer stores ciphertext only, and the peer checks a generation by
 decrypting it in memory with its own age identity (root-only, 0600).
 
-Status: **steps 1-2 of the task are done and tested offline (inventory, metrics, alert rules; keygen, seal,
-two-way escrow, receive + in-memory verify, tamper detection, pft-maint-gated restore with backups)**. The mutant run,
-install and the live two-host proof come next. This README covers only what exists now.
+Status: **steps 1-3 of the task are done and tested offline (inventory, metrics, alert rules; keygen, seal,
+two-way escrow, receive + in-memory verify, tamper detection, pft-maint-gated restore with backups; mutation run)**.
+Install and the live two-host proof (step 4) come next. This README covers only what exists now.
 
 ## Inventory (read-only)
 
@@ -138,4 +138,27 @@ old identity is not needed. The target decrypts in memory and `keyescrow_tar.py 
 bash keyescrow/tests/run-tests.sh          # inventory: fake root, no root/network needed
 bash keyescrow/tests/run-escrow-tests.sh   # keygen/seal/escrow/verify/tamper/restore with real age, two fake hosts
 promtool test rules alerts/keyescrow.tests.yml
+python3 keyescrow/tests/mutate.py -j 3     # 44 mutants over every refusal and integrity check (both files)
 ```
+
+`tests/mutate.py`: each mutant is one exact text replacement in `pft-keyescrow.sh` or `keyescrow_tar.py` (it must
+match exactly once, else NOT APPLIED = harness failure). An unmutated control run must pass first. Each suite run has
+a timeout and runs in its own session with stdin from /dev/null, and on timeout the whole process group is killed.
+After the run no process from a mutant copy may be left. One mutant is documented as equivalent: P11
+(`O_NOFOLLOW` in pack), because the inventory refuses symlinks before pack is called.
+
+## Results so far (all from the logs in `logs/`)
+
+| log | what | result |
+|---|---|---|
+| `logs/01-inventory.log` | live read-only inventory, both hosts | validator `ok 10 ... absent(optional) 3 ... new 10 -> exit 1` (l.24), sentry `ok 10 ... absent(optional) 1 ... new 10 -> exit 1` (l.49): every required secret present with its declared mode/owner, nothing escrowed yet |
+| `logs/02-offline.log` | inventory suite, shellcheck, promtool | `67 passed, 0 failed` (l.79); `SUCCESS: 3 rules found` (l.83); promtool tests `SUCCESS` (l.87) |
+| `logs/03-offline.log` | inventory + escrow suites (real age 1.0.0) | `67 passed, 0 failed` (l.86) and `48 passed, 0 failed` (l.138) |
+| `logs/04-offline.log` | after restore | 67/67 (l.15) and escrow + restore 64/64 (l.83) |
+| `logs/05a-dev-mutants-1.log` | first mutant pass (dev) | 3 survivors: S4 (l.17), E2 (l.19), E3 (l.20); `40 killed + 1 documented equivalent of 44` (l.47) |
+| `logs/05b-dev-mutants-2.log` | the 3 former survivors after 3 new tests | `3 killed` (l.6) |
+| `logs/05-mutants.log` | recorded mutant run on the commit in its header | control 67/67 + 76/76 (l.10); `ORPHANS: 0` (l.55); `43 killed + 1 documented equivalent of 44, 0 survived` (l.56) |
+
+05a/05b are the raw harness output of dev passes (no header line); 05 is the recorded run. In 05, l.5 is
+`sha256sum` skipping the ignored `tests/__pycache__` directory (harmless).
+The last line of 05 (`0`) is an independent `ps` count of mutant-copy processes after the run.

@@ -1,0 +1,48 @@
+CONTROL (unmutated) rc=0 RESULT: 67 passed, 0 failed | RESULT: 72 passed, 0 failed 42s
+I1   KILLED (5 failed: mode 644 (want 600): perm, exit 2)                        46s  inventory: wrong mode accepted
+I2   KILLED (1 failed: owner differs: perm, owner BAD, name not printed)         46s  inventory: owner not checked
+I3   KILLED (1 failed: group differs: perm, group BAD)                           46s  inventory: group not checked
+I4   KILLED (1 failed: symlink: perm 'not a regular file')                       46s  inventory: symlink / non-file accepted
+I5   KILLED (4 failed: bare: exit 2)                                             47s  inventory: missing required item read as optional
+I6   KILLED (3 failed: one byte appended: drift, exit 1)                         46s  inventory: drift not detected
+I7   KILLED (7 failed: present: exit 1 (never escrowed))                         55s  inventory: never escrowed / new items exit 0
+I8   KILLED (2 failed: fingerprint is keyed: differs from sha256(file))          53s  inventory: fingerprint not keyed
+I9   KILLED (1 failed: unreadable: state + exit 2, no fingerprint)               56s  inventory: unreadable item read as ok
+K1   KILLED (1 failed: keygen again: refused (exit 4), identity unchanged)       56s  keygen: replaces an existing identity
+K2   KILLED (3 failed: set-peer: own recipient refused)                          56s  set-peer: own recipient accepted
+K3   KILLED (1 failed: set-peer: malformed refused (exit 3))                     55s  set-peer: malformed recipient accepted
+S1   KILLED (1 failed: seal with a perm finding: refused (exit 4), item named    53s  seal: inventory FAIL items do not refuse
+S2   KILLED (1 failed: seal without a peer: refused (exit 4))                    54s  seal: missing/malformed PEER_RECIPIENT not refused
+S3   KILLED (1 failed: seal: age failing in the pipe -> exit 2, nothing commi    51s  seal: a failing pack/age pipe is committed
+S4   SURVIVED                                                                    59s  seal: no fp_key not refused
+E1   KILLED (2 failed: wrong recipient: escrow FAIL (exit 2), sentry VERIFY F    60s  escrow: recorded as escrowed without the peer's VERIFIED
+E2   SURVIVED                                                                    58s  escrow: pulled generation acked without local verify
+E3   SURVIVED                                                                    57s  escrow: a failed ack is not a failure
+E4   KILLED (1 failed: escrow: refused without PEER_SSH (exit 4))                56s  escrow: PEER_SSH unset not refused
+V1   KILLED (1 failed: one-byte tamper: sha256 MISMATCH, exit 2, textfile ok=    55s  verify: ciphertext sha256 not compared
+V2   KILLED (7 failed: tamper + re-hashed meta: age authentication fails, VER    54s  verify: in-memory check result ignored
+V3   KILLED (4 failed: wrong recipient: the undecryptable generation was disc    50s  receive: a generation that failed its check is kept (can displace good ones)
+V4   KILLED (4 failed: KEEP=2 on the sentry: 2 generations held after 3 escro    55s  receive: KEEP ignored
+V5   KILLED (1 failed: serve receive with the host's own label: refused (exit    63s  receive: the host's own label accepted
+V6   KILLED (1 failed: serve: unknown verb refused (exit 3))                     62s  serve: unknown verb not refused
+V7   KILLED (1 failed: serve ack of a generation never sealed: refused (exit     60s  ack: a generation never sealed is recorded
+X1   KILLED (1 failed: restore without --yes: refused (exit 3))                  47s  restore: no --yes needed
+X2   KILLED (5 failed: restore outside a window: refused on the sentry, FAIL,    48s  restore: no maintenance window needed
+X3   KILLED (3 failed: restore with an EXPIRED window: refused)                  46s  restore: an expired window accepted
+X4   KILLED (1 failed: restore: pft-maint missing -> refused (fail closed))      48s  restore: missing pft-maint read as an open window
+X5   KILLED (2 failed: restore --dry-run (no window needed): plan only, nothi    48s  restore: dry run writes
+X6   KILLED (1 failed: tampered held copy: reseal refused, restore FAIL, noth    49s  reseal: a held copy that fails its check is still sent
+P1   KILLED (1 failed: check: an item whose bytes differ from its MANIFEST sh    53s  check: item sha256 mismatch accepted
+P2   KILLED (1 failed: check: an extra member -> bad, exit 2)                    53s  check: extra member accepted
+P3   KILLED (1 failed: forged payload (allowed id, foreign path): refused, fo    56s  apply: path outside this host's registry accepted
+P4   KILLED (1 failed: restore-apply: a payload for ANOTHER host is refused)     60s  apply: payload for another host accepted
+P5   KILLED (1 failed: restore-apply: a setuid mode in the MANIFEST is refuse    63s  apply: setuid/setgid/sticky mode accepted
+P6   KILLED (2 failed: restore all items over a corrupted seed: seed restored    62s  apply: replaced file not backed up
+P7   KILLED (1 failed: unknown item: refused, nothing changed)                   70s  apply: unknown item ignored
+P8   KILLED (1 failed: receive: ciphertext that differs from its meta sha256     71s  receive: ciphertext sha256 not compared
+P9   KILLED (1 failed: receive: a generation already held is rejected)           69s  receive: a generation already held is overwritten
+P10  KILLED (1 failed: receive: size differs from meta rejected)                 63s  receive: ciphertext size not compared
+P11  EQUIVALENT (documented)                                                     62s  pack: follows symlinks - inventory refuses symlinks (I4) before pack is ever called, so no input reaches pack with a symlink; O_NOFOLLOW is defence in depth
+ORPHANS: 0 process(es) from mutant copies left running
+RESULT: 40 killed + 1 documented equivalent of 44, 3 survived, not applied or errored
+exit=1
