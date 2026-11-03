@@ -23,7 +23,8 @@
 #   apply:          --online-delete N [--advisory-delete 0|1] [--timeout SECONDS (900)]
 #   rollback:       [--from FILE] [--timeout SECONDS (900)]
 #   can-delete:     [SEQ|now|always|never]
-# Env: CONTAINER (postfiatd) CFG (/etc/postfiatd/postfiatd.cfg, inside the container)
+# Env: CONTAINER (postfiatd) CFG (/etc/postfiatd/postfiatd.cfg, inside the container; written through
+#      the host side of its directory's mount when there is one, else from inside the container)
 #      RPC (http://127.0.0.1:5005/, inside the container) LOG_FILE (/opt/postfiatd/logs/debug.log)
 #      STATE_DIR (/var/lib/pft-retention) BACKUP_DIR (/var/backups/pft-retention) DOCKER (docker)
 
@@ -42,7 +43,7 @@ SAMPLE_HEADER="epoch,utc,server_state,validated_seq,complete_lo,complete_hi,nudb
 
 log() { printf '[%s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&2; }
 die() { log "ERROR: $*"; exit 2; }
-usage() { sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+usage() { sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 
 dx() { "${DOCKER[@]}" exec "$CONTAINER" "$@"; }
 dxi() { "${DOCKER[@]}" exec -i "$CONTAINER" "$@"; }
@@ -315,13 +316,33 @@ validate_cfg() { # $1 old file, $2 new file, $3 online_delete, $4 advisory_delet
 
 node_db_view() { sed -n '/^\[node_db\]/,/^\[/p' "$1" | sed '$ { /^\[/d }'; }
 
+cfg_host_dir() { # host path of the container mount that holds $CFG's directory, or "" if it is not a mount
+  "${DOCKER[@]}" inspect -f '{{json .Mounts}}' "$CONTAINER" 2>/dev/null \
+    | jq -r --arg d "$(dirname "$CFG")" '[.[] | select(.Destination == $d) | .Source][0] // empty' 2>/dev/null
+}
+
 install_cfg() { # $1 = host file to install as $CFG
-  local mode
+  local mode hd hp
   mode="$(dx stat -c %a "$CFG")"
-  # shellcheck disable=SC2016  # $1/$2 expand inside the container shell
-  dxi sh -c 'cat > "$1.pft-retention.new" && chmod "$2" "$1.pft-retention.new" && mv -f "$1.pft-retention.new" "$1"' sh "$CFG" "$mode" <"$1"
+  hd="$(cfg_host_dir)"
+  if [ -n "$hd" ]; then
+    # Write through the mount's host path, never from inside the container: an AppArmor profile (apparmor/) or a
+    # read-only mount may forbid the node from writing its own config, and the host-side rename stays atomic.
+    hp="$hd/$(basename "$CFG")"
+    [ -w "$hd" ] || die "config dir $hd (host side of $(dirname "$CFG")) not writable; run as root."
+    if ! [ -f "$hp" ] || [ "$(sha256sum <"$hp" | cut -d' ' -f1)" != "$(read_cfg | sha256sum | cut -d' ' -f1)" ]; then
+      die "host file $hp is not the container's $CFG (sha256 differs)."
+    fi
+    if ! { install -m "$mode" -o "$(stat -c %u "$hp")" -g "$(stat -c %g "$hp")" "$1" "$hp.pft-retention.new" \
+      && mv -f "$hp.pft-retention.new" "$hp"; }; then
+      die "could not write $hp."
+    fi
+  else
+    # shellcheck disable=SC2016  # $1/$2 expand inside the container shell
+    dxi sh -c 'cat > "$1.pft-retention.new" && chmod "$2" "$1.pft-retention.new" && mv -f "$1.pft-retention.new" "$1"' sh "$CFG" "$mode" <"$1"
+  fi
   [ "$(read_cfg | sha256sum | cut -d' ' -f1)" = "$(sha256sum <"$1" | cut -d' ' -f1)" ] || die "installed config does not match (sha256)."
-  log "installed $CFG in $CONTAINER (mode $mode, sha256 $(sha256sum <"$1" | cut -c1-16)...)"
+  log "installed $CFG in $CONTAINER (${hp:+via host mount, }mode $mode, sha256 $(sha256sum <"$1" | cut -c1-16)...)"
 }
 
 wait_full() { # $1 timeout seconds
