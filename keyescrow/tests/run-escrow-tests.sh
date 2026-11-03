@@ -96,6 +96,9 @@ check "decrypted payload carries the exact secret bytes (in memory)" 'age -d -i 
 chmod 644 "$VA/root/etc/n/ntfy.env"; on va seal
 check "seal with a perm finding: refused (exit 4), item named, nothing new" '[ "$RC" = 4 ] && grep -q "\[perm\] n:env" <<<"$OUT" && [ "$(ls "$(SD va)/outbox/"*.meta | wc -l)" = 1 ]'
 chmod 600 "$VA/root/etc/n/ntfy.env"
+mv "$(SD va)/fp_key" "$T/fp_key.va"; on va seal
+check "seal without fp_key: refused (exit 4), nothing new" '[ "$RC" = 4 ] && grep -q "no fp_key" <<<"$OUT" && [ "$(ls "$(SD va)/outbox/"*.meta | wc -l)" = 1 ]'
+mv "$T/fp_key.va" "$(SD va)/fp_key"
 
 # --- escrow end to end -------------------------------------------------------------------------------------------
 on va escrow
@@ -165,6 +168,25 @@ check "serve ack of a generation never sealed: refused (exit 4)" '[ "$RC" = 4 ]'
 OUT="$("$T/bin/fakessh" serve export "../../etc" 2>&1)"; RC=$?
 check "serve export of a non-generation name: refused (exit 4)" '[ "$RC" = 4 ]'
 
+# --- the pulled generation fails here / the ack fails: nothing is recorded on the sentry ------------------------------
+cp "$(SD se)/escrowed.tsv" "$T/se-esc.before"
+OTHER2="$(age-keygen 2>/dev/null | sed -n 's/^# public key: //p')"
+conf se PEER_RECIPIENT "$OTHER2"
+sleep 1; on va escrow
+check "sentry sealed to a wrong recipient: pull/verify FAIL here, exit 2, no ack" '[ "$RC" = 2 ] && grep -q "FAIL pull/verify here" <<<"$OUT" && ! grep -q "ACKED gen=.* items=" <<<"$(sed -n "/== 2\./,\$p" <<<"$OUT")"'
+check "...and the sentry's escrowed.tsv is unchanged" 'cmp -s "$T/se-esc.before" "$(SD se)/escrowed.tsv"'
+conf se PEER_RECIPIENT "$VAPUB"
+cat > "$T/bin/fakessh-noack" <<STUB2
+#!/usr/bin/env bash
+# like fakessh, but the ack verb fails (a lost connection at the last step)
+[ "\$2" = ack ] && { echo "connection lost" >&2; exit 255; }
+exec "$T/bin/fakessh" "\$@"
+STUB2
+chmod +x "$T/bin/fakessh-noack"; conf va PEER_SSH "$T/bin/fakessh-noack"
+sleep 1; on va escrow
+check "ack fails: escrow FAIL (exit 2), sentry escrowed.tsv unchanged" '[ "$RC" = 2 ] && grep -q "FAIL ack on sentry" <<<"$OUT" && cmp -s "$T/se-esc.before" "$(SD se)/escrowed.tsv"'
+conf va PEER_SSH "$T/bin/fakessh"
+
 # --- wrong recipient: the peer cannot verify, nothing is recorded as escrowed --------------------------------------
 cp "$(SD va)/escrowed.tsv" "$T/esc.before"
 OTHER="$(age-keygen 2>/dev/null | sed -n 's/^# public key: //p')"
@@ -226,6 +248,46 @@ printf 'lost\n' > "$SESEED"
 on va restore --host sentry --item c:seed --yes
 check "tampered held copy: reseal refused, restore FAIL, nothing written" '[ "$RC" = 2 ] && grep -q "reseal refused" <<<"$OUT" && [ "$(cat "$SESEED")" = lost ]'
 cp "$T/held.orig" "$HELD"; window se none
+
+# --- guards without a natural trigger: crafted inputs ---------------------------------------------------------------
+NG="$(ls "$(SD va)/outbox/"*.meta | wc -l)"
+PFT_KEYESCROW_AGE=false on va seal
+check "seal: age failing in the pipe -> exit 2, nothing committed" '[ "$RC" = 2 ] && grep -q "seal failed" <<<"$OUT" && [ "$(ls "$(SD va)/outbox/"*.meta | wc -l)" = "$NG" ] && [ -z "$(find "$(SD va)/outbox" -name "*.tmp")" ]'
+PFT_KEYESCROW_MAINT="$T/bin/no-such-pft-maint" on va restore --host validator --item n:env --yes
+check "restore: pft-maint missing -> refused (fail closed)" '[ "$RC" = 2 ] && grep -q "pft-maint not installed" <<<"$OUT"'
+craft() { # MODE -> a payload tar on stdout, built by hand (python), item bytes "abc"
+  python3 -I - "$1" <<'PYEOF'
+import hashlib, io, json, sys, tarfile
+mode = sys.argv[1]
+data = b"abc"
+items = [{"id": "c:seed", "path": "/x", "mode": "600", "uid": 0, "gid": 0, "size": 3,
+          "sha256": hashlib.sha256(b"abd" if mode == "badsha" else data).hexdigest()}]
+man = json.dumps({"v": 1, "host": "sentry", "gen": "20990101T000000Z", "items": items}).encode()
+out = sys.stdout.buffer
+with tarfile.open(fileobj=out, mode="w|") as tf:
+    for name, b in [("MANIFEST", man), ("items/0", data)] + ([("items/9", b"zz")] if mode == "extra" else []):
+        ti = tarfile.TarInfo(name); ti.size = len(b); tf.addfile(ti, io.BytesIO(b))
+PYEOF
+}
+OUT="$(craft badsha | python3 -I "$PFT_KEYESCROW_HELPER" check 2>&1)"; RC=$?
+check "check: an item whose bytes differ from its MANIFEST sha256 -> MISMATCH, exit 2" '[ "$RC" = 2 ] && grep -q "item c:seed MISMATCH(sha256)" <<<"$OUT"'
+OUT="$(craft extra | python3 -I "$PFT_KEYESCROW_HELPER" check 2>&1)"; RC=$?
+check "check: an extra member -> bad, exit 2" '[ "$RC" = 2 ] && grep -q "items/9 not in MANIFEST" <<<"$OUT"'
+OUT="$(craft ok | python3 -I "$PFT_KEYESCROW_HELPER" check 2>&1)"; RC=$?
+check "check control: the same hand-built payload without the defect passes" '[ "$RC" = 0 ] && grep -q "ok=1 bad=0" <<<"$OUT"'
+OUT="$(printf 'n:env\t%s\n' "$VANTFY" | python3 -I "$PFT_KEYESCROW_HELPER" pack --host validator --gen 20990101T000000Z 2>/dev/null | age -r "$NEWSE" | "$T/bin/fakessh" serve restore-apply --dry-run 2>&1)"; RC=$?
+check "restore-apply: a payload for ANOTHER host is refused" '[ "$RC" = 2 ] && grep -q "payload is for host .validator., this is .sentry." <<<"$OUT"'
+chmod 4600 "$SESEED"
+SUIDP="$(printf 'c:seed\t%s\n' "$SESEED" | python3 -I "$PFT_KEYESCROW_HELPER" pack --host sentry --gen 20990101T000000Z 2>/dev/null | age -r "$NEWSE" | base64 -w0)"
+chmod 600 "$SESEED"
+OUT="$(base64 -d <<<"$SUIDP" | "$T/bin/fakessh" serve restore-apply --dry-run 2>&1)"; RC=$?
+check "restore-apply: a setuid mode in the MANIFEST is refused" '[ "$RC" = 2 ] && grep -q "refusing mode 4600" <<<"$OUT" && [ "$(stat -c %a "$SESEED")" = 600 ]'
+G="$(ls "$(SD va)"/outbox/gen-*.meta | sort | tail -1)"; G="${G##*/gen-}"; G="${G%.meta}"
+rm -rf "$T/env2"; mkdir -p "$T/env2"; cp "$(SD va)/outbox/gen-$G.meta" "$(SD va)/outbox/gen-$G.age" "$T/env2/"
+printf 'X' | dd of="$T/env2/gen-$G.age" bs=1 seek=100 conv=notrunc 2>/dev/null
+rm -f "$(SD se)/store/validator/gen-$G."*
+OUT="$(tar -C "$T/env2" -cf - "gen-$G.meta" "gen-$G.age" | "$T/bin/fakessh" serve receive validator 2>&1)"; RC=$?
+check "receive: ciphertext that differs from its meta sha256 is rejected, nothing kept" '[ "$RC" = 2 ] && grep -q "ciphertext sha256 differs" <<<"$OUT" && [ ! -e "$(SD se)/store/validator/gen-$G.meta" ]'
 
 echo "RESULT: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]
