@@ -75,8 +75,8 @@ Exit codes: 0 everything ok and escrowed, 1 drift / not escrowed, 2 perm / missi
 - `PFTKeyEscrowStale` `reason=drift`: an item changed or appeared after the last escrow and stayed that way for 2 h.
 - `PFTKeyEscrowInventoryFailed`: inventory exit 2 (missing / wrong permissions / unreadable) for 15 min.
 
-The rules file is **not yet listed in `../alerts/prometheus.yml`**. It gets added in the same commit as the live
-install, so Prometheus never loads a rule whose metric has no series yet.
+The rules file is listed in `../alerts/prometheus.yml` since the live install (log 13): it was added only after
+both hosts exported metrics, so Prometheus never loaded a rule whose metric had no series.
 
 ## Escrow (offline-tested; not installed yet)
 
