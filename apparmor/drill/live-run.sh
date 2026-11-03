@@ -148,7 +148,7 @@ for h in local relay; do
 done
 echo "  no extra postfiatd-image container running on either host"
 if [ -n "$PROFILE_FILE" ]; then
-  x "sudo -n pft-apparmor check '$PROFILE_FILE' && sudo -n sha256sum < '$PROFILE_FILE' | cut -c1-64 && sudo -n grep -c . '$PROFILE_FILE'"
+  x "sudo -n pft-apparmor check '$PROFILE_FILE' && sudo -n cat '$PROFILE_FILE' | sha256sum | cut -c1-64 && sudo -n grep -c . '$PROFILE_FILE'"
   if [ "$XRC" != 0 ]; then
     if [ "$PREFLIGHT_ONLY" = 1 ]; then echo "  PROFILE_FILE missing or does not compile - a real run would stop here"; NOT_READY=1
     else echo "  PROFILE_FILE missing or does not compile - stopping" >&2; exit 3; fi
@@ -259,7 +259,7 @@ echo; echo "== 3. sentry: before, P0, injected gate miss, complain window, P1, e
 started
 if [ -n "$PROFILE_FILE" ]; then
   echo "  re-apply mode: PROFILE_FILE -> $P1 on both hosts, then host-run.sh sentry --profile (no drill)"
-  x "sudo -n install -m 0644 '$PROFILE_FILE' $P1 && sudo -n cat $P1 | R 'sudo -n sh -c \"umask 022; cat > $P1\"' && sudo -n sha256sum < $P1 | cut -c1-64; R 'sudo -n sha256sum < $P1 | cut -c1-64'"
+  x "sudo -n install -m 0644 '$PROFILE_FILE' $P1 && sudo -n cat $P1 | R 'sudo -n sh -c \"umask 022; cat > $P1\"' && sudo -n cat $P1 | sha256sum | cut -c1-64; R 'sudo -n cat $P1 | sha256sum | cut -c1-64'"
   check "profile copied, sha256 identical on both hosts" "$(ok_if '[ "$XRC" = 0 ] && [ "$(sed -n 1p <<<"$XOUT")" = "$(sed -n 2p <<<"$XOUT")" ] && [ -n "$(sed -n 1p <<<"$XOUT")" ]')"
   [ "$FAILS" = 0 ] || { echo "  profile copy failed - stopping before any node change"; exit 4; }
   x "R 'sudo -n bash $RDIR/apparmor/drill/host-run.sh sentry --profile $P1'"
