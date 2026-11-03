@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Payload and envelope helper for pft-keyescrow (stdlib only). Never writes a secret to disk.
+"""Payload and envelope helper for pft-keyescrow (stdlib only). Writes plaintext only in `apply`, to the item's own path.
 
 pack --host H --gen G      stdin: "id<TAB>path" lines. stdout: an uncompressed tar stream (meant to be piped
                            straight into `age -r PEER`): member MANIFEST (JSON: id, path, mode, uid, gid, size,
@@ -11,6 +11,14 @@ receive DEST               stdin: tar of exactly gen-G.meta + gen-G.age (one gen
                            both as 0600 temp files in DEST, checks the ciphertext sha256 and size against the
                            meta, then renames .age and finally .meta (the meta is the commit marker of a
                            generation). Prints RECEIVED gen=G. Exit 0 ok, 2 rejected (temp files removed).
+apply --host H --allow FILE --backup-dir DIR [--item ID ...] [--dry-run]
+                           stdin: a decrypted payload. Restores the selected items (default: all) to their paths
+                           with the MANIFEST's mode, uid and gid. age does not authenticate the SENDER, so only
+                           (id, path) pairs listed in FILE (this host's own registry) are accepted. Everything is
+                           read and checked first (sha256, sizes, allow list, selection); nothing is written
+                           unless all of it passes. An existing different file is copied to DIR first (0600).
+                           Each file goes to a temp file in its own directory, is fsynced, chowned, chmodded and
+                           renamed over the target. Exit 0 ok, 2 refused/failed.
 """
 
 import argparse
@@ -239,6 +247,140 @@ def cmd_receive(a):
         die(f"receive failed: {type(e).__name__}: {e}")
 
 
+def read_payload(stream):
+    """-> (manifest, [bytes per item]) with every item's size and sha256 checked."""
+    with tarfile.open(fileobj=stream, mode="r|") as tf:
+        first = tf.next()
+        if (
+            first is None
+            or first.name != "MANIFEST"
+            or not first.isreg()
+            or first.size > MAX_META
+        ):
+            die("payload does not start with MANIFEST")
+        man = json.loads(tf.extractfile(first).read())
+        items = man.get("items")
+        if man.get("v") != 1 or not isinstance(items, list):
+            die("MANIFEST: unknown version or no items")
+        blobs = [None] * len(items)
+        for m in tf:  # stream-mode iteration replays MANIFEST: skip it
+            if m is first:
+                continue
+            mm = re.fullmatch(r"items/([0-9]+)", m.name)
+            if not mm or not m.isreg() or m.size > MAX_ITEM:
+                die(f"unexpected member {m.name!r}")
+            i = int(mm.group(1))
+            if i >= len(items) or blobs[i] is not None:
+                die(f"member {m.name} not in MANIFEST or duplicated")
+            blobs[i] = tf.extractfile(m).read()
+    for i, want in enumerate(items):
+        data = blobs[i]
+        if data is None:
+            die(f"item {want.get('id')} missing from the payload")
+        if (
+            len(data) != want["size"]
+            or hashlib.sha256(data).hexdigest() != want["sha256"]
+        ):
+            die(f"item {want.get('id')} does not match its MANIFEST entry")
+    return man, blobs
+
+
+def cmd_apply(a):
+    allow = {}
+    with open(a.allow, encoding="utf-8") as fh:
+        for line in fh:
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) == 2 and parts[0]:
+                allow[parts[0]] = parts[1]
+    try:
+        man, blobs = read_payload(sys.stdin.buffer)
+    except (tarfile.TarError, OSError, ValueError, KeyError, EOFError) as e:
+        die(f"payload unreadable: {type(e).__name__}: {e}")
+    if man.get("host") != a.host:
+        die(f"payload is for host {man.get('host')!r}, this is {a.host!r}")
+    by_id = {it["id"]: (it, blobs[i]) for i, it in enumerate(man["items"])}
+    sel = a.item or list(by_id)
+    plan = []
+    for ident in sel:
+        if ident not in by_id:
+            die(f"item {ident} is not in this generation")
+        it, data = by_id[ident]
+        if allow.get(ident) != it["path"]:
+            die(
+                f"item {ident}: path {it['path']!r} is not this host's registry path for that id"
+            )
+        if (
+            not re.fullmatch(r"[0-7]{3,4}", str(it["mode"]))
+            or int(it["mode"], 8) & 0o7000
+        ):
+            die(f"item {ident}: refusing mode {it['mode']}")
+        plan.append((ident, it, data, int(it["mode"], 8)))
+    for ident, it, data, mode in plan:
+        path = it["path"]
+        cur, st = None, None
+        if os.path.lexists(path):
+            if os.path.islink(path) or not os.path.isfile(path):
+                die(f"item {ident}: target exists and is not a regular file")
+            with open(path, "rb") as fh:
+                cur = fh.read()
+            st = os.stat(path)
+        same = cur == data
+        meta_ok = (
+            st is not None
+            and (st.st_mode & 0o7777) == mode
+            and st.st_uid == it["uid"]
+            and st.st_gid == it["gid"]
+        )
+        if same and meta_ok:
+            print(f"  item {ident} unchanged")
+            continue
+        what = (
+            "mode/owner fixed"
+            if same
+            else ("restored" if cur is not None else "restored (was absent)")
+        )
+        if a.dry_run:
+            print(f"  item {ident} would be {what}")
+            continue
+        backup = "none"
+        if cur is not None and not same:
+            os.makedirs(a.backup_dir, mode=0o700, exist_ok=True)
+            bpath = os.path.join(
+                a.backup_dir, ident.replace(":", "_").replace("/", "_")
+            )
+            fd = os.open(bpath, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "wb") as out:
+                out.write(cur)
+                out.flush()
+                os.fsync(out.fileno())
+            backup = "kept"
+        d = os.path.dirname(path)
+        if not os.path.isdir(d):
+            os.makedirs(d, mode=0o700)
+        tmp = os.path.join(d, f".{os.path.basename(path)}.pft-keyescrow.tmp")
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            with os.fdopen(fd, "wb") as out:
+                out.write(data)
+                out.flush()
+                os.fsync(out.fileno())
+                os.fchown(out.fileno(), it["uid"], it["gid"])
+                os.fchmod(out.fileno(), mode)
+            os.rename(tmp, path)
+        except OSError:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+            raise
+        dfd = os.open(d, os.O_RDONLY)
+        os.fsync(dfd)
+        os.close(dfd)
+        print(f"  item {ident} {what} (mode {it['mode']}, backup {backup})")
+    print(
+        f"APPLY host={a.host} gen={man.get('gen')} items={len(plan)}{' DRY RUN' if a.dry_run else ''}"
+    )
+    return 0
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -251,12 +393,23 @@ def main():
     rc = sub.add_parser("receive")
     rc.add_argument("dest")
     rc.add_argument("--host", default="")
+    ap = sub.add_parser("apply")
+    ap.add_argument("--host", required=True)
+    ap.add_argument("--allow", required=True)
+    ap.add_argument("--backup-dir", required=True)
+    ap.add_argument("--item", action="append")
+    ap.add_argument("--dry-run", action="store_true")
     a = p.parse_args()
     if a.cmd == "pack":
         cmd_pack(a)
         return 0
     if a.cmd == "check":
         return cmd_check(a)
+    if a.cmd == "apply":
+        try:
+            return cmd_apply(a)
+        except OSError as e:
+            die(f"apply failed: {type(e).__name__}: {e}")
     return cmd_receive(a)
 
 

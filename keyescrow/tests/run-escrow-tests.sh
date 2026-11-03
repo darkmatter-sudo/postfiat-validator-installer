@@ -4,7 +4,8 @@
 # whole two-way flow (seal, push, receive + in-memory check, ack, peer seal, export, pull, verify) runs end to end.
 # Covers: secrets never printed or written in plaintext (positive controls), refusals (no peer, bad inventory,
 # wrong recipient, own label, unknown verb, foreign/odd envelopes), one-byte tamper of ciphertext, a re-hashed
-# tamper (age authentication catches it), generation pruning (KEEP), drift after a change.
+# tamper (age authentication catches it), generation pruning (KEEP), drift after a change; restore in both
+# directions (pft-maint gate, dry run, backups, mode fix, rebuilt identity, forged payload, tampered held copy).
 # Needs: age, age-keygen, python3, jq. No root, no network. Temp under TEST_TMPDIR (default ~/.cache).
 # Usage: bash keyescrow/tests/run-escrow-tests.sh [path/to/pft-keyescrow.sh]
 # shellcheck disable=SC2016,SC2034,SC2001,SC2012
@@ -172,6 +173,59 @@ sleep 1; on va escrow
 check "wrong recipient: escrow FAIL (exit 2), sentry VERIFY FAILED" '[ "$RC" = 2 ] && grep -q "VERIFY FAILED from=validator" <<<"$OUT" && grep -q "FAIL push/verify on sentry" <<<"$OUT"'
 check "wrong recipient: escrowed.tsv not updated" 'cmp -s "$T/esc.before" "$(SD va)/escrowed.tsv"'
 check "wrong recipient: the undecryptable generation was discarded, good ones kept" 'grep -q "discarded gen" <<<"$OUT" && [ "$(ls "$(SD se)/store/validator/"*.meta | wc -l)" = 2 ] && [ -z "$(grep -l "result=bad" "$(SD se)"/store/validator/*.verified)" ]'
+
+# --- restore ------------------------------------------------------------------------------------------------------
+cat > "$T/bin/pft-maint" <<'STUBMAINT'
+#!/usr/bin/env bash
+# stub: window state from <host root>/etc/maint-window (absent = none)
+w="$(cat "$PFT_KEYESCROW_ROOT/etc/maint-window" 2>/dev/null || echo none)"
+printf '{"time":"x","window":"%s","locks":[]}\n' "$w"
+STUBMAINT
+chmod +x "$T/bin/pft-maint"; export PFT_KEYESCROW_MAINT="$T/bin/pft-maint"
+window() { if [ "$2" = none ]; then rm -f "$T/$1/root/etc/maint-window"; else echo "$2" > "$T/$1/root/etc/maint-window"; fi; }
+SESEED="$SE/root/var/lib/c/node_seed"; cp "$SESEED" "$T/se-seed.orig"
+VANTFY="$VA/root/etc/n/ntfy.env"; cp "$VANTFY" "$T/va-ntfy.orig"
+on va restore --host sentry --item c:seed
+check "restore without --yes: refused (exit 3)" '[ "$RC" = 3 ] && grep -q "add --yes" <<<"$OUT"'
+rm "$SESEED"; on va restore --host sentry --item c:seed --yes
+check "restore outside a window: refused on the sentry, FAIL, seed still absent" '[ "$RC" = 2 ] && grep -q "outside a maintenance window" <<<"$OUT" && [ ! -e "$SESEED" ]'
+window se expired; on va restore --host sentry --item c:seed --yes
+check "restore with an EXPIRED window: refused" '[ "$RC" = 2 ] && grep -q "window=expired" <<<"$OUT" && [ ! -e "$SESEED" ]'
+window se none; on va restore --host sentry --item c:seed --dry-run
+check "restore --dry-run (no window needed): plan only, nothing written" '[ "$RC" = 0 ] && grep -q "item c:seed would be restored (was absent)" <<<"$OUT" && [ ! -e "$SESEED" ]'
+window se active; on va restore --host sentry --item c:seed --yes
+check "sentry node_seed restore: PASS" '[ "$RC" = 0 ] && grep -q "item c:seed restored (was absent) (mode 600, backup none)" <<<"$OUT" && grep -qx "RESULT: PASS - restore on sentry" <<<"$OUT"'
+check "restored seed byte-identical, 0600" 'cmp -s "$SESEED" "$T/se-seed.orig" && [ "$(stat -c %a "$SESEED")" = 600 ]'
+check "restore output: after-scan shows c:seed ok, no secret bytes printed" 'grep -q "after: \[ok\] c:seed" <<<"$OUT" && ! grep -qF "$MARK" <<<"$OUT"'
+printf 'corrupted\n' > "$SESEED"; chmod 600 "$SESEED"
+on va restore --host sentry --yes
+check "restore all items over a corrupted seed: seed restored with backup, others unchanged" '[ "$RC" = 0 ] && grep -q "item c:seed restored (mode 600, backup kept)" <<<"$OUT" && [ "$(grep -c "unchanged$" <<<"$OUT")" = 3 ] && cmp -s "$SESEED" "$T/se-seed.orig"'
+BK="$(find "$(SD se)/restore-backups" -type f -name c_seed | tail -1)"
+check "backup holds the replaced (corrupted) file, 0600 in a 0700 dir" '[ -n "$BK" ] && [ "$(cat "$BK")" = corrupted ] && [ "$(stat -c %a "$BK")" = 600 ] && [ "$(stat -c %a "$(dirname "$BK")")" = 700 ]'
+chmod 644 "$SESEED"; on va restore --host sentry --item c:seed --yes
+check "same bytes, wrong mode: mode/owner fixed, no backup" '[ "$RC" = 0 ] && grep -q "item c:seed mode/owner fixed (mode 600, backup none)" <<<"$OUT" && [ "$(stat -c %a "$SESEED")" = 600 ]'
+window se none
+rm "$VANTFY"; window va active; on va restore --host validator --item n:env --yes
+check "validator self-restore (sentry re-encrypts its copy): PASS, byte-identical" '[ "$RC" = 0 ] && grep -q "item n:env restored (was absent)" <<<"$OUT" && cmp -s "$VANTFY" "$T/va-ntfy.orig"'
+window va none
+rm "$(SD se)/age.key" "$(SD se)/age.pub"; on se keygen; NEWSE="$(sed -n 's/^age recipient: //p' <<<"$OUT")"
+check "sentry rebuilt identity: new recipient" '[[ "$NEWSE" =~ ^age1 ]] && [ "$NEWSE" != "$SEPUB" ]'
+printf 'lost\n' > "$SESEED"; chmod 600 "$SESEED"; window se active
+on va restore --host sentry --item c:seed --yes
+check "restore to a REBUILT identity (re-encrypted to the new recipient): PASS" '[ "$RC" = 0 ] && cmp -s "$SESEED" "$T/se-seed.orig"'
+on va restore --host sentry --item x:nope --yes
+check "unknown item: refused, nothing changed" '[ "$RC" = 2 ] && grep -q "item x:nope is not in this generation" <<<"$OUT" && cmp -s "$SESEED" "$T/se-seed.orig"'
+mkdir -p "$T/forge"; printf 'evil\n' > "$T/forge/x"
+FORGED="$(printf 'c:seed\t%s\n' "$T/forge/x" | python3 -I "$PFT_KEYESCROW_HELPER" pack --host sentry --gen 20990101T000000Z 2>/dev/null | age -r "$NEWSE" | base64 -w0)"
+rm "$T/forge/x"
+OUT="$(base64 -d <<<"$FORGED" | "$T/bin/fakessh" serve restore-apply 2>&1)"; RC=$?
+check "forged payload (allowed id, foreign path): refused, foreign path not written" '[ "$RC" = 2 ] && grep -q "is not this host.s registry path" <<<"$OUT" && [ ! -e "$T/forge/x" ] && cmp -s "$SESEED" "$T/se-seed.orig"'
+HELD="$(ls "$(SD va)"/store/sentry/gen-*.age | sort | tail -1)"; cp "$HELD" "$T/held.orig"
+printf 'X' | dd of="$HELD" bs=1 seek=200 conv=notrunc 2>/dev/null
+printf 'lost\n' > "$SESEED"
+on va restore --host sentry --item c:seed --yes
+check "tampered held copy: reseal refused, restore FAIL, nothing written" '[ "$RC" = 2 ] && grep -q "reseal refused" <<<"$OUT" && [ "$(cat "$SESEED")" = lost ]'
+cp "$T/held.orig" "$HELD"; window se none
 
 echo "RESULT: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

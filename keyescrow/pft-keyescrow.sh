@@ -14,7 +14,12 @@
 #        sudo pft-keyescrow escrow          (host with PEER_SSH) both directions: seal + push + peer verifies; peer
 #                                           seals + pull + verify here; each side records what the other holds
 #        sudo pft-keyescrow verify [--all] [--textfile]   re-check held generations (sha256 + decrypt in memory)
-#        pft-keyescrow serve VERB ...       what PEER_SSH runs on the peer: receive LABEL | seal | export GEN | ack GEN
+#        sudo pft-keyescrow restore --host validator|sentry [--gen G] [--item ID]... [--dry-run] --yes
+#                                           (host with PEER_SSH) the holder re-encrypts its checked copy to the
+#                                           target's current recipient; the target applies it inside an ACTIVE
+#                                           pft-maint window, backing up every file it replaces
+#        pft-keyescrow serve VERB ...       what PEER_SSH runs on the peer: receive LABEL | seal | export GEN |
+#                                           ack GEN | pubkey | reseal FROM GEN RECIPIENT | restore-apply [...]
 #
 # Inventory, per declared item that applies to this host (HOST_LABEL):
 #   ok        present, mode/owner/group exactly as declared, readable
@@ -339,7 +344,10 @@ cmd_serve() { # the only verbs PEER_SSH may run on this host
     seal) [ $# = 0 ] || die "serve seal"; cmd_seal ;;
     export) [ $# = 1 ] || die "serve export GEN"; cmd_export "$1" ;;
     ack) [ $# = 1 ] || die "serve ack GEN"; record_escrowed "$1" ;;
-    *) die "serve: unknown verb '$v' (receive|seal|export|ack)" ;;
+    pubkey) [ $# = 0 ] || die "serve pubkey"; cmd_pubkey ;;
+    reseal) [ $# = 3 ] || die "serve reseal FROM GEN RECIPIENT"; cmd_reseal "$@" ;;
+    restore-apply) cmd_restore_apply "$@" ;;
+    *) die "serve: unknown verb '$v' (receive|seal|export|ack|pubkey|reseal|restore-apply)" ;;
   esac
 }
 
@@ -423,6 +431,98 @@ cmd_verify() {
   [ "$bad" = 0 ] || return 2
 }
 
+MAINT="${PFT_KEYESCROW_MAINT:-pft-maint}"
+maint_active() { # rc 0 only when pft-maint positively reports an ACTIVE window; else message + rc 1 (fail closed)
+  local j w
+  command -v "$MAINT" >/dev/null 2>&1 || { echo "pft-maint not installed: cannot prove a maintenance window is open"; return 1; }
+  j="$("$MAINT" status --json 2>/dev/null)" || { echo "pft-maint status --json failed"; return 1; }
+  w="$(jq -er '.window | strings' <<<"$j" 2>/dev/null)" || { echo "pft-maint status: no window field"; return 1; }
+  [ "$w" = active ] || { echo "no active pft-maint window (window=$w); run: sudo pft-maint start --ttl 30m --reason ..."; return 1; }
+}
+allow_list() { # id<TAB>path of every registry item that applies to this host (the only paths restore may write)
+  local id hosts tpl rest p
+  while IFS=$'\t' read -r id hosts tpl rest; do
+    [ -z "$id" ] || [[ "$id" == \#* ]] && continue
+    applies "$hosts" || continue
+    p="$(resolve "$tpl")"; [ -n "$p" ] && printf '%s\t%s\n' "$id" "$p"
+  done < <(registry)
+}
+
+cmd_reseal() { # FROM GEN|latest RECIPIENT -> stdout: the held generation re-encrypted to RECIPIENT (checked first)
+  local from="${1:-}" g="${2:-}" recip="${3:-}" d
+  valid_label "$from" && [ "$from" != "$HOST_LABEL" ] || die "reseal: FROM must be the peer's label"
+  [[ "$recip" =~ $AGE_RE ]] || die "reseal: want an age recipient"
+  [ -s "$IDF" ] || die "no age identity (run keygen)" 4
+  d="$STORE/$from"
+  [ "$g" = latest ] && g="$(gens_in "$d" 2>/dev/null | tail -1)"
+  [[ "$g" =~ $GEN_RE ]] && [ -f "$d/gen-$g.meta" ] || die "reseal: no held generation '${2:-}' for $from" 4
+  verify_gen "$from" "$g" >&2 || die "reseal refused: held generation $g failed its check" 2
+  ( set -o pipefail; "$AGE" -d -i "$IDF" "$d/gen-$g.age" | "$AGE" -r "$recip" ) || die "reseal: age failed" 2
+}
+
+cmd_restore_apply() { # [--item ID]... [--dry-run]; stdin = a payload encrypted to THIS host's identity
+  local dry=0 items=() bdir rc allow
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --item) [ -n "${2:-}" ] || die "--item needs an id"; items+=(--item "$2"); shift ;;
+      --dry-run) dry=1 ;;
+      *) die "restore-apply: unknown option $1" ;;
+    esac
+    shift
+  done
+  [ -s "$IDF" ] || die "no age identity (run keygen)" 4
+  if [ "$dry" = 0 ]; then maint_active >&2 || die "restore refused on $HOST_LABEL: outside a maintenance window" 4; fi
+  need_dirs
+  bdir="$STATE_DIR/restore-backups/$(date -u +%Y%m%dT%H%M%SZ)"
+  allow="$(mktemp "$STATE_DIR/.allow.XXXXXX")"; allow_list > "$allow"
+  # shellcheck disable=SC2046 # the flag is one word
+  ( set -o pipefail; "$AGE" -d -i "$IDF" | python3 -I "$HELPER" apply --host "$HOST_LABEL" --allow "$allow" \
+      --backup-dir "$bdir" "${items[@]}" $([ "$dry" = 1 ] && echo --dry-run) ); rc=$?
+  rm -f "$allow"
+  [ -d "$bdir" ] && echo "  backups of replaced files: restore-backups/${bdir##*/} (0700 dir, 0600 files)"
+  if [ "$rc" != 0 ]; then echo "RESTORE FAILED on $HOST_LABEL (exit $rc)"; return 2; fi
+  [ "$dry" = 1 ] && { echo "RESTORE DRY RUN on $HOST_LABEL"; return 0; }
+  scan
+  printf '%s' "$ROWS" | awk -F'\t' '{ print "  after: [" $2 "] " $1 " " $7 }'
+  echo "RESTORED on $HOST_LABEL"
+}
+
+cmd_restore() { # --host validator|sentry [--gen G] [--item ID]... [--dry-run] --yes
+  local target="" g=latest yes=0 dry=0 args=() recip rc err
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --host) target="${2:-}"; shift ;;
+      --gen) g="${2:-}"; shift ;;
+      --item) [ -n "${2:-}" ] || die "--item needs an id"; args+=(--item "$2"); shift ;;
+      --dry-run) dry=1; args+=(--dry-run) ;;
+      --yes) yes=1 ;;
+      *) die "restore: unknown option $1" ;;
+    esac
+    shift
+  done
+  valid_label "$target" || die "restore: --host validator|sentry"
+  [ "$g" = latest ] || [[ "$g" =~ $GEN_RE ]] || die "restore: --gen must be a generation name or latest"
+  [ "$yes" = 1 ] || [ "$dry" = 1 ] || die "restore writes secrets back on $target: add --yes (or --dry-run)"
+  [ -n "$PEER_SSH" ] || die "PEER_SSH not set (see $CONF)" 4
+  err="$(mktemp "$STATE_DIR/.restore-err.XXXXXX")" || die "cannot write $STATE_DIR" 2
+  echo "pft-keyescrow restore - $(ts) | target $target | gen $g$([ "$dry" = 1 ] && echo ' | DRY RUN')"
+  if [ "$target" = "$HOST_LABEL" ]; then
+    recip="$(cmd_pubkey)" || die "no age recipient here (run keygen first on a rebuilt host)" 4
+    echo "== $PEER_LABEL re-encrypts its held copy of $target to $target's current recipient; $target applies"
+    peer reseal "$target" "$g" "$recip" </dev/null 2>"$err" | cmd_restore_apply "${args[@]}"
+    rc=$(( PIPESTATUS[0] + PIPESTATUS[1] ))
+  else
+    recip="$(peer pubkey </dev/null 2>/dev/null)"
+    [[ "$recip" =~ $AGE_RE ]] || die "restore: $target has no age recipient (run keygen there first)" 4
+    echo "== $HOST_LABEL re-encrypts its held copy of $target to $target's current recipient; $target applies"
+    cmd_reseal "$target" "$g" "$recip" 2>"$err" | peer restore-apply "${args[@]}"
+    rc=$(( PIPESTATUS[0] + PIPESTATUS[1] ))
+  fi
+  sed 's/^/  reseal: /' "$err"; rm -f "$err"
+  if [ "$rc" = 0 ]; then echo "RESULT: PASS - restore on $target"; return 0; fi
+  echo "RESULT: FAIL - restore on $target (exit sum $rc)"; return 2
+}
+
 usage() { sed -n '/^# Usage:/,/^#$/p' "$0" | sed '$d' >&2; exit 3; }
 case "${1:-}" in
   inventory) shift; cmd_inventory "$@"; exit $? ;;
@@ -432,6 +532,7 @@ case "${1:-}" in
   seal) cmd_seal; exit $? ;;
   escrow) cmd_escrow; exit $? ;;
   verify) shift; cmd_verify "$@"; exit $? ;;
+  restore) shift; cmd_restore "$@"; exit $? ;;
   serve) shift; cmd_serve "$@"; exit $? ;;
   *) usage ;;
 esac

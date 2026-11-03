@@ -10,9 +10,9 @@ either host can be rebuilt from the other one. Plaintext is never written to dis
 the source host packs and encrypts in one pipe, the peer stores ciphertext only, and the peer checks a generation by
 decrypting it in memory with its own age identity (root-only, 0600).
 
-Status: **steps 1-2 of the task are done offline (inventory, metrics, alert rules; keygen, seal, two-way escrow,
-receive + in-memory verify, tamper detection)**. Restore, the mutant run, install and the live two-host proof come
-next. This README covers only what exists now.
+Status: **steps 1-2 of the task are done and tested offline (inventory, metrics, alert rules; keygen, seal,
+two-way escrow, receive + in-memory verify, tamper detection, pft-maint-gated restore with backups)**. The mutant run,
+install and the live two-host proof come next. This README covers only what exists now.
 
 ## Inventory (read-only)
 
@@ -111,10 +111,31 @@ also rewrites the meta's hash, age's authentication fails on decrypt. Both cases
 `--textfile` writes `pft_keyescrow_held_generations`, `pft_keyescrow_held_newest_timestamp_seconds`,
 `pft_keyescrow_held_verify_ok` and `pft_keyescrow_verify_timestamp_seconds` (per `node`, `peer`).
 
+## Restore (offline-tested; not installed yet)
+
+```sh
+sudo pft-maint start --ttl 30m --reason "restore sentry node_seed"     # on the TARGET host
+sudo pft-keyescrow restore --host sentry --item cluster:node_seed --dry-run
+sudo pft-keyescrow restore --host sentry --item cluster:node_seed --yes  # run on the host with PEER_SSH
+```
+
+The host that holds the target's escrow checks its copy (sha256 + in-memory decrypt) and re-encrypts it in one pipe
+(`age -d | age -r`) to the target's **current** age recipient. So a rebuilt host only needs `keygen` first, and its
+old identity is not needed. The target decrypts in memory and `keyescrow_tar.py apply` writes the items:
+- Refused unless `pft-maint status --json` reports `window=active` on the target (fail closed: no pft-maint, a
+  failing status, or `none`/`expired` all refuse). `--dry-run` prints the plan without a window and writes nothing.
+- age does not authenticate the sender, so the target writes only (id, path) pairs from its **own** registry. A
+  payload that names an allowed id with a different path is refused before anything is written.
+- Everything is checked first (sha256, sizes, allow list, selection); nothing is written unless all of it passes.
+- A file with different bytes is copied to `STATE_DIR/restore-backups/<UTC>/` (0700 dir, 0600 files) before it is
+  replaced. Same bytes with a wrong mode/owner only get the mode/owner fixed. Each file is written to a temp file
+  in its own directory, fsynced, chowned/chmodded to the MANIFEST's uid/gid/mode, then renamed into place.
+- After applying, the inventory runs again and prints each item's state.
+
 ## Tests
 
 ```sh
 bash keyescrow/tests/run-tests.sh          # inventory: fake root, no root/network needed
-bash keyescrow/tests/run-escrow-tests.sh   # keygen/seal/escrow/verify/tamper with the real age binary, two fake hosts
+bash keyescrow/tests/run-escrow-tests.sh   # keygen/seal/escrow/verify/tamper/restore with real age, two fake hosts
 promtool test rules alerts/keyescrow.tests.yml
 ```
