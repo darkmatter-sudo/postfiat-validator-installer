@@ -1,0 +1,125 @@
+fleet sync fleet - 2026-11-03T23:09:28Z - Ubuntu 22.04.5 LTS - repo HEAD 211335b6b4b72cb6a422707a60915c43abb6a849 (clean: yes)
+
+== 0. before
+$ sudo -n pft-fleet skew | grep -v ' CURRENT '
+  ref main = 211335b6b4b72cb6a422707a60915c43abb6a849
+  host sentry     role sentry    ok
+  host validator  role validator ok
+  HOST       ADDON       STATE      DETAIL
+  validator  fleet       BEHIND     /usr/local/lib/pft-fleet/manifest.tsv BEHIND @0188866054fc (-1)
+  SUMMARY CURRENT=50 BEHIND=1 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 0)
+
+== 1. point pft-maint at a throwaway topic
+real /etc/pft-maint/ntfy.env present before: 0
+CHECK ok   throwaway target installed
+
+== 2. window + sync of fleet to HEAD
+$ sudo -n pft-maint start --ttl 15m --reason 'task_2361bde7 fleet sync fleet (manifest)'
+  window started: id m1793747381-2196089 until 2026-11-03T23:24:41Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint window open
+$ sudo -n pft-fleet sync --addon fleet --to 211335b6b4b72cb6a422707a60915c43abb6a849 --apply --reason 'task_2361bde7 keyescrow manifest lines'
+  [2026-11-03T23:09:57Z] sync fleet to 211335b6b4b72cb6a422707a60915c43abb6a849 (2026-11-03T22:12:15+00:00) REF main=211335b6b4b72cb6a422707a60915c43abb6a849
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN validator validator /usr/local/sbin/pft-fleet 0755 CURRENT 61cafcfcdaa9 61cafcfcdaa9 keep
+  PLAN validator validator /usr/local/lib/pft-fleet/fleet_lib.py 0644 CURRENT dcb37d26f33f dcb37d26f33f keep
+  PLAN validator validator /usr/local/lib/pft-fleet/manifest.tsv 0644 BEHIND b3cd5f91f36a f193ff3c7301 write
+  PLAN validator validator /etc/systemd/system/pft-fleet.service 0644 CURRENT 3105a2f0a144 3105a2f0a144 keep
+  PLAN validator validator /etc/systemd/system/pft-fleet.timer 0644 CURRENT 79839ee00a81 79839ee00a81 keep
+  [2026-11-03T23:09:57Z] order: sentry validator
+  [2026-11-03T23:09:57Z] sentry: every fleet file already at 211335b6b4b7 - nothing to do
+  [2026-11-03T23:09:57Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/lib/pft-fleet/manifest.tsv sha256 b3cd5f91f36a -> /var/lib/pft-fleet/backup/20261103T230957Z-fleet-validator
+  WRITE validator /usr/local/lib/pft-fleet/manifest.tsv b3cd5f91f36a -> f193ff3c7301 mode 0644
+  GATE validator sha256 /usr/local/lib/pft-fleet/manifest.tsv = target f193ff3c7301 PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync fleet@211335b6b4b7 (manifest.tsv)
+  [2026-11-03T23:10:28Z] SYNCED validator fleet -> 211335b6b4b7
+  [2026-11-03T23:10:28Z] sync complete
+  (exit 0)
+CHECK ok   fleet sync fleet exit 0
+$ sudo -n pft-fleet skew
+  ref main = 211335b6b4b72cb6a422707a60915c43abb6a849
+  host sentry     role sentry    ok
+  host validator  role validator ok
+  HOST       ADDON       STATE      DETAIL
+  sentry     alertpath   CURRENT    
+  sentry     apparmor    CURRENT    
+  sentry     audittrail  CURRENT    
+  sentry     authwatch   CURRENT    
+  sentry     backfill    CURRENT    
+  sentry     cluster     CURRENT    
+  sentry     divergence  CURRENT    
+  sentry     egress      CURRENT    
+  sentry     feewatch    CURRENT    
+  sentry     integrity   CURRENT    
+  sentry     keyescrow   CURRENT    
+  sentry     logship     CURRENT    
+  sentry     maint       CURRENT    
+  sentry     mounts      CURRENT    
+  sentry     patch       CURRENT    
+  sentry     privesc     CURRENT    
+  sentry     resources   CURRENT    
+  sentry     rulecheck   CURRENT    
+  sentry     statewatch  CURRENT    
+  sentry     sysctl      CURRENT    
+  sentry     timesync    CURRENT    
+  sentry     upgradewatch CURRENT    
+  sentry     vulnscan    CURRENT    
+  sentry     watchdog    CURRENT    
+  validator  alertpath   CURRENT    
+  validator  apparmor    CURRENT    
+  validator  audittrail  CURRENT    
+  validator  authwatch   CURRENT    
+  validator  backfill    CURRENT    
+  validator  backup      CURRENT    
+  validator  cluster     CURRENT    
+  validator  divergence  CURRENT    
+  validator  egress      CURRENT    
+  validator  exporter    CURRENT    
+  validator  feewatch    CURRENT    
+  validator  fleet       CURRENT    
+  validator  integrity   CURRENT    
+  validator  keyescrow   CURRENT    
+  validator  logship     CURRENT    
+  validator  maint       CURRENT    
+  validator  monitor     CURRENT    
+  validator  mounts      CURRENT    
+  validator  patch       CURRENT    
+  validator  privesc     CURRENT    
+  validator  resources   CURRENT    
+  validator  retention   CURRENT    
+  validator  rulecheck   CURRENT    
+  validator  statewatch  CURRENT    
+  validator  sysctl      CURRENT    
+  validator  timesync    CURRENT    
+  validator  upgradewatch CURRENT    
+  validator  vulnscan    CURRENT    
+  validator  watchdog    CURRENT    
+  SUMMARY CURRENT=53 BEHIND=0 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 0)
+CHECK ok   pft-fleet skew exit 0 (all CURRENT)
+
+== 3. end window, restore the real target
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+  (exit 0)
+$ sudo -n rm -f $NE   (absent before)
+CHECK ok   pft-maint target absent again
+$ curl -s --max-time 15 "https://ntfy.sh/$TT/json?poll=1&since=10m" | jq -r '.title'
+  [MAINT] start validator
+  [MAINT] end validator
+CHECK ok   [MAINT] start+end reached the throwaway topic
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 160 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 94 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS validator
+CHECK ok   pft-integrity PASS sentry
+
+fleet-run done 2026-11-03T23:11:43Z: 0 check(s) failed -> PASS

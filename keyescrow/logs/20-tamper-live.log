@@ -1,0 +1,235 @@
+pft-keyescrow tamper drill (one byte, both holders) - 2026-11-03T23:44:54Z - Ubuntu 22.04.5 LTS - run 20261103T234454Z
+repo HEAD 162e4f363f8f8426f723fe07d80ae3e174725b42
+sha256: tamper-run.sh 5f6b597e522f09677d7f6f11359698298f65258cf2ebecded75021a49315b757
+        repo pft-keyescrow.sh be558e05196f9ee5b65f1758f3a1b699a4a33964bd142f3b3c881584b18ab686 keyescrow_tar.py 45d0bbeaf7728564159440690d88f493e5be9eedd89423825b87edd8143286f2
+        installed validator be558e05196f9ee5b65f1758f3a1b699a4a33964bd142f3b3c881584b18ab686 45d0bbeaf7728564159440690d88f493e5be9eedd89423825b87edd8143286f2
+        installed sentry    be558e05196f9ee5b65f1758f3a1b699a4a33964bd142f3b3c881584b18ab686 45d0bbeaf7728564159440690d88f493e5be9eedd89423825b87edd8143286f2
+        keyescrow.rules.yml (repo, loaded by Prometheus) 937947729b8b80cfb8628a3ce27c88d4603d6df4571d161bfee9588242c8ebd8
+        redact.py f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8 flipbyte.py 3c34c71d627635354a9653074afd7365d7fab945ebd26801c25b1bf96a6de451
+
+== 0. preflight (nothing changed yet)
+  pft-maint: no window open on either host
+  notifier env files present, no leftovers, no drill backup on either host
+  bridge mounts the operator env file: yes
+  active silences covering PFTKeyEscrowVerifyFailed: 0
+  keyescrow alerts pending/firing: 0
+  pft_keyescrow_held_verify_ok 1 for (validator, sentry) and (sentry, validator)
+  pft_keyescrow_drift_items 0 for both nodes
+$ sudo -n /usr/local/bin/pft-keyescrow verify --all | tail -1; R 'sudo -n /usr/local/bin/pft-keyescrow verify --all' | tail -1
+  RESULT: 3 generation(s) checked, 0 failed -> exit 0
+  RESULT: 3 generation(s) checked, 0 failed -> exit 0
+  (exit 0)
+CHECK ok   0 verify --all exit 0 on both hosts before the drill
+  operator topics to watch: 2 (not printed)
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+  postfiatd-sentry: server_state=full
+  postfiatd: server_state=full
+  pft-integrity local: RESULT: PASS - 160 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity relay: RESULT: PASS - 94 unchanged, 0 warn, 0 fail -> exit 0
+  literals for redaction: 3 ip, 4 key, 3 topic, 1 user (values not printed)
+$ redact.py control --literals <literals>
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (20/20)
+  validator holds sentry's newest gen 20261103T214449Z: .age sha256 7437f8ac716214d642a781130d0fad3f13aa6d926c3a95d0c4378994ae4ace0d, .meta sha256 61847ab90a7a032274ccd08e5adf57a96453c954b558737906a8049c71b3979a
+  sentry holds validator's newest gen 20261103T214447Z: .age sha256 92f595910261b8a17ed48a6b9c14f5179b3e5d7ce18b01bc33689271733426be, .meta sha256 9d426afc26da1d7c47a565e038d877be78b2194691113ecfbcd7f9f02bbd3342
+
+== 1. redirect notifiers + bridge, silence everything except PFTKeyEscrowVerifyFailed and the watchdog, maintenance window
+  local:/etc/postfiat-monitor.env sha256 6dc3b10fb491 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/postfiat-monitor.env.pre-keyescrow-drill
+  local:/etc/pft-integrity.env sha256 b3cd1c3da7ff -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-integrity.env.pre-keyescrow-drill
+  relay:/etc/pft-watchdog/ntfy.env sha256 ddb52721a668 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-watchdog/ntfy.env.pre-keyescrow-drill
+  relay:/etc/pft-integrity.env sha256 cdd330a974d2 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-integrity.env.pre-keyescrow-drill
+  relay:/etc/pft-alertpath/ntfy.env sha256 ddb52721a668 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-alertpath/ntfy.env.pre-keyescrow-drill
+  2026-11-03T23:45:46Z starting pft-alert-bridge (ntfy: on)
+  2026-11-03T23:45:49Z pft-alert-bridge listening
+  bridge -> https://ntfy.sh/<redacted> (throwaway env file in a 0700 temp dir)
+  silence alertname=~".+", alertname!~"PFTKeyEscrowVerifyFailed|PFTAlertPipelineWatchdog" until 2026-11-04T00:45:49Z (id 95a3bcc6)
+$ sudo -n pft-maint start --ttl 60m --reason 'pft-keyescrow tamper drill 20261103T234454Z'
+  window started: id m1793749550-2267283 until 2026-11-04T00:45:50Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   sentry has the window (via the watchdog channel) after 30s
+
+== 2. tamper: flip one byte (XOR 0x01, middle of the file) of the newest held generation on each holder
+-- T1: validator holds sentry's gen 20261103T214449Z
+$ on local 'sudo -n python3 -I - /var/lib/pft-keyescrow/store/sentry/gen-20261103T214449Z.age' < ~/work/postfiat-validator-installer/keyescrow/drill/flipbyte.py
+  flipped 1 byte at offset 10340 of 20680
+  (exit 0)
+$ on local "sudo -n cmp -l /var/lib/pft-keyescrow/drill-backup-20261103T234454Z/gen-20261103T214449Z.age /var/lib/pft-keyescrow/store/sentry/gen-20261103T214449Z.age | wc -l; sudo -n sha256sum /var/lib/pft-keyescrow/store/sentry/gen-20261103T214449Z.age | cut -c1-64"
+  1
+  cf8c226a14f7e9d521cbd81dd4f0e2e520db77f71f331cae50ebe5eb20f8eeaa
+  (exit 0)
+CHECK ok   validator: exactly one byte differs from the backup, sha256 changed
+-- T2: sentry holds validator's gen 20261103T214447Z
+$ on relay 'sudo -n python3 -I - /var/lib/pft-keyescrow/store/validator/gen-20261103T214447Z.age /var/lib/pft-keyescrow/store/validator/gen-20261103T214447Z.meta' < ~/work/postfiat-validator-installer/keyescrow/drill/flipbyte.py
+  flipped 1 byte at offset 10340 of 20680
+  meta cipher_sha256 lines with the tampered file's sha256: 1
+  (exit 0)
+CHECK ok   sentry: meta cipher_sha256 now equals the tampered file's sha256
+$ on relay "sudo -n cmp -l /var/lib/pft-keyescrow/drill-backup-20261103T234454Z/gen-20261103T214447Z.age /var/lib/pft-keyescrow/store/validator/gen-20261103T214447Z.age | wc -l; sudo -n sha256sum /var/lib/pft-keyescrow/store/validator/gen-20261103T214447Z.age | cut -c1-64"
+  1
+  04213d69a82dd730d79ea2f71c59f42c692527adc6a4d6249afa287ae0a5f8c1
+  (exit 0)
+CHECK ok   sentry: exactly one byte differs from the backup, sha256 changed
+$ sudo -n systemctl start pft-keyescrow.service; R 'sudo -n systemctl start pft-keyescrow.service'; sudo -n systemctl start pft-keyescrow-pull.service; echo started
+  started
+  (exit 0)
+$ sudo -n journalctl --utc -o cat -u pft-keyescrow.service --since @1793749589 | grep -E 'MISMATCH|VERIF|RESULT: [0-9]'; R 'sudo -n journalctl --utc -o cat -u pft-keyescrow.service --since @1793749589' | grep -E 'MISMATCH|VERIF|RESULT: [0-9]'; sudo -n journalctl --utc -o cat -u pft-keyescrow-pull.service --since @1793749589 | grep -E 'pulled|rejected|failed'
+    gen 20261103T214449Z: ciphertext sha256 MISMATCH (meta 7437f8ac716214d6, file cf8c226a14f7e9d5)
+  VERIFY FAILED from=sentry gen=20261103T214449Z
+  RESULT: 1 generation(s) checked, 1 failed -> exit 2
+  VERIFY FAILED from=validator gen=20261103T214447Z
+  RESULT: 1 generation(s) checked, 1 failed -> exit 2
+  pft_keyescrow: pulled from sentry
+  pft_keyescrow_held: pulled from sentry
+  (exit 0)
+CHECK ok   2a T1 validator unit: sentry's gen 20261103T214449Z ciphertext sha256 MISMATCH, VERIFY FAILED
+CHECK ok   2b T2 sentry unit: validator's gen 20261103T214447Z VERIFY FAILED with the sha256 check passing (decrypt caught it)
+CHECK ok   2c pull: both sentry textfiles pulled to the validator
+$ sudo -n /usr/local/bin/pft-keyescrow verify; echo rc=$?; R 'sudo -n /usr/local/bin/pft-keyescrow verify; echo rc=$?'
+  pft-keyescrow verify - 2026-11-03T23:46:37Z | host validator
+    gen 20261103T214449Z: ciphertext sha256 MISMATCH (meta 7437f8ac716214d6, file cf8c226a14f7e9d5)
+  VERIFY FAILED from=sentry gen=20261103T214449Z
+  RESULT: 1 generation(s) checked, 1 failed -> exit 2
+  rc=2
+  pft-keyescrow verify - 2026-11-03T23:46:38Z | host sentry
+    keyescrow_tar: payload unreadable: ReadError: truncated header
+  VERIFY FAILED from=validator gen=20261103T214447Z
+  RESULT: 1 generation(s) checked, 1 failed -> exit 2
+  rc=2
+  (exit 0)
+CHECK ok   2d manual verify: exit 2 on both hosts, sha256 MISMATCH only for T1
+$ sudo -n /usr/local/bin/pft-keyescrow restore --host sentry --dry-run; echo rc=$?; sudo -n /usr/local/bin/pft-keyescrow restore --host validator --dry-run; echo rc=$?
+  pft-keyescrow restore - 2026-11-03T23:46:38Z | target sentry | gen latest | DRY RUN
+  == validator re-encrypts its held copy of sentry to sentry's current recipient; sentry applies
+  age: error: failed to read header: parsing age header: failed to read intro: EOF
+  age: report unexpected or unhelpful errors at https://filippo.io/age/report
+  keyescrow_tar: payload unreadable: ReadError: empty file
+  RESTORE FAILED on sentry (exit 2)
+    reseal:   gen 20261103T214449Z: ciphertext sha256 MISMATCH (meta 7437f8ac716214d6, file cf8c226a14f7e9d5)
+    reseal: VERIFY FAILED from=sentry gen=20261103T214449Z
+    reseal: pft-keyescrow: reseal refused: held generation 20261103T214449Z failed its check
+  RESULT: FAIL - restore on sentry (exit sum 4)
+  rc=2
+  pft-keyescrow restore - 2026-11-03T23:46:41Z | target validator | gen latest | DRY RUN
+  == sentry re-encrypts its held copy of validator to validator's current recipient; validator applies
+  age: error: failed to read header: parsing age header: failed to read intro: EOF
+  age: report unexpected or unhelpful errors at https://filippo.io/age/report
+  keyescrow_tar: payload unreadable: ReadError: empty file
+  RESTORE FAILED on validator (exit 2)
+    reseal:   keyescrow_tar: payload unreadable: ReadError: truncated header
+    reseal: VERIFY FAILED from=validator gen=20261103T214447Z
+    reseal: pft-keyescrow: reseal refused: held generation 20261103T214447Z failed its check
+  RESULT: FAIL - restore on validator (exit sum 4)
+  rc=2
+  (exit 0)
+CHECK ok   2e restore --dry-run from each tampered copy refused (reseal refused x2, RESULT: FAIL x2, rc 2 x2)
+  Prometheus: 2/2 pairs with pft_keyescrow_held_verify_ok 0 after 10s
+$ curl -s --max-time 20 http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=pft_keyescrow_held_verify_ok' | jq -r '.data.result[] | "\(.metric.node) peer=\(.metric.peer) \(.value[1])"' | sort
+  sentry peer=validator 0
+  validator peer=sentry 0
+  (exit 0)
+CHECK ok   2f Prometheus: pft_keyescrow_held_verify_ok 0 for both pairs
+  waiting for PFTKeyEscrowVerifyFailed to fire for both pairs (for: 5m; max 900s, poll 30s)
+  2026-11-03T23:52:23Z firing (330s after the metric showed 0):
+    alertname=PFTKeyEscrowVerifyFailed,alertstate=firing,instance=127.0.0.1:9877,job=postfiat,node=sentry,peer=validator,severity=warning 1
+    alertname=PFTKeyEscrowVerifyFailed,alertstate=firing,instance=127.0.0.1:9877,job=postfiat,node=validator,peer=sentry,severity=warning 1
+CHECK ok   2g PFTKeyEscrowVerifyFailed firing for both (node, peer) pairs (2/2)
+CHECK ok   2h exactly 2 PFTKeyEscrowVerifyFailed firing
+    {"time":"2026-11-03T23:45:52Z","title":"[MAINT] start validator","message":"pft-keyescrow tamper drill 20261103T234454Z | until 2026-11-04T00:45:50Z (ttl 3600s) | sentry copy: pushed"}
+    {"time":"2026-11-03T23:51:55Z","title":"[FIRING] PFTKeyEscrowVerifyFailed","message":"Escrow copy of sentry's secrets held on validator failed verification (or none held)"}
+    {"time":"2026-11-03T23:52:54Z","title":"[FIRING] PFTKeyEscrowVerifyFailed","message":"Escrow copy of validator's secrets held on sentry failed verification (or none held)"}
+CHECK ok   2i [FIRING] delivered to the throwaway topic for both pairs (2/2)
+
+== 3. put the original bytes back, re-run the units
+  validator: gen 20261103T214449Z .age + .meta sha256 match the pre-drill copies: yes
+  validator: drill backup dir removed
+  sentry: gen 20261103T214447Z .age + .meta sha256 match the pre-drill copies: yes
+  sentry: drill backup dir removed
+CHECK ok   3a both held generations byte-identical to the pre-drill copies, backups removed
+$ sudo -n systemctl start pft-keyescrow.service; R 'sudo -n systemctl start pft-keyescrow.service'; sudo -n systemctl start pft-keyescrow-pull.service; echo started
+  started
+  (exit 0)
+$ sudo -n journalctl --utc -o cat -u pft-keyescrow.service --since @1793749978 | grep -E 'MISMATCH|VERIF|RESULT: [0-9]'; R 'sudo -n journalctl --utc -o cat -u pft-keyescrow.service --since @1793749978' | grep -E 'MISMATCH|VERIF|RESULT: [0-9]'; sudo -n journalctl --utc -o cat -u pft-keyescrow-pull.service --since @1793749978 | grep -E 'pulled|rejected|failed'
+  VERIFIED from=sentry gen=20261103T214449Z items=10
+  RESULT: 1 generation(s) checked, 0 failed -> exit 0
+  VERIFIED from=validator gen=20261103T214447Z items=11
+  RESULT: 1 generation(s) checked, 0 failed -> exit 0
+  pft_keyescrow: pulled from sentry
+  pft_keyescrow_held: pulled from sentry
+  (exit 0)
+CHECK ok   3b units: both held generations VERIFIED again
+  Prometheus: 2/2 pairs with pft_keyescrow_held_verify_ok 1 after 20s
+$ curl -s --max-time 20 http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=pft_keyescrow_held_verify_ok' | jq -r '.data.result[] | "\(.metric.node) peer=\(.metric.peer) \(.value[1])"' | sort
+  sentry peer=validator 1
+  validator peer=sentry 1
+  (exit 0)
+CHECK ok   3c Prometheus: pft_keyescrow_held_verify_ok 1 for both pairs
+  2026-11-03T23:54:08Z: 2/2 pairs left Prometheus with [RESOLVED] delivered (70s after the bytes were put back)
+    [RESOLVED] sentry/validator: 1
+    [RESOLVED] validator/sentry: 1
+CHECK ok   3d both pairs left Prometheus and delivered [RESOLVED] (2/2)
+$ curl -s -G http://127.0.0.1:9090/api/v1/query_range --data-urlencode 'query=ALERTS{alertname="PFTKeyEscrowVerifyFailed",alertstate="firing"}' --data-urlencode start=1793749494 --data-urlencode end=1793750048 --data-urlencode step=15 | jq -r '.data.result[] | "\(.metric.alertname) node=\(.metric.node) peer=\(.metric.peer) first=\(.values[0][0] | todate) last=\(.values[-1][0] | todate) samples=\(.values | length)"' | sort
+  PFTKeyEscrowVerifyFailed node=sentry peer=validator first=2026-11-03T23:52:09Z last=2026-11-03T23:53:24Z samples=6
+  PFTKeyEscrowVerifyFailed node=validator peer=sentry first=2026-11-03T23:51:54Z last=2026-11-03T23:53:09Z samples=6
+  (exit 0)
+CHECK ok   3e query_range shows exactly the 2 drill series firing during the drill
+
+== 4. restore, read back
+  $ sudo -n pft-maint end
+    window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+  restored local:/etc/postfiat-monitor.env: sha256 matches pre-drill copy: yes
+  restored local:/etc/pft-integrity.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-watchdog/ntfy.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-integrity.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-alertpath/ntfy.env: sha256 matches pre-drill copy: yes
+  2026-11-03T23:54:14Z starting pft-alert-bridge (ntfy: on)
+  2026-11-03T23:54:16Z pft-alert-bridge listening
+  restored bridge: mounts the operator env file again: yes
+  units re-run on the restored env files: pft_keyescrow_drift_items 0 for 2/2 nodes (20s)
+  PFTKeyEscrowVerifyFailed alerts left in Prometheus + Alertmanager: 0 (0s)
+  drill silence expired: HTTP 200
+CHECK ok   env files byte-identical, bridge on the operator env, window ended, generations restored
+  throwaway topic: 7 message(s)
+    {"time":"2026-11-03T23:45:52Z","title":"[MAINT] start validator","message":"pft-keyescrow tamper drill 20261103T234454Z | until 2026-11-04T00:45:50Z (ttl 3600s) | sentry copy: pushed"}
+    {"time":"2026-11-03T23:51:55Z","title":"[FIRING] PFTKeyEscrowVerifyFailed","message":"Escrow copy of sentry's secrets held on validator failed verification (or none held)"}
+    {"time":"2026-11-03T23:52:54Z","title":"[FIRING] PFTKeyEscrowVerifyFailed","message":"Escrow copy of validator's secrets held on sentry failed verification (or none held)"}
+    {"time":"2026-11-03T23:52:55Z","title":"[FIRING] PFTKeyEscrowVerifyFailed","message":"Escrow copy of sentry's secrets held on validator failed verification (or none held)"}
+    {"time":"2026-11-03T23:53:54Z","title":"[RESOLVED] PFTKeyEscrowVerifyFailed","message":"Escrow copy of validator's secrets held on sentry failed verification (or none held)"}
+    {"time":"2026-11-03T23:53:55Z","title":"[RESOLVED] PFTKeyEscrowVerifyFailed","message":"Escrow copy of sentry's secrets held on validator failed verification (or none held)"}
+    {"time":"2026-11-03T23:54:11Z","title":"[MAINT] end validator","message":"pft-keyescrow tamper drill 20261103T234454Z | ended by operator after 500s | suppressed here: watchdog=0 monitor=0 integrity=0 | sentry copy: pushed"}
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the drill (2 topic(s), 0 with messages)
+  pft-integrity local: RESULT: PASS - 160 unchanged, 0 warn, 0 fail -> exit 0
+CHECK ok   pft-integrity PASS on local at the end
+CHECK ok   no drill backup left on local
+  pft-integrity relay: RESULT: PASS - 94 unchanged, 0 warn, 0 fail -> exit 0
+CHECK ok   pft-integrity PASS on relay at the end
+CHECK ok   no drill backup left on relay
+CHECK ok   postfiatd-sentry full at the end (full)
+CHECK ok   postfiatd full at the end (full)
+$ sudo -n /usr/local/bin/pft-keyescrow verify --all | tail -1; R 'sudo -n /usr/local/bin/pft-keyescrow verify --all' | tail -1
+  RESULT: 3 generation(s) checked, 0 failed -> exit 0
+  RESULT: 3 generation(s) checked, 0 failed -> exit 0
+  (exit 0)
+CHECK ok   verify --all exit 0 on both hosts at the end
+
+tamper-run done 2026-11-03T23:57:34Z: 0 check(s) failed -> PASS

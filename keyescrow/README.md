@@ -13,8 +13,9 @@ decrypting it in memory with its own age identity (root-only, 0600).
 Status: steps 1-3 are done and tested offline (inventory, metrics, alert rules; keygen, seal, two-way escrow,
 receive + in-memory verify, tamper detection, pft-maint-gated restore with backups; mutation runs). Step 4 so far:
 **installed on both hosts, live two-way escrow + verify PASS (logs 10, 12), pull of the sentry metrics, zero-leak
-check on both hosts, alert rules loaded (log 13)**. Still to come: the one-byte tamper drill with the alert on a
-throwaway topic, the sentry node_seed restore keeping pubkey_node, and the first nightly timer run.
+check on both hosts, alert rules loaded (log 13), one-byte tamper drill on both holders with PFTKeyEscrowVerifyFailed
+FIRING -> RESOLVED on a throwaway topic and 0 operator messages (log 20)**. Still to come: the sentry node_seed restore
+keeping pubkey_node, and the first nightly timer run.
 This README covers only what exists now.
 
 ## Inventory (read-only)
@@ -180,6 +181,7 @@ promtool test rules alerts/keyescrow.tests.yml
 python3 keyescrow/tests/mutate.py -j 3     # 56 mutants over every refusal and integrity check (both files)
 sudo python3 -I keyescrow/drill/leakcheck.py --tool /usr/local/bin/pft-keyescrow --conf /etc/pft-keyescrow.env \
   --host validator --scan /var/lib/pft-keyescrow --scan /var/lib/pft-exporter/textfile   # live zero-leak check
+bash keyescrow/drill/tamper-run.sh > LOG 2>&1   # live one-byte tamper drill, both holders, alerts on a throwaway topic
 ```
 
 `tests/mutate.py`: each mutant is one exact text replacement in `pft-keyescrow.sh` or `keyescrow_tar.py` (it must
@@ -216,6 +218,10 @@ planted copy of the secret (`leaks 3  FAIL`, exit 1).
 | `logs/13-rules-live.log` | rules loaded in the live Prometheus | all 4 rules `ok inactive` (l.6-9) with live series for both nodes |
 | `logs/14-mutants.log` | recorded mutant run on the commit in its header (56 mutants: + U1-U8 pull, F1-F4 evolving) | control 74/74 + 90/90 (l.9); `ORPHANS: 0` (l.66); `55 killed + 1 documented equivalent of 56, 0 survived` (l.67) |
 | `logs/15-fss-evolving.log` | why journald:fss is EVOLVING | the escrow unit recorded fss fp `31fc04dd...` at 21:22Z (l.7) and `9f9ceaf1...` at 21:33Z (l.12); the fss mtime moved again at 21:44:59Z (l.22), 7 s after the third escrow (l.17), and inventory now reports `escrow evolving` with `drift 0, ... evolving 1 -> exit 0` (l.30-31), drift_items 0 on both nodes (l.34-35) |
+| `logs/16-fleet-sync.log` | `pft-fleet sync --addon fleet` (manifest lines for keyescrow) in a pft-maint window, [MAINT] to a throwaway topic | before `BEHIND=1` (l.10), `SYNCED validator fleet` (l.42), after `CURRENT=53 BEHIND=0` (l.104), `0 check(s) failed -> PASS` (l.125) |
+| `logs/17-tamper-preflight.log` | `PREFLIGHT_ONLY=1 drill/tamper-run.sh` (nothing changed) | `0 check(s) failed` (last line) |
+| `logs/18-...-harness-fail.log`, `logs/19-...-harness-fail.log` | first two recorded tamper drills, superseded (annotated at the end of each) | 18: 3 FAIL (l.97, 99, 167): the validator's unit journal was read without sudo, and the drill left drift_items exported (fixed in a9d3801); 19: 1 FAIL (l.177): grep `VERIFY` cannot match `VERIFIED` (fixed in 162e4f3). In both, the alert fired and resolved for both pairs and the operator topics got 0 messages |
+| `logs/20-tamper-live.log` | one-byte tamper drill, both holders (`drill/tamper-run.sh`, sha256 in l.3 = the file at the pinned commit) | T1 validator-held copy: `flipped 1 byte at offset 10340 of 20680` (l.73), `ciphertext sha256 MISMATCH` (l.95); T2 sentry-held copy with the meta re-hashed: sha check passes, the in-memory decrypt fails `payload unreadable` (l.113); `restore --dry-run` refused from both tampered copies (l.128, l.139, check l.143); verify_ok 0 for both pairs (l.149); `PFTKeyEscrowVerifyFailed` firing for both (l.154-155) and `[FIRING]` on the throwaway topic for both (l.157-158); bytes put back byte-identical (l.166), VERIFIED again (l.178), `[RESOLVED]` for both (l.185-188), query_range first/last firing sample per pair (l.190-191); drift 0 after restore (l.206); operator topics 0 messages (l.218-220); integrity PASS, both nodes full, `verify --all` exit 0 (l.222-233); `0 check(s) failed -> PASS` (l.235) |
 
 05a/05b are the raw harness output of dev passes (no header line); 05 is the recorded run. In 05, l.5 is
 `sha256sum` skipping the ignored `tests/__pycache__` directory (harmless).

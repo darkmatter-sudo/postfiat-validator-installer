@@ -1,0 +1,54 @@
+pft-keyescrow tamper drill (one byte, both holders) - 2026-11-03T23:16:36Z - Ubuntu 22.04.5 LTS - run 20261103T231636Z
+repo HEAD b6208348a313922e87e1236497fee5a139b4018a
+sha256: tamper-run.sh db65768228f32e989f188fc49e91e3ca25b5b3b9168bd056e419fc701ed2a668
+        repo pft-keyescrow.sh be558e05196f9ee5b65f1758f3a1b699a4a33964bd142f3b3c881584b18ab686 keyescrow_tar.py 45d0bbeaf7728564159440690d88f493e5be9eedd89423825b87edd8143286f2
+        installed validator be558e05196f9ee5b65f1758f3a1b699a4a33964bd142f3b3c881584b18ab686 45d0bbeaf7728564159440690d88f493e5be9eedd89423825b87edd8143286f2
+        installed sentry    be558e05196f9ee5b65f1758f3a1b699a4a33964bd142f3b3c881584b18ab686 45d0bbeaf7728564159440690d88f493e5be9eedd89423825b87edd8143286f2
+        keyescrow.rules.yml (repo, loaded by Prometheus) 937947729b8b80cfb8628a3ce27c88d4603d6df4571d161bfee9588242c8ebd8
+        redact.py f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8 flipbyte.py 3c34c71d627635354a9653074afd7365d7fab945ebd26801c25b1bf96a6de451
+
+== 0. preflight (nothing changed yet)
+  pft-maint: no window open on either host
+  notifier env files present, no leftovers, no drill backup on either host
+  bridge mounts the operator env file: yes
+  active silences covering PFTKeyEscrowVerifyFailed: 0
+  keyescrow alerts pending/firing: 0
+  pft_keyescrow_held_verify_ok 1 for (validator, sentry) and (sentry, validator)
+$ sudo -n /usr/local/bin/pft-keyescrow verify --all | tail -1; R 'sudo -n /usr/local/bin/pft-keyescrow verify --all' | tail -1
+  RESULT: 3 generation(s) checked, 0 failed -> exit 0
+  RESULT: 3 generation(s) checked, 0 failed -> exit 0
+  (exit 0)
+CHECK ok   0 verify --all exit 0 on both hosts before the drill
+  operator topics to watch: 2 (not printed)
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+  postfiatd-sentry: server_state=full
+  postfiatd: server_state=full
+  pft-integrity local: RESULT: PASS - 160 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity relay: RESULT: PASS - 94 unchanged, 0 warn, 0 fail -> exit 0
+  literals for redaction: 3 ip, 4 key, 3 topic, 1 user (values not printed)
+$ redact.py control --literals <literals>
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (20/20)
+  validator holds sentry's newest gen 20261103T214449Z: .age sha256 7437f8ac716214d642a781130d0fad3f13aa6d926c3a95d0c4378994ae4ace0d, .meta sha256 61847ab90a7a032274ccd08e5adf57a96453c954b558737906a8049c71b3979a
+  sentry holds validator's newest gen 20261103T214447Z: .age sha256 92f595910261b8a17ed48a6b9c14f5179b3e5d7ce18b01bc33689271733426be, .meta sha256 9d426afc26da1d7c47a565e038d877be78b2194691113ecfbcd7f9f02bbd3342
+
+PREFLIGHT_ONLY=1: stopping after step 0, nothing changed (0 check(s) failed)
