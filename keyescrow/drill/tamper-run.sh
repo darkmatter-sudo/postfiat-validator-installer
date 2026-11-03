@@ -86,7 +86,7 @@ newest() { on "$1" "sudo -n ls $ST/store/$2/" | sed -n 's/^gen-\([0-9TZ]*\)\.met
 run_units() {
   local t; t="$(date -u +%s)"
   x "sudo -n systemctl start pft-keyescrow.service; R 'sudo -n systemctl start pft-keyescrow.service'; sudo -n systemctl start pft-keyescrow-pull.service; echo started"
-  x "sudo -n journalctl --utc -o cat -u pft-keyescrow.service --since @$t | grep -E 'MISMATCH|VERIFY|RESULT: [0-9]'; R 'sudo -n journalctl --utc -o cat -u pft-keyescrow.service --since @$t' | grep -E 'MISMATCH|VERIFY|RESULT: [0-9]'; sudo -n journalctl --utc -o cat -u pft-keyescrow-pull.service --since @$t | grep -E 'pulled|rejected|failed'"
+  x "sudo -n journalctl --utc -o cat -u pft-keyescrow.service --since @$t | grep -E 'MISMATCH|VERIF|RESULT: [0-9]'; R 'sudo -n journalctl --utc -o cat -u pft-keyescrow.service --since @$t' | grep -E 'MISMATCH|VERIF|RESULT: [0-9]'; sudo -n journalctl --utc -o cat -u pft-keyescrow-pull.service --since @$t | grep -E 'pulled|rejected|failed'"
   # shellcheck disable=SC2034  # read inside ok_if strings
   UNITLOG="$XOUT"
 }
