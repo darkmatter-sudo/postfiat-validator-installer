@@ -1,0 +1,458 @@
+# upgradewatch 01 source survey - 2026-11-03T04:09:12Z
+OS: PRETTY_NAME="Ubuntu 22.04.5 LTS"
+Ubuntu 22.04.5 LTS
+$ git rev-parse HEAD
+32723c15e686a2088f2c83017a6ff909d93822cd
+$ grep -rn "majorityTime\|amendment_majority_time\|weeks{2}\|amendment_blocked\|amendmentBlocked" src --include=*.cpp --include=*.h | grep -v test | head -60
+src/libxrpl/protocol/ErrorCodes.cpp:56:    {rpcAMENDMENT_BLOCKED,      "amendmentBlocked",     "Amendment blocked, need upgrade.", 503},
+src/xrpld/core/ConfigSections.h:46:#define SECTION_AMENDMENT_MAJORITY_TIME "amendment_majority_time"
+src/xrpld/app/ledger/detail/LedgerMaster.cpp:175:        return weeks{2};
+src/xrpld/app/ledger/detail/LedgerMaster.cpp:200:        return weeks{2};
+src/xrpld/app/misc/NetworkOPs.cpp:748:    std::atomic<bool> amendmentBlocked_{false};
+src/xrpld/app/misc/NetworkOPs.cpp:749:    std::atomic<bool> amendmentWarned_{false};
+src/xrpld/app/misc/NetworkOPs.cpp:1836:    return amendmentBlocked_;
+src/xrpld/app/misc/NetworkOPs.cpp:1842:    amendmentBlocked_ = true;
+src/xrpld/app/misc/NetworkOPs.cpp:1849:    return !amendmentBlocked_ && amendmentWarned_;
+src/xrpld/app/misc/NetworkOPs.cpp:1855:    amendmentWarned_ = true;
+src/xrpld/app/misc/NetworkOPs.cpp:1861:    amendmentWarned_ = false;
+src/xrpld/app/misc/NetworkOPs.cpp:2811:    if (amendmentBlocked_)
+src/xrpld/app/misc/NetworkOPs.cpp:2812:        info[jss::amendment_blocked] = true;
+src/xrpld/app/misc/AmendmentTable.h:193:    std::chrono::seconds majorityTime,
+src/xrpld/app/misc/detail/AmendmentTable.cpp:423:    std::chrono::seconds const majorityTime_;
+src/xrpld/app/misc/detail/AmendmentTable.cpp:472:        std::chrono::seconds majorityTime,
+src/xrpld/app/misc/detail/AmendmentTable.cpp:536:    std::chrono::seconds majorityTime,
+src/xrpld/app/misc/detail/AmendmentTable.cpp:542:    , majorityTime_(majorityTime)
+src/xrpld/app/misc/detail/AmendmentTable.cpp:886:        auto const majorityTime = [&]() -> std::optional<NetClock::time_point> {
+src/xrpld/app/misc/detail/AmendmentTable.cpp:893:        bool const hasLedgerMajority = majorityTime.has_value();
+src/xrpld/app/misc/detail/AmendmentTable.cpp:918:            ((*majorityTime + majorityTime_) <= closeTime) &&
+src/xrpld/app/misc/detail/AmendmentTable.cpp:988:        firstUnsupportedExpected_ = *firstUnsupportedExpected_ + majorityTime_;
+src/xrpld/app/misc/detail/AmendmentTable.cpp:1074:    std::chrono::seconds majorityTime,
+src/xrpld/app/misc/detail/AmendmentTable.cpp:1081:        app, majorityTime, supported, enabled, vetoed, journal);
+src/xrpld/overlay/detail/OverlayImpl.cpp:1029:    bool amendment_blocked = false;
+src/xrpld/overlay/detail/OverlayImpl.cpp:1030:    if (info.isMember(jss::amendment_blocked))
+src/xrpld/overlay/detail/OverlayImpl.cpp:1031:        amendment_blocked = true;
+src/xrpld/overlay/detail/OverlayImpl.cpp:1055:    if (amendment_blocked)
+src/xrpld/overlay/detail/OverlayImpl.cpp:1057:        msg.body()[jss::info][jss::amendment_blocked] = true;
+$ sed -n 160,205p src/xrpld/app/ledger/detail/LedgerMaster.cpp
+            return false;
+        }
+    }
+
+    return true;
+}
+
+std::chrono::seconds
+LedgerMaster::getPublishedLedgerAge()
+{
+    using namespace std::chrono_literals;
+    std::chrono::seconds pubClose{mPubLedgerClose.load()};
+    if (pubClose == 0s)
+    {
+        JLOG(m_journal.debug()) << "No published ledger";
+        return weeks{2};
+    }
+
+    std::chrono::seconds ret = app_.timeKeeper().closeTime().time_since_epoch();
+    ret -= pubClose;
+    ret = (ret > 0s) ? ret : 0s;
+    static std::chrono::seconds lastRet = -1s;
+
+    if (ret != lastRet)
+    {
+        JLOG(m_journal.trace()) << "Published ledger age is " << ret.count();
+        lastRet = ret;
+    }
+    return ret;
+}
+
+std::chrono::seconds
+LedgerMaster::getValidatedLedgerAge()
+{
+    using namespace std::chrono_literals;
+
+    std::chrono::seconds valClose{mValidLedgerSign.load()};
+    if (valClose == 0s)
+    {
+        JLOG(m_journal.debug()) << "No validated ledger";
+        return weeks{2};
+    }
+
+    std::chrono::seconds ret = app_.timeKeeper().closeTime().time_since_epoch();
+    ret -= valClose;
+    ret = (ret > 0s) ? ret : 0s;
+$ grep -rn "majorityTime\|SECTION_AMENDMENT_MAJORITY_TIME\|amendmentMajorityTime" src/xrpld --include=*.cpp | grep -v AmendmentTable.cpp
+src/xrpld/core/ConfigSections.h:46:#define SECTION_AMENDMENT_MAJORITY_TIME "amendment_majority_time"
+src/xrpld/core/Config.h:248:    std::chrono::seconds AMENDMENT_MAJORITY_TIME = defaultAmendmentMajorityTime;
+src/xrpld/core/detail/Config.cpp:872:            secConfig, SECTION_AMENDMENT_MAJORITY_TIME, strTemp, j_))
+src/xrpld/core/detail/Config.cpp:880:                "Invalid " SECTION_AMENDMENT_MAJORITY_TIME
+src/xrpld/core/detail/Config.cpp:887:            AMENDMENT_MAJORITY_TIME = minutes(duration);
+src/xrpld/core/detail/Config.cpp:889:            AMENDMENT_MAJORITY_TIME = hours(duration);
+src/xrpld/core/detail/Config.cpp:891:            AMENDMENT_MAJORITY_TIME = days(duration);
+src/xrpld/core/detail/Config.cpp:893:            AMENDMENT_MAJORITY_TIME = weeks(duration);
+src/xrpld/core/detail/Config.cpp:895:        if (AMENDMENT_MAJORITY_TIME < minutes(15))
+src/xrpld/core/detail/Config.cpp:897:                "Invalid " SECTION_AMENDMENT_MAJORITY_TIME
+src/xrpld/app/main/Application.cpp:1288:            config().AMENDMENT_MAJORITY_TIME,
+$ grep -rn "warnRPC_UNSUPPORTED_MAJORITY\|warnRPC_AMENDMENT_BLOCKED\|expected_date" src --include=*.cpp --include=*.h
+src/xrpld/app/misc/NetworkOPs.cpp:2650:            w[jss::id] = warnRPC_AMENDMENT_BLOCKED;
+src/xrpld/app/misc/NetworkOPs.cpp:2667:            w[jss::id] = warnRPC_UNSUPPORTED_MAJORITY;
+src/xrpld/app/misc/NetworkOPs.cpp:2676:                d[jss::expected_date] = expected->time_since_epoch().count();
+src/xrpld/app/misc/NetworkOPs.cpp:2677:                d[jss::expected_date_UTC] = to_string(*expected);
+src/test/server/ServerStatus_test.cpp:883:                warnRPC_UNSUPPORTED_MAJORITY);
+src/test/server/ServerStatus_test.cpp:895:                warnRPC_UNSUPPORTED_MAJORITY);
+src/test/server/ServerStatus_test.cpp:1015:                warnRPC_AMENDMENT_BLOCKED);
+src/test/server/ServerStatus_test.cpp:1027:                warnRPC_AMENDMENT_BLOCKED);
+$ grep -rn "defaultAmendmentMajorityTime" src --include=*.h --include=*.cpp
+src/xrpld/core/Config.h:248:    std::chrono::seconds AMENDMENT_MAJORITY_TIME = defaultAmendmentMajorityTime;
+$ sed -n 866,900p src/xrpld/core/detail/Config.cpp
+                ": must be of the form '<number>' representing a count of "
+                "manifests.");
+        }
+    }
+
+    if (getSingleSection(
+            secConfig, SECTION_AMENDMENT_MAJORITY_TIME, strTemp, j_))
+    {
+        using namespace std::chrono;
+        boost::regex const re(
+            "^\\s*(\\d+)\\s*(minutes|hours|days|weeks)\\s*(\\s+.*)?$");
+        boost::smatch match;
+        if (!boost::regex_match(strTemp, match, re))
+            Throw<std::runtime_error>(
+                "Invalid " SECTION_AMENDMENT_MAJORITY_TIME
+                ", must be: [0-9]+ [minutes|hours|days|weeks]");
+
+        std::uint32_t duration =
+            beast::lexicalCastThrow<std::uint32_t>(match[1].str());
+
+        if (boost::iequals(match[2], "minutes"))
+            AMENDMENT_MAJORITY_TIME = minutes(duration);
+        else if (boost::iequals(match[2], "hours"))
+            AMENDMENT_MAJORITY_TIME = hours(duration);
+        else if (boost::iequals(match[2], "days"))
+            AMENDMENT_MAJORITY_TIME = days(duration);
+        else if (boost::iequals(match[2], "weeks"))
+            AMENDMENT_MAJORITY_TIME = weeks(duration);
+
+        if (AMENDMENT_MAJORITY_TIME < minutes(15))
+            Throw<std::runtime_error>(
+                "Invalid " SECTION_AMENDMENT_MAJORITY_TIME
+                ", the minimum amount of time an amendment must hold a "
+                "majority is 15 minutes");
+    }
+$ sed -n 2640,2685p src/xrpld/app/misc/NetworkOPs.cpp
+NetworkOPsImp::getServerInfo(bool human, bool admin, bool counters)
+{
+    Json::Value info = Json::objectValue;
+
+    // System-level warnings
+    {
+        Json::Value warnings{Json::arrayValue};
+        if (isAmendmentBlocked())
+        {
+            Json::Value& w = warnings.append(Json::objectValue);
+            w[jss::id] = warnRPC_AMENDMENT_BLOCKED;
+            w[jss::message] =
+                "This server is amendment blocked, and must be updated to be "
+                "able to stay in sync with the network.";
+        }
+        if (isUNLBlocked())
+        {
+            Json::Value& w = warnings.append(Json::objectValue);
+            w[jss::id] = warnRPC_EXPIRED_VALIDATOR_LIST;
+            w[jss::message] =
+                "This server has an expired validator list. validators.txt "
+                "may be incorrectly configured or some [validator_list_sites] "
+                "may be unreachable.";
+        }
+        if (admin && isAmendmentWarned())
+        {
+            Json::Value& w = warnings.append(Json::objectValue);
+            w[jss::id] = warnRPC_UNSUPPORTED_MAJORITY;
+            w[jss::message] =
+                "One or more unsupported amendments have reached majority. "
+                "Upgrade to the latest version before they are activated "
+                "to avoid being amendment blocked.";
+            if (auto const expected =
+                    app_.getAmendmentTable().firstUnsupportedExpected())
+            {
+                auto& d = w[jss::details] = Json::objectValue;
+                d[jss::expected_date] = expected->time_since_epoch().count();
+                d[jss::expected_date_UTC] = to_string(*expected);
+            }
+        }
+
+        if (warnings.size())
+            info[jss::warnings] = std::move(warnings);
+    }
+
+    // hostid: unique string describing the machine
+$ sed -n 880,925p src/xrpld/app/misc/detail/AmendmentTable.cpp
+
+            continue;
+        }
+
+        bool const hasValMajority = vote->passes(entry.first);
+
+        auto const majorityTime = [&]() -> std::optional<NetClock::time_point> {
+            auto const it = majorityAmendments.find(entry.first);
+            if (it != majorityAmendments.end())
+                return it->second;
+            return std::nullopt;
+        }();
+
+        bool const hasLedgerMajority = majorityTime.has_value();
+
+        auto const logStr = [&entry, &vote]() {
+            std::stringstream ss;
+            ss << entry.first << " (" << entry.second.name << ") has "
+               << vote->votes(entry.first) << " votes";
+            return ss.str();
+        }();
+
+        if (hasValMajority && !hasLedgerMajority &&
+            entry.second.vote == AmendmentVote::up)
+        {
+            // Ledger says no majority, validators say yes, and voting yes
+            // locally
+            JLOG(j_.debug()) << logStr << ": amendment got majority";
+            actions[entry.first] = tfGotMajority;
+        }
+        else if (!hasValMajority && hasLedgerMajority)
+        {
+            // Ledger says majority, validators say no
+            JLOG(j_.debug()) << logStr << ": amendment lost majority";
+            actions[entry.first] = tfLostMajority;
+        }
+        else if (
+            hasLedgerMajority &&
+            ((*majorityTime + majorityTime_) <= closeTime) &&
+            entry.second.vote == AmendmentVote::up)
+        {
+            // Ledger says majority held
+            JLOG(j_.debug()) << logStr << ": amendment majority held";
+            actions[entry.first] = 0;
+        }
+        // Logging only below this point
+$ sed -n 960,995p src/xrpld/app/misc/detail/AmendmentTable.cpp
+    for (auto& e : enabled)
+        enable(e);
+
+    std::lock_guard lock(mutex_);
+
+    // Remember the ledger sequence of this update.
+    lastUpdateSeq_ = ledgerSeq;
+
+    // Since we have the whole list in `majority`, reset the time flag, even
+    // if it's currently set. If it's not set when the loop is done, then any
+    // prior unknown amendments have lost majority.
+    firstUnsupportedExpected_.reset();
+    for (auto const& [hash, time] : majority)
+    {
+        AmendmentState& s = add(hash, lock);
+
+        if (s.enabled)
+            continue;
+
+        if (!s.supported)
+        {
+            JLOG(j_.info()) << "Unsupported amendment " << hash
+                            << " reached majority at " << to_string(time);
+            if (!firstUnsupportedExpected_ || firstUnsupportedExpected_ > time)
+                firstUnsupportedExpected_ = time;
+        }
+    }
+    if (firstUnsupportedExpected_)
+        firstUnsupportedExpected_ = *firstUnsupportedExpected_ + majorityTime_;
+}
+
+void
+AmendmentTableImpl::trustChanged(hash_set<PublicKey> const& allTrusted)
+{
+    std::lock_guard lock(mutex_);
+    previousTrustedVotes_.trustChanged(allTrusted, lock);
+$ grep -rn "defaultAmendmentMajorityTime\|warnRPC_UNSUPPORTED_MAJORITY *=\|warnRPC_AMENDMENT_BLOCKED *=" include src
+include/xrpl/protocol/SystemParameters.h:88:constexpr std::chrono::seconds const defaultAmendmentMajorityTime = std::chrono::weeks{2};
+include/xrpl/protocol/ErrorCodes.h:173:    warnRPC_UNSUPPORTED_MAJORITY = 1001,
+include/xrpl/protocol/ErrorCodes.h:174:    warnRPC_AMENDMENT_BLOCKED = 1002,
+src/xrpld/core/Config.h:248:    std::chrono::seconds AMENDMENT_MAJORITY_TIME = defaultAmendmentMajorityTime;
+$ grep -rn "amendment_majority_time" cfg
+cfg/postfiatd-devnet-light.cfg:1469:[amendment_majority_time]
+cfg/postfiatd-devnet-full.cfg:1466:[amendment_majority_time]
+cfg/postfiatd-ai-devnet-medium.cfg:1469:[amendment_majority_time]
+cfg/postfiatd-ai-devnet-light.cfg:1469:[amendment_majority_time]
+cfg/postfiatd-testnet-full.cfg:1467:[amendment_majority_time]
+cfg/postfiatd-devnet-medium.cfg:1469:[amendment_majority_time]
+cfg/postfiatd-ai-devnet-full.cfg:1469:[amendment_majority_time]
+cfg/postfiatd-testnet-medium.cfg:1470:[amendment_majority_time]
+cfg/postfiatd-testnet-light.cfg:1470:[amendment_majority_time]
+$ grep -n "isFlagLedger\|FLAG_LEDGER_INTERVAL\|flagLedgerInterval" include/xrpl/protocol/*.h src/libxrpl/ledger/*.cpp | head
+$ sed -n 1460,1472p cfg/postfiatd-testnet-light.cfg
+<redacted-ip> 2559
+<redacted-ip> 2559
+<redacted-ip> 2559
+
+[peer_private]
+0
+
+[network_id]
+2025
+
+[amendment_majority_time]
+3 days
+
+$ sed -n 84,90p include/xrpl/protocol/SystemParameters.h
+
+constexpr std::ratio<67, 100> postFixAmendmentMajorityCalcThreshold;
+
+/** The minimum amount of time an amendment must hold a majority */
+constexpr std::chrono::seconds const defaultAmendmentMajorityTime = std::chrono::weeks{2};
+
+}  // namespace ripple
+$ grep -rn "256\b" include/xrpl/protocol/Protocol.h | head -3
+include/xrpl/protocol/Protocol.h:51:std::size_t constexpr expiredOfferRemoveLimit = 256;
+include/xrpl/protocol/Protocol.h:223:std::size_t constexpr maxTokenURILength = 256;
+include/xrpl/protocol/Protocol.h:226:std::size_t constexpr maxDIDDocumentLength = 256;
+include/xrpl/protocol/Protocol.h:229:std::size_t constexpr maxDIDURILength = 256;
+include/xrpl/protocol/Protocol.h:232:std::size_t constexpr maxDIDAttestationLength = 256;
+[validator-host] $ sudo docker exec postfiatd grep -n -A1 "^\[amendment_majority_time\]" /etc/postfiatd/postfiatd.cfg
+1470:[amendment_majority_time]
+1471-3 days
+[sentry-host] $ sudo docker exec postfiatd-sentry grep -n -A1 "^\[amendment_majority_time\]" /etc/postfiatd/postfiatd.cfg
+1470:[amendment_majority_time]
+1471-3 days
+$ grep -rn "FLAG_LEDGER_INTERVAL\|isFlagLedger\|isVotingLedger" include/xrpl src/libxrpl --include=*.h --include=*.cpp | head -8
+$ grep -rn "FLAG_LEDGER_INTERVAL\|isFlagLedger\|isVotingLedger" src include | grep -v /test/ | head -8
+src/xrpld/app/ledger/detail/LedgerMaster.cpp:317:        else if (!app_.getOPs().isAmendmentWarned() || l->isFlagLedger())
+src/xrpld/app/tx/detail/Change.cpp:427:    if (!isFlagLedger(view().seq()))
+src/xrpld/app/ledger/Ledger.h:387:    isFlagLedger() const;
+src/xrpld/app/ledger/Ledger.h:391:    isVotingLedger() const;
+src/xrpld/app/ledger/Ledger.h:426:std::uint32_t constexpr FLAG_LEDGER_INTERVAL = 256;
+src/xrpld/app/ledger/Ledger.h:429:isFlagLedger(LedgerIndex seq);
+src/xrpld/app/consensus/RCLConsensus.cpp:364:        if (prevLedger->isFlagLedger())
+src/xrpld/app/consensus/RCLConsensus.cpp:379:            prevLedger->isVotingLedger() &&
+$ grep -n -A22 "^getSingleSection" src/xrpld/core/detail/Config.cpp
+218:getSingleSection(
+219-    IniFileSections& secSource,
+220-    std::string const& strSection,
+221-    std::string& strValue,
+222-    beast::Journal j)
+223-{
+224-    auto const pmtEntries = getIniFileSection(secSource, strSection);
+225-
+226-    if (pmtEntries && pmtEntries->size() == 1)
+227-    {
+228-        strValue = (*pmtEntries)[0];
+229-        return true;
+230-    }
+231-
+232-    if (pmtEntries)
+233-    {
+234-        JLOG(j.warn()) << "Section '" << strSection << "': requires 1 line not "
+235-                       << pmtEntries->size() << " lines.";
+236-    }
+237-
+238-    return false;
+239-}
+240-
+$ grep -n -B2 -A40 "^parseIniFile" src/xrpld/core/detail/Config.cpp | head -60
+161:parseIniFile(std::string const& strInput, bool const bTrim)
+162-{
+163-    std::string strData(strInput);
+164-    std::vector<std::string> vLines;
+165-    IniFileSections secResult;
+166-
+167-    // Convert DOS format to unix.
+168-    boost::algorithm::replace_all(strData, "\r\n", "\n");
+169-
+170-    // Convert MacOS format to unix.
+171-    boost::algorithm::replace_all(strData, "\r", "\n");
+172-
+173-    boost::algorithm::split(vLines, strData, boost::algorithm::is_any_of("\n"));
+174-
+175-    // Set the default Section name.
+176-    std::string strSection = SECTION_DEFAULT_NAME;
+177-
+178-    // Initialize the default Section.
+179-    secResult[strSection] = IniFileSections::mapped_type();
+180-
+181-    // Parse each line.
+182-    for (auto& strValue : vLines)
+183-    {
+184-        if (bTrim)
+185-            boost::algorithm::trim(strValue);
+186-
+187-        if (strValue.empty() || strValue[0] == '#')
+188-        {
+189-            // Blank line or comment, do nothing.
+190-        }
+191-        else if (strValue[0] == '[' && strValue[strValue.length() - 1] == ']')
+192-        {
+193-            // New Section.
+194-            strSection = strValue.substr(1, strValue.length() - 2);
+195-            secResult.emplace(strSection, IniFileSections::mapped_type{});
+196-        }
+197-        else
+198-        {
+199-            // Another line for Section.
+200-            if (!strValue.empty())
+201-                secResult[strSection].push_back(strValue);
+# README line-number check
+$ sed -n 900,920p src/xrpld/app/misc/detail/AmendmentTable.cpp
+1+899	        }();
+2+899	
+3+899	        if (hasValMajority && !hasLedgerMajority &&
+4+899	            entry.second.vote == AmendmentVote::up)
+5+899	        {
+6+899	            // Ledger says no majority, validators say yes, and voting yes
+7+899	            // locally
+8+899	            JLOG(j_.debug()) << logStr << ": amendment got majority";
+9+899	            actions[entry.first] = tfGotMajority;
+10+899	        }
+11+899	        else if (!hasValMajority && hasLedgerMajority)
+12+899	        {
+13+899	            // Ledger says majority, validators say no
+14+899	            JLOG(j_.debug()) << logStr << ": amendment lost majority";
+15+899	            actions[entry.first] = tfLostMajority;
+16+899	        }
+17+899	        else if (
+18+899	            hasLedgerMajority &&
+19+899	            ((*majorityTime + majorityTime_) <= closeTime) &&
+20+899	            entry.second.vote == AmendmentVote::up)
+21+899	        {
+$ sed -n 2662,2678p src/xrpld/app/misc/NetworkOPs.cpp
+                "may be unreachable.";
+        }
+        if (admin && isAmendmentWarned())
+        {
+$ grep -n "tfLostMajority\|tfGotMajority\|sfMajorities" src/xrpld/app/tx/detail/Change.cpp
+308:    bool const gotMajority = (flags & tfGotMajority) != 0;
+309:    bool const lostMajority = (flags & tfLostMajority) != 0;
+314:    STArray newMajorities(sfMajorities);
+317:    if (amendmentObject->isFieldPresent(sfMajorities))
+320:            amendmentObject->getFieldArray(sfMajorities);
+375:        amendmentObject->makeFieldAbsent(sfMajorities);
+377:        amendmentObject->setFieldArray(sfMajorities, newMajorities);
+$ sed -n 424,428p src/xrpld/app/ledger/Ledger.h
+using CachedLedger = CachedView<Ledger>;
+
+std::uint32_t constexpr FLAG_LEDGER_INTERVAL = 256;
+/** Returns true if the given ledgerIndex is a flag ledgerIndex */
+bool
+$ grep -n "tfGotMajority;\|tfLostMajority;\|majorityTime_) <= closeTime\|hasValMajority && !hasLedgerMajority\|!hasValMajority && hasLedgerMajority\|firstUnsupportedExpected_.reset\|firstUnsupportedExpected_ = \*firstUnsupportedExpected_" src/xrpld/app/misc/detail/AmendmentTable.cpp
+902:        if (hasValMajority && !hasLedgerMajority &&
+908:            actions[entry.first] = tfGotMajority;
+910:        else if (!hasValMajority && hasLedgerMajority)
+914:            actions[entry.first] = tfLostMajority;
+918:            ((*majorityTime + majorityTime_) <= closeTime) &&
+971:    firstUnsupportedExpected_.reset();
+988:        firstUnsupportedExpected_ = *firstUnsupportedExpected_ + majorityTime_;
+$ sed -n 336,378p src/xrpld/app/tx/detail/Change.cpp | grep -n "lostMajority\|gotMajority\|erase\|push_back\|newMajorities"
+6:                if (gotMajority)
+13:                newMajorities.push_back(majority);
+18:    if (!found && lostMajority)
+21:    if (gotMajority)
+24:        newMajorities.push_back(STObject::makeInnerObject(sfMajority));
+25:        auto& entry = newMajorities.back();
+36:    else if (!lostMajority)
+55:    if (newMajorities.empty())
+58:        amendmentObject->setFieldArray(sfMajorities, newMajorities);

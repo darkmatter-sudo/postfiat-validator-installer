@@ -1,0 +1,72 @@
+# upgradewatch 04 DEV mutant pass (not the recorded run) - 2026-11-03T04:23:57Z
+341feba8a2e84c998086b0df37e5f5b92b73208f0b58e3ff6c28ba2b44659af6  pft-upgradewatch.sh
+cd864f2d2f407fe0f4accc696cbb45cde215e69c58e0661458b5c9f024b556a4  upgradewatch_parse.py
+cb9d4c40874c9935eeee6c820a2495c6ea4b9fd63b28868add4cc58f0bdd0623  ../alerts/upgradewatch.rules.yml
+e5497241653e53a50e37c152a82c5fbee38d39a8b72d1fb12f73928bd1c13f15  ../alerts/upgradewatch.tests.yml
+4550bf6f922c4cebcfad68dc9d148db323ed4d6581914326989b515d63f4b0d0  tests/capture_fixtures.sh
+000be3ed265c58d10d243e0dfd741a39fe3b5dcf698d106894b74a295efbea96  tests/run-tests.sh
+fad7cf820f2ac2391d96a65299a2bbb42204bfd8262b56c9e3bd35eee5c6baa1  tests/gen_promtool_tests.py
+7b217376280a5e49dc37e5e1f1dd6d9d1a78f87cff408e3b1fc8b482d9d04200  tests/mutate.py
+d1997b3c91702b5a7e4a710acd1328f4015f043e79dae6444d0102fc3184b5db  tests/test_upgradewatch_parse.py
+CONTROL (unmutated): py rc=0, sh rc=0, promtool rc=0
+S1   KILLED (sh: 1 failed: FAIL ledger_entry asks the validated Amendments object)     18s  Amendments read from the current (unvalidated) ledger
+S2   KILLED (sh: 10 failed: FAIL fail-amendments: only up + timestamp (no stale val    18s  values written even when the collection failed (stale data)
+S3   KILLED (sh: 11 failed: FAIL fail-amendments: up 0)                                18s  up always 1
+S4   KILLED (sh: 1 failed: FAIL docker CLI warning on stderr: up 1)                    18s  docker stderr merged into the RPC answer
+S5   KILLED (sh: 5 failed: FAIL hang-feature: rc 1)                                    72s  no timeout around the RPC docker exec
+S6   KILLED (sh: 5 failed: FAIL hang-cfg: rc 1)                                        72s  no timeout around the config grep
+S7   KILLED (sh: 1 failed: FAIL section absent (grep rc 1): up 1, 2 week default)      22s  grep rc 1 (section absent) treated as a failure
+S8   KILLED (sh: 4 failed: FAIL config grep rc 2: rc 1)                                18s  grep rc 2 (config unreadable) accepted
+S9   KILLED (sh: 1 failed: FAIL config grep reads only headers + duration lines)       18s  config filter widened to every line (secrets would leave the container)
+S10  KILLED (sh: 2 failed: FAIL foundation down: no answer file passed to the parse    20s  failed foundation answer still passed to the parser
+S11  KILLED (sh: 1 failed: FAIL FOUNDATION_URL empty: curl never called, known 0)      20s  empty FOUNDATION_URL still asked
+S12  KILLED (sh: 1 failed: FAIL foundation empty answer: not passed to the parser (    20s  empty foundation answer accepted
+S13  KILLED (sh: 23 failed: FAIL rc 0)                                                 18s  server_info answer not handed to the parser
+S14  KILLED (sh: 1 failed: FAIL replay to a real node name refused (rc 3))             20s  replay may overwrite a real node's textfile
+S15  SURVIVED                                                                          20s  non-root-owned conf is sourced
+S16  KILLED (sh: 2 failed: FAIL RPC_TIMEOUT=0: rc 3)                                   20s  RPC_TIMEOUT 0 / non-numeric accepted
+S17  KILLED (sh: 2 failed: FAIL NODE_CFG=rel/path: rc 3)                               21s  NODE_CFG not checked
+S18  KILLED (sh: 1 failed: FAIL no temp files left in the textfile dir)                19s  atomic rename replaced by a copy (temp files left)
+S19  KILLED (sh: 3 failed: FAIL valid file, other name: 2)                             19s  validate: first label not checked
+S20  KILLED (sh: 1 failed: FAIL too big: 2)                                            19s  validate: size limit not enforced
+S21  KILLED (sh: 1 failed: FAIL no up sample: 2)                                       18s  validate: up sample not required
+S22  KILLED (sh: 1 failed: FAIL no timestamp sample: 2)                                18s  validate: timestamp sample not required
+S23  KILLED (sh: 2 failed: FAIL pull wrong-container file: rc 2, old copy kept)        18s  pull: pulled file not validated
+S24  KILLED (sh: 1 failed: FAIL pull leaves no temp files)                             17s  pull: temp file left after a failed fetch
+P1   KILLED (py: 5 failed: FAIL: test_default_two_weeks_when_section_absent (__main    19s  Ripple epoch off by one second
+P2   KILLED (py: 2 failed: FAIL: test_default_two_weeks_when_section_absent (__main    18s  default majority time 1 week instead of 2
+P3   KILLED (py: 1 failed: FAIL: test_invalid_values_raise (__main__.MajorityTime))    19s  minimum majority time 10 min instead of 15
+P4   KILLED (py: 1 failed: FAIL: test_units (__main__.MajorityTime))                   20s  wrong week length
+P5   KILLED (py: 1 failed: ERROR: test_invalid_values_raise (__main__.MajorityTime)    20s  duration unit matched case-insensitively (the node is case-sensitive)
+P6   KILLED (py: 1 failed: FAIL: test_default_cases (__main__.MajorityTime))           19s  two section lines: first one used instead of the default
+P7   KILLED (py: 5 failed: FAIL: test_known_but_unsupported_amendment_counts_as_uns    20s  comment lines read as values
+P8   KILLED (py: 1 failed: FAIL: test_enabled_amendment_in_majorities_is_ignored (_    19s  an already enabled amendment counted as a majority
+P9   KILLED (py: 1 failed: FAIL: test_known_but_unsupported_amendment_counts_as_uns    18s  a known but unsupported amendment counted as supported
+P10  KILLED (py: 1 failed: FAIL: test_earliest_unsupported_wins_and_supported_does_    18s  majorities not sorted: not the earliest ETA
+P11  KILLED (py: 5 failed: FAIL: test_default_two_weeks_when_section_absent (__main    18s  majority time left out of the ETA
+P12  KILLED (py: 1 failed: FAIL: test_node_warning_agrees_and_disagrees (__main__.E    19s  node expected_date not converted from the Ripple epoch
+P13  KILLED (py: 1 failed: FAIL: test_node_warning_agrees_and_disagrees (__main__.E    21s  ETA agreement tolerance 1 h
+P14  KILLED (py: 1 failed: FAIL: test_cases (__main__.Malformed))                      20s  Amendments object from an unvalidated ledger accepted
+P15  KILLED (py: 1 failed: FAIL: test_series_cap (__main__.ETA))                       20s  per-amendment series not capped
+P16  KILLED (py: 1 failed: FAIL: test_bool_is_not_an_int (__main__.Malformed))         18s  boolean CloseTime accepted
+P17  KILLED (py: 1 failed: FAIL: test_enabled_unsupported (__main__.Blocked))          18s  enabled-but-unsupported count treats unknown hashes as supported
+P18  KILLED (py: 1 failed: FAIL: test_flag_and_warning (__main__.Blocked))             18s  warning 1002 alone does not mean blocked
+P19  KILLED (py: 1 failed: FAIL: test_flag_and_warning (__main__.Blocked))             17s  amendment_blocked: false read as blocked
+P20  KILLED (py: 1 failed: FAIL: test_order (__main__.Versions))                       17s  pre-release order rc/b swapped
+P21  KILLED (py: 2 failed: FAIL: test_order (__main__.Versions))                       17s  any prefix-version (rippled-2.x) compared as a postfiatd version
+P22  KILLED (py: 2 failed: FAIL: test_validator_and_sentry_live_values (__main__.Re    18s  a peer on the same version counted as newer
+P23  KILLED (py: 1 failed: FAIL: test_validator_and_sentry_live_values (__main__.Re    18s  same version as the foundation counted as behind
+P24  KILLED (py: 1 failed: ERROR: test_foundation_unknown_is_not_a_failure (__main_    18s  foundation build_version used without a version check
+P25  KILLED (py: 1 failed: ERROR: test_peers_newer_and_ratio (__main__.Versions))      25s  peers without a parseable version not skipped
+R1   KILLED (promtool: 2 failed: FAILED:)                                               8s  PFTAmendmentBlocked for 1m
+R2   KILLED (promtool: 8 failed: FAILED:)                                               8s  majority count >= 0 fires on every node
+R3   KILLED (promtool: 3 failed: FAILED:)                                               3s  node warning 1001 path dropped
+R4   KILLED (promtool: 3 failed: FAILED:)                                               3s  activation window 48 h
+R5   KILLED (promtool: 9 failed: FAILED:)                                               3s  no 'an ETA exists' guard (ETA 0 = none would fire)
+R6   KILLED (promtool: 5 failed: FAILED:)                                               3s  peer path needs only 4 peers
+R7   KILLED (promtool: 5 failed: FAILED:)                                               3s  peer path needs MORE than half
+R8   KILLED (promtool: 3 failed: FAILED:)                                               3s  version lag for 10m
+R9   KILLED (promtool: 2 failed: FAILED:)                                               2s  stale threshold 30 min
+R10  KILLED (promtool: 2 failed: FAILED:)                                               2s  up == 0 path dropped from the stale rule
+RESULT: 58 killed + 0 documented equivalent of 59, 1 survived, not applied or errored
+(exit 1)

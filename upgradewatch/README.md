@@ -134,3 +134,32 @@ on these hosts.
   `foundation_known` is 0, and the lag alert relies on the peer comparison alone.
 - Peer versions are self-reported in the handshake. The peer rule needs at least 5 version-reporting peers, so that
   a few odd peers cannot trigger it.
+
+## Install
+
+```bash
+sudo upgradewatch/install.sh --container postfiatd           # validator (sentry: --container postfiatd-sentry)
+sudo install -m 600 upgradewatch/pft-upgradewatch.env.example /etc/pft-upgradewatch.env   # validator: set PULL_SSH
+sudo upgradewatch/install.sh --pull postfiatd-sentry         # validator: pull the sentry's textfile
+sudo pft-integrity accept --reason "pft-upgradewatch installed"
+```
+
+On these two hosts the install ran through `pft-fleet sync` inside a `pft-maint` window
+([`drill/install-run.sh`](drill/install-run.sh), log 08). The rule line in `../alerts/prometheus.yml`, the six
+`../fleet/manifest.tsv` lines and the rulecheck lines were committed together with that run, and not before it.
+
+## Logs
+
+Raw output of the commands run on the validator and the sentry (Ubuntu 22.04.5 LTS). IP addresses are replaced by
+`<redacted-ip>` (in log 01 these are the public peers listed in the testnet config) and the home directory by `~`.
+
+| Log | What | Result |
+|---|---|---|
+| [`01-source.log`](logs/01-source.log) | postfiatd source at the running build `32723c15`: majority time, enable rule, warnings, flag interval; `[amendment_majority_time]` on both live configs | `3 days` on both hosts, default `weeks{2}` |
+| [`02-capture.log`](logs/02-capture.log) | `tests/capture_fixtures.sh`: real answers from both nodes and the foundation RPC | 101 features, 0 majorities, 19 / 16 peers, build 1.0.9 everywhere |
+| [`03-smoke.log`](logs/03-smoke.log) | first live `collect --stdout` on the validator (dev, nothing written) | up 1 in 1.9 s |
+| [`04-dev-mutants.log`](logs/04-dev-mutants.log) | dev mutant pass | 58/59; S15 survived (the conf test set a value that `--container` overrode) |
+| [`05-dev-s15.log`](logs/05-dev-s15.log) | S15 after the test fix | killed |
+| [`06-tests.log`](logs/06-tests.log) | recorded offline run at `0e80c1a`: shellcheck, ruff, parser suite, collector suite, generated == committed promtool tests, promtool | 22 tests OK, `RESULT: 98/98 passed`, promtool `SUCCESS` |
+| [`07-mutants.log`](logs/07-mutants.log) | recorded mutant run at `0e80c1a` (control first) | `59 killed ... of 59, 0 survived` |
+| [`08-install.log`](logs/08-install.log) | two-host install at `55bc1e5` through pft-fleet in a pft-maint window ([MAINT] to a throwaway topic) | 28 checks ok, 0 failed |

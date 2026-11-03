@@ -1,0 +1,62 @@
+# upgradewatch 03 dev smoke (validator, --stdout, nothing written) - 2026-11-03T04:14:11Z
+OS: PRETTY_NAME="Ubuntu 22.04.5 LTS"
+99cf31c64fce5be5beb640c7c2047fc3dcebfedc7a3ecd289dfcec4c42a90c51  pft-upgradewatch.sh
+b917b14bf51ba1e4a6ec45108c5cc7811c528a80e80e5bcc19c728dcaa36bb7c  upgradewatch_parse.py
+$ sudo env PFT_UW_CONF=/nonexistent PFT_UW_PARSER=./upgradewatch_parse.py bash pft-upgradewatch.sh collect --container postfiatd --stdout
+# HELP pft_upgradewatch_up 1 if the last collection succeeded and every node field was valid
+# TYPE pft_upgradewatch_up gauge
+pft_upgradewatch_up{container="postfiatd"} 1
+# HELP pft_upgradewatch_collect_timestamp_seconds Unix time of the last collection attempt
+# TYPE pft_upgradewatch_collect_timestamp_seconds gauge
+pft_upgradewatch_collect_timestamp_seconds{container="postfiatd"} 1793679251
+# HELP pft_upgradewatch_amendment_blocked 1 if server_info reports amendment_blocked (or warning 1002)
+# TYPE pft_upgradewatch_amendment_blocked gauge
+pft_upgradewatch_amendment_blocked{container="postfiatd"} 0
+# HELP pft_upgradewatch_unsupported_majority_warning 1 if server_info carries warning 1001 (unsupported majority)
+# TYPE pft_upgradewatch_unsupported_majority_warning gauge
+pft_upgradewatch_unsupported_majority_warning{container="postfiatd"} 0
+# HELP pft_upgradewatch_amendments_known amendments in this build's feature table
+# TYPE pft_upgradewatch_amendments_known gauge
+pft_upgradewatch_amendments_known{container="postfiatd"} 101
+# HELP pft_upgradewatch_amendments_enabled amendments enabled in the validated Amendments object
+# TYPE pft_upgradewatch_amendments_enabled gauge
+pft_upgradewatch_amendments_enabled{container="postfiatd"} 64
+# HELP pft_upgradewatch_amendments_enabled_unsupported enabled amendments this build does not support
+# TYPE pft_upgradewatch_amendments_enabled_unsupported gauge
+pft_upgradewatch_amendments_enabled_unsupported{container="postfiatd"} 0
+# HELP pft_upgradewatch_majority_amendments not-yet-enabled amendments holding a ledger majority
+# TYPE pft_upgradewatch_majority_amendments gauge
+pft_upgradewatch_majority_amendments{container="postfiatd",supported="yes"} 0
+pft_upgradewatch_majority_amendments{container="postfiatd",supported="no"} 0
+# HELP pft_upgradewatch_majority_time_seconds hold time used for the ETA (Config.cpp [amendment_majority_time])
+# TYPE pft_upgradewatch_majority_time_seconds gauge
+pft_upgradewatch_majority_time_seconds{container="postfiatd"} 259200
+# HELP pft_upgradewatch_majority_time_from_config 1 if majority_time_seconds came from the node config, 0 = 2 week default
+# TYPE pft_upgradewatch_majority_time_from_config gauge
+pft_upgradewatch_majority_time_from_config{container="postfiatd"} 1
+# HELP pft_upgradewatch_build_info this node's build_version
+# TYPE pft_upgradewatch_build_info gauge
+pft_upgradewatch_build_info{container="postfiatd",version="1.0.9"} 1
+# HELP pft_upgradewatch_peers_versioned peers reporting a parseable version
+# TYPE pft_upgradewatch_peers_versioned gauge
+pft_upgradewatch_peers_versioned{container="postfiatd"} 19
+# HELP pft_upgradewatch_peers_newer peers reporting a NEWER version than this node
+# TYPE pft_upgradewatch_peers_newer gauge
+pft_upgradewatch_peers_newer{container="postfiatd"} 0
+# HELP pft_upgradewatch_peers_newer_ratio peers_newer / peers_versioned (0 when no peer reports a version)
+# TYPE pft_upgradewatch_peers_newer_ratio gauge
+pft_upgradewatch_peers_newer_ratio{container="postfiatd"} 0.0
+# HELP pft_upgradewatch_foundation_known 1 if the foundation RPC's build_version was read this run
+# TYPE pft_upgradewatch_foundation_known gauge
+pft_upgradewatch_foundation_known{container="postfiatd"} 1
+# HELP pft_upgradewatch_foundation_build_info the foundation RPC's build_version
+# TYPE pft_upgradewatch_foundation_build_info gauge
+pft_upgradewatch_foundation_build_info{container="postfiatd",version="1.0.9"} 1
+# HELP pft_upgradewatch_behind_foundation 1 if this node's build is older than the foundation RPC's
+# TYPE pft_upgradewatch_behind_foundation gauge
+pft_upgradewatch_behind_foundation{container="postfiatd"} 0
+
+real	0m1.931s
+user	0m0.255s
+sys	0m0.255s
+(exit 0)

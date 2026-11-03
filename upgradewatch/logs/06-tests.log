@@ -1,0 +1,161 @@
+# upgradewatch 06 offline tests - 2026-11-03T04:32:03Z - Ubuntu 22.04.5 LTS - repo HEAD 0e80c1a41528c55f6fddeed552f20fba8474c1c0 (clean: yes)
+$ sha256sum upgradewatch/pft-upgradewatch.sh upgradewatch/upgradewatch_parse.py upgradewatch/install.sh upgradewatch/systemd/* alerts/upgradewatch.rules.yml alerts/upgradewatch.tests.yml upgradewatch/tests/*.sh upgradewatch/tests/*.py
+341feba8a2e84c998086b0df37e5f5b92b73208f0b58e3ff6c28ba2b44659af6  upgradewatch/pft-upgradewatch.sh
+cd864f2d2f407fe0f4accc696cbb45cde215e69c58e0661458b5c9f024b556a4  upgradewatch/upgradewatch_parse.py
+109a6565c64c366f67b6c3014ee6f71b2c32328da3aeaf0d0e262f2a837dfb4f  upgradewatch/install.sh
+2bcc831f65d85c2ead3d2c84f26cda26528aba350a34b8ea7a118fb1bfeca77b  upgradewatch/systemd/pft-upgradewatch-pull@.service
+d2252b913e5e4dd73d26608110e70d60155c25b091abe4d068edbd8a888ffd66  upgradewatch/systemd/pft-upgradewatch-pull@.timer
+dd0817ac8d8ae9157c3a1031929b85b5807809b80429707ef373a055850057c3  upgradewatch/systemd/pft-upgradewatch@.service
+81f34228a829ecf0bcced7aa208e710f8a63eb2387995f253d6cd6865e75d1ef  upgradewatch/systemd/pft-upgradewatch@.timer
+cb9d4c40874c9935eeee6c820a2495c6ea4b9fd63b28868add4cc58f0bdd0623  alerts/upgradewatch.rules.yml
+e5497241653e53a50e37c152a82c5fbee38d39a8b72d1fb12f73928bd1c13f15  alerts/upgradewatch.tests.yml
+4550bf6f922c4cebcfad68dc9d148db323ed4d6581914326989b515d63f4b0d0  upgradewatch/tests/capture_fixtures.sh
+8f573d43e26d56fb250b0ec0211cae1a8e626a10739ad66f861ac531f92abd15  upgradewatch/tests/run-tests.sh
+fad7cf820f2ac2391d96a65299a2bbb42204bfd8262b56c9e3bd35eee5c6baa1  upgradewatch/tests/gen_promtool_tests.py
+7b217376280a5e49dc37e5e1f1dd6d9d1a78f87cff408e3b1fc8b482d9d04200  upgradewatch/tests/mutate.py
+d1997b3c91702b5a7e4a710acd1328f4015f043e79dae6444d0102fc3184b5db  upgradewatch/tests/test_upgradewatch_parse.py
+(exit 0)
+$ shellcheck --version | sed -n 2p; shellcheck upgradewatch/pft-upgradewatch.sh upgradewatch/install.sh upgradewatch/tests/run-tests.sh upgradewatch/tests/capture_fixtures.sh upgradewatch/drill/install-run.sh && echo shellcheck clean
+version: 0.8.0
+shellcheck clean
+(exit 0)
+$ ruff --version; ruff check upgradewatch && ruff format --check upgradewatch
+ruff 0.17.1
+All checks passed!
+5 files already formatted
+(exit 0)
+$ python3 --version; python3 upgradewatch/tests/test_upgradewatch_parse.py
+Python 3.10.12
+..bad container name
+server_info: not readable JSON (FileNotFoundError)
+.................warning: foundation: not readable JSON (JSONDecodeError); foundation version unknown
+warning: foundation: rpc error 'noNetwork'; foundation version unknown
+...
+----------------------------------------------------------------------
+Ran 22 tests in 0.204s
+
+OK
+(exit 0)
+$ timeout 300 bash upgradewatch/tests/run-tests.sh
+== happy path (real validator answers)
+PASS rc 0
+PASS up 1
+PASS timestamp = PFT_UW_NOW
+PASS majority time 3 days from config
+PASS no unsupported ETA
+PASS build and foundation versions
+PASS 19 versioned peers
+PASS textfile passes validate
+PASS exactly 4 RPC calls + 1 config grep
+PASS only allowlisted methods sent
+PASS ledger_entry asks the validated Amendments object
+PASS config grep reads only headers + duration lines
+PASS foundation asked once at the default URL
+PASS no temp files left in the textfile dir
+PASS nothing on stderr
+== --stdout writes nothing
+PASS --stdout: rc 0, file absent
+PASS --stdout: up 1 printed
+== each node-side failure gives up 0
+PASS fail-amendments: rc 1
+PASS fail-amendments: up 0
+PASS fail-amendments: only up + timestamp (no stale values)
+PASS fail-amendments: reason on stderr
+PASS fail-amendments: rc 1
+PASS fail-amendments: up 0
+PASS fail-amendments: only up + timestamp (no stale values)
+PASS fail-amendments: reason on stderr
+PASS fail-amendments: rc 1
+PASS fail-amendments: up 0
+PASS fail-amendments: only up + timestamp (no stale values)
+PASS fail-amendments: reason on stderr
+PASS fail-amendments: rc 1
+PASS fail-amendments: up 0
+PASS fail-amendments: only up + timestamp (no stale values)
+PASS fail-amendments: reason on stderr
+PASS config grep rc 2: rc 1
+PASS config grep rc 2: up 0
+PASS config grep rc 2: only up + timestamp (no stale values)
+PASS config grep rc 2: reason on stderr
+PASS non-JSON feature answer: rc 1
+PASS non-JSON feature answer: up 0
+PASS non-JSON feature answer: only up + timestamp (no stale values)
+PASS non-JSON feature answer: reason on stderr
+PASS rpc error answer: rc 1
+PASS rpc error answer: up 0
+PASS rpc error answer: only up + timestamp (no stale values)
+PASS rpc error answer: reason on stderr
+PASS majority time below the node's minimum: rc 1
+PASS majority time below the node's minimum: up 0
+PASS majority time below the node's minimum: only up + timestamp (no stale values)
+PASS majority time below the node's minimum: reason on stderr
+== hang is bounded by timeout (RPC_TIMEOUT=1 -> 6 s)
+PASS hang-feature: rc 1
+PASS hang-feature: up 0
+PASS hang-feature: only up + timestamp (no stale values)
+PASS hang-feature: reason on stderr
+PASS hang-feature: finished in < 15 s (took 6s)
+PASS hang-cfg: rc 1
+PASS hang-cfg: up 0
+PASS hang-cfg: only up + timestamp (no stale values)
+PASS hang-cfg: reason on stderr
+PASS hang-cfg: finished in < 15 s (took 7s)
+== tolerated conditions keep up 1
+PASS docker CLI warning on stderr: up 1
+PASS section absent (grep rc 1): up 1, 2 week default
+PASS foundation down: up 1, foundation_known 0, behind 0
+PASS foundation down: no answer file passed to the parser (no warning)
+PASS foundation empty answer: foundation_known 0
+PASS foundation empty answer: not passed to the parser (no warning)
+PASS FOUNDATION_URL empty: curl never called, known 0
+PASS foundation on 1.0.10: behind_foundation 1
+== injected unsupported majority through the real collector path
+PASS unsupported majority counted
+PASS ETA = 815000000 + 946684800 + 259200 = 1761944000
+== config and argument guards
+PASS non-root-owned conf is ignored
+PASS collect --container bad/name: rc 3
+PASS collect --bogus: rc 3
+PASS RPC_TIMEOUT=0: rc 3
+PASS RPC_TIMEOUT=abc: rc 3
+PASS FOUNDATION_TIMEOUT=100: rc 3
+PASS NODE_CFG=rel/path: rc 3
+PASS NODE_CFG=/etc/x;id: rc 3
+PASS missing parser: rc 3
+== replay (drill mode)
+PASS replay to a real node name refused (rc 3)
+PASS replay without a fixture dir: rc 3
+PASS replay drill-x: rc 0, up 1, --now stamped, foundation unknown
+PASS replay reads fx/foundation.json when present
+PASS replay of a broken fixture: rc 1, up 0
+== validate
+PASS valid file, right name: 0
+PASS valid file, other name: 2
+PASS foreign metric: 2
+PASS no up sample: 2
+PASS no timestamp sample: 2
+PASS non-numeric value: 2
+PASS too big: 2
+== pull (validator copies the sentry textfile)
+PASS pull good file: rc 0, copied byte-identical
+PASS pull asked for the right remote file
+PASS pull wrong-container file: rc 2, old copy kept
+PASS pull ssh failure: rc 1, old copy kept
+PASS pull leaves no temp files
+PASS pull without PULL_SSH: rc 3
+== misc
+PASS version
+PASS unknown command: rc 3
+RESULT: 98/98 passed
+(exit 0)
+$ python3 upgradewatch/tests/gen_promtool_tests.py | cmp - alerts/upgradewatch.tests.yml && echo 'generated tests == committed tests'
+generated tests == committed tests
+(exit 0)
+$ cd alerts && sudo -n docker run --rm -v "$PWD:/w:ro" -w /w --entrypoint promtool prom/prometheus:v3.5.0 check rules upgradewatch.rules.yml && sudo -n docker run --rm -v "$PWD:/w:ro" -w /w --entrypoint promtool prom/prometheus:v3.5.0 test rules upgradewatch.tests.yml; cd ..
+Checking upgradewatch.rules.yml
+  SUCCESS: 5 rules found
+
+  SUCCESS
+
+(exit 0)
+done 2026-11-03T04:32:26Z
