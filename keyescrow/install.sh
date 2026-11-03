@@ -44,7 +44,7 @@ conf_get() { [ -f "$CONF" ] || return 0; sed -n "s/^$1=//p" "$CONF" | tail -1 | 
 run_unit() { # UNIT: start it, print this run's journal (a finished oneshot has no InvocationID left), fail if it failed
   local t0; t0="$(date -u +%s)"
   systemctl start "$1" || true
-  journalctl -u "$1" --since "@$t0" --no-pager --utc -o cat | grep -v 'pam_limits\|pam_unix'
+  journalctl -u "$1" --since "@$t0" --no-pager --utc -o cat | grep -v 'pam_limits\|pam_unix' || true
   if systemctl is-failed -q "$1"; then log "ERROR: $1 failed"; exit 1; fi
 }
 
