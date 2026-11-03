@@ -31,6 +31,7 @@
 # Env: RELAY (relay)  NTFY (https://ntfy.sh)  AM (http://127.0.0.1:9093)  PROM (http://127.0.0.1:9090)  REFRESH (20, s)
 #      LOCAL_ENVS  REMOTE_ENVS  BRIDGE_ENV  AGENT_ENV  TTL (60m)  SIL_TTL (60, min)  FIRE_WAIT (1380, s)
 #      RESOLVE_WAIT (900, s)  NTFY_WAIT (180, s)  REDACT (../../peerexpose/drill/redact.py)
+#      CLEAR_WAIT (300, s: drill-file alerts must clear before the silence expires)  READBACK_WAIT (150, s)
 #      PREFLIGHT_ONLY (0; 1 = run step 0 only and exit, nothing changed)
 # shellcheck disable=SC2016  # ok_if conditions are single-quoted on purpose: evaluated later
 set -uo pipefail
@@ -47,6 +48,7 @@ REMOTE_ENVS="${REMOTE_ENVS:-/etc/pft-watchdog/ntfy.env /etc/pft-integrity.env /e
 BRIDGE_ENV="${BRIDGE_ENV:-$HOME/.config/pft-alerts/ntfy.env}"; AGENT_ENV="${AGENT_ENV:-/opt/pft-agent/config.env}"
 TTL="${TTL:-60m}"; SIL_TTL="${SIL_TTL:-60}"
 FIRE_WAIT="${FIRE_WAIT:-1380}"; RESOLVE_WAIT="${RESOLVE_WAIT:-900}"; NTFY_WAIT="${NTFY_WAIT:-180}"
+CLEAR_WAIT="${CLEAR_WAIT:-300}"; READBACK_WAIT="${READBACK_WAIT:-150}"
 UW_ALERTS='PFTAmendmentBlocked|PFTUnsupportedAmendmentMajority|PFTUnsupportedAmendmentActivationSoon|PFTNodeVersionLag|PFTUpgradewatchStale'
 WATCHDOG_ALERT=PFTAlertPipelineWatchdog
 TF=/var/lib/pft-exporter/textfile
@@ -156,6 +158,19 @@ restore() {
     else echo "  restored bridge: mounts the operator env file again: NO"; RESTORE_OK=false; fi
   fi
   if [ -n "$SIL" ]; then
+    # pft-rulecheck grades every textfile, so drill-stale (back-dated collect timestamp) is also PFTTextfileStale
+    # there, under the drill silence. Run 10 expired the silence before rulecheck's next run noticed the file was
+    # gone, and one [FIRING] PFTTextfileStale reached the operator. Re-run rulecheck now and keep the silence until
+    # no alert names a drill file, in Prometheus or in Alertmanager.
+    local w=0 n=1
+    sudo -n systemctl start pft-rulecheck.service || { echo "  pft-rulecheck re-run FAILED"; RESTORE_OK=false; }
+    while [ "$w" -le "$CLEAR_WAIT" ]; do
+      n="$(( $(pq 'ALERTS{file=~".*drill-.*"}' | grep -c .) + $(curl -s --max-time 10 "$AM/api/v2/alerts" | jq '[.[] | select((.labels.file // "") | test("drill-"))] | length') ))"
+      [ "$n" = 0 ] && break
+      sleep 10; w=$((w + 10))
+    done
+    echo "  alerts naming a drill textfile after the rulecheck re-run (Prometheus + Alertmanager): $n (${w}s)"
+    [ "$n" = 0 ] || RESTORE_OK=false
     curl -s --max-time 10 -o /dev/null -w "  drill silence expired: HTTP %{http_code}\n" -X DELETE "$AM/api/v2/silence/$SIL"
   fi
 }
@@ -370,7 +385,8 @@ echo; echo "== 4. restore, read back"
 restore
 check "env files byte-identical, bridge on the operator env, window ended, no drill textfile" \
   "$([ "$RESTORE_OK" = true ] && ! sudo -n pft-maint active >/dev/null 2>&1 && echo 0 || echo 1)"
-sleep 20
+# Alertmanager may notify anything the silence held back one group_interval (1m) after it expires: wait longer
+sleep "$READBACK_WAIT"
 readback() { # TOPIC LABEL [quiet]
   local out
   if out="$(curl -s --max-time 20 "$NTFY/$1/json?poll=1&since=$since")"; then
