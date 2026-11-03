@@ -18,3 +18,6 @@ textfile pft_sshcrypto_*.prom   3h   pft_sshcrypto_last_run_timestamp_seconds
 # pft-authwatch (1-minute collector)
 textfile pft_authwatch_*.prom   5m   pft_authwatch_collect_timestamp_seconds
 require pft_authwatch_sentry.prom
+# pft-upgradewatch (5-minute collector)
+textfile pft_upgradewatch_*.prom   15m   pft_upgradewatch_collect_timestamp_seconds
+require pft_upgradewatch_postfiatd-sentry.prom
