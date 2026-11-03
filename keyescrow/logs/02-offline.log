@@ -1,0 +1,89 @@
+# keyescrow 02 - offline suite, shellcheck, promtool - 2026-11-03T19:20:22Z - commit 837f80e960654581fdb77a0cd9efc36f176d31f8 - Ubuntu 22.04.5 LTS
+$ sha256sum keyescrow/pft-keyescrow.sh keyescrow/tests/run-tests.sh alerts/keyescrow.rules.yml alerts/keyescrow.tests.yml
+1489bb178928b04efa3e7569de3fcb99e8cc298f8d51a3c60194378ee3b7b791  keyescrow/pft-keyescrow.sh
+dfd6b78480eb1d304826582e80c1854cb5b78daaa883485e3f259a343d2610ec  keyescrow/tests/run-tests.sh
+4b58a518b380f2d064fe83316178fa9e94b0ebcbe36edc515ccf100f8e12eb49  alerts/keyescrow.rules.yml
+0af019bd03958dc656ebdf57545bdd26e18ddb35441122af1ca6a414c03c7435  alerts/keyescrow.tests.yml
+(exit 0)
+$ shellcheck --version | sed -n 2p; shellcheck keyescrow/pft-keyescrow.sh keyescrow/tests/run-tests.sh
+version: 0.8.0
+(exit 0)
+$ nice -n 15 timeout 300 bash keyescrow/tests/run-tests.sh
+ok   bare: exit 2
+ok   bare: required items missing
+ok   bare: optional item absent, not missing
+ok   bare: result line counts
+ok   bare: last escrow never
+ok   validator: sentry-only item not listed
+ok   sentry: validator-only item not listed, sentry-only listed
+ok   present: exit 1 (never escrowed)
+ok   present: all ok
+ok   present: no fp_key -> fp n/a, escrow new
+ok   present: counts
+ok   present: owners never printed
+ok   mode 644 (want 600): perm, exit 2
+ok   owner differs: perm, owner BAD, name not printed
+ok   group differs: perm, group BAD
+ok   group '-' is not checked (a:key)
+ok   symlink: perm 'not a regular file'
+ok   directory in place of an optional file: perm
+ok   unreadable: state + exit 2, no fingerprint
+ok   bad machine-id: fss missing (no path guessed), exit 2
+ok   fp_key: 16-hex fingerprints
+ok   fingerprint is keyed: differs from sha256(file)
+ok   fingerprint = sha256(fp_key || file)
+ok   escrowed + unchanged: exit 0, all same
+ok   last escrow time printed (UTC)
+ok   one byte appended: drift, exit 1
+ok   drift counted
+ok   item missing from the escrow manifest: new
+ok   garbage escrowed_at: treated as never
+ok   json: valid, host, exit
+ok   json: one object per applicable item
+ok   json: item fields
+ok   json: optional absent item
+ok   json: perm finding carries exit 2 and detail
+ok   textfile: written, 0644
+ok   textfile: state counts
+ok   textfile: drift items (never escrowed = 4 new)
+ok   textfile: last escrow 0, exit code 2
+ok   textfile: collect timestamp recent
+ok   textfile: no temp file left
+ok   textfile: every sample line has a HELP'd metric
+ok   textfile dir not writable: exit 2, named
+ok   positive control: the marker is in the secret files
+ok   positive control: a grep for the marker finds it in a string that has it
+ok   no secret bytes in text, json, textfile output
+ok   fp_key bytes never printed
+ok   unknown option: exit 3
+ok   bad HOST_LABEL: exit 3
+ok   no command: exit 3 + usage
+ok   registry: 15 rows, 8 tab-separated fields each
+ok   registry: unique ids
+ok   registry: modes are 3 octal digits, need is req|opt, hosts both|validator|sentry
+ok   cite cluster:node_seed: cluster/pft-cluster.sh:78 names node_seed
+ok   cite cluster:fp_key: cluster/pft-cluster.sh:80 names fp_key
+ok   cite cluster:env: cluster/install.sh:17 names pft-cluster.env
+ok   cite logship:env: logship/pft-logship.sh:40 names pft-logship.env
+ok   cite logship:host_key: logship/pft-logship.sh:115 names host.key
+ok   cite logship:ca_key: logship/pft-logship.sh:237 names ca.key
+ok   cite journald:fss: audittrail/pft-audittrail.sh:87 names fss
+ok   cite alertpath:hmac: alertpath/pft-alertpath.sh:168 names hmac.key
+ok   cite watchdog:hmac: watchdog/pft-heartbeat.sh:14 names hmac.key
+ok   cite ntfy:monitor: monitor/install-monitor.sh:15 names postfiat-monitor.env
+ok   cite ntfy:maint: maint/install.sh:36 names ntfy.env
+ok   cite ntfy:alertpath: alertpath/pft-alertpath.sh:300 names ntfy.env
+ok   cite ntfy:watchdog: watchdog/install.sh:12 names ntfy.env
+ok   cite ntfy:alerts: alerts/run-stack.sh:13 names NTFY_ENV_FILE
+ok   cite valkeys:keys: valkeys/pft-valkeys.sh:33 names validator-keys.json
+RESULT: 67 passed, 0 failed
+(exit 0)
+$ sudo docker run --rm --entrypoint promtool -v "$PWD/alerts":/r:ro -w /r prom/prometheus:v3.5.0 check rules keyescrow.rules.yml
+Checking keyescrow.rules.yml
+  SUCCESS: 3 rules found
+
+(exit 0)
+$ sudo docker run --rm --entrypoint promtool -v "$PWD/alerts":/r:ro -w /r prom/prometheus:v3.5.0 test rules keyescrow.tests.yml
+  SUCCESS
+
+(exit 0)

@@ -1,0 +1,56 @@
+# keyescrow 01 - live read-only inventory on both hosts - 2026-11-03T19:20:00Z - commit 837f80e960654581fdb77a0cd9efc36f176d31f8 - Ubuntu 22.04.5 LTS
+$ sha256sum keyescrow/pft-keyescrow.sh
+1489bb178928b04efa3e7569de3fcb99e8cc298f8d51a3c60194378ee3b7b791  keyescrow/pft-keyescrow.sh
+(exit 0)
+== validator (no /etc/pft-keyescrow.env yet: HOST_LABEL defaults to validator)
+$ test -e /etc/pft-keyescrow.env; echo conf-present=$?
+conf-present=1
+(exit 0)
+$ sudo bash keyescrow/pft-keyescrow.sh inventory
+pft-keyescrow inventory - 2026-11-03T19:20:04Z | host validator | last escrow never
+  [ok]       cluster:node_seed  escrow new   fp n/a              mode 600, owner ok, group ok  (cluster/pft-cluster.sh:78)
+  [ok]       cluster:fp_key     escrow new   fp n/a              mode 600, owner ok, group ok  (cluster/pft-cluster.sh:80)
+  [ok]       cluster:env        escrow new   fp n/a              mode 600, owner ok, group ok  (cluster/install.sh:17)
+  [ok]       logship:env        escrow new   fp n/a              mode 600, owner ok, group ok  (logship/pft-logship.sh:40)
+  [ok]       logship:host_key   escrow new   fp n/a              mode 640, owner ok, group ok  (logship/pft-logship.sh:115)
+  [ok]       logship:ca_key     escrow new   fp n/a              mode 600, owner ok, group ok  (logship/pft-logship.sh:237)
+  [ok]       journald:fss       escrow new   fp n/a              mode 600, owner ok, group ok  (audittrail/pft-audittrail.sh:87)
+  [ok]       alertpath:hmac     escrow new   fp n/a              mode 600, owner ok, group ok  (alertpath/pft-alertpath.sh:168)
+  [ok]       watchdog:hmac      escrow new   fp n/a              mode 600, owner ok, group ok  (watchdog/pft-heartbeat.sh:14)
+  [ok]       ntfy:monitor       escrow new   fp n/a              mode 600, owner ok, group ok  (monitor/install-monitor.sh:15)
+  [absent]   ntfy:maint         escrow -     fp n/a              optional, not on this host  (maint/install.sh:36)
+  [absent]   ntfy:alerts        escrow -     fp n/a              optional, not on this host  (alerts/run-stack.sh:13)
+  [absent]   valkeys:keys       escrow -     fp n/a              optional, not on this host  (valkeys/pft-valkeys.sh:33)
+RESULT: ok 10, perm 0, missing 0, unreadable 0, absent(optional) 3; escrow drift 0, new 10 -> exit 1
+(exit 1)
+$ sudo bash keyescrow/pft-keyescrow.sh inventory --json | jq -c '{host, exit, last_escrow_epoch, items: [.items[] | {id, state, escrow}]}'
+{"host":"validator","exit":1,"last_escrow_epoch":0,"items":[{"id":"cluster:node_seed","state":"ok","escrow":"new"},{"id":"cluster:fp_key","state":"ok","escrow":"new"},{"id":"cluster:env","state":"ok","escrow":"new"},{"id":"logship:env","state":"ok","escrow":"new"},{"id":"logship:host_key","state":"ok","escrow":"new"},{"id":"logship:ca_key","state":"ok","escrow":"new"},{"id":"journald:fss","state":"ok","escrow":"new"},{"id":"alertpath:hmac","state":"ok","escrow":"new"},{"id":"watchdog:hmac","state":"ok","escrow":"new"},{"id":"ntfy:monitor","state":"ok","escrow":"new"},{"id":"ntfy:maint","state":"absent","escrow":"-"},{"id":"ntfy:alerts","state":"absent","escrow":"-"},{"id":"valkeys:keys","state":"absent","escrow":"-"}]}
+(exit 0)
+== sentry (script copied to /tmp, conf HOST_LABEL=sentry in /tmp)
+$ scp -q keyescrow/pft-keyescrow.sh relay:/tmp/pft-keyescrow.sh && ssh relay 'printf "HOST_LABEL=sentry\n" > /tmp/pft-keyescrow.env'
+(exit 0)
+$ ssh relay '. /etc/os-release; echo "remote OS: $PRETTY_NAME"; sha256sum < /tmp/pft-keyescrow.sh'
+remote OS: Ubuntu 22.04.5 LTS
+1489bb178928b04efa3e7569de3fcb99e8cc298f8d51a3c60194378ee3b7b791  -
+(exit 0)
+$ ssh relay 'sudo PFT_KEYESCROW_CONF=/tmp/pft-keyescrow.env bash /tmp/pft-keyescrow.sh inventory'
+pft-keyescrow inventory - 2026-11-03T19:20:12Z | host sentry | last escrow never
+  [ok]       cluster:node_seed  escrow new   fp n/a              mode 600, owner ok, group ok  (cluster/pft-cluster.sh:78)
+  [ok]       cluster:fp_key     escrow new   fp n/a              mode 600, owner ok, group ok  (cluster/pft-cluster.sh:80)
+  [ok]       cluster:env        escrow new   fp n/a              mode 600, owner ok, group ok  (cluster/install.sh:17)
+  [ok]       logship:env        escrow new   fp n/a              mode 600, owner ok, group ok  (logship/pft-logship.sh:40)
+  [ok]       logship:host_key   escrow new   fp n/a              mode 640, owner ok, group ok  (logship/pft-logship.sh:115)
+  [ok]       journald:fss       escrow new   fp n/a              mode 600, owner ok, group ok  (audittrail/pft-audittrail.sh:87)
+  [ok]       alertpath:hmac     escrow new   fp n/a              mode 600, owner ok, group ok  (alertpath/pft-alertpath.sh:168)
+  [ok]       watchdog:hmac      escrow new   fp n/a              mode 600, owner ok, group ok  (watchdog/pft-heartbeat.sh:14)
+  [absent]   ntfy:maint         escrow -     fp n/a              optional, not on this host  (maint/install.sh:36)
+  [ok]       ntfy:alertpath     escrow new   fp n/a              mode 600, owner ok, group ok  (alertpath/pft-alertpath.sh:300)
+  [ok]       ntfy:watchdog      escrow new   fp n/a              mode 600, owner ok, group ok  (watchdog/install.sh:12)
+RESULT: ok 10, perm 0, missing 0, unreadable 0, absent(optional) 1; escrow drift 0, new 10 -> exit 1
+(exit 1)
+$ ssh relay 'sudo PFT_KEYESCROW_CONF=/tmp/pft-keyescrow.env bash /tmp/pft-keyescrow.sh inventory --json' | jq -c '{host, exit, last_escrow_epoch, items: [.items[] | {id, state, escrow}]}'
+{"host":"sentry","exit":1,"last_escrow_epoch":0,"items":[{"id":"cluster:node_seed","state":"ok","escrow":"new"},{"id":"cluster:fp_key","state":"ok","escrow":"new"},{"id":"cluster:env","state":"ok","escrow":"new"},{"id":"logship:env","state":"ok","escrow":"new"},{"id":"logship:host_key","state":"ok","escrow":"new"},{"id":"journald:fss","state":"ok","escrow":"new"},{"id":"alertpath:hmac","state":"ok","escrow":"new"},{"id":"watchdog:hmac","state":"ok","escrow":"new"},{"id":"ntfy:maint","state":"absent","escrow":"-"},{"id":"ntfy:alertpath","state":"ok","escrow":"new"},{"id":"ntfy:watchdog","state":"ok","escrow":"new"}]}
+(exit 0)
+$ ssh relay 'rm -f /tmp/pft-keyescrow.sh /tmp/pft-keyescrow.env; ls /tmp/pft-keyescrow* 2>/dev/null | wc -l'
+0
+(exit 0)
