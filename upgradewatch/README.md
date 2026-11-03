@@ -32,6 +32,10 @@ container, and makes one public `server_info` call to the foundation RPC. It nev
 | `tests/gen_promtool_tests.py` | generates `../alerts/upgradewatch.tests.yml` (hand-written series, times and values) |
 | `tests/mutate.py` | mutation harness over the collector, the parser and the rules, with a timeout and an unmutated control run |
 | `../alerts/upgradewatch.rules.yml`, `../alerts/upgradewatch.tests.yml` | the five alerts and their promtool unit tests |
+| `drill/install-run.sh` | the recorded two-host install through `pft-fleet sync` in a `pft-maint` window |
+| `drill/make_drill_fixtures.py` | builds the drill fixture sets (blocked, majority, soon, lag, failing, healthy) from the real validator answers |
+| `drill/live-run.sh` | the alert drill: fixture replay -> Prometheus -> Alertmanager -> throwaway ntfy topic, then recovery and restore |
+| `drill/live-values.sh` | read-only record of the live values on both nodes (timers, textfiles, Prometheus, alert state) |
 
 ## How the collector reads the node
 
@@ -148,6 +152,36 @@ On these two hosts the install ran through `pft-fleet sync` inside a `pft-maint`
 ([`drill/install-run.sh`](drill/install-run.sh), log 08). The rule line in `../alerts/prometheus.yml`, the six
 `../fleet/manifest.tsv` lines and the rulecheck lines were committed together with that run, and not before it.
 
+## Alert drill
+
+`drill/live-run.sh` proves every alert end to end without touching either node. The inputs are **fixtures, not live
+conditions**: at drill start `drill/make_drill_fixtures.py` copies the real validator answers from `tests/fixtures`
+and changes one thing per set, and the INSTALLED `pft-upgradewatch replay` writes them as `drill-*` textfiles
+(`replay` refuses any name that does not start with `drill-`, so it cannot overwrite a real node's file).
+
+| Drill series | Fixture change | Alert(s) expected |
+|---|---|---|
+| `drill-blocked` | `amendment_blocked: true` + warning 1002 | `PFTAmendmentBlocked` |
+| `drill-majority` | an amendment unknown to this build got a majority 1 day ago (ETA = +3 days - 1 day = now + 2 days) | `PFTUnsupportedAmendmentMajority` |
+| `drill-soon` | the same amendment, majority 2.5 days ago (ETA = now + 12 h) | `...Majority` and `PFTUnsupportedAmendmentActivationSoon` |
+| `drill-lag` | foundation RPC reports build 1.0.10 (node 1.0.9) | `PFTNodeVersionLag` |
+| `drill-failing` | `server_info` is not JSON (`up 0`) | `PFTUpgradewatchStale` |
+| `drill-stale` | healthy answers, collect timestamp 1000 s in the past | `PFTUpgradewatchStale` |
+
+The harness is the feewatch drill's (`../feewatch/drill/live-run.sh`): every notifier env file on both hosts and the
+Alertmanager-to-ntfy bridge point at a random throwaway topic for the drill (sha256 of each original recorded and
+compared after the restore), one Alertmanager silence covers every alert except the five under test and the pipeline
+watchdog, and a `pft-maint` window is open. It waits for every (alert, container) pair to be FIRING in Prometheus and
+delivered as `[FIRING]`, switches every series to the healthy set, waits for every pair to leave Prometheus and be
+delivered as `[RESOLVED]`, then restores and reads back the operator topics (count only, never printed).
+`PREFLIGHT_ONLY=1` runs step 0 alone (nothing changed).
+
+Recorded run (log 10): 19 checks ok, 0 failed. All 7 pairs fired (940 s after the first replay, the 15 min
+`PFTNodeVersionLag` hold being the longest) and all 7 resolved 74 s after the healthy replay. The throwaway topic got
+16 messages (7 `[FIRING]`, 7 `[RESOLVED]`, 2 `[MAINT]`); both operator topics got 0. The sentry runs no
+Prometheus/Alertmanager: `host=sentry` alerts are evaluated on the validator from the pulled textfile, so the drill
+runs there.
+
 ## Logs
 
 Raw output of the commands run on the validator and the sentry (Ubuntu 22.04.5 LTS). IP addresses are replaced by
@@ -163,3 +197,6 @@ Raw output of the commands run on the validator and the sentry (Ubuntu 22.04.5 L
 | [`06-tests.log`](logs/06-tests.log) | recorded offline run at `0e80c1a`: shellcheck, ruff, parser suite, collector suite, generated == committed promtool tests, promtool | 22 tests OK, `RESULT: 98/98 passed`, promtool `SUCCESS` |
 | [`07-mutants.log`](logs/07-mutants.log) | recorded mutant run at `0e80c1a` (control first) | `59 killed ... of 59, 0 survived` |
 | [`08-install.log`](logs/08-install.log) | two-host install at `55bc1e5` through pft-fleet in a pft-maint window ([MAINT] to a throwaway topic) | 28 checks ok, 0 failed |
+| [`09-drill-preflight.log`](logs/09-drill-preflight.log) | `PREFLIGHT_ONLY=1 drill/live-run.sh`: step 0 only, fixture dry run, redaction control. Smoke run before the commit: same `live-run.sh` sha256 as log 10; `make_drill_fixtures.py` was `ruff format`ted afterwards (sha256 `df16c489...` here, `9e76aee2...` in log 10) | 1 check ok, nothing changed |
+| [`10-live-drill.log`](logs/10-live-drill.log) | recorded alert drill at `adfa4c4` | 7/7 pairs FIRING then RESOLVED, operator topics 0 messages, 19 checks ok, 0 failed |
+| [`11-live-values.log`](logs/11-live-values.log) | `drill/live-values.sh` after the drill | `up 1`, not blocked, 0 unsupported majorities, majority time 259200 s, build 1.0.9 = foundation, 19 / 16 versioned peers, 0 newer; 0 upgradewatch alerts |

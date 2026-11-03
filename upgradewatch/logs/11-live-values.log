@@ -1,0 +1,120 @@
+pft-upgradewatch live values - 2026-11-03T05:33:38Z - Ubuntu 22.04.5 LTS
+installed: validator pft-upgradewatch 1 | sentry pft-upgradewatch 1
+
+== timers and last runs
+$ systemctl list-timers --no-pager 'pft-upgradewatch*' | sed -E 's/ +/ /g'
+  NEXT LEFT LAST PASSED UNIT ACTIVATES
+  Tue 2026-11-03 05:35:25 UTC 1min 45s left Tue 2026-11-03 05:30:25 UTC 3min 13s ago pft-upgradewatch@postfiatd.timer pft-upgradewatch@postfiatd.service
+  Tue 2026-11-03 05:35:50 UTC 2min 10s left Tue 2026-11-03 05:30:50 UTC 2min 48s ago pft-upgradewatch-pull@postfiatd-sentry.timer pft-upgradewatch-pull@postfiatd-sentry.service
+  
+  2 timers listed.
+  Pass --all to see loaded but inactive timers, too.
+  (exit 0)
+$ R "TZ=UTC systemctl list-timers --no-pager 'pft-upgradewatch*' | sed -E 's/ +/ /g'"
+  NEXT LEFT LAST PASSED UNIT ACTIVATES
+  Tue 2026-11-03 05:35:25 UTC 1min 44s left Tue 2026-11-03 05:30:25 UTC 3min 14s ago pft-upgradewatch@postfiatd-sentry.timer pft-upgradewatch@postfiatd-sentry.service
+  
+  1 timers listed.
+  Pass --all to see loaded but inactive timers, too.
+  (exit 0)
+$ systemctl show -p Result -p ExecMainStatus pft-upgradewatch@postfiatd.service pft-upgradewatch-pull@postfiatd-sentry.service
+  Result=success
+  ExecMainStatus=0
+  
+  Result=success
+  ExecMainStatus=0
+  (exit 0)
+$ R 'systemctl show -p Result -p ExecMainStatus pft-upgradewatch@postfiatd-sentry.service'
+  Result=success
+  ExecMainStatus=0
+  (exit 0)
+
+== textfiles on the validator (sentry: pulled copy)
+$ grep -v '^#' /var/lib/pft-exporter/textfile/pft_upgradewatch_postfiatd.prom
+  pft_upgradewatch_up{container="postfiatd"} 1
+  pft_upgradewatch_collect_timestamp_seconds{container="postfiatd"} 1793683826
+  pft_upgradewatch_amendment_blocked{container="postfiatd"} 0
+  pft_upgradewatch_unsupported_majority_warning{container="postfiatd"} 0
+  pft_upgradewatch_amendments_known{container="postfiatd"} 101
+  pft_upgradewatch_amendments_enabled{container="postfiatd"} 64
+  pft_upgradewatch_amendments_enabled_unsupported{container="postfiatd"} 0
+  pft_upgradewatch_majority_amendments{container="postfiatd",supported="yes"} 0
+  pft_upgradewatch_majority_amendments{container="postfiatd",supported="no"} 0
+  pft_upgradewatch_majority_time_seconds{container="postfiatd"} 259200
+  pft_upgradewatch_majority_time_from_config{container="postfiatd"} 1
+  pft_upgradewatch_unsupported_activation_eta_seconds{container="postfiatd"} 0
+  pft_upgradewatch_node_expected_date_seconds{container="postfiatd"} 0
+  pft_upgradewatch_build_info{container="postfiatd",version="1.0.9"} 1
+  pft_upgradewatch_peers_versioned{container="postfiatd"} 19
+  pft_upgradewatch_peers_newer{container="postfiatd"} 0
+  pft_upgradewatch_peers_newer_ratio{container="postfiatd"} 0.0
+  pft_upgradewatch_foundation_known{container="postfiatd"} 1
+  pft_upgradewatch_foundation_build_info{container="postfiatd",version="1.0.9"} 1
+  pft_upgradewatch_behind_foundation{container="postfiatd"} 0
+  (exit 0)
+  age: 193 s
+$ grep -v '^#' /var/lib/pft-exporter/textfile/pft_upgradewatch_postfiatd-sentry.prom
+  pft_upgradewatch_up{container="postfiatd-sentry"} 1
+  pft_upgradewatch_collect_timestamp_seconds{container="postfiatd-sentry"} 1793683825
+  pft_upgradewatch_amendment_blocked{container="postfiatd-sentry"} 0
+  pft_upgradewatch_unsupported_majority_warning{container="postfiatd-sentry"} 0
+  pft_upgradewatch_amendments_known{container="postfiatd-sentry"} 101
+  pft_upgradewatch_amendments_enabled{container="postfiatd-sentry"} 64
+  pft_upgradewatch_amendments_enabled_unsupported{container="postfiatd-sentry"} 0
+  pft_upgradewatch_majority_amendments{container="postfiatd-sentry",supported="yes"} 0
+  pft_upgradewatch_majority_amendments{container="postfiatd-sentry",supported="no"} 0
+  pft_upgradewatch_majority_time_seconds{container="postfiatd-sentry"} 259200
+  pft_upgradewatch_majority_time_from_config{container="postfiatd-sentry"} 1
+  pft_upgradewatch_unsupported_activation_eta_seconds{container="postfiatd-sentry"} 0
+  pft_upgradewatch_node_expected_date_seconds{container="postfiatd-sentry"} 0
+  pft_upgradewatch_build_info{container="postfiatd-sentry",version="1.0.9"} 1
+  pft_upgradewatch_peers_versioned{container="postfiatd-sentry"} 16
+  pft_upgradewatch_peers_newer{container="postfiatd-sentry"} 0
+  pft_upgradewatch_peers_newer_ratio{container="postfiatd-sentry"} 0.0
+  pft_upgradewatch_foundation_known{container="postfiatd-sentry"} 1
+  pft_upgradewatch_foundation_build_info{container="postfiatd-sentry",version="1.0.9"} 1
+  pft_upgradewatch_behind_foundation{container="postfiatd-sentry"} 0
+  (exit 0)
+  age: 170 s
+
+== as served by Prometheus
+$ query pft_upgradewatch_up
+  container=postfiatd,instance=127.0.0.1:9877,job=postfiat 1
+  container=postfiatd-sentry,instance=127.0.0.1:9877,job=postfiat 1
+$ query pft_upgradewatch_amendment_blocked
+  container=postfiatd,instance=127.0.0.1:9877,job=postfiat 0
+  container=postfiatd-sentry,instance=127.0.0.1:9877,job=postfiat 0
+$ query pft_upgradewatch_majority_amendments
+  container=postfiatd,instance=127.0.0.1:9877,job=postfiat,supported=yes 0
+  container=postfiatd,instance=127.0.0.1:9877,job=postfiat,supported=no 0
+  container=postfiatd-sentry,instance=127.0.0.1:9877,job=postfiat,supported=yes 0
+  container=postfiatd-sentry,instance=127.0.0.1:9877,job=postfiat,supported=no 0
+$ query pft_upgradewatch_unsupported_activation_eta_seconds
+  container=postfiatd,instance=127.0.0.1:9877,job=postfiat 0
+  container=postfiatd-sentry,instance=127.0.0.1:9877,job=postfiat 0
+$ query pft_upgradewatch_majority_time_seconds
+  container=postfiatd,instance=127.0.0.1:9877,job=postfiat 259200
+  container=postfiatd-sentry,instance=127.0.0.1:9877,job=postfiat 259200
+$ query pft_upgradewatch_build_info
+  container=postfiatd,instance=127.0.0.1:9877,job=postfiat,version=1.0.9 1
+  container=postfiatd-sentry,instance=127.0.0.1:9877,job=postfiat,version=1.0.9 1
+$ query pft_upgradewatch_foundation_build_info
+  container=postfiatd,instance=127.0.0.1:9877,job=postfiat,version=1.0.9 1
+  container=postfiatd-sentry,instance=127.0.0.1:9877,job=postfiat,version=1.0.9 1
+$ query pft_upgradewatch_behind_foundation
+  container=postfiatd,instance=127.0.0.1:9877,job=postfiat 0
+  container=postfiatd-sentry,instance=127.0.0.1:9877,job=postfiat 0
+$ query pft_upgradewatch_peers_versioned
+  container=postfiatd,instance=127.0.0.1:9877,job=postfiat 19
+  container=postfiatd-sentry,instance=127.0.0.1:9877,job=postfiat 16
+$ query pft_upgradewatch_peers_newer_ratio
+  container=postfiatd,instance=127.0.0.1:9877,job=postfiat 0
+  container=postfiatd-sentry,instance=127.0.0.1:9877,job=postfiat 0
+$ query time() - pft_upgradewatch_collect_timestamp_seconds
+  container=postfiatd,instance=127.0.0.1:9877,job=postfiat 195.86299991607666
+  container=postfiatd-sentry,instance=127.0.0.1:9877,job=postfiat 196.86299991607666
+
+== upgradewatch alerts (pending or firing)
+  0
+
+live-values done 2026-11-03T05:33:41Z

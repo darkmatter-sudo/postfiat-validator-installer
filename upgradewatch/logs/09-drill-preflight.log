@@ -1,0 +1,106 @@
+pft-upgradewatch alert drill (fixture replay, no network load) - 2026-11-03T05:11:32Z - Ubuntu 22.04.5 LTS - run 20261103T051132Z
+repo HEAD 2d6935b65b063e07c1188b82e42a3f38650a6a74
+sha256: live-run.sh 5fb0afa534d115fd46172b24456c093075e371eb77bce68c29e1512166ed9eca
+        repo pft-upgradewatch.sh 341feba8a2e84c998086b0df37e5f5b92b73208f0b58e3ff6c28ba2b44659af6 upgradewatch_parse.py cd864f2d2f407fe0f4accc696cbb45cde215e69c58e0661458b5c9f024b556a4
+        installed validator 341feba8a2e84c998086b0df37e5f5b92b73208f0b58e3ff6c28ba2b44659af6 cd864f2d2f407fe0f4accc696cbb45cde215e69c58e0661458b5c9f024b556a4
+        installed sentry    341feba8a2e84c998086b0df37e5f5b92b73208f0b58e3ff6c28ba2b44659af6 cd864f2d2f407fe0f4accc696cbb45cde215e69c58e0661458b5c9f024b556a4
+        upgradewatch.rules.yml (repo, loaded by Prometheus) cb9d4c40874c9935eeee6c820a2495c6ea4b9fd63b28868add4cc58f0bdd0623
+        redact.py f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8 make_drill_fixtures.py df16c489b3251efc056ab22fe882264188af19ead95deaf44841c3fe6bc75372
+        source fixtures: 3e4ef8f6c10ab40389ee0aef96a908dae193427b5d20f872ac9c38d2c75c9aab (sha256 of 'sha256sum ./*' in tests/fixtures)
+
+== 0. preflight (nothing changed yet)
+  pft-maint: no window open on either host
+  bridge mounts the operator env file: yes
+  active silences covering the upgradewatch alerts: 0
+  upgradewatch alerts pending/firing: 0
+  drill textfiles present: 0
+  pft-upgradewatch@ timers active on both hosts, pft-upgradewatch-pull@postfiatd-sentry.timer active on the validator
+  pft_upgradewatch_up 1 for postfiatd and postfiatd-sentry
+$ python3 -I upgradewatch/drill/make_drill_fixtures.py --out <tmp>/fx --now 1793682702   (2026-11-03T05:11:42Z)
+  healthy: real validator answers (build 1.0.9, foundation 1.0.9, 0 majorities, not blocked)
+  blocked: amendment_blocked true + warning 1002 -> amendment_blocked 1
+  majority: unknown_4EE6D4E4A8AF50FD... CloseTime 846911502 (Ripple) = now-86400s; ETA 846911502 + 946684800 + 259200 = 1793855502 = now+172800s
+  soon: unknown_4EE6D4E4A8AF50FD... CloseTime 846781902 (Ripple) = now-216000s; ETA 846781902 + 946684800 + 259200 = 1793725902 = now+43200s
+  lag: foundation build_version 1.0.10 > node 1.0.9 -> behind_foundation 1
+  failing: server_info is not JSON -> up 0
+  fixture sets: 00bd3fbfa0940bd744fadaf47507d306d006526e3d44db110b0bd3145f59f471 (sha256 of the sorted per-file sha256 list)
+  dry run healthy: rc 0 up 1
+  dry run blocked: rc 0 up 1
+  dry run majority: rc 0 up 1
+  dry run soon: rc 0 up 1
+  dry run lag: rc 0 up 1
+  dry run failing: rc 1 up 0
+$ sudo -n cat /tmp/tmp.OFX2b4e7B3/dry/pft_upgradewatch_drill-{blocked,majority,soon,lag,failing,healthy}.prom | grep -E '^pft_upgradewatch_(up|amendment_blocked|unsupported_majority_warning|majority_amendments\{[^}]*supported="no"|unsupported_activation_eta_seconds|node_expected_date_seconds|behind_foundation|foundation_build_info)'
+  pft_upgradewatch_up{container="drill-blocked"} 1
+  pft_upgradewatch_amendment_blocked{container="drill-blocked"} 1
+  pft_upgradewatch_unsupported_majority_warning{container="drill-blocked"} 0
+  pft_upgradewatch_majority_amendments{container="drill-blocked",supported="no"} 0
+  pft_upgradewatch_unsupported_activation_eta_seconds{container="drill-blocked"} 0
+  pft_upgradewatch_node_expected_date_seconds{container="drill-blocked"} 0
+  pft_upgradewatch_foundation_build_info{container="drill-blocked",version="1.0.9"} 1
+  pft_upgradewatch_behind_foundation{container="drill-blocked"} 0
+  pft_upgradewatch_up{container="drill-majority"} 1
+  pft_upgradewatch_amendment_blocked{container="drill-majority"} 0
+  pft_upgradewatch_unsupported_majority_warning{container="drill-majority"} 1
+  pft_upgradewatch_majority_amendments{container="drill-majority",supported="no"} 1
+  pft_upgradewatch_unsupported_activation_eta_seconds{container="drill-majority"} 1793855502
+  pft_upgradewatch_node_expected_date_seconds{container="drill-majority"} 1793855502
+  pft_upgradewatch_foundation_build_info{container="drill-majority",version="1.0.9"} 1
+  pft_upgradewatch_behind_foundation{container="drill-majority"} 0
+  pft_upgradewatch_up{container="drill-soon"} 1
+  pft_upgradewatch_amendment_blocked{container="drill-soon"} 0
+  pft_upgradewatch_unsupported_majority_warning{container="drill-soon"} 1
+  pft_upgradewatch_majority_amendments{container="drill-soon",supported="no"} 1
+  pft_upgradewatch_unsupported_activation_eta_seconds{container="drill-soon"} 1793725902
+  pft_upgradewatch_node_expected_date_seconds{container="drill-soon"} 1793725902
+  pft_upgradewatch_foundation_build_info{container="drill-soon",version="1.0.9"} 1
+  pft_upgradewatch_behind_foundation{container="drill-soon"} 0
+  pft_upgradewatch_up{container="drill-lag"} 1
+  pft_upgradewatch_amendment_blocked{container="drill-lag"} 0
+  pft_upgradewatch_unsupported_majority_warning{container="drill-lag"} 0
+  pft_upgradewatch_majority_amendments{container="drill-lag",supported="no"} 0
+  pft_upgradewatch_unsupported_activation_eta_seconds{container="drill-lag"} 0
+  pft_upgradewatch_node_expected_date_seconds{container="drill-lag"} 0
+  pft_upgradewatch_foundation_build_info{container="drill-lag",version="1.0.10"} 1
+  pft_upgradewatch_behind_foundation{container="drill-lag"} 1
+  pft_upgradewatch_up{container="drill-failing"} 0
+  pft_upgradewatch_up{container="drill-healthy"} 1
+  pft_upgradewatch_amendment_blocked{container="drill-healthy"} 0
+  pft_upgradewatch_unsupported_majority_warning{container="drill-healthy"} 0
+  pft_upgradewatch_majority_amendments{container="drill-healthy",supported="no"} 0
+  pft_upgradewatch_unsupported_activation_eta_seconds{container="drill-healthy"} 0
+  pft_upgradewatch_node_expected_date_seconds{container="drill-healthy"} 0
+  pft_upgradewatch_foundation_build_info{container="drill-healthy",version="1.0.9"} 1
+  pft_upgradewatch_behind_foundation{container="drill-healthy"} 0
+  (exit 0)
+CHECK ok   0 dry run: blocked 1, majority/soon 1 unsupported with ETA now+172800 / now+43200, lag behind 1, failing up 0, healthy all 0
+  operator topics to watch: 2 (not printed)
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+  postfiatd-sentry: server_state=full
+  postfiatd: server_state=full
+  pft-integrity local: RESULT: PASS - 135 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity relay: RESULT: PASS - 80 unchanged, 0 warn, 0 fail -> exit 0
+  literals for redaction: 3 ip, 2 key, 3 topic, 1 user (values not printed)
+$ redact.py control --literals <literals>
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (18/18)
+
+PREFLIGHT_ONLY=1: stopping after step 0, nothing changed (0 check(s) failed)
+  drill textfiles removed: yes
