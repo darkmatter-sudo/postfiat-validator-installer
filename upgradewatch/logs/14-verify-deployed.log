@@ -1,0 +1,67 @@
+upgradewatch deployed state - 2026-11-03T06:24:08Z (now = 1793687048)
+
+== validator (postfiatd)
+$ TZ=UTC systemctl list-timers --no-pager pft-upgradewatch@postfiatd.timer
+  NEXT LEFT LAST PASSED UNIT ACTIVATES
+  Tue 2026-11-03 06:25:25 UTC 1min 16s left Tue 2026-11-03 06:20:25 UTC 3min 42s ago pft-upgradewatch@postfiatd.timer pft-upgradewatch@postfiatd.service
+  
+  1 timers listed.
+  Pass --all to see loaded but inactive timers, too.
+$ systemctl is-enabled pft-upgradewatch@postfiatd.timer; systemctl is-active pft-upgradewatch@postfiatd.timer
+  enabled
+  active
+$ TZ=UTC systemctl show -p ExecMainExitTimestamp -p Result -p ExecMainStatus pft-upgradewatch@postfiatd.service
+  Result=success
+  ExecMainExitTimestamp=Tue 2026-11-03 06:20:28 UTC
+  ExecMainStatus=0
+$ grep -E '^pft_upgradewatch_(up|collect_timestamp_seconds|amendment_blocked|unsupported_majority_warning|majority_amendments|majority_time_seconds|build_info|foundation_build_info|peers_versioned|peers_newer_ratio)\{' /var/lib/pft-exporter/textfile/pft_upgradewatch_postfiatd.prom  (this host's own collector output)
+  pft_upgradewatch_up{container="postfiatd"} 1
+  pft_upgradewatch_collect_timestamp_seconds{container="postfiatd"} 1793686826
+  pft_upgradewatch_amendment_blocked{container="postfiatd"} 0
+  pft_upgradewatch_unsupported_majority_warning{container="postfiatd"} 0
+  pft_upgradewatch_majority_amendments{container="postfiatd",supported="yes"} 0
+  pft_upgradewatch_majority_amendments{container="postfiatd",supported="no"} 0
+  pft_upgradewatch_majority_time_seconds{container="postfiatd"} 259200
+  pft_upgradewatch_build_info{container="postfiatd",version="1.0.9"} 1
+  pft_upgradewatch_peers_versioned{container="postfiatd"} 19
+  pft_upgradewatch_peers_newer_ratio{container="postfiatd"} 0.0
+  pft_upgradewatch_foundation_build_info{container="postfiatd",version="1.0.9"} 1
+  collect timestamp 1793686826 = 2026-11-03T06:20:26Z, age 222 s
+
+== sentry (postfiatd-sentry)
+$ TZ=UTC systemctl list-timers --no-pager pft-upgradewatch@postfiatd-sentry.timer
+  NEXT LEFT LAST PASSED UNIT ACTIVATES
+  Tue 2026-11-03 06:25:25 UTC 1min 15s left Tue 2026-11-03 06:20:25 UTC 3min 44s ago pft-upgradewatch@postfiatd-sentry.timer pft-upgradewatch@postfiatd-sentry.service
+  
+  1 timers listed.
+  Pass --all to see loaded but inactive timers, too.
+$ systemctl is-enabled pft-upgradewatch@postfiatd-sentry.timer; systemctl is-active pft-upgradewatch@postfiatd-sentry.timer
+  enabled
+  active
+$ TZ=UTC systemctl show -p ExecMainExitTimestamp -p Result -p ExecMainStatus pft-upgradewatch@postfiatd-sentry.service
+  Result=success
+  ExecMainExitTimestamp=Tue 2026-11-03 06:20:28 UTC
+  ExecMainStatus=0
+$ grep -E '^pft_upgradewatch_(up|collect_timestamp_seconds|amendment_blocked|unsupported_majority_warning|majority_amendments|majority_time_seconds|build_info|foundation_build_info|peers_versioned|peers_newer_ratio)\{' /var/lib/pft-exporter/textfile/pft_upgradewatch_postfiatd-sentry.prom  (this host's own collector output)
+  pft_upgradewatch_up{container="postfiatd-sentry"} 1
+  pft_upgradewatch_collect_timestamp_seconds{container="postfiatd-sentry"} 1793686825
+  pft_upgradewatch_amendment_blocked{container="postfiatd-sentry"} 0
+  pft_upgradewatch_unsupported_majority_warning{container="postfiatd-sentry"} 0
+  pft_upgradewatch_majority_amendments{container="postfiatd-sentry",supported="yes"} 0
+  pft_upgradewatch_majority_amendments{container="postfiatd-sentry",supported="no"} 0
+  pft_upgradewatch_majority_time_seconds{container="postfiatd-sentry"} 259200
+  pft_upgradewatch_build_info{container="postfiatd-sentry",version="1.0.9"} 1
+  pft_upgradewatch_peers_versioned{container="postfiatd-sentry"} 16
+  pft_upgradewatch_peers_newer_ratio{container="postfiatd-sentry"} 0.0
+  pft_upgradewatch_foundation_build_info{container="postfiatd-sentry",version="1.0.9"} 1
+  collect timestamp 1793686825 = 2026-11-03T06:20:25Z, age 226 s
+
+== validator: pull timer for the sentry's textfile
+$ TZ=UTC systemctl list-timers --no-pager pft-upgradewatch-pull@postfiatd-sentry.timer
+  NEXT LEFT LAST PASSED UNIT ACTIVATES
+  Tue 2026-11-03 06:25:50 UTC 1min 38s left Tue 2026-11-03 06:20:50 UTC 3min 21s ago pft-upgradewatch-pull@postfiatd-sentry.timer pft-upgradewatch-pull@postfiatd-sentry.service
+  
+  1 timers listed.
+  Pass --all to see loaded but inactive timers, too.
+
+done 2026-11-03T06:24:11Z
