@@ -6,6 +6,10 @@
 # every notifier on both hosts points at a throwaway topic.
 #   bash apparmor/drill/live-run.sh LEARN_EVENTS 2>&1 | tee LOG   (agent user, repo root; sudo -n, `ssh relay`)
 #   LEARN_EVENTS: path ON THE SENTRY of the events file written by the recorded `pft-apparmor learn` run.
+#   PROFILE_FILE=/path bash apparmor/drill/live-run.sh 2>&1 | tee LOG   re-apply mode: a finished profile (path ON THE
+#   VALIDATOR, e.g. merged from the sentry's and the validator's learn events) is copied to both hosts (sha256
+#   compared); step 1b rolls back what is applied; step 3 runs host-run.sh sentry --profile (no drill: run 26 has it),
+#   step 4 host-run.sh validator --profile, both including step 5b (add-on units + one real retention tick).
 # 0  preflight (nothing changed yet): clean pushed HEAD; relay, Alertmanager, Prometheus reachable; no pft-maint
 #    window; no data collector reading the validator's node; learn events present; run-commit lines present;
 #    notifier env files present, no leftovers; both nodes full; pft-integrity PASS on both; redaction control.
@@ -27,7 +31,7 @@ set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"; cd "$REPO" || exit 3
 REDACT="$REPO/peerexpose/drill/redact.py"
-LEARN_EVENTS="${1:-}"
+LEARN_EVENTS="${1:-}"; PROFILE_FILE="${PROFILE_FILE:-}"
 RELAY="${RELAY:-relay}"; NTFY="${NTFY:-https://ntfy.sh}"
 AM="${AM:-http://127.0.0.1:9093}"; PROM="${PROM:-http://127.0.0.1:9090}"
 LOCAL_ENVS="${LOCAL_ENVS:-/etc/postfiat-monitor.env /etc/pft-integrity.env}"
@@ -41,6 +45,7 @@ SUF=.pre-apparmor-live
 SHA_HEAD="$(git rev-parse HEAD)"; SHORT="$(git rev-parse --short HEAD)"
 RDIR="/var/tmp/pft-apparmor-live-$SHORT"   # sentry copy of the tree (read with bash, never executed from a noexec mount)
 P1=/var/lib/pft-apparmor/pft-postfiatd.live   # the profile host-run writes on the sentry and the validator applies
+[ -z "$PROFILE_FILE" ] || P1=/var/lib/pft-apparmor/pft-postfiatd.reapply   # re-apply mode: PROFILE_FILE copied here on both hosts
 
 rnd() { head -c 12 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
 ALERT="aalive-$(rnd)"
@@ -112,7 +117,7 @@ trap 'echo "interrupted"; exit 6' INT TERM
 echo; echo "== 0. preflight (nothing changed yet)"
 [ -z "$(git status --short)" ] || { echo "  dirty tree - stopping"; exit 3; }
 [ "$(git rev-parse origin/main)" = "$SHA_HEAD" ] || { echo "  HEAD is not pushed - stopping"; exit 3; }
-[ -n "$LEARN_EVENTS" ] || { echo "  usage: live-run.sh LEARN_EVENTS (path on the sentry)" >&2; exit 3; }
+[ -n "$LEARN_EVENTS$PROFILE_FILE" ] || { echo "  usage: live-run.sh LEARN_EVENTS (path on the sentry) | PROFILE_FILE=path live-run.sh" >&2; exit 3; }
 R true || { echo "  relay unreachable - stopping" >&2; exit 3; }
 curl -s --max-time 5 -o /dev/null "$AM/-/ready" || { echo "  Alertmanager not reachable - stopping" >&2; exit 3; }
 curl -s --max-time 5 -o /dev/null "$PROM/-/ready" || { echo "  Prometheus not reachable - stopping" >&2; exit 3; }
@@ -142,10 +147,18 @@ for h in local relay; do
   [ "$n" = 0 ] || { echo "  $h: $n running postfiatd-image container(s) besides $(cn "$h") (learn throwaway?) - stopping" >&2; exit 3; }
 done
 echo "  no extra postfiatd-image container running on either host"
+if [ -n "$PROFILE_FILE" ]; then
+  x "sudo -n pft-apparmor check '$PROFILE_FILE' && sudo -n sha256sum < '$PROFILE_FILE' | cut -c1-64 && sudo -n grep -c . '$PROFILE_FILE'"
+  if [ "$XRC" != 0 ]; then
+    if [ "$PREFLIGHT_ONLY" = 1 ]; then echo "  PROFILE_FILE missing or does not compile - a real run would stop here"; NOT_READY=1
+    else echo "  PROFILE_FILE missing or does not compile - stopping" >&2; exit 3; fi
+  fi
+else
 x "R 'sudo -n cat $LEARN_EVENTS | wc -l; sudo -n cat $LEARN_EVENTS | sha256sum | cut -c1-64; sudo -n cut -f1 $LEARN_EVENTS | sort | uniq -c'"
 if ! { [ "$XRC" = 0 ] && [ "$(head -1 <<<"$XOUT")" -gt 0 ] 2>/dev/null; }; then
   if [ "$PREFLIGHT_ONLY" = 1 ]; then echo "  learn events missing or empty on the sentry - a real run would stop here"; NOT_READY=1
   else echo "  learn events missing or empty on the sentry - stopping" >&2; exit 3; fi
+fi
 fi
 x "on local 'sudo -n test -f /var/lib/pft-apparmor/apply-postfiatd.json && sudo -n jq -c \"{id, mode, rolled_back}\" /var/lib/pft-apparmor/apply-postfiatd.json'; R 'sudo -n test -f /var/lib/pft-apparmor/apply-postfiatd-sentry.json && sudo -n jq -c \"{id, mode, rolled_back}\" /var/lib/pft-apparmor/apply-postfiatd-sentry.json'"
 echo "  (informational: apply state from an earlier run, if any; step 1b rolls back an apply still in place)"
@@ -244,14 +257,22 @@ check "PFTAppArmorDrift loaded, health ok" "$(ok_if 'grep -qE "^PFTAppArmorDrift
 
 echo; echo "== 3. sentry: before, P0, injected gate miss, complain window, P1, enforce, controls, restart, rollback, re-apply"
 started
-x "R 'sudo -n CMIN=$CMIN bash $RDIR/apparmor/drill/host-run.sh sentry --drill --learn $LEARN_EVENTS --out-profile $P1 --complain-min $CMIN'"
+if [ -n "$PROFILE_FILE" ]; then
+  echo "  re-apply mode: PROFILE_FILE -> $P1 on both hosts, then host-run.sh sentry --profile (no drill)"
+  x "sudo -n install -m 0644 '$PROFILE_FILE' $P1 && sudo -n cat $P1 | R 'sudo -n sh -c \"umask 022; cat > $P1\"' && sudo -n sha256sum < $P1 | cut -c1-64; R 'sudo -n sha256sum < $P1 | cut -c1-64'"
+  check "profile copied, sha256 identical on both hosts" "$(ok_if '[ "$XRC" = 0 ] && [ "$(sed -n 1p <<<"$XOUT")" = "$(sed -n 2p <<<"$XOUT")" ] && [ -n "$(sed -n 1p <<<"$XOUT")" ]')"
+  [ "$FAILS" = 0 ] || { echo "  profile copy failed - stopping before any node change"; exit 4; }
+  x "R 'sudo -n bash $RDIR/apparmor/drill/host-run.sh sentry --profile $P1'"
+else
+  x "R 'sudo -n CMIN=$CMIN bash $RDIR/apparmor/drill/host-run.sh sentry --drill --learn $LEARN_EVENTS --out-profile $P1 --complain-min $CMIN'"
+fi
 started
 check "sentry host-run RESULT: PASS" "$(ok_if '[ "$XRC" = 0 ] && grep -q "^RESULT: PASS" <<<"$XOUT"')" "$(grep -c '^PASS ' <<<"$XOUT") PASS, $(grep -c '^FAIL ' <<<"$XOUT") FAIL"
 [ "$XRC" = 0 ] || { echo "  sentry did not pass - validator NOT changed; stopping"; exit 1; }
 
 echo; echo "== 4. validator: P1 from the sentry, before, enforce, controls, restart"
-x "sudo -n install -d -m 700 /var/lib/pft-apparmor && R 'sudo -n cat $P1' | sudo -n sh -c 'umask 022; cat > $P1' && sudo -n cat $P1 | sha256sum | cut -c1-64; R 'sudo -n cat $P1 | sha256sum | cut -c1-64'"
-check "P1 copied, sha256 identical on both hosts" "$(ok_if '[ "$XRC" = 0 ] && [ "$(sed -n 1p <<<"$XOUT")" = "$(sed -n 2p <<<"$XOUT")" ] && [ -n "$(sed -n 1p <<<"$XOUT")" ]')"
+[ -n "$PROFILE_FILE" ] || x "sudo -n install -d -m 700 /var/lib/pft-apparmor && R 'sudo -n cat $P1' | sudo -n sh -c 'umask 022; cat > $P1' && sudo -n cat $P1 | sha256sum | cut -c1-64; R 'sudo -n cat $P1 | sha256sum | cut -c1-64'"
+[ -n "$PROFILE_FILE" ] || check "P1 copied, sha256 identical on both hosts" "$(ok_if '[ "$XRC" = 0 ] && [ "$(sed -n 1p <<<"$XOUT")" = "$(sed -n 2p <<<"$XOUT")" ] && [ -n "$(sed -n 1p <<<"$XOUT")" ]')"
 started
 x "sudo -n bash apparmor/drill/host-run.sh validator --profile $P1"
 started
