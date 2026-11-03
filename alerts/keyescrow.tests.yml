@@ -112,3 +112,26 @@ tests:
       - eval_time: 45m
         alertname: PFTKeyEscrowInventoryFailed
         exp_alerts: []
+  - name: "verify failed: ok=0 fires after 5 min with node and peer, not at 4 min; recovers when ok=1 again"
+    interval: 1m
+    input_series:
+      - series: 'pft_keyescrow_held_verify_ok{node="validator",peer="sentry"}'
+        values: '1x9 0x20 1x10'
+      - series: 'pft_keyescrow_held_verify_ok{node="sentry",peer="validator"}'
+        values: '1x40'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: PFTKeyEscrowVerifyFailed
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: PFTKeyEscrowVerifyFailed
+        exp_alerts:
+          - exp_labels: {severity: warning, node: validator, peer: sentry}
+            exp_annotations:
+              summary: "Escrow copy of sentry's secrets held on validator failed verification (or none held)"
+              description: "The newest encrypted generation that validator holds for sentry no longer matches its recorded ciphertext sha256 or failed the in-memory decrypt and MANIFEST check, or no generation is held. A restore from it would be refused. Run `sudo pft-keyescrow verify --all` on validator, then a fresh `sudo pft-keyescrow escrow` on the validator."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/keyescrow/README.md#alerts"
+      - eval_time: 32m
+        alertname: PFTKeyEscrowVerifyFailed
+        exp_alerts: []
+

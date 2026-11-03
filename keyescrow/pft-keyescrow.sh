@@ -3,7 +3,7 @@
 # without plaintext ever leaving the host it belongs to. Each host encrypts its own secrets to the PEER's age public
 # key and stores N generations there; the peer can check a generation against its manifest but cannot read it.
 #
-# This file is step 1 (read-only inventory). Every secret path comes from a source line of an add-on in this repo
+# Every secret path comes from a source line of an add-on in this repo
 # (REGISTRY below, column "cite"; tests/run-tests.sh checks every citation still names the path).
 #
 # Usage: pft-keyescrow inventory [--json] [--textfile]   read-only; root to read 0600 files
@@ -18,8 +18,11 @@
 #                                           (host with PEER_SSH) the holder re-encrypts its checked copy to the
 #                                           target's current recipient; the target applies it inside an ACTIVE
 #                                           pft-maint window, backing up every file it replaces
+#        sudo pft-keyescrow pull            (host with PEER_SSH) copy the peer's pft_keyescrow.prom and
+#                                           pft_keyescrow_held.prom here (as *_PEER.prom) after validating every line
 #        pft-keyescrow serve VERB ...       what PEER_SSH runs on the peer: receive LABEL | seal | export GEN |
-#                                           ack GEN | pubkey | reseal FROM GEN RECIPIENT | restore-apply [...]
+#                                           ack GEN | pubkey | reseal FROM GEN RECIPIENT | restore-apply [...] |
+#                                           textfile pft_keyescrow|pft_keyescrow_held (what pull reads)
 #
 # Inventory, per declared item that applies to this host (HOST_LABEL):
 #   ok        present, mode/owner/group exactly as declared, readable
@@ -347,6 +350,8 @@ cmd_serve() { # the only verbs PEER_SSH may run on this host
     pubkey) [ $# = 0 ] || die "serve pubkey"; cmd_pubkey ;;
     reseal) [ $# = 3 ] || die "serve reseal FROM GEN RECIPIENT"; cmd_reseal "$@" ;;
     restore-apply) cmd_restore_apply "$@" ;;
+    textfile) [ $# = 1 ] && [[ "$1" =~ ^pft_keyescrow(_held)?$ ]] || die "serve textfile pft_keyescrow|pft_keyescrow_held"
+              cat -- "$TEXTFILE_DIR/$1.prom" ;;
     *) die "serve: unknown verb '$v' (receive|seal|export|ack|pubkey|reseal|restore-apply)" ;;
   esac
 }
@@ -429,6 +434,29 @@ cmd_verify() {
   fi
   echo "RESULT: $total generation(s) checked, $bad failed -> exit $([ "$bad" = 0 ] && echo 0 || echo 2)"
   [ "$bad" = 0 ] || return 2
+}
+
+validate_prom() { # FILE NODE TS_METRIC -> rc 0, or rc 1 with the first reason on stdout (a pulled file must look like ours)
+  local f="$1" n
+  [ -f "$f" ] || { echo "missing"; return 1; }
+  [ "$(stat -c %s "$f")" -le 65536 ] || { echo "larger than 65536 bytes"; return 1; }
+  n="$(grep -cvE '^(# (HELP|TYPE) pft_keyescrow_.*|pft_keyescrow_[a-z_]+\{node="'"$2"'"(,[a-z]+="[a-z]+")*\} [0-9]+)$' "$f")"
+  [ "$n" -eq 0 ] || { echo "$n unexpected lines"; return 1; }
+  grep -qE '^'"$3"'\{node="'"$2"'"\} [0-9]+$' "$f" || { echo "no $3 sample"; return 1; }
+}
+
+cmd_pull() { # (host with PEER_SSH) copy the peer's two textfiles here as pft_keyescrow[_held]_PEER.prom, validated
+  local name ts tmp why rc
+  [ -n "$PEER_SSH" ] || die "PEER_SSH not set (see $CONF)" 4
+  for name in pft_keyescrow:pft_keyescrow_collect_timestamp_seconds pft_keyescrow_held:pft_keyescrow_verify_timestamp_seconds; do
+    ts="${name#*:}"; name="${name%%:*}"
+    tmp="$TEXTFILE_DIR/.${name}_$PEER_LABEL.prom.pull"
+    peer textfile "$name" > "$tmp" 2>/dev/null </dev/null; rc=$?
+    [ "$rc" = 0 ] || { rm -f "$tmp"; die "pull of $name from $PEER_LABEL failed (rc $rc)" 1; }
+    if ! why="$(validate_prom "$tmp" "$PEER_LABEL" "$ts")"; then rm -f "$tmp"; die "pulled $name rejected: $why" 2; fi
+    { chmod 0644 "$tmp" && mv -f "$tmp" "$TEXTFILE_DIR/${name}_$PEER_LABEL.prom"; } || { rm -f "$tmp"; die "cannot install $name" 2; }
+    echo "$name: pulled from $PEER_LABEL"
+  done
 }
 
 MAINT="${PFT_KEYESCROW_MAINT:-pft-maint}"
@@ -534,5 +562,6 @@ case "${1:-}" in
   verify) shift; cmd_verify "$@"; exit $? ;;
   restore) shift; cmd_restore "$@"; exit $? ;;
   serve) shift; cmd_serve "$@"; exit $? ;;
+  pull) cmd_pull; exit $? ;;
   *) usage ;;
 esac

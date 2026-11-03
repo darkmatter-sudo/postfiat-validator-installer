@@ -289,5 +289,38 @@ rm -f "$(SD se)/store/validator/gen-$G."*
 OUT="$(tar -C "$T/env2" -cf - "gen-$G.meta" "gen-$G.age" | "$T/bin/fakessh" serve receive validator 2>&1)"; RC=$?
 check "receive: ciphertext that differs from its meta sha256 is rejected, nothing kept" '[ "$RC" = 2 ] && grep -q "ciphertext sha256 differs" <<<"$OUT" && [ ! -e "$(SD se)/store/validator/gen-$G.meta" ]'
 
+# --- pull: the sentry's textfiles reach the validator only through serve textfile, every line validated ------------
+STF="$SE/root/var/lib/pft-exporter/textfile"; VTF="$VA/root/var/lib/pft-exporter/textfile"
+on se inventory --textfile; on se verify --textfile
+on va pull
+check "pull: exit 0, both files pulled" '[ "$RC" = 0 ] && grep -qx "pft_keyescrow: pulled from sentry" <<<"$OUT" && grep -qx "pft_keyescrow_held: pulled from sentry" <<<"$OUT"'
+check "pull: byte-identical copies, 0644, no temp files" 'cmp -s "$STF/pft_keyescrow.prom" "$VTF/pft_keyescrow_sentry.prom" && cmp -s "$STF/pft_keyescrow_held.prom" "$VTF/pft_keyescrow_held_sentry.prom" && [ "$(stat -c %a "$VTF/pft_keyescrow_sentry.prom")" = 644 ] && [ -z "$(find "$VTF" -name ".*.pull")" ]'
+check "pull control: the pulled inventory carries node=sentry samples" 'grep -q "^pft_keyescrow_items{node=\"sentry\",state=\"ok\"} 4$" "$VTF/pft_keyescrow_sentry.prom"'
+GOOD="$(sha256sum < "$VTF/pft_keyescrow_sentry.prom")"
+cp "$STF/pft_keyescrow.prom" "$T/inv.good"
+echo 'evil_metric 1' >> "$STF/pft_keyescrow.prom"; on va pull
+check "pull: a foreign metric line is rejected (exit 2), old copy kept, no temp" '[ "$RC" = 2 ] && grep -q "pulled pft_keyescrow rejected: 1 unexpected lines" <<<"$OUT" && [ "$(sha256sum < "$VTF/pft_keyescrow_sentry.prom")" = "$GOOD" ] && [ -z "$(find "$VTF" -name ".*.pull")" ]'
+sed 's/node="sentry"/node="validator"/' "$T/inv.good" > "$STF/pft_keyescrow.prom"; on va pull
+check "pull: samples labelled as another node are rejected (exit 2)" '[ "$RC" = 2 ] && grep -q "pulled pft_keyescrow rejected: [0-9]* unexpected lines" <<<"$OUT" && [ "$(sha256sum < "$VTF/pft_keyescrow_sentry.prom")" = "$GOOD" ]'
+grep -v '^pft_keyescrow_collect_timestamp_seconds{' "$T/inv.good" > "$STF/pft_keyescrow.prom"; on va pull
+check "pull: a file without its timestamp sample is rejected (exit 2)" '[ "$RC" = 2 ] && grep -q "no pft_keyescrow_collect_timestamp_seconds sample" <<<"$OUT"'
+sed 's/} 4$/} 4.5/' "$T/inv.good" > "$STF/pft_keyescrow.prom"; on va pull
+check "pull: a non-integer sample value is rejected (exit 2)" '[ "$RC" = 2 ] && grep -q "unexpected lines" <<<"$OUT"'
+head -c 70000 /dev/zero | tr '\0' '#' > "$STF/pft_keyescrow.prom"; on va pull
+check "pull: a file over 64 KiB is rejected (exit 2)" '[ "$RC" = 2 ] && grep -q "larger than 65536 bytes" <<<"$OUT"'
+rm -f "$STF/pft_keyescrow.prom"; on va pull
+check "pull: a missing file on the peer fails (exit 1), old copy kept" '[ "$RC" = 1 ] && grep -q "pull of pft_keyescrow from sentry failed" <<<"$OUT" && [ "$(sha256sum < "$VTF/pft_keyescrow_sentry.prom")" = "$GOOD" ]'
+cp "$T/inv.good" "$STF/pft_keyescrow.prom"
+printf '%s decoy\n' "$MARK" > "$SE/root/etc/n/decoy.prom"
+OUT="$("$T/bin/fakessh" serve textfile ../../../../etc/n/decoy 2>&1)"; RC=$?
+check "serve textfile: any other name is refused (exit 3), nothing printed" '[ "$RC" = 3 ] && ! grep -qF "$MARK" <<<"$OUT"'
+check "positive control: that traversal names a real file with the marker" 'grep -qF "$MARK" "$SE/root/var/lib/pft-exporter/textfile/../../../../etc/n/decoy.prom"'
+rm -f "$SE/root/etc/n/decoy.prom"
+OUT="$("$T/bin/fakessh" serve textfile pft_keyescrow 2>&1)"; RC=$?
+check "serve textfile control: the allowed name prints the file" '[ "$RC" = 0 ] && cmp -s <(printf "%s\n" "$OUT") "$STF/pft_keyescrow.prom"'
+sed -i '/^PEER_SSH=/d' "$VA/root/etc/pft-keyescrow.env"; on va pull
+check "pull: refused without PEER_SSH (exit 4)" '[ "$RC" = 4 ] && grep -q "PEER_SSH not set" <<<"$OUT"'
+conf va PEER_SSH "$T/bin/fakessh"
+
 echo "RESULT: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

@@ -1,0 +1,37 @@
+[Unit]
+Description=pft-keyescrow inventory + held-copy verify (read-only checks, textfile metrics)
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/keyescrow
+
+[Service]
+Type=oneshot
+# exit 1 (drift / not escrowed) and 2 (perm/missing, or a held copy failed its check) are exported as metrics and
+# alerted on (../alerts/keyescrow.rules.yml), so they do not fail the unit; a textfile that cannot be written does
+# (no fresh metrics -> pft-rulecheck / PFTTextfileStale).
+SuccessExitStatus=1 2
+ExecStart=/usr/local/bin/pft-keyescrow inventory --textfile
+ExecStart=/usr/local/bin/pft-keyescrow verify --textfile
+# verify writes gen-G.verified next to each held generation
+ReadWritePaths=/var/lib/pft-keyescrow /var/lib/pft-exporter/textfile
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+UMask=0077
+NoNewPrivileges=yes
+RestrictAddressFamilies=AF_UNIX
+# some declared secrets belong to other users (journal group files, the alert stack's ntfy env): read, never write
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH
+Nice=10
+TimeoutStartSec=5min

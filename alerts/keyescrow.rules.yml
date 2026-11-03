@@ -6,6 +6,9 @@
 #    Label reason=age|drift tells the two apart.
 # 2. PFTKeyEscrowInventoryFailed: a declared secret is missing, has the wrong mode/owner/group, or cannot be read
 #    (inventory exit 2) for 15 min.
+# 3. PFTKeyEscrowVerifyFailed: the newest generation this host holds for the peer failed its check (ciphertext
+#    sha256 vs meta, or in-memory decrypt + MANIFEST check), or no generation is held, for 5 min
+#    (pft_keyescrow_held_verify_ok, written by `verify --textfile`).
 # A stopped timer is caught by pft-rulecheck (textfile pft_keyescrow*.prom) and PFTTextfileStale, not here.
 # The sentry runs no Prometheus: every node="sentry" alert is evaluated here. Tests: keyescrow.tests.yml.
 groups:
@@ -38,4 +41,13 @@ groups:
         annotations:
           summary: "pft-keyescrow inventory on {{ $labels.node }}: a declared secret is missing, has wrong permissions or is unreadable"
           description: "A secret that an add-on needs is missing, is not 0600/owned as its source declares, or cannot be read by the inventory. Run `sudo pft-keyescrow inventory` for the item and the source line that declares it."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/keyescrow/README.md#alerts"
+      - alert: PFTKeyEscrowVerifyFailed
+        expr: max by (instance, job, node, peer) (pft_keyescrow_held_verify_ok) == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Escrow copy of {{ $labels.peer }}'s secrets held on {{ $labels.node }} failed verification (or none held)"
+          description: "The newest encrypted generation that {{ $labels.node }} holds for {{ $labels.peer }} no longer matches its recorded ciphertext sha256 or failed the in-memory decrypt and MANIFEST check, or no generation is held. A restore from it would be refused. Run `sudo pft-keyescrow verify --all` on {{ $labels.node }}, then a fresh `sudo pft-keyescrow escrow` on the validator."
           runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/keyescrow/README.md#alerts"

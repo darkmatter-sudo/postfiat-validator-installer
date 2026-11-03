@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the pft-keyescrow two-way escrow every night (02:40 UTC)
+
+[Timer]
+OnCalendar=*-*-* 02:40:00 UTC
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

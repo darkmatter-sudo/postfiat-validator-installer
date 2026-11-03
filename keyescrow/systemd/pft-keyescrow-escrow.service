@@ -1,0 +1,36 @@
+[Unit]
+Description=pft-keyescrow nightly escrow: both directions (seal, push, peer verifies; peer seals, pull, verify here)
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/keyescrow
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# validator only (the host with PEER_SSH in /etc/pft-keyescrow.env). The ssh runs as the operator account named in
+# PEER_SSH (runuser -u ...), which already holds the admin key for the peer. A failed direction fails the unit and
+# leaves the last-escrow time unchanged, so PFTKeyEscrowStale reason=age fires after 36 h.
+ExecStart=/usr/local/bin/pft-keyescrow escrow
+ExecStartPost=-/usr/local/bin/pft-keyescrow inventory --textfile
+ExecStartPost=-/usr/local/bin/pft-keyescrow verify --textfile
+ExecStartPost=-/usr/local/bin/pft-keyescrow pull
+ReadWritePaths=/var/lib/pft-keyescrow /var/lib/pft-exporter/textfile
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+UMask=0077
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_SETUID CAP_SETGID CAP_AUDIT_WRITE
+TimeoutStartSec=15min
