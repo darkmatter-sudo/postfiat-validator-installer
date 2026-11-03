@@ -5,12 +5,14 @@ logship TLS keys and CA key, the journald FSS sealing key of `../audittrail`, th
 ntfy targets. If a host's disk is lost, they are gone, and some of them (the node seed = the node's identity
 `pubkey_node`, the logship CA key) cannot be recreated without reconfiguring the other host too.
 
-pft-keyescrow will encrypt each host's secrets to the **peer's** age public key and keep N generations there, so
-either host can be rebuilt from the other one. Plaintext never leaves the host it belongs to, and the peer can check
-a generation against its manifest but cannot read it.
+pft-keyescrow encrypts each host's secrets to the **peer's** age public key and keeps N generations there, so
+either host can be rebuilt from the other one. Plaintext is never written to disk and never crosses the network:
+the source host packs and encrypts in one pipe, the peer stores ciphertext only, and the peer checks a generation by
+decrypting it in memory with its own age identity (root-only, 0600).
 
-Status: **step 1 of the task is done (read-only inventory, metrics, alert rules)**. Keygen, escrow, verify and restore
-come next. This README covers only what exists now.
+Status: **steps 1-2 of the task are done offline (inventory, metrics, alert rules; keygen, seal, two-way escrow,
+receive + in-memory verify, tamper detection)**. Restore, the mutant run, install and the live two-host proof come
+next. This README covers only what exists now.
 
 ## Inventory (read-only)
 
@@ -76,9 +78,43 @@ Exit codes: 0 everything ok and escrowed, 1 drift / not escrowed, 2 perm / missi
 The rules file is **not yet listed in `../alerts/prometheus.yml`**. It gets added in the same commit as the live
 install, so Prometheus never loads a rule whose metric has no series yet.
 
+## Escrow (offline-tested; not installed yet)
+
+```sh
+sudo pft-keyescrow keygen          # both hosts: STATE_DIR/fp_key + age identity (0600), prints the age recipient
+sudo pft-keyescrow set-peer age1...  # both hosts: the OTHER host's recipient -> PEER_RECIPIENT in /etc/pft-keyescrow.env
+sudo pft-keyescrow escrow          # the host with PEER_SSH (validator): both directions in one run
+sudo pft-keyescrow verify [--all] [--textfile]   # re-check what this host holds for the peer
+```
+
+One `escrow` run on the validator:
+1. `seal` here: the inventory must have no perm/missing/unreadable item (refused otherwise, nothing sealed). The ok
+   items are packed by `keyescrow_tar.py pack` (tar stream: a `MANIFEST` with path, mode, uid, gid, size and sha256
+   per item, then the bytes) straight into `age -r PEER_RECIPIENT`. The result is `outbox/gen-G.age` plus
+   `gen-G.meta` (gen, ciphertext sha256 and size, recipient, and the keyed fingerprints only: no plaintext hash
+   outside the encryption).
+2. Push: `tar gen-G.meta gen-G.age | PEER_SSH sudo -n pft-keyescrow serve receive validator`. The peer writes both
+   as 0600 temp files, checks the ciphertext sha256 and size against the meta, renames `.age` and then `.meta` (the
+   meta is the commit marker), then decrypts in memory and checks every item's size and sha256 against the MANIFEST
+   (no missing, extra or duplicate members). A generation that fails this first check is discarded, so it never
+   displaces a good one. Only a `VERIFIED` answer makes this host record the generation's fingerprints in
+   `escrowed.tsv` (drift baseline, last escrow time).
+3. The peer seals (`serve seal`), this host pulls it (`serve export G`), receives and verifies it the same way, then
+   `serve ack G` makes the peer record it.
+4. Each side keeps the newest `KEEP` (default 7) verified generations.
+
+`serve` runs only `receive LABEL | seal | export GEN | ack GEN`. Everything else is refused. `PEER_SSH` follows the
+same pattern as the other pulls in this repo (`runuser -u <agent user> -- ssh ... <peer>`).
+
+`verify` checks the held generations again: a one-byte change of a ciphertext fails the sha256 check. If an attacker
+also rewrites the meta's hash, age's authentication fails on decrypt. Both cases give `VERIFY FAILED` and exit 2.
+`--textfile` writes `pft_keyescrow_held_generations`, `pft_keyescrow_held_newest_timestamp_seconds`,
+`pft_keyescrow_held_verify_ok` and `pft_keyescrow_verify_timestamp_seconds` (per `node`, `peer`).
+
 ## Tests
 
 ```sh
-bash keyescrow/tests/run-tests.sh      # offline: fake root, no root/network needed
+bash keyescrow/tests/run-tests.sh          # inventory: fake root, no root/network needed
+bash keyescrow/tests/run-escrow-tests.sh   # keygen/seal/escrow/verify/tamper with the real age binary, two fake hosts
 promtool test rules alerts/keyescrow.tests.yml
 ```
