@@ -16,7 +16,9 @@
 #     reported as blocked by an earlier layer when that is the design), ack-denials, audit PASS
 #   6 enforced restart: docker restart -> same profile, enforce, full, 0 DENIED since the restart
 #   7 explicit rollback -> docker-default, full; re-apply P1 -> PASS; audit PASS
-# validator: 0, 4 (with the sentry's P1), 5, 6.
+#   5b host add-ons that docker exec into the node, run by hand under the profile; then one real
+#      pft-retention-sample.timer tick (validator) with the DENIED gate open; audit PASS
+# validator: 0, 4 (with the merged profile), 5, 5b, 6.
 # Exit 0 only if every check passed. Never edits postfiatd.cfg: the volume-write control creates a new file name.
 # shellcheck disable=SC2016,SC2034,SC2015  # ok_if conditions are evaluated later (they read rc, before, ...); A && B || C only reports
 set -uo pipefail
@@ -167,6 +169,39 @@ x "$PA ack-denials --reason 'task_faf99695 live drill: deliberate negative contr
 res "ack-denials for the deliberate records" "$XRC"
 x "$PA audit; echo audit-exit=\$?"
 res "audit after apply + ack: RESULT PASS" "$(ok_if 'grep -qx "audit-exit=0" <<<"$XOUT"')"
+
+echo; echo "== 5b. host add-ons that docker exec into the node: run each by hand, then wait for a real retention tick"
+# The sentry-learned P1 passed every control above on the validator, then blocked pft-retention sample 10 min later
+# (live run 26). So every installed unit that execs into the node runs here under the enforced profile, and the
+# DENIED gate stays open across one real pft-retention-sample.timer tick (every 10 min) where that timer exists.
+t5b="$(date +%s)"
+for u in pft-retention-sample.service "pft-statewatch@$C.service" "pft-feewatch@$C.service" "pft-upgradewatch@$C.service" \
+         pft-mounts.service pft-timesync.service pft-divergence.service postfiat-monitor.service \
+         "pft-egress-reapply@$C.service" pft-maint-tick.service; do
+  systemctl cat "$u" >/dev/null 2>&1 || { echo "  $u: not installed on this host, skipped"; continue; }
+  x "systemctl start $u; systemctl show -p Result --value $u"
+  res "add-on $u ran under the profile: Result=success" "$(ok_if '[ "$XRC" = 0 ] && [ "$(tail -1 <<<"$XOUT")" = success ]')"
+done
+if [ -r /var/lib/pft-retention/samples.csv ]; then
+  x "tail -1 /var/lib/pft-retention/samples.csv | cut -d, -f2,3,7,8,9"
+  res "pft-retention sample read the store (nudb_bytes > 0, the field P1 zeroed)" \
+    "$(ok_if '[ "$(tail -1 /var/lib/pft-retention/samples.csv | cut -d, -f7)" -gt 0 ] 2>/dev/null')"
+fi
+if systemctl cat pft-retention-sample.timer >/dev/null 2>&1; then
+  inv0="$(systemctl show -p InvocationID --value pft-retention-sample.service)"
+  echo "  $(ts) waiting for the next real pft-retention-sample.timer tick (InvocationID changes and the run ends), up to 12 min"
+  inv=""; for ((i = 0; i < 72; i++)); do
+    inv="$(systemctl show -p InvocationID --value pft-retention-sample.service)"
+    [ "$inv" != "$inv0" ] && [ "$(systemctl show -p ActiveState --value pft-retention-sample.service)" != activating ] && break
+    sleep 10
+  done
+  x "TZ=UTC systemctl show -p Result -p ExecMainExitTimestamp pft-retention-sample.service; tail -1 /var/lib/pft-retention/samples.csv | cut -d, -f2,3,7"
+  res "a real timer tick ran under the profile: new invocation, Result=success, nudb_bytes > 0" \
+    "$(ok_if '[ "$inv" != "$inv0" ] && grep -qx "Result=success" <<<"$XOUT" && [ "$(tail -1 /var/lib/pft-retention/samples.csv | cut -d, -f7)" -gt 0 ] 2>/dev/null')"
+fi
+sleep 3; d="$(denied "$t5b")"; res "0 DENIED records from the add-ons and the timer tick" "$(ok_if '[ "$d" = 0 ]')" "$d"
+x "$PA audit; echo audit-exit=\$?"
+res "audit after the add-on runs: RESULT PASS" "$(ok_if 'grep -qx "audit-exit=0" <<<"$XOUT"')"
 
 echo; echo "== 6. enforced restart"
 t6="$(date +%s)"; before="$(docker inspect -f '{{.State.StartedAt}}' "$C")"
