@@ -1,0 +1,36 @@
+[Unit]
+Description=pft-upgradewatch: amendment-block risk and upgrade readiness of container %i
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/upgradewatch
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# root: needs the docker socket (docker exec ... curl server_info/feature/peers/ledger_entry + one grep of the config
+# on the container's loopback). Read-only otherwise. Network: only the foundation RPC (FOUNDATION_URL, HTTPS).
+# The docker CLI cannot read /root/.docker under ProtectHome and warns on every run; an empty private /tmp silences it.
+Environment=DOCKER_CONFIG=/tmp
+ExecStart=/usr/local/bin/pft-upgradewatch collect --container %i
+ProtectSystem=strict
+ReadWritePaths=/var/lib/pft-exporter/textfile
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+UMask=0022
+TimeoutStartSec=120

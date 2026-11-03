@@ -1,0 +1,61 @@
+# Alert rules for pft-upgradewatch (../upgradewatch). pft-upgradewatch@<container>.timer writes the textfile every
+# 5 min (validator: local; sentry: pulled by pft-upgradewatch-pull@postfiatd-sentry.timer); the pft exporter serves
+# it as pft_upgradewatch_*{container="..."}. Every series the rules read is written on every successful run (0 = none),
+# so ../rulecheck never grades these rules DEAD on a healthy node.
+# Tests: upgradewatch.tests.yml (promtool test rules upgradewatch.tests.yml), 1m sample interval.
+groups:
+  - name: pft-upgradewatch
+    rules:
+      - alert: PFTAmendmentBlocked
+        expr: pft_upgradewatch_amendment_blocked == 1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.container }} is AMENDMENT BLOCKED"
+          description: "server_info reports amendment_blocked (warning 1002): the network enabled an amendment this build does not support, so the node can no longer follow the validated ledger and stops serving current data. Upgrade postfiatd now (../upgrade); the node will not recover on its own."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/upgradewatch/README.md#alerts"
+      - alert: PFTUnsupportedAmendmentMajority
+        # ledger-derived count (Amendments.Majorities vs this build's feature table), or the node's own warning 1001
+        expr: |
+          max without (supported) (pft_upgradewatch_majority_amendments{supported="no"}) > 0
+          or pft_upgradewatch_unsupported_majority_warning == 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.container }}: an amendment this build does not support holds a majority"
+          description: "At least one amendment that postfiatd on this node does not support has held a majority of trusted validators for 10 min. If the majority holds for the network's [amendment_majority_time], it activates and this node becomes amendment blocked. Plan the upgrade; pft_upgradewatch_unsupported_activation_eta_seconds is the earliest activation time."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/upgradewatch/README.md#alerts"
+      - alert: PFTUnsupportedAmendmentActivationSoon
+        # measured value on the left ($value = seconds left), the "one exists" guard on the right
+        expr: |
+          (pft_upgradewatch_unsupported_activation_eta_seconds - time() < 86400)
+          and pft_upgradewatch_unsupported_activation_eta_seconds > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.container }}: unsupported amendment can activate in {{ $value | humanizeDuration }}"
+          description: "An unsupported amendment's majority CloseTime + the majority time ends within 24 h (a negative time means it is past and activation waits only for the next flag ledger). After activation this node is amendment blocked. Upgrade before the ETA."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/upgradewatch/README.md#alerts"
+      - alert: PFTNodeVersionLag
+        expr: |
+          pft_upgradewatch_behind_foundation == 1
+          or (pft_upgradewatch_peers_newer_ratio >= 0.5 and pft_upgradewatch_peers_versioned >= 5)
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.container }} runs an older postfiatd build than the foundation or most of its peers"
+          description: "For 15 min this node's build_version has been older than the foundation RPC's (pft_upgradewatch_behind_foundation 1), or at least half of 5+ version-reporting peers run a newer build. New amendments usually ship with new builds, so lag comes before amendment-block risk. Compare pft_upgradewatch_build_info with pft_upgradewatch_foundation_build_info and plan the upgrade."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/upgradewatch/README.md#alerts"
+      - alert: PFTUpgradewatchStale
+        expr: time() - pft_upgradewatch_collect_timestamp_seconds > 900 or pft_upgradewatch_up == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pft-upgradewatch for {{ $labels.container }} is stale or failing"
+          description: "Either the last collection is older than 15 min (pft-upgradewatch@{{ $labels.container }}.timer, or for the sentry pft-upgradewatch-pull@{{ $labels.container }}.timer on the validator, is not running) or two runs in a row failed (pft_upgradewatch_up 0: container stopped, RPC not answering, or a field missing or malformed). The amendment-block alerts for this node are blind. Run `sudo pft-upgradewatch collect --container {{ $labels.container }} --stdout`."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/upgradewatch/README.md#alerts"

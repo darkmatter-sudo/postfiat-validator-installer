@@ -1,0 +1,10 @@
+[Unit]
+Description=Pull peer container %i's pft-upgradewatch textfile every 5 minutes
+
+[Timer]
+OnCalendar=*-*-* *:0/5:50
+AccuracySec=1s
+Persistent=false
+
+[Install]
+WantedBy=timers.target
