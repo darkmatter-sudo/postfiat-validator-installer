@@ -1,0 +1,200 @@
+# pft-cluster suite + mutant run - start 2026-11-03T13:35:16Z - Ubuntu 22.04.5 LTS - commit 4d375983bc361ed40698d38fdc0044230514832c (git archive copy)
+# sha256 a31db6d4d9779e399e020dd1f371ff2c7f678ed05e3dc45e477d9becdcdf0975  cluster/pft-cluster.sh
+# sha256 35b3af6829c61b3645114843e5b8390fa4d444ed1c2f83795d5b4b113225c517  cluster/install.sh
+# sha256 6652e278c68f2af58797256a9eb93cf261e1b9418acc3a5f940e41226c185b01  cluster/tests/run-tests.sh
+# sha256 e78d8113a7214b163dfc0ef711e5c163f8e921a7b0640644bdbe181c023732e5  cluster/tests/mutate.py
+# sha256 8d03eb311ed61343123c500a5a3edf726611fba5ec745ea78ddd3335b00a5030  cluster/tests/stubs.sh
+# sha256 1ba510e250c6faea817b1e92f4d9164e309ae8e7caa0b1ad75409dc8caa9f945  cluster/tests/fake_node.py
+# sha256 a6e04b17f40072302f2458f72e75c79363777357d4bd0c70c69b378f987a13ff  alerts/cluster.rules.yml
+$ shellcheck cluster/pft-cluster.sh cluster/install.sh cluster/drill/*.sh cluster/tests/*.sh
+(exit 0)
+$ timeout 1200 bash cluster/tests/run-tests.sh
+ok   bare: exit 1
+ok   bare: no seed
+ok   bare: no [node_seed]
+ok   bare: commented [node_seed] lines ignored
+ok   bare: no PEER_PUBKEY
+ok   bare: live key not pinned
+ok   bare: no member
+ok   bare: peer not a member
+ok   bare: no reports
+ok   bare: no seed to look for
+ok   bare: 7 findings
+ok   bare: no host path in output
+ok   audit: never restarts
+ok   json: findings 7, live:peer FAIL
+ok   prom: findings 7, clustered 0, INFO not exported
+ok   prom: 0644, no temp left
+ok   validate: own textfile accepted
+ok   validate: wrong host label rejected
+ok   validate: foreign line rejected
+ok   validate: no last_run rejected
+ok   textfile: pft_cluster_<HOST_LABEL>.prom
+ok   conf: bad HOST_LABEL -> exit 2
+ok   conf: bad PEER_TAG -> exit 2
+ok   audit: no config mount -> exit 2
+ok   keygen: seed 0600 in 0700 dir, fp_key 0600
+ok   keygen: seed not printed
+ok   keygen: key printed as fingerprint only
+ok   keygen: temp dir removed
+ok   keygen: idempotent, seed kept
+ok   pubkey: prints the pinned public key
+ok   pubkey: seed not printed
+ok   keygen: no command line carried the seed
+ok   keygen: RPC error -> exit 2, nothing stored
+ok   pubkey: none stored -> exit 2
+ok   set-peer: malformed key -> exit 3
+ok   set-peer: base58-invalid char (0) -> exit 3
+ok   set-peer: bad tag -> exit 3
+ok   set-peer: conf updated, 0600
+ok   set-peer: replaces, no duplicate line
+ok   plan: block shown, seed redacted, peer as fingerprint
+ok   plan: seed not printed
+ok   apply: no --yes -> exit 4
+ok   apply: no pft-maint window -> exit 4
+ok   refusals: config unchanged, no restart
+ok   apply: no seed -> exit 4
+ok   apply: no PEER_PUBKEY -> exit 4
+ok   apply: own key as peer -> exit 4
+ok   apply: unmanaged [node_seed] -> refused
+ok   plan: unmanaged [node_seed] -> REFUSE exit 4
+ok   apply: unmanaged [cluster_nodes] (indented header) -> refused
+ok   apply: BEGIN without END -> refused
+ok   dry run: diff with seed redacted, nothing changed
+ok   dry run: seed not printed
+ok   apply: exit 0, one restart
+ok   apply: seed not printed
+ok   apply: gate PASS incl. --require-peer
+ok   apply: block written, cfg 0600
+ok   apply: backup byte-identical, 0600, pre-apply key recorded
+ok   apply: every original line kept in order
+ok   apply: no temp files left
+ok   apply: integrity accepted (config item only)
+ok   after apply: audit PASS (9 checks)
+ok   after: live:pubkey pinned
+ok   after: reports
+ok   after: secret absent
+ok   after: prom clustered 1, findings 0
+ok   after: seed not in textfile
+ok   apply: idempotent (no restart, no change)
+ok   re-apply: block replaced, one block
+ok   re-apply: back to the first block byte-identical (no blank-line growth)
+ok   gate: injected miss -> rolled back, exit 1
+ok   gate: server_state never full -> rolled back, exit 1
+ok   gate: peer not reporting (--require-peer) -> rolled back, exit 1
+ok   gate: peer connected without cluster flag (--require-peer) -> rolled back, exit 1
+ok   gate: report too old (--require-peer) -> rolled back, exit 1
+ok   gate: pft daemon stopped -> rolled back, exit 1
+ok   gate: ssh handshake lost -> rolled back, exit 1
+ok   gate: peer port not listening -> rolled back, exit 1
+ok   gate: restart fails -> config restored, rollback restart fails -> exit 5
+ok   gate: node unhealthy after rollback too -> exit 5
+ok   gate: node does not start with the new config -> rolled back
+ok   gate: docker restart exit 0 but no restart -> gate FAIL (then rollback cannot restart either: exit 5)
+ok   gate: node ignores [cluster_nodes] -> rolled back
+ok   gate: live key is not the stored key -> rolled back
+ok   rollback: node comes back on another key (wallet.db changed) -> exit 5
+ok   dry run after apply: seed context redacted, old/new key as distinct fingerprints
+ok   dry run after apply: seed not printed
+ok   integrity: other changed items -> not accepted
+ok   integrity: nothing changed -> no accept
+ok   rollback: no backup -> exit 2
+ok   rollback: no --yes -> exit 4
+ok   rollback: no window -> exit 4, unchanged
+ok   rollback: byte-identical, 0644, pre-apply key back
+ok   rollback: gate printed the restored key
+ok   after rollback: cfg has no seed
+ok   re-apply after rollback: exit 0
+ok   rollback: gate fails -> exit 5
+ok   audit: seed in a 0644 config
+ok   audit: state dir 0755
+ok   audit: seed file 0640
+ok   audit: seed not owned by SEED_UID
+ok   audit: two-line seed file
+ok   audit: config seed differs from stored
+ok   audit: two [node_seed] sections
+ok   audit: unmanaged [cluster_nodes] merged
+ok   audit: malformed entry
+ok   audit: PEER_PUBKEY not listed
+ok   audit: stale report
+ok   audit: peer disconnected
+ok   audit: disconnected -> no report
+ok   audit: peer runs another key
+ok   audit: peer connected without the cluster flag
+ok   audit: config written, restart pending
+ok   audit: member not loaded
+ok   audit: node down
+ok   audit: node down -> peers
+ok   audit: seed exposed in inspect
+ok   audit inspect: finding does not print the seed
+ok   audit: seed exposed in ps
+ok   audit ps: finding does not print the seed
+ok   audit: seed exposed in log
+ok   audit log: finding does not print the seed
+ok   audit: seed exposed in textfile
+ok   audit textfile: finding does not print the seed
+ok   pull: valid peer file installed 0644
+ok   pull: foreign line rejected, old file kept, temp removed
+ok   pull: ssh failure -> exit 1
+ok   pull: no PULL_SSH -> exit 2
+ok   usage: unknown command -> help, exit 3
+ok   usage: unknown option -> exit 3
+RESULT: 130 passed, 0 failed
+(exit 0)
+$ timeout 10800 python3 -u cluster/tests/mutate.py -j 2 --timeout 420
+CONTROL (unmutated) rc=0 RESULT: 130 passed, 0 failed 150s
+G1   KILLED (1 failed: restart noop rc=0)                                       142s  gate: restart not required (StartedAt)
+G2   KILLED (3 failed: gate: server_state never full (rc=0))                    135s  gate: any server_state accepted
+G3   KILLED (2 failed: wrong key rc=0)                                          143s  gate: pubkey_node not compared
+G4   KILLED (1 failed: no_cluster rc=0)                                         151s  gate: loaded member not required
+G5   KILLED (1 failed: gate: injected miss (rc=0))                              172s  gate: injected miss ignored
+G6   KILLED (3 failed: gate: peer not reporting (--require-peer) (rc=0))        157s  gate: --require-peer ignored
+G7   KILLED (1 failed: gate: report too old (--require-peer) (rc=0))            154s  gate: report age bound dropped
+G8   KILLED (1 failed: gate: pft daemon stopped (rc=0))                         154s  gate: stopped pft daemons ignored
+G9   KILLED (1 failed: gate: ssh handshake lost (rc=0))                         154s  gate: ssh handshake ignored
+G10  KILLED (1 failed: gate: peer port not listening (rc=0))                    154s  gate: peer port not checked
+G11  KILLED (14 failed: gate: injected miss (rc=1))                             143s  apply: no automatic rollback on a gate miss
+G12  KILLED (3 failed: restart fail rc=1)                                       158s  apply: failed rollback not reported (exit 5)
+G13  EQUIVALENT (documented)                                                    162s  restore: sha256 compare dropped - cp -p succeeded => bytes equal; no test input reaches the sha256 mismatch branch
+G14  KILLED (15 failed: gate: injected miss (rc=5))                             132s  restore: original mode/owner not restored
+G15  KILLED (1 failed: rollback rc=5)                                           176s  rollback: no restart after the restore
+G16  KILLED (1 failed: rollback key rc=0)                                       183s  rollback gate: pre-apply key not expected
+W1   KILLED (2 failed: apply no window)                                         193s  apply: runs without a pft-maint window
+W2   KILLED (1 failed: rollback window)                                         185s  rollback: runs without a pft-maint window
+W3   KILLED (3 failed: apply no window)                                         178s  window check: exit status of pft-maint active ignored
+W4   KILLED (2 failed: apply no yes)                                            178s  apply: --yes not required
+F1   KILLED (2 failed: apply unmanaged seed)                                    174s  refuse: unmanaged [node_seed] accepted
+F2   KILLED (1 failed: apply unmanaged cluster)                                 162s  refuse: unmanaged [cluster_nodes] accepted
+F3   KILLED (1 failed: apply markers)                                           173s  refuse: broken block markers accepted
+F4   KILLED (1 failed: apply own key)                                           178s  refuse: own key as peer accepted
+F5   KILLED (1 failed: apply no peer)                                           257s  refuse: missing PEER_PUBKEY accepted
+F6   KILLED (1 failed: apply no seed)                                           247s  refuse: missing seed accepted
+F7   KILLED (1 failed: set-peer b58)                                            245s  base58: 0/O/I/l accepted in keys
+C1   KILLED (1 failed: idempotent)                                              234s  apply: idempotency check dropped (restarts every time)
+C2   KILLED (2 failed: idempotent)                                              174s  candidate: trailing blank lines kept (file grows on re-apply)
+C3   KILLED (4 failed: idempotent)                                              161s  candidate: old block not removed
+C4   KILLED (1 failed: apply unmanaged cluster)                                 194s  parser: indented section headers missed
+C5   KILLED (5 failed: after audit rc=1)                                        190s  parser: comment lines read as values
+S1   KILLED (5 failed: apply cfg)                                               168s  config installed with the old mode (0644 with the seed)
+S2   KILLED (3 failed: keygen)                                                  171s  seed file left at the umask mode
+S3   KILLED (1 failed: backup)                                                  216s  backup keeps the original 0644 mode
+S4   KILLED (4 failed: dry run)                                                 228s  dry run prints the seed
+S5   KILLED (1 failed: audit: seed exposed in inspect (want FAIL /docker-insp   188s  exposure: docker inspect not searched
+S6   KILLED (1 failed: audit: seed exposed in ps (want FAIL /process-args/, g   184s  exposure: process args not searched
+S7   KILLED (1 failed: audit: seed exposed in log (want FAIL /container-log/,   163s  exposure: container log not searched
+S8   KILLED (1 failed: audit: seed exposed in textfile (want FAIL /textfile/,   161s  exposure: textfiles not searched
+S9   KILLED (7 failed: keygen fp)                                               398s  fingerprints: full keys printed
+A1   KILLED (2 failed: audit: state dir 0755 (want FAIL /dir 755/, got 'PASS'   159s  audit: seed storage modes not checked
+A2   KILLED (1 failed: audit: config seed differs from stored (want FAIL /dif   158s  audit: config seed not compared with the stored one
+A3   KILLED (1 failed: audit: seed in a 0644 config (want FAIL /mode 644/, go   180s  audit: 0644 config with the seed graded PASS
+A4   KILLED (1 failed: audit: malformed entry (want FAIL /1 malformed/, got '   180s  audit: malformed [cluster_nodes] entries not counted
+A5   KILLED (1 failed: audit: peer connected without the cluster flag (want F   169s  audit: connected peer without cluster flag graded PASS
+A6   KILLED (1 failed: audit: stale report (want FAIL /900 s ago/, got 'PASS'   183s  audit: report age bound dropped
+A7   KILLED (1 failed: audit: node down -> peers (want FAIL /no peers answer/   172s  jq: empty answer (node down) read as true
+A8   KILLED (1 failed: audit: two [node_seed] sections (want FAIL /2 \[node_s   170s  audit: duplicate [node_seed] sections accepted
+I1   KILLED (1 failed: integrity filter)                                        177s  integrity: other changed items accepted too
+P1   KILLED (2 failed: validate foreign)                                        170s  validate: foreign lines accepted
+P2   KILLED (1 failed: pull reject rc=2)                                        158s  pull: rejected file still installed
+P3   KILLED (7 failed: prom)                                                    153s  prom: host label missing on findings
+RESULT: 52 killed + 1 documented equivalent of 53, 0 survived, not applied or errored
+(exit 0) end 2026-11-03T15:00:05Z

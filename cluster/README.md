@@ -173,6 +173,9 @@ promtool tests: `../alerts/cluster.tests.yml`.
 - `tests/mutate.py`: mutant harness; each mutant is one exact replacement that must match once; an unmutated control
   run must pass first; every suite run has a timeout (a hang counts as killed); documented equivalents are listed with
   the reason.
+- Recorded run `logs/11-suite-mutants.log` (git archive of `4d37598`, the live run's commit; script sha256 in the
+  header): shellcheck clean, suite 130 passed / 0 failed, mutant control 130/130, 52 killed + 1 documented equivalent
+  (G13: `cp -p` success already implies equal bytes) of 53, 0 survived / not applied.
 - `drill/identity-control.sh`: the source facts above, checked on **throwaway containers** (same image as the running
   node, `--network none`, a fresh anonymous data volume per run, `--memory 2g`; the live nodes and their volumes are
   never touched): the stock config twice gives two different `pubkey_node` values; the stock config plus a
