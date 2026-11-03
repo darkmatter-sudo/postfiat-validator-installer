@@ -87,7 +87,7 @@ carries `node="validator|sentry"`; the validator pulls the sentry's files (`pull
   alerted.
 - **PFTBackfillCheckFailed** - status cannot read the node (`up 0`) or the last repair ended with exit 2, for 10 min.
 
-A stopped timer is caught by `pft-rulecheck` (install adds `textfile pft_backfill_*.prom 20m`) and PFTTextfileStale.
+A stopped timer is caught by `pft-rulecheck` (install adds `textfile pft_backfill*.prom 20m` for the status files; the repair file is a last-run record and gets `3650d -`, first match wins; and `ignore-metric pft_backfill_repair_exit_code`, which has no series until the first opt-in repair) and PFTTextfileStale.
 
 ## Units
 

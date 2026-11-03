@@ -124,6 +124,16 @@ setup chainflip 7729009 7
 run repair --apply --max-ledgers 1
 check "hash changed between ledger_request calls: exit 2" '[ "$RC" = 2 ] && grep -q "ledger_request hash changed" <<<"$OUT"'
 
+setup badhash 7729000 1
+run repair --apply --max-ledgers 50
+check "prev link: held seq-1 hash differs from the arrived parent -> MISMATCH, exit 2" '[ "$RC" = 2 ] && grep -A1 "seq 7729001 fetched" <<<"$OUT" | grep -q "prev MISMATCH(seq-1 is"'
+setup isolated 7729009 1
+run repair --apply --max-ledgers 1
+check "no held neighbour servable: UNVERIFIED (chain alone is not enough), exit 1" '[ "$RC" = 1 ] && grep -q "chain ok prev n/a next n/a" <<<"$OUT" && grep -q "UNVERIFIED" <<<"$OUT"'
+setup wrongseq 7729009 1
+run repair --apply --max-ledgers 1 --wait 10
+check "ledger answer for another sequence is not taken as arrival (times out), exit 1" '[ "$RC" = 1 ] && grep -q "seq 7729009 timeout: not servable after 10 s" <<<"$OUT"'
+
 # 6. public RPC unavailable: retried 3 times, then n/a (still verified locally)
 setup pubdown 0 1
 run repair --apply --max-ledgers 1
@@ -145,6 +155,7 @@ setup ok 0 -1
 run repair --apply --max-ledgers 3 --wait 600 --max-runtime 20
 check "runtime cap: first skipped while waiting, rest skipped" '[ "$RC" = 1 ] && grep -q "runtime cap reached while waiting" <<<"$OUT" && grep -q "timeout 0 skipped 3" <<<"$OUT"'
 check "runtime cap: fake clock stopped near the cap" '[ "$(cat "$CLOCK")" -le 1030 ]'
+check "runtime cap: no ledger_request after the cap (3 for the first ledger only)" '[ "$(lr_calls)" = 3 ] && grep -q "seq 7729008 skipped: runtime cap$" <<<"$OUT"'
 
 # 9. refusals (exit 4) send no ledger_request
 setup ok 0 1 syncing

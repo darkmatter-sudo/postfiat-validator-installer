@@ -26,7 +26,8 @@
 # 7  recover: drill series healthy -> both pairs leave Prometheus with [RESOLVED] delivered; every real backfill alert
 #    clears; the drill file is removed. ALERTS query_range for the run.
 # 8  metrics (units on both hosts, pull, Prometheus), 9 baselines (integrity accept, fleet sync + skew, rulecheck),
-#    10 restore + read-back of the throwaway topic and every operator topic (counts only).
+#    10 restore + read-back of the throwaway topic and every operator topic (counts only). The fleet sync in 9 runs in a
+#    second short window (pft-fleet refuses without one); restore ends it.
 # Env: RELAY (relay)  NTFY (https://ntfy.sh)  AM  PROM  LOCAL_ENVS  REMOTE_ENVS  BRIDGE_ENV  AGENT_ENV  TTL (150m)
 #      SIL_TTL (240, min)  GAP_STOP (1080, s)  FIRE_WAIT (2400, s)  RESOLVE_WAIT (1200, s)  NTFY_WAIT (180, s)
 #      CLEAR_WAIT (900, s)  READBACK_WAIT (150, s)  REFRESH (20, s)  REPAIR_ARGS
@@ -110,7 +111,7 @@ refresher() {
 
 declare -A SHA=()
 declare -a MOVED=()
-RESTORED=0; RESTORE_OK=true; MAINT_STARTED=0; MAINT_ENV_MADE=0; SIL=""; BRIDGE_SWAPPED=0; LOOP_PID=""; SENTRY_STOPPED=0
+CHANGED=0; RESTORED=0; RESTORE_OK=true; MAINT_STARTED=0; MAINT_ENV_MADE=0; SIL=""; BRIDGE_SWAPPED=0; LOOP_PID=""; SENTRY_STOPPED=0
 stop_refresher() {
   local w=0
   rm -f "$SEC/phase"
@@ -126,6 +127,7 @@ bf_active() { # backfill alerts in Prometheus (pending/firing) + active in Alert
 restore() {
   [ "$RESTORED" -eq 1 ] && return 0
   RESTORED=1
+  [ "$CHANGED" = 1 ] || return 0   # stopped before step 1: nothing to restore
   local k h f now_sha left n w src nb SIL2 SIL3
   if [ "$SENTRY_STOPPED" = 1 ]; then
     echo "  sentry still stopped: starting it"; R "sudo -n docker start postfiatd-sentry" >/dev/null || { echo "  docker start FAILED"; RESTORE_OK=false; }
@@ -166,6 +168,17 @@ restore() {
     else echo "  restored bridge: mounts the operator env file again: NO"; RESTORE_OK=false; fi
   fi
   if [ -n "$SIL" ]; then
+    # expiring the catch-all releases whatever it still holds: wait for those alerts to resolve first (lesson: expiring
+    # a silence releases what it held); PFTContainerRestarted is handed to its own narrow silence below
+    held() { curl -s --max-time 10 "$AM/api/v2/alerts?active=true&silenced=true&inhibited=false" \
+      | jq -r --arg id "$SIL" '[.[] | select(.status.silencedBy | index($id)) | select(.labels.alertname != "PFTContainerRestarted") | .labels.alertname] | unique | join(",")'; }
+    w=0; n="$(held)"
+    while [ -n "$n" ] && [ "$w" -lt "$CLEAR_WAIT" ]; do sleep 15; w=$((w + 15)); n="$(held)"; done
+    if [ -n "$n" ]; then
+      echo "  catch-all still holds active alerts after ${w}s: $n - kept until its end time $ends (not expired)"
+      RESTORE_OK=false; R "rm -rf $RDIR" || true; return 0
+    fi
+    echo "  catch-all holds no other active alert (${w}s)"
     left=$(( LAST_START + 25 * 60 - $(date -u +%s) ))
     if [ "$left" -gt 0 ]; then
       # keep only what the sentry restart still needs (PFTContainerRestarted looks back 15 min), never the catch-all,
@@ -268,6 +281,7 @@ if [ "$PREFLIGHT_ONLY" = 1 ]; then
 fi
 
 echo; echo "== 1. redirect notifiers + bridge, silence every alert except the backfill alerts and the watchdog, window"
+CHANGED=1
 redirect() { # HOST PATH
   local h="$1" f="$2"
   SHA["$h:$f"]="$(on "$h" "sudo -n sha256sum -- $f" | cut -c1-64)"
@@ -430,6 +444,9 @@ x "sudo -n pft-integrity verify | grep -E '^  \[(WARN|FAIL)\]|^RESULT' | sed -E 
 x "sudo -n pft-integrity accept --reason '$TASK: pft-backfill $SHORT installed (script, parser, units, env, rulecheck.conf)' | tail -2"
 x "R 'sudo -n pft-integrity verify' | grep -E '^  \[(WARN|FAIL)\]|^RESULT' | sed -E 's/ +sha256.*//' | head -30"
 x "R \"sudo -n pft-integrity accept --reason '$TASK: pft-backfill $SHORT installed (script, parser, units, env); planned sentry stop/start'\" | tail -2"
+# pft-fleet sync refuses without a window, and step 6 ended the first one (repair refuses inside a window)
+x "sudo -n pft-maint start --ttl 20m --reason '$TASK pft-backfill live run $RUN: fleet manifest sync'"
+check "second window for the fleet sync" "$XRC"
 x "sudo -n pft-fleet sync --addon fleet --to $SHA_HEAD --apply --reason '$TASK backfill manifest lines'"
 check "fleet sync of the manifest exit 0" "$XRC"
 x "sudo -n pft-fleet skew"

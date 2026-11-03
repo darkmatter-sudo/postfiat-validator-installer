@@ -3,7 +3,7 @@
 # postfiatd.cfg nor the node, and runs no repair.
 #   sudo ./install.sh [--host LABEL] [--container NAME] [--enable-repair]
 #       script -> /usr/local/bin/pft-backfill, parser -> /usr/local/lib/pft-backfill/, writes HOST_LABEL/CONTAINER
-#       into /etc/pft-backfill.env, adds the textfile line to /etc/pft-rulecheck.conf if pft-rulecheck is installed,
+#       into /etc/pft-backfill.env, adds two textfile lines to /etc/pft-rulecheck.conf if pft-rulecheck is installed,
 #       runs one status check through the sandboxed unit (its textfile must pass `validate`), enables
 #       pft-backfill.timer. --enable-repair also installs + enables pft-backfill-repair.timer (hourly, default caps).
 #   sudo ./install.sh --pull           on the host that runs ../alerts: pft-backfill-pull.service/.timer; needs
@@ -16,7 +16,11 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEXTDIR=/var/lib/pft-exporter/textfile
 CONF=/etc/pft-backfill.env
 RC_CONF=/etc/pft-rulecheck.conf
-RC_LINE='textfile pft_backfill_*.prom  20m  pft_backfill_status_timestamp_seconds'
+# first matching line wins: the repair file is a last-run record (hourly only when opted in), not a heartbeat
+# PFTBackfillCheckFailed's repair selector has no series until the first (opt-in) repair --textfile run
+RC_LINES='textfile pft_backfill_repair*.prom  3650d  -
+textfile pft_backfill*.prom  20m  pft_backfill_status_timestamp_seconds
+ignore-metric pft_backfill_repair_exit_code repair is opt-in: no series until the first repair --textfile run'
 label=""; container=""; uninstall=false; pull=false; repair=false
 log() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*"; }
 [ "$(id -u)" -eq 0 ] || { echo "run as root" >&2; exit 3; }
@@ -86,8 +90,8 @@ conf_set HOST_LABEL "$host"
 [ -n "$(conf_get CONTAINER)" ] || conf_set CONTAINER "$([ "$host" = sentry ] && echo postfiatd-sentry || echo postfiatd)"
 chown root:root "$CONF"; chmod 600 "$CONF"
 if [ -f "$RC_CONF" ] && ! grep -q 'pft_backfill_' "$RC_CONF"; then
-  printf '# pft-backfill (status every 5 min; sentry copy pulled every 5 min)\n%s\n' "$RC_LINE" >> "$RC_CONF"
-  log "added the pft_backfill textfile line to $RC_CONF"
+  printf '# pft-backfill (status every 5 min; sentry copy pulled every 5 min)\n%s\n' "$RC_LINES" >> "$RC_CONF"
+  log "added the pft_backfill textfile lines to $RC_CONF"
 fi
 install -m 644 "$HERE/systemd/pft-backfill.service" "$HERE/systemd/pft-backfill.timer" \
   "$HERE/systemd/pft-backfill-repair.service" "$HERE/systemd/pft-backfill-repair.timer" /etc/systemd/system/

@@ -24,6 +24,8 @@ MODES = (
     "pubmismatch",  # public RPC answers a different hash for target
     "pubdown",  # public RPC gives no answer
     "pubnotfound",  # public RPC answers lgrNotFound
+    "isolated",  # the held neighbours of target (seq-1, seq+1) are not servable: no parent link can be checked
+    "wrongseq",  # the ledger RPC answers target with the header of target+1
 )
 
 
@@ -133,6 +135,14 @@ def node(st, req):
             }
         }
     if m == "ledger":
+        if st["mode"] == "isolated" and seq in (st["target"] - 1, st["target"] + 1):
+            return {
+                "result": {
+                    "error": "lgrNotFound",
+                    "error_message": "ledgerNotFound",
+                    "status": "error",
+                }
+            }
         if not held(st, seq):
             k = str(seq)
             if k in st["polls"] and st["arrive_after"] >= 0:
@@ -140,6 +150,14 @@ def node(st, req):
                 if st["polls"][k] > st["arrive_after"]:
                     add_held(st, seq)
         if held(st, seq):
+            if st["mode"] == "wrongseq" and seq == st["target"]:
+                return {
+                    "result": {
+                        "ledger": ledger_obj(st, seq + 1),
+                        "status": "success",
+                        "validated": True,
+                    }
+                }
             return {
                 "result": {
                     "ledger": ledger_obj(st, seq),
