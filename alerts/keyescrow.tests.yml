@@ -1,0 +1,114 @@
+# promtool unit tests for keyescrow.rules.yml. Run: promtool test rules keyescrow.tests.yml
+# Time 0 = 1970-01-01T00:00Z; 1m input intervals. Hand-computed values: time() at eval_time t is t in seconds.
+rule_files:
+  - keyescrow.rules.yml
+evaluation_interval: 1m
+tests:
+  - name: "escrow age: 36 h is not stale, 37 h is (validator); a host escrowed every minute never fires"
+    interval: 1m
+    input_series:
+      - series: 'pft_keyescrow_last_escrow_timestamp_seconds{node="validator"}'
+        values: '3600x2400'
+      - series: 'pft_keyescrow_last_escrow_timestamp_seconds{node="sentry"}'
+        values: '0+60x2400'
+    alert_rule_test:
+      - eval_time: 37h
+        alertname: PFTKeyEscrowStale
+        exp_alerts: []
+      - eval_time: 38h
+        alertname: PFTKeyEscrowStale
+        exp_alerts:
+          - exp_labels: {severity: warning, reason: age, node: validator}
+            exp_annotations:
+              summary: "Secrets on validator last escrowed 37 h ago (limit 36 h)"
+              description: "pft-keyescrow has not stored a fresh encrypted copy of this host's add-on secrets on the peer for over 36 hours (a very large value means never). If this host is lost, the newest secrets cannot be restored. Run `sudo pft-keyescrow inventory` and check pft-keyescrow.timer."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/keyescrow/README.md#alerts"
+  - name: "escrow age recovers: stale at 37h45m (36.75 h -> 37), fresh escrow at 38 h clears it"
+    interval: 1m
+    input_series:
+      - series: 'pft_keyescrow_last_escrow_timestamp_seconds{node="sentry"}'
+        values: '3600x2279 136800x60'
+    alert_rule_test:
+      - eval_time: 2265m
+        alertname: PFTKeyEscrowStale
+        exp_alerts:
+          - exp_labels: {severity: warning, reason: age, node: sentry}
+            exp_annotations:
+              summary: "Secrets on sentry last escrowed 37 h ago (limit 36 h)"
+              description: "pft-keyescrow has not stored a fresh encrypted copy of this host's add-on secrets on the peer for over 36 hours (a very large value means never). If this host is lost, the newest secrets cannot be restored. Run `sudo pft-keyescrow inventory` and check pft-keyescrow.timer."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/keyescrow/README.md#alerts"
+      - eval_time: 2300m
+        alertname: PFTKeyEscrowStale
+        exp_alerts: []
+  - name: "never escrowed (0) is stale as soon as 36 h of epoch time have passed"
+    interval: 1m
+    input_series:
+      - series: 'pft_keyescrow_last_escrow_timestamp_seconds{node="validator"}'
+        values: '0x2300'
+    alert_rule_test:
+      - eval_time: 2170m
+        alertname: PFTKeyEscrowStale
+        exp_alerts:
+          - exp_labels: {severity: warning, reason: age, node: validator}
+            exp_annotations:
+              summary: "Secrets on validator last escrowed 36 h ago (limit 36 h)"
+              description: "pft-keyescrow has not stored a fresh encrypted copy of this host's add-on secrets on the peer for over 36 hours (a very large value means never). If this host is lost, the newest secrets cannot be restored. Run `sudo pft-keyescrow inventory` and check pft-keyescrow.timer."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/keyescrow/README.md#alerts"
+  - name: "drift: fires after 2 h with the count, not before; 0 never fires"
+    interval: 1m
+    input_series:
+      - series: 'pft_keyescrow_drift_items{node="validator"}'
+        values: '0x10 2x200'
+      - series: 'pft_keyescrow_drift_items{node="sentry"}'
+        values: '0x210'
+    alert_rule_test:
+      - eval_time: 125m
+        alertname: PFTKeyEscrowStale
+        exp_alerts: []
+      - eval_time: 135m
+        alertname: PFTKeyEscrowStale
+        exp_alerts:
+          - exp_labels: {severity: warning, reason: drift, node: validator}
+            exp_annotations:
+              summary: "2 secret(s) on validator changed or are new since the last escrow"
+              description: "A declared secret's fingerprint differs from the one recorded at the last escrow (or it was never escrowed) for 2 hours, so the peer holds no copy of the current value. Run `sudo pft-keyescrow inventory` to see which item, then escrow again."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/keyescrow/README.md#alerts"
+  - name: "drift recovers: a fresh escrow (drift 0) clears it at the next evaluation"
+    interval: 1m
+    input_series:
+      - series: 'pft_keyescrow_drift_items{node="sentry"}'
+        values: '0x10 1x140 0x60'
+    alert_rule_test:
+      - eval_time: 145m
+        alertname: PFTKeyEscrowStale
+        exp_alerts:
+          - exp_labels: {severity: warning, reason: drift, node: sentry}
+            exp_annotations:
+              summary: "1 secret(s) on sentry changed or are new since the last escrow"
+              description: "A declared secret's fingerprint differs from the one recorded at the last escrow (or it was never escrowed) for 2 hours, so the peer holds no copy of the current value. Run `sudo pft-keyescrow inventory` to see which item, then escrow again."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/keyescrow/README.md#alerts"
+      - eval_time: 155m
+        alertname: PFTKeyEscrowStale
+        exp_alerts: []
+  - name: "inventory exit 2 for 15 min fires; exit 1 (drift only) never does; recovery clears"
+    interval: 1m
+    input_series:
+      - series: 'pft_keyescrow_inventory_exit_code{node="validator"}'
+        values: '0x5 2x30 0x20'
+      - series: 'pft_keyescrow_inventory_exit_code{node="sentry"}'
+        values: '1x60'
+    alert_rule_test:
+      - eval_time: 19m
+        alertname: PFTKeyEscrowInventoryFailed
+        exp_alerts: []
+      - eval_time: 22m
+        alertname: PFTKeyEscrowInventoryFailed
+        exp_alerts:
+          - exp_labels: {severity: warning, node: validator}
+            exp_annotations:
+              summary: "pft-keyescrow inventory on validator: a declared secret is missing, has wrong permissions or is unreadable"
+              description: "A secret that an add-on needs is missing, is not 0600/owned as its source declares, or cannot be read by the inventory. Run `sudo pft-keyescrow inventory` for the item and the source line that declares it."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/keyescrow/README.md#alerts"
+      - eval_time: 45m
+        alertname: PFTKeyEscrowInventoryFailed
+        exp_alerts: []
