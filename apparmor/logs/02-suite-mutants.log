@@ -1,0 +1,358 @@
+# pft-apparmor suite + mutant run - start 2026-11-02T14:51:22Z - Ubuntu 22.04.5 LTS - commit fd5391c50f43cc4d9d57a5592590a22ac9898394 (git archive copy)
+# sha256 eaee2749b42865135ddd98682282a0bbed9803b7a3642ef1149320c3fb91f468  apparmor/pft-apparmor.sh
+# sha256 aecd1140226c3429aa37b910065bba783d52927b9c36e025c6f1f41193c1c8da  apparmor/install.sh
+# sha256 de55d2ad330fd6b1e4f6c901a118ce03069841b0f41d7076730d3cf4ffa26c04  apparmor/tests/run-tests.sh
+# sha256 49641922d1461cbd3639c57f2a451ed501768f42679bcfbdd5c662c63671001e  apparmor/tests/mutate.py
+# sha256 ef2413c2ed9b0e4329f4409b6d2185ceaa4b74364ff9987827af6034b7125a83  apparmor/tests/ack-tests.inc.sh
+# sha256 14e81a5d86e8f1631d29c9419a3f3feee166bd662cc8a9cf875f59844ce9608c  apparmor/tests/apply-tests.inc.sh
+# sha256 eba0d5721507b5b74fefbda2432ccf84a1d10964f48b44babbc48221b47527ac  apparmor/tests/pull-install-tests.inc.sh
+# sha256 b83b947c496abbb11f89109d3780d4533c4e6fdbf5bee9d6f1fcdce96ddaf46b  apparmor/tests/stub_docker.py
+# env TMPDIR=~/.cache (/tmp is noexec on this host)
+$ timeout 1200 bash apparmor/tests/run-tests.sh
+ok   healthy: exit 0
+ok   healthy: kernel PASS
+ok   healthy: parser PASS
+ok   healthy: loaded PASS
+ok   healthy: container PASS
+ok   healthy: mode PASS
+ok   healthy: boot PASS
+ok   healthy: recreate PASS
+ok   healthy: confine:cap_drop PASS
+ok   healthy: confine:read_only PASS
+ok   healthy: confine:nnp PASS
+ok   healthy: denials PASS
+ok   healthy: RESULT PASS
+ok   kernel disabled: FAIL
+ok   kernel param missing: FAIL
+ok   parser missing: FAIL
+ok   docker-default: container FAIL
+ok   docker-default: mode not graded
+ok   docker-default: exit 1
+ok   unconfined: container FAIL
+ok   empty profile: container FAIL
+ok   other profile: container FAIL
+ok   complain: loaded PASS (mode shown)
+ok   complain: mode WARN
+ok   complain: exit 1
+ok   not loaded: loaded FAIL
+ok   not loaded: mode FAIL
+ok   profiles unreadable: loaded FAIL
+ok   no profile file: boot FAIL
+ok   file defines another name: boot FAIL
+ok   file does not parse: boot FAIL
+ok   apparmor.service disabled: boot FAIL
+ok   compose without override: recreate FAIL
+ok   compose override, colon form: recreate PASS
+ok   docker run container under profile: recreate PASS
+ok   docker run container not under profile: recreate FAIL
+ok   cap_drop lost: FAIL
+ok   cap_drop lowercase all: PASS
+ok   read-only lost: FAIL
+ok   nnp lost: FAIL
+ok   nnp short form: PASS
+ok   nnp :false: FAIL
+ok   container missing: FAIL
+ok   denials: WARN with count 3
+ok   denials: top pairs, most frequent first
+ok   denials: exit 1
+ok   denials --since 45: only the last one
+ok   denials: child profile counted
+ok   denials: rotated audit.log.1 read
+ok   no audit log: denials FAIL
+ok   --json: findings/denied/profile/host
+ok   --json: container check object
+ok   --json: INFO kept
+ok   --prom: findings
+ok   --prom: denied_events
+ok   --prom: failing check = 0
+ok   --prom: passing check = 1
+ok   --prom: INFO not exported
+ok   --prom: last_run
+ok   --prom: mode 0644
+ok   --prom: no temp file left
+ok   --textfile: HOST_LABEL from env file
+ok   bad PROFILE in env file: exit 2
+ok   unknown option: exit 3
+ok   --since non-numeric: exit 3
+ok   events: file line
+ok   events: exec line
+ok   events: capability line
+ok   events: socket family line
+ok   events: no IP address in output
+ok   events: lines before T0 dropped
+ok   events: other profiles dropped
+ok   events: DENIED lines of the profile kept
+ok   events: unique lines
+ok   events: non-AVC records dropped
+ok   events: no audit log -> exit 2
+ok   generate: exit 0
+ok   generate: profile header
+ok   generate: '/var/lib/postfiatd/db/{,**} rwk,'
+ok   generate: '/var/log/postfiatd/{,**} rwk,'
+ok   generate: '/etc/postfiatd/{,**} r,'
+ok   generate: '@{PROC}/@{pid}/stat r,'
+ok   generate: '@{PROC}/@{pid}/task/@{tid}/comm r,'
+ok   generate: '@{PROC}/sys/kernel/pid_max r,'
+ok   generate: '/usr/sbin/cron ix,'
+ok   generate: '/usr/bin/savelog rix,'
+ok   generate: 'capability setgid,'
+ok   generate: 'capability setuid,'
+ok   generate: 'capability chown,'
+ok   generate: '/etc/shadow r,'
+ok   generate: 'audit deny /etc/gshadow rwklx,'
+ok   generate: 'audit deny /tmp/** x,'
+ok   generate: 'audit deny ptrace (trace,tracedby),'
+ok   generate: 'ptrace (read,readby) peer=pft-postfiatd,  # ps reads the other processes' /proc entries'
+ok   generate: 'audit deny network inet raw,'
+ok   generate: 'network netlink raw,'
+ok   generate: '/usr/bin/logger ix,'
+ok   generate: no 'audit deny network raw,'
+ok   generate: 'deny @{PROC}/sysrq-trigger rwklx,'
+ok   generate: no '/var/lib/postfiatd/db/nudb'
+ok   generate: no '/usr/bin/savelog r,'
+ok   generate: no '/proc/1'
+ok   generate: learned + --caps capability not duplicated
+ok   generate --name: header + signal peer
+ok   generate: no unlearned capability without --caps
+ok   generate: refuses learned read of gshadow (exit 4)
+ok   generate: refuses learned exec from /tmp (exit 4)
+ok   generate: refuses learned write under /usr (exit 4)
+ok   generate: read+mmap under /usr allowed
+ok   generate: unknown event kind -> exit 2
+ok   generate: missing events file -> exit 2
+ok   generate: no --events -> exit 3
+ok   generate: EXTRA_EXEC empty adds nothing
+ok   generate: '/var/log/postfiatd/{,**} wk,'
+ok   generate: '/usr/bin/flock ix,'
+ok   generate: '/var/cache/pft-c w,'
+ok   generate: '/var/cache/pft-d w,'
+ok   generate: '/var/cache/pft-a w,'
+ok   apparmor_parser -Q -K: profile from events.tsv compiles
+ok   apparmor_parser -Q -K: profile from events-explore.tsv compiles
+ok   apparmor_parser: broken profile rejected (control)
+ok   check: non-zero on a broken profile
+ok   check: zero on a generated profile
+ok   apply run: PASS, exit 0
+ok   apply run: container under pft-postfiatd
+ok   apply run: re-created container keeps every confine/identity field (built from the run args)
+ok   apply run: security_opt = no-new-privileges + apparmor=pft-postfiatd
+ok   apply run: previous container kept, restart=no
+ok   apply run: kernel enforce
+ok   apply run: /etc/apparmor.d file = generated profile (enforce)
+ok   apply run: host IP masked in output
+ok   apply run: env values masked in output
+ok   apply run: publish arg shown masked
+ok   apply run: gate exercised the node, 0 DENIED
+ok   apply run: state applied
+ok   apply run: audit afterwards: container/recreate/mode PASS
+ok   apply run: second apply refused (exit 4)
+ok   rollback without --yes: exit 4
+ok   rollback run: PASS
+ok   rollback run: previous container back (docker-default, unless-stopped)
+ok   rollback run: profile file removed + unloaded
+ok   rollback run: no leftover container
+ok   rollback run: state rolled_back (manual)
+ok   rollback twice: no-op
+ok   re-apply after rollback: PASS
+ok   apply compose: PASS, exit 0
+ok   apply compose: .env COMPOSE_FILE + other lines kept
+ok   apply compose: .env mode kept (640)
+ok   apply compose: override written
+ok   apply compose: container under pft-postfiatd
+ok   apply compose: audit recreate PASS (override listed)
+ok   apply compose: integrity baseline current -> no accept
+ok   rollback compose: .env byte-identical, override gone, docker-default
+ok   integrity: own items accepted
+ok   integrity: foreign change -> not accepted (apply still PASS)
+ok   refuse: no --yes (exit 4)
+ok   refuse no --yes: nothing changed
+ok   refuse: no window
+ok   refuse no window: nothing changed
+ok   refuse: window too short for apply + rollback
+ok   refuse: data-collection lock held
+ok   refuse lock: nothing changed
+ok   refuse: node not full
+ok   refuse not full: nothing changed
+ok   refuse: container not confined
+ok   refuse: profile file of another name
+ok   refuse name: nothing changed
+ok   refuse: candidate does not compile
+ok   refuse compile: nothing changed
+ok   apply without --profile-file: exit 3
+ok   auto: lost read-only named by the gate
+ok   auto: lost read-only: rolled back (exit 1)
+ok   auto run: wrong container profile named by the gate
+ok   auto run: wrong container profile: rolled back (exit 1)
+ok   auto compose: wrong container profile named by the gate
+ok   auto compose: wrong container profile: rolled back (exit 1)
+ok   auto: node not full under the profile named
+ok   auto: not full: rolled back (exit 1)
+ok   gate: DENIED of another profile (pft-postfiatd-learn) not counted
+ok   auto: DENIED during the exercise fails the gate
+ok   auto: DENIED: rolled back (exit 1)
+ok   auto: docker run failed: rolled back (exit 1)
+ok   auto: PFT_AA_INJECT=health named
+ok   auto: injected: rolled back (exit 1)
+ok   auto: pft daemon down -> apply gate fails, container restored, exit 5
+ok   auto compose: compose up failed -> .env restored, override + profile gone
+ok   auto compose: injected gate failure rolled back
+ok   rollback: a pre-existing profile file is restored byte-identical and re-loaded
+ok   apply --complain: complain flag in file + kernel
+ok   apply --complain: audit mode WARN (blocks nothing)
+ok   apply (enforce) of a complain-flagged file strips the flag
+ok   textfile: pft_apparmor_<HOST_LABEL>.prom, label from the env file
+ok   validate: own sentry textfile accepted (check labels with ':')
+ok   validate: wrong host label rejected
+ok   validate: foreign metric rejected
+ok   validate: trailing junk on an own metric rejected
+ok   validate: missing last_run rejected
+ok   validate: file over 64 KiB rejected
+ok   validate: missing file rejected
+ok   validate: bad host label is a usage error
+ok   validate: one argument is a usage error
+ok   cli: a third positional argument is refused
+ok   cli: ARG/ARG2 from the environment are ignored
+ok   pull: peer textfile copied (0644)
+ok   pull: PULL_SSH word-split, peer path for PEER_LABEL sentry
+ok   pull: tampered file rejected, last good copy kept, no temp left
+ok   pull: a file labelled for another host is rejected
+ok   pull: ssh failure exit 1, last good copy kept, no temp left
+ok   pull: a hanging ssh is cut at PULL_TIMEOUT (2s), last good copy kept
+ok   pull: refuses without PULL_SSH
+ok   pull: refuses a bad PEER_LABEL
+ok   pull: needs root on a real host
+ok   install: exit 0, tool installed 0755
+ok   install: env file HOST_LABEL=validator, 0600
+ok   install: units installed
+ok   install: first audit through the unit, textfile valid, timer enabled
+ok   install: rulecheck textfile line added
+ok   install: idempotent (one rulecheck line, one HOST_LABEL)
+ok   install --host sentry: label + sentry textfile; no rulecheck conf created
+ok   install: bad label refused before any change
+ok   install: unknown argument refused
+ok   install: failed first audit -> exit 1, timer NOT enabled
+ok   install: textfile that fails validate -> exit 1, timer NOT enabled
+ok   install --pull: refuses without an env file, nothing installed
+ok   install --pull: refuses an env file without PULL_SSH, nothing installed
+ok   install --pull: first pull copied the peer file, env 0600, pull timer enabled
+ok   install --pull: failed first pull -> exit 1, timer NOT enabled
+ok   install --pull --uninstall: pull timer disabled, pulled file removed
+ok   uninstall: refused while an apply is in place, nothing removed
+ok   uninstall: after rollback, timer disabled and textfile removed
+ok   ack: before, 2 DENIED -> WARN
+ok   ack: refused without --yes, nothing written
+ok   ack: 1 record up to --until acknowledged, file written
+ok   ack: the record after --until still counts (WARN 1)
+ok   ack: an --until not after the last ack is refused
+ok   ack: default --until is now; counts only records after the previous ack
+ok   ack: all acknowledged -> PASS, reason shown
+ok   ack: --json carries denied_acknowledged_until
+ok   ack: --until in the future refused
+ok   ack: non-numeric --until refused
+ok   ack: --reason required
+ok   ack: non-printable reason refused
+ok   ack: reason over 200 chars refused
+ok   ack: refused calls wrote nothing
+ok   ack: needs root on a real host
+ok   bad ack file garbage: denials-ack FAIL
+ok   bad ack file garbage: the DENIED record still counts
+ok   bad ack file []: denials-ack FAIL
+ok   bad ack file []: the DENIED record still counts
+ok   bad ack file {"profile":"pft-postfiatd","un: denials-ack FAIL
+ok   bad ack file {"profile":"pft-postfiatd","un: the DENIED record still counts
+ok   bad ack file {"profile":"pft-other","until": denials-ack FAIL
+ok   bad ack file {"profile":"pft-other","until": the DENIED record still counts
+ok   bad ack file {"profile":"pft-postfiatd","un: denials-ack FAIL
+ok   bad ack file {"profile":"pft-postfiatd","un: the DENIED record still counts
+ok   ack older than the audit window: no effect, no note
+RESULT: 256 passed, 0 failed
+(exit 0)
+$ timeout 21000 python3 -u apparmor/tests/mutate.py --timeout 420
+control (unmutated): PASS RESULT: 256 passed, 0 failed
+M01 CAUGHT - kernel check accepts any value [2 failing: kernel disabled: exit 0; kernel param missing: FAIL (want FAIL /missing/, got 'PASS')]
+M02 CAUGHT - docker-default graded PASS [6 failing: docker-default: container FAIL (want FAIL /docker-default/, got 'PASS'); docker-default: exit 0]
+M03 CAUGHT - complain mode graded PASS [3 failing: complain: mode WARN (want WARN /blocks nothing/, got 'PASS'); complain: exit 0]
+M04 CAUGHT - WARN not counted as a finding [4 failing: complain: exit 0; denials: exit 0]
+M05 CAUGHT - boot check skips the parse [1 failing: file does not parse: boot FAIL (want FAIL /does not parse/, got 'PASS')]
+M06 CAUGHT - boot check skips apparmor.service [1 failing: apparmor.service disabled: boot FAIL (want FAIL /not enabled/, got 'PASS')]
+M07 CAUGHT - recreate: compose override not required [1 failing: compose without override: recreate FAIL (want FAIL /drops it/, got 'PASS')]
+M08 CAUGHT - cap_drop ALL not required [1 failing: cap_drop lost: FAIL (want FAIL, got 'PASS')]
+M09 CAUGHT - nnp :false accepted [1 failing: nnp :false: FAIL (want FAIL, got 'PASS')]
+M10 CAUGHT - denials: window ignored [6 failing: denials: WARN with count 3 (want WARN /^  \[WARN\] denials +3 DENIED/, got 'WARN'); denials --since 45: only the last one (want WARN /1 DENIED/, got 'WARN')]
+M11 CAUGHT - denials: other profiles with the same prefix counted [2 failing: denials: WARN with count 3 (want WARN /^  \[WARN\] denials +3 DENIED/, got 'WARN'); denials --since 45: only the last one (want WARN /1 DENIED/, got 'WARN')]
+M12 CAUGHT - denials: count shown but graded PASS [15 failing: denials: WARN with count 3 (want WARN /^  \[WARN\] denials +3 DENIED/, got 'PASS'); denials: exit 0]
+M13 CAUGHT - denials: unreadable log graded PASS [1 failing: no audit log: denials FAIL (want FAIL /no readable audit log/, got 'PASS')]
+M14 CAUGHT - prom: failing check exported as 1 [1 failing: --prom: container]
+M15 CAUGHT - prom: INFO exported [1 failing: --prom: INFO line exported]
+M16 CAUGHT - events: socket addresses kept [2 failing: events: net line; events: an IP address leaked]
+M17 CAUGHT - events: T0 ignored [1 failing: events: line before T0 kept]
+M18 CAUGHT - events: DENIED lines dropped [1 failing: events: DENIED kept]
+M19 CAUGHT - generate: tree rule without the directory itself [5 failing: generate: missing '/var/lib/postfiatd/db/{,**} rwk,'; generate: missing '/var/log/postfiatd/{,**} rwk,']
+M20 CAUGHT - generate: /proc pid not normalized [1 failing: generate: missing '@{PROC}/@{pid}/stat r,']
+M21 CAUGHT - generate: overlap check disabled [3 failing: generate: gshadow overlap rc=0; generate: /tmp exec overlap rc=0]
+M22 CAUGHT - generate: write mask dropped for a/c/d [3 failing: generate: missing '/var/cache/pft-c w,'; generate: missing '/var/cache/pft-d w,']
+M23 CAUGHT - generate: lock mask dropped [3 failing: generate: missing '/var/lib/postfiatd/db/{,**} rwk,'; generate: missing '/var/log/postfiatd/{,**} rwk,']
+M24 CAUGHT - generate: --caps ignored [1 failing: generate: missing 'capability setuid,']
+M25 CAUGHT - generate: exec rule loses r for scripts [1 failing: generate: missing '/usr/bin/savelog rix,']
+M26 CAUGHT - generate: deny 'network raw' (blocks netlink, enforce probe 04) [2 failing: generate: missing 'audit deny network inet raw,'; generate: unexpected 'audit deny network raw,']
+M27 CAUGHT - generate: ptrace read allow dropped [1 failing: generate: missing 'ptrace (read,readby) peer=pft-postfiatd,  # ps reads the other processes' /proc entries']
+M28 CAUGHT - generate: EXTRA_EXEC ignored [1 failing: generate: missing '/usr/bin/logger ix,']
+M29 CAUGHT - generate: gshadow deny dropped [2 failing: generate: missing 'audit deny /etc/gshadow rwklx,'; generate: gshadow overlap rc=0]
+M30 CAUGHT - generate: /tmp exec deny dropped [2 failing: generate: missing 'audit deny /tmp/** x,'; generate: /tmp exec overlap rc=0]
+M31 CAUGHT - generate: unknown kind accepted [1 failing: generate: bogus kind rc=0]
+M33 CAUGHT - apply: no maintenance window required [1 failing: refuse no window: rc=4]
+M34 CAUGHT - apply: data-collection locks ignored [2 failing: refuse lock: rc=0; refuse lock: something changed]
+M35 CAUGHT - apply: window length not checked [1 failing: refuse short window: rc=0]
+M36 CAUGHT - apply: --yes not required [2 failing: refuse no --yes: rc=0; refuse no --yes: something changed]
+M37 CAUGHT - apply: node full not required [2 failing: refuse not full: rc=0; refuse not full: something changed]
+M38 CAUGHT - apply: candidate compile result ignored [2 failing: refuse compile: rc=0; refuse compile: something changed]
+M39 CAUGHT - gate: confine signature not compared [2 failing: auto: lost read-only; auto: lost read-only: rc=0]
+M40 CAUGHT - run args: --read-only dropped [18 failing: apply run: rc=1; apply run: profile docker-default]
+M41 CAUGHT - run args: tmpfs dropped [18 failing: apply run: rc=1; apply run: profile docker-default]
+M42 CAUGHT - run args: security_opt (no-new-privileges) dropped [18 failing: apply run: rc=1; apply run: profile docker-default]
+M43 CAUGHT - run args: profile not set [19 failing: apply run: rc=1; apply run: profile docker-default]
+M44 CAUGHT - gate: container profile not checked [4 failing: auto run: wrong profile; auto run: wrong container profile: rc=0]
+M45 CAUGHT - gate: server_state not checked [2 failing: auto: not full; auto: not full: rc=0]
+M46 CAUGHT - gate: DENIED records ignored [2 failing: auto: DENIED; auto: DENIED: rc=0]
+M47 CAUGHT - gate: pft daemons not checked [1 failing: auto: daemon rc=0]
+M48 CAUGHT - integrity: foreign items accepted [1 failing: integrity: foreign rc=0]
+M49 CAUGHT - rollback: .env not restored [4 failing: rollback compose: rc=5; auto compose: wrong container profile: rc=5]
+M50 CAUGHT - rollback: new profile not removed [9 failing: rollback run: profile left; auto: lost read-only: rc=1]
+M51 CAUGHT - rollback: restart policy not restored [7 failing: rollback run: container; auto: lost read-only: rc=1]
+M52 CAUGHT - apply --complain: flag not added [2 failing: apply --complain: rc=1; complain audit]
+M53 CAUGHT - apply: already-applied check removed [5 failing: apply run: re-apply rc=1; rollback run: rc=5]
+M54 CAUGHT - apply output: IPv4 not masked [2 failing: apply run: host IP printed; apply run: publish arg]
+M55 CAUGHT - apply output: env values not masked [1 failing: apply run: env value printed]
+M56 CAUGHT - lx: exit code swallowed (the bug the suite found) [2 failing: refuse compile: rc=0; refuse compile: something changed]
+M57 CAUGHT - apply: read-only root not required [1 failing: refuse unconfined: rc=0]
+M58 CAUGHT - rollback: gate result ignored [1 failing: auto: daemon rc=1]
+M59 CAUGHT - apply: previous container keeps its restart policy [1 failing: apply run: old container]
+M61 CAUGHT - gate: DENIED of other profiles with the same prefix counted [1 failing: gate: other-profile DENIED rc=1]
+M60 CAUGHT - apply: gate failure does not roll back [8 failing: auto: lost read-only: rc=1; auto run: wrong container profile: rc=1]
+M62 CAUGHT - validate: host label not enforced [1 failing: validate host: rc=2]
+M63 CAUGHT - validate: foreign lines accepted [8 failing: validate host: rc=2; validate foreign: rc=0]
+M64 CAUGHT - validate: size limit removed [1 failing: validate size: rc=0]
+M65 CAUGHT - validate: last_run not required [1 failing: validate last_run: rc=0]
+M66 CAUGHT - pull: rejected file still replaces the last good copy [4 failing: pull tampered: rc=0; pull label: rc=0]
+M67 CAUGHT - pull: no timeout on the ssh [1 failing: pull hang: rc=2 el=30s]
+M68 CAUGHT - pull: failed ssh leaves the temp file [1 failing: pull fail: rc=1]
+M70 CAUGHT - cli: ARG from the environment used [1 failing: env ARG: rc=0]
+M71 CAUGHT - audit: ack file ignored [2 failing: ack: the record after --until still counts (WARN 1) (want WARN /^  \[WARN\] denials +1 DENIED.*exec /usr/bin/id x1.*acknowledged: drill negative controls/, got 'WARN'); ack audit: rc=1]
+M72 CAUGHT - audit: ack hides records after --until [1 failing: ack: the record after --until still counts (WARN 1) (want WARN /^  \[WARN\] denials +1 DENIED.*exec /usr/bin/id x1.*acknowledged: drill negative controls/, got 'PASS')]
+M73 CAUGHT - audit: malformed ack file accepted [6 failing: bad ack file {"profile":"pft-postfiatd","un: denials-ack FAIL (want FAIL /malformed/, got ''); bad ack file {"profile":"pft-postfiatd","un: the DENIED record still counts (want WARN /1 DENIED/, got 'PASS')]
+M74 CAUGHT - ack: future --until accepted [2 failing: ack future: rc=0; ack refused wrote]
+M75 CAUGHT - ack: older --until accepted [2 failing: ack older: rc=0; ack second: rc=0]
+M76 CAUGHT - ack: count includes records after --until [1 failing: ack: rc=0]
+M77 CAUGHT - ack: runs without --yes [2 failing: ack no yes: rc=0; ack: rc=4]
+M78 CAUGHT - ack: reason not checked [4 failing: ack no reason: rc=0; ack nl: rc=4]
+I01 CAUGHT - install: failed first audit still enables the timer [1 failing: install audit fail: rc=1]
+I02 CAUGHT - install: textfile not validated [1 failing: install garbage: rc=0]
+I03 CAUGHT - install: env file left world-readable [1 failing: install env]
+I04 CAUGHT - install: rulecheck line added twice [1 failing: install twice: rc=0]
+I05 CAUGHT - install: --host ignored [1 failing: install sentry: rc=0]
+I06 CAUGHT - uninstall: does not refuse while an apply is in place [2 failing: uninstall applied: rc=0; uninstall: rc=0]
+I07 CAUGHT - install --pull: failed first pull still enables the timer [1 failing: install pull fail: rc=0]
+I08 CAUGHT - install --pull: runs without PULL_SSH [1 failing: install pull no ssh: rc=1]
+I09 CAUGHT - install: label not validated [1 failing: install bad label: rc=1]
+RESULT: 85 caught, 0 survived, 0 not applied of 85 (+ 2 documented equivalent: M32, M69)
+(exit 0) end 2026-11-02T18:27:06Z

@@ -1,0 +1,40 @@
+# 01 lint, promtool, profile parse - 2026-11-03T09:03:06Z - Ubuntu 22.04.5 LTS - commit 50ff6dec044f2f1c870472724edc07c71b8f8187 (+ apparmor/profile/pft-postfiatd, not yet committed)
+# sha256 eaee2749b42865135ddd98682282a0bbed9803b7a3642ef1149320c3fb91f468 apparmor/pft-apparmor.sh
+# sha256 aecd1140226c3429aa37b910065bba783d52927b9c36e025c6f1f41193c1c8da apparmor/install.sh
+# sha256 6340356967918257daf72bdd9f94e9195275b0b0b2b38882648427dea2b18674 apparmor/drill/live-run.sh
+# sha256 49408332fdc38d085b4314e10ca5edf28f1cbfaaa2dde2c58209db1da60c5dce apparmor/drill/host-run.sh
+# sha256 de55d2ad330fd6b1e4f6c901a118ce03069841b0f41d7076730d3cf4ffa26c04 apparmor/tests/run-tests.sh
+# sha256 ef2413c2ed9b0e4329f4409b6d2185ceaa4b74364ff9987827af6034b7125a83 apparmor/tests/ack-tests.inc.sh
+# sha256 14e81a5d86e8f1631d29c9419a3f3feee166bd662cc8a9cf875f59844ce9608c apparmor/tests/apply-tests.inc.sh
+# sha256 eba0d5721507b5b74fefbda2432ccf84a1d10964f48b44babbc48221b47527ac apparmor/tests/pull-install-tests.inc.sh
+# sha256 2c1daea18383d8fbb1c62f6fd2f8fd87e19dfbdf87b85fbeb29ea7f4a43fcc99 alerts/apparmor.rules.yml
+# sha256 86c61bdc545f88adfc78cb67c03e933bbd69c75ea2a6d692a5ba304d541f901f alerts/apparmor.tests.yml
+# sha256 27d117bf8fd0e51e90d609590e936d1287da48cb23ce57def20f1d39d000a200 apparmor/profile/pft-postfiatd
+$ shellcheck --version | sed -n 2p
+version: 0.8.0
+(exit 0)
+$ shellcheck -x "${SH[@]}"
+(exit 0)
+$ python3 -m py_compile apparmor/tests/mutate.py apparmor/tests/stub_docker.py
+(exit 0)
+$ sudo docker run --rm -v "$PWD/alerts:/w:ro" -w /w --entrypoint promtool prom/prometheus:v3.5.0 check rules apparmor.rules.yml
+Checking apparmor.rules.yml
+  SUCCESS: 1 rules found
+
+(exit 0)
+$ sudo docker run --rm -v "$PWD/alerts:/w:ro" -w /w --entrypoint promtool prom/prometheus:v3.5.0 test rules apparmor.tests.yml
+  SUCCESS
+
+(exit 0)
+$ apparmor_parser --version | head -1
+AppArmor parser version 3.0.4
+(exit 0)
+$ sudo apparmor_parser -Q -K apparmor/profile/pft-postfiatd
+(exit 0)
+# the published profile is byte-identical to the enforced one on both hosts:
+$ sudo sha256sum /etc/apparmor.d/pft-postfiatd
+27d117bf8fd0e51e90d609590e936d1287da48cb23ce57def20f1d39d000a200  /etc/apparmor.d/pft-postfiatd
+(exit 0)
+$ ssh -o LogLevel=ERROR relay sudo sha256sum /etc/apparmor.d/pft-postfiatd
+27d117bf8fd0e51e90d609590e936d1287da48cb23ce57def20f1d39d000a200  /etc/apparmor.d/pft-postfiatd
+(exit 0)

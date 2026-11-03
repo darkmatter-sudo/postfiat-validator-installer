@@ -1,0 +1,86 @@
+OS: Ubuntu 22.04.5 LTS | 2026-11-02T11:09:57Z | sentry-host | recorded learn (throwaway container), run 20261102T110956Z
+repo HEAD 766c3d9bc42085041cb0d616bbde2c6511d9b7ba | pft-apparmor.sh sha256 eaee2749b42865135ddd98682282a0bbed9803b7a3642ef1149320c3fb91f468
+$ sudo pft-apparmor learn --out /var/lib/pft-apparmor/learn-sentry-20261102T110956Z.tsv   (default --minutes 65)
+2026-11-02T11:09:57Z learn: seed pft-postfiatd-learn (complain), throwaway postfiatd-sentry-aalearn-20261102110957 from postfiatd-sentry's confine arguments; T0=1793617797
+  | #include <tunables/global>
+  | profile pft-postfiatd-learn flags=(attach_disconnected,mediate_deleted,complain) {
+  |   #include <abstractions/base>
+  |   network inet stream,
+  |   network inet6 stream,
+  |   network inet dgram,
+  |   network inet6 dgram,
+  |   network netlink raw,
+  |   network unix,
+  |   signal (receive) peer=unconfined,
+  |   signal (send,receive) peer=pft-postfiatd-learn,
+  | }
+$ apparmor_parser -r -W /var/lib/pft-apparmor/pft-postfiatd-learn
+(exit 0)
+$ docker run -d --name postfiatd-sentry-aalearn-20261102110957 --security-opt=apparmor=pft-postfiatd-learn --security-opt=no-new-privileges --cap-drop=ALL --cap-add=CAP_SETGID --cap-add=CAP_SETUID --read-only --tmpfs=/run:rw,noexec,nosuid,size=64m --tmpfs=/tmp:rw,noexec,nosuid,size=64m --tmpfs=/var/backups:rw,noexec,nosuid,size=64m --tmpfs=/var/lib/apt:rw,noexec,nosuid,size=64m --tmpfs=/var/lib/logrotate:rw,noexec,nosuid,size=64m --volume=/var/log/postfiatd --volume=/etc/postfiatd --volume=/var/lib/postfiatd/db --pids-limit=256 --memory=2147483648 --user=0:0 agtipft/postfiatd:testnet-light-latest --conf /etc/postfiatd/postfiatd.cfg
+2026-11-02T11:09:59Z profile: pft-postfiatd-learn
+2026-11-02T11:10:50Z throwaway server_state: full (after ~50s)
+$ docker exec postfiatd-sentry-aalearn-20261102110957 curl -s -m 10 -o /dev/null -w %{http_code}\n -X POST -d {"method":"server_info"} http://127.0.0.1:5005
+200
+(exit 0)
+$ docker exec postfiatd-sentry-aalearn-20261102110957 curl -s -m 10 -o /dev/null -w %{http_code}\n -X POST -d {"method":"peers"} http://127.0.0.1:5005
+200
+(exit 0)
+$ docker exec postfiatd-sentry-aalearn-20261102110957 setpriv --reuid=0 --regid=0 --init-groups true
+(exit 0)
+$ docker exec postfiatd-sentry-aalearn-20261102110957 sh -c cd / && run-parts --report /etc/cron.hourly
+(exit 0)
+$ docker exec postfiatd-sentry-aalearn-20261102110957 sh -c for j in /etc/cron.daily/*; do [ "${j##*/}" = apt-compat ] && continue; echo "cron.daily/${j##*/}"; "$j"; done
+cron.daily/dpkg
+cron.daily/logrotate
+(exit 0)
+$ docker exec postfiatd-sentry-aalearn-20261102110957 sh -c /usr/sbin/logrotate -s /var/log/postfiatd/.logrotate.status /etc/logrotate.d/postfiatd
+(exit 0)
+$ docker exec postfiatd-sentry-aalearn-20261102110957 sh -c logrotate -f -s /var/log/postfiatd/.logrotate.status /etc/logrotate.d/postfiatd
+(exit 0)
+$ docker exec postfiatd-sentry-aalearn-20261102110957 sh -c test -e /run/systemd/system || SERVICE_MODE=1 /sbin/e2scrub_all -A -r
+(exit 0)
+$ docker exec postfiatd-sentry-aalearn-20261102110957 sh -c test -e /run/systemd/system || SERVICE_MODE=1 /usr/lib/x86_64-linux-gnu/e2fsprogs/e2scrub_all_cron
+(exit 0)
+$ docker exec postfiatd-sentry-aalearn-20261102110957 ps -eo pid,comm
+    PID COMMAND
+      1 postfiatd
+      7 cron
+    237 ps
+(exit 0)
+2026-11-02T11:11:46Z after restart server_state: full
+$ docker exec postfiatd-sentry-aalearn-20261102110957 curl -s -m 10 -o /dev/null -w %{http_code}\n -X POST -d {"method":"server_info"} http://127.0.0.1:5005
+200
+(exit 0)
+$ docker exec postfiatd-sentry-aalearn-20261102110957 curl -s -m 10 -o /dev/null -w %{http_code}\n -X POST -d {"method":"peers"} http://127.0.0.1:5005
+200
+(exit 0)
+$ docker exec postfiatd-sentry-aalearn-20261102110957 setpriv --reuid=0 --regid=0 --init-groups true
+(exit 0)
+$ docker exec postfiatd-sentry-aalearn-20261102110957 sh -c cd / && run-parts --report /etc/cron.hourly
+(exit 0)
+$ docker exec postfiatd-sentry-aalearn-20261102110957 sh -c for j in /etc/cron.daily/*; do [ "${j##*/}" = apt-compat ] && continue; echo "cron.daily/${j##*/}"; "$j"; done
+cron.daily/dpkg
+cron.daily/logrotate
+(exit 0)
+$ docker exec postfiatd-sentry-aalearn-20261102110957 sh -c /usr/sbin/logrotate -s /var/log/postfiatd/.logrotate.status /etc/logrotate.d/postfiatd
+(exit 0)
+$ docker exec postfiatd-sentry-aalearn-20261102110957 sh -c logrotate -f -s /var/log/postfiatd/.logrotate.status /etc/logrotate.d/postfiatd
+(exit 0)
+$ docker exec postfiatd-sentry-aalearn-20261102110957 sh -c test -e /run/systemd/system || SERVICE_MODE=1 /sbin/e2scrub_all -A -r
+(exit 0)
+$ docker exec postfiatd-sentry-aalearn-20261102110957 sh -c test -e /run/systemd/system || SERVICE_MODE=1 /usr/lib/x86_64-linux-gnu/e2fsprogs/e2scrub_all_cron
+(exit 0)
+$ docker exec postfiatd-sentry-aalearn-20261102110957 ps -eo pid,comm
+    PID COMMAND
+      1 postfiatd
+      8 cron
+   4820 ps
+(exit 0)
+2026-11-02T12:15:26Z collecting events since T0 for profile prefix pft-postfiatd-learn
+  cap 2
+  exec 31
+  file 307
+2026-11-02T12:15:29Z learn: done, 340 distinct events -> /var/lib/pft-apparmor/learn-sentry-20261102T110956Z.tsv; throwaway removed, pft-postfiatd-learn unloaded
+(exit 0)
+events sha256 c4f92580674186193ecea28abf7fc7537ec072472898bfc6122a7007eb43a57e
+2026-11-02T12:15:29Z end

@@ -1,15 +1,65 @@
 # pft-apparmor: a tailored AppArmor profile for the postfiatd container
 
-> Work in progress. `audit`, `learn`, `events`, `generate`, `check`, `apply`, `rollback`, the offline suite, the
-> mutant harness and the alert rule are in place. The two-host live proof (sentry first, then validator) comes next;
-> this README gets the found → fixed → verified table with the live run.
-
 Docker starts every container under `docker-default`, a generic profile that allows **any** file access, any
 capability the container holds and any executable. `pft-apparmor` replaces it for postfiatd with `pft-postfiatd`, a
 profile learned from what the node really does, and keeps the confine/ runtime profile (cap_drop ALL + SETGID
 SETUID, read-only root, noexec tmpfs, no-new-privileges) and the mounts/ host options. AppArmor is one more layer
 under those: if one of them is ever lost (a re-create without `--read-only`, a tmpfs without noexec), the profile
 still blocks writes to the image, execution from writable directories and anything outside the allow-list.
+
+## Live proof (2026-11-03): found → fixed → verified
+
+Recorded run [`logs/05-live-run.log`](logs/05-live-run.log) (`drill/live-run.sh`, sentry first, then validator,
+commit 50ff6dec044f2f1c870472724edc07c71b8f8187, clean tree). Header sha256 values (lines 3-6): `pft-apparmor.sh`
+`eaee2749…f468`, `install.sh` `aecd1140…c8da`, `drill/host-run.sh` `49408332…5dce`, `drill/live-run.sh`
+`63403569…8674`. The same `pft-apparmor.sh` sha256 is in the learn log (03, line 2) and the suite + mutant log
+(02, line 2): the tool did not change between learn, tests and the live run.
+
+| Host | Found (before audit) | Fixed by | Verified (after) |
+|---|---|---|---|
+| sentry | `RESULT: FAIL - 4 finding(s)` (log 05 l.137): pft-postfiatd not loaded (l.128), container under `docker-default` (l.129), `docker run` container not created with the profile (l.131), no boot copy in `/etc/apparmor.d` (l.135) | `pft-apparmor apply --yes` (enforce) inside a pft-maint window, l.278 `apply (enforce) -> PASS` | audit `RESULT: PASS` l.386 (loaded enforce, container + mode + recreate + boot PASS l.377-384); again after the enforced restart, the explicit rollback and the re-apply: l.469 |
+| validator | `RESULT: FAIL - 4 finding(s)` (l.507): same four, recreate = no compose file sets the profile (l.501) | same P1 profile (sha256 compared, l.488), applied through a compose override, l.552 | audit `RESULT: PASS` l.660, and after the enforced restart l.690 |
+
+Controls (each host, enforced profile):
+
+| Control | sentry (log 05) | validator (log 05) |
+|---|---|---|
+| positive: RPC, peers, cron identity switch, hourly run-parts, `logrotate -d`, log-volume write, `ps`; 0 DENIED | l.324 | l.598 |
+| negative: new file in the `/etc/postfiatd` volume → fails + DENIED `mknod` | l.331 | l.605 |
+| negative: read `/etc/gshadow` → fails + DENIED `open` | l.337 | l.611 |
+| negative: exec unlisted `/usr/bin/id` → fails + DENIED `exec` | l.343 | l.617 |
+| negative: exec a script copied into the log volume → fails + DENIED `exec` | l.353 | l.627 |
+| earlier layers still in place: write to `/usr` (EROFS), exec from `/tmp` (noexec) | l.362, l.367 | l.636, l.641 |
+| deliberate DENIED records acknowledged (`ack-denials`), audit PASS | l.372 | l.646 |
+| enforced `docker restart`: still pft-postfiatd enforce, full, 0 DENIED | l.395 | l.669 |
+| injected gate failure → automatic rollback to docker-default, full | l.172 | - (sentry only) |
+| explicit rollback → audit shows the finding again; re-apply → PASS | l.411, l.419, l.452 | - (sentry only) |
+| host-run result | l.481: 41 PASS, 0 FAIL | l.702: 29 PASS, 0 FAIL |
+
+Run-level checks: boot copy identical on both hosts (l.706); textfiles and Prometheus `pft_apparmor_findings 0`
+for both hosts, PFTAppArmorDrift neither pending nor firing (l.721-730); fleet skew apparmor CURRENT on both (l.837);
+rulecheck OK on both (l.841, l.845); pft-integrity PASS on both after accept (l.850) and at the end (l.876, l.878);
+both nodes full at the end (l.879-880); `live-run done ...: 0 check(s) failed -> PASS` (l.882, exit file `rc=0`).
+
+Notes, stated up front:
+- The 20-minute complain window on the live sentry recorded **0** new events (l.220), so P1 = the rules learned on
+  the throwaway (340 distinct events, log 03 l.83-85) and nothing more. The published profile
+  [`profile/pft-postfiatd`](profile/pft-postfiatd) is byte-identical to `/etc/apparmor.d/pft-postfiatd` on both
+  hosts (log 01, sha256 `27d117bf…a200`).
+- After the run: the re-create dropped the live-only `docker update --cpu-shares/--memory-reservation` tuning
+  (an earlier, unrelated fix for CPU starvation that recreate paths do not copy); re-applied on both nodes, no
+  restart (log 06).
+- After the run (09:05Z), the run's catch-all Alertmanager silence, kept for PFTContainerRestarted after the
+  node re-creates, also held the `../alertpath` watchdog heartbeat, so the sentry's dead-man switch sent one STALE
+  and one RECOVERED message to the operator. That is a drill-harness issue, not a pft-apparmor one; the
+  silence was narrowed to PFTContainerRestarted and the pipeline was OK again at 09:09Z. "Operator topics received
+  nothing" (l.874) covers the run itself only.
+
+Evidence logs: [01 lint, promtool, parser](logs/01-lint.log) · [02 suite 256/256 + mutants 85/85
+caught](logs/02-suite-mutants.log) · [03 recorded sentry learn](logs/03-learn-sentry.log) ·
+[04 preflight](logs/04-preflight.log) · [05 live run](logs/05-live-run.log) ·
+[06 resource tuning re-applied](logs/06-resources-reapply.log). Logs are published as recorded; IPs, usernames,
+hostnames, node keys and notification topics are redacted by the run itself (redaction control: log 04).
 
 ## Usage
 
