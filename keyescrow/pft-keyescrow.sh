@@ -73,7 +73,7 @@ ALERTS_NTFY_ENV="$(conf_get ALERTS_NTFY_ENV)"
 ALERTS_NTFY_OWNER="$(conf_get ALERTS_NTFY_OWNER)"
 VALKEYS_DIR="$(conf_get VALKEYS_DIR)"
 
-die() { echo "pft-keyescrow: $*" >&2; exit "${2:-3}"; }
+die() { echo "pft-keyescrow: $1" >&2; exit "${2:-3}"; }
 ts() { date -u +%FT%TZ; }
 
 # id  hosts  path  mode  owner  group  need  cite   (tab-separated; "-" = empty; @MID@ = /etc/machine-id,
@@ -352,7 +352,7 @@ cmd_serve() { # the only verbs PEER_SSH may run on this host
     restore-apply) cmd_restore_apply "$@" ;;
     textfile) [ $# = 1 ] && [[ "$1" =~ ^pft_keyescrow(_held)?$ ]] || die "serve textfile pft_keyescrow|pft_keyescrow_held"
               cat -- "$TEXTFILE_DIR/$1.prom" ;;
-    *) die "serve: unknown verb '$v' (receive|seal|export|ack|pubkey|reseal|restore-apply)" ;;
+    *) die "serve: unknown verb '$v' (receive|seal|export|ack|pubkey|reseal|restore-apply|textfile)" ;;
   esac
 }
 

@@ -320,6 +320,7 @@ OUT="$("$T/bin/fakessh" serve textfile pft_keyescrow 2>&1)"; RC=$?
 check "serve textfile control: the allowed name prints the file" '[ "$RC" = 0 ] && cmp -s <(printf "%s\n" "$OUT") "$STF/pft_keyescrow.prom"'
 sed -i '/^PEER_SSH=/d' "$VA/root/etc/pft-keyescrow.env"; on va pull
 check "pull: refused without PEER_SSH (exit 4)" '[ "$RC" = 4 ] && grep -q "PEER_SSH not set" <<<"$OUT"'
+check "die prints the message only, not the exit code (whole-line match)" 'grep -qx "pft-keyescrow: PEER_SSH not set (see .*pft-keyescrow.env)" <<<"$OUT"'
 conf va PEER_SSH "$T/bin/fakessh"
 
 echo "RESULT: $PASS passed, $FAIL failed"

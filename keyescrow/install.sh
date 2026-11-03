@@ -41,12 +41,11 @@ while [ $# -gt 0 ]; do
 done
 [ -z "$label" ] || [[ "$label" =~ ^(validator|sentry)$ ]] || { echo "--host must be validator or sentry" >&2; exit 3; }
 conf_get() { [ -f "$CONF" ] || return 0; sed -n "s/^$1=//p" "$CONF" | tail -1 | tr -d '"'; }
-run_unit() { # UNIT: start it, fail with its journal if it failed
+run_unit() { # UNIT: start it, print this run's journal (a finished oneshot has no InvocationID left), fail if it failed
+  local t0; t0="$(date -u +%s)"
   systemctl start "$1" || true
-  if systemctl is-failed -q "$1"; then
-    log "ERROR: $1 failed"; journalctl -u "$1" -n 30 --no-pager --utc -o cat; exit 1
-  fi
-  journalctl -u "$1" --no-pager --utc -o cat _SYSTEMD_INVOCATION_ID="$(systemctl show -p InvocationID --value "$1")"
+  journalctl -u "$1" --since "@$t0" --no-pager --utc -o cat | grep -v 'pam_limits\|pam_unix'
+  if systemctl is-failed -q "$1"; then log "ERROR: $1 failed"; exit 1; fi
 }
 
 case "$mode" in
