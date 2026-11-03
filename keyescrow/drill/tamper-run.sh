@@ -86,7 +86,7 @@ newest() { on "$1" "sudo -n ls $ST/store/$2/" | sed -n 's/^gen-\([0-9TZ]*\)\.met
 run_units() {
   local t; t="$(date -u +%s)"
   x "sudo -n systemctl start pft-keyescrow.service; R 'sudo -n systemctl start pft-keyescrow.service'; sudo -n systemctl start pft-keyescrow-pull.service; echo started"
-  x "journalctl --utc -o cat -u pft-keyescrow.service --since @$t | grep -E 'MISMATCH|VERIFY|RESULT: [0-9]'; R 'journalctl --utc -o cat -u pft-keyescrow.service --since @$t' | grep -E 'MISMATCH|VERIFY|RESULT: [0-9]'; journalctl --utc -o cat -u pft-keyescrow-pull.service --since @$t | grep -E 'pulled|rejected|failed'"
+  x "sudo -n journalctl --utc -o cat -u pft-keyescrow.service --since @$t | grep -E 'MISMATCH|VERIFY|RESULT: [0-9]'; R 'sudo -n journalctl --utc -o cat -u pft-keyescrow.service --since @$t' | grep -E 'MISMATCH|VERIFY|RESULT: [0-9]'; sudo -n journalctl --utc -o cat -u pft-keyescrow-pull.service --since @$t | grep -E 'pulled|rejected|failed'"
   # shellcheck disable=SC2034  # read inside ok_if strings
   UNITLOG="$XOUT"
 }
@@ -141,6 +141,20 @@ restore() {
     src="$(sudo -n docker inspect pft-alert-bridge --format '{{range .Mounts}}{{if eq .Destination "/run/secrets/ntfy.env"}}{{.Source}}{{end}}{{end}}')"
     if [ "$src" = "$BRIDGE_ENV" ]; then echo "  restored bridge: mounts the operator env file again: yes"
     else echo "  restored bridge: mounts the operator env file again: NO"; RESTORE_OK=false; fi
+  fi
+  if [ "${#MOVED[@]}" -gt 0 ]; then
+    # the redirected ntfy env files are declared secrets: an inventory run during the drill exported them as drift
+    # (run 18). Re-run the units on the restored files and require drift 0 for both nodes before going on.
+    local dw=0 dn=0
+    sudo -n systemctl start pft-keyescrow.service; R 'sudo -n systemctl start pft-keyescrow.service'
+    sudo -n systemctl start pft-keyescrow-pull.service
+    while :; do
+      dn="$(pq 'pft_keyescrow_drift_items == 0' | grep -cE 'node=(validator|sentry)(,|$| )')"
+      [ "$dn" = 2 ] && break
+      dw=$((dw + 10)); [ "$dw" -le 180 ] || break; sleep 10
+    done
+    echo "  units re-run on the restored env files: pft_keyescrow_drift_items 0 for $dn/2 nodes (${dw}s)"
+    [ "$dn" = 2 ] || RESTORE_OK=false
   fi
   if [ -n "$SIL" ]; then
     # the silence only holds unrelated alerts; keep it until no keyescrow alert is left anywhere, then expire it
@@ -200,6 +214,9 @@ echo "  keyescrow alerts pending/firing: 0"
 n1="$(pq 'pft_keyescrow_held_verify_ok == 1' | grep -cE 'node=(validator,peer=sentry|sentry,peer=validator)')"
 [ "$n1" = 2 ] || { echo "  pft_keyescrow_held_verify_ok not 1 for both pairs - stopping" >&2; exit 3; }
 echo "  pft_keyescrow_held_verify_ok 1 for (validator, sentry) and (sentry, validator)"
+nd="$(pq 'pft_keyescrow_drift_items == 0' | grep -cE 'node=(validator|sentry)(,|$| )')"
+[ "$nd" = 2 ] || { echo "  pft_keyescrow_drift_items not 0 for both nodes - stopping" >&2; exit 3; }
+echo "  pft_keyescrow_drift_items 0 for both nodes"
 x "sudo -n $BIN verify --all | tail -1; R 'sudo -n $BIN verify --all' | tail -1"
 check "0 verify --all exit 0 on both hosts before the drill" "$(ok_if '[ "$(grep -c "failed -> exit 0$" <<<"$XOUT")" = 2 ]')"
 { for f in $LOCAL_ENVS; do L "sudo -n sed -n 's/^NTFY_TOPIC=//p' $f"; done
