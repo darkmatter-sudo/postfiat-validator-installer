@@ -320,3 +320,10 @@ promtool test rules alerts/apparmor.tests.yml
 The suite compiles every generated profile with the real `apparmor_parser -Q -K` when it is installed (nothing is
 loaded), plus a broken-profile control. Temp files go under `TEST_TMPDIR` (default `~/.cache`) because `/tmp` is
 noexec on hosts hardened by mounts/.
+
+Recorded results on the final code (script sha256 in each log header = the live run 2 header, `logs/16`):
+
+| log | result |
+|---|---|
+| `logs/18-suite-mutants.log` (git archive of `3dbd447`; `pft-apparmor.sh` / `install.sh` unchanged since) | suite `RESULT: 259 passed, 0 failed` (l.271), incl. `apparmor_parser -Q -K` of generated profiles + broken-profile control (l.130-132); mutant control PASS (l.274); `RESULT: 86 caught, 0 survived, 0 not applied of 86 (+ 2 documented equivalent: M32, M69)` (l.361) |
+| `logs/19-lint-final.log` | `shellcheck -x` on every apparmor shell file exit 0; promtool `check rules` + `test rules` SUCCESS; `apparmor_parser -Q -K` of P2 exit 0; P2 sha256 `f3a023fc14cd46ae856dc3e118cdca7b233e2896be123f8ec9b3973180830e34` equal in the repo and in `/etc/apparmor.d` on both hosts |

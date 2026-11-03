@@ -1,0 +1,41 @@
+# 19 lint, promtool, profile parse (final code) - 2026-11-03T15:24:08Z - Ubuntu 22.04.5 LTS - commit 385a9785cd9c51002b8621cd856b80bdf5625729 (clean: yes)
+# sha256 30397bba344150bcc48d0a034b61404a3de04c8407c96d2c30687ae75004466b  apparmor/pft-apparmor.sh
+# sha256 aecd1140226c3429aa37b910065bba783d52927b9c36e025c6f1f41193c1c8da  apparmor/install.sh
+# sha256 de3592baace751c19abc625e1da63bb348970cde838925a6e10267feffa3ad9d  apparmor/drill/live-run.sh
+# sha256 21ce01ba7416fcc763d603e77fd5822f17e51339b07e918f6a0650c149d24848  apparmor/drill/host-run.sh
+# sha256 f3a023fc14cd46ae856dc3e118cdca7b233e2896be123f8ec9b3973180830e34  apparmor/profile/pft-postfiatd
+# sha256 2c1daea18383d8fbb1c62f6fd2f8fd87e19dfbdf87b85fbeb29ea7f4a43fcc99  alerts/apparmor.rules.yml
+# sha256 86c61bdc545f88adfc78cb67c03e933bbd69c75ea2a6d692a5ba304d541f901f  alerts/apparmor.tests.yml
+# shell files: apparmor/drill/host-run.sh apparmor/drill/live-run.sh apparmor/install.sh apparmor/pft-apparmor.sh apparmor/tests/ack-tests.inc.sh apparmor/tests/apply-tests.inc.sh apparmor/tests/pull-install-tests.inc.sh apparmor/tests/run-tests.sh
+$ shellcheck --version | sed -n 2p
+version: 0.8.0
+(exit 0)
+$ shellcheck -x "${SH[@]}"
+(exit 0)
+$ python3 -c "import ast,sys; [ast.parse(open(f).read(), f) for f in sys.argv[1:]]; print(\"ast ok\", len(sys.argv)-1)" apparmor/tests/mutate.py apparmor/tests/stub_docker.py
+ast ok 2
+(exit 0)
+$ sudo docker run --rm -v "$PWD/alerts:/w:ro" -w /w --entrypoint promtool prom/prometheus:v3.5.0 check rules apparmor.rules.yml
+Checking apparmor.rules.yml
+  SUCCESS: 1 rules found
+
+(exit 0)
+$ sudo docker run --rm -v "$PWD/alerts:/w:ro" -w /w --entrypoint promtool prom/prometheus:v3.5.0 test rules apparmor.tests.yml
+  SUCCESS
+
+(exit 0)
+$ apparmor_parser --version | head -1
+AppArmor parser version 3.0.4
+(exit 0)
+$ sudo apparmor_parser -Q -K apparmor/profile/pft-postfiatd
+(exit 0)
+$ sha256sum < apparmor/profile/pft-postfiatd
+f3a023fc14cd46ae856dc3e118cdca7b233e2896be123f8ec9b3973180830e34  -
+(exit 0)
+$ sudo sha256sum < /etc/apparmor.d/pft-postfiatd
+f3a023fc14cd46ae856dc3e118cdca7b233e2896be123f8ec9b3973180830e34  -
+(exit 0)
+$ ssh -o LogLevel=ERROR relay "sudo sha256sum < /etc/apparmor.d/pft-postfiatd"
+f3a023fc14cd46ae856dc3e118cdca7b233e2896be123f8ec9b3973180830e34  -
+(exit 0)
+# end 2026-11-03T15:24:28Z
