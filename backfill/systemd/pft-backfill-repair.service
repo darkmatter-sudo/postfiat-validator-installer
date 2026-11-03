@@ -1,0 +1,36 @@
+[Unit]
+Description=pft-backfill repair: capped, verified ledger_request backfill of gaps in the online_delete window (opt-in)
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/backfill
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# default caps: 16 ledgers, 2 s interval, 90 s wait per ledger, 600 s runtime. exit 1 (incomplete) and 4 (refused:
+# node not full, maintenance window open, another run) are not unit failures; exit 2 (MISMATCH / failure) is.
+SuccessExitStatus=1 4
+ExecStart=/usr/local/bin/pft-backfill repair --apply --textfile
+ReadWritePaths=/var/lib/pft-exporter/textfile /run/lock
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+UMask=0022
+# AF_UNIX: docker.sock; AF_INET/AF_INET6: the public RPC hash check (curl from the host, not from the container)
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH
+Nice=10
+TimeoutStartSec=20min

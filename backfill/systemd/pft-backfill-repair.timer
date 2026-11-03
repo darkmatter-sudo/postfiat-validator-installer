@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the capped pft-backfill repair hourly (opt-in: install.sh --enable-repair)
+
+[Timer]
+OnCalendar=*:41
+RandomizedDelaySec=2min
+Persistent=false
+
+[Install]
+WantedBy=timers.target

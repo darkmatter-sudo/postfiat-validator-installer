@@ -1,0 +1,31 @@
+# Alert rules for pft-backfill (../backfill). pft-backfill.timer runs `status --textfile` every 5 min and writes
+# pft_backfill_*{node="..."}; the opt-in pft-backfill-repair.timer writes pft_backfill_repair_*{node="..."} (validator:
+# local; sentry: pulled by pft-backfill-pull.timer every 5 min).
+# 1. PFTBackfillGap: ledgers missing INSIDE the online_delete window above the oldest held one (an interior hole) for
+#    20 min while the node is full. Edge gaps (history below the oldest held ledger, normal for up to ~30 min after a
+#    restart because ledger_history 256 < online_delete 512) are exported but not alerted.
+# 2. PFTBackfillCheckFailed: the status run cannot read the node (up 0), or the last repair run ended with exit 2
+#    (a hash MISMATCH against the validated chain / a held neighbour / the public RPC, or a failed ledger_request).
+# A stopped timer is caught by pft-rulecheck (textfile pft_backfill*.prom) and PFTTextfileStale, not here.
+# The sentry runs no Prometheus: every node="sentry" alert is evaluated here. Tests: backfill.tests.yml.
+groups:
+  - name: pft-backfill
+    rules:
+      - alert: PFTBackfillGap
+        expr: (max by (node) (pft_backfill_missing_ledgers{kind="interior"}) > 0) and on (node) (max by (node) (pft_backfill_node_full) == 1)
+        for: 20m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} ledger(s) missing inside the online_delete window on {{ $labels.node }}"
+          description: "The node is full but its complete_ledgers has an interior hole inside the [node_db] online_delete window, so it cannot serve that history. Run `sudo pft-backfill status` to list the gaps, then `sudo pft-backfill repair` (dry run) and `--apply` outside a maintenance window."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/backfill/README.md#alerts"
+      - alert: PFTBackfillCheckFailed
+        expr: (max by (node) (pft_backfill_up) == 0) or (max by (node) (pft_backfill_repair_exit_code) == 2)
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pft-backfill check failed on {{ $labels.node }}"
+          description: "Either the status run cannot read server_info / postfiatd.cfg (pft_backfill_up 0), or the last repair run ended with exit 2: a fetched ledger's hash did not match the validated chain, a held neighbour or the public RPC, or ledger_request failed. Check `journalctl -u pft-backfill -u pft-backfill-repair` and run `sudo pft-backfill repair` (dry run)."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/backfill/README.md#alerts"

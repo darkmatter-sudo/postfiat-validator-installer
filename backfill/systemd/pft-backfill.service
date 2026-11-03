@@ -1,0 +1,35 @@
+[Unit]
+Description=pft-backfill status: ledger-history gaps inside the online_delete window (read-only)
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/backfill
+After=docker.service
+
+[Service]
+Type=oneshot
+# exit 1 = gaps found / node not full (exported as metrics), not a unit failure; exit 2 (cannot read the node) fails it
+SuccessExitStatus=1
+ExecStart=/usr/local/bin/pft-backfill status --textfile
+ReadWritePaths=/var/lib/pft-exporter/textfile
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+UMask=0022
+# AF_UNIX: docker.sock only (inspect + exec of curl to the node's own loopback admin RPC); no network
+RestrictAddressFamilies=AF_UNIX
+# reads postfiatd.cfg ([node_db] only) through the config volume's host path, which the container user owns 0600
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH
+Nice=10
+TimeoutStartSec=2min

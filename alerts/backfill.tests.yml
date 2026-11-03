@@ -1,0 +1,138 @@
+# promtool unit tests for backfill.rules.yml (generated once by hand, then edited as YAML).
+# Run: promtool test rules backfill.tests.yml   Time 0 = 1970-01-01T00:00Z; 1m input intervals.
+rule_files:
+- backfill.rules.yml
+evaluation_interval: 1m
+tests:
+- name: interior gap on a full node fires after 20m with the count; the other node stays quiet
+  input_series:
+  - series: pft_backfill_missing_ledgers{node="sentry",kind="interior"}
+    values: 37x40
+  - series: pft_backfill_node_full{node="sentry"}
+    values: 1x40
+  - series: pft_backfill_missing_ledgers{node="validator",kind="interior"}
+    values: '0x40'
+  - series: pft_backfill_node_full{node="validator"}
+    values: 1x40
+  alert_rule_test:
+  - eval_time: 19m
+    alertname: PFTBackfillGap
+    exp_alerts: []
+  - eval_time: 21m
+    alertname: PFTBackfillGap
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        node: sentry
+      exp_annotations:
+        summary: 37 ledger(s) missing inside the online_delete window on sentry
+        description: The node is full but its complete_ledgers has an interior hole inside the [node_db] online_delete window, so it cannot serve that history. Run `sudo pft-backfill status` to list the
+          gaps, then `sudo pft-backfill repair` (dry run) and `--apply` outside a maintenance window.
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/backfill/README.md#alerts
+  interval: 1m
+- name: 'recovery: gap repaired at 30m -> resolved at the next sample (no history window)'
+  input_series:
+  - series: pft_backfill_missing_ledgers{node="sentry",kind="interior"}
+    values: 37x29 0x20
+  - series: pft_backfill_node_full{node="sentry"}
+    values: 1x50
+  alert_rule_test:
+  - eval_time: 25m
+    alertname: PFTBackfillGap
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        node: sentry
+      exp_annotations:
+        summary: 37 ledger(s) missing inside the online_delete window on sentry
+        description: The node is full but its complete_ledgers has an interior hole inside the [node_db] online_delete window, so it cannot serve that history. Run `sudo pft-backfill status` to list the
+          gaps, then `sudo pft-backfill repair` (dry run) and `--apply` outside a maintenance window.
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/backfill/README.md#alerts
+  - eval_time: 31m
+    alertname: PFTBackfillGap
+    exp_alerts: []
+  interval: 1m
+- name: node not full (syncing after a restart) -> no gap alert even with an interior hole
+  input_series:
+  - series: pft_backfill_missing_ledgers{node="sentry",kind="interior"}
+    values: 37x40
+  - series: pft_backfill_node_full{node="sentry"}
+    values: '0x40'
+  alert_rule_test:
+  - eval_time: 30m
+    alertname: PFTBackfillGap
+    exp_alerts: []
+  interval: 1m
+- name: edge gap only (history not yet acquired after a restart) -> no alert
+  input_series:
+  - series: pft_backfill_missing_ledgers{node="validator",kind="edge"}
+    values: 256x40
+  - series: pft_backfill_missing_ledgers{node="validator",kind="interior"}
+    values: '0x40'
+  - series: pft_backfill_node_full{node="validator"}
+    values: 1x40
+  alert_rule_test:
+  - eval_time: 30m
+    alertname: PFTBackfillGap
+    exp_alerts: []
+  interval: 1m
+- name: 'gap blinking below 20m never fires (for: resets)'
+  input_series:
+  - series: pft_backfill_missing_ledgers{node="sentry",kind="interior"}
+    values: 5x14 0 5x14 0 5x10
+  - series: pft_backfill_node_full{node="sentry"}
+    values: 1x45
+  alert_rule_test:
+  - eval_time: 40m
+    alertname: PFTBackfillGap
+    exp_alerts: []
+  interval: 1m
+- name: status cannot read the node (up 0) for 10m -> CheckFailed; recovers when up returns
+  input_series:
+  - series: pft_backfill_up{node="validator"}
+    values: 0x15 1x10
+  alert_rule_test:
+  - eval_time: 9m
+    alertname: PFTBackfillCheckFailed
+    exp_alerts: []
+  - eval_time: 11m
+    alertname: PFTBackfillCheckFailed
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        node: validator
+      exp_annotations:
+        summary: pft-backfill check failed on validator
+        description: 'Either the status run cannot read server_info / postfiatd.cfg (pft_backfill_up 0), or the last repair run ended with exit 2: a fetched ledger''s hash did not match the validated chain,
+          a held neighbour or the public RPC, or ledger_request failed. Check `journalctl -u pft-backfill -u pft-backfill-repair` and run `sudo pft-backfill repair` (dry run).'
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/backfill/README.md#alerts
+  - eval_time: 17m
+    alertname: PFTBackfillCheckFailed
+    exp_alerts: []
+  interval: 1m
+- name: repair exit 2 (MISMATCH) fires; exit 1 (incomplete) and 0 do not; next good run resolves
+  input_series:
+  - series: pft_backfill_repair_exit_code{node="sentry"}
+    values: 2x15 0x10
+  - series: pft_backfill_repair_exit_code{node="validator"}
+    values: 1x25
+  - series: pft_backfill_up{node="sentry"}
+    values: 1x25
+  - series: pft_backfill_up{node="validator"}
+    values: 1x25
+  alert_rule_test:
+  - eval_time: 11m
+    alertname: PFTBackfillCheckFailed
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        node: sentry
+      exp_annotations:
+        summary: pft-backfill check failed on sentry
+        description: 'Either the status run cannot read server_info / postfiatd.cfg (pft_backfill_up 0), or the last repair run ended with exit 2: a fetched ledger''s hash did not match the validated chain,
+          a held neighbour or the public RPC, or ledger_request failed. Check `journalctl -u pft-backfill -u pft-backfill-repair` and run `sudo pft-backfill repair` (dry run).'
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/backfill/README.md#alerts
+  - eval_time: 17m
+    alertname: PFTBackfillCheckFailed
+    exp_alerts: []
+  interval: 1m

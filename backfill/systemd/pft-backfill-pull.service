@@ -1,0 +1,32 @@
+[Unit]
+Description=pft-backfill pull: copy the peer host's pft-backfill textfiles to this host's exporter
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/backfill
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# root: writes into the root-owned textfile dir; the ssh itself runs as the operator account named in PULL_SSH
+# (/etc/pft-backfill.env, root-owned), which already holds the admin key for the peer.
+ExecStart=/usr/local/bin/pft-backfill pull
+ReadWritePaths=/var/lib/pft-exporter/textfile
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+UMask=0022
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_AUDIT_WRITE
+TimeoutStartSec=90
