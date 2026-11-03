@@ -1,0 +1,77 @@
+# keyescrow 08 - offline suites, lint, promtool, leakcheck controls - 2026-11-03T21:28:44Z - commit 533a2228dfd76034c681c7107c9b82a2f4e7c6cb - Ubuntu 22.04.5 LTS
+$ sha256sum keyescrow/pft-keyescrow.sh keyescrow/keyescrow_tar.py keyescrow/install.sh keyescrow/tests/*.sh keyescrow/tests/*.py keyescrow/drill/* keyescrow/systemd/* alerts/keyescrow.rules.yml alerts/keyescrow.tests.yml
+8a0ab105440ba766cc7beae1d40b69980ce020ad7d7a8710823dbb0a4e288bc8  keyescrow/pft-keyescrow.sh
+45d0bbeaf7728564159440690d88f493e5be9eedd89423825b87edd8143286f2  keyescrow/keyescrow_tar.py
+ac1e19a5464095a19a3eccc3b96156a7d3ee57e3f00b2b7a1b9bb92ece4c5592  keyescrow/install.sh
+4c6374025d109dd6d5875e63a17fb0e01413aac85065bdcd1d9b4959eb249f62  keyescrow/tests/run-escrow-tests.sh
+dfd6b78480eb1d304826582e80c1854cb5b78daaa883485e3f259a343d2610ec  keyescrow/tests/run-tests.sh
+29eaf77754dabeed55fdd5c6d315d43ad1525df32fe7c49f1436aa98b2839f62  keyescrow/tests/mutate.py
+964c9b6608f64f1902fa68da91efa9ffc0b53905fcca17929bb2f8be0f271f29  keyescrow/drill/install-run.sh
+6f86513b7e5a2a9c8c07f0c684902c0e4d93fee4ab8f7db407e617d4e9ecd6f9  keyescrow/drill/leakcheck.py
+78dce409324d1563e65db764a13fe11f6c03437a945b4bbc8804d7bbad7f043e  keyescrow/systemd/pft-keyescrow-escrow.service
+799964bc1fc066ed4e9194ae5acc2013c36c99c8651a1cfab6fbb3129d358bfd  keyescrow/systemd/pft-keyescrow-escrow.timer
+03d46472ca7c06a710b0112a2e6d19a68464a61ccfde41de307d4fdf06c3e87e  keyescrow/systemd/pft-keyescrow-pull.service
+ef1c87dec33d3df7ac421a4941d55df42dcd4283a8f57a10e28a4ddc60149447  keyescrow/systemd/pft-keyescrow-pull.timer
+7c998f9c2235fbb3c863f08815406c578536e31ab6008862f2f8875aa3fe7643  keyescrow/systemd/pft-keyescrow.service
+c30700ab613d6f2a144ed7645ce88c705bf152d427b858984fb22b25b762a153  keyescrow/systemd/pft-keyescrow.timer
+937947729b8b80cfb8628a3ce27c88d4603d6df4571d161bfee9588242c8ebd8  alerts/keyescrow.rules.yml
+6c0abc591df54f1ad68cda6a06b3c72b7565af4cf5e1993c1985a3bcf5b462f2  alerts/keyescrow.tests.yml
+(exit 0)
+$ age --version
+1.0.0
+(exit 0)
+$ shellcheck keyescrow/pft-keyescrow.sh keyescrow/install.sh keyescrow/tests/*.sh keyescrow/drill/*.sh
+(exit 0)
+$ ruff format --check keyescrow && ruff check keyescrow
+4 files already formatted
+All checks passed!
+(exit 0)
+$ TEST_TMPDIR=~/.cache bash keyescrow/tests/run-tests.sh | tail -3
+ok   cite ntfy:alerts: alerts/run-stack.sh:13 names NTFY_ENV_FILE
+ok   cite valkeys:keys: valkeys/pft-valkeys.sh:33 names validator-keys.json
+RESULT: 67 passed, 0 failed
+(exit 0)
+$ TEST_TMPDIR=~/.cache bash keyescrow/tests/run-escrow-tests.sh | grep -E 'pull|textfile|die|^RESULT'
+ok   verify: newest ok, exit 0, textfile ok=1 generations=2
+ok   one-byte tamper: sha256 MISMATCH, exit 2, textfile ok=0
+ok   sentry sealed to a wrong recipient: pull/verify FAIL here, exit 2, no ack
+ok   pull: exit 0, both files pulled
+ok   pull: byte-identical copies, 0644, no temp files
+ok   pull control: the pulled inventory carries node=sentry samples
+ok   pull: a foreign metric line is rejected (exit 2), old copy kept, no temp
+ok   pull: samples labelled as another node are rejected (exit 2)
+ok   pull: a file without its timestamp sample is rejected (exit 2)
+ok   pull: a non-integer sample value is rejected (exit 2)
+ok   pull: a file over 64 KiB is rejected (exit 2)
+ok   pull: a missing file on the peer fails (exit 1), old copy kept
+ok   serve textfile: any other name is refused (exit 3), nothing printed
+ok   serve textfile control: the allowed name prints the file
+ok   pull: refused without PEER_SSH (exit 4)
+ok   die prints the message only, not the exit code (whole-line match)
+RESULT: 90 passed, 0 failed
+(exit 0)
+## fix-reverted control: the die() regression test against the parent commit's tool
+$ git show HEAD~1:keyescrow/pft-keyescrow.sh > ~/.cache/pft-keyescrow-prev.sh && TEST_TMPDIR=~/.cache bash keyescrow/tests/run-escrow-tests.sh ~/.cache/pft-keyescrow-prev.sh | grep -E '^FAIL|^RESULT'; rm -f ~/.cache/pft-keyescrow-prev.sh
+FAIL die prints the message only, not the exit code (whole-line match)
+RESULT: 89 passed, 1 failed
+(exit 0)
+$ sudo docker run --rm --entrypoint promtool -v "$PWD/alerts":/r:ro -w /r prom/prometheus:v3.5.0 check rules keyescrow.rules.yml
+Checking keyescrow.rules.yml
+  SUCCESS: 4 rules found
+
+(exit 0)
+$ sudo docker run --rm --entrypoint promtool -v "$PWD/alerts":/r:ro -w /r prom/prometheus:v3.5.0 test rules keyescrow.tests.yml
+  SUCCESS
+
+(exit 0)
+## leakcheck.py synthetic controls: a clean scan dir (ok) and the same dir with a planted copy of the secret (FAIL)
+$ T=$(mktemp -d ~/.cache/lc.XXXXXX); printf "  cat <<'REG'\nx:a\tboth\t$T/sec\t600\tme\tme\treq\tc:1\nREG\n" > $T/tool; head -c 64 /dev/urandom > $T/sec; mkdir $T/scan; echo hi > $T/scan/f; python3 -I keyescrow/drill/leakcheck.py --tool $T/tool --conf /nonexistent --host validator --scan $T/scan; echo "rc=$?"; cp $T/sec $T/scan/leak; python3 -I keyescrow/drill/leakcheck.py --tool $T/tool --conf /nonexistent --host validator --scan $T/scan; echo "rc=$?"; rm -rf $T
+scanned files: 1 (3 bytes)
+  x:a                probes 3  control 3/3  leaks 0  ok
+RESULT: 1 secrets checked, 0 failed -> exit 0
+rc=0
+scanned files: 2 (67 bytes)
+  x:a                probes 3  control 3/3  leaks 3  FAIL
+RESULT: 1 secrets checked, 1 failed -> exit 1
+rc=1
+(exit 0)

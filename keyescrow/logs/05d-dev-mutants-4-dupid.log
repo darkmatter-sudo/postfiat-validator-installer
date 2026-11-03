@@ -1,0 +1,11 @@
+CONTROL (unmutated) rc=0 RESULT: 74 passed, 0 failed | RESULT: 90 passed, 0 failed 53s
+V1   KILLED (1 failed: one-byte tamper: sha256 MISMATCH, exit 2, textfile ok=    76s  verify: ciphertext sha256 not compared
+V2   KILLED (10 failed: tamper + re-hashed meta: age authentication fails, VE    74s  verify: in-memory check result ignored
+V3   KILLED (4 failed: wrong recipient: the undecryptable generation was disc    74s  receive: a generation that failed its check is kept (can displace good ones)
+V4   KILLED (4 failed: KEEP=2 on the sentry: 2 generations held after 3 escro    75s  receive: KEEP ignored
+V1   KILLED (4 failed: EVOLVING item changed: escrow evolving, not drift, exi    84s  evolving: never recognised (always drift)
+V2   KILLED (3 failed: EVOLVING item changed: escrow evolving, not drift, exi    82s  evolving: still counted as drift
+V3   KILLED (1 failed: EVOLVING matches whole ids only (j:fs and xj:fss do no    82s  evolving: substring match
+V4   KILLED (1 failed: default EVOLVING (no conf line) is journald:fss)          84s  evolving: no default
+ORPHANS: 0 process(es) from mutant copies left running
+RESULT: 8 killed + 0 documented equivalent of 8, 0 survived, not applied or errored

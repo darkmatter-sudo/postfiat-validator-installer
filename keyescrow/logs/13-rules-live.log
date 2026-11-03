@@ -1,0 +1,36 @@
+# keyescrow 13 - load the alert rules live - 2026-11-03T21:46:25Z - commit f26921558e143dc5975aa4ca7af5d165364e1beb - Ubuntu 22.04.5 LTS
+$ grep -n keyescrow.rules.yml alerts/prometheus.yml
+25:  - /etc/pft-alerts/keyescrow.rules.yml   # ../keyescrow (secrets not escrowed for 36 h / drift for 2 h, inventory failed, held copy failed verify)
+(exit 0)
+$ sudo -n docker kill -s HUP pft-prometheus >/dev/null && sleep 40 && curl -s http://127.0.0.1:9090/api/v1/rules | jq -r '.data.groups[] | select(.name == "pft-keyescrow") | .rules[] | [.name, (.labels.reason // "-"), .health, .state, (.lastError // "")] | @tsv'
+PFTKeyEscrowStale	age	ok	inactive	
+PFTKeyEscrowStale	drift	ok	inactive	
+PFTKeyEscrowInventoryFailed	-	ok	inactive	
+PFTKeyEscrowVerifyFailed	-	ok	inactive	
+(exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=pft_keyescrow_last_escrow_timestamp_seconds' | jq -r '.data.result[] | "\(.metric | del(.__name__, .instance, .job) | tostring) \(.value[1])"'
+{"node":"validator"} 1793742288
+{"node":"sentry"} 1793742290
+(exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=pft_keyescrow_drift_items' | jq -r '.data.result[] | "\(.metric | del(.__name__, .instance, .job) | tostring) \(.value[1])"'
+{"node":"validator"} 0
+{"node":"sentry"} 0
+(exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=pft_keyescrow_inventory_exit_code' | jq -r '.data.result[] | "\(.metric | del(.__name__, .instance, .job) | tostring) \(.value[1])"'
+{"node":"validator"} 0
+{"node":"sentry"} 0
+(exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=pft_keyescrow_held_verify_ok' | jq -r '.data.result[] | "\(.metric | del(.__name__, .instance, .job) | tostring) \(.value[1])"'
+{"node":"validator","peer":"sentry"} 1
+{"node":"sentry","peer":"validator"} 1
+(exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=pft_keyescrow_held_generations' | jq -r '.data.result[] | "\(.metric | del(.__name__, .instance, .job) | tostring) \(.value[1])"'
+{"node":"validator","peer":"sentry"} 3
+{"node":"sentry","peer":"validator"} 3
+(exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=ALERTS{alertname=~"PFTKeyEscrow.*"}' | jq -r '.data.result[] | "\(.metric | del(.__name__, .instance, .job) | tostring) \(.value[1])"'
+(exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=(time() - max by (node) (pft_keyescrow_last_escrow_timestamp_seconds)) / 3600' | jq -r '.data.result[] | "\(.metric.node) \(.value[1] | tonumber | . * 100 | floor / 100) h since the last escrow"'
+validator 0.03 h since the last escrow
+sentry 0.03 h since the last escrow
+(exit 0)

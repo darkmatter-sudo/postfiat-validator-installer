@@ -1,0 +1,19 @@
+# keyescrow 09 - recorded mutant run - 2026-11-03T21:31:25Z - commit 533a2228dfd76034c681c7107c9b82a2f4e7c6cb - Ubuntu 22.04.5 LTS
+$ sha256sum keyescrow/pft-keyescrow.sh keyescrow/keyescrow_tar.py keyescrow/tests/*.sh keyescrow/tests/*.py
+8a0ab105440ba766cc7beae1d40b69980ce020ad7d7a8710823dbb0a4e288bc8  keyescrow/pft-keyescrow.sh
+45d0bbeaf7728564159440690d88f493e5be9eedd89423825b87edd8143286f2  keyescrow/keyescrow_tar.py
+4c6374025d109dd6d5875e63a17fb0e01413aac85065bdcd1d9b4959eb249f62  keyescrow/tests/run-escrow-tests.sh
+dfd6b78480eb1d304826582e80c1854cb5b78daaa883485e3f259a343d2610ec  keyescrow/tests/run-tests.sh
+29eaf77754dabeed55fdd5c6d315d43ad1525df32fe7c49f1436aa98b2839f62  keyescrow/tests/mutate.py
+$ nice -n 15 python3 -u keyescrow/tests/mutate.py -j 3 --timeout 600
+CONTROL (unmutated) rc=0 RESULT: 67 passed, 0 failed | RESULT: 90 passed, 0 failed 63s
+I1   KILLED (6 failed: mode 644 (want 600): perm, exit 2)                        65s  inventory: wrong mode accepted
+I2   KILLED (1 failed: owner differs: perm, owner BAD, name not printed)         65s  inventory: owner not checked
+I3   KILLED (1 failed: group differs: perm, group BAD)                           65s  inventory: group not checked
+I4   KILLED (1 failed: symlink: perm 'not a regular file')                       57s  inventory: symlink / non-file accepted
+I5   KILLED (4 failed: bare: exit 2)                                             61s  inventory: missing required item read as optional
+I6   KILLED (3 failed: one byte appended: drift, exit 1)                         60s  inventory: drift not detected
+(exit 143)
+$ ps -eo pid,args | grep -c "[p]ft-keyescrow-mut-"
+10
+# NOTE 2026-11-03T21:34:57Z: run 09 STOPPED by the agent (SIGTERM to timeout): the live reinstall (log 10) showed journald:fss changes between escrows (journald evolves the FSS sealing key in place), which needs a code change (expected-evolving items); superseded by run 11. 0 processes from mutant copies left after the stop. Not cited as evidence.

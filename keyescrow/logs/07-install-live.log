@@ -1,0 +1,302 @@
+# keyescrow install-run - 2026-11-03T21:21:53Z - commit decc95476f0ca5ca5bbd44392765034941f2e829 - Ubuntu 22.04.5 LTS
+== 0. preflight (nothing changed yet)
+$ sha256sum keyescrow/pft-keyescrow.sh keyescrow/keyescrow_tar.py keyescrow/install.sh keyescrow/drill/install-run.sh keyescrow/drill/leakcheck.py keyescrow/systemd/*
+  7df758d07df80a5c3c6e0b4c66a89974f1c1376e3c379ff69bf41d9ec4ba5cbd  keyescrow/pft-keyescrow.sh
+  45d0bbeaf7728564159440690d88f493e5be9eedd89423825b87edd8143286f2  keyescrow/keyescrow_tar.py
+  ec637507827c481d0ef83553d4c9bdd003c10d427728690e4f3b7a5b9014d64f  keyescrow/install.sh
+  964c9b6608f64f1902fa68da91efa9ffc0b53905fcca17929bb2f8be0f271f29  keyescrow/drill/install-run.sh
+  6f86513b7e5a2a9c8c07f0c684902c0e4d93fee4ab8f7db407e617d4e9ecd6f9  keyescrow/drill/leakcheck.py
+  78dce409324d1563e65db764a13fe11f6c03437a945b4bbc8804d7bbad7f043e  keyescrow/systemd/pft-keyescrow-escrow.service
+  799964bc1fc066ed4e9194ae5acc2013c36c99c8651a1cfab6fbb3129d358bfd  keyescrow/systemd/pft-keyescrow-escrow.timer
+  03d46472ca7c06a710b0112a2e6d19a68464a61ccfde41de307d4fdf06c3e87e  keyescrow/systemd/pft-keyescrow-pull.service
+  ef1c87dec33d3df7ac421a4941d55df42dcd4283a8f57a10e28a4ddc60149447  keyescrow/systemd/pft-keyescrow-pull.timer
+  7c998f9c2235fbb3c863f08815406c578536e31ab6008862f2f8875aa3fe7643  keyescrow/systemd/pft-keyescrow.service
+  c30700ab613d6f2a144ed7645ce88c705bf152d427b858984fb22b25b762a153  keyescrow/systemd/pft-keyescrow.timer
+  (exit 0)
+CHECK ok   HEAD is clean and pushed (origin/main = decc954)
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+  literals for redaction: 5 (not printed)
+  pft-integrity local: RESULT: PASS - 153 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity relay: RESULT: PASS - 91 unchanged, 0 warn, 0 fail -> exit 0
+$ sudo -n test ! -e /var/lib/pft-keyescrow/age.key && R 'sudo -n test ! -e /var/lib/pft-keyescrow/age.key'
+  
+  (exit 0)
+CHECK ok   no earlier keyescrow identity on either host
+$ age --version && R 'command -v age >/dev/null || sudo -n DEBIAN_FRONTEND=noninteractive apt-get install -y -q age' | tail -3 && R 'age --version; dpkg-query -W age'
+  1.0.0
+  No user sessions are running outdated binaries.
+  
+  No VM guests are running outdated hypervisor (qemu) binaries on this host.
+  1.0.0
+  age	1.0.0-1ubuntu0.1
+  (exit 0)
+CHECK ok   age on both hosts
+$ redact.py control --literals <literals>
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (14/14)
+CHECK ok   redaction positive control
+== 1. install on both hosts (2026-11-03T21:22:36Z)
+$ git archive decc95476f0ca5ca5bbd44392765034941f2e829 keyescrow | ssh -o BatchMode=yes relay 'rm -rf /var/tmp/pft-keyescrow-live-decc954 && mkdir -m 700 /var/tmp/pft-keyescrow-live-decc954 && tar -x -C /var/tmp/pft-keyescrow-live-decc954 && sha256sum /var/tmp/pft-keyescrow-live-decc954/keyescrow/pft-keyescrow.sh'
+  7df758d07df80a5c3c6e0b4c66a89974f1c1376e3c379ff69bf41d9ec4ba5cbd  /var/tmp/pft-keyescrow-live-decc954/keyescrow/pft-keyescrow.sh
+  (exit 0)
+$ R 'sudo -n bash /var/tmp/pft-keyescrow-live-decc954/keyescrow/install.sh --host sentry'
+  2026-11-03T21:22:37Z installed /usr/local/bin/pft-keyescrow (sha256 7df758d07df80a5c3c6e0b4c66a89974f1c1376e3c379ff69bf41d9ec4ba5cbd)
+  2026-11-03T21:22:37Z installed /usr/local/lib/pft-keyescrow/keyescrow_tar.py (sha256 45d0bbeaf7728564159440690d88f493e5be9eedd89423825b87edd8143286f2)
+  2026-11-03T21:22:37Z HOST_LABEL=sentry in /etc/pft-keyescrow.env (0600 root)
+  2026-11-03T21:22:37Z keygen: fp_key: created (0600)
+  2026-11-03T21:22:37Z keygen: age identity: created (0600, never printed)
+  2026-11-03T21:22:37Z keygen: age recipient: <redacted-key>
+  2026-11-03T21:22:37Z added the pft_keyescrow textfile lines to /etc/pft-rulecheck.conf
+  2026-11-03T21:22:38Z pft-keyescrow.service/.timer installed, timer NOT enabled yet (./install.sh --enable after the first escrow)
+  2026-11-03T21:22:38Z remember: sudo pft-integrity accept --reason 'pft-keyescrow installed'
+  (exit 0)
+CHECK ok   sentry install
+$ sudo -n bash keyescrow/install.sh --host validator
+  2026-11-03T21:22:38Z installed /usr/local/bin/pft-keyescrow (sha256 7df758d07df80a5c3c6e0b4c66a89974f1c1376e3c379ff69bf41d9ec4ba5cbd)
+  2026-11-03T21:22:38Z installed /usr/local/lib/pft-keyescrow/keyescrow_tar.py (sha256 45d0bbeaf7728564159440690d88f493e5be9eedd89423825b87edd8143286f2)
+  2026-11-03T21:22:38Z HOST_LABEL=validator in /etc/pft-keyescrow.env (0600 root)
+  2026-11-03T21:22:38Z keygen: fp_key: created (0600)
+  2026-11-03T21:22:38Z keygen: age identity: created (0600, never printed)
+  2026-11-03T21:22:38Z keygen: age recipient: <redacted-key>
+  2026-11-03T21:22:39Z added the pft_keyescrow textfile lines to /etc/pft-rulecheck.conf
+  2026-11-03T21:22:40Z pft-keyescrow.service/.timer installed, timer NOT enabled yet (./install.sh --enable after the first escrow)
+  2026-11-03T21:22:40Z remember: sudo pft-integrity accept --reason 'pft-keyescrow installed'
+  (exit 0)
+CHECK ok   validator install
+$ printf "ALERTS_NTFY_ENV=%s\nALERTS_NTFY_OWNER=%s\nPEER_SSH=\"%s\"\n" "$ANE" "$ANO" "$PSSH" | sudo -n tee -a /etc/pft-keyescrow.env >/dev/null && sudo -n stat -c "%a %U:%G" /etc/pft-keyescrow.env && sudo -n grep -c . /etc/pft-keyescrow.env
+  600 root:root
+  5
+  (exit 0)
+== 2. exchange PUBLIC age recipients, inventory before (2026-11-03T21:22:41Z)
+CHECK ok   two different age recipients (printed redacted)
+$ sudo -n pft-keyescrow set-peer "$SEPUB"
+  PEER_RECIPIENT set for sentry
+  (exit 0)
+CHECK ok   validator set-peer
+$ R "sudo -n pft-keyescrow set-peer $VAPUB"
+  PEER_RECIPIENT set for validator
+  (exit 0)
+CHECK ok   sentry set-peer
+$ sudo -n pft-keyescrow inventory
+  pft-keyescrow inventory - 2026-11-03T21:22:43Z | host validator | last escrow never
+    [ok]       cluster:node_seed  escrow new   fp 62cd1dafb67cb816 mode 600, owner ok, group ok  (cluster/pft-cluster.sh:78)
+    [ok]       cluster:fp_key     escrow new   fp 42476620c36e5101 mode 600, owner ok, group ok  (cluster/pft-cluster.sh:80)
+    [ok]       cluster:env        escrow new   fp 76d59020c600c6a1 mode 600, owner ok, group ok  (cluster/install.sh:17)
+    [ok]       logship:env        escrow new   fp a6da8b06ce4b1be9 mode 600, owner ok, group ok  (logship/pft-logship.sh:40)
+    [ok]       logship:host_key   escrow new   fp aefcdfed7eb75857 mode 640, owner ok, group ok  (logship/pft-logship.sh:115)
+    [ok]       logship:ca_key     escrow new   fp 2a614ea336e8dc61 mode 600, owner ok, group ok  (logship/pft-logship.sh:237)
+    [ok]       journald:fss       escrow new   fp 31fc04dde4343b8b mode 600, owner ok, group ok  (audittrail/pft-audittrail.sh:87)
+    [ok]       alertpath:hmac     escrow new   fp f3cb1e161b03825d mode 600, owner ok, group ok  (alertpath/pft-alertpath.sh:168)
+    [ok]       watchdog:hmac      escrow new   fp 53ff6bbe477ccde9 mode 600, owner ok, group ok  (watchdog/pft-heartbeat.sh:14)
+    [ok]       ntfy:monitor       escrow new   fp daaee3ac6b07370e mode 600, owner ok, group ok  (monitor/install-monitor.sh:15)
+    [absent]   ntfy:maint         escrow -     fp n/a              optional, not on this host  (maint/install.sh:36)
+    [ok]       ntfy:alerts        escrow new   fp 1ae9e08929812743 mode 600, owner ok, group ok  (alerts/run-stack.sh:13)
+    [absent]   valkeys:keys       escrow -     fp n/a              optional, not on this host  (valkeys/pft-valkeys.sh:33)
+  RESULT: ok 11, perm 0, missing 0, unreadable 0, absent(optional) 2; escrow drift 0, new 11 -> exit 1
+  (exit 1)
+CHECK ok   validator inventory before: nothing perm/missing/unreadable, all new (exit 1)
+$ R 'sudo -n pft-keyescrow inventory'
+  pft-keyescrow inventory - 2026-11-03T21:22:44Z | host sentry | last escrow never
+    [ok]       cluster:node_seed  escrow new   fp 1ef10044a19e727f mode 600, owner ok, group ok  (cluster/pft-cluster.sh:78)
+    [ok]       cluster:fp_key     escrow new   fp 689511a3aaebe3c6 mode 600, owner ok, group ok  (cluster/pft-cluster.sh:80)
+    [ok]       cluster:env        escrow new   fp 20a16550278ee03b mode 600, owner ok, group ok  (cluster/install.sh:17)
+    [ok]       logship:env        escrow new   fp eae8fd4413e652bb mode 600, owner ok, group ok  (logship/pft-logship.sh:40)
+    [ok]       logship:host_key   escrow new   fp 150be57f49a5e3da mode 640, owner ok, group ok  (logship/pft-logship.sh:115)
+    [ok]       journald:fss       escrow new   fp 4aca02a9a3d119c3 mode 600, owner ok, group ok  (audittrail/pft-audittrail.sh:87)
+    [ok]       alertpath:hmac     escrow new   fp 039f1f347affdf39 mode 600, owner ok, group ok  (alertpath/pft-alertpath.sh:168)
+    [ok]       watchdog:hmac      escrow new   fp d35ce5a1cc9f4989 mode 600, owner ok, group ok  (watchdog/pft-heartbeat.sh:14)
+    [absent]   ntfy:maint         escrow -     fp n/a              optional, not on this host  (maint/install.sh:36)
+    [ok]       ntfy:alertpath     escrow new   fp 6b77a3f8f4dfe035 mode 600, owner ok, group ok  (alertpath/pft-alertpath.sh:300)
+    [ok]       ntfy:watchdog      escrow new   fp 6b77a3f8f4dfe035 mode 600, owner ok, group ok  (watchdog/install.sh:12)
+  RESULT: ok 10, perm 0, missing 0, unreadable 0, absent(optional) 1; escrow drift 0, new 10 -> exit 1
+  (exit 1)
+CHECK ok   sentry inventory before: nothing perm/missing/unreadable, all new (exit 1)
+== 3. first escrow through the sandboxed unit (2026-11-03T21:22:44Z)
+$ sudo -n bash keyescrow/install.sh --escrow-host
+  2026-11-03T21:22:45Z first escrow (through the sandboxed unit):
+  Created symlink /etc/systemd/system/timers.target.wants/pft-keyescrow-escrow.timer → /etc/systemd/system/pft-keyescrow-escrow.timer.
+  Created symlink /etc/systemd/system/timers.target.wants/pft-keyescrow-pull.timer → /etc/systemd/system/pft-keyescrow-pull.timer.
+  2026-11-03T21:22:55Z enabled pft-keyescrow-escrow.timer (nightly 02:40 UTC) and pft-keyescrow-pull.timer (every 15 min)
+  (exit 0)
+CHECK FAIL escrow unit: both directions PASS
+CHECK FAIL sentry decrypted + checked the validator generation in memory
+CHECK FAIL validator decrypted + checked the sentry generation, sentry acked
+$ TZ=UTC systemctl list-timers pft-keyescrow-escrow.timer pft-keyescrow-pull.timer --no-pager
+  NEXT                        LEFT          LAST PASSED UNIT                       ACTIVATES
+  Tue 2026-11-03 21:30:41 UTC 7min left     n/a  n/a    pft-keyescrow-pull.timer   pft-keyescrow-pull.service
+  Wed 2026-11-04 02:43:34 UTC 5h 20min left n/a  n/a    pft-keyescrow-escrow.timer pft-keyescrow-escrow.service
+  
+  2 timers listed.
+  Pass --all to see loaded but inactive timers, too.
+  (exit 0)
+CHECK ok   nightly escrow + pull timers enabled
+== 4. verify both holders, inventory after, hourly unit (2026-11-03T21:22:55Z)
+$ sudo -n pft-keyescrow verify --all
+  pft-keyescrow verify - 2026-11-03T21:22:55Z | host validator
+      item cluster:node_seed ok
+      item cluster:fp_key ok
+      item cluster:env ok
+      item logship:env ok
+      item logship:host_key ok
+      item journald:fss ok
+      item alertpath:hmac ok
+      item watchdog:hmac ok
+      item ntfy:alertpath ok
+      item ntfy:watchdog ok
+    CHECK host=sentry gen=20261103T212247Z items=10 ok=10 bad=0
+  VERIFIED from=sentry gen=20261103T212247Z items=10
+  RESULT: 1 generation(s) checked, 0 failed -> exit 0
+  (exit 0)
+CHECK ok   validator verify of the sentry generation it holds
+$ R 'sudo -n pft-keyescrow verify --all'
+  pft-keyescrow verify - 2026-11-03T21:22:55Z | host sentry
+      item cluster:node_seed ok
+      item cluster:fp_key ok
+      item cluster:env ok
+      item logship:env ok
+      item logship:host_key ok
+      item logship:ca_key ok
+      item journald:fss ok
+      item alertpath:hmac ok
+      item watchdog:hmac ok
+      item ntfy:monitor ok
+      item ntfy:alerts ok
+    CHECK host=validator gen=20261103T212246Z items=11 ok=11 bad=0
+  VERIFIED from=validator gen=20261103T212246Z items=11
+  RESULT: 1 generation(s) checked, 0 failed -> exit 0
+  (exit 0)
+CHECK ok   sentry verify of the validator generation it holds
+$ sudo -n pft-keyescrow inventory --json | jq -c '{host, exit, escrow: ([.items[] | select(.state == "ok") | .escrow] | group_by(.) | map({(.[0]): length}) | add)}'
+  {"host":"validator","exit":0,"escrow":{"same":11}}
+  (exit 0)
+CHECK ok   validator inventory after: every ok item same, exit 0
+$ R 'sudo -n pft-keyescrow inventory --json' | jq -c '{host, exit, escrow: ([.items[] | select(.state == "ok") | .escrow] | group_by(.) | map({(.[0]): length}) | add)}'
+  {"host":"sentry","exit":0,"escrow":{"same":10}}
+  (exit 0)
+CHECK ok   sentry inventory after: every ok item same, exit 0
+$ sudo -n bash keyescrow/install.sh --enable
+  2026-11-03T21:22:59Z one run of pft-keyescrow.service (inventory + verify, sandboxed):
+  pft_keyescrow_items{node="validator",state="ok"} 11
+  pft_keyescrow_items{node="validator",state="perm"} 0
+  pft_keyescrow_items{node="validator",state="missing"} 0
+  pft_keyescrow_items{node="validator",state="unreadable"} 0
+  pft_keyescrow_items{node="validator",state="absent"} 2
+  pft_keyescrow_drift_items{node="validator"} 0
+  pft_keyescrow_inventory_exit_code{node="validator"} 0
+  pft_keyescrow_held_verify_ok{node="validator",peer="sentry"} 1
+  Created symlink /etc/systemd/system/timers.target.wants/pft-keyescrow.timer → /etc/systemd/system/pft-keyescrow.timer.
+  2026-11-03T21:23:03Z enabled pft-keyescrow.timer (hourly)
+  (exit 0)
+CHECK ok   validator hourly unit run + timer enabled
+$ R 'sudo -n bash /var/tmp/pft-keyescrow-live-decc954/keyescrow/install.sh --enable'
+  2026-11-03T21:23:04Z one run of pft-keyescrow.service (inventory + verify, sandboxed):
+  pft_keyescrow_items{node="sentry",state="ok"} 10
+  pft_keyescrow_items{node="sentry",state="perm"} 0
+  pft_keyescrow_items{node="sentry",state="missing"} 0
+  pft_keyescrow_items{node="sentry",state="unreadable"} 0
+  pft_keyescrow_items{node="sentry",state="absent"} 1
+  pft_keyescrow_drift_items{node="sentry"} 0
+  pft_keyescrow_inventory_exit_code{node="sentry"} 0
+  pft_keyescrow_held_verify_ok{node="sentry",peer="validator"} 1
+  Created symlink /etc/systemd/system/timers.target.wants/pft-keyescrow.timer → /etc/systemd/system/pft-keyescrow.timer.
+  2026-11-03T21:23:06Z enabled pft-keyescrow.timer (hourly)
+  (exit 0)
+CHECK ok   sentry hourly unit run + timer enabled
+== 5. pull + metrics (2026-11-03T21:23:06Z)
+$ sudo -n systemctl start pft-keyescrow-pull.service && journalctl -u pft-keyescrow-pull.service -n 2 --no-pager --utc -o cat
+  
+  (exit 0)
+CHECK ok   pull unit
+$ grep -h '^pft_keyescrow_[a-z_]*{' /var/lib/pft-exporter/textfile/pft_keyescrow*.prom | grep -v collect_timestamp | grep -v verify_timestamp
+  pft_keyescrow_items{node="validator",state="ok"} 11
+  pft_keyescrow_items{node="validator",state="perm"} 0
+  pft_keyescrow_items{node="validator",state="missing"} 0
+  pft_keyescrow_items{node="validator",state="unreadable"} 0
+  pft_keyescrow_items{node="validator",state="absent"} 2
+  pft_keyescrow_drift_items{node="validator"} 0
+  pft_keyescrow_last_escrow_timestamp_seconds{node="validator"} 1793740966
+  pft_keyescrow_inventory_exit_code{node="validator"} 0
+  pft_keyescrow_held_generations{node="validator",peer="sentry"} 1
+  pft_keyescrow_held_newest_timestamp_seconds{node="validator",peer="sentry"} 1793740968
+  pft_keyescrow_held_verify_ok{node="validator",peer="sentry"} 1
+  pft_keyescrow_held_generations{node="sentry",peer="validator"} 1
+  pft_keyescrow_held_newest_timestamp_seconds{node="sentry",peer="validator"} 1793740966
+  pft_keyescrow_held_verify_ok{node="sentry",peer="validator"} 1
+  pft_keyescrow_items{node="sentry",state="ok"} 10
+  pft_keyescrow_items{node="sentry",state="perm"} 0
+  pft_keyescrow_items{node="sentry",state="missing"} 0
+  pft_keyescrow_items{node="sentry",state="unreadable"} 0
+  pft_keyescrow_items{node="sentry",state="absent"} 1
+  pft_keyescrow_drift_items{node="sentry"} 0
+  pft_keyescrow_last_escrow_timestamp_seconds{node="sentry"} 1793740969
+  pft_keyescrow_inventory_exit_code{node="sentry"} 0
+  (exit 0)
+CHECK ok   validator exports both nodes: items, last escrow, held ok=1 each way
+== 6. zero-leak check (2026-11-03T21:23:10Z)
+$ sudo -n python3 -I keyescrow/drill/leakcheck.py --tool /usr/local/bin/pft-keyescrow --conf /etc/pft-keyescrow.env --host validator --scan /var/lib/pft-keyescrow --scan /var/lib/pft-exporter/textfile --scan-file ~/work/runlogs/task_2361bde7-07-install-live.log
+  scanned files: 45 (181206 bytes)
+    cluster:node_seed  probes 3  control 3/3  leaks 0  ok
+    cluster:fp_key     probes 3  control 3/3  leaks 0  ok
+    cluster:env        probes 3  control 3/3  leaks 0  ok
+    logship:env        probes 3  control 3/3  leaks 0  ok
+    logship:host_key   probes 3  control 3/3  leaks 0  ok
+    logship:ca_key     probes 3  control 3/3  leaks 0  ok
+    journald:fss       probes 3  control 3/3  leaks 0  ok
+    alertpath:hmac     probes 3  control 3/3  leaks 0  ok
+    watchdog:hmac      probes 3  control 3/3  leaks 0  ok
+    ntfy:monitor       probes 3  control 3/3  leaks 0  ok
+    ntfy:maint         absent here (not checked)
+    ntfy:alerts        probes 3  control 3/3  leaks 0  ok
+    valkeys:keys       absent here (not checked)
+  RESULT: 11 secrets checked, 0 failed -> exit 0
+  (exit 0)
+CHECK ok   validator: every secret probed, 0 leaks (incl. the raw log of this run)
+$ R 'sudo -n python3 -I /var/tmp/pft-keyescrow-live-decc954/keyescrow/drill/leakcheck.py --tool /usr/local/bin/pft-keyescrow --conf /etc/pft-keyescrow.env --host sentry --scan /var/lib/pft-keyescrow --scan /var/lib/pft-exporter/textfile --scan /var/tmp/pft-keyescrow-live-decc954'
+  scanned files: 51 (273106 bytes)
+    cluster:node_seed  probes 3  control 3/3  leaks 0  ok
+    cluster:fp_key     probes 3  control 3/3  leaks 0  ok
+    cluster:env        probes 3  control 3/3  leaks 0  ok
+    logship:env        probes 3  control 3/3  leaks 0  ok
+    logship:host_key   probes 3  control 3/3  leaks 0  ok
+    journald:fss       probes 3  control 3/3  leaks 0  ok
+    alertpath:hmac     probes 3  control 3/3  leaks 0  ok
+    watchdog:hmac      probes 3  control 3/3  leaks 0  ok
+    ntfy:maint         absent here (not checked)
+    ntfy:alertpath     probes 3  control 3/3  leaks 0  ok
+    ntfy:watchdog      probes 3  control 3/3  leaks 0  ok
+  RESULT: 10 secrets checked, 0 failed -> exit 0
+  (exit 0)
+CHECK ok   sentry: every secret probed, 0 leaks
+$ grep -c 'AGE-SECRET-KEY' <<<"$ESC"; sudo -n grep -c 'AGE-SECRET-KEY' /var/lib/pft-keyescrow/age.key
+  0
+  1
+  (exit 0)
+CHECK ok   no age identity in the escrow output (control: the identity file has one)
+== 7. integrity baselines (2026-11-03T21:23:12Z)
+$ sudo -n pft-integrity accept --reason 'task_2361bde7: pft-keyescrow decc954 installed (binary, helper, units, conf, rulecheck lines)' | tail -3
+  pft-integrity accept - 2026-11-03T21:23:27Z: re-baselined 160 items by <user>
+  manifest sha256: 056cfbbc6485b27a56eae2d150716fc8083225587ac5e2753eae6b9770a18aa7 -> 542768f95fbe374b9772ae76012f713dbeadaa4622f010c608121e44da8b3336 (logged to accept.log)
+  (exit 0)
+$ R "sudo -n pft-integrity accept --reason 'task_2361bde7: pft-keyescrow decc954 installed (binary, helper, units, conf, rulecheck lines)'" | tail -3
+  pft-integrity accept - 2026-11-03T21:23:33Z: re-baselined 94 items by root
+  manifest sha256: 3d7a1c68d564be9befc01f44baddfbbba4ed9d7efb402d72497a93b8695db8ea -> 3919bd052e994e8b439d1e8f99da471756314e97a69ba422911f51b36507c757 (logged to accept.log)
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify' | tail -1
+  RESULT: PASS - 160 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 94 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both after accept
+RESULT: FAIL - 3 failed check(s) - 2026-11-03T21:23:53Z

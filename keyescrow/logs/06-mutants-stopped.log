@@ -1,0 +1,26 @@
+# keyescrow 06 - recorded mutant run - 2026-11-03T21:18:45Z - commit 8ce1e9581053b0096bc3fd21702d8bc7c3bc7957 - Ubuntu 22.04.5 LTS
+$ sha256sum keyescrow/pft-keyescrow.sh keyescrow/keyescrow_tar.py keyescrow/tests/*.sh keyescrow/tests/*.py
+7df758d07df80a5c3c6e0b4c66a89974f1c1376e3c379ff69bf41d9ec4ba5cbd  keyescrow/pft-keyescrow.sh
+45d0bbeaf7728564159440690d88f493e5be9eedd89423825b87edd8143286f2  keyescrow/keyescrow_tar.py
+0312715be5bfdfc925202a9348c3a89476296374dd594ede49bd4df0293b2423  keyescrow/tests/run-escrow-tests.sh
+dfd6b78480eb1d304826582e80c1854cb5b78daaa883485e3f259a343d2610ec  keyescrow/tests/run-tests.sh
+29eaf77754dabeed55fdd5c6d315d43ad1525df32fe7c49f1436aa98b2839f62  keyescrow/tests/mutate.py
+$ nice -n 15 python3 -u keyescrow/tests/mutate.py -j 3 --timeout 600
+CONTROL (unmutated) rc=0 RESULT: 67 passed, 0 failed | RESULT: 89 passed, 0 failed 53s
+I1   KILLED (6 failed: mode 644 (want 600): perm, exit 2)                        70s  inventory: wrong mode accepted
+I2   KILLED (1 failed: owner differs: perm, owner BAD, name not printed)         69s  inventory: owner not checked
+I3   KILLED (1 failed: group differs: perm, group BAD)                           69s  inventory: group not checked
+I4   KILLED (1 failed: symlink: perm 'not a regular file')                       55s  inventory: symlink / non-file accepted
+I5   KILLED (4 failed: bare: exit 2)                                             54s  inventory: missing required item read as optional
+I6   KILLED (3 failed: one byte appended: drift, exit 1)                         55s  inventory: drift not detected
+I7   KILLED (7 failed: present: exit 1 (never escrowed))                         64s  inventory: never escrowed / new items exit 0
+I8   KILLED (2 failed: fingerprint is keyed: differs from sha256(file))          62s  inventory: fingerprint not keyed
+I9   KILLED (1 failed: unreadable: state + exit 2, no fingerprint)               62s  inventory: unreadable item read as ok
+K1   KILLED (1 failed: keygen again: refused (exit 4), identity unchanged)       73s  keygen: replaces an existing identity
+K2   KILLED (4 failed: set-peer: own recipient refused)                          73s  set-peer: own recipient accepted
+K3   KILLED (1 failed: set-peer: malformed refused (exit 3))                     77s  set-peer: malformed recipient accepted
+(exit 143)
+$ ps -eo pid,args | grep -c "[p]ft-keyescrow-mut-"
+14
+# NOTE 2026-11-03T21:24:42Z: run 06 STOPPED by the agent (SIGTERM to timeout) after the live install found a cosmetic die() bug (exit code appended to every message); superseded by run 08 on the fixed commit. Not cited as evidence.
+# NOTE 2026-11-03T21:24:54Z: re-check after the stop: 0 processes from mutant copies left (ps | grep -c [p]ft-keyescrow-mut- = 0)

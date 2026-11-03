@@ -1,0 +1,14 @@
+# keyescrow 11 - recorded mutant run - 2026-11-03T21:43:38Z - commit b914f2885169b5c44cd4171c63fcaede2d247b6b - Ubuntu 22.04.5 LTS
+$ sha256sum keyescrow/pft-keyescrow.sh keyescrow/keyescrow_tar.py keyescrow/tests/*.sh keyescrow/tests/*.py
+be558e05196f9ee5b65f1758f3a1b699a4a33964bd142f3b3c881584b18ab686  keyescrow/pft-keyescrow.sh
+45d0bbeaf7728564159440690d88f493e5be9eedd89423825b87edd8143286f2  keyescrow/keyescrow_tar.py
+4c6374025d109dd6d5875e63a17fb0e01413aac85065bdcd1d9b4959eb249f62  keyescrow/tests/run-escrow-tests.sh
+b3e578530e6cec2ac0c78f4385d6b7487b4303ffc4a291065e777bfc7d11364c  keyescrow/tests/run-tests.sh
+094a7c5903cbc9f72b9e46874e70e4417b1aea65b50acee707a6338c759eeb4c  keyescrow/tests/mutate.py
+$ nice -n 15 python3 -u keyescrow/tests/mutate.py -j 3 --timeout 600
+CONTROL (unmutated) rc=1 RESULT: 74 passed, 0 failed | RESULT: 89 passed, 1 failed 56s
+RESULT: control run failed - no mutant counted
+(exit 2)
+$ ps -eo pid,args | grep -c "[p]ft-keyescrow-mut-"
+0
+# NOTE 2026-11-03T21:50:28Z: control run failed 1 escrow test (name not printed by the harness); 7 later runs of the suite (1 alone + 6 in parallel under nice 15) all passed 90/90. mutate.py now names failing control tests; superseded by run 14.
