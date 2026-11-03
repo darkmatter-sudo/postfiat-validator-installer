@@ -4,6 +4,8 @@ Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tr
 
 [Service]
 Type=oneshot
+# shell pipelines rely on SIGPIPE (systemd ignores it by default: "sort: write error" in the run-10 escrow prune)
+IgnoreSIGPIPE=no
 # exit 1 (drift / not escrowed) and 2 (perm/missing, or a held copy failed its check) are exported as metrics and
 # alerted on (../alerts/keyescrow.rules.yml), so they do not fail the unit; a textfile that cannot be written does
 # (no fresh metrics -> pft-rulecheck / PFTTextfileStale).

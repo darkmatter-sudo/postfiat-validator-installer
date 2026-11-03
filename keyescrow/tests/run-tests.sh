@@ -52,7 +52,7 @@ fresh; run inventory
 check "bare: exit 2" '[ "$RC" = 2 ]'
 check "bare: required items missing" '[ "$(state_of a:seed)" = missing ] && [ "$(state_of j:fss)" = missing ] && [ "$(state_of v:only)" = missing ]'
 check "bare: optional item absent, not missing" '[ "$(state_of o:opt)" = absent ]'
-check "bare: result line counts" 'grep -q "^RESULT: ok 0, perm 0, missing 4, unreadable 0, absent(optional) 1; escrow drift 0, new 0 -> exit 2$" <<<"$OUT"'
+check "bare: result line counts" 'grep -q "^RESULT: ok 0, perm 0, missing 4, unreadable 0, absent(optional) 1; escrow drift 0, new 0, evolving 0 -> exit 2$" <<<"$OUT"'
 check "bare: last escrow never" 'grep -q "| last escrow never$" <<<"$OUT"'
 
 # --- host filter ---------------------------------------------------------------------------------------------
@@ -65,7 +65,7 @@ fresh; populate; run inventory
 check "present: exit 1 (never escrowed)" '[ "$RC" = 1 ]'
 check "present: all ok" '[ "$(state_of a:seed)" = ok ] && [ "$(state_of a:key)" = ok ] && [ "$(state_of j:fss)" = ok ] && [ "$(state_of v:only)" = ok ]'
 check "present: no fp_key -> fp n/a, escrow new" '[ "$(fp_of a:seed)" = n/a ] && [ "$(escrow_of a:seed)" = new ]'
-check "present: counts" 'grep -q "^RESULT: ok 4, perm 0, missing 0, unreadable 0, absent(optional) 1; escrow drift 0, new 4 -> exit 1$" <<<"$OUT"'
+check "present: counts" 'grep -q "^RESULT: ok 4, perm 0, missing 0, unreadable 0, absent(optional) 1; escrow drift 0, new 4, evolving 0 -> exit 1$" <<<"$OUT"'
 check "present: owners never printed" '! grep -qw "$ME" <<<"$OUT"'
 
 # --- perm findings ---------------------------------------------------------------------------------------------
@@ -103,7 +103,25 @@ check "escrowed + unchanged: exit 0, all same" '[ "$RC" = 0 ] && [ "$(escrow_of 
 check "last escrow time printed (UTC)" 'grep -q "| last escrow 2026-09-21T14:13:20Z$" <<<"$OUT"'
 printf 'x' >> "$E/root/var/lib/a/seed"; run inventory
 check "one byte appended: drift, exit 1" '[ "$RC" = 1 ] && [ "$(escrow_of a:seed)" = drift ] && [ "$(escrow_of a:key)" = same ]'
-check "drift counted" 'grep -q "escrow drift 1, new 0 -> exit 1$" <<<"$OUT"'
+check "drift counted" 'grep -q "escrow drift 1, new 0, evolving 0 -> exit 1$" <<<"$OUT"'
+# evolving items (conf EVOLVING): journald rewrites the FSS sealing key in place every seal interval
+fresh; populate; fpkey; run inventory
+{ echo "# escrowed_at=1790000000"; for id in a:seed a:key j:fss v:only; do printf '%s\t%s\n' "$id" "$(fp_of "$id")"; done; } > "$E/root/var/lib/pft-keyescrow/escrowed.tsv"
+printf 'evolved' >> "$E/root/var/log/journal/$MID/fss"; run inventory --textfile
+check "evolving control: without EVOLVING a changed j:fss is drift" '[ "$RC" = 1 ] && [ "$(escrow_of j:fss)" = drift ]'
+printf 'EVOLVING=x:other j:fss\n' >> "$E/root/etc/pft-keyescrow.env"; run inventory --textfile
+check "EVOLVING item changed: escrow evolving, not drift, exit 0" '[ "$RC" = 0 ] && [ "$(escrow_of j:fss)" = evolving ] && grep -q "escrow drift 0, new 0, evolving 1 -> exit 0$" <<<"$OUT"'
+check "EVOLVING item changed: textfile drift_items 0" 'grep -qx "pft_keyescrow_drift_items{node=\"validator\"} 0" "$E/root/var/lib/pft-exporter/textfile/pft_keyescrow.prom"'
+printf 'x' >> "$E/root/var/lib/a/seed"; run inventory
+check "EVOLVING does not hide drift of other items" '[ "$RC" = 1 ] && [ "$(escrow_of a:seed)" = drift ] && [ "$(escrow_of j:fss)" = evolving ] && grep -q "escrow drift 1, new 0, evolving 1 -> exit 1$" <<<"$OUT"'
+sed -i '/^j:fss/d' "$E/root/var/lib/pft-keyescrow/escrowed.tsv"; run inventory
+check "EVOLVING item never escrowed: still new" '[ "$(escrow_of j:fss)" = new ] && grep -q "new 1, evolving 0" <<<"$OUT"'
+printf 'EVOLVING=j:fs xj:fss\n' >> "$E/root/etc/pft-keyescrow.env"; printf 'j:fss\t0000000000000000\n' >> "$E/root/var/lib/pft-keyescrow/escrowed.tsv"; run inventory
+check "EVOLVING matches whole ids only (j:fs and xj:fss do not cover j:fss)" '[ "$(escrow_of j:fss)" = drift ]'
+sed -i '/^EVOLVING=/d' "$E/root/etc/pft-keyescrow.env"; sed -i 's/^j:fss\t/journald:fss\t/' "$E/registry.tsv" "$E/root/var/lib/pft-keyescrow/escrowed.tsv"; run inventory
+check "default EVOLVING (no conf line) is journald:fss" '[ "$(escrow_of journald:fss)" = evolving ]'
+fresh; populate; fpkey; run inventory
+{ echo "# escrowed_at=1790000000"; for id in a:seed a:key j:fss v:only; do printf '%s\t%s\n' "$id" "$(fp_of "$id")"; done; } > "$E/root/var/lib/pft-keyescrow/escrowed.tsv"
 sed -i '/^v:only/d' "$E/root/var/lib/pft-keyescrow/escrowed.tsv"; run inventory
 check "item missing from the escrow manifest: new" '[ "$(escrow_of v:only)" = new ]'
 sed -i 's/^# escrowed_at=.*/# escrowed_at=soon/' "$E/root/var/lib/pft-keyescrow/escrowed.tsv"; run inventory

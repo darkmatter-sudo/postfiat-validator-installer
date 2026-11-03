@@ -78,7 +78,7 @@ check "validator: 2 sentry generations held, both verified" "$(ok_if '[ "$XRC" =
 x "R 'sudo -n pft-keyescrow verify --all --textfile'"
 check "sentry: 2 validator generations held, both verified" "$(ok_if '[ "$XRC" = 0 ] && grep -q "RESULT: 2 generation(s) checked, 0 failed" <<<"$XOUT"')"
 x "sudo -n pft-keyescrow inventory --textfile | tail -1; R 'sudo -n pft-keyescrow inventory --textfile' | tail -1"
-check "inventory on both: no drift, nothing new, exit 0" "$(ok_if '[ "$(grep -c "escrow drift 0, new 0 -> exit 0" <<<"$XOUT")" = 2 ]')"
+check "inventory on both: no drift, nothing new, exit 0" "$(ok_if '[ "$(grep -cE "escrow drift 0, new 0, evolving [0-9]+ -> exit 0" <<<"$XOUT")" = 2 ]')"
 x "sudo -n pft-keyescrow pull && grep -h '^pft_keyescrow_[a-z_]*{' /var/lib/pft-exporter/textfile/pft_keyescrow*.prom | grep -v collect_timestamp | grep -v verify_timestamp"
 check "validator exports both nodes: held ok=1 and 2 generations each way, no drift" "$(ok_if 'grep -q "^pft_keyescrow_held_verify_ok{node=\"validator\",peer=\"sentry\"} 1$" <<<"$XOUT" && grep -q "^pft_keyescrow_held_verify_ok{node=\"sentry\",peer=\"validator\"} 1$" <<<"$XOUT" && grep -q "^pft_keyescrow_held_generations{node=\"sentry\",peer=\"validator\"} 2$" <<<"$XOUT" && grep -q "^pft_keyescrow_held_generations{node=\"validator\",peer=\"sentry\"} 2$" <<<"$XOUT" && grep -q "^pft_keyescrow_drift_items{node=\"sentry\"} 0$" <<<"$XOUT" && grep -q "^pft_keyescrow_drift_items{node=\"validator\"} 0$" <<<"$XOUT"')"
 x "TZ=UTC systemctl list-timers 'pft-keyescrow*' --no-pager | grep -c pft-keyescrow; R 'TZ=UTC systemctl list-timers pft-keyescrow* --no-pager' | grep -c pft-keyescrow"

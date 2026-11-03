@@ -6,6 +6,8 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+# shell pipelines rely on SIGPIPE (systemd ignores it by default: "sort: write error" in the run-10 escrow prune)
+IgnoreSIGPIPE=no
 # validator only (the host with PEER_SSH in /etc/pft-keyescrow.env). The ssh runs as the operator account named in
 # PEER_SSH (runuser -u ...), which already holds the admin key for the peer. A failed direction fails the unit and
 # leaves the last-escrow time unchanged, so PFTKeyEscrowStale reason=age fires after 36 h.

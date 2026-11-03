@@ -6,6 +6,8 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+# shell pipelines rely on SIGPIPE (systemd ignores it by default: "sort: write error" in the run-10 escrow prune)
+IgnoreSIGPIPE=no
 ExecStart=/usr/local/bin/pft-keyescrow pull
 ReadWritePaths=/var/lib/pft-exporter/textfile
 ProtectSystem=strict

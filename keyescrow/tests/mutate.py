@@ -341,6 +341,35 @@ MUTANTS = [
         '        if meta.get("cipher_bytes") != str(got["age"][3]):',
         "        if False:",
     ),
+    # evolving items (journald FSS key)
+    (
+        "F1",
+        "sh",
+        "evolving: never recognised (always drift)",
+        'elif [[ " $EVOLVING " == *" $id "* ]]; then esc=evolving',
+        "elif false; then esc=evolving",
+    ),
+    (
+        "F2",
+        "sh",
+        "evolving: still counted as drift",
+        "esc=evolving; n_evolving=$((n_evolving + 1))",
+        "esc=evolving; n_drift=$((n_drift + 1))",
+    ),
+    (
+        "F3",
+        "sh",
+        "evolving: substring match",
+        '[[ " $EVOLVING " == *" $id "* ]]',
+        '[[ " $EVOLVING " == *"$id"* ]]',
+    ),
+    (
+        "F4",
+        "sh",
+        "evolving: no default",
+        'EVOLVING="${EVOLVING:-journald:fss}"',
+        'EVOLVING="${EVOLVING:-}"',
+    ),
     # pull (peer textfiles copied here) and serve textfile
     (
         "U1",

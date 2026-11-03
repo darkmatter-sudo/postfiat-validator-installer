@@ -32,7 +32,8 @@
 #   unreadable present but this caller cannot read it (run as root; exit 2)
 # Escrow state, per present item: fingerprint = first 16 hex of sha256(FP_KEY || file bytes) (keyed, so a published
 # fingerprint of a low-entropy secret such as an ntfy topic cannot be brute-forced), compared with the fingerprint
-# recorded by the last escrow (STATE_DIR/escrowed.tsv): same | drift (changed since the escrow) | new (never escrowed).
+# recorded by the last escrow (STATE_DIR/escrowed.tsv): same | drift (changed since the escrow) | new (never escrowed)
+# | evolving (changed, but the item changes by design: conf EVOLVING, default journald:fss; not counted as drift).
 # Without FP_KEY (before keygen) fingerprints are "n/a" and every item is "new". drift/new/never-escrowed: exit 1.
 # Owners/groups are never printed (the alerts ntfy env belongs to a login user): only ok / BAD.
 #
@@ -72,6 +73,11 @@ KEEP="$(conf_get KEEP)"; KEEP="${KEEP:-7}"
 ALERTS_NTFY_ENV="$(conf_get ALERTS_NTFY_ENV)"
 ALERTS_NTFY_OWNER="$(conf_get ALERTS_NTFY_OWNER)"
 VALKEYS_DIR="$(conf_get VALKEYS_DIR)"
+# Items whose bytes change by design between escrows: journald evolves the FSS sealing key IN PLACE at every seal
+# interval (forward-secure sealing; the fss file's mtime moves every interval), so its fingerprint differs from the
+# escrowed one minutes after each escrow. Such items report escrow "evolving" (not drift, not alerted); the nightly
+# escrow keeps a copy at most a day old. "new" (never escrowed) still counts. Conf EVOLVING (space-separated ids).
+EVOLVING="$(conf_get EVOLVING)"; EVOLVING="${EVOLVING:-journald:fss}"
 
 die() { echo "pft-keyescrow: $1" >&2; exit "${2:-3}"; }
 ts() { date -u +%FT%TZ; }
@@ -125,7 +131,7 @@ escrowed_at() { # epoch of the last escrow (0 = never)
 
 scan() { # sets ROWS (one line per applicable item), SEAL_LIST (id<TAB>path of ok items), FPS (id<TAB>fp), N_*, LAST
   local id hosts tpl mode owner group need cite p st fp esc have_m have_o have_g own grp why e
-  n_ok=0; n_perm=0; n_missing=0; n_absent=0; n_unread=0; n_drift=0; n_new=0; ROWS=""; SEAL_LIST=""; FPS=""
+  n_ok=0; n_perm=0; n_missing=0; n_absent=0; n_unread=0; n_drift=0; n_new=0; n_evolving=0; ROWS=""; SEAL_LIST=""; FPS=""
   [[ "$HOST_LABEL" =~ ^(validator|sentry)$ ]] || die "HOST_LABEL must be validator or sentry (got '$HOST_LABEL')"
   LAST="$(escrowed_at)"
   while IFS=$'\t' read -r id hosts tpl mode owner group need cite; do
@@ -157,6 +163,7 @@ scan() { # sets ROWS (one line per applicable item), SEAL_LIST (id<TAB>path of o
         e="$(escrowed_fp "$id")"
         if [ -z "$e" ] || [ "$fp" = n/a ]; then esc=new; n_new=$((n_new + 1))
         elif [ "$e" = "$fp" ]; then esc=same
+        elif [[ " $EVOLVING " == *" $id "* ]]; then esc=evolving; n_evolving=$((n_evolving + 1))
         else esc=drift; n_drift=$((n_drift + 1)); fi
       fi
     fi
@@ -187,7 +194,7 @@ cmd_inventory() {
     printf '%s' "$rows" | while IFS=$'\t' read -r id st esc fp need cite why; do
       printf '  %-10s %-18s escrow %-5s fp %-16s %s  (%s)\n' "[$st]" "$id" "$esc" "$fp" "$why" "$cite"
     done
-    echo "RESULT: ok $n_ok, perm $n_perm, missing $n_missing, unreadable $n_unread, absent(optional) $n_absent; escrow drift $n_drift, new $n_new -> exit $rc"
+    echo "RESULT: ok $n_ok, perm $n_perm, missing $n_missing, unreadable $n_unread, absent(optional) $n_absent; escrow drift $n_drift, new $n_new, evolving $n_evolving -> exit $rc"
   fi
   if [ "$tf" = 1 ]; then
     local lab="node=\"$HOST_LABEL\"" out tmp
