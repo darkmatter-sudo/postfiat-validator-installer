@@ -53,7 +53,9 @@ check "redaction positive control" "$RCTL"
 [ "$RCTL" = 0 ] || exit 3
 x "sha256sum /usr/local/bin/pft-keyescrow; R 'sha256sum /usr/local/bin/pft-keyescrow'"
 x "sudo -n pft-keyescrow verify --all | tail -1; R 'sudo -n pft-keyescrow verify --all' | tail -1"
-check "before: each holder has 1 good generation of the other" "$(ok_if '[ "$(grep -c "^RESULT: 1 generation(s) checked, 0 failed" <<<"$XOUT")" = 2 ]')"
+check "before: each holder has good generations of the other" "$(ok_if '[ "$(grep -cE "^RESULT: [1-9][0-9]* generation\(s\) checked, 0 failed" <<<"$XOUT")" = 2 ]')"
+NV="$(sudo -n pft-keyescrow verify --all | sed -nE 's/^RESULT: ([0-9]+) generation.*/\1/p')"; NS="$(R 'sudo -n pft-keyescrow verify --all' | sed -nE 's/^RESULT: ([0-9]+) generation.*/\1/p')"
+echo "  held before: validator holds $NV sentry generation(s), sentry holds $NS validator generation(s)"
 
 echo "== 1. re-install on both hosts ($(ts))"
 x "git archive $SHA_HEAD keyescrow | ssh -o BatchMode=yes $RELAY 'rm -rf $RDIR && mkdir -m 700 $RDIR && tar -x -C $RDIR && sha256sum $RDIR/keyescrow/pft-keyescrow.sh'"
@@ -74,13 +76,13 @@ check "pull after the escrow (sentry textfiles exist now)" "$(ok_if 'grep -q "pf
 
 echo "== 3. verify every held generation, inventory, metrics ($(ts))"
 x "sudo -n pft-keyescrow verify --all --textfile"
-check "validator: 2 sentry generations held, both verified" "$(ok_if '[ "$XRC" = 0 ] && grep -q "RESULT: 2 generation(s) checked, 0 failed" <<<"$XOUT"')"
+check "validator: one more sentry generation held ($((NV + 1))), all verified" "$(ok_if '[ "$XRC" = 0 ] && grep -q "RESULT: $((NV + 1)) generation(s) checked, 0 failed" <<<"$XOUT"')"
 x "R 'sudo -n pft-keyescrow verify --all --textfile'"
-check "sentry: 2 validator generations held, both verified" "$(ok_if '[ "$XRC" = 0 ] && grep -q "RESULT: 2 generation(s) checked, 0 failed" <<<"$XOUT"')"
+check "sentry: one more validator generation held ($((NS + 1))), all verified" "$(ok_if '[ "$XRC" = 0 ] && grep -q "RESULT: $((NS + 1)) generation(s) checked, 0 failed" <<<"$XOUT"')"
 x "sudo -n pft-keyescrow inventory --textfile | tail -1; R 'sudo -n pft-keyescrow inventory --textfile' | tail -1"
 check "inventory on both: no drift, nothing new, exit 0" "$(ok_if '[ "$(grep -cE "escrow drift 0, new 0, evolving [0-9]+ -> exit 0" <<<"$XOUT")" = 2 ]')"
 x "sudo -n pft-keyescrow pull && grep -h '^pft_keyescrow_[a-z_]*{' /var/lib/pft-exporter/textfile/pft_keyescrow*.prom | grep -v collect_timestamp | grep -v verify_timestamp"
-check "validator exports both nodes: held ok=1 and 2 generations each way, no drift" "$(ok_if 'grep -q "^pft_keyescrow_held_verify_ok{node=\"validator\",peer=\"sentry\"} 1$" <<<"$XOUT" && grep -q "^pft_keyescrow_held_verify_ok{node=\"sentry\",peer=\"validator\"} 1$" <<<"$XOUT" && grep -q "^pft_keyescrow_held_generations{node=\"sentry\",peer=\"validator\"} 2$" <<<"$XOUT" && grep -q "^pft_keyescrow_held_generations{node=\"validator\",peer=\"sentry\"} 2$" <<<"$XOUT" && grep -q "^pft_keyescrow_drift_items{node=\"sentry\"} 0$" <<<"$XOUT" && grep -q "^pft_keyescrow_drift_items{node=\"validator\"} 0$" <<<"$XOUT"')"
+check "validator exports both nodes: held ok=1 and the new generation counts each way, no drift" "$(ok_if 'grep -q "^pft_keyescrow_held_verify_ok{node=\"validator\",peer=\"sentry\"} 1$" <<<"$XOUT" && grep -q "^pft_keyescrow_held_verify_ok{node=\"sentry\",peer=\"validator\"} 1$" <<<"$XOUT" && grep -q "^pft_keyescrow_held_generations{node=\"sentry\",peer=\"validator\"} $((NS + 1))$" <<<"$XOUT" && grep -q "^pft_keyescrow_held_generations{node=\"validator\",peer=\"sentry\"} $((NV + 1))$" <<<"$XOUT" && grep -q "^pft_keyescrow_drift_items{node=\"sentry\"} 0$" <<<"$XOUT" && grep -q "^pft_keyescrow_drift_items{node=\"validator\"} 0$" <<<"$XOUT"')"
 x "TZ=UTC systemctl list-timers 'pft-keyescrow*' --no-pager | grep -c pft-keyescrow; R 'TZ=UTC systemctl list-timers pft-keyescrow* --no-pager' | grep -c pft-keyescrow"
 check "timers: 3 on the validator (hourly, nightly, pull), 1 on the sentry (hourly)" "$(ok_if '[ "$(head -1 <<<"$XOUT")" = 3 ] && [ "$(tail -1 <<<"$XOUT")" = 1 ]')"
 
@@ -93,8 +95,8 @@ x "grep -c 'AGE-SECRET-KEY' <<<\"\$ESC\"; sudo -n grep -c 'AGE-SECRET-KEY' /var/
 check "no age identity in the escrow output (control: the identity file has one)" "$(ok_if '[ "$(head -1 <<<"$XOUT")" = 0 ] && [ "$(tail -1 <<<"$XOUT")" = 1 ]')"
 
 echo "== 5. integrity baselines ($(ts))"
-x "sudo -n pft-integrity accept --reason '$TASK: pft-keyescrow $SHORT re-installed (binary, install output fix)' | tail -3"
-x "R \"sudo -n pft-integrity accept --reason '$TASK: pft-keyescrow $SHORT re-installed (binary, install output fix)'\" | tail -3"
+x "sudo -n pft-integrity accept --reason '$TASK: pft-keyescrow $SHORT re-installed' | tail -3"
+x "R \"sudo -n pft-integrity accept --reason '$TASK: pft-keyescrow $SHORT re-installed'\" | tail -3"
 x "sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify' | tail -1"
 check "pft-integrity PASS on both after accept" "$(ok_if '[ "$(grep -c "^RESULT: PASS" <<<"$XOUT")" = 2 ]')"
 
