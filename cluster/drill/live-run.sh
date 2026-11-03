@@ -213,7 +213,7 @@ check "PFTClusterMissing loaded, health ok" "$(ok_if 'grep -qE "^PFTClusterMissi
 echo; echo "== 3. keys (validation_create on each node; only fingerprints are printed)"
 x "sudo -n pft-cluster keygen"
 check "validator keygen exit 0" "$XRC"
-x "sudo -n cat /var/lib/pft-cluster/fp_key | R 'sudo -n sh -c \"umask 077; mkdir -p /var/lib/pft-cluster && chmod 700 /var/lib/pft-cluster && cat > /var/lib/pft-cluster/fp_key\"'; sudo -n sha256sum < /var/lib/pft-cluster/fp_key | cut -c1-12; R 'sudo -n sha256sum < /var/lib/pft-cluster/fp_key | cut -c1-12'"
+x "sudo -n cat /var/lib/pft-cluster/fp_key | R 'sudo -n sh -c \"umask 077; mkdir -p /var/lib/pft-cluster && chmod 700 /var/lib/pft-cluster && cat > /var/lib/pft-cluster/fp_key\"'; sudo -n cat /var/lib/pft-cluster/fp_key | sha256sum | cut -c1-12; R 'sudo -n cat /var/lib/pft-cluster/fp_key | sha256sum | cut -c1-12'"
 check "fp_key identical on both hosts (sha256 prefix)" "$(ok_if '[ "$(sort -u <<<"$XOUT" | grep -cE "^[0-9a-f]{12}$")" = 1 ]')"
 x "R 'sudo -n pft-cluster keygen'"
 check "sentry keygen exit 0" "$XRC"
