@@ -1,0 +1,106 @@
+# promtool unit tests for seccomp.rules.yml. Run: promtool test rules seccomp.tests.yml
+# Time 0 = 1970-01-01T00:00Z; 1m input intervals. Input series and eval times are hand-written; annotations are the
+# rules' own text with the labels/value substituted by hand for each case.
+rule_files:
+- seccomp.rules.yml
+evaluation_interval: 1m
+tests:
+- name: 'drift: two FAIL checks on the validator fire after 30m with the count; sentry all PASS never fires'
+  interval: 1m
+  input_series:
+  - series: pft_seccomp_check{host="validator",check="container",status="X"}
+    values: '0x40'
+  - series: pft_seccomp_check{host="validator",check="recreate",status="X"}
+    values: '0x40'
+  - series: pft_seccomp_check{host="validator",check="kernel",status="X"}
+    values: 1x40
+  - series: pft_seccomp_check{host="sentry",check="container",status="X"}
+    values: 1x40
+  - series: pft_seccomp_check{host="sentry",check="denials",status="X"}
+    values: 1x40
+  alert_rule_test:
+  - eval_time: 29m
+    alertname: PFTSeccompDrift
+    exp_alerts: []
+  - eval_time: 31m
+    alertname: PFTSeccompDrift
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        host: validator
+      exp_annotations:
+        summary: 2 seccomp check(s) FAIL on validator
+        description: 'The hourly pft-seccomp audit found the postfiatd container''s seccomp confinement drifted: Docker''s default or no profile, a stored profile that differs from /etc/pft-seccomp/pft-postfiatd.json,
+          the file missing or invalid, init not in filter mode, errno actions not logged, or the re-create path / confine options lost. Run `sudo pft-seccomp audit` to list them.'
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/seccomp/README.md#alerts
+- name: drift ignores the denials check (that is PFTSeccompDenied); a <30m apply window never fires; FIRING then RESOLVED
+  interval: 1m
+  input_series:
+  - series: pft_seccomp_check{host="sentry",check="denials",status="X"}
+    values: '0x80'
+  - series: pft_seccomp_check{host="sentry",check="container",status="X"}
+    values: 1x5 0x20 1x10 0x35 1x10
+  alert_rule_test:
+  - eval_time: 28m
+    alertname: PFTSeccompDrift
+    exp_alerts: []
+  - eval_time: 70m
+    alertname: PFTSeccompDrift
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        host: sentry
+      exp_annotations:
+        summary: 1 seccomp check(s) FAIL on sentry
+        description: 'The hourly pft-seccomp audit found the postfiatd container''s seccomp confinement drifted: Docker''s default or no profile, a stored profile that differs from /etc/pft-seccomp/pft-postfiatd.json,
+          the file missing or invalid, init not in filter mode, errno actions not logged, or the re-create path / confine options lost. Run `sudo pft-seccomp audit` to list them.'
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/seccomp/README.md#alerts
+  - eval_time: 75m
+    alertname: PFTSeccompDrift
+    exp_alerts: []
+- name: 'denied: fires on the first sample > 0, per host, and resolves when the audit reports 0 (ack or 24h window passed)'
+  interval: 1m
+  input_series:
+  - series: pft_seccomp_denied_events{host="validator"}
+    values: 0x5 3x10 0x10
+  - series: pft_seccomp_denied_events{host="sentry"}
+    values: '0x25'
+  alert_rule_test:
+  - eval_time: 5m
+    alertname: PFTSeccompDenied
+    exp_alerts: []
+  - eval_time: 6m
+    alertname: PFTSeccompDenied
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        host: validator
+      exp_annotations:
+        summary: 3 seccomp denial(s) in 24h on validator
+        description: The tailored seccomp profile returned EPERM to a process in the postfiatd container in the last 24h (a syscall the learn run never saw). Run `sudo pft-seccomp audit` for the top syscalls;
+          widen margin.tsv and re-apply, or acknowledge with `sudo pft-seccomp ack-denials --reason ... --yes`.
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/seccomp/README.md#alerts
+  - eval_time: 17m
+    alertname: PFTSeccompDenied
+    exp_alerts: []
+- name: 'denied: max by host merges two scrapes of the same host into one alert with the larger count'
+  interval: 1m
+  input_series:
+  - series: pft_seccomp_denied_events{host="validator",instance="a",job="node"}
+    values: 2x5
+  - series: pft_seccomp_denied_events{host="validator",instance="a",job="node",extra="x"}
+    values: 5x5
+  alert_rule_test:
+  - eval_time: 3m
+    alertname: PFTSeccompDenied
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        host: validator
+        instance: a
+        job: node
+      exp_annotations:
+        summary: 5 seccomp denial(s) in 24h on validator
+        description: The tailored seccomp profile returned EPERM to a process in the postfiatd container in the last 24h (a syscall the learn run never saw). Run `sudo pft-seccomp audit` for the top syscalls;
+          widen margin.tsv and re-apply, or acknowledge with `sudo pft-seccomp ack-denials --reason ... --yes`.
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/seccomp/README.md#alerts

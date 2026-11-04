@@ -1,0 +1,32 @@
+# Alert rules for pft-seccomp (../seccomp). pft-seccomp.timer audits once an hour and writes pft_seccomp_*{host="..."}
+# to the textfile dir (validator: local; sentry: pulled like pft-apparmor). Two alerts:
+#   PFTSeccompDrift   a non-denial check FAIL for 30m: the container back on Docker's default profile or unconfined
+#                     (e.g. a re-create without the compose override), its stored profile no longer equal to
+#                     /etc/pft-seccomp/pft-postfiatd.json (file edited or replaced after create), the file missing or
+#                     failing check, init not in filter mode, errno actions not logged by the kernel, the re-create
+#                     path or confine/ options lost, or an unreadable ack file. 30m: an apply/rollback window is shorter.
+#   PFTSeccompDenied  the profile returned EPERM to the node, cron or an add-on's docker exec in the last 24h (no `for`:
+#                     the audit counts a 24h window, so one hourly sample is a real denial). Clear it with
+#                     `pft-seccomp ack-denials` after investigating; the next audit resolves it.
+# A stopped audit is caught by pft-rulecheck and PFTTextfileStale. The sentry runs no Prometheus: host="sentry" is
+# evaluated here. Tests: seccomp.tests.yml.
+groups:
+  - name: pft-seccomp
+    rules:
+      - alert: PFTSeccompDrift
+        expr: count by (instance, job, host) (pft_seccomp_check{check!="denials"} == 0) > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} seccomp check(s) FAIL on {{ $labels.host }}"
+          description: "The hourly pft-seccomp audit found the postfiatd container's seccomp confinement drifted: Docker's default or no profile, a stored profile that differs from /etc/pft-seccomp/pft-postfiatd.json, the file missing or invalid, init not in filter mode, errno actions not logged, or the re-create path / confine options lost. Run `sudo pft-seccomp audit` to list them."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/seccomp/README.md#alerts"
+      - alert: PFTSeccompDenied
+        expr: max by (instance, job, host) (pft_seccomp_denied_events) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} seccomp denial(s) in 24h on {{ $labels.host }}"
+          description: "The tailored seccomp profile returned EPERM to a process in the postfiatd container in the last 24h (a syscall the learn run never saw). Run `sudo pft-seccomp audit` for the top syscalls; widen margin.tsv and re-apply, or acknowledge with `sudo pft-seccomp ack-denials --reason ... --yes`."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/seccomp/README.md#alerts"

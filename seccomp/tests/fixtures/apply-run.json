@@ -1,0 +1,90 @@
+{
+  "Name": "/postfiatd-sentry",
+  "AppArmorProfile": "pft-postfiatd",
+  "State": {
+    "Running": true,
+    "StartedAt": "2026-10-30T08:00:00.000000000Z",
+    "Pid": 4242
+  },
+  "Config": {
+    "Image": "agtipft/postfiatd:testnet-light-latest",
+    "Cmd": [
+      "--conf",
+      "/etc/postfiatd/postfiatd.cfg"
+    ],
+    "Entrypoint": [
+      "/usr/local/bin/docker-entrypoint.sh"
+    ],
+    "User": "0:0",
+    "Env": [
+      "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+      "NETWORK=testnet"
+    ],
+    "Labels": {}
+  },
+  "HostConfig": {
+    "CapAdd": [
+      "CAP_SETGID",
+      "CAP_SETUID"
+    ],
+    "CapDrop": [
+      "ALL"
+    ],
+    "ReadonlyRootfs": true,
+    "SecurityOpt": [
+      "no-new-privileges",
+      "apparmor=pft-postfiatd"
+    ],
+    "PidsLimit": 256,
+    "Memory": 2147483648,
+    "MemorySwap": 2147483648,
+    "Tmpfs": {
+      "/run": "rw,noexec,nosuid,size=64m",
+      "/tmp": "rw,noexec,nosuid,size=64m",
+      "/var/lib/logrotate": "rw,noexec,nosuid,size=64m"
+    },
+    "PortBindings": {
+      "2559/tcp": [
+        {
+          "HostIp": "203.0.113.7",
+          "HostPort": "2560"
+        }
+      ]
+    },
+    "LogConfig": {
+      "Type": "json-file",
+      "Config": {
+        "max-file": "10",
+        "max-size": "100m"
+      }
+    },
+    "RestartPolicy": {
+      "Name": "unless-stopped",
+      "MaximumRetryCount": 0
+    },
+    "NetworkMode": "bridge"
+  },
+  "Mounts": [
+    {
+      "Type": "volume",
+      "Name": "7f50599299879",
+      "Source": "/var/lib/docker/volumes/7f50599299879/_data",
+      "Destination": "/var/log/postfiatd",
+      "RW": true
+    },
+    {
+      "Type": "volume",
+      "Name": "pft-sentry-config",
+      "Source": "/var/lib/docker/volumes/pft-sentry-config/_data",
+      "Destination": "/etc/postfiatd",
+      "RW": true
+    },
+    {
+      "Type": "volume",
+      "Name": "pft-sentry-data",
+      "Source": "/var/lib/docker/volumes/pft-sentry-data/_data",
+      "Destination": "/var/lib/postfiatd/db",
+      "RW": true
+    }
+  ]
+}
