@@ -1,0 +1,50 @@
+# pft-kernwatch pattern catalogue
+# version	1
+# One pattern per line: id <TAB> severity <TAB> class <TAB> Python regex (re.search on the kernel MESSAGE).
+# The FIRST matching line wins, so specific patterns come before general ones. severity: crit | warn | info
+# (info is counted and exported but never alerted on). ids are unique; kernwatch_parse.py refuses a bad catalogue.
+# Classes: oom mem hung lockup oops io fs mce conntrack synflood net link clocksource audit segv
+#
+# --- crit: the node or the host is losing work right now
+oom_global	crit	oom	^Out of memory: Killed process \d+ \(
+oom_cgroup	crit	oom	^Memory cgroup out of memory: Killed process \d+ \(
+hung_task	crit	hung	^INFO: task \S.* blocked for more than \d+ seconds
+soft_lockup	crit	lockup	watchdog: BUG: soft lockup - CPU#\d+ stuck
+hard_lockup	crit	lockup	[Ww]atchdog detected hard LOCKUP on cpu \d+
+rcu_stall	crit	lockup	^rcu: INFO: rcu_\w+ (self-)?detected stall
+kernel_panic	crit	oops	^Kernel panic - not syncing
+kernel_bug	crit	oops	^(kernel BUG at |BUG: unable to handle |BUG: kernel NULL pointer dereference)
+kernel_oops	crit	oops	^(Oops: |general protection fault[:,] )
+io_error	crit	io	^(blk_update_request: )?(I/O|critical medium|critical target|critical space allocation) error, dev \S+, sector
+buffer_io	crit	io	^Buffer I/O error on dev(ice)? \S+
+ext4_error	crit	fs	^EXT4-fs error \(device \S+\)
+fs_readonly	crit	fs	^EXT4-fs \(\S+\): Remounting filesystem read-only
+jbd2_abort	crit	fs	^Aborting journal on device \S+
+xfs_shutdown	crit	fs	^XFS \(\S+\): (Corruption|metadata I/O error|Filesystem has been shut down|Log I/O Error)
+btrfs_error	crit	fs	^BTRFS (error|critical) \(device \S+\)
+mce_error	crit	mce	^mce: \[Hardware Error\]
+edac_ue	crit	mce	^EDAC \S+: \d+ UE
+conntrack_full	crit	conntrack	nf_conntrack: table full, dropping packet
+# --- warn: degraded, or a sign that a crit is coming
+conntrack_expect	warn	conntrack	nf_conntrack: expectation table full
+syn_flood	warn	synflood	^TCP: request_sock_TCPv?6?: Possible SYN flooding on port
+tcp_mem	warn	net	^TCP: out of memory -- consider tuning tcp_mem
+tcp_orphans	warn	net	^TCP: too many orphaned sockets
+alloc_fail	warn	mem	page allocation failure: order:\d+
+oom_invoked	warn	oom	invoked oom-killer: gfp_mask=
+mce_logged	warn	mce	^mce: \d+ Machine check events logged
+edac_ce	warn	mce	^EDAC \S+: \d+ CE
+io_timeout	warn	io	^(nvme \S+: I/O \d+ QID \d+ timeout|virtio_blk \S+: .*timeout|ata\d+(\.\d+)?: (exception Emask|failed command|hard resetting link))
+ext4_warning	warn	fs	^EXT4-fs warning \(device \S+\)
+link_down	warn	link	^(?!.*\b(veth|docker\d|br-)\S*).*\bLink is Down\b
+clock_unstable	warn	clocksource	^clocksource: .*Marking clocksource '\S+' as unstable
+clock_fallback	warn	clocksource	^clocksource: Switched to clocksource (hpet|acpi_pm|refined-jiffies|jiffies)\b
+audit_backlog	warn	audit	^audit: backlog limit exceeded
+audit_lost	warn	audit	^audit: audit_lost=\d+
+audit_queue	warn	audit	^audit: kauditd hold queue overflow
+audit_ratelimit	warn	audit	^audit: rate limit exceeded
+segfault	warn	segv	\bsegfault at [0-9a-f]+ ip [0-9a-f]+ sp [0-9a-f]+ error \d+
+trap	warn	segv	^traps: \S+\[\d+\] (general protection|trap \S+)
+# --- info: counted for the baseline, never alerted on
+martian	info	net	^IPv[46]: martian (source|destination)
+martian_header	info	net	^ll header: \d+:
