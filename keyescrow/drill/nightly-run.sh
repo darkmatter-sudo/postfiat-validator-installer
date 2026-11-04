@@ -28,7 +28,7 @@ ts() { date -u +%FT%TZ; }
 SEC="$(mktemp -d "${TEST_TMPDIR:-$HOME/.cache}/kenightly.XXXXXX")"; chmod 700 "$SEC"; LIT="$SEC/literals.tsv"
 printf 'user\t%s\n' "$(id -un)" > "$LIT"; chmod 600 "$LIT"
 trap 'rm -rf "$SEC"' EXIT
-red() { python3 -u "$REDACT" filter --literals "$LIT" | sed -E "s#$HOME#~#g"; }
+red() { sed -u -E "s#$HOME#~#g" | python3 -u "$REDACT" filter --literals "$LIT"; } # home path first, then the user name
 R() { ssh -o LogLevel=ERROR -o ConnectTimeout=10 -o BatchMode=yes "$RELAY" "$@"; }
 FAILS=0
 check() { # NAME 0|1 DETAIL
@@ -82,7 +82,8 @@ check "timer triggered the service after this script started and the service fin
 
 echo "== 2. the run ($(ts))"
 x "TZ=UTC systemctl show $SVC -p Result -p ExecMainStatus -p ExecMainStartTimestamp -p ExecMainExitTimestamp"
-check "service Result=success ExecMainStatus=0" "$(ok_if 'grep -qx "Result=success" <<<"$XOUT" && grep -qx "ExecMainStatus=0" <<<"$XOUT"')"
+mstart="$(date -u -d "$(sed -n 's/^ExecMainStartTimestamp=//p' <<<"$XOUT")" +%s 2>/dev/null || echo 0)"
+check "service Result=success ExecMainStatus=0, started at/after the trigger" "$(ok_if 'grep -qx "Result=success" <<<"$XOUT" && grep -qx "ExecMainStatus=0" <<<"$XOUT" && [ "$mstart" -ge "$trig" ] && [ "$trig" -ge "$since" ]')" "main start $(date -u -d "@$mstart" +%FT%TZ)"
 x "sudo -n journalctl -u $SVC --since @$((trig - 1)) --utc -o short-iso-precise --no-pager | jn"
 J="$XOUT"
 check "journal: triggered by the timer (systemd Starting line) and Finished" "$(ok_if 'grep -q "Starting pft-keyescrow nightly escrow" <<<"$J" && grep -q "Finished pft-keyescrow nightly escrow" <<<"$J"')"
