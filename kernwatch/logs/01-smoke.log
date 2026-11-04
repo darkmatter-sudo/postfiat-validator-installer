@@ -1,0 +1,114 @@
+== pft-kernwatch smoke 2026-11-04T06:20:29Z
+OS: Ubuntu 22.04.5 LTS | commit fff369f2ae98592f5b059b9110b90ae9dbbc55e1
+$ sha256sum kernwatch/pft-kernwatch.sh kernwatch/kernwatch_parse.py kernwatch/catalogue.tsv
+9581bd4df0042cb121770e3c0e6e535bbde58ea11e03d1075bd4cccb42a3d31f  kernwatch/pft-kernwatch.sh
+7a18cf09a540c5af9586523ed61ede3ab232f6a583a4fbbbcee161dcbb972c1b  kernwatch/kernwatch_parse.py
+54d05f903e12f0ed20b51824ab542d7057e5196ca071498e9067fd206e966d6f  kernwatch/catalogue.tsv
+(exit 0)
+== validator-host (local)
+$ sudo -n rm -rf /var/tmp/kw-smoke-v /var/tmp/kw-smoke-v-full
+(exit 0)
+$ sudo -n env PFT_KW_CONF=/nonexistent PFT_KW_HELPER=kernwatch/kernwatch_parse.py CATALOGUE=kernwatch/catalogue.tsv HOST_LABEL=validator bash kernwatch/pft-kernwatch.sh check-catalogue
+catalogue version 1 sha256 54d05f903e12f0ed20b51824ab542d7057e5196ca071498e9067fd206e966d6f patterns 40
+(exit 0)
+$ sudo -n env PFT_KW_CONF=/nonexistent PFT_KW_HELPER=kernwatch/kernwatch_parse.py CATALOGUE=kernwatch/catalogue.tsv HOST_LABEL=validator bash kernwatch/pft-kernwatch.sh report --boot all --format tsv
+# catalogue_version	1
+# catalogue_sha256	54d05f903e12f0ed20b51824ab542d7057e5196ca071498e9067fd206e966d6f
+# records	8333
+# malformed	0
+# truncated	False
+# boots	1
+# first	2026-11-02T16:52:06Z
+# last	2026-11-04T06:21:04Z
+# by_severity	{"crit": 1, "info": 22, "warn": 1}
+severity	class	pattern	count	first	last	excerpt
+crit	oom	oom_global	1	2026-11-02T17:19:16Z	2026-11-02T17:19:16Z	Out of memory: Killed process <n> (python3) total-vm:<n>kB, anon-rss:<n>kB, file-rss:<n>kB, shmem-rss:0kB, UID:<n> pgtables:<n>kB oom_score_adj:0
+warn	oom	oom_invoked	1	2026-11-02T17:19:16Z	2026-11-02T17:19:16Z	systemd invoked oom-killer: gfp_mask=<hex>(GFP_HIGHUSER_MOVABLE), order=0, oom_score_adj=0
+info	net	martian	11	2026-11-04T01:28:21Z	2026-11-04T02:39:52Z	IPv4: martian source <ip> from <ip>, on dev eth0
+info	net	martian_header	11	2026-11-04T01:28:21Z	2026-11-04T02:39:52Z	ll header: <n>: <bytes>
+(exit 0)
+$ sudo -n env PFT_KW_CONF=/nonexistent PFT_KW_HELPER=kernwatch/kernwatch_parse.py CATALOGUE=kernwatch/catalogue.tsv HOST_LABEL=validator STATE_DIR=/var/tmp/kw-smoke-v bash kernwatch/pft-kernwatch.sh collect --stdout | grep -vE '^# (HELP|TYPE)' | grep -E 'up|records|seeded|backlog|matches_total.*(oom_global|martian)\b'
+pft_kernwatch_up{host="validator"} 1
+pft_kernwatch_matches_total{host="validator",pattern="oom_global",class="oom",severity="crit"} 0
+pft_kernwatch_matches_total{host="validator",pattern="oom_cgroup",class="oom",severity="crit"} 0
+pft_kernwatch_matches_total{host="validator",pattern="soft_lockup",class="lockup",severity="crit"} 0
+pft_kernwatch_matches_total{host="validator",pattern="hard_lockup",class="lockup",severity="crit"} 0
+pft_kernwatch_matches_total{host="validator",pattern="rcu_stall",class="lockup",severity="crit"} 0
+pft_kernwatch_matches_total{host="validator",pattern="audit_backlog",class="audit",severity="warn"} 0
+pft_kernwatch_matches_total{host="validator",pattern="martian",class="net",severity="info"} 0
+pft_kernwatch_last_match_timestamp_seconds{host="validator",class="lockup",severity="crit"} 0
+pft_kernwatch_records_total{host="validator"} 0
+pft_kernwatch_run_records{host="validator"} 0
+pft_kernwatch_backlog{host="validator"} 0
+pft_kernwatch_seeded_timestamp_seconds{host="validator"} 1793773272
+(exit 0)
+$ sudo -n python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(sorted(d), d["records_total"])' /var/tmp/kw-smoke-v/state.json
+['boot', 'boot_changes_total', 'counters', 'cursor', 'cursor_resets_total', 'last', 'malformed_total', 'mono', 'records_total', 'rt', 'seeded_at', 'state_resets_total', 'version'] 0
+(exit 0)
+$ sudo -n env PFT_KW_CONF=/nonexistent PFT_KW_HELPER=kernwatch/kernwatch_parse.py CATALOGUE=kernwatch/catalogue.tsv HOST_LABEL=validator STATE_DIR=/var/tmp/kw-smoke-v bash kernwatch/pft-kernwatch.sh collect --stdout | grep -E '^pft_kernwatch_(up|records_total|run_records|malformed_total)\{'
+pft_kernwatch_up{host="validator"} 1
+pft_kernwatch_records_total{host="validator"} 0
+pft_kernwatch_malformed_total{host="validator"} 0
+pft_kernwatch_run_records{host="validator"} 0
+(exit 0)
+$ sudo -n env PFT_KW_CONF=/nonexistent PFT_KW_HELPER=kernwatch/kernwatch_parse.py CATALOGUE=kernwatch/catalogue.tsv HOST_LABEL=validator STATE_DIR=/var/tmp/kw-smoke-v-full bash kernwatch/pft-kernwatch.sh collect --stdout --from-boot-start | grep -E '^pft_kernwatch_(up|records_total|malformed_total|backlog)\{|matches_total.* [1-9][0-9]*$'
+pft_kernwatch_up{host="validator"} 1
+pft_kernwatch_matches_total{host="validator",pattern="oom_global",class="oom",severity="crit"} 1
+pft_kernwatch_matches_total{host="validator",pattern="oom_invoked",class="oom",severity="warn"} 1
+pft_kernwatch_matches_total{host="validator",pattern="martian",class="net",severity="info"} 11
+pft_kernwatch_matches_total{host="validator",pattern="martian_header",class="net",severity="info"} 11
+pft_kernwatch_records_total{host="validator"} 8333
+pft_kernwatch_malformed_total{host="validator"} 0
+pft_kernwatch_backlog{host="validator"} 0
+(exit 0)
+$ sudo -n stat -c '%a %U %n' /var/tmp/kw-smoke-v /var/tmp/kw-smoke-v/state.json
+700 root /var/tmp/kw-smoke-v
+600 root /var/tmp/kw-smoke-v/state.json
+(exit 0)
+$ sudo -n rm -rf /var/tmp/kw-smoke-v /var/tmp/kw-smoke-v-full
+(exit 0)
+== sentry-host (ssh relay)
+$ ssh relay 'rm -rf /var/tmp/kw-smoke-src /var/tmp/kw-smoke-s /var/tmp/kw-smoke-s-full && mkdir -p /var/tmp/kw-smoke-src/kernwatch'
+(exit 0)
+$ scp -q kernwatch/pft-kernwatch.sh kernwatch/kernwatch_parse.py kernwatch/catalogue.tsv relay:/var/tmp/kw-smoke-src/kernwatch/
+(exit 0)
+$ ssh relay '. /etc/os-release; echo OS: $PRETTY_NAME; cd /var/tmp/kw-smoke-src && sha256sum kernwatch/pft-kernwatch.sh kernwatch/kernwatch_parse.py kernwatch/catalogue.tsv'
+OS: Ubuntu 22.04.5 LTS
+9581bd4df0042cb121770e3c0e6e535bbde58ea11e03d1075bd4cccb42a3d31f  kernwatch/pft-kernwatch.sh
+7a18cf09a540c5af9586523ed61ede3ab232f6a583a4fbbbcee161dcbb972c1b  kernwatch/kernwatch_parse.py
+54d05f903e12f0ed20b51824ab542d7057e5196ca071498e9067fd206e966d6f  kernwatch/catalogue.tsv
+(exit 0)
+$ ssh relay 'cd /var/tmp/kw-smoke-src && env PFT_KW_CONF=/nonexistent PFT_KW_HELPER=kernwatch/kernwatch_parse.py CATALOGUE=kernwatch/catalogue.tsv HOST_LABEL=sentry bash kernwatch/pft-kernwatch.sh report --boot all --format tsv'
+# catalogue_version	1
+# catalogue_sha256	54d05f903e12f0ed20b51824ab542d7057e5196ca071498e9067fd206e966d6f
+# records	7868
+# malformed	0
+# truncated	False
+# boots	1
+# first	2026-11-02T14:10:19Z
+# last	2026-11-04T06:21:39Z
+# by_severity	{"crit": 0, "info": 0, "warn": 0}
+severity	class	pattern	count	first	last	excerpt
+(exit 0)
+$ ssh relay 'cd /var/tmp/kw-smoke-src && env PFT_KW_CONF=/nonexistent PFT_KW_HELPER=kernwatch/kernwatch_parse.py CATALOGUE=kernwatch/catalogue.tsv HOST_LABEL=sentry STATE_DIR=/var/tmp/kw-smoke-s bash kernwatch/pft-kernwatch.sh collect --stdout' | grep -E '^pft_kernwatch_(up|records_total|seeded_timestamp_seconds|backlog)\{'
+pft_kernwatch_up{host="sentry"} 1
+pft_kernwatch_records_total{host="sentry"} 0
+pft_kernwatch_backlog{host="sentry"} 0
+pft_kernwatch_seeded_timestamp_seconds{host="sentry"} 1793773307
+(exit 0)
+$ ssh relay 'cd /var/tmp/kw-smoke-src && env PFT_KW_CONF=/nonexistent PFT_KW_HELPER=kernwatch/kernwatch_parse.py CATALOGUE=kernwatch/catalogue.tsv HOST_LABEL=sentry STATE_DIR=/var/tmp/kw-smoke-s bash kernwatch/pft-kernwatch.sh collect --stdout' | grep -E '^pft_kernwatch_(up|records_total|run_records|malformed_total)\{'
+pft_kernwatch_up{host="sentry"} 1
+pft_kernwatch_records_total{host="sentry"} 0
+pft_kernwatch_malformed_total{host="sentry"} 0
+pft_kernwatch_run_records{host="sentry"} 0
+(exit 0)
+$ ssh relay 'cd /var/tmp/kw-smoke-src && env PFT_KW_CONF=/nonexistent PFT_KW_HELPER=kernwatch/kernwatch_parse.py CATALOGUE=kernwatch/catalogue.tsv HOST_LABEL=sentry STATE_DIR=/var/tmp/kw-smoke-s-full bash kernwatch/pft-kernwatch.sh collect --stdout --from-boot-start' | grep -E '^pft_kernwatch_(up|records_total|malformed_total|backlog)\{|matches_total.* [1-9][0-9]*$'
+pft_kernwatch_up{host="sentry"} 1
+pft_kernwatch_records_total{host="sentry"} 7868
+pft_kernwatch_malformed_total{host="sentry"} 0
+pft_kernwatch_backlog{host="sentry"} 0
+(exit 0)
+$ ssh relay 'rm -rf /var/tmp/kw-smoke-src /var/tmp/kw-smoke-s /var/tmp/kw-smoke-s-full; ls -d /var/tmp/kw-smoke* 2>/dev/null | wc -l'
+0
+(exit 0)
+end 2026-11-04T06:21:52Z

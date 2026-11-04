@@ -1,0 +1,113 @@
+== offline suite 2026-11-04T06:21:52Z | commit fff369f2ae98592f5b059b9110b90ae9dbbc55e1
+OS: Ubuntu 22.04.5 LTS
+$ sha256sum kernwatch/kernwatch_parse.py kernwatch/pft-kernwatch.sh kernwatch/catalogue.tsv kernwatch/tests/test_kernwatch.py kernwatch/tests/stub_journalctl.py
+7a18cf09a540c5af9586523ed61ede3ab232f6a583a4fbbbcee161dcbb972c1b  kernwatch/kernwatch_parse.py
+9581bd4df0042cb121770e3c0e6e535bbde58ea11e03d1075bd4cccb42a3d31f  kernwatch/pft-kernwatch.sh
+54d05f903e12f0ed20b51824ab542d7057e5196ca071498e9067fd206e966d6f  kernwatch/catalogue.tsv
+46835febe0b0f6e060157c2f4eb0bcbe4a0efc0a973c571167deeeeb06a1bbad  kernwatch/tests/test_kernwatch.py
+d22a76b6eddcadfa713291f2b8544c0ec656a5d3e6bbae2ea1bb34f2f8cbf249  kernwatch/tests/stub_journalctl.py
+$ shellcheck -V | head -2 | tail -1; shellcheck -x kernwatch/pft-kernwatch.sh kernwatch/drill/smoke-run.sh
+version: 0.8.0
+(exit 0)
+$ ruff --version; ruff check kernwatch; ruff format --check kernwatch
+ruff 0.17.1
+All checks passed!
+4 files already formatted
+(exit 0)
+$ TEST_TMPDIR=~/.cache timeout 300 python3 -u kernwatch/tests/test_kernwatch.py
+== t_catalogue
+PASS catalogue loads
+PASS every catalogue pattern has a positive fixture
+PASS 44 positive fixtures classify to their pattern
+PASS 21 near-miss fixtures match nothing
+PASS catalogue covers every requested class
+== t_catalogue_negative
+PASS catalogue refused: dup id (rc 3 + reason)
+PASS catalogue refused: bad severity (rc 3 + reason)
+PASS catalogue refused: bad regex (rc 3 + reason)
+PASS catalogue refused: 3 fields (rc 3 + reason)
+PASS catalogue refused: no version (rc 3 + reason)
+PASS catalogue refused: bad class (rc 3 + reason)
+PASS catalogue accepted: shipped file (rc 0)
+== t_redaction
+PASS redact removes 203.0.113.7
+PASS redact control: raw input has 203.0.113.7
+PASS redact removes 198.51.100.9
+PASS redact control: raw input has 198.51.100.9
+PASS redact removes 96:00:03
+PASS redact control: raw input has 96:00:03
+PASS redact removes 2001:db8
+PASS redact control: raw input has 2001:db8
+PASS redact removes fe80::1
+PASS redact control: raw input has fe80::1
+PASS redact removes someuser
+PASS redact control: raw input has someuser
+PASS redact removes /root
+PASS redact control: raw input has /root
+PASS redact removes de 7c 0c
+PASS redact control: raw input has de 7c 0c
+PASS redact removes 1234567
+PASS redact control: raw input has 1234567
+PASS redact removes ffffa1b2
+PASS redact control: raw input has ffffa1b2
+PASS redact removes <hostname>
+PASS redact control: raw input has <hostname>
+PASS redact keeps the shape (ConsensusPhase::accepted style text survives)
+PASS redact truncates
+== t_seed_and_count
+PASS first run seeds at the newest record (rc 0, nothing counted)
+PASS seed run: up 1 + seeded timestamp
+PASS second run counts only records after the cursor
+PASS last-match time per class is the kernel record time
+PASS third run with no new records adds nothing
+PASS collect asks journalctl for kernel records only (-k) of one boot (-b)
+PASS state file is 0600
+== t_from_boot_start_and_backlog
+PASS --from-boot-start counts the whole boot
+PASS --max 7: backlog 1 and 7 records read
+PASS bounded resume (7 runs of 7) ends with the same counters as one run, backlog 0
+== t_cursor_reset
+PASS unknown cursor: cursor_resets_total 1, rc 0
+PASS unknown cursor: only records after the saved monotonic time are counted (no double count)
+PASS unknown cursor: re-read uses --since one second before the last record
+== t_boot_change
+PASS boot change: old boot tail after the cursor is counted (lockup + panic before the reboot)
+PASS boot change: new boot read from its start, boot_changes_total 1
+PASS boot change: next run stays on the new boot (no recount)
+PASS boot change with the old boot gone: old_boot_missing, new boot still read
+== t_malformed
+PASS malformed: 3 bad records counted, run continues (rc 0)
+PASS malformed: record missing a field is NOT classified (no panic counted)
+PASS byte-array MESSAGE is decoded and classified
+== t_state_problems
+PASS state garbage: replaced (state_resets_total 1, re-seeded, rc 0)
+PASS state list: replaced (state_resets_total 1, re-seeded, rc 0)
+PASS state wrong version: replaced (state_resets_total 1, re-seeded, rc 0)
+PASS state negative counter: replaced (state_resets_total 1, re-seeded, rc 0)
+== t_journal_failure
+PASS journalctl failure: rc 1, up 0, no counters exported
+PASS journalctl failure: state file untouched
+PASS journalctl failure: reason on stderr
+== t_report
+PASS report json: every pattern counted
+PASS report json: link_down count 3 (two fixtures + one extra)
+PASS report json: severities ordered crit, warn, info
+PASS report: no IP, MAC bytes or host name in the output
+PASS report: UTC timestamps
+PASS report truncated at --max: rc 2 and 'truncated True' in the header
+PASS report refuses a bad --boot (rc 3)
+== t_wrapper
+PASS wrapper collect writes pft_kernwatch_validator.prom (rc 0, up 1)
+PASS wrapper output ends with a newline and has no temp files left
+PASS validate accepts the collected file
+PASS validate refuses another host's label (rc 2)
+PASS validate refuses a foreign metric (rc 2)
+PASS validate refuses a file without pft_kernwatch_up (rc 2)
+PASS wrapper collect on journal failure: rc 1, up 0 on stdout
+PASS wrapper refuses a bad HOST_LABEL (rc 3)
+PASS wrapper: a hanging helper is stopped at RUN_TIMEOUT -> up 0, rc 1
+PASS pull copies + validates the sentry file
+PASS pull refuses a bad file and keeps the last good copy (rc 2)
+PASS pull refuses to overwrite this host's own file (rc 3)
+RESULT: PASS (82 checks, 0 failing)
+(exit 0)
