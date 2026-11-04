@@ -573,6 +573,7 @@ confine_sig() { # INSPECT0
     cap_drop: (.HostConfig.CapDrop // [] | map(ascii_upcase) | sort),
     read_only: (.HostConfig.ReadonlyRootfs // false), tmpfs: (.HostConfig.Tmpfs // {}),
     pids: (.HostConfig.PidsLimit // 0), memory: (.HostConfig.Memory // 0), memory_swap: (.HostConfig.MemorySwap // 0),
+    cpu_shares: (.HostConfig.CpuShares // 0), memory_reservation: (.HostConfig.MemoryReservation // 0),
     apparmor: (.AppArmorProfile // ""),
     security_opt: (.HostConfig.SecurityOpt // [] | map(select(startswith("seccomp") | not)
                    | sub("^no-new-privileges([:=]true)?$"; "no-new-privileges")) | sort),
@@ -606,12 +607,29 @@ run_args() { # INSPECT0 IMAGE_ENV_JSON SECCOMP(FILE|default)
     (if (.HostConfig.PidsLimit // 0) > 0 then "--pids-limit=\(.HostConfig.PidsLimit)" else empty end),
     (if (.HostConfig.Memory // 0) > 0 then "--memory=\(.HostConfig.Memory)" else empty end),
     (if (.HostConfig.MemorySwap // 0) != 0 then "--memory-swap=\(.HostConfig.MemorySwap)" else empty end),
+    (if (.HostConfig.CpuShares // 0) > 0 then "--cpu-shares=\(.HostConfig.CpuShares)" else empty end),
+    (if (.HostConfig.MemoryReservation // 0) > 0 then "--memory-reservation=\(.HostConfig.MemoryReservation)" else empty end),
     (.HostConfig.SecurityOpt // [] | map(select(startswith("seccomp") | not))[] | "--security-opt=\(.)"),
     (if $sc != "default" then "--security-opt=seccomp=\($sc)" else empty end),
     .Config.Image, (.Config.Cmd // [])[]' <<<"$1"
 }
 show_args() { # args on stdin, one per line -> one line, env values and IPv4 addresses masked (publishable)
   sed -E 's/^(--env=[^=]*)=.*/\1=<value>/; s/([0-9]{1,3}\.){3}[0-9]{1,3}/<redacted-ip>/g' | paste -sd' '
+}
+
+# CPU weight and memory.low set live with `docker update` (the node's protection against host load) are not in the
+# compose files, so `compose up` re-creates without them. Put them back from the pre-apply signature; the gate's
+# confine signature includes both, so a value that did not come back fails the gate.
+keep_resources() { # CONTAINER SIG
+  local cs mr ins cur
+  cs="$(jq -r '.cpu_shares // 0' <<<"$2")"; mr="$(jq -r '.memory_reservation // 0' <<<"$2")"
+  [ "$cs" -gt 0 ] || [ "$mr" -gt 0 ] || return 0
+  ins="$(inspect0 "$1")"
+  cur="$(jq -r '"\(.HostConfig.CpuShares // 0) \(.HostConfig.MemoryReservation // 0)"' <<<"${ins:-$NOJ}")"
+  [ "$cur" = "$cs $mr" ] && return 0
+  local a=(); [ "$cs" -gt 0 ] && a+=("--cpu-shares=$cs"); [ "$mr" -gt 0 ] && a+=("--memory-reservation=$mr")
+  "$DOCKER" update "${a[@]}" "$1" >/dev/null || { echo "$(ts) resources: docker update ${a[*]} $1 FAILED"; return 1; }
+  echo "$(ts) resources: $1 had cpu_shares/memory_reservation '$cur', restored ${a[*]}"
 }
 
 maint_gate() { # -> "ok <remaining>" or "refuse <reason>"; apply + a possible rollback must fit the window
@@ -737,9 +755,10 @@ do_apply() { # PROFILE_SRC
     { grep -v '^COMPOSE_FILE=' "$eb"; echo "COMPOSE_FILE=$files:docker-compose.seccomp.yml"; } > "$R$wd/.env"
     chmod --reference="$eb" "$R$wd/.env" 2>/dev/null
     echo "$(ts) apply: wrote $wd/docker-compose.seccomp.yml; .env backed up, COMPOSE_FILE=$files:docker-compose.seccomp.yml"
-    ( cd "$R$wd" && "$DOCKER" compose config -q ) || { echo "$(ts) apply: compose config invalid -> automatic rollback"; do_rollback auto; return 1; }
+    ( cd "$R$wd" && "$DOCKER" compose config -q ) || { echo "$(ts) apply: compose config invalid -> automatic rollback"; do_rollback auto && return 1; return 5; }
     ( cd "$R$wd" && "$DOCKER" compose up -d 2>&1 ) | sed 's/^/  | /'
-    [ "${PIPESTATUS[0]}" = 0 ] || { echo "$(ts) apply: compose up failed -> automatic rollback"; do_rollback auto; return 1; }
+    [ "${PIPESTATUS[0]}" = 0 ] || { echo "$(ts) apply: compose up failed -> automatic rollback"; do_rollback auto && return 1; return 5; }
+    keep_resources "$c" "$sig" || { echo "$(ts) apply: resources not restored -> automatic rollback"; do_rollback auto && return 1; return 5; }
   else
     iimg="$(jq -r .Config.Image <<<"$ins")"
     ienv="$("$DOCKER" image inspect "$iimg" 2>/dev/null | jq -c '.[0].Config.Env // []' 2>/dev/null)"; [ -n "$ienv" ] || ienv='[]'
@@ -749,9 +768,9 @@ do_apply() { # PROFILE_SRC
       "$STATE_FILE" > "$STATE_FILE.tmp" && mv -f "$STATE_FILE.tmp" "$STATE_FILE"
     echo "$(ts) apply: recreate: docker run -d $(printf '%s\n' "${A[@]}" | show_args)"
     "$DOCKER" stop -t 60 "$c" >/dev/null && "$DOCKER" rename "$c" "$old" && "$DOCKER" update --restart=no "$old" >/dev/null \
-      || { echo "$(ts) apply: could not stop/rename $c -> automatic rollback"; do_rollback auto; return 1; }
+      || { echo "$(ts) apply: could not stop/rename $c -> automatic rollback"; do_rollback auto && return 1; return 5; }
     echo "$(ts) apply: previous container kept as $old (stopped, restart=no)"
-    "$DOCKER" run -d "${A[@]}" >/dev/null || { echo "$(ts) apply: docker run failed -> automatic rollback"; do_rollback auto; return 1; }
+    "$DOCKER" run -d "${A[@]}" >/dev/null || { echo "$(ts) apply: docker run failed -> automatic rollback"; do_rollback auto && return 1; return 5; }
   fi
   # 3. gate
   if ! health_gate apply "$c" "$before" "$want" "$sig" "$daemons" "$t0"; then
@@ -790,7 +809,8 @@ do_rollback() { # auto|manual: undo the last apply from the state file
         echo "$(ts) rollback: .env restored, docker-compose.seccomp.yml removed"
       fi
       ( cd "$R$wd" && "$DOCKER" compose up -d 2>&1 ) | sed 's/^/  | /'
-      [ "${PIPESTATUS[0]}" = 0 ] || { echo "$(ts) ROLLBACK FAILED: compose up"; return 5; } ;;
+      [ "${PIPESTATUS[0]}" = 0 ] || { echo "$(ts) ROLLBACK FAILED: compose up"; return 5; }
+      keep_resources "$c" "$sig" || { echo "$(ts) ROLLBACK FAILED: resources"; return 5; } ;;
     run)
       old="$(jq -r .old_container <<<"$s")"
       if [ -n "$(inspect0 "$old")" ]; then

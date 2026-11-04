@@ -9,7 +9,7 @@ started container gets a new State.Pid and $STUB_ROOT/proc/<pid>/status with "Se
 Knobs (files in $STUB_DIR): rpc_bad_sc (containers whose seccomp option starts with this text, or "default" for
 none, answer server_state "connected"), drop_on_recreate (HostConfig key removed from every created container),
 seccomp_ignored (every created container keeps Docker's default: the seccomp= option is dropped), nofilter
-(proc status says Seccomp: 0 for containers with a seccomp= option), fail_run, fail_compose_up (one-shot), deny_on_exercise (run-parts appends a
+(proc status says Seccomp: 0 for containers with a seccomp= option), fail_run, fail_compose_up (one-shot), fail_update, deny_on_exercise (run-parts appends a
 type=SECCOMP errno record with subj=<the container's AppArmor label> to $AUDIT_LOG), deny_on_addon (the same for
 exercise_addons' `du -sb`).
 `docker run` builds the new container from its ARGUMENTS, so the tests check that apply's run args really
@@ -183,6 +183,10 @@ def do_run(args):
             hc["Memory"] = int(v)
         elif k == "memory-swap":
             hc["MemorySwap"] = int(v)
+        elif k == "cpu-shares":
+            hc["CpuShares"] = int(v)
+        elif k == "memory-reservation":
+            hc["MemoryReservation"] = int(v)
         elif k == "security-opt":
             hc["SecurityOpt"].append(seccomp_opt(v))
         else:
@@ -333,7 +337,19 @@ def main(a):
         c = load(a[-1])
         if c is None:
             return 1
-        c["HostConfig"]["RestartPolicy"]["Name"] = a[1].split("=", 1)[1]
+        if knob("fail_update") is not None:
+            return 1
+        for o in a[1:-1]:
+            k, _, v = o[2:].partition("=")
+            if k == "restart":
+                c["HostConfig"]["RestartPolicy"]["Name"] = v
+            elif k == "cpu-shares":
+                c["HostConfig"]["CpuShares"] = int(v)
+            elif k == "memory-reservation":
+                c["HostConfig"]["MemoryReservation"] = int(v)
+            else:
+                sys.stderr.write(f"stub docker update: unknown flag {o}\n")
+                return 125
         save(a[-1], c)
         return 0
     if a[0] == "rm":

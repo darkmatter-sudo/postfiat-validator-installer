@@ -24,6 +24,8 @@ compact() { python3 -I -c 'import json, sys; print(json.dumps(json.load(open(sys
 
 # ---- fake host -------------------------------------------------------------------------------------------
 # $A/root: fake filesystem (PFT_SC_ROOT, STUB_ROOT); $A/d: stub state (containers/, maint.json, daemons, calls)
+# what `compose up` creates: the compose files do not carry the docker-update'd CPU weight / memory.low (as live)
+nores() { jq 'del(.HostConfig.CpuShares, .HostConfig.MemoryReservation)' "$1"; }
 mk() { # KIND(run|compose) STATE(default|applied)
   N=$((N + 1)); A="$T/a$N"; local k="$1" r="$T/a$N/root" f
   mkdir -p "$r/proc/1" "$r/proc/sys/kernel/seccomp" "$r/proc/4242" "$r/var/log/audit" "$r/opt/postfiatd" "$r/textfile" \
@@ -35,7 +37,7 @@ mk() { # KIND(run|compose) STATE(default|applied)
   cp "$FIX/apply-image.json" "$A/d/image.json"
   if [ "$k" = run ]; then CN=postfiatd-sentry; cp "$FIX/apply-run.json" "$A/d/containers/$CN.json"
   else
-    CN=postfiatd; cp "$FIX/apply-compose.json" "$A/d/containers/$CN.json"; cp "$FIX/apply-compose.json" "$A/d/compose_base.json"
+    CN=postfiatd; cp "$FIX/apply-compose.json" "$A/d/containers/$CN.json"; nores "$FIX/apply-compose.json" > "$A/d/compose_base.json"
     printf 'NETWORK=testnet\nCOMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.confine.yml:docker-compose.apparmor.yml\n' > "$r/opt/postfiatd/.env"
     chmod 0640 "$r/opt/postfiatd/.env"
     for f in docker-compose.yml docker-compose.override.yml docker-compose.confine.yml docker-compose.apparmor.yml; do echo "services: {}" > "$r/opt/postfiatd/$f"; done
@@ -180,7 +182,7 @@ printf 'HOST_LABEL=Bad Label\n' > "$A/root/etc/pft-seccomp.env"; run audit
 
 # ---- apply / rollback ------------------------------------------------------------------------------------
 SIGKEYS='[.HostConfig.CapAdd, .HostConfig.CapDrop, .HostConfig.ReadonlyRootfs, .HostConfig.Tmpfs, .HostConfig.PidsLimit,
-  .HostConfig.Memory, .HostConfig.MemorySwap, (.HostConfig.SecurityOpt | map(select(startswith("seccomp") | not))), .AppArmorProfile,
+  .HostConfig.Memory, .HostConfig.MemorySwap, .HostConfig.CpuShares, .HostConfig.MemoryReservation, (.HostConfig.SecurityOpt | map(select(startswith("seccomp") | not))), .AppArmorProfile,
   .HostConfig.PortBindings, .HostConfig.LogConfig, .HostConfig.RestartPolicy.Name, .HostConfig.NetworkMode,
   .Mounts, .Config.User, .Config.Env, .Config.Image, .Config.Cmd, .Config.Entrypoint]'
 WANT="seccomp=$(compact "$PROFILE")"
@@ -228,14 +230,18 @@ grep -qx 'COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-com
   && grep -qx 'NETWORK=testnet' "$A/root/opt/postfiatd/.env" && ok "apply compose: COMPOSE_FILE keeps the apparmor override + adds seccomp" || ko "apply compose: .env" "$(cat "$A/root/opt/postfiatd/.env")"
 [ "$(stat -c %a "$A/root/opt/postfiatd/.env")" = 640 ] && ok "apply compose: .env mode kept" || ko "apply compose: .env mode"
 [ "$(scopt)" = "$WANT" ] && [ "$(cj "$CN" .AppArmorProfile)" = pft-postfiatd ] && ok "apply compose: stored profile + AppArmor label" || ko "apply compose: container"
+res() { cj "$CN" '"\(.HostConfig.CpuShares // 0) \(.HostConfig.MemoryReservation // 0)"'; }
+[ "$(res)" = "8192 1342177280" ] && grep -q 'resources: postfiatd had cpu_shares/memory_reservation .0 0., restored --cpu-shares=8192 --memory-reservation=1342177280' <<<"$OUT" \
+  && ok "apply compose: cpu_shares + memory_reservation (not in the compose files) restored after compose up" || ko "apply compose: resources '$(res)'" "$OUT"
 run audit; [ "$RC" = 0 ] && expect "apply compose: audit recreate PASS" recreate PASS "compose file sets" || ko "apply compose audit: rc=$RC" "$OUT"
 run rollback --yes
+[ "$(res)" = "8192 1342177280" ] && grep -q 'resources: postfiatd had' <<<"$OUT" && ok "rollback compose: cpu_shares + memory_reservation restored too" || ko "rollback compose: resources '$(res)'" "$OUT"
 [ "$RC" = 0 ] && [ "$(cat "$A/root/opt/postfiatd/.env")" = "$ENV0" ] && [ ! -e "$A/root/opt/postfiatd/docker-compose.seccomp.yml" ] && [ "$(scopt)" = none ] \
   && ok "rollback compose: .env byte-identical, override gone, Docker default" || ko "rollback compose: rc=$RC" "$OUT"
 
 # pre-existing profile file: rollback restores it byte-identical BEFORE the re-create (compose re-reads it)
 mk compose applied; jq '.syscalls[0].names -= ["mremap"]' "$PROFILE" > "$A/p2"
-cset '.HostConfig.SecurityOpt |= map(select(startswith("seccomp=") | not))'; cp "$FIX/apply-compose.json" "$A/d/compose_base.json"
+cset '.HostConfig.SecurityOpt |= map(select(startswith("seccomp=") | not))'; nores "$FIX/apply-compose.json" > "$A/d/compose_base.json"
 printf 'NETWORK=testnet\nCOMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.confine.yml:docker-compose.apparmor.yml:docker-compose.seccomp.yml\n' > "$A/root/opt/postfiatd/.env"
 jq --arg o "seccomp=$(compact "$PROFILE")" '.HostConfig.SecurityOpt += [$o]' "$A/d/containers/$CN.json" > "$A/d/x" && mv "$A/d/x" "$A/d/containers/$CN.json"
 cp "$A/root/etc/pft-seccomp/pft-postfiatd.json" "$A/old"
@@ -285,6 +291,9 @@ auto_rb() { # NAME
 }
 mk run; echo ReadonlyRootfs > "$A/d/drop_on_recreate"; run apply --profile-file "$PROFILE" --yes
 grep -q 'confine changed: read_only' <<<"$OUT" && ok "auto: lost read-only named" || ko "auto: read-only" "$OUT"; rm "$A/d/drop_on_recreate"; auto_rb "auto: lost read-only"
+mk run; echo CpuShares > "$A/d/drop_on_recreate"; run apply --profile-file "$PROFILE" --yes
+grep -q 'confine changed: cpu_shares' <<<"$OUT" && ok "auto: lost cpu_shares named" || ko "auto: cpu_shares" "$OUT"; rm "$A/d/drop_on_recreate"; auto_rb "auto: lost cpu_shares (run path)"
+[ "$(cj "$CN" .HostConfig.CpuShares)" = 8192 ] && ok "auto: rolled-back sentry container keeps cpu_shares 8192" || ko "auto: cpu_shares after rollback" "$(cj "$CN" .HostConfig.CpuShares)"
 for m in run compose; do
   mk "$m"; touch "$A/d/seccomp_ignored"; run apply --profile-file "$PROFILE" --yes
   grep -q 'health FAIL .*seccomp default want sha256:' <<<"$OUT" && ok "auto $m: profile not taken named" || ko "auto $m: ignored" "$OUT"
@@ -314,6 +323,9 @@ mk compose; ENV0="$(cat "$A/root/opt/postfiatd/.env")"; touch "$A/d/fail_compose
   && ok "auto compose: compose up failed -> .env restored, override + file gone" || ko "auto compose up: rc=$RC" "$OUT"
 mk compose; PFT_SC_INJECT=health run apply --profile-file "$PROFILE" --yes
 [ "$RC" = 1 ] && [ "$(scopt)" = none ] && grep -q 'rollback RESULT: PASS' <<<"$OUT" && ok "auto compose: injected failure rolled back" || ko "auto compose inject: rc=$RC" "$OUT"
+mk compose; touch "$A/d/fail_update"; run apply --profile-file "$PROFILE" --yes
+[ "$RC" = 5 ] && grep -q 'apply: resources not restored -> automatic rollback' <<<"$OUT" && grep -q 'ROLLBACK FAILED: resources' <<<"$OUT" \
+  && ok "auto compose: docker update fails -> rollback, which cannot restore them either and says so (exit 5)" || ko "auto compose update: rc=$RC" "$OUT"
 
 # ---- generate/diff over two learn dirs (validator + sentry) ---------------------------------------------
 run diff --learn "$FIX/learn" --learn "$FIX/learn2"

@@ -2,7 +2,8 @@
 """Mutation harness for pft-seccomp.sh: apply each mutant (exactly one textual match) to a copy of the tool, run
 tests/run-tests.sh against it with a timeout, and count it CAUGHT if the suite fails or hangs (a hang is a caught
 mutant, never a stuck harness). An unmutated control run must pass first; a mutant whose text does not match exactly
-once is NOT APPLIED and fails the harness. Each suite runs in its own session and the whole process group is
+once is NOT APPLIED and fails the harness. A failing suite counts as CAUGHT only with a RESULT line and at least one
+FAIL line (else BROKEN, which fails the harness); the control runs from a copy next to the same helper files. Each suite runs in its own session and the whole process group is
 SIGKILLed on timeout (subprocess's own timeout kills only the bash, and a hanging grandchild kept polling for 1.5 h
 in backfill/); the run ends with an orphan check. Mutants run JOBS at a time (default 2) under nice 19.
 Usage: python3 -u tests/mutate.py [--timeout SEC] [--jobs N] [--only M01,M02,...]   (--only: a dev subset)
@@ -10,6 +11,7 @@ Temp files go under TEST_TMPDIR (default ~/.cache): /tmp is noexec on the harden
 """
 
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -270,13 +272,13 @@ MUTANTS = [
     (
         "M42",
         "apply: failed docker run does not roll back",
-        'echo "$(ts) apply: docker run failed -> automatic rollback"; do_rollback auto; return 1;',
+        'echo "$(ts) apply: docker run failed -> automatic rollback"; do_rollback auto && return 1; return 5;',
         'echo "$(ts) apply: docker run failed -> automatic rollback"; return 1;',
     ),
     (
         "M43",
         "apply: failed compose up does not roll back",
-        'echo "$(ts) apply: compose up failed -> automatic rollback"; do_rollback auto; return 1;',
+        'echo "$(ts) apply: compose up failed -> automatic rollback"; do_rollback auto && return 1; return 5;',
         'echo "$(ts) apply: compose up failed -> automatic rollback"; return 1;',
     ),
     (
@@ -345,6 +347,43 @@ MUTANTS = [
         'rc=$?; echo "(exit $rc)"; return "$rc"; }',
         'rc=$?; echo "(exit $rc)"; return 0; }',
     ),
+    # cpu weight / memory.low across compose re-creates
+    (
+        "M55",
+        "apply: resources not restored after compose up",
+        '    keep_resources "$c" "$sig" || { echo "$(ts) apply: resources not restored',
+        '    true || { echo "$(ts) apply: resources not restored',
+    ),
+    (
+        "M56",
+        "rollback: resources not restored after compose up",
+        'keep_resources "$c" "$sig" || { echo "$(ts) ROLLBACK FAILED: resources"',
+        'true || { echo "$(ts) ROLLBACK FAILED: resources"',
+    ),
+    (
+        "M57",
+        "confine signature ignores cpu_shares",
+        "cpu_shares: (.HostConfig.CpuShares // 0), memory_reservation",
+        "memory_reservation",
+    ),
+    (
+        "M58",
+        "run args drop --cpu-shares",
+        '(if (.HostConfig.CpuShares // 0) > 0 then "--cpu-shares=',
+        '(if false then "--cpu-shares=',
+    ),
+    (
+        "M59",
+        "keep_resources: docker update failure ignored",
+        '"$DOCKER" update "${a[@]}" "$1" >/dev/null || {',
+        '"$DOCKER" update "${a[@]}" "$1" >/dev/null; true || {',
+    ),
+    (
+        "M60",
+        "apply: a failed automatic rollback exits 1 like a successful one",
+        'echo "$(ts) apply: resources not restored -> automatic rollback"; do_rollback auto && return 1; return 5;',
+        'echo "$(ts) apply: resources not restored -> automatic rollback"; do_rollback auto; return 1;',
+    ),
 ]
 # Equivalent mutants (no input can reach the difference) are documented here instead of counted.
 EQUIVALENT = []
@@ -380,13 +419,20 @@ def one(work, timeout, src, m):
     os.remove(path)
     if st == "PASS":
         return mid, "SURVIVED", f"- {desc}"
+    if st == "HANG":
+        return mid, "CAUGHT", f"- {desc} [suite hung (timeout, process group killed)]"
     fails = [ln[5:] for ln in out.splitlines() if ln.startswith("FAIL ")]
-    why = (
-        "suite hung (timeout, process group killed)"
-        if st == "HANG"
-        else f"{len(fails)} failing: {'; '.join(fails[:2])}"
-    )
-    return mid, "CAUGHT", f"- {desc} [{why}]"
+    done = any(ln.startswith("RESULT:") for ln in out.splitlines())
+    if not fails or not done:
+        # a suite that died before its checks proves nothing about the mutant (log 04: every mutant copy lacked the
+        # helper next to it, so the suite stopped at its first generate and all 54 read as caught)
+        last = out.strip().splitlines()[-1:] or [""]
+        return (
+            mid,
+            "BROKEN",
+            f"- {desc} [suite failed without a FAIL line or RESULT: {last[0][:120]}]",
+        )
+    return mid, "CAUGHT", f"- {desc} [{len(fails)} failing: {'; '.join(fails[:2])}]"
 
 
 def main():
@@ -399,11 +445,26 @@ def main():
     base = os.environ.get("TEST_TMPDIR", os.path.expanduser("~/.cache"))
     os.makedirs(base, exist_ok=True)
     work = tempfile.mkdtemp(prefix="pft-sc-mut.", dir=base)
-    st, out = run_suite(TOOL, timeout)
+    # the tool finds its helper, margin and Docker reference profile next to itself: give every copy the same
+    # neighbours, and run the control from a copy in the same place, so a broken copy setup fails the control
+    tooldir = os.path.dirname(os.path.abspath(TOOL))
+    for rel in (
+        "pft_seccomp.py",
+        "margin.tsv",
+        os.path.join("ref", "docker-default-29.1.3.json"),
+    ):
+        os.makedirs(os.path.dirname(os.path.join(work, rel)), exist_ok=True)
+        shutil.copy2(os.path.join(tooldir, rel), os.path.join(work, rel))
+    ctl = os.path.join(work, "CONTROL.sh")
+    with open(ctl, "w") as f:
+        f.write(src)
+    st, out = run_suite(ctl, timeout)
+    os.remove(ctl)
     last = [ln for ln in out.splitlines() if ln.startswith("RESULT:")]
     print(f"control (unmutated): {st} {last[-1] if last else ''}", flush=True)
     if st != "PASS":
         print("RESULT: control run failed, mutants not run")
+        shutil.rmtree(work)
         return 2
     selected = [m for m in MUTANTS if only is None or m[0] in only]
     res = {}
@@ -411,20 +472,21 @@ def main():
         for mid, status, text in ex.map(lambda m: one(work, timeout, src, m), selected):
             res[mid] = status
             print(f"{mid} {status} {text}", flush=True)
-    os.rmdir(work)
+    shutil.rmtree(work)
     c = sum(1 for s in res.values() if s == "CAUGHT")
     sv = sum(1 for s in res.values() if s == "SURVIVED")
     na = sum(1 for s in res.values() if s == "NOT APPLIED")
+    br = sum(1 for s in res.values() if s == "BROKEN")
     orphans = subprocess.run(
         ["pgrep", "-fc", "pft-sc-mut\\."], capture_output=True, text=True, check=False
     ).stdout.strip()
     print(f"orphan check: {orphans or 0} process(es) still running from mutant copies")
     subset = f" (--only subset of {len(MUTANTS)})" if only is not None else ""
     print(
-        f"RESULT: {c} caught, {sv} survived, {na} not applied of {len(selected)}{subset}"
+        f"RESULT: {c} caught, {sv} survived, {na} not applied, {br} broken of {len(selected)}{subset}"
         f" (+ {len(EQUIVALENT)} documented equivalent{': ' + ', '.join(EQUIVALENT) if EQUIVALENT else ''})"
     )
-    return 0 if sv == 0 and na == 0 and (orphans or "0") == "0" else 1
+    return 0 if sv == 0 and na == 0 and br == 0 and (orphans or "0") == "0" else 1
 
 
 if __name__ == "__main__":

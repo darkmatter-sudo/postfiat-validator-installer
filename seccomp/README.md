@@ -15,14 +15,14 @@ helper: syscall table from libseccomp, Docker rule resolution, profile + diff, c
 [`../alerts/seccomp.rules.yml`](../alerts/seccomp.rules.yml) + [`seccomp.tests.yml`](../alerts/seccomp.tests.yml) ·
 [`tests/`](tests/) · [`systemd/`](systemd/) · [`install.sh`](install.sh).
 
-## Status (2026-11-04T04:00Z)
+## Status (2026-11-04T04:36Z)
 
 | Card step | State |
 |---|---|
 | 1 learn (throwaway, census + SCMP_ACT_LOG) | done: recorded learn on both hosts ([05](logs/05-learn-validator.log), [06](logs/06-learn-sentry.log)) |
 | 2 profile + per-syscall diff vs Docker | done: [`profile/pft-postfiatd.json`](profile/pft-postfiatd.json) + [`profile/diff.tsv`](profile/diff.tsv) from [08](logs/08-generate-two-host.log) |
-| 3 guarded apply / rollback | built and tested offline (stub suite); live apply not done yet |
-| 4 audit, rules, promtool, tests, mutants | built; [04](logs/04-lint-suite-mutants.log) at 3cd5cdf: shellcheck/ruff/promtool clean, suite 129/129, mutants 54 caught / 0 survived / 0 orphans (l.225, l.224); suite now 136 (two-dir merge, 850bfb0): re-run before submission |
+| 3 guarded apply / rollback | built and tested offline (stub suite); live apply not done yet. Found before any live apply (2026-11-04): a re-create would have dropped both nodes' `CpuShares`/`MemoryReservation` (set by `docker update`, not in compose/run args) and the gate did not compare them; fixed: kept through every re-create and part of the gate signature (see apply / rollback), offline tests + mutants M55-M60 |
+| 4 audit, rules, promtool, tests, mutants | built; [04](logs/04-lint-suite-mutants.log) at 3cd5cdf: shellcheck/ruff/promtool clean, suite 129/129 (l.165). **Its mutant result (54 caught) is not valid**: found 2026-11-04 that every one of the 54 CAUGHT lines reads `[0 failing: ]` (l.170-223): the harness wrote each mutant copy to a temp dir without `pft_seccomp.py` next to it, so every mutant suite stopped at its first `generate` and failed without running a check, while the control ran from the repo copy and passed. Fixed in `tests/mutate.py`: the copies get the helper/margin/reference files, the control runs from a copy in the same place, and a failing suite counts as CAUGHT only with a RESULT line and at least one FAIL line (else BROKEN, which fails the harness). The recorded re-run at the current commit replaces 04 |
 | 5 two-host live proof | not done: the validator holds the growth/ 24 h data-collection lock until 2026-11-05T00:26Z, so `apply` refuses there until then (by design); sentry canary first |
 
 The results table required by the card is added once the live proof has run; it will cite log lines only.
@@ -128,7 +128,13 @@ place. Then it installs the file to `/etc/pft-seccomp/` (the previous one backed
 a new one run from the old one's own arguments. The gate polls until the container is new, its stored profile equals
 the file, init is in filter mode, the node is `full` with peers, the confine signature (everything but the seccomp
 option, including the AppArmor label) is unchanged and every running pft-* service is still active; then it runs the
-live exercise and requires 0 denials since T0. Any failure, failed step or SIGINT/SIGTERM rolls back automatically.
+live exercise and requires 0 denials since T0. Any failure, failed step or SIGINT/SIGTERM rolls back automatically
+(exit 1; exit 5 if that rollback itself fails).
+Both nodes run with a raised CPU weight (`CpuShares` 8192) and `MemoryReservation` (memory.low), set live with
+`docker update` after host load starved postfiatd; the compose files do not carry them. A re-create therefore keeps
+them explicitly: docker run passes `--cpu-shares`/`--memory-reservation` from the old container, and after every
+compose `up` (apply and rollback) `docker update` puts the pre-apply values back. Both values are part of the confine
+signature, so a re-create that loses either one fails the gate and rolls back.
 `rollback` restores the previous profile file first (a compose re-create reads it), then `.env` and any previous
 override (or removes ours), or the kept container, and runs the same gate for the previous seccomp state (exit 5 if
 that gate fails). pft-integrity's baseline is accepted only if every changed item is the container or its compose
@@ -136,11 +142,11 @@ files.
 
 ## Tests
 
-`tests/run-tests.sh`: 136 offline checks against a fake host (`PFT_SC_ROOT`) and a stateful docker stub
+`tests/run-tests.sh`: 142 offline checks against a fake host (`PFT_SC_ROOT`) and a stateful docker stub
 (`tests/stub_docker.py`: `docker run` builds the container from its arguments; `seccomp=FILE` is stored as
 `json.Compact`, as Docker does): every audit check in both directions, `--json`/`--textfile`/`validate`, `ack-denials`,
 `pull`, apply/rollback for compose and docker run, every refusal (nothing changed), every automatic rollback trigger,
 integrity acceptance, generate/diff over two learn dirs, and the helper's unit tests (`tests/test_pft_seccomp.py`, hand-computed fixtures).
-`tests/mutate.py`: 54 mutants of the gates and rollback paths, each suite in its own process group, SIGKILLed on
+`tests/mutate.py`: 60 mutants of the gates and rollback paths (CAUGHT only with a RESULT line and at least one FAIL line), each suite in its own process group, SIGKILLed on
 timeout, with an orphan check at the end. Temp files go under `TEST_TMPDIR` (default `~/.cache`): `/tmp` is noexec on
 the hardened hosts.
