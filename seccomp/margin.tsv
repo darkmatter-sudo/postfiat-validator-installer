@@ -11,3 +11,8 @@ sched_yield	lock backoff under contention (boost/std mutexes, NuDB); depends on 
 fdatasync	database flush on rotation/online_delete; a short learn window may miss it
 fsync	same as fdatasync for files opened without O_DSYNC (SQLite journal)
 mremap	large realloc() growth of in-memory caches
+clock_gettime	normally a vDSO call (never a syscall, so no learn sees it); a real syscall when the kernel falls back from kvm-clock to hpet/acpi_pm (both listed in available_clocksource on these hosts) after marking it unstable
+gettimeofday	same vDSO fallback as clock_gettime
+time	same vDSO fallback as clock_gettime
+clock_getres	same vDSO fallback as clock_gettime
+kill	timeout(1) in the add-ons' docker exec commands (pft-egress: timeout 5 bash -c ...) signals its child only when the child hangs
