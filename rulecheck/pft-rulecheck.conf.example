@@ -44,3 +44,7 @@ require pft_authwatch_sentry.prom
 textfile pft_upgradewatch_*.prom   15m   pft_upgradewatch_collect_timestamp_seconds
 require pft_upgradewatch_postfiatd.prom
 require pft_upgradewatch_postfiatd-sentry.prom
+# pft-kernwatch (2-minute collector; sentry copy pulled every 2 min)
+textfile pft_kernwatch_*.prom   15m   pft_kernwatch_collect_timestamp_seconds
+require pft_kernwatch_validator.prom
+require pft_kernwatch_sentry.prom

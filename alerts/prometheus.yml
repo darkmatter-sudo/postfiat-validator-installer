@@ -23,6 +23,7 @@ rule_files:
   - /etc/pft-alerts/cluster.rules.yml     # ../cluster (validator<->sentry cluster missing or degraded: any FAIL/WARN audit check)
   - /etc/pft-alerts/backfill.rules.yml    # ../backfill (interior ledger gap in the online_delete window; status unreadable / repair MISMATCH)
   - /etc/pft-alerts/keyescrow.rules.yml   # ../keyescrow (secrets not escrowed for 36 h / drift for 2 h, inventory failed, held copy failed verify)
+  - /etc/pft-alerts/kernwatch.rules.yml   # ../kernwatch (host kernel log: OOM kill, hung task, lockup, I/O/fs error, conntrack full; warnings; stale collector)
   - /etc/pft-slo/*.rules.yml    # ../slo (availability SLO + burn-rate alerts); run-stack.sh mounts it
 alerting:
   alertmanagers:

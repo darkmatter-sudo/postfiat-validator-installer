@@ -1,0 +1,36 @@
+[Unit]
+Description=pft-kernwatch: classify new host kernel-log records (journalctl -k) into textfile metrics
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/kernwatch
+
+[Service]
+Type=oneshot
+# root without capabilities: reads the root-owned journal files, writes its own state and textfile.
+# A failed journal read still writes "pft_kernwatch_up 0" and exits 1 (the unit fails: visible in systemctl too).
+ExecStart=/usr/local/bin/pft-kernwatch collect
+ProtectSystem=strict
+ReadWritePaths=/var/lib/pft-exporter/textfile /var/lib/pft-kernwatch
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateNetwork=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+UMask=0022
+Nice=10
+# RUN_TIMEOUT (120 s) bounds the helper; this bounds the whole run
+TimeoutStartSec=150

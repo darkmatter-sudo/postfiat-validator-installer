@@ -1,8 +1,8 @@
 # kernwatch — host kernel-log monitor (pft-kernwatch)
 
-Status: **steps 1-2 of 5** (collector, catalogue, redaction, metrics, reports, rules + promtool tests, offline suite,
-mutant harness). Install, the 24 h two-host baseline and the throwaway-topic drill follow; this README gains a results
-table when they are done.
+Status: **steps 1-3 of 5** (collector, catalogue, redaction, metrics, reports, rules + promtool tests, offline suite,
+mutant harness; install on both hosts). The 24 h two-host baseline and the throwaway-topic drill follow; this README
+gains a results table when they are done.
 
 The existing monitors read postfiatd's debug.log, cgroup files and `server_info`. None of them sees the host kernel:
 an OOM kill of a helper, a hung `jbd2`, an I/O error, a soft lockup, conntrack dropping peer packets, a NIC link loss,
@@ -18,9 +18,22 @@ and turns it into Prometheus textfile metrics.
 | `tests/mutate.py` | mutant harness: 52 code/catalogue mutants against the suite + 8 rule mutants against promtool (M39 documented equivalent) |
 | `tests/fixtures/positive.tsv`, `near_miss.tsv` | one or more real-format lines per pattern; noise that must match nothing |
 | `drill/smoke-run.sh` | read-only two-host smoke (throwaway state dirs, no textfile written) |
+| `install.sh` | install/uninstall: collector (`--host NAME`) or the validator's pull of the sentry file (`--pull`) |
+| `systemd/` | `pft-kernwatch.service/.timer` (both hosts, every 2 min at :15 of even minutes, sandboxed: no network, no capabilities) and `pft-kernwatch-pull.service/.timer` (validator, odd minutes at :00) |
+| `pft-kernwatch.env.example` | `/etc/pft-kernwatch.env` (root-owned 0600): `HOST_LABEL`, limits, `PULL_SSH` |
+| `drill/install-run.sh` | recorded two-host install through pft-fleet in a pft-maint window (throwaway [MAINT] topic) |
 
 Logs so far: `logs/01-smoke.log` (two-host read-only smoke), `logs/02-suite.log` (step-1 suite),
 `logs/03-lint-suite-mutants.log` (shellcheck, ruff, promtool check + test, suite 93/93, mutants 60 caught / 0 survived / 0 orphans).
+
+## Install
+
+On each host, from a checkout: `sudo ./install.sh --host validator` (or `--host sentry`). The first run through the
+sandboxed unit only seeds the cursor at the newest kernel record (no history counted, no alert at install) and must
+export `pft_kernwatch_up 1`; then the timer is enabled. On the validator, put a `PULL_SSH` line in
+`/etc/pft-kernwatch.env` and run `sudo ./install.sh --pull`. Every installed file is listed in `../fleet/manifest.tsv`;
+`../rulecheck` grades `pft_kernwatch_*.prom` stale after 15 min and requires both hosts' files; the rule file is listed in
+`../alerts/prometheus.yml`. Then `sudo pft-integrity accept --reason "..."` on each host.
 
 ## How collection works
 
@@ -66,9 +79,8 @@ segfault). `info` = counted for the baseline, never alerted (martian packets).
 
 ## Alerts
 
-`../alerts/kernwatch.rules.yml` (promtool tests: `../alerts/kernwatch.tests.yml`). Not yet listed in
-`../alerts/prometheus.yml`: the rule line goes in with the live install commit, so no rule is ever loaded before its
-textfile exists.
+`../alerts/kernwatch.rules.yml` (promtool tests: `../alerts/kernwatch.tests.yml`), listed in `../alerts/prometheus.yml`
+in the same commit as the live install (`drill/install-run.sh`), so no rule is loaded before its textfile exists.
 
 | Alert | Fires when | Severity |
 |---|---|---|

@@ -1,0 +1,10 @@
+[Unit]
+Description=Pull the sentry's pft-kernwatch textfile every 2 minutes (the sentry collects at even minutes :15)
+
+[Timer]
+OnCalendar=*-*-* *:1/2:00
+AccuracySec=1s
+Persistent=false
+
+[Install]
+WantedBy=timers.target
