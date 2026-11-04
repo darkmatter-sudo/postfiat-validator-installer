@@ -15,17 +15,48 @@ helper: syscall table from libseccomp, Docker rule resolution, profile + diff, c
 [`../alerts/seccomp.rules.yml`](../alerts/seccomp.rules.yml) + [`seccomp.tests.yml`](../alerts/seccomp.tests.yml) ·
 [`tests/`](tests/) · [`systemd/`](systemd/) · [`install.sh`](install.sh).
 
-## Status (2026-11-04T03:30Z)
+## Status (2026-11-04T04:00Z)
 
 | Card step | State |
 |---|---|
-| 1 learn (throwaway, census + SCMP_ACT_LOG) | built (65ab406); dev runs 02-03 on the validator; recorded learn on both hosts running |
-| 2 profile + per-syscall diff vs Docker | built (65ab406); final profile from the recorded learn: pending (next commit) |
+| 1 learn (throwaway, census + SCMP_ACT_LOG) | done: recorded learn on both hosts ([05](logs/05-learn-validator.log), [06](logs/06-learn-sentry.log)) |
+| 2 profile + per-syscall diff vs Docker | done: [`profile/pft-postfiatd.json`](profile/pft-postfiatd.json) + [`profile/diff.tsv`](profile/diff.tsv) from [08](logs/08-generate-two-host.log) |
 | 3 guarded apply / rollback | built and tested offline (stub suite); live apply not done yet |
-| 4 audit, rules, promtool, tests, mutants | built; promtool SUCCESS; suite 129/129; recorded mutant run pending |
+| 4 audit, rules, promtool, tests, mutants | built; promtool SUCCESS; suite 136/136; recorded mutant run in progress (log 04, next commit) |
 | 5 two-host live proof | not done: the validator holds the growth/ 24 h data-collection lock until 2026-11-05T00:26Z, so `apply` refuses there until then (by design); sentry canary first |
 
 The results table required by the card is added once the live proof has run; it will cite log lines only.
+
+## Learn result (2026-11-04, both hosts)
+
+| | validator ([05](logs/05-learn-validator.log)) | sentry ([06](logs/06-learn-sentry.log)) |
+|---|---|---|
+| auto-detection still picks the live node, not the throwaway | l.20, l.289 | l.20, l.285 |
+| throwaway full, then full again after its restart (both phases) | l.21, l.91; l.290, l.360 | l.21, l.91; l.286, l.356 |
+| census (Docker default profile, 65 min): distinct syscalls / calls | 120 / 9 231 715 (l.164) | 116 / 12 762 662 (l.164) |
+| log phase (SCMP_ACT_LOG, 65 min): records / distinct | 254 / 4 (l.431-435) | 509 / 8 (l.427-435) |
+| audit records lost before / after; leftover throwaways | 0 / 0; 0 (l.9, l.438-439) | 0 / 0; 0 (l.9, l.438-439) |
+
+The log phase is the safety net for the census: on the sentry the census missed cron's identity switch
+(`setuid setgid getpriority setpriority`, a :17 cron tick fell into the log phase only) and the LOG records caught
+it; on the validator the census had them. `openat2` (runc after the filter is loaded) and `sched_yield` appear only
+as LOG records on both; `clone3` is EPERM-logged by Docker's own ENOSYS rule (glibc falls back to `clone`).
+
+**Bug found in the recorded run, fixed:** the offline tail of `drill/learn-run.sh` wrote `x bash ... generate >
+profile.json`, so the logging wrapper's `$ ...` and `(exit 0)` lines went into the JSON: `check` failed (05/06
+l.442-461) but the script still printed `RESULT: PASS` (l.592). Fixed in 850bfb0 (direct writes, RESULT gated on
+generate/check/diff). The learn data itself was unaffected; the profile is built from it offline:
+[`drill/generate-run.sh`](drill/generate-run.sh), log [08](logs/08-generate-two-host.log): validator-only,
+sentry-only and merged profiles are byte-identical (l.20), `check` ok, 129 allowed syscalls (l.22); Docker's default
+allows 294 for these caps, the profile keeps 129 and removes 165 (l.324). File sha256 `8568e172…2457`, canonical
+(Docker-stored) sha256 `f533d504…` (l.19). Log [07](logs/07-generate-two-host-superseded.log) is the same build
+before 5 margin entries were added (124 syscalls): `clock_gettime gettimeofday time clock_getres` (vDSO calls a learn
+never sees; real syscalls if the kernel falls back from kvm-clock to hpet/acpi_pm, both available on these hosts) and
+`kill` (`timeout 5 bash -c` in an add-on probe signals its child only on a hang).
+
+Dev logs: [01 bpftrace install](logs/01-bpftrace-install.log) · [02 dev learn 1](logs/02-dev-learn-validator-flood.log)
+(ausyscall's `pread`/`pwrite` names missed `pread64`/`pwrite64`: ~80k LOG records in 2 min, guard stopped it; table now
+from libseccomp) · [03 dev learn 2](logs/03-dev-learn-validator.log) (256 records).
 
 ## How it works
 
@@ -105,11 +136,11 @@ files.
 
 ## Tests
 
-`tests/run-tests.sh`: 129 offline checks against a fake host (`PFT_SC_ROOT`) and a stateful docker stub
+`tests/run-tests.sh`: 136 offline checks against a fake host (`PFT_SC_ROOT`) and a stateful docker stub
 (`tests/stub_docker.py`: `docker run` builds the container from its arguments; `seccomp=FILE` is stored as
 `json.Compact`, as Docker does): every audit check in both directions, `--json`/`--textfile`/`validate`, `ack-denials`,
 `pull`, apply/rollback for compose and docker run, every refusal (nothing changed), every automatic rollback trigger,
-integrity acceptance, and the helper's unit tests (`tests/test_pft_seccomp.py`, hand-computed fixtures).
+integrity acceptance, generate/diff over two learn dirs, and the helper's unit tests (`tests/test_pft_seccomp.py`, hand-computed fixtures).
 `tests/mutate.py`: 54 mutants of the gates and rollback paths, each suite in its own process group, SIGKILLed on
 timeout, with an orphan check at the end. Temp files go under `TEST_TMPDIR` (default `~/.cache`): `/tmp` is noexec on
 the hardened hosts.

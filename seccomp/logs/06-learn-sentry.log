@@ -1,0 +1,592 @@
+OS: Ubuntu 22.04.5 LTS | 2026-11-04T01:34:25Z | sentry-host | recorded learn run, --minutes 65 per phase
+# tree: commit 65ab406b8b2414322b5d1311f2774410cf3f4ff6
+# sha256 f020193d1eb5b0dab02ab0d4c7aa83adb23adc98b734d3275f0bd6df537a9988 seccomp/pft-seccomp.sh
+# sha256 2c2b32e2f82aedd8b2f8613b0711d4d66c33844a241b4fae71b24b5fba5e40d5 seccomp/pft_seccomp.py
+# sha256 01536f1d1df938ae611eba20d6349e0de7a99b6ecdee1549427a0b01b8301e28 seccomp/ref/docker-default-29.1.3.json
+# sha256 a0fe23174d03159a2614a814972c8cbc6384a86bc379884e26c7dd89d1b7ef1a seccomp/margin.tsv
+# sha256 a967eb9c1335ef42eba80e0542f1aa4ba0d5676d1b64427574896e5c90c566be seccomp/drill/learn-run.sh
+# kernel 5.15.0-202-generic, docker 29.1.3, libseccomp 2.5.3-2ubuntu3~22.04.1, bpftrace bpftrace v0.14.0
+# audit before: enabled 2 backlog_limit 8192 lost 0
+$ bash /var/lib/pft-seccomp/tree-65ab406/seccomp/pft-seccomp.sh learn --out /var/lib/pft-seccomp/learn-sentry-20261104T013423Z --minutes 65 --phase both
+2026-11-04T01:34:26Z learn on postfiatd-sentry: phase both, --minutes 65, caps CAP_SETGID,CAP_SETUID, image sha256:cc139becfe50
+  helper sha256 2c2b32e2f82aedd8b2f8613b0711d4d66c33844a241b4fae71b24b5fba5e40d5, Docker profile sha256 01536f1d1df938ae611eba20d6349e0de7a99b6ecdee1549427a0b01b8301e28, syscall table 362 lines
+2026-11-04T01:34:26Z census: T0=1793756066, throwaway pftsc-learn-census-20261104013426 under Docker's default seccomp profile
+  bpftrace program:
+  | tracepoint:raw_syscalls:sys_enter /strncmp(comm, "runc:[", 6) != 0/ { @[cgroup, args->id] = count(); }
+  | tracepoint:raw_syscalls:sys_enter /strncmp(comm, "runc:[", 6) == 0/ { @r[cgroup, args->id] = count(); }
+2026-11-04T01:34:28Z census: bpftrace attached (Attaching 2 probes...)
+$ docker run -d --name pftsc-learn-census-20261104013426 --security-opt=apparmor=docker-default --security-opt=no-new-privileges --cap-drop=ALL --cap-add=CAP_SETGID --cap-add=CAP_SETUID --read-only --tmpfs=/run:rw,noexec,nosuid,size=64m --tmpfs=/tmp:rw,noexec,nosuid,size=64m --tmpfs=/var/backups:rw,noexec,nosuid,size=64m --tmpfs=/var/lib/apt:rw,noexec,nosuid,size=64m --tmpfs=/var/lib/logrotate:rw,noexec,nosuid,size=64m --volume=/var/lib/postfiatd/db --volume=/var/log/postfiatd --volume=/etc/postfiatd --pids-limit=256 --memory=2147483648 --user=0:0 sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e --conf /etc/postfiatd/postfiatd.cfg
+2026-11-04T01:34:29Z throwaway pftsc-learn-census-20261104013426 started; cgroup id 17649106; SecurityOpt ["apparmor=docker-default", "no-new-privileges"]
+2026-11-04T01:34:29Z node auto-detection (pft-integrity's rule) picks: postfiatd-sentry (throwaway pftsc-learn-census-20261104013426 is not a candidate)
+2026-11-04T01:35:21Z throwaway server_state: full
+$ docker exec pftsc-learn-census-20261104013426 curl -s -m 10 -o /dev/null -w %{http_code}\n -X POST -d {"method":"server_info"} http://127.0.0.1:5005
+200
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 curl -s -m 10 -o /dev/null -w %{http_code}\n -X POST -d {"method":"peers"} http://127.0.0.1:5005
+200
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 setpriv --reuid=0 --regid=0 --init-groups true
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 sh -c cd / && run-parts --report /etc/cron.hourly
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 sh -c for j in /etc/cron.daily/*; do [ "${j##*/}" = apt-compat ] && continue; echo "cron.daily/${j##*/}"; "$j"; done
+cron.daily/dpkg
+cron.daily/logrotate
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 sh -c /usr/sbin/logrotate -s /var/log/postfiatd/.logrotate.status /etc/logrotate.d/postfiatd
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 sh -c logrotate -f -s /var/log/postfiatd/.logrotate.status /etc/logrotate.d/postfiatd
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 sh -c test -e /run/systemd/system || SERVICE_MODE=1 /sbin/e2scrub_all -A -r
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 sh -c test -e /run/systemd/system || SERVICE_MODE=1 /usr/lib/x86_64-linux-gnu/e2fsprogs/e2scrub_all_cron
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 sh -c command -v curl >/dev/null
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 sh -c curl -s -m 5 -o /dev/null -w "%{http_code}\n" -d "{\"method\":\"server_info\"}" http://127.0.0.1:${RPC_PORT:-5005}/
+200
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 curl -s -m 10 -o /dev/null -w %{http_code}\n -X POST -H Content-Type: application/json -d {"method":"fee"} http://localhost:5005/
+200
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 stat -c %a /etc/postfiatd/postfiatd.cfg
+644
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 sh -c cat "$1/postfiatd.cfg" /etc/resolv.conf "$1/validators.txt" | wc -l sh /etc/postfiatd
+1668
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 sh -c grep -cE "^\[" "$1/postfiatd.cfg"; grep -c -A4 "^\[amendment_majority_time\]" "$1/postfiatd.cfg" sh /etc/postfiatd
+18
+1
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 sh -c sha256sum "$1/postfiatd.cfg" | wc -c; sed -n "/^\[node_db\]/,/^\[/p" "$1/postfiatd.cfg" | wc -l sh /etc/postfiatd
+95
+7
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 sh -c postfiatd --conf "$1/postfiatd.cfg" server_info 2>/dev/null | wc -l sh /etc/postfiatd
+152
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 sh -c du -sb "$1/nudb" | cut -f1 sh /var/lib/postfiatd/db
+3701132
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 sh -c du -cb "$1"/*.db "$1"/*.db-* "$1"/*.sqlite 2>/dev/null | tail -n1 sh /var/lib/postfiatd/db
+1560632	total
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 df -B1 -P /var/lib/postfiatd/db
+Filesystem         1-blocks        Used   Available Capacity Mounted on
+/dev/sda1      103865303040 24330371072 79518154752      24% /var/lib/postfiatd/db
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 sh -c ls -1 "$1/nudb" 2>/dev/null | wc -l; tail -n 3 /var/log/postfiatd/debug.log | wc -l sh /var/lib/postfiatd/db
+2
+3
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 timeout 5 bash -c exec 3<>/dev/tcp/127.0.0.1/5005
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 ps -eo pid,comm
+    PID COMMAND
+      1 postfiatd
+      8 cron
+    334 ps
+(exit 0)
+2026-11-04T01:36:21Z after restart: cgroup id 17651339, server_state full
+$ docker exec pftsc-learn-census-20261104013426 curl -s -m 10 -o /dev/null -w %{http_code}\n -X POST -d {"method":"server_info"} http://127.0.0.1:5005
+200
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 curl -s -m 10 -o /dev/null -w %{http_code}\n -X POST -d {"method":"peers"} http://127.0.0.1:5005
+200
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 setpriv --reuid=0 --regid=0 --init-groups true
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 sh -c cd / && run-parts --report /etc/cron.hourly
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 sh -c for j in /etc/cron.daily/*; do [ "${j##*/}" = apt-compat ] && continue; echo "cron.daily/${j##*/}"; "$j"; done
+cron.daily/dpkg
+cron.daily/logrotate
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 sh -c /usr/sbin/logrotate -s /var/log/postfiatd/.logrotate.status /etc/logrotate.d/postfiatd
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 sh -c logrotate -f -s /var/log/postfiatd/.logrotate.status /etc/logrotate.d/postfiatd
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 sh -c test -e /run/systemd/system || SERVICE_MODE=1 /sbin/e2scrub_all -A -r
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 sh -c test -e /run/systemd/system || SERVICE_MODE=1 /usr/lib/x86_64-linux-gnu/e2fsprogs/e2scrub_all_cron
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 sh -c command -v curl >/dev/null
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 sh -c curl -s -m 5 -o /dev/null -w "%{http_code}\n" -d "{\"method\":\"server_info\"}" http://127.0.0.1:${RPC_PORT:-5005}/
+200
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 curl -s -m 10 -o /dev/null -w %{http_code}\n -X POST -H Content-Type: application/json -d {"method":"fee"} http://localhost:5005/
+200
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 stat -c %a /etc/postfiatd/postfiatd.cfg
+644
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 sh -c cat "$1/postfiatd.cfg" /etc/resolv.conf "$1/validators.txt" | wc -l sh /etc/postfiatd
+1668
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 sh -c grep -cE "^\[" "$1/postfiatd.cfg"; grep -c -A4 "^\[amendment_majority_time\]" "$1/postfiatd.cfg" sh /etc/postfiatd
+18
+1
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 sh -c sha256sum "$1/postfiatd.cfg" | wc -c; sed -n "/^\[node_db\]/,/^\[/p" "$1/postfiatd.cfg" | wc -l sh /etc/postfiatd
+95
+7
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 sh -c postfiatd --conf "$1/postfiatd.cfg" server_info 2>/dev/null | wc -l sh /etc/postfiatd
+147
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 sh -c du -sb "$1/nudb" | cut -f1 sh /var/lib/postfiatd/db
+11904121
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 sh -c du -cb "$1"/*.db "$1"/*.db-* "$1"/*.sqlite 2>/dev/null | tail -n1 sh /var/lib/postfiatd/db
+4597760	total
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 df -B1 -P /var/lib/postfiatd/db
+Filesystem         1-blocks        Used   Available Capacity Mounted on
+/dev/sda1      103865303040 24296161280 79552364544      24% /var/lib/postfiatd/db
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 sh -c ls -1 "$1/nudb" 2>/dev/null | wc -l; tail -n 3 /var/log/postfiatd/debug.log | wc -l sh /var/lib/postfiatd/db
+2
+3
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 timeout 5 bash -c exec 3<>/dev/tcp/127.0.0.1/5005
+(exit 0)
+$ docker exec pftsc-learn-census-20261104013426 ps -eo pid,comm
+    PID COMMAND
+      1 postfiatd
+      8 cron
+   4882 ps
+(exit 0)
+2026-11-04T02:39:37Z throwaway peers: 10
+
+
+2026-11-04T02:39:39Z census: cgroups 17649106,17651339; 116 distinct syscalls (12762662 calls) in the node + exec'd processes; runc init (pre-filter, left out): 84
+  futex 9632910
+  sendmsg 1015265
+  epoll_wait 611974
+  recvmsg 567410
+  pread64 275158
+  prctl 182161
+  write 160552
+  fcntl 79154
+  timerfd_settime 77031
+  pwrite64 38766
+  rt_sigprocmask 18992
+  epoll_ctl 13699
+  fstat 10303
+  fsync 9759
+  mprotect 8709
+  mmap 5849
+  set_robust_list 5030
+  rseq 4911
+  clone 4789
+  madvise 4679
+  exit 4641
+  read 4087
+  clock_nanosleep 4001
+  close 3459
+  openat 2895
+  newfstatat 2547
+  ftruncate 1989
+  getpid 1809
+  rt_sigaction 1347
+  brk 894
+  connect 448
+  munmap 412
+  getsockname 352
+  socket 346
+  wait4 346
+  prlimit64 325
+  poll 321
+  ioctl 303
+  access 296
+  lseek 295
+  recvfrom 285
+  getrandom 271
+  exit_group 247
+  geteuid 242
+  arch_prctl 241
+  set_tid_address 241
+  statx 212
+  statfs 204
+  execve 194
+  dup2 181
+  rt_sigreturn 179
+  setsockopt 167
+  sendto 159
+  fdatasync 143
+  getsockopt 120
+  getuid 116
+  pipe2 112
+  getegid 106
+  getdents64 90
+  getppid 80
+  getgid 76
+  fadvise64 74
+  getcwd 58
+  accept 54
+  shutdown 54
+  bind 52
+  unlink 48
+  getpeername 40
+  fchown 34
+  vfork 33
+  setresuid 32
+  sendmmsg 28
+  uname 28
+  fchmod 19
+  writev 16
+  setresgid 15
+  fgetxattr 13
+  fsetxattr 13
+  chdir 11
+  flock 10
+  getpgrp 10
+  listen 10
+  unlinkat 10
+  utimensat 10
+  eventfd2 8
+  rename 8
+  faccessat2 7
+  dup3 6
+  epoll_create1 6
+  flistxattr 6
+  fstatfs 6
+  readlink 6
+  renameat2 5
+  sigaltstack 5
+  creat 4
+  setsid 4
+  socketpair 4
+  sysinfo 4
+  timerfd_create 4
+  copy_file_range 3
+  mkdir 3
+  sched_getparam 3
+  sched_getscheduler 3
+  capget 2
+  capset 2
+  fchdir 1
+  getresgid 1
+  getresuid 1
+  gettid 1
+  mremap 1
+  rt_sigsuspend 1
+  setgroups 1
+  setpgid 1
+  timer_create 1
+  timer_settime 1
+  umask 1
+2026-11-04T02:39:39Z log: learn profile sha256 a591908908f495b4ee04597367c17fe1f114bf90cc98730a0f819b799a3dc9e5: {"defaultAction":"SCMP_ACT_LOG","flags":["SECCOMP_FILTER_FLAG_LOG"],"rules":[{"action":"SCMP_ACT_ALLOW","errnoRet":null,"n":114},{"action":"SCMP_ACT_ALLOW","errnoRet":null,"n":1},{"action":"SCMP_ACT_ALLOW","errnoRet":null,"n":1},{"action":"SCMP_ACT_ERRNO","errnoRet":38,"n":1},{"action":"SCMP_ACT_ERRNO","errnoRet":1,"n":66}]}
+2026-11-04T02:39:39Z log: T0=1793759979, throwaway pftsc-learn-log-20261104023939 under the learn profile (SCMP_ACT_LOG default)
+$ docker run -d --name pftsc-learn-log-20261104023939 --security-opt=apparmor=docker-default --security-opt=seccomp=/var/lib/pft-seccomp/learn-sentry-20261104T013423Z/learn-profile.json --security-opt=no-new-privileges --cap-drop=ALL --cap-add=CAP_SETGID --cap-add=CAP_SETUID --read-only --tmpfs=/run:rw,noexec,nosuid,size=64m --tmpfs=/tmp:rw,noexec,nosuid,size=64m --tmpfs=/var/backups:rw,noexec,nosuid,size=64m --tmpfs=/var/lib/apt:rw,noexec,nosuid,size=64m --tmpfs=/var/lib/logrotate:rw,noexec,nosuid,size=64m --volume=/var/lib/postfiatd/db --volume=/var/log/postfiatd --volume=/etc/postfiatd --pids-limit=256 --memory=2147483648 --user=0:0 sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e --conf /etc/postfiatd/postfiatd.cfg
+2026-11-04T02:39:40Z throwaway pftsc-learn-log-20261104023939 started; cgroup id 17794350; SecurityOpt ["apparmor=docker-default", "seccomp=<sha256 8a3c234b5e798c71adcb21ac394fc63c5a54b796492d4592e6ea421835619325>", "no-new-privileges"]
+2026-11-04T02:39:40Z node auto-detection (pft-integrity's rule) picks: postfiatd-sentry (throwaway pftsc-learn-log-20261104023939 is not a candidate)
+2026-11-04T02:40:31Z throwaway server_state: full
+$ docker exec pftsc-learn-log-20261104023939 curl -s -m 10 -o /dev/null -w %{http_code}\n -X POST -d {"method":"server_info"} http://127.0.0.1:5005
+200
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 curl -s -m 10 -o /dev/null -w %{http_code}\n -X POST -d {"method":"peers"} http://127.0.0.1:5005
+200
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 setpriv --reuid=0 --regid=0 --init-groups true
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 sh -c cd / && run-parts --report /etc/cron.hourly
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 sh -c for j in /etc/cron.daily/*; do [ "${j##*/}" = apt-compat ] && continue; echo "cron.daily/${j##*/}"; "$j"; done
+cron.daily/dpkg
+cron.daily/logrotate
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 sh -c /usr/sbin/logrotate -s /var/log/postfiatd/.logrotate.status /etc/logrotate.d/postfiatd
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 sh -c logrotate -f -s /var/log/postfiatd/.logrotate.status /etc/logrotate.d/postfiatd
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 sh -c test -e /run/systemd/system || SERVICE_MODE=1 /sbin/e2scrub_all -A -r
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 sh -c test -e /run/systemd/system || SERVICE_MODE=1 /usr/lib/x86_64-linux-gnu/e2fsprogs/e2scrub_all_cron
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 sh -c command -v curl >/dev/null
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 sh -c curl -s -m 5 -o /dev/null -w "%{http_code}\n" -d "{\"method\":\"server_info\"}" http://127.0.0.1:${RPC_PORT:-5005}/
+200
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 curl -s -m 10 -o /dev/null -w %{http_code}\n -X POST -H Content-Type: application/json -d {"method":"fee"} http://localhost:5005/
+200
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 stat -c %a /etc/postfiatd/postfiatd.cfg
+644
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 sh -c cat "$1/postfiatd.cfg" /etc/resolv.conf "$1/validators.txt" | wc -l sh /etc/postfiatd
+1668
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 sh -c grep -cE "^\[" "$1/postfiatd.cfg"; grep -c -A4 "^\[amendment_majority_time\]" "$1/postfiatd.cfg" sh /etc/postfiatd
+18
+1
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 sh -c sha256sum "$1/postfiatd.cfg" | wc -c; sed -n "/^\[node_db\]/,/^\[/p" "$1/postfiatd.cfg" | wc -l sh /etc/postfiatd
+95
+7
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 sh -c postfiatd --conf "$1/postfiatd.cfg" server_info 2>/dev/null | wc -l sh /etc/postfiatd
+160
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 sh -c du -sb "$1/nudb" | cut -f1 sh /var/lib/postfiatd/db
+3142327
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 sh -c du -cb "$1"/*.db "$1"/*.db-* "$1"/*.sqlite 2>/dev/null | tail -n1 sh /var/lib/postfiatd/db
+600672	total
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 df -B1 -P /var/lib/postfiatd/db
+Filesystem         1-blocks        Used   Available Capacity Mounted on
+/dev/sda1      103865303040 24254758912 79593766912      24% /var/lib/postfiatd/db
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 sh -c ls -1 "$1/nudb" 2>/dev/null | wc -l; tail -n 3 /var/log/postfiatd/debug.log | wc -l sh /var/lib/postfiatd/db
+2
+3
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 timeout 5 bash -c exec 3<>/dev/tcp/127.0.0.1/5005
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 ps -eo pid,comm
+    PID COMMAND
+      1 postfiatd
+      8 cron
+    334 ps
+(exit 0)
+2026-11-04T02:41:20Z after restart: cgroup id 17796979, server_state full
+$ docker exec pftsc-learn-log-20261104023939 curl -s -m 10 -o /dev/null -w %{http_code}\n -X POST -d {"method":"server_info"} http://127.0.0.1:5005
+200
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 curl -s -m 10 -o /dev/null -w %{http_code}\n -X POST -d {"method":"peers"} http://127.0.0.1:5005
+200
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 setpriv --reuid=0 --regid=0 --init-groups true
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 sh -c cd / && run-parts --report /etc/cron.hourly
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 sh -c for j in /etc/cron.daily/*; do [ "${j##*/}" = apt-compat ] && continue; echo "cron.daily/${j##*/}"; "$j"; done
+cron.daily/dpkg
+cron.daily/logrotate
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 sh -c /usr/sbin/logrotate -s /var/log/postfiatd/.logrotate.status /etc/logrotate.d/postfiatd
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 sh -c logrotate -f -s /var/log/postfiatd/.logrotate.status /etc/logrotate.d/postfiatd
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 sh -c test -e /run/systemd/system || SERVICE_MODE=1 /sbin/e2scrub_all -A -r
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 sh -c test -e /run/systemd/system || SERVICE_MODE=1 /usr/lib/x86_64-linux-gnu/e2fsprogs/e2scrub_all_cron
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 sh -c command -v curl >/dev/null
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 sh -c curl -s -m 5 -o /dev/null -w "%{http_code}\n" -d "{\"method\":\"server_info\"}" http://127.0.0.1:${RPC_PORT:-5005}/
+200
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 curl -s -m 10 -o /dev/null -w %{http_code}\n -X POST -H Content-Type: application/json -d {"method":"fee"} http://localhost:5005/
+200
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 stat -c %a /etc/postfiatd/postfiatd.cfg
+644
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 sh -c cat "$1/postfiatd.cfg" /etc/resolv.conf "$1/validators.txt" | wc -l sh /etc/postfiatd
+1668
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 sh -c grep -cE "^\[" "$1/postfiatd.cfg"; grep -c -A4 "^\[amendment_majority_time\]" "$1/postfiatd.cfg" sh /etc/postfiatd
+18
+1
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 sh -c sha256sum "$1/postfiatd.cfg" | wc -c; sed -n "/^\[node_db\]/,/^\[/p" "$1/postfiatd.cfg" | wc -l sh /etc/postfiatd
+95
+7
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 sh -c postfiatd --conf "$1/postfiatd.cfg" server_info 2>/dev/null | wc -l sh /etc/postfiatd
+160
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 sh -c du -sb "$1/nudb" | cut -f1 sh /var/lib/postfiatd/db
+11977152
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 sh -c du -cb "$1"/*.db "$1"/*.db-* "$1"/*.sqlite 2>/dev/null | tail -n1 sh /var/lib/postfiatd/db
+4861568	total
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 df -B1 -P /var/lib/postfiatd/db
+Filesystem         1-blocks        Used   Available Capacity Mounted on
+/dev/sda1      103865303040 24348241920 79500283904      24% /var/lib/postfiatd/db
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 sh -c ls -1 "$1/nudb" 2>/dev/null | wc -l; tail -n 3 /var/log/postfiatd/debug.log | wc -l sh /var/lib/postfiatd/db
+2
+3
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 timeout 5 bash -c exec 3<>/dev/tcp/127.0.0.1/5005
+(exit 0)
+$ docker exec pftsc-learn-log-20261104023939 ps -eo pid,comm
+    PID COMMAND
+      1 postfiatd
+      7 cron
+   4918 ps
+(exit 0)
+2026-11-04T03:45:10Z throwaway peers: 10
+2026-11-04T03:45:17Z log: 509 SECCOMP records since T0; distinct (action, syscall, comm, exe): 8
+  errno	clone3	postfiatd	/usr/local/bin/postfiatd	2
+  errno	clone3	postfiatd: rpc	/usr/local/bin/postfiatd	2
+  log	getpriority	cron	/usr/sbin/cron	3
+  log	openat2	runc:[2:INIT]	/runc	252
+  log	sched_yield	postfiatd	/usr/local/bin/postfiatd	241
+  log	setgid	cron	/usr/sbin/cron	3
+  log	setpriority	cron	/usr/sbin/cron	3
+  log	setuid	cron	/usr/sbin/cron	3
+2026-11-04T03:45:17Z learn: done -> /var/lib/pft-seccomp/learn-sentry-20261104T013423Z
+(exit 0)
+# audit after: enabled 2 backlog_limit 8192 lost 0
+# leftover throwaways: 0
+
+== offline: generate, check, diff (from /var/lib/pft-seccomp/learn-sentry-20261104T013423Z)
+Traceback (most recent call last):
+  File "/var/lib/pft-seccomp/tree-65ab406/seccomp/pft_seccomp.py", line 480, in <module>
+    sys.exit(main())
+  File "/var/lib/pft-seccomp/tree-65ab406/seccomp/pft_seccomp.py", line 473, in main
+    print(canon_sha(args.profile))
+  File "/var/lib/pft-seccomp/tree-65ab406/seccomp/pft_seccomp.py", line 317, in canon_sha
+    obj = json.load(f)
+  File "/usr/lib/python3.10/json/__init__.py", line 293, in load
+    return loads(fp.read(),
+  File "/usr/lib/python3.10/json/__init__.py", line 346, in loads
+    return _default_decoder.decode(s)
+  File "/usr/lib/python3.10/json/decoder.py", line 337, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+  File "/usr/lib/python3.10/json/decoder.py", line 355, in raw_decode
+    raise JSONDecodeError("Expecting value", s, err.value) from None
+json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+  profile sha256 7b9cff40e55529796303e12f907945215113ff8a9c17ab571dc315e5457ab7ac, canonical (docker-stored) sha256 
+$ bash /var/lib/pft-seccomp/tree-65ab406/seccomp/pft-seccomp.sh check /var/lib/pft-seccomp/learn-sentry-20261104T013423Z/profile.json
+not readable JSON: Expecting value: line 1 column 1 (char 0)
+(exit 1)
+$ bash /var/lib/pft-seccomp/tree-65ab406/seccomp/pft-seccomp.sh diff --learn /var/lib/pft-seccomp/learn-sentry-20261104T013423Z
+# syscall	docker_default	pft_profile	why
+accept	allow	allow	census 54
+access	allow	allow	census 296
+arch_prctl	allow	allow	census 241
+bind	allow	allow	census 52
+brk	allow	allow	census 894
+capget	allow	allow	census 2
+capset	allow	allow	census 2
+chdir	allow	allow	census 11
+clock_nanosleep	allow	allow	census 4001
+clone	allow(args)	allow(args)	census 4789
+clone3	deny	deny	observed, denied by Docker default too: stays denied
+close	allow	allow	census 3459
+connect	allow	allow	census 448
+copy_file_range	allow	allow	census 3
+creat	allow	allow	census 4
+dup2	allow	allow	census 181
+dup3	allow	allow	census 6
+epoll_create1	allow	allow	census 6
+epoll_ctl	allow	allow	census 13699
+epoll_wait	allow	allow	census 611974
+eventfd2	allow	allow	census 8
+execve	allow	allow	census 194
+exit	allow	allow	census 4641
+exit_group	allow	allow	census 247
+faccessat2	allow	allow	census 7
+fadvise64	allow	allow	census 74
+fchdir	allow	allow	census 1
+fchmod	allow	allow	census 19
+fchown	allow	allow	census 34
+fcntl	allow	allow	census 79154
+fdatasync	allow	allow	census 143
+fgetxattr	allow	allow	census 13
+flistxattr	allow	allow	census 6
+flock	allow	allow	census 10
+fsetxattr	allow	allow	census 13
+fstat	allow	allow	census 10303
+fstatfs	allow	allow	census 6
+fsync	allow	allow	census 9759
+ftruncate	allow	allow	census 1989
+futex	allow	allow	census 9632910
+getcwd	allow	allow	census 58
+getdents64	allow	allow	census 90
+getegid	allow	allow	census 106
+geteuid	allow	allow	census 242
+getgid	allow	allow	census 76
+getpeername	allow	allow	census 40
+getpgrp	allow	allow	census 10
+getpid	allow	allow	census 1809
+getppid	allow	allow	census 80
+getpriority	allow	allow	SCMP_ACT_LOG record (missed by the census)
+getrandom	allow	allow	census 271
+getresgid	allow	allow	census 1
+getresuid	allow	allow	census 1
+getsockname	allow	allow	census 352
+getsockopt	allow	allow	census 120
+gettid	allow	allow	census 1
+getuid	allow	allow	census 116
+ioctl	allow	allow	census 303
+listen	allow	allow	census 10
+lseek	allow	allow	census 295
+madvise	allow	allow	census 4679
+mkdir	allow	allow	census 3
+mmap	allow	allow	census 5849
+mprotect	allow	allow	census 8709
+mremap	allow	allow	census 1
+munmap	allow	allow	census 412
+newfstatat	allow	allow	census 2547
+openat	allow	allow	census 2895
+openat2	allow	allow	SCMP_ACT_LOG record (missed by the census)
+pipe2	allow	allow	census 112
+poll	allow	allow	census 321
+prctl	allow	allow	census 182161
+pread64	allow	allow	census 275158
+prlimit64	allow	allow	census 325
+pwrite64	allow	allow	census 38766
+read	allow	allow	census 4087
+readlink	allow	allow	census 6
+recvfrom	allow	allow	census 285
+recvmsg	allow	allow	census 567410
+rename	allow	allow	census 8
+renameat2	allow	allow	census 5
+restart_syscall	allow	allow	margin: kernel-issued after a signal interrupts a restartable sleep (e.g. nanosleep); never called directly
+rseq	allow	allow	census 4911
+rt_sigaction	allow	allow	census 1347
+rt_sigprocmask	allow	allow	census 18992
+rt_sigreturn	allow	allow	census 179
+rt_sigsuspend	allow	allow	census 1
+sched_getparam	allow	allow	census 3
+sched_getscheduler	allow	allow	census 3
+sched_yield	allow	allow	SCMP_ACT_LOG record (missed by the census)
+sendmmsg	allow	allow	census 28
+sendmsg	allow	allow	census 1015265
+sendto	allow	allow	census 159
+set_robust_list	allow	allow	census 5030
+set_tid_address	allow	allow	census 241
+setgid	allow	allow	SCMP_ACT_LOG record (missed by the census)
+setgroups	allow	allow	census 1
+setpgid	allow	allow	census 1
+setpriority	allow	allow	SCMP_ACT_LOG record (missed by the census)
+setresgid	allow	allow	census 15
+setresuid	allow	allow	census 32
+setsid	allow	allow	census 4
+setsockopt	allow	allow	census 167
+setuid	allow	allow	SCMP_ACT_LOG record (missed by the census)
+shutdown	allow	allow	census 54
+sigaltstack	allow	allow	census 5
+socket	allow(args)	allow(args)	census 346
+socketpair	allow	allow	census 4
+statfs	allow	allow	census 204
+statx	allow	allow	census 212
+sysinfo	allow	allow	census 4
+tgkill	allow	allow	margin: abort()/raise(): assertion failure and fatal-signal paths, so the node still dumps a stack instead of EPERM
+timer_create	allow	allow	census 1
+timer_settime	allow	allow	census 1
+timerfd_create	allow	allow	census 4
+timerfd_settime	allow	allow	census 77031
+umask	allow	allow	census 1
+uname	allow	allow	census 28
+unlink	allow	allow	census 48
+unlinkat	allow	allow	census 10
+utimensat	allow	allow	census 10
+vfork	allow	allow	census 33
+wait4	allow	allow	census 346
+write	allow	allow	census 160552
+writev	allow	allow	census 16
+# summary: Docker default allows 294 x86_64 syscalls for these caps; profile keeps 124, removes 170
+(exit 0)
+(exit 0)
+RESULT: PASS - learn done, profile generated

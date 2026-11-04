@@ -1,0 +1,335 @@
+OS: Ubuntu 22.04.5 LTS | 2026-11-04T03:52:19Z | validator-host | recorded offline generate: one profile from both hosts' learn
+# tree: commit 453174a1a7c5fef876067ad9bf0850408c793076
+# sha256 c53b92bb41e542672e18dcae96b4dd470ed38d16c2e8c43fb390398395650f58 seccomp/pft-seccomp.sh
+# sha256 2c2b32e2f82aedd8b2f8613b0711d4d66c33844a241b4fae71b24b5fba5e40d5 seccomp/pft_seccomp.py
+# sha256 01536f1d1df938ae611eba20d6349e0de7a99b6ecdee1549427a0b01b8301e28 seccomp/ref/docker-default-29.1.3.json
+# sha256 2590677f2f34b64f456dd6aabb49ad7be6f456fbc3e7c8cdc50fa196d113a208 seccomp/margin.tsv
+# sha256 5f3bb38cae8d982f6f3df4233468dd4dd0bbcbf081ee17b06fda2c8e7d423b55 seccomp/drill/generate-run.sh
+# sha256 1f294d3aa06f595f82412fdc2864d9255740d467f47995b9d843164e846015df seccomp/learn/validator/census.json
+# sha256 ea9729bf651404422abc09ad79296e77d3dd8170cf4d0bb846fa435f92216e73 seccomp/learn/validator/events.tsv
+# sha256 1337cf0e1062a4c1e74f89c527d8940cff580ba25c5f56adf420be5b8ef0a2b6 seccomp/learn/sentry/census.json
+# sha256 2df523259ab59a94ae645b4c7d1b0af377228d0ce0bd879f9ec2a509b0ec4fb9 seccomp/learn/sentry/events.tsv
+# libseccomp 2.5.3-2ubuntu3~22.04.1
+$ bash pft-seccomp.sh generate --learn learn/validator > OUT/validator.json
+(exit 0)  sha256 8568e1728fa413e81e4fb256fd16286f4874d9cdaed6adf224ad35610b9e2457
+$ bash pft-seccomp.sh generate --learn learn/sentry > OUT/sentry.json
+(exit 0)  sha256 8568e1728fa413e81e4fb256fd16286f4874d9cdaed6adf224ad35610b9e2457
+$ bash pft-seccomp.sh generate --learn learn/validator --learn learn/sentry > OUT/pft-postfiatd.json
+(exit 0)
+  file sha256 8568e1728fa413e81e4fb256fd16286f4874d9cdaed6adf224ad35610b9e2457; canonical (docker-stored json.Compact) sha256 f533d5043ec4cb7b0bc9f2caaaaf037051b40de3db38ec2b656db5719b584398
+  validator-only, sentry-only and merged profiles are byte-identical
+$ bash pft-seccomp.sh check OUT/pft-postfiatd.json
+ok 129 allowed syscalls
+(exit 0)
+["SCMP_ACT_ERRNO",1,["SCMP_ARCH_X86_64"],["SECCOMP_FILTER_FLAG_LOG"],[{"action":"SCMP_ACT_ALLOW","errnoRet":null,"args":false,"n":127},{"action":"SCMP_ACT_ALLOW","errnoRet":null,"args":true,"n":1},{"action":"SCMP_ACT_ALLOW","errnoRet":null,"args":true,"n":1},{"action":"SCMP_ACT_ERRNO","errnoRet":38,"args":false,"n":1}]]
+$ bash pft-seccomp.sh diff --learn learn/validator --learn learn/sentry > OUT/diff.tsv
+(exit 0)
+== per-syscall diff vs Docker's default (295 rows)
+# syscall	docker_default	pft_profile	why
+accept	allow	allow	census 107
+accept4	allow	deny	never observed
+access	allow	allow	census 591
+adjtimex	allow	deny	never observed
+alarm	allow	deny	never observed
+arch_prctl	allow	allow	census 481
+bind	allow	allow	census 104
+brk	allow	allow	census 1779
+capget	allow	allow	census 30
+capset	allow	allow	census 4
+chdir	allow	allow	census 22
+chmod	allow	deny	never observed
+chown	allow	deny	never observed
+clock_adjtime	allow	deny	never observed
+clock_getres	allow	allow	margin: same vDSO fallback as clock_gettime
+clock_gettime	allow	allow	margin: normally a vDSO call (never a syscall, so no learn sees it); a real syscall when the kernel falls back from kvm-clock to hpet/acpi_pm (both listed in available_clocksource on these hosts) after marking it unstable
+clock_nanosleep	allow	allow	census 8013
+clone	allow(args)	allow(args)	census 9578
+clone3	deny	deny	observed, denied by Docker default too: stays denied
+close	allow	allow	census 6858
+close_range	allow	deny	never observed
+connect	allow	allow	census 875
+copy_file_range	allow	allow	census 6
+creat	allow	allow	census 8
+dup	allow	deny	never observed
+dup2	allow	allow	census 362
+dup3	allow	allow	census 12
+epoll_create	allow	deny	never observed
+epoll_create1	allow	allow	census 12
+epoll_ctl	allow	allow	census 26191
+epoll_ctl_old	allow	deny	never observed
+epoll_pwait	allow	deny	never observed
+epoll_pwait2	allow	deny	never observed
+epoll_wait	allow	allow	census 1256470
+epoll_wait_old	allow	deny	never observed
+eventfd	allow	deny	never observed
+eventfd2	allow	allow	census 16
+execve	allow	allow	census 388
+execveat	allow	deny	never observed
+exit	allow	allow	census 9282
+exit_group	allow	allow	census 493
+faccessat	allow	deny	never observed
+faccessat2	allow	allow	census 14
+fadvise64	allow	allow	census 148
+fallocate	allow	deny	never observed
+fanotify_mark	allow	deny	never observed
+fchdir	allow	allow	census 2
+fchmod	allow	allow	census 38
+fchmodat	allow	deny	never observed
+fchmodat2	allow	deny	never observed
+fchown	allow	allow	census 69
+fchownat	allow	deny	never observed
+fcntl	allow	allow	census 165118
+fdatasync	allow	allow	census 290
+fgetxattr	allow	allow	census 26
+flistxattr	allow	allow	census 12
+flock	allow	allow	census 20
+fork	allow	deny	never observed
+fremovexattr	allow	deny	never observed
+fsetxattr	allow	allow	census 26
+fstat	allow	allow	census 20632
+fstatfs	allow	allow	census 12
+fsync	allow	allow	census 19668
+ftruncate	allow	allow	census 4008
+futex	allow	allow	census 15825335
+futimesat	allow	deny	never observed
+get_robust_list	allow	deny	never observed
+get_thread_area	allow	deny	never observed
+getcpu	allow	deny	never observed
+getcwd	allow	allow	census 116
+getdents	allow	deny	never observed
+getdents64	allow	allow	census 180
+getegid	allow	allow	census 212
+geteuid	allow	allow	census 484
+getgid	allow	allow	census 152
+getgroups	allow	deny	never observed
+getitimer	allow	deny	never observed
+getpeername	allow	allow	census 78
+getpgid	allow	deny	never observed
+getpgrp	allow	allow	census 20
+getpid	allow	allow	census 3860
+getppid	allow	allow	census 160
+getpriority	allow	allow	census 2
+getrandom	allow	allow	census 540
+getresgid	allow	allow	census 2
+getresuid	allow	allow	census 2
+getrlimit	allow	deny	never observed
+getrusage	allow	deny	never observed
+getsid	allow	deny	never observed
+getsockname	allow	allow	census 664
+getsockopt	allow	allow	census 221
+gettid	allow	allow	census 15
+gettimeofday	allow	allow	margin: same vDSO fallback as clock_gettime
+getuid	allow	allow	census 232
+getxattr	allow	deny	never observed
+inotify_add_watch	allow	deny	never observed
+inotify_init	allow	deny	never observed
+inotify_init1	allow	deny	never observed
+inotify_rm_watch	allow	deny	never observed
+io_cancel	allow	deny	never observed
+io_destroy	allow	deny	never observed
+io_getevents	allow	deny	never observed
+io_pgetevents	allow	deny	never observed
+io_setup	allow	deny	never observed
+io_submit	allow	deny	never observed
+ioctl	allow	allow	census 585
+ioprio_get	allow	deny	never observed
+ioprio_set	allow	deny	never observed
+kill	allow	allow	margin: timeout(1) in the add-ons' docker exec commands (pft-egress: timeout 5 bash -c ...) signals its child only when the child hangs
+landlock_add_rule	allow	deny	never observed
+landlock_create_ruleset	allow	deny	never observed
+landlock_restrict_self	allow	deny	never observed
+lchown	allow	deny	never observed
+lgetxattr	allow	deny	never observed
+link	allow	deny	never observed
+linkat	allow	deny	never observed
+listen	allow	allow	census 20
+listxattr	allow	deny	never observed
+llistxattr	allow	deny	never observed
+lremovexattr	allow	deny	never observed
+lseek	allow	allow	census 588
+lsetxattr	allow	deny	never observed
+lstat	allow	deny	never observed
+madvise	allow	allow	census 9355
+membarrier	allow	deny	never observed
+memfd_create	allow	deny	never observed
+memfd_secret	allow	deny	never observed
+mincore	allow	deny	never observed
+mkdir	allow	allow	census 8
+mkdirat	allow	deny	never observed
+mknod	allow	deny	never observed
+mknodat	allow	deny	never observed
+mlock	allow	deny	never observed
+mlock2	allow	deny	never observed
+mlockall	allow	deny	never observed
+mmap	allow	allow	census 11557
+modify_ldt	allow	deny	never observed
+mprotect	allow	allow	census 17082
+mq_getsetattr	allow	deny	never observed
+mq_notify	allow	deny	never observed
+mq_open	allow	deny	never observed
+mq_timedreceive	allow	deny	never observed
+mq_timedsend	allow	deny	never observed
+mq_unlink	allow	deny	never observed
+mremap	allow	allow	census 5
+msgctl	allow	deny	never observed
+msgget	allow	deny	never observed
+msgrcv	allow	deny	never observed
+msgsnd	allow	deny	never observed
+msync	allow	deny	never observed
+munlock	allow	deny	never observed
+munlockall	allow	deny	never observed
+munmap	allow	allow	census 829
+name_to_handle_at	allow	deny	never observed
+nanosleep	allow	deny	never observed
+newfstatat	allow	allow	census 5095
+open	allow	deny	never observed
+openat	allow	allow	census 5749
+openat2	allow	allow	SCMP_ACT_LOG record (missed by the census)
+pause	allow	deny	never observed
+personality	allow(args)	deny	never observed
+pidfd_open	allow	deny	never observed
+pidfd_send_signal	allow	deny	never observed
+pipe	allow	deny	never observed
+pipe2	allow	allow	census 223
+pkey_alloc	allow	deny	never observed
+pkey_free	allow	deny	never observed
+pkey_mprotect	allow	deny	never observed
+poll	allow	allow	census 619
+ppoll	allow	deny	never observed
+prctl	allow	allow	census 361843
+pread64	allow	allow	census 563008
+preadv	allow	deny	never observed
+preadv2	allow	deny	never observed
+prlimit64	allow	allow	census 649
+process_mrelease	allow	deny	never observed
+process_vm_readv	allow	deny	never observed
+process_vm_writev	allow	deny	never observed
+pselect6	allow	deny	never observed
+ptrace	allow	deny	never observed
+pwrite64	allow	allow	census 77410
+pwritev	allow	deny	never observed
+pwritev2	allow	deny	never observed
+read	allow	allow	census 8157
+readahead	allow	deny	never observed
+readlink	allow	allow	census 20
+readlinkat	allow	deny	never observed
+readv	allow	deny	never observed
+recvfrom	allow	allow	census 574
+recvmmsg	allow	deny	never observed
+recvmsg	allow	allow	census 1097625
+remap_file_pages	allow	deny	never observed
+removexattr	allow	deny	never observed
+rename	allow	allow	census 16
+renameat	allow	deny	never observed
+renameat2	allow	allow	census 10
+restart_syscall	allow	allow	margin: kernel-issued after a signal interrupts a restartable sleep (e.g. nanosleep); never called directly
+rmdir	allow	deny	never observed
+rseq	allow	allow	census 9821
+rt_sigaction	allow	allow	census 2660
+rt_sigpending	allow	deny	never observed
+rt_sigprocmask	allow	allow	census 37984
+rt_sigqueueinfo	allow	deny	never observed
+rt_sigreturn	allow	allow	census 357
+rt_sigsuspend	allow	allow	census 2
+rt_sigtimedwait	allow	deny	never observed
+rt_tgsigqueueinfo	allow	deny	never observed
+sched_get_priority_max	allow	deny	never observed
+sched_get_priority_min	allow	deny	never observed
+sched_getaffinity	allow	deny	never observed
+sched_getattr	allow	deny	never observed
+sched_getparam	allow	allow	census 5
+sched_getscheduler	allow	allow	census 5
+sched_rr_get_interval	allow	deny	never observed
+sched_setaffinity	allow	deny	never observed
+sched_setattr	allow	deny	never observed
+sched_setparam	allow	deny	never observed
+sched_setscheduler	allow	deny	never observed
+sched_yield	allow	allow	SCMP_ACT_LOG record (missed by the census)
+seccomp	allow	deny	never observed
+select	allow	deny	never observed
+semctl	allow	deny	never observed
+semget	allow	deny	never observed
+semop	allow	deny	never observed
+semtimedop	allow	deny	never observed
+sendfile	allow	deny	never observed
+sendmmsg	allow	allow	census 56
+sendmsg	allow	allow	census 1933519
+sendto	allow	allow	census 317
+set_robust_list	allow	allow	census 10059
+set_thread_area	allow	deny	never observed
+set_tid_address	allow	allow	census 481
+setfsgid	allow	deny	never observed
+setfsuid	allow	deny	never observed
+setgid	allow	allow	census 2
+setgroups	allow	allow	census 5
+setitimer	allow	deny	never observed
+setpgid	allow	allow	census 2
+setpriority	allow	allow	census 2
+setregid	allow	deny	never observed
+setresgid	allow	allow	census 30
+setresuid	allow	allow	census 64
+setreuid	allow	deny	never observed
+setrlimit	allow	deny	never observed
+setsid	allow	allow	census 8
+setsockopt	allow	allow	census 329
+setuid	allow	allow	census 2
+setxattr	allow	deny	never observed
+shmat	allow	deny	never observed
+shmctl	allow	deny	never observed
+shmdt	allow	deny	never observed
+shmget	allow	deny	never observed
+shutdown	allow	allow	census 107
+sigaltstack	allow	allow	census 10
+signalfd	allow	deny	never observed
+signalfd4	allow	deny	never observed
+socket	allow(args)	allow(args)	census 671
+socketpair	allow	allow	census 8
+splice	allow	deny	never observed
+stat	allow	deny	never observed
+statfs	allow	allow	census 408
+statx	allow	allow	census 424
+symlink	allow	deny	never observed
+symlinkat	allow	deny	never observed
+sync	allow	deny	never observed
+sync_file_range	allow	deny	never observed
+syncfs	allow	deny	never observed
+sysinfo	allow	allow	census 8
+tee	allow	deny	never observed
+tgkill	allow	allow	margin: abort()/raise(): assertion failure and fatal-signal paths, so the node still dumps a stack instead of EPERM
+time	allow	allow	margin: same vDSO fallback as clock_gettime
+timer_create	allow	allow	census 2
+timer_delete	allow	deny	never observed
+timer_getoverrun	allow	deny	never observed
+timer_gettime	allow	deny	never observed
+timer_settime	allow	allow	census 2
+timerfd_create	allow	allow	census 8
+timerfd_gettime	allow	deny	never observed
+timerfd_settime	allow	allow	census 145825
+times	allow	deny	never observed
+tkill	allow	deny	never observed
+truncate	allow	deny	never observed
+umask	allow	allow	census 6
+uname	allow	allow	census 56
+unlink	allow	allow	census 97
+unlinkat	allow	allow	census 36
+utime	allow	deny	never observed
+utimensat	allow	allow	census 20
+utimes	allow	deny	never observed
+vfork	allow	allow	census 101
+vmsplice	allow	deny	never observed
+wait4	allow	allow	census 692
+waitid	allow	deny	never observed
+write	allow	allow	census 325087
+writev	allow	allow	census 32
+# summary: Docker default allows 294 x86_64 syscalls for these caps; profile keeps 129, removes 165
+== kept by margin or by a LOG record only:
+clock_getres	allow	allow	margin: same vDSO fallback as clock_gettime
+clock_gettime	allow	allow	margin: normally a vDSO call (never a syscall, so no learn sees it); a real syscall when the kernel falls back from kvm-clock to hpet/acpi_pm (both listed in available_clocksource on these hosts) after marking it unstable
+gettimeofday	allow	allow	margin: same vDSO fallback as clock_gettime
+kill	allow	allow	margin: timeout(1) in the add-ons' docker exec commands (pft-egress: timeout 5 bash -c ...) signals its child only when the child hangs
+openat2	allow	allow	SCMP_ACT_LOG record (missed by the census)
+restart_syscall	allow	allow	margin: kernel-issued after a signal interrupts a restartable sleep (e.g. nanosleep); never called directly
+sched_yield	allow	allow	SCMP_ACT_LOG record (missed by the census)
+tgkill	allow	allow	margin: abort()/raise(): assertion failure and fatal-signal paths, so the node still dumps a stack instead of EPERM
+time	allow	allow	margin: same vDSO fallback as clock_gettime
+RESULT: PASS - one profile for both hosts
