@@ -1,0 +1,44 @@
+$ sudo bash drill/reload-run.sh pft-postfiatd(generated, a57315ab) sentry apparmor-crondaily postfiatd-sentry   # on the sentry
+== reload-run sentry 2026-11-04T08:16:36Z on Ubuntu 22.04.5 LTS
+container before: f3874051771a 2026-11-04T00:20:22.716502475Z pft-postfiatd
+CHECK PASS preflight: postfiatd-sentry runs under pft-postfiatd (enforce)
+CHECK PASS preflight: server_state full
+CHECK PASS preflight: new profile defines pft-postfiatd and compiles
+installed sha256: f3a023fc14cd46ae856dc3e118cdca7b233e2896be123f8ec9b3973180830e34
+new       sha256: a57315ab83095b5a39b06cb85436ff24674af5776796ba4364aa9188d1b9adb3
+-- diff installed -> new
+66a67
+>   / r,
+140a142,145
+> 
+>   # --- pft-apparmor quiet denials (not logged): jobs that are pointless in the container ---
+>   deny /etc/cron.daily/apt-compat x,
+>   deny /usr/lib/apt/apt.systemd.daily x,
+CHECK PASS install + apparmor_parser -r -W (backup pft-postfiatd.bak-20261104T081636Z)
+CHECK PASS installed file = new profile
+container after:  f3874051771a 2026-11-04T00:20:22.716502475Z pft-postfiatd
+CHECK PASS same container ID + start time, still pft-postfiatd (no re-create, no restart)
+CHECK PASS pft-postfiatd loaded in enforce mode
+CHECK PASS server_state full
+pft-integrity accept - 2026-11-04T08:16:47Z: re-baselined 97 items by root
+manifest sha256: 4ae5da36a64a00bd1daee3bedd6f668df40f677e12bbe41b7fb923730865f590 -> 13e78b0a1cee46b24d2cfe5f0651e4510bc315d32f3ca04721c36729db0435be (logged to accept.log)
+CHECK PASS pft-integrity accept
+RESULT: PASS - 97 unchanged, 0 warn, 0 fail -> exit 0
+CHECK PASS pft-integrity verify after accept
+-- pft-apparmor audit
+pft-apparmor audit - 2026-11-04T08:16:55Z | host sentry | container postfiatd-sentry | profile pft-postfiatd
+  [PASS] kernel             AppArmor enabled in the kernel
+  [PASS] parser             apparmor_parser present
+  [PASS] loaded             pft-postfiatd loaded (enforce)
+  [PASS] container          postfiatd-sentry runs under pft-postfiatd
+  [PASS] mode               pft-postfiatd enforce
+  [PASS] recreate           docker run container: HostConfig keeps pft-postfiatd across restarts
+  [PASS] confine:cap_drop   cap_drop ALL
+  [PASS] confine:read_only  read-only root fs
+  [PASS] confine:nnp        no-new-privileges
+  [PASS] boot               /etc/apparmor.d/pft-postfiatd parses; apparmor.service enabled
+  [PASS] denials            0 DENIED events in the last 86401s; up to 2026-11-04T06:25:08Z acknowledged: agent 2026-11-04: node cron.daily 06:25Z apt-compat exec apt-config/cksum/dd + logrotate open / denied (learn skipped ap
+RESULT: PASS
+CHECK PASS pft-apparmor audit exit 0
+RESULT: PASS - 0 failed
+(exit 0)

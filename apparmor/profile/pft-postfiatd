@@ -64,6 +64,7 @@ profile pft-postfiatd flags=(attach_disconnected,mediate_deleted) {
   /usr/sbin/logrotate ix,
 
   # files
+  / r,
   /dev/tty rw,
   /etc/cron.d/{,**} r,
   /etc/cron.hourly/{,**} r,
@@ -138,6 +139,10 @@ profile pft-postfiatd flags=(attach_disconnected,mediate_deleted) {
   deny /sys/fs/cg[^r]*/** wklx,
   deny /sys/firmware/** rwklx,
   deny /sys/kernel/security/** rwklx,
+
+  # --- pft-apparmor quiet denials (not logged): jobs that are pointless in the container ---
+  deny /etc/cron.daily/apt-compat x,
+  deny /usr/lib/apt/apt.systemd.daily x,
 
   # --- pft-apparmor explicit denials (logged) ---
   audit deny /etc/gshadow rwklx,

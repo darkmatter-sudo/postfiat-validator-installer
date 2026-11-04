@@ -1,0 +1,44 @@
+$ sudo bash drill/reload-run.sh pft-postfiatd(generated, a57315ab) validator apparmor-crondaily postfiatd
+== reload-run validator 2026-11-04T08:15:41Z on Ubuntu 22.04.5 LTS
+container before: 82b1285c5324 2026-11-03T13:25:44.589339315Z pft-postfiatd
+CHECK PASS preflight: postfiatd runs under pft-postfiatd (enforce)
+CHECK PASS preflight: server_state full
+CHECK PASS preflight: new profile defines pft-postfiatd and compiles
+installed sha256: f3a023fc14cd46ae856dc3e118cdca7b233e2896be123f8ec9b3973180830e34
+new       sha256: a57315ab83095b5a39b06cb85436ff24674af5776796ba4364aa9188d1b9adb3
+-- diff installed -> new
+66a67
+>   / r,
+140a142,145
+> 
+>   # --- pft-apparmor quiet denials (not logged): jobs that are pointless in the container ---
+>   deny /etc/cron.daily/apt-compat x,
+>   deny /usr/lib/apt/apt.systemd.daily x,
+CHECK PASS install + apparmor_parser -r -W (backup pft-postfiatd.bak-20261104T081541Z)
+CHECK PASS installed file = new profile
+container after:  82b1285c5324 2026-11-03T13:25:44.589339315Z pft-postfiatd
+CHECK PASS same container ID + start time, still pft-postfiatd (no re-create, no restart)
+CHECK PASS pft-postfiatd loaded in enforce mode
+CHECK PASS server_state full
+pft-integrity accept - 2026-11-04T08:16:04Z: re-baselined 165 items by <user>
+manifest sha256: 462dc00ab4d961ff0a73cdacaa4c360ec10a8b312cde4b9bc6a389facbba1aee -> 1a0533f1971d8a4f7d4b2bc641ea6a771c7d1d0d5011b74747135cf62f8a0c45 (logged to accept.log)
+CHECK PASS pft-integrity accept
+RESULT: PASS - 165 unchanged, 0 warn, 0 fail -> exit 0
+CHECK PASS pft-integrity verify after accept
+-- pft-apparmor audit
+pft-apparmor audit - 2026-11-04T08:16:29Z | host validator | container postfiatd | profile pft-postfiatd
+  [PASS] kernel             AppArmor enabled in the kernel
+  [PASS] parser             apparmor_parser present
+  [PASS] loaded             pft-postfiatd loaded (enforce)
+  [PASS] container          postfiatd runs under pft-postfiatd
+  [PASS] mode               pft-postfiatd enforce
+  [PASS] recreate           compose file sets apparmor=pft-postfiatd
+  [PASS] confine:cap_drop   cap_drop ALL
+  [PASS] confine:read_only  read-only root fs
+  [PASS] confine:nnp        no-new-privileges
+  [PASS] boot               /etc/apparmor.d/pft-postfiatd parses; apparmor.service enabled
+  [PASS] denials            0 DENIED events in the last 86403s; up to 2026-11-04T06:25:08Z acknowledged: agent 2026-11-04: node cron.daily 06:25Z apt-compat exec apt-config/cksum/dd + logrotate open / denied (learn skipped ap
+RESULT: PASS
+CHECK PASS pft-apparmor audit exit 0
+RESULT: PASS - 0 failed
+(exit 0)

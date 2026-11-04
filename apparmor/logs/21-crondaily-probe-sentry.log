@@ -1,0 +1,54 @@
+$ sudo bash crondaily-probe.sh OLD(pft-postfiatd @HEAD) NEW(generated) postfiatd-sentry   # on the sentry, same script as log 20
+1f99849c0a20c082ca8de361a32443a53bd7cf17037ad92d5fb011d19f8fad90  crondaily-probe.sh
+== crondaily-probe 2026-11-04T08:14:42Z on Ubuntu 22.04.5 LTS
+image: agtipft/postfiatd:testnet-light-latest
+live container profile: pft-postfiatd
+old profile sha256: f3a023fc14cd46ae856dc3e118cdca7b233e2896be123f8ec9b3973180830e34
+new profile sha256: a57315ab83095b5a39b06cb85436ff24674af5776796ba4364aa9188d1b9adb3
+-- diff old -> new
+66a67
+>   / r,
+140a142,145
+> 
+>   # --- pft-apparmor quiet denials (not logged): jobs that are pointless in the container ---
+>   deny /etc/cron.daily/apt-compat x,
+>   deny /usr/lib/apt/apt.systemd.daily x,
+-- container's cron.daily line and jobs
+25 6	* * *	root	test -x /usr/sbin/anacron || { cd / && run-parts --report /etc/cron.daily; }
+apt-compat
+dpkg
+logrotate
+CHECK PASS old: probe profile pft-aa-probe-old loaded
+-- old: run-parts cron.daily in a throwaway container under pft-aa-probe-old (since 1793780083)
+/etc/cron.daily/apt-compat:
+/etc/cron.daily/apt-compat: 36: apt-config: Permission denied
+/etc/cron.daily/apt-compat: 42: cksum: Permission denied
+/etc/cron.daily/apt-compat: 42: arithmetic expression: expecting primary: "  % 32767 "
+run-parts: /etc/cron.daily/apt-compat exited with return code 2
+/etc/cron.daily/logrotate:
+error: cannot open current directory: Permission denied
+run-parts: /etc/cron.daily/logrotate exited with return code 1
+run-parts exit 1
+-- old: DENIED records for pft-aa-probe-old
+      2 operation="exec" name="/usr/bin/apt-config" comm="apt-compat"
+      2 operation="exec" name="/usr/bin/cksum" comm="apt-compat"
+      2 operation="exec" name="/usr/bin/dd" comm="apt-compat"
+      1 operation="open" name="/" comm="logrotate"
+CHECK PASS old: apt-compat exec denials reproduced (the 06:25Z gap)
+CHECK PASS old: logrotate's open of / denied and the daily logrotate job failed (reproduced)
+CHECK PASS old: probe profile pft-aa-probe-old unloaded
+CHECK PASS new: probe profile pft-aa-probe-new loaded
+-- new: run-parts cron.daily in a throwaway container under pft-aa-probe-new (since 1793780088)
+/etc/cron.daily/apt-compat:
+run-parts: failed to exec /etc/cron.daily/apt-compat: Permission denied
+run-parts: /etc/cron.daily/apt-compat exited with return code 1
+run-parts exit 1
+-- new: DENIED records for pft-aa-probe-new
+(none)
+CHECK PASS new: 0 DENIED records
+CHECK PASS new: apt-compat refused before it runs anything
+CHECK PASS new: every other cron.daily job (dpkg, logrotate) exited 0
+CHECK PASS new: probe profile pft-aa-probe-new unloaded
+CHECK PASS no probe profile left loaded
+RESULT: PASS - 0 failed
+(exit 0)

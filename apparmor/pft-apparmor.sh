@@ -42,8 +42,9 @@
 #  generate  builds the profile from a learn events file. Paths under TREES collapse to TREE/**, /proc/<pid>
 #            becomes @{PROC}/@{pid}; masks: r, w (from w/a/c/d), k, l, m; executed files get ix (inherit: the
 #            daemon cannot get its own sub-profile while no-new-privileges is set, see README). Capabilities =
-#            learned + --caps; plus EXTRA_EXEC (error-path-only binaries). Then the docker-default deny block (verbatim) and an explicit `audit deny` block
+#            learned + --caps; plus EXTRA_EXEC (error-path-only binaries) and EXTRA_FILE (logrotate's read of /). Then the docker-default deny block (verbatim) and an explicit `audit deny` block
 #            (shadow files, writes to /usr /etc /boot, exec from writable trees, mount/ptrace/raw sockets...).
+#            Before it, a quiet `deny ... x` for QUIET_DENY_EXEC (cron.daily/apt-compat: apt has no job in the container).
 #            Refuses (exit 4) if any learned allow overlaps an explicit deny.
 #  apply     refuses (exit 4, nothing changed) without --yes, without an active pft-maint window holding
 #            2*HEALTH_BUDGET+MAINT_MARGIN s and no data-collection lock, when the node is not full, when the
@@ -111,6 +112,15 @@ NOJ='{}'
 # Executables a learn run cannot see because only error paths call them: /etc/cron.daily/logrotate runs
 # `logger` only when logrotate fails (enforce probe 04 denied it).
 EXTRA_EXEC="${EXTRA_EXEC-/usr/bin/logger}" # set and empty = none
+# Jobs that are pointless in the container get a quiet (unaudited) exec deny instead of an allow, so the daily cron
+# run neither runs them nor writes DENIED records: /etc/cron.daily/apt-compat would sleep up to 30 min and then run
+# apt.systemd.daily (apt-get update against the mirrors); the image is updated by pulling a new image, never by apt.
+# The learn's cron.daily loop skips apt-compat for the same reason. Before 2026-11-04 it was simply unlisted, so the
+# live 06:25Z cron.daily run on both hosts was denied exec of apt-config/cksum/dd (DENIED, PFTAppArmorDrift).
+QUIET_DENY_EXEC="${QUIET_DENY_EXEC-/etc/cron.daily/apt-compat /usr/lib/apt/apt.systemd.daily}" # set and empty = none
+# Files every run needs that a learn may not see: logrotate (cron.daily) opens the root directory "/" read-only
+# (DENIED on both hosts at 2026-11-04 06:25Z). Listing / reveals nothing beyond the image's own layout.
+EXTRA_FILE="${EXTRA_FILE-/:r}" # PATH:MASK ...; set and empty = none
 TREES="${TREES:-/var/lib/postfiatd/db/ /var/log/postfiatd/ /etc/postfiatd/ /var/backups/ /var/lib/logrotate/ /var/lib/apt/ /var/opt/postfiat/ /run/ /tmp/ /var/lib/dpkg/alternatives/ /etc/logrotate.d/ /etc/cron.d/ /etc/cron.daily/ /etc/cron.hourly/ /etc/cron.weekly/ /etc/cron.monthly/ /var/spool/cron/}"
 
 die() { echo "pft-apparmor: $1" >&2; exit "${2:-2}"; }
@@ -441,6 +451,8 @@ do_generate() { # EVENTS CAPS NAME
   done < "$ev"
   for k in $caps; do k="${k,,}"; CAP[${k#cap_}]=1; done
   for k in $EXTRA_EXEC; do EX[$k]=1; done
+  for k in $EXTRA_FILE; do [[ "$k" == /*:* ]] || die "bad EXTRA_FILE entry '$k' (PATH:MASK)" 2; FM[${k%:*}]="${FM[${k%:*}]:-}${k##*:}"; done
+  for k in $QUIET_DENY_EXEC; do [[ "$k" == /* ]] || die "bad QUIET_DENY_EXEC entry '$k'" 2; done
   for k in "${!FM[@]}"; do FM[$k]="$(mask_norm "${FM[$k]}")"; [ -n "${FM[$k]}" ] || unset 'FM[$k]'; done
   for k in "${!FM[@]}"; do
     x="$(overlaps "$k" "${FM[$k]}")" && { echo "pft-apparmor: learned allow '$k ${FM[$k]}' overlaps audit deny '$x'" >&2; bad=1; }
@@ -485,6 +497,11 @@ do_generate() { # EVENTS CAPS NAME
   echo
   echo "$DENY_BLOCK"
   echo
+  if [ -n "$QUIET_DENY_EXEC" ]; then
+    echo "  # --- pft-apparmor quiet denials (not logged): jobs that are pointless in the container ---"
+    for k in $QUIET_DENY_EXEC; do echo "  deny $k x,"; done
+    echo
+  fi
   echo "  # --- pft-apparmor explicit denials (logged) ---"
   for k in "${AUDIT_DENY[@]}"; do echo "  audit deny ${k% *} ${k##* },"; done
   echo "$AUDIT_DENY_OTHER"

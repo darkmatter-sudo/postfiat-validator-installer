@@ -16,8 +16,9 @@ sha256 values (lines 3-6): `drill/live-run.sh` `de3592ba…ad9d`, `drill/host-ru
 validator learn log (11, line 2) and the P2 generate log (13, line 2), and each host-run prints it again (l.129,
 l.424). P2 = `generate` over the sentry's P1 events + a recorded learn on the validator that also ran every host
 add-on's in-container commands (log 11); diff vs P1 = 8 `ix` exec rules (`bash cat curl cut du ls tail wc`) and
-`@{PROC}/@{pid}/mountinfo r` (log 13). [`profile/pft-postfiatd`](profile/pft-postfiatd) is P2, sha256
-`f3a023fc…0e34`, byte-identical to `/etc/apparmor.d/pft-postfiatd` on both hosts (log 16 l.126, l.739).
+`@{PROC}/@{pid}/mountinfo r` (log 13). P2 had sha256 `f3a023fc…0e34` (log 16 l.126, l.739). Since 2026-11-04 08:16Z
+[`profile/pft-postfiatd`](profile/pft-postfiatd) is P2 + the cron.daily fix (Run 2 below), sha256 `a57315ab…adb3`,
+reloaded in place on both hosts (logs 22-23).
 
 | Host | Found | Fixed by | Verified (after) |
 |---|---|---|---|
@@ -53,6 +54,38 @@ Logs: [07 rollback, refused](logs/07-validator-rollback-refused.log) · [08 roll
 fd9bbd8) · [15 preflight, ready](logs/15-preflight-reapply.log) · [16 live re-apply](logs/16-live-reapply.log) ·
 [17 resources re-applied](logs/17-resources-reapply.log). The retention-side fix has its own proof in
 [`../logs/retention/2-sandbox-readonly-cfg.log`](../logs/retention/2-sandbox-readonly-cfg.log).
+
+## Run 2 (2026-11-04): cron.daily gap found → fixed → verified
+
+**Found.** At 06:25Z the node container's own `cron.daily` run (`/etc/crontab`: `run-parts --report /etc/cron.daily`)
+wrote 7 `DENIED` records for `pft-postfiatd` on both hosts and `PFTAppArmorDrift` fired: `apt-compat` was denied exec
+of `apt-config`, `cksum` and `dd`, and `logrotate` was denied `open` of `/`. Cause: the learn's `cron.daily` loop skips
+`apt-compat` (it sleeps up to 30 min, then runs `apt.systemd.daily`), and the profile made no decision for it; and
+logrotate's daily run opens `/`, which no learn path reached. The probe below showed the second one also made the
+container's daily logrotate job fail (`error: cannot open current directory: Permission denied`, exit 1). The
+postfiatd log itself is rotated by the hourly crontab line and was not affected. Not an intrusion; the records were
+acknowledged (`ack-denials`) after the investigation.
+
+**Fixed** in `generate` (no new learn needed), profile sha256 `f3a023fc…0e34` → `a57315ab…adb3`:
+- `QUIET_DENY_EXEC` (default `/etc/cron.daily/apt-compat /usr/lib/apt/apt.systemd.daily`): a quiet `deny PATH x,`
+  block before the logged denials. The image is updated by pulling a new image, never by apt, so the job is refused
+  before it runs anything and writes no audit record. Side effect: `run-parts` reports
+  `failed to exec /etc/cron.daily/apt-compat: Permission denied` (exit 1) in cron's output, which is discarded
+  (no MTA in the image).
+- `EXTRA_FILE` (default `/:r`): `/ r,` (the root directory itself, not `/**`). It goes through the same
+  overlap check as learned allows (an `EXTRA_FILE` that overlaps an audit deny exits 4).
+- tests: 10 new checks (suite 269 passed, 0 failed).
+
+**Verified.**
+
+| Log | What it shows |
+|---|---|
+| [`logs/20-crondaily-probe-validator.log`](logs/20-crondaily-probe-validator.log) | `drill/crondaily-probe.sh` (printed at the top) loads the old and the new profile under throwaway names and runs the container's real `run-parts --report /etc/cron.daily` in a throwaway container from the live image with the live confine arguments, `--network none`. Old: the 06:25Z records reproduced (6 exec + `open /`) and logrotate exits 1 (l.113-114). New: 0 DENIED, apt-compat refused before it runs, dpkg + logrotate exit 0 (l.124-126). `RESULT: PASS - 0 failed` (l.129). An earlier run of the same probe without the two logrotate/other-job checks gave the same outputs. |
+| [`logs/21-crondaily-probe-sentry.log`](logs/21-crondaily-probe-sentry.log) | the same script (sha256 `1f99849c…ad90`, l.2) on the sentry: same results, `RESULT: PASS - 0 failed` |
+| [`logs/22-reload-validator.log`](logs/22-reload-validator.log), [`logs/23-reload-sentry.log`](logs/23-reload-sentry.log) | `drill/reload-run.sh`: in-place `apparmor_parser -r -W` of the new file (backup kept), no container re-create or restart (same container ID and start time, l.20), enforce, `server_state` full, `pft-integrity accept` + verify PASS, `pft-apparmor audit` PASS; `RESULT: PASS - 0 failed` (l.43). The script is not printed in these two logs; the committed file is the version that ran (sha256 `58d6a613…62a1`). |
+
+The next real proof is the container's own 06:25Z `cron.daily` run: the hourly `audit` (`denials` check) and
+`PFTAppArmorDrift` show any DENIED record it writes.
 
 ## Run 1 (2026-11-03, 08:10Z): found → fixed → verified
 
