@@ -58,3 +58,17 @@ every replacement with a positive control (the raw input contains it).
 or read-only remount, uncorrected machine check, conntrack table full). `warn` = degraded or a precursor (OOM killer
 invoked, allocation failure, I/O timeout, link down, clocksource unstable/fallback, audit backlog/lost, SYN flood,
 segfault). `info` = counted for the baseline, never alerted (martian packets).
+
+## Alerts
+
+`../alerts/kernwatch.rules.yml` (promtool tests: `../alerts/kernwatch.tests.yml`). Not yet listed in
+`../alerts/prometheus.yml`: the rule line goes in with the live install commit, so no rule is ever loaded before its
+textfile exists.
+
+| Alert | Fires when | Severity |
+|---|---|---|
+| `PFTKernelCritical` | any `crit` pattern counter increased in the last 15 min (one alert per host + class + pattern) | critical |
+| `PFTKernelWarning` | any `warn` pattern counter increased in the last 30 min | warning |
+| `PFTKernwatchStale` | for 10 min: last collection older than 10 min, `up 0`, or `backlog 1` | warning |
+
+`info` patterns never alert. A counter reset (state reset) is not an event (tested).

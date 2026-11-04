@@ -1,0 +1,131 @@
+# promtool unit tests for kernwatch.rules.yml. Run: promtool test rules kernwatch.tests.yml
+rule_files:
+- kernwatch.rules.yml
+evaluation_interval: 1m
+tests:
+- name: quiet host for 2h fires nothing
+  interval: 1m
+  input_series:
+  - series: pft_kernwatch_up{host="validator"}
+    values: 1x120
+  - series: pft_kernwatch_backlog{host="validator"}
+    values: 0x120
+  - series: pft_kernwatch_collect_timestamp_seconds{host="validator"}
+    values: 0+60x120
+  - series: pft_kernwatch_matches_total{host="validator",pattern="oom_global",class="oom",severity="crit"}
+    values: 0x120
+  - series: pft_kernwatch_matches_total{host="validator",pattern="link_down",class="link",severity="warn"}
+    values: 0x120
+  - series: pft_kernwatch_matches_total{host="validator",pattern="martian",class="net",severity="info"}
+    values: 0+3x120
+  alert_rule_test:
+  - {eval_time: 30m, alertname: PFTKernelCritical, exp_alerts: []}
+  - {eval_time: 119m, alertname: PFTKernelCritical, exp_alerts: []}
+  - {eval_time: 119m, alertname: PFTKernelWarning, exp_alerts: []}
+  - {eval_time: 119m, alertname: PFTKernwatchStale, exp_alerts: []}
+- name: one crit record fires at once, per host + pattern, and resolves within 15 min; info never alerts
+  interval: 1m
+  input_series:
+  - series: pft_kernwatch_matches_total{host="sentry",pattern="oom_global",class="oom",severity="crit"}
+    values: 0x30 1x60
+  - series: pft_kernwatch_matches_total{host="sentry",pattern="hung_task",class="hung",severity="crit"}
+    values: 0x40 2x50
+  - series: pft_kernwatch_matches_total{host="validator",pattern="oom_global",class="oom",severity="crit"}
+    values: 0x90
+  - series: pft_kernwatch_matches_total{host="sentry",pattern="martian",class="net",severity="info"}
+    values: 0x30 50x60
+  alert_rule_test:
+  - {eval_time: 30m, alertname: PFTKernelCritical, exp_alerts: []}
+  - eval_time: 32m
+    alertname: PFTKernelCritical
+    exp_alerts:
+    - exp_labels: {severity: critical, host: sentry, class: oom, pattern: oom_global}
+      exp_annotations:
+        summary: "sentry: kernel oom event (oom_global) x1 in the last 15 min"
+        description: "The host kernel logged a critical oom record (catalogue pattern oom_global): the host is losing work now (OOM kill, hung task, lockup/stall, oops/panic, block I/O or filesystem error, uncorrected machine check, or conntrack dropping packets). Run `sudo pft-kernwatch report --since -1h` on the host for the redacted lines and times, then check postfiatd (server_state, peers) and the resources/statewatch alerts."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/kernwatch/README.md#alerts"
+  - eval_time: 43m
+    alertname: PFTKernelCritical
+    exp_alerts:
+    - exp_labels: {severity: critical, host: sentry, class: oom, pattern: oom_global}
+      exp_annotations:
+        summary: "sentry: kernel oom event (oom_global) x1 in the last 15 min"
+        description: "The host kernel logged a critical oom record (catalogue pattern oom_global): the host is losing work now (OOM kill, hung task, lockup/stall, oops/panic, block I/O or filesystem error, uncorrected machine check, or conntrack dropping packets). Run `sudo pft-kernwatch report --since -1h` on the host for the redacted lines and times, then check postfiatd (server_state, peers) and the resources/statewatch alerts."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/kernwatch/README.md#alerts"
+    - exp_labels: {severity: critical, host: sentry, class: hung, pattern: hung_task}
+      exp_annotations:
+        summary: "sentry: kernel hung event (hung_task) x2 in the last 15 min"
+        description: "The host kernel logged a critical hung record (catalogue pattern hung_task): the host is losing work now (OOM kill, hung task, lockup/stall, oops/panic, block I/O or filesystem error, uncorrected machine check, or conntrack dropping packets). Run `sudo pft-kernwatch report --since -1h` on the host for the redacted lines and times, then check postfiatd (server_state, peers) and the resources/statewatch alerts."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/kernwatch/README.md#alerts"
+  - eval_time: 50m
+    alertname: PFTKernelCritical
+    exp_alerts:
+    - exp_labels: {severity: critical, host: sentry, class: hung, pattern: hung_task}
+      exp_annotations:
+        summary: "sentry: kernel hung event (hung_task) x2 in the last 15 min"
+        description: "The host kernel logged a critical hung record (catalogue pattern hung_task): the host is losing work now (OOM kill, hung task, lockup/stall, oops/panic, block I/O or filesystem error, uncorrected machine check, or conntrack dropping packets). Run `sudo pft-kernwatch report --since -1h` on the host for the redacted lines and times, then check postfiatd (server_state, peers) and the resources/statewatch alerts."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/kernwatch/README.md#alerts"
+  - {eval_time: 60m, alertname: PFTKernelCritical, exp_alerts: []}
+  - {eval_time: 60m, alertname: PFTKernelWarning, exp_alerts: []}
+- name: warn record fires PFTKernelWarning (not Critical) and resolves after 30 min
+  interval: 1m
+  input_series:
+  - series: pft_kernwatch_matches_total{host="validator",pattern="clock_fallback",class="clocksource",severity="warn"}
+    values: 0x20 1x80
+  alert_rule_test:
+  - {eval_time: 25m, alertname: PFTKernelCritical, exp_alerts: []}
+  - eval_time: 25m
+    alertname: PFTKernelWarning
+    exp_alerts:
+    - exp_labels: {severity: warning, host: validator, class: clocksource, pattern: clock_fallback}
+      exp_annotations:
+        summary: "validator: kernel clocksource warning (clock_fallback) x1 in the last 30 min"
+        description: "The host kernel logged a clocksource warning (catalogue pattern clock_fallback): degraded or a precursor of a critical event (OOM killer invoked, allocation failure, I/O timeout, NIC link down, clocksource unstable or fallback, audit backlog/lost records, SYN flood, segfault). Run `sudo pft-kernwatch report --since -2h` on the host."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/kernwatch/README.md#alerts"
+  - {eval_time: 55m, alertname: PFTKernelWarning, exp_alerts: []}
+- name: a counter reset (state reset) is not an event
+  interval: 1m
+  input_series:
+  - series: pft_kernwatch_matches_total{host="validator",pattern="oom_global",class="oom",severity="crit"}
+    values: 5x30 0x30
+  alert_rule_test:
+  - {eval_time: 35m, alertname: PFTKernelCritical, exp_alerts: []}
+  - {eval_time: 55m, alertname: PFTKernelCritical, exp_alerts: []}
+- name: stale collector, failing read and stuck backlog each fire PFTKernwatchStale after 10 min
+  interval: 1m
+  input_series:
+  - series: pft_kernwatch_collect_timestamp_seconds{host="sentry"}
+    values: 0+60x30 1800x60
+  - series: pft_kernwatch_up{host="sentry"}
+    values: 1x90
+  - series: pft_kernwatch_backlog{host="sentry"}
+    values: 0x90
+  - series: pft_kernwatch_collect_timestamp_seconds{host="validator"}
+    values: 0+60x90
+  - series: pft_kernwatch_up{host="validator"}
+    values: 1x20 0x70
+  - series: pft_kernwatch_backlog{host="validator"}
+    values: 0x50 1x40
+  alert_rule_test:
+  - {eval_time: 29m, alertname: PFTKernwatchStale, exp_alerts: []}
+  - eval_time: 32m
+    alertname: PFTKernwatchStale
+    exp_alerts:
+    - exp_labels: {severity: warning, host: validator}
+      exp_annotations:
+        summary: "pft-kernwatch on validator is stale, failing or behind"
+        description: "For 10 min either the last collection is older than 10 min (pft-kernwatch.timer, or for the sentry pft-kernwatch-pull.timer on the validator, is not running), the kernel journal read fails (pft_kernwatch_up 0), or every run stops at MAX_RECORDS (pft_kernwatch_backlog 1: a kernel log flood). The kernel alerts for this host are blind or late. Run `sudo pft-kernwatch collect --stdout` on the host."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/kernwatch/README.md#alerts"
+  - eval_time: 52m
+    alertname: PFTKernwatchStale
+    exp_alerts:
+    - exp_labels: {severity: warning, host: validator}
+      exp_annotations:
+        summary: "pft-kernwatch on validator is stale, failing or behind"
+        description: "For 10 min either the last collection is older than 10 min (pft-kernwatch.timer, or for the sentry pft-kernwatch-pull.timer on the validator, is not running), the kernel journal read fails (pft_kernwatch_up 0), or every run stops at MAX_RECORDS (pft_kernwatch_backlog 1: a kernel log flood). The kernel alerts for this host are blind or late. Run `sudo pft-kernwatch collect --stdout` on the host."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/kernwatch/README.md#alerts"
+    - exp_labels: {severity: warning, host: sentry}
+      exp_annotations:
+        summary: "pft-kernwatch on sentry is stale, failing or behind"
+        description: "For 10 min either the last collection is older than 10 min (pft-kernwatch.timer, or for the sentry pft-kernwatch-pull.timer on the validator, is not running), the kernel journal read fails (pft_kernwatch_up 0), or every run stops at MAX_RECORDS (pft_kernwatch_backlog 1: a kernel log flood). The kernel alerts for this host are blind or late. Run `sudo pft-kernwatch collect --stdout` on the host."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/kernwatch/README.md#alerts"

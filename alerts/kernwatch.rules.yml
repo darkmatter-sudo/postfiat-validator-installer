@@ -1,0 +1,37 @@
+# Alert rules for pft-kernwatch (../kernwatch). pft-kernwatch.timer writes pft_kernwatch_<host>.prom every 2 min
+# (validator: local; sentry: pulled by pft-kernwatch-pull.timer); the pft exporter serves it as pft_kernwatch_*{host=...}.
+# Every catalogue pattern is exported on every successful run (0 = none since seeding), so ../rulecheck never grades
+# these rules DEAD on a quiet host. Counters restart only on a state reset; increase() treats that as a reset (no alert).
+# Tests: kernwatch.tests.yml (promtool test rules kernwatch.tests.yml), 1m sample interval.
+groups:
+  - name: pft-kernwatch
+    rules:
+      - alert: PFTKernelCritical
+        # one alert per (host, class, pattern); stays FIRING for 15 min after the newest matching kernel record
+        expr: sum by (host, class, pattern) (increase(pft_kernwatch_matches_total{severity="crit"}[15m])) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.host }}: kernel {{ $labels.class }} event ({{ $labels.pattern }}) x{{ $value | printf \"%.0f\" }} in the last 15 min"
+          description: "The host kernel logged a critical {{ $labels.class }} record (catalogue pattern {{ $labels.pattern }}): the host is losing work now (OOM kill, hung task, lockup/stall, oops/panic, block I/O or filesystem error, uncorrected machine check, or conntrack dropping packets). Run `sudo pft-kernwatch report --since -1h` on the host for the redacted lines and times, then check postfiatd (server_state, peers) and the resources/statewatch alerts."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/kernwatch/README.md#alerts"
+      - alert: PFTKernelWarning
+        expr: sum by (host, class, pattern) (increase(pft_kernwatch_matches_total{severity="warn"}[30m])) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.host }}: kernel {{ $labels.class }} warning ({{ $labels.pattern }}) x{{ $value | printf \"%.0f\" }} in the last 30 min"
+          description: "The host kernel logged a {{ $labels.class }} warning (catalogue pattern {{ $labels.pattern }}): degraded or a precursor of a critical event (OOM killer invoked, allocation failure, I/O timeout, NIC link down, clocksource unstable or fallback, audit backlog/lost records, SYN flood, segfault). Run `sudo pft-kernwatch report --since -2h` on the host."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/kernwatch/README.md#alerts"
+      - alert: PFTKernwatchStale
+        expr: |
+          time() - pft_kernwatch_collect_timestamp_seconds > 600
+          or pft_kernwatch_up == 0
+          or pft_kernwatch_backlog == 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pft-kernwatch on {{ $labels.host }} is stale, failing or behind"
+          description: "For 10 min either the last collection is older than 10 min (pft-kernwatch.timer, or for the sentry pft-kernwatch-pull.timer on the validator, is not running), the kernel journal read fails (pft_kernwatch_up 0), or every run stops at MAX_RECORDS (pft_kernwatch_backlog 1: a kernel log flood). The kernel alerts for this host are blind or late. Run `sudo pft-kernwatch collect --stdout` on the host."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/kernwatch/README.md#alerts"
