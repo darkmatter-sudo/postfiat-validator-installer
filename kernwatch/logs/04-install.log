@@ -1,0 +1,424 @@
+kernwatch two-host install - 2026-11-04T07:12:50Z - Ubuntu 22.04.5 LTS - repo HEAD 3cc9c2818f8c45bc758c6f04d34f0973ceddc4ea (clean: yes)
+
+== 0. preflight
+$ sha256sum kernwatch/pft-kernwatch.sh kernwatch/kernwatch_parse.py kernwatch/catalogue.tsv kernwatch/install.sh kernwatch/drill/install-run.sh kernwatch/systemd/* alerts/kernwatch.rules.yml
+  9581bd4df0042cb121770e3c0e6e535bbde58ea11e03d1075bd4cccb42a3d31f  kernwatch/pft-kernwatch.sh
+  7a18cf09a540c5af9586523ed61ede3ab232f6a583a4fbbbcee161dcbb972c1b  kernwatch/kernwatch_parse.py
+  54d05f903e12f0ed20b51824ab542d7057e5196ca071498e9067fd206e966d6f  kernwatch/catalogue.tsv
+  0dd249a96e513f34aaaf748cb1428d0b6d8dc0dfbfe1394d1b17200eab796c82  kernwatch/install.sh
+  b5c0fb041abfd23b57dbf398ac30ace1fe8dcedef2279141d3216a562a63ff71  kernwatch/drill/install-run.sh
+  5ba10526982c1fd9953c7819d8304e07bc8bb4c97287b731ba4c2da143520b87  kernwatch/systemd/pft-kernwatch-pull.service
+  806de29ae49a38a5c7fe2f951ec0db8662fe63a0a941b7b84b53cfc9bc156b1a  kernwatch/systemd/pft-kernwatch-pull.timer
+  92e007875f914a4f13face3cec2d473bc01f0c6781f8fa21c1dda0d3fd779e5d  kernwatch/systemd/pft-kernwatch.service
+  61410c7a5f013c51b09d55658979e5a6ac79d04483a408161c7496375fcd43a1  kernwatch/systemd/pft-kernwatch.timer
+  b1a20ab7b111b767e5d7f1aca85beb87046efc1aabf6ca7aa5ce85f92b1f0225  alerts/kernwatch.rules.yml
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 160 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 94 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts before install
+$ sudo -n docker exec postfiatd curl -s -m 10 -d '{"method":"server_info"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state; R "sudo -n docker exec postfiatd-sentry curl -s -m 10 -d '{\"method\":\"server_info\"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state"
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ ls /usr/local/bin/pft-kernwatch /etc/pft-kernwatch.env 2>&1; R 'ls /usr/local/bin/pft-kernwatch 2>&1'
+  ls: cannot access '/usr/local/bin/pft-kernwatch': No such file or directory
+  ls: cannot access '/etc/pft-kernwatch.env': No such file or directory
+  ls: cannot access '/usr/local/bin/pft-kernwatch': No such file or directory
+  (exit 2)
+CHECK ok   not installed yet on either host
+$ grep -n kernwatch alerts/prometheus.yml fleet/manifest.tsv rulecheck/pft-rulecheck.conf.example rulecheck/pft-rulecheck.sentry.conf.example 2>&1 | cut -c1-150
+  alerts/prometheus.yml:26:  - /etc/pft-alerts/kernwatch.rules.yml   # ../kernwatch (host kernel log: OOM kill, hung task, lockup, I/O/fs error, conntra
+  fleet/manifest.tsv:134:kernwatch   kernwatch/pft-kernwatch.sh                         /usr/local/bin/pft-kernwatch                        0755 both
+  fleet/manifest.tsv:135:kernwatch   kernwatch/kernwatch_parse.py                       /usr/local/lib/pft-kernwatch/kernwatch_parse.py     0644 both
+  fleet/manifest.tsv:136:kernwatch   kernwatch/catalogue.tsv                            /usr/local/lib/pft-kernwatch/catalogue.tsv          0644 both
+  fleet/manifest.tsv:137:kernwatch   kernwatch/systemd/pft-kernwatch.service            /etc/systemd/system/pft-kernwatch.service           0644 both
+  fleet/manifest.tsv:138:kernwatch   kernwatch/systemd/pft-kernwatch.timer              /etc/systemd/system/pft-kernwatch.timer             0644 both
+  fleet/manifest.tsv:139:kernwatch   kernwatch/systemd/pft-kernwatch-pull.service       /etc/systemd/system/pft-kernwatch-pull.service      0644 validat
+  fleet/manifest.tsv:140:kernwatch   kernwatch/systemd/pft-kernwatch-pull.timer         /etc/systemd/system/pft-kernwatch-pull.timer        0644 validat
+  rulecheck/pft-rulecheck.conf.example:47:# pft-kernwatch (2-minute collector; sentry copy pulled every 2 min)
+  rulecheck/pft-rulecheck.conf.example:48:textfile pft_kernwatch_*.prom   15m   pft_kernwatch_collect_timestamp_seconds
+  rulecheck/pft-rulecheck.conf.example:49:require pft_kernwatch_validator.prom
+  rulecheck/pft-rulecheck.conf.example:50:require pft_kernwatch_sentry.prom
+  rulecheck/pft-rulecheck.sentry.conf.example:24:# pft-kernwatch (2-minute collector)
+  rulecheck/pft-rulecheck.sentry.conf.example:25:textfile pft_kernwatch_*.prom   15m   pft_kernwatch_collect_timestamp_seconds
+  rulecheck/pft-rulecheck.sentry.conf.example:26:require pft_kernwatch_sentry.prom
+  (exit 0)
+CHECK ok   HEAD lists the rule file, 7 manifest lines and the rulecheck example lines
+$ sudo -n grep -c '^PULL_SSH=' /etc/pft-authwatch.env
+  1
+  (exit 0)
+CHECK ok   a PULL_SSH line to copy exists (/etc/pft-authwatch.env, not printed)
+
+== 1. rollout silence (new rules; rulecheck/fleet see new files during the install)
+CHECK ok   Alertmanager silence created (kernwatch rules, PFTRuleDead, PFTTextfileStale, PFTRulecheck*, PFTFleet*; not the watchdog) until 2026-11-04T07:58:15Z
+
+== 2. pft-maint window, [MAINT] messages to a throwaway topic (real file kept as $BK)
+real /etc/pft-maint/ntfy.env present before: 0
+$ { [ $HAD = 0 ] || sudo -n cp -p $NE $BK; } && printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' "$TT" | sudo -n tee $NE >/dev/null && sudo -n chmod 600 $NE && sudo -n stat -c '%a %U' $NE
+  600 root
+  (exit 0)
+CHECK ok   throwaway target installed
+$ sudo -n pft-maint start --ttl 30m --reason 'task_1036cee2 kernwatch install'
+  window started: id m1793776396-246522 until 2026-11-04T07:43:16Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint window open
+CHECK ok   sentry has the window (via the watchdog channel) after 60s
+
+== 3. pft-fleet: manifest (fleet add-on) to HEAD, then the kernwatch files to HEAD on both hosts
+$ sudo -n pft-fleet sync --addon fleet --to 3cc9c2818f8c45bc758c6f04d34f0973ceddc4ea --apply --reason 'task_1036cee2 kernwatch manifest lines'
+  [2026-11-04T07:14:39Z] sync fleet to 3cc9c2818f8c45bc758c6f04d34f0973ceddc4ea (2026-11-04T07:12:45+00:00) REF main=3cc9c2818f8c45bc758c6f04d34f0973ceddc4ea
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN validator validator /usr/local/sbin/pft-fleet 0755 CURRENT 61cafcfcdaa9 61cafcfcdaa9 keep
+  PLAN validator validator /usr/local/lib/pft-fleet/fleet_lib.py 0644 CURRENT dcb37d26f33f dcb37d26f33f keep
+  PLAN validator validator /usr/local/lib/pft-fleet/manifest.tsv 0644 BEHIND f193ff3c7301 5e33d1ad6e04 write
+  PLAN validator validator /etc/systemd/system/pft-fleet.service 0644 CURRENT 3105a2f0a144 3105a2f0a144 keep
+  PLAN validator validator /etc/systemd/system/pft-fleet.timer 0644 CURRENT 79839ee00a81 79839ee00a81 keep
+  [2026-11-04T07:14:39Z] order: sentry validator
+  [2026-11-04T07:14:39Z] sentry: every fleet file already at 3cc9c2818f8c - nothing to do
+  [2026-11-04T07:14:39Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/lib/pft-fleet/manifest.tsv sha256 f193ff3c7301 -> /var/lib/pft-fleet/backup/20261104T071439Z-fleet-validator
+  WRITE validator /usr/local/lib/pft-fleet/manifest.tsv f193ff3c7301 -> 5e33d1ad6e04 mode 0644
+  GATE validator sha256 /usr/local/lib/pft-fleet/manifest.tsv = target 5e33d1ad6e04 PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync fleet@3cc9c2818f8c (manifest.tsv)
+  [2026-11-04T07:14:58Z] SYNCED validator fleet -> 3cc9c2818f8c
+  [2026-11-04T07:14:58Z] sync complete
+  (exit 0)
+CHECK ok   fleet manifest sync exit 0
+$ sudo -n pft-fleet sync --addon kernwatch --to 3cc9c2818f8c45bc758c6f04d34f0973ceddc4ea --apply --reason 'task_1036cee2 kernwatch 3cc9c28 first install'
+  [2026-11-04T07:15:21Z] sync kernwatch to 3cc9c2818f8c45bc758c6f04d34f0973ceddc4ea (2026-11-04T07:12:45+00:00) REF main=3cc9c2818f8c45bc758c6f04d34f0973ceddc4ea
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN sentry sentry /usr/local/bin/pft-kernwatch 0755 MISSING - 9581bd4df004 write
+  PLAN sentry sentry /usr/local/lib/pft-kernwatch/kernwatch_parse.py 0644 MISSING - 7a18cf09a540 write
+  PLAN sentry sentry /usr/local/lib/pft-kernwatch/catalogue.tsv 0644 MISSING - 54d05f903e12 write
+  PLAN sentry sentry /etc/systemd/system/pft-kernwatch.service 0644 MISSING - 92e007875f91 write
+  PLAN sentry sentry /etc/systemd/system/pft-kernwatch.timer 0644 MISSING - 61410c7a5f01 write
+  PLAN validator validator /usr/local/bin/pft-kernwatch 0755 MISSING - 9581bd4df004 write
+  PLAN validator validator /usr/local/lib/pft-kernwatch/kernwatch_parse.py 0644 MISSING - 7a18cf09a540 write
+  PLAN validator validator /usr/local/lib/pft-kernwatch/catalogue.tsv 0644 MISSING - 54d05f903e12 write
+  PLAN validator validator /etc/systemd/system/pft-kernwatch.service 0644 MISSING - 92e007875f91 write
+  PLAN validator validator /etc/systemd/system/pft-kernwatch.timer 0644 MISSING - 61410c7a5f01 write
+  PLAN validator validator /etc/systemd/system/pft-kernwatch-pull.service 0644 MISSING - 5ba10526982c write
+  PLAN validator validator /etc/systemd/system/pft-kernwatch-pull.timer 0644 MISSING - 806de29ae49a write
+  [2026-11-04T07:15:21Z] order: sentry validator
+  [2026-11-04T07:15:21Z] sentry: 5 file(s) to write
+  PRE sentry pft-maint window active PASS
+  PRE sentry node server_state=full PASS
+  PRE sentry pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP sentry /usr/local/bin/pft-kernwatch absent before sync (rollback removes it)
+  BACKUP sentry /usr/local/lib/pft-kernwatch/kernwatch_parse.py absent before sync (rollback removes it)
+  BACKUP sentry /usr/local/lib/pft-kernwatch/catalogue.tsv absent before sync (rollback removes it)
+  BACKUP sentry /etc/systemd/system/pft-kernwatch.service absent before sync (rollback removes it)
+  BACKUP sentry /etc/systemd/system/pft-kernwatch.timer absent before sync (rollback removes it)
+  WRITE sentry /usr/local/bin/pft-kernwatch - -> 9581bd4df004 mode 0755
+  WRITE sentry /usr/local/lib/pft-kernwatch/kernwatch_parse.py - -> 7a18cf09a540 mode 0644
+  WRITE sentry /usr/local/lib/pft-kernwatch/catalogue.tsv - -> 54d05f903e12 mode 0644
+  WRITE sentry /etc/systemd/system/pft-kernwatch.service - -> 92e007875f91 mode 0644
+  WRITE sentry /etc/systemd/system/pft-kernwatch.timer - -> 61410c7a5f01 mode 0644
+  RELOAD sentry systemctl daemon-reload
+  GATE sentry sha256 /usr/local/bin/pft-kernwatch = target 9581bd4df004 PASS
+  GATE sentry syntax /usr/local/bin/pft-kernwatch bash -n PASS
+  GATE sentry sha256 /usr/local/lib/pft-kernwatch/kernwatch_parse.py = target 7a18cf09a540 PASS
+  GATE sentry syntax /usr/local/lib/pft-kernwatch/kernwatch_parse.py python PASS
+  GATE sentry sha256 /usr/local/lib/pft-kernwatch/catalogue.tsv = target 54d05f903e12 PASS
+  GATE sentry sha256 /etc/systemd/system/pft-kernwatch.service = target 92e007875f91 PASS
+  GATE sentry unit pft-kernwatch.service LoadState=loaded PASS
+  GATE sentry sha256 /etc/systemd/system/pft-kernwatch.timer = target 61410c7a5f01 PASS
+  GATE sentry unit pft-kernwatch.timer LoadState=loaded PASS
+  GATE sentry addon units failed=none PASS
+  GATE sentry node server_state=full PASS
+  ACCEPT sentry pft-integrity baseline updated: pft-fleet sync kernwatch@3cc9c2818f8c (pft-kernwatch,kernwatch_parse.py,catalogue.tsv,pft-kernwatch.service,pft-kernwatch.timer)
+  [2026-11-04T07:16:13Z] SYNCED sentry kernwatch -> 3cc9c2818f8c
+  [2026-11-04T07:16:13Z] validator: 7 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/bin/pft-kernwatch absent before sync (rollback removes it)
+  BACKUP validator /usr/local/lib/pft-kernwatch/kernwatch_parse.py absent before sync (rollback removes it)
+  BACKUP validator /usr/local/lib/pft-kernwatch/catalogue.tsv absent before sync (rollback removes it)
+  BACKUP validator /etc/systemd/system/pft-kernwatch.service absent before sync (rollback removes it)
+  BACKUP validator /etc/systemd/system/pft-kernwatch.timer absent before sync (rollback removes it)
+  BACKUP validator /etc/systemd/system/pft-kernwatch-pull.service absent before sync (rollback removes it)
+  BACKUP validator /etc/systemd/system/pft-kernwatch-pull.timer absent before sync (rollback removes it)
+  WRITE validator /usr/local/bin/pft-kernwatch - -> 9581bd4df004 mode 0755
+  WRITE validator /usr/local/lib/pft-kernwatch/kernwatch_parse.py - -> 7a18cf09a540 mode 0644
+  WRITE validator /usr/local/lib/pft-kernwatch/catalogue.tsv - -> 54d05f903e12 mode 0644
+  WRITE validator /etc/systemd/system/pft-kernwatch.service - -> 92e007875f91 mode 0644
+  WRITE validator /etc/systemd/system/pft-kernwatch.timer - -> 61410c7a5f01 mode 0644
+  WRITE validator /etc/systemd/system/pft-kernwatch-pull.service - -> 5ba10526982c mode 0644
+  WRITE validator /etc/systemd/system/pft-kernwatch-pull.timer - -> 806de29ae49a mode 0644
+  RELOAD validator systemctl daemon-reload
+  GATE validator sha256 /usr/local/bin/pft-kernwatch = target 9581bd4df004 PASS
+  GATE validator syntax /usr/local/bin/pft-kernwatch bash -n PASS
+  GATE validator sha256 /usr/local/lib/pft-kernwatch/kernwatch_parse.py = target 7a18cf09a540 PASS
+  GATE validator syntax /usr/local/lib/pft-kernwatch/kernwatch_parse.py python PASS
+  GATE validator sha256 /usr/local/lib/pft-kernwatch/catalogue.tsv = target 54d05f903e12 PASS
+  GATE validator sha256 /etc/systemd/system/pft-kernwatch.service = target 92e007875f91 PASS
+  GATE validator unit pft-kernwatch.service LoadState=loaded PASS
+  GATE validator sha256 /etc/systemd/system/pft-kernwatch.timer = target 61410c7a5f01 PASS
+  GATE validator unit pft-kernwatch.timer LoadState=loaded PASS
+  GATE validator sha256 /etc/systemd/system/pft-kernwatch-pull.service = target 5ba10526982c PASS
+  GATE validator unit pft-kernwatch-pull.service LoadState=loaded PASS
+  GATE validator sha256 /etc/systemd/system/pft-kernwatch-pull.timer = target 806de29ae49a PASS
+  GATE validator unit pft-kernwatch-pull.timer LoadState=loaded PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync kernwatch@3cc9c2818f8c (pft-kernwatch,kernwatch_parse.py,catalogue.tsv,pft-kernwatch.service,pft-kernwatch.timer,pft-kernwatch-pull.service,pft-kernwatch-pull.timer)
+  [2026-11-04T07:16:45Z] SYNCED validator kernwatch -> 3cc9c2818f8c
+  [2026-11-04T07:16:45Z] sync complete
+  (exit 0)
+CHECK ok   kernwatch sync exit 0 (files written + integrity accepted by pft-fleet)
+$ sha256sum kernwatch/pft-kernwatch.sh kernwatch/kernwatch_parse.py kernwatch/catalogue.tsv | cut -c1-64; sudo -n sha256sum /usr/local/bin/pft-kernwatch /usr/local/lib/pft-kernwatch/kernwatch_parse.py /usr/local/lib/pft-kernwatch/catalogue.tsv | cut -c1-64; R 'sha256sum /usr/local/bin/pft-kernwatch /usr/local/lib/pft-kernwatch/kernwatch_parse.py /usr/local/lib/pft-kernwatch/catalogue.tsv | cut -c1-64'
+  9581bd4df0042cb121770e3c0e6e535bbde58ea11e03d1075bd4cccb42a3d31f
+  7a18cf09a540c5af9586523ed61ede3ab232f6a583a4fbbbcee161dcbb972c1b
+  54d05f903e12f0ed20b51824ab542d7057e5196ca071498e9067fd206e966d6f
+  9581bd4df0042cb121770e3c0e6e535bbde58ea11e03d1075bd4cccb42a3d31f
+  7a18cf09a540c5af9586523ed61ede3ab232f6a583a4fbbbcee161dcbb972c1b
+  54d05f903e12f0ed20b51824ab542d7057e5196ca071498e9067fd206e966d6f
+  9581bd4df0042cb121770e3c0e6e535bbde58ea11e03d1075bd4cccb42a3d31f
+  7a18cf09a540c5af9586523ed61ede3ab232f6a583a4fbbbcee161dcbb972c1b
+  54d05f903e12f0ed20b51824ab542d7057e5196ca071498e9067fd206e966d6f
+  (exit 0)
+CHECK ok   installed script + helper + catalogue = repo bytes on both hosts
+
+== 4. sentry: install.sh (same bytes; first collection through the sandboxed unit seeds the cursor, enable the timer)
+$ git archive 3cc9c2818f8c45bc758c6f04d34f0973ceddc4ea kernwatch | R 'rm -rf /tmp/pft-kernwatch-3cc9c28 && mkdir -m 700 /tmp/pft-kernwatch-3cc9c28 && tar -x -C /tmp/pft-kernwatch-3cc9c28'
+  
+  (exit 0)
+$ R 'sudo -n bash /tmp/pft-kernwatch-3cc9c28/kernwatch/install.sh --host sentry'
+  2026-11-04T07:16:47Z unchanged /usr/local/bin/pft-kernwatch
+  2026-11-04T07:16:47Z unchanged /usr/local/lib/pft-kernwatch/kernwatch_parse.py
+  2026-11-04T07:16:47Z unchanged /usr/local/lib/pft-kernwatch/catalogue.tsv
+  2026-11-04T07:16:47Z check-catalogue: catalogue version 1 sha256 54d05f903e12f0ed20b51824ab542d7057e5196ca071498e9067fd206e966d6f patterns 40
+  2026-11-04T07:16:48Z set HOST_LABEL=sentry in /etc/pft-kernwatch.env
+  2026-11-04T07:16:48Z unchanged /etc/systemd/system/pft-kernwatch.service
+  2026-11-04T07:16:48Z unchanged /etc/systemd/system/pft-kernwatch.timer
+  2026-11-04T07:16:48Z first collection (through the sandboxed unit):
+  Starting pft-kernwatch: classify new host kernel-log records (journalctl -k) into textfile metrics...
+  pft-kernwatch.service: Deactivated successfully.
+  Finished pft-kernwatch: classify new host kernel-log records (journalctl -k) into textfile metrics.
+  pft_kernwatch_up{host="sentry"} 1
+  pft_kernwatch_collect_timestamp_seconds{host="sentry"} 1793776608
+  pft_kernwatch_catalogue_info{host="sentry",version="1",sha256="54d05f903e12f0ed"} 1
+  pft_kernwatch_records_total{host="sentry"} 0
+  pft_kernwatch_seeded_timestamp_seconds{host="sentry"} 1793776608
+    Created symlink /etc/systemd/system/timers.target.wants/pft-kernwatch.timer → /etc/systemd/system/pft-kernwatch.timer.
+  2026-11-04T07:16:49Z pft-kernwatch.timer active (even minutes at :15); changed=true
+  2026-11-04T07:16:49Z remember: sudo pft-integrity accept --reason 'pft-kernwatch installed'
+  (exit 0)
+CHECK ok   sentry install exit 0, up 1
+
+== 5. validator: install.sh, then the pull of the sentry file (PULL_SSH copied from /etc/pft-authwatch.env, not printed)
+$ sudo -n bash kernwatch/install.sh --host validator
+  2026-11-04T07:16:50Z unchanged /usr/local/bin/pft-kernwatch
+  2026-11-04T07:16:50Z unchanged /usr/local/lib/pft-kernwatch/kernwatch_parse.py
+  2026-11-04T07:16:50Z unchanged /usr/local/lib/pft-kernwatch/catalogue.tsv
+  2026-11-04T07:16:50Z check-catalogue: catalogue version 1 sha256 54d05f903e12f0ed20b51824ab542d7057e5196ca071498e9067fd206e966d6f patterns 40
+  2026-11-04T07:16:50Z set HOST_LABEL=validator in /etc/pft-kernwatch.env
+  2026-11-04T07:16:50Z unchanged /etc/systemd/system/pft-kernwatch.service
+  2026-11-04T07:16:50Z unchanged /etc/systemd/system/pft-kernwatch.timer
+  2026-11-04T07:16:51Z first collection (through the sandboxed unit):
+  Starting pft-kernwatch: classify new host kernel-log records (journalctl -k) into textfile metrics...
+  pft-kernwatch.service: Deactivated successfully.
+  Finished pft-kernwatch: classify new host kernel-log records (journalctl -k) into textfile metrics.
+  pft_kernwatch_up{host="validator"} 1
+  pft_kernwatch_collect_timestamp_seconds{host="validator"} 1793776611
+  pft_kernwatch_catalogue_info{host="validator",version="1",sha256="54d05f903e12f0ed"} 1
+  pft_kernwatch_records_total{host="validator"} 0
+  pft_kernwatch_seeded_timestamp_seconds{host="validator"} 1793776611
+    Created symlink /etc/systemd/system/timers.target.wants/pft-kernwatch.timer → /etc/systemd/system/pft-kernwatch.timer.
+  2026-11-04T07:16:55Z pft-kernwatch.timer active (even minutes at :15); changed=true
+  2026-11-04T07:16:55Z remember: sudo pft-integrity accept --reason 'pft-kernwatch installed'
+  (exit 0)
+CHECK ok   validator install exit 0, up 1
+$ sudo -n grep -q '^PULL_SSH=' /etc/pft-kernwatch.env || { sudo -n grep '^PULL_SSH=' /etc/pft-authwatch.env | sudo -n tee -a /etc/pft-kernwatch.env >/dev/null; }; sudo -n chmod 600 /etc/pft-kernwatch.env; sudo -n grep -c '^PULL_SSH=' /etc/pft-kernwatch.env; sudo -n stat -c '%a %U' /etc/pft-kernwatch.env
+  1
+  600 root
+  (exit 0)
+CHECK ok   validator conf: one PULL_SSH line, 600 root
+$ sudo -n bash kernwatch/install.sh --pull --host sentry
+  2026-11-04T07:16:55Z unchanged /usr/local/bin/pft-kernwatch
+  2026-11-04T07:16:55Z unchanged /usr/local/lib/pft-kernwatch/kernwatch_parse.py
+  2026-11-04T07:16:55Z unchanged /usr/local/lib/pft-kernwatch/catalogue.tsv
+  2026-11-04T07:16:56Z check-catalogue: catalogue version 1 sha256 54d05f903e12f0ed20b51824ab542d7057e5196ca071498e9067fd206e966d6f patterns 40
+  2026-11-04T07:16:56Z unchanged /etc/systemd/system/pft-kernwatch-pull.service
+  2026-11-04T07:16:56Z unchanged /etc/systemd/system/pft-kernwatch-pull.timer
+  2026-11-04T07:16:57Z first pull (through the sandboxed unit):
+  Starting pft-kernwatch pull: copy the sentry's kernwatch textfile to this host's exporter (validated)...
+  pft-kernwatch-pull.service: Deactivated successfully.
+  Finished pft-kernwatch pull: copy the sentry's kernwatch textfile to this host's exporter (validated).
+  pft_kernwatch_up{host="sentry"} 1
+  pft_kernwatch_collect_timestamp_seconds{host="sentry"} 1793776608
+  pft_kernwatch_catalogue_info{host="sentry",version="1",sha256="54d05f903e12f0ed"} 1
+    Created symlink /etc/systemd/system/timers.target.wants/pft-kernwatch-pull.timer → /etc/systemd/system/pft-kernwatch-pull.timer.
+  2026-11-04T07:16:59Z pft-kernwatch-pull.timer active (odd minutes at :00); changed=false
+  (exit 0)
+CHECK ok   pull install exit 0, sentry file on the validator
+
+== 6. rulecheck inputs: append the kernwatch lines (idempotent; the live confs carry earlier add-ons' lines)
+$ sudo -n grep -qF 'pft_kernwatch_' /etc/pft-rulecheck.conf || printf '%s\n' '# pft-kernwatch (2-minute collector; sentry copy pulled every 2 min)' 'textfile pft_kernwatch_*.prom   15m   pft_kernwatch_collect_timestamp_seconds' 'require pft_kernwatch_validator.prom' 'require pft_kernwatch_sentry.prom' | sudo -n tee -a /etc/pft-rulecheck.conf >/dev/null; sudo -n grep -n kernwatch /etc/pft-rulecheck.conf
+  68:# pft-kernwatch (2-minute collector; sentry copy pulled every 2 min)
+  69:textfile pft_kernwatch_*.prom   15m   pft_kernwatch_collect_timestamp_seconds
+  70:require pft_kernwatch_validator.prom
+  71:require pft_kernwatch_sentry.prom
+  (exit 0)
+CHECK ok   validator rulecheck.conf has the 4 kernwatch lines
+$ R "sudo -n grep -qF 'pft_kernwatch_' /etc/pft-rulecheck.conf || printf '%s\n' '# pft-kernwatch (2-minute collector)' 'textfile pft_kernwatch_*.prom   15m   pft_kernwatch_collect_timestamp_seconds' 'require pft_kernwatch_sentry.prom' | sudo -n tee -a /etc/pft-rulecheck.conf >/dev/null; sudo -n grep -n kernwatch /etc/pft-rulecheck.conf"
+  43:# pft-kernwatch (2-minute collector)
+  44:textfile pft_kernwatch_*.prom   15m   pft_kernwatch_collect_timestamp_seconds
+  45:require pft_kernwatch_sentry.prom
+  (exit 0)
+CHECK ok   sentry rulecheck.conf has the 3 kernwatch lines
+
+== 7. load the alert rules (alerts/ is mounted at /etc/pft-alerts) and check them
+$ sudo -n docker kill -s HUP pft-prometheus >/dev/null && sleep 30 && curl -s http://<redacted-ip>:9090/api/v1/rules | jq -r '.data.groups[] | select(.name == "pft-kernwatch") | .rules[] | [.name, .health, .state] | @tsv'
+  PFTKernelCritical	ok	inactive
+  PFTKernelWarning	ok	inactive
+  PFTKernwatchStale	ok	inactive
+  (exit 0)
+CHECK ok   3 kernwatch rules loaded, health ok, all inactive
+$ sleep 30; curl -s http://<redacted-ip>:9090/api/v1/query --data-urlencode 'query={__name__=~"pft_kernwatch_(up|backlog|records_total|malformed_total)"}' | jq -r '.data.result[] | "\(.metric.host) \(.metric.__name__) \(.value[1])"' | sort; curl -s http://<redacted-ip>:9090/api/v1/query --data-urlencode 'query=count by (host) (pft_kernwatch_matches_total)' | jq -r '.data.result[] | "\(.metric.host) patterns \(.value[1])"'
+  sentry pft_kernwatch_backlog 0
+  sentry pft_kernwatch_malformed_total 0
+  sentry pft_kernwatch_records_total 0
+  sentry pft_kernwatch_up 1
+  validator pft_kernwatch_backlog 0
+  validator pft_kernwatch_malformed_total 0
+  validator pft_kernwatch_records_total 0
+  validator pft_kernwatch_up 1
+  sentry patterns 40
+  validator patterns 40
+  (exit 0)
+CHECK ok   Prometheus scrapes pft_kernwatch_up 1 for both hosts
+
+== 8. integrity: accept what pft-fleet did not write (env file, state dir, enabled timer links, rulecheck.conf), verify
+$ sudo -n pft-integrity verify | grep -E '^(WARN|FAIL|RESULT)' | sed -E 's/ +sha256.*//' | head -20
+  RESULT: PASS - 165 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+$ sudo -n pft-integrity accept --reason 'task_1036cee2: kernwatch 3cc9c28 installed (env, timers enabled, rulecheck.conf)' | tail -2
+  pft-integrity accept - 2026-11-04T07:18:39Z: re-baselined 165 items by <user>
+  manifest sha256: d5a3a0b45405df60db7399addfe8163d78c3d559bccf9917ab092c5725eb0770 -> 462dc00ab4d961ff0a73cdacaa4c360ec10a8b312cde4b9bc6a389facbba1aee (logged to accept.log)
+  (exit 0)
+$ R 'sudo -n pft-integrity verify' | grep -E '^(WARN|FAIL|RESULT)' | sed -E 's/ +sha256.*//' | head -20
+  RESULT: PASS - 97 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+$ R "sudo -n pft-integrity accept --reason 'task_1036cee2: kernwatch 3cc9c28 installed (env, timer enabled, rulecheck.conf)'" | tail -2
+  pft-integrity accept - 2026-11-04T07:18:56Z: re-baselined 97 items by root
+  manifest sha256: 78ab5f218fe556711cdca21d2b4f1413ecf2ecd19e93df0aadd2f4c0bb3fd386 -> 4ae5da36a64a00bd1daee3bedd6f668df40f677e12bbe41b7fb923730865f590 (logged to accept.log)
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 165 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 97 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts
+
+== 9. fleet skew and rulecheck
+$ sudo -n pft-fleet skew
+  ref main = 3cc9c2818f8c45bc758c6f04d34f0973ceddc4ea
+  host sentry     role sentry    ok
+  host validator  role validator ok
+  HOST       ADDON       STATE      DETAIL
+  sentry     alertpath   CURRENT    
+  sentry     apparmor    CURRENT    
+  sentry     audittrail  CURRENT    
+  sentry     authwatch   CURRENT    
+  sentry     backfill    CURRENT    
+  sentry     cluster     CURRENT    
+  sentry     divergence  CURRENT    
+  sentry     egress      CURRENT    
+  sentry     feewatch    CURRENT    
+  sentry     integrity   CURRENT    
+  sentry     kernwatch   CURRENT    
+  sentry     keyescrow   CURRENT    
+  sentry     logship     CURRENT    
+  sentry     maint       CURRENT    
+  sentry     mounts      CURRENT    
+  sentry     patch       CURRENT    
+  sentry     privesc     CURRENT    
+  sentry     resources   CURRENT    
+  sentry     rulecheck   CURRENT    
+  sentry     statewatch  CURRENT    
+  sentry     sysctl      CURRENT    
+  sentry     timesync    CURRENT    
+  sentry     upgradewatch CURRENT    
+  sentry     vulnscan    CURRENT    
+  sentry     watchdog    CURRENT    
+  validator  alertpath   CURRENT    
+  validator  apparmor    CURRENT    
+  validator  audittrail  CURRENT    
+  validator  authwatch   CURRENT    
+  validator  backfill    CURRENT    
+  validator  backup      CURRENT    
+  validator  cluster     CURRENT    
+  validator  divergence  CURRENT    
+  validator  egress      CURRENT    
+  validator  exporter    CURRENT    
+  validator  feewatch    CURRENT    
+  validator  fleet       CURRENT    
+  validator  integrity   CURRENT    
+  validator  kernwatch   CURRENT    
+  validator  keyescrow   CURRENT    
+  validator  logship     CURRENT    
+  validator  maint       CURRENT    
+  validator  monitor     CURRENT    
+  validator  mounts      CURRENT    
+  validator  patch       CURRENT    
+  validator  privesc     CURRENT    
+  validator  resources   CURRENT    
+  validator  retention   CURRENT    
+  validator  rulecheck   CURRENT    
+  validator  statewatch  CURRENT    
+  validator  sysctl      CURRENT    
+  validator  timesync    CURRENT    
+  validator  upgradewatch CURRENT    
+  validator  vulnscan    CURRENT    
+  validator  watchdog    CURRENT    
+  SUMMARY CURRENT=55 BEHIND=0 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 0)
+CHECK ok   pft-fleet skew exit 0, kernwatch CURRENT on both hosts
+$ sudo -n systemctl start pft-rulecheck.service; sudo -n journalctl -u pft-rulecheck.service --since -1min --no-pager -o cat | grep -E '^RESULT '
+  RESULT OK - rules: LIVE 104 PARTIAL 0 DEAD 0 ERROR 0 IGNORED 0 | textfiles: FRESH 37 STALE 0 MISSING 0 LEFTOVER 0 UNCONFIGURED 0 -> exit 0
+  (exit 0)
+CHECK ok   validator pft-rulecheck RESULT OK (kernwatch rules LIVE, textfiles FRESH)
+$ R 'sudo -n systemctl start pft-rulecheck.service; sudo -n journalctl -u pft-rulecheck.service --since -1min --no-pager -o cat' | grep -E '^RESULT '
+  RESULT OK - rules: skipped | textfiles: FRESH 19 STALE 0 MISSING 0 LEFTOVER 0 UNCONFIGURED 0 -> exit 0
+  (exit 0)
+CHECK ok   sentry pft-rulecheck RESULT OK
+$ systemctl is-active pft-kernwatch.timer pft-kernwatch-pull.timer; R 'systemctl is-active pft-kernwatch.timer'
+  active
+  active
+  active
+  (exit 0)
+CHECK ok   3 timers active
+
+== 10. end window, restore the real target, compare, read back the throwaway topic
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+$ sudo -n rm -f $NE   (no ntfy.env before: pft-maint falls back to the real monitor target again)
+CHECK ok   pft-maint target back to its pre-run state (/etc/pft-maint/ntfy.env: absent again)
+$ sudo -n test ! -e $BK && echo backup gone
+  backup gone
+  (exit 0)
+$ sleep 5; curl -s --max-time 15 "https://ntfy.sh/$TT/json?poll=1&since=40m" | jq -r '.title'
+  [MAINT] start validator
+  [MAINT] end validator
+  (exit 0)
+CHECK ok   the [MAINT] start and end messages reached the throwaway topic
+$ curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '[.data.alerts[] | select(.labels.alertname | test("Kern|RuleDead|TextfileStale|Rulecheck|Fleet"))] | length'
+  0
+  (exit 0)
+CHECK ok   no kernwatch/rulecheck/fleet alert pending or firing (silence left to run out on its own, lesson 185)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 165 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 97 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts at the end
+
+install-run done 2026-11-04T07:20:33Z: 0 check(s) failed -> PASS

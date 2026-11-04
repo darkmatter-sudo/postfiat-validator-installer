@@ -25,6 +25,9 @@ and turns it into Prometheus textfile metrics.
 
 Logs so far: `logs/01-smoke.log` (two-host read-only smoke), `logs/02-suite.log` (step-1 suite),
 `logs/03-lint-suite-mutants.log` (shellcheck, ruff, promtool check + test, suite 93/93, mutants 60 caught / 0 survived / 0 orphans).
+`logs/04-install.log` (recorded two-host install at 3cc9c28 through pft-fleet in a pft-maint window, throwaway [MAINT]
+topic: 29 checks, 0 failed; both hosts `up 1`, 40 patterns each in Prometheus, 3 rules ok/inactive, fleet skew CURRENT,
+rulecheck RESULT OK on both hosts, pft-integrity PASS on both after accept).
 
 ## Install
 
