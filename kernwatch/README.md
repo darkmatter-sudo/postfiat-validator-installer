@@ -1,7 +1,8 @@
 # kernwatch — host kernel-log monitor (pft-kernwatch)
 
-Status: **step 1 of 5** (collector, catalogue, redaction, metrics, reports, offline suite). Rules, install, the 24 h
-two-host baseline and the throwaway-topic drill follow; this README gains a results table when they are done.
+Status: **steps 1-2 of 5** (collector, catalogue, redaction, metrics, reports, rules + promtool tests, offline suite,
+mutant harness). Install, the 24 h two-host baseline and the throwaway-topic drill follow; this README gains a results
+table when they are done.
 
 The existing monitors read postfiatd's debug.log, cgroup files and `server_info`. None of them sees the host kernel:
 an OOM kill of a helper, a hung `jbd2`, an I/O error, a soft lockup, conntrack dropping peer packets, a NIC link loss,
@@ -13,9 +14,13 @@ and turns it into Prometheus textfile metrics.
 | `pft-kernwatch.sh` | CLI: `collect`, `report`, `pull`, `validate`, `check-catalogue`, `version` (usage in its header) |
 | `kernwatch_parse.py` | stdlib helper: incremental cursor/boot-ID reader, classifier, redaction, textfile + JSON/TSV report |
 | `catalogue.tsv` | versioned pattern catalogue (`id severity class regex`, first match wins); 40 patterns, 15 classes |
-| `tests/test_kernwatch.py` | offline suite against `tests/stub_journalctl.py` (82 checks) |
+| `tests/test_kernwatch.py` | offline suite against `tests/stub_journalctl.py` (93 checks) |
+| `tests/mutate.py` | mutant harness: 52 code/catalogue mutants against the suite + 8 rule mutants against promtool (M39 documented equivalent) |
 | `tests/fixtures/positive.tsv`, `near_miss.tsv` | one or more real-format lines per pattern; noise that must match nothing |
 | `drill/smoke-run.sh` | read-only two-host smoke (throwaway state dirs, no textfile written) |
+
+Logs so far: `logs/01-smoke.log` (two-host read-only smoke), `logs/02-suite.log` (step-1 suite),
+`logs/03-lint-suite-mutants.log` (shellcheck, ruff, promtool check + test, suite 93/93, mutants 60 caught / 0 survived / 0 orphans).
 
 ## How collection works
 
