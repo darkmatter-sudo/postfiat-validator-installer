@@ -1,4 +1,4 @@
-# pft-keyescrow: cross-host escrow of add-on secrets (work in progress)
+# pft-keyescrow: cross-host escrow of add-on secrets
 
 The add-ons in this repo create secrets that exist on one host only: the pinned node seed of `../cluster`, the
 logship TLS keys and CA key, the journald FSS sealing key of `../audittrail`, the heartbeat HMAC keys, and the
@@ -10,13 +10,12 @@ either host can be rebuilt from the other one. Plaintext is never written to dis
 the source host packs and encrypts in one pipe, the peer stores ciphertext only, and the peer checks a generation by
 decrypting it in memory with its own age identity (root-only, 0600).
 
-Status: steps 1-3 are done and tested offline (inventory, metrics, alert rules; keygen, seal, two-way escrow,
+Status: all steps done. Steps 1-3 are tested offline (inventory, metrics, alert rules; keygen, seal, two-way escrow,
 receive + in-memory verify, tamper detection, pft-maint-gated restore with backups; mutation runs). Step 4 so far:
 **installed on both hosts, live two-way escrow + verify PASS (logs 10, 12), pull of the sentry metrics, zero-leak
 check on both hosts, alert rules loaded (log 13), one-byte tamper drill on both holders with PFTKeyEscrowVerifyFailed
 FIRING -> RESOLVED on a throwaway topic and 0 operator messages (log 20), and the live sentry node_seed loss +
-restore + restart with pubkey_node unchanged (log 21)**. Still to come: the first nightly timer run.
-This README covers only what exists now.
+restore + restart with pubkey_node unchanged (log 21), and the first unattended nightly timer run (log 24)**.
 
 ## Inventory (read-only)
 
@@ -180,6 +179,12 @@ capabilities limited to reading other users' secret files and, for the ssh units
   and pull. A failed direction fails the unit and leaves the last-escrow time unchanged (PFTKeyEscrowStale after 36 h).
 - `pft-keyescrow-pull.timer` (validator, every 15 min): `pull`.
 
+Nightly proof (`drill/nightly-run.sh`, read-only, log 24): started before the timer, it records the newest generation
+each side holds, waits until `pft-keyescrow-escrow.timer` triggers the service and the service has finished, then
+checks the unit's Result and its own journal (sudo), a newer verified generation on both holders, the last escrow time,
+inventory on both hosts, the held metrics, Prometheus alerts and a zero-leak scan on both hosts (including the run's own
+raw log). With `WAIT_MAX=0` (no run) it must fail: log 23 is that negative control (9 FAIL).
+
 The rules are evaluated on the validator only: the sentry runs no Prometheus, and its metrics arrive by `pull`.
 
 ## Tests
@@ -192,6 +197,8 @@ python3 keyescrow/tests/mutate.py -j 3     # 56 mutants over every refusal and i
 sudo python3 -I keyescrow/drill/leakcheck.py --tool /usr/local/bin/pft-keyescrow --conf /etc/pft-keyescrow.env \
   --host validator --scan /var/lib/pft-keyescrow --scan /var/lib/pft-exporter/textfile   # live zero-leak check
 bash keyescrow/drill/tamper-run.sh > LOG 2>&1   # live one-byte tamper drill, both holders, alerts on a throwaway topic
+bash keyescrow/drill/restore-run.sh > LOG 2>&1  # live sentry node_seed loss + restore + guarded restart, pubkey_node kept
+LOG=LOG bash keyescrow/drill/nightly-run.sh > LOG 2>&1   # read-only proof of the next nightly timer run
 ```
 
 `tests/mutate.py`: each mutant is one exact text replacement in `pft-keyescrow.sh` or `keyescrow_tar.py` (it must
@@ -205,7 +212,7 @@ present secret and searches them in every scanned file; it prints item ids and c
 probe must be found in the secret file itself, and log 08 shows a clean scan dir (exit 0) and the same dir with a
 planted copy of the secret (`leaks 3  FAIL`, exit 1).
 
-## Results so far (all from the logs in `logs/`)
+## Results (all from the logs in `logs/`)
 
 | log | what | result |
 |---|---|---|
@@ -233,6 +240,9 @@ planted copy of the secret (`leaks 3  FAIL`, exit 1).
 | `logs/18-...-harness-fail.log`, `logs/19-...-harness-fail.log` | first two recorded tamper drills, superseded (annotated at the end of each) | 18: 3 FAIL (l.97, 99, 167): the validator's unit journal was read without sudo, and the drill left drift_items exported (fixed in a9d3801); 19: 1 FAIL (l.177): grep `VERIFY` cannot match `VERIFIED` (fixed in 162e4f3). In both, the alert fired and resolved for both pairs and the operator topics got 0 messages |
 | `logs/20-tamper-live.log` | one-byte tamper drill, both holders (`drill/tamper-run.sh`, sha256 in l.3 = the file at the pinned commit) | T1 validator-held copy: `flipped 1 byte at offset 10340 of 20680` (l.73), `ciphertext sha256 MISMATCH` (l.95); T2 sentry-held copy with the meta re-hashed: sha check passes, the in-memory decrypt fails `payload unreadable` (l.113); `restore --dry-run` refused from both tampered copies (l.128, l.139, check l.143); verify_ok 0 for both pairs (l.149); `PFTKeyEscrowVerifyFailed` firing for both (l.154-155) and `[FIRING]` on the throwaway topic for both (l.157-158); bytes put back byte-identical (l.166), VERIFIED again (l.178), `[RESOLVED]` for both (l.185-188), query_range first/last firing sample per pair (l.190-191); drift 0 after restore (l.206); operator topics 0 messages (l.218-220); integrity PASS, both nodes full, `verify --all` exit 0 (l.222-233); `0 check(s) failed -> PASS` (l.235) |
 | `logs/21-restore-live.log` | sentry node_seed loss + restore from the validator's escrow + guarded restart (`drill/restore-run.sh`, sha256 in l.3 = the file at the pinned commit) | preflight: no lock on the sentry (l.13), verify --all + cluster audit PASS both hosts (l.49, l.54), seed 600 root:root + tags (l.55), dry run `unchanged` (l.76); seed moved away (l.97), cluster audit FAILs seed:stored (l.103); dry run `would be restored (was absent)` (l.107, l.124); `restored (was absent) (mode 600, backup none)` (l.128), RESULT PASS (l.156); `cmp` identical + sha256 tag equal to l.55 (l.157-161); mode/owner equal (l.162); cluster audit PASS again (l.168); `restart-node PASS: server_state full after 55s` (l.175); pubkey_node tag after == before (l.181-182); cluster audit PASS both hosts (l.195); inventory `[ok] cluster:node_seed` (l.202); verify --all exit 0 both (l.207); everything restored (l.228); throwaway topic only `[MAINT]` start/end (l.229), operator topics 0 messages (l.232-234); integrity PASS + both nodes full (l.236-240); `0 check(s) failed -> PASS` (l.242). l.17 is an ssh notice on stderr (no tty), harmless |
+| `logs/22-nightly-dev-negative-superseded.log` | first dev negative run of `drill/nightly-run.sh` (`WAIT_MAX=0`), superseded (note at the end) | 8 FAIL; the Result check passed off the previous run and 3 command lines printed the home path: both fixed in 682144f |
+| `logs/23-nightly-dev-negative.log` | negative control on the final script (`WAIT_MAX=0`, no timer run yet) | `RESULT: FAIL - 9 failed check(s)` (l.149): every check that needs tonight's run fails |
+| `logs/24-nightly-live.log` | first unattended nightly run (`drill/nightly-run.sh`, sha256 in l.4 = the file at the pinned commit; installed tool sha256 = repo `pft-keyescrow.sh`, l.5) | timer triggered the service at 02:41:25Z (l.49-50), `Result=success ExecMainStatus=0` (l.58); journal: validator gen `VERIFIED` by the sentry, sentry gen `VERIFIED` here, `RESULT: PASS - both directions` (l.155-158), no age identity (l.159); newer verified generations on both holders `20261103T214449Z -> 20261104T024132Z` and `20261103T214447Z -> 20261104T024127Z` (l.175-176); last escrow time moved (l.180); inventory exit 0 both (l.185); held verify_ok 1 both (l.194); 0 PFTKeyEscrow* alerts (l.202); 0 leaks on both hosts incl. the raw log (l.224, l.240); `RESULT: PASS - 0 failed check(s)` (l.244) |
 
 05a/05b are the raw harness output of dev passes (no header line); 05 is the recorded run. In 05, l.5 is
 `sha256sum` skipping the ignored `tests/__pycache__` directory (harmless).

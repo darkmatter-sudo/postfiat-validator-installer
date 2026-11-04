@@ -1,0 +1,244 @@
+pft-keyescrow nightly-run - 2026-11-04T02:12:14Z
+OS: Ubuntu 22.04.5 LTS | sentry OS: Ubuntu 22.04.5 LTS
+repo HEAD: 682144fb3a5c8ce69de440e76fdf279b29e3de90
+script sha256: 8f2a7111fddb14dc4fccbb98b5c14f0f7c6e1ba3bef5677b199030a46211ba39  keyescrow/drill/nightly-run.sh
+installed tool sha256: validator be558e05196f9ee5b65f1758f3a1b699a4a33964bd142f3b3c881584b18ab686, sentry be558e05196f9ee5b65f1758f3a1b699a4a33964bd142f3b3c881584b18ab686
+== 0. before (2026-11-04T02:12:16Z)
+$ cat '~/work/postfiat-validator-installer/keyescrow/systemd/pft-keyescrow-escrow.timer'
+  [Unit]
+  Description=Run the pft-keyescrow two-way escrow every night (02:40 UTC)
+  
+  [Timer]
+  OnCalendar=*-*-* 02:40:00 UTC
+  RandomizedDelaySec=10min
+  Persistent=true
+  
+  [Install]
+  WantedBy=timers.target
+  (exit 0)
+$ TZ=UTC systemctl list-timers --all pft-keyescrow-escrow.timer --no-pager | head -2
+  NEXT                        LEFT       LAST PASSED UNIT                       ACTIVATES
+  Wed 2026-11-04 02:41:18 UTC 29min left n/a  n/a    pft-keyescrow-escrow.timer pft-keyescrow-escrow.service
+  (exit 141)
+$ TZ=UTC systemctl show pft-keyescrow-escrow.timer -p LastTriggerUSec -p NextElapseUSecRealtime
+  NextElapseUSecRealtime=Wed 2026-11-04 02:41:18 UTC
+  LastTriggerUSec=
+  (exit 0)
+$ TZ=UTC systemctl show pft-keyescrow-escrow.service -p Result -p ExecMainStatus -p ActiveState
+  Result=success
+  ExecMainStatus=0
+  ActiveState=inactive
+  (exit 0)
+$ grep -h '^pft_keyescrow_last_escrow_timestamp_seconds' /var/lib/pft-exporter/textfile/pft_keyescrow.prom
+  pft_keyescrow_last_escrow_timestamp_seconds{node="validator"} 1793742288
+  (exit 0)
+$ sudo -n /usr/local/bin/pft-keyescrow verify --all | grep -E '^ *(VERIFIED|RESULT)'
+  VERIFIED from=sentry gen=20261103T212247Z items=10
+  VERIFIED from=sentry gen=20261103T213257Z items=10
+  VERIFIED from=sentry gen=20261103T214449Z items=10
+  RESULT: 3 generation(s) checked, 0 failed -> exit 0
+  (exit 0)
+$ R 'sudo -n /usr/local/bin/pft-keyescrow verify --all' | grep -E '^ *(VERIFIED|RESULT)'
+  VERIFIED from=validator gen=20261103T212246Z items=11
+  VERIFIED from=validator gen=20261103T213255Z items=11
+  VERIFIED from=validator gen=20261103T214447Z items=11
+  RESULT: 3 generation(s) checked, 0 failed -> exit 0
+  (exit 0)
+CHECK ok   before: both holders verify --all exit 0 (validator holds sentry newest 20261103T214449Z, sentry holds validator newest 20261103T214447Z)
+== 1. wait for the timer (2026-11-04T02:12:19Z, up to 3000 s)
+wait loop exited after 1740 s: timer triggered at 2026-11-04T02:41:25Z, service state inactive (2026-11-04T02:41:44Z)
+CHECK ok   timer triggered the service after this script started and the service finished (timer triggered at 2026-11-04T02:41:25Z, inactive)
+== 2. the run (2026-11-04T02:41:44Z)
+$ TZ=UTC systemctl show pft-keyescrow-escrow.service -p Result -p ExecMainStatus -p ExecMainStartTimestamp -p ExecMainExitTimestamp
+  Result=success
+  ExecMainStartTimestamp=Wed 2026-11-04 02:41:26 UTC
+  ExecMainExitTimestamp=Wed 2026-11-04 02:41:34 UTC
+  ExecMainStatus=0
+  (exit 0)
+CHECK ok   service Result=success ExecMainStatus=0, started at/after the trigger (main start 2026-11-04T02:41:26Z)
+$ sudo -n journalctl -u pft-keyescrow-escrow.service --since @1793760084 --utc -o short-iso-precise --no-pager | jn
+  2026-11-04T02:41:26.009951+0000 systemd[1]: Starting pft-keyescrow nightly escrow: both directions (seal, push, peer verifies; peer seals, pull, verify here)...
+  2026-11-04T02:41:26.557743+0000 pft-keyescrow[2874046]: pft-keyescrow escrow - 2026-11-04T02:41:26Z | host validator <-> peer sentry | keep 7 generations
+  2026-11-04T02:41:26.558882+0000 pft-keyescrow[2874046]: == 1. seal here, push to sentry, sentry decrypts in memory and checks every item
+  2026-11-04T02:41:27.604221+0000 pft-keyescrow[2874392]:   SEALED gen=20261104T024127Z host=validator items=11 cipher_bytes=20680 cipher_sha256=702e21cb5c88651e
+  2026-11-04T02:41:27.619545+0000 runuser[2874399]: pam_limits(runuser:session): Could not set limit for 'nofile' to soft=1024, hard=1048576: Operation not permitted; uid=0,euid=0
+  2026-11-04T02:41:27.619768+0000 runuser[2874399]: pam_limits(runuser:session): Could not set limit for 'memlock' to soft=1040355328, hard=1040355328: Operation not permitted; uid=0,euid=0
+  2026-11-04T02:41:27.620014+0000 runuser[2874399]: pam_unix(runuser:session): session opened for user <user>(uid=1001) by (uid=0)
+  2026-11-04T02:41:29.966020+0000 runuser[2874399]: pam_unix(runuser:session): session closed for user <user>
+  2026-11-04T02:41:30.039987+0000 pft-keyescrow[2874516]:   | RECEIVED gen=20261104T024127Z cipher_bytes=20680 sha256 ok
+  2026-11-04T02:41:30.039987+0000 pft-keyescrow[2874516]:   |     item cluster:node_seed ok
+  2026-11-04T02:41:30.039987+0000 pft-keyescrow[2874516]:   |     item cluster:fp_key ok
+  2026-11-04T02:41:30.039987+0000 pft-keyescrow[2874516]:   |     item cluster:env ok
+  2026-11-04T02:41:30.039987+0000 pft-keyescrow[2874516]:   |     item logship:env ok
+  2026-11-04T02:41:30.039987+0000 pft-keyescrow[2874516]:   |     item logship:host_key ok
+  2026-11-04T02:41:30.039987+0000 pft-keyescrow[2874516]:   |     item logship:ca_key ok
+  2026-11-04T02:41:30.039987+0000 pft-keyescrow[2874516]:   |     item journald:fss ok
+  2026-11-04T02:41:30.039987+0000 pft-keyescrow[2874516]:   |     item alertpath:hmac ok
+  2026-11-04T02:41:30.039987+0000 pft-keyescrow[2874516]:   |     item watchdog:hmac ok
+  2026-11-04T02:41:30.039987+0000 pft-keyescrow[2874516]:   |     item ntfy:monitor ok
+  2026-11-04T02:41:30.039987+0000 pft-keyescrow[2874516]:   |     item ntfy:alerts ok
+  2026-11-04T02:41:30.039987+0000 pft-keyescrow[2874516]:   |   CHECK host=validator gen=20261104T024127Z items=11 ok=11 bad=0
+  2026-11-04T02:41:30.039987+0000 pft-keyescrow[2874516]:   | VERIFIED from=validator gen=20261104T024127Z items=11
+  2026-11-04T02:41:30.582498+0000 runuser[2874546]: pam_limits(runuser:session): Could not set limit for 'nofile' to soft=1024, hard=1048576: Operation not permitted; uid=0,euid=0
+  2026-11-04T02:41:30.659501+0000 pft-keyescrow[2874523]:   ACKED gen=20261104T024127Z items=11
+  2026-11-04T02:41:30.582514+0000 runuser[2874546]: pam_limits(runuser:session): Could not set limit for 'memlock' to soft=1040355328, hard=1040355328: Operation not permitted; uid=0,euid=0
+  2026-11-04T02:41:30.661195+0000 pft-keyescrow[2874046]: == 2. sentry seals, pull here, decrypt in memory and check every item, ack
+  2026-11-04T02:41:30.582644+0000 runuser[2874546]: pam_unix(runuser:session): session opened for user <user>(uid=1001) by (uid=0)
+  2026-11-04T02:41:32.436516+0000 runuser[2874546]: pam_unix(runuser:session): session closed for user <user>
+  2026-11-04T02:41:32.446190+0000 pft-keyescrow[2874647]:   | SEALED gen=20261104T024132Z host=sentry items=10 cipher_bytes=20680 cipher_sha256=788e36925627ec5e
+  2026-11-04T02:41:32.504981+0000 runuser[2874666]: pam_limits(runuser:session): Could not set limit for 'nofile' to soft=1024, hard=1048576: Operation not permitted; uid=0,euid=0
+  2026-11-04T02:41:32.506256+0000 runuser[2874666]: pam_limits(runuser:session): Could not set limit for 'memlock' to soft=1040355328, hard=1040355328: Operation not permitted; uid=0,euid=0
+  2026-11-04T02:41:32.507452+0000 runuser[2874666]: pam_unix(runuser:session): session opened for user <user>(uid=1001) by (uid=0)
+  2026-11-04T02:41:33.366741+0000 runuser[2874666]: pam_unix(runuser:session): session closed for user <user>
+  2026-11-04T02:41:33.950717+0000 pft-keyescrow[2874829]:   RECEIVED gen=20261104T024132Z cipher_bytes=20680 sha256 ok
+  2026-11-04T02:41:33.950717+0000 pft-keyescrow[2874829]:       item cluster:node_seed ok
+  2026-11-04T02:41:33.950717+0000 pft-keyescrow[2874829]:       item cluster:fp_key ok
+  2026-11-04T02:41:33.950717+0000 pft-keyescrow[2874829]:       item cluster:env ok
+  2026-11-04T02:41:33.950717+0000 pft-keyescrow[2874829]:       item logship:env ok
+  2026-11-04T02:41:33.950717+0000 pft-keyescrow[2874829]:       item logship:host_key ok
+  2026-11-04T02:41:33.950717+0000 pft-keyescrow[2874829]:       item journald:fss ok
+  2026-11-04T02:41:33.950717+0000 pft-keyescrow[2874829]:       item alertpath:hmac ok
+  2026-11-04T02:41:33.950717+0000 pft-keyescrow[2874829]:       item watchdog:hmac ok
+  2026-11-04T02:41:33.950717+0000 pft-keyescrow[2874829]:       item ntfy:alertpath ok
+  2026-11-04T02:41:33.950717+0000 pft-keyescrow[2874829]:       item ntfy:watchdog ok
+  2026-11-04T02:41:33.950717+0000 pft-keyescrow[2874829]:     CHECK host=sentry gen=20261104T024132Z items=10 ok=10 bad=0
+  2026-11-04T02:41:33.950717+0000 pft-keyescrow[2874829]:   VERIFIED from=sentry gen=20261104T024132Z items=10
+  2026-11-04T02:41:33.966395+0000 runuser[2874833]: pam_limits(runuser:session): Could not set limit for 'nofile' to soft=1024, hard=1048576: Operation not permitted; uid=0,euid=0
+  2026-11-04T02:41:33.966406+0000 runuser[2874833]: pam_limits(runuser:session): Could not set limit for 'memlock' to soft=1040355328, hard=1040355328: Operation not permitted; uid=0,euid=0
+  2026-11-04T02:41:33.966508+0000 runuser[2874833]: pam_unix(runuser:session): session opened for user <user>(uid=1001) by (uid=0)
+  2026-11-04T02:41:34.793859+0000 runuser[2874833]: pam_unix(runuser:session): session closed for user <user>
+  2026-11-04T02:41:34.801277+0000 pft-keyescrow[2874835]:   | ACKED gen=20261104T024132Z items=10
+  2026-11-04T02:41:34.806686+0000 pft-keyescrow[2874046]: RESULT: PASS - both directions sealed, held and verified
+  2026-11-04T02:41:36.938643+0000 pft-keyescrow[2874837]: pft-keyescrow inventory - 2026-11-04T02:41:36Z | host validator | last escrow 2026-11-04T02:41:30Z
+  2026-11-04T02:41:36.940712+0000 pft-keyescrow[2875102]:   [ok]       cluster:node_seed  escrow same  fp 62cd1dafb67cb816 mode 600, owner ok, group ok  (cluster/pft-cluster.sh:78)
+  2026-11-04T02:41:36.941208+0000 pft-keyescrow[2875102]:   [ok]       cluster:fp_key     escrow same  fp 42476620c36e5101 mode 600, owner ok, group ok  (cluster/pft-cluster.sh:80)
+  2026-11-04T02:41:36.941443+0000 pft-keyescrow[2875102]:   [ok]       cluster:env        escrow same  fp 76d59020c600c6a1 mode 600, owner ok, group ok  (cluster/install.sh:17)
+  2026-11-04T02:41:36.941703+0000 pft-keyescrow[2875102]:   [ok]       logship:env        escrow same  fp a6da8b06ce4b1be9 mode 600, owner ok, group ok  (logship/pft-logship.sh:40)
+  2026-11-04T02:41:36.941901+0000 pft-keyescrow[2875102]:   [ok]       logship:host_key   escrow same  fp aefcdfed7eb75857 mode 640, owner ok, group ok  (logship/pft-logship.sh:115)
+  2026-11-04T02:41:36.942099+0000 pft-keyescrow[2875102]:   [ok]       logship:ca_key     escrow same  fp 2a614ea336e8dc61 mode 600, owner ok, group ok  (logship/pft-logship.sh:237)
+  2026-11-04T02:41:36.942286+0000 pft-keyescrow[2875102]:   [ok]       journald:fss       escrow same  fp 0bf710e92d5b5d5e mode 600, owner ok, group ok  (audittrail/pft-audittrail.sh:87)
+  2026-11-04T02:41:36.942474+0000 pft-keyescrow[2875102]:   [ok]       alertpath:hmac     escrow same  fp f3cb1e161b03825d mode 600, owner ok, group ok  (alertpath/pft-alertpath.sh:168)
+  2026-11-04T02:41:36.942710+0000 pft-keyescrow[2875102]:   [ok]       watchdog:hmac      escrow same  fp 53ff6bbe477ccde9 mode 600, owner ok, group ok  (watchdog/pft-heartbeat.sh:14)
+  2026-11-04T02:41:36.942948+0000 pft-keyescrow[2875102]:   [ok]       ntfy:monitor       escrow same  fp daaee3ac6b07370e mode 600, owner ok, group ok  (monitor/install-monitor.sh:15)
+  2026-11-04T02:41:36.943135+0000 pft-keyescrow[2875102]:   [absent]   ntfy:maint         escrow -     fp n/a              optional, not on this host  (maint/install.sh:36)
+  2026-11-04T02:41:36.943328+0000 pft-keyescrow[2875102]:   [ok]       ntfy:alerts        escrow same  fp 1ae9e08929812743 mode 600, owner ok, group ok  (alerts/run-stack.sh:13)
+  2026-11-04T02:41:36.943513+0000 pft-keyescrow[2875102]:   [absent]   valkeys:keys       escrow -     fp n/a              optional, not on this host  (valkeys/pft-valkeys.sh:33)
+  2026-11-04T02:41:36.950311+0000 pft-keyescrow[2874837]: RESULT: ok 11, perm 0, missing 0, unreadable 0, absent(optional) 2; escrow drift 0, new 0, evolving 0 -> exit 0
+  2026-11-04T02:41:37.392903+0000 pft-keyescrow[2875123]: pft-keyescrow verify - 2026-11-04T02:41:37Z | host validator
+  2026-11-04T02:41:37.557187+0000 pft-keyescrow[2875183]:     item cluster:node_seed ok
+  2026-11-04T02:41:37.557187+0000 pft-keyescrow[2875183]:     item cluster:fp_key ok
+  2026-11-04T02:41:37.557187+0000 pft-keyescrow[2875183]:     item cluster:env ok
+  2026-11-04T02:41:37.557187+0000 pft-keyescrow[2875183]:     item logship:env ok
+  2026-11-04T02:41:37.557187+0000 pft-keyescrow[2875183]:     item logship:host_key ok
+  2026-11-04T02:41:37.557187+0000 pft-keyescrow[2875183]:     item journald:fss ok
+  2026-11-04T02:41:37.557187+0000 pft-keyescrow[2875183]:     item alertpath:hmac ok
+  2026-11-04T02:41:37.557187+0000 pft-keyescrow[2875183]:     item watchdog:hmac ok
+  2026-11-04T02:41:37.557187+0000 pft-keyescrow[2875183]:     item ntfy:alertpath ok
+  2026-11-04T02:41:37.557187+0000 pft-keyescrow[2875183]:     item ntfy:watchdog ok
+  2026-11-04T02:41:37.557187+0000 pft-keyescrow[2875183]:   CHECK host=sentry gen=20261104T024132Z items=10 ok=10 bad=0
+  2026-11-04T02:41:37.569897+0000 pft-keyescrow[2875123]: VERIFIED from=sentry gen=20261104T024132Z items=10
+  2026-11-04T02:41:37.611406+0000 pft-keyescrow[2875123]: RESULT: 1 generation(s) checked, 0 failed -> exit 0
+  2026-11-04T02:41:37.938232+0000 runuser[2875243]: pam_limits(runuser:session): Could not set limit for 'nofile' to soft=1024, hard=1048576: Operation not permitted; uid=0,euid=0
+  2026-11-04T02:41:37.938674+0000 runuser[2875243]: pam_limits(runuser:session): Could not set limit for 'memlock' to soft=1040355328, hard=1040355328: Operation not permitted; uid=0,euid=0
+  2026-11-04T02:41:37.938774+0000 runuser[2875243]: pam_unix(runuser:session): session opened for user <user>(uid=1001) by (uid=0)
+  2026-11-04T02:41:39.049085+0000 runuser[2875243]: pam_unix(runuser:session): session closed for user <user>
+  2026-11-04T02:41:39.284488+0000 pft-keyescrow[2875203]: pft_keyescrow: pulled from sentry
+  2026-11-04T02:41:39.299210+0000 runuser[2875294]: pam_limits(runuser:session): Could not set limit for 'nofile' to soft=1024, hard=1048576: Operation not permitted; uid=0,euid=0
+  2026-11-04T02:41:39.299902+0000 runuser[2875294]: pam_limits(runuser:session): Could not set limit for 'memlock' to soft=1040355328, hard=1040355328: Operation not permitted; uid=0,euid=0
+  2026-11-04T02:41:39.300226+0000 runuser[2875294]: pam_unix(runuser:session): session opened for user <user>(uid=1001) by (uid=0)
+  2026-11-04T02:41:39.975892+0000 runuser[2875294]: pam_unix(runuser:session): session closed for user <user>
+  2026-11-04T02:41:40.274253+0000 pft-keyescrow[2875203]: pft_keyescrow_held: pulled from sentry
+  2026-11-04T02:41:40.474066+0000 systemd[1]: pft-keyescrow-escrow.service: Deactivated successfully.
+  2026-11-04T02:41:40.474853+0000 systemd[1]: Finished pft-keyescrow nightly escrow: both directions (seal, push, peer verifies; peer seals, pull, verify here).
+  2026-11-04T02:41:40.475181+0000 systemd[1]: pft-keyescrow-escrow.service: Consumed 5.905s CPU time.
+  (exit 0)
+CHECK ok   journal: triggered by the timer (systemd Starting line) and Finished
+CHECK ok   journal: validator generation VERIFIED by the sentry
+CHECK ok   journal: sentry generation VERIFIED here
+CHECK ok   journal: RESULT PASS both directions
+CHECK ok   journal: no age identity printed (0 matches; control: 1 in the identity file)
+== 3. after (2026-11-04T02:41:46Z)
+$ sudo -n /usr/local/bin/pft-keyescrow verify --all | grep -E '^ *(VERIFIED|RESULT)'
+  VERIFIED from=sentry gen=20261103T212247Z items=10
+  VERIFIED from=sentry gen=20261103T213257Z items=10
+  VERIFIED from=sentry gen=20261103T214449Z items=10
+  VERIFIED from=sentry gen=20261104T024132Z items=10
+  RESULT: 4 generation(s) checked, 0 failed -> exit 0
+  (exit 0)
+$ R 'sudo -n /usr/local/bin/pft-keyescrow verify --all' | grep -E '^ *(VERIFIED|RESULT)'
+  VERIFIED from=validator gen=20261103T212246Z items=11
+  VERIFIED from=validator gen=20261103T213255Z items=11
+  VERIFIED from=validator gen=20261103T214447Z items=11
+  VERIFIED from=validator gen=20261104T024127Z items=11
+  RESULT: 4 generation(s) checked, 0 failed -> exit 0
+  (exit 0)
+CHECK ok   validator holds a newer sentry generation from tonight, all verified (20261103T214449Z -> 20261104T024132Z)
+CHECK ok   sentry holds a newer validator generation from tonight, all verified (20261103T214447Z -> 20261104T024127Z)
+$ grep -h '^pft_keyescrow_last_escrow_timestamp_seconds' /var/lib/pft-exporter/textfile/pft_keyescrow.prom
+  pft_keyescrow_last_escrow_timestamp_seconds{node="validator"} 1793760090
+  (exit 0)
+CHECK ok   last escrow time moved to tonight's run (1793742288 -> 1793760090)
+$ sudo -n /usr/local/bin/pft-keyescrow inventory | tail -1; R 'sudo -n /usr/local/bin/pft-keyescrow inventory' | tail -1
+  RESULT: ok 11, perm 0, missing 0, unreadable 0, absent(optional) 2; escrow drift 0, new 0, evolving 0 -> exit 0
+  RESULT: ok 10, perm 0, missing 0, unreadable 0, absent(optional) 1; escrow drift 0, new 0, evolving 0 -> exit 0
+  (exit 0)
+CHECK ok   inventory on both: exit 0 (no drift, nothing new)
+$ grep -h '^pft_keyescrow_held_[a-z_]*{' /var/lib/pft-exporter/textfile/pft_keyescrow_held.prom /var/lib/pft-exporter/textfile/pft_keyescrow_held_sentry.prom
+  pft_keyescrow_held_generations{node="validator",peer="sentry"} 4
+  pft_keyescrow_held_newest_timestamp_seconds{node="validator",peer="sentry"} 1793760092
+  pft_keyescrow_held_verify_ok{node="validator",peer="sentry"} 1
+  pft_keyescrow_held_generations{node="sentry",peer="validator"} 3
+  pft_keyescrow_held_newest_timestamp_seconds{node="sentry",peer="validator"} 1793742287
+  pft_keyescrow_held_verify_ok{node="sentry",peer="validator"} 1
+  (exit 0)
+CHECK ok   held metrics: verify_ok 1 on both sides
+$ curl -fsS --max-time 20 'http://127.0.0.1:9090/api/v1/query' --data-urlencode 'query=pft_keyescrow_last_escrow_timestamp_seconds' | jq -r '.data.result[] | .metric.node + " " + .value[1]'
+  validator 1793760090
+  sentry 1793742290
+  (exit 0)
+$ curl -fsS --max-time 20 'http://127.0.0.1:9090/api/v1/alerts' | jq -r '[.data.alerts[] | select(.labels.alertname | startswith("PFTKeyEscrow"))] | length'
+  0
+  (exit 0)
+CHECK ok   no PFTKeyEscrow* alert pending or firing
+== 4. zero-leak check (2026-11-04T02:41:55Z)
+$ R 'mkdir -p /var/tmp/pft-keyescrow-nightly-682144f' && scp -q -o LogLevel=ERROR '~/work/postfiat-validator-installer/keyescrow/drill/leakcheck.py' 'relay:/var/tmp/pft-keyescrow-nightly-682144f/leakcheck.py' && echo copied
+  copied
+  (exit 0)
+$ sudo -n python3 -I '~/work/postfiat-validator-installer/keyescrow/drill/leakcheck.py' --tool /usr/local/bin/pft-keyescrow --conf /etc/pft-keyescrow.env --host validator --scan /var/lib/pft-keyescrow --scan /var/lib/pft-exporter/textfile --scan ~/work/runlogs/task_2361bde7-24-nightly-live.log
+  scanned files: 55 (251044 bytes)
+    cluster:node_seed  probes 3  control 3/3  leaks 0  ok
+    cluster:fp_key     probes 3  control 3/3  leaks 0  ok
+    cluster:env        probes 3  control 3/3  leaks 0  ok
+    logship:env        probes 3  control 3/3  leaks 0  ok
+    logship:host_key   probes 3  control 3/3  leaks 0  ok
+    logship:ca_key     probes 3  control 3/3  leaks 0  ok
+    journald:fss       probes 3  control 3/3  leaks 0  ok
+    alertpath:hmac     probes 3  control 3/3  leaks 0  ok
+    watchdog:hmac      probes 3  control 3/3  leaks 0  ok
+    ntfy:monitor       probes 3  control 3/3  leaks 0  ok
+    ntfy:maint         absent here (not checked)
+    ntfy:alerts        probes 3  control 3/3  leaks 0  ok
+    valkeys:keys       absent here (not checked)
+  RESULT: 11 secrets checked, 0 failed -> exit 0
+  (exit 0)
+CHECK ok   validator: every secret probed, 0 leaks (incl. the raw log of this run)
+$ R 'sudo -n python3 -I /var/tmp/pft-keyescrow-nightly-682144f/leakcheck.py --tool /usr/local/bin/pft-keyescrow --conf /etc/pft-keyescrow.env --host sentry --scan /var/lib/pft-keyescrow --scan /var/lib/pft-exporter/textfile'
+  scanned files: 38 (176550 bytes)
+    cluster:node_seed  probes 3  control 3/3  leaks 0  ok
+    cluster:fp_key     probes 3  control 3/3  leaks 0  ok
+    cluster:env        probes 3  control 3/3  leaks 0  ok
+    logship:env        probes 3  control 3/3  leaks 0  ok
+    logship:host_key   probes 3  control 3/3  leaks 0  ok
+    journald:fss       probes 3  control 3/3  leaks 0  ok
+    alertpath:hmac     probes 3  control 3/3  leaks 0  ok
+    watchdog:hmac      probes 3  control 3/3  leaks 0  ok
+    ntfy:maint         absent here (not checked)
+    ntfy:alertpath     probes 3  control 3/3  leaks 0  ok
+    ntfy:watchdog      probes 3  control 3/3  leaks 0  ok
+  RESULT: 10 secrets checked, 0 failed -> exit 0
+  (exit 0)
+CHECK ok   sentry: every secret probed, 0 leaks
+$ R 'rm -rf /var/tmp/pft-keyescrow-nightly-682144f' && echo removed
+  removed
+  (exit 0)
+RESULT: PASS - 0 failed check(s) - 2026-11-04T02:42:02Z

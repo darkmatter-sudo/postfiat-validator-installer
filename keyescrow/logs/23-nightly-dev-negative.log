@@ -1,0 +1,149 @@
+pft-keyescrow nightly-run - 2026-11-04T02:11:50Z
+OS: Ubuntu 22.04.5 LTS | sentry OS: Ubuntu 22.04.5 LTS
+repo HEAD: 682144fb3a5c8ce69de440e76fdf279b29e3de90
+script sha256: 8f2a7111fddb14dc4fccbb98b5c14f0f7c6e1ba3bef5677b199030a46211ba39  keyescrow/drill/nightly-run.sh
+installed tool sha256: validator be558e05196f9ee5b65f1758f3a1b699a4a33964bd142f3b3c881584b18ab686, sentry be558e05196f9ee5b65f1758f3a1b699a4a33964bd142f3b3c881584b18ab686
+== 0. before (2026-11-04T02:11:51Z)
+$ cat '~/work/postfiat-validator-installer/keyescrow/systemd/pft-keyescrow-escrow.timer'
+  [Unit]
+  Description=Run the pft-keyescrow two-way escrow every night (02:40 UTC)
+  
+  [Timer]
+  OnCalendar=*-*-* 02:40:00 UTC
+  RandomizedDelaySec=10min
+  Persistent=true
+  
+  [Install]
+  WantedBy=timers.target
+  (exit 0)
+$ TZ=UTC systemctl list-timers --all pft-keyescrow-escrow.timer --no-pager | head -2
+  NEXT                        LEFT       LAST PASSED UNIT                       ACTIVATES
+  Wed 2026-11-04 02:41:18 UTC 29min left n/a  n/a    pft-keyescrow-escrow.timer pft-keyescrow-escrow.service
+  (exit 141)
+$ TZ=UTC systemctl show pft-keyescrow-escrow.timer -p LastTriggerUSec -p NextElapseUSecRealtime
+  NextElapseUSecRealtime=Wed 2026-11-04 02:41:18 UTC
+  LastTriggerUSec=
+  (exit 0)
+$ TZ=UTC systemctl show pft-keyescrow-escrow.service -p Result -p ExecMainStatus -p ActiveState
+  Result=success
+  ExecMainStatus=0
+  ActiveState=inactive
+  (exit 0)
+$ grep -h '^pft_keyescrow_last_escrow_timestamp_seconds' /var/lib/pft-exporter/textfile/pft_keyescrow.prom
+  pft_keyescrow_last_escrow_timestamp_seconds{node="validator"} 1793742288
+  (exit 0)
+$ sudo -n /usr/local/bin/pft-keyescrow verify --all | grep -E '^ *(VERIFIED|RESULT)'
+  VERIFIED from=sentry gen=20261103T212247Z items=10
+  VERIFIED from=sentry gen=20261103T213257Z items=10
+  VERIFIED from=sentry gen=20261103T214449Z items=10
+  RESULT: 3 generation(s) checked, 0 failed -> exit 0
+  (exit 0)
+$ R 'sudo -n /usr/local/bin/pft-keyescrow verify --all' | grep -E '^ *(VERIFIED|RESULT)'
+  VERIFIED from=validator gen=20261103T212246Z items=11
+  VERIFIED from=validator gen=20261103T213255Z items=11
+  VERIFIED from=validator gen=20261103T214447Z items=11
+  RESULT: 3 generation(s) checked, 0 failed -> exit 0
+  (exit 0)
+CHECK ok   before: both holders verify --all exit 0 (validator holds sentry newest 20261103T214449Z, sentry holds validator newest 20261103T214447Z)
+== 1. wait for the timer (2026-11-04T02:11:55Z, up to 0 s)
+wait loop exited after 0 s: TIMEOUT, service state  (2026-11-04T02:11:55Z)
+CHECK FAIL timer triggered the service after this script started and the service finished (TIMEOUT, )
+== 2. the run (2026-11-04T02:11:55Z)
+$ TZ=UTC systemctl show pft-keyescrow-escrow.service -p Result -p ExecMainStatus -p ExecMainStartTimestamp -p ExecMainExitTimestamp
+  Result=success
+  ExecMainStartTimestamp=Tue 2026-11-03 21:44:46 UTC
+  ExecMainExitTimestamp=Tue 2026-11-03 21:44:50 UTC
+  ExecMainStatus=0
+  (exit 0)
+CHECK FAIL service Result=success ExecMainStatus=0, started at/after the trigger (main start 2026-11-03T21:44:46Z)
+$ sudo -n journalctl -u pft-keyescrow-escrow.service --since @-1 --utc -o short-iso-precise --no-pager | jn
+  Failed to parse timestamp: @-1
+  (exit 1)
+CHECK FAIL journal: triggered by the timer (systemd Starting line) and Finished
+CHECK FAIL journal: validator generation VERIFIED by the sentry
+CHECK FAIL journal: sentry generation VERIFIED here
+CHECK FAIL journal: RESULT PASS both directions
+CHECK ok   journal: no age identity printed (0 matches; control: 1 in the identity file)
+== 3. after (2026-11-04T02:11:56Z)
+$ sudo -n /usr/local/bin/pft-keyescrow verify --all | grep -E '^ *(VERIFIED|RESULT)'
+  VERIFIED from=sentry gen=20261103T212247Z items=10
+  VERIFIED from=sentry gen=20261103T213257Z items=10
+  VERIFIED from=sentry gen=20261103T214449Z items=10
+  RESULT: 3 generation(s) checked, 0 failed -> exit 0
+  (exit 0)
+$ R 'sudo -n /usr/local/bin/pft-keyescrow verify --all' | grep -E '^ *(VERIFIED|RESULT)'
+  VERIFIED from=validator gen=20261103T212246Z items=11
+  VERIFIED from=validator gen=20261103T213255Z items=11
+  VERIFIED from=validator gen=20261103T214447Z items=11
+  RESULT: 3 generation(s) checked, 0 failed -> exit 0
+  (exit 0)
+CHECK FAIL validator holds a newer sentry generation from tonight, all verified (20261103T214449Z -> 20261103T214449Z)
+CHECK FAIL sentry holds a newer validator generation from tonight, all verified (20261103T214447Z -> 20261103T214447Z)
+$ grep -h '^pft_keyescrow_last_escrow_timestamp_seconds' /var/lib/pft-exporter/textfile/pft_keyescrow.prom
+  pft_keyescrow_last_escrow_timestamp_seconds{node="validator"} 1793742288
+  (exit 0)
+CHECK FAIL last escrow time moved to tonight's run (1793742288 -> 1793742288)
+$ sudo -n /usr/local/bin/pft-keyescrow inventory | tail -1; R 'sudo -n /usr/local/bin/pft-keyescrow inventory' | tail -1
+  RESULT: ok 11, perm 0, missing 0, unreadable 0, absent(optional) 2; escrow drift 0, new 0, evolving 1 -> exit 0
+  RESULT: ok 10, perm 0, missing 0, unreadable 0, absent(optional) 1; escrow drift 0, new 0, evolving 1 -> exit 0
+  (exit 0)
+CHECK ok   inventory on both: exit 0 (no drift, nothing new)
+$ grep -h '^pft_keyescrow_held_[a-z_]*{' /var/lib/pft-exporter/textfile/pft_keyescrow_held.prom /var/lib/pft-exporter/textfile/pft_keyescrow_held_sentry.prom
+  pft_keyescrow_held_generations{node="validator",peer="sentry"} 3
+  pft_keyescrow_held_newest_timestamp_seconds{node="validator",peer="sentry"} 1793742289
+  pft_keyescrow_held_verify_ok{node="validator",peer="sentry"} 1
+  pft_keyescrow_held_generations{node="sentry",peer="validator"} 3
+  pft_keyescrow_held_newest_timestamp_seconds{node="sentry",peer="validator"} 1793742287
+  pft_keyescrow_held_verify_ok{node="sentry",peer="validator"} 1
+  (exit 0)
+CHECK ok   held metrics: verify_ok 1 on both sides
+$ curl -fsS --max-time 20 'http://127.0.0.1:9090/api/v1/query' --data-urlencode 'query=pft_keyescrow_last_escrow_timestamp_seconds' | jq -r '.data.result[] | .metric.node + " " + .value[1]'
+  validator 1793742288
+  sentry 1793742290
+  (exit 0)
+$ curl -fsS --max-time 20 'http://127.0.0.1:9090/api/v1/alerts' | jq -r '[.data.alerts[] | select(.labels.alertname | startswith("PFTKeyEscrow"))] | length'
+  0
+  (exit 0)
+CHECK ok   no PFTKeyEscrow* alert pending or firing
+== 4. zero-leak check (2026-11-04T02:12:05Z)
+$ R 'mkdir -p /var/tmp/pft-keyescrow-nightly-682144f' && scp -q -o LogLevel=ERROR '~/work/postfiat-validator-installer/keyescrow/drill/leakcheck.py' 'relay:/var/tmp/pft-keyescrow-nightly-682144f/leakcheck.py' && echo copied
+  copied
+  (exit 0)
+$ sudo -n python3 -I '~/work/postfiat-validator-installer/keyescrow/drill/leakcheck.py' --tool /usr/local/bin/pft-keyescrow --conf /etc/pft-keyescrow.env --host validator --scan /var/lib/pft-keyescrow --scan /var/lib/pft-exporter/textfile --scan ~/work/runlogs/task_2361bde7-23-nightly-dev-negative.log
+  scanned files: 52 (229745 bytes)
+    cluster:node_seed  probes 3  control 3/3  leaks 0  ok
+    cluster:fp_key     probes 3  control 3/3  leaks 0  ok
+    cluster:env        probes 3  control 3/3  leaks 0  ok
+    logship:env        probes 3  control 3/3  leaks 0  ok
+    logship:host_key   probes 3  control 3/3  leaks 0  ok
+    logship:ca_key     probes 3  control 3/3  leaks 0  ok
+    journald:fss       probes 3  control 3/3  leaks 0  ok
+    alertpath:hmac     probes 3  control 3/3  leaks 0  ok
+    watchdog:hmac      probes 3  control 3/3  leaks 0  ok
+    ntfy:monitor       probes 3  control 3/3  leaks 0  ok
+    ntfy:maint         absent here (not checked)
+    ntfy:alerts        probes 3  control 3/3  leaks 0  ok
+    valkeys:keys       absent here (not checked)
+  RESULT: 11 secrets checked, 0 failed -> exit 0
+  (exit 0)
+CHECK ok   validator: every secret probed, 0 leaks (incl. the raw log of this run)
+$ R 'sudo -n python3 -I /var/tmp/pft-keyescrow-nightly-682144f/leakcheck.py --tool /usr/local/bin/pft-keyescrow --conf /etc/pft-keyescrow.env --host sentry --scan /var/lib/pft-keyescrow --scan /var/lib/pft-exporter/textfile'
+  scanned files: 35 (155222 bytes)
+    cluster:node_seed  probes 3  control 3/3  leaks 0  ok
+    cluster:fp_key     probes 3  control 3/3  leaks 0  ok
+    cluster:env        probes 3  control 3/3  leaks 0  ok
+    logship:env        probes 3  control 3/3  leaks 0  ok
+    logship:host_key   probes 3  control 3/3  leaks 0  ok
+    journald:fss       probes 3  control 3/3  leaks 0  ok
+    alertpath:hmac     probes 3  control 3/3  leaks 0  ok
+    watchdog:hmac      probes 3  control 3/3  leaks 0  ok
+    ntfy:maint         absent here (not checked)
+    ntfy:alertpath     probes 3  control 3/3  leaks 0  ok
+    ntfy:watchdog      probes 3  control 3/3  leaks 0  ok
+  RESULT: 10 secrets checked, 0 failed -> exit 0
+  (exit 0)
+CHECK ok   sentry: every secret probed, 0 leaks
+$ R 'rm -rf /var/tmp/pft-keyescrow-nightly-682144f' && echo removed
+  removed
+  (exit 0)
+RESULT: FAIL - 9 failed check(s) - 2026-11-04T02:12:10Z
