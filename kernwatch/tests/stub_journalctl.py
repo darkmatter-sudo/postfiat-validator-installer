@@ -2,7 +2,8 @@
 """Stub journalctl for the kernwatch tests: serves KW_JOURNAL (JSON lines, one record each) for the argument shapes
 kernwatch_parse.py uses: -k -o json --no-pager -q [-b BOOT] [--after-cursor C] [--since @EPOCH] [--until ..] [-n N].
 Error texts copied from journalctl 249 on Ubuntu 22.04: 'Failed to seek to cursor: Invalid argument' and
-"Failed to add match 'X': Invalid argument" (unknown boot). KW_FAIL=1 fails every call; KW_CALLS appends argv."""
+"Failed to add match 'X': Invalid argument" (unknown boot). KW_FAIL=1 fails every call; KW_CALLS appends argv;
+KW_IGNORE_BOOT=1 ignores -b (other boots' records leak into the read)."""
 
 import json
 import os
@@ -41,10 +42,13 @@ if boot is not None and boot != "0" and boot not in boots:
     sys.exit(1)
 if boot == "0":
     boot = os.environ.get("KW_CUR_BOOT") or (boots[-1] if boots else None)
+ignore = os.environ.get(
+    "KW_IGNORE_BOOT"
+)  # test: hand out other boots' records too (must be skipped)
 sel = [
     (raw, d)
     for raw, d in recs
-    if boot is None or not isinstance(d, dict) or d.get("_BOOT_ID") == boot
+    if ignore or boot is None or not isinstance(d, dict) or d.get("_BOOT_ID") == boot
 ]
 cur = opt("--after-cursor")
 if cur is not None:

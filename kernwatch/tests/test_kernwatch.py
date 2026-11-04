@@ -14,7 +14,9 @@ import sys
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-KW = os.path.dirname(HERE)
+KW = os.environ.get("KW_DIR") or os.path.dirname(
+    HERE
+)  # KW_DIR: a mutant copy (tests/mutate.py)
 HELPER = os.path.join(KW, "kernwatch_parse.py")
 SCRIPT = os.path.join(KW, "pft-kernwatch.sh")
 CAT = os.path.join(KW, "catalogue.tsv")
@@ -29,6 +31,49 @@ sys.path.insert(0, KW)
 import kernwatch_parse as kp
 
 results = []
+CRIT = [
+    "oom_global",
+    "oom_cgroup",
+    "hung_task",
+    "soft_lockup",
+    "hard_lockup",
+    "rcu_stall",
+    "kernel_panic",
+    "kernel_bug",
+    "kernel_oops",
+    "io_error",
+    "buffer_io",
+    "ext4_error",
+    "fs_readonly",
+    "jbd2_abort",
+    "xfs_shutdown",
+    "btrfs_error",
+    "mce_error",
+    "edac_ue",
+    "conntrack_full",
+]
+WARN = [
+    "conntrack_expect",
+    "syn_flood",
+    "tcp_mem",
+    "tcp_orphans",
+    "alloc_fail",
+    "oom_invoked",
+    "mce_logged",
+    "edac_ce",
+    "io_timeout",
+    "ext4_warning",
+    "link_down",
+    "clock_unstable",
+    "clock_fallback",
+    "audit_backlog",
+    "audit_lost",
+    "audit_queue",
+    "audit_ratelimit",
+    "segfault",
+    "trap",
+]
+INFO = ["martian", "martian_header"]
 
 
 def rd(path, mode="r"):
@@ -180,6 +225,28 @@ def t_catalogue():
         if kp.classify(entries, msg)
     ]
     check(f"{len(near)} near-miss fixtures match nothing", not hit, hit)
+    both = "Kernel panic - not syncing: watchdog: BUG: soft lockup - CPU#0 stuck for 22s! [x:1]"
+    hit = kp.classify(entries, both)
+    check(
+        "first matching pattern wins (soft_lockup is listed before kernel_panic)",
+        hit is not None and hit[0] == "soft_lockup",
+        hit and hit[0],
+    )
+    sev = {e[0]: e[1] for e in entries}
+    pinned = (
+        {p: "crit" for p in CRIT}
+        | {p: "warn" for p in WARN}
+        | {p: "info" for p in INFO}
+    )
+    check(
+        "every pattern's severity matches the pinned table (catalogue changes need a test change)",
+        sev == pinned,
+        {
+            k: (sev.get(k), pinned.get(k))
+            for k in set(sev) | set(pinned)
+            if sev.get(k) != pinned.get(k)
+        },
+    )
     classes = {e[2] for e in entries}
     want = {
         "io",
@@ -482,6 +549,52 @@ def t_boot_change():
     g.done()
 
 
+def t_other_boot_and_budget():
+    e = Env()
+    e.write(
+        [
+            rec(BOOT_A, 0, "x"),
+            rec(BOOT_B, 1, "Out of memory: Killed process 9 (y) total-vm:1kB"),
+            rec(BOOT_A, 2, "eth0: Link is Down"),
+        ]
+    )
+    rc, out, err = e.collect("--from-boot-start", KW_IGNORE_BOOT="1")
+    check(
+        "a record of another boot in this boot's read is skipped, not counted",
+        rc == 0
+        and metric(out, "pft_kernwatch_matches_total", pattern="oom_global") == 0
+        and metric(out, "pft_kernwatch_matches_total", pattern="link_down") == 1
+        and metric(out, "pft_kernwatch_records_total") == 2,
+        (rc, err, out[-400:]),
+    )
+    g = Env()
+    a = [rec(BOOT_A, 0, "x")]
+    g.write(a)
+    g.collect()
+    tail = [rec(BOOT_A, 1, "x"), rec(BOOT_A, 2, "x")]
+    b = [rec(BOOT_B, 10 + i, "eth0: Link is Down") for i in range(3)]
+    g.write(a + tail + b)
+    g.set_boot(BOOT_B)
+    rc, out, err = g.collect("--max", "3")
+    check(
+        "boot change: old boot tail + new boot together stay within --max (2 + 1 = 3, backlog 1)",
+        rc == 0
+        and metric(out, "pft_kernwatch_records_total") == 3
+        and metric(out, "pft_kernwatch_backlog") == 1,
+        (rc, err, out[-500:]),
+    )
+    rc, out, _ = g.collect("--max", "3")
+    check(
+        "boot change: next run finishes the new boot (5 records, link_down 3, backlog 0)",
+        metric(out, "pft_kernwatch_records_total") == 5
+        and metric(out, "pft_kernwatch_matches_total", pattern="link_down") == 3
+        and metric(out, "pft_kernwatch_backlog") == 0,
+        out[-500:],
+    )
+    e.done()
+    g.done()
+
+
 def t_malformed():
     e = Env()
     e.write([rec(BOOT_A, 0, "x")])
@@ -490,6 +603,10 @@ def t_malformed():
     binmsg["MESSAGE"] = list(b"Out of memory: Killed process 7 (p\xff) total-vm:1kB")
     nofield = rec(BOOT_A, 2, "Kernel panic - not syncing: x")
     del nofield["__REALTIME_TIMESTAMP"]
+    badmono = rec(BOOT_A, 5, "Kernel panic - not syncing: y")
+    badmono["__MONOTONIC_TIMESTAMP"] = "x"
+    tailbad = rec(BOOT_A, 6, "z")
+    del tailbad["MESSAGE"]
     e.write(
         [
             rec(BOOT_A, 0, "x"),
@@ -498,17 +615,24 @@ def t_malformed():
             json.dumps(binmsg),
             "[1,2]",
             rec(BOOT_A, 4, "eth0: Link is Down"),
+            json.dumps(badmono),
+            json.dumps(tailbad),
         ]
     )
     rc, out, err = e.collect()
     check(
-        "malformed: 3 bad records counted, run continues (rc 0)",
-        rc == 0 and metric(out, "pft_kernwatch_malformed_total") == 3,
+        "malformed: 5 bad records counted (incl. non-numeric monotonic time), run continues (rc 0)",
+        rc == 0 and metric(out, "pft_kernwatch_malformed_total") == 5,
         (rc, err, out[-400:]),
     )
     check(
         "malformed: record missing a field is NOT classified (no panic counted)",
         metric(out, "pft_kernwatch_matches_total", pattern="kernel_panic") == 0,
+    )
+    check(
+        "malformed: cursor moves past a malformed record that has a cursor (no re-read next run)",
+        e.st()["cursor"] == f"s=1;i=6;b={BOOT_A}",
+        e.st()["cursor"],
     )
     check(
         "byte-array MESSAGE is decoded and classified",
@@ -690,7 +814,10 @@ def t_wrapper():
     )
     stub_helper = os.path.join(e.d, "slow.py")
     with open(stub_helper, "w") as f:
-        f.write("import time\ntime.sleep(30)\n")
+        # prints a partial textfile line first: a hung helper's partial output must never be published
+        f.write(
+            "import time\nprint('pft_kernwatch_up{host=\"validator\"} 1', flush=True)\ntime.sleep(30)\n"
+        )
     r = subprocess.run(
         ["bash", SCRIPT, "collect", "--stdout"],
         check=False,
@@ -763,6 +890,58 @@ def t_wrapper():
         r.returncode == 3,
         (r.returncode, r.stderr),
     )
+    big = os.path.join(e.d, "big.prom")
+    with open(big, "w") as f:
+        f.write(body)
+        f.write('pft_kernwatch_records_total{host="validator"} 1\n' * 3000)
+    v = sh(e, "validate", big, "validator")
+    check(
+        "validate refuses a file over MAX_BYTES (rc 2)",
+        v.returncode == 2 and "too big" in v.stdout,
+        v.stdout,
+    )
+    v = sh(e, "validate", big, "validator", MAX_BYTES="10000000")
+    check(
+        "validate control: the same big file passes with a larger MAX_BYTES",
+        v.returncode == 0,
+        v.stdout,
+    )
+    sdir = os.path.join(e.d, "st")
+    check(
+        "state dir is 0700",
+        oct(os.stat(sdir).st_mode & 0o777) == "0o700",
+        oct(os.stat(sdir).st_mode),
+    )
+    holder = subprocess.Popen(
+        ["flock", os.path.join(sdir, "lock"), "sleep", "20"],
+        stdin=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    try:
+        for _ in range(50):
+            busy = subprocess.run(
+                ["flock", "-n", os.path.join(sdir, "lock"), "true"],
+                check=False,
+                stdin=subprocess.DEVNULL,
+            )
+            if busy.returncode != 0:
+                break
+            subprocess.run(["sleep", "0.1"], check=False)
+        r = sh(e, "collect", "--stdout", **base)
+        check(
+            "a second collect while one holds the lock exits 1 without touching state",
+            r.returncode == 1 and "another collect is running" in r.stderr,
+            (r.returncode, r.stderr),
+        )
+    finally:
+        os.killpg(holder.pid, 9)
+        holder.wait()
+    r = sh(e, "collect", "--stdout", **base)
+    check(
+        "collect works again once the lock is free",
+        r.returncode == 0,
+        (r.returncode, r.stderr),
+    )
     e.done()
 
 
@@ -776,6 +955,7 @@ def main():
         t_from_boot_start_and_backlog,
         t_cursor_reset,
         t_boot_change,
+        t_other_boot_and_budget,
         t_malformed,
         t_state_problems,
         t_journal_failure,
