@@ -1,0 +1,13 @@
+# Margin: syscalls allowed although a learn run may not observe them. Each is on a rare or error path of the node or
+# of the image's cron/logrotate tools, and each is allowed by Docker's default profile (generate refuses any other).
+# name<TAB>reason
+restart_syscall	kernel-issued after a signal interrupts a restartable sleep (e.g. nanosleep); never called directly
+rt_sigreturn	return from any signal handler (SIGHUP/SIGTERM handling, logrotate's postrotate signal)
+exit	single-thread exit (glibc thread teardown); exit_group covers the process
+exit_group	process exit
+tgkill	abort()/raise(): assertion failure and fatal-signal paths, so the node still dumps a stack instead of EPERM
+getpid	abort()/raise() pid lookup on the same path
+sched_yield	lock backoff under contention (boost/std mutexes, NuDB); depends on load
+fdatasync	database flush on rotation/online_delete; a short learn window may miss it
+fsync	same as fdatasync for files opened without O_DSYNC (SQLite journal)
+mremap	large realloc() growth of in-memory caches
