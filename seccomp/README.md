@@ -22,7 +22,7 @@ helper: syscall table from libseccomp, Docker rule resolution, profile + diff, c
 | 1 learn (throwaway, census + SCMP_ACT_LOG) | done: recorded learn on both hosts ([05](logs/05-learn-validator.log), [06](logs/06-learn-sentry.log)) |
 | 2 profile + per-syscall diff vs Docker | done: [`profile/pft-postfiatd.json`](profile/pft-postfiatd.json) + [`profile/diff.tsv`](profile/diff.tsv) from [08](logs/08-generate-two-host.log) |
 | 3 guarded apply / rollback | built and tested offline (stub suite); live apply not done yet |
-| 4 audit, rules, promtool, tests, mutants | built; promtool SUCCESS; suite 136/136; recorded mutant run in progress (log 04, next commit) |
+| 4 audit, rules, promtool, tests, mutants | built; [04](logs/04-lint-suite-mutants.log) at 3cd5cdf: shellcheck/ruff/promtool clean, suite 129/129, mutants 54 caught / 0 survived / 0 orphans (l.225, l.224); suite now 136 (two-dir merge, 850bfb0): re-run before submission |
 | 5 two-host live proof | not done: the validator holds the growth/ 24 h data-collection lock until 2026-11-05T00:26Z, so `apply` refuses there until then (by design); sentry canary first |
 
 The results table required by the card is added once the live proof has run; it will cite log lines only.

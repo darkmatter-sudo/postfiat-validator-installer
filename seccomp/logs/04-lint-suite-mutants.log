@@ -1,0 +1,226 @@
+OS: Ubuntu 22.04.5 LTS | 2026-11-04T03:30:38Z | validator-host | recorded lint + offline suite + mutants
+# tree: commit 3cd5cdf74f6a822c9861d930e32bd3850b585547 (git archive, unmodified)
+# sha256 bc3b2dacc2f8a111217e21b1a7370555f42c2d4c7ddde2b9ae94e429816a8c47 seccomp/pft-seccomp.sh
+# sha256 2c2b32e2f82aedd8b2f8613b0711d4d66c33844a241b4fae71b24b5fba5e40d5 seccomp/pft_seccomp.py
+# sha256 2c1d2eefa3e77205142e9ffbd3d2cd924821b1ffdcfd2cfd3f7299d8d3ca4090 seccomp/install.sh
+# sha256 71e1140a6c606ad0fc4dd756e38dc4a86f087c764d8f7745b321314b8a6b0e9e seccomp/tests/run-tests.sh
+# sha256 7c87df4c7fd18cf4c1daee3c7e836dab12c71542b604e28a890e29e54e733239 seccomp/tests/stub_docker.py
+# sha256 7f4de9bbe8f26b1f7f544e9b6d18b813a1004696ea2c2b457d7c547e02f874c4 seccomp/tests/test_pft_seccomp.py
+# sha256 48a0f461396726dda03bf2feebdfa2aa5e1dee1569fafe0ffd956c34db7a6aad seccomp/tests/mutate.py
+# sha256 979afef11a529342099582ab99b200c6cdce4239bd28aad3e4233b3fb3389bc1 alerts/seccomp.rules.yml
+# sha256 07c047785a0095b3ea1cda53d910c2920b20d0b57925793c66c1554752590422 alerts/seccomp.tests.yml
+== lint
+ShellCheck - shell script analysis tool
+$ shellcheck -x seccomp/pft-seccomp.sh seccomp/install.sh seccomp/tests/run-tests.sh
+(exit 0)
+$ ruff --version
+ruff 0.17.1
+(exit 0)
+$ ruff check seccomp/pft_seccomp.py seccomp/tests/
+All checks passed!
+(exit 0)
+$ ruff format --check seccomp/pft_seccomp.py seccomp/tests/
+4 files already formatted
+(exit 0)
+$ docker run --rm --entrypoint promtool -v /home/<user>/.cache/sc-tree-3cd5cdf/alerts:/w:ro -w /w prom/prometheus:v3.5.0 check rules seccomp.rules.yml
+Checking seccomp.rules.yml
+  SUCCESS: 2 rules found
+
+(exit 0)
+$ docker run --rm --entrypoint promtool -v /home/<user>/.cache/sc-tree-3cd5cdf/alerts:/w:ro -w /w prom/prometheus:v3.5.0 test rules seccomp.tests.yml
+  SUCCESS
+
+(exit 0)
+== offline suite
+$ env TEST_TMPDIR=/home/<user>/.cache bash seccomp/tests/run-tests.sh
+ok   audit compose healthy: PASS, exit 0
+ok   audit compose healthy: kernel PASS
+ok   audit compose healthy: logging PASS
+ok   audit compose healthy: profile PASS
+ok   audit compose healthy: container PASS
+ok   audit compose healthy: filter PASS
+ok   audit compose healthy: recreate PASS
+ok   audit compose healthy: confine:cap_drop PASS
+ok   audit compose healthy: confine:nnp PASS
+ok   audit compose healthy: denials PASS
+ok   audit run healthy: PASS, exit 0
+ok   audit run healthy: kernel PASS
+ok   audit run healthy: logging PASS
+ok   audit run healthy: profile PASS
+ok   audit run healthy: container PASS
+ok   audit run healthy: filter PASS
+ok   audit run healthy: recreate PASS
+ok   audit run healthy: confine:cap_drop PASS
+ok   audit run healthy: confine:nnp PASS
+ok   audit run healthy: denials PASS
+ok   default profile: container FAIL
+ok   default: profile file missing FAIL
+ok   default: recreate FAIL
+ok   unconfined: container FAIL
+ok   file edited after create: container FAIL drift
+ok   same profile re-indented: container still PASS (canonical compare)
+ok   allow-by-default file: profile FAIL
+ok   init not filtered: filter FAIL
+ok   no pid: filter FAIL
+ok   errno not logged: logging FAIL
+ok   override points elsewhere: recreate FAIL
+ok   cap_drop lost: FAIL
+ok   nnp lost: FAIL
+ok   missing container: container FAIL
+ok   denials: 3 errno records of pft-postfiatd counted (throwaway label, LOG action, older than 24h left out)
+ok   denials: top syscalls named with comm
+ok   denials: exit 1
+ok   denials --since 85: only the last record
+ok   unreadable audit log: denials FAIL
+ok   --json: findings, denied_events, 9 checks
+ok   --textfile: samples written
+ok   --textfile: mode 644
+ok   validate: own textfile ok
+ok   validate: other host label rejected
+ok   validate: foreign metric rejected
+ok   validate: no last_run rejected
+ok   ack without --yes: exit 4
+ok   ack: 3 records up to --until counted (incl. the one older than 24h)
+ok   after ack: 1 denial left, reason shown
+ok   ack: same --until twice refused
+ok   ack: future --until refused
+ok   ack: non-printable reason refused
+ok   ack to now: denials PASS
+ok   malformed ack file: FAIL
+ok   malformed ack file: every record counted again
+ok   pull: peer textfile copied
+ok   pull: bad file rejected, last good copy kept
+ok   pull: ssh failure exit 1
+ok   conf: bad HOST_LABEL refused
+ok   apply run: PASS, exit 0
+ok   apply run: stored profile = json.Compact(profile)
+ok   apply run: re-created container keeps every confine/identity field incl. AppArmor (built from the run args)
+ok   apply run: previous container kept, restart=no
+ok   apply run: /etc/pft-seccomp file = candidate
+ok   apply run: host IP masked in output
+ok   apply run: env values masked in output
+ok   apply run: gate exercised the node, 0 denials
+ok   apply run: gate ran the add-ons' docker exec commands
+ok   apply run: state applied, pre_state default
+ok   apply run: audit afterwards PASS
+ok   apply run: same profile again refused
+ok   apply run: other profile while applied refused
+ok   rollback without --yes: exit 4
+ok   rollback run: PASS
+ok   rollback run: previous container back (Docker default seccomp, unless-stopped, AppArmor kept)
+ok   rollback run: profile file removed (none before)
+ok   rollback run: no leftover container
+ok   rollback run: state rolled_back (manual)
+ok   rollback twice: no-op
+ok   re-apply after rollback: PASS
+ok   apply compose: PASS
+ok   apply compose: COMPOSE_FILE keeps the apparmor override + adds seccomp
+ok   apply compose: .env mode kept
+ok   apply compose: stored profile + AppArmor label
+ok   apply compose: audit recreate PASS
+ok   rollback compose: .env byte-identical, override gone, Docker default
+ok   apply over an older profile: PASS
+ok   rollback: older file restored byte-identical and the container back on it
+ok   rollback: the pre-existing override file is restored, not deleted
+ok   integrity: own items accepted
+ok   integrity: foreign change -> not accepted
+ok   refuse: no --yes
+ok   refuse no --yes: nothing changed
+ok   refuse: no window
+ok   refuse no window: nothing changed
+ok   refuse: window too short
+ok   refuse: data-collection lock
+ok   refuse lock: nothing changed
+ok   refuse: node not full
+ok   refuse not full: nothing changed
+ok   refuse: not confined
+ok   refuse: no AppArmor label (denials unattributable)
+ok   refuse label: nothing changed
+ok   refuse: allow-by-default candidate
+ok   refuse check: nothing changed
+ok   apply without --profile-file: exit 3
+ok   refuse: rollback outside a window
+ok   auto: lost read-only named
+ok   auto: lost read-only: rolled back (exit 1)
+ok   auto run: profile not taken named
+ok   auto run: profile not taken: rolled back (exit 1)
+ok   auto compose: profile not taken named
+ok   auto compose: profile not taken: rolled back
+ok   auto: init not filtered named
+ok   auto: init not filtered: rolled back (exit 1)
+ok   auto: not full under the profile named
+ok   auto: not full: rolled back (exit 1)
+ok   gate: denial of another label (throwaway) not counted
+ok   auto: denial during the exercise fails the gate
+ok   auto: denial: rolled back (exit 1)
+ok   auto: denial on an add-on command fails the gate
+ok   auto: add-on denial: rolled back (exit 1)
+ok   auto: docker run failed: rolled back (exit 1)
+ok   auto: PFT_SC_INJECT=health named
+ok   auto: injected: rolled back (exit 1)
+ok   auto: pft daemon down -> container restored, rollback gate fails honestly (exit 5)
+ok   auto compose: compose up failed -> .env restored, override + file gone
+ok   auto compose: injected failure rolled back
+ok   helper unit tests: Ran 12 tests
+RESULT: 129 passed, 0 failed
+(exit 0)
+== mutants (gates and rollback paths)
+$ env TEST_TMPDIR=/home/<user>/.cache python3 -u seccomp/tests/mutate.py --jobs 2 --timeout 900
+control (unmutated): PASS RESULT: 129 passed, 0 failed
+M01 CAUGHT - kernel: errno logging not required [0 failing: ]
+M02 CAUGHT - profile: check result ignored [0 failing: ]
+M03 CAUGHT - container: Docker default graded PASS [0 failing: ]
+M04 CAUGHT - container: unconfined graded PASS [0 failing: ]
+M05 CAUGHT - container: drift graded PASS [0 failing: ]
+M06 CAUGHT - canonical compare replaced by raw file sha [0 failing: ]
+M07 CAUGHT - filter: init mode not checked [0 failing: ]
+M08 CAUGHT - recreate: compose override not required [0 failing: ]
+M09 CAUGHT - confine: cap_drop ALL not required [0 failing: ]
+M10 CAUGHT - WARN not counted as a finding [0 failing: ]
+M11 CAUGHT - denials: errno filter dropped (LOG records counted) [0 failing: ]
+M12 CAUGHT - denials: label filter dropped (throwaways counted) [0 failing: ]
+M13 CAUGHT - denials: count shown but graded PASS [0 failing: ]
+M14 CAUGHT - denials: unreadable log graded PASS [0 failing: ]
+M15 CAUGHT - prom: failing check exported as 1 [0 failing: ]
+M16 CAUGHT - ack: malformed file accepted [0 failing: ]
+M17 CAUGHT - ack: hides records after --until [0 failing: ]
+M18 CAUGHT - ack: future --until accepted [0 failing: ]
+M19 CAUGHT - validate: host label not enforced [0 failing: ]
+M20 CAUGHT - pull: rejected file replaces the last good copy [0 failing: ]
+M21 CAUGHT - apply: --yes not required [0 failing: ]
+M22 CAUGHT - apply: no maintenance window required [0 failing: ]
+M23 CAUGHT - apply: window length not checked [0 failing: ]
+M24 CAUGHT - apply: data-collection locks ignored [0 failing: ]
+M25 CAUGHT - apply: node full not required [0 failing: ]
+M26 CAUGHT - apply: candidate check ignored [0 failing: ]
+M27 CAUGHT - apply: AppArmor label not required [0 failing: ]
+M28 CAUGHT - apply: last-apply-in-place check removed [0 failing: ]
+M29 CAUGHT - gate: stored profile not compared [0 failing: ]
+M30 CAUGHT - gate: init filter mode not checked [0 failing: ]
+M31 CAUGHT - gate: server_state not checked [0 failing: ]
+M32 CAUGHT - gate: confine signature not compared [0 failing: ]
+M33 CAUGHT - gate: pft daemons not checked [0 failing: ]
+M34 CAUGHT - gate: denials since T0 ignored [0 failing: ]
+M35 CAUGHT - gate: injected failure ignored [0 failing: ]
+M36 CAUGHT - gate: add-ons' docker exec commands skipped [0 failing: ]
+M37 CAUGHT - confine sig: AppArmor label not part of it [0 failing: ]
+M38 CAUGHT - run args: seccomp option not set [0 failing: ]
+M39 CAUGHT - run args: other security_opt dropped (nnp, apparmor) [0 failing: ]
+M40 CAUGHT - integrity: foreign items accepted [0 failing: ]
+M41 CAUGHT - apply: gate failure does not roll back [0 failing: ]
+M42 CAUGHT - apply: failed docker run does not roll back [0 failing: ]
+M43 CAUGHT - apply: failed compose up does not roll back [0 failing: ]
+M44 CAUGHT - rollback: .env not restored (no prior override) [0 failing: ]
+M45 CAUGHT - rollback: prior override deleted instead of restored [0 failing: ]
+M46 CAUGHT - rollback: previous profile file not restored [0 failing: ]
+M47 CAUGHT - rollback: new profile file left behind [0 failing: ]
+M48 CAUGHT - rollback: restart policy not restored [0 failing: ]
+M49 CAUGHT - rollback: gate result ignored [0 failing: ]
+M50 CAUGHT - rollback: gate wants the candidate, not the previous state [0 failing: ]
+M51 CAUGHT - rollback: outside a maintenance window [0 failing: ]
+M52 CAUGHT - apply: previous container keeps its restart policy [0 failing: ]
+M53 CAUGHT - apply output: IPv4 not masked [0 failing: ]
+M54 CAUGHT - lx: exit code swallowed [0 failing: ]
+orphan check: 0 process(es) still running from mutant copies
+RESULT: 54 caught, 0 survived, 0 not applied of 54 (+ 0 documented equivalent)
+(exit 0)
