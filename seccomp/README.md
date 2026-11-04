@@ -15,14 +15,14 @@ helper: syscall table from libseccomp, Docker rule resolution, profile + diff, c
 [`../alerts/seccomp.rules.yml`](../alerts/seccomp.rules.yml) + [`seccomp.tests.yml`](../alerts/seccomp.tests.yml) ·
 [`tests/`](tests/) · [`systemd/`](systemd/) · [`install.sh`](install.sh).
 
-## Status (2026-11-04T04:36Z)
+## Status (2026-11-04T10:30Z)
 
 | Card step | State |
 |---|---|
 | 1 learn (throwaway, census + SCMP_ACT_LOG) | done: recorded learn on both hosts ([05](logs/05-learn-validator.log), [06](logs/06-learn-sentry.log)) |
 | 2 profile + per-syscall diff vs Docker | done: [`profile/pft-postfiatd.json`](profile/pft-postfiatd.json) + [`profile/diff.tsv`](profile/diff.tsv) from [08](logs/08-generate-two-host.log) |
 | 3 guarded apply / rollback | built and tested offline (stub suite); live apply not done yet. Found before any live apply (2026-11-04): a re-create would have dropped both nodes' `CpuShares`/`MemoryReservation` (set by `docker update`, not in compose/run args) and the gate did not compare them; fixed: kept through every re-create and part of the gate signature (see apply / rollback), offline tests + mutants M55-M60 |
-| 4 audit, rules, promtool, tests, mutants | built; [04](logs/04-lint-suite-mutants.log) at 3cd5cdf: shellcheck/ruff/promtool clean, suite 129/129 (l.165). **Its mutant result (54 caught) is not valid**: found 2026-11-04 that every one of the 54 CAUGHT lines reads `[0 failing: ]` (l.170-223): the harness wrote each mutant copy to a temp dir without `pft_seccomp.py` next to it, so every mutant suite stopped at its first `generate` and failed without running a check, while the control ran from the repo copy and passed. Fixed in `tests/mutate.py`: the copies get the helper/margin/reference files, the control runs from a copy in the same place, and a failing suite counts as CAUGHT only with a RESULT line and at least one FAIL line (else BROKEN, which fails the harness). The recorded re-run at the current commit replaces 04 |
+| 4 audit, rules, promtool, tests, mutants | done offline: recorded [10](logs/10-lint-suite-mutants.log) at 80d944a (git archive, script sha256 in l.3-11): shellcheck/ruff/ruff format/promtool clean (l.12-35), suite 147 passed, 0 failed (l.185), mutants 59 caught, 0 survived, 0 not applied, 0 broken of 59 + M54 documented equivalent, 0 orphans (l.249-250). Replaces [04](logs/04-lint-suite-mutants.log) (its 54 CAUGHT lines all read `[0 failing: ]`: the mutant copies lacked `pft_seccomp.py`, so no check ever ran; harness fixed, see Tests) and [09](logs/09-lint-suite-mutants-superseded.log) (56 caught / 4 survived at fffc1d6: M16, M19, M37 got tests in 80d944a, M54 is equivalent because no caller reads `lx`'s status) |
 | 5 two-host live proof | not done: the validator holds the growth/ 24 h data-collection lock until 2026-11-05T00:26Z, so `apply` refuses there until then (by design); sentry canary first |
 
 The results table required by the card is added once the live proof has run; it will cite log lines only.
@@ -57,6 +57,8 @@ never sees; real syscalls if the kernel falls back from kvm-clock to hpet/acpi_p
 Dev logs: [01 bpftrace install](logs/01-bpftrace-install.log) · [02 dev learn 1](logs/02-dev-learn-validator-flood.log)
 (ausyscall's `pread`/`pwrite` names missed `pread64`/`pwrite64`: ~80k LOG records in 2 min, guard stopped it; table now
 from libseccomp) · [03 dev learn 2](logs/03-dev-learn-validator.log) (256 records).
+
+**`apt-compat` (cron.daily) is not exercised, by decision:** the exercise loop skips it (`pft-seccomp.sh` exercise(), the `[ "${j##*/}" = apt-compat ] && continue` line) because it sleeps up to 30 min and calls apt. Since the apparmor/ cron.daily fix (c1af4e9) the container's AppArmor profile refuses its exec (quiet `deny x` on `/etc/cron.daily/apt-compat` and `apt.systemd.daily`), so under the full stack the job never runs and makes no syscalls; seccomp needs no rule for it. If AppArmor is not in use, `apt-compat` would need a learn of its own.
 
 ## How it works
 
@@ -142,7 +144,7 @@ files.
 
 ## Tests
 
-`tests/run-tests.sh`: 142 offline checks against a fake host (`PFT_SC_ROOT`) and a stateful docker stub
+`tests/run-tests.sh`: 147 offline checks against a fake host (`PFT_SC_ROOT`) and a stateful docker stub
 (`tests/stub_docker.py`: `docker run` builds the container from its arguments; `seccomp=FILE` is stored as
 `json.Compact`, as Docker does): every audit check in both directions, `--json`/`--textfile`/`validate`, `ack-denials`,
 `pull`, apply/rollback for compose and docker run, every refusal (nothing changed), every automatic rollback trigger,
