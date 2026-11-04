@@ -22,6 +22,7 @@ and turns it into Prometheus textfile metrics.
 | `systemd/` | `pft-kernwatch.service/.timer` (both hosts, every 2 min at :15 of even minutes, sandboxed: no network, no capabilities) and `pft-kernwatch-pull.service/.timer` (validator, odd minutes at :00) |
 | `pft-kernwatch.env.example` | `/etc/pft-kernwatch.env` (root-owned 0600): `HOST_LABEL`, limits, `PULL_SSH` |
 | `drill/install-run.sh` | recorded two-host install through pft-fleet in a pft-maint window (throwaway [MAINT] topic) |
+| `drill/kmsg-run.sh` | step-4 alert drill (after the 24 h baseline): one marked `/dev/kmsg` record per alerting severity (crit `oom_global`, warn `segfault`) on each host -> PFTKernelCritical/Warning FIRING then RESOLVED for both hosts on a throwaway topic (bridge swap + silence of every other alert), operator topics read back; `PREFLIGHT_ONLY=1` changes nothing |
 
 Logs so far: `logs/01-smoke.log` (two-host read-only smoke), `logs/02-suite.log` (step-1 suite),
 `logs/03-lint-suite-mutants.log` (shellcheck, ruff, promtool check + test, suite 93/93, mutants 60 caught / 0 survived / 0 orphans).
