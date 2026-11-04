@@ -1,24 +1,25 @@
 #!/usr/bin/env bash
 # live-run: recorded two-host live proof of pft-seccomp, sentry first (canary), then the validator. Built from
 # ../../apparmor/drill/live-run.sh (redirect / silence / window / read-back / PREFLIGHT_ONLY) and the bridge swap +
-# FIRING/RESOLVED read-back of ../../statewatch and ../../rulecheck drills. One stage per run:
-#   bash seccomp/drill/live-run.sh sentry 2>&1 | tee LOG      (agent user, repo root; sudo -n, `ssh relay`)
-#   bash seccomp/drill/live-run.sh validator 2>&1 | tee LOG   (only after the sentry stage passed: preflight checks it)
-# sentry stage: install on both hosts (+ the validator's pull), host-run.sh sentry pre --drill (injected gate failure
-#   -> automatic rollback, apply, positive + negative controls), alert drill, host-run.sh sentry post --drill (ack,
-#   add-ons, enforced restart, explicit rollback + re-apply), RESOLVED, HOLD min hold.
-# validator stage: host-run.sh validator pre, alert drill (host=validator), host-run.sh validator post, HOLD min hold
-#   with both nodes enforced.
+# FIRING/RESOLVED read-back of ../../statewatch and ../../rulecheck drills. Both hosts in ONE run and one window:
+# installing puts the hourly audit on both hosts, and a host left on Docker's default would page PFTSeccompDrift once
+# the run's silence ends, so the validator is applied in the same run, right after the sentry canary passed.
+#   bash seccomp/drill/live-run.sh 2>&1 | tee LOG      (agent user, repo root; sudo -n, `ssh relay`)
+# sentry (canary): host-run.sh sentry pre --drill (injected gate failure -> automatic rollback, apply, positive +
+#   negative controls), alert drill (host=sentry), host-run.sh sentry post --drill (ack, add-ons, enforced restart,
+#   explicit rollback + re-apply), RESOLVED. A sentry failure stops the run before the validator is touched.
+# validator: host-run.sh validator pre, alert drill (host=validator), host-run.sh validator post, RESOLVED.
+# Then a HOLD-min hold with both nodes enforced.
 # 0  preflight (nothing changed yet): clean pushed HEAD; relay, Alertmanager, Prometheus reachable; no pft-maint window;
-#    no data-collection lock on the stage host; run-commit lines present; notifier env files present, no leftovers;
+#    no data-collection lock on either host; run-commit lines present; notifier env files present, no leftovers;
 #    bridge on the operator env; both nodes full; pft-integrity PASS on both; redaction control.
 # 1  redirect notifiers + the Alertmanager bridge to a throwaway topic; silence alertname=~".+" except
 #    PFTAlertPipelineWatchdog (dead-man switch) and PFTSeccompDenied (under test); pft-maint window (sentry gets it).
-# 1b reset: an apply left in place on the stage host by an earlier run is rolled back first.
-# 2  (sentry stage) install on both hosts + pull; Prometheus loads the pft-seccomp group.
-# 3  host-run.sh STAGE pre.  4 alert drill: the stage host's audit exports the unacknowledged negative-control
-#    denials -> PFTSeccompDenied{host=STAGE} firing -> [FIRING] on the throwaway topic.
-# 5  host-run.sh STAGE post (acknowledges them).  6 audit again -> alert leaves Prometheus -> [RESOLVED].
+# 1b reset: an apply left in place by an earlier run is rolled back first (both hosts).
+# 2  install on both hosts + pull; Prometheus loads the pft-seccomp group; profile copied from the pinned tree.
+# 3..6 per host, sentry first: host-run.sh HOST pre; alert drill (the host's audit exports the unacknowledged
+#    negative-control denials -> PFTSeccompDenied{host=HOST} firing -> [FIRING] on the throwaway topic);
+#    host-run.sh HOST post (acknowledges them); audit again -> alert leaves Prometheus -> [RESOLVED].
 # 7  hold HOLD min: both nodes polled every POLL min (state, peers, stored profile, unacknowledged denials).
 # 8  metrics + baselines (integrity, fleet, rulecheck).  9 restore + read-back of every operator topic.
 # Env: RELAY (relay) NTFY (https://ntfy.sh) AM PROM LOCAL_ENVS REMOTE_ENVS BRIDGE_ENV TTL (4h) SIL_TTL (230 min)
@@ -29,7 +30,6 @@ set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"; cd "$REPO" || exit 3
 REDACT="$REPO/peerexpose/drill/redact.py"; RUNSTACK="$REPO/alerts/run-stack.sh"
-STAGE="${1:-}"; case "$STAGE" in sentry|validator) ;; *) echo "usage: live-run.sh sentry|validator" >&2; exit 3 ;; esac
 RELAY="${RELAY:-relay}"; NTFY="${NTFY:-https://ntfy.sh}"
 AM="${AM:-http://127.0.0.1:9093}"; PROM="${PROM:-http://127.0.0.1:9090}"
 LOCAL_ENVS="${LOCAL_ENVS:-/etc/postfiat-monitor.env /etc/pft-integrity.env}"
@@ -44,8 +44,6 @@ SHA_HEAD="$(git rev-parse HEAD)"; SHORT="$(git rev-parse --short HEAD)"
 RDIR="/var/tmp/pft-seccomp-live-$SHORT"   # sentry copy of the tree (run with bash, never executed from a noexec mount)
 PROFILE_REPO=seccomp/profile/pft-postfiatd.json
 P1=/var/lib/pft-seccomp/pft-postfiatd.live.json   # the profile both hosts apply (copied from the pinned tree)
-[ "$STAGE" = sentry ] && SH=relay || SH=local
-DRILLF=""; [ "$STAGE" = sentry ] && DRILLF=--drill
 
 rnd() { head -c 12 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
 ALERT="sclive-$(rnd)"
@@ -111,13 +109,13 @@ restore() {
       else echo "  narrow silence FAILED: catch-all kept until its end time"; RESTORE_OK=false; fi
     else curl -s --max-time 10 -o /dev/null -w "  silence expired: HTTP %{http_code}\n" -X DELETE "$AM/api/v2/silence/$SIL"; fi
   fi
-  [ "$STAGE" = sentry ] && { R "rm -rf $RDIR" || true; }
+  R "rm -rf $RDIR" || true
 }
 cleanup() { restore; rm -rf "$SEC"; }
 trap cleanup EXIT
 trap 'echo "interrupted"; exit 6' INT TERM
 
-{ echo "pft-seccomp live run, stage $STAGE - $(ts) - $(lsb_release -ds) - run $RUN"
+{ echo "pft-seccomp two-host live run (sentry canary, then validator) - $(ts) - $(lsb_release -ds) - run $RUN"
   echo "repo HEAD $SHA_HEAD (clean: $([ -z "$(git status --short)" ] && echo yes || echo NO))"
   for f in seccomp/drill/live-run.sh seccomp/drill/host-run.sh seccomp/pft-seccomp.sh seccomp/pft_seccomp.py seccomp/install.sh \
            "$PROFILE_REPO" alerts/seccomp.rules.yml "${REDACT#"$REPO"/}"; do
@@ -131,11 +129,12 @@ curl -s --max-time 5 -o /dev/null "$AM/-/ready" || { echo "  Alertmanager not re
 curl -s --max-time 5 -o /dev/null "$PROM/-/ready" || { echo "  Prometheus not reachable - stopping" >&2; exit 3; }
 sudo -n pft-maint active >/dev/null 2>&1 && { echo "  a pft-maint window is open on the validator - stopping" >&2; exit 4; }
 R "sudo -n pft-maint active" >/dev/null 2>&1 && { echo "  a pft-maint window is open on the relay - stopping" >&2; exit 4; }
-nl="$(on "$SH" "sudo -n pft-maint status --json" 2>/dev/null | jq -r '.locks | length' 2>/dev/null)"
-if [ "${nl:-1}" != 0 ]; then
-  if [ "$PREFLIGHT_ONLY" = 1 ]; then echo "  $STAGE: ${nl:-?} pft-maint data-collection lock(s) held - apply would refuse; a real run would stop here"; NOT_READY=1
-  else echo "  $STAGE: ${nl:-?} pft-maint data-collection lock(s) held - stopping" >&2; exit 4; fi
-fi
+for h in relay local; do
+  nl="$(on "$h" "sudo -n pft-maint status --json" 2>/dev/null | jq -r '.locks | length' 2>/dev/null)"
+  [ "${nl:-1}" = 0 ] && continue
+  if [ "$PREFLIGHT_ONLY" = 1 ]; then echo "  $(lb "$h"): ${nl:-?} pft-maint data-collection lock(s) held - apply would refuse; a real run would stop here"; NOT_READY=1
+  else echo "  $(lb "$h"): ${nl:-?} pft-maint data-collection lock(s) held - stopping" >&2; exit 4; fi
+done
 # The rule line and the manifest lines ship in the run commit (lesson: a loaded rule with no series pages PFTRuleDead).
 for need in "alerts/prometheus.yml:/etc/pft-alerts/seccomp.rules.yml" "fleet/manifest.tsv:seccomp/pft-seccomp.sh"; do
   grep -qF "${need#*:}" "${need%%:*}" && continue
@@ -148,15 +147,6 @@ for h in local relay; do
 done
 echo "  no extra postfiatd-image container running on either host"
 x "python3 -I seccomp/pft_seccomp.py canon $PROFILE_REPO; sha256sum < $PROFILE_REPO | cut -c1-64"
-if [ "$STAGE" = validator ]; then
-  x "R 'sudo -n pft-seccomp audit; echo audit-exit=\$?'"
-  if ! { grep -qx "audit-exit=0" <<<"$XOUT" && grep -q "\[PASS\] container " <<<"$XOUT"; }; then
-    if [ "$PREFLIGHT_ONLY" = 1 ]; then echo "  sentry not enforced + clean yet (sentry stage first) - a real run would stop here"; NOT_READY=1
-    else echo "  sentry not enforced + clean yet - run the sentry stage first; stopping" >&2; exit 4; fi
-  fi
-  x "command -v pft-seccomp && systemctl is-active pft-seccomp.timer pft-seccomp-pull.timer"
-  [ "$XRC" = 0 ] || { echo "  pft-seccomp not installed on the validator (the sentry stage installs it) - stopping" >&2; exit 3; }
-fi
 sudo -n test -e "$MAINT_ENV" && { echo "  $MAINT_ENV exists (this runner expects it absent) - stopping" >&2; exit 3; }
 for f in $LOCAL_ENVS; do
   L "sudo -n test -f $f" || { echo "  local $f missing - stopping" >&2; exit 3; }
@@ -221,11 +211,11 @@ DOCKER="sudo -n docker" NTFY_ENV_FILE="$SEC/bridge.env" "$RUNSTACK" bridge 2>&1 
 check "Alertmanager bridge -> throwaway env file (0700 temp dir)" "$(ok_if '[ "$(bridge_src)" = "$SEC/bridge.env" ]')"
 [ "$FAILS" = 0 ] || exit 3
 ends="$(date -u -d "+$SIL_TTL min" +%FT%TZ)"
-SBODY="$(jq -nc --arg s "$(ts)" --arg e "$ends" --arg c "$TASK pft-seccomp live run $RUN stage $STAGE (planned re-creates/restarts)" \
+SBODY="$(jq -nc --arg s "$(ts)" --arg e "$ends" --arg c "$TASK pft-seccomp live run $RUN (planned re-creates/restarts of both nodes)" \
   '{matchers: [{name: "alertname", value: ".+", isRegex: true, isEqual: true}, {name: "alertname", value: "PFTAlertPipelineWatchdog|PFTSeccompDenied", isRegex: true, isEqual: false}], startsAt: $s, endsAt: $e, createdBy: "seccomp-live", comment: $c}')"
 SIL="$(curl -s --max-time 10 -H 'Content-Type: application/json' -X POST "$AM/api/v2/silences" -d "$SBODY" | jq -r '.silenceID // empty')"
 check "silence alertname=~\".+\", alertname!~\"PFTAlertPipelineWatchdog|PFTSeccompDenied\" until $ends" "$(ok_if '[ -n "$SIL" ]')"
-x "sudo -n pft-maint start --ttl $TTL --reason '$TASK pft-seccomp live run $RUN stage $STAGE'"
+x "sudo -n pft-maint start --ttl $TTL --reason '$TASK pft-seccomp live run $RUN'"
 [ "$XRC" = 0 ] || { echo "  pft-maint start failed - stopping"; exit 4; }
 MAINT_STARTED=1
 w=0
@@ -233,16 +223,17 @@ until R "sudo -n pft-maint active" >/dev/null 2>&1; do w=$((w + 10)); [ "$w" -le
 R "sudo -n pft-maint active" >/dev/null 2>&1; check "sentry has the window (via the watchdog channel) after ${w}s" "$?"
 [ "$FAILS" = 0 ] || exit 4
 
-echo; echo "== 1b. reset: an apply an earlier run left in place on the $STAGE is rolled back first"
-sf="/var/lib/pft-seccomp/apply-$(cn "$SH").json"
-if on "$SH" "command -v pft-seccomp >/dev/null && sudo -n test -f $sf" && [ "$(on "$SH" "sudo -n jq -r '.rolled_back // false' $sf")" = false ]; then
-  x "on $SH 'sudo -n pft-seccomp rollback --yes'"; started
-  check "$STAGE: rollback of the earlier apply -> PASS" "$(ok_if '[ "$XRC" = 0 ]')"
-else echo "  $STAGE: no apply in place (nothing to reset)"; fi
+echo; echo "== 1b. reset: an apply an earlier run left in place is rolled back first"
+for h in relay local; do
+  sf="/var/lib/pft-seccomp/apply-$(cn "$h").json"
+  if on "$h" "command -v pft-seccomp >/dev/null && sudo -n test -f $sf" && [ "$(on "$h" "sudo -n jq -r '.rolled_back // false' $sf")" = false ]; then
+    x "on $h 'sudo -n pft-seccomp rollback --yes'"; started
+    check "$(lb "$h"): rollback of the earlier apply -> PASS" "$(ok_if '[ "$XRC" = 0 ]')"
+  else echo "  $(lb "$h"): no apply in place (nothing to reset)"; fi
+done
 [ "$FAILS" = 0 ] || { echo "  reset failed - stopping"; exit 4; }
 
-if [ "$STAGE" = sentry ]; then
-  echo; echo "== 2. install (sentry, validator, the validator's pull of the sentry file)"
+echo; echo "== 2. install (sentry, validator, the validator's pull of the sentry file)"
   x "git archive $SHA_HEAD seccomp | R 'rm -rf $RDIR && mkdir -m 700 $RDIR && tar -x -C $RDIR'"
   x "R 'sudo -n bash $RDIR/seccomp/install.sh --host sentry'"
   check "sentry install exit 0, first audit textfile valid" "$(ok_if '[ "$XRC" = 0 ] && grep -q "pft_seccomp_findings{host=\"sentry\"}" <<<"$XOUT"')"
@@ -255,19 +246,22 @@ if [ "$STAGE" = sentry ]; then
   x "grep -n seccomp.rules.yml alerts/prometheus.yml; sudo -n docker kill -s HUP pft-prometheus >/dev/null && sleep 30 && curl -s $PROM/api/v1/rules | jq -r '.data.groups[] | select(.name == \"pft-seccomp\") | .rules[] | [.name, .health] | @tsv'"
   check "PFTSeccompDrift + PFTSeccompDenied loaded, health ok" "$(ok_if 'grep -qE "^PFTSeccompDrift	ok" <<<"$XOUT" && grep -qE "^PFTSeccompDenied	ok" <<<"$XOUT"')"
   [ "$FAILS" = 0 ] || { echo "  install failed - stopping before any node change"; exit 4; }
-fi
 
-echo; echo "== 3. $STAGE: profile copy, host-run pre"
 x "sudo -n install -d -m 700 /var/lib/pft-seccomp && git show $SHA_HEAD:$PROFILE_REPO | sudo -n sh -c 'umask 022; cat > $P1' && git show $SHA_HEAD:$PROFILE_REPO | R 'sudo -n install -d -m 700 /var/lib/pft-seccomp && sudo -n sh -c \"umask 022; cat > $P1\"' && sudo -n cat $P1 | sha256sum | cut -c1-64; R 'sudo -n cat $P1 | sha256sum | cut -c1-64'; sha256sum < $PROFILE_REPO | cut -c1-64"
 check "profile copied from the pinned tree, sha256 identical on both hosts and in the repo" \
   "$(ok_if '[ "$XRC" = 0 ] && [ "$(sort -u <<<"$XOUT" | wc -l)" = 1 ] && [ "$(wc -l <<<"$XOUT")" = 3 ]')"
 [ "$FAILS" = 0 ] || { echo "  profile copy failed - stopping before any node change"; exit 4; }
-if [ "$STAGE" = sentry ]; then HR="R 'sudo -n bash $RDIR/seccomp/drill/host-run.sh sentry"; else HR="L 'sudo -n bash seccomp/drill/host-run.sh validator"; fi
+
+stage_run() { # STAGE: steps 3-6 on one host
+STAGE="$1"; local F0="$FAILS"
+if [ "$STAGE" = sentry ]; then SH=relay; DRILLF=--drill; HR="R 'sudo -n bash $RDIR/seccomp/drill/host-run.sh sentry"
+else SH=local; DRILLF=""; HR="L 'sudo -n bash seccomp/drill/host-run.sh validator"; fi
+echo; echo "== 3. $STAGE: host-run pre"
 started
 x "$HR pre --profile $P1 $DRILLF'"
 started
 check "$STAGE host-run pre RESULT: PASS" "$(ok_if '[ "$XRC" = 0 ] && grep -q "^RESULT: PASS" <<<"$XOUT"')" "$(grep -c '^PASS ' <<<"$XOUT") PASS, $(grep -c '^FAIL ' <<<"$XOUT") FAIL"
-[ "$XRC" = 0 ] || { echo "  $STAGE pre did not pass - stopping (the EXIT trap restores notifiers; the host-run/apply rollbacks own the node)"; exit 1; }
+[ "$XRC" = 0 ] || { echo "  $STAGE pre did not pass - stopping (the EXIT trap restores notifiers; the host-run/apply rollbacks own the node)"; return 1; }
 
 echo; echo "== 4. alert drill: the negative-control denials (not yet acknowledged) -> PFTSeccompDenied{host=$STAGE}"
 t_det="$(date -u +%s)"
@@ -309,9 +303,13 @@ while :; do
 done
 check "PFTSeccompDenied{host=$STAGE} gone from Prometheus" "$(ok_if '[ -z "$F" ]')"
 check "[RESOLVED] PFTSeccompDenied naming $STAGE delivered to the throwaway topic" "$(ok_if '[ "$nr" -ge 1 ]')" "$nr, $(( $(date -u +%s) - t_rec ))s"
+[ "$FAILS" = "$F0" ]
+}
+stage_run sentry || { echo "  sentry canary did not pass - validator NOT changed; stopping"; exit 1; }
+stage_run validator || { echo "  validator stage did not pass - stopping"; exit 1; }
 
 echo; echo "== 7. hold: $HOLD min under enforcement, both nodes polled every $POLL min"
-echo "  columns: time | per host: state peers stored-profile unacknowledged-denials(24h)"
+echo "  columns: time | per host: state peers container-check unacknowledged-denials(24h)"
 t_hold="$(date -u +%s)"; HBAD=0; NPOLL=0
 while :; do
   line="$(ts)"
@@ -321,30 +319,27 @@ while :; do
     cs="$(jq -r '.checks[] | select(.check == "container") | .status' <<<"$a" 2>/dev/null)"; d="$(jq -r '.denied_events // "?"' <<<"$a" 2>/dev/null)"
     line+=" | $(lb "$h") $s $p container=${cs:-n/a} denied=${d:-?}"
     [ "$s" = full ] && [ "${p:-0}" -ge 5 ] 2>/dev/null || HBAD=$((HBAD + 1))
-    { [ "$h" = "$SH" ] || [ "$STAGE" = validator ]; } && { [ "$cs" = PASS ] && [ "$d" = 0 ] || HBAD=$((HBAD + 1)); }
+    [ "$cs" = PASS ] && [ "$d" = 0 ] || HBAD=$((HBAD + 1))
   done
   echo "  $line"; NPOLL=$((NPOLL + 1))
   [ $(( $(date -u +%s) - t_hold )) -ge $(( HOLD * 60 )) ] && break
   sleep $(( POLL * 60 ))
 done
-check "hold ${HOLD} min: every poll full, peers >= 5, enforced host(s) container PASS + 0 denials" "$(ok_if '[ "$HBAD" = 0 ]')" "$NPOLL polls, $HBAD bad"
+check "hold ${HOLD} min: every poll, both hosts: full, peers >= 5, container PASS, 0 denials" "$(ok_if '[ "$HBAD" = 0 ]')" "$NPOLL polls, $HBAD bad"
 x "curl -s $PROM/api/v1/query --data-urlencode 'query=min_over_time(pft_statewatch_up[${HOLD}m])' | jq -r '.data.result[] | \"\(.metric.container) \(.value[1])\"'"
 
 echo; echo "== 8. metrics + baselines"
 x "on relay 'sudo -n systemctl start pft-seccomp.service' && sudo -n systemctl start pft-seccomp.service pft-seccomp-pull.service; grep -hE '^pft_seccomp_(findings|denied_events)' /var/lib/pft-exporter/textfile/pft_seccomp_*.prom"
 x "sleep 45; curl -s $PROM/api/v1/query --data-urlencode 'query=pft_seccomp_findings' | jq -r '.data.result[] | \"\(.metric.host) \(.value[1])\"' | sort"
-if [ "$STAGE" = validator ]; then check "Prometheus: pft_seccomp_findings 0 for sentry and validator" "$(ok_if '[ "$(grep -cE "^(sentry|validator) 0$" <<<"$XOUT")" = 2 ]')"
-else check "Prometheus: pft_seccomp_findings 0 for sentry" "$(ok_if 'grep -qE "^sentry 0$" <<<"$XOUT"')"; fi
+check "Prometheus: pft_seccomp_findings 0 for sentry and validator" "$(ok_if '[ "$(grep -cE "^(sentry|validator) 0$" <<<"$XOUT")" = 2 ]')"
 x "curl -s $PROM/api/v1/query --data-urlencode 'query=ALERTS{alertname=~\"PFTSeccomp.*\"}' | jq -r '.data.result | length'"
 check "no PFTSeccomp* alert pending or firing" "$(ok_if '[ "$XOUT" = 0 ]')"
 x "sudo -n pft-integrity verify | grep -E '^(  \[(WARN|FAIL)\]|RESULT)' | sed -E 's/ +sha256.*//' | head -20"
-x "sudo -n pft-integrity accept --reason '$TASK: pft-seccomp $SHORT stage $STAGE (script, lib, units, env, rulecheck.conf, profile, compose override)' | tail -2"
+x "sudo -n pft-integrity accept --reason '$TASK: pft-seccomp $SHORT installed + applied (script, lib, units, env, rulecheck.conf, profile, compose override)' | tail -2"
 x "R 'sudo -n pft-integrity verify' | grep -E '^(  \[(WARN|FAIL)\]|RESULT)' | sed -E 's/ +sha256.*//' | head -20"
-x "R \"sudo -n pft-integrity accept --reason '$TASK: pft-seccomp $SHORT stage $STAGE (script, lib, units, env, rulecheck.conf, profile, container)'\" | tail -2"
-if [ "$STAGE" = sentry ]; then
-  x "sudo -n pft-fleet sync --addon fleet --to $SHA_HEAD --apply --reason '$TASK seccomp manifest lines'"
-  check "fleet sync of the manifest exit 0" "$XRC"
-fi
+x "R \"sudo -n pft-integrity accept --reason '$TASK: pft-seccomp $SHORT installed + applied (script, lib, units, env, rulecheck.conf, profile, container)'\" | tail -2"
+x "sudo -n pft-fleet sync --addon fleet --to $SHA_HEAD --apply --reason '$TASK seccomp manifest lines'"
+check "fleet sync of the manifest exit 0" "$XRC"
 x "sudo -n pft-fleet skew"
 check "pft-fleet skew exit 0, seccomp CURRENT on both hosts" "$(ok_if '[ "$XRC" = 0 ] && [ "$(grep -cE "^ *(validator|sentry) +seccomp +CURRENT" <<<"$XOUT")" = 2 ]')"
 x "sudo -n systemctl start pft-rulecheck.service; sudo -n journalctl -u pft-rulecheck.service --since -1min --no-pager -o cat | grep -E '^RESULT '"
@@ -379,5 +374,5 @@ for h in relay local; do
   s="$(node_state "$h")"
   check "$(cn "$h") full at the end" "$(case "$s" in full|proposing) echo 0 ;; *) echo 1 ;; esac)" "$s"
 done
-echo; echo "live-run $STAGE done $(ts): $FAILS check(s) failed -> $([ "$FAILS" = 0 ] && echo PASS || echo FAIL)"
+echo; echo "live-run done $(ts): $FAILS check(s) failed -> $([ "$FAILS" = 0 ] && echo PASS || echo FAIL)"
 [ "$FAILS" = 0 ]
