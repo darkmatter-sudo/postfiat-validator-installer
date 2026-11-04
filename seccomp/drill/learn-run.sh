@@ -21,7 +21,14 @@ echo "# audit after: $(auditctl -s | grep -E '^(enabled|lost|backlog_limit) ' | 
 echo "# leftover throwaways: $(docker ps -a --format '{{.Names}}' | grep -c '^pftsc-learn-')"
 [ "$rc" = 0 ] || { echo "RESULT: FAIL - learn exit $rc"; exit 1; }
 echo; echo "== offline: generate, check, diff (from $OUT)"
-x bash "$T" generate --learn "$OUT" > "$OUT/profile.json" && echo "  profile sha256 $(sha256sum < "$OUT/profile.json" | cut -c1-64), canonical (docker-stored) sha256 $(python3 -I "$D/pft_seccomp.py" canon "$OUT/profile.json")"
-x bash "$T" check "$OUT/profile.json"
-x bash "$T" diff --learn "$OUT" > "$OUT/diff.tsv"; grep -v 'never observed' "$OUT/diff.tsv"; tail -1 "$OUT/diff.tsv"
+# generate/diff write their files directly: x() prints "$ cmd" / "(exit N)" on stdout, which a redirect would capture
+# into the file (recorded run 20261104T013423Z: profile.json started with the "$ bash ..." line and failed check).
+echo "\$ bash $T generate --learn $OUT > $OUT/profile.json"
+bash "$T" generate --learn "$OUT" > "$OUT/profile.json"; g=$?; echo "(exit $g)"
+echo "  profile sha256 $(sha256sum < "$OUT/profile.json" | cut -c1-64), canonical (docker-stored) sha256 $(python3 -I "$D/pft_seccomp.py" canon "$OUT/profile.json" 2>&1 | tail -1)"
+x bash "$T" check "$OUT/profile.json"; k=$?
+echo "\$ bash $T diff --learn $OUT > $OUT/diff.tsv"
+bash "$T" diff --learn "$OUT" > "$OUT/diff.tsv"; d=$?; echo "(exit $d)"
+grep -v 'never observed' "$OUT/diff.tsv"; tail -1 "$OUT/diff.tsv"
+[ "$g$k$d" = 000 ] || { echo "RESULT: FAIL - offline step failed (generate $g, check $k, diff $d)"; exit 1; }
 echo "RESULT: PASS - learn done, profile generated"

@@ -315,6 +315,22 @@ mk compose; ENV0="$(cat "$A/root/opt/postfiatd/.env")"; touch "$A/d/fail_compose
 mk compose; PFT_SC_INJECT=health run apply --profile-file "$PROFILE" --yes
 [ "$RC" = 1 ] && [ "$(scopt)" = none ] && grep -q 'rollback RESULT: PASS' <<<"$OUT" && ok "auto compose: injected failure rolled back" || ko "auto compose inject: rc=$RC" "$OUT"
 
+# ---- generate/diff over two learn dirs (validator + sentry) ---------------------------------------------
+run diff --learn "$FIX/learn" --learn "$FIX/learn2"
+r="$(jq -r '.read' "$FIX/learn/census.json")"
+grep -qP "^read\tallow\tallow\tcensus $((r + 5))$" <<<"$OUT" && ok "merge: census counts summed (read $r + 5)" || ko "merge: read" "$(grep '^read' <<<"$OUT")"
+grep -qP '^setpriority\tallow\tallow\tSCMP_ACT_LOG record' <<<"$OUT" && ok "merge: the second dir's LOG events count" || ko "merge: events" "$(grep '^setpriority' <<<"$OUT")"
+grep -qP '^mremap\tallow\tallow\tcensus 7$' <<<"$OUT" && ok "merge: a census-only name from the second dir kept" || ko "merge: mremap" "$(grep '^mremap' <<<"$OUT")"
+run generate --learn "$FIX/learn" --learn "$FIX/learn2"; G1="$OUT"; run generate --learn "$FIX/learn2" --learn "$FIX/learn"
+[ "$G1" = "$OUT" ] && ok "merge: order of --learn does not change the profile" || ko "merge: order" "$(diff <(echo "$G1") <(echo "$OUT") | head)"
+run generate --learn "$FIX/learn" --learn "$FIX/learn"
+[ "$RC" = 0 ] && [ "$OUT" = "$(cat "$PROFILE")" ] && ok "merge: the same dir twice = that dir alone" || ko "merge: same dir twice rc=$RC" "$OUT"
+mkdir -p "$T/l3"; cp "$FIX/learn2/census.json" "$T/l3/"; jq '.caps = "CAP_SETGID,CAP_SETUID,CAP_NET_RAW"' "$FIX/learn2/meta.json" > "$T/l3/meta.json"
+run generate --learn "$FIX/learn" --learn "$T/l3"
+[ "$RC" = 2 ] && grep -q 'learn dirs differ in caps' <<<"$OUT" && ok "merge: dirs with different caps refused" || ko "merge: caps rc=$RC" "$OUT"
+run generate --learn "$FIX/learn" --learn "$T"
+[ "$RC" = 2 ] && grep -q 'no census.json' <<<"$OUT" && ok "merge: dir without census refused" || ko "merge: no census rc=$RC" "$OUT"
+
 # ---- helper unit tests -----------------------------------------------------------------------------------
 if python3 -I "$HERE/test_pft_seccomp.py" > "$T/unit.log" 2>&1; then ok "helper unit tests: $(grep -oE '^Ran [0-9]+ tests' "$T/unit.log")"
 else ko "helper unit tests" "$(tail -30 "$T/unit.log")"; fi

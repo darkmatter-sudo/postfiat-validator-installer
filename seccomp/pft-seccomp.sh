@@ -4,8 +4,8 @@
 # Profile math lives in pft_seccomp.py (stdlib); this script runs containers, bpftrace and the audit log.
 #
 # Usage: sudo pft-seccomp learn --out DIR [--minutes N] [--phase census|log|both]   (throwaway containers only)
-#        pft-seccomp generate --learn DIR [--margin FILE]     (final profile JSON on stdout)
-#        pft-seccomp diff --learn DIR [--margin FILE]         (per-syscall table vs Docker's default, TSV)
+#        pft-seccomp generate --learn DIR [--learn DIR2] [--margin FILE]   (final profile JSON on stdout)
+#        pft-seccomp diff --learn DIR [--learn DIR2] [--margin FILE]       (per-syscall table vs Docker's default, TSV)
 #        pft-seccomp check FILE                               (structural checks, exit 1 + reason)
 #        pft-seccomp audit [--json] [--prom FILE | --textfile] [--since SEC]   (read-only)
 #        sudo pft-seccomp apply --profile-file FILE --yes     (inside a pft-maint window)
@@ -112,7 +112,7 @@ MIN_PEERS="${MIN_PEERS:-1}"
 INJECT="${PFT_SC_INJECT:-}" # "health": apply's gate fails (live automatic-rollback drill)
 NOJ='{}'
 TABLE_TMP="$(mktemp "${TMPDIR:-/tmp}/pft-seccomp-table.XXXXXX")" || { echo "pft-seccomp: mktemp failed" >&2; exit 2; }
-trap 'rm -f "$TABLE_TMP"' EXIT
+trap 'rm -f "$TABLE_TMP" "$TABLE_TMP.census.json" "$TABLE_TMP.events.tsv"' EXIT
 
 die() { echo "pft-seccomp: $1" >&2; exit "${2:-2}"; }
 now() { echo "${PFT_SC_NOW:-$(date +%s)}"; }
@@ -363,11 +363,24 @@ do_learn() { # OUT MIN PHASE
   echo "$(ts) learn: done -> $d"
 }
 
-learn_inputs() { # DIR -> helper args for generate/diff
-  [ -s "$1/census.json" ] || die "no census.json in $1" 2
-  printf '%s\n' --docker "$DOCKER_PROFILE" --table "$(table_file)" --census "$1/census.json" \
-    --caps "$(jq -r '.caps' "$1/meta.json" 2>/dev/null || echo CAP_SETGID,CAP_SETUID)"
-  [ -s "$1/events.tsv" ] && printf '%s\n' --events "$1/events.tsv"
+learn_inputs() { # DIR... -> helper args for generate/diff. Several learn dirs (same image + caps, e.g. the validator's
+  # and the sentry's): census counts are summed and events concatenated, so one profile covers both hosts.
+  local d c c0="" cen ev cs=() es=()
+  for d in "$@"; do
+    [ -s "$d/census.json" ] || die "no census.json in $d" 2
+    c="$(jq -r '.caps' "$d/meta.json" 2>/dev/null || echo CAP_SETGID,CAP_SETUID)"
+    [ -z "$c0" ] || [ "$c" = "$c0" ] || die "learn dirs differ in caps ($c0 vs $c)" 2
+    c0="$c"; cs+=("$d/census.json"); [ -s "$d/events.tsv" ] && es+=("$d/events.tsv")
+  done
+  if [ $# -eq 1 ]; then cen="${cs[0]}"; ev="${es[0]:-}"
+  else
+    cen="$TABLE_TMP.census.json"; ev=""
+    jq -S -s 'reduce .[] as $c ({}; reduce ($c | to_entries[]) as $e (.; .[$e.key] += $e.value))' "${cs[@]}" > "$cen" \
+      || die "cannot merge the census files" 2
+    if [ ${#es[@]} -gt 0 ]; then ev="$TABLE_TMP.events.tsv"; cat -- "${es[@]}" > "$ev" || die "cannot merge the events files" 2; fi
+  fi
+  printf '%s\n' --docker "$DOCKER_PROFILE" --table "$(table_file)" --census "$cen" --caps "$c0"
+  [ -n "$ev" ] && printf '%s\n' --events "$ev"
   [ -n "$MARGIN" ] && printf '%s\n' --margin "$MARGIN"
   return 0
 }
@@ -801,14 +814,14 @@ do_rollback() { # auto|manual: undo the last apply from the state file
 
 # ---------------------------------------------------------------------------------------------------- main
 cmd="${1:-}"; shift || true
-ARG=""; ARG2=""; OUT=""; MIN=65; PHASE=both; LD=""; JSON=0; PROM=""; SINCE=86400; YES=0; PF=""; UNTIL=""; REASON=""
+ARG=""; ARG2=""; OUT=""; MIN=65; PHASE=both; LDS=(); JSON=0; PROM=""; SINCE=86400; YES=0; PF=""; UNTIL=""; REASON=""
 MARGIN="$( [ -r "$HERE/margin.tsv" ] && echo "$HERE/margin.tsv" || { [ -r "$LIB/margin.tsv" ] && echo "$LIB/margin.tsv"; } )"
 while [ $# -gt 0 ]; do
   case "$1" in
     --out) OUT="${2:-}"; [ -n "$OUT" ] || die "--out needs a directory" 3; shift ;;
     --minutes) MIN="${2:-}"; [[ "$MIN" =~ ^[0-9]+$ ]] || die "--minutes needs a number" 3; shift ;;
     --phase) PHASE="${2:-}"; [[ "$PHASE" =~ ^(census|log|both)$ ]] || die "--phase census|log|both" 3; shift ;;
-    --learn) LD="${2:-}"; [ -d "$LD" ] || die "--learn needs a learn directory" 3; shift ;;
+    --learn) [ -d "${2:-}" ] || die "--learn needs a learn directory" 3; LDS+=("$2"); shift ;;
     --margin) MARGIN="${2:-}"; [ -r "$MARGIN" ] || die "--margin: cannot read $MARGIN" 3; shift ;;
     --json) JSON=1 ;;
     --prom) PROM="${2:-}"; [ -n "$PROM" ] || die "--prom needs a file" 3; shift ;;
@@ -826,8 +839,9 @@ done
 case "$cmd" in
   learn) [ -n "$OUT" ] || die "usage: pft-seccomp learn --out DIR [--minutes N] [--phase census|log|both]" 3
          do_learn "$OUT" "$MIN" "$PHASE"; exit $? ;;
-  generate|diff) [ -n "$LD" ] || die "usage: pft-seccomp $cmd --learn DIR [--margin FILE]" 3
-         mapfile -t GA < <(learn_inputs "$LD"); py "$cmd" "${GA[@]}"; exit $? ;;
+  generate|diff) [ ${#LDS[@]} -gt 0 ] || die "usage: pft-seccomp $cmd --learn DIR [--learn DIR2] [--margin FILE]" 3
+         GA="$(learn_inputs "${LDS[@]}")" || exit $?
+         mapfile -t GA <<<"$GA"; py "$cmd" "${GA[@]}"; exit $? ;;
   check) [ -n "$ARG" ] || die "usage: pft-seccomp check FILE" 3
          py check "$ARG" --table "$(table_file)"; exit $? ;;
   audit)
