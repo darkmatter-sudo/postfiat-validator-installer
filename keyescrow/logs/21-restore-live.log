@@ -1,0 +1,242 @@
+pft-keyescrow restore drill (sentry node_seed, identity kept) - 2026-11-04T00:17:42Z - Ubuntu 22.04.5 LTS - run 20261104T001742Z
+repo HEAD e9887f53408a4dd31a5035d3192367c9eece2666
+sha256: restore-run.sh 8d9e34e81813e82367e85f03c97fe7cab5425bbacacacfa8f51aea503bf77bf2
+        repo pft-keyescrow.sh be558e05196f9ee5b65f1758f3a1b699a4a33964bd142f3b3c881584b18ab686 keyescrow_tar.py 45d0bbeaf7728564159440690d88f493e5be9eedd89423825b87edd8143286f2
+        installed validator be558e05196f9ee5b65f1758f3a1b699a4a33964bd142f3b3c881584b18ab686 45d0bbeaf7728564159440690d88f493e5be9eedd89423825b87edd8143286f2
+        installed sentry    be558e05196f9ee5b65f1758f3a1b699a4a33964bd142f3b3c881584b18ab686 45d0bbeaf7728564159440690d88f493e5be9eedd89423825b87edd8143286f2
+        redact.py f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8
+
+== 0. preflight (nothing changed yet)
+$ R 'sudo -n pft-maint lock list'
+  no data-collection locks
+  (exit 0)
+CHECK ok   0 no data-collection lock on the sentry (restart-node would refuse)
+  pft-maint: no window on either host; notifier env files present, no leftovers, /etc/pft-maint/ntfy.env absent
+  bridge mounts the operator env file: yes
+  operator topics to watch: 2 (not printed)
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+  postfiatd-sentry: server_state=full
+  postfiatd: server_state=full
+  pft-integrity local: RESULT: PASS - 160 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity relay: RESULT: PASS - 94 unchanged, 0 warn, 0 fail -> exit 0
+  literals for redaction: 3 ip, 4 key, 3 topic, 1 user (values not printed)
+$ redact.py control --literals <literals>
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (20/20)
+$ sudo -n /usr/local/bin/pft-keyescrow verify --all | tail -1; R 'sudo -n /usr/local/bin/pft-keyescrow verify --all' | tail -1
+  RESULT: 3 generation(s) checked, 0 failed -> exit 0
+  RESULT: 3 generation(s) checked, 0 failed -> exit 0
+  (exit 0)
+CHECK ok   0 verify --all exit 0 on both hosts
+$ sudo -n pft-cluster audit | tail -1; R 'sudo -n pft-cluster audit' | tail -1
+  RESULT: PASS
+  RESULT: PASS
+  (exit 0)
+CHECK ok   0 pft-cluster audit PASS on both hosts
+  sentry /var/lib/pft-cluster/node_seed: 600 root:root, sha256 tag 0f674e4418ec; pubkey_node tag edd311a41c9a (HMAC, per-run key)
+$ sudo -n /usr/local/bin/pft-keyescrow restore --host sentry --item cluster:node_seed --dry-run
+  pft-keyescrow restore - 2026-11-04T00:18:33Z | target sentry | gen latest | DRY RUN
+  == validator re-encrypts its held copy of sentry to sentry's current recipient; sentry applies
+    item cluster:node_seed unchanged
+  APPLY host=sentry gen=20261103T214449Z items=1 DRY RUN
+  RESTORE DRY RUN on sentry
+    reseal:     item cluster:node_seed ok
+    reseal:     item cluster:fp_key ok
+    reseal:     item cluster:env ok
+    reseal:     item logship:env ok
+    reseal:     item logship:host_key ok
+    reseal:     item journald:fss ok
+    reseal:     item alertpath:hmac ok
+    reseal:     item watchdog:hmac ok
+    reseal:     item ntfy:alertpath ok
+    reseal:     item ntfy:watchdog ok
+    reseal:   CHECK host=sentry gen=20261103T214449Z items=10 ok=10 bad=0
+    reseal: VERIFIED from=sentry gen=20261103T214449Z items=10
+  RESULT: PASS - restore on sentry
+  (exit 0)
+CHECK ok   0 restore --dry-run of cluster:node_seed from the validator's newest held generation: PASS, item unchanged
+
+== 1. redirect notifiers + bridge + pft-maint env, silence everything except the watchdog, maintenance window
+  local:/etc/postfiat-monitor.env sha256 6dc3b10fb491 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/postfiat-monitor.env.pre-keyescrow-restore
+  local:/etc/pft-integrity.env sha256 b3cd1c3da7ff -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-integrity.env.pre-keyescrow-restore
+  relay:/etc/pft-watchdog/ntfy.env sha256 ddb52721a668 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-watchdog/ntfy.env.pre-keyescrow-restore
+  relay:/etc/pft-integrity.env sha256 cdd330a974d2 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-integrity.env.pre-keyescrow-restore
+  relay:/etc/pft-alertpath/ntfy.env sha256 ddb52721a668 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-alertpath/ntfy.env.pre-keyescrow-restore
+CHECK ok   /etc/pft-maint/ntfy.env created with the throwaway topic (0600)
+  2026-11-04T00:18:49Z starting pft-alert-bridge (ntfy: on)
+  2026-11-04T00:18:53Z pft-alert-bridge listening
+  bridge -> https://ntfy.sh/<redacted> (throwaway env file in a 0700 temp dir)
+  silence alertname=~".+", alertname!~"PFTAlertPipelineWatchdog" until 2026-11-04T01:18:54Z (id 62b78123)
+$ sudo -n pft-maint start --ttl 45m --reason 'task_2361bde7 pft-keyescrow restore drill 20261104T001742Z'
+  window started: id m1793751534-2344111 until 2026-11-04T01:03:54Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   sentry has the window (via the watchdog channel) after 50s
+== 2. loss: move the sentry's pinned seed into a 0700 drill dir, then restore it from the validator's escrow
+$ R 'sudo -n sh -c "umask 077; mkdir /var/lib/pft-keyescrow/drill-restore-20261104T001742Z && mv /var/lib/pft-cluster/node_seed /var/lib/pft-keyescrow/drill-restore-20261104T001742Z/node_seed" && sudo -n test ! -e /var/lib/pft-cluster/node_seed && echo seed file gone'
+  seed file gone
+  (exit 0)
+CHECK ok   2a L1 seed file gone from /var/lib/pft-cluster/node_seed (moved, not deleted)
+$ R 'sudo -n pft-cluster audit' | grep -E '^ *\[(FAIL|WARN)\]|^RESULT'
+    [FAIL] seed:stored        no pinned seed (run: sudo pft-cluster keygen)
+    [FAIL] cfg:node_seed      [node_seed] differs from the stored seed
+  RESULT: FAIL - 2 finding(s)
+  (exit 1)
+CHECK ok   2b pft-cluster audit on the sentry now FAILs seed:stored
+$ sudo -n /usr/local/bin/pft-keyescrow restore --host sentry --item cluster:node_seed --dry-run
+  pft-keyescrow restore - 2026-11-04T00:19:55Z | target sentry | gen latest | DRY RUN
+  == validator re-encrypts its held copy of sentry to sentry's current recipient; sentry applies
+    item cluster:node_seed would be restored (was absent)
+  APPLY host=sentry gen=20261103T214449Z items=1 DRY RUN
+  RESTORE DRY RUN on sentry
+    reseal:     item cluster:node_seed ok
+    reseal:     item cluster:fp_key ok
+    reseal:     item cluster:env ok
+    reseal:     item logship:env ok
+    reseal:     item logship:host_key ok
+    reseal:     item journald:fss ok
+    reseal:     item alertpath:hmac ok
+    reseal:     item watchdog:hmac ok
+    reseal:     item ntfy:alertpath ok
+    reseal:     item ntfy:watchdog ok
+    reseal:   CHECK host=sentry gen=20261103T214449Z items=10 ok=10 bad=0
+    reseal: VERIFIED from=sentry gen=20261103T214449Z items=10
+  RESULT: PASS - restore on sentry
+  (exit 0)
+CHECK ok   2c restore --dry-run: the item would be written, nothing written
+$ sudo -n /usr/local/bin/pft-keyescrow restore --host sentry --item cluster:node_seed --yes
+  pft-keyescrow restore - 2026-11-04T00:19:59Z | target sentry | gen latest
+  == validator re-encrypts its held copy of sentry to sentry's current recipient; sentry applies
+    item cluster:node_seed restored (was absent) (mode 600, backup none)
+  APPLY host=sentry gen=20261103T214449Z items=1
+    after: [ok] cluster:node_seed mode 600, owner ok, group ok
+    after: [ok] cluster:fp_key mode 600, owner ok, group ok
+    after: [ok] cluster:env mode 600, owner ok, group ok
+    after: [ok] logship:env mode 600, owner ok, group ok
+    after: [ok] logship:host_key mode 640, owner ok, group ok
+    after: [ok] journald:fss mode 600, owner ok, group ok
+    after: [ok] alertpath:hmac mode 600, owner ok, group ok
+    after: [ok] watchdog:hmac mode 600, owner ok, group ok
+    after: [absent] ntfy:maint optional, not on this host
+    after: [ok] ntfy:alertpath mode 600, owner ok, group ok
+    after: [ok] ntfy:watchdog mode 600, owner ok, group ok
+  RESTORED on sentry
+    reseal:     item cluster:node_seed ok
+    reseal:     item cluster:fp_key ok
+    reseal:     item cluster:env ok
+    reseal:     item logship:env ok
+    reseal:     item logship:host_key ok
+    reseal:     item journald:fss ok
+    reseal:     item alertpath:hmac ok
+    reseal:     item watchdog:hmac ok
+    reseal:     item ntfy:alertpath ok
+    reseal:     item ntfy:watchdog ok
+    reseal:   CHECK host=sentry gen=20261103T214449Z items=10 ok=10 bad=0
+    reseal: VERIFIED from=sentry gen=20261103T214449Z items=10
+  RESULT: PASS - restore on sentry
+  (exit 0)
+CHECK ok   2d restore --yes: RESTORED on sentry, RESULT: PASS
+  restored /var/lib/pft-cluster/node_seed: 600 root:root, sha256 tag 0f674e4418ec
+$ R 'sudo -n cmp /var/lib/pft-keyescrow/drill-restore-20261104T001742Z/node_seed /var/lib/pft-cluster/node_seed && echo identical'
+  identical
+  (exit 0)
+CHECK ok   2e restored seed byte-identical to the moved original (cmp), sha256 equal to the pre-drill seed
+CHECK ok   2f restored seed mode/owner equal to the pre-drill file (600 root:root)
+$ R 'sudo -n pft-cluster audit' | grep -E '^ *\[(FAIL|WARN)\] |seed:stored|cfg:node_seed|^RESULT'
+    [PASS] seed:stored        seed 0600 in a 0700 dir; pinned key node:001a67fe0285
+    [PASS] cfg:node_seed      managed [node_seed] = stored seed
+  RESULT: PASS
+  (exit 0)
+CHECK ok   2g pft-cluster audit PASS on the sentry again (seed:stored, cfg:node_seed equal to the stored seed)
+
+== 3. restart postfiatd-sentry through pft-maint restart-node; identity must be unchanged
+$ R 'sudo -n env CONTAINER=postfiatd-sentry pft-maint restart-node'
+  pre:  server_state=full peers=11 validated=7741572 sentry_peered=0
+  restarted postfiatd-sentry at 2026-11-04T00:20:20Z; waiting up to 600s for full
+  full after 55s
+  restart-node PASS: server_state full after 55s; peers 11->11; sentry down (not peered before); validated 7741572->7741591
+  (exit 0)
+CHECK ok   3a pft-maint restart-node PASS on the sentry
+$ R 'sudo -n docker inspect -f "{{.State.StartedAt}} running={{.State.Running}}" postfiatd-sentry'
+  2026-11-04T00:20:22.716502475Z running=true
+  (exit 0)
+  postfiatd-sentry after restart: server_state=full, pubkey_node tag edd311a41c9a (before: edd311a41c9a)
+CHECK ok   3b pubkey_node after the restart == before the drill
+$ sudo -n pft-cluster audit | grep -E 'live:|^RESULT'; R 'sudo -n pft-cluster audit' | grep -E 'live:|^RESULT'
+    [PASS] live:pubkey        pubkey_node node:b708657d9318 = pinned key
+    [PASS] live:cluster       sentry node:001a67fe0285 is a loaded cluster member
+    [PASS] live:peer          sentry connected, cluster=true
+    [PASS] live:reports       cluster report from sentry 6 s ago (it counts this node as a member)
+  RESULT: PASS
+    [PASS] live:pubkey        pubkey_node node:001a67fe0285 = pinned key
+    [PASS] live:cluster       validator node:b708657d9318 is a loaded cluster member
+    [PASS] live:peer          validator connected, cluster=true
+    [PASS] live:reports       cluster report from validator 4 s ago (it counts this node as a member)
+  RESULT: PASS
+  (exit 0)
+CHECK ok   3c pft-cluster audit PASS on both hosts after the restart (0s)
+
+== 4. escrow units + verify after the restore
+$ R 'sudo -n /usr/local/bin/pft-keyescrow inventory' | grep -E 'cluster:node_seed|^RESULT'
+    [ok]       cluster:node_seed  escrow same  fp 1ef10044a19e727f mode 600, owner ok, group ok  (cluster/pft-cluster.sh:78)
+  RESULT: ok 10, perm 0, missing 0, unreadable 0, absent(optional) 1; escrow drift 2, new 0, evolving 1 -> exit 1
+  (exit 1)
+CHECK ok   4a sentry inventory: cluster:node_seed ok after the restore
+$ sudo -n /usr/local/bin/pft-keyescrow verify --all | tail -1; R 'sudo -n /usr/local/bin/pft-keyescrow verify --all' | tail -1
+  RESULT: 3 generation(s) checked, 0 failed -> exit 0
+  RESULT: 3 generation(s) checked, 0 failed -> exit 0
+  (exit 0)
+CHECK ok   4b verify --all exit 0 on both hosts
+
+== 5. restore, read back
+  seed file present (restored by the drill)
+  seed sha256 equals the pre-drill seed: yes
+  drill dir with the moved seed copy removed
+  $ sudo -n pft-maint end
+    window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+  removed /etc/pft-maint/ntfy.env (absent before the run)
+  restored local:/etc/postfiat-monitor.env: sha256 matches pre-drill copy: yes
+  restored local:/etc/pft-integrity.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-watchdog/ntfy.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-integrity.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-alertpath/ntfy.env: sha256 matches pre-drill copy: yes
+  2026-11-04T00:21:41Z starting pft-alert-bridge (ntfy: on)
+  2026-11-04T00:21:43Z pft-alert-bridge listening
+  restored bridge: mounts the operator env file again: yes
+  units re-run on the restored files: pft_keyescrow_drift_items 0 for 2/2 nodes (0s)
+  catch-all holds no other active alert (0s)
+  narrow silence alertname=PFTContainerRestarted until last node start + 25 min (1467s); expires by itself
+  catch-all silence expired: HTTP 200
+CHECK ok   env files byte-identical, bridge on the operator env, pft-maint env removed, window ended, seed in place, drill dir gone
+  throwaway topic: 2 message(s)
+    {"time":"2026-11-04T00:18:56Z","title":"[MAINT] start validator","message":"task_2361bde7 pft-keyescrow restore drill 20261104T001742Z | until 2026-11-04T01:03:54Z (ttl 2700s) | sentry copy: pushed"}
+    {"time":"2026-11-04T00:21:35Z","title":"[MAINT] end validator","message":"task_2361bde7 pft-keyescrow restore drill 20261104T001742Z | ended by operator after 159s | suppressed here: watchdog=0 monitor=0 integrity=0 | sentry copy: pushed"}
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the drill (2 topic(s), 0 with messages)
+  pft-integrity local: RESULT: PASS - 160 unchanged, 0 warn, 0 fail -> exit 0
+CHECK ok   pft-integrity PASS on local at the end
+  pft-integrity relay: RESULT: PASS - 94 unchanged, 0 warn, 0 fail -> exit 0
+CHECK ok   pft-integrity PASS on relay at the end
+CHECK ok   postfiatd-sentry full at the end (full)
+CHECK ok   postfiatd full at the end (full)
+
+restore-run done 2026-11-04T00:24:48Z: 0 check(s) failed -> PASS

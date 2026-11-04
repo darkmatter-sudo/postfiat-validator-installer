@@ -14,8 +14,8 @@ Status: steps 1-3 are done and tested offline (inventory, metrics, alert rules; 
 receive + in-memory verify, tamper detection, pft-maint-gated restore with backups; mutation runs). Step 4 so far:
 **installed on both hosts, live two-way escrow + verify PASS (logs 10, 12), pull of the sentry metrics, zero-leak
 check on both hosts, alert rules loaded (log 13), one-byte tamper drill on both holders with PFTKeyEscrowVerifyFailed
-FIRING -> RESOLVED on a throwaway topic and 0 operator messages (log 20)**. Still to come: the sentry node_seed restore
-keeping pubkey_node, and the first nightly timer run.
+FIRING -> RESOLVED on a throwaway topic and 0 operator messages (log 20), and the live sentry node_seed loss +
+restore + restart with pubkey_node unchanged (log 21)**. Still to come: the first nightly timer run.
 This README covers only what exists now.
 
 ## Inventory (read-only)
@@ -131,7 +131,7 @@ also rewrites the meta's hash, age's authentication fails on decrypt. Both cases
 `--textfile` writes `pft_keyescrow_held_generations`, `pft_keyescrow_held_newest_timestamp_seconds`,
 `pft_keyescrow_held_verify_ok` and `pft_keyescrow_verify_timestamp_seconds` (per `node`, `peer`).
 
-## Restore (offline-tested; live restore drill pending)
+## Restore (offline-tested; live drill on the sentry node seed: log 21)
 
 ```sh
 sudo pft-maint start --ttl 30m --reason "restore sentry node_seed"     # on the TARGET host
@@ -151,6 +151,16 @@ old identity is not needed. The target decrypts in memory and `keyescrow_tar.py 
   replaced. Same bytes with a wrong mode/owner only get the mode/owner fixed. Each file is written to a temp file
   in its own directory, fsynced, chowned/chmodded to the MANIFEST's uid/gid/mode, then renamed into place.
 - After applying, the inventory runs again and prints each item's state.
+
+Live drill (`drill/restore-run.sh`, log 21): the sentry's pinned seed (`/var/lib/pft-cluster/node_seed`) is moved into
+a 0700 drill dir, so `pft-cluster audit` on the sentry FAILs `seed:stored`; `restore --host sentry --item
+cluster:node_seed` (dry run, then `--yes` inside the window) writes it back byte-identical (cmp against the moved copy)
+with mode 600 root:root; then `pft-maint restart-node` (run on the sentry with `CONTAINER=postfiatd-sentry`) restarts
+the node and `pubkey_node` is the same as before the drill. postfiatd reads `[node_seed]` only at start, so the live
+identity never changed during the loss; the restart proves the restored state starts the same identity. Seed bytes and
+node keys are never printed: the drill compares them inside the script and prints HMAC tags under a per-run random key
+(equal tags = equal values). In restart-node's verdict line, `sentry down (not peered before)` is pft-maint's
+validator-side "is my sentry peered" field, which is always 0 when it runs on the sentry itself.
 
 ## Install
 
@@ -222,6 +232,7 @@ planted copy of the secret (`leaks 3  FAIL`, exit 1).
 | `logs/17-tamper-preflight.log` | `PREFLIGHT_ONLY=1 drill/tamper-run.sh` (nothing changed) | `0 check(s) failed` (last line) |
 | `logs/18-...-harness-fail.log`, `logs/19-...-harness-fail.log` | first two recorded tamper drills, superseded (annotated at the end of each) | 18: 3 FAIL (l.97, 99, 167): the validator's unit journal was read without sudo, and the drill left drift_items exported (fixed in a9d3801); 19: 1 FAIL (l.177): grep `VERIFY` cannot match `VERIFIED` (fixed in 162e4f3). In both, the alert fired and resolved for both pairs and the operator topics got 0 messages |
 | `logs/20-tamper-live.log` | one-byte tamper drill, both holders (`drill/tamper-run.sh`, sha256 in l.3 = the file at the pinned commit) | T1 validator-held copy: `flipped 1 byte at offset 10340 of 20680` (l.73), `ciphertext sha256 MISMATCH` (l.95); T2 sentry-held copy with the meta re-hashed: sha check passes, the in-memory decrypt fails `payload unreadable` (l.113); `restore --dry-run` refused from both tampered copies (l.128, l.139, check l.143); verify_ok 0 for both pairs (l.149); `PFTKeyEscrowVerifyFailed` firing for both (l.154-155) and `[FIRING]` on the throwaway topic for both (l.157-158); bytes put back byte-identical (l.166), VERIFIED again (l.178), `[RESOLVED]` for both (l.185-188), query_range first/last firing sample per pair (l.190-191); drift 0 after restore (l.206); operator topics 0 messages (l.218-220); integrity PASS, both nodes full, `verify --all` exit 0 (l.222-233); `0 check(s) failed -> PASS` (l.235) |
+| `logs/21-restore-live.log` | sentry node_seed loss + restore from the validator's escrow + guarded restart (`drill/restore-run.sh`, sha256 in l.3 = the file at the pinned commit) | preflight: no lock on the sentry (l.13), verify --all + cluster audit PASS both hosts (l.49, l.54), seed 600 root:root + tags (l.55), dry run `unchanged` (l.76); seed moved away (l.97), cluster audit FAILs seed:stored (l.103); dry run `would be restored (was absent)` (l.107, l.124); `restored (was absent) (mode 600, backup none)` (l.128), RESULT PASS (l.156); `cmp` identical + sha256 tag equal to l.55 (l.157-161); mode/owner equal (l.162); cluster audit PASS again (l.168); `restart-node PASS: server_state full after 55s` (l.175); pubkey_node tag after == before (l.181-182); cluster audit PASS both hosts (l.195); inventory `[ok] cluster:node_seed` (l.202); verify --all exit 0 both (l.207); everything restored (l.228); throwaway topic only `[MAINT]` start/end (l.229), operator topics 0 messages (l.232-234); integrity PASS + both nodes full (l.236-240); `0 check(s) failed -> PASS` (l.242). l.17 is an ssh notice on stderr (no tty), harmless |
 
 05a/05b are the raw harness output of dev passes (no header line); 05 is the recorded run. In 05, l.5 is
 `sha256sum` skipping the ignored `tests/__pycache__` directory (harmless).
