@@ -8,6 +8,7 @@ compose_base.json (what `docker compose up` creates before the override files ar
 started container gets a new State.Pid and $STUB_ROOT/proc/<pid>/status with "Seccomp: 2".
 Knobs (files in $STUB_DIR): rpc_bad_sc (containers whose seccomp option starts with this text, or "default" for
 none, answer server_state "connected"), drop_on_recreate (HostConfig key removed from every created container),
+label_on_recreate (every created container reports this AppArmor label, whatever its apparmor= option says),
 seccomp_ignored (every created container keeps Docker's default: the seccomp= option is dropped), nofilter
 (proc status says Seccomp: 0 for containers with a seccomp= option), fail_run, fail_compose_up (one-shot), fail_update, deny_on_exercise (run-parts appends a
 type=SECCOMP errno record with subj=<the container's AppArmor label> to $AUDIT_LOG), deny_on_addon (the same for
@@ -88,6 +89,9 @@ def after_create(c):
     k = knob("drop_on_recreate")
     if k:
         c["HostConfig"].pop(k, None)
+    k = knob("label_on_recreate")
+    if k:
+        c["AppArmorProfile"] = k
     if knob("seccomp_ignored") is not None:
         c["HostConfig"]["SecurityOpt"] = [
             o for o in c["HostConfig"]["SecurityOpt"] if not o.startswith("seccomp=")

@@ -341,12 +341,6 @@ MUTANTS = [
         "; s/([0-9]{1,3}\\.){3}[0-9]{1,3}/<redacted-ip>/g",
         "",
     ),
-    (
-        "M54",
-        "lx: exit code swallowed",
-        'rc=$?; echo "(exit $rc)"; return "$rc"; }',
-        'rc=$?; echo "(exit $rc)"; return 0; }',
-    ),
     # cpu weight / memory.low across compose re-creates
     (
         "M55",
@@ -386,7 +380,11 @@ MUTANTS = [
     ),
 ]
 # Equivalent mutants (no input can reach the difference) are documented here instead of counted.
-EQUIVALENT = []
+#  M54 lx "return $rc" -> "return 0": lx is used only in the exercise steps (exercise_addons, exercise, exercise_live,
+#      the throwaway restart/rm); every caller ignores their status on purpose (a failing exercise command is the
+#      signal the seccomp denial check reads, not an error), so no input can observe lx's return value. Survived in
+#      recorded run 09; removed from MUTANTS after that run. If a caller ever does `lx ... ||`, restore it with a test.
+EQUIVALENT = ["M54"]
 
 
 def run_suite(tool, timeout):

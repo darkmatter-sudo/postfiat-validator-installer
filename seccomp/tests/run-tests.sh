@@ -150,6 +150,8 @@ cp "$P" "$A/v"; echo 'node_load1 9' >> "$A/v"; run validate "$A/v" validator
 [ "$RC" = 2 ] && grep -q '1 unexpected lines' <<<"$OUT" && ok "validate: foreign metric rejected" || ko "validate foreign: rc=$RC" "$OUT"
 grep -v last_run "$P" > "$A/v"; run validate "$A/v" validator
 [ "$RC" = 2 ] && grep -q 'no last_run' <<<"$OUT" && ok "validate: no last_run rejected" || ko "validate last_run: rc=$RC" "$OUT"
+sed '0,/^pft_seccomp_check{host="validator"/s//pft_seccomp_check{host="sentry"/' "$P" > "$A/v"; run validate "$A/v" validator
+[ "$RC" = 2 ] && grep -q '1 unexpected lines' <<<"$OUT" && ok "validate: one sample with another host label rejected (last_run still ours)" || ko "validate mixed host: rc=$RC" "$OUT"
 # ack-denials
 run ack-denials --reason "drill negative controls"
 [ "$RC" = 4 ] && ok "ack without --yes: exit 4" || ko "ack no --yes: rc=$RC" "$OUT"
@@ -168,6 +170,9 @@ expect "ack to now: denials PASS" denials PASS
 echo '[1,2]' > "$A/root/var/lib/pft-seccomp/denials-ack.json"; run audit
 expect "malformed ack file: FAIL" denials-ack FAIL malformed
 expect "malformed ack file: every record counted again" denials WARN "3 seccomp denial"
+printf '{"until":%s}\n' "$NOW" > "$A/root/var/lib/pft-seccomp/denials-ack.json"; run audit
+expect "ack file without a reason: FAIL" denials-ack FAIL malformed
+expect "ack file without a reason: every record counted again" denials WARN "3 seccomp denial"
 # pull
 mk run applied; run audit --textfile; mv "$A/root/textfile/pft_seccomp_validator.prom" "$A/peer.prom"; sed -i 's/host="validator"/host="sentry"/' "$A/peer.prom"
 printf 'PULL_SSH=%s\n' "$A/s/fakessh" > "$A/root/etc/pft-seccomp.env"
@@ -294,6 +299,8 @@ grep -q 'confine changed: read_only' <<<"$OUT" && ok "auto: lost read-only named
 mk run; echo CpuShares > "$A/d/drop_on_recreate"; run apply --profile-file "$PROFILE" --yes
 grep -q 'confine changed: cpu_shares' <<<"$OUT" && ok "auto: lost cpu_shares named" || ko "auto: cpu_shares" "$OUT"; rm "$A/d/drop_on_recreate"; auto_rb "auto: lost cpu_shares (run path)"
 [ "$(cj "$CN" .HostConfig.CpuShares)" = 8192 ] && ok "auto: rolled-back sentry container keeps cpu_shares 8192" || ko "auto: cpu_shares after rollback" "$(cj "$CN" .HostConfig.CpuShares)"
+mk run; echo docker-default > "$A/d/label_on_recreate"; run apply --profile-file "$PROFILE" --yes
+grep -q 'confine changed: apparmor' <<<"$OUT" && ok "auto: AppArmor label lost on recreate named (security_opt unchanged)" || ko "auto: apparmor label" "$OUT"; rm "$A/d/label_on_recreate"; auto_rb "auto: lost AppArmor label"
 for m in run compose; do
   mk "$m"; touch "$A/d/seccomp_ignored"; run apply --profile-file "$PROFILE" --yes
   grep -q 'health FAIL .*seccomp default want sha256:' <<<"$OUT" && ok "auto $m: profile not taken named" || ko "auto $m: ignored" "$OUT"
