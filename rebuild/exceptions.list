@@ -18,3 +18,16 @@ cfgvol:postfiatd.cfg.pre-*        *   backup copies left in the config volume by
 sshd:sshd_config.d/50-cloud-init.conf  *   written by the cloud provider's cloud-init at first boot; the LXD ubuntu:22.04 image has no such file
 image:local:python:3.12-slim      *   unused image left by earlier test work on the live host (no container uses it: docker ps -a)
 image:local:pft-exporter:latest   *   unused image of the exporter's optional Dockerfile; the live exporter runs as the systemd unit
+# --- cross-host: add-ons whose apply needs the sentry as a peer (sandbox is one host, must not reach the live sentry) ---
+unit:pft-logship-*                *   logship apply pairs two hosts (mutual TLS keys + the peer's journal-remote); needs the sentry
+dropin:pft-logship-*              *   unitguard drop-in of a logship unit, and logship apply needs the sentry (no unit to guard)
+fw:ufw                            *   the only extra live rule is logship's 19532/tcp ALLOW from the sentry's address (logship apply, cross-host)
+unit:pft-keyescrow-escrow.*       *   install.sh --escrow-host runs a real escrow to the peer (age recipient + PEER_SSH of the sentry)
+unit-enabled:pft-keyescrow-escrow.*  *   install.sh --escrow-host runs a real escrow to the peer (age recipient + PEER_SSH of the sentry)
+file:/etc/systemd/system/pft-keyescrow-escrow.*  *   install.sh --escrow-host runs a real escrow to the peer (age recipient + PEER_SSH of the sentry)
+unit-enabled:pft-keyescrow.timer  enabled   install.sh --enable needs a held generation, which only exists after a cross-host escrow
+cfgvol:postfiatd.cfg              *   drill strips [ips_fixed]/[peer_private]/[cluster_nodes] and refuses key sections (sanitize_backup); live 0600 is set by pft-cluster apply, which writes the node key (cross-host)
+# --- sandbox limits and pull-time values ---
+unit-enabled:pft-kernwatch.timer  enabled   SANDBOX_LIMIT kernel-log: install.sh leaves the timer disabled when the first audit cannot read a kernel log (rb-limit)
+image:local:python:3.12-alpine    id    alerts/run-stack.sh uses the rolling python:3.12-alpine tag for the bridge; the image id is whatever the tag pointed to on pull day
+sshd:sshd_config                  sha256   stock file of the cloud provider's 22.04 image differs from the LXD ubuntu:22.04 image's; no repo script edits sshd_config (drop-ins only)

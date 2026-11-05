@@ -208,6 +208,7 @@ def fleet_items(doc):
         items[f"file:{f['path']}"] = {
             "sha256": f.get("sha256") or "",
             "state": f.get("state", ""),
+            "addon": f.get("addon", ""),
         }
     for u in doc.get("units", []):
         items[f"unit-enabled:{u['unit']}"] = {"enabled": u.get("enabled", "")}
@@ -269,7 +270,28 @@ def classify(live, sandbox, exceptions=()):
             "exception": exc,
         }
         rows.append(row)
+    _addon_state_follows_files(rows, live, sandbox)
     return rows
+
+
+def _addon_state_follows_files(rows, live, sandbox):
+    """pft-fleet grades an add-on by its worst file, so one excepted file (a cross-host pull unit) turns the whole
+    add-on MISSING. An open addon:X row is excepted only if X has at least one non-REPRODUCED file row and EVERY
+    such row is excepted; an add-on with no differing file, or with one open file, stays open."""
+    by_key = {r["key"]: r for r in rows}
+    for r in rows:
+        if not r["key"].startswith("addon:") or r["class"] == "REPRODUCED" or r["exception"]:
+            continue
+        name = r["key"][len("addon:"):]
+        files = [
+            f
+            for k, f in by_key.items()
+            if k.startswith("file:")
+            and f["class"] != "REPRODUCED"
+            and name in ((live.get(k) or {}).get("addon"), (sandbox.get(k) or {}).get("addon"))
+        ]
+        if files and all(f["exception"] for f in files):
+            r["exception"] = f"add-on state follows its files: all {len(files)} differing file(s) are excepted"
 
 
 def summarize(rows):

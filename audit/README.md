@@ -63,6 +63,14 @@ The script detects the host role: **sentry** (nginx stream listening on the peer
 | `relay.validator_private` | (validator-behind-sentry) `[peer_private]=1` with `[ips_fixed]` | | INFO on a standalone node |
 | `relay.validator_fw` | (validator-behind-sentry) inbound 2559 restricted to the sentry in ufw and DOCKER-USER | WARN | |
 
+## Fix drop-in
+
+`fixes/40-pft-hardening.conf` is the sshd drop-in that fixed `ssh.x11_forwarding`, `ssh.max_auth_tries` and
+`ssh.root_login` on the hosts in FINDINGS.md (byte-identical to the live file). `PermitRootLogin prohibit-password`
+locks out root password logins, so install it only once a root or sudo user logs in with a key:
+`sudo install -m 0644 fixes/40-pft-hardening.conf /etc/ssh/sshd_config.d/ && sudo sshd -t && sudo systemctl reload ssh`.
+`../rebuild/stack.list` runs exactly that line.
+
 ## Limits
 
 - `patch.pending_security` uses the cached package lists; run `apt-get update` first for a current answer.

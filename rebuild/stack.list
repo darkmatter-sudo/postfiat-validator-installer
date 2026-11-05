@@ -31,13 +31,15 @@
 170 vulnscan      exporter        bash vulnscan/install.sh --host validator
 180 privesc       exporter        id rbagent >/dev/null 2>&1 || useradd -m -s /bin/bash rbagent; bash privesc/install.sh --host validator --agent rbagent
 190 mounts        exporter        bash mounts/install.sh --host validator
+194 sshharden     base            install -m 0644 -o root -g root audit/fixes/40-pft-hardening.conf /etc/ssh/sshd_config.d/ && sshd -t && systemctl reload ssh
+196 sshcrypto     sshharden       bash sshcrypto/install.sh --host validator && pft-sshcrypto apply
 200 apparmor      exporter        bash apparmor/install.sh --host validator
 210 seccomp       exporter        bash seccomp/install.sh --host validator
 220 cluster       exporter        bash cluster/install.sh
 230 keyescrow     base            apt-get -qq install -y age >/dev/null && bash keyescrow/install.sh --host validator
 240 rulecheck     exporter        bash rulecheck/install.sh --host-label validator
 250 divergence    exporter        rb-manifest divergence
-260 egress        base            rb-manifest egress
+260 egress        cluster,maint   pft-maint start --ttl 30m --reason rebuild-egress --no-sentry && { bash egress/pft-egress.sh apply --yes --container postfiatd; rc=$?; pft-maint end --reason rebuild-egress; exit $rc; }
 270 sysctl        base            rb-manifest sysctl
 280 audittrail    base            rb-manifest audittrail
 290 logship       base            rb-manifest logship
@@ -45,4 +47,5 @@
 310 alertpath     exporter        rb-manifest alertpath
 320 watchdog      base            rb-manifest watchdog
 330 fleet         base            rb-fleet-conf && bash fleet/install.sh
+335 unitguard     egress,logship,watchdog,fleet  bash unitguard/pft-unitguard.sh apply --all
 340 baseline      integrity       pft-integrity baseline
