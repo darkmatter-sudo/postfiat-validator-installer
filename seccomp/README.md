@@ -15,17 +15,47 @@ helper: syscall table from libseccomp, Docker rule resolution, profile + diff, c
 [`../alerts/seccomp.rules.yml`](../alerts/seccomp.rules.yml) + [`seccomp.tests.yml`](../alerts/seccomp.tests.yml) ·
 [`tests/`](tests/) · [`systemd/`](systemd/) · [`install.sh`](install.sh).
 
-## Status (2026-11-05T02:20Z)
+## Status (2026-11-05T12:10Z)
 
 | Card step | State |
 |---|---|
 | 1 learn (throwaway, census + SCMP_ACT_LOG) | done: recorded learn on both hosts ([05](logs/05-learn-validator.log), [06](logs/06-learn-sentry.log)) |
 | 2 profile + per-syscall diff vs Docker | done: [`profile/pft-postfiatd.json`](profile/pft-postfiatd.json) + [`profile/diff.tsv`](profile/diff.tsv) from [08](logs/08-generate-two-host.log) |
-| 3 guarded apply / rollback | built and tested offline (stub suite); live apply not done yet. Found before any live apply (2026-11-04): a re-create would have dropped both nodes' `CpuShares`/`MemoryReservation` (set by `docker update`, not in compose/run args) and the gate did not compare them; fixed: kept through every re-create and part of the gate signature (see apply / rollback), offline tests + mutants M55-M60 |
+| 3 guarded apply / rollback | done: live on both hosts in [19](logs/19-live-run-pass.log) (sentry canary, then validator, inside one pft-maint window; see [Results](#results-live-run-19-2026-11-05-pass)). Built and tested offline first (stub suite). Found before any live apply (2026-11-04): a re-create would have dropped both nodes' `CpuShares`/`MemoryReservation` (set by `docker update`, not in compose/run args) and the gate did not compare them; fixed: kept through every re-create and part of the gate signature (see apply / rollback), offline tests + mutants M55-M60 |
 | 4 audit, rules, promtool, tests, mutants | done offline: recorded [10](logs/10-lint-suite-mutants.log) at 80d944a (git archive, script sha256 in l.3-11): shellcheck/ruff/ruff format/promtool clean (l.12-35), suite 147 passed, 0 failed (l.185), mutants 59 caught, 0 survived, 0 not applied, 0 broken of 59 + M54 documented equivalent, 0 orphans (l.249-250). Replaces [04](logs/04-lint-suite-mutants.log) (its 54 CAUGHT lines all read `[0 failing: ]`: the mutant copies lacked `pft_seccomp.py`, so no check ever ran; harness fixed, see Tests) and [09](logs/09-lint-suite-mutants-superseded.log) (56 caught / 4 survived at fffc1d6: M16, M19, M37 got tests in 80d944a, M54 is equivalent because no caller reads `lx`'s status) |
-| 5 two-host live proof | first live run [11](logs/11-live-run-stopped-at-canary.log) (2026-11-05T01:14Z, run commit 72b614f) stopped at the sentry canary, by design: the apply gate counted 2 `clone3` records as denials and rolled the sentry back automatically; the validator was never changed. Found → fixed → verified offline, see [Live run 11](#live-run-11-2026-11-05-stopped-at-the-sentry-canary). Second live run [16](logs/16-live-run-stopped-at-canary-drill-counter.log) (2026-11-05T09:10Z, run commit 5e62fb3) passed the gate this time but stopped at the canary on the drill script's own denial counter, see [Live run 16](#live-run-16-2026-11-05-stopped-at-the-sentry-canary-drill-counter) |
+| 5 two-host live proof | **done: live run [19](logs/19-live-run-pass.log) (2026-11-05T10:12-11:52Z, run commit 7ef49b4) PASS, 0 checks failed**, see [Results](#results-live-run-19-2026-11-05-pass). Earlier runs that stopped at the canary (kept as evidence): first live run [11](logs/11-live-run-stopped-at-canary.log) (2026-11-05T01:14Z, run commit 72b614f) stopped at the sentry canary, by design: the apply gate counted 2 `clone3` records as denials and rolled the sentry back automatically; the validator was never changed. Found → fixed → verified offline, see [Live run 11](#live-run-11-2026-11-05-stopped-at-the-sentry-canary). Second live run [16](logs/16-live-run-stopped-at-canary-drill-counter.log) (2026-11-05T09:10Z, run commit 5e62fb3) passed the gate this time but stopped at the canary on the drill script's own denial counter, see [Live run 16](#live-run-16-2026-11-05-stopped-at-the-sentry-canary-drill-counter) | |
 
-The results table required by the card is added once the live proof has run; it will cite log lines only.
+## Results: live run 19 (2026-11-05): PASS
+
+Every row cites a line of [`logs/19-live-run-pass.log`](logs/19-live-run-pass.log) (run commit
+`7ef49b47995e8612122f2aabce26b9fd44f5c400`, clean tree, l.2). The log is the run's own output, already redacted by the
+run (l.27-47: redaction control 18/18). One change was made when publishing it: `docker compose` printed two warning
+lines with a local-time timestamp (l.620-621), and that timestamp is replaced by `<redacted-local-time>`. Nothing else
+differs from the raw run log.
+
+| Card requirement | Result | log 19 |
+|---|---|---|
+| script hashes match the log header | header sha256 of live-run.sh, host-run.sh, denied-lib.sh, stop-lib.sh, pft-seccomp.sh, pft_seccomp.py, install.sh, the profile, seccomp.rules.yml and redact.py = `git show 7ef49b4:<file> \| sha256sum` | l.3-12 |
+| profile sha256: repo = both hosts | file sha256 `8568e172…2457` in the repo and on both hosts; canonical sha256 `f533d504…4398` | l.16-18, l.134-138 |
+| `docker inspect` SecurityOpt before (sentry / validator) | `["no-new-privileges", "apparmor=pft-postfiatd"]` / `["no-new-privileges:true", "apparmor=pft-postfiatd"]` (Docker's default seccomp) | l.162, l.605 |
+| SecurityOpt after apply (sentry / validator) | `... "seccomp=<inline profile, sha256 f533d504…4398>"` on both | l.261, l.689 |
+| installed profile = repo profile | byte-identical, stored canonical sha256 = profile, init `Seccomp 2` | l.266-267, l.694-695 |
+| apply gate: 0 denials during the exercise | `seccomp denials since T0: 0` (clone3 → ENOSYS shown as a by-design answer, not a denial) | l.256, l.684 |
+| every negative control returns EPERM + a SECCOMP record (sentry) | symlink (symlinkat), hard link (linkat), inotify (inotify_init) | l.311, l.317, l.323 |
+| every negative control returns EPERM + a SECCOMP record (validator) | the same three | l.739, l.745, l.751 |
+| forced rollback with prior-profile restoration | injected gate failure → apply exit 1, automatic rollback → Docker's default, profile file removed, node full | l.171-190 |
+| explicit rollback, then re-apply | rollback PASS (SecurityOpt back to the prior value), audit shows the finding again, re-apply PASS | l.467-468, l.475, l.543 |
+| alert drill FIRING → RESOLVED (throwaway topic) | PFTSeccompDenied sentry FIRING / RESOLVED; validator FIRING / RESOLVED | l.380, l.581, l.804, l.925 |
+| host runs | sentry pre 23/0, post 21/0; validator pre 20/0, post 19/0 (PASS/FAIL) | l.364, l.567, l.792, l.915 |
+| both nodes full for at least 1 hour, normal peers, 0 normal-operation denials | 13 polls 10:46:33Z-11:47:47Z, every poll full on both, peers 11-13, container PASS, denied=0 (enforced since 10:31Z sentry / 10:33Z validator) | l.927-942 |
+| no alert left, baselines, fleet | pft_seccomp_findings 0 on both, no PFTSeccomp* alert, integrity accepted + PASS on both, fleet skew 0, rulecheck OK | l.959, l.963, l.1078-1091 |
+| zero operator-topic messages | 2 operator topics, 0 messages each; the 9 throwaway-topic messages listed | l.1107-1119 |
+| end state | notifier envs restored byte-identical, integrity PASS on both, both nodes full; `0 check(s) failed -> PASS` | l.1106, l.1121-1127 |
+
+Aftercare after the run (not in the log): both nodes' `pft-keyescrow` textfiles still held `drift_items` 2 from
+11:04Z, while the drill's redirected ntfy env files were in place (lesson from keyescrow: they fingerprint those files).
+`pft-keyescrow.service` was re-run on both hosts at 11:58Z (drift 0, alert was only pending, `for: 2h`); the restore
+step of `drill/live-run.sh` does not re-run it yet.
 
 ## Live run 11 (2026-11-05): stopped at the sentry canary
 
