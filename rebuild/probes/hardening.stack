@@ -1,0 +1,53 @@
+# rebuild/probes/hardening.stack: dev probe for pft-rebuild-drill (RB_STACK=this file, run with --continue).
+# Question 1: run 21 (stack.list @db3d205) rolled back aaapply: the node never synced under pft-postfiatd and the HOST
+# audit log held 24 records apparmor="DENIED" operation="file_mmap" namespace="root//lxd-pftrb-sbx_..." comm=docker-entrypoi
+# name=/usr/bin/bash denied_mask=r. The live host runs the same profile with no such record. Does adding
+# `/usr/bin/bash mr` (probes/pft-postfiatd.bash-mr) let the node start in the nested AppArmor namespace?
+# Question 2: run 21 showed fw:docker-user DIFFERENT (rules) after two re-creates: print DOCKER-USER after each.
+# Same steps as stack.list otherwise.
+10  base          -               bash install.sh
+20  restore       base            rb-restore
+30  exporter      base            rb-manifest exporter
+35  alerts        exporter        for i in $(seq 1 30); do curl -sf -o /dev/null http://127.0.0.1:9877/metrics && break; sleep 2; done; bash alerts/run-stack.sh up
+40  integrity     base            rb-manifest integrity
+50  backup        restore         rb-manifest backup
+60  monitor       base            rb-manifest monitor
+70  maint         base            bash maint/install.sh install --label validator --ntfy-env /etc/pft-rebuild/ntfy.env
+80  retention     exporter        rb-manifest retention
+90  resources     exporter        bash resources/install.sh --container postfiatd
+100 statewatch    exporter        bash statewatch/install.sh --container postfiatd
+110 feewatch      exporter        bash feewatch/install.sh --container postfiatd
+120 upgradewatch  exporter        bash upgradewatch/install.sh --container postfiatd
+130 backfill      exporter        bash backfill/install.sh
+140 kernwatch     exporter        rb-limit kernel-log bash kernwatch/install.sh --host validator
+150 authwatch     exporter        bash authwatch/install.sh --host validator
+160 timesync      exporter        bash timesync/install.sh
+170 vulnscan      exporter        bash vulnscan/install.sh --host validator
+180 privesc       exporter        id rbagent >/dev/null 2>&1 || useradd -m -s /bin/bash rbagent; bash privesc/install.sh --host validator --agent rbagent
+190 mounts        exporter        bash mounts/install.sh --host validator
+194 sshharden     base            install -m 0644 -o root -g root audit/fixes/40-pft-hardening.conf /etc/ssh/sshd_config.d/ && sshd -t && systemctl reload ssh
+196 sshcrypto     sshharden       bash sshcrypto/install.sh --host validator && pft-sshcrypto apply
+200 apparmor      exporter        bash apparmor/install.sh --host validator
+210 seccomp       exporter        bash seccomp/install.sh --host validator
+220 cluster       exporter        bash cluster/install.sh
+230 keyescrow     base            apt-get -qq install -y age >/dev/null && bash keyescrow/install.sh --host validator
+240 rulecheck     exporter        bash rulecheck/install.sh --host-label validator
+250 divergence    exporter        rb-manifest divergence
+260 egress        cluster,maint   pft-maint start --ttl 30m --reason rebuild-egress --no-sentry && { bash egress/pft-egress.sh apply --yes --container postfiatd; rc=$?; pft-maint end --reason rebuild-egress; exit $rc; }
+270 sysctl        base            rb-manifest sysctl
+280 audittrail    base            rb-manifest audittrail
+290 logship       base            rb-manifest logship
+300 patch         base            bash patch/install.sh
+310 alertpath     exporter        rb-manifest alertpath
+320 watchdog      base            rb-manifest watchdog
+330 fleet         base            rb-fleet-conf && bash fleet/install.sh
+332 baseline      integrity       pft-integrity baseline
+334 firstrun      backup,baseline  systemctl start pft-backup.service pft-integrity.service
+336 unitguard     firstrun,egress,logship,watchdog,fleet  bash unitguard/pft-unitguard.sh apply --all --skip pft-heartbeat.service
+340 rebaseline    unitguard       pft-integrity accept --reason "rebuild: unitguard drop-ins"
+341 fwpre         rebaseline                 iptables -S DOCKER-USER | sed "s/^/fw-before-apply: /"
+342 aaapply       rebaseline,apparmor,maint  pft-maint start --ttl 40m --reason rebuild-apparmor --no-sentry && { pft-apparmor apply --profile-file rebuild/probes/pft-postfiatd.bash-mr --yes; rc=$?; pft-maint end --reason rebuild-apparmor; exit $rc; }
+343 fwmid         aaapply                    iptables -S DOCKER-USER | sed "s/^/fw-after-aaapply: /"; docker inspect -f "{{.AppArmorProfile}} {{.State.Status}}" postfiatd
+344 scapply       aaapply,seccomp,maint      pft-maint start --ttl 40m --reason rebuild-seccomp --no-sentry && { pft-seccomp apply --profile-file seccomp/profile/pft-postfiatd.json --yes; rc=$?; pft-maint end --reason rebuild-seccomp; exit $rc; }
+345 fwpost        scapply                    iptables -S DOCKER-USER | sed "s/^/fw-after-scapply: /"
+346 rebaseline2   scapply                    pft-integrity accept --reason "rebuild: apparmor + seccomp apply"
