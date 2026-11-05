@@ -1,0 +1,106 @@
+pft-kernwatch 24 h baseline report - 2026-11-05T13:12:32Z - Ubuntu 22.04.5 LTS
+repo HEAD e0f94ee5c24bd492afc604f923cda2c301b6177f (clean: yes)
+sha256 b6f67048b6e90999c921a359d39b6327806a05edfe045ecbbafb6993bf6ab726 kernwatch/drill/baseline-run.sh
+sha256 3bd09e14bbf7e6eae5ddd28b4f783138779419976037ec87f25137583e1ecfd8 kernwatch/drill/baseline_shapes.py
+sha256 9581bd4df0042cb121770e3c0e6e535bbde58ea11e03d1075bd4cccb42a3d31f kernwatch/pft-kernwatch.sh
+sha256 f09b6f08d7d0e9c7ccba5acda0059aae8a64b91e9296b5cfb199e920af1121b3 kernwatch/kernwatch_parse.py
+sha256 54d05f903e12f0ed20b51824ab542d7057e5196ca071498e9067fd206e966d6f kernwatch/catalogue.tsv
+sha256 f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8 peerexpose/drill/redact.py
+window 2026-11-04T07:17:00Z .. 2026-11-05T07:17:00Z (journalctl --since '2026-11-04 07:17:00 UTC' --until '2026-11-05 07:17:00 UTC')
+
+== 0. redaction literals + positive control
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+  literals: 3 ip, 1 user (values not printed)
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (13/13)
+
+== validator: 1. installed files match this checkout
+  /usr/local/bin/pft-kernwatch 9581bd4df0042cb121770e3c0e6e535bbde58ea11e03d1075bd4cccb42a3d31f
+CHECK ok   validator: /usr/local/bin/pft-kernwatch == kernwatch/pft-kernwatch.sh
+  /usr/local/lib/pft-kernwatch/kernwatch_parse.py f09b6f08d7d0e9c7ccba5acda0059aae8a64b91e9296b5cfb199e920af1121b3
+CHECK ok   validator: /usr/local/lib/pft-kernwatch/kernwatch_parse.py == kernwatch/kernwatch_parse.py
+  /usr/local/lib/pft-kernwatch/catalogue.tsv 54d05f903e12f0ed20b51824ab542d7057e5196ca071498e9067fd206e966d6f
+CHECK ok   validator: /usr/local/lib/pft-kernwatch/catalogue.tsv == kernwatch/catalogue.tsv
+
+== validator: 2. pft-kernwatch report over the window (installed tool)
+$ [validator] sudo -n pft-kernwatch report --since '2026-11-04 07:17:00 UTC' --until '2026-11-05 07:17:00 UTC' --format tsv
+  # catalogue_version	1
+  # catalogue_sha256	54d05f903e12f0ed20b51824ab542d7057e5196ca071498e9067fd206e966d6f
+  # records	4579
+  # malformed	0
+  # truncated	False
+  # boots	1
+  # first	2026-11-04T07:17:03Z
+  # last	2026-11-05T07:16:48Z
+  # by_severity	{"crit": 0, "info": 0, "warn": 0}
+  severity	class	pattern	count	first	last	excerpt
+  (exit 0)
+CHECK ok   validator: report exit 0 (not truncated, journal readable)
+  by_severity: {"crit": 0, "info": 0, "warn": 0}
+
+== validator: 3. all records in the window by redacted shape
+$ [validator] sudo -n journalctl -k --since '2026-11-04 07:17:00 UTC' --until '2026-11-05 07:17:00 UTC' -o json --no-pager | baseline_shapes.py
+  4492	[UFW BLOCK] IN=eth<if>
+  38	docker<if>: port <n>(veth<if>)
+  24	free (<n>): drop_caches:
+  5	device veth<if> entered
+  5	eth<if>: renamed from
+  5	IPv<n>: ADDRCONF(NETDEV_CHANGE): veth<if>:
+  5	veth<if>: renamed from
+  5	device veth<if> left
+  4579	total records, 8 shape(s), 0 unparsable
+  (exit 0)
+CHECK ok   validator: journalctl -k readable for the whole window
+
+== sentry: 1. installed files match this checkout
+  /usr/local/bin/pft-kernwatch 9581bd4df0042cb121770e3c0e6e535bbde58ea11e03d1075bd4cccb42a3d31f
+CHECK ok   sentry: /usr/local/bin/pft-kernwatch == kernwatch/pft-kernwatch.sh
+  /usr/local/lib/pft-kernwatch/kernwatch_parse.py f09b6f08d7d0e9c7ccba5acda0059aae8a64b91e9296b5cfb199e920af1121b3
+CHECK ok   sentry: /usr/local/lib/pft-kernwatch/kernwatch_parse.py == kernwatch/kernwatch_parse.py
+  /usr/local/lib/pft-kernwatch/catalogue.tsv 54d05f903e12f0ed20b51824ab542d7057e5196ca071498e9067fd206e966d6f
+CHECK ok   sentry: /usr/local/lib/pft-kernwatch/catalogue.tsv == kernwatch/catalogue.tsv
+
+== sentry: 2. pft-kernwatch report over the window (installed tool)
+$ [sentry] sudo -n pft-kernwatch report --since '2026-11-04 07:17:00 UTC' --until '2026-11-05 07:17:00 UTC' --format tsv
+  # catalogue_version	1
+  # catalogue_sha256	54d05f903e12f0ed20b51824ab542d7057e5196ca071498e9067fd206e966d6f
+  # records	4578
+  # malformed	0
+  # truncated	False
+  # boots	1
+  # first	2026-11-04T07:17:03Z
+  # last	2026-11-05T07:16:59Z
+  # by_severity	{"crit": 0, "info": 0, "warn": 0}
+  severity	class	pattern	count	first	last	excerpt
+  (exit 0)
+CHECK ok   sentry: report exit 0 (not truncated, journal readable)
+  by_severity: {"crit": 0, "info": 0, "warn": 0}
+
+== sentry: 3. all records in the window by redacted shape
+$ [sentry] sudo -n journalctl -k --since '2026-11-04 07:17:00 UTC' --until '2026-11-05 07:17:00 UTC' -o json --no-pager | baseline_shapes.py
+  4495	[UFW BLOCK] IN=eth<if>
+  28	docker<if>: port <n>(veth<if>)
+  24	free (<n>): drop_caches:
+  11	[UFW LIMIT BLOCK]
+  4	veth<if>: renamed from
+  4	device veth<if> left
+  4	device veth<if> entered
+  4	eth<if>: renamed from
+  4	IPv<n>: ADDRCONF(NETDEV_CHANGE): veth<if>:
+  4578	total records, 9 shape(s), 0 unparsable
+  (exit 0)
+CHECK ok   sentry: journalctl -k readable for the whole window
+
+baseline-run done 2026-11-05T13:12:39Z: 0 check(s) failed -> PASS

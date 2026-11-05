@@ -1,6 +1,6 @@
 OS: Ubuntu 22.04.5 LTS | 2026-11-05T08:09:10Z | fleet sync kernwatch -> b64a13853a26e01a711d6c85ccaaf37be0bcdc30
 $ sudo -n pft-fleet sync --addon kernwatch --to b64a13853a26e01a711d6c85ccaaf37be0bcdc30
-[2026-11-05T08:09:28Z] sync kernwatch to b64a13853a26e01a711d6c85ccaaf37be0bcdc30 (2026-11-05T09:08:54+01:00) REF main=b64a13853a26e01a711d6c85ccaaf37be0bcdc30
+[2026-11-05T08:09:28Z] sync kernwatch to b64a13853a26e01a711d6c85ccaaf37be0bcdc30 (<commit date redacted: local offset>) REF main=b64a13853a26e01a711d6c85ccaaf37be0bcdc30
 PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
 PLAN sentry sentry /usr/local/bin/pft-kernwatch 0755 CURRENT 9581bd4df004 9581bd4df004 keep
 PLAN sentry sentry /usr/local/lib/pft-kernwatch/kernwatch_parse.py 0644 BEHIND 7a18cf09a540 f09b6f08d7d0 write
@@ -19,7 +19,7 @@ PLAN validator validator /etc/systemd/system/pft-kernwatch-pull.timer 0644 CURRE
 (exit 0)
 
 $ sudo -n pft-fleet sync --addon kernwatch --to b64a13853a26e01a711d6c85ccaaf37be0bcdc30 --apply --reason "task_1036cee2: kernwatch_parse.py relative --since fix (ca7d08c)"
-[2026-11-05T08:09:51Z] sync kernwatch to b64a13853a26e01a711d6c85ccaaf37be0bcdc30 (2026-11-05T09:08:54+01:00) REF main=b64a13853a26e01a711d6c85ccaaf37be0bcdc30
+[2026-11-05T08:09:51Z] sync kernwatch to b64a13853a26e01a711d6c85ccaaf37be0bcdc30 (<commit date redacted: local offset>) REF main=b64a13853a26e01a711d6c85ccaaf37be0bcdc30
 PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
 PLAN sentry sentry /usr/local/bin/pft-kernwatch 0755 CURRENT 9581bd4df004 9581bd4df004 keep
 PLAN sentry sentry /usr/local/lib/pft-kernwatch/kernwatch_parse.py 0644 BEHIND 7a18cf09a540 f09b6f08d7d0 write
