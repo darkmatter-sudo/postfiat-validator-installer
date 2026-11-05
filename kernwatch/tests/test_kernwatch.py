@@ -5,6 +5,7 @@ Run: TEST_TMPDIR=~/.cache python3 -u kernwatch/tests/test_kernwatch.py   (stdlib
 so the temp dir defaults to ~/.cache). Prints one PASS/FAIL line per check and 'RESULT: PASS|FAIL (n checks)'.
 """
 
+import atexit
 import json
 import os
 import re
@@ -113,6 +114,7 @@ def load_tsv(name):
 class Env:
     def __init__(self):
         self.d = tempfile.mkdtemp(prefix="kw-test.", dir=TMP_BASE)
+        atexit.register(shutil.rmtree, self.d, True)  # tests that raise before done() (mutants) leak no dirs
         self.journal = os.path.join(self.d, "journal.jsonl")
         self.state = os.path.join(self.d, "state.json")
         self.bootf = os.path.join(self.d, "boot_id")
