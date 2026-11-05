@@ -1,0 +1,184 @@
+kernwatch two-host update - 2026-11-05T08:12:15Z - Ubuntu 22.04.5 LTS - repo HEAD 8437c1277126601bb66b55c2f0a28b268fd325ee (clean: yes)
+
+== 0. preflight
+$ sha256sum kernwatch/pft-kernwatch.sh kernwatch/kernwatch_parse.py kernwatch/catalogue.tsv kernwatch/drill/update-run.sh
+  9581bd4df0042cb121770e3c0e6e535bbde58ea11e03d1075bd4cccb42a3d31f  kernwatch/pft-kernwatch.sh
+  f09b6f08d7d0e9c7ccba5acda0059aae8a64b91e9296b5cfb199e920af1121b3  kernwatch/kernwatch_parse.py
+  54d05f903e12f0ed20b51824ab542d7057e5196ca071498e9067fd206e966d6f  kernwatch/catalogue.tsv
+  57a2a2200d90c6f0f755f4531b590ffa42dc2e907a4fd20041bccef9944abab8  kernwatch/drill/update-run.sh
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 170 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 100 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts before the update
+$ sudo -n docker exec postfiatd curl -s -m 10 -d '{"method":"server_info"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state; R "sudo -n docker exec postfiatd-sentry curl -s -m 10 -d '{\"method\":\"server_info\"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state"
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ sudo -n pft-fleet sync --addon kernwatch --to 8437c1277126601bb66b55c2f0a28b268fd325ee | grep -E '^PLAN .* (write|keep)$' | awk '{print $2, $4, $6, $NF}'
+  sentry /usr/local/bin/pft-kernwatch CURRENT keep
+  sentry /usr/local/lib/pft-kernwatch/kernwatch_parse.py BEHIND write
+  sentry /usr/local/lib/pft-kernwatch/catalogue.tsv CURRENT keep
+  sentry /etc/systemd/system/pft-kernwatch.service CURRENT keep
+  sentry /etc/systemd/system/pft-kernwatch.timer CURRENT keep
+  validator /usr/local/bin/pft-kernwatch CURRENT keep
+  validator /usr/local/lib/pft-kernwatch/kernwatch_parse.py BEHIND write
+  validator /usr/local/lib/pft-kernwatch/catalogue.tsv CURRENT keep
+  validator /etc/systemd/system/pft-kernwatch.service CURRENT keep
+  validator /etc/systemd/system/pft-kernwatch.timer CURRENT keep
+  validator /etc/systemd/system/pft-kernwatch-pull.service CURRENT keep
+  validator /etc/systemd/system/pft-kernwatch-pull.timer CURRENT keep
+  (exit 0)
+CHECK ok   dry run: only kernwatch_parse.py is written, on both hosts
+$ sudo -n pft-kernwatch report --since -1min --format tsv >/dev/null; echo validator rc $?; R 'sudo -n pft-kernwatch report --since -1min --format tsv >/dev/null; echo sentry rc $?'
+  usage: kernwatch_parse.py report [-h] --catalogue CATALOGUE [--since SINCE]
+                                   [--until UNTIL] [--boot BOOT]
+                                   [--format {json,tsv}] [--max MAX]
+                                   [--redact-name REDACT_NAME]
+  kernwatch_parse.py report: error: argument --since: expected one argument
+  validator rc 2
+  sentry rc 2
+  usage: kernwatch_parse.py report [-h] --catalogue CATALOGUE [--since SINCE]
+                                   [--until UNTIL] [--boot BOOT]
+                                   [--format {json,tsv}] [--max MAX]
+                                   [--redact-name REDACT_NAME]
+  kernwatch_parse.py report: error: argument --since: expected one argument
+  (exit 0)
+CHECK ok   before: installed report rejects --since -1min on both hosts (argparse rc 2, the run 06 bug)
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+
+== 1. rollout silence (pft-fleet/rulecheck see a changed file during the update; not the watchdog)
+CHECK ok   Alertmanager silence created (PFTKernwatchStale, PFTRuleDead, PFTTextfileStale, PFTRulecheck*, PFTFleet*) until 2026-11-05T08:42:53Z
+
+== 2. pft-maint window, [MAINT] messages to a throwaway topic (real file kept as $BK)
+real /etc/pft-maint/ntfy.env present before: 0
+$ { [ $HAD = 0 ] || sudo -n cp -p $NE $BK; } && printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' "$TT" | sudo -n tee $NE >/dev/null && sudo -n chmod 600 $NE && sudo -n stat -c '%a %U' $NE
+  600 root
+  (exit 0)
+CHECK ok   throwaway target installed
+$ sudo -n pft-maint start --ttl 30m --reason 'task_1036cee2 kernwatch update 8437c12'
+  window started: id m1793866373-1606622 until 2026-11-05T08:42:53Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint window open
+CHECK ok   sentry has the window (via the watchdog channel) after 30s
+
+== 3. pft-fleet: kernwatch files to HEAD on both hosts (writes + integrity accept by pft-fleet)
+$ sudo -n pft-fleet sync --addon kernwatch --to 8437c1277126601bb66b55c2f0a28b268fd325ee --apply --reason 'task_1036cee2: kernwatch_parse.py relative --since fix (8437c12)'
+  [2026-11-05T08:13:45Z] sync kernwatch to 8437c1277126601bb66b55c2f0a28b268fd325ee (2026-11-05T09:12:12+01:00) REF main=8437c1277126601bb66b55c2f0a28b268fd325ee
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN sentry sentry /usr/local/bin/pft-kernwatch 0755 CURRENT 9581bd4df004 9581bd4df004 keep
+  PLAN sentry sentry /usr/local/lib/pft-kernwatch/kernwatch_parse.py 0644 BEHIND 7a18cf09a540 f09b6f08d7d0 write
+  PLAN sentry sentry /usr/local/lib/pft-kernwatch/catalogue.tsv 0644 CURRENT 54d05f903e12 54d05f903e12 keep
+  PLAN sentry sentry /etc/systemd/system/pft-kernwatch.service 0644 CURRENT 92e007875f91 92e007875f91 keep
+  PLAN sentry sentry /etc/systemd/system/pft-kernwatch.timer 0644 CURRENT 61410c7a5f01 61410c7a5f01 keep
+  PLAN validator validator /usr/local/bin/pft-kernwatch 0755 CURRENT 9581bd4df004 9581bd4df004 keep
+  PLAN validator validator /usr/local/lib/pft-kernwatch/kernwatch_parse.py 0644 BEHIND 7a18cf09a540 f09b6f08d7d0 write
+  PLAN validator validator /usr/local/lib/pft-kernwatch/catalogue.tsv 0644 CURRENT 54d05f903e12 54d05f903e12 keep
+  PLAN validator validator /etc/systemd/system/pft-kernwatch.service 0644 CURRENT 92e007875f91 92e007875f91 keep
+  PLAN validator validator /etc/systemd/system/pft-kernwatch.timer 0644 CURRENT 61410c7a5f01 61410c7a5f01 keep
+  PLAN validator validator /etc/systemd/system/pft-kernwatch-pull.service 0644 CURRENT 5ba10526982c 5ba10526982c keep
+  PLAN validator validator /etc/systemd/system/pft-kernwatch-pull.timer 0644 CURRENT 806de29ae49a 806de29ae49a keep
+  [2026-11-05T08:13:45Z] order: sentry validator
+  [2026-11-05T08:13:45Z] sentry: 1 file(s) to write
+  PRE sentry pft-maint window active PASS
+  PRE sentry node server_state=full PASS
+  PRE sentry pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP sentry /usr/local/lib/pft-kernwatch/kernwatch_parse.py sha256 7a18cf09a540 -> /var/lib/pft-fleet/backup/20261105T081345Z-kernwatch-sentry
+  WRITE sentry /usr/local/lib/pft-kernwatch/kernwatch_parse.py 7a18cf09a540 -> f09b6f08d7d0 mode 0644
+  GATE sentry sha256 /usr/local/lib/pft-kernwatch/kernwatch_parse.py = target f09b6f08d7d0 PASS
+  GATE sentry syntax /usr/local/lib/pft-kernwatch/kernwatch_parse.py python PASS
+  GATE sentry addon units failed=none PASS
+  GATE sentry node server_state=full PASS
+  ACCEPT sentry pft-integrity baseline updated: pft-fleet sync kernwatch@8437c1277126 (kernwatch_parse.py)
+  [2026-11-05T08:14:00Z] SYNCED sentry kernwatch -> 8437c1277126
+  [2026-11-05T08:14:00Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/lib/pft-kernwatch/kernwatch_parse.py sha256 7a18cf09a540 -> /var/lib/pft-fleet/backup/20261105T081345Z-kernwatch-validator
+  WRITE validator /usr/local/lib/pft-kernwatch/kernwatch_parse.py 7a18cf09a540 -> f09b6f08d7d0 mode 0644
+  GATE validator sha256 /usr/local/lib/pft-kernwatch/kernwatch_parse.py = target f09b6f08d7d0 PASS
+  GATE validator syntax /usr/local/lib/pft-kernwatch/kernwatch_parse.py python PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync kernwatch@8437c1277126 (kernwatch_parse.py)
+  [2026-11-05T08:14:30Z] SYNCED validator kernwatch -> 8437c1277126
+  [2026-11-05T08:14:30Z] sync complete
+  (exit 0)
+CHECK ok   kernwatch sync exit 0
+$ sha256sum kernwatch/pft-kernwatch.sh kernwatch/kernwatch_parse.py kernwatch/catalogue.tsv | cut -c1-64; sudo -n sha256sum /usr/local/bin/pft-kernwatch /usr/local/lib/pft-kernwatch/kernwatch_parse.py /usr/local/lib/pft-kernwatch/catalogue.tsv | cut -c1-64; R 'sudo -n sha256sum /usr/local/bin/pft-kernwatch /usr/local/lib/pft-kernwatch/kernwatch_parse.py /usr/local/lib/pft-kernwatch/catalogue.tsv | cut -c1-64'
+  9581bd4df0042cb121770e3c0e6e535bbde58ea11e03d1075bd4cccb42a3d31f
+  f09b6f08d7d0e9c7ccba5acda0059aae8a64b91e9296b5cfb199e920af1121b3
+  54d05f903e12f0ed20b51824ab542d7057e5196ca071498e9067fd206e966d6f
+  9581bd4df0042cb121770e3c0e6e535bbde58ea11e03d1075bd4cccb42a3d31f
+  f09b6f08d7d0e9c7ccba5acda0059aae8a64b91e9296b5cfb199e920af1121b3
+  54d05f903e12f0ed20b51824ab542d7057e5196ca071498e9067fd206e966d6f
+  9581bd4df0042cb121770e3c0e6e535bbde58ea11e03d1075bd4cccb42a3d31f
+  f09b6f08d7d0e9c7ccba5acda0059aae8a64b91e9296b5cfb199e920af1121b3
+  54d05f903e12f0ed20b51824ab542d7057e5196ca071498e9067fd206e966d6f
+  (exit 0)
+CHECK ok   installed script + helper + catalogue = repo bytes on both hosts
+
+== 4. behaviour: relative --since now accepted; collector still runs and reports up 1
+$ sudo -n pft-kernwatch report --since -15min --format tsv | head -3; echo validator rc ${PIPESTATUS[0]}; R 'sudo -n pft-kernwatch report --since -15min --format tsv | head -3; echo sentry rc ${PIPESTATUS[0]}'
+  # catalogue_version	1
+  # catalogue_sha256	54d05f903e12f0ed20b51824ab542d7057e5196ca071498e9067fd206e966d6f
+  # records	47
+  validator rc 0
+  # catalogue_version	1
+  # catalogue_sha256	54d05f903e12f0ed20b51824ab542d7057e5196ca071498e9067fd206e966d6f
+  # records	45
+  sentry rc 0
+  (exit 0)
+CHECK ok   report --since -15min exit 0 on both hosts
+$ R 'sudo -n systemctl start pft-kernwatch.service; systemctl show -p Result --value pft-kernwatch.service' && sudo -n systemctl start pft-kernwatch.service pft-kernwatch-pull.service; systemctl show -p Result --value pft-kernwatch.service pft-kernwatch-pull.service
+  success
+  success
+  
+  success
+  (exit 0)
+CHECK ok   collector (both hosts) + pull: Result success x3
+$ sleep 40; curl -s http://<redacted-ip>:9090/api/v1/query --data-urlencode 'query=pft_kernwatch_up' | jq -r '.data.result[] | "\(.metric.host) \(.value[1])"' | sort
+  sentry 1
+  validator 1
+  (exit 0)
+CHECK ok   Prometheus: pft_kernwatch_up 1 for both hosts
+
+== 5. integrity and fleet skew
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 170 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 100 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts
+$ sudo -n pft-fleet skew | grep -E 'kernwatch|SUMMARY'
+  sentry     kernwatch   CURRENT    
+  validator  kernwatch   CURRENT    
+  SUMMARY CURRENT=54 BEHIND=1 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 1)
+CHECK ok   kernwatch CURRENT on both hosts
+
+== 6. end window, restore the real target, compare, read back the throwaway and every operator topic
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+$ sudo -n rm -f $NE   (no ntfy.env before: pft-maint falls back to the real monitor target again)
+CHECK ok   pft-maint target back to its pre-run state (/etc/pft-maint/ntfy.env: absent again)
+$ sudo -n test ! -e $BK && echo backup gone
+  backup gone
+  (exit 0)
+$ sleep 5; curl -s --max-time 15 "https://ntfy.sh/$TT/json?poll=1&since=1793866335" | jq -r '.title'
+  [MAINT] start validator
+  [MAINT] end validator
+  (exit 0)
+CHECK ok   the [MAINT] start and end messages reached the throwaway topic
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the run (2 topic(s), 0 with messages)
+$ curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '[.data.alerts[] | select(.labels.alertname | test("Kern|RuleDead|TextfileStale|Rulecheck|Fleet"))] | length'
+  0
+  (exit 0)
+CHECK ok   no kernwatch/rulecheck/fleet alert pending or firing (silence left to run out on its own)
+
+update-run done 2026-11-05T08:16:15Z: 0 check(s) failed -> PASS

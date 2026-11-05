@@ -1,0 +1,57 @@
+OS: Ubuntu 22.04.5 LTS | 2026-11-05T08:09:10Z | fleet sync kernwatch -> b64a13853a26e01a711d6c85ccaaf37be0bcdc30
+$ sudo -n pft-fleet sync --addon kernwatch --to b64a13853a26e01a711d6c85ccaaf37be0bcdc30
+[2026-11-05T08:09:28Z] sync kernwatch to b64a13853a26e01a711d6c85ccaaf37be0bcdc30 (2026-11-05T09:08:54+01:00) REF main=b64a13853a26e01a711d6c85ccaaf37be0bcdc30
+PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+PLAN sentry sentry /usr/local/bin/pft-kernwatch 0755 CURRENT 9581bd4df004 9581bd4df004 keep
+PLAN sentry sentry /usr/local/lib/pft-kernwatch/kernwatch_parse.py 0644 BEHIND 7a18cf09a540 f09b6f08d7d0 write
+PLAN sentry sentry /usr/local/lib/pft-kernwatch/catalogue.tsv 0644 CURRENT 54d05f903e12 54d05f903e12 keep
+PLAN sentry sentry /etc/systemd/system/pft-kernwatch.service 0644 CURRENT 92e007875f91 92e007875f91 keep
+PLAN sentry sentry /etc/systemd/system/pft-kernwatch.timer 0644 CURRENT 61410c7a5f01 61410c7a5f01 keep
+PLAN validator validator /usr/local/bin/pft-kernwatch 0755 CURRENT 9581bd4df004 9581bd4df004 keep
+PLAN validator validator /usr/local/lib/pft-kernwatch/kernwatch_parse.py 0644 BEHIND 7a18cf09a540 f09b6f08d7d0 write
+PLAN validator validator /usr/local/lib/pft-kernwatch/catalogue.tsv 0644 CURRENT 54d05f903e12 54d05f903e12 keep
+PLAN validator validator /etc/systemd/system/pft-kernwatch.service 0644 CURRENT 92e007875f91 92e007875f91 keep
+PLAN validator validator /etc/systemd/system/pft-kernwatch.timer 0644 CURRENT 61410c7a5f01 61410c7a5f01 keep
+PLAN validator validator /etc/systemd/system/pft-kernwatch-pull.service 0644 CURRENT 5ba10526982c 5ba10526982c keep
+PLAN validator validator /etc/systemd/system/pft-kernwatch-pull.timer 0644 CURRENT 806de29ae49a 806de29ae49a keep
+[2026-11-05T08:09:28Z] order: sentry validator
+[2026-11-05T08:09:28Z] dry run (no --apply): nothing changed
+(exit 0)
+
+$ sudo -n pft-fleet sync --addon kernwatch --to b64a13853a26e01a711d6c85ccaaf37be0bcdc30 --apply --reason "task_1036cee2: kernwatch_parse.py relative --since fix (ca7d08c)"
+[2026-11-05T08:09:51Z] sync kernwatch to b64a13853a26e01a711d6c85ccaaf37be0bcdc30 (2026-11-05T09:08:54+01:00) REF main=b64a13853a26e01a711d6c85ccaaf37be0bcdc30
+PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+PLAN sentry sentry /usr/local/bin/pft-kernwatch 0755 CURRENT 9581bd4df004 9581bd4df004 keep
+PLAN sentry sentry /usr/local/lib/pft-kernwatch/kernwatch_parse.py 0644 BEHIND 7a18cf09a540 f09b6f08d7d0 write
+PLAN sentry sentry /usr/local/lib/pft-kernwatch/catalogue.tsv 0644 CURRENT 54d05f903e12 54d05f903e12 keep
+PLAN sentry sentry /etc/systemd/system/pft-kernwatch.service 0644 CURRENT 92e007875f91 92e007875f91 keep
+PLAN sentry sentry /etc/systemd/system/pft-kernwatch.timer 0644 CURRENT 61410c7a5f01 61410c7a5f01 keep
+PLAN validator validator /usr/local/bin/pft-kernwatch 0755 CURRENT 9581bd4df004 9581bd4df004 keep
+PLAN validator validator /usr/local/lib/pft-kernwatch/kernwatch_parse.py 0644 BEHIND 7a18cf09a540 f09b6f08d7d0 write
+PLAN validator validator /usr/local/lib/pft-kernwatch/catalogue.tsv 0644 CURRENT 54d05f903e12 54d05f903e12 keep
+PLAN validator validator /etc/systemd/system/pft-kernwatch.service 0644 CURRENT 92e007875f91 92e007875f91 keep
+PLAN validator validator /etc/systemd/system/pft-kernwatch.timer 0644 CURRENT 61410c7a5f01 61410c7a5f01 keep
+PLAN validator validator /etc/systemd/system/pft-kernwatch-pull.service 0644 CURRENT 5ba10526982c 5ba10526982c keep
+PLAN validator validator /etc/systemd/system/pft-kernwatch-pull.timer 0644 CURRENT 806de29ae49a 806de29ae49a keep
+[2026-11-05T08:09:51Z] order: sentry validator
+[2026-11-05T08:09:51Z] sentry: 1 file(s) to write
+[2026-11-05T08:09:51Z] REFUSED sentry: no active pft-maint window (sudo pft-maint start --ttl 30m --reason ...)
+(exit 4)
+$ [local] sudo -n pft-kernwatch report --since -15min --format tsv | head -3; sudo -n pft-integrity verify | tail -1
+usage: kernwatch_parse.py report [-h] --catalogue CATALOGUE [--since SINCE]
+                                 [--until UNTIL] [--boot BOOT]
+                                 [--format {json,tsv}] [--max MAX]
+                                 [--redact-name REDACT_NAME]
+kernwatch_parse.py report: error: argument --since: expected one argument
+(exit 2)
+RESULT: PASS - 170 unchanged, 0 warn, 0 fail -> exit 0
+$ [relay] sudo -n pft-kernwatch report --since -15min --format tsv | head -3; sudo -n pft-integrity verify | tail -1
+usage: kernwatch_parse.py report [-h] --catalogue CATALOGUE [--since SINCE]
+                                 [--until UNTIL] [--boot BOOT]
+                                 [--format {json,tsv}] [--max MAX]
+                                 [--redact-name REDACT_NAME]
+kernwatch_parse.py report: error: argument --since: expected one argument
+(exit 2)
+RESULT: PASS - 100 unchanged, 0 warn, 0 fail -> exit 0
+$ sudo -n pft-fleet skew | tail -1
+SUMMARY CURRENT=52 BEHIND=3 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
