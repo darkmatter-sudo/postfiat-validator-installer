@@ -114,7 +114,8 @@ def load_tsv(name):
 class Env:
     def __init__(self):
         self.d = tempfile.mkdtemp(prefix="kw-test.", dir=TMP_BASE)
-        atexit.register(shutil.rmtree, self.d, True)  # tests that raise before done() (mutants) leak no dirs
+        # tests that raise before done() (mutants) leak no dirs
+        atexit.register(shutil.rmtree, self.d, True)
         self.journal = os.path.join(self.d, "journal.jsonl")
         self.state = os.path.join(self.d, "state.json")
         self.bootf = os.path.join(self.d, "boot_id")
