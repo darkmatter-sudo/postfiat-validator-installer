@@ -126,8 +126,29 @@ check(
     and real[-1]["cmd"].startswith("pft-integrity accept ")
     and real[idx("rebaseline")]["cmd"].startswith("pft-integrity accept ")
     and names[idx("baseline") + 1 :]
-    == ["firstrun", "unitguard", "rebaseline", "aaapply", "scapply", "rebaseline2"],
+    == [
+        "firstrun",
+        "unitguard",
+        "rebaseline",
+        "aaapply",
+        "scapply",
+        "egressfix",
+        "rebaseline2",
+    ],
     names[-4:],
+)
+check(
+    "stack.list (repo): the profile applies go through their rb-limit, egressfix reapplies pft-egress after them",
+    all(idx(n) >= 0 for n in ("aaapply", "scapply", "egressfix"))
+    and "rb-limit apparmor-nested pft-apparmor apply" in real[idx("aaapply")]["cmd"]
+    and "rb-limit kernel-audit pft-seccomp apply" in real[idx("scapply")]["cmd"]
+    and "pft-egress-reapply@postfiatd.service" in real[idx("egressfix")]["cmd"]
+    and "-j PFT-EGRESS" in real[idx("egressfix")]["cmd"],
+    [
+        real[idx(n)]["cmd"][:80]
+        for n in ("aaapply", "scapply", "egressfix")
+        if idx(n) >= 0
+    ],
 )
 check(
     "stack.list (repo): restore before backup",
@@ -833,8 +854,286 @@ for name, virt, cmd, want, lim in lim_cases:
         rc == want and ("SANDBOX_LIMIT kernel-log:" in out) == lim,
         (rc, out),
     )
+# the two hardening limits also need the tool's own rollback PASS line (a failed rollback is never a limit)
+AA_FAIL = "2026-11-05T21:41:55Z apply: health FAIL after 91 poll(s): server_state none; peers 0 < 1;"
+AA_RB = (
+    "2026-11-05T21:42:47Z rollback RESULT: PASS - postfiatd back under docker-default"
+)
+SC_FAIL = "2026-11-05T21:43:41Z apply: gate FAIL - audit log unreadable"
+SC_RB = (
+    "2026-11-05T21:44:46Z rollback RESULT: PASS - postfiatd back under seccomp default"
+)
+hard_cases = (
+    ("apparmor-nested", "fail + rollback PASS -> limit", [AA_FAIL, AA_RB], 0, True),
+    ("apparmor-nested", "fail, rollback not PASS -> rc", [AA_FAIL], 1, False),
+    (
+        "apparmor-nested",
+        "rollback PASS, other failure -> rc",
+        ["apply: x", AA_RB],
+        1,
+        False,
+    ),
+    (
+        "apparmor-nested",
+        "server_state syncing is not the signature",
+        [AA_FAIL.replace("none", "syncing"), AA_RB],
+        1,
+        False,
+    ),
+    (
+        "apparmor-nested",
+        "seccomp rollback line does not count",
+        [AA_FAIL, SC_RB],
+        1,
+        False,
+    ),
+    ("kernel-audit", "fail + rollback PASS -> limit", [SC_FAIL, SC_RB], 0, True),
+    ("kernel-audit", "fail, rollback not PASS -> rc", [SC_FAIL], 1, False),
+    (
+        "kernel-audit",
+        "apparmor rollback line does not count",
+        [SC_FAIL, AA_RB],
+        1,
+        False,
+    ),
+)
+for lim, name, lines, want, islim in hard_cases:
+    body = "".join(f"echo '{x}'; " for x in lines) + "exit 1"
+    rc, out, _ = helper(
+        "rb-limit", TMP, {"RB_STUB_VIRT": "lxc"}, (lim, "bash", "-c", body)
+    )
+    check(
+        f"rb-limit {lim}: {name}",
+        rc == want and (f"SANDBOX_LIMIT {lim}:" in out) == islim,
+        (rc, out),
+    )
+rc, out, _ = helper(
+    "rb-limit",
+    TMP,
+    {"RB_STUB_VIRT": "none"},
+    ("kernel-audit", "bash", "-c", f"echo '{SC_FAIL}'; echo '{SC_RB}'; exit 1"),
+)
+check(
+    "rb-limit kernel-audit: outside a container keeps rc",
+    rc == 1 and "SANDBOX_LIMIT" not in out,
+    (rc, out),
+)
+
 rc, out, _ = helper("rb-limit", TMP, {"RB_STUB_VIRT": "lxc"}, ("nope", "true"))
 check("rb-limit: unknown limit -> exit 3", rc == 3, (rc, out))
+
+# ---------- aa-nested: host audit records (shapes from the run-22 host audit.log, pids replaced) ----------
+NS = 'namespace="root//lxd-pftrb-sbx_<var-snap-lxd-common-lxd>" '
+
+
+def avc(ts, op, name, ns=NS, prof="pft-postfiatd", verdict="DENIED"):
+    return (
+        f'type=AVC msg=audit({ts}.674:5547701): apparmor="{verdict}" operation="{op}" {ns}profile="{prof}" '
+        f'name="{name}" pid=1 comm="docker-entrypoi" requested_mask="r" denied_mask="r" fsuid=1000000 ouid=1000000'
+    )
+
+
+LIBC = "/io.containerd.snapshotter.v1.overlayfs/snapshots/2/fs/usr/lib/x86_64-linux-gnu/libc.so.6"
+AUD = [
+    avc(1793916797, "file_mprotect", LIBC),
+    avc(1793916858, "file_mprotect", LIBC),
+    avc(1793916900, "file_mmap", "/usr/bin/bash"),
+    avc(1793900000, "file_mmap", "/old"),  # before --since
+    avc(1793916901, "open", "/x", prof="docker-default"),  # other profile
+    avc(1793916902, "open", "/y", verdict="ALLOWED"),
+    'type=SERVICE_STOP msg=audit(1793916903.1:5): pid=1 uid=0 msg="unit=x"',
+]
+SINCE = 1793916000
+r = safe(rl.aa_nested, "\n".join(AUD), "pftrb-sbx", "pft-postfiatd", SINCE, default={})
+check(
+    "aa-nested: counts only DENIED for the profile in the sandbox namespace since the step start",
+    r.get("sandbox") == 3
+    and r.get("live") == 0
+    and r.get("ops", {}).get(f"file_mprotect {LIBC}") == 2,
+    r,
+)
+r = safe(
+    rl.aa_nested,
+    "\n".join(AUD + [avc(1793916950, "exec", "/usr/bin/cat", ns="")]),
+    "pftrb-sbx",
+    "pft-postfiatd",
+    SINCE,
+    default={},
+)
+check(
+    "aa-nested: a record without namespace is the live node",
+    r.get("live") == 1 and r.get("sandbox") == 3,
+    r,
+)
+r = safe(rl.aa_nested, "\n".join(AUD), "pftrb", "pft-postfiatd", SINCE, default={})
+check(
+    "aa-nested: another instance name's namespace is not the sandbox",
+    r.get("sandbox") == 0 and r.get("live") == 3,
+    r,
+)
+af = tmpf("audit.txt", "\n".join(AUD) + "\n")
+rc, out, _ = run(
+    "aa-nested",
+    af,
+    "--sandbox",
+    "pftrb-sbx",
+    "--profile",
+    "pft-postfiatd",
+    "--since",
+    str(SINCE),
+)
+check(
+    "cli aa-nested: sandbox-only denials -> CONFIRMED exit 0",
+    rc == 0 and "AA_NESTED: CONFIRMED" in out,
+    (rc, out),
+)
+af2 = tmpf(
+    "audit2.txt",
+    "\n".join(AUD + [avc(1793916950, "exec", "/usr/bin/cat", ns="")]) + "\n",
+)
+rc, out, _ = run(
+    "aa-nested",
+    af2,
+    "--sandbox",
+    "pftrb-sbx",
+    "--profile",
+    "pft-postfiatd",
+    "--since",
+    str(SINCE),
+)
+check(
+    "cli aa-nested: one live denial -> NOT CONFIRMED exit 1",
+    rc == 1 and "NOT CONFIRMED" in out,
+    (rc, out),
+)
+rc, out, _ = run(
+    "aa-nested",
+    af,
+    "--sandbox",
+    "pftrb-sbx",
+    "--profile",
+    "pft-postfiatd",
+    "--since",
+    "1793999999",
+)
+check(
+    "cli aa-nested: no sandbox denial in the span -> exit 1",
+    rc == 1 and "sandbox namespace 0" in out,
+    (rc, out),
+)
+rc, _, _ = run("aa-nested", af, "--sandbox", "pftrb-sbx")
+check("cli aa-nested: missing options -> exit 3", rc == 3)
+
+# ---------- drill `limits --dir`: every SANDBOX_LIMIT is re-checked on the live host ----------
+REPOD = os.path.dirname(RB)
+LIM_AA = "SANDBOX_LIMIT apparmor-nested: nested AppArmor namespace (step rc 1)"
+LIM_SC = "SANDBOX_LIMIT kernel-audit: no kernel audit log (step rc 1)"
+tmpf(
+    "rbdocker",
+    '#!/bin/sh\ncase "$3" in *AppArmorProfile*) echo "${RB_STUB_AA:-pft-postfiatd}" ;; *SecurityOpt*) echo "${RB_STUB_SECOPT:-[\\"seccomp={}\\"]}" ;; esac\n',
+)
+os.chmod(os.path.join(TMP, "rbdocker"), 0o755)
+same_aa = os.path.join(REPOD, "apparmor/profile/pft-postfiatd")
+same_sc = os.path.join(REPOD, "seccomp/profile/pft-postfiatd.json")
+other = tmpf("other-profile", "not the committed profile\n")
+
+
+def limits_case(steps, extra_env=None):
+    d = tempfile.mkdtemp(dir=TMP)
+    os.makedirs(os.path.join(d, "steps"))
+    for name, body in steps.items():
+        with open(os.path.join(d, "steps", name + ".log"), "w", encoding="utf-8") as fh:
+            fh.write(body)
+        if not (extra_env or {}).get("RB_TEST_NOSTART"):
+            with open(
+                os.path.join(d, "steps", name + ".start"), "w", encoding="utf-8"
+            ) as fh:
+                fh.write(f"{SINCE}\n")
+    env = dict(
+        os.environ,
+        RB_TEST="1",
+        RB_DOCKER=os.path.join(TMP, "rbdocker"),
+        RB_AUDIT_LOGS=af,
+        RB_AA_LIVE=same_aa,
+        RB_SC_LIVE=same_sc,
+    )
+    env.update(extra_env or {})
+    p = subprocess.run(
+        ["bash", SCRIPT, "limits", "--dir", d],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=60,
+        check=False,
+        stdin=subprocess.DEVNULL,
+    )
+    return p.returncode, p.stdout + p.stderr
+
+
+BOTH = {"342-aaapply": f"x\n{LIM_AA}\n", "344-scapply": f"{LIM_SC}\n"}
+rc, out = limits_case(BOTH)
+check(
+    "drill limits: both limits confirmed on the live host -> exit 0",
+    rc == 0
+    and "AA_NESTED: CONFIRMED" in out
+    and "CHECK FAIL" not in out
+    and "2 SANDBOX_LIMIT" in out,
+    (rc, out),
+)
+rc, out = limits_case({"140-kernwatch": "SANDBOX_LIMIT kernel-log: x (step rc 1)\n"})
+check(
+    "drill limits: kernel-log needs no live proof -> exit 0",
+    rc == 0 and "1 SANDBOX_LIMIT" in out,
+    (rc, out),
+)
+rc, out = limits_case({"010-base": "ok\n"})
+check(
+    "drill limits: no limit lines -> exit 0",
+    rc == 0 and "0 SANDBOX_LIMIT" in out,
+    (rc, out),
+)
+for name, env, frag in (
+    ("a live denial", {"RB_AUDIT_LOGS": af2}, "DENIED only in the sandbox namespace"),
+    (
+        "live AppArmor profile bytes differ",
+        {"RB_AA_LIVE": other},
+        "apparmor-nested: live",
+    ),
+    (
+        "live container not under pft-postfiatd",
+        {"RB_STUB_AA": "docker-default"},
+        "runs pft-postfiatd",
+    ),
+    ("live seccomp profile bytes differ", {"RB_SC_LIVE": other}, "kernel-audit: live"),
+    (
+        "live container without custom seccomp",
+        {"RB_STUB_SECOPT": '["no-new-privileges:true"]'},
+        "custom seccomp",
+    ),
+    (
+        "no audit file readable",
+        {"RB_AUDIT_LOGS": os.path.join(TMP, "nope*")},
+        "DENIED only in the sandbox namespace",
+    ),
+):
+    rc, out = limits_case(BOTH, env)
+    check(
+        f"drill limits: {name} -> exit 2",
+        rc == 2 and "CHECK FAIL" in out and frag in out.split("CHECK FAIL", 1)[1],
+        (rc, out),
+    )
+rc, out = limits_case(BOTH, {"RB_TEST_NOSTART": "1"})
+check(
+    "drill limits: apparmor-nested without a recorded step start -> exit 2",
+    rc == 2 and "CHECK FAIL apparmor-nested: step start time recorded" in out,
+    (rc, out),
+)
+rc, out = limits_case({"344-scapply": "SANDBOX_LIMIT made-up: x\n"})
+check(
+    "drill limits: unknown limit name -> exit 2",
+    rc == 2 and "known limit name" in out,
+    (rc, out),
+)
 
 rc, _, _ = run("nope")
 check("cli: unknown subcommand -> exit 3", rc == 3)

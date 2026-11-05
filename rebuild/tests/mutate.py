@@ -23,6 +23,7 @@ FILES = ("rebuild_lib.py", "stack.list", "pft-rebuild-drill.sh")
 L, S, D = FILES
 HELPERS = ("bin/rb-limit", "bin/rb-manifest", "bin/rb-fleet-conf", "bin/rb-restore")
 BL, BM, BF = HELPERS[:3]
+PROFILES = ("apparmor/profile/pft-postfiatd", "seccomp/profile/pft-postfiatd.json")
 
 MUTANTS = [
     # stack.list parsing / ordering
@@ -211,12 +212,73 @@ MUTANTS = [
         '"$LXC" storage volume delete "$POOL" "$vn" && echo "  volume $vn deleted"',
         ":",
     ),
+    # aa-nested host audit classifier + drill limits (runs 21/22)
+    (
+        "M62",
+        L,
+        'if kv.get("namespace", "").startswith(pre):',
+        'if "lxd-" in kv.get("namespace", ""):',
+    ),
+    ("M63", L, "if not m or int(m.group(1)) < since:", "if not m:"),
+    (
+        "M64",
+        L,
+        'if kv.get("apparmor") != "DENIED" or kv.get("profile") != profile:',
+        'if kv.get("profile") != profile:',
+    ),
+    ("M65", L, 'ok = r["sandbox"] >= 1 and r["live"] == 0', 'ok = r["live"] == 0'),
+    ("M66", L, 'pre = f"root//lxd-{sandbox}_"', 'pre = f"root//lxd-{sandbox}"'),
+    ("M67", L, 'ok = r["sandbox"] >= 1 and r["live"] == 0', 'ok = r["sandbox"] >= 1'),
+    (
+        "T11",
+        D,
+        'cmp -s "$AA_LIVE" "$HERE/../apparmor/profile/pft-postfiatd"; check',
+        "true; check",
+    ),
+    (
+        "T12",
+        D,
+        'check "apparmor-nested: DENIED only in the sandbox namespace (host audit log)" "${PIPESTATUS[0]}"',
+        'check "apparmor-nested: DENIED only in the sandbox namespace (host audit log)" 0',
+    ),
+    (
+        "T13",
+        D,
+        '[ "$("$DOCKER" inspect -f \'{{.AppArmorProfile}}\' "$CONTAINER" 2>/dev/null)" = pft-postfiatd ]',
+        "true",
+    ),
+    (
+        "T14",
+        D,
+        'cmp -s "$SC_LIVE" "$HERE/../seccomp/profile/pft-postfiatd.json"; check',
+        "true; check",
+    ),
+    (
+        "T15",
+        D,
+        '"$DOCKER" inspect -f \'{{json .HostConfig.SecurityOpt}}\' "$CONTAINER" 2>/dev/null | grep -q \'"seccomp={\'',
+        "true",
+    ),
+    ("T16", D, '*) check "known limit name in: $line" 1 ;;', "*) : ;;"),
+    ("T17", D, '[[ "$since" =~ ^[0-9]+$ ]]; check', "true; check"),
+    (
+        "S04",
+        S,
+        "{ rb-limit apparmor-nested pft-apparmor apply",
+        "{ pft-apparmor apply",
+    ),
+    (
+        "S05",
+        S,
+        "345 egressfix     scapply,egress             systemctl start pft-egress-reapply@postfiatd.service && ",
+        "345 egressfix     scapply,egress             ",
+    ),
     # helpers
     (
         "H01",
         BL,
-        'if [ "$virt" = lxc ] && grep -qE "$sig" "$out"; then',
-        'if grep -qE "$sig" "$out"; then',
+        'if [ "$virt" = lxc ] && grep -qE "$sig" "$out" && {',
+        'if grep -qE "$sig" "$out" && {',
     ),
     # (dev pass log 10: "rc=${PIPESTATUS[0]}" -> "rc=$?" SURVIVED = equivalent under set -o pipefail; replaced)
     ("H02", BL, '"$@" 2>&1 | tee "$out"', '"$@" | tee "$out"'),
@@ -232,9 +294,29 @@ MUTANTS = [
     ("H07", BF, "grep -E '^host validator[[:space:]]'", "grep -E '^host '"),
     ("H08", BF, '-e "s|^REF=.*|REF=$ref|"', '-e "s|^REF=.*|REF=main|"'),
     ("H09", BF, 'if [ ! -e "$E/hosts.conf" ]; then', "if true; then"),
+    # hardening limits (runs 21/22): rollback line required, exact signatures
+    (
+        "H10",
+        BL,
+        ' && { [ -z "$need" ] || grep -qF "$need" "$out"; }; then',
+        "; then",
+    ),
+    (
+        "H11",
+        BL,
+        "need='rollback RESULT: PASS - postfiatd back under seccomp default'",
+        "need=''",
+    ),
+    ("H12", BL, "server_state none'", "server_state'"),
+    (
+        "H13",
+        BL,
+        "need='rollback RESULT: PASS - postfiatd back under docker-default'",
+        "need='rollback RESULT: PASS'",
+    ),
     # the declared stack itself
     ("S01", S, "50  backup        restore         rb-manifest backup\n", ""),
-    ("S02", S, "340 baseline      integrity       pft-integrity baseline\n", ""),
+    ("S02", S, "332 baseline      integrity       pft-integrity baseline\n", ""),
     (
         "S03",
         S,
@@ -270,6 +352,11 @@ def copy_module(base):
     for f in FILES + HELPERS:  # the helper tests run bin/* from RB_DIR too
         os.makedirs(os.path.dirname(os.path.join(d, f)), exist_ok=True)
         shutil.copy2(os.path.join(RB, f), os.path.join(d, f))
+    # the drill's `limits` compares the live profiles with the committed ones at $HERE/.. (log 23: the control failed
+    # without them), so the copy gets its neighbours too
+    for f in PROFILES:
+        os.makedirs(os.path.dirname(os.path.join(base, f)), exist_ok=True)
+        shutil.copy2(os.path.join(os.path.dirname(RB), f), os.path.join(base, f))
     return d
 
 

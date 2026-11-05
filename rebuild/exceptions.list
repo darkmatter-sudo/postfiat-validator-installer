@@ -33,3 +33,10 @@ image:local:python:3.12-alpine    id    alerts/run-stack.sh uses the rolling pyt
 sshd:sshd_config                  sha256   stock file of the cloud provider's 22.04 image differs from the LXD ubuntu:22.04 image's; no repo script edits sshd_config (drop-ins only)
 dropin:pft-heartbeat.service.d/*  *   pft-heartbeat signs and sends to the watchdog on the sentry (cross-host; fails without a peer), so unitguard skips it
 fw:docker-user                    sha256   raw `iptables -S` text: pft-egress's jump names the container's /32 and Docker's random per-network bridge (br-<id>), unique per host; the rule COUNT is still compared
+# --- hardening overlays the sandbox cannot keep (aaapply/scapply roll back there; the drill's cmd_limits proves the
+#     same committed profile bytes are enforced on the live node, and apparmor denials only in the sandbox namespace) ---
+compose:docker-compose.apparmor.yml  *   SANDBOX_LIMIT apparmor-nested: pft-apparmor apply rolls back in the nested AppArmor namespace and removes its overlay (live profile = committed bytes, checked)
+compose:docker-compose.seccomp.yml   *   SANDBOX_LIMIT kernel-audit: pft-seccomp apply's denial gate needs the kernel audit log, which an LXD container lacks; rollback removes the overlay (live profile = committed bytes, checked)
+compose:.env                      sha256   COMPOSE_FILE: live lists docker-compose.apparmor.yml + docker-compose.seccomp.yml, removed again by the two rollbacks (SANDBOX_LIMIT apparmor-nested / kernel-audit)
+container:postfiatd               security_opt   live runs apparmor=pft-postfiatd + the custom seccomp JSON; the sandbox keeps docker-default + seccomp default after the two rollbacks (SANDBOX_LIMIT apparmor-nested / kernel-audit)
+container:postfiatd               labels   compose config-hash label: it hashes the merged compose files, which differ by the two overlays above

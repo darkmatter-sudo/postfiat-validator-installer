@@ -10,6 +10,9 @@ Subcommands (all read-only; print to stdout, exit 0 ok / 1 finding / 3 usage or 
                                             REPRODUCED / MISSING / EXTRA / DIFFERENT, exit 1 if any MISSING or
                                             DIFFERENT item has no documented exception
   teardown BEFORE AFTER                     host-state snapshots (one item per line) -> leftovers, exit 1 if any
+  aa-nested AUDIT_LOG --sandbox NAME --profile P --since EPOCH
+                                            host AppArmor DENIED records for P: sandbox namespace vs live; exit 0
+                                            only if the sandbox has >= 1 and the live node 0 (SANDBOX_LIMIT check)
 """
 
 import base64
@@ -336,6 +339,33 @@ def leftovers(before, after):
     return sorted(x for x in after.splitlines() if x.strip() and x not in b)
 
 
+# ---------- host audit check for SANDBOX_LIMIT apparmor-nested ----------
+_AUD_TS = re.compile(r"msg=audit\((\d+)\.\d+:\d+\)")
+_AUD_KV = re.compile(r'(\w+)="([^"]*)"')
+
+
+def aa_nested(audit_text, sandbox, profile, since):
+    """Split the host's AppArmor DENIED records for PROFILE (epoch >= SINCE) into the sandbox's own AppArmor
+    namespace (root//lxd-SANDBOX_<...>) and everything else (= the live node under the same profile). The limit
+    holds only if the sandbox has >= 1 such record and the live node has none."""
+    out = {"sandbox": 0, "live": 0, "ops": {}}
+    pre = f"root//lxd-{sandbox}_"
+    for line in audit_text.splitlines():
+        m = _AUD_TS.search(line)
+        if not m or int(m.group(1)) < since:
+            continue
+        kv = dict(_AUD_KV.findall(line))
+        if kv.get("apparmor") != "DENIED" or kv.get("profile") != profile:
+            continue
+        if kv.get("namespace", "").startswith(pre):
+            out["sandbox"] += 1
+            op = f"{kv.get('operation', '?')} {kv.get('name', '?')}"
+            out["ops"][op] = out["ops"].get(op, 0) + 1
+        else:
+            out["live"] += 1
+    return out
+
+
 # ---------- CLI ----------
 def _read(p):
     with open(p, encoding="utf-8") as f:
@@ -419,6 +449,22 @@ def main(argv):
             else:
                 print(render_table(rows, s))
             return 1 if s["open"] else 0
+        if cmd == "aa-nested":
+            sb, args = _opt(args, "--sandbox")
+            pr, args = _opt(args, "--profile")
+            si, args = _opt(args, "--since")
+            if len(args) != 1 or not (sb and pr and si):
+                raise InputError(
+                    "aa-nested AUDIT_LOG --sandbox NAME --profile P --since EPOCH"
+                )
+            r = aa_nested(_read(args[0]), sb, pr, int(si))
+            for op, n in sorted(r["ops"].items()):
+                print(f"sandbox-denied {n:>4}  {op}")
+            ok = r["sandbox"] >= 1 and r["live"] == 0
+            print(
+                f"AA_NESTED: {'CONFIRMED' if ok else 'NOT CONFIRMED'} (sandbox namespace {r['sandbox']}, live {r['live']} DENIED for {pr})"
+            )
+            return 0 if ok else 1
         if cmd == "teardown" and len(args) == 2:
             left = leftovers(_read(args[0]), _read(args[1]))
             for x in left:

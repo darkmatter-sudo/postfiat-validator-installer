@@ -7,6 +7,7 @@
 #        sudo pft-rebuild-drill preflight --commit SHA        read-only host checks; exit 0 = a run may start
 #        sudo pft-rebuild-drill run --commit SHA --yes [--keep] [--continue] [--json-out FILE]
 #        sudo pft-rebuild-drill teardown --yes                remove every sandbox resource (idempotent)
+#        sudo pft-rebuild-drill limits --dir RUN_DIR          re-check a run's SANDBOX_LIMIT lines against the live host
 #        pft-rebuild-drill diff LIVE_MANIFEST SANDBOX_MANIFEST [--live-fleet J --sandbox-fleet J] [--json]
 #
 # The sandbox (names from the env below) is an unprivileged LXD container with security.nesting (Docker inside),
@@ -26,6 +27,8 @@
 #      RB_REPO_URL (this repo on GitHub) BACKUP_DIR (/var/backups/postfiat) CONTAINER (postfiatd)
 #      NTFY (https://ntfy.sh) RB_TOPIC_ENVS (env files holding the operator's ntfy topics; read, never printed)
 #      RB_STACK (rebuild/stack.list; another file = a dev probe, printed in the run header)
+#      RB_AUDIT_LOGS (/var/log/audit/audit.log*: host audit files for the apparmor-nested check)
+#      RB_AA_LIVE (/etc/apparmor.d/pft-postfiatd) RB_SC_LIVE (/etc/pft-seccomp/pft-postfiatd.json): live profiles
 set -uo pipefail
 export TZ=UTC LC_ALL=C
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -37,6 +40,8 @@ REPO_URL="${RB_REPO_URL:-https://github.com/darkmatter-sudo/postfiat-validator-i
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/postfiat}"; CONTAINER="${CONTAINER:-postfiatd}"; NTFY="${NTFY:-https://ntfy.sh}"
 TOPIC_ENVS="${RB_TOPIC_ENVS:-/etc/pft-integrity.env /etc/pft-maint/ntfy.env /etc/pft-watchdog/ntfy.env /etc/postfiat-monitor.env /opt/pft-agent/config.env}"
 CHAIN=PFT-REBUILD; CHAIN_IN=PFT-REBUILD-IN; LIVE_PORTS="2559 5005 51235"
+AUDIT_LOGS="${RB_AUDIT_LOGS:-/var/log/audit/audit.log*}"
+AA_LIVE="${RB_AA_LIVE:-/etc/apparmor.d/pft-postfiatd}"; SC_LIVE="${RB_SC_LIVE:-/etc/pft-seccomp/pft-postfiatd.json}"
 LXC="${RB_LXC:-lxc}"; IPT="${RB_IPT:-iptables}"; NFT="${RB_NFT:-nft}"; DOCKER="${RB_DOCKER:-docker}"
 
 usage() { sed -n '2,/^set -uo/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 3; }
@@ -193,6 +198,40 @@ cmd_preflight() { # host-side, read-only
   [ "$FAILS" = 0 ] && [ "$rc" = 0 ]
 }
 
+# A SANDBOX_LIMIT is only accepted for a hardening step if the live host shows that the same committed profile
+# works there: the live node runs it from the same bytes, and (apparmor-nested) every DENIED record for it in the
+# step's time span is in the sandbox's own AppArmor namespace on the HOST audit log, none on the live node.
+cmd_limits() { # RUN_DIR (steps/NNN-step.log + NNN-step.start)
+  local d="$1" f st line n=0 since lim
+  for f in "$d"/steps/*.log; do
+    [ -f "$f" ] || continue
+    st="$(basename "$f" .log)"
+    while IFS= read -r line; do
+      n=$((n + 1)); echo "  ${st#*-}: $line"; lim="$(sed -E 's/^SANDBOX_LIMIT ([a-z-]+):.*/\1/' <<<"$line")"
+      case "$lim" in
+        apparmor-nested)
+          since="$(cat "$d/steps/$st.start" 2>/dev/null)"
+          [[ "$since" =~ ^[0-9]+$ ]]; check "apparmor-nested: step start time recorded" "$?" "${since:-none}"
+          # shellcheck disable=SC2086 # AUDIT_LOGS is a glob list
+          cat $AUDIT_LOGS 2>/dev/null </dev/null > "$d/aa-audit.txt"
+          python3 "$LIB" aa-nested "$d/aa-audit.txt" --sandbox "$SBX" --profile pft-postfiatd --since "${since:-0}" </dev/null | sed 's/^/    /'
+          check "apparmor-nested: DENIED only in the sandbox namespace (host audit log)" "${PIPESTATUS[0]}"
+          rm -f "$d/aa-audit.txt"
+          cmp -s "$AA_LIVE" "$HERE/../apparmor/profile/pft-postfiatd"; check "apparmor-nested: live $AA_LIVE = committed profile bytes" "$?"
+          [ "$("$DOCKER" inspect -f '{{.AppArmorProfile}}' "$CONTAINER" 2>/dev/null)" = pft-postfiatd ]
+          check "apparmor-nested: live $CONTAINER runs pft-postfiatd" "$?" ;;
+        kernel-audit)
+          cmp -s "$SC_LIVE" "$HERE/../seccomp/profile/pft-postfiatd.json"; check "kernel-audit: live $SC_LIVE = committed profile bytes" "$?"
+          "$DOCKER" inspect -f '{{json .HostConfig.SecurityOpt}}' "$CONTAINER" 2>/dev/null | grep -q '"seccomp={'
+          check "kernel-audit: live $CONTAINER runs a custom seccomp profile" "$?" ;;
+        kernel-log) : ;; # nothing to prove on the live host: the timer state is a documented exception
+        *) check "known limit name in: $line" 1 ;;
+      esac
+    done < <(grep -E '^SANDBOX_LIMIT ' "$f")
+  done
+  echo "  $n SANDBOX_LIMIT line(s)"
+}
+
 cmd_run() {
   local commit="$1" keep="$2" cont="$3" jsonout="$4" RUNID W t_start
   need_root
@@ -277,7 +316,7 @@ cmd_run() {
   local order step cmd b64 t0 dt src log_ ttf=""
   while IFS=$'\t' read -r order step b64; do
     cmd="$(printf '%s' "$b64" | base64 -d)"
-    log_="$W/steps/$(printf '%03d' "$order")-$step.log"; t0="$(date -u +%s)"
+    log_="$W/steps/$(printf '%03d' "$order")-$step.log"; t0="$(date -u +%s)"; echo "$t0" > "${log_%.log}.start"
     sx bash -c "$cmd" > "$log_" 2>&1; src=$?; dt=$(( $(date -u +%s) - t0 ))
     printf '%s\t%s\t%s\t%s\n' "$order" "$step" "$src" "$dt" >> "$W/timings.tsv"
     printf 'STEP %3s %-13s rc=%-3s %5ss  $ %s\n' "$order" "$step" "$src" "$dt" "$cmd"
@@ -289,6 +328,8 @@ cmd_run() {
   done < <(python3 "$LIB" stack "$STACK" --rows)
   echo "TIME_TO_FULL ${ttf:-n/a} s (restore step start -> server_state full, cap $FULL_TIMEOUT s)"
   echo "sandbox server_state now: $(sbx_state)"
+  echo; echo "== 5b. sandbox limits vs the live host"
+  cmd_limits "$W"
 
   echo; echo "== 6. diff sandbox vs live"
   "$LXC" file pull "$SBX/var/lib/pft-integrity/manifest.tsv" "$W/sandbox-manifest.tsv" 2>/dev/null
@@ -323,7 +364,7 @@ cmd_run() {
 
 [ $# -ge 1 ] || usage
 sub="$1"; shift
-commit=""; yes=0; keep=0; cont=0; jsonout=""; json=()
+commit=""; yes=0; keep=0; cont=0; jsonout=""; json=(); rdir=""
 case "$sub" in
   stack) [ "${1:-}" = --json ] && json=(--json); exec python3 "$LIB" stack "$STACK" "${json[@]}" ;;
   diff) exec python3 "$LIB" diff "$@" ;;
@@ -335,6 +376,7 @@ while [ $# -gt 0 ]; do
     --keep) keep=1 ;;
     --continue) cont=1 ;;
     --json-out) jsonout="${2:?}"; shift ;;
+    --dir) rdir="${2:?}"; shift ;;
     -h|--help) usage ;;
     *) echo "unknown option $1" >&2; exit 3 ;;
   esac
@@ -345,6 +387,8 @@ case "$sub" in
     echo "PREFLIGHT: $([ "$r" = 0 ] && echo READY || echo NOT READY) ($FAILS failed)"; exit $((r == 0 ? 0 : 4)) ;;
   run) if [ -z "$commit" ] || [ "$yes" != 1 ]; then echo "run needs --commit SHA --yes" >&2; exit 3; fi
     cmd_run "$commit" "$keep" "$cont" "$jsonout" ;;
+  limits) need_root; if [ -z "$rdir" ] || [ ! -d "$rdir/steps" ]; then usage; fi; cmd_limits "$rdir"
+    [ "$FAILS" = 0 ]; exit $(( $? == 0 ? 0 : 2 )) ;;
   teardown) need_root; [ "$yes" = 1 ] || { echo "teardown needs --yes" >&2; exit 3; }
     cmd_teardown; exit $(( $? == 0 ? 0 : 5 )) ;;
   -h|--help|help) usage ;;

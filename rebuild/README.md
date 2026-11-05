@@ -22,6 +22,7 @@ pft-rebuild-drill.sh stack [--json]                        # the declared steps,
 sudo pft-rebuild-drill.sh preflight --commit SHA           # read-only host checks; exit 0 = a run may start
 sudo pft-rebuild-drill.sh run --commit SHA --yes [--keep] [--continue] [--json-out FILE]
 sudo pft-rebuild-drill.sh teardown --yes                   # remove every sandbox resource (idempotent)
+sudo pft-rebuild-drill.sh limits --dir RUN_DIR             # re-check a run's SANDBOX_LIMIT lines on the live host
 pft-rebuild-drill.sh diff LIVE_MANIFEST SANDBOX_MANIFEST [--live-fleet J --sandbox-fleet J] [--exceptions F] [--json]
 ```
 
@@ -46,8 +47,27 @@ Commands run as root in the sandbox with cwd = the checkout and `rebuild/bin` on
   (REF = the pinned commit), before `fleet/install.sh`.
 - `rb-limit LIMIT CMD`: a step that cannot fully work in an LXD system container. CMD's failure becomes
   `SANDBOX_LIMIT LIMIT: reason` (exit 0) only if we are in an lxc container AND the output has LIMIT's exact error
-  signature; any other failure keeps its exit code. One limit so far: `kernel-log` (kernwatch: a system container
-  has no kernel log, and a sandboxed unit sees the host's boot id).
+  signature; any other failure keeps its exit code. Three limits:
+  - `kernel-log` (kernwatch): a system container has no kernel log, and a sandboxed unit sees the host's boot id.
+  - `apparmor-nested` (`aaapply`): under `pft-postfiatd` the node never syncs inside the sandbox. The HOST audit log
+    holds the denials, in the sandbox's own AppArmor namespace (`root//lxd-pftrb-sbx_...`): `file_mmap` of
+    `/usr/bin/bash`, and with that allowed, `file_mprotect` of
+    `/io.containerd.snapshotter.v1.overlayfs/snapshots/N/fs/.../libc.so.6`. Docker's data on an LXD custom volume
+    makes the container's paths disconnected, so host-path rules cannot match (runs 21/22). The production profile is
+    not reshaped to fit the sandbox. Signature: `apply: health FAIL ... server_state none` **and** the tool's own
+    `rollback RESULT: PASS - postfiatd back under docker-default`.
+  - `kernel-audit` (`scapply`): an LXD container has no kernel audit log, so pft-seccomp's denial gate fails closed
+    (`apply: gate FAIL - audit log unreadable`) **and** must have rolled back (`rollback RESULT: PASS - postfiatd back
+    under seccomp default`).
+
+  A limit on a hardening step is accepted only if the **live host** shows that the same committed profile works
+  there (drill section 5b, `limits --dir RUN_DIR` re-checks a run): the live profile file has the committed bytes
+  (`cmp`), the live container runs it (`docker inspect`), and for `apparmor-nested`, `rebuild_lib.py aa-nested` over
+  the host's `/var/log/audit/audit.log*` since the step start counts >= 1 DENIED record for `pft-postfiatd` in the
+  sandbox namespace and **0** for the live node. Otherwise the run FAILs.
+- `egressfix`: every container re-create drops pft-egress's `DOCKER-USER` jump until the 5-min
+  `pft-egress-reapply@postfiatd` timer runs (run 22 dumps 7 rules before, 6 after), so this step runs that unit and
+  requires the `-j PFT-EGRESS` jump before the diff reads the firewall.
 - everything else: the add-on's own `install.sh` with the arguments the live host used. Prerequisites an add-on's
   README asks for by hand (the `age` package for keyescrow, an agent account for privesc: sandbox-only `rbagent`)
   are part of the step.
@@ -97,10 +117,16 @@ Recorded runs on the validator host (Ubuntu 22.04.5, 4 CPU / 8 GB, LXD 5.0); raw
 | 12 | `8856f16` | FAIL (unitguard rc 1), diff rc 1 (14 open) | `logs/16-run-unitguard-integrity-order.log`. backup's drop-in now PASSes. `pft-integrity`'s check needs RESULT PASS, but the drop-ins `apply --all` had already written (alphabetical: backup, divergence, egress, exporter) are new integrity items -> exit 1 -> rollback. Tool fix `bc01783`: `apply --all` applies `FIRST_UNITS` (default `pft-integrity.service`) first; unitguard tests 34/0, mutants 17/17 incl. new U17 (`logs/17-unitguard-tests.log`). Diff REPRODUCED 270 / MISSING 100 / DIFFERENT 61, excepted 147, open 14: 9 drop-ins (written, but the run stopped before `rebaseline`), AppArmor/seccomp overlays (.env, 2 compose files, container `security_opt`/labels), `fw:docker-user` sha256 (per-host /32 + bridge id -> exception, count compared). TIME_TO_FULL 50 s, teardown CLEAN, live full + integrity PASS, 0 operator messages. |
 | 13 | `bc01783` | FAIL (unitguard rc 1), diff rc 1 (13 open) | `logs/18-run-integrity-own-dropin.log`. FIRST_UNITS works: pft-integrity is applied first, and all 8 other drop-ins PASS. pft-integrity still exits 1 under its drop-in and 0 right after the rollback, with nothing else changed in between: its own new drop-in is a tracked `dropin:` item, so it WARNs on itself. On the live host the profile went in before integrity tracked drop-ins. Fix: the profile check passes exit 1 only if that invocation's single WARN/FAIL line is `dropin:pft-integrity.service.d/50-unitguard.conf added` (journal by InvocationID; the lines are printed into the unitguard log). Offline test 8/8, a mutant that accepts any WARN is caught 4x (`logs/19-integrity-check-tests.log`); drop-in bytes unchanged. Open: same 9 drop-ins (no rebaseline), AppArmor/seccomp overlays (4). TIME_TO_FULL 47 s, teardown CLEAN, live full + integrity PASS, 0 operator messages. |
 | 14 | `27e8676` | **PASS**, diff rc 1 (4 open) | `logs/20-run-unitguard-pass.log`. **All 40 steps rc 0**, including `unitguard apply --all` (9 drop-ins PASS, heartbeat held) and `rebaseline`. The integrity check printed its single line `[WARN] dropin:pft-integrity.service.d/50-unitguard.conf added`, which confirms the run-13 diagnosis. TIME_TO_FULL 58 s. Diff REPRODUCED 279 / MISSING 91 / DIFFERENT 61, excepted 148, **open 4**, all from the deferred AppArmor/seccomp overlays: `compose:.env` (COMPOSE_FILE), `docker-compose.apparmor.yml`, `docker-compose.seccomp.yml`, `container:postfiatd` labels/security_opt. Next: apply both in the sandbox or record a documented SANDBOX_LIMIT. Teardown CLEAN, live full + integrity PASS, 0 operator messages. |
+| 21 | `db3d205` | FAIL (2 steps, both rolled back PASS), diff rc 1 | `logs/21-run-hardening-rollback.log`. New steps `aaapply`/`scapply` apply the committed AppArmor + seccomp profiles inside pft-maint windows. **aaapply**: `apply: health FAIL after 91 poll(s): server_state none` (15-min gate), then `rollback RESULT: PASS - postfiatd back under docker-default`; the HOST audit log held `file_mmap` DENIED records for `/usr/bin/bash` in the sandbox's AppArmor namespace `root//lxd-pftrb-sbx_...` (the live node, same profile bytes, has none). **scapply**: `apply: gate FAIL - audit log unreadable` (no kernel audit in an LXD container; the gate fails closed, as designed), rollback PASS. `fw:docker-user` rule count differed after the two re-creates. TIME_TO_FULL 58 s, teardown CLEAN, live full + integrity PASS, 0 operator messages. |
+| 22 (probe) | `7f5ed0e` | probe, `RB_STACK=probes/hardening.stack` | `logs/22-probe-apparmor-nested.log`. With `/usr/bin/bash mr` added (probe-only profile `probes/pft-postfiatd.bash-mr`), aaapply still fails; the host audit log now shows `file_mprotect` DENIED on the **disconnected** path `/io.containerd.snapshotter.v1.overlayfs/snapshots/2/fs/usr/lib/x86_64-linux-gnu/libc.so.6` (the profile already has `attach_disconnected`). Docker's data on the custom volume (the run-08 fix) makes paths disconnected in the nested namespace, so host-path rules cannot match: a sandbox limit, not a profile gap, and the production profile is left unchanged. DOCKER-USER dumps: each re-create drops pft-egress's jump (7 rules before, 6 after) until `pft-egress-reapply` runs. Teardown CLEAN, live full + integrity PASS, 0 operator messages. |
+| 23, 24 (dev mutants) | working tree | FAIL (dev passes, fixed before the recorded pass) | New code: `rb-limit` limits `apparmor-nested` + `kernel-audit` (signature **and** the tool's own rollback PASS line), `rebuild_lib.py aa-nested` (host audit DENIED records: sandbox namespace vs live), drill section 5b / `limits --dir` (live profile bytes = committed, live container enforces them), step `egressfix`, 5 exceptions for the overlay items; suite 144 checks. Log 23: the mutant control failed, because the mutant copy had no `../apparmor` / `../seccomp` profiles next to it (lesson of the seccomp harness); `mutate.py` now copies them. Log 24: MUTANTS: 81 run: BROKEN=4 CAUGHT=76 NOT APPLIED=1 -> FAIL: M07/S01-S03 BROKEN (a new stack check indexed an empty list when parsing failed: now guarded), H01 NOT APPLIED (its target line had changed: updated). |
 
 ## Limits
 
 - The sandbox is one host. Cross-host parts (relay pulls, heartbeats, the sentry itself) cannot be rebuilt there;
   each such live item is listed in [`exceptions.list`](exceptions.list) with its reason.
 - An LXD container shares the host kernel: kernel/sysctl/mount add-ons install but act on a namespaced view.
+- The AppArmor and seccomp profiles are installed but cannot be **enforced** in the sandbox (`apparmor-nested`,
+  `kernel-audit` above), so the drill proves those two steps only up to a clean rollback, plus the live-host check
+  that the same committed bytes are enforced on the live node. Their 4 overlay items are documented exceptions.
 - Time to full depends on the testnet's peers at the time; it is a measurement, not a guarantee.

@@ -7,20 +7,34 @@
 #   kernel-log  a system container has no kernel log of its own (journalctl -k: no entries), and inside a sandboxed
 #               unit (ProtectKernelTunables) /proc/sys is re-mounted, which drops LXC's per-container boot_id, so the
 #               unit sees the HOST's boot id and journalctl -b finds no such boot (run 03/09).
+#   apparmor-nested  pft-apparmor apply: the node never syncs under pft-postfiatd inside the sandbox, because the
+#               sandbox's AppArmor namespace (root//lxd-<instance>) and Docker's data on an LXD custom volume make the
+#               container's paths disconnected (/io.containerd.snapshotter.v1.overlayfs/...), so host-path rules do
+#               not match (runs 21/22). Needs the tool's own rollback PASS line; the drill then checks the HOST audit
+#               log (denials only in the sandbox namespace, none on the live node under the same profile bytes).
+#   kernel-audit  pft-seccomp apply: an LXD system container has no kernel audit log, so the denial gate fails
+#               closed ("audit log unreadable", runs 21/22). Needs the tool's own rollback PASS line.
 set -uo pipefail
-limit="${1:?usage: rb-limit LIMIT CMD...}"; shift
+limit="${1:?usage: rb-limit LIMIT CMD...}"; shift; need=""
 [ $# -gt 0 ] || { echo "usage: rb-limit LIMIT CMD..." >&2; exit 3; }
 case "$limit" in
   kernel-log) sig='Data from the specified boot .* is not available|No such boot ID in journal'
     reason="LXD system container: no kernel log, and sandboxed units see the host boot id" ;;
+  apparmor-nested) sig='apply: health FAIL after [0-9]+ poll\(s\): server_state none'
+    need='rollback RESULT: PASS - postfiatd back under docker-default'
+    reason="nested AppArmor namespace: container paths are disconnected in the sandbox, profile rules cannot match" ;;
+  kernel-audit) sig='apply: gate FAIL - audit log unreadable'
+    need='rollback RESULT: PASS - postfiatd back under seccomp default'
+    reason="LXD system container: no kernel audit log, the seccomp denial gate fails closed" ;;
   *) echo "rb-limit: unknown limit $limit" >&2; exit 3 ;;
 esac
 out="$(mktemp)"; trap 'rm -f "$out"' EXIT
 "$@" 2>&1 | tee "$out"; rc=${PIPESTATUS[0]}
 [ "$rc" = 0 ] && exit 0
 virt="$(systemd-detect-virt --container 2>/dev/null || true)"
-if [ "$virt" = lxc ] && grep -qE "$sig" "$out"; then
+# a limit with a `need` line also requires the tool's own clean rollback: a failed rollback is never a limit
+if [ "$virt" = lxc ] && grep -qE "$sig" "$out" && { [ -z "$need" ] || grep -qF "$need" "$out"; }; then
   echo "SANDBOX_LIMIT $limit: $reason (step rc $rc)"; exit 0
 fi
-echo "rb-limit: rc $rc is not the $limit limit (container=${virt:-none}, signature $(grep -cE "$sig" "$out") lines)" >&2
+echo "rb-limit: rc $rc is not the $limit limit (container=${virt:-none}, signature $(grep -cE "$sig" "$out") lines${need:+, rollback line $(grep -cF "$need" "$out")})" >&2
 exit "$rc"

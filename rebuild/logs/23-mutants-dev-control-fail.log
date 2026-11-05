@@ -1,0 +1,148 @@
+CONTROL rc=1 RESULT: FAIL (144 checks, 1 failed)
+PASS stack: parses 3 steps in order
+PASS stack: command keeps its spaces
+PASS stack: after list split
+PASS stack: '-' means no deps
+PASS stack: equal ORDER refused
+PASS stack: decreasing ORDER refused
+PASS stack: dependency on a LATER step refused
+PASS stack: unknown dependency refused
+PASS stack: duplicate step refused
+PASS stack: first step must be base
+PASS stack: missing command refused
+PASS stack: non-integer ORDER refused
+PASS stack: bad step name refused
+PASS stack: empty stack refused
+PASS stack: empty dep name refused
+PASS stack.list (repo): parses
+PASS stack.list (repo): the integrity manifest is written last (baseline, then only unitguard, the profile applies and their accepts)
+PASS stack.list (repo): the profile applies go through their rb-limit, egressfix reapplies pft-egress after them
+PASS stack.list (repo): restore before backup
+PASS stack.list (repo): exporter before every textfile collector
+PASS stack.list (repo): every fleet add-on has a step
+PASS cli stack --json: exit 0 + JSON list
+PASS cli stack: invalid -> exit 3
+PASS stack --rows: command bytes (backslash, quotes, tab) survive the step loop encoding
+PASS preflight: clean sandbox isolated
+PASS preflight: custom volume on the sandbox pool accepted
+PASS preflight: custom volume on another pool refused
+PASS preflight: privileged refused
+PASS preflight: no nesting refused
+PASS preflight: no memory cap refused
+PASS preflight: no cpu cap refused
+PASS preflight: live disk source /var/lib/docker/volumes/postfiatd_data/_data refused
+PASS preflight: live disk source /opt/postfiatd refused
+PASS preflight: live disk source /etc/pft-kernwatch.env refused
+PASS preflight: live disk source /var/lib/pft-integrity refused
+PASS preflight: live disk source / refused
+PASS preflight: live disk source /srv/../opt/postfiatd refused
+PASS preflight: unrelated disk source allowed
+PASS preflight: proxy tcp:0.0.0.0:2559 refused
+PASS preflight: proxy tcp:127.0.0.1:5005 refused
+PASS preflight: proxy udp:[::]:51235 refused
+PASS preflight: proxy tcp:0.0.0.0:2500-2600 refused
+PASS preflight: proxy on other port allowed
+PASS preflight: macvlan nic refused
+PASS preflight: nic on another bridge refused
+PASS preflight: host device passthrough refused
+PASS preflight: IPv6 bridge refused
+PASS preflight: unmanaged bridge refused
+PASS preflight: live topic in sandbox file refused
+PASS preflight: refusal text does not print the topic
+PASS preflight: any ntfy URL in sandbox file refused
+PASS preflight: ntfy URL redacted in refusal
+PASS preflight: blackhole sink allowed
+PASS cli preflight: isolated -> exit 0
+PASS cli preflight: refused -> exit 4
+PASS cli preflight: --live-topic/--sandbox-file wired
+PASS diff: same bytes, different mtime -> REPRODUCED
+PASS diff: different sha -> DIFFERENT
+PASS diff: live only -> MISSING
+PASS diff: sandbox only -> EXTRA
+PASS diff: identical -> REPRODUCED
+PASS diff: attr present only in sandbox -> DIFFERENT
+PASS diff: summary counts
+PASS diff: exception covers MISSING item
+PASS diff: exception covers DIFFERENT attr
+PASS diff: excepted items are not open
+PASS diff: exception for another attr does not cover
+PASS diff: partial attr exception leaves item open
+PASS diff: malformed manifest line refused
+PASS diff: exception without reason refused
+PASS diff: fleet active state not compared
+PASS diff: fleet add-on state change -> DIFFERENT
+PASS diff: add-on state excepted when its only differing file is excepted
+PASS diff: add-on state stays open when the file is not excepted
+PASS diff: add-on state stays open when one differing file is open
+PASS diff: add-on state with no differing file stays open
+PASS diff: table hides REPRODUCED by default
+PASS diff: table shows exception reason
+PASS diff: table summary line
+PASS cli diff --json: exit 1 with open items
+PASS cli diff --json: every item has a class
+PASS cli diff: all open items excepted -> exit 0
+PASS cli diff: fleet items merged
+PASS cli diff: one-sided fleet refused (exit 3)
+PASS teardown: identical -> no leftovers
+PASS teardown: new item -> leftover
+PASS teardown: removed item is not a leftover
+PASS cli teardown: leftover -> exit 1
+PASS cli teardown: clean -> exit 0
+PASS teardown: exit 0 on success
+PASS teardown: sandbox instance/network/pool deleted, others kept
+PASS teardown: only the image this run downloaded deleted
+PASS teardown: every jump removed (also a duplicate), other rules kept
+PASS teardown: both chains deleted
+PASS teardown: DOCKER-USER untouched
+PASS teardown: reports complete
+PASS teardown: both custom volumes deleted (before the pool), other pool's volume kept
+PASS teardown: empty nft table inet lxd the run created is deleted
+PASS teardown: idempotent on a clean host (exit 0)
+PASS teardown: instance delete fails -> exit 5 INCOMPLETE
+PASS teardown: input chain delete fails -> exit 5 INCOMPLETE
+PASS teardown: pre-existing nft table inet lxd left alone
+PASS teardown: nft table with chains left alone and reported INCOMPLETE
+PASS teardown: refuses without --yes (exit 3)
+PASS rb-manifest: installs every validator/both row (6)
+PASS rb-manifest: enables the timer and the long-running service only
+PASS rb-manifest: no validator/both rows -> exit 1
+PASS rb-fleet-conf: REPO = sandbox checkout, REF = its HEAD commit
+PASS rb-fleet-conf: hosts.conf lists only the local validator
+PASS rb-fleet-conf: an existing file is left alone
+PASS rb-limit: signature in lxc -> 0 + SANDBOX_LIMIT
+PASS rb-limit: success passes through
+PASS rb-limit: other failure in lxc keeps rc
+PASS rb-limit: signature outside a container keeps rc
+PASS rb-limit: signature on stderr counts
+PASS rb-limit apparmor-nested: fail + rollback PASS -> limit
+PASS rb-limit apparmor-nested: fail, rollback not PASS -> rc
+PASS rb-limit apparmor-nested: rollback PASS, other failure -> rc
+PASS rb-limit apparmor-nested: server_state syncing is not the signature
+PASS rb-limit apparmor-nested: seccomp rollback line does not count
+PASS rb-limit kernel-audit: fail + rollback PASS -> limit
+PASS rb-limit kernel-audit: fail, rollback not PASS -> rc
+PASS rb-limit kernel-audit: apparmor rollback line does not count
+PASS rb-limit kernel-audit: outside a container keeps rc
+PASS rb-limit: unknown limit -> exit 3
+PASS aa-nested: counts only DENIED for the profile in the sandbox namespace since the step start
+PASS aa-nested: a record without namespace is the live node
+PASS aa-nested: another instance name's namespace is not the sandbox
+PASS cli aa-nested: sandbox-only denials -> CONFIRMED exit 0
+PASS cli aa-nested: one live denial -> NOT CONFIRMED exit 1
+PASS cli aa-nested: no sandbox denial in the span -> exit 1
+PASS cli aa-nested: missing options -> exit 3
+FAIL drill limits: both limits confirmed on the live host -> exit 0 -- (2, '  aaapply: SANDBOX_LIMIT apparmor-nested: nested AppArmor namespace (step rc 1)\nCHECK ok   apparmor-nested: step start time recorded (1793916000)\n    sandbox-denied    1  file_mmap /usr/bin/bash\n    sandbox-denied    2  file_mprotect /io.containerd.snapshotter.v1.overlayfs/snapshots/2/fs/usr/lib/x86_64-linux-gnu/libc.so.6\n    AA_NESTED: CONFIRMED (sandbox namespace 3, live 0 DENIED for pft-postfiatd)\nCHECK ok   apparmor-nested: DENIED only in the sandbox namespace (host audit log)\nCHECK FAIL apparmor-nested: live ~/.cache/rbmut-ip8xnwr5/control/apparmor/profile/pft-postfiatd = committed profile bytes\nCHECK ok   apparmor-nested: live postfiatd runs pft-postfiatd\n  scapply: SANDBOX_LIMIT kernel-audit: no kernel audit log (step rc 1)\nCHECK FAIL kernel-audit: live ~/.cache/rbmut-ip8xnwr5/control/seccomp/profile/pft-postfiatd.json = committed profile bytes\nCHECK ok   kernel-audit: live postfiatd runs a custom seccomp profile\n  2 SANDBOX_LIMIT line(s)\n')
+PASS drill limits: kernel-log needs no live proof -> exit 0
+PASS drill limits: no limit lines -> exit 0
+PASS drill limits: a live denial -> exit 2
+PASS drill limits: live AppArmor profile bytes differ -> exit 2
+PASS drill limits: live container not under pft-postfiatd -> exit 2
+PASS drill limits: live seccomp profile bytes differ -> exit 2
+PASS drill limits: live container without custom seccomp -> exit 2
+PASS drill limits: no audit file readable -> exit 2
+PASS drill limits: apparmor-nested without a recorded step start -> exit 2
+PASS drill limits: unknown limit name -> exit 2
+PASS cli: unknown subcommand -> exit 3
+RESULT: FAIL (144 checks, 1 failed)
+
+exit 1
