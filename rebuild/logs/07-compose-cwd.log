@@ -1,0 +1,9 @@
+OS: Ubuntu 22.04.5 LTS | 2026-11-05T16:48:04Z | pft-restore COMPOSE_FILE cwd resolution (rebuild run 03 restore: stat /root/pfvi/docker-compose.yml) | docker compose 2.40.3+ds1-0ubuntu1~22.04.1
+$ cd ~ && COMPOSE_FILE=docker-compose.yml:extra.yml docker compose --project-directory PROJECT config   # old dc()
+stat ~/docker-compose.yml: no such file or directory
+(exit 1)
+$ env -C PROJECT COMPOSE_FILE=docker-compose.yml:extra.yml docker compose --project-directory PROJECT config   # new dc()
+    image: busybox
+    read_only: true
+(exit 0)
+141:dc() { run env -C "$COMPOSE_DIR" COMPOSE_FILE="$EFFECTIVE" docker compose --project-directory "$COMPOSE_DIR" "$@"; }

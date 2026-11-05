@@ -1,0 +1,348 @@
+OS: Ubuntu 22.04.5 LTS | kernel 5.15.0-202-generic | lxd 5.0.11
+run 20261105T164130Z commit 12ae97223d4e9ddc96ced4a6b7ecb62c47b55a5f sandbox pftrb-sbx cpu=2 mem=3GiB disk=25GiB procs=6000 image=ubuntu:22.04
+
+== 0. preflight
+[2026-11-05T16:41:30Z] preflight (read-only), commit 12ae97223d4e9ddc96ced4a6b7ecb62c47b55a5f
+CHECK ok   LXD available
+CHECK ok   live node postfiatd server_state full
+CHECK ok   live pft-integrity verify PASS
+CHECK ok   no leftover instance pftrb-sbx
+CHECK ok   no leftover network pftrb0
+CHECK ok   no leftover pool pftrb
+CHECK ok   no leftover chain PFT-REBUILD
+CHECK ok   subnet <redacted-ip>/24 unused on the host
+CHECK ok   RB_MEM=3GiB and RB_DISK=25GiB parse as sizes
+CHECK ok   MemAvailable 6151 MiB >= sandbox cap + 1 GiB
+CHECK ok   free disk 69 GiB >= RB_DISK + 10 GiB
+CHECK ok   nightly backup archive present in /var/lib/pft-rebuild/backup-src
+CHECK ok   commit is a full 40-hex SHA
+CHECK ok   this checkout is clean at 12ae97223d4e9ddc96ced4a6b7ecb62c47b55a5f
+CHECK ok   commit public on GitHub (HTTP 200)
+CHECK ok   stack.list valid
+CHECK ok   operator ntfy topics found (2, not printed)
+  host snapshot: 184 items; live baseline: 668 rows
+
+== 1. sandbox infrastructure
+CHECK ok   pool pftrb (lvm loop, size 25GiB)
+CHECK ok   bridge pftrb0 NAT-only IPv4 <redacted-ip>/24
+CHECK ok   firewall chains PFT-REBUILD (forward) / PFT-REBUILD-IN (input) for pftrb0 only
+CHECK ok   instance pftrb-sbx created (not started)
+CHECK ok   live pft-integrity verify still PASS with the sandbox infrastructure up
+
+== 2. sandbox isolation preflight
+CHECK ok   backup sanitized (keys refused, peering stripped)
+  PREFLIGHT: ISOLATED (0 refusals)
+CHECK ok   no sandbox device exposes 2559 5005 51235
+
+== 3. start + network
+CHECK ok   sandbox started
+CHECK ok   sandbox DNS + IPv4 up (9 s)
+CHECK ok   cloud-init finished
+CHECK ok   sandbox cannot reach host admin port 5005 via the bridge
+CHECK ok   sandbox cannot reach host sshd via the bridge
+
+== 4. checkout pinned commit inside the sandbox
+CHECK ok   git + jq installed
+CHECK ok   sandbox HEAD = 12ae97223d4e9ddc96ced4a6b7ecb62c47b55a5f
+CHECK ok   sanitized backup + blackhole ntfy.env pushed
+
+== 5. install steps (rebuild/stack.list @ 12ae97223d4e9ddc96ced4a6b7ecb62c47b55a5f)
+STEP  10 base          rc=1     101s  $ bash install.sh
+  --- last 25 lines of base ---
+  |  a60ef8ec184e Extracting 9 s
+  |  4fdbdab854c4 Downloading [================>                                  ]  66.06MB/198.6MB
+  |  f23545b4186b Downloading [========>                                          ]  41.94MB/244.6MB
+  |  4bef51fa5543 Downloading [===========>                                       ]  94.37MB/421.9MB
+  |  89418c1f8e76 Downloading [=====>                                             ]  70.25MB/685.8MB
+  |  a60ef8ec184e Extracting 9 s
+  |  4bef51fa5543 Downloading [===========>                                       ]  95.42MB/421.9MB
+  |  89418c1f8e76 Downloading [=====>                                             ]   71.3MB/685.8MB
+  |  4fdbdab854c4 Downloading [================>                                  ]  66.06MB/198.6MB
+  |  f23545b4186b Downloading [========>                                          ]  41.94MB/244.6MB
+  |  a60ef8ec184e Extracting 9 s
+  |  4bef51fa5543 Downloading [===========>                                       ]  96.47MB/421.9MB
+  |  89418c1f8e76 Downloading [=====>                                             ]   71.3MB/685.8MB
+  |  4fdbdab854c4 Downloading [================>                                  ]  66.06MB/198.6MB
+  |  f23545b4186b Downloading [========>                                          ]  42.99MB/244.6MB
+  |  4fdbdab854c4 Downloading [================>                                  ]  66.06MB/198.6MB
+  |  f23545b4186b Downloading [========>                                          ]  42.99MB/244.6MB
+  |  4bef51fa5543 Downloading [===========>                                       ]  96.47MB/421.9MB
+  |  89418c1f8e76 Downloading [=====>                                             ]  72.35MB/685.8MB
+  |  a60ef8ec184e Pull complete 
+  |  4fdbdab854c4 Downloading [================>                                  ]  66.06MB/198.6MB
+  |  f23545b4186b Downloading [========>                                          ]  42.99MB/244.6MB
+  |  4bef51fa5543 Downloading [===========>                                       ]  97.52MB/421.9MB
+  |  89418c1f8e76 Downloading [=====>                                             ]  72.35MB/685.8MB
+  | failed to extract layer (application/vnd.docker.image.rootfs.diff.tar.gzip sha256:32c568fa6de94cbf6ce9a94613336224352bd718f2fe0a633948ba98151ab522) to overlayfs as "extract-148627992-JRum sha256:e43e18ad309c9ac6cdfaef825eab113bee8ba330a3aacb25f9c2eda103df2752": failed to mount /var/lib/containerd/tmpmounts/containerd-mount4063433652: mount source: "overlay", target: "/var/lib/containerd/tmpmounts/containerd-mount4063433652", fstype: overlay, flags: 0, data: "workdir=/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/3/work,upperdir=/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/3/fs,lowerdir=/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/2/fs,userxattr,index=off", err: invalid argument
+STEP  20 restore       rc=1       2s  $ rb-restore
+  --- last 25 lines of restore ---
+  | [2026-11-05T16:47:20Z] OS: Ubuntu 22.04.5 LTS
+  | [2026-11-05T16:47:20Z] archive: /root/rb/backup/pft-backup-20261105T163505Z.tar.gz
+  | [2026-11-05T16:47:20Z] archive sha256 OK (99bad803195218c6fa3b7951c5e0300e28e0a0ecdee255344d2b589b3f00c053)
+  | [2026-11-05T16:47:20Z] verifying MANIFEST.sha256 (22 entries)
+  | [2026-11-05T16:47:20Z] manifest OK
+  |   meta: created_utc=20261105T163505Z
+  |   meta: os=Ubuntu 22.04.5 LTS
+  |   meta: image=agtipft/postfiatd:testnet-light-latest
+  |   meta: build_version=1.0.9
+  |   meta: secrets_included=0
+  |   meta: excluded=postfiatd.cfg sections [validator_token], [validation_seed], [node_seed] (present: [node_seed] )
+  |   meta: excluded=/etc/postfiat-monitor.env
+  |   meta: not_backed_up=ledger database (postfiatd-data volume): re-syncs from the network
+  | [2026-11-05T16:47:20Z] DEFERRED overlay docker-compose.apparmor.yml: AppArmor profile pft-postfiatd not loaded; re-create it with apparmor/ (sudo pft-apparmor apply --yes)
+  | [2026-11-05T16:47:20Z] DEFERRED overlay docker-compose.seccomp.yml: seccomp profile /etc/pft-seccomp/pft-postfiatd.json missing; re-create it with seccomp/ (sudo pft-seccomp apply --yes)
+  | [2026-11-05T16:47:20Z] compose files: docker-compose.yml:docker-compose.override.yml:docker-compose.confine.yml (deferred: docker-compose.apparmor.yml docker-compose.seccomp.yml)
+  | [2026-11-05T16:47:20Z] restore compose files -> /opt/postfiatd
+  | [2026-11-05T16:47:20Z] COMPOSE_FILE in /opt/postfiatd/.env without the deferred overlays: docker-compose.yml:docker-compose.override.yml:docker-compose.confine.yml
+  | [2026-11-05T16:47:20Z] skip units (use --with-units)
+  | [2026-11-05T16:47:20Z] skip firewall (use --with-firewall; saved rules are in firewall/ of the archive)
+  | [2026-11-05T16:47:20Z] create container and load config into its volume
+  | stat /root/pfvi/docker-compose.yml: no such file or directory
+STEP  30 exporter      rc=0       0s  $ rb-manifest exporter
+STEP  40 integrity     rc=0       2s  $ rb-manifest integrity
+STEP  50 backup        rc=0       1s  $ rb-manifest backup
+STEP  60 monitor       rc=0       1s  $ rb-manifest monitor
+STEP  70 maint         rc=0       2s  $ bash maint/install.sh install --label validator --ntfy-env /etc/pft-rebuild/ntfy.env
+STEP  80 retention     rc=0       1s  $ rb-manifest retention
+STEP  90 resources     rc=3       0s  $ bash resources/install.sh --container postfiatd
+  --- last 25 lines of resources ---
+  | container postfiatd not running
+STEP 100 statewatch    rc=3       1s  $ bash statewatch/install.sh --container postfiatd
+  --- last 25 lines of statewatch ---
+  | container postfiatd not running
+STEP 110 feewatch      rc=3       1s  $ bash feewatch/install.sh --container postfiatd
+  --- last 25 lines of feewatch ---
+  | container postfiatd not running
+STEP 120 upgradewatch  rc=3       0s  $ bash upgradewatch/install.sh --container postfiatd
+  --- last 25 lines of upgradewatch ---
+  | container postfiatd not running
+STEP 130 backfill      rc=1       2s  $ bash backfill/install.sh
+  --- last 25 lines of backfill ---
+  | 2026-11-05T16:47:31Z installed /usr/local/bin/pft-backfill (sha256 b674c31a38049ee08c3ffb49450aaa5ef0c0be3b809c039780e13a381ca162b1)
+  | 2026-11-05T16:47:31Z installed /usr/local/lib/pft-backfill/backfill_parse.py (sha256 eb5b357448f4398209609ce5d5b34d26cf23c2040f7d70f218f9817584bd6034)
+  | 2026-11-05T16:47:31Z first status check (through the sandboxed unit, HOST_LABEL=validator, CONTAINER=postfiatd):
+  | Job for pft-backfill.service failed because the control process exited with error code.
+  | See "systemctl status pft-backfill.service" and "journalctl -xeu pft-backfill.service" for details.
+  | 2026-11-05T16:47:32Z ERROR: first status check failed
+  | Nov 05 16:47:31 pftrb-sbx systemd[1]: Starting pft-backfill status: ledger-history gaps inside the online_delete window (read-only)...
+  | Nov 05 16:47:31 pftrb-sbx pft-backfill[3980]: pft-backfill: rpc server_info failed: Error response from daemon: No such container: postfiatd 2
+  | Nov 05 16:47:31 pftrb-sbx systemd[1]: pft-backfill.service: Main process exited, code=exited, status=2/INVALIDARGUMENT
+  | Nov 05 16:47:31 pftrb-sbx systemd[1]: pft-backfill.service: Failed with result 'exit-code'.
+  | Nov 05 16:47:31 pftrb-sbx systemd[1]: Failed to start pft-backfill status: ledger-history gaps inside the online_delete window (read-only).
+STEP 140 kernwatch     rc=1       1s  $ bash kernwatch/install.sh --host validator
+  --- last 25 lines of kernwatch ---
+  | 2026-11-05T16:47:32Z installed /usr/local/bin/pft-kernwatch (sha256 9581bd4df0042cb121770e3c0e6e535bbde58ea11e03d1075bd4cccb42a3d31f)
+  | 2026-11-05T16:47:32Z installed /usr/local/lib/pft-kernwatch/kernwatch_parse.py (sha256 f09b6f08d7d0e9c7ccba5acda0059aae8a64b91e9296b5cfb199e920af1121b3)
+  | 2026-11-05T16:47:32Z installed /usr/local/lib/pft-kernwatch/catalogue.tsv (sha256 54d05f903e12f0ed20b51824ab542d7057e5196ca071498e9067fd206e966d6f)
+  | 2026-11-05T16:47:32Z check-catalogue: catalogue version 1 sha256 54d05f903e12f0ed20b51824ab542d7057e5196ca071498e9067fd206e966d6f patterns 40
+  | 2026-11-05T16:47:32Z set HOST_LABEL=validator in /etc/pft-kernwatch.env
+  | 2026-11-05T16:47:32Z installed /etc/systemd/system/pft-kernwatch.service (sha256 92e007875f914a4f13face3cec2d473bc01f0c6781f8fa21c1dda0d3fd779e5d)
+  | 2026-11-05T16:47:32Z installed /etc/systemd/system/pft-kernwatch.timer (sha256 61410c7a5f013c51b09d55658979e5a6ac79d04483a408161c7496375fcd43a1)
+  | 2026-11-05T16:47:32Z first collection (through the sandboxed unit):
+  | Job for pft-kernwatch.service failed because the control process exited with error code.
+  | See "systemctl status pft-kernwatch.service" and "journalctl -xeu pft-kernwatch.service" for details.
+  | Starting pft-kernwatch: classify new host kernel-log records (journalctl -k) into textfile metrics...
+  | pft-kernwatch: kernwatch_parse: Data from the specified boot (7ccb0487586944b6aabfccb2eec9699e) is not available: No such boot ID in journal: up 0
+  | pft-kernwatch.service: Main process exited, code=exited, status=1/FAILURE
+  | pft-kernwatch.service: Failed with result 'exit-code'.
+  | Failed to start pft-kernwatch: classify new host kernel-log records (journalctl -k) into textfile metrics.
+  | 2026-11-05T16:47:33Z ERROR: pft-kernwatch.service failed
+STEP 150 authwatch     rc=0       1s  $ bash authwatch/install.sh --host validator
+STEP 160 timesync      rc=0       2s  $ bash timesync/install.sh
+STEP 170 vulnscan      rc=0      53s  $ bash vulnscan/install.sh --host validator
+STEP 180 privesc       rc=3       0s  $ bash privesc/install.sh --host validator
+  --- last 25 lines of privesc ---
+  | agent account missing: pass --agent ACCOUNT
+STEP 190 mounts        rc=0       2s  $ bash mounts/install.sh --host validator
+STEP 200 apparmor      rc=0       2s  $ bash apparmor/install.sh --host validator
+STEP 210 seccomp       rc=0       2s  $ bash seccomp/install.sh --host validator
+STEP 220 cluster       rc=1       2s  $ bash cluster/install.sh
+  --- last 25 lines of cluster ---
+  | 2026-11-05T16:48:35Z installed /usr/local/bin/pft-cluster (sha256 a31db6d4d9779e399e020dd1f371ff2c7f678ed05e3dc45e477d9becdcdf0975)
+  | 2026-11-05T16:48:36Z first audit (through the sandboxed unit, HOST_LABEL=validator):
+  | Job for pft-cluster.service failed because the control process exited with error code.
+  | See "systemctl status pft-cluster.service" and "journalctl -xeu pft-cluster.service" for details.
+  | 2026-11-05T16:48:37Z ERROR: first audit failed
+  | Nov 05 16:48:36 pftrb-sbx systemd[1]: Starting pft-cluster audit: pinned node identity and validator<->sentry cluster membership...
+  | Nov 05 16:48:37 pftrb-sbx pft-cluster[6357]: pft-cluster: cannot find postfiatd.cfg of postfiatd (no /etc/postfiatd mount)
+  | Nov 05 16:48:37 pftrb-sbx systemd[1]: pft-cluster.service: Main process exited, code=exited, status=2/INVALIDARGUMENT
+  | Nov 05 16:48:37 pftrb-sbx systemd[1]: pft-cluster.service: Failed with result 'exit-code'.
+  | Nov 05 16:48:37 pftrb-sbx systemd[1]: Failed to start pft-cluster audit: pinned node identity and validator<->sentry cluster membership.
+STEP 230 keyescrow     rc=3       0s  $ bash keyescrow/install.sh --host validator
+  --- last 25 lines of keyescrow ---
+  | age and age-keygen are required (Ubuntu 22.04: apt-get install age)
+STEP 240 rulecheck     rc=1       1s  $ bash rulecheck/install.sh --host-label validator
+  --- last 25 lines of rulecheck ---
+  | 2026-11-05T16:48:37Z installed /usr/local/bin/pft-rulecheck (sha256 5659e0169c3bfead4f2a28ae8074ed1e19c345e61df87a5e5f9d65686994b4a1)
+  | 2026-11-05T16:48:37Z installed /usr/local/lib/pft-rulecheck/rulecheck_lib.py (sha256 2e73cd052ddc6accd8c84e086f062e232726244989390e51cc7a81e9dacf0345)
+  | 2026-11-05T16:48:37Z wrote /etc/pft-rulecheck.env (HOST_LABEL=validator NO_PROM=0)
+  | 2026-11-05T16:48:37Z wrote /etc/pft-rulecheck.conf from pft-rulecheck.conf.example
+  | 2026-11-05T16:48:38Z first check (through the sandboxed unit; exit 1 = findings is a success for the unit):
+  | Job for pft-rulecheck.service failed because the control process exited with error code.
+  | See "systemctl status pft-rulecheck.service" and "journalctl -xeu pft-rulecheck.service" for details.
+  | Nov 05 16:48:38 pftrb-sbx systemd[1]: Starting pft-rulecheck: dead alert rules + stale textfile inputs (writes textfile metrics)...
+  | Nov 05 16:48:38 pftrb-sbx pft-rulecheck[6527]: ERROR /api/v1/rules: <urlopen error [Errno 111] Connection refused>
+  | Nov 05 16:48:38 pftrb-sbx pft-rulecheck[6527]: RESULT ERROR - rules: skipped | textfiles: skipped -> exit 2
+  | Nov 05 16:48:38 pftrb-sbx systemd[1]: pft-rulecheck.service: Main process exited, code=exited, status=2/INVALIDARGUMENT
+  | Nov 05 16:48:38 pftrb-sbx systemd[1]: pft-rulecheck.service: Failed with result 'exit-code'.
+  | Nov 05 16:48:38 pftrb-sbx systemd[1]: Failed to start pft-rulecheck: dead alert rules + stale textfile inputs (writes textfile metrics).
+STEP 250 divergence    rc=0       2s  $ rb-manifest divergence
+STEP 260 egress        rc=0       0s  $ rb-manifest egress
+STEP 270 sysctl        rc=0       1s  $ rb-manifest sysctl
+STEP 280 audittrail    rc=0       1s  $ rb-manifest audittrail
+STEP 290 logship       rc=0       1s  $ rb-manifest logship
+STEP 300 patch         rc=0       1s  $ bash patch/install.sh
+STEP 310 alertpath     rc=0       1s  $ rb-manifest alertpath
+STEP 320 watchdog      rc=0       2s  $ rb-manifest watchdog
+STEP 330 fleet         rc=3       0s  $ bash fleet/install.sh
+  --- last 25 lines of fleet ---
+  | /etc/pft-fleet/fleet.conf missing, not root-owned or group/other-writable (see fleet.conf.example)
+STEP 340 baseline      rc=0       2s  $ pft-integrity baseline
+TIME_TO_FULL n/a s (restore step start -> server_state full, cap 3600 s)
+sandbox server_state now: down
+
+== 6. diff sandbox vs live
+  sandbox pft-fleet inventory unavailable: diff uses pft-integrity items only
+CLASS       ITEM                                                         DETAIL
+MISSING     bin:pft-agent
+MISSING     bin:pft-feewatch
+MISSING     bin:pft-keyescrow
+MISSING     bin:pft-privesc
+MISSING     bin:pft-resources
+MISSING     bin:pft-resources-pull
+MISSING     bin:pft-sshcrypto
+MISSING     bin:pft-statewatch
+MISSING     bin:pft-upgradewatch
+MISSING     bin:postfiat-health
+MISSING     cfgvol:postfiatd.cfg
+MISSING     cfgvol:postfiatd.cfg.pre-fixed
+MISSING     cfgvol:postfiatd.cfg.pre-sentry
+MISSING     cfgvol:validators.txt
+MISSING     compose:.env
+MISSING     compose:docker-compose.apparmor.yml
+MISSING     compose:docker-compose.confine.yml
+MISSING     compose:docker-compose.override.yml
+MISSING     compose:docker-compose.seccomp.yml
+MISSING     compose:docker-compose.yml
+EXTRA       compose:none
+EXTRA       container:none
+MISSING     container:postfiatd
+MISSING     dropin:pft-backup.service.d/50-unitguard.conf
+MISSING     dropin:pft-divergence.service.d/50-unitguard.conf
+MISSING     dropin:pft-egress-reapply@.service.d/50-unitguard.conf
+MISSING     dropin:pft-exporter.service.d/50-unitguard.conf
+MISSING     dropin:pft-heartbeat.service.d/50-unitguard.conf
+MISSING     dropin:pft-integrity.service.d/50-unitguard.conf
+MISSING     dropin:pft-logship-check.service.d/50-unitguard.conf
+MISSING     dropin:pft-logship-dockerlog@.service.d/50-unitguard.conf
+MISSING     dropin:pft-logship-vacuum.service.d/50-unitguard.conf
+MISSING     dropin:pft-maint-tick.service.d/50-unitguard.conf
+MISSING     dropin:pft-retention-sample.service.d/50-unitguard.conf
+MISSING     dropin:postfiat-docker-user.service.d/50-unitguard.conf
+MISSING     dropin:postfiat-monitor.service.d/50-unitguard.conf
+DIFFERENT   fw:docker-user                                               rules,sha256
+DIFFERENT   fw:ufw                                                       rules,sha256
+MISSING     image:local:agtipft/postfiatd:testnet-light-latest
+MISSING     image:local:pft-exporter:latest
+MISSING     image:local:prom/alertmanager:v0.28.1
+MISSING     image:local:prom/prometheus:v3.5.0
+MISSING     image:local:python:3.12-alpine
+MISSING     image:local:python:3.12-slim
+MISSING     image:registry
+MISSING     image:running
+DIFFERENT   sshd:effective                                               sha256
+DIFFERENT   sshd:sshd_config                                             sha256
+MISSING     sshd:sshd_config.d/10-pft-sshcrypto.conf
+MISSING     sshd:sshd_config.d/40-pft-hardening.conf
+MISSING     sshd:sshd_config.d/50-cloud-init.conf
+MISSING     unit:pft-apparmor-pull.service
+MISSING     unit:pft-apparmor-pull.timer
+MISSING     unit:pft-authwatch-pull.service
+MISSING     unit:pft-authwatch-pull.timer
+MISSING     unit:pft-backfill-pull.service
+MISSING     unit:pft-backfill-pull.timer
+MISSING     unit:pft-cluster-pull.service
+MISSING     unit:pft-cluster-pull.timer
+MISSING     unit:pft-egress-reapply@.service
+MISSING     unit:pft-egress-reapply@.timer
+MISSING     unit:pft-feewatch-pull@.service
+MISSING     unit:pft-feewatch-pull@.timer
+MISSING     unit:pft-feewatch@.service
+MISSING     unit:pft-feewatch@.timer
+MISSING     unit:pft-fleet.service
+MISSING     unit:pft-fleet.timer
+MISSING     unit:pft-kernwatch-pull.service
+MISSING     unit:pft-kernwatch-pull.timer
+MISSING     unit:pft-keyescrow-escrow.service
+MISSING     unit:pft-keyescrow-escrow.timer
+MISSING     unit:pft-keyescrow-pull.service
+MISSING     unit:pft-keyescrow-pull.timer
+MISSING     unit:pft-keyescrow.service
+MISSING     unit:pft-keyescrow.timer
+MISSING     unit:pft-ledger-stats.service
+MISSING     unit:pft-logship-check.service
+MISSING     unit:pft-logship-check.timer
+MISSING     unit:pft-logship-dockerlog@.service
+MISSING     unit:pft-logship-vacuum.service
+MISSING     unit:pft-logship-vacuum.timer
+MISSING     unit:pft-mounts-pull.service
+MISSING     unit:pft-mounts-pull.timer
+MISSING     unit:pft-privesc-pull.service
+MISSING     unit:pft-privesc-pull.timer
+MISSING     unit:pft-privesc.service
+MISSING     unit:pft-privesc.timer
+MISSING     unit:pft-resources-pull@.service
+MISSING     unit:pft-resources-pull@.timer
+MISSING     unit:pft-resources@.service
+MISSING     unit:pft-resources@.timer
+MISSING     unit:pft-rulecheck-pull.service
+MISSING     unit:pft-rulecheck-pull.timer
+MISSING     unit:pft-seccomp-pull.service
+MISSING     unit:pft-seccomp-pull.timer
+MISSING     unit:pft-sshcrypto-pull.service
+MISSING     unit:pft-sshcrypto-pull.timer
+MISSING     unit:pft-sshcrypto.service
+MISSING     unit:pft-sshcrypto.timer
+MISSING     unit:pft-statewatch-pull@.service
+MISSING     unit:pft-statewatch-pull@.timer
+MISSING     unit:pft-statewatch@.service
+MISSING     unit:pft-statewatch@.timer
+MISSING     unit:pft-timesync-pull.service
+MISSING     unit:pft-timesync-pull.timer
+MISSING     unit:pft-txmix-collect.service
+MISSING     unit:pft-upgradewatch-pull@.service
+MISSING     unit:pft-upgradewatch-pull@.timer
+MISSING     unit:pft-upgradewatch@.service
+MISSING     unit:pft-upgradewatch@.timer
+MISSING     unit:pft-validators-record.service
+MISSING     unit:pft-vulnscan-pull.service
+MISSING     unit:pft-vulnscan-pull.timer
+SUMMARY: REPRODUCED=60 MISSING=107 EXTRA=2 DIFFERENT=4 excepted=0 open=111
+
+== 7. teardown
+[2026-11-05T16:48:50Z] teardown: instance pftrb-sbx, network pftrb0, pool pftrb, image cache, chains PFT-REBUILD/PFT-REBUILD-IN
+  instance deleted
+  cached image deleted
+Network pftrb0 deleted
+  network deleted
+Storage pool pftrb deleted
+  pool deleted
+  removed jump: FORWARD -i pftrb0 -j PFT-REBUILD
+  removed jump: FORWARD -o pftrb0 -j PFT-REBUILD
+  removed jump: INPUT -i pftrb0 -j PFT-REBUILD-IN
+  removed chain PFT-REBUILD
+  removed chain PFT-REBUILD-IN
+  removed empty nft table inet lxd
+  teardown complete: no sandbox resource left
+CHECK ok   teardown removed every sandbox resource
+  TEARDOWN: CLEAN (0 leftovers)
+CHECK ok   teardown complete (host snapshot identical)
+
+== 8. live host after
+CHECK ok   live server_state full
+  RESULT: PASS - 171 unchanged, 0 warn, 0 fail -> exit 0
+CHECK ok   live pft-integrity verify PASS
+CHECK ok   operator ntfy topics: 0 messages since run start
+
+per-step timings: /var/lib/pft-rebuild/20261105T164130Z/timings.tsv; per-step logs: /var/lib/pft-rebuild/20261105T164130Z/steps/
+RESULT: FAIL (13 checks/steps failed, diff rc 1)

@@ -136,7 +136,9 @@ for m in "${listed[@]}"; do
 done
 EFFECTIVE="$(IFS=:; echo "${members[*]}")"
 log "compose files: $EFFECTIVE${deferred[*]:+ (deferred: ${deferred[*]})}"
-dc() { run env COMPOSE_FILE="$EFFECTIVE" docker compose --project-directory "$COMPOSE_DIR" "$@"; }
+# compose resolves COMPOSE_FILE members against the CWD, not --project-directory (rebuild run 03: "stat
+# /root/pfvi/docker-compose.yml"), so run it from COMPOSE_DIR.
+dc() { run env -C "$COMPOSE_DIR" COMPOSE_FILE="$EFFECTIVE" docker compose --project-directory "$COMPOSE_DIR" "$@"; }
 
 # 4. compose files
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
