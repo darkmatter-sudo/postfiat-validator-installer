@@ -15,7 +15,7 @@ helper: syscall table from libseccomp, Docker rule resolution, profile + diff, c
 [`../alerts/seccomp.rules.yml`](../alerts/seccomp.rules.yml) + [`seccomp.tests.yml`](../alerts/seccomp.tests.yml) ·
 [`tests/`](tests/) · [`systemd/`](systemd/) · [`install.sh`](install.sh).
 
-## Status (2026-11-05T12:10Z)
+## Status (2026-11-05T11:55Z)
 
 | Card step | State |
 |---|---|
@@ -54,7 +54,7 @@ differs from the raw run log.
 
 Aftercare after the run (not in the log): both nodes' `pft-keyescrow` textfiles still held `drift_items` 2 from
 11:04Z, while the drill's redirected ntfy env files were in place (lesson from keyescrow: they fingerprint those files).
-`pft-keyescrow.service` was re-run on both hosts at 11:58Z (drift 0, alert was only pending, `for: 2h`); the restore
+`pft-keyescrow.service` was re-run on both hosts at 11:53:56Z (validator) and 11:53:58Z (sentry), per their journals (drift 0, alert was only pending, `for: 2h`); the restore
 step of `drill/live-run.sh` does not re-run it yet.
 
 ## Live run 11 (2026-11-05): stopped at the sentry canary
