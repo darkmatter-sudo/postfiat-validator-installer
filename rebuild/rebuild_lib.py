@@ -280,18 +280,25 @@ def _addon_state_follows_files(rows, live, sandbox):
     such row is excepted; an add-on with no differing file, or with one open file, stays open."""
     by_key = {r["key"]: r for r in rows}
     for r in rows:
-        if not r["key"].startswith("addon:") or r["class"] == "REPRODUCED" or r["exception"]:
+        if (
+            not r["key"].startswith("addon:")
+            or r["class"] == "REPRODUCED"
+            or r["exception"]
+        ):
             continue
-        name = r["key"][len("addon:"):]
+        name = r["key"][len("addon:") :]
         files = [
             f
             for k, f in by_key.items()
             if k.startswith("file:")
             and f["class"] != "REPRODUCED"
-            and name in ((live.get(k) or {}).get("addon"), (sandbox.get(k) or {}).get("addon"))
+            and name
+            in ((live.get(k) or {}).get("addon"), (sandbox.get(k) or {}).get("addon"))
         ]
         if files and all(f["exception"] for f in files):
-            r["exception"] = f"add-on state follows its files: all {len(files)} differing file(s) are excepted"
+            r["exception"] = (
+                f"add-on state follows its files: all {len(files)} differing file(s) are excepted"
+            )
 
 
 def summarize(rows):

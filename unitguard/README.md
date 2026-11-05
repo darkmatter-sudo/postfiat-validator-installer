@@ -25,6 +25,11 @@ Env: `PROFILE_DIR`, `DROPIN_ROOT` (/etc/systemd/system), `STATE_DIR` (/var/lib/p
 `HOLD_UNITS` (units to leave alone, e.g. a collector in the middle of a 24h data window).
 
 **apply** in detail: the drop-in is written root-owned (dir 0755, file 0644), then `daemon-reload`. A oneshot unit is
+
+**Fresh hosts:** apply a profile only after the unit has run once. A profile's `ReadWritePaths=` dirs (for example
+`/var/backups/postfiat`, `/var/lib/pft-integrity`) are created by the unit's first run; before that the unit fails
+with `226/NAMESPACE` under the drop-in and apply rolls back. Found by `../rebuild/` run 11, which now runs
+`pft-integrity baseline` and one `pft-backup`/`pft-integrity` start before `apply --all`.
 started (restarted when `RemainAfterExit=yes`, because `start` on an active one runs nothing) and must end with
 `Result=success`. A long-running unit is restarted and must stay active for `SETTLE_SEC` with `NRestarts` unchanged.
 Then the profile's `#@ check:` command must exit 0, and the new exposure must meet the class target. If any step

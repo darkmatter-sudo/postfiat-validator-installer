@@ -31,3 +31,4 @@ cfgvol:postfiatd.cfg              *   drill strips [ips_fixed]/[peer_private]/[c
 unit-enabled:pft-kernwatch.timer  enabled   SANDBOX_LIMIT kernel-log: install.sh leaves the timer disabled when the first audit cannot read a kernel log (rb-limit)
 image:local:python:3.12-alpine    id    alerts/run-stack.sh uses the rolling python:3.12-alpine tag for the bridge; the image id is whatever the tag pointed to on pull day
 sshd:sshd_config                  sha256   stock file of the cloud provider's 22.04 image differs from the LXD ubuntu:22.04 image's; no repo script edits sshd_config (drop-ins only)
+dropin:pft-heartbeat.service.d/*  *   pft-heartbeat signs and sends to the watchdog on the sentry (cross-host; fails without a peer), so unitguard skips it

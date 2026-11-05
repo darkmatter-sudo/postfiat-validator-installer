@@ -119,7 +119,13 @@ def idx(n):
 
 
 check("stack.list (repo): parses", len(real) >= 30, len(real))
-check("stack.list (repo): baseline is the last step", names[-1:] == ["baseline"])
+check(
+    "stack.list (repo): the integrity manifest is written last (baseline, then only unitguard + its accept)",
+    names[-1:] == ["rebaseline"]
+    and real[-1]["cmd"].startswith("pft-integrity accept ")
+    and names[idx("baseline") + 1 :] == ["firstrun", "unitguard", "rebaseline"],
+    names[-4:],
+)
 check(
     "stack.list (repo): restore before backup",
     idx("restore") < idx("backup"),
@@ -408,8 +414,18 @@ check(
 FL3 = copy.deepcopy(FL)
 FL3["addons"] = [{"addon": "apparmor", "state": "CURRENT"}]
 FL3["files"] = [
-    {"addon": "apparmor", "path": "/usr/local/bin/pft-apparmor", "sha256": "aa", "state": "CURRENT"},
-    {"addon": "apparmor", "path": "/etc/systemd/system/pft-apparmor-pull.timer", "sha256": "bb", "state": "CURRENT"},
+    {
+        "addon": "apparmor",
+        "path": "/usr/local/bin/pft-apparmor",
+        "sha256": "aa",
+        "state": "CURRENT",
+    },
+    {
+        "addon": "apparmor",
+        "path": "/etc/systemd/system/pft-apparmor-pull.timer",
+        "sha256": "bb",
+        "state": "CURRENT",
+    },
 ]
 FS3 = copy.deepcopy(FL3)
 FS3["addons"][0]["state"] = "MISSING"
@@ -418,23 +434,33 @@ exc3 = rl.parse_exceptions("file:/etc/systemd/system/pft-*-pull* * cross-host\n"
 fr = {r["key"]: r for r in rl.classify(rl.fleet_items(FL3), rl.fleet_items(FS3), exc3)}
 check(
     "diff: add-on state excepted when its only differing file is excepted",
-    fr["addon:apparmor"]["exception"] and "1 differing file" in fr["addon:apparmor"]["exception"],
+    fr["addon:apparmor"]["exception"]
+    and "1 differing file" in fr["addon:apparmor"]["exception"],
     fr["addon:apparmor"],
 )
 fr = {r["key"]: r for r in rl.classify(rl.fleet_items(FL3), rl.fleet_items(FS3))}
-check("diff: add-on state stays open when the file is not excepted", not fr["addon:apparmor"]["exception"], fr)
+check(
+    "diff: add-on state stays open when the file is not excepted",
+    not fr["addon:apparmor"]["exception"],
+    fr,
+)
 FS4 = copy.deepcopy(FS3)
 FS4["files"][0]["sha256"] = "zz"
 fr = {r["key"]: r for r in rl.classify(rl.fleet_items(FL3), rl.fleet_items(FS4), exc3)}
 check(
     "diff: add-on state stays open when one differing file is open",
-    not fr["addon:apparmor"]["exception"] and not fr["file:/usr/local/bin/pft-apparmor"]["exception"],
+    not fr["addon:apparmor"]["exception"]
+    and not fr["file:/usr/local/bin/pft-apparmor"]["exception"],
     fr,
 )
 FS5 = copy.deepcopy(FL3)
 FS5["addons"][0]["state"] = "BEHIND"
 fr = {r["key"]: r for r in rl.classify(rl.fleet_items(FL3), rl.fleet_items(FS5), exc3)}
-check("diff: add-on state with no differing file stays open", not fr["addon:apparmor"]["exception"], fr)
+check(
+    "diff: add-on state with no differing file stays open",
+    not fr["addon:apparmor"]["exception"],
+    fr,
+)
 tbl = rl.render_table(rl.classify(lm, sm, exc), rl.summarize(rl.classify(lm, sm, exc)))
 check("diff: table hides REPRODUCED by default", "bin:a" not in tbl and "bin:b" in tbl)
 check("diff: table shows exception reason", "[exception: host-specific]" in tbl)

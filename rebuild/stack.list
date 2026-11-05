@@ -11,6 +11,9 @@
 # `rb-limit LIMIT CMD` marks a step that cannot fully work in an LXD system container (fixed list in rebuild/bin/rb-limit,
 # matched by exact error signature); the drill prints each SANDBOX_LIMIT line in its result.
 # Cross-host parts (relay pulls, heartbeats to the sentry) need a second host and are exceptions (exceptions.list).
+# unitguard runs after `firstrun`: a unit's ReadWritePaths dirs (/var/backups/postfiat, /var/lib/pft-integrity) only exist
+# after its first run, and a drop-in naming a missing dir fails with 226/NAMESPACE (run 11). Its drop-ins are then
+# accepted into the sandbox's integrity baseline, as on the live host.
 10  base          -               bash install.sh
 20  restore       base            rb-restore
 30  exporter      base            rb-manifest exporter
@@ -47,5 +50,7 @@
 310 alertpath     exporter        rb-manifest alertpath
 320 watchdog      base            rb-manifest watchdog
 330 fleet         base            rb-fleet-conf && bash fleet/install.sh
-335 unitguard     egress,logship,watchdog,fleet  bash unitguard/pft-unitguard.sh apply --all
-340 baseline      integrity       pft-integrity baseline
+332 baseline      integrity       pft-integrity baseline
+334 firstrun      backup,baseline  systemctl start pft-backup.service pft-integrity.service
+336 unitguard     firstrun,egress,logship,watchdog,fleet  bash unitguard/pft-unitguard.sh apply --all --skip pft-heartbeat.service
+340 rebaseline    unitguard       pft-integrity accept --reason "rebuild: unitguard drop-ins"
