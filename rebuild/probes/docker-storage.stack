@@ -1,0 +1,10 @@
+# rebuild/probes/docker-storage.stack: dev probe for pft-rebuild-drill (RB_STACK=this file, run with --continue).
+# Question: which Docker storage setup can unpack and run images inside the unprivileged LXD sandbox?
+# Run 03 showed Docker 29's default containerd overlayfs snapshotter fails ("failed to mount ... overlay ... invalid
+# argument"). Suspect: the sandbox rootfs is an idmapped mount, and overlayfs on 5.15 cannot use idmapped lower dirs.
+# Each step prints its evidence and exits 0 so the next one runs; the step logs are the result.
+10 base       -     apt-get -qq update && apt-get -qq install -y docker.io jq >/dev/null && docker version --format 'server {{.Server.Version}}' && grep -E ' / ' /proc/self/mountinfo | sed 's/^/mountinfo: /'
+20 snapdflt   base  docker info --format 'driver {{.Driver}} {{json .DriverStatus}}'; docker pull -q python:3.12-alpine; docker run --rm python:3.12-alpine python3 -c 'print("run ok")'; echo "PROBE containerd-snapshotter rc=$?"
+30 overlay2   base  printf '{"features":{"containerd-snapshotter":false}}\n' > /etc/docker/daemon.json && systemctl restart docker && docker info --format 'driver {{.Driver}} {{json .DriverStatus}}'; docker pull -q python:3.12-alpine; docker run --rm python:3.12-alpine python3 -c 'print("run ok")'; echo "PROBE overlay2 rc=$?"
+40 fuse       base  apt-get -qq install -y fuse-overlayfs >/dev/null; ls -l /dev/fuse; printf '{"features":{"containerd-snapshotter":false},"storage-driver":"fuse-overlayfs"}\n' > /etc/docker/daemon.json && systemctl restart docker; docker info --format 'driver {{.Driver}} {{json .DriverStatus}}'; docker pull -q python:3.12-alpine; docker run --rm python:3.12-alpine python3 -c 'print("run ok")'; echo "PROBE fuse-overlayfs rc=$?"
+50 report     base  for f in /etc/docker/daemon.json; do echo "== $f"; cat "$f"; done; journalctl -u docker --no-pager -o cat | grep -iE 'overlay|storage|snapshotter|error' | tail -20

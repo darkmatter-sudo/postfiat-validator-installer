@@ -24,10 +24,11 @@
 #      RB_DISK (25GiB) RB_PROCS (6000) RB_IMAGE (ubuntu:22.04) RB_FULL_TIMEOUT (3600) RB_STATE (/var/lib/pft-rebuild)
 #      RB_REPO_URL (this repo on GitHub) BACKUP_DIR (/var/backups/postfiat) CONTAINER (postfiatd)
 #      NTFY (https://ntfy.sh) RB_TOPIC_ENVS (env files holding the operator's ntfy topics; read, never printed)
+#      RB_STACK (rebuild/stack.list; another file = a dev probe, printed in the run header)
 set -uo pipefail
 export TZ=UTC LC_ALL=C
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LIB="$HERE/rebuild_lib.py"; STACK="$HERE/stack.list"; EXC="$HERE/exceptions.list"
+LIB="$HERE/rebuild_lib.py"; STACK="${RB_STACK:-$HERE/stack.list}"; EXC="$HERE/exceptions.list"
 SBX="${RB_NAME:-pftrb-sbx}"; NET="${RB_NET:-pftrb0}"; POOL="${RB_POOL:-pftrb}"; SUBNET="${RB_SUBNET:-10.209.77.1/24}"
 POOL_DRIVER="${RB_POOL_DRIVER:-lvm}"; CPU="${RB_CPU:-2}"; MEM="${RB_MEM:-3GiB}"; DISK="${RB_DISK:-25GiB}"; PROCS="${RB_PROCS:-6000}"
 IMAGE="${RB_IMAGE:-ubuntu:22.04}"; FULL_TIMEOUT="${RB_FULL_TIMEOUT:-3600}"; STATE="${RB_STATE:-/var/lib/pft-rebuild}"
@@ -188,8 +189,9 @@ cmd_run() {
   need_root
   RUNID="$(date -u +%Y%m%dT%H%M%SZ)"; W="$STATE/$RUNID"; mkdir -p "$W/steps"; chmod 700 "$STATE" "$W"
   t_start="$(date -u +%s)"
-  echo "OS: $(. /etc/os-release && echo "$PRETTY_NAME") | kernel $(uname -r) | lxd $("$LXC" version 2>/dev/null | awk '/Server/ {print $3}')"
+  echo "OS: $(sed -n 's/^PRETTY_NAME=//p' /etc/os-release | tr -d '"') | kernel $(uname -r) | lxd $("$LXC" version 2>/dev/null | awk '/Server/ {print $3}')"
   echo "run $RUNID commit $commit sandbox $SBX cpu=$CPU mem=$MEM disk=$DISK procs=$PROCS image=$IMAGE"
+  echo "stack: ${STACK#"$HERE/"} sha256 $(sha256sum < "$STACK" | cut -c1-64)"
   echo; echo "== 0. preflight"
   cmd_preflight "$commit" || { echo "preflight failed - nothing changed"; exit 4; }
   read_topics "$W/topics"; chmod 600 "$W/topics"
