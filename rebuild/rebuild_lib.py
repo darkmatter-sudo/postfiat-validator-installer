@@ -2,7 +2,8 @@
 """Helper for pft-rebuild-drill.sh (stdlib only).
 
 Subcommands (all read-only; print to stdout, exit 0 ok / 1 finding / 3 usage or input error / 4 refused):
-  stack   STACK_LIST [--json]               parse + validate rebuild/stack.list, print the ordered steps
+  stack   STACK_LIST [--json|--rows]        parse + validate rebuild/stack.list, print the ordered steps
+          (--rows: ORDER<TAB>STEP<TAB>base64(CMD) per line, for the drill's step loop: no escaping of the command)
   preflight INSTANCE_JSON BRIDGE_JSON [--live-topic T ...] [--sandbox-file PATH ...]
                                             isolation refusals for the sandbox (lxc query output); exit 4 if any
   diff    LIVE_MANIFEST SANDBOX_MANIFEST [--live-fleet J] [--sandbox-fleet J] [--exceptions F] [--json]
@@ -11,6 +12,7 @@ Subcommands (all read-only; print to stdout, exit 0 ok / 1 finding / 3 usage or 
   teardown BEFORE AFTER                     host-state snapshots (one item per line) -> leftovers, exit 1 if any
 """
 
+import base64
 import fnmatch
 import json
 import os
@@ -116,9 +118,24 @@ def preflight(instance, bridge, live_topics=(), sandbox_files=()):
     for key in ("limits.cpu", "limits.memory"):
         if not cfg.get(key):
             refuse.append(f"{key} unset: the sandbox must be resource-capped")
+    root_pool = next(
+        (
+            d.get("pool")
+            for d in devs.values()
+            if d.get("type") == "disk" and d.get("path") == "/"
+        ),
+        None,
+    )
     for name, d in sorted(devs.items()):
         typ = d.get("type")
-        if typ == "disk" and d.get("path") != "/":
+        if typ == "disk" and d.get("path") != "/" and d.get("pool"):
+            # a custom volume (Docker's data dirs: the idmapped rootfs cannot hold overlayfs layers, run 08) is
+            # isolated only if it lives on the sandbox's own pool, which teardown deletes
+            if d.get("pool") != root_pool:
+                refuse.append(
+                    f"device {name}: volume {d.get('source')} on pool {d.get('pool')}, not the sandbox pool {root_pool}"
+                )
+        elif typ == "disk" and d.get("path") != "/":
             src = os.path.normpath(d.get("source") or "")
             if src == "/" or any(
                 src == p.rstrip("-/") or src.startswith(p) for p in LIVE_PATH_PREFIXES
@@ -320,12 +337,18 @@ def main(argv):
         return 3
     cmd, args = argv[0], argv[1:]
     js = "--json" in args
-    args = [a for a in args if a != "--json"]
+    rows = "--rows" in args
+    args = [a for a in args if a not in ("--json", "--rows")]
     try:
         if cmd == "stack" and len(args) == 1:
             steps = parse_stack(_read(args[0]))
             if js:
                 print(json.dumps(steps, indent=1))
+            elif rows:
+                # jq @tsv + `read -r` turned `\n` into `\\n` inside commands (run 08); base64 survives any byte
+                for s in steps:
+                    b = base64.b64encode(s["cmd"].encode()).decode()
+                    print(f"{s['order']}\t{s['step']}\t{b}")
             else:
                 for s in steps:
                     print(

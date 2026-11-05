@@ -5,10 +5,14 @@
 #   AFTER = '-' or a comma list of earlier steps this one needs (checked offline: tests/test_rebuild.py).
 # `rb-manifest ADDON` installs ADDON's validator/both rows of fleet/manifest.tsv (install -m MODE) and runs
 # `systemctl daemon-reload` + enables any .timer it installed: the documented path for add-ons without install.sh.
+# `rb-fleet-conf` writes a validator-only fleet.conf/hosts.conf for the sandbox's own checkout. The agent account the
+# privesc audit grades is a sandbox-only `rbagent` (the live one is not named here). Prerequisites an add-on's
+# README asks the operator to install by hand (age for keyescrow) are installed in the step itself.
 # Cross-host parts (relay pulls, heartbeats to the sentry) need a second host and are exceptions (exceptions.list).
 10  base          -               bash install.sh
 20  restore       base            rb-restore
 30  exporter      base            rb-manifest exporter
+35  alerts        exporter        bash alerts/run-stack.sh up
 40  integrity     base            rb-manifest integrity
 50  backup        restore         rb-manifest backup
 60  monitor       base            rb-manifest monitor
@@ -23,12 +27,12 @@
 150 authwatch     exporter        bash authwatch/install.sh --host validator
 160 timesync      exporter        bash timesync/install.sh
 170 vulnscan      exporter        bash vulnscan/install.sh --host validator
-180 privesc       exporter        bash privesc/install.sh --host validator
+180 privesc       exporter        id rbagent >/dev/null 2>&1 || useradd -m -s /bin/bash rbagent; bash privesc/install.sh --host validator --agent rbagent
 190 mounts        exporter        bash mounts/install.sh --host validator
 200 apparmor      exporter        bash apparmor/install.sh --host validator
 210 seccomp       exporter        bash seccomp/install.sh --host validator
 220 cluster       exporter        bash cluster/install.sh
-230 keyescrow     base            bash keyescrow/install.sh --host validator
+230 keyescrow     base            apt-get -qq install -y age >/dev/null && bash keyescrow/install.sh --host validator
 240 rulecheck     exporter        bash rulecheck/install.sh --host-label validator
 250 divergence    exporter        rb-manifest divergence
 260 egress        base            rb-manifest egress
@@ -38,5 +42,5 @@
 300 patch         base            bash patch/install.sh
 310 alertpath     exporter        rb-manifest alertpath
 320 watchdog      base            rb-manifest watchdog
-330 fleet         base            bash fleet/install.sh
+330 fleet         base            rb-fleet-conf && bash fleet/install.sh
 340 baseline      integrity       pft-integrity baseline

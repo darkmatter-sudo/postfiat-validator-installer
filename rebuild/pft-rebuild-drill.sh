@@ -21,6 +21,7 @@
 # Exit codes: 0 run done and every MISSING/DIFFERENT item excepted, 1 open diff items, 2 a step or check failed,
 #   3 usage/config error, 4 refused (preflight), 5 teardown incomplete.
 # Env: RB_TEST=1 (offline tests: stubs via RB_LXC/RB_IPT, no root check)  RB_NAME (pftrb-sbx) RB_NET (pftrb0) RB_POOL (pftrb) RB_SUBNET (10.209.77.1/24) RB_CPU (2) RB_MEM (3GiB)
+#      RB_VOLS (docker:/var/lib/docker:4GiB containerd:/var/lib/containerd:16GiB = NAME:PATH:SIZE custom volumes)
 #      RB_DISK (25GiB) RB_PROCS (6000) RB_IMAGE (ubuntu:22.04) RB_FULL_TIMEOUT (3600) RB_STATE (/var/lib/pft-rebuild)
 #      RB_REPO_URL (this repo on GitHub) BACKUP_DIR (/var/backups/postfiat) CONTAINER (postfiatd)
 #      NTFY (https://ntfy.sh) RB_TOPIC_ENVS (env files holding the operator's ntfy topics; read, never printed)
@@ -30,7 +31,7 @@ export TZ=UTC LC_ALL=C
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB="$HERE/rebuild_lib.py"; STACK="${RB_STACK:-$HERE/stack.list}"; EXC="$HERE/exceptions.list"
 SBX="${RB_NAME:-pftrb-sbx}"; NET="${RB_NET:-pftrb0}"; POOL="${RB_POOL:-pftrb}"; SUBNET="${RB_SUBNET:-10.209.77.1/24}"
-POOL_DRIVER="${RB_POOL_DRIVER:-lvm}"; CPU="${RB_CPU:-2}"; MEM="${RB_MEM:-3GiB}"; DISK="${RB_DISK:-25GiB}"; PROCS="${RB_PROCS:-6000}"
+POOL_DRIVER="${RB_POOL_DRIVER:-lvm}"; VOLS="${RB_VOLS:-docker:/var/lib/docker:4GiB containerd:/var/lib/containerd:16GiB}"; CPU="${RB_CPU:-2}"; MEM="${RB_MEM:-3GiB}"; DISK="${RB_DISK:-25GiB}"; PROCS="${RB_PROCS:-6000}"
 IMAGE="${RB_IMAGE:-ubuntu:22.04}"; FULL_TIMEOUT="${RB_FULL_TIMEOUT:-3600}"; STATE="${RB_STATE:-/var/lib/pft-rebuild}"
 REPO_URL="${RB_REPO_URL:-https://github.com/darkmatter-sudo/postfiat-validator-installer.git}"
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/postfiat}"; CONTAINER="${CONTAINER:-postfiatd}"; NTFY="${NTFY:-https://ntfy.sh}"
@@ -86,6 +87,13 @@ cmd_teardown() {
     "$LXC" image delete "$(cat "$STATE/image.fp")" 2>/dev/null && echo "  cached image deleted"; rm -f "$STATE/image.fp"
   fi
   if "$LXC" network show "$NET" >/dev/null 2>&1; then "$LXC" network delete "$NET" && echo "  network deleted"; fi
+  local v vn
+  for v in $VOLS; do # custom volumes outlive the instance and block the pool delete
+    vn="rb-${v%%:*}"
+    if "$LXC" storage volume show "$POOL" "$vn" >/dev/null 2>&1; then
+      "$LXC" storage volume delete "$POOL" "$vn" && echo "  volume $vn deleted"
+    fi
+  done
   if "$LXC" storage show "$POOL" >/dev/null 2>&1; then "$LXC" storage delete "$POOL" && echo "  pool deleted"; fi
   for spec in "FORWARD -i $NET -j $CHAIN" "FORWARD -o $NET -j $CHAIN" "INPUT -i $NET -j $CHAIN_IN"; do
     # shellcheck disable=SC2086
@@ -103,6 +111,7 @@ cmd_teardown() {
   local left=()
   "$LXC" info "$SBX" >/dev/null 2>&1 && left+=("instance $SBX")
   "$LXC" network show "$NET" >/dev/null 2>&1 && left+=("network $NET")
+  for v in $VOLS; do "$LXC" storage volume show "$POOL" "rb-${v%%:*}" >/dev/null 2>&1 && left+=("volume rb-${v%%:*}"); done
   "$LXC" storage show "$POOL" >/dev/null 2>&1 && left+=("pool $POOL")
   "$IPT" -S "$CHAIN" >/dev/null 2>&1 && left+=("chain $CHAIN")
   "$IPT" -S "$CHAIN_IN" >/dev/null 2>&1 && left+=("chain $CHAIN_IN")
@@ -211,6 +220,16 @@ cmd_run() {
   "$LXC" init "$IMAGE" "$SBX" -s "$POOL" -n "$NET" -c security.nesting=true -c security.syscalls.intercept.mknod=true \
     -c security.syscalls.intercept.setxattr=true -c limits.cpu="$CPU" -c limits.memory="$MEM" -c limits.processes="$PROCS" >/dev/null
   check "instance $SBX created (not started)" "$?"
+  # Docker's data dirs on their own custom volumes of the sandbox pool: the LVM rootfs is an IDMAPPED mount, and
+  # overlayfs (Docker 29's containerd snapshotter, also overlay2) cannot use idmapped lower dirs on 5.15 (run 08
+  # probe: "failed to mount ... overlay ... invalid argument"). Custom volumes are uid-shifted, not idmapped.
+  local v vn vp vs
+  for v in $VOLS; do
+    IFS=: read -r vn vp vs <<<"$v"
+    "$LXC" storage volume create "$POOL" "rb-$vn" size="$vs" >/dev/null \
+      && "$LXC" config device add "$SBX" "rb-$vn" disk pool="$POOL" source="rb-$vn" path="$vp" >/dev/null
+    check "custom volume rb-$vn ($vs) on $POOL at $vp" "$?"
+  done
   # only an image this run downloaded is deleted at teardown (a pre-existing cache is left alone)
   comm -13 <(grep '^image ' "$W/host-before.txt" | cut -d' ' -f2 | sort) <("$LXC" image list --format csv -c f | sort) \
     | head -1 > "$STATE/image.fp"
@@ -255,8 +274,9 @@ cmd_run() {
 
   echo; echo "== 5. install steps (rebuild/stack.list @ $commit)"
   printf 'order\tstep\trc\tseconds\n' > "$W/timings.tsv"
-  local order step cmd t0 dt src log_ ttf=""
-  while IFS=$'\t' read -r order step cmd; do
+  local order step cmd b64 t0 dt src log_ ttf=""
+  while IFS=$'\t' read -r order step b64; do
+    cmd="$(printf '%s' "$b64" | base64 -d)"
     log_="$W/steps/$(printf '%03d' "$order")-$step.log"; t0="$(date -u +%s)"
     sx bash -c "$cmd" > "$log_" 2>&1; src=$?; dt=$(( $(date -u +%s) - t0 ))
     printf '%s\t%s\t%s\t%s\n' "$order" "$step" "$src" "$dt" >> "$W/timings.tsv"
@@ -266,7 +286,7 @@ cmd_run() {
       FAILS=$((FAILS + 1)); echo "  --- last 25 lines of $step ---"; tail -25 "$log_" | sed 's/^/  | /'
       [ "$cont" = 1 ] || break
     fi
-  done < <(python3 "$LIB" stack "$STACK" --json | jq -r '.[] | [.order, .step, .cmd] | @tsv')
+  done < <(python3 "$LIB" stack "$STACK" --rows)
   echo "TIME_TO_FULL ${ttf:-n/a} s (restore step start -> server_state full, cap $FULL_TIMEOUT s)"
   echo "sandbox server_state now: $(sbx_state)"
 

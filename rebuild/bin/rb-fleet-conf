@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# rb-fleet-conf: write the sandbox's /etc/pft-fleet/fleet.conf + hosts.conf (root-owned 0644) before fleet/install.sh.
+# The live files point at the operator's checkout and list the sentry (ssh); in the sandbox pft-fleet compares the
+# installed files with the sandbox's own checkout at the pinned commit (REF = that commit), and only the local
+# validator is listed (the sentry is a second host: exceptions.list). Existing files are left alone. Run from the repo.
+set -euo pipefail
+[ -f fleet/fleet.conf.example ] || { echo "rb-fleet-conf: run from the repo root" >&2; exit 3; }
+repo="$(pwd -P)"; ref="$(git -C "$repo" rev-parse HEAD)"
+E="${RB_FLEET_ETC:-/etc/pft-fleet}" # tests only
+install -d -m 755 "$E"
+if [ ! -e "$E/fleet.conf" ]; then
+  sed -e "s|^REPO=.*|REPO=$repo|" -e "s|^REF=.*|REF=$ref|" -e "s|^SSH_AS=.*|SSH_AS=root|" fleet/fleet.conf.example \
+    > "$E/fleet.conf"
+  echo "wrote $E/fleet.conf (REPO=$repo REF=$ref)"
+fi
+if [ ! -e "$E/hosts.conf" ]; then
+  { grep '^#' fleet/hosts.conf.example; grep -E '^host validator[[:space:]]' fleet/hosts.conf.example; } \
+    > "$E/hosts.conf"
+  echo "wrote $E/hosts.conf ($(grep -c '^host ' "$E/hosts.conf") host: validator, local)"
+fi
+chown root:root "$E/fleet.conf" "$E/hosts.conf"
+chmod 644 "$E/fleet.conf" "$E/hosts.conf"

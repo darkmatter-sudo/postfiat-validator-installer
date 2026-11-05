@@ -6,7 +6,7 @@ set -euo pipefail
 addon="${1:?usage: rb-manifest ADDON}"
 role="${RB_ROLE:-validator}"
 [ -f fleet/manifest.tsv ] || { echo "rb-manifest: run from the repo root" >&2; exit 3; }
-n=0; timers=()
+n=0; timers=(); services=()
 while read -r a repo dest mode roles; do
   [ "$a" = "$addon" ] || continue
   case "$roles" in both|"$role") ;; *) continue ;; esac
@@ -14,12 +14,24 @@ while read -r a repo dest mode roles; do
   install -D -m "$mode" "$repo" "$dest"
   echo "installed $repo -> $dest ($mode)"
   n=$((n + 1))
-  case "$dest" in /etc/systemd/system/*.timer) timers+=("$(basename "$dest")") ;; esac
+  case "$dest" in
+    /etc/systemd/system/*.timer) timers+=("$(basename "$dest")") ;;
+    /etc/systemd/system/*.service) services+=("$(basename "$dest" .service):$repo") ;;
+  esac
 done < <(grep -v '^#' fleet/manifest.tsv)
 [ "$n" -gt 0 ] || { echo "rb-manifest: no $role/both rows for $addon in fleet/manifest.tsv" >&2; exit 1; }
 systemctl daemon-reload
 for t in "${timers[@]}"; do
   case "$t" in *@.timer) echo "template $t: not enabled (needs an instance name)"; continue ;; esac
   systemctl enable --now "$t" && echo "enabled $t"
+done
+# a long-running service (own [Install] section, no timer of the same name, e.g. pft-exporter) is enabled --now too;
+# timer-driven oneshots are started by their timer only (run 03: the exporter was installed but never started)
+for u in "${services[@]}"; do
+  b="${u%%:*}"
+  case "$b" in *@) continue ;; esac
+  printf '%s\n' "${timers[@]}" | grep -qxF "$b.timer" && continue
+  grep -q '^\[Install\]' "${u#*:}" || continue
+  systemctl enable --now "$b.service" && echo "enabled $b.service"
 done
 echo "rb-manifest $addon: $n files"

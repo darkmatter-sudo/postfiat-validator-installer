@@ -3,7 +3,7 @@
 `stub_host.py iptables ARGS...` (through two tiny wrapper scripts the test writes). State: one JSON file
 (RB_STUB_STATE): {"instances": [], "networks": [], "pools": [], "images": [], "chains": {NAME: [rule, ...]}};
 built-in chains FORWARD/INPUT hold rules as the text after the chain name ("-i pftrb0 -j PFT-REBUILD").
-"nft": {"inet lxd": "chain ...rules or empty"}. Every call is appended to RB_STUB_CALLS. RB_STUB_FAIL=delete makes
+"nft": {"inet lxd": "chain ...rules or empty"}, "volumes": ["POOL/NAME"] (a pool with volumes cannot be deleted). Every call is appended to RB_STUB_CALLS. RB_STUB_FAIL=delete makes
 `lxc delete` fail; RB_STUB_FAIL=X:CHAIN makes `iptables -X CHAIN` fail (exit 1)."""
 
 import json
@@ -37,6 +37,19 @@ def lxc(a):
             return 1
         st["images"].remove(a[2])
         return 0
+    vols = st.setdefault("volumes", [])  # "POOL/NAME"
+    if a[:3] == ["storage", "volume", "show"]:
+        return 0 if f"{a[3]}/{a[4]}" in vols else 1
+    if a[:3] == ["storage", "volume", "delete"]:
+        if f"{a[3]}/{a[4]}" not in vols:
+            return 1
+        vols.remove(f"{a[3]}/{a[4]}")
+        return 0
+    if a[:2] == ["storage", "delete"] and any(v.startswith(a[2] + "/") for v in vols):
+        print(
+            f"stub lxc: pool {a[2]} still has volumes", file=sys.stderr
+        )  # like LXD: in use
+        return 1
     for verb, key in (("network", "networks"), ("storage", "pools")):
         if a[:2] == [verb, "show"]:
             return 0 if a[2] in st[key] else 1

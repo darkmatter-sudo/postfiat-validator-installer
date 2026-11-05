@@ -7,6 +7,7 @@ Prints one PASS/FAIL line per check and 'RESULT: PASS|FAIL (n checks)'.
 """
 
 import atexit
+import base64
 import copy
 import json
 import os
@@ -148,6 +149,21 @@ check(
 rc, _, err = run("stack", tmpf("bad.list", "10 x - a\n"))
 check("cli stack: invalid -> exit 3", rc == 3 and "first step" in err, (rc, err))
 
+BS = "# c\n10 base - bash install.sh\n20 dj base printf '{\"a\":1}\\n' > /etc/x.json &&\tcat /etc/x.json\n"
+rc, out, err = run("stack", tmpf("bs.list", BS), "--rows")
+rows = [ln.split("\t") for ln in out.splitlines()]
+dec = (
+    [base64.b64decode(r[2]).decode() for r in rows]
+    if rc == 0 and all(len(r) == 3 for r in rows)
+    else []
+)
+check(
+    "stack --rows: command bytes (backslash, quotes, tab) survive the step loop encoding",
+    [r[:2] for r in rows] == [["10", "base"], ["20", "dj"]]
+    and dec[1:] == ["printf '{\"a\":1}\\n' > /etc/x.json &&\tcat /etc/x.json"],
+    (rc, out, err),
+)
+
 # ---------- preflight ----------
 INST = {
     "expanded_config": {
@@ -183,6 +199,22 @@ def has(refs, word):
     return any(word in r for r in refs)
 
 
+VOL = {
+    "type": "disk",
+    "pool": "pftrb",
+    "source": "rb-containerd",
+    "path": "/var/lib/containerd",
+}
+r = mut(lambda i: i["expanded_devices"].update({"rb-containerd": dict(VOL)}))
+check("preflight: custom volume on the sandbox pool accepted", r == [], r)
+r = mut(
+    lambda i: i["expanded_devices"].update({"rb-containerd": dict(VOL, pool="default")})
+)
+check(
+    "preflight: custom volume on another pool refused",
+    has(r, "not the sandbox pool"),
+    r,
+)
 r = mut(lambda i: i["expanded_config"].update({"security.privileged": "true"}))
 check("preflight: privileged refused", has(r, "privileged"), r)
 r = mut(lambda i: i["expanded_config"].pop("security.nesting"))
@@ -482,6 +514,7 @@ FULL = {
         "DOCKER-USER": ["-j RETURN"],
     },
     "nft": {"inet lxd": ""},
+    "volumes": ["pftrb/rb-docker", "pftrb/rb-containerd", "default/keepvol"],
 }
 MARK = os.path.join("rbstate", "nft-lxd.created")
 os.makedirs(os.path.join(TMP, "rbstate"), exist_ok=True)
@@ -512,6 +545,11 @@ check(
 )
 check("teardown: DOCKER-USER untouched", st["chains"]["DOCKER-USER"] == ["-j RETURN"])
 check("teardown: reports complete", "teardown complete" in out, out[-200:])
+check(
+    "teardown: both custom volumes deleted (before the pool), other pool's volume kept",
+    st.get("volumes") == ["default/keepvol"],
+    st.get("volumes"),
+)
 check(
     "teardown: empty nft table inet lxd the run created is deleted",
     st.get("nft") == {},
@@ -556,6 +594,149 @@ check(
 )
 rc, out, _ = teardown_case(FULL, args=("teardown",))
 check("teardown: refuses without --yes (exit 3)", rc == 3, rc)
+
+# ---------- rb-manifest / rb-fleet-conf (shell, stub install/systemctl/chown) ----------
+BIN = os.path.join(RB, "bin")
+SB = os.path.join(TMP, "stubbin")
+os.makedirs(SB, exist_ok=True)
+for tool in ("install", "systemctl", "chown"):
+    tmpf(f"stubbin/{tool}", f'#!/bin/sh\necho "{tool} $*" >> "$RB_STUB_CALLS"\n')
+    os.chmod(os.path.join(SB, tool), 0o755)
+
+
+def helper(name, repo, extra_env=None, args=()):
+    calls = tmpf("hcalls.txt", "")
+    env = dict(
+        os.environ,
+        PATH=SB + ":" + os.environ["PATH"],
+        RB_STUB_CALLS=calls,
+        **(extra_env or {}),
+    )
+    p = subprocess.run(
+        ["bash", os.path.join(BIN, name), *args],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=60,
+        check=False,
+        stdin=subprocess.DEVNULL,
+    )
+    with open(calls, encoding="utf-8") as fh:
+        return p.returncode, p.stdout + p.stderr, fh.read().splitlines()
+
+
+MR = os.path.join(TMP, "mrepo")
+U = "/etc/systemd/system/"
+for f, body in {
+    "x/long.service": "[Service]\nExecStart=/bin/true\n[Install]\nWantedBy=multi-user.target\n",
+    "x/tick.service": "[Service]\nType=oneshot\n[Install]\nWantedBy=multi-user.target\n",
+    "x/tick.timer": "[Timer]\nOnCalendar=hourly\n",
+    "x/static.service": "[Service]\nType=oneshot\n",
+    "x/inst@.service": "[Service]\n[Install]\nWantedBy=multi-user.target\n",
+    "x/tool.sh": "#!/bin/sh\n",
+}.items():
+    os.makedirs(os.path.join(MR, "x"), exist_ok=True)
+    tmpf(f"mrepo/{f}", body)
+os.makedirs(os.path.join(MR, "fleet"), exist_ok=True)
+tmpf(
+    "mrepo/fleet/manifest.tsv",
+    "".join(
+        f"x\tx/{n}\t{U}{n}\t0644\tboth\n"
+        for n in (
+            "long.service",
+            "tick.service",
+            "tick.timer",
+            "static.service",
+            "inst@.service",
+        )
+    )
+    + "x\tx/tool.sh\t/usr/local/bin/tool\t0755\tvalidator\ny\tx/tool.sh\t/usr/local/bin/y\t0755\tsentry\n",
+)
+rc, out, calls = helper("rb-manifest", MR, args=("x",))
+en = [c for c in calls if c.startswith("systemctl enable")]
+check(
+    "rb-manifest: installs every validator/both row (6)",
+    rc == 0 and sum(c.startswith("install ") for c in calls) == 6,
+    (rc, out[-300:]),
+)
+check(
+    "rb-manifest: enables the timer and the long-running service only",
+    sorted(en)
+    == ["systemctl enable --now long.service", "systemctl enable --now tick.timer"],
+    en,
+)
+rc, out, _ = helper("rb-manifest", MR, args=("y",))
+check(
+    "rb-manifest: no validator/both rows -> exit 1",
+    rc == 1 and "no validator/both rows" in out,
+    (rc, out),
+)
+
+FR = os.path.join(TMP, "frepo")
+os.makedirs(os.path.join(FR, "fleet"), exist_ok=True)
+shutil.copy(
+    os.path.join(os.path.dirname(RB), "fleet", "fleet.conf.example"),
+    os.path.join(FR, "fleet"),
+)
+shutil.copy(
+    os.path.join(os.path.dirname(RB), "fleet", "hosts.conf.example"),
+    os.path.join(FR, "fleet"),
+)
+subprocess.run(["git", "init", "-q", FR], check=True)
+subprocess.run(
+    [
+        "git",
+        "-C",
+        FR,
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@t",
+        "commit",
+        "-q",
+        "--allow-empty",
+        "-m",
+        "t",
+    ],
+    check=True,
+)
+head = subprocess.run(
+    ["git", "-C", FR, "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+).stdout.strip()
+
+
+def readf(path):
+    with open(path, encoding="utf-8") as fh:
+        return fh.read()
+
+
+FE = os.path.join(TMP, "fleetetc")
+os.makedirs(FE, exist_ok=True)  # install -d is stubbed
+rc, out, calls = helper("rb-fleet-conf", FR, {"RB_FLEET_ETC": FE})
+fc = readf(os.path.join(FE, "fleet.conf")) if rc == 0 else ""
+hc = readf(os.path.join(FE, "hosts.conf")) if rc == 0 else ""
+check(
+    "rb-fleet-conf: REPO = sandbox checkout, REF = its HEAD commit",
+    f"\nREPO={os.path.realpath(FR)}\n" in fc and f"\nREF={head}\n" in fc,
+    (rc, out[-300:]),
+)
+hosts = [ln.split() for ln in hc.splitlines() if ln.startswith("host ")]
+check(
+    "rb-fleet-conf: hosts.conf lists only the local validator",
+    hosts == [["host", "validator", "local", "-", "postfiatd", "validator"]],
+    hosts,
+)
+with open(os.path.join(FE, "hosts.conf"), "w", encoding="utf-8") as fh:
+    fh.write("host keep local - postfiatd validator\n")
+rc, out, _ = helper("rb-fleet-conf", FR, {"RB_FLEET_ETC": FE})
+check(
+    "rb-fleet-conf: an existing file is left alone",
+    rc == 0
+    and readf(os.path.join(FE, "hosts.conf"))
+    == "host keep local - postfiatd validator\n",
+    (rc, out),
+)
 
 rc, _, _ = run("nope")
 check("cli: unknown subcommand -> exit 3", rc == 3)

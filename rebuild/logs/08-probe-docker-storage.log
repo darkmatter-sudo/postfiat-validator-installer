@@ -1,0 +1,162 @@
+OS: Ubuntu 22.04.5 LTS | kernel 5.15.0-202-generic | lxd 5.0.11
+run 20261105T171110Z commit 2f164ff7e05ba2bbf6b99ed28ab2a6f8c0aac117 sandbox pftrb-sbx cpu=2 mem=3GiB disk=25GiB procs=6000 image=ubuntu:22.04
+stack: probes/docker-storage.stack sha256 085a61ad8597f2eb6704358c893e0215bde8c36402d96f387af9492fe69136b5
+
+== 0. preflight
+[2026-11-05T17:11:10Z] preflight (read-only), commit 2f164ff7e05ba2bbf6b99ed28ab2a6f8c0aac117
+CHECK ok   LXD available
+CHECK ok   live node postfiatd server_state full
+CHECK ok   live pft-integrity verify PASS
+CHECK ok   no leftover instance pftrb-sbx
+CHECK ok   no leftover network pftrb0
+CHECK ok   no leftover pool pftrb
+CHECK ok   no leftover chain PFT-REBUILD
+CHECK ok   subnet 10.209.77.1/24 unused on the host
+CHECK ok   RB_MEM=3GiB and RB_DISK=25GiB parse as sizes
+CHECK ok   MemAvailable 6168 MiB >= sandbox cap + 1 GiB
+CHECK ok   free disk 69 GiB >= RB_DISK + 10 GiB
+CHECK ok   nightly backup archive present in /var/backups/postfiat
+CHECK ok   commit is a full 40-hex SHA
+CHECK ok   this checkout is clean at 2f164ff7e05ba2bbf6b99ed28ab2a6f8c0aac117
+CHECK ok   commit public on GitHub (HTTP 200)
+CHECK ok   stack.list valid
+CHECK ok   operator ntfy topics found (2, not printed)
+  host snapshot: 184 items; live baseline: 668 rows
+
+== 1. sandbox infrastructure
+CHECK ok   pool pftrb (lvm loop, size 25GiB)
+CHECK ok   bridge pftrb0 NAT-only IPv4 10.209.77.1/24
+CHECK ok   firewall chains PFT-REBUILD (forward) / PFT-REBUILD-IN (input) for pftrb0 only
+CHECK ok   instance pftrb-sbx created (not started)
+CHECK ok   live pft-integrity verify still PASS with the sandbox infrastructure up
+
+== 2. sandbox isolation preflight
+CHECK ok   backup sanitized (keys refused, peering stripped)
+  PREFLIGHT: ISOLATED (0 refusals)
+CHECK ok   no sandbox device exposes 2559 5005 51235
+
+== 3. start + network
+CHECK ok   sandbox started
+CHECK ok   sandbox DNS + IPv4 up (9 s)
+CHECK ok   cloud-init finished
+CHECK ok   sandbox cannot reach host admin port 5005 via the bridge
+CHECK ok   sandbox cannot reach host sshd via the bridge
+
+== 4. checkout pinned commit inside the sandbox
+CHECK ok   git + jq installed
+CHECK ok   sandbox HEAD = 2f164ff7e05ba2bbf6b99ed28ab2a6f8c0aac117
+CHECK ok   sanitized backup + blackhole ntfy.env pushed
+
+== 5. install steps (rebuild/stack.list @ 2f164ff7e05ba2bbf6b99ed28ab2a6f8c0aac117)
+STEP  10 base          rc=0      54s  $ apt-get -qq update && apt-get -qq install -y docker.io jq >/dev/null && docker version --format 'server {{.Server.Version}}' && grep -E ' / ' /proc/self/mountinfo | sed 's/^/mountinfo: /'
+STEP  20 snapdflt      rc=0      12s  $ docker info --format 'driver {{.Driver}} {{json .DriverStatus}}'; docker pull -q python:3.12-alpine; docker run --rm python:3.12-alpine python3 -c 'print("run ok")'; echo "PROBE containerd-snapshotter rc=$?"
+STEP  30 overlay2      rc=0       4s  $ printf '{"features":{"containerd-snapshotter":false}}\\n' > /etc/docker/daemon.json && systemctl restart docker && docker info --format 'driver {{.Driver}} {{json .DriverStatus}}'; docker pull -q python:3.12-alpine; docker run --rm python:3.12-alpine python3 -c 'print("run ok")'; echo "PROBE overlay2 rc=$?"
+STEP  40 fuse          rc=0      12s  $ apt-get -qq install -y fuse-overlayfs >/dev/null; ls -l /dev/fuse; printf '{"features":{"containerd-snapshotter":false},"storage-driver":"fuse-overlayfs"}\\n' > /etc/docker/daemon.json && systemctl restart docker; docker info --format 'driver {{.Driver}} {{json .DriverStatus}}'; docker pull -q python:3.12-alpine; docker run --rm python:3.12-alpine python3 -c 'print("run ok")'; echo "PROBE fuse-overlayfs rc=$?"
+STEP  50 report        rc=0       1s  $ for f in /etc/docker/daemon.json; do echo "== $f"; cat "$f"; done; journalctl -u docker --no-pager -o cat | grep -iE 'overlay|storage|snapshotter|error' | tail -20
+TIME_TO_FULL n/a s (restore step start -> server_state full, cap 3600 s)
+sandbox server_state now: down
+
+== 6. diff sandbox vs live
+  sandbox pft-fleet inventory unavailable: diff uses pft-integrity items only
+  no sandbox baseline (baseline step not reached)
+
+== 7. teardown
+[2026-11-05T17:16:51Z] teardown: instance pftrb-sbx, network pftrb0, pool pftrb, image cache, chains PFT-REBUILD/PFT-REBUILD-IN
+  instance deleted
+  cached image deleted
+Network pftrb0 deleted
+  network deleted
+Storage pool pftrb deleted
+  pool deleted
+  removed jump: FORWARD -i pftrb0 -j PFT-REBUILD
+  removed jump: FORWARD -o pftrb0 -j PFT-REBUILD
+  removed jump: INPUT -i pftrb0 -j PFT-REBUILD-IN
+  removed chain PFT-REBUILD
+  removed chain PFT-REBUILD-IN
+  removed empty nft table inet lxd
+  teardown complete: no sandbox resource left
+CHECK ok   teardown removed every sandbox resource
+  TEARDOWN: CLEAN (0 leftovers)
+CHECK ok   teardown complete (host snapshot identical)
+
+== 8. live host after
+CHECK ok   live server_state full
+  RESULT: PASS - 171 unchanged, 0 warn, 0 fail -> exit 0
+CHECK ok   live pft-integrity verify PASS
+CHECK ok   operator ntfy topics: 0 messages since run start
+
+per-step timings: /var/lib/pft-rebuild/20261105T171110Z/timings.tsv; per-step logs: /var/lib/pft-rebuild/20261105T171110Z/steps/
+RESULT: FAIL (1 checks/steps failed, diff rc 3)
+
+# --- per-step logs of this probe run (sudo cat /var/lib/pft-rebuild/20261105T171110Z/steps/*), appended after it exited ---
+=== 010-base.log
+server 29.1.3
+mountinfo: 1602 1340 253:4 /rootfs / rw,relatime,idmapped shared:513 master:505 - ext4 /dev/pftrb/containers_pftrb--sbx rw,discard,stripe=16
+mountinfo: 1603 1602 0:109 / /dev rw,relatime shared:514 - tmpfs none rw,size=492k,mode=755,uid=1000000,gid=1000000,inode64
+mountinfo: 1604 1602 0:111 / /proc rw,nosuid,nodev,noexec,relatime shared:587 - proc proc rw
+mountinfo: 1605 1602 0:112 / /sys rw,relatime shared:643 - sysfs sysfs rw
+mountinfo: 1608 1604 0:36 / /proc/sys/fs/binfmt_misc rw,nosuid,nodev,noexec,relatime shared:588 master:55 - binfmt_misc binfmt_misc rw
+mountinfo: 1609 1605 0:34 / /sys/fs/fuse/connections rw,nosuid,nodev,noexec,relatime shared:666 master:18 - fusectl fusectl rw
+mountinfo: 1610 1605 0:30 / /sys/fs/pstore rw,nosuid,nodev,noexec,relatime shared:667 master:10 - pstore pstore rw
+mountinfo: 1611 1605 0:21 / /sys/kernel/config rw,nosuid,nodev,noexec,relatime shared:668 master:19 - configfs configfs rw
+mountinfo: 1612 1605 0:7 / /sys/kernel/debug rw,nosuid,nodev,noexec,relatime shared:669 master:16 - debugfs debugfs rw
+mountinfo: 1613 1612 0:12 / /sys/kernel/debug/tracing rw,nosuid,nodev,noexec,relatime shared:670 master:372 - tracefs tracefs rw
+mountinfo: 1614 1605 0:6 / /sys/kernel/security rw,nosuid,nodev,noexec,relatime shared:671 master:8 - securityfs securityfs rw
+mountinfo: 1615 1605 0:12 / /sys/kernel/tracing rw,nosuid,nodev,noexec,relatime shared:672 master:17 - tracefs tracefs rw
+mountinfo: 1616 1603 0:20 / /dev/mqueue rw,nosuid,nodev,noexec,relatime shared:518 master:15 - mqueue mqueue rw
+mountinfo: 1617 1603 0:113 / /dev/.lxc/proc rw,relatime shared:519 - proc proc rw
+mountinfo: 1618 1603 0:112 / /dev/.lxc/sys rw,relatime shared:525 - sysfs sys rw
+mountinfo: 1621 1605 0:29 / /sys/fs/cgroup rw,nosuid,nodev,noexec,relatime shared:673 - cgroup2 none rw
+mountinfo: 1631 1602 0:110 / /var/snap/lxd/common/var/lib/lxcfs rw,nosuid,nodev,relatime shared:675 master:503 - fuse.lxcfs lxcfs rw,user_id=0,group_id=0,allow_other
+mountinfo: 1642 1603 0:115 / /dev/pts rw,nosuid,noexec,relatime shared:584 - devpts devpts rw,gid=1000005,mode=620,ptmxmode=666,max=1024
+mountinfo: 1341 1603 0:116 / /dev/shm rw,nosuid,nodev shared:546 - tmpfs tmpfs rw,uid=1000000,gid=1000000,inode64
+mountinfo: 1360 1602 0:125 / /run rw,nosuid,nodev shared:676 - tmpfs tmpfs rw,size=1625560k,nr_inodes=819200,mode=755,uid=1000000,gid=1000000,inode64
+mountinfo: 1369 1360 0:126 / /run/lock rw,nosuid,nodev,noexec,relatime shared:677 - tmpfs tmpfs rw,size=5120k,uid=1000000,gid=1000000,inode64
+mountinfo: 1547 1360 0:127 / /run/credentials/systemd-sysusers.service ro,nosuid,nodev,noexec,relatime shared:678 - ramfs none rw,mode=700
+mountinfo: 1595 1602 0:128 / /snap/lxd/40911 ro,nodev,relatime shared:725 - fuse.snapfuse snapfuse ro,user_id=0,group_id=0,allow_other
+mountinfo: 1598 1602 0:130 / /snap/snapd/28254 ro,nodev,relatime shared:727 - fuse.snapfuse snapfuse ro,user_id=0,group_id=0,allow_other
+mountinfo: 1646 1602 0:129 / /snap/core22/2955 ro,nodev,relatime shared:729 - fuse.snapfuse snapfuse ro,user_id=0,group_id=0,allow_other
+=== 020-snapdflt.log
+driver overlayfs [["driver-type","io.containerd.snapshotter.v1"]]
+failed to extract layer (application/vnd.oci.image.layer.v1.tar+gzip sha256:44f1f4ea94679845e46980407242f9a70a6578ccf3d07230a02533f41d78dfc9) to overlayfs as "extract-396173803-Ya77 sha256:7dded9198a52f45916d3191a89c56645c5dc54ac30652a79f8b50a44cba2566e": failed to mount /var/lib/containerd/tmpmounts/containerd-mount2276150200: mount source: "overlay", target: "/var/lib/containerd/tmpmounts/containerd-mount2276150200", fstype: overlay, flags: 0, data: "workdir=/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/3/work,upperdir=/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/3/fs,lowerdir=/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/2/fs,userxattr,index=off", err: invalid argument
+Unable to find image 'python:3.12-alpine' locally
+3.12-alpine: Pulling from library/python
+8dc6b13ab3d0: Pulling fs layer
+7b229517ed22: Pulling fs layer
+44f1f4ea9467: Pulling fs layer
+c03751883ae5: Pulling fs layer
+7b229517ed22: Download complete
+44f1f4ea9467: Download complete
+8dc6b13ab3d0: Download complete
+c03751883ae5: Download complete
+7d3c93c83994: Download complete
+7b229517ed22: Pull complete
+56b83917debc: Download complete
+docker: failed to extract layer (application/vnd.oci.image.layer.v1.tar+gzip sha256:44f1f4ea94679845e46980407242f9a70a6578ccf3d07230a02533f41d78dfc9) to overlayfs as "extract-894649682-yzdw sha256:7dded9198a52f45916d3191a89c56645c5dc54ac30652a79f8b50a44cba2566e": failed to mount /var/lib/containerd/tmpmounts/containerd-mount1155445523: mount source: "overlay", target: "/var/lib/containerd/tmpmounts/containerd-mount1155445523", fstype: overlay, flags: 0, data: "workdir=/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/5/work,upperdir=/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/5/fs,lowerdir=/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots/4/fs,userxattr,index=off", err: invalid argument
+
+Run 'docker run --help' for more information
+PROBE containerd-snapshotter rc=125
+=== 030-overlay2.log
+Job for docker.service failed because the control process exited with error code.
+See "systemctl status docker.service" and "journalctl -xeu docker.service" for details.
+Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
+Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
+PROBE overlay2 rc=1
+=== 040-fuse.log
+crw-rw-rw- 1 nobody nogroup 10, 229 Oct 29 02:58 /dev/fuse
+Job for docker.service failed because the control process exited with error code.
+See "systemctl status docker.service" and "journalctl -xeu docker.service" for details.
+Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
+driver  null
+Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
+Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
+PROBE fuse-overlayfs rc=1
+=== 050-report.log
+== /etc/docker/daemon.json
+{"features":{"containerd-snapshotter":false},"storage-driver":"fuse-overlayfs"}\ntime="2026-11-05T17:16:12.958352634Z" level=info msg="Starting daemon with containerd snapshotter integration enabled"
+time="2026-11-05T17:16:13.014744162Z" level=info msg="Deleting nftables IPv4 rules" error="exit status 1"
+time="2026-11-05T17:16:13.038658658Z" level=info msg="Deleting nftables IPv6 rules" error="exit status 1"
+time="2026-11-05T17:16:13.798597880Z" level=info msg="Docker daemon" commit="29.1.3-0ubuntu3~22.04.2" containerd-snapshotter=true storage-driver=overlayfs version=29.1.3
+time="2026-11-05T17:16:27.750599963Z" level=error msg="failed to cleanup \"extract-396173803-Ya77 sha256:7dded9198a52f45916d3191a89c56645c5dc54ac30652a79f8b50a44cba2566e\"" error="NotFound: snapshot extract-396173803-Ya77 sha256:7dded9198a52f45916d3191a89c56645c5dc54ac30652a79f8b50a44cba2566e does not exist: not found"
+time="2026-11-05T17:16:32.975039833Z" level=error msg="failed to cleanup \"extract-894649682-yzdw sha256:7dded9198a52f45916d3191a89c56645c5dc54ac30652a79f8b50a44cba2566e\"" error="NotFound: snapshot extract-894649682-yzdw sha256:7dded9198a52f45916d3191a89c56645c5dc54ac30652a79f8b50a44cba2566e does not exist: not found"
+time="2026-11-05T17:16:33.450583445Z" level=info msg="stopping event stream following graceful shutdown" error="<nil>" module=libcontainerd namespace=moby
