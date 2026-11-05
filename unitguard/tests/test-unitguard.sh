@@ -109,6 +109,13 @@ check "perms: world-writable parent dir of ExecStart binary flagged" '[ "$(rc)" 
 setup; ug apply; check "usage: apply without unit -> 3" '[ "$(rc)" = 3 ]'
 ug plan nosuch; check "plan: unknown unit -> 3" '[ "$(rc)" = 3 ] && has "no profile"'
 ug plan k; check "plan: shows exception + drop-in" 'has "exception: docker.sock" && has "PrivateTmp=yes" && has "target: <= <before"'
+# apply --all order: FIRST_UNITS before the alphabetical rest (pft-integrity's check needs PASS before other drop-ins)
+setup; FIRST_UNITS="r.service" ug apply --all
+check "all-order: FIRST_UNITS unit started first" '[ "$(grep -oE "(start|restart) [a-z@.]+service" "$STUB_DIR/calls.log" | head -1)" = "restart r.service" ]'
+check "all-order: the rest still applied" '[ -f "$(dp a.service)" ] && [ -f "$(dp k.service)" ] && [ -f "$(dp r.service)" ]'
+setup; ug apply --all
+check "all-order: default keeps alphabetical order when pft-integrity is absent" '[ "$(grep -oE "(start|restart) [a-z@.]+service" "$STUB_DIR/calls.log" | head -1)" = "start a.service" ]'
+
 PFT_UNITGUARD_TEST="" bash "$UG" apply a > "$W/out" 2>&1; echo $? > "$W/rc"
 if [ "$(id -u)" != 0 ]; then check "root: apply as non-root refused (4)" '[ "$(rc)" = 4 ]'; fi
 

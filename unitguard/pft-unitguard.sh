@@ -32,7 +32,7 @@
 #   "<before" = lower than the exposure recorded before the first apply)
 #
 # Exit codes: 0 ok, 1 check failed / rolled back / target missed, 3 usage, 4 refused, 5 rollback failed.
-# Env: PROFILE_DIR (dir of this script/profiles)  DROPIN_ROOT (/etc/systemd/system)  STATE_DIR (/var/lib/pft-unitguard)
+# Env: FIRST_UNITS (pft-integrity.service: apply --all does these first)  PROFILE_DIR (dir of this script/profiles)  DROPIN_ROOT (/etc/systemd/system)  STATE_DIR (/var/lib/pft-unitguard)
 #      SETTLE_SEC (10)  HOLD_UNITS ("")
 #      Test hooks: PFT_UNITGUARD_TEST=1 (no root check)  PFT_UNITGUARD_SYSTEMCTL  PFT_UNITGUARD_ANALYZE  PFT_UNITGUARD_SLEEP
 #                  PFT_UNITGUARD_OWNER_UID (expected owner in the permission check, default 0)
@@ -96,6 +96,13 @@ all_profiled() { # profiled units present on this host; templates -> every exist
       *) "$SYSTEMCTL" cat "$base" >/dev/null 2>&1 && echo "$base" ;;
     esac
   done
+}
+# apply --all runs these first: pft-integrity's check needs RESULT PASS, and every drop-in written before it is a new
+# integrity item (WARN until accepted), so a later integrity apply would fail and roll back (rebuild run 12).
+FIRST_UNITS="${FIRST_UNITS:-pft-integrity.service}"
+apply_order() { # all_profiled, FIRST_UNITS moved to the front (reads all input: no SIGPIPE under pipefail)
+  all_profiled | awk -v first="$FIRST_UNITS" 'BEGIN { n = split(first, f, " "); for (i = 1; i <= n; i++) want[f[i]] = 1 }
+    ($0 in want) { print; next } { rest[++m] = $0 } END { for (i = 1; i <= m; i++) print rest[i] }'
 }
 held() { local u; for u in $HOLD_UNITS; do [ "$u" = "$1" ] || [ "$u.service" = "$1" ] && return 0; done; return 1; }
 
@@ -260,7 +267,7 @@ cmd_apply() {
   need_root apply
   HOLD_UNITS="$HOLD_UNITS $skip"
   if [ "$target" = --all ]; then
-    for u in $(all_profiled); do apply_one "$u"; r=$?; [ "$r" -gt "$rc" ] && rc="$r"; done
+    for u in $(apply_order); do apply_one "$u"; r=$?; [ "$r" -gt "$rc" ] && rc="$r"; done
   else
     case "$target" in *.service) ;; *) target="$target.service" ;; esac
     apply_one "$target"; rc=$?

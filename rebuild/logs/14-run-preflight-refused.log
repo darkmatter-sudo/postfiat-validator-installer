@@ -1,0 +1,24 @@
+OS: Ubuntu 22.04.5 LTS | kernel 5.15.0-202-generic | lxd 5.0.11
+run 20261105T191316Z commit 31e99545d2e4ce74df618bc5670467c51f33e6ba sandbox pftrb-sbx cpu=2 mem=3GiB disk=25GiB procs=6000 image=ubuntu:22.04
+stack: stack.list sha256 5d58015a0f5b3c752397f637154037a221c283ec77a8034042035c39723622ea
+
+== 0. preflight
+[2026-11-05T19:13:18Z] preflight (read-only), commit 31e99545d2e4ce74df618bc5670467c51f33e6ba
+CHECK ok   LXD available
+CHECK ok   live node postfiatd server_state full
+CHECK FAIL live pft-integrity verify PASS
+CHECK ok   no leftover instance pftrb-sbx
+CHECK ok   no leftover network pftrb0
+CHECK ok   no leftover pool pftrb
+CHECK ok   no leftover chain PFT-REBUILD
+CHECK ok   subnet 10.209.77.1/24 unused on the host
+CHECK ok   RB_MEM=3GiB and RB_DISK=25GiB parse as sizes
+CHECK ok   MemAvailable 6090 MiB >= sandbox cap + 1 GiB
+CHECK ok   free disk 69 GiB >= RB_DISK + 10 GiB
+CHECK ok   nightly backup archive present in /var/backups/postfiat
+CHECK ok   commit is a full 40-hex SHA
+CHECK ok   this checkout is clean at 31e99545d2e4ce74df618bc5670467c51f33e6ba
+CHECK ok   commit public on GitHub (HTTP 200)
+CHECK ok   stack.list valid
+CHECK ok   operator ntfy topics found (2, not printed)
+preflight failed - nothing changed

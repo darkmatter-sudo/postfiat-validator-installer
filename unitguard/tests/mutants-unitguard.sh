@@ -23,6 +23,7 @@ MUTANTS=(
   'U14 root check bypassed|s/\[ "$(id -u)" = 0 \] ||/true ||/'
   'U15 rollback deletes an earlier unitguard drop-in instead of restoring it|s/^  \[ -f "$prev" \] || { remove_dropin "$u"; return; }$/  remove_dropin "$u"; return/'
   'U16 RemainAfterExit=yes oneshot only started (no-op), never re-run|s/\] \&\& verb=restart$/] \&\& verb=start/'
+  'U17 apply --all ignores FIRST_UNITS (integrity applied after other drop-ins)|s/for u in $(apply_order); do apply_one/for u in $(all_profiled); do apply_one/'
 )
 MC=0
 for m in "${MUTANTS[@]}"; do
