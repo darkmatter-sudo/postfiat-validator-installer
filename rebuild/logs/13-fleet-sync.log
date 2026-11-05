@@ -1,0 +1,106 @@
+pft-fleet sync --addon fleet - 2026-11-05T17:44:39Z - Ubuntu 22.04.5 LTS - repo HEAD fea254b87c5b1205fc6503db11a1b9b8c4baba10 (clean: yes)
+
+== 0. preflight
+$ sha256sum rebuild/drill/fleet-sync-run.sh
+  22a4cc8522c17ab18d54ed5c380bbf9fb4904372a41322412133d5cdfdd278fd  rebuild/drill/fleet-sync-run.sh
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1
+  RESULT: PASS - 171 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS before the update
+$ sudo -n docker exec postfiatd curl -s -m 10 -d '{"method":"server_info"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state
+  full
+  (exit 0)
+CHECK ok   node full or proposing
+$ sudo -n pft-fleet skew | grep -E ' fleet |SUMMARY'
+  validator  fleet       BEHIND     /usr/local/lib/pft-fleet/manifest.tsv BEHIND @72b614ff7b16 (-1)
+  SUMMARY CURRENT=56 BEHIND=1 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 1)
+CHECK ok   before: fleet BEHIND on the validator
+$ sudo -n pft-fleet sync --addon fleet --to fea254b87c5b1205fc6503db11a1b9b8c4baba10 | grep -E '^PLAN .* (write|keep)$' | awk '{print $2, $4, $6, $NF}'
+  validator /usr/local/sbin/pft-fleet CURRENT keep
+  validator /usr/local/lib/pft-fleet/fleet_lib.py CURRENT keep
+  validator /usr/local/lib/pft-fleet/manifest.tsv BEHIND write
+  validator /etc/systemd/system/pft-fleet.service CURRENT keep
+  validator /etc/systemd/system/pft-fleet.timer CURRENT keep
+  (exit 0)
+CHECK ok   dry run: only manifest.tsv is written, on the validator only
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+
+== 1. rollout silence (pft-fleet/rulecheck see a changed file during the update; not the watchdog)
+CHECK ok   Alertmanager silence created (PFTRuleDead, PFTTextfileStale, PFTRulecheck*, PFTFleet*) until 2026-11-05T18:15:50Z
+
+== 2. pft-maint window, [MAINT] messages to a throwaway topic (real file kept as $BK)
+real /etc/pft-maint/ntfy.env present before: 0
+$ { [ $HAD = 0 ] || sudo -n cp -p $NE $BK; } && printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' "$TT" | sudo -n tee $NE >/dev/null && sudo -n chmod 600 $NE && sudo -n stat -c '%a %U' $NE
+  600 root
+  (exit 0)
+CHECK ok   throwaway target installed
+$ sudo -n pft-maint start --ttl 30m --reason 'task_b225ea76 fleet sync fea254b'
+  window started: id m1793900750-2779610 until 2026-11-05T18:15:50Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint window open
+
+== 3. pft-fleet: fleet to HEAD on the validator (write + integrity accept by pft-fleet)
+$ sudo -n pft-fleet sync --addon fleet --to fea254b87c5b1205fc6503db11a1b9b8c4baba10 --apply --reason 'task_b225ea76: fleet manifest.tsv to fea254b (rebuild drill finding)'
+  [2026-11-05T17:46:19Z] sync fleet to fea254b87c5b1205fc6503db11a1b9b8c4baba10 (2026-11-05T17:44:37+00:00) REF main=fea254b87c5b1205fc6503db11a1b9b8c4baba10
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN validator validator /usr/local/sbin/pft-fleet 0755 CURRENT 61cafcfcdaa9 61cafcfcdaa9 keep
+  PLAN validator validator /usr/local/lib/pft-fleet/fleet_lib.py 0644 CURRENT dcb37d26f33f dcb37d26f33f keep
+  PLAN validator validator /usr/local/lib/pft-fleet/manifest.tsv 0644 BEHIND 3e79d48f22db 9786cd5a9cd5 write
+  PLAN validator validator /etc/systemd/system/pft-fleet.service 0644 CURRENT 3105a2f0a144 3105a2f0a144 keep
+  PLAN validator validator /etc/systemd/system/pft-fleet.timer 0644 CURRENT 79839ee00a81 79839ee00a81 keep
+  [2026-11-05T17:46:19Z] order: sentry validator
+  [2026-11-05T17:46:19Z] sentry: every fleet file already at fea254b87c5b - nothing to do
+  [2026-11-05T17:46:19Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/lib/pft-fleet/manifest.tsv sha256 3e79d48f22db -> /var/lib/pft-fleet/backup/20261105T174619Z-fleet-validator
+  WRITE validator /usr/local/lib/pft-fleet/manifest.tsv 3e79d48f22db -> 9786cd5a9cd5 mode 0644
+  GATE validator sha256 /usr/local/lib/pft-fleet/manifest.tsv = target 9786cd5a9cd5 PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync fleet@fea254b87c5b (manifest.tsv)
+  [2026-11-05T17:46:52Z] SYNCED validator fleet -> fea254b87c5b
+  [2026-11-05T17:46:52Z] sync complete
+  (exit 0)
+CHECK ok   fleet sync exit 0
+$ sha256sum 'fleet/manifest.tsv' | cut -c1-64; sudo -n sha256sum '/usr/local/lib/pft-fleet/manifest.tsv' | cut -c1-64
+  9786cd5a9cd50d5604da907c959ea8ee91cafed5212be004b24f7324c1cbcb67
+  9786cd5a9cd50d5604da907c959ea8ee91cafed5212be004b24f7324c1cbcb67
+  (exit 0)
+CHECK ok   installed /usr/local/lib/pft-fleet/manifest.tsv = repo bytes (fleet/manifest.tsv)
+
+== 5. integrity and fleet skew
+$ sudo -n pft-integrity verify | tail -1
+  RESULT: PASS - 171 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS
+$ sudo -n pft-fleet skew | grep -E ' fleet |SUMMARY'
+  validator  fleet       CURRENT    
+  SUMMARY CURRENT=57 BEHIND=0 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 0)
+CHECK ok   fleet CURRENT on the validator, fleet BEHIND=0
+
+== 6. end window, restore the real target, compare, read back the throwaway and every operator topic
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+$ sudo -n rm -f $NE   (no ntfy.env before: pft-maint falls back to the real monitor target again)
+CHECK ok   pft-maint target back to its pre-run state (/etc/pft-maint/ntfy.env: absent again)
+$ sleep 5; curl -s --max-time 15 "https://ntfy.sh/$TT/json?poll=1&since=1793900679" | jq -r '.title'
+  [MAINT] start validator
+  [MAINT] end validator
+  (exit 0)
+CHECK ok   the [MAINT] start and end messages reached the throwaway topic
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the run (2 topic(s), 0 with messages)
+$ curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '[.data.alerts[] | select(.labels.alertname | test("RuleDead|TextfileStale|Rulecheck|Fleet"))] | length'
+  0
+  (exit 0)
+CHECK ok   no rulecheck/fleet alert pending or firing (silence left to run out on its own)
+
+fleet-sync-run (fleet) done 2026-11-05T17:47:56Z: 0 check(s) failed -> PASS
+exit 0

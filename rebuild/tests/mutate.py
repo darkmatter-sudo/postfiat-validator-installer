@@ -218,7 +218,8 @@ MUTANTS = [
         'if [ "$virt" = lxc ] && grep -qE "$sig" "$out"; then',
         'if grep -qE "$sig" "$out"; then',
     ),
-    ("H02", BL, "rc=${PIPESTATUS[0]}", "rc=$?"),
+    # (dev pass log 10: "rc=${PIPESTATUS[0]}" -> "rc=$?" SURVIVED = equivalent under set -o pipefail; replaced)
+    ("H02", BL, '"$@" 2>&1 | tee "$out"', '"$@" | tee "$out"'),
     ("H03", BL, 'exit "$rc"', "exit 0"),
     (
         "H04",

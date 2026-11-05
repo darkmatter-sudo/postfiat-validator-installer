@@ -1,0 +1,153 @@
+pft-backup sync + fresh backup - 2026-11-05T17:37:38Z - Ubuntu 22.04.5 LTS - repo HEAD bce5506ade88b2e7d595856a6917c48613671250 (clean: yes)
+
+== 0. preflight
+$ sha256sum backup/pft-backup.sh rebuild/drill/backup-sync-run.sh
+  42fdc1464e11330b251680d94084113e3eaa87ff3a2edfb61d675c5ab001a504  backup/pft-backup.sh
+  c484babfc1aac7930e60195316ff916a39e9739712589feb05fcdd60e94624c8  rebuild/drill/backup-sync-run.sh
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1
+  RESULT: PASS - 171 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS before the update
+$ sudo -n docker exec postfiatd curl -s -m 10 -d '{"method":"server_info"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state
+  full
+  (exit 0)
+CHECK ok   node full or proposing
+$ sudo -n pft-fleet skew | grep -E ' backup |SUMMARY'
+  validator  backup      BEHIND     /usr/local/sbin/pft-backup.sh BEHIND @67a8b951d6eb (-1)
+  SUMMARY CURRENT=56 BEHIND=1 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 1)
+CHECK ok   before: backup BEHIND on the validator
+$ sudo -n pft-fleet sync --addon backup --to bce5506ade88b2e7d595856a6917c48613671250 | grep -E '^PLAN .* (write|keep)$' | awk '{print $2, $4, $6, $NF}'
+  validator /usr/local/sbin/pft-backup.sh BEHIND write
+  validator /etc/systemd/system/pft-backup.service CURRENT keep
+  validator /etc/systemd/system/pft-backup.timer CURRENT keep
+  (exit 0)
+CHECK ok   dry run: only pft-backup.sh is written, on the validator only
+$ sudo -n sed -n 's/^COMPOSE_FILE=//p' /opt/postfiatd/.env | tr ':' '\n'
+  docker-compose.yml
+  docker-compose.override.yml
+  docker-compose.confine.yml
+  docker-compose.apparmor.yml
+  docker-compose.seccomp.yml
+  (exit 0)
+CHECK ok   live COMPOSE_FILE lists 5 files
+$ sudo -n tar -tzf '/var/backups/postfiat/pft-backup-20261105T022856Z.tar.gz' | grep -E 'docker-compose[^/]*\.ya?ml$' | sed 's#.*/##' | sort
+  docker-compose.override.yml
+  docker-compose.yml
+  (exit 0)
+CHECK ok   newest nightly archive (pft-backup-20261105T022856Z.tar.gz) lacks a COMPOSE_FILE member (the run 09 refusal)
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+
+== 1. rollout silence (pft-fleet/rulecheck see a changed file during the update; not the watchdog)
+CHECK ok   Alertmanager silence created (PFTRuleDead, PFTTextfileStale, PFTRulecheck*, PFTFleet*) until 2026-11-05T18:08:39Z
+
+== 2. pft-maint window, [MAINT] messages to a throwaway topic (real file kept as $BK)
+real /etc/pft-maint/ntfy.env present before: 0
+$ { [ $HAD = 0 ] || sudo -n cp -p $NE $BK; } && printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' "$TT" | sudo -n tee $NE >/dev/null && sudo -n chmod 600 $NE && sudo -n stat -c '%a %U' $NE
+  600 root
+  (exit 0)
+CHECK ok   throwaway target installed
+$ sudo -n pft-maint start --ttl 30m --reason 'task_b225ea76 backup sync bce5506'
+  window started: id m1793900320-2736552 until 2026-11-05T18:08:40Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint window open
+
+== 3. pft-fleet: backup to HEAD on the validator (write + integrity accept by pft-fleet)
+$ sudo -n pft-fleet sync --addon backup --to bce5506ade88b2e7d595856a6917c48613671250 --apply --reason 'task_b225ea76: pft-backup archives every COMPOSE_FILE member (rebuild run 09)'
+  [2026-11-05T17:39:01Z] sync backup to bce5506ade88b2e7d595856a6917c48613671250 (2026-11-05T17:37:30+00:00) REF main=bce5506ade88b2e7d595856a6917c48613671250
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN validator validator /usr/local/sbin/pft-backup.sh 0755 BEHIND 6243c3d8a7e1 42fdc1464e11 write
+  PLAN validator validator /etc/systemd/system/pft-backup.service 0644 CURRENT 7c751d65f3f2 7c751d65f3f2 keep
+  PLAN validator validator /etc/systemd/system/pft-backup.timer 0644 CURRENT 928b03c5c0ff 928b03c5c0ff keep
+  [2026-11-05T17:39:01Z] order: sentry validator
+  [2026-11-05T17:39:01Z] sentry: every backup file already at bce5506ade88 - nothing to do
+  [2026-11-05T17:39:01Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/sbin/pft-backup.sh sha256 6243c3d8a7e1 -> /var/lib/pft-fleet/backup/20261105T173901Z-backup-validator
+  WRITE validator /usr/local/sbin/pft-backup.sh 6243c3d8a7e1 -> 42fdc1464e11 mode 0755
+  GATE validator sha256 /usr/local/sbin/pft-backup.sh = target 42fdc1464e11 PASS
+  GATE validator syntax /usr/local/sbin/pft-backup.sh bash -n PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync backup@bce5506ade88 (pft-backup.sh)
+  [2026-11-05T17:39:25Z] SYNCED validator backup -> bce5506ade88
+  [2026-11-05T17:39:25Z] sync complete
+  (exit 0)
+CHECK ok   backup sync exit 0
+$ sha256sum backup/pft-backup.sh | cut -c1-64; sudo -n sha256sum /usr/local/sbin/pft-backup.sh | cut -c1-64
+  42fdc1464e11330b251680d94084113e3eaa87ff3a2edfb61d675c5ab001a504
+  42fdc1464e11330b251680d94084113e3eaa87ff3a2edfb61d675c5ab001a504
+  (exit 0)
+CHECK ok   installed pft-backup.sh = repo bytes
+
+== 4. one fresh backup through the real (sandboxed) unit
+$ sudo -n systemctl start pft-backup.service; systemctl show -p Result --value pft-backup.service
+  success
+  (exit 0)
+CHECK ok   pft-backup.service Result success
+$ sudo -n journalctl -u pft-backup.service --since @1793900365 --no-pager --utc -o cat | tail -15
+  [2026-11-05T17:39:26Z]   - /etc/postfiat-monitor.env (secret, excluded)
+  [2026-11-05T17:39:26Z] collecting firewall rules
+  [2026-11-05T17:39:26Z]   + /etc/ufw/user.rules
+  [2026-11-05T17:39:26Z]   + /etc/ufw/user6.rules
+  [2026-11-05T17:39:27Z]   + ufw status verbose
+  [2026-11-05T17:39:27Z] manifest: 21 files
+  [2026-11-05T17:39:27Z] archive: /var/backups/postfiat/pft-backup-20261105T173926Z.tar.gz (29342 bytes)
+  [2026-11-05T17:39:27Z] sha256 : e9e85a527b8ff8789553ec0f01275beb048bc5035c986559809db969ca8e84da
+  [2026-11-05T17:39:27Z] retention: keep newest 14
+  [2026-11-05T17:39:27Z]   pruned pft-backup-20261025T022639Z.tar.gz
+  [2026-11-05T17:39:27Z] retention: 14 kept, 1 pruned
+  [2026-11-05T17:39:27Z] done
+  pft-backup.service: Deactivated successfully.
+  Finished Post Fiat node config backup (pft-backup.sh).
+  pft-backup.service: Consumed 1.371s CPU time.
+  (exit 0)
+CHECK ok   new archive written (pft-backup-20261105T173926Z.tar.gz)
+$ sudo -n tar -tzf '/var/backups/postfiat/pft-backup-20261105T173926Z.tar.gz' | grep -E 'docker-compose[^/]*\.ya?ml$' | sed 's#.*/##' | sort
+  docker-compose.apparmor.yml
+  docker-compose.confine.yml
+  docker-compose.override.yml
+  docker-compose.seccomp.yml
+  docker-compose.yml
+  (exit 0)
+CHECK ok   new archive holds every COMPOSE_FILE member (5)
+$ sudo -n tar -xzOf '/var/backups/postfiat/pft-backup-20261105T173926Z.tar.gz' --wildcards '*/postfiatd.cfg' | grep -cE '^\[(validator_token|validation_seed|node_seed)\]'
+  0
+  (exit 1)
+CHECK ok   new archive carries no key sections (default: secret-free)
+
+== 5. integrity and fleet skew
+$ sudo -n pft-integrity verify | tail -1
+  RESULT: PASS - 171 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS
+$ sudo -n pft-fleet skew | grep -E ' backup |SUMMARY'
+  validator  backup      CURRENT    
+  SUMMARY CURRENT=57 BEHIND=0 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 0)
+CHECK ok   backup CURRENT on the validator, fleet BEHIND=0
+
+== 6. end window, restore the real target, compare, read back the throwaway and every operator topic
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+$ sudo -n rm -f $NE   (no ntfy.env before: pft-maint falls back to the real monitor target again)
+CHECK ok   pft-maint target back to its pre-run state (/etc/pft-maint/ntfy.env: absent again)
+$ sleep 5; curl -s --max-time 15 "https://ntfy.sh/$TT/json?poll=1&since=1793900258" | jq -r '.title'
+  [MAINT] start validator
+  [MAINT] end validator
+  (exit 0)
+CHECK ok   the [MAINT] start and end messages reached the throwaway topic
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the run (2 topic(s), 0 with messages)
+$ curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '[.data.alerts[] | select(.labels.alertname | test("RuleDead|TextfileStale|Rulecheck|Fleet"))] | length'
+  0
+  (exit 0)
+CHECK ok   no rulecheck/fleet alert pending or firing (silence left to run out on its own)
+
+backup-sync-run done 2026-11-05T17:40:09Z: 0 check(s) failed -> PASS
+exit 0

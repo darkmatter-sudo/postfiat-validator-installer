@@ -1,0 +1,65 @@
+CONTROL rc=0 RESULT: PASS (112 checks, 0 failed)
+M01 rebuild_lib.py  CAUGHT      1 failing: stack: equal ORDER refused
+M02 rebuild_lib.py  CAUGHT      3 failing: stack: dependency on a LATER step refused
+M03 rebuild_lib.py  CAUGHT      2 failing: stack: first step must be base
+M04 rebuild_lib.py  CAUGHT      1 failing: stack: duplicate step refused
+M05 rebuild_lib.py  CAUGHT      1 failing: stack: missing command refused
+M06 rebuild_lib.py  CAUGHT      4 failing: stack: after list split
+M07 rebuild_lib.py  CAUGHT      13 failing: parse_stack raised
+M08 rebuild_lib.py  CAUGHT      1 failing: stack: empty stack refused
+M11 rebuild_lib.py  CAUGHT      1 failing: preflight: privileged refused
+M12 rebuild_lib.py  CAUGHT      1 failing: preflight: no nesting refused
+M13 rebuild_lib.py  CAUGHT      1 failing: preflight: no memory cap refused
+M14 rebuild_lib.py  CAUGHT      5 failing: preflight: live disk source /var/lib/docker/volumes/postfiatd_data/_data refused
+M15 rebuild_lib.py  CAUGHT      1 failing: preflight: live disk source /srv/../opt/postfiatd refused
+M16 rebuild_lib.py  CAUGHT      1 failing: preflight: proxy udp:[::]:51235 refused
+M17 rebuild_lib.py  CAUGHT      1 failing: preflight: proxy tcp:0.0.0.0:2500-2600 refused
+M18 rebuild_lib.py  CAUGHT      1 failing: preflight: macvlan nic refused
+M19 rebuild_lib.py  CAUGHT      1 failing: preflight: nic on another bridge refused
+M20 rebuild_lib.py  CAUGHT      1 failing: preflight: host device passthrough refused
+M21 rebuild_lib.py  CAUGHT      1 failing: preflight: IPv6 bridge refused
+M22 rebuild_lib.py  CAUGHT      1 failing: preflight: unmanaged bridge refused
+M23 rebuild_lib.py  CAUGHT      2 failing: preflight: live topic in sandbox file refused
+M24 rebuild_lib.py  CAUGHT      1 failing: preflight: ntfy URL redacted in refusal
+M25 rebuild_lib.py  CAUGHT      1 failing: preflight: any ntfy URL in sandbox file refused
+M26 rebuild_lib.py  CAUGHT      2 failing: cli preflight: refused -> exit 4
+M31 rebuild_lib.py  CAUGHT      7 failing: diff: same bytes, different mtime -> REPRODUCED
+M32 rebuild_lib.py  CAUGHT      6 failing: diff: sandbox only -> EXTRA
+M33 rebuild_lib.py  CAUGHT      4 failing: diff: live only -> MISSING
+M34 rebuild_lib.py  CAUGHT      1 failing: diff: attr present only in sandbox -> DIFFERENT
+M35 rebuild_lib.py  CAUGHT      3 failing: diff: summary counts
+M36 rebuild_lib.py  CAUGHT      1 failing: diff: partial attr exception leaves item open
+M37 rebuild_lib.py  CAUGHT      2 failing: diff: exception for another attr does not cover
+M38 rebuild_lib.py  CAUGHT      1 failing: diff: fleet active state not compared
+M39 rebuild_lib.py  CAUGHT      1 failing: diff: table hides REPRODUCED by default
+M40 rebuild_lib.py  CAUGHT      2 failing: cli diff --json: exit 1 with open items
+M41 rebuild_lib.py  CAUGHT      1 failing: cli diff: one-sided fleet refused (exit 3)
+M42 rebuild_lib.py  CAUGHT      1 failing: diff: malformed manifest line refused
+M51 rebuild_lib.py  CAUGHT      2 failing: teardown: new item -> leftover
+M52 rebuild_lib.py  CAUGHT      1 failing: cli teardown: leftover -> exit 1
+T01 pft-rebuild-drill.sh CAUGHT      6 failing: teardown: exit 0 on success
+T02 pft-rebuild-drill.sh CAUGHT      3 failing: teardown: instance delete fails -> exit 5 INCOMPLETE
+T03 pft-rebuild-drill.sh CAUGHT      1 failing: teardown: only the image this run downloaded deleted
+T04 pft-rebuild-drill.sh CAUGHT      3 failing: teardown: instance delete fails -> exit 5 INCOMPLETE
+T05 pft-rebuild-drill.sh CAUGHT      1 failing: teardown: input chain delete fails -> exit 5 INCOMPLETE
+T06 pft-rebuild-drill.sh CAUGHT      5 failing: teardown: exit 0 on success
+T07 pft-rebuild-drill.sh CAUGHT      1 failing: teardown: empty nft table inet lxd the run created is deleted
+T08 pft-rebuild-drill.sh CAUGHT      1 failing: teardown: pre-existing nft table inet lxd left alone
+T09 pft-rebuild-drill.sh CAUGHT      1 failing: teardown: nft table with chains left alone and reported INCOMPLETE
+M60 rebuild_lib.py  CAUGHT      1 failing: stack --rows: command bytes (backslash, quotes, tab) survive the step loop encoding
+M61 rebuild_lib.py  CAUGHT      1 failing: preflight: custom volume on another pool refused
+T10 pft-rebuild-drill.sh CAUGHT      6 failing: teardown: exit 0 on success
+H01 bin/rb-limit    CAUGHT      1 failing: rb-limit: signature outside a container keeps rc
+H02 bin/rb-limit    SURVIVED    
+H03 bin/rb-limit    CAUGHT      2 failing: rb-limit: other failure in lxc keeps rc
+H04 bin/rb-manifest CAUGHT      1 failing: rb-manifest: enables the timer and the long-running service only
+H05 bin/rb-manifest CAUGHT      1 failing: rb-manifest: enables the timer and the long-running service only
+H06 bin/rb-manifest CAUGHT      1 failing: rb-manifest: enables the timer and the long-running service only
+H07 bin/rb-fleet-conf CAUGHT      1 failing: rb-fleet-conf: hosts.conf lists only the local validator
+H08 bin/rb-fleet-conf CAUGHT      1 failing: rb-fleet-conf: REPO = sandbox checkout, REF = its HEAD commit
+H09 bin/rb-fleet-conf CAUGHT      1 failing: rb-fleet-conf: an existing file is left alone
+S01 stack.list      CAUGHT      2 failing: stack.list (repo): restore before backup
+S02 stack.list      CAUGHT      1 failing: stack.list (repo): baseline is the last step
+S03 stack.list      CAUGHT      6 failing: parse_stack raised
+orphan processes: 0
+MUTANTS: 62 run: CAUGHT=61 SURVIVED=1 -> FAIL
