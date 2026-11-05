@@ -16,6 +16,11 @@
 # integrity notifiers never read the kernel log), and leaving their env files alone keeps pft-keyescrow's fingerprints
 # of those files clean (lesson from the keyescrow drill). Every other alert is silenced for the run; the operator
 # topics are read back at the end (must be 0 messages).
+# Run 06 paged the operator twice: the sentry's pft-alertpath check (60 s timer, its own ntfy.env) saw the bridge
+# "not listening" while step 1 re-created it ([alertpath] DEGRADED 07:18:33Z, RECOVERED 07:19:33Z). An Alertmanager
+# silence never reaches that notifier. Every bridge re-create (step 1 and restore) is now wrapped in ap_pause/ap_resume:
+# stop pft-alertpath-check.timer on the sentry, re-create, wait until a plain `pft-alertpath check` (no --notify,
+# read-only) is OK from a fresh snapshot, then start the timer again (also on every exit path).
 # 0  preflight (nothing changed): clean pushed HEAD; relay, Alertmanager, Prometheus reachable; the 24 h baseline window
 #    is over (BASELINE_END); pft_kernwatch_up 1 for both hosts in Prometheus; no PFTKernel* alert active; bridge on the
 #    operator env; both nodes full; pft-integrity PASS on both; redaction control.
@@ -38,7 +43,7 @@ LOCAL_ENVS="/etc/postfiat-monitor.env /etc/pft-integrity.env"
 REMOTE_ENVS="/etc/pft-watchdog/ntfy.env /etc/pft-integrity.env /etc/pft-alertpath/ntfy.env"
 BRIDGE_ENV="${BRIDGE_ENV:-$HOME/.config/pft-alerts/ntfy.env}"; AGENT_ENV="${AGENT_ENV:-/opt/pft-agent/config.env}"
 BASELINE_END="${BASELINE_END:-2026-11-05T07:17:00Z}"
-SIL_TTL="${SIL_TTL:-60}"; FIRE_WAIT="${FIRE_WAIT:-600}"; RESOLVE_WAIT="${RESOLVE_WAIT:-2700}"
+AP_WAIT="${AP_WAIT:-180}"; SIL_TTL="${SIL_TTL:-60}"; FIRE_WAIT="${FIRE_WAIT:-600}"; RESOLVE_WAIT="${RESOLVE_WAIT:-2700}"
 PREFLIGHT_ONLY="${PREFLIGHT_ONLY:-0}"; NOT_READY=0
 TASK=task_1036cee2
 SHA_HEAD="$(git rev-parse HEAD)"
@@ -71,16 +76,28 @@ n_msgs() { # STATUS ALERTNAME HOST CLASS -> count of matching throwaway-topic me
   topic_msgs "$ALERT" | jq -r --arg t "[$1] $2" 'select(.title == $t) | .message' | grep -c "^$3: kernel $4 "
 }
 
-RESTORED=0; RESTORE_OK=true; SIL=""; BRIDGE_SWAPPED=0
+RESTORED=0; RESTORE_OK=true; SIL=""; BRIDGE_SWAPPED=0; AP_PAUSED=0
+ap_pause() { R 'sudo -n systemctl stop pft-alertpath-check.timer' && AP_PAUSED=1
+  echo "  sentry pft-alertpath-check.timer stopped: $([ "$AP_PAUSED" = 1 ] && echo yes || echo NO)"; }
+ap_resume() { # wait (<= AP_WAIT s) for a read-only check to be OK again, then start the timer whatever the result
+  local t0 rc=9; t0="$(date -u +%s)"
+  while [ $(( $(date -u +%s) - t0 )) -lt "$AP_WAIT" ]; do
+    R 'sudo -n pft-alertpath check >/dev/null 2>&1'; rc=$?; [ "$rc" = 0 ] && break; sleep 10
+  done
+  R 'sudo -n systemctl start pft-alertpath-check.timer' && AP_PAUSED=0
+  echo "  sentry pft-alertpath check rc $rc after $(( $(date -u +%s) - t0 ))s; timer started again: $([ "$AP_PAUSED" = 0 ] && echo yes || echo NO)"
+  [ "$rc" = 0 ] && [ "$AP_PAUSED" = 0 ]; }
 bridge_src() { sudo -n docker inspect pft-alert-bridge --format '{{range .Mounts}}{{if eq .Destination "/run/secrets/ntfy.env"}}{{.Source}}{{end}}{{end}}'; }
 restore() {
   [ "$RESTORED" -eq 1 ] && return 0
   RESTORED=1
   if [ "$BRIDGE_SWAPPED" = 1 ]; then
+    [ "$AP_PAUSED" = 1 ] || ap_pause
     DOCKER="sudo -n docker" NTFY_ENV_FILE="$BRIDGE_ENV" "$RUNSTACK" bridge 2>&1 | red | sed 's/^/  /'
     if [ "$(bridge_src)" = "$BRIDGE_ENV" ]; then echo "  restored bridge: mounts the operator env file again: yes"
     else echo "  restored bridge: mounts the operator env file again: NO"; RESTORE_OK=false; fi
   fi
+  if [ "$AP_PAUSED" = 1 ]; then ap_resume || RESTORE_OK=false; fi
   [ -n "$SIL" ] && curl -s --max-time 10 -o /dev/null -w "  silence expired: HTTP %{http_code}\n" -X DELETE "$AM/api/v2/silence/$SIL"
 }
 cleanup() { restore; rm -rf "$SEC"; }
@@ -108,6 +125,14 @@ for h in local relay; do
     || { echo "  $(lb "$h"): pft-kernwatch or its timer missing - stopping" >&2; exit 3; }
 done
 systemctl is-active --quiet pft-kernwatch-pull.timer || { echo "  pft-kernwatch-pull.timer not active - stopping" >&2; exit 3; }
+for h in local relay; do # run 06: the installed report rejected `--since -15min` (argparse), fixed at ca7d08c
+  on "$h" "sudo -n pft-kernwatch report --since -1min --format tsv >/dev/null 2>&1" \
+    || { echo "  $(lb "$h"): installed pft-kernwatch report rejects --since -1min (pre-ca7d08c build) - stopping" >&2; exit 3; }
+done
+echo "  installed pft-kernwatch report accepts --since -1min on both hosts"
+R 'systemctl is-active --quiet pft-alertpath-check.timer && sudo -n pft-alertpath check >/dev/null 2>&1' \
+  || { echo "  sentry pft-alertpath-check.timer not active or check not OK - stopping" >&2; exit 3; }
+echo "  sentry pft-alertpath-check.timer active, check OK"
 x "curl -s $PROM/api/v1/query --data-urlencode 'query=pft_kernwatch_up' | jq -r '.data.result[] | \"\(.metric.host) \(.value[1])\"' | sort"
 [ "$(grep -cE '^(sentry|validator) 1$' <<<"$XOUT")" = 2 ] || { echo "  pft_kernwatch_up is not 1 for both hosts - stopping" >&2; exit 4; }
 x "curl -s $PROM/api/v1/query --data-urlencode 'query=ALERTS{alertname=~\"PFTKernel.*\"}' | jq -r '.data.result | length'"
@@ -148,9 +173,12 @@ fi
 
 echo; echo "== 1. bridge -> throwaway topic; silence everything except the two rules under test and the watchdog"
 ( umask 077; printf 'NTFY_URL=%s/%s\n' "$NTFY" "$ALERT" > "$SEC/bridge.env" )
+ap_pause; check "sentry pft-alertpath-check.timer paused for the bridge re-create" "$(ok_if '[ "$AP_PAUSED" = 1 ]')"
+[ "$FAILS" = 0 ] || exit 3
 BRIDGE_SWAPPED=1
 DOCKER="sudo -n docker" NTFY_ENV_FILE="$SEC/bridge.env" "$RUNSTACK" bridge 2>&1 | red | sed 's/^/  /'
 check "Alertmanager bridge -> throwaway env file (0700 temp dir)" "$(ok_if '[ "$(bridge_src)" = "$SEC/bridge.env" ]')"
+ap_resume; check "sentry pft-alertpath OK again, check timer running" "$?"
 ends="$(date -u -d "+$SIL_TTL min" +%FT%TZ)"
 SBODY="$(jq -nc --arg s "$(ts)" --arg e "$ends" --arg c "$TASK pft-kernwatch kmsg drill $RUN" \
   '{matchers: [{name: "alertname", value: ".+", isRegex: true, isEqual: true}, {name: "alertname", value: "PFTAlertPipelineWatchdog|PFTKernelCritical|PFTKernelWarning", isRegex: true, isEqual: false}], startsAt: $s, endsAt: $e, createdBy: "kernwatch-drill", comment: $c}')"
