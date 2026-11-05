@@ -1,3 +1,20 @@
 # rebuild/exceptions.list: documented reasons why a live item is legitimately MISSING from, or DIFFERENT in, the
 # sandbox. KEY_GLOB ATTR_GLOB REASON...   (fnmatch globs; ATTR '*' = the whole item; read by rebuild_lib.py diff)
 # Every line needs a reason a reviewer can check. An item without a matching line stays open and fails the run.
+# --- cross-host: the validator's pulls of the SENTRY's textfiles over ssh (install.sh --pull needs PULL_SSH to a second
+#     host; the sandbox is one host and must not reach the live sentry) ---
+unit:pft-*-pull.*                 *   cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)
+unit:pft-*-pull@.*                *   cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)
+unit-enabled:pft-*-pull*          *   cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)
+file:/etc/systemd/system/pft-*-pull*  *   cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)
+file:/usr/local/*/pft-*-pull      *   cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)
+bin:pft-*-pull                    *   cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)
+# --- live-only items that are not part of this repo's stack ---
+bin:pft-agent                     *   the operator's own agent runner (/usr/local/bin/pft-agent), installed outside this repo
+unit:pft-ledger-stats.service     *   collector of the separate pft-ledger-stats repo (data analysis), not this repo's stack
+unit:pft-txmix-collect.service    *   collector of the separate pft-ledger-stats repo (data analysis), not this repo's stack
+unit:pft-validators-record.service  *   collector of the separate pft-ledger-stats repo (data analysis), not this repo's stack
+cfgvol:postfiatd.cfg.pre-*        *   backup copies left in the config volume by earlier one-off edits (sentry peering, fixed peers); not read by postfiatd
+sshd:sshd_config.d/50-cloud-init.conf  *   written by the cloud provider's cloud-init at first boot; the LXD ubuntu:22.04 image has no such file
+image:local:python:3.12-slim      *   unused image left by earlier test work on the live host (no container uses it: docker ps -a)
+image:local:pft-exporter:latest   *   unused image of the exporter's optional Dockerfile; the live exporter runs as the systemd unit

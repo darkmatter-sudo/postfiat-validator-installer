@@ -14,7 +14,7 @@
 10  base          -               bash install.sh
 20  restore       base            rb-restore
 30  exporter      base            rb-manifest exporter
-35  alerts        exporter        bash alerts/run-stack.sh up
+35  alerts        exporter        for i in $(seq 1 30); do curl -sf -o /dev/null http://127.0.0.1:9877/metrics && break; sleep 2; done; bash alerts/run-stack.sh up
 40  integrity     base            rb-manifest integrity
 50  backup        restore         rb-manifest backup
 60  monitor       base            rb-manifest monitor
