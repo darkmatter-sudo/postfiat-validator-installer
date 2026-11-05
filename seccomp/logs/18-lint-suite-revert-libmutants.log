@@ -1,0 +1,269 @@
+OS: Ubuntu 22.04.5 LTS | 2026-11-05T09:48:39Z | validator-host | recorded lint + suite + fix-reverted + drill-lib mutants (run 18)
+# tree: commit f5f1ce8b92ac2f7a2bc44775061b88d71ecc9ceb (git archive, unmodified)
+# sha256 070b52cf399a457961016834caeceff8d9fccfeeb936774c3e1ec32e36b02706  seccomp/pft-seccomp.sh
+# sha256 2c2b32e2f82aedd8b2f8613b0711d4d66c33844a241b4fae71b24b5fba5e40d5  seccomp/pft_seccomp.py
+# sha256 e18d1f87459ce4c88531c3ea1e5e13c15b27054e00f6a43444a38434a65562fc  seccomp/drill/denied-lib.sh
+# sha256 91192de2e0addb2b4f49c8186e32a3b58cafb43f825f397429b47ab7b0fb97e4  seccomp/drill/stop-lib.sh
+# sha256 d7671c9b2203f775eeaa76c892d85f55387405c2f2000ef8382f697c96ef3068  seccomp/drill/host-run.sh
+# sha256 bddaddd78af045ea6eada6beb7c91c16ab6855b4481cc26cb2735df8be404b09  seccomp/drill/live-run.sh
+# sha256 ee130ecfcbc310a611c15613f7df17da59c2af27abfe3260e0a0a68558bba06c  seccomp/tests/run-tests.sh
+# sha256 8db6b4897c8730f70c0a373f1cf29fc411290c5d4e030f34d6ac0a8f3e56532f  seccomp/tests/mutate.py
+== the tool itself is unchanged since recorded run 15 (9032b02: full 67-mutant pass); only drill/ and tests/ changed
+$ git -C ~/work/postfiat-validator-installer diff --stat 9032b026f34581b274774245bbd896f91b119144 f5f1ce8b92ac2f7a2bc44775061b88d71ecc9ceb -- seccomp/pft-seccomp.sh seccomp/pft_seccomp.py seccomp/install.sh seccomp/profile alerts/seccomp.rules.yml | wc -l
+0
+(exit 0)
+$ git -C ~/work/postfiat-validator-installer diff --stat 9032b026f34581b274774245bbd896f91b119144 f5f1ce8b92ac2f7a2bc44775061b88d71ecc9ceb -- seccomp/drill seccomp/tests
+ seccomp/drill/denied-lib.sh                       |  28 ++++++
+ seccomp/drill/host-run.sh                         |  23 +++--
+ seccomp/drill/live-run.sh                         |  21 +++--
+ seccomp/drill/stop-lib.sh                         |  23 +++++
+ seccomp/tests/fixtures/drill-audit-run16.txt      |   6 ++
+ seccomp/tests/fixtures/verify-after-16-sentry.txt |   4 +
+ seccomp/tests/mutate.py                           | 109 ++++++++++++++++++++--
+ seccomp/tests/run-tests.sh                        |  63 +++++++++++++
+ 8 files changed, 249 insertions(+), 28 deletions(-)
+(exit 0)
+== lint
+$ shellcheck -V | head -2 | tail -1
+version: 0.8.0
+(exit 0)
+$ shellcheck -x seccomp/pft-seccomp.sh seccomp/install.sh seccomp/tests/run-tests.sh seccomp/drill/*.sh
+(exit 0)
+$ ruff check seccomp/pft_seccomp.py seccomp/tests/
+All checks passed!
+(exit 0)
+$ ruff format --check seccomp/pft_seccomp.py seccomp/tests/
+4 files already formatted
+(exit 0)
+== offline suite
+$ env TEST_TMPDIR=/home/<user>/.cache timeout 1200 nice -n 15 bash seccomp/tests/run-tests.sh </dev/null
+ok   audit compose healthy: PASS, exit 0
+ok   audit compose healthy: kernel PASS
+ok   audit compose healthy: logging PASS
+ok   audit compose healthy: profile PASS
+ok   audit compose healthy: container PASS
+ok   audit compose healthy: filter PASS
+ok   audit compose healthy: recreate PASS
+ok   audit compose healthy: confine:cap_drop PASS
+ok   audit compose healthy: confine:nnp PASS
+ok   audit compose healthy: denials PASS
+ok   audit run healthy: PASS, exit 0
+ok   audit run healthy: kernel PASS
+ok   audit run healthy: logging PASS
+ok   audit run healthy: profile PASS
+ok   audit run healthy: container PASS
+ok   audit run healthy: filter PASS
+ok   audit run healthy: recreate PASS
+ok   audit run healthy: confine:cap_drop PASS
+ok   audit run healthy: confine:nnp PASS
+ok   audit run healthy: denials PASS
+ok   default profile: container FAIL
+ok   default: profile file missing FAIL
+ok   default: recreate FAIL
+ok   unconfined: container FAIL
+ok   file edited after create: container FAIL drift
+ok   same profile re-indented: container still PASS (canonical compare)
+ok   allow-by-default file: profile FAIL
+ok   init not filtered: filter FAIL
+ok   no pid: filter FAIL
+ok   errno not logged: logging FAIL
+ok   override points elsewhere: recreate FAIL
+ok   cap_drop lost: FAIL
+ok   nnp lost: FAIL
+ok   missing container: container FAIL
+ok   denials: 3 errno records of pft-postfiatd counted (throwaway label, LOG action, older than 24h left out)
+ok   denials: top syscalls named with comm
+ok   denials: exit 1
+ok   denials --since 85: only the last record
+ok   unreadable audit log: denials FAIL
+ok   --json: findings, denied_events, 9 checks
+ok   --textfile: samples written
+ok   --textfile: mode 644
+ok   validate: own textfile ok
+ok   validate: other host label rejected
+ok   validate: foreign metric rejected
+ok   validate: no last_run rejected
+ok   validate: one sample with another host label rejected (last_run still ours)
+ok   ack without --yes: exit 4
+ok   ack: 3 records up to --until counted (incl. the one older than 24h)
+ok   after ack: 1 denial left, reason shown
+ok   ack: same --until twice refused
+ok   ack: future --until refused
+ok   ack: non-printable reason refused
+ok   ack to now: denials PASS
+ok   malformed ack file: FAIL
+ok   malformed ack file: every record counted again
+ok   ack file without a reason: FAIL
+ok   ack file without a reason: every record counted again
+ok   profile: unconditional clone3 -> ENOSYS rule present
+ok   clone3 ENOSYS records are not denials: only the ptrace record counted
+ok   only clone3 ENOSYS records: denials PASS, expected answers shown
+ok   only clone3 ENOSYS records: audit exit 0
+ok   only clone3 ENOSYS records: --json denied_events 0
+ok   no profile file (Docker's default): clone3 records counted (nothing to attribute them to)
+ok   clone3 rule answering EPERM: clone3 records are denials
+ok   conditional clone3 rule (excludes caps): clone3 records are denials
+ok   argument-filtered clone3 rule: clone3 records are denials
+ok   ack-denials: clone3 ENOSYS records not counted as acknowledged denials
+ok   pull: peer textfile copied
+ok   pull: bad file rejected, last good copy kept
+ok   pull: ssh failure exit 1
+ok   conf: bad HOST_LABEL refused
+ok   apply run: PASS, exit 0
+ok   apply run: stored profile = json.Compact(profile)
+ok   apply run: re-created container keeps every confine/identity field incl. AppArmor (built from the run args)
+ok   apply run: previous container kept, restart=no
+ok   apply run: /etc/pft-seccomp file = candidate
+ok   apply run: host IP masked in output
+ok   apply run: env values masked in output
+ok   apply run: gate exercised the node, 0 denials
+ok   apply run: gate ran the add-ons' docker exec commands
+ok   apply run: state applied, pre_state default
+ok   apply run: audit afterwards PASS
+ok   apply run: same profile again refused
+ok   apply run: other profile while applied refused
+ok   rollback without --yes: exit 4
+ok   rollback run: PASS
+ok   rollback run: previous container back (Docker default seccomp, unless-stopped, AppArmor kept)
+ok   rollback run: profile file removed (none before)
+ok   rollback run: no leftover container
+ok   rollback run: state rolled_back (manual)
+ok   rollback twice: no-op
+ok   re-apply after rollback: PASS
+ok   apply compose: PASS
+ok   apply compose: COMPOSE_FILE keeps the apparmor override + adds seccomp
+ok   apply compose: .env mode kept
+ok   apply compose: stored profile + AppArmor label
+ok   apply compose: cpu_shares + memory_reservation (not in the compose files) restored after compose up
+ok   apply compose: audit recreate PASS
+ok   rollback compose: cpu_shares + memory_reservation restored too
+ok   rollback compose: .env byte-identical, override gone, Docker default
+ok   apply over an older profile: PASS
+ok   rollback: older file restored byte-identical and the container back on it
+ok   rollback: the pre-existing override file is restored, not deleted
+ok   integrity: own items accepted
+ok   integrity: foreign change -> not accepted
+ok   refuse: no --yes
+ok   refuse no --yes: nothing changed
+ok   refuse: no window
+ok   refuse no window: nothing changed
+ok   refuse: window too short
+ok   refuse: data-collection lock
+ok   refuse lock: nothing changed
+ok   refuse: node not full
+ok   refuse not full: nothing changed
+ok   refuse: not confined
+ok   refuse: no AppArmor label (denials unattributable)
+ok   refuse label: nothing changed
+ok   refuse: allow-by-default candidate
+ok   refuse check: nothing changed
+ok   apply without --profile-file: exit 3
+ok   refuse: rollback outside a window
+ok   auto: lost read-only named
+ok   auto: lost read-only: rolled back (exit 1)
+ok   auto: lost cpu_shares named
+ok   auto: lost cpu_shares (run path): rolled back (exit 1)
+ok   auto: rolled-back sentry container keeps cpu_shares 8192
+ok   auto: AppArmor label lost on recreate named (security_opt unchanged)
+ok   auto: lost AppArmor label: rolled back (exit 1)
+ok   auto run: profile not taken named
+ok   auto run: profile not taken: rolled back (exit 1)
+ok   auto compose: profile not taken named
+ok   auto compose: profile not taken: rolled back
+ok   auto: init not filtered named
+ok   auto: init not filtered: rolled back (exit 1)
+ok   auto: not full under the profile named
+ok   auto: not full: rolled back (exit 1)
+ok   gate: denial of another label (throwaway) not counted
+ok   auto: denial during the exercise fails the gate
+ok   auto: denial: rolled back (exit 1)
+ok   auto: denial on an add-on command fails the gate
+ok   auto: add-on denial: rolled back (exit 1)
+ok   gate: the node's clone3 -> ENOSYS records do not fail the gate (named as expected)
+ok   gate clone3: records really written (control)
+ok   auto: docker run failed: rolled back (exit 1)
+ok   auto: PFT_SC_INJECT=health named
+ok   auto: injected: rolled back (exit 1)
+ok   auto: pft daemon down -> container restored, rollback gate fails honestly (exit 5)
+ok   auto compose: compose up failed -> .env restored, override + file gone
+ok   auto compose: injected failure rolled back
+ok   auto compose: docker update fails -> rollback, which cannot restore them either and says so (exit 5)
+ok   merge: census counts summed (read 1000 + 5)
+ok   merge: the second dir's LOG events count
+ok   merge: a census-only name from the second dir kept
+ok   merge: order of --learn does not change the profile
+ok   merge: the same dir twice = that dir alone
+ok   merge: dirs with different caps refused
+ok   merge: dir without census refused
+ok   drill lib: expected_list = clone3 (the profile's only by-design errno rule)
+ok   drill lib: run 16 drill window (only a clone3 record) -> 0 denials
+ok   drill lib: same window with nothing skipped -> 1 (the run 16 FAIL reproduced: control)
+ok   drill lib: whole run 16 capture -> 3 denials (the negative controls), clone3 x3 not counted
+ok   drill lib: SYSCALL=clone3 -> 3 (named syscalls are counted even when skipped)
+ok   drill lib: SYSCALL=symlinkat -> 1 (named syscalls are counted even when skipped)
+ok   drill lib: SYSCALL=linkat -> 1 (named syscalls are counted even when skipped)
+ok   drill lib: SYSCALL=inotify_init -> 1 (named syscalls are counted even when skipped)
+ok   drill lib: SYSCALL=inotify_init1 -> 0 (named syscalls are counted even when skipped)
+ok   drill lib: SINCE bound (records at/after 1793870686 only)
+ok   drill lib: other AppArmor label -> 0
+ok   drill lib: non-errno actions (code 0x7fff0000) -> 0
+ok   drill lib: clone3 rule with .errnoRet = 1 is not by design -> its records count (6)
+ok   drill lib: clone3 rule with .args = [{"index": 0, "op": "SCMP_CMP_EQ", "value": 0}] is not by design -> its records count (6)
+ok   drill lib: clone3 rule with .excludes = {"caps": ["CAP_SYS_ADMIN"]} is not by design -> its records count (6)
+ok   drill lib: clone3 rule with .includes = {"caps": ["CAP_SYS_ADMIN"]} is not by design -> its records count (6)
+ok   drill lib: no profile file -> nothing skipped
+ok   drill lib: host-run.sh counts through count_records with the profile's expected list (static check)
+ok   stop lib: own_items reads the 4 real items of the run 16 sentry verify
+ok   stop lib: log 13 validator (install only, not enforced) -> accept
+ok   stop lib: log 13 sentry (install only) -> accept
+ok   stop lib: run 16 sentry, container under the profile -> accept
+ok   stop lib: run 16 sentry, container NOT under the profile -> refuse
+ok   stop lib: another host's container name -> refuse
+ok   stop lib: container changed in more than security_opt -> refuse
+ok   stop lib: any other changed item -> refuse
+ok   stop lib: a look-alike unit name -> refuse
+ok   stop lib: nothing changed -> rc 0 (caller says nothing to accept)
+ok   stop lib: live-run.sh passes the verify output, the host's container and the audit's container grade (static check)
+ok   helper unit tests: Ran 12 tests
+RESULT: 188 passed, 0 failed
+(exit 0)
+== fix reverted 1: denied-lib with nothing skipped (= host-run.sh's counter before this commit: every code=0x50000 record counts)
+$ mkdir -p /home/<user>/.cache/sc-revert18 && sed 's/else if (s in sk) next//' seccomp/drill/denied-lib.sh > /home/<user>/.cache/sc-revert18/denied-lib.sh && diff seccomp/drill/denied-lib.sh /home/<user>/.cache/sc-revert18/denied-lib.sh
+25c25
+<       if (n != "") { if (s != n) next } else if (s in sk) next
+---
+>       if (n != "") { if (s != n) next } 
+(exit 1)
+$ env TEST_TMPDIR=/home/<user>/.cache DRILL_LIB=/home/<user>/.cache/sc-revert18/denied-lib.sh timeout 1200 nice -n 15 bash seccomp/tests/run-tests.sh </dev/null | command grep -E '^(FAIL|RESULT)' | cut -c1-160
+FAIL drill lib: drill window 1
+FAIL drill lib: whole 6
+RESULT: 186 passed, 2 failed
+(exit 0)
+== fix reverted 2: stop-lib with the parent commit's install_only (pft-seccomp files only, container never accepted)
+$ printf '%s\n' 'own_items() { grep -E "^  \[(WARN|FAIL)\]" | awk "{print \$2}" | sort -u; }' 'install_only() { ! own_items <<<"$1" | grep -vxE "bin:pft-seccomp|unit:pft-seccomp(-pull)?\.(service|timer)" | grep -q .; }' > /home/<user>/.cache/sc-revert18/stop-lib.sh && cat /home/<user>/.cache/sc-revert18/stop-lib.sh
+own_items() { grep -E "^  \[(WARN|FAIL)\]" | awk "{print \$2}" | sort -u; }
+install_only() { ! own_items <<<"$1" | grep -vxE "bin:pft-seccomp|unit:pft-seccomp(-pull)?\.(service|timer)" | grep -q .; }
+(exit 0)
+$ env TEST_TMPDIR=/home/<user>/.cache STOP_LIB=/home/<user>/.cache/sc-revert18/stop-lib.sh timeout 1200 nice -n 15 bash seccomp/tests/run-tests.sh </dev/null | command grep -E '^(FAIL|RESULT)' | cut -c1-160
+FAIL stop lib: run 16 enforced
+RESULT: 187 passed, 1 failed
+(exit 0)
+$ rm -rf /home/<user>/.cache/sc-revert18
+(exit 0)
+== mutants of the drill libs (L01-L06 denied-lib, S01-S04 stop-lib)
+$ env TEST_TMPDIR=/home/<user>/.cache timeout 3600 nice -n 15 python3 -u seccomp/tests/mutate.py --jobs 2 --timeout 900 --only L01,L02,L03,L04,L05,L06,S01,S02,S03,S04 </dev/null
+control (unmutated): PASS RESULT: 188 passed, 0 failed
+L01 CAUGHT - drill counter: expected errno answers not skipped (live run 16 stop reproduced) [2 failing: drill lib: drill window 1; drill lib: whole 6]
+L02 CAUGHT - drill counter: named syscall filter ignored [5 failing: drill lib: clone3 6; drill lib: symlinkat 6]
+L03 CAUGHT - expected_list: EPERM rules qualify as by design [1 failing: drill lib: .errnoRet = 1 -> 'clone3' 3]
+L04 CAUGHT - expected_list: argument-filtered rules qualify as by design [1 failing: drill lib: .args = [{"index": 0, "op": "SCMP_CMP_EQ", "value": 0}] -> 'clone3' 3]
+L05 CAUGHT - drill counter: SINCE bound ignored [1 failing: drill lib: since 3]
+L06 CAUGHT - drill counter: AppArmor label not required [1 failing: drill lib: label 6]
+S01 CAUGHT - stop accept: container accepted while not under the profile [1 failing: stop lib: run 16 not enforced accepted]
+S02 CAUGHT - stop accept: container accepted whatever field changed [1 failing: stop lib: image change accepted]
+S03 CAUGHT - stop accept: any other item accepted [3 failing: stop lib: wrong container accepted; stop lib: foreign item accepted]
+S04 CAUGHT - stop accept: look-alike unit names accepted [1 failing: stop lib: look-alike accepted]
+orphan check: 0 process(es) still running from mutant copies
+RESULT: 10 caught, 0 survived, 0 not applied, 0 broken of 10 (--only subset of 76) (+ 1 documented equivalent: M54)
+(exit 0)
+end 2026-11-05T10:10:18Z
