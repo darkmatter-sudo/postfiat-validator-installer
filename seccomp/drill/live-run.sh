@@ -130,16 +130,17 @@ readback() { # TOPIC LABEL [quiet]
     [ -n "${3:-}" ] || jq -c 'select(.event == "message") | {time: (.time | todate), title, message}' <<<"$out" 2>/dev/null | red | sed 's/^/    /'
   else N_MSG=-1; echo "  $2 topic: could not be read from ntfy"; fi
 }
-# the WARN items a stopped run may leave: pft-seccomp's own installed files only (pft-integrity verify lines)
-own_items() { grep -E '^  \[(WARN|FAIL)\]' | awk '{print $2}' | sort -u; }
-install_only() { ! grep -vxE 'bin:pft-seccomp|unit:pft-seccomp(-pull)?\.(service|timer)' <<<"$1" | grep -q .; }
-stop_accept() { # HOST: accept the install into the baseline only if nothing else changed (else leave it for a human)
-  local items; items="$(on "$1" "sudo -n pft-integrity verify" 2>&1 | own_items)"
+# shellcheck source-path=SCRIPTDIR source=stop-lib.sh
+. "$HERE/stop-lib.sh"   # own_items, install_only (what the stop path may accept by itself)
+stop_accept() { # HOST: accept the install (+ a container left enforced by its passed apply) only if nothing else changed
+  local v items enf=0
+  v="$(on "$1" "sudo -n pft-integrity verify" 2>&1)"; items="$(own_items <<<"$v")"
+  on "$1" "sudo -n /usr/local/bin/pft-seccomp audit" 2>/dev/null | grep -qE '^  \[PASS\] container ' && enf=1
   if [ -z "$items" ]; then echo "  pft-integrity $(lb "$1"): nothing to accept"
-  elif install_only "$items"; then
-    on "$1" "sudo -n pft-integrity accept --reason '$TASK: pft-seccomp $SHORT installed (run stopped before enforcement)'" 2>&1 | tail -1 | sed -E 's/ by [a-z_][a-z0-9_-]*$/ by <user>/' | red | sed 's/^/  /'
-    echo "  pft-integrity $(lb "$1"): accepted the pft-seccomp install items: $(tr '\n' ' ' <<<"$items")"
-  else echo "  pft-integrity $(lb "$1"): NOT accepted - items besides the pft-seccomp install: $(tr '\n' ' ' <<<"$items")"; RESTORE_OK=false; fi
+  elif install_only "$v" "$(cn "$1")" "$enf"; then
+    on "$1" "sudo -n pft-integrity accept --reason '$TASK: pft-seccomp $SHORT installed (run stopped before both nodes were enforced; container enforced: $enf)'" 2>&1 | tail -1 | sed -E 's/ by [a-z_][a-z0-9_-]*$/ by <user>/' | red | sed 's/^/  /'
+    echo "  pft-integrity $(lb "$1"): accepted the pft-seccomp items (container under the profile: $enf): $(tr '\n' ' ' <<<"$items")"
+  else echo "  pft-integrity $(lb "$1"): NOT accepted - items besides the pft-seccomp install (container under the profile: $enf): $(tr '\n' ' ' <<<"$items")"; RESTORE_OK=false; fi
 }
 stop_path() { # the run ended before step 8/9: baselines for the install and the operator read-back still happen
   local h i=0 opn=0 t
@@ -155,7 +156,7 @@ trap 'echo "interrupted"; exit 6' INT TERM
 
 { echo "pft-seccomp two-host live run (sentry canary, then validator) - $(ts) - $(lsb_release -ds) - run $RUN"
   echo "repo HEAD $SHA_HEAD (clean: $([ -z "$(git status --short)" ] && echo yes || echo NO))"
-  for f in seccomp/drill/live-run.sh seccomp/drill/host-run.sh seccomp/pft-seccomp.sh seccomp/pft_seccomp.py seccomp/install.sh \
+  for f in seccomp/drill/live-run.sh seccomp/drill/host-run.sh seccomp/drill/denied-lib.sh seccomp/drill/stop-lib.sh seccomp/pft-seccomp.sh seccomp/pft_seccomp.py seccomp/install.sh \
            "$PROFILE_REPO" alerts/seccomp.rules.yml "${REDACT#"$REPO"/}"; do
     echo "sha256 $(sha256sum < "$f" | cut -c1-64) $f"; done; }
 

@@ -421,6 +421,75 @@ MUTANTS = [
         'a="$(denials "$((prev + 1))" "$subj")"',
     ),
 ]
+# Mutants of the live drill's libs: drill/denied-lib.sh (host-run.sh's own denial counter, env DRILL_LIB) and
+# drill/stop-lib.sh (what live-run.sh's stop path may accept, env STOP_LIB), both sourced by the suite. Each is applied
+# to a copy of the lib that the suite loads via that env var, with the unmutated tool. L* = denied-lib, S* = stop-lib.
+LIBS = {
+    "L": ("DRILL_LIB", os.path.join(HERE, "..", "drill", "denied-lib.sh")),
+    "S": ("STOP_LIB", os.path.join(HERE, "..", "drill", "stop-lib.sh")),
+}
+LIB_MUTANTS = [
+    (
+        "L01",
+        "drill counter: expected errno answers not skipped (live run 16 stop reproduced)",
+        "else if (s in sk) next",
+        "",
+    ),
+    (
+        "L02",
+        "drill counter: named syscall filter ignored",
+        'if (n != "") { if (s != n) next }',
+        'if (n != "") { }',
+    ),
+    (
+        "L03",
+        "expected_list: EPERM rules qualify as by design",
+        "(.errnoRet // 1) != 1 and",
+        "",
+    ),
+    (
+        "L04",
+        "expected_list: argument-filtered rules qualify as by design",
+        "((.args // []) | length) == 0",
+        "true",
+    ),
+    (
+        "L05",
+        "drill counter: SINCE bound ignored",
+        "+ 0 >= t + 0) c++",
+        "+ 0 >= 0) c++",
+    ),
+    (
+        "L06",
+        "drill counter: AppArmor label not required",
+        'index($0, " subj=" l " ") &&',
+        "",
+    ),
+    (
+        "S01",
+        "stop accept: container accepted while not under the profile",
+        '"container:$2") [ "$3" = 1 ] &&',
+        '"container:$2") true &&',
+    ),
+    (
+        "S02",
+        "stop accept: container accepted whatever field changed",
+        "changed +security_opt *$",
+        "changed",
+    ),
+    (
+        "S03",
+        "stop accept: any other item accepted",
+        "*) return 1 ;;",
+        "*) ;;",
+    ),
+    (
+        "S04",
+        "stop accept: look-alike unit names accepted",
+        "unit:pft-seccomp.service | unit:pft-seccomp.timer",
+        "unit:pft-seccomp* ",
+    ),
+]
 # Equivalent mutants (no input can reach the difference) are documented here instead of counted.
 #  M54 lx "return $rc" -> "return 0": lx is used only in the exercise steps (exercise_addons, exercise, exercise_live,
 #      the throwaway restart/rm); every caller ignores their status on purpose (a failing exercise command is the
@@ -429,14 +498,16 @@ MUTANTS = [
 EQUIVALENT = ["M54"]
 
 
-def run_suite(tool, timeout):
+def run_suite(tool, timeout, lib=None):
     """-> (PASS|FAIL|HANG, stdout). The suite gets its own session; on timeout the whole group is SIGKILLed."""
+    env = dict(os.environ, **{lib[0]: lib[1]}) if lib else None
     p = subprocess.Popen(
         ["nice", "-n", "19", "bash", SUITE, tool],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
         start_new_session=True,
+        env=env,
     )
     try:
         out, _ = p.communicate(timeout=timeout)
@@ -447,15 +518,24 @@ def run_suite(tool, timeout):
     return ("PASS" if p.returncode == 0 else "FAIL"), out
 
 
-def one(work, timeout, src, m):
+def one(work, timeout, src, m, libsrc=None):
+    """A tool mutant (libsrc None) or a drill-lib mutant (src = the unmutated tool, libsrc = the lib to mutate)."""
     mid, desc, old, new = m
-    n = src.count(old)
+    target = src if libsrc is None else libsrc
+    n = target.count(old)
     if n != 1:
         return mid, "NOT APPLIED", f"({n} matches) - {desc}"
     path = os.path.join(work, f"{mid}.sh")
     with open(path, "w") as f:
-        f.write(src.replace(old, new, 1))
-    st, out = run_suite(path, timeout)
+        f.write(target.replace(old, new, 1))
+    if libsrc is None:
+        st, out = run_suite(path, timeout)
+    else:
+        tool = os.path.join(work, f"{mid}-tool.sh")
+        with open(tool, "w") as f:
+            f.write(src)
+        st, out = run_suite(tool, timeout, lib=(LIBS[mid[0]][0], path))
+        os.remove(tool)
     os.remove(path)
     if st == "PASS":
         return mid, "SURVIVED", f"- {desc}"
@@ -506,10 +586,19 @@ def main():
         print("RESULT: control run failed, mutants not run")
         shutil.rmtree(work)
         return 2
-    selected = [m for m in MUTANTS if only is None or m[0] in only]
+    libsrc = {}
+    for k, (_, path) in LIBS.items():
+        with open(path) as f:
+            libsrc[k] = f.read()
+    selected = [(m, None) for m in MUTANTS if only is None or m[0] in only]
+    selected += [
+        (m, libsrc[m[0][0]]) for m in LIB_MUTANTS if only is None or m[0] in only
+    ]
     res = {}
     with ThreadPoolExecutor(max_workers=jobs) as ex:
-        for mid, status, text in ex.map(lambda m: one(work, timeout, src, m), selected):
+        for mid, status, text in ex.map(
+            lambda ml: one(work, timeout, src, ml[0], ml[1]), selected
+        ):
             res[mid] = status
             print(f"{mid} {status} {text}", flush=True)
     shutil.rmtree(work)
@@ -521,7 +610,11 @@ def main():
         ["pgrep", "-fc", "pft-sc-mut\\."], capture_output=True, text=True, check=False
     ).stdout.strip()
     print(f"orphan check: {orphans or 0} process(es) still running from mutant copies")
-    subset = f" (--only subset of {len(MUTANTS)})" if only is not None else ""
+    subset = (
+        f" (--only subset of {len(MUTANTS) + len(LIB_MUTANTS)})"
+        if only is not None
+        else ""
+    )
     print(
         f"RESULT: {c} caught, {sv} survived, {na} not applied, {br} broken of {len(selected)}{subset}"
         f" (+ {len(EQUIVALENT)} documented equivalent{': ' + ', '.join(EQUIVALENT) if EQUIVALENT else ''})"

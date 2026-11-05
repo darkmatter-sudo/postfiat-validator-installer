@@ -62,12 +62,15 @@ o = (json.load(sys.stdin)[0].get("HostConfig") or {}).get("SecurityOpt") or []
 print(json.dumps(["seccomp=<inline profile, sha256 " + hashlib.sha256(x[8:].encode()).hexdigest() + ">" if x.startswith("seccomp=") and x != "seccomp=unconfined" else x for x in o]))'
 }
 init_mode() { local p; p="$(docker inspect -f '{{.State.Pid}}' "$C" 2>/dev/null)"; awk '$1 == "Seccomp:" { print $2 }' "/proc/$p/status" 2>/dev/null; }
+# shellcheck source-path=SCRIPTDIR source=denied-lib.sh
+. "$(dirname "$0")/denied-lib.sh"
+SKIP="$(expected_list "$PROF")"   # by-design errno answers (clone3 -> ENOSYS): logged like denials, never counted
 denied() { # SINCE_EPOCH [SYSCALL] -> errno type=SECCOMP records for the container's AppArmor label since SINCE
-  local l; l="$(label)"
-  cat /var/log/audit/audit.log* 2>/dev/null | awk -v t="$1" -v n="${2:-}" -v l="$l" '
-    index($0, "type=SECCOMP ") && index($0, " subj=" l " ") && index($0, " code=0x50000") && (n == "" || $0 ~ ("SYSCALL=" n "$")) {
-      if (match($0, /audit\([0-9]+/) && substr($0, RSTART + 6, RLENGTH - 6) + 0 >= t + 0) c++ }
-    END { print c + 0 }'
+  count_records "$1" "$(label)" "${2:-}" "$SKIP" /var/log/audit/audit.log*
+}
+expected_seen() { # SINCE_EPOCH -> ", not denials: N expected errno answer(s) (SYSCALLS)" or nothing
+  local s c=0; for s in $SKIP; do c=$((c + $(count_records "$1" "$(label)" "$s" "" /var/log/audit/audit.log*))); done
+  [ "$c" = 0 ] || echo ", not denials: $c expected errno answer(s) by design ($SKIP)"
 }
 show_denied() { # SINCE SYSCALL: matching records, trimmed (no pid/ip)
   local l; l="$(label)"
@@ -108,7 +111,7 @@ if [ "$PHASE" = pre ]; then
     res "previous profile state restored: Docker's default, $PF removed, init Seccomp 2, full" \
       "$(ok_if '[ "$st" = default ] && [ ! -e "$PF" ] && [ "$m" = 2 ] && [ "$s" = full ]')" "$st, $s"
     echo "  SecurityOpt: $(secopt_shown)"
-    d="$(denied "$t2")"; res "0 denials during the drill" "$(ok_if '[ "$d" = 0 ]')" "$d"
+    d="$(denied "$t2")"; res "0 denials during the drill" "$(ok_if '[ "$d" = 0 ]')" "$d$(expected_seen "$t2")"
   fi
 
   echo; echo "== 3. apply"
@@ -134,7 +137,7 @@ if [ "$PHASE" = pre ]; then
   x "docker exec $C ls /var/log/postfiatd /var/lib/postfiatd/db | wc -l"; res "list log + data dirs" "$XRC"
   x "docker exec $C ps -eo pid,comm | head -6"; res "ps" "$XRC"
   sleep 3
-  d="$(denied "$t4")"; res "0 denials from the positive controls" "$(ok_if '[ "$d" = 0 ]')" "$d"
+  d="$(denied "$t4")"; res "0 denials from the positive controls" "$(ok_if '[ "$d" = 0 ]')" "$d$(expected_seen "$t4")"
 
   echo; echo "== 5. negative controls (Docker's default allows these; each must fail with EPERM and leave a SECCOMP record)"
   neg() { # LABEL SYSCALL COMMAND
@@ -185,7 +188,7 @@ else
     res "a real timer tick ran under the profile: new invocation, Result=success, nudb_bytes > 0" \
       "$(ok_if '[ "$inv" != "$inv0" ] && grep -qx "Result=success" <<<"$XOUT" && [ "$(tail -1 /var/lib/pft-retention/samples.csv | cut -d, -f7)" -gt 0 ] 2>/dev/null')"
   fi
-  sleep 3; d="$(denied "$t7")"; res "0 denials from the add-ons" "$(ok_if '[ "$d" = 0 ]')" "$d"
+  sleep 3; d="$(denied "$t7")"; res "0 denials from the add-ons" "$(ok_if '[ "$d" = 0 ]')" "$d$(expected_seen "$t7")"
 
   echo; echo "== 8. enforced restart"
   t8="$(date +%s)"; before="$(docker inspect -f '{{.State.StartedAt}}' "$C")"
@@ -193,7 +196,7 @@ else
   s="$(wait_full)"; st="$(stored)"; m="$(init_mode)"; after="$(docker inspect -f '{{.State.StartedAt}}' "$C")"
   res "restarted (StartedAt changed), same stored profile, init Seccomp 2, full" \
     "$(ok_if '[ "$before" != "$after" ] && [ "$st" = "$WANT" ] && [ "$m" = 2 ] && [ "$s" = full ]')" "$s"
-  sleep 5; d="$(denied "$t8")"; res "0 denials since the restart" "$(ok_if '[ "$d" = 0 ]')" "$d"
+  sleep 5; d="$(denied "$t8")"; res "0 denials since the restart" "$(ok_if '[ "$d" = 0 ]')" "$d$(expected_seen "$t8")"
 
   if [ "$DRILL" = 1 ]; then
     echo; echo "== 9. explicit rollback, then re-apply"
@@ -207,7 +210,7 @@ else
     x "$SC apply --profile-file '$PROF' --yes"
     res "re-apply -> PASS" "$(ok_if '[ "$XRC" = 0 ] && grep -q "apply RESULT: PASS" <<<"$XOUT"')"
     st="$(stored)"; res "stored profile = canonical sha256 again" "$(ok_if '[ "$st" = "$WANT" ]')" "$st"
-    d="$(denied "$t9")"; res "0 denials since the re-apply" "$(ok_if '[ "$d" = 0 ]')" "$d"
+    d="$(denied "$t9")"; res "0 denials since the re-apply" "$(ok_if '[ "$d" = 0 ]')" "$d$(expected_seen "$t9")"
   fi
 fi
 

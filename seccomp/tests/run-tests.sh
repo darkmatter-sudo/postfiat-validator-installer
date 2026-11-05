@@ -376,6 +376,69 @@ run generate --learn "$FIX/learn" --learn "$T/l3"
 run generate --learn "$FIX/learn" --learn "$T"
 [ "$RC" = 2 ] && grep -q 'no census.json' <<<"$OUT" && ok "merge: dir without census refused" || ko "merge: no census rc=$RC" "$OUT"
 
+# ---- the live drill's own denial counter (drill/denied-lib.sh, sourced by drill/host-run.sh) -------------
+# Live run 16 stopped at the sentry canary: host-run's "0 denials during the drill" counted Docker's clone3 -> ENOSYS
+# record (the da341ce fix covered audit/ack/gate, not this counter). The fixture is the 6 real type=SECCOMP records
+# of that run on the sentry (3 clone3, then the 3 negative controls); host-run checked the drill at 09:23:31Z, when
+# only the first one existed.
+DLIB="${DRILL_LIB:-$HERE/../drill/denied-lib.sh}"
+# shellcheck source-path=SCRIPTDIR source=../drill/denied-lib.sh
+. "$DLIB"
+DA="$FIX/drill-audit-run16.txt"; T2=1793869932   # host-run's t2 (drill start 09:12:12Z)
+head -1 "$DA" > "$T/drill-window.txt"
+SK="$(expected_list "$PROFILE")"
+[ "$SK" = clone3 ] && ok "drill lib: expected_list = clone3 (the profile's only by-design errno rule)" || ko "drill lib: expected_list '$SK'"
+n="$(count_records "$T2" pft-postfiatd "" "$SK" "$T/drill-window.txt")"
+[ "$n" = 0 ] && ok "drill lib: run 16 drill window (only a clone3 record) -> 0 denials" || ko "drill lib: drill window $n"
+n="$(count_records "$T2" pft-postfiatd "" "" "$T/drill-window.txt")"
+[ "$n" = 1 ] && ok "drill lib: same window with nothing skipped -> 1 (the run 16 FAIL reproduced: control)" || ko "drill lib: control $n"
+n="$(count_records "$T2" pft-postfiatd "" "$SK" "$DA")"
+[ "$n" = 3 ] && ok "drill lib: whole run 16 capture -> 3 denials (the negative controls), clone3 x3 not counted" || ko "drill lib: whole $n"
+for sc in clone3:3 symlinkat:1 linkat:1 inotify_init:1 inotify_init1:0; do
+  n="$(count_records "$T2" pft-postfiatd "${sc%%:*}" "$SK" "$DA")"
+  [ "$n" = "${sc##*:}" ] && ok "drill lib: SYSCALL=${sc%%:*} -> ${sc##*:} (named syscalls are counted even when skipped)" || ko "drill lib: ${sc%%:*} $n"
+done
+n="$(count_records 1793870686 pft-postfiatd "" "$SK" "$DA")"
+[ "$n" = 2 ] && ok "drill lib: SINCE bound (records at/after 1793870686 only)" || ko "drill lib: since $n"
+n="$(count_records "$T2" docker-default "" "" "$DA")"
+[ "$n" = 0 ] && ok "drill lib: other AppArmor label -> 0" || ko "drill lib: label $n"
+sed 's/code=0x50000/code=0x7fff0000/' "$DA" > "$T/allow.txt"; n="$(count_records "$T2" pft-postfiatd "" "" "$T/allow.txt")"
+[ "$n" = 0 ] && ok "drill lib: non-errno actions (code 0x7fff0000) -> 0" || ko "drill lib: code $n"
+for v in '.errnoRet = 1' '.args = [{"index": 0, "op": "SCMP_CMP_EQ", "value": 0}]' '.excludes = {"caps": ["CAP_SYS_ADMIN"]}' '.includes = {"caps": ["CAP_SYS_ADMIN"]}'; do
+  jq "(.syscalls[] | select(.names == [\"clone3\"])) |= ($v)" "$PROFILE" > "$T/p-var.json"
+  e="$(expected_list "$T/p-var.json")"; n="$(count_records "$T2" pft-postfiatd "" "$e" "$DA")"
+  [ -z "$e" ] && [ "$n" = 6 ] && ok "drill lib: clone3 rule with $v is not by design -> its records count (6)" || ko "drill lib: $v -> '$e' $n"
+done
+[ -z "$(expected_list "$T/missing.json")" ] && ok "drill lib: no profile file -> nothing skipped" || ko "drill lib: missing profile"
+HR="$HERE/../drill/host-run.sh"
+grep -qF 'SKIP="$(expected_list "$PROF")"' "$HR" && grep -qF 'count_records "$1" "$(label)" "${2:-}" "$SKIP" /var/log/audit/audit.log*' "$HR" \
+  && ok "drill lib: host-run.sh counts through count_records with the profile's expected list (static check)" || ko "drill lib: host-run wiring"
+
+# ---- live-run.sh stop path: what it may accept into the integrity baseline (drill/stop-lib.sh) -------------
+# Real verify lines: log 13 (run 11 stopped before any apply stayed: install items only) and the sentry after run 16
+# (stopped after a passed apply: the container is under the profile, security_opt changed).
+# shellcheck source-path=SCRIPTDIR source=../drill/stop-lib.sh
+. "${STOP_LIB:-$HERE/../drill/stop-lib.sh}"
+V13V="$(sed -n '/^== validator/,/^RESULT/p' "$HERE/../logs/13-integrity-after-11.log")"
+V13S="$(sed -n '/^== sentry/,/^RESULT/p' "$HERE/../logs/13-integrity-after-11.log")"
+V16="$(cat "$FIX/verify-after-16-sentry.txt")"
+[ "$(own_items <<<"$V16" | tr '\n' ' ')" = "bin:pft-seccomp container:postfiatd-sentry unit:pft-seccomp.service unit:pft-seccomp.timer " ] \
+  && ok "stop lib: own_items reads the 4 real items of the run 16 sentry verify" || ko "stop lib: own_items" "$(own_items <<<"$V16")"
+install_only "$V13V" postfiatd 0 && ok "stop lib: log 13 validator (install only, not enforced) -> accept" || ko "stop lib: log 13 validator"
+install_only "$V13S" postfiatd-sentry 0 && ok "stop lib: log 13 sentry (install only) -> accept" || ko "stop lib: log 13 sentry"
+install_only "$V16" postfiatd-sentry 1 && ok "stop lib: run 16 sentry, container under the profile -> accept" || ko "stop lib: run 16 enforced"
+! install_only "$V16" postfiatd-sentry 0 && ok "stop lib: run 16 sentry, container NOT under the profile -> refuse" || ko "stop lib: run 16 not enforced accepted"
+! install_only "$V16" postfiatd 1 && ok "stop lib: another host's container name -> refuse" || ko "stop lib: wrong container accepted"
+! install_only "$(sed 's/changed  security_opt/changed  security_opt, image/' <<<"$V16")" postfiatd-sentry 1 \
+  && ok "stop lib: container changed in more than security_opt -> refuse" || ko "stop lib: image change accepted"
+! install_only "$V13V"$'\n''  [WARN] bin:pft-integrity                            changed  mtime, sha256' postfiatd 1 \
+  && ok "stop lib: any other changed item -> refuse" || ko "stop lib: foreign item accepted"
+! install_only "$V13V"$'\n''  [WARN] unit:pft-seccomp-evil.service              added    new file' postfiatd 1 \
+  && ok "stop lib: a look-alike unit name -> refuse" || ko "stop lib: look-alike accepted"
+install_only "RESULT: PASS - 170 unchanged, 0 warn, 0 fail -> exit 0" postfiatd 0 && ok "stop lib: nothing changed -> rc 0 (caller says nothing to accept)" || ko "stop lib: empty"
+grep -qF 'install_only "$v" "$(cn "$1")" "$enf"' "$HERE/../drill/live-run.sh" && grep -qF "grep -qE '^  \\[PASS\\] container ' && enf=1" "$HERE/../drill/live-run.sh" \
+  && ok "stop lib: live-run.sh passes the verify output, the host's container and the audit's container grade (static check)" || ko "stop lib: live-run wiring"
+
 # ---- helper unit tests -----------------------------------------------------------------------------------
 if python3 -I "$HERE/test_pft_seccomp.py" > "$T/unit.log" 2>&1; then ok "helper unit tests: $(grep -oE '^Ran [0-9]+ tests' "$T/unit.log")"
 else ko "helper unit tests" "$(tail -30 "$T/unit.log")"; fi

@@ -23,7 +23,7 @@ helper: syscall table from libseccomp, Docker rule resolution, profile + diff, c
 | 2 profile + per-syscall diff vs Docker | done: [`profile/pft-postfiatd.json`](profile/pft-postfiatd.json) + [`profile/diff.tsv`](profile/diff.tsv) from [08](logs/08-generate-two-host.log) |
 | 3 guarded apply / rollback | built and tested offline (stub suite); live apply not done yet. Found before any live apply (2026-11-04): a re-create would have dropped both nodes' `CpuShares`/`MemoryReservation` (set by `docker update`, not in compose/run args) and the gate did not compare them; fixed: kept through every re-create and part of the gate signature (see apply / rollback), offline tests + mutants M55-M60 |
 | 4 audit, rules, promtool, tests, mutants | done offline: recorded [10](logs/10-lint-suite-mutants.log) at 80d944a (git archive, script sha256 in l.3-11): shellcheck/ruff/ruff format/promtool clean (l.12-35), suite 147 passed, 0 failed (l.185), mutants 59 caught, 0 survived, 0 not applied, 0 broken of 59 + M54 documented equivalent, 0 orphans (l.249-250). Replaces [04](logs/04-lint-suite-mutants.log) (its 54 CAUGHT lines all read `[0 failing: ]`: the mutant copies lacked `pft_seccomp.py`, so no check ever ran; harness fixed, see Tests) and [09](logs/09-lint-suite-mutants-superseded.log) (56 caught / 4 survived at fffc1d6: M16, M19, M37 got tests in 80d944a, M54 is equivalent because no caller reads `lx`'s status) |
-| 5 two-host live proof | first live run [11](logs/11-live-run-stopped-at-canary.log) (2026-11-05T01:14Z, run commit 72b614f) stopped at the sentry canary, by design: the apply gate counted 2 `clone3` records as denials and rolled the sentry back automatically; the validator was never changed. Found → fixed → verified offline, see [Live run 11](#live-run-11-2026-11-05-stopped-at-the-sentry-canary). The re-run follows the recorded offline run 15 |
+| 5 two-host live proof | first live run [11](logs/11-live-run-stopped-at-canary.log) (2026-11-05T01:14Z, run commit 72b614f) stopped at the sentry canary, by design: the apply gate counted 2 `clone3` records as denials and rolled the sentry back automatically; the validator was never changed. Found → fixed → verified offline, see [Live run 11](#live-run-11-2026-11-05-stopped-at-the-sentry-canary). Second live run [16](logs/16-live-run-stopped-at-canary-drill-counter.log) (2026-11-05T09:10Z, run commit 5e62fb3) passed the gate this time but stopped at the canary on the drill script's own denial counter, see [Live run 16](#live-run-16-2026-11-05-stopped-at-the-sentry-canary-drill-counter) |
 
 The results table required by the card is added once the live proof has run; it will cite log lines only.
 
@@ -67,6 +67,43 @@ expires, accepts the integrity baseline only when every changed item is pft-secc
 the real verify lines of [13](logs/13-integrity-after-11.log)), and always reads back the operator topics. For run
 11 these steps were done by hand: [12](logs/12-ack-after-11.log), [13](logs/13-integrity-after-11.log), and
 [14](logs/14-operator-readback-after-11.log) (2 operator topics, 0 messages since the run start).
+
+## Live run 16 (2026-11-05): stopped at the sentry canary (drill counter)
+
+From [16](logs/16-live-run-stopped-at-canary-drill-counter.log):
+
+| | log 16 |
+|---|---|
+| sentry: injected gate failure → automatic rollback PASS | l.177 |
+| sentry: `0 denials during the drill` FAIL (1) | l.180 |
+| sentry: real apply PASS with the da341ce gate (clone3 no longer fails it) | l.248 |
+| positive controls 0 denials; negative controls symlinkat / linkat / inotify_init each EPERM + record | l.293, l.301, l.307, l.313 |
+| `sentry host-run pre RESULT: PASS (22 PASS, 1 FAIL)` → canary stop, validator not changed | l.354-356 |
+| every notifier env restored byte-identical, bridge back on the operator env | l.360-367 |
+| stop path: PFTSeccompDrift held 24 h, PFTContainerRestarted 25 min, catch-all expired | l.368-370 |
+| stop path: validator install items accepted; sentry NOT accepted (container changed) | l.372-373 |
+| operator topics: 0 messages each | l.375-376 |
+
+**Finding 4, the drill's own counter counted clone3.** `drill/host-run.sh` counts errno records with its own awk, so
+that it stays independent of the tool it tests. The da341ce fix went into `pft-seccomp.sh` (audit, ack-denials,
+gate) but not into this counter. The only record in the drill window was the clone3 → ENOSYS answer from the
+injected apply's container start (`tests/fixtures/drill-audit-run16.txt` holds the 6 real records of the run).
+Fix: the counter moved to `drill/denied-lib.sh` (`expected_list` + `count_records`). It skips the syscalls the
+profile answers with an unconditional, argument-free, non-EPERM ERRNO rule. This is the same selection as
+`expected_errno`, but implemented separately. A named syscall (the negative controls) is always counted. Each
+`0 denials` check now shows the expected answers it left out.
+
+**Finding 5, the stop path refused its own enforced container.** Run 16 stopped *after* a passed apply, so the
+sentry stayed enforced (healthy, full, 11 peers). The stop path accepted only pft-seccomp's own files, so
+`container:postfiatd-sentry changed security_opt` was left out of the baseline. The hourly verify would have
+paged. Fix (`drill/stop-lib.sh` `install_only`): the node container is accepted too, but only when `security_opt`
+is its only change and the host's audit grades it `[PASS] container` (under the installed profile). For run 16
+the aftercare was done by hand ([17](logs/17-aftercare-after-16.log)): `ack-denials` for the 3 negative-control
+records, audit PASS, then `pft-integrity accept` on the sentry, verify PASS.
+
+Tests (`tests/run-tests.sh`, sections "drill counter" and "stop path"): the real run 16 records and verify lines
+(plus log 13's), with the run 16 FAIL reproduced as a control. Mutants L01-L06 (denied-lib) and S01-S04
+(stop-lib) are run on lib copies through `DRILL_LIB` / `STOP_LIB`.
 
 ## Learn result (2026-11-04, both hosts)
 

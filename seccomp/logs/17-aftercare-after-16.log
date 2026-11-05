@@ -1,0 +1,25 @@
+OS: Ubuntu 22.04.5 LTS | 2026-11-05T09:28:11Z | aftercare of live run 16 (stopped at sentry canary: drill counter counted clone3)
+sentry: Ubuntu 22.04.5 LTS
+Thu 2026-11-05 10:00:51 UTC 32min left Thu 2026-11-05 09:09:31 UTC 18min ago pft-seccomp.timer pft-seccomp.service
+$ sudo pft-seccomp ack-denials --reason ... --until 1793870892 --yes
+2026-11-05T09:28:13Z ack-denials: 3 seccomp denial(s) after 1793842260 up to 1793870892 (2026-11-05T09:28:12Z) acknowledged: agent 2026-11-05: task_d4a0a82d seccomp live run 16 sentry canary negative controls (symlinkat/linkat/inotify_init, deliberate)
+(exit 0)
+$ sudo pft-seccomp audit
+pft-seccomp audit - 2026-11-05T09:28:13Z | host sentry | container postfiatd-sentry | profile /etc/pft-seccomp/pft-postfiatd.json
+  [PASS] kernel             seccomp filter support (CONFIG_SECCOMP_FILTER)
+  [PASS] logging            kernel logs errno actions (actions_logged: kill_process kill_thread trap errno user_notif trace log)
+  [PASS] profile            /etc/pft-seccomp/pft-postfiatd.json ok 129 allowed syscalls, canonical sha256:f533d5043ec4
+  [PASS] container          postfiatd-sentry runs under pft-postfiatd (stored profile = /etc/pft-seccomp/pft-postfiatd.json)
+  [PASS] filter             container init: Seccomp 2 (filter), 1 filter(s)
+  [PASS] recreate           docker run container: HostConfig keeps the profile across restarts
+  [PASS] confine:cap_drop   cap_drop ALL
+  [PASS] confine:nnp        no-new-privileges
+  [PASS] denials            0 seccomp denials (subj pft-postfiatd) in the last 86400s; up to 2026-11-05T09:28:12Z acknowledged: agent 2026-11-05: task_d4a0a82d seccomp live run 16 sentry canary negative controls (symlinkat/linkat/inotify_init, deli
+RESULT: PASS
+(exit 0)
+$ sudo pft-integrity accept --reason ...
+pft-integrity accept - 2026-11-05T09:28:25Z: re-baselined 100 items by <user>
+manifest sha256: b2ada5244c1509b8f3c2a794448a4d00d262010569d1055eff49125c2159d49a -> d2a579d37f6bf1dde5c03396a0115ee611a8457d6154f114d6f656baa8e05295 (logged to accept.log)
+(exit 0)
+RESULT: PASS - 100 unchanged, 0 warn, 0 fail -> exit 0
+RESULT: PASS - 170 unchanged, 0 warn, 0 fail -> exit 0
