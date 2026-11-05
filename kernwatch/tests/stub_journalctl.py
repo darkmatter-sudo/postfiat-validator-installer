@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Stub journalctl for the kernwatch tests: serves KW_JOURNAL (JSON lines, one record each) for the argument shapes
-kernwatch_parse.py uses: -k -o json --no-pager -q [-b BOOT] [--after-cursor C] [--since @EPOCH] [--until ..] [-n N].
+kernwatch_parse.py uses: -k -o json --no-pager -q [-b BOOT] [--after-cursor C] [--since @EPOCH|-Nmin] [--until ..] [-n N].
 Error texts copied from journalctl 249 on Ubuntu 22.04: 'Failed to seek to cursor: Invalid argument' and
 "Failed to add match 'X': Invalid argument" (unknown boot). KW_FAIL=1 fails every call; KW_CALLS appends argv;
 KW_IGNORE_BOOT=1 ignores -b (other boots' records leak into the read)."""
 
 import json
 import os
+import re
 import sys
+import time
 
 args = sys.argv[1:]
 if os.environ.get("KW_CALLS"):
@@ -63,7 +65,12 @@ if cur is not None:
     sel = sel[idx[0] + 1 :]
 since = opt("--since")
 if since is not None:
-    t = int(since.lstrip("@")) * 1_000_000
+    m = re.fullmatch(
+        r"-(\d+)min", since
+    )  # relative form, as passed by `report --since -15min`
+    t = (
+        int(time.time()) - int(m.group(1)) * 60 if m else int(since.lstrip("@"))
+    ) * 1_000_000
     sel = [
         (r, d)
         for r, d in sel

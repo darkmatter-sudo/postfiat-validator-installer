@@ -661,6 +661,27 @@ def report(a, cat):
     return 2 if stopped else 0
 
 
+DASH_VALUE_OPTS = ("--since", "--until", "--boot")
+
+
+def join_dash_values(argv):
+    """`--since -15min` is journalctl's own relative syntax, but argparse reads a value starting with "-" as an
+    option and stops with "expected one argument" (kernwatch drill run 06). Rewrite it to `--since=-15min`."""
+    out, i = [], 0
+    while i < len(argv):
+        if (
+            argv[i] in DASH_VALUE_OPTS
+            and i + 1 < len(argv)
+            and argv[i + 1].startswith("-")
+        ):
+            out.append(f"{argv[i]}={argv[i + 1]}")
+            i += 2
+        else:
+            out.append(argv[i])
+            i += 1
+    return out
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="kernwatch_parse.py")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -682,7 +703,7 @@ def main(argv=None):
     r.add_argument("--redact-name", action="append")
     k = sub.add_parser("check-catalogue")
     k.add_argument("--catalogue", required=True)
-    a = ap.parse_args(argv)
+    a = ap.parse_args(join_dash_values(sys.argv[1:] if argv is None else argv))
     try:
         cat = load_catalogue(a.catalogue)
     except (OSError, UnicodeDecodeError, CatalogueError) as e:

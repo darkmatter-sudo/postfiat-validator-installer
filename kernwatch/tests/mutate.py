@@ -328,6 +328,20 @@ MUTANTS = [
         'rm -f "$tmp"; die "validation failed: $why" 2',
         "true",
     ),
+    (
+        "M54",
+        P,
+        "report: --since/--until values starting with '-' not joined (drill run 06)",
+        "ap.parse_args(join_dash_values(sys.argv[1:] if argv is None else argv))",
+        "ap.parse_args(argv)",
+    ),
+    (
+        "M55",
+        P,
+        "report: only --boot joined, not --since/--until",
+        'DASH_VALUE_OPTS = ("--since", "--until", "--boot")',
+        'DASH_VALUE_OPTS = ("--boot",)',
+    ),
     # rules (promtool)
     (
         "R01",

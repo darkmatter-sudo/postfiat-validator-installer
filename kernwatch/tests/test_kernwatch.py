@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 KW = os.environ.get("KW_DIR") or os.path.dirname(
@@ -737,6 +738,45 @@ def t_report():
     e.done()
 
 
+def t_report_relative_since():
+    # kernwatch drill run 06: `report --since -15min` died in argparse ("expected one argument", rc 2)
+    e = Env()
+    try:
+        now = int(time.time())
+        e.write(
+            [
+                rec(BOOT_A, 1, "Out of memory: Killed process 1 (old) total-vm:0kB"),
+                rec(BOOT_A, 2, "segfault at 0 ip 0 sp 0 error 4", rt=now - 60),
+            ]
+        )
+        for form in (("--since", "-15min"), ("--since=-15min",)):
+            open(e.calls, "w").close()
+            rc, out, err = e.report(*form, "--format", "json")
+            rows = (
+                {r["pattern"]: r for r in json.loads(out).get("matches", [])}
+                if rc == 0
+                else {}
+            )
+            check(
+                f"report {' '.join(form)}: rc 0, only the recent segfault counted",
+                rc == 0
+                and set(rows) == {"segfault"}
+                and rows["segfault"]["count"] == 1,
+                (rc, err, sorted(rows)),
+            )
+            check(
+                f"report {' '.join(form)}: journalctl gets --since -15min",
+                "--since -15min" in rd(e.calls),
+                rd(e.calls),
+            )
+        rc, _, err = e.report("--until", "-1min", "--format", "tsv")
+        check(
+            "report --until -1min: accepted (not an argparse error)", rc == 0, (rc, err)
+        )
+    finally:
+        e.done()
+
+
 def sh(e, *args, conf=None, **extra):
     env = e.env(PFT_KW_HELPER=HELPER, PFT_KW_CONF=conf or "/nonexistent", **extra)
     return subprocess.run(
@@ -960,6 +1000,7 @@ def main():
         t_state_problems,
         t_journal_failure,
         t_report,
+        t_report_relative_since,
         t_wrapper,
     ):
         print(f"== {t.__name__}")
