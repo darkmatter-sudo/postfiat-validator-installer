@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# rb-manifest ADDON: install ADDON's validator/both rows of fleet/manifest.tsv, exactly as listed (install -D -m MODE
+# REPO_PATH INSTALL_PATH), then `systemctl daemon-reload` and enable --now every .timer it installed. This is the
+# documented install path for add-ons whose README installs files by hand (no install.sh). Run as root from the repo.
+set -euo pipefail
+addon="${1:?usage: rb-manifest ADDON}"
+role="${RB_ROLE:-validator}"
+[ -f fleet/manifest.tsv ] || { echo "rb-manifest: run from the repo root" >&2; exit 3; }
+n=0; timers=()
+while read -r a repo dest mode roles; do
+  [ "$a" = "$addon" ] || continue
+  case "$roles" in both|"$role") ;; *) continue ;; esac
+  [ -f "$repo" ] || { echo "rb-manifest: $repo listed in fleet/manifest.tsv but not in the repo" >&2; exit 1; }
+  install -D -m "$mode" "$repo" "$dest"
+  echo "installed $repo -> $dest ($mode)"
+  n=$((n + 1))
+  case "$dest" in /etc/systemd/system/*.timer) timers+=("$(basename "$dest")") ;; esac
+done < <(grep -v '^#' fleet/manifest.tsv)
+[ "$n" -gt 0 ] || { echo "rb-manifest: no $role/both rows for $addon in fleet/manifest.tsv" >&2; exit 1; }
+systemctl daemon-reload
+for t in "${timers[@]}"; do
+  case "$t" in *@.timer) echo "template $t: not enabled (needs an instance name)"; continue ;; esac
+  systemctl enable --now "$t" && echo "enabled $t"
+done
+echo "rb-manifest $addon: $n files"

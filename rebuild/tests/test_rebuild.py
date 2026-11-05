@@ -1,0 +1,424 @@
+#!/usr/bin/env python3
+"""Offline tests for rebuild_lib.py: stack.list ordering, preflight isolation refusals, the
+REPRODUCED/MISSING/EXTRA/DIFFERENT classifier and the teardown leftover check.
+
+Run: python3 -u rebuild/tests/test_rebuild.py   (stdlib only). RB_DIR points at a mutant copy (tests/mutate.py).
+Prints one PASS/FAIL line per check and 'RESULT: PASS|FAIL (n checks)'.
+"""
+
+import atexit
+import copy
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+RB = os.environ.get("RB_DIR") or os.path.dirname(HERE)
+LIB = os.path.join(RB, "rebuild_lib.py")
+sys.path.insert(0, RB)
+import rebuild_lib as rl
+
+results = []
+
+
+def check(name, cond, detail=""):
+    results.append(bool(cond))
+    print(
+        f"{'PASS' if cond else 'FAIL'} {name}"
+        + (f" -- {detail}" if detail and not cond else "")
+    )
+
+
+def raises(fn, *a):
+    try:
+        fn(*a)
+    except rl.InputError as e:
+        return str(e)
+    return None
+
+
+def run(*args):
+    p = subprocess.run(
+        [sys.executable, LIB, *args],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    return p.returncode, p.stdout, p.stderr
+
+
+TMP = tempfile.mkdtemp(
+    prefix="rbtest-",
+    dir=os.environ.get("TEST_TMPDIR") or os.path.expanduser("~/.cache"),
+)
+atexit.register(shutil.rmtree, TMP, True)
+
+
+def tmpf(name, text):
+    p = os.path.join(TMP, name)
+    with open(p, "w", encoding="utf-8") as f:
+        f.write(text)
+    return p
+
+
+# ---------- stack.list ----------
+GOOD = "# c\n10 base - bash install.sh\n\n20 restore base rb-restore\n30 exp base,restore rb-manifest exporter x\n"
+s = rl.parse_stack(GOOD)
+check(
+    "stack: parses 3 steps in order",
+    [x["step"] for x in s] == ["base", "restore", "exp"],
+)
+check("stack: command keeps its spaces", s[2]["cmd"] == "rb-manifest exporter x")
+check("stack: after list split", s[2]["after"] == ["base", "restore"])
+check("stack: '-' means no deps", s[0]["after"] == [])
+e = raises(rl.parse_stack, "10 base - a\n10 x base b\n")
+check("stack: equal ORDER refused", e and "not greater" in e, e)
+e = raises(rl.parse_stack, "20 base - a\n10 x base b\n")
+check("stack: decreasing ORDER refused", e and "not greater" in e, e)
+e = raises(rl.parse_stack, "10 base - a\n20 x later b\n30 later base c\n")
+check("stack: dependency on a LATER step refused", e and "not an earlier step" in e, e)
+e = raises(rl.parse_stack, "10 base - a\n20 x nope b\n")
+check("stack: unknown dependency refused", e and "'nope'" in e, e)
+e = raises(rl.parse_stack, "10 base - a\n20 base - b\n")
+check("stack: duplicate step refused", e and "duplicate" in e, e)
+e = raises(rl.parse_stack, "10 other - a\n")
+check("stack: first step must be base", e and "first step" in e, e)
+e = raises(rl.parse_stack, "10 base -\n")
+check("stack: missing command refused", e and "need ORDER" in e, e)
+e = raises(rl.parse_stack, "x base - a\n")
+check("stack: non-integer ORDER refused", e and "not an integer" in e, e)
+e = raises(rl.parse_stack, "10 Base - a\n")
+check("stack: bad step name refused", e and "bad STEP" in e, e)
+e = raises(rl.parse_stack, "# only comments\n")
+check("stack: empty stack refused", e and "no steps" in e, e)
+e = raises(rl.parse_stack, "10 base - a\n20 x base, b\n")
+check("stack: empty dep name refused", e and "not an earlier step" in e, e)
+
+with open(os.path.join(RB, "stack.list"), encoding="utf-8") as fh:
+    real = rl.parse_stack(fh.read())
+names = [x["step"] for x in real]
+check("stack.list (repo): parses", len(real) >= 30, len(real))
+check("stack.list (repo): baseline is the last step", names[-1] == "baseline")
+check(
+    "stack.list (repo): restore before backup",
+    names.index("restore") < names.index("backup"),
+)
+check(
+    "stack.list (repo): exporter before every textfile collector",
+    all(
+        names.index("exporter") < names.index(x["step"])
+        for x in real
+        if "exporter" in x["after"]
+    ),
+)
+REPO = os.path.dirname(
+    os.path.dirname(HERE)
+)  # the repo, also when RB_DIR is a mutant copy
+with open(os.path.join(REPO, "fleet", "manifest.tsv"), encoding="utf-8") as fh:
+    manifest_addons = {
+        ln.split()[0] for ln in fh if ln.strip() and not ln.startswith("#")
+    }
+check(
+    "stack.list (repo): every fleet add-on has a step",
+    manifest_addons <= set(names),
+    sorted(manifest_addons - set(names)),
+)
+rc, out, _ = run("stack", os.path.join(RB, "stack.list"), "--json")
+check(
+    "cli stack --json: exit 0 + JSON list",
+    rc == 0 and json.loads(out)[0]["step"] == "base",
+    rc,
+)
+rc, _, err = run("stack", tmpf("bad.list", "10 x - a\n"))
+check("cli stack: invalid -> exit 3", rc == 3 and "first step" in err, (rc, err))
+
+# ---------- preflight ----------
+INST = {
+    "expanded_config": {
+        "security.nesting": "true",
+        "limits.cpu": "2",
+        "limits.memory": "3GiB",
+    },
+    "expanded_devices": {
+        "root": {"type": "disk", "path": "/", "pool": "pftrb"},
+        "eth0": {"type": "nic", "network": "pftrb0", "name": "eth0"},
+    },
+}
+BR = {
+    "name": "pftrb0",
+    "type": "bridge",
+    "managed": True,
+    "config": {"ipv4.nat": "true", "ipv6.address": "none"},
+}
+check(
+    "preflight: clean sandbox isolated",
+    rl.preflight(INST, BR) == [],
+    rl.preflight(INST, BR),
+)
+
+
+def mut(fn):
+    i = copy.deepcopy(INST)
+    fn(i)
+    return rl.preflight(i, BR)
+
+
+def has(refs, word):
+    return any(word in r for r in refs)
+
+
+r = mut(lambda i: i["expanded_config"].update({"security.privileged": "true"}))
+check("preflight: privileged refused", has(r, "privileged"), r)
+r = mut(lambda i: i["expanded_config"].pop("security.nesting"))
+check("preflight: no nesting refused", has(r, "nesting"), r)
+r = mut(lambda i: i["expanded_config"].pop("limits.memory"))
+check("preflight: no memory cap refused", has(r, "limits.memory"), r)
+r = mut(lambda i: i["expanded_config"].pop("limits.cpu"))
+check("preflight: no cpu cap refused", has(r, "limits.cpu"), r)
+for src in (
+    "/var/lib/docker/volumes/postfiatd_data/_data",
+    "/opt/postfiatd",
+    "/etc/pft-kernwatch.env",
+    "/var/lib/pft-integrity",
+    "/",
+    "/opt/postfiatd/../postfiatd",
+):
+    r = mut(
+        lambda i, s=src: i["expanded_devices"].update(
+            {"d": {"type": "disk", "path": "/x", "source": s}}
+        )
+    )
+    check(f"preflight: live disk source {src} refused", has(r, "live host state"), r)
+r = mut(
+    lambda i: i["expanded_devices"].update(
+        {"d": {"type": "disk", "path": "/x", "source": "/srv/pftrb-cache"}}
+    )
+)
+check("preflight: unrelated disk source allowed", r == [], r)
+for listen in (
+    "tcp:0.0.0.0:2559",
+    "tcp:127.0.0.1:5005",
+    "udp:[::]:51235",
+    "tcp:0.0.0.0:2500-2600",
+):
+    r = mut(
+        lambda i, l=listen: i["expanded_devices"].update(
+            {"p": {"type": "proxy", "listen": l, "connect": "tcp:127.0.0.1:2559"}}
+        )
+    )
+    check(f"preflight: proxy {listen} refused", has(r, "live port"), r)
+r = mut(
+    lambda i: i["expanded_devices"].update(
+        {"p": {"type": "proxy", "listen": "tcp:127.0.0.1:18080"}}
+    )
+)
+check("preflight: proxy on other port allowed", r == [], r)
+r = mut(
+    lambda i: i["expanded_devices"].update(
+        {"eth1": {"type": "nic", "nictype": "macvlan", "parent": "eth0"}}
+    )
+)
+check("preflight: macvlan nic refused", has(r, "bypasses"), r)
+r = mut(lambda i: i["expanded_devices"]["eth0"].update({"network": "lxdbr0"}))
+check("preflight: nic on another bridge refused", has(r, "not on sandbox bridge"), r)
+r = mut(
+    lambda i: i["expanded_devices"].update(
+        {"g": {"type": "unix-char", "source": "/dev/kvm"}}
+    )
+)
+check("preflight: host device passthrough refused", has(r, "passthrough"), r)
+b2 = dict(BR, config={"ipv4.nat": "true", "ipv6.address": "fd42::1/64"})
+check("preflight: IPv6 bridge refused", has(rl.preflight(INST, b2), "NAT-only"))
+b3 = dict(BR, managed=False)
+check("preflight: unmanaged bridge refused", has(rl.preflight(INST, b3), "LXD-managed"))
+TOPIC = "pft-live-topic-abc123"
+r = rl.preflight(
+    INST, BR, [TOPIC], [("/etc/pft-rebuild/ntfy.env", f"NTFY_TOPIC={TOPIC}\n")]
+)
+check("preflight: live topic in sandbox file refused", has(r, "live ntfy topic"), r)
+check(
+    "preflight: refusal text does not print the topic",
+    not any(TOPIC in x for x in r),
+    r,
+)
+r = rl.preflight(
+    INST, BR, [TOPIC], [("/e", "NTFY_URL=https://ntfy.sh/some-other-topic\n")]
+)
+check("preflight: any ntfy URL in sandbox file refused", has(r, "ntfy URL"), r)
+check(
+    "preflight: ntfy URL redacted in refusal",
+    not any("some-other-topic" in x for x in r),
+    r,
+)
+r = rl.preflight(
+    INST, BR, [TOPIC], [("/e", "NTFY_URL=http://127.0.0.1:9/rebuild-blackhole\n")]
+)
+check("preflight: blackhole sink allowed", r == [], r)
+ip, bp = tmpf("i.json", json.dumps(INST)), tmpf("b.json", json.dumps(BR))
+rc, out, _ = run("preflight", ip, bp)
+check("cli preflight: isolated -> exit 0", rc == 0 and "ISOLATED" in out, (rc, out))
+bad = copy.deepcopy(INST)
+bad["expanded_devices"]["p"] = {"type": "proxy", "listen": "tcp:0.0.0.0:2559"}
+rc, out, _ = run("preflight", tmpf("ib.json", json.dumps(bad)), bp)
+check("cli preflight: refused -> exit 4", rc == 4 and "REFUSE" in out, (rc, out))
+envf = tmpf("ntfy.env", f"NTFY_TOPIC={TOPIC}\n")
+rc, out, _ = run("preflight", ip, bp, "--live-topic", TOPIC, "--sandbox-file", envf)
+check(
+    "cli preflight: --live-topic/--sandbox-file wired",
+    rc == 4 and "live ntfy topic" in out,
+    (rc, out),
+)
+
+# ---------- diff ----------
+LIVE = "# hdr\nbin:a\tsha256\t111\nbin:a\tmtime\t5\nbin:b\tsha256\t222\nunit:x\tenabled\tenabled\nbin:c\tmode\t755\n"
+SAND = "bin:a\tsha256\t111\nbin:a\tmtime\t9\nbin:b\tsha256\t999\nbin:d\tsha256\t444\nbin:c\tmode\t755\n"
+lm, sm = rl.parse_manifest(LIVE), rl.parse_manifest(SAND)
+rows = {r["key"]: r for r in rl.classify(lm, sm)}
+check(
+    "diff: same bytes, different mtime -> REPRODUCED",
+    rows["bin:a"]["class"] == "REPRODUCED",
+    rows["bin:a"],
+)
+check(
+    "diff: different sha -> DIFFERENT",
+    rows["bin:b"]["class"] == "DIFFERENT" and rows["bin:b"]["attrs"] == ["sha256"],
+)
+check("diff: live only -> MISSING", rows["unit:x"]["class"] == "MISSING")
+check("diff: sandbox only -> EXTRA", rows["bin:d"]["class"] == "EXTRA")
+check("diff: identical -> REPRODUCED", rows["bin:c"]["class"] == "REPRODUCED")
+lm2, sm2 = rl.parse_manifest("k\ta\t1\n"), rl.parse_manifest("k\ta\t1\nk\tb\t2\n")
+check(
+    "diff: attr present only in sandbox -> DIFFERENT",
+    rl.classify(lm2, sm2)[0]["class"] == "DIFFERENT",
+)
+sm_ = rl.summarize(rl.classify(lm, sm))
+check(
+    "diff: summary counts",
+    (sm_["REPRODUCED"], sm_["MISSING"], sm_["EXTRA"], sm_["DIFFERENT"], sm_["open"])
+    == (2, 1, 1, 1, 2),
+    sm_,
+)
+exc = rl.parse_exceptions(
+    "# c\nunit:x * cross-host unit, needs the sentry\nbin:b sha256 host-specific\n"
+)
+rows = {r["key"]: r for r in rl.classify(lm, sm, exc)}
+check(
+    "diff: exception covers MISSING item",
+    rows["unit:x"]["exception"] == "cross-host unit, needs the sentry",
+)
+check(
+    "diff: exception covers DIFFERENT attr",
+    rows["bin:b"]["exception"] == "host-specific",
+)
+check(
+    "diff: excepted items are not open", rl.summarize(list(rows.values()))["open"] == 0
+)
+exc2 = rl.parse_exceptions("bin:b mode wrong attr\n")
+r2 = {r["key"]: r for r in rl.classify(lm, sm, exc2)}
+check(
+    "diff: exception for another attr does not cover", r2["bin:b"]["exception"] is None
+)
+lm3 = rl.parse_manifest("k\ta\t1\nk\tb\t1\n")
+sm3 = rl.parse_manifest("k\ta\t2\nk\tb\t2\n")
+r3 = rl.classify(lm3, sm3, rl.parse_exceptions("k a only a\n"))
+check("diff: partial attr exception leaves item open", r3[0]["exception"] is None)
+e = raises(rl.parse_manifest, "bin:a sha256 111\n")
+check("diff: malformed manifest line refused", e and "KEY<TAB>" in e, e)
+e = raises(rl.parse_exceptions, "bin:a sha256\n")
+check("diff: exception without reason refused", e and "REASON" in e, e)
+FL = {
+    "addons": [{"addon": "kernwatch", "state": "CURRENT"}],
+    "files": [
+        {"path": "/usr/local/bin/pft-kernwatch", "sha256": "aa", "state": "CURRENT"}
+    ],
+    "units": [
+        {"unit": "pft-kernwatch.timer", "enabled": "enabled", "active": "active"}
+    ],
+}
+FS = {
+    "addons": [{"addon": "kernwatch", "state": "CURRENT"}],
+    "files": [
+        {"path": "/usr/local/bin/pft-kernwatch", "sha256": "aa", "state": "CURRENT"}
+    ],
+    "units": [
+        {"unit": "pft-kernwatch.timer", "enabled": "enabled", "active": "inactive"}
+    ],
+}
+fr = {r["key"]: r["class"] for r in rl.classify(rl.fleet_items(FL), rl.fleet_items(FS))}
+check("diff: fleet active state not compared", set(fr.values()) == {"REPRODUCED"}, fr)
+FS2 = copy.deepcopy(FS)
+FS2["addons"][0]["state"] = "MISSING"
+fr = {
+    r["key"]: r["class"] for r in rl.classify(rl.fleet_items(FL), rl.fleet_items(FS2))
+}
+check(
+    "diff: fleet add-on state change -> DIFFERENT",
+    fr["addon:kernwatch"] == "DIFFERENT",
+    fr,
+)
+tbl = rl.render_table(rl.classify(lm, sm, exc), rl.summarize(rl.classify(lm, sm, exc)))
+check("diff: table hides REPRODUCED by default", "bin:a" not in tbl and "bin:b" in tbl)
+check("diff: table shows exception reason", "[exception: host-specific]" in tbl)
+check(
+    "diff: table summary line",
+    tbl.splitlines()[-1].startswith(
+        "SUMMARY: REPRODUCED=2 MISSING=1 EXTRA=1 DIFFERENT=1"
+    ),
+)
+lp, sp = tmpf("l.tsv", LIVE), tmpf("s.tsv", SAND)
+rc, out, _ = run("diff", lp, sp, "--json")
+j = json.loads(out) if rc in (0, 1) else {}
+check(
+    "cli diff --json: exit 1 with open items",
+    rc == 1 and j["summary"]["open"] == 2,
+    (rc, out[:200]),
+)
+check(
+    "cli diff --json: every item has a class",
+    all(i["class"] in rl.CLASSES for i in j.get("items", [])),
+)
+ep = tmpf("exc.list", "unit:x * cross-host\nbin:b sha256 host-specific\n")
+rc, out, _ = run("diff", lp, sp, "--exceptions", ep)
+check(
+    "cli diff: all open items excepted -> exit 0",
+    rc == 0 and "open=0" in out,
+    (rc, out),
+)
+flp, fsp = tmpf("fl.json", json.dumps(FL)), tmpf("fs.json", json.dumps(FS2))
+rc, out, _ = run(
+    "diff", lp, sp, "--live-fleet", flp, "--sandbox-fleet", fsp, "--exceptions", ep
+)
+check("cli diff: fleet items merged", rc == 1 and "addon:kernwatch" in out, (rc, out))
+rc, _, err = run("diff", lp, sp, "--live-fleet", flp)
+check("cli diff: one-sided fleet refused (exit 3)", rc == 3, (rc, err))
+
+# ---------- teardown ----------
+before = "instance none\nnet lxdbr-x\n"
+check("teardown: identical -> no leftovers", rl.leftovers(before, before) == [])
+check(
+    "teardown: new item -> leftover",
+    rl.leftovers(before, before + "net pftrb0\n") == ["net pftrb0"],
+)
+check(
+    "teardown: removed item is not a leftover",
+    rl.leftovers(before, "instance none\n") == [],
+)
+rc, out, _ = run(
+    "teardown",
+    tmpf("b.txt", before),
+    tmpf("a.txt", before + "iptables -A DOCKER-USER -i pftrb0\n"),
+)
+check("cli teardown: leftover -> exit 1", rc == 1 and "INCOMPLETE" in out, (rc, out))
+rc, out, _ = run("teardown", tmpf("b2.txt", before), tmpf("a2.txt", before))
+check("cli teardown: clean -> exit 0", rc == 0 and "CLEAN" in out, (rc, out))
+rc, _, _ = run("nope")
+check("cli: unknown subcommand -> exit 3", rc == 3)
+
+print(
+    f"RESULT: {'PASS' if all(results) else 'FAIL'} ({len(results)} checks, {results.count(False)} failed)"
+)
+sys.exit(0 if all(results) else 1)

@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# rb-restore: restore the drill's sanitized, secret-free backup (RB_BACKUP, pushed by pft-rebuild-drill.sh) with the
+# repo's own backup/pft-restore.sh, which waits until server_state is full. Prints TIME_TO_FULL <seconds>.
+# The archive holds no [validator_token]/[validation_seed]/[node_seed] and no sentry peering ([ips_fixed],
+# [peer_private], [cluster_nodes]); the sandbox node makes its own throwaway node key on first start.
+set -euo pipefail
+: "${RB_BACKUP:?RB_BACKUP not set}"
+timeout="${RB_FULL_TIMEOUT:-3600}"
+if tar -xzOf "$RB_BACKUP" --wildcards '*/postfiatd.cfg' | grep -qE '^\[(validator_token|validation_seed|node_seed)\]'; then
+  echo "rb-restore: archive carries key material - refusing" >&2; exit 4
+fi
+t0=$(date +%s)
+bash backup/pft-restore.sh --timeout "$timeout" "$RB_BACKUP"
+echo "TIME_TO_FULL $(( $(date +%s) - t0 ))"

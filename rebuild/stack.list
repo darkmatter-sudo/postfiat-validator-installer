@@ -1,0 +1,42 @@
+# rebuild/stack.list: the declared install order that recreates a Post Fiat validator host from this repo.
+# pft-rebuild-drill.sh runs every step, in ORDER, inside the sandbox as root with cwd = the repo checkout at the
+# pinned commit and rebuild/bin on PATH. Each step is timed and logged on its own; a failing step stops the drill.
+#   ORDER STEP AFTER COMMAND...
+#   AFTER = '-' or a comma list of earlier steps this one needs (checked offline: tests/test_rebuild.py).
+# `rb-manifest ADDON` installs ADDON's validator/both rows of fleet/manifest.tsv (install -m MODE) and runs
+# `systemctl daemon-reload` + enables any .timer it installed: the documented path for add-ons without install.sh.
+# Cross-host parts (relay pulls, heartbeats to the sentry) need a second host and are exceptions (exceptions.list).
+10  base          -               bash install.sh
+20  restore       base            rb-restore
+30  exporter      base            rb-manifest exporter
+40  integrity     base            rb-manifest integrity
+50  backup        restore         rb-manifest backup
+60  monitor       base            rb-manifest monitor
+70  maint         base            bash maint/install.sh install --label validator --ntfy-env /etc/pft-rebuild/ntfy.env
+80  retention     exporter        rb-manifest retention
+90  resources     exporter        bash resources/install.sh --container postfiatd
+100 statewatch    exporter        bash statewatch/install.sh --container postfiatd
+110 feewatch      exporter        bash feewatch/install.sh --container postfiatd
+120 upgradewatch  exporter        bash upgradewatch/install.sh --container postfiatd
+130 backfill      exporter        bash backfill/install.sh
+140 kernwatch     exporter        bash kernwatch/install.sh --host validator
+150 authwatch     exporter        bash authwatch/install.sh --host validator
+160 timesync      exporter        bash timesync/install.sh
+170 vulnscan      exporter        bash vulnscan/install.sh --host validator
+180 privesc       exporter        bash privesc/install.sh --host validator
+190 mounts        exporter        bash mounts/install.sh --host validator
+200 apparmor      exporter        bash apparmor/install.sh --host validator
+210 seccomp       exporter        bash seccomp/install.sh --host validator
+220 cluster       exporter        bash cluster/install.sh
+230 keyescrow     base            bash keyescrow/install.sh --host validator
+240 rulecheck     exporter        bash rulecheck/install.sh --host-label validator
+250 divergence    exporter        rb-manifest divergence
+260 egress        base            rb-manifest egress
+270 sysctl        base            rb-manifest sysctl
+280 audittrail    base            rb-manifest audittrail
+290 logship       base            rb-manifest logship
+300 patch         base            bash patch/install.sh
+310 alertpath     exporter        rb-manifest alertpath
+320 watchdog      base            rb-manifest watchdog
+330 fleet         base            bash fleet/install.sh
+340 baseline      integrity       pft-integrity baseline
