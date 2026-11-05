@@ -1,0 +1,23 @@
+OS: Ubuntu 22.04.5 LTS
+$ bash tests/test-integrity-check.sh
+PASS exit 0 passes (rc 0)
+PASS exit 1, only its own drop-in added: pass (rc 0)
+PASS exit 1, another unit's drop-in added: fail (rc 1)
+PASS exit 1, own drop-in + another WARN: fail (rc 1)
+PASS exit 1, own drop-in changed (not added): fail (rc 1)
+PASS exit 1, FAIL line: fail (rc 1)
+PASS exit 1, no WARN line (e.g. sandbox read error): fail (rc 1)
+PASS exit 2: fail (rc 1)
+RESULT: 8 passed, 0 failed
+(exit 0)
+$ bash tests/test-integrity-check.sh <mutant: any WARN/FAIL accepted (n >= 1)>
+PASS exit 0 passes (rc 0)
+PASS exit 1, only its own drop-in added: pass (rc 0)
+FAIL exit 1, another unit's drop-in added: fail (rc 0, want 1)
+FAIL exit 1, own drop-in + another WARN: fail (rc 0, want 1)
+FAIL exit 1, own drop-in changed (not added): fail (rc 0, want 1)
+FAIL exit 1, FAIL line: fail (rc 0, want 1)
+PASS exit 1, no WARN line (e.g. sandbox read error): fail (rc 1)
+PASS exit 2: fail (rc 1)
+RESULT: 4 passed, 4 failed
+(exit 1 - nonzero = mutant caught)
