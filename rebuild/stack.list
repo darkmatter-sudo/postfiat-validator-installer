@@ -8,6 +8,8 @@
 # `rb-fleet-conf` writes a validator-only fleet.conf/hosts.conf for the sandbox's own checkout. The agent account the
 # privesc audit grades is a sandbox-only `rbagent` (the live one is not named here). Prerequisites an add-on's
 # README asks the operator to install by hand (age for keyescrow) are installed in the step itself.
+# `rb-limit LIMIT CMD` marks a step that cannot fully work in an LXD system container (fixed list in rebuild/bin/rb-limit,
+# matched by exact error signature); the drill prints each SANDBOX_LIMIT line in its result.
 # Cross-host parts (relay pulls, heartbeats to the sentry) need a second host and are exceptions (exceptions.list).
 10  base          -               bash install.sh
 20  restore       base            rb-restore
@@ -23,7 +25,7 @@
 110 feewatch      exporter        bash feewatch/install.sh --container postfiatd
 120 upgradewatch  exporter        bash upgradewatch/install.sh --container postfiatd
 130 backfill      exporter        bash backfill/install.sh
-140 kernwatch     exporter        bash kernwatch/install.sh --host validator
+140 kernwatch     exporter        rb-limit kernel-log bash kernwatch/install.sh --host validator
 150 authwatch     exporter        bash authwatch/install.sh --host validator
 160 timesync      exporter        bash timesync/install.sh
 170 vulnscan      exporter        bash vulnscan/install.sh --host validator

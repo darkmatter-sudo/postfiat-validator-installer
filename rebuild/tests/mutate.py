@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Mutation harness for rebuild/: each mutant changes exactly one text match in ONE file of a full copy of the
-module (rebuild_lib.py, stack.list, pft-rebuild-drill.sh) and runs tests/test_rebuild.py against that copy (RB_DIR).
+module (rebuild_lib.py, stack.list, pft-rebuild-drill.sh, bin/rb-*) and runs tests/test_rebuild.py against that copy (RB_DIR).
 
 A mutant is CAUGHT if its suite fails with a RESULT line and at least one FAIL line, or hangs (process group
 SIGKILLed at --timeout). A failing suite without them is BROKEN. A mutant whose old text does not match exactly once
@@ -21,6 +21,8 @@ RB = os.path.dirname(HERE)
 SUITE = os.path.join(HERE, "test_rebuild.py")
 FILES = ("rebuild_lib.py", "stack.list", "pft-rebuild-drill.sh")
 L, S, D = FILES
+HELPERS = ("bin/rb-limit", "bin/rb-manifest", "bin/rb-fleet-conf", "bin/rb-restore")
+BL, BM, BF = HELPERS[:3]
 
 MUTANTS = [
     # stack.list parsing / ordering
@@ -200,6 +202,35 @@ MUTANTS = [
         "if \"$NFT\" list table inet lxd | grep -q 'chain '; then",
         "if false; then",
     ),
+    # run 08/09 additions: step-loop encoding, volume pool check, volume teardown
+    ("M60", L, 'b = base64.b64encode(s["cmd"].encode()).decode()', 'b = s["cmd"]'),
+    ("M61", L, 'if d.get("pool") != root_pool:', "if False:"),
+    (
+        "T10",
+        D,
+        '"$LXC" storage volume delete "$POOL" "$vn" && echo "  volume $vn deleted"',
+        ":",
+    ),
+    # helpers
+    (
+        "H01",
+        BL,
+        'if [ "$virt" = lxc ] && grep -qE "$sig" "$out"; then',
+        'if grep -qE "$sig" "$out"; then',
+    ),
+    ("H02", BL, "rc=${PIPESTATUS[0]}", "rc=$?"),
+    ("H03", BL, 'exit "$rc"', "exit 0"),
+    (
+        "H04",
+        BM,
+        '  printf \'%s\\n\' "${timers[@]}" | grep -qxF "$b.timer" && continue\n',
+        "",
+    ),
+    ("H05", BM, "  grep -q '^\\[Install\\]' \"${u#*:}\" || continue\n", ""),
+    ("H06", BM, '  case "$b" in *@) continue ;; esac\n', ""),
+    ("H07", BF, "grep -E '^host validator[[:space:]]'", "grep -E '^host '"),
+    ("H08", BF, '-e "s|^REF=.*|REF=$ref|"', '-e "s|^REF=.*|REF=main|"'),
+    ("H09", BF, 'if [ ! -e "$E/hosts.conf" ]; then', "if true; then"),
     # the declared stack itself
     ("S01", S, "50  backup        restore         rb-manifest backup\n", ""),
     ("S02", S, "340 baseline      integrity       pft-integrity baseline\n", ""),
@@ -235,7 +266,8 @@ def run_suite(rbdir, timeout):
 def copy_module(base):
     d = os.path.join(base, "rebuild")
     os.makedirs(d)
-    for f in FILES:
+    for f in FILES + HELPERS:  # the helper tests run bin/* from RB_DIR too
+        os.makedirs(os.path.dirname(os.path.join(d, f)), exist_ok=True)
         shutil.copy2(os.path.join(RB, f), os.path.join(d, f))
     return d
 

@@ -676,11 +676,11 @@ check(
 FR = os.path.join(TMP, "frepo")
 os.makedirs(os.path.join(FR, "fleet"), exist_ok=True)
 shutil.copy(
-    os.path.join(os.path.dirname(RB), "fleet", "fleet.conf.example"),
+    os.path.join(REPO, "fleet", "fleet.conf.example"),
     os.path.join(FR, "fleet"),
 )
 shutil.copy(
-    os.path.join(os.path.dirname(RB), "fleet", "hosts.conf.example"),
+    os.path.join(REPO, "fleet", "hosts.conf.example"),
     os.path.join(FR, "fleet"),
 )
 subprocess.run(["git", "init", "-q", FR], check=True)
@@ -737,6 +737,44 @@ check(
     == "host keep local - postfiatd validator\n",
     (rc, out),
 )
+
+# rb-limit: only the declared signature, only inside an lxc container, turns a failure into SANDBOX_LIMIT
+tmpf(
+    "stubbin/systemd-detect-virt",
+    '#!/bin/sh\necho "${RB_STUB_VIRT:-none}"\n[ "${RB_STUB_VIRT:-none}" != none ]\n',
+)
+os.chmod(os.path.join(SB, "systemd-detect-virt"), 0o755)
+KMSG = "kernwatch_parse: Data from the specified boot (7ccb0487586944b6aabfccb2eec9699e) is not available: No such boot ID in journal"
+lim_cases = (
+    ("signature in lxc -> 0 + SANDBOX_LIMIT", "lxc", f"echo '{KMSG}'; exit 1", 0, True),
+    ("success passes through", "lxc", "echo fine", 0, False),
+    (
+        "other failure in lxc keeps rc",
+        "lxc",
+        "echo 'container postfiatd not running'; exit 3",
+        3,
+        False,
+    ),
+    (
+        "signature outside a container keeps rc",
+        "none",
+        f"echo '{KMSG}'; exit 1",
+        1,
+        False,
+    ),
+    ("signature on stderr counts", "lxc", f"echo '{KMSG}' >&2; exit 2", 0, True),
+)
+for name, virt, cmd, want, lim in lim_cases:
+    rc, out, _ = helper(
+        "rb-limit", TMP, {"RB_STUB_VIRT": virt}, ("kernel-log", "bash", "-c", cmd)
+    )
+    check(
+        f"rb-limit: {name}",
+        rc == want and ("SANDBOX_LIMIT kernel-log:" in out) == lim,
+        (rc, out),
+    )
+rc, out, _ = helper("rb-limit", TMP, {"RB_STUB_VIRT": "lxc"}, ("nope", "true"))
+check("rb-limit: unknown limit -> exit 3", rc == 3, (rc, out))
 
 rc, _, _ = run("nope")
 check("cli: unknown subcommand -> exit 3", rc == 3)

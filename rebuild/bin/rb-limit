@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# rb-limit LIMIT CMD...: run CMD (a stack.list step). If CMD fails ONLY because of a known limit of an LXD system
+# container (checked: we are in an lxc container AND CMD's output carries LIMIT's exact signature), print
+# `SANDBOX_LIMIT LIMIT: reason (step rc N)` and exit 0, so the drill goes on and lists the limit in its result.
+# Any other failure (or the same failure outside a container) keeps CMD's exit code. Every limit is a fixed entry
+# below; the items it leaves MISSING/DIFFERENT need their own lines in rebuild/exceptions.list.
+#   kernel-log  a system container has no kernel log of its own (journalctl -k: no entries), and inside a sandboxed
+#               unit (ProtectKernelTunables) /proc/sys is re-mounted, which drops LXC's per-container boot_id, so the
+#               unit sees the HOST's boot id and journalctl -b finds no such boot (run 03/09).
+set -uo pipefail
+limit="${1:?usage: rb-limit LIMIT CMD...}"; shift
+[ $# -gt 0 ] || { echo "usage: rb-limit LIMIT CMD..." >&2; exit 3; }
+case "$limit" in
+  kernel-log) sig='Data from the specified boot .* is not available|No such boot ID in journal'
+    reason="LXD system container: no kernel log, and sandboxed units see the host boot id" ;;
+  *) echo "rb-limit: unknown limit $limit" >&2; exit 3 ;;
+esac
+out="$(mktemp)"; trap 'rm -f "$out"' EXIT
+"$@" 2>&1 | tee "$out"; rc=${PIPESTATUS[0]}
+[ "$rc" = 0 ] && exit 0
+virt="$(systemd-detect-virt --container 2>/dev/null || true)"
+if [ "$virt" = lxc ] && grep -qE "$sig" "$out"; then
+  echo "SANDBOX_LIMIT $limit: $reason (step rc $rc)"; exit 0
+fi
+echo "rb-limit: rc $rc is not the $limit limit (container=${virt:-none}, signature $(grep -cE "$sig" "$out") lines)" >&2
+exit "$rc"
