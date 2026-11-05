@@ -1,0 +1,157 @@
+pft-kernwatch two-host /dev/kmsg alert drill - 2026-11-05T07:17:36Z - Ubuntu 22.04.5 LTS - run 20261105T071736Z
+repo HEAD 9032b026f34581b274774245bbd896f91b119144 (clean: yes)
+sha256 eebd1262b6e9a47eeefe22959186029bd2e5ba0f584439934f2b049421c1efe3 kernwatch/drill/kmsg-run.sh
+sha256 9581bd4df0042cb121770e3c0e6e535bbde58ea11e03d1075bd4cccb42a3d31f kernwatch/pft-kernwatch.sh
+sha256 7a18cf09a540c5af9586523ed61ede3ab232f6a583a4fbbbcee161dcbb972c1b kernwatch/kernwatch_parse.py
+sha256 54d05f903e12f0ed20b51824ab542d7057e5196ca071498e9067fd206e966d6f kernwatch/catalogue.tsv
+sha256 b1a20ab7b111b767e5d7f1aca85beb87046efc1aabf6ca7aa5ce85f92b1f0225 alerts/kernwatch.rules.yml
+sha256 f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8 peerexpose/drill/redact.py
+
+== 0. preflight (nothing changed yet)
+  baseline window over (2026-11-05T07:17:00Z)
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=pft_kernwatch_up' | jq -r '.data.result[] | "\(.metric.host) \(.value[1])"' | sort
+  sentry 1
+  validator 1
+  (exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=ALERTS{alertname=~"PFTKernel.*"}' | jq -r '.data.result | length'
+  0
+  (exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/rules | jq -r '.data.groups[] | select(.name == "pft-kernwatch") | .rules[] | [.name, .health] | @tsv'
+  PFTKernelCritical	ok
+  PFTKernelWarning	ok
+  PFTKernwatchStale	ok
+  (exit 0)
+  bridge mounts the operator env file: yes
+  operator topics to watch: 2 (not printed)
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+  postfiatd-sentry: server_state=full
+  postfiatd: server_state=full
+  pft-integrity validator: RESULT: PASS - 170 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity sentry: RESULT: PASS - 100 unchanged, 0 warn, 0 fail -> exit 0
+  literals for redaction: 3 ip, 3 topic, 1 user (values not printed)
+$ redact.py control --literals <literals>
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (16/16)
+
+== 1. bridge -> throwaway topic; silence everything except the two rules under test and the watchdog
+  2026-11-05T07:18:16Z starting pft-alert-bridge (ntfy: on)
+  2026-11-05T07:18:20Z pft-alert-bridge listening
+CHECK ok   Alertmanager bridge -> throwaway env file (0700 temp dir)
+CHECK ok   silence alertname=~".+", alertname!~"PFTAlertPipelineWatchdog|PFTKernelCritical|PFTKernelWarning" until 2026-11-05T08:18:20Z
+
+== 2. inject one marked record per alerting severity into each host's kernel log (/dev/kmsg)
+$ [sentry] printf '<3>%s\n' 'Out of memory: Killed process 4194303 (pftkw-abd0c3bc) total-vm:0kB, anon-rss:0kB, file-rss:0kB, shmem-rss:0kB, UID:0 pgtables:0kB oom_score_adj:0 [PFT-KERNWATCH-DRILL abd0c3bc…]' | sudo -n tee /dev/kmsg >/dev/null && printf '<6>%s\n' 'segfault at 0 ip 0000000000000000 sp 0000000000000000 error 4 [PFT-KERNWATCH-DRILL abd0c3bc…]' | sudo -n tee /dev/kmsg >/dev/null
+  (exit 0)
+CHECK ok   sentry: both records written to /dev/kmsg
+$ [sentry] sudo -n journalctl -k -b --since -5min -o json --no-pager | grep -F 'PFT-KERNWATCH-DRILL abd0c3bc…' | jq -r '[._TRANSPORT, .SYSLOG_FACILITY, .PRIORITY, first 3 words of MESSAGE] | @tsv'
+  kernel	1	3	Out of memory:
+  kernel	1	6	segfault at 0
+CHECK ok   sentry: journalctl -k finds both marked records (_TRANSPORT=kernel)
+$ [validator] printf '<3>%s\n' 'Out of memory: Killed process 4194303 (pftkw-abd0c3bc) total-vm:0kB, anon-rss:0kB, file-rss:0kB, shmem-rss:0kB, UID:0 pgtables:0kB oom_score_adj:0 [PFT-KERNWATCH-DRILL abd0c3bc…]' | sudo -n tee /dev/kmsg >/dev/null && printf '<6>%s\n' 'segfault at 0 ip 0000000000000000 sp 0000000000000000 error 4 [PFT-KERNWATCH-DRILL abd0c3bc…]' | sudo -n tee /dev/kmsg >/dev/null
+  (exit 0)
+CHECK ok   validator: both records written to /dev/kmsg
+$ [validator] sudo -n journalctl -k -b --since -5min -o json --no-pager | grep -F 'PFT-KERNWATCH-DRILL abd0c3bc…' | jq -r '[._TRANSPORT, .SYSLOG_FACILITY, .PRIORITY, first 3 words of MESSAGE] | @tsv'
+  kernel	1	3	Out of memory:
+  kernel	1	6	segfault at 0
+CHECK ok   validator: journalctl -k finds both marked records (_TRANSPORT=kernel)
+
+== 3. collect on both hosts + pull; counters and report
+$ R 'sudo -n systemctl start pft-kernwatch.service; systemctl show -p Result --value pft-kernwatch.service' && sudo -n systemctl start pft-kernwatch.service pft-kernwatch-pull.service; systemctl show -p Result --value pft-kernwatch.service pft-kernwatch-pull.service; grep -hE '^pft_kernwatch_matches_total\{.*pattern="(oom_global|segfault)"' /var/lib/pft-exporter/textfile/pft_kernwatch_validator.prom /var/lib/pft-exporter/textfile/pft_kernwatch_sentry.prom
+  success
+  success
+  
+  success
+  pft_kernwatch_matches_total{host="validator",pattern="oom_global",class="oom",severity="crit"} 1
+  pft_kernwatch_matches_total{host="validator",pattern="segfault",class="segv",severity="warn"} 1
+  pft_kernwatch_matches_total{host="sentry",pattern="oom_global",class="oom",severity="crit"} 1
+  pft_kernwatch_matches_total{host="sentry",pattern="segfault",class="segv",severity="warn"} 1
+  (exit 0)
+CHECK ok   validator textfile: oom_global >= 1 and segfault >= 1
+CHECK ok   sentry textfile: oom_global >= 1 and segfault >= 1
+$ on relay 'sudo -n pft-kernwatch report --since -15min --format tsv'
+  usage: kernwatch_parse.py report [-h] --catalogue CATALOGUE [--since SINCE]
+                                   [--until UNTIL] [--boot BOOT]
+                                   [--format {json,tsv}] [--max MAX]
+                                   [--redact-name REDACT_NAME]
+  kernwatch_parse.py report: error: argument --since: expected one argument
+  (exit 2)
+CHECK FAIL sentry: report lists oom_global and segfault
+$ on local 'sudo -n pft-kernwatch report --since -15min --format tsv'
+  usage: kernwatch_parse.py report [-h] --catalogue CATALOGUE [--since SINCE]
+                                   [--until UNTIL] [--boot BOOT]
+                                   [--format {json,tsv}] [--max MAX]
+                                   [--redact-name REDACT_NAME]
+  kernwatch_parse.py report: error: argument --since: expected one argument
+  (exit 2)
+CHECK FAIL validator: report lists oom_global and segfault
+
+== 4. FIRING: PFTKernelCritical (oom) + PFTKernelWarning (segv) for both hosts
+  2026-11-05T07:19:00Z (40s after the records):
+    __name__=ALERTS,alertname=PFTKernelCritical,alertstate=firing,class=oom,host=validator,pattern=oom_global,severity=critical 1
+    __name__=ALERTS,alertname=PFTKernelCritical,alertstate=firing,class=oom,host=sentry,pattern=oom_global,severity=critical 1
+    __name__=ALERTS,alertname=PFTKernelWarning,alertstate=firing,class=segv,host=sentry,pattern=segfault,severity=warning 1
+    __name__=ALERTS,alertname=PFTKernelWarning,alertstate=firing,class=segv,host=validator,pattern=segfault,severity=warning 1
+CHECK ok   PFTKernelCritical{host=sentry,pattern=oom_global} firing
+CHECK ok   PFTKernelWarning{host=sentry,pattern=segfault} firing
+CHECK ok   PFTKernelCritical{host=validator,pattern=oom_global} firing
+CHECK ok   PFTKernelWarning{host=validator,pattern=segfault} firing
+CHECK ok   [FIRING] PFTKernelCritical 'sentry: kernel oom ...' on the throwaway topic
+CHECK ok   [FIRING] PFTKernelWarning 'sentry: kernel segv ...' on the throwaway topic
+CHECK ok   [FIRING] PFTKernelCritical 'validator: kernel oom ...' on the throwaway topic
+CHECK ok   [FIRING] PFTKernelWarning 'validator: kernel segv ...' on the throwaway topic
+
+== 5. RESOLVED: no new record; Critical leaves after its 15 min window, Warning after 30 min
+  2026-11-05T07:49:55Z: alerts left in Prometheus: 0
+CHECK ok   no PFTKernel* alert left in Prometheus (1895s after the records)
+CHECK ok   [RESOLVED] PFTKernelCritical 'sentry: kernel oom ...' on the throwaway topic
+CHECK ok   [RESOLVED] PFTKernelWarning 'sentry: kernel segv ...' on the throwaway topic
+CHECK ok   [RESOLVED] PFTKernelCritical 'validator: kernel oom ...' on the throwaway topic
+CHECK ok   [RESOLVED] PFTKernelWarning 'validator: kernel segv ...' on the throwaway topic
+
+== 6. restore, read back
+  2026-11-05T07:49:59Z starting pft-alert-bridge (ntfy: on)
+  2026-11-05T07:50:05Z pft-alert-bridge listening
+  restored bridge: mounts the operator env file again: yes
+  silence expired: HTTP 200
+CHECK ok   bridge back on the operator env, silence expired
+  throwaway topic: 8 message(s)
+    {"time":"2026-11-05T07:18:58Z","title":"[FIRING] PFTKernelCritical","message":"sentry: kernel oom event (oom_global) x1 in the last 15 min"}
+    {"time":"2026-11-05T07:18:58Z","title":"[FIRING] PFTKernelCritical","message":"validator: kernel oom event (oom_global) x1 in the last 15 min"}
+    {"time":"2026-11-05T07:18:59Z","title":"[FIRING] PFTKernelWarning","message":"sentry: kernel segv warning (segfault) x1 in the last 30 min"}
+    {"time":"2026-11-05T07:19:00Z","title":"[FIRING] PFTKernelWarning","message":"validator: kernel segv warning (segfault) x1 in the last 30 min"}
+    {"time":"2026-11-05T07:33:57Z","title":"[RESOLVED] PFTKernelCritical","message":"sentry: kernel oom event (oom_global) x1 in the last 15 min"}
+    {"time":"2026-11-05T07:33:58Z","title":"[RESOLVED] PFTKernelCritical","message":"validator: kernel oom event (oom_global) x1 in the last 15 min"}
+    {"time":"2026-11-05T07:48:58Z","title":"[RESOLVED] PFTKernelWarning","message":"sentry: kernel segv warning (segfault) x1 in the last 30 min"}
+    {"time":"2026-11-05T07:48:58Z","title":"[RESOLVED] PFTKernelWarning","message":"validator: kernel segv warning (segfault) x1 in the last 30 min"}
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 2 message(s)
+CHECK FAIL operator topics received nothing during the run (2 topic(s), 1 with messages)
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=pft_kernwatch_up' | jq -r '.data.result[] | "\(.metric.host) \(.value[1])"' | sort
+  sentry 1
+  validator 1
+  (exit 0)
+CHECK ok   pft_kernwatch_up 1 for both hosts at the end
+  pft-integrity validator: RESULT: PASS - 170 unchanged, 0 warn, 0 fail -> exit 0
+CHECK ok   pft-integrity PASS on validator at the end
+  pft-integrity sentry: RESULT: PASS - 100 unchanged, 0 warn, 0 fail -> exit 0
+CHECK ok   pft-integrity PASS on sentry at the end
+CHECK ok   postfiatd-sentry full at the end (full)
+CHECK ok   postfiatd full at the end (full)
+
+kmsg-run done 2026-11-05T07:51:29Z: 3 check(s) failed -> FAIL
+end 2026-11-05T07:51:29Z
