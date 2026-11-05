@@ -1,0 +1,282 @@
+#!/usr/bin/env bash
+# recorded kernwatch lint + suite + fix-reverted control + mutants (run 09); run from the repo root, clean pushed tree
+set -uo pipefail
+cd ~/work/postfiat-validator-installer || exit 3
+[ -z "$(git status --short)" ] || { echo "dirty tree"; exit 3; }
+SHA="$(git rev-parse HEAD)"; [ "$(git rev-parse origin/main)" = "$SHA" ] || { echo "HEAD not pushed"; exit 3; }
+RCS=0
+x() { echo "\$ $*" | sed "s#$HOME#\$HOME#g"; bash -c "$*" 2>&1 | sed "s#$HOME#\$HOME#g"; local rc=${PIPESTATUS[0]}; echo "(exit $rc)"; return "$rc"; }
+echo "== kernwatch lint + suite + fix-reverted control + promtool + mutants $(date -u +%FT%TZ) | commit $SHA (run 09)"
+lsb_release -ds | sed 's/^/OS: /'
+x "sha256sum kernwatch/pft-kernwatch.sh kernwatch/kernwatch_parse.py kernwatch/catalogue.tsv kernwatch/tests/test_kernwatch.py kernwatch/tests/stub_journalctl.py kernwatch/tests/mutate.py kernwatch/drill/kmsg-run.sh alerts/kernwatch.rules.yml alerts/kernwatch.tests.yml"
+echo; echo "== lint"
+x "shellcheck -V | sed -n 2p"
+x "shellcheck -x kernwatch/pft-kernwatch.sh kernwatch/install.sh kernwatch/drill/*.sh" || RCS=1
+x "ruff --version"
+x "ruff check kernwatch" || RCS=1
+x "ruff format --check kernwatch" || RCS=1
+x "docker run --rm --network none --entrypoint promtool -v \$PWD/alerts:/w:ro -w /w prom/prometheus:v3.5.0 check rules kernwatch.rules.yml" || RCS=1
+x "docker run --rm --network none --entrypoint promtool -v \$PWD/alerts:/w:ro -w /w prom/prometheus:v3.5.0 test rules kernwatch.tests.yml" || RCS=1
+echo; echo "== offline suite"
+x "env TEST_TMPDIR=\$HOME/.cache timeout 300 python3 -u kernwatch/tests/test_kernwatch.py </dev/null" || RCS=1
+echo; echo "== fix reverted: the same suite with kernwatch_parse.py from ca7d08c~1 (copy next to the same helpers);"
+echo "   the 3 relative-time report checks must FAIL (drill run 06 step 3 reproduced offline)"
+D="$HOME/.cache/kw-revert09"
+x "rm -rf $D && mkdir -p $D && cp -r kernwatch/. $D/ && git show ca7d08ce2692c460e4a5d688c9eafc5e13103f5c~1:kernwatch/kernwatch_parse.py > $D/kernwatch_parse.py && sha256sum $D/kernwatch_parse.py | cut -c1-64"
+x "cd $D/tests && env TEST_TMPDIR=\$HOME/.cache timeout 300 python3 -I test_kernwatch.py </dev/null | grep -E '^(FAIL|RESULT)' | cut -c1-150"
+RV="$(cd "$D/tests" && env TEST_TMPDIR="$HOME/.cache" timeout 300 python3 -I test_kernwatch.py </dev/null | grep -c '^FAIL')"
+if [ "$RV" = 3 ]; then echo "control: 3 FAIL as expected"; else echo "control: $RV FAIL (want 3)"; RCS=1; fi
+x "rm -rf $D"
+echo; echo "== mutants"
+x "env TEST_TMPDIR=\$HOME/.cache timeout 1800 nice -n 15 python3 -u kernwatch/tests/mutate.py --jobs 2 --timeout 240 </dev/null" || RCS=1
+x "ls -d \$HOME/.cache/kw-test.* \$HOME/.cache/pft-kw-mut.* 2>/dev/null | wc -l"
+echo; echo "RESULT: $([ "$RCS" = 0 ] && echo PASS || echo FAIL) (every step's rc gated)"
+echo "end $(date -u +%FT%TZ)"
+exit "$RCS"
+=== run
+== kernwatch lint + suite + fix-reverted control + promtool + mutants 2026-11-05T08:02:27Z | commit bac740a55ff8b6987e44bcec0a7c13114d773272 (run 09)
+OS: Ubuntu 22.04.5 LTS
+$ sha256sum kernwatch/pft-kernwatch.sh kernwatch/kernwatch_parse.py kernwatch/catalogue.tsv kernwatch/tests/test_kernwatch.py kernwatch/tests/stub_journalctl.py kernwatch/tests/mutate.py kernwatch/drill/kmsg-run.sh alerts/kernwatch.rules.yml alerts/kernwatch.tests.yml
+9581bd4df0042cb121770e3c0e6e535bbde58ea11e03d1075bd4cccb42a3d31f  kernwatch/pft-kernwatch.sh
+f09b6f08d7d0e9c7ccba5acda0059aae8a64b91e9296b5cfb199e920af1121b3  kernwatch/kernwatch_parse.py
+54d05f903e12f0ed20b51824ab542d7057e5196ca071498e9067fd206e966d6f  kernwatch/catalogue.tsv
+95d7f295443a2bec1856190146d623e56c89e1ff51ead2f7b3d44891ab224ff8  kernwatch/tests/test_kernwatch.py
+d88e6dbb567755b48c648c3a2b3c848b7b5f0a8b54ce262350e748355cb7644b  kernwatch/tests/stub_journalctl.py
+60e1ceb83a3793a842e4ed63fe9b9dfe80616d629e32a7dbf67b2a08af7ee656  kernwatch/tests/mutate.py
+4bae77fe7088d5ec22c3a28136798975f491df54e7a1e73622e026cce55f6b7e  kernwatch/drill/kmsg-run.sh
+b1a20ab7b111b767e5d7f1aca85beb87046efc1aabf6ca7aa5ce85f92b1f0225  alerts/kernwatch.rules.yml
+2001fc1d81f4a2eba25b110e391931d42d116d6351af5cd4a777ad0c92c467ca  alerts/kernwatch.tests.yml
+(exit 0)
+
+== lint
+$ shellcheck -V | sed -n 2p
+version: 0.8.0
+(exit 0)
+$ shellcheck -x kernwatch/pft-kernwatch.sh kernwatch/install.sh kernwatch/drill/*.sh
+(exit 0)
+$ ruff --version
+ruff 0.17.1
+(exit 0)
+$ ruff check kernwatch
+All checks passed!
+(exit 0)
+$ ruff format --check kernwatch
+5 files already formatted
+(exit 0)
+$ docker run --rm --network none --entrypoint promtool -v $PWD/alerts:/w:ro -w /w prom/prometheus:v3.5.0 check rules kernwatch.rules.yml
+Checking kernwatch.rules.yml
+  SUCCESS: 3 rules found
+
+(exit 0)
+$ docker run --rm --network none --entrypoint promtool -v $PWD/alerts:/w:ro -w /w prom/prometheus:v3.5.0 test rules kernwatch.tests.yml
+  SUCCESS
+
+(exit 0)
+
+== offline suite
+$ env TEST_TMPDIR=$HOME/.cache timeout 300 python3 -u kernwatch/tests/test_kernwatch.py </dev/null
+== t_catalogue
+PASS catalogue loads
+PASS every catalogue pattern has a positive fixture
+PASS 44 positive fixtures classify to their pattern
+PASS 21 near-miss fixtures match nothing
+PASS first matching pattern wins (soft_lockup is listed before kernel_panic)
+PASS every pattern's severity matches the pinned table (catalogue changes need a test change)
+PASS catalogue covers every requested class
+== t_catalogue_negative
+PASS catalogue refused: dup id (rc 3 + reason)
+PASS catalogue refused: bad severity (rc 3 + reason)
+PASS catalogue refused: bad regex (rc 3 + reason)
+PASS catalogue refused: 3 fields (rc 3 + reason)
+PASS catalogue refused: no version (rc 3 + reason)
+PASS catalogue refused: bad class (rc 3 + reason)
+PASS catalogue accepted: shipped file (rc 0)
+== t_redaction
+PASS redact removes 203.0.113.7
+PASS redact control: raw input has 203.0.113.7
+PASS redact removes 198.51.100.9
+PASS redact control: raw input has 198.51.100.9
+PASS redact removes 96:00:03
+PASS redact control: raw input has 96:00:03
+PASS redact removes 2001:db8
+PASS redact control: raw input has 2001:db8
+PASS redact removes fe80::1
+PASS redact control: raw input has fe80::1
+PASS redact removes someuser
+PASS redact control: raw input has someuser
+PASS redact removes /root
+PASS redact control: raw input has /root
+PASS redact removes de 7c 0c
+PASS redact control: raw input has de 7c 0c
+PASS redact removes 1234567
+PASS redact control: raw input has 1234567
+PASS redact removes ffffa1b2
+PASS redact control: raw input has ffffa1b2
+PASS redact removes <hostname>
+PASS redact control: raw input has <hostname>
+PASS redact keeps the shape (ConsensusPhase::accepted style text survives)
+PASS redact truncates
+== t_seed_and_count
+PASS first run seeds at the newest record (rc 0, nothing counted)
+PASS seed run: up 1 + seeded timestamp
+PASS second run counts only records after the cursor
+PASS last-match time per class is the kernel record time
+PASS third run with no new records adds nothing
+PASS collect asks journalctl for kernel records only (-k) of one boot (-b)
+PASS state file is 0600
+== t_from_boot_start_and_backlog
+PASS --from-boot-start counts the whole boot
+PASS --max 7: backlog 1 and 7 records read
+PASS bounded resume (7 runs of 7) ends with the same counters as one run, backlog 0
+== t_cursor_reset
+PASS unknown cursor: cursor_resets_total 1, rc 0
+PASS unknown cursor: only records after the saved monotonic time are counted (no double count)
+PASS unknown cursor: re-read uses --since one second before the last record
+== t_boot_change
+PASS boot change: old boot tail after the cursor is counted (lockup + panic before the reboot)
+PASS boot change: new boot read from its start, boot_changes_total 1
+PASS boot change: next run stays on the new boot (no recount)
+PASS boot change with the old boot gone: old_boot_missing, new boot still read
+== t_other_boot_and_budget
+PASS a record of another boot in this boot's read is skipped, not counted
+PASS boot change: old boot tail + new boot together stay within --max (2 + 1 = 3, backlog 1)
+PASS boot change: next run finishes the new boot (5 records, link_down 3, backlog 0)
+== t_malformed
+PASS malformed: 5 bad records counted (incl. non-numeric monotonic time), run continues (rc 0)
+PASS malformed: record missing a field is NOT classified (no panic counted)
+PASS malformed: cursor moves past a malformed record that has a cursor (no re-read next run)
+PASS byte-array MESSAGE is decoded and classified
+== t_state_problems
+PASS state garbage: replaced (state_resets_total 1, re-seeded, rc 0)
+PASS state list: replaced (state_resets_total 1, re-seeded, rc 0)
+PASS state wrong version: replaced (state_resets_total 1, re-seeded, rc 0)
+PASS state negative counter: replaced (state_resets_total 1, re-seeded, rc 0)
+== t_journal_failure
+PASS journalctl failure: rc 1, up 0, no counters exported
+PASS journalctl failure: state file untouched
+PASS journalctl failure: reason on stderr
+== t_report
+PASS report json: every pattern counted
+PASS report json: link_down count 3 (two fixtures + one extra)
+PASS report json: severities ordered crit, warn, info
+PASS report: no IP, MAC bytes or host name in the output
+PASS report: UTC timestamps
+PASS report truncated at --max: rc 2 and 'truncated True' in the header
+PASS report refuses a bad --boot (rc 3)
+== t_report_relative_since
+PASS report --since -15min: rc 0, only the recent segfault counted
+PASS report --since -15min: journalctl gets --since -15min
+PASS report --since=-15min: rc 0, only the recent segfault counted
+PASS report --since=-15min: journalctl gets --since -15min
+PASS report --until -1min: accepted (not an argparse error)
+== t_wrapper
+PASS wrapper collect writes pft_kernwatch_validator.prom (rc 0, up 1)
+PASS wrapper output ends with a newline and has no temp files left
+PASS validate accepts the collected file
+PASS validate refuses another host's label (rc 2)
+PASS validate refuses a foreign metric (rc 2)
+PASS validate refuses a file without pft_kernwatch_up (rc 2)
+PASS wrapper collect on journal failure: rc 1, up 0 on stdout
+PASS wrapper refuses a bad HOST_LABEL (rc 3)
+PASS wrapper: a hanging helper is stopped at RUN_TIMEOUT -> up 0, rc 1
+PASS pull copies + validates the sentry file
+PASS pull refuses a bad file and keeps the last good copy (rc 2)
+PASS pull refuses to overwrite this host's own file (rc 3)
+PASS validate refuses a file over MAX_BYTES (rc 2)
+PASS validate control: the same big file passes with a larger MAX_BYTES
+PASS state dir is 0700
+PASS a second collect while one holds the lock exits 1 without touching state
+PASS collect works again once the lock is free
+RESULT: PASS (98 checks, 0 failing)
+(exit 0)
+
+== fix reverted: the same suite with kernwatch_parse.py from ca7d08c~1 (copy next to the same helpers);
+   the 3 relative-time report checks must FAIL (drill run 06 step 3 reproduced offline)
+$ rm -rf $HOME/.cache/kw-revert09 && mkdir -p $HOME/.cache/kw-revert09 && cp -r kernwatch/. $HOME/.cache/kw-revert09/ && git show ca7d08ce2692c460e4a5d688c9eafc5e13103f5c~1:kernwatch/kernwatch_parse.py > $HOME/.cache/kw-revert09/kernwatch_parse.py && sha256sum $HOME/.cache/kw-revert09/kernwatch_parse.py | cut -c1-64
+7a18cf09a540c5af9586523ed61ede3ab232f6a583a4fbbbcee161dcbb972c1b
+(exit 0)
+$ cd $HOME/.cache/kw-revert09/tests && env TEST_TMPDIR=$HOME/.cache timeout 300 python3 -I test_kernwatch.py </dev/null | grep -E '^(FAIL|RESULT)' | cut -c1-150
+FAIL report --since -15min: rc 0, only the recent segfault counted :: (2, 'usage: kernwatch_parse.py report [-h] --catalogue CATALOGUE [--since SINCE]
+FAIL report --since -15min: journalctl gets --since -15min :: 
+FAIL report --until -1min: accepted (not an argparse error) :: (2, 'usage: kernwatch_parse.py report [-h] --catalogue CATALOGUE [--since SINCE]\n     
+RESULT: FAIL (98 checks, 3 failing)
+(exit 0)
+control: 3 FAIL as expected
+$ rm -rf $HOME/.cache/kw-revert09
+(exit 0)
+
+== mutants
+$ env TEST_TMPDIR=$HOME/.cache timeout 1800 nice -n 15 python3 -u kernwatch/tests/mutate.py --jobs 2 --timeout 240 </dev/null
+control suite (unmutated copy): PASS RESULT: PASS (98 checks, 0 failing)
+control promtool (unmutated copy): PASS SUCCESS
+M01 CAUGHT - catalogue: 3-field lines accepted [1 failing: catalogue refused: 3 fields (rc 3 + reason) :: (1, 'Traceback (most recent call last):\n  ]
+M02 CAUGHT - catalogue: duplicate ids accepted [1 failing: catalogue refused: dup id (rc 3 + reason) :: (0, '')]
+M03 CAUGHT - catalogue: any severity accepted [1 failing: catalogue refused: bad severity (rc 3 + reason) :: (0, '')]
+M04 CAUGHT - catalogue: missing version accepted [1 failing: catalogue refused: no version (rc 3 + reason) :: (0, '')]
+M05 CAUGHT - classify: last match wins instead of first [1 failing: first matching pattern wins (soft_lockup is listed before kernel_panic) :: kernel_panic]
+M06 CAUGHT - catalogue: OOM kill pattern loosened to any 'Killed process' [2 failing: 44 positive fixtures classify to their pattern :: [('oom_cgroup', 'Memory cgroup out of me; report json: every pattern counted :: (0, '')]
+M07 CAUGHT - catalogue: link_down exclusion of veth/docker/bridge dropped [1 failing: 21 near-miss fixtures match nothing :: [('veth1a2b3c4: Link is Down', 'link_down'), ('br-1]
+M08 CAUGHT - catalogue: hung_task demoted to warn [1 failing: every pattern's severity matches the pinned table (catalogue changes need a test change) :]
+M09 CAUGHT - catalogue: martian promoted to warn [1 failing: every pattern's severity matches the pinned table (catalogue changes need a test change) :]
+M10 CAUGHT - catalogue: clocksource fallback also matches tsc [1 failing: 21 near-miss fixtures match nothing :: [('clocksource: Switched to clocksource tsc', 'cloc]
+M11 CAUGHT - redact: MAC addresses kept [1 failing: redact removes 96:00:03 :: IPv4: martian source <ip> from <ip>, on dev eth0 host <host>]
+M12 CAUGHT - redact: header byte dumps kept [2 failing: redact removes de 7c 0c :: IPv4: martian source <ip> from <ip>, on dev eth0 host <host>; report: no IP, MAC bytes or host name in the output :: {]
+M13 CAUGHT - redact: IPv4 kept [3 failing: redact removes 203.0.113.7 :: IPv4: martian source 203.0.113.7 from 198.51.100.9, on dev e; redact removes 198.51.100.9 :: IPv4: martian source 203.0.113.7 from 198.51.100.9, on dev ]
+M14 CAUGHT - redact: IPv6 kept [1 failing: redact removes fe80::1 :: IPv4: martian source <ip> from <ip>, on dev eth0 host <host>]
+M15 CAUGHT - redact: home paths kept [2 failing: redact removes someuser :: IPv4: martian source <ip> from <ip>, on dev eth0 host <host>; redact removes /root :: IPv4: martian source <ip> from <ip>, on dev eth0 host <host>]
+M16 CAUGHT - redact: host name kept [1 failing: redact removes <hostname> :: IPv4: martian source <ip> from <ip>, on dev eth0 host pft-age]
+M17 CAUGHT - redact: long numbers kept [1 failing: redact removes 1234567 :: IPv4: martian source <ip> from <ip>, on dev eth0 host <host>]
+M18 CAUGHT - read: --max limit ignored [3 failing: --max 7: backlog 1 and 7 records read :: dator"} 44; boot change: old boot tail + new boot together stay within --max (2 + 1 = 3, backlog 1) ::]
+M19 CAUGHT - read: journalctl failure ignored [7 failing: unknown cursor: cursor_resets_total 1, rc 0 :: (0, '', 'tinues from there)\n# TYPE pft_ker; unknown cursor: only records after the saved monotonic time are counted (no double count) ]
+M20 CAUGHT - read: cursor error treated as a hard failure [3 failing: unknown cursor: cursor_resets_total 1, rc 0 :: (1, 'kernwatch_parse: journalctl exit 1: Fa; unknown cursor: only records after the saved monotonic time are counted (no double count) ]
+M21 CAUGHT - parse: monotonic field not validated [4 failing: malformed: 5 bad records counted (incl. non-numeric monotonic time), run continues (rc 0) ; malformed: record missing a field is NOT classified (no panic counted) :: ]
+M22 CAUGHT - parse: byte-array MESSAGE not decoded [2 failing: malformed: 5 bad records counted (incl. non-numeric monotonic time), run continues (rc 0) ; byte-array MESSAGE is decoded and classified :: idator"} 1]
+M23 CAUGHT - malformed: not counted [1 failing: malformed: 5 bad records counted (incl. non-numeric monotonic time), run continues (rc 0) ]
+M24 CAUGHT - malformed: cursor not advanced past a malformed record with a cursor [1 failing: malformed: cursor moves past a malformed record that has a cursor (no re-read next run) ::]
+M25 CAUGHT - rotation: monotonic guard dropped (double count) [1 failing: unknown cursor: only records after the saved monotonic time are counted (no double count) ]
+M26 CAUGHT - rotation: reset not counted [1 failing: unknown cursor: cursor_resets_total 1, rc 0 :: (0, '', 'tinues from there)\n# TYPE pft_ker]
+M27 CAUGHT - rotation: re-read from the boot start instead of --since [1 failing: unknown cursor: re-read uses --since one second before the last record :: ['-k -o json --n]
+M28 CAUGHT - boot: records of another boot not skipped [1 failing: a record of another boot in this boot's read is skipped, not counted :: (0, '', 'idator"} ]
+M29 CAUGHT - boot: old boot tail skipped [5 failing: boot change: old boot tail after the cursor is counted (lockup + panic before the reboot) ; boot change: next run stays on the new boot (no recount) :: idator"} 0]
+M30 CAUGHT - boot: missing old boot is a hard failure [1 failing: boot change with the old boot gone: old_boot_missing, new boot still read :: (1, "kernwatc]
+M31 CAUGHT - boot: change not counted [2 failing: boot change: new boot read from its start, boot_changes_total 1 :: ords read by the last r; boot change: next run stays on the new boot (no recount) :: idator"} 0]
+M32 CAUGHT - boot: budget not reduced by the old boot's records [1 failing: boot change: old boot tail + new boot together stay within --max (2 + 1 = 3, backlog 1) ::]
+M33 CAUGHT - seed: first run counts history [6 failing: first run seeds at the newest record (rc 0, nothing counted) :: (0, '', {'boot': 'aaaaaaaa; second run counts only records after the cursor :: (0, '', {'soft_lockup': 1, 'hard_lockup]
+M34 CAUGHT - state: negative counters accepted [1 failing: state negative counter: replaced (state_resets_total 1, re-seeded, rc 0) :: (0, '')]
+M35 CAUGHT - state: invalid structure read as empty [3 failing: state list: replaced (state_resets_total 1, re-seeded, rc 0) :: (0, ''); state wrong version: replaced (state_resets_total 1, re-seeded, rc 0) :: (0, '')]
+M36 CAUGHT - state: reset not counted [4 failing: state garbage: replaced (state_resets_total 1, re-seeded, rc 0) :: (0, ''); state list: replaced (state_resets_total 1, re-seeded, rc 0) :: (0, '')]
+M37 CAUGHT - state: not saved [15 failing: t_seed_and_count raised :: FileNotFoundError: [Errno 2] No such file or directory: '/home/; bounded resume (2 runs of 7) ends with the same counters as one run, backlog 0 :: idator"}]
+M38 CAUGHT - state: file mode not 0600 [1 failing: state file is 0600 :: 0o100644]
+M40 CAUGHT - metrics: zero counters not exported [23 failing: first run seeds at the newest record (rc 0, nothing counted) :: (1, 'Traceback (most recen; seed run: up 1 + seeded timestamp :: ]
+M41 CAUGHT - metrics: backlog always 0 [3 failing: --max 7: backlog 1 and 7 records read :: idator"} 7; bounded resume (1 runs of 7) ends with the same counters as one run, backlog 0 :: idator"}]
+M42 CAUGHT - metrics: last-match keeps the oldest time [1 failing: last-match time per class is the kernel record time :: # HELP pft_kernwatch_up 1 if the la]
+M43 CAUGHT - report: truncation hidden (rc 0) [1 failing: report truncated at --max: rc 2 and 'truncated True' in the header :: (0, '# catalogue_ver]
+M44 CAUGHT - report: severity order lost [1 failing: report json: severities ordered crit, warn, info :: ]
+M45 CAUGHT - wrapper: HOST_LABEL not validated [1 failing: wrapper refuses a bad HOST_LABEL (rc 3) :: pft-kernwatch: helper refused: kernwatch_parse:]
+M46 CAUGHT - wrapper: state dir mode not set [1 failing: state dir is 0700 :: 0o40755]
+M47 CAUGHT - wrapper: no lock [1 failing: a second collect while one holds the lock exits 1 without touching state :: (0, '')]
+M48 CAUGHT - wrapper: helper timeout not turned into up 0 [1 failing: wrapper: a hanging helper is stopped at RUN_TIMEOUT -> up 0, rc 1 :: (1, 'pft-kernwatch: h]
+M49 CAUGHT - validate: size limit not enforced [1 failing: validate refuses a file over MAX_BYTES (rc 2) :: ]
+M50 CAUGHT - validate: host label not enforced [1 failing: validate refuses another host's label (rc 2) :: ]
+M51 CAUGHT - validate: missing up sample accepted [1 failing: validate refuses a file without pft_kernwatch_up (rc 2) :: no pft_kernwatch_collect_timest]
+M52 CAUGHT - pull: refuses nothing for its own host [1 failing: pull refuses to overwrite this host's own file (rc 3) :: (1, 'pft-kernwatch: fetch of pft_]
+M53 CAUGHT - pull: rejected file replaces the last good copy [1 failing: pull refuses a bad file and keeps the last good copy (rc 2) :: (0, '')]
+M54 CAUGHT - report: --since/--until values starting with '-' not joined (drill run 06) [3 failing: report --since -15min: rc 0, only the recent segfault counted :: (2, 'usage: kernwatch_par; report --since -15min: journalctl gets --since -15min :: ]
+M55 CAUGHT - report: only --boot joined, not --since/--until [3 failing: report --since -15min: rc 0, only the recent segfault counted :: (2, 'usage: kernwatch_par; report --since -15min: journalctl gets --since -15min :: ]
+R01 CAUGHT - rule: severity filter dropped from PFTKernelCritical (info fires) [promtool FAILED: one crit record fires at once, per host + pattern, and resolves within 15 min; info never alerts; quiet host for 2h fires nothing; warn record fires PFTKernelWarning (not Critical) and resolves after ]
+R02 CAUGHT - rule: crit window 15m -> 60m (no resolve) [promtool FAILED: one crit record fires at once, per host + pattern, and resolves within 15 min; info never alerts]
+R03 CAUGHT - rule: per-pattern grouping lost [promtool FAILED: one crit record fires at once, per host + pattern, and resolves within 15 min; info never alerts]
+R04 CAUGHT - rule: warn severity filter swapped to crit [promtool FAILED: one crit record fires at once, per host + pattern, and resolves within 15 min; info never alerts; warn record fires PFTKernelWarning (not Critical) and resolves after 30 min]
+R05 CAUGHT - rule: stale ignores up 0 [promtool FAILED: stale collector, failing read and stuck backlog each fire PFTKernwatchStale after 10 min]
+R06 CAUGHT - rule: stale ignores backlog [promtool FAILED: ]
+R07 CAUGHT - rule: stale threshold 600 -> 6000 [promtool FAILED: stale collector, failing read and stuck backlog each fire PFTKernwatchStale after 10 min]
+R08 CAUGHT - rule: crit uses delta-style raw value (counter reset fires) [promtool FAILED: a counter reset (state reset) is not an event]
+orphan check: 0 process(es) still running from mutant copies
+RESULT: 62 caught, 0 survived, 0 not applied, 0 broken of 62 (+ 1 documented equivalent: M39)
+(exit 0)
+$ ls -d $HOME/.cache/kw-test.* $HOME/.cache/pft-kw-mut.* 2>/dev/null | wc -l
+0
+(exit 0)
+
+RESULT: PASS (every step's rc gated)
+end 2026-11-05T08:08:39Z
