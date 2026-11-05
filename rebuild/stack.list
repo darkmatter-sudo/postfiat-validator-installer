@@ -54,3 +54,6 @@
 334 firstrun      backup,baseline  systemctl start pft-backup.service pft-integrity.service
 336 unitguard     firstrun,egress,logship,watchdog,fleet  bash unitguard/pft-unitguard.sh apply --all --skip pft-heartbeat.service
 340 rebaseline    unitguard       pft-integrity accept --reason "rebuild: unitguard drop-ins"
+342 aaapply       rebaseline,apparmor,maint  pft-maint start --ttl 40m --reason rebuild-apparmor --no-sentry && { pft-apparmor apply --profile-file apparmor/profile/pft-postfiatd --yes; rc=$?; pft-maint end --reason rebuild-apparmor; exit $rc; }
+344 scapply       aaapply,seccomp,maint      pft-maint start --ttl 40m --reason rebuild-seccomp --no-sentry && { pft-seccomp apply --profile-file seccomp/profile/pft-postfiatd.json --yes; rc=$?; pft-maint end --reason rebuild-seccomp; exit $rc; }
+346 rebaseline2   scapply                    pft-integrity accept --reason "rebuild: apparmor + seccomp apply"

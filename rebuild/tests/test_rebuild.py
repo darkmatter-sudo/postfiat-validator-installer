@@ -120,10 +120,13 @@ def idx(n):
 
 check("stack.list (repo): parses", len(real) >= 30, len(real))
 check(
-    "stack.list (repo): the integrity manifest is written last (baseline, then only unitguard + its accept)",
-    names[-1:] == ["rebaseline"]
+    "stack.list (repo): the integrity manifest is written last (baseline, then only unitguard, the profile applies"
+    " and their accepts)",
+    names[-1:] == ["rebaseline2"]
     and real[-1]["cmd"].startswith("pft-integrity accept ")
-    and names[idx("baseline") + 1 :] == ["firstrun", "unitguard", "rebaseline"],
+    and real[idx("rebaseline")]["cmd"].startswith("pft-integrity accept ")
+    and names[idx("baseline") + 1 :]
+    == ["firstrun", "unitguard", "rebaseline", "aaapply", "scapply", "rebaseline2"],
     names[-4:],
 )
 check(
