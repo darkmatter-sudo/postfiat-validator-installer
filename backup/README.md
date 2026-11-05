@@ -13,9 +13,19 @@ Built for the `/opt/postfiatd` Docker install from this repo (Ubuntu 22.04).
 | Item | Source | Why |
 |---|---|---|
 | `postfiatd.cfg`, `validators.txt` | config volume, via `docker cp` | the node's whole behaviour: peers, ports, `[peer_private]`, UNL source |
-| `docker-compose.yml`, `.env` | `/opt/postfiatd` | image tag, loopback-only admin ports, network |
+| `docker-compose.yml`, `docker-compose.override.yml`, `.env`, and every `COMPOSE_FILE` member listed in `.env` | `/opt/postfiatd` | image tag, loopback-only admin ports, network, and the container hardening overlays written by `confine/`, `apparmor/`, `seccomp/` (a listed member that is missing fails the backup) |
 | add-on units + scripts | `postfiat-monitor.*`, `postfiat-docker-user.service`, `pft-exporter.service`, `/usr/local/bin/postfiat-health`, `/usr/local/bin/postfiat-monitor`, `/usr/local/sbin/postfiat-docker-user.sh`, `/opt/pft-exporter/pft_exporter.py` | rebuild monitoring/hardening without re-running each installer; `units-enabled.txt` records which were enabled |
 | firewall | `/etc/ufw/user.rules`, `user6.rules`, `ufw status verbose`, `iptables -S DOCKER-USER` | reference copy of the 2559 rate limits |
+
+**Hardening overlays on restore.** Until 2026-11-05 only the first three compose files were saved and
+`pft-restore.sh` ran `docker compose -f docker-compose.yml`, which also skipped the override: a restored node came
+up without `no-new-privileges` and without the confine/AppArmor/seccomp overlays (found by `../rebuild`). Now the
+restore installs every member and runs compose with exactly that `COMPOSE_FILE` set. If an overlay needs something
+the new host does not have yet (a `seccomp=` profile file, an `apparmor=` profile that is not loaded), the restore
+stops before changing anything (exit 5) and names the add-on to apply first. `--defer-hardening` instead leaves
+those overlays out of `COMPOSE_FILE`, names each one and the command that re-creates it, and restores the rest.
+Archives made before this change still restore when their `.env` has no `COMPOSE_FILE`; if it lists members that
+are not in the archive the restore refuses (exit 3) rather than silently dropping them.
 
 **Not backed up:**
 - the ledger database (`postfiatd-data` volume): it is large and a light node re-syncs in minutes (47 s to `full` in the drill below);

@@ -6,9 +6,14 @@
 set -euo pipefail
 : "${RB_BACKUP:?RB_BACKUP not set}"
 timeout="${RB_FULL_TIMEOUT:-3600}"
-if tar -xzOf "$RB_BACKUP" --wildcards '*/postfiatd.cfg' | grep -qE '^\[(validator_token|validation_seed|node_seed)\]'; then
+# read the whole cfg first: `tar | grep -q` under pipefail returns tar's SIGPIPE (141) exactly when grep MATCHES,
+# so the refusal would never fire (same bug class as install.sh's sshd -T, rebuild run 01)
+cfg="$(tar -xzOf "$RB_BACKUP" --wildcards '*/postfiatd.cfg')"
+if grep -qE '^\[(validator_token|validation_seed|node_seed)\]' <<<"$cfg"; then
   echo "rb-restore: archive carries key material - refusing" >&2; exit 4
 fi
 t0=$(date +%s)
-bash backup/pft-restore.sh --timeout "$timeout" "$RB_BACKUP"
+# --defer-hardening: the confine/apparmor/seccomp overlays need profiles that later stack steps create; restore
+# names each deferred overlay and the apply step re-creates it (the final diff shows whether its bytes match).
+bash backup/pft-restore.sh --timeout "$timeout" --defer-hardening "$RB_BACKUP"
 echo "TIME_TO_FULL $(( $(date +%s) - t0 ))"

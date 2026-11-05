@@ -159,8 +159,8 @@ MUTANTS = [
     (
         "T01",
         D,
-        'while "$IPT" -C $spec 2>/dev/null; do "$IPT" -D $spec && echo "  removed jump: $spec"; done',
-        'if "$IPT" -C $spec 2>/dev/null; then "$IPT" -D $spec && echo "  removed jump: $spec"; fi',
+        'while "$IPT" -C $spec >/dev/null 2>&1; do "$IPT" -D $spec && echo "  removed jump: $spec"; done',
+        'if "$IPT" -C $spec >/dev/null 2>&1; then "$IPT" -D $spec && echo "  removed jump: $spec"; fi',
     ),
     ("T02", D, 'if [ "${#left[@]}" -gt 0 ]; then', "if false; then"),
     (

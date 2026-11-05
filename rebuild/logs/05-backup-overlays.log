@@ -1,0 +1,59 @@
+OS: Ubuntu 22.04.5 LTS | 2026-11-05T16:35:05Z | backup/ COMPOSE_FILE overlays: new pft-backup.sh (working tree) -> scratch dest, then pft-restore --dry-run
+$ sudo bash backup/pft-backup.sh --dest /var/lib/pft-rebuild/backup-src --keep 2
+[2026-11-05T16:35:05Z] collecting compose files from /opt/postfiatd
+[2026-11-05T16:35:05Z]   + /opt/postfiatd/docker-compose.yml
+[2026-11-05T16:35:05Z]   + /opt/postfiatd/docker-compose.override.yml
+[2026-11-05T16:35:05Z]   + /opt/postfiatd/.env
+[2026-11-05T16:35:05Z]   + /opt/postfiatd/docker-compose.confine.yml
+[2026-11-05T16:35:05Z]   + /opt/postfiatd/docker-compose.apparmor.yml
+[2026-11-05T16:35:05Z]   + /opt/postfiatd/docker-compose.seccomp.yml
+[2026-11-05T16:35:07Z] manifest: 22 files
+[2026-11-05T16:35:07Z] archive: /var/lib/pft-rebuild/backup-src/pft-backup-20261105T163505Z.tar.gz (29700 bytes)
+(exit 0)
+$ tar -tzf ARCHIVE | grep opt/postfiatd
+pft-backup-20261105T163505Z/files/opt/postfiatd/docker-compose.apparmor.yml
+pft-backup-20261105T163505Z/files/opt/postfiatd/docker-compose.seccomp.yml
+pft-backup-20261105T163505Z/files/opt/postfiatd/docker-compose.confine.yml
+pft-backup-20261105T163505Z/files/opt/postfiatd/docker-compose.override.yml
+pft-backup-20261105T163505Z/files/opt/postfiatd/docker-compose.yml
+pft-backup-20261105T163505Z/files/opt/postfiatd/.env
+$ old nightly archive, same listing
+pft-backup-20261105T022856Z/files/opt/postfiatd/docker-compose.override.yml
+pft-backup-20261105T022856Z/files/opt/postfiatd/docker-compose.yml
+pft-backup-20261105T022856Z/files/opt/postfiatd/.env
+$ sudo bash backup/pft-restore.sh --dry-run ARCHIVE (live host: profiles present)
+[2026-11-05T16:35:10Z] manifest OK
+[2026-11-05T16:35:11Z] compose files: docker-compose.yml:docker-compose.override.yml:docker-compose.confine.yml:docker-compose.apparmor.yml:docker-compose.seccomp.yml
+[2026-11-05T16:35:11Z] restore compose files -> /opt/postfiatd
+[2026-11-05T16:35:11Z] DRY-RUN would run: install -m 0600 /tmp/tmp.gzmJCFaYGo/pft-backup-20261105T163505Z/files/opt/postfiatd/.env /opt/postfiatd/.env
+[2026-11-05T16:35:11Z] DRY-RUN would run: cp -p /opt/postfiatd/docker-compose.yml /opt/postfiatd/docker-compose.yml.pre-restore-20261105T163511Z
+[2026-11-05T16:35:11Z] DRY-RUN would run: install -m 0644 /tmp/tmp.gzmJCFaYGo/pft-backup-20261105T163505Z/files/opt/postfiatd/docker-compose.yml /opt/postfiatd/docker-compose.yml
+[2026-11-05T16:35:11Z] DRY-RUN would run: cp -p /opt/postfiatd/docker-compose.override.yml /opt/postfiatd/docker-compose.override.yml.pre-restore-20261105T163511Z
+[2026-11-05T16:35:11Z] DRY-RUN would run: install -m 0644 /tmp/tmp.gzmJCFaYGo/pft-backup-20261105T163505Z/files/opt/postfiatd/docker-compose.override.yml /opt/postfiatd/docker-compose.override.yml
+[2026-11-05T16:35:11Z] DRY-RUN would run: cp -p /opt/postfiatd/docker-compose.confine.yml /opt/postfiatd/docker-compose.confine.yml.pre-restore-20261105T163511Z
+[2026-11-05T16:35:11Z] DRY-RUN would run: install -m 0644 /tmp/tmp.gzmJCFaYGo/pft-backup-20261105T163505Z/files/opt/postfiatd/docker-compose.confine.yml /opt/postfiatd/docker-compose.confine.yml
+[2026-11-05T16:35:11Z] DRY-RUN would run: cp -p /opt/postfiatd/docker-compose.apparmor.yml /opt/postfiatd/docker-compose.apparmor.yml.pre-restore-20261105T163511Z
+[2026-11-05T16:35:11Z] DRY-RUN would run: install -m 0644 /tmp/tmp.gzmJCFaYGo/pft-backup-20261105T163505Z/files/opt/postfiatd/docker-compose.apparmor.yml /opt/postfiatd/docker-compose.apparmor.yml
+[2026-11-05T16:35:11Z] DRY-RUN would run: cp -p /opt/postfiatd/docker-compose.seccomp.yml /opt/postfiatd/docker-compose.seccomp.yml.pre-restore-20261105T163511Z
+[2026-11-05T16:35:11Z] DRY-RUN would run: install -m 0644 /tmp/tmp.gzmJCFaYGo/pft-backup-20261105T163505Z/files/opt/postfiatd/docker-compose.seccomp.yml /opt/postfiatd/docker-compose.seccomp.yml
+[2026-11-05T16:35:11Z] DRY-RUN would run: env COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.confine.yml:docker-compose.apparmor.yml:docker-compose.seccomp.yml docker compose --project-directory /opt/postfiatd create
+[2026-11-05T16:35:11Z] DRY-RUN would run: env COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.confine.yml:docker-compose.apparmor.yml:docker-compose.seccomp.yml docker compose --project-directory /opt/postfiatd stop
+[2026-11-05T16:35:11Z] DRY-RUN would run: env COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.confine.yml:docker-compose.apparmor.yml:docker-compose.seccomp.yml docker compose --project-directory /opt/postfiatd up -d
+(exit 0)
+$ sudo bash backup/pft-restore.sh --dry-run OLD_NIGHTLY (COMPOSE_FILE lists overlays the archive lacks)
+[2026-11-05T16:35:11Z] ERROR: COMPOSE_FILE member docker-compose.confine.yml is not in the archive (made before backup/ saved overlays?); nothing was restored
+(exit 3)
+$ fixture: copy of the new archive with seccomp=/etc/pft-seccomp/absent-profile.json, manifest rebuilt
+$ sudo bash backup/pft-restore.sh --dry-run FIXTURE
+[2026-11-05T16:35:26Z] ERROR: overlay docker-compose.seccomp.yml cannot be applied on this host: seccomp profile /etc/pft-seccomp/absent-profile.json missing; install + apply seccomp/ (sudo pft-seccomp apply --yes) first, or pass --defer-hardening; nothing was restored
+(exit 5)
+$ sudo bash backup/pft-restore.sh --dry-run --defer-hardening FIXTURE
+[2026-11-05T16:35:27Z] DEFERRED overlay docker-compose.seccomp.yml: seccomp profile /etc/pft-seccomp/absent-profile.json missing; re-create it with seccomp/ (sudo pft-seccomp apply --yes)
+[2026-11-05T16:35:27Z] compose files: docker-compose.yml:docker-compose.override.yml:docker-compose.confine.yml:docker-compose.apparmor.yml (deferred: docker-compose.seccomp.yml)
+[2026-11-05T16:35:27Z] restore compose files -> /opt/postfiatd
+[2026-11-05T16:35:27Z] COMPOSE_FILE in /opt/postfiatd/.env without the deferred overlays: docker-compose.yml:docker-compose.override.yml:docker-compose.confine.yml:docker-compose.apparmor.yml
+[2026-11-05T16:35:27Z] DRY-RUN would run: sed -i s|^COMPOSE_FILE=.*|COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.confine.yml:docker-compose.apparmor.yml| /opt/postfiatd/.env
+[2026-11-05T16:35:27Z] DRY-RUN would run: env COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.confine.yml:docker-compose.apparmor.yml docker compose --project-directory /opt/postfiatd create
+[2026-11-05T16:35:27Z] DRY-RUN would run: env COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.confine.yml:docker-compose.apparmor.yml docker compose --project-directory /opt/postfiatd stop
+[2026-11-05T16:35:27Z] DRY-RUN would run: env COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.confine.yml:docker-compose.apparmor.yml docker compose --project-directory /opt/postfiatd up -d
+(exit 0)

@@ -4,15 +4,20 @@
 #  1. verifies the sidecar <archive>.sha256 (if present) and, after extracting into a temp
 #     dir, the archive's MANIFEST.sha256 (every file must match; unlisted files are refused)
 #  2. decrypts *.gpg archives (PFT_BACKUP_PASSPHRASE_FILE or PFT_BACKUP_PASSPHRASE)
-#  3. installs docker-compose.yml/.env into COMPOSE_DIR (existing files kept as *.pre-restore-<ts>)
+#  3. installs docker-compose.yml, .env and every COMPOSE_FILE member in .env (e.g. the confine/ apparmor/ seccomp/
+#     hardening overlays) into COMPOSE_DIR (existing files kept as *.pre-restore-<ts>); compose then runs with
+#     exactly that file set. An overlay whose host prerequisite is missing here (seccomp=FILE that does not exist,
+#     apparmor=PROFILE not loaded) stops the restore before anything changes (exit 5), unless --defer-hardening:
+#     then that overlay is left out of COMPOSE_FILE and named, with the add-on command that re-creates it
 #  4. creates the container, copies postfiatd.cfg + validators.txt into its config volume,
 #     starts it, and waits until server_state is "full" (or proposing) within --timeout
 #  5. optional: --with-units installs the add-on units + helper scripts (daemon-reload, the
 #     units are not enabled); --with-firewall installs the saved ufw user rules and reloads ufw
 #
-# Exit codes: 0 ok, 1 error, 2 usage, 3 verification failed, 4 timeout waiting for "full".
+# Exit codes: 0 ok, 1 error, 2 usage, 3 verification failed, 4 timeout waiting for "full",
+#   5 a hardening overlay cannot be applied on this host (see 3).
 #
-# Usage: sudo ./pft-restore.sh [--dry-run] [--timeout SECS] [--with-units] [--with-firewall] ARCHIVE
+# Usage: sudo ./pft-restore.sh [--dry-run] [--timeout SECS] [--with-units] [--with-firewall] [--defer-hardening] ARCHIVE
 # Env:   COMPOSE_DIR (/opt/postfiatd)  CONTAINER (postfiatd)  TIMEOUT (900)
 
 set -euo pipefail
@@ -23,11 +28,12 @@ TIMEOUT="${TIMEOUT:-900}"
 DRY_RUN=0
 WITH_UNITS=0
 WITH_FIREWALL=0
+DEFER=0
 ARCHIVE=""
 
 log() { printf '[%s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
 die() { log "ERROR: $1"; exit "${2:-1}"; }
-usage() { sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+usage() { sed -n '2,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit "${1:-0}"; }
 run() { if [ "$DRY_RUN" -eq 1 ]; then log "DRY-RUN would run: $*"; else "$@"; fi; }
 
 while [ $# -gt 0 ]; do
@@ -36,6 +42,7 @@ while [ $# -gt 0 ]; do
     --timeout) TIMEOUT="${2:?--timeout needs seconds}"; shift ;;
     --with-units) WITH_UNITS=1 ;;
     --with-firewall) WITH_FIREWALL=1 ;;
+    --defer-hardening) DEFER=1 ;;
     -h|--help) usage 0 ;;
     -*) log "unknown option: $1"; usage 2 ;;
     *) [ -z "$ARCHIVE" ] || usage 2; ARCHIVE="$1" ;;
@@ -108,16 +115,43 @@ F="$SRC/files"
 [ -f "$F/etc/postfiatd/postfiatd.cfg" ] || die "postfiatd.cfg missing from archive" 3
 [ -f "$F$COMPOSE_DIR/docker-compose.yml" ] || die "docker-compose.yml for $COMPOSE_DIR missing from archive" 3
 
+# 3b. compose file set: COMPOSE_FILE from the archived .env, else the base pair. Check every overlay's host
+# prerequisite BEFORE changing anything.
+A="$F$COMPOSE_DIR"
+cf="$(sed -n 's/^COMPOSE_FILE=//p' "$A/.env" 2>/dev/null | tail -1 | tr -d "\"'\r")"
+[ -n "$cf" ] || cf="docker-compose.yml$([ -f "$A/docker-compose.override.yml" ] && echo :docker-compose.override.yml)"
+fix_hint() { case "$1" in *seccomp*) echo "seccomp/ (sudo pft-seccomp apply --yes)" ;; *apparmor*) echo "apparmor/ (sudo pft-apparmor apply --yes)" ;; *) echo "the add-on that wrote $1" ;; esac; }
+members=(); deferred=()
+IFS=: read -r -a listed <<<"$cf"
+for m in "${listed[@]}"; do
+  [ -f "$A/$m" ] || die "COMPOSE_FILE member $m is not in the archive (made before backup/ saved overlays?); nothing was restored" 3
+  miss=""
+  while read -r sc; do [ -f "$sc" ] || miss="$miss seccomp profile $sc missing;"; done < <(sed -nE 's/.*seccomp=([^"'"'"' ]+).*/\1/p' "$A/$m" | grep -v '^unconfined$')
+  while read -r aa; do
+    grep -q "^$aa " /sys/kernel/security/apparmor/profiles 2>/dev/null || miss="$miss AppArmor profile $aa not loaded;"
+  done < <(sed -nE 's/.*apparmor=([^"'"'"' ]+).*/\1/p' "$A/$m" | grep -v '^unconfined$')
+  if [ -z "$miss" ]; then members+=("$m"); continue; fi
+  if [ "$DEFER" -eq 1 ]; then deferred+=("$m"); log "DEFERRED overlay $m:$miss re-create it with $(fix_hint "$m")"
+  else die "overlay $m cannot be applied on this host:$miss install + apply $(fix_hint "$m") first, or pass --defer-hardening; nothing was restored" 5; fi
+done
+EFFECTIVE="$(IFS=:; echo "${members[*]}")"
+log "compose files: $EFFECTIVE${deferred[*]:+ (deferred: ${deferred[*]})}"
+dc() { run env COMPOSE_FILE="$EFFECTIVE" docker compose --project-directory "$COMPOSE_DIR" "$@"; }
+
 # 4. compose files
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
 log "restore compose files -> $COMPOSE_DIR"
 run mkdir -p "$COMPOSE_DIR" "$COMPOSE_DIR/logs"
-for f in docker-compose.yml docker-compose.override.yml .env; do
-  [ -f "$F$COMPOSE_DIR/$f" ] || continue
+for f in .env "${members[@]}"; do
+  [ -f "$A/$f" ] || continue
   [ -f "$COMPOSE_DIR/$f" ] && run cp -p "$COMPOSE_DIR/$f" "$COMPOSE_DIR/$f.pre-restore-$TS"
   mode=0644; [ "$f" = .env ] && mode=0600
-  run install -m "$mode" "$F$COMPOSE_DIR/$f" "$COMPOSE_DIR/$f"
+  run install -m "$mode" "$A/$f" "$COMPOSE_DIR/$f"
 done
+if [ "${#deferred[@]}" -gt 0 ] && grep -q '^COMPOSE_FILE=' "$A/.env"; then
+  log "COMPOSE_FILE in $COMPOSE_DIR/.env without the deferred overlays: $EFFECTIVE"
+  run sed -i "s|^COMPOSE_FILE=.*|COMPOSE_FILE=$EFFECTIVE|" "$COMPOSE_DIR/.env"
+fi
 
 # 5. optional units / firewall
 if [ "$WITH_UNITS" -eq 1 ]; then
@@ -147,15 +181,15 @@ fi
 
 # 6. container + config volume
 log "create container and load config into its volume"
-run docker compose --project-directory "$COMPOSE_DIR" -f "$COMPOSE_DIR/docker-compose.yml" create
+dc create
 if docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null | grep -q true; then
-  run docker compose --project-directory "$COMPOSE_DIR" -f "$COMPOSE_DIR/docker-compose.yml" stop
+  dc stop
 fi
 run docker cp "$F/etc/postfiatd/postfiatd.cfg" "$CONTAINER:/etc/postfiatd/postfiatd.cfg"
 [ -f "$F/etc/postfiatd/validators.txt" ] &&
   run docker cp "$F/etc/postfiatd/validators.txt" "$CONTAINER:/etc/postfiatd/validators.txt"
 START="$(date +%s)"
-run docker compose --project-directory "$COMPOSE_DIR" -f "$COMPOSE_DIR/docker-compose.yml" up -d
+dc up -d
 
 if [ "$DRY_RUN" -eq 1 ]; then
   log "DRY-RUN would wait up to ${TIMEOUT}s for server_state full"

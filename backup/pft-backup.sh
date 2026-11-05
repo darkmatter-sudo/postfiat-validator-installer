@@ -102,9 +102,16 @@ else
 fi
 
 log "collecting compose files from $COMPOSE_DIR"
-for f in docker-compose.yml docker-compose.override.yml .env; do
-  if [ -f "$COMPOSE_DIR/$f" ]; then add_file "$COMPOSE_DIR/$f"; fi
-done
+# Every file compose loads: the base pair, .env, and every COMPOSE_FILE member (.env), e.g. the hardening overlays
+# written by confine/ apparmor/ seccomp/. Before this, only the first three were saved, so a restore lost them
+# (found by ../rebuild, 2026-11-05). A member that is listed but missing would make the archive unusable: fail.
+compose_file="$(sed -n 's/^COMPOSE_FILE=//p' "$COMPOSE_DIR/.env" 2>/dev/null | tail -1 | tr -d "\"'\r")"
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  case "$f" in */* | ..*) die "COMPOSE_FILE member '$f' is not a plain file name in $COMPOSE_DIR; not supported." ;; esac
+  if [ -f "$COMPOSE_DIR/$f" ]; then add_file "$COMPOSE_DIR/$f"
+  elif [[ ":$compose_file:" == *":$f:"* ]]; then die "COMPOSE_FILE lists $f but $COMPOSE_DIR/$f does not exist."; fi
+done < <({ printf '%s\n' docker-compose.yml docker-compose.override.yml .env; tr ':' '\n' <<<"$compose_file"; } | awk '!seen[$0]++')
 
 log "collecting add-on systemd units and helper scripts"
 for u in "${UNITS[@]}"; do

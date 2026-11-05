@@ -10,7 +10,7 @@
 #        pft-rebuild-drill diff LIVE_MANIFEST SANDBOX_MANIFEST [--live-fleet J --sandbox-fleet J] [--json]
 #
 # The sandbox (names from the env below) is an unprivileged LXD container with security.nesting (Docker inside),
-# limits.cpu/limits.memory/limits.processes and a btrfs loop pool of RB_DISK, on its own NAT-only IPv4 bridge. Host
+# limits.cpu/limits.memory/limits.processes and an LVM loop pool of RB_DISK (RB_POOL_DRIVER), on its own NAT-only IPv4 bridge. Host
 # firewall: chain PFT-REBUILD (FORWARD, sandbox bridge only: tcp 80/443/2559/51235 out, replies in, LOG+DROP the
 # rest) and PFT-REBUILD-IN (INPUT from the bridge: DHCP + DNS to LXD's dnsmasq only, everything else dropped, so the
 # sandbox cannot reach the live node's admin ports or sshd). Nothing of the live node is shared: no volume, no port,
@@ -29,7 +29,7 @@ export TZ=UTC LC_ALL=C
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB="$HERE/rebuild_lib.py"; STACK="$HERE/stack.list"; EXC="$HERE/exceptions.list"
 SBX="${RB_NAME:-pftrb-sbx}"; NET="${RB_NET:-pftrb0}"; POOL="${RB_POOL:-pftrb}"; SUBNET="${RB_SUBNET:-10.209.77.1/24}"
-CPU="${RB_CPU:-2}"; MEM="${RB_MEM:-3GiB}"; DISK="${RB_DISK:-25GiB}"; PROCS="${RB_PROCS:-6000}"
+POOL_DRIVER="${RB_POOL_DRIVER:-lvm}"; CPU="${RB_CPU:-2}"; MEM="${RB_MEM:-3GiB}"; DISK="${RB_DISK:-25GiB}"; PROCS="${RB_PROCS:-6000}"
 IMAGE="${RB_IMAGE:-ubuntu:22.04}"; FULL_TIMEOUT="${RB_FULL_TIMEOUT:-3600}"; STATE="${RB_STATE:-/var/lib/pft-rebuild}"
 REPO_URL="${RB_REPO_URL:-https://github.com/darkmatter-sudo/postfiat-validator-installer.git}"
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/postfiat}"; CONTAINER="${CONTAINER:-postfiatd}"; NTFY="${NTFY:-https://ntfy.sh}"
@@ -201,7 +201,9 @@ cmd_run() {
   echo; echo "== 1. sandbox infrastructure"
   trap '[ "${KEEP:-0}" = 1 ] || cmd_teardown' EXIT; KEEP="$keep"
   "$NFT" list table inet lxd >/dev/null 2>&1 || : > "$STATE/nft-lxd.created"
-  "$LXC" storage create "$POOL" btrfs size="$DISK" >/dev/null; check "pool $POOL (btrfs loop, size $DISK)" "$?"
+  # lvm (ext4 on a thin LV in a loop file): Docker inside the sandbox cannot mount overlayfs on btrfs in an
+  # unprivileged container (run 02: "failed to extract layer ... to overlayfs"); RB_DISK caps the loop file.
+  "$LXC" storage create "$POOL" "$POOL_DRIVER" size="$DISK" >/dev/null; check "pool $POOL ($POOL_DRIVER loop, size $DISK)" "$?"
   "$LXC" network create "$NET" ipv4.address="$SUBNET" ipv4.nat=true ipv6.address=none >/dev/null; check "bridge $NET NAT-only IPv4 $SUBNET" "$?"
   fw_setup; check "firewall chains $CHAIN (forward) / $CHAIN_IN (input) for $NET only" "$?"
   "$LXC" init "$IMAGE" "$SBX" -s "$POOL" -n "$NET" -c security.nesting=true -c security.syscalls.intercept.mknod=true \
@@ -225,7 +227,7 @@ cmd_run() {
     --sandbox-file "$W/ntfy.env" --sandbox-file "$W/sandbox-postfiatd.cfg" | sed 's/^/  /'
   [ "${PIPESTATUS[0]}" = 0 ] || { echo "isolation preflight refused - tearing down"; exit 4; }
   for p in $LIVE_PORTS; do
-    "$LXC" config device show "$SBX" | grep -q "listen:.*:$p$" && { check "no host listener for live port $p" 1; exit 4; }
+    grep -q "listen:.*:$p$" <<<"$("$LXC" config device show "$SBX")" && { check "no host listener for live port $p" 1; exit 4; }
   done
   check "no sandbox device exposes $LIVE_PORTS" 0
 

@@ -58,7 +58,7 @@ forgotten here.
 | a bridge that is not LXD-managed NAT-only IPv4 | the sandbox would be reachable from outside |
 | any file the drill pushes containing a live ntfy topic, or any ntfy URL at all | sandbox alerts must go nowhere (`http://127.0.0.1:9/` blackhole) |
 
-On the host the drill adds only: btrfs loop pool `pftrb` (`RB_DISK`, default 25GiB), bridge `pftrb0`
+On the host the drill adds only: LVM loop pool `pftrb` (thin LV, ext4; btrfs breaks nested overlayfs, run 02) (`RB_DISK`, default 25GiB), bridge `pftrb0`
 (10.209.77.1/24), and two iptables chains scoped to that bridge: `PFT-REBUILD` (FORWARD: tcp 80/443/2559/51235 out,
 replies in, LOG `pft-rebuild-drop:` + DROP for the rest) and `PFT-REBUILD-IN` (INPUT: DHCP and DNS to LXD's
 dnsmasq, everything else dropped, so the sandbox cannot reach the host's sshd or the live node's admin ports;
@@ -73,6 +73,7 @@ Recorded runs on the validator host (Ubuntu 22.04.5, 4 CPU / 8 GB, LXD 5.0); raw
 | Run | Commit | Result | What it found / fixed |
 |---|---|---|---|
 | 01 | `9b64883` | FAIL (3 checks) | Isolation preflight, bridge, and "sandbox cannot reach host sshd / :5005" all ok; live host full, integrity PASS, 0 operator messages. **(a)** `install.sh` died at `rc=141` right after "Detected OS": `sshd -T \| awk '…{exit}'` under `set -euo pipefail` SIGPIPEs sshd once its output passes one 4 KiB write. A stock 22.04 sshd does; the hardened live sshd (3814 bytes) does not, so it never showed on the live host. Fixed in `install.sh` (awk reads all input; a missing sshd falls back to 22), repro in `logs/02-sshd-sigpipe.log`. **(b)** `lxc exec` read the step loop's stdin, so no step after `base` ran: `sx` now reads `/dev/null`. **(c)** teardown left LXD's empty `table inet lxd` (caught by the before/after snapshot): teardown now deletes it when the run created it and it is empty, and reports INCOMPLETE otherwise. |
+| 02 | `51282f7` | FAIL (13 steps/checks) | (a)/(b)/(c) of run 01 confirmed fixed: base ran past the SSH-port step, all 34 steps ran, teardown CLEAN (host snapshot identical, `table inet lxd` removed). New: Docker inside the sandbox could not pull the node image, `failed to extract layer ... to overlayfs` (overlayfs on the btrfs pool in an unprivileged container), so base/restore failed and every node-dependent installer refused (resources/statewatch/feewatch/upgradewatch: container not running; backfill/kernwatch/cluster/rulecheck: first unit run failed). Pool is now LVM (ext4). Also: privesc needs `--agent`, keyescrow needs the `age` package, fleet needs `/etc/pft-fleet/fleet.conf`. Diff: REPRODUCED 60, MISSING 107, EXTRA 2, DIFFERENT 4 (most MISSING = node/container items). **Separate finding, fixed in `../backup`**: the nightly archive omitted the COMPOSE_FILE hardening overlays and `pft-restore` ran `-f docker-compose.yml` (dropping the override too), so a restore lost no-new-privileges + confine/AppArmor/seccomp: `logs/05-backup-overlays.log`. |
 
 ## Limits
 
