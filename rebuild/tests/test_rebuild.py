@@ -35,9 +35,19 @@ def check(name, cond, detail=""):
 def raises(fn, *a):
     try:
         fn(*a)
-    except rl.InputError as e:
-        return str(e)
+    # a mutant may raise something else: that is a FAIL line, not a crash
+    except Exception as e:  # noqa: BLE001
+        return f"{type(e).__name__}: {e}"
     return None
+
+
+def safe(fn, *a, default=None):
+    try:
+        return fn(*a)
+    # report as a FAIL line, keep running the other checks
+    except Exception as e:  # noqa: BLE001
+        check(f"{fn.__name__} raised", False, f"{type(e).__name__}: {e}")
+        return default
 
 
 def run(*args):
@@ -67,14 +77,14 @@ def tmpf(name, text):
 
 # ---------- stack.list ----------
 GOOD = "# c\n10 base - bash install.sh\n\n20 restore base rb-restore\n30 exp base,restore rb-manifest exporter x\n"
-s = rl.parse_stack(GOOD)
+s = safe(rl.parse_stack, GOOD, default=[{}, {}, {}])
 check(
     "stack: parses 3 steps in order",
-    [x["step"] for x in s] == ["base", "restore", "exp"],
+    [x.get("step") for x in s] == ["base", "restore", "exp"],
 )
-check("stack: command keeps its spaces", s[2]["cmd"] == "rb-manifest exporter x")
-check("stack: after list split", s[2]["after"] == ["base", "restore"])
-check("stack: '-' means no deps", s[0]["after"] == [])
+check("stack: command keeps its spaces", s[2].get("cmd") == "rb-manifest exporter x")
+check("stack: after list split", s[2].get("after") == ["base", "restore"])
+check("stack: '-' means no deps", s[0].get("after") == [])
 e = raises(rl.parse_stack, "10 base - a\n10 x base b\n")
 check("stack: equal ORDER refused", e and "not greater" in e, e)
 e = raises(rl.parse_stack, "20 base - a\n10 x base b\n")
@@ -99,21 +109,23 @@ e = raises(rl.parse_stack, "10 base - a\n20 x base, b\n")
 check("stack: empty dep name refused", e and "not an earlier step" in e, e)
 
 with open(os.path.join(RB, "stack.list"), encoding="utf-8") as fh:
-    real = rl.parse_stack(fh.read())
+    real = safe(rl.parse_stack, fh.read(), default=[])
 names = [x["step"] for x in real]
+
+
+def idx(n):
+    return names.index(n) if n in names else -1
+
+
 check("stack.list (repo): parses", len(real) >= 30, len(real))
-check("stack.list (repo): baseline is the last step", names[-1] == "baseline")
+check("stack.list (repo): baseline is the last step", names[-1:] == ["baseline"])
 check(
     "stack.list (repo): restore before backup",
-    names.index("restore") < names.index("backup"),
+    idx("restore") < idx("backup"),
 )
 check(
     "stack.list (repo): exporter before every textfile collector",
-    all(
-        names.index("exporter") < names.index(x["step"])
-        for x in real
-        if "exporter" in x["after"]
-    ),
+    all(idx("exporter") < idx(x["step"]) for x in real if "exporter" in x["after"]),
 )
 REPO = os.path.dirname(
     os.path.dirname(HERE)
@@ -185,7 +197,7 @@ for src in (
     "/etc/pft-kernwatch.env",
     "/var/lib/pft-integrity",
     "/",
-    "/opt/postfiatd/../postfiatd",
+    "/srv/../opt/postfiatd",
 ):
     r = mut(
         lambda i, s=src: i["expanded_devices"].update(
@@ -415,6 +427,136 @@ rc, out, _ = run(
 check("cli teardown: leftover -> exit 1", rc == 1 and "INCOMPLETE" in out, (rc, out))
 rc, out, _ = run("teardown", tmpf("b2.txt", before), tmpf("a2.txt", before))
 check("cli teardown: clean -> exit 0", rc == 0 and "CLEAN" in out, (rc, out))
+
+# ---------- teardown (shell, against stub lxc + iptables) ----------
+SCRIPT = os.path.join(RB, "pft-rebuild-drill.sh")
+STUB = os.path.join(HERE, "stub_host.py")
+for tool in ("lxc", "iptables", "nft"):
+    tmpf(tool, f'#!/bin/sh\nexec {sys.executable} {STUB} {tool} "$@"\n')
+    os.chmod(os.path.join(TMP, tool), 0o755)
+OTHER_FWD = "-j DOCKER-USER"
+
+
+def teardown_case(state, extra_env=None, args=("teardown", "--yes")):
+    sp, cp = tmpf("state.json", json.dumps(state)), tmpf("calls.txt", "")
+    env = dict(
+        os.environ,
+        RB_TEST="1",
+        RB_LXC=os.path.join(TMP, "lxc"),
+        RB_IPT=os.path.join(TMP, "iptables"),
+        RB_NFT=os.path.join(TMP, "nft"),
+        RB_STATE=os.path.join(TMP, "rbstate"),
+        RB_STUB_STATE=sp,
+        RB_STUB_CALLS=cp,
+        **(extra_env or {}),
+    )
+    os.makedirs(env["RB_STATE"], exist_ok=True)
+    p = subprocess.run(
+        ["bash", SCRIPT, *args],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=60,
+        check=False,
+        stdin=subprocess.DEVNULL,
+    )
+    with open(sp, encoding="utf-8") as fh:
+        return p.returncode, p.stdout + p.stderr, json.load(fh)
+
+
+FULL = {
+    "instances": ["pftrb-sbx", "other-ct"],
+    "networks": ["pftrb0", "lxdbr0"],
+    "pools": ["pftrb", "default"],
+    "images": ["abc123", "keepme"],
+    "chains": {
+        "FORWARD": [
+            "-o pftrb0 -j PFT-REBUILD",
+            "-i pftrb0 -j PFT-REBUILD",
+            "-i pftrb0 -j PFT-REBUILD",
+            OTHER_FWD,
+        ],
+        "INPUT": ["-i pftrb0 -j PFT-REBUILD-IN", "-j ufw-before-input"],
+        "PFT-REBUILD": ["-j DROP"],
+        "PFT-REBUILD-IN": ["-j DROP"],
+        "DOCKER-USER": ["-j RETURN"],
+    },
+    "nft": {"inet lxd": ""},
+}
+MARK = os.path.join("rbstate", "nft-lxd.created")
+os.makedirs(os.path.join(TMP, "rbstate"), exist_ok=True)
+tmpf(os.path.join("rbstate", "image.fp"), "abc123\n")  # the image this run downloaded
+tmpf(MARK, "")  # the run created table inet lxd
+rc, out, st = teardown_case(FULL)
+check("teardown: exit 0 on success", rc == 0, (rc, out[-300:]))
+check(
+    "teardown: sandbox instance/network/pool deleted, others kept",
+    (st["instances"], st["networks"], st["pools"])
+    == (["other-ct"], ["lxdbr0"], ["default"]),
+    st,
+)
+check(
+    "teardown: only the image this run downloaded deleted",
+    st["images"] == ["keepme"],
+    st["images"],
+)
+check(
+    "teardown: every jump removed (also a duplicate), other rules kept",
+    st["chains"]["FORWARD"] == [OTHER_FWD]
+    and st["chains"]["INPUT"] == ["-j ufw-before-input"],
+    st["chains"],
+)
+check(
+    "teardown: both chains deleted",
+    "PFT-REBUILD" not in st["chains"] and "PFT-REBUILD-IN" not in st["chains"],
+)
+check("teardown: DOCKER-USER untouched", st["chains"]["DOCKER-USER"] == ["-j RETURN"])
+check("teardown: reports complete", "teardown complete" in out, out[-200:])
+check(
+    "teardown: empty nft table inet lxd the run created is deleted",
+    st.get("nft") == {},
+    st.get("nft"),
+)
+rc, out, st2 = teardown_case(st)
+check(
+    "teardown: idempotent on a clean host (exit 0)",
+    rc == 0 and st2 == st,
+    (rc, out[-200:]),
+)
+rc, out, st3 = teardown_case(json.loads(json.dumps(FULL)), {"RB_STUB_FAIL": "delete"})
+check(
+    "teardown: instance delete fails -> exit 5 INCOMPLETE",
+    rc == 5 and "INCOMPLETE" in out and "instance pftrb-sbx" in out,
+    (rc, out[-300:]),
+)
+rc, out, st4 = teardown_case(
+    json.loads(json.dumps(FULL)), {"RB_STUB_FAIL": "X:PFT-REBUILD-IN"}
+)
+check(
+    "teardown: input chain delete fails -> exit 5 INCOMPLETE",
+    rc == 5 and "chain PFT-REBUILD-IN" in out,
+    (rc, out[-300:]),
+)
+if os.path.exists(os.path.join(TMP, MARK)):
+    os.remove(os.path.join(TMP, MARK))
+rc, out, st5 = teardown_case(json.loads(json.dumps(FULL)))
+check(
+    "teardown: pre-existing nft table inet lxd left alone",
+    rc == 0 and st5["nft"] == {"inet lxd": ""},
+    (rc, st5.get("nft")),
+)
+tmpf(MARK, "")
+busy = json.loads(json.dumps(FULL))
+busy["nft"] = {"inet lxd": "  chain fwd.lxdbr0 {\n  }\n"}
+rc, out, st6 = teardown_case(busy)
+check(
+    "teardown: nft table with chains left alone and reported INCOMPLETE",
+    rc == 5 and "inet lxd" in st6["nft"] and "nft table inet lxd" in out,
+    (rc, out[-300:]),
+)
+rc, out, _ = teardown_case(FULL, args=("teardown",))
+check("teardown: refuses without --yes (exit 3)", rc == 3, rc)
+
 rc, _, _ = run("nope")
 check("cli: unknown subcommand -> exit 3", rc == 3)
 

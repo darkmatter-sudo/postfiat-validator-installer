@@ -1,0 +1,14 @@
+OS: Ubuntu 22.04.5 LTS | 2026-11-05T16:29:20Z | install.sh sshd -T SIGPIPE repro (rebuild run 01 base rc=141)
+fake sshd -T output bytes: 202507
+$ old: set -euo pipefail; SSH_PORT="$(sshd -T 2>/dev/null | awk '/^port /{print $2; exit}')"
+(exit 141)
+$ new (install.sh @ working tree): extracted line
+55:  SSH_PORT="$({ sshd -T 2>/dev/null || true; } | awk '/^port / && !p {p = $2} END {print p}')"
+SSH_PORT=22
+(exit 0)
+$ new, sshd not installed
+SSH_PORT=[]
+(exit 0)
+$ new, live host sshd (3814 bytes)
+SSH_PORT=22
+(exit 0)

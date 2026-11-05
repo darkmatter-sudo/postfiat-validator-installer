@@ -20,7 +20,7 @@
 #
 # Exit codes: 0 run done and every MISSING/DIFFERENT item excepted, 1 open diff items, 2 a step or check failed,
 #   3 usage/config error, 4 refused (preflight), 5 teardown incomplete.
-# Env: RB_NAME (pftrb-sbx) RB_NET (pftrb0) RB_POOL (pftrb) RB_SUBNET (10.209.77.1/24) RB_CPU (2) RB_MEM (3GiB)
+# Env: RB_TEST=1 (offline tests: stubs via RB_LXC/RB_IPT, no root check)  RB_NAME (pftrb-sbx) RB_NET (pftrb0) RB_POOL (pftrb) RB_SUBNET (10.209.77.1/24) RB_CPU (2) RB_MEM (3GiB)
 #      RB_DISK (25GiB) RB_PROCS (6000) RB_IMAGE (ubuntu:22.04) RB_FULL_TIMEOUT (3600) RB_STATE (/var/lib/pft-rebuild)
 #      RB_REPO_URL (this repo on GitHub) BACKUP_DIR (/var/backups/postfiat) CONTAINER (postfiatd)
 #      NTFY (https://ntfy.sh) RB_TOPIC_ENVS (env files holding the operator's ntfy topics; read, never printed)
@@ -35,7 +35,7 @@ REPO_URL="${RB_REPO_URL:-https://github.com/darkmatter-sudo/postfiat-validator-i
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/postfiat}"; CONTAINER="${CONTAINER:-postfiatd}"; NTFY="${NTFY:-https://ntfy.sh}"
 TOPIC_ENVS="${RB_TOPIC_ENVS:-/etc/pft-integrity.env /etc/pft-maint/ntfy.env /etc/pft-watchdog/ntfy.env /etc/postfiat-monitor.env /opt/pft-agent/config.env}"
 CHAIN=PFT-REBUILD; CHAIN_IN=PFT-REBUILD-IN; LIVE_PORTS="2559 5005 51235"
-LXC="${RB_LXC:-lxc}"; IPT="${RB_IPT:-iptables}"; DOCKER="${RB_DOCKER:-docker}"
+LXC="${RB_LXC:-lxc}"; IPT="${RB_IPT:-iptables}"; NFT="${RB_NFT:-nft}"; DOCKER="${RB_DOCKER:-docker}"
 
 usage() { sed -n '2,/^set -uo/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 3; }
 ts() { date -u +%FT%TZ; }
@@ -43,8 +43,8 @@ log() { echo "[$(ts)] $*"; }
 FAILS=0
 check() { if [ "$2" = 0 ]; then echo "CHECK ok   $1${3:+ ($3)}"; else echo "CHECK FAIL $1${3:+ ($3)}"; FAILS=$((FAILS + 1)); fi; }
 to_bytes() { numfmt --from=iec-i "${1%B}" 2>/dev/null; } # 3GiB / 25GiB -> bytes; empty on a bad value
-need_root() { [ "$(id -u)" = 0 ] || { echo "run as root" >&2; exit 3; }; }
-sx() { "$LXC" exec "$SBX" --cwd /root/pfvi --env PATH=/root/pfvi/rebuild/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin --env RB_BACKUP="${SBX_BACKUP:-}" --env RB_FULL_TIMEOUT="$FULL_TIMEOUT" --env DEBIAN_FRONTEND=noninteractive -- "$@"; }
+need_root() { [ "${RB_TEST:-0}" = 1 ] || [ "$(id -u)" = 0 ] || { echo "run as root" >&2; exit 3; }; }
+sx() { "$LXC" exec "$SBX" --cwd /root/pfvi --env PATH=/root/pfvi/rebuild/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin --env RB_BACKUP="${SBX_BACKUP:-}" --env RB_FULL_TIMEOUT="$FULL_TIMEOUT" --env DEBIAN_FRONTEND=noninteractive -- "$@" </dev/null; } # stdin: run 01 lost the step loop to lxc exec
 
 live_state() { "$DOCKER" exec "$CONTAINER" curl -s -m 10 -d '{"method":"server_info"}' http://127.0.0.1:5005 2>/dev/null | jq -r '.result.info.server_state // "down"' 2>/dev/null || echo down; }
 sbx_state() { sx docker exec postfiatd curl -s -m 10 -d '{"method":"server_info"}' http://127.0.0.1:5005 2>/dev/null | jq -r '.result.info.server_state // "down"' 2>/dev/null || echo down; }
@@ -88,11 +88,26 @@ cmd_teardown() {
   if "$LXC" storage show "$POOL" >/dev/null 2>&1; then "$LXC" storage delete "$POOL" && echo "  pool deleted"; fi
   for spec in "FORWARD -i $NET -j $CHAIN" "FORWARD -o $NET -j $CHAIN" "INPUT -i $NET -j $CHAIN_IN"; do
     # shellcheck disable=SC2086
-    while "$IPT" -C $spec 2>/dev/null; do "$IPT" -D $spec && echo "  removed jump: $spec"; done
+    while "$IPT" -C $spec >/dev/null 2>&1; do "$IPT" -D $spec && echo "  removed jump: $spec"; done
   done
   for c in "$CHAIN" "$CHAIN_IN"; do
     if "$IPT" -S "$c" >/dev/null 2>&1; then "$IPT" -F "$c" && "$IPT" -X "$c" && echo "  removed chain $c"; fi
   done
+  # LXD creates `table inet lxd` with its first managed network and leaves it (empty) behind (run 01); delete it
+  # only if this host had none before the run (marker written at setup).
+  if [ -f "$STATE/nft-lxd.created" ] && "$NFT" list table inet lxd >/dev/null 2>&1; then
+    if "$NFT" list table inet lxd | grep -q 'chain '; then echo "  table inet lxd still has chains - left alone"
+    else "$NFT" delete table inet lxd && rm -f "$STATE/nft-lxd.created" && echo "  removed empty nft table inet lxd"; fi
+  fi
+  local left=()
+  "$LXC" info "$SBX" >/dev/null 2>&1 && left+=("instance $SBX")
+  "$LXC" network show "$NET" >/dev/null 2>&1 && left+=("network $NET")
+  "$LXC" storage show "$POOL" >/dev/null 2>&1 && left+=("pool $POOL")
+  "$IPT" -S "$CHAIN" >/dev/null 2>&1 && left+=("chain $CHAIN")
+  "$IPT" -S "$CHAIN_IN" >/dev/null 2>&1 && left+=("chain $CHAIN_IN")
+  [ -f "$STATE/nft-lxd.created" ] && "$NFT" list table inet lxd >/dev/null 2>&1 && left+=("nft table inet lxd")
+  if [ "${#left[@]}" -gt 0 ]; then echo "  teardown INCOMPLETE: ${left[*]}"; return 1; fi
+  echo "  teardown complete: no sandbox resource left"
 }
 
 fw_setup() {
@@ -185,6 +200,7 @@ cmd_run() {
 
   echo; echo "== 1. sandbox infrastructure"
   trap '[ "${KEEP:-0}" = 1 ] || cmd_teardown' EXIT; KEEP="$keep"
+  "$NFT" list table inet lxd >/dev/null 2>&1 || : > "$STATE/nft-lxd.created"
   "$LXC" storage create "$POOL" btrfs size="$DISK" >/dev/null; check "pool $POOL (btrfs loop, size $DISK)" "$?"
   "$LXC" network create "$NET" ipv4.address="$SUBNET" ipv4.nat=true ipv6.address=none >/dev/null; check "bridge $NET NAT-only IPv4 $SUBNET" "$?"
   fw_setup; check "firewall chains $CHAIN (forward) / $CHAIN_IN (input) for $NET only" "$?"
@@ -228,7 +244,8 @@ cmd_run() {
   local head; head="$(sx git rev-parse HEAD 2>/dev/null)"; [ "$head" = "$commit" ]; check "sandbox HEAD = $commit" "$?"
   [ "$head" = "$commit" ] || exit 2
   "$LXC" exec "$SBX" -- mkdir -p /root/rb/backup /etc/pft-rebuild
-  "$LXC" file push "$SAN" "$SAN.sha256" "$SBX/root/rb/backup/" && "$LXC" file push "$W/ntfy.env" "$SBX/etc/pft-rebuild/ntfy.env" --mode 0600
+  "$LXC" file push --quiet "$SAN" "$SAN.sha256" "$SBX/root/rb/backup/" \
+    && "$LXC" file push --quiet "$W/ntfy.env" "$SBX/etc/pft-rebuild/ntfy.env" --mode 0600
   check "sanitized backup + blackhole ntfy.env pushed" "$?"
   SBX_BACKUP="/root/rb/backup/$(basename "$SAN")"
 
@@ -265,7 +282,7 @@ cmd_run() {
 
   echo; echo "== 7. teardown"
   if [ "$keep" = 1 ]; then echo "  --keep: sandbox left running for inspection"; else
-    cmd_teardown; trap - EXIT
+    cmd_teardown; check "teardown removed every sandbox resource" "$?"; trap - EXIT
     host_snapshot > "$W/host-after.txt"
     python3 "$LIB" teardown "$W/host-before.txt" "$W/host-after.txt" | sed 's/^/  /'
     [ "${PIPESTATUS[0]}" = 0 ]; check "teardown complete (host snapshot identical)" "$?"
@@ -305,7 +322,7 @@ case "$sub" in
   run) if [ -z "$commit" ] || [ "$yes" != 1 ]; then echo "run needs --commit SHA --yes" >&2; exit 3; fi
     cmd_run "$commit" "$keep" "$cont" "$jsonout" ;;
   teardown) need_root; [ "$yes" = 1 ] || { echo "teardown needs --yes" >&2; exit 3; }
-    cmd_teardown; exit 0 ;;
+    cmd_teardown; exit $(( $? == 0 ? 0 : 5 )) ;;
   -h|--help|help) usage ;;
   *) usage ;;
 esac

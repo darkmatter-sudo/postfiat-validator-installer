@@ -68,7 +68,11 @@ Defaults: 2 CPUs, 3GiB, 6000 processes, so the live node keeps headroom on a 4-C
 
 ## Results
 
-_Filled in from the recorded runs (`logs/`)._
+Recorded runs on the validator host (Ubuntu 22.04.5, 4 CPU / 8 GB, LXD 5.0); raw logs redacted in `logs/`.
+
+| Run | Commit | Result | What it found / fixed |
+|---|---|---|---|
+| 01 | `9b64883` | FAIL (3 checks) | Isolation preflight, bridge, and "sandbox cannot reach host sshd / :5005" all ok; live host full, integrity PASS, 0 operator messages. **(a)** `install.sh` died at `rc=141` right after "Detected OS": `sshd -T \| awk '…{exit}'` under `set -euo pipefail` SIGPIPEs sshd once its output passes one 4 KiB write. A stock 22.04 sshd does; the hardened live sshd (3814 bytes) does not, so it never showed on the live host. Fixed in `install.sh` (awk reads all input; a missing sshd falls back to 22), repro in `logs/02-sshd-sigpipe.log`. **(b)** `lxc exec` read the step loop's stdin, so no step after `base` ran: `sx` now reads `/dev/null`. **(c)** teardown left LXD's empty `table inet lxd` (caught by the before/after snapshot): teardown now deletes it when the run created it and it is empty, and reports INCOMPLETE otherwise. |
 
 ## Limits
 

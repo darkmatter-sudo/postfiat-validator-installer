@@ -50,7 +50,9 @@ fi
 
 # ---------- SSH port ----------
 if [ -z "${SSH_PORT:-}" ]; then
-  SSH_PORT="$(sshd -T 2>/dev/null | awk '/^port /{print $2; exit}')"
+  # awk reads ALL of sshd -T: an early `exit` lets sshd die of SIGPIPE once its output passes one 4 KiB write (a
+  # stock Ubuntu 22.04 sshd does), and with pipefail + set -e that killed the installer (rebuild/ drill, run 01).
+  SSH_PORT="$({ sshd -T 2>/dev/null || true; } | awk '/^port / && !p {p = $2} END {print p}')"
   SSH_PORT="${SSH_PORT:-22}"
 fi
 log "SSH port: $SSH_PORT"

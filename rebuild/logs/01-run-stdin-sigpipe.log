@@ -1,0 +1,88 @@
+OS: Ubuntu 22.04.5 LTS | kernel 5.15.0-202-generic | lxd 5.0.11
+run 20261105T162134Z commit 9b64883d308feedc155573581ee7e26581923cec sandbox pftrb-sbx cpu=2 mem=3GiB disk=25GiB procs=6000 image=ubuntu:22.04
+
+== 0. preflight
+[2026-11-05T16:21:34Z] preflight (read-only), commit 9b64883d308feedc155573581ee7e26581923cec
+CHECK ok   LXD available
+CHECK ok   live node postfiatd server_state full
+CHECK ok   live pft-integrity verify PASS
+CHECK ok   no leftover instance pftrb-sbx
+CHECK ok   no leftover network pftrb0
+CHECK ok   no leftover pool pftrb
+CHECK ok   no leftover chain PFT-REBUILD
+CHECK ok   subnet <redacted-ip>/24 unused on the host
+CHECK ok   RB_MEM=3GiB and RB_DISK=25GiB parse as sizes
+CHECK ok   MemAvailable 6221 MiB >= sandbox cap + 1 GiB
+CHECK ok   free disk 69 GiB >= RB_DISK + 10 GiB
+CHECK ok   nightly backup archive present in /var/backups/postfiat
+CHECK ok   commit is a full 40-hex SHA
+CHECK ok   this checkout is clean at 9b64883d308feedc155573581ee7e26581923cec
+CHECK ok   commit public on GitHub (HTTP 200)
+CHECK ok   stack.list valid
+CHECK ok   operator ntfy topics found (2, not printed)
+  host snapshot: 184 items; live baseline: 668 rows
+
+== 1. sandbox infrastructure
+CHECK ok   pool pftrb (btrfs loop, size 25GiB)
+CHECK ok   bridge pftrb0 NAT-only IPv4 <redacted-ip>/24
+CHECK ok   firewall chains PFT-REBUILD (forward) / PFT-REBUILD-IN (input) for pftrb0 only
+CHECK ok   instance pftrb-sbx created (not started)
+CHECK ok   live pft-integrity verify still PASS with the sandbox infrastructure up
+
+== 2. sandbox isolation preflight
+CHECK ok   backup sanitized (keys refused, peering stripped)
+  PREFLIGHT: ISOLATED (0 refusals)
+CHECK ok   no sandbox device exposes 2559 5005 51235
+
+== 3. start + network
+CHECK ok   sandbox started
+CHECK ok   sandbox DNS + IPv4 up (9 s)
+CHECK ok   cloud-init finished
+CHECK ok   sandbox cannot reach host admin port 5005 via the bridge
+CHECK ok   sandbox cannot reach host sshd via the bridge
+
+== 4. checkout pinned commit inside the sandbox
+CHECK ok   git + jq installed
+CHECK ok   sandbox HEAD = 9b64883d308feedc155573581ee7e26581923cec
+Pushing /var/lib/snapd/hostfs/var/lib/pft-rebuild/20261105T162134Z/backup/pft-backup-20261105T022856Z.tar.gz to /root/rb/backup/pft-backup-20261105T022856Z.tar.gz: 100% (26.96GB/s)                                                                                                                                                                                     Pushing /var/lib/snapd/hostfs/var/lib/pft-rebuild/20261105T162134Z/backup/pft-backup-20261105T022856Z.tar.gz.sha256 to /root/rb/backup/pft-backup-20261105T022856Z.tar.gz.sha256: 100% (115.96MB/s)                                                                                                                                                                                                    Pushing /var/lib/snapd/hostfs/var/lib/pft-rebuild/20261105T162134Z/ntfy.env to /etc/pft-rebuild/ntfy.env: 100% (70.62MB/s)                                                                                                                           CHECK ok   sanitized backup + blackhole ntfy.env pushed
+
+== 5. install steps (rebuild/stack.list @ 9b64883d308feedc155573581ee7e26581923cec)
+STEP  10 base          rc=141     0s  $ bash install.sh
+  --- last 25 lines of base ---
+  | [2026-11-05T16:26:07Z] === Post Fiat validator installer starting ===
+  | [2026-11-05T16:26:07Z] Detected OS: Ubuntu 22.04.5 LTS
+TIME_TO_FULL n/a s (restore step start -> server_state full, cap 3600 s)
+sandbox server_state now: down
+
+== 6. diff sandbox vs live
+  sandbox pft-fleet inventory unavailable: diff uses pft-integrity items only
+  no sandbox baseline (baseline step not reached)
+
+== 7. teardown
+[2026-11-05T16:26:08Z] teardown: instance pftrb-sbx, network pftrb0, pool pftrb, image cache, chains PFT-REBUILD/PFT-REBUILD-IN
+  instance deleted
+  cached image deleted
+Network pftrb0 deleted
+  network deleted
+Storage pool pftrb deleted
+  pool deleted
+PFT-REBUILD  all opt -- in pftrb0 out *  0.0.0.0/0  -> 0.0.0.0/0  
+  removed jump: FORWARD -i pftrb0 -j PFT-REBUILD
+PFT-REBUILD  all opt -- in * out pftrb0  0.0.0.0/0  -> 0.0.0.0/0  
+  removed jump: FORWARD -o pftrb0 -j PFT-REBUILD
+PFT-REBUILD-IN  all opt -- in pftrb0 out *  0.0.0.0/0  -> 0.0.0.0/0  
+  removed jump: INPUT -i pftrb0 -j PFT-REBUILD-IN
+  removed chain PFT-REBUILD
+  removed chain PFT-REBUILD-IN
+  LEFTOVER nft table inet lxd
+  TEARDOWN: INCOMPLETE (1 leftovers)
+CHECK FAIL teardown complete (host snapshot identical)
+
+== 8. live host after
+CHECK ok   live server_state full
+  RESULT: PASS - 171 unchanged, 0 warn, 0 fail -> exit 0
+CHECK ok   live pft-integrity verify PASS
+CHECK ok   operator ntfy topics: 0 messages since run start
+
+per-step timings: /var/lib/pft-rebuild/20261105T162134Z/timings.tsv; per-step logs: /var/lib/pft-rebuild/20261105T162134Z/steps/
+RESULT: FAIL (3 checks/steps failed, diff rc 3)
