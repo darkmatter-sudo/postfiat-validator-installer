@@ -15,7 +15,7 @@ helper: syscall table from libseccomp, Docker rule resolution, profile + diff, c
 [`../alerts/seccomp.rules.yml`](../alerts/seccomp.rules.yml) + [`seccomp.tests.yml`](../alerts/seccomp.tests.yml) ·
 [`tests/`](tests/) · [`systemd/`](systemd/) · [`install.sh`](install.sh).
 
-## Status (2026-11-04T10:30Z)
+## Status (2026-11-05T02:20Z)
 
 | Card step | State |
 |---|---|
@@ -23,9 +23,50 @@ helper: syscall table from libseccomp, Docker rule resolution, profile + diff, c
 | 2 profile + per-syscall diff vs Docker | done: [`profile/pft-postfiatd.json`](profile/pft-postfiatd.json) + [`profile/diff.tsv`](profile/diff.tsv) from [08](logs/08-generate-two-host.log) |
 | 3 guarded apply / rollback | built and tested offline (stub suite); live apply not done yet. Found before any live apply (2026-11-04): a re-create would have dropped both nodes' `CpuShares`/`MemoryReservation` (set by `docker update`, not in compose/run args) and the gate did not compare them; fixed: kept through every re-create and part of the gate signature (see apply / rollback), offline tests + mutants M55-M60 |
 | 4 audit, rules, promtool, tests, mutants | done offline: recorded [10](logs/10-lint-suite-mutants.log) at 80d944a (git archive, script sha256 in l.3-11): shellcheck/ruff/ruff format/promtool clean (l.12-35), suite 147 passed, 0 failed (l.185), mutants 59 caught, 0 survived, 0 not applied, 0 broken of 59 + M54 documented equivalent, 0 orphans (l.249-250). Replaces [04](logs/04-lint-suite-mutants.log) (its 54 CAUGHT lines all read `[0 failing: ]`: the mutant copies lacked `pft_seccomp.py`, so no check ever ran; harness fixed, see Tests) and [09](logs/09-lint-suite-mutants-superseded.log) (56 caught / 4 survived at fffc1d6: M16, M19, M37 got tests in 80d944a, M54 is equivalent because no caller reads `lx`'s status) |
-| 5 two-host live proof | not done: the validator holds the growth/ 24 h data-collection lock until 2026-11-05T00:26Z, so `apply` refuses there until then (by design); sentry canary first |
+| 5 two-host live proof | first live run [11](logs/11-live-run-stopped-at-canary.log) (2026-11-05T01:14Z, run commit 72b614f) stopped at the sentry canary, by design: the apply gate counted 2 `clone3` records as denials and rolled the sentry back automatically; the validator was never changed. Found → fixed → verified offline, see [Live run 11](#live-run-11-2026-11-05-stopped-at-the-sentry-canary). The re-run follows the recorded offline run 15 |
 
 The results table required by the card is added once the live proof has run; it will cite log lines only.
+
+## Live run 11 (2026-11-05): stopped at the sentry canary
+
+What happened, from [11](logs/11-live-run-stopped-at-canary.log):
+
+| | log 11 |
+|---|---|
+| preflight clean, notifiers + bridge redirected to a throwaway topic, catch-all silence (watchdog and PFTSeccompDenied excluded) | l.12-61 |
+| install on both hosts + the validator's pull, rules loaded (`PFTSeccompDrift ok`, `PFTSeccompDenied ok`), profile sha256 `8568e172…` equal on both hosts and in the repo | l.67-133 |
+| sentry: injected gate failure → automatic rollback, previous state restored (Docker's default, file removed, full) | l.166-183 |
+| sentry: real apply healthy (full, peers 11, confine signature unchanged), then the gate's denial check: `gate FAIL - 2 seccomp denial(s) since T0: clone3 (postfiatd) x1; clone3 (postfiatd: rpc) x1` → automatic rollback PASS | l.187-260 |
+| canary rule: `sentry canary did not pass - validator NOT changed; stopping`; window ended, every notifier env restored byte-identical, bridge back on the operator env | l.267-280 |
+
+**Finding 1, `clone3` is not a denial.** The profile keeps Docker's own `clone3 → ERRNO 38 (ENOSYS)` rule, so
+glibc's `pthread_create` gets ENOSYS and falls back to `clone`. That is why the node stayed full. But with
+`SECCOMP_FILTER_FLAG_LOG` the kernel audits *every* errno answer as `code=0x50000`, and the errno value is not in
+the record, so the counter read the designed ENOSYS answers as EPERM denials. Fix (`pft-seccomp.sh`
+`expected_errno`/`denials`): syscalls the applied profile answers with an unconditional, argument-free ERRNO rule
+whose errno is not EPERM are counted apart as "expected errno answers by design" and shown next to the result,
+never as denials. EPERM rules, argument-filtered rules and caps-conditional rules do not qualify. Without a
+profile file (Docker's default), every record counts. Tests: 7 new checks in `tests/run-tests.sh` (audit WARN/PASS,
+`--json`, ack-denials, the apply gate with a stub that writes the node's clone3 records on every `curl` exec, and
+the three non-qualifying rule shapes). With the parent commit's script, 6 of them fail, including `gate clone3:
+rc=1`, which is the live failure reproduced offline. Mutants M61-M67 cover each new guard.
+
+**Finding 2, an exercise command no add-on runs.** `exercise_addons` ran `sha256sum` inside the container (l.195,
+`sh: 1: sha256sum: Permission denied`). AppArmor's pft-postfiatd profile correctly denies it, and that left 2
+DENIED records on the sentry. No installed tool runs that: pft-integrity hashes the config volume from the host
+(`collect_cfgvol`). The line was removed. The 2 records were acknowledged with `pft-apparmor ack-denials` right
+after the run, and the 3 clone3 records with `pft-seccomp ack-denials`
+([12](logs/12-ack-after-11.log)).
+
+**Finding 3, the stop path of `drill/live-run.sh`.** A run that stops after install but before both nodes are
+enforced leaves the hourly audit grading Docker's default FAIL. PFTSeccompDrift would then have paged once the
+catch-all silence went. In run 11 the alerts were still `pending` when a PFTSeccompDrift silence was posted by
+hand. The install items were also left out of the integrity baseline, and the stop path skipped the operator-topic
+read-back. Fixed: the stop path now holds a narrow PFTSeccompDrift silence (`DRIFT_HOLD`, 24 h) before the catch-all
+expires, accepts the integrity baseline only when every changed item is pft-seccomp's own binary/units (tested on
+the real verify lines of [13](logs/13-integrity-after-11.log)), and always reads back the operator topics. For run
+11 these steps were done by hand: [12](logs/12-ack-after-11.log), [13](logs/13-integrity-after-11.log), and
+[14](logs/14-operator-readback-after-11.log) (2 operator topics, 0 messages since the run start).
 
 ## Learn result (2026-11-04, both hosts)
 

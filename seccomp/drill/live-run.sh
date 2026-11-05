@@ -75,6 +75,7 @@ topic_msgs() { curl -s --max-time 20 "$NTFY/$1/json?poll=1&since=$since" | jq -c
 declare -A SHA=()
 declare -a MOVED=()
 RESTORED=0; RESTORE_OK=true; MAINT_STARTED=0; MAINT_ENV_MADE=0; SIL=""; BRIDGE_SWAPPED=0
+INSTALLED=0; ENFORCED_ALL=0; READ_BACK=0; DRIFT_HOLD="${DRIFT_HOLD:-24}"   # hours
 bridge_src() { sudo -n docker inspect pft-alert-bridge --format '{{range .Mounts}}{{if eq .Destination "/run/secrets/ntfy.env"}}{{.Source}}{{end}}{{end}}'; }
 restore() {
   [ "$RESTORED" -eq 1 ] && return 0
@@ -96,6 +97,16 @@ restore() {
     if [ "$(bridge_src)" = "$BRIDGE_ENV" ]; then echo "  restored bridge: mounts the operator env file again: yes"
     else echo "  restored bridge: mounts the operator env file again: NO"; RESTORE_OK=false; fi
   fi
+  if [ -n "$SIL" ] && [ "$INSTALLED" = 1 ] && [ "$ENFORCED_ALL" = 0 ]; then
+    # stopped after install, before both nodes were enforced: the hourly audit on both hosts now grades a node on
+    # Docker's default FAIL, and PFTSeccompDrift would page once the catch-all goes (live run 11). Keep the audit
+    # (uninstalling leaves the rulecheck line -> PFTTextfileStale) and hold that one alert until a fixed re-run.
+    nb="$(jq -nc --arg s "$(ts)" --arg e "$(date -u -d "+$DRIFT_HOLD hours" +%FT%TZ)" --arg c "$TASK stopped run: audit installed, nodes not enforced; re-run or uninstall" \
+      '{matchers: [{name: "alertname", value: "PFTSeccompDrift", isRegex: false, isEqual: true}], startsAt: $s, endsAt: $e, createdBy: "seccomp-live", comment: $c}')"
+    if [ -n "$(curl -s --max-time 10 -H 'Content-Type: application/json' -X POST "$AM/api/v2/silences" -d "$nb" | jq -r '.silenceID // empty')" ]; then
+      echo "  stopped before both nodes were enforced: silence alertname=PFTSeccompDrift for ${DRIFT_HOLD}h (audit stays installed; re-run or uninstall)"
+    else echo "  PFTSeccompDrift hold silence FAILED"; RESTORE_OK=false; fi
+  fi
   if [ -n "$SIL" ]; then
     left=$(( LAST_START + 25 * 60 - $(date -u +%s) ))
     if [ "$left" -gt 0 ]; then
@@ -111,7 +122,34 @@ restore() {
   fi
   R "rm -rf $RDIR" || true
 }
-cleanup() { restore; rm -rf "$SEC"; }
+readback() { # TOPIC LABEL [quiet]
+  local out
+  if out="$(curl -s --max-time 20 "$NTFY/$1/json?poll=1&since=$since")"; then
+    N_MSG="$(jq -c 'select(.event == "message")' <<<"$out" 2>/dev/null | wc -l)"
+    echo "  $2 topic: $N_MSG message(s)"
+    [ -n "${3:-}" ] || jq -c 'select(.event == "message") | {time: (.time | todate), title, message}' <<<"$out" 2>/dev/null | red | sed 's/^/    /'
+  else N_MSG=-1; echo "  $2 topic: could not be read from ntfy"; fi
+}
+# the WARN items a stopped run may leave: pft-seccomp's own installed files only (pft-integrity verify lines)
+own_items() { grep -E '^  \[(WARN|FAIL)\]' | awk '{print $2}' | sort -u; }
+install_only() { ! grep -vxE 'bin:pft-seccomp|unit:pft-seccomp(-pull)?\.(service|timer)' <<<"$1" | grep -q .; }
+stop_accept() { # HOST: accept the install into the baseline only if nothing else changed (else leave it for a human)
+  local items; items="$(on "$1" "sudo -n pft-integrity verify" 2>&1 | own_items)"
+  if [ -z "$items" ]; then echo "  pft-integrity $(lb "$1"): nothing to accept"
+  elif install_only "$items"; then
+    on "$1" "sudo -n pft-integrity accept --reason '$TASK: pft-seccomp $SHORT installed (run stopped before enforcement)'" 2>&1 | tail -1 | sed -E 's/ by [a-z_][a-z0-9_-]*$/ by <user>/' | red | sed 's/^/  /'
+    echo "  pft-integrity $(lb "$1"): accepted the pft-seccomp install items: $(tr '\n' ' ' <<<"$items")"
+  else echo "  pft-integrity $(lb "$1"): NOT accepted - items besides the pft-seccomp install: $(tr '\n' ' ' <<<"$items")"; RESTORE_OK=false; fi
+}
+stop_path() { # the run ended before step 8/9: baselines for the install and the operator read-back still happen
+  local h i=0 opn=0 t
+  if [ "$INSTALLED" = 1 ] && [ "$ENFORCED_ALL" = 0 ]; then for h in local relay; do stop_accept "$h"; done; fi
+  [ "$READ_BACK" = 1 ] || [ ! -s "${OPS:-/nonexistent}" ] && return 0
+  echo "  stop path: operator read-back after 60 s"; sleep 60
+  while read -r t; do i=$((i + 1)); readback "$t" "operator #$i" quiet; [ "$N_MSG" = 0 ] || opn=$((opn + 1)); done < "$OPS"
+  echo "  stop path: operator topics received nothing during the run: $([ "$opn" = 0 ] && echo yes || echo NO) ($i topic(s), $opn with messages)"
+}
+cleanup() { restore; stop_path; rm -rf "$SEC"; }
 trap cleanup EXIT
 trap 'echo "interrupted"; exit 6' INT TERM
 
@@ -246,6 +284,7 @@ echo; echo "== 2. install (sentry, validator, the validator's pull of the sentry
   x "grep -n seccomp.rules.yml alerts/prometheus.yml; sudo -n docker kill -s HUP pft-prometheus >/dev/null && sleep 30 && curl -s $PROM/api/v1/rules | jq -r '.data.groups[] | select(.name == \"pft-seccomp\") | .rules[] | [.name, .health] | @tsv'"
   check "PFTSeccompDrift + PFTSeccompDenied loaded, health ok" "$(ok_if 'grep -qE "^PFTSeccompDrift	ok" <<<"$XOUT" && grep -qE "^PFTSeccompDenied	ok" <<<"$XOUT"')"
   [ "$FAILS" = 0 ] || { echo "  install failed - stopping before any node change"; exit 4; }
+  INSTALLED=1
 
 x "sudo -n install -d -m 700 /var/lib/pft-seccomp && git show $SHA_HEAD:$PROFILE_REPO | sudo -n sh -c 'umask 022; cat > $P1' && git show $SHA_HEAD:$PROFILE_REPO | R 'sudo -n install -d -m 700 /var/lib/pft-seccomp && sudo -n sh -c \"umask 022; cat > $P1\"' && sudo -n cat $P1 | sha256sum | cut -c1-64; R 'sudo -n cat $P1 | sha256sum | cut -c1-64'; sha256sum < $PROFILE_REPO | cut -c1-64"
 check "profile copied from the pinned tree, sha256 identical on both hosts and in the repo" \
@@ -307,6 +346,7 @@ check "[RESOLVED] PFTSeccompDenied naming $STAGE delivered to the throwaway topi
 }
 stage_run sentry || { echo "  sentry canary did not pass - validator NOT changed; stopping"; exit 1; }
 stage_run validator || { echo "  validator stage did not pass - stopping"; exit 1; }
+ENFORCED_ALL=1
 
 echo; echo "== 7. hold: $HOLD min under enforcement, both nodes polled every $POLL min"
 echo "  columns: time | per host: state peers container-check unacknowledged-denials(24h)"
@@ -354,18 +394,10 @@ restore
 check "env files byte-identical, bridge back on the operator env, pft-maint env removed, window ended" \
   "$(ok_if '[ "$RESTORE_OK" = true ] && ! sudo -n pft-maint active >/dev/null 2>&1 && ! sudo -n test -e "$MAINT_ENV"')"
 sleep 60
-readback() { # TOPIC LABEL [quiet]
-  local out
-  if out="$(curl -s --max-time 20 "$NTFY/$1/json?poll=1&since=$since")"; then
-    N_MSG="$(jq -c 'select(.event == "message")' <<<"$out" 2>/dev/null | wc -l)"
-    echo "  $2 topic: $N_MSG message(s)"
-    [ -n "${3:-}" ] || jq -c 'select(.event == "message") | {time: (.time | todate), title, message}' <<<"$out" 2>/dev/null | red | sed 's/^/    /'
-  else N_MSG=-1; echo "  $2 topic: could not be read from ntfy"; fi
-}
 readback "$ALERT" throwaway
 i=0; OPN=0
 while read -r t; do i=$((i + 1)); readback "$t" "operator #$i" quiet; [ "$N_MSG" = 0 ] || OPN=$((OPN + 1)); done < "$OPS"
-check "operator topics received nothing during the run" "$(ok_if '[ "$OPN" = 0 ]')" "$i topic(s), $OPN with messages"
+check "operator topics received nothing during the run" "$(ok_if '[ "$OPN" = 0 ]')" "$i topic(s), $OPN with messages"; READ_BACK=1
 for h in local relay; do
   r="$(on "$h" "sudo -n pft-integrity verify" 2>&1 | grep '^RESULT')"; echo "  pft-integrity $h: $r"
   check "pft-integrity PASS on $h at the end" "$(case "$r" in "RESULT: PASS"*) echo 0 ;; *) echo 1 ;; esac)"

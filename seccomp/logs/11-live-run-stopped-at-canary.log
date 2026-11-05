@@ -1,0 +1,280 @@
+pft-seccomp two-host live run (sentry canary, then validator) - 2026-11-05T01:14:04Z - Ubuntu 22.04.5 LTS - run 20261105T011404Z
+repo HEAD 72b614ff7b16f599bb04e31d7df0a61e1c89591e (clean: yes)
+sha256 b3f33c2d4c17e0cb89d0725cbc8cd591b481a9b5b8309c68d5bb1605e946d36e seccomp/drill/live-run.sh
+sha256 aa73666b6eec474569f4d0cc7da59e857c846fb528cdf03a6490ee4438eb1f0c seccomp/drill/host-run.sh
+sha256 579ee8b540b0e4cf9bc605ce7130363aef7f0862aba1b125531d307a5fed5b1f seccomp/pft-seccomp.sh
+sha256 2c2b32e2f82aedd8b2f8613b0711d4d66c33844a241b4fae71b24b5fba5e40d5 seccomp/pft_seccomp.py
+sha256 2c1d2eefa3e77205142e9ffbd3d2cd924821b1ffdcfd2cfd3f7299d8d3ca4090 seccomp/install.sh
+sha256 8568e1728fa413e81e4fb256fd16286f4874d9cdaed6adf224ad35610b9e2457 seccomp/profile/pft-postfiatd.json
+sha256 979afef11a529342099582ab99b200c6cdce4239bd28aad3e4233b3fb3389bc1 alerts/seccomp.rules.yml
+sha256 f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8 peerexpose/drill/redact.py
+
+== 0. preflight (nothing changed yet)
+  no extra postfiatd-image container running on either host
+$ python3 -I seccomp/pft_seccomp.py canon seccomp/profile/pft-postfiatd.json; sha256sum < seccomp/profile/pft-postfiatd.json | cut -c1-64
+  f533d5043ec4cb7b0bc9f2caaaaf037051b40de3db38ec2b656db5719b584398
+  8568e1728fa413e81e4fb256fd16286f4874d9cdaed6adf224ad35610b9e2457
+  (exit 0)
+  bridge mounts the operator env file: yes
+  operator topics to watch: 2 (not printed)
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+  postfiatd-sentry: server_state=full, peers 21
+  postfiatd: server_state=full, peers 15
+  pft-integrity local: RESULT: PASS - 165 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity relay: RESULT: PASS - 97 unchanged, 0 warn, 0 fail -> exit 0
+  literals for redaction: 3 ip, 2 key, 3 topic, 1 user (values not printed)
+$ redact.py control --literals <literals>
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (18/18)
+
+== 1. redirect notifiers + bridge, silence everything except the rule under test, maintenance window
+  local:/etc/postfiat-monitor.env sha256 6dc3b10fb491 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/postfiat-monitor.env.pre-seccomp-live
+  local:/etc/pft-integrity.env sha256 b3cd1c3da7ff -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-integrity.env.pre-seccomp-live
+  relay:/etc/pft-watchdog/ntfy.env sha256 ddb52721a668 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-watchdog/ntfy.env.pre-seccomp-live
+  relay:/etc/pft-integrity.env sha256 cdd330a974d2 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-integrity.env.pre-seccomp-live
+  relay:/etc/pft-alertpath/ntfy.env sha256 ddb52721a668 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-alertpath/ntfy.env.pre-seccomp-live
+CHECK ok   /etc/pft-maint/ntfy.env created with the throwaway topic (0600)
+  2026-11-05T01:14:38Z starting pft-alert-bridge (ntfy: on)
+  2026-11-05T01:14:41Z pft-alert-bridge listening
+CHECK ok   Alertmanager bridge -> throwaway env file (0700 temp dir)
+CHECK ok   silence alertname=~".+", alertname!~"PFTAlertPipelineWatchdog|PFTSeccompDenied" until 2026-11-05T05:04:41Z
+$ sudo -n pft-maint start --ttl 4h --reason 'task_d4a0a82d pft-seccomp live run 20261105T011404Z'
+  window started: id m1793841281-287601 until 2026-11-05T05:14:41Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   sentry has the window (via the watchdog channel) after 30s
+
+== 1b. reset: an apply an earlier run left in place is rolled back first
+  sentry: no apply in place (nothing to reset)
+  validator: no apply in place (nothing to reset)
+
+== 2. install (sentry, validator, the validator's pull of the sentry file)
+$ git archive 72b614ff7b16f599bb04e31d7df0a61e1c89591e seccomp | R 'rm -rf /var/tmp/pft-seccomp-live-72b614f && mkdir -m 700 /var/tmp/pft-seccomp-live-72b614f && tar -x -C /var/tmp/pft-seccomp-live-72b614f'
+  
+  (exit 0)
+$ R 'sudo -n bash /var/tmp/pft-seccomp-live-72b614f/seccomp/install.sh --host sentry'
+  2026-11-05T01:15:23Z installed /usr/local/bin/pft-seccomp (sha256 579ee8b540b0e4cf9bc605ce7130363aef7f0862aba1b125531d307a5fed5b1f)
+  2026-11-05T01:15:23Z installed /usr/local/lib/pft-seccomp/pft_seccomp.py (sha256 2c2b32e2f82aedd8b2f8613b0711d4d66c33844a241b4fae71b24b5fba5e40d5)
+  2026-11-05T01:15:23Z installed /usr/local/lib/pft-seccomp/docker-default-29.1.3.json (sha256 01536f1d1df938ae611eba20d6349e0de7a99b6ecdee1549427a0b01b8301e28)
+  2026-11-05T01:15:23Z installed /usr/local/lib/pft-seccomp/margin.tsv (sha256 2590677f2f34b64f456dd6aabb49ad7be6f456fbc3e7c8cdc50fa196d113a208)
+  2026-11-05T01:15:23Z wrote /usr/local/lib/pft-seccomp/syscall-table.tsv (361 syscalls)
+  2026-11-05T01:15:23Z added the pft_seccomp textfile line to /etc/pft-rulecheck.conf
+  2026-11-05T01:15:24Z first audit (through the sandboxed unit, HOST_LABEL=sentry):
+  pft_seccomp_findings{host="sentry"} 3
+  pft_seccomp_last_run_timestamp_seconds{host="sentry"} 1793841325
+  Created symlink /etc/systemd/system/timers.target.wants/pft-seccomp.timer → /etc/systemd/system/pft-seccomp.timer.
+  2026-11-05T01:15:26Z enabled pft-seccomp.timer (hourly + up to 10 min)
+  2026-11-05T01:15:26Z remember: sudo pft-integrity accept --reason 'pft-seccomp installed'
+  (exit 0)
+CHECK ok   sentry install exit 0, first audit textfile valid
+$ sudo -n bash seccomp/install.sh
+  2026-11-05T01:15:27Z installed /usr/local/bin/pft-seccomp (sha256 579ee8b540b0e4cf9bc605ce7130363aef7f0862aba1b125531d307a5fed5b1f)
+  2026-11-05T01:15:27Z installed /usr/local/lib/pft-seccomp/pft_seccomp.py (sha256 2c2b32e2f82aedd8b2f8613b0711d4d66c33844a241b4fae71b24b5fba5e40d5)
+  2026-11-05T01:15:27Z installed /usr/local/lib/pft-seccomp/docker-default-29.1.3.json (sha256 01536f1d1df938ae611eba20d6349e0de7a99b6ecdee1549427a0b01b8301e28)
+  2026-11-05T01:15:27Z installed /usr/local/lib/pft-seccomp/margin.tsv (sha256 2590677f2f34b64f456dd6aabb49ad7be6f456fbc3e7c8cdc50fa196d113a208)
+  2026-11-05T01:15:27Z wrote /usr/local/lib/pft-seccomp/syscall-table.tsv (361 syscalls)
+  2026-11-05T01:15:27Z added the pft_seccomp textfile line to /etc/pft-rulecheck.conf
+  2026-11-05T01:15:29Z first audit (through the sandboxed unit, HOST_LABEL=validator):
+  pft_seccomp_findings{host="validator"} 3
+  pft_seccomp_last_run_timestamp_seconds{host="validator"} 1793841330
+  Created symlink /etc/systemd/system/timers.target.wants/pft-seccomp.timer → /etc/systemd/system/pft-seccomp.timer.
+  2026-11-05T01:15:33Z enabled pft-seccomp.timer (hourly + up to 10 min)
+  2026-11-05T01:15:33Z remember: sudo pft-integrity accept --reason 'pft-seccomp installed'
+  (exit 0)
+CHECK ok   validator install exit 0, first audit textfile valid
+$ sudo -n grep -q '^PULL_SSH=' /etc/pft-seccomp.env || sudo -n sh -c 'grep "^PULL_SSH=" /etc/pft-apparmor.env >> /etc/pft-seccomp.env'; sudo -n grep -c '^PULL_SSH=' /etc/pft-seccomp.env; sudo -n stat -c '%a %U' /etc/pft-seccomp.env
+  1
+  600 root
+  (exit 0)
+$ sudo -n bash seccomp/install.sh --pull
+  2026-11-05T01:15:33Z installed /usr/local/bin/pft-seccomp (sha256 579ee8b540b0e4cf9bc605ce7130363aef7f0862aba1b125531d307a5fed5b1f)
+  2026-11-05T01:15:34Z installed /usr/local/lib/pft-seccomp/pft_seccomp.py (sha256 2c2b32e2f82aedd8b2f8613b0711d4d66c33844a241b4fae71b24b5fba5e40d5)
+  2026-11-05T01:15:34Z installed /usr/local/lib/pft-seccomp/docker-default-29.1.3.json (sha256 01536f1d1df938ae611eba20d6349e0de7a99b6ecdee1549427a0b01b8301e28)
+  2026-11-05T01:15:34Z installed /usr/local/lib/pft-seccomp/margin.tsv (sha256 2590677f2f34b64f456dd6aabb49ad7be6f456fbc3e7c8cdc50fa196d113a208)
+  2026-11-05T01:15:34Z wrote /usr/local/lib/pft-seccomp/syscall-table.tsv (361 syscalls)
+  2026-11-05T01:15:36Z first pull (through the sandboxed unit):
+  pft_seccomp_findings{host="sentry"} 3
+  pft_seccomp_last_run_timestamp_seconds{host="sentry"} 1793841325
+  Created symlink /etc/systemd/system/timers.target.wants/pft-seccomp-pull.timer → /etc/systemd/system/pft-seccomp-pull.timer.
+  2026-11-05T01:15:38Z enabled pft-seccomp-pull.timer (every 15 min)
+  (exit 0)
+CHECK ok   pull install exit 0, sentry file present on the validator
+$ sudo -n grep -n pft_seccomp /etc/pft-rulecheck.conf; R 'sudo -n grep -n pft_seccomp /etc/pft-rulecheck.conf'
+  73:textfile pft_seccomp_*.prom   3h   pft_seccomp_last_run_timestamp_seconds
+  47:textfile pft_seccomp_*.prom   3h   pft_seccomp_last_run_timestamp_seconds
+  (exit 0)
+$ grep -n seccomp.rules.yml alerts/prometheus.yml; sudo -n docker kill -s HUP pft-prometheus >/dev/null && sleep 30 && curl -s http://127.0.0.1:9090/api/v1/rules | jq -r '.data.groups[] | select(.name == "pft-seccomp") | .rules[] | [.name, .health] | @tsv'
+  27:  - /etc/pft-alerts/seccomp.rules.yml     # ../seccomp (container off the tailored seccomp profile / profile drift; EPERM denials in 24 h)
+  PFTSeccompDrift	ok
+  PFTSeccompDenied	ok
+  (exit 0)
+CHECK ok   PFTSeccompDrift + PFTSeccompDenied loaded, health ok
+$ sudo -n install -d -m 700 /var/lib/pft-seccomp && git show 72b614ff7b16f599bb04e31d7df0a61e1c89591e:seccomp/profile/pft-postfiatd.json | sudo -n sh -c 'umask 022; cat > /var/lib/pft-seccomp/pft-postfiatd.live.json' && git show 72b614ff7b16f599bb04e31d7df0a61e1c89591e:seccomp/profile/pft-postfiatd.json | R 'sudo -n install -d -m 700 /var/lib/pft-seccomp && sudo -n sh -c "umask 022; cat > /var/lib/pft-seccomp/pft-postfiatd.live.json"' && sudo -n cat /var/lib/pft-seccomp/pft-postfiatd.live.json | sha256sum | cut -c1-64; R 'sudo -n cat /var/lib/pft-seccomp/pft-postfiatd.live.json | sha256sum | cut -c1-64'; sha256sum < seccomp/profile/pft-postfiatd.json | cut -c1-64
+  8568e1728fa413e81e4fb256fd16286f4874d9cdaed6adf224ad35610b9e2457
+  8568e1728fa413e81e4fb256fd16286f4874d9cdaed6adf224ad35610b9e2457
+  8568e1728fa413e81e4fb256fd16286f4874d9cdaed6adf224ad35610b9e2457
+  (exit 0)
+CHECK ok   profile copied from the pinned tree, sha256 identical on both hosts and in the repo
+
+== 3. sentry: host-run pre
+$ R 'sudo -n bash /var/tmp/pft-seccomp-live-72b614f/seccomp/drill/host-run.sh sentry pre --profile /var/lib/pft-seccomp/pft-postfiatd.live.json --drill'
+  host-run sentry pre - 2026-11-05T01:16:15Z - Ubuntu 22.04.5 LTS - container postfiatd-sentry
+  sha256: host-run.sh aa73666b6eec474569f4d0cc7da59e857c846fb528cdf03a6490ee4438eb1f0c pft-seccomp 579ee8b540b0e4cf9bc605ce7130363aef7f0862aba1b125531d307a5fed5b1f pft_seccomp.py 2c2b32e2f82aedd8b2f8613b0711d4d66c33844a241b4fae71b24b5fba5e40d5
+  profile /var/lib/pft-seccomp/pft-postfiatd.live.json: file sha256 8568e1728fa413e81e4fb256fd16286f4874d9cdaed6adf224ad35610b9e2457, canonical (json.Compact) sha256:f533d5043ec4cb7b0bc9f2caaaaf037051b40de3db38ec2b656db5719b584398
+  
+  == 0. before
+  $ /usr/local/bin/pft-seccomp audit; echo audit-exit=$?
+    pft-seccomp audit - 2026-11-05T01:16:16Z | host sentry | container postfiatd-sentry | profile /etc/pft-seccomp/pft-postfiatd.json
+      [PASS] kernel             seccomp filter support (CONFIG_SECCOMP_FILTER)
+      [PASS] logging            kernel logs errno actions (actions_logged: kill_process kill_thread trap errno user_notif trace log)
+      [FAIL] profile            /etc/pft-seccomp/pft-postfiatd.json missing
+      [FAIL] container          postfiatd-sentry runs under Docker's default seccomp profile
+      [PASS] filter             container init: Seccomp 2 (filter), 1 filter(s)
+      [FAIL] recreate           docker run container not created with seccomp=/etc/pft-seccomp/pft-postfiatd.json
+      [PASS] confine:cap_drop   cap_drop ALL
+      [PASS] confine:nnp        no-new-privileges
+      [PASS] denials            0 seccomp denials (subj pft-postfiatd) in the last 86401s
+    RESULT: FAIL - 3 finding(s)
+    audit-exit=1
+    (exit 0)
+  PASS before: container on Docker's default seccomp profile -> audit FAIL
+    SecurityOpt: ["no-new-privileges", "apparmor=pft-postfiatd"]
+  PASS before: postfiatd-sentry full, init Seccomp 2 (Docker's default filter) (full)
+  
+  == 1. profile
+  $ /usr/local/bin/pft-seccomp check '/var/lib/pft-seccomp/pft-postfiatd.live.json'
+    ok 129 allowed syscalls
+    (exit 0)
+  PASS profile passes check
+  
+  == 2. automatic rollback drill: injected gate failure
+  $ PFT_SC_INJECT=health HEALTH_BUDGET=600 /usr/local/bin/pft-seccomp apply --profile-file '/var/lib/pft-seccomp/pft-postfiatd.live.json' --yes
+    2026-11-05T01:16:18Z apply 20261105T011618Z on postfiatd-sentry (host sentry): maintenance gate: ok 14304; before: seccomp default, server_state full
+    2026-11-05T01:16:18Z apply: candidate /var/lib/pft-seccomp/pft-postfiatd.live.json: ok 129 allowed syscalls, canonical sha256:f533d5043ec4; confine signature sha256 f03fcab6421c (20 keys); 1 pft daemons active
+    2026-11-05T01:16:18Z apply: installed /etc/pft-seccomp/pft-postfiatd.json (sha256 8568e1728fa4)
+    2026-11-05T01:16:19Z apply: recreate: docker run -d --name=postfiatd-sentry --restart=unless-stopped --user=0:0 --log-driver=json-file --log-opt=max-file=10 --log-opt=max-size=100m --network=bridge --publish=<redacted-ip>:2560:2559 --volume=pft-sentry-data:/var/lib/postfiatd/db --volume=7f505992998799bdc092cfb03d16aaae688a0190738c4429bb66f05355511ec9:/var/log/postfiatd --volume=pft-sentry-config:/etc/postfiatd --cap-drop=ALL --cap-add=CAP_SETGID --cap-add=CAP_SETUID --read-only --tmpfs=/run:rw,noexec,nosuid,size=64m --tmpfs=/tmp:rw,noexec,nosuid,size=64m --tmpfs=/var/backups:rw,noexec,nosuid,size=64m --tmpfs=/var/lib/apt:rw,noexec,nosuid,size=64m --tmpfs=/var/lib/logrotate:rw,noexec,nosuid,size=64m --pids-limit=256 --memory=2147483648 --memory-swap=2147483648 --cpu-shares=8192 --memory-reservation=1342177280 --security-opt=no-new-privileges --security-opt=apparmor=pft-postfiatd --security-opt=seccomp=/etc/pft-seccomp/pft-postfiatd.json agtipft/postfiatd:testnet-light-latest --conf /etc/postfiatd/postfiatd.cfg
+    2026-11-05T01:16:24Z apply: previous container kept as postfiatd-sentry-presc-20261105T011618Z (stopped, restart=no)
+    2026-11-05T01:26:53Z apply: health FAIL after 61 poll(s): injected failure (PFT_SC_INJECT=health);
+    2026-11-05T01:26:53Z apply: gate failed -> automatic rollback
+    2026-11-05T01:26:54Z rollback (auto) of apply 20261105T011618Z on postfiatd-sentry: back to seccomp default
+    2026-11-05T01:26:56Z rollback: previous container postfiatd-sentry-presc-20261105T011618Z restored as postfiatd-sentry (restart=unless-stopped)
+    2026-11-05T01:26:56Z rollback: /etc/pft-seccomp/pft-postfiatd.json removed (there was none before)
+    2026-11-05T01:27:41Z rollback: health PASS after 5 poll(s) (postfiatd-sentry re-created, seccomp default, init Seccomp 2 1, server_state full, peers 11, confine signature unchanged, 1 pft daemons active)
+    2026-11-05T01:27:49Z integrity: NOT accepted - changed items besides the container/compose: bin:pft-seccomp unit:pft-seccomp.service unit:pft-seccomp.timer
+    2026-11-05T01:27:49Z rollback RESULT: PASS - postfiatd-sentry back under seccomp default
+    (exit 1)
+  PASS injected gate failure -> apply exit 1 (automatic rollback, its gate passed)
+  PASS previous profile state restored: Docker's default, /etc/pft-seccomp/pft-postfiatd.json removed, init Seccomp 2, full (default, full)
+    SecurityOpt: ["no-new-privileges", "apparmor=pft-postfiatd"]
+  FAIL 0 denials during the drill (1)
+  
+  == 3. apply
+  $ /usr/local/bin/pft-seccomp apply --profile-file '/var/lib/pft-seccomp/pft-postfiatd.live.json' --yes
+    2026-11-05T01:27:52Z apply 20261105T012751Z on postfiatd-sentry (host sentry): maintenance gate: ok 13610; before: seccomp default, server_state full
+    2026-11-05T01:27:52Z apply: candidate /var/lib/pft-seccomp/pft-postfiatd.live.json: ok 129 allowed syscalls, canonical sha256:f533d5043ec4; confine signature sha256 f03fcab6421c (20 keys); 1 pft daemons active
+    2026-11-05T01:27:52Z apply: installed /etc/pft-seccomp/pft-postfiatd.json (sha256 8568e1728fa4)
+    2026-11-05T01:27:52Z apply: recreate: docker run -d --name=postfiatd-sentry --restart=unless-stopped --user=0:0 --log-driver=json-file --log-opt=max-file=10 --log-opt=max-size=100m --network=bridge --publish=<redacted-ip>:2560:2559 --volume=pft-sentry-data:/var/lib/postfiatd/db --volume=7f505992998799bdc092cfb03d16aaae688a0190738c4429bb66f05355511ec9:/var/log/postfiatd --volume=pft-sentry-config:/etc/postfiatd --cap-drop=ALL --cap-add=CAP_SETGID --cap-add=CAP_SETUID --read-only --tmpfs=/run:rw,noexec,nosuid,size=64m --tmpfs=/tmp:rw,noexec,nosuid,size=64m --tmpfs=/var/backups:rw,noexec,nosuid,size=64m --tmpfs=/var/lib/apt:rw,noexec,nosuid,size=64m --tmpfs=/var/lib/logrotate:rw,noexec,nosuid,size=64m --pids-limit=256 --memory=2147483648 --memory-swap=2147483648 --cpu-shares=8192 --memory-reservation=1342177280 --security-opt=no-new-privileges --security-opt=apparmor=pft-postfiatd --security-opt=seccomp=/etc/pft-seccomp/pft-postfiatd.json agtipft/postfiatd:testnet-light-latest --conf /etc/postfiatd/postfiatd.cfg
+    2026-11-05T01:27:53Z apply: previous container kept as postfiatd-sentry-presc-20261105T012751Z (stopped, restart=no)
+    2026-11-05T01:28:37Z apply: health PASS after 5 poll(s) (postfiatd-sentry re-created, seccomp sha256:f533d5043ec4, init Seccomp 2 1, server_state full, peers 11, confine signature unchanged, 1 pft daemons active)
+    sh: 1: sha256sum: Permission denied
+      | $ docker exec postfiatd-sentry curl -s -m 10 -o /dev/null -w %{http_code}\n -X POST -d {"method":"server_info"} http://127.0.0.1:5005
+      | 200
+      | (exit 0)
+      | $ docker exec postfiatd-sentry curl -s -m 10 -o /dev/null -w %{http_code}\n -X POST -d {"method":"peers"} http://127.0.0.1:5005
+      | 200
+      | (exit 0)
+      | $ docker exec postfiatd-sentry setpriv --reuid=0 --regid=0 --init-groups true
+      | (exit 0)
+      | $ docker exec postfiatd-sentry sh -c cd / && run-parts --report /etc/cron.hourly
+      | (exit 0)
+      | $ docker exec postfiatd-sentry sh -c command -v curl >/dev/null
+      | (exit 0)
+      | $ docker exec postfiatd-sentry sh -c curl -s -m 5 -o /dev/null -w "%{http_code}\n" -d "{\"method\":\"server_info\"}" http://127.0.0.1:${RPC_PORT:-5005}/
+      | 200
+      | (exit 0)
+      | $ docker exec postfiatd-sentry curl -s -m 10 -o /dev/null -w %{http_code}\n -X POST -H Content-Type: application/json -d {"method":"fee"} http://localhost:5005/
+      | 200
+      | (exit 0)
+      | $ docker exec postfiatd-sentry stat -c %a /etc/postfiatd/postfiatd.cfg
+      | 600
+      | (exit 0)
+      | $ docker exec postfiatd-sentry sh -c cat "$1/postfiatd.cfg" /etc/resolv.conf "$1/validators.txt" | wc -l sh /etc/postfiatd
+      | 1684
+      | (exit 0)
+      | $ docker exec postfiatd-sentry sh -c grep -cE "^\[" "$1/postfiatd.cfg"; grep -c -A4 "^\[amendment_majority_time\]" "$1/postfiatd.cfg" sh /etc/postfiatd
+      | 22
+      | 1
+      | (exit 0)
+      | $ docker exec postfiatd-sentry sh -c sha256sum "$1/postfiatd.cfg" | wc -c; sed -n "/^\[node_db\]/,/^\[/p" "$1/postfiatd.cfg" | wc -l sh /etc/postfiatd
+      | 0
+      | 7
+      | (exit 0)
+      | $ docker exec postfiatd-sentry sh -c postfiatd --conf "$1/postfiatd.cfg" server_info 2>/dev/null | wc -l sh /etc/postfiatd
+      | 155
+      | (exit 0)
+      | $ docker exec postfiatd-sentry sh -c du -sb "$1/nudb" | cut -f1 sh /var/lib/postfiatd/db
+      | 10739458
+      | (exit 0)
+      | $ docker exec postfiatd-sentry sh -c du -cb "$1"/*.db "$1"/*.db-* "$1"/*.sqlite 2>/dev/null | tail -n1 sh /var/lib/postfiatd/db
+      | 6394904	total
+      | (exit 0)
+      | $ docker exec postfiatd-sentry df -B1 -P /var/lib/postfiatd/db
+      | Filesystem         1-blocks        Used   Available Capacity Mounted on
+      | /dev/sda1      103865303040 25043611648 78804914176      25% /var/lib/postfiatd/db
+      | (exit 0)
+      | $ docker exec postfiatd-sentry sh -c ls -1 "$1/nudb" 2>/dev/null | wc -l; tail -n 3 /var/log/postfiatd/debug.log | wc -l sh /var/lib/postfiatd/db
+      | 2
+      | 3
+      | (exit 0)
+      | $ docker exec postfiatd-sentry timeout 5 bash -c exec 3<>/dev/tcp/127.0.0.1/5005
+      | (exit 0)
+      | $ docker exec postfiatd-sentry ps -eo pid,comm
+      |     PID COMMAND
+      |       1 postfiatd
+      |       8 cron
+      |     321 ps
+      | (exit 0)
+    2026-11-05T01:28:42Z apply: gate FAIL - 2 seccomp denial(s) since T0: clone3 (postfiatd) x1; clone3 (postfiatd: rpc) x1
+    2026-11-05T01:28:42Z apply: gate failed -> automatic rollback
+    2026-11-05T01:28:42Z rollback (auto) of apply 20261105T012751Z on postfiatd-sentry: back to seccomp default
+    2026-11-05T01:28:44Z rollback: previous container postfiatd-sentry-presc-20261105T012751Z restored as postfiatd-sentry (restart=unless-stopped)
+    2026-11-05T01:28:44Z rollback: /etc/pft-seccomp/pft-postfiatd.json removed (there was none before)
+    2026-11-05T01:29:27Z rollback: health PASS after 5 poll(s) (postfiatd-sentry re-created, seccomp default, init Seccomp 2 1, server_state full, peers 11, confine signature unchanged, 1 pft daemons active)
+    2026-11-05T01:29:33Z integrity: NOT accepted - changed items besides the container/compose: bin:pft-seccomp unit:pft-seccomp.service unit:pft-seccomp.timer
+    2026-11-05T01:29:33Z rollback RESULT: PASS - postfiatd-sentry back under seccomp default
+    (exit 1)
+  FAIL apply -> PASS
+  RESULT: FAIL - apply did not pass (exit 1: 4 = refused, nothing changed; 1/6 = rolled back; 5 = rollback gate failed)
+  (exit 1)
+CHECK FAIL sentry host-run pre RESULT: PASS (5 PASS, 2 FAIL)
+  sentry pre did not pass - stopping (the EXIT trap restores notifiers; the host-run/apply rollbacks own the node)
+  sentry canary did not pass - validator NOT changed; stopping
+  $ sudo -n pft-maint end
+    window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+  removed /etc/pft-maint/ntfy.env (absent before the run)
+  restored local:/etc/postfiat-monitor.env: sha256 matches pre-run copy: yes
+  restored local:/etc/pft-integrity.env: sha256 matches pre-run copy: yes
+  restored relay:/etc/pft-watchdog/ntfy.env: sha256 matches pre-run copy: yes
+  restored relay:/etc/pft-integrity.env: sha256 matches pre-run copy: yes
+  restored relay:/etc/pft-alertpath/ntfy.env: sha256 matches pre-run copy: yes
+  2026-11-05T01:29:49Z starting pft-alert-bridge (ntfy: on)
+  2026-11-05T01:29:54Z pft-alert-bridge listening
+  restored bridge: mounts the operator env file again: yes
+  narrow silence alertname=PFTContainerRestarted until last node start 01:29:33Z + 25 min (1479s); expires by itself
+  catch-all silence expired: HTTP 200

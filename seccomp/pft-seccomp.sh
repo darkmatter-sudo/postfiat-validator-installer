@@ -183,7 +183,8 @@ wait_full() { # CONTAINER -> waits up to SYNC_BUDGET; prints the state
 }
 
 # The read-only commands host add-ons docker exec into the node (pft-retention du/df/ls, pft-egress cat + /dev/tcp,
-# pft-upgradewatch/pft-peerexpose grep, pft-cfglint/pft-integrity sha256sum/sed, pft-mounts/pft-timesync sh -c curl,
+# pft-upgradewatch/pft-peerexpose grep, pft-cfglint sed (pft-integrity hashes the config volume on the host, never via
+# docker exec), pft-mounts/pft-timesync sh -c curl,
 # postfiat-monitor's postfiatd client call). Output is reduced to counts so no config text reaches a log.
 exercise_addons() { # CONTAINER
   local c="$1"
@@ -193,7 +194,7 @@ exercise_addons() { # CONTAINER
   lx "$DOCKER" exec "$c" stat -c %a "$CFG_DIR/postfiatd.cfg"
   lx "$DOCKER" exec "$c" sh -c 'cat "$1/postfiatd.cfg" /etc/resolv.conf "$1/validators.txt" | wc -l' sh "$CFG_DIR"
   lx "$DOCKER" exec "$c" sh -c 'grep -cE "^\[" "$1/postfiatd.cfg"; grep -c -A4 "^\[amendment_majority_time\]" "$1/postfiatd.cfg"' sh "$CFG_DIR"
-  lx "$DOCKER" exec "$c" sh -c 'sha256sum "$1/postfiatd.cfg" | wc -c; sed -n "/^\[node_db\]/,/^\[/p" "$1/postfiatd.cfg" | wc -l' sh "$CFG_DIR"
+  lx "$DOCKER" exec "$c" sh -c 'sed -n "/^\[node_db\]/,/^\[/p" "$1/postfiatd.cfg" | wc -l' sh "$CFG_DIR"
   lx "$DOCKER" exec "$c" sh -c 'postfiatd --conf "$1/postfiatd.cfg" server_info 2>/dev/null | wc -l' sh "$CFG_DIR"
   lx "$DOCKER" exec "$c" sh -c 'du -sb "$1/nudb" | cut -f1' sh "$DB_DIR"
   lx "$DOCKER" exec "$c" sh -c 'du -cb "$1"/*.db "$1"/*.db-* "$1"/*.sqlite 2>/dev/null | tail -n1' sh "$DB_DIR"
@@ -409,15 +410,27 @@ proc_seccomp() { # INSPECT0 -> "MODE FILTERS" from /proc/<pid>/status of the con
 # type=SECCOMP records with action errno (our filter's denials; SECCOMP_FILTER_FLAG_LOG makes the kernel log them)
 # whose subj is the container's AppArmor label (throwaways run under docker-default, the live node under its own
 # label, see README). -> "COUNT<TAB>top3 syscall/comm summary"; rc 1 if no audit log is readable.
-denials() { # SINCE_EPOCH SUBJ
+# The kernel logs every errno answer as code=0x50000 (the errno value is not in the record), so a syscall the profile
+# answers by design with its own errno (Docker's clone3 -> ENOSYS: glibc then falls back to clone) is logged too.
+# Those are counted apart as "expected" and never as denials; only syscalls with such an unconditional rule qualify.
+expected_errno() { # PROFILE_FILE -> comma list of syscalls with an argument-free ERRNO rule whose errno is not EPERM
+  [ -r "${1:-}" ] || return 0
+  jq -r '[.syscalls[]? | select(.action == "SCMP_ACT_ERRNO" and (.errnoRet // 1) != 1 and ((.args // []) | length) == 0
+          and (has("includes") | not) and (has("excludes") | not)) | .names[]] | unique | join(",")' "$1" 2>/dev/null
+}
+denials() { # SINCE_EPOCH SUBJ [PROFILE_FILE]
   local f files=()
   for f in "$R"/var/log/audit/audit.log*; do [ -r "$f" ] && files+=("$f"); done
   [ ${#files[@]} -gt 0 ] || { printf '0\tno readable audit log\n'; return 1; }
   [ -n "$2" ] || { printf '0\tcontainer has no AppArmor label to attribute records\n'; return 0; }
-  py audit --table "$(table_file)" --since "$1" --subj "$2" "${files[@]}" | awk -F'\t' '
+  py audit --table "$(table_file)" --since "$1" --subj "$2" "${files[@]}" | awk -F'\t' -v skip="$(expected_errno "${3:-}")" '
+    BEGIN { ns = split(skip, a, ","); for (i = 1; i <= ns; i++) sk[a[i]] = 1 }
+    $1 == "errno" && ($2 in sk) { e += $5; ek[$2] += $5; next }
     $1 == "errno" { n += $5; k[$2 " (" $3 ")"] += $5 }
     END { s = ""; for (i = 0; i < 3; i++) { b = ""; bn = 0; for (x in k) if (k[x] > bn) { bn = k[x]; b = x }
             if (bn == 0) break; s = s (s == "" ? "" : "; ") b " x" bn; delete k[b] }
+          x = ""; for (y in ek) x = x (x == "" ? "" : ", ") y " x" ek[y]
+          if (e > 0) s = s (s == "" ? "" : "; ") "(not denials: " e + 0 " expected errno answer(s) by design: " x ")"
           printf "%d\t%s\n", n + 0, s }'
 }
 subj_of() { # INSPECT0 -> the AppArmor label audit records carry for the container's processes
@@ -426,7 +439,7 @@ subj_of() { # INSPECT0 -> the AppArmor label audit records carry for the contain
 compose_files() { jq -r '.Config.Labels["com.docker.compose.project.config_files"] // ""' <<<"${1:-$NOJ}"; }
 
 audit_checks() {
-  local c="$1" since="$2" ins st want pm m f found=0 fl d al
+  local c="$1" since="$2" ins st want pm m f found=0 fl d al dx
   al="$(cat "$R/proc/sys/kernel/seccomp/actions_logged" 2>/dev/null)"
   if grep -q '^Seccomp:' "$R/proc/1/status" 2>/dev/null; then add PASS kernel "seccomp filter support (CONFIG_SECCOMP_FILTER)"
   else add FAIL kernel "no Seccomp field in /proc/1/status"; fi
@@ -478,10 +491,10 @@ audit_checks() {
       fi
     fi
   fi
-  if ! d="$(denials "$eff" "$subj")"; then DENIED=0; add FAIL denials "${d#*$'\t'} (run as root)"
+  if ! d="$(denials "$eff" "$subj" "$PROFILE_FILE")"; then DENIED=0; add FAIL denials "${d#*$'\t'} (run as root)"
   else
-    DENIED="${d%%$'\t'*}"
-    if [ "$DENIED" = 0 ]; then add PASS denials "0 seccomp denials (subj ${subj:-none}) in the last $(( $(now) - since ))s$note"
+    DENIED="${d%%$'\t'*}"; dx="${d#*$'\t'}"
+    if [ "$DENIED" = 0 ]; then add PASS denials "0 seccomp denials (subj ${subj:-none}) in the last $(( $(now) - since ))s${dx:+ $dx}$note"
     else add WARN denials "$DENIED seccomp denial(s) in the last $(( $(now) - since ))s: ${d#*$'\t'}$note"
     fi
   fi
@@ -552,8 +565,8 @@ do_ack() { # UNTIL REASON: acknowledge the denials up to UNTIL (after a drill's 
   fi
   [ "$u" -gt "$prev" ] || die "already acknowledged up to $prev" 4
   c="$(pick_container)"; subj="$(subj_of "$(inspect0 "$c")")"
-  a="$(denials "$((prev + 1))" "$subj")" || die "audit log unreadable (run as root)" 2
-  b="$(denials "$((u + 1))" "$subj")" || die "audit log unreadable (run as root)" 2
+  a="$(denials "$((prev + 1))" "$subj" "$PROFILE_FILE")" || die "audit log unreadable (run as root)" 2
+  b="$(denials "$((u + 1))" "$subj" "$PROFILE_FILE")" || die "audit log unreadable (run as root)" 2
   n=$(( ${a%%$'\t'*} - ${b%%$'\t'*} ))
   mkdir -p "$STATE_DIR" || die "cannot create $STATE_DIR" 2
   tmp="$(mktemp "$ACK_FILE.XXXXXX")" || die "cannot write $ACK_FILE" 2
@@ -687,9 +700,9 @@ health_gate() { # MODE(apply|rollback) CONTAINER BEFORE_STARTED_AT WANT_STATE SI
   [ "$mode" = apply ] || return 0
   exercise_live "$c" | sed 's/^/  | /'
   sleep 2
-  d="$(denials "$t0" "$(subj_of "$ins")")" || { echo "$(ts) apply: gate FAIL - audit log unreadable"; return 1; }
+  d="$(denials "$t0" "$(subj_of "$ins")" "$PROFILE_FILE")" || { echo "$(ts) apply: gate FAIL - audit log unreadable"; return 1; }
   if [ "${d%%$'\t'*}" != 0 ]; then echo "$(ts) apply: gate FAIL - ${d%%$'\t'*} seccomp denial(s) since T0: ${d#*$'\t'}"; return 1; fi
-  echo "$(ts) apply: gate PASS - exercise done, seccomp denials since T0: 0"
+  d="${d#*$'\t'}"; echo "$(ts) apply: gate PASS - exercise done, seccomp denials since T0: 0${d:+ $d}"
 }
 
 integrity_accept() { # CONTAINER REASON: accept a new baseline only if every changed item is ours

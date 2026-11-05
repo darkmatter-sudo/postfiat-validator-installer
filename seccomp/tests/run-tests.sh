@@ -173,6 +173,28 @@ expect "malformed ack file: every record counted again" denials WARN "3 seccomp 
 printf '{"until":%s}\n' "$NOW" > "$A/root/var/lib/pft-seccomp/denials-ack.json"; run audit
 expect "ack file without a reason: FAIL" denials-ack FAIL malformed
 expect "ack file without a reason: every record counted again" denials WARN "3 seccomp denial"
+# expected errno answers: the kernel logs clone3 -> ENOSYS (Docker's rule, kept) as code=0x50000 like a denial
+# (live run 11, sentry canary: the gate failed on 2 such records of postfiatd's own thread creation)
+jq -e '[.syscalls[] | select(.action == "SCMP_ACT_ERRNO" and .errnoRet == 38) | .names[]] == ["clone3"]' "$PROFILE" >/dev/null \
+  && ok "profile: unconditional clone3 -> ENOSYS rule present" || ko "profile: clone3 rule" "$(jq -c '.syscalls[] | select(.action != "SCMP_ACT_ALLOW")' "$PROFILE")"
+c3() { rec $((NOW - 50)) 0x50000 pft-postfiatd 435 postfiatd; rec $((NOW - 40)) 0x50000 pft-postfiatd 435 postfiatd; }
+mk run applied; c3; rec $((NOW - 30)) 0x50000 pft-postfiatd 101 sh; run audit
+expect "clone3 ENOSYS records are not denials: only the ptrace record counted" denials WARN " 1 seccomp denial\(s\) in the last [0-9]+s: ptrace \(sh\) x1; \(not denials: 2 expected errno answer\(s\) by design: clone3 x2\)"
+mk run applied; c3; run audit
+expect "only clone3 ENOSYS records: denials PASS, expected answers shown" denials PASS "0 seccomp denials \(subj pft-postfiatd\) in the last [0-9]+s \(not denials: 2 expected errno answer\(s\) by design: clone3 x2\)"
+[ "$RC" = 0 ] && ok "only clone3 ENOSYS records: audit exit 0" || ko "clone3 only: rc=$RC" "$OUT"
+run audit --json
+jq -e '.denied_events == 0' <<<"$OUT" >/dev/null && ok "only clone3 ENOSYS records: --json denied_events 0" || ko "clone3 --json" "$OUT"
+mk run; c3; run audit
+expect "no profile file (Docker's default): clone3 records counted (nothing to attribute them to)" denials WARN "2 seccomp denial\(s\).*clone3 \(postfiatd\) x2"
+mk run applied; jq '.syscalls |= map(if .names == ["clone3"] then .errnoRet = 1 else . end)' "$PROFILE" > "$A/root/etc/pft-seccomp/pft-postfiatd.json"; c3; run audit
+expect "clone3 rule answering EPERM: clone3 records are denials" denials WARN "2 seccomp denial\(s\).*clone3 \(postfiatd\) x2"
+mk run applied; jq '.syscalls |= map(if .names == ["clone3"] then .excludes = {"caps": ["CAP_SYS_ADMIN"]} else . end)' "$PROFILE" > "$A/root/etc/pft-seccomp/pft-postfiatd.json"; c3; run audit
+expect "conditional clone3 rule (excludes caps): clone3 records are denials" denials WARN "2 seccomp denial\(s\).*clone3 \(postfiatd\) x2"
+mk run applied; jq '.syscalls |= map(if .names == ["clone3"] then .args = [{"index": 0, "op": "SCMP_CMP_EQ", "value": 0}] else . end)' "$PROFILE" > "$A/root/etc/pft-seccomp/pft-postfiatd.json"; c3; run audit
+expect "argument-filtered clone3 rule: clone3 records are denials" denials WARN "2 seccomp denial\(s\).*clone3 \(postfiatd\) x2"
+mk run applied; c3; rec $((NOW - 30)) 0x50000 pft-postfiatd 101 sh; run ack-denials --reason "drill" --until $((NOW - 1)) --yes
+[ "$RC" = 0 ] && grep -q 'ack-denials: 1 seccomp denial(s) after' <<<"$OUT" && ok "ack-denials: clone3 ENOSYS records not counted as acknowledged denials" || ko "ack clone3: rc=$RC" "$OUT"
 # pull
 mk run applied; run audit --textfile; mv "$A/root/textfile/pft_seccomp_validator.prom" "$A/peer.prom"; sed -i 's/host="validator"/host="sentry"/' "$A/peer.prom"
 printf 'PULL_SSH=%s\n' "$A/s/fakessh" > "$A/root/etc/pft-seccomp.env"
@@ -319,6 +341,10 @@ mk run; touch "$A/d/deny_on_exercise"; run apply --profile-file "$PROFILE" --yes
 grep -q 'gate FAIL - 1 seccomp denial(s) since T0: ptrace (run-parts)' <<<"$OUT" && ok "auto: denial during the exercise fails the gate" || ko "auto: denial" "$OUT"; auto_rb "auto: denial"
 mk run; touch "$A/d/deny_on_addon"; run apply --profile-file "$PROFILE" --yes
 grep -q 'gate FAIL - 1 seccomp denial(s) since T0: mount (du)' <<<"$OUT" && ok "auto: denial on an add-on command fails the gate" || ko "auto: add-on" "$OUT"; auto_rb "auto: add-on denial"
+mk run; touch "$A/d/clone3_on_exec"; run apply --profile-file "$PROFILE" --yes
+[ "$RC" = 0 ] && grep -qE 'gate PASS - exercise done, seccomp denials since T0: 0 \(not denials: [0-9]+ expected errno answer\(s\) by design: clone3 x[0-9]+\)' <<<"$OUT" \
+  && ok "gate: the node's clone3 -> ENOSYS records do not fail the gate (named as expected)" || ko "gate clone3: rc=$RC" "$OUT"
+command grep -q 'syscall=435 ' "$A/root/var/log/audit/audit.log" && ok "gate clone3: records really written (control)" || ko "gate clone3: no records written"
 mk run; touch "$A/d/fail_run"; run apply --profile-file "$PROFILE" --yes; rm "$A/d/fail_run"; auto_rb "auto: docker run failed"
 mk run; PFT_SC_INJECT=health run apply --profile-file "$PROFILE" --yes
 grep -q 'injected failure' <<<"$OUT" && ok "auto: PFT_SC_INJECT=health named" || ko "auto: inject" "$OUT"; auto_rb "auto: injected"

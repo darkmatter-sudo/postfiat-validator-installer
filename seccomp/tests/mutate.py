@@ -378,6 +378,48 @@ MUTANTS = [
         'echo "$(ts) apply: resources not restored -> automatic rollback"; do_rollback auto && return 1; return 5;',
         'echo "$(ts) apply: resources not restored -> automatic rollback"; do_rollback auto; return 1;',
     ),
+    (
+        "M61",
+        "denials: expected-errno skip applied to every errno record",
+        '$1 == "errno" && ($2 in sk) {',
+        '$1 == "errno" {',
+    ),
+    (
+        "M62",
+        "expected_errno: EPERM rules qualify as expected",
+        "(.errnoRet // 1) != 1 and ",
+        "",
+    ),
+    (
+        "M63",
+        "expected_errno: argument-filtered rules qualify as expected",
+        " and ((.args // []) | length) == 0",
+        "",
+    ),
+    (
+        "M64",
+        "expected_errno: conditional (includes/excludes) rules qualify as expected",
+        '(has("includes") | not) and (has("excludes") | not)',
+        "true",
+    ),
+    (
+        "M65",
+        "audit: profile not passed to denials (expected answers counted as denials)",
+        'denials "$eff" "$subj" "$PROFILE_FILE"',
+        'denials "$eff" "$subj"',
+    ),
+    (
+        "M66",
+        "apply gate: profile not passed to denials (clone3 ENOSYS fails the gate, live run 11)",
+        'denials "$t0" "$(subj_of "$ins")" "$PROFILE_FILE"',
+        'denials "$t0" "$(subj_of "$ins")"',
+    ),
+    (
+        "M67",
+        "ack-denials: profile not passed to denials (expected answers acknowledged as denials)",
+        'a="$(denials "$((prev + 1))" "$subj" "$PROFILE_FILE")"',
+        'a="$(denials "$((prev + 1))" "$subj")"',
+    ),
 ]
 # Equivalent mutants (no input can reach the difference) are documented here instead of counted.
 #  M54 lx "return $rc" -> "return 0": lx is used only in the exercise steps (exercise_addons, exercise, exercise_live,

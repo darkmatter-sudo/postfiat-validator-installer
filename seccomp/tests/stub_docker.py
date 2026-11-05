@@ -12,7 +12,8 @@ label_on_recreate (every created container reports this AppArmor label, whatever
 seccomp_ignored (every created container keeps Docker's default: the seccomp= option is dropped), nofilter
 (proc status says Seccomp: 0 for containers with a seccomp= option), fail_run, fail_compose_up (one-shot), fail_update, deny_on_exercise (run-parts appends a
 type=SECCOMP errno record with subj=<the container's AppArmor label> to $AUDIT_LOG), deny_on_addon (the same for
-exercise_addons' `du -sb`).
+exercise_addons' `du -sb`), clone3_on_exec (every `curl` exec appends a clone3 errno record of comm postfiatd: the
+node's own thread creation, answered ENOSYS by the profile's clone3 rule and logged like any errno action).
 `docker run` builds the new container from its ARGUMENTS, so the tests check that apply's run args really
 reproduce the old container (a lost flag shows up as a confine signature change).
 """
@@ -271,6 +272,7 @@ def do_exec(args):
     for trig, kn, comm, exe, nr in (
         ("run-parts", "deny_on_exercise", "run-parts", "/usr/bin/run-parts", 101),
         ("du -sb", "deny_on_addon", "du", "/usr/bin/du", 165),
+        ("curl", "clone3_on_exec", "postfiatd", "/usr/local/bin/postfiatd", 435),
     ):
         if trig in cmd and knob(kn) is not None:
             with open(os.environ["AUDIT_LOG"], "a") as f:

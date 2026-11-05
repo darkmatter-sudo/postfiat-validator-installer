@@ -1,0 +1,31 @@
+$ cat task_d4a0a82d-19-readback.sh
+#!/usr/bin/env bash
+# Operator-topic read-back for seccomp live run 11 (its stop path skipped step 9). Counts only; topics never printed.
+set -u
+since="$1"; NTFY=https://ntfy.sh; RELAY=relay
+echo "# seccomp live run 11 operator-topic read-back - $(date -u +%FT%TZ) - since $(date -u -d "@$since" +%FT%TZ)"
+echo "OS: $(sed -n 's/^PRETTY_NAME="\(.*\)"$/\1/p' /etc/os-release)"
+OPS="$(mktemp)"; trap 'rm -f "$OPS"' EXIT
+{ for f in /etc/postfiat-monitor.env /etc/pft-integrity.env; do sudo -n sed -n 's/^NTFY_TOPIC=//p' "$f"; done
+  for f in /etc/pft-watchdog/ntfy.env /etc/pft-integrity.env /etc/pft-alertpath/ntfy.env; do ssh -o BatchMode=yes "$RELAY" "sudo -n sed -n 's/^NTFY_TOPIC=//p' $f"; done
+  sed -n 's|^NTFY_URL=.*/||p' "$HOME/.config/pft-alerts/ntfy.env"
+  sed -n 's/^NTFY_TOPIC=//p' /opt/pft-agent/config.env 2>/dev/null
+} | tr -d "\"'\r" | grep -E '^[A-Za-z0-9_-]{8,}$' | sort -u > "$OPS"
+echo "operator topics: $(wc -l < "$OPS") (not printed)"
+i=0; bad=0
+while read -r t; do
+  i=$((i + 1))
+  if out="$(curl -s --max-time 20 "$NTFY/$t/json?poll=1&since=$since")"; then
+    n="$(jq -c 'select(.event == "message")' <<<"$out" 2>/dev/null | wc -l)"; echo "operator #$i topic: $n message(s)"
+    [ "$n" = 0 ] || bad=$((bad + 1))
+  else echo "operator #$i topic: could not be read"; bad=$((bad + 1)); fi
+done < "$OPS"
+echo "RESULT: $i topic(s), $bad with messages or unreadable"
+$ bash task_d4a0a82d-19-readback.sh 1793841244
+# seccomp live run 11 operator-topic read-back - 2026-11-05T01:49:51Z - since 2026-11-05T01:14:04Z
+OS: Ubuntu 22.04.5 LTS
+operator topics: 2 (not printed)
+operator #1 topic: 0 message(s)
+operator #2 topic: 0 message(s)
+RESULT: 2 topic(s), 0 with messages or unreadable
+(exit 0)
