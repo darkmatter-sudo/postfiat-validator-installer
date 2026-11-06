@@ -1,0 +1,73 @@
+pft-schedaudit two-host tamper drill - 2026-11-06T23:12:38Z - Ubuntu 22.04.5 LTS - run 20261106T231238Z
+repo HEAD 44c862a344a91e52e560c473ff24109bd0e55b57 (clean: yes)
+sha256 bb0b8327f4d29aaf048669e16fcd2ddd3f2d8d8dc67553f031a25f2c2fd3fefa schedaudit/drill/tamper-run.sh
+sha256 cebe0936e5e28126d9c5ebf63adcc6bedad169406c840106044d0c952c1caab7 schedaudit/pft-schedaudit.sh
+sha256 d0fd11a79c456e118ad9d0c2848b20d53f316f60335adaa4b2948626206f8071 schedaudit/schedaudit_lib.py
+sha256 34dd9127efa670162cbb80c951915c83d49ec8ead1a6d4fbb5c4ac69e265ffac alerts/schedaudit.rules.yml
+sha256 86035cd2b9acfd06d0ab478223c08c86460e1f11e08230ad0d6d3b42b92e4ddc alerts/ntfy_bridge.py
+sha256 f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8 peerexpose/drill/redact.py
+
+== 0. preflight (nothing changed yet)
+$ sha256sum schedaudit/pft-schedaudit.sh schedaudit/schedaudit_lib.py | cut -c1-64; sudo -n sha256sum /usr/local/bin/pft-schedaudit /usr/local/lib/pft-schedaudit/schedaudit_lib.py | cut -c1-64; R 'sha256sum /usr/local/bin/pft-schedaudit /usr/local/lib/pft-schedaudit/schedaudit_lib.py | cut -c1-64'
+  cebe0936e5e28126d9c5ebf63adcc6bedad169406c840106044d0c952c1caab7
+  d0fd11a79c456e118ad9d0c2848b20d53f316f60335adaa4b2948626206f8071
+  cebe0936e5e28126d9c5ebf63adcc6bedad169406c840106044d0c952c1caab7
+  d0fd11a79c456e118ad9d0c2848b20d53f316f60335adaa4b2948626206f8071
+  cebe0936e5e28126d9c5ebf63adcc6bedad169406c840106044d0c952c1caab7
+  d0fd11a79c456e118ad9d0c2848b20d53f316f60335adaa4b2948626206f8071
+  (exit 0)
+CHECK ok   installed pft-schedaudit + helper = repo bytes on both hosts
+$ on relay 'sudo -n pft-schedaudit audit | grep -E "^SUMMARY"'
+  SUMMARY entries=66 enabled=53 findings=0 allowed=0 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+  (exit 0)
+CHECK ok   sentry: audit 0 unexpected findings, 0 new/removed, baseline yes
+$ on local 'sudo -n pft-schedaudit audit | grep -E "^SUMMARY"'
+  SUMMARY entries=91 enabled=78 findings=1 allowed=1 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+  (exit 0)
+CHECK ok   validator: audit 0 unexpected findings, 0 new/removed, baseline yes
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=ALERTS{alertname!="PFTAlertPipelineWatchdog"}' | jq -r '.data.result | length'
+  0
+  (exit 0)
+CHECK ok   no alert but the pipeline watchdog pending/firing in Prometheus
+$ curl -s http://127.0.0.1:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'
+  0
+  (exit 0)
+CHECK ok   no active silence (an earlier rollout silence would swallow the drill alert)
+$ curl -s http://127.0.0.1:9090/api/v1/rules | jq -r '.data.groups[] | select(.name == "pft-schedaudit") | .rules[] | [.name, .health] | @tsv'
+  PFTSchedEntryUnexpected	ok
+  PFTSchedauditStale	ok
+  (exit 0)
+CHECK ok   schedaudit rules loaded and healthy
+CHECK ok   bridge mounts the operator env file
+CHECK ok   sentry pft-alertpath-check.timer active, check OK
+  operator topics to watch: 2 (not printed)
+CHECK ok   operator topics found
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+CHECK ok   postfiatd-sentry full or proposing (full)
+CHECK ok   pft-integrity PASS on sentry
+CHECK ok   no pft-maint window open on sentry
+CHECK ok   postfiatd full or proposing (full)
+CHECK ok   pft-integrity PASS on validator
+CHECK ok   no pft-maint window open on validator
+$ redact.py control --literals <literals>
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (17/17)
+CHECK ok   redaction positive control
+
+PREFLIGHT_ONLY: stopping before step 1, nothing changed (ready: yes)

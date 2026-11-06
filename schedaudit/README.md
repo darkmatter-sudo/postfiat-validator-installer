@@ -20,6 +20,7 @@ accepted one, exports the result as textfile metrics, and gives `pft-integrity` 
 | `tests/fixtures/` | `systemctl show` output captured on the validator (TZ=UTC): pft-jobwatch, pft-heartbeat (monotonic), xfs_scrub_all (disabled), mdmonitor-oneshot (`ExecStart` `path=sh`), plus variants with only the named fields changed (unit not found, binary missing, unpackaged binary, `User=alice`, masked) |
 | `install.sh` | install/uninstall the collector (`--host NAME --reason TEXT`) or the validator's pull of the sentry file (`--pull`) |
 | `systemd/` | `pft-schedaudit.service/.timer` (both hosts, every 5 min at :20; sandboxed: no network, only `CAP_DAC_READ_SEARCH`) and `pft-schedaudit-pull.service/.timer` (validator, :01:50 every 5 min) |
+| `drill/` | recorded runners: `checks-run.sh` (lint + suite + mutants), `install-run.sh`, `update-run.sh` (pft-fleet in a pft-maint window), `tamper-run.sh` (two-host tamper drill on throwaway topics; `PREFLIGHT_ONLY=1` changes nothing) |
 | `pft-schedaudit.env.example` | `/etc/pft-schedaudit.env` (root-owned 0600): `HOST_LABEL`, `ALLOW_FILE`, `PULL_SSH` |
 | `../alerts/schedaudit.rules.yml` | `PFTSchedEntryUnexpected`, `PFTSchedauditStale` (+ `schedaudit.tests.yml`, promtool) |
 | `../integrity/pft-integrity.sh` | `collect_sched`: every path from `pft-schedaudit scope` becomes a `sched:PATH` item |
@@ -157,6 +158,9 @@ cd alerts && promtool test rules schedaudit.tests.yml
 | `logs/04-checks.log` | the same checks at `1ad593b` (package ids) | PASS: suite 107/107, mutants 60/60 caught, 0 orphans |
 | `logs/05-update-preflight.log` | `PREFLIGHT_ONLY=1 drill/update-run.sh` at `7e923ec` | 6/6 checks ok |
 | `logs/06-update.log` | two-host update to `7e923ec` through pft-fleet in a pft-maint window: 28 re-identified ids per host (every NEW id has a REMOVED partner with the same SOURCE/NAME), accepted with a reason | PASS, 26/26 checks ok |
+| `logs/07-tamper-preflight.log` | `PREFLIGHT_ONLY=1 drill/tamper-run.sh` at `44c862a` (changes nothing) | 16/16 checks ok |
+| `logs/08-tamper-run02-harness-fail.log` | tamper drill run 02 at `44c862a` | FAIL 4 of 68 checks, all the harness's own expectation: it wanted an `untracked` finding for the drill file, but the scope hook hands every entry file to pft-integrity, so a new cron.d file is never `untracked` (by design). Every alert, apply, negative-control, restore and read-back check passed; fixed in `7b8f2f2` |
+| `logs/09-tamper.log` | two-host tamper drill run 03 at `7b8f2f2` | PASS, 75/75 checks ok |
 
 Found → fixed → verified (log 03):
 
@@ -174,5 +178,25 @@ Since log 03: package-verified run-parts scripts and packaged timers are identif
 [What is inventoried](#what-is-inventoried)), installed on both hosts by update run 06 (28 ids re-identified and
 accepted per host, 0 unexpected afterwards, operator topics 0 messages).
 
-Pending: the non-executing tamper drill (a never-firing cron.d entry, `PFTSchedEntryUnexpected` FIRING then
-RESOLVED on a throwaway topic, `apply` on a deliberately 0666 drill file).
+Tamper drill (log 09, `drill/tamper-run.sh`, throwaway topics only, inside a pft-maint window on both hosts):
+
+| Step | Time (UTC) | What happened (both hosts) |
+|---|---|---|
+| tamper | 23:27:09 | `/etc/cron.d/pft-sadrill`, root:root, mode 0666, one line `0 0 31 2 * root /usr/bin/touch /run/pft-sadrill.ran` (31 February: never fires) |
+| found | 23:27-23:29 | audit: `CRIT chain_writable ... mode 0666` + `NEW` entry; `pft_schedaudit_unexpected{kind="new"} 1`, `{kind="finding"} 1`; pft-integrity (read-only verify) also reports `sched:/etc/cron.d/pft-sadrill added` + `sched:/etc/cron.d changed listing` |
+| alert | 23:29:36 | `[FIRING] PFTSchedEntryUnexpected x4` (new + finding, sentry + validator) on the throwaway topic |
+| fixed | 23:30:15 | `pft-schedaudit apply`: `FIXED /etc/cron.d/pft-sadrill 0666 -> 0644` in apply.log; owner and sha256 unchanged; 0 unexpected findings, entry still `NEW` (not accepted) |
+| resolved | 23:31:36 | `[RESOLVED] PFTSchedEntryUnexpected x2` (finding, both hosts); `new` still firing for both |
+| removed | 23:31:41 | drill file deleted; all 8 `unexpected` series 0 |
+| resolved | 23:32:36 | `[RESOLVED] PFTSchedEntryUnexpected x2` (new, both hosts) |
+
+Negative control: `/run/pft-sadrill.ran` never existed on either host, and cron's own journal shows only
+`INSECURE MODE (group/other writable)` while the file was 0666, then `RELOAD` after the fix: never a `CMD` line.
+Restore: privesc re-run (PASS both), schedaudit 0 unexpected, drain, bridge back on the operator env, pft-maint target
+back (absent again), pft-keyescrow drift 0, silence expired with nothing else active. The operator topics got 0
+messages during the run. pft-integrity PASS on both hosts (213 / 132 unchanged), both nodes `full`.
+
+Limits of the drill: it proves detection of a new + group/other-writable root cron.d entry, the permissions-only
+fix and alert delivery end to end. It does not run a job (by design), and the other finding classes
+(`chain_owner`, `writable_dir`, `pkg_modified`, `nonsystem_user`, `timer_target`) are covered by the offline
+fixtures and mutants (logs 01/04), not by a live tamper.
