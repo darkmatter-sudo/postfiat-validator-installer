@@ -244,11 +244,18 @@ check "drill file content = the line above on both hosts" "$(ok_if '[ "$(grep -c
 T_TAMPER="$(ts)"
 x "collect_now; for h in validator sentry; do grep -E '^pft_schedaudit_(up|unexpected)\{' $TF/pft_schedaudit_\$h.prom; done"
 for hl in sentry validator; do
-  check "$hl textfile: unexpected new 1, finding >= 2 (chain_writable + untracked)" "$(ok_if '[ "$(ux "$hl" new)" = 1 ] && [ "$(ux "$hl" finding)" -ge 2 ]')" "new $(ux "$hl" new), finding $(ux "$hl" finding)"
+  # finding = chain_writable only: the scope hook hands every entry file to pft-integrity, so a new cron.d file is
+  # never `untracked` (run 02 expected >= 2 and failed on that); the integrity check below shows the other layer
+  check "$hl textfile: unexpected new 1, finding 1 (chain_writable)" "$(ok_if '[ "$(ux "$hl" new)" = 1 ] && [ "$(ux "$hl" finding)" = 1 ]')" "new $(ux "$hl" new), finding $(ux "$hl" finding)"
 done
 for h in relay local; do
   x "on $h 'sudo -n pft-schedaudit audit' | grep -E 'pft-sadrill|^SUMMARY'"
+  check "$(lb "$h"): no untracked finding for the drill file (scope hook)" "$(ok_if '! grep -q "untracked	cron\.d/pft-sadrill" <<<"$XOUT"')"
   check "$(lb "$h"): CRIT chain_writable on $DF (mode 666) + NEW entry cron.d/pft-sadrill" "$(ok_if 'grep -qE "^CRIT	chain_writable	cron\.d/pft-sadrill@[0-9a-f]+	$DF	" <<<"$XOUT" && grep -qE "new=1 " <<<"$XOUT"')"
+done
+for h in relay local; do
+  x "on $h 'sudo -n pft-integrity verify' | grep -E 'pft-sadrill|sched:/etc/cron.d|^RESULT' | sed -E 's/ +sha256.*//'"
+  check "$(lb "$h"): pft-integrity (read-only verify, no --notify) also sees the drill file: WARN, sched:/etc/cron.d changed" "$(ok_if 'grep -q "sched:/etc/cron.d" <<<"$XOUT" && grep -qE "^RESULT: (WARN|FAIL)" <<<"$XOUT"')"
 done
 x "both 'sudo -n pft-schedaudit apply --dry-run | grep -E \"^PLAN|pft-sadrill\"'"
 check "apply --dry-run plans exactly the drill file on each host (PLAN lines: 2)" "$(ok_if '[ "$(grep -c "^PLAN" <<<"$XOUT")" = 2 ] && [ "$(grep "^PLAN" <<<"$XOUT" | grep -vc "$DF")" = 0 ]')"
@@ -263,8 +270,14 @@ check "apply.log records the change on both hosts" "$(ok_if '[ "$(grep -v "^FIXE
 x "collect_now; for h in validator sentry; do grep -E '^pft_schedaudit_unexpected\{' $TF/pft_schedaudit_\$h.prom; done"
 for h in relay local; do
   x "on $h 'sudo -n pft-schedaudit audit' | grep -E 'pft-sadrill|^SUMMARY'"
-  check "$(lb "$h"): chain_writable on the drill file gone; still NEW (not accepted) + untracked" "$(ok_if '! grep -q "chain_writable	cron\.d/pft-sadrill" <<<"$XOUT" && grep -q "untracked	cron\.d/pft-sadrill" <<<"$XOUT" && grep -q "new=1 " <<<"$XOUT"')"
+  check "$(lb "$h"): chain_writable on the drill file gone, 0 unexpected findings; still NEW (not accepted)" "$(ok_if '! grep -q "chain_writable	cron\.d/pft-sadrill" <<<"$XOUT" && grep -q "unexpected_findings=0 new=1 " <<<"$XOUT"')"
 done
+for hl in sentry validator; do
+  check "$hl textfile after apply: finding 0, new 1" "$(ok_if '[ "$(ux "$hl" finding)" = 0 ] && [ "$(ux "$hl" new)" = 1 ]')" "new $(ux "$hl" new), finding $(ux "$hl" finding)"
+done
+wait_kinds none RESOLVED finding
+F2="$(pq 'ALERTS{alertname="PFTSchedEntryUnexpected",alertstate="firing",kind="new"}')"
+check "kind=new still firing for both hosts after apply (the entry is still not accepted)" "$(ok_if '[ "$(grep -cE "host=(sentry|validator)" <<<"$F2")" = 2 ]')"
 
 echo; echo "== 4. REMOVE the drill file on both hosts -> RESOLVED"
 x "both 'sudo -n rm -f $DF && test ! -e $DF && echo removed'"
@@ -274,12 +287,12 @@ x "collect_now; for h in validator sentry; do grep -E '^pft_schedaudit_unexpecte
 for hl in sentry validator; do
   check "$hl textfile: unexpected new 0, finding 0, removed 0" "$(ok_if '[ "$(ux "$hl" new)" = 0 ] && [ "$(ux "$hl" finding)" = 0 ] && [ "$(ux "$hl" removed)" = 0 ]')"
 done
-wait_kinds none RESOLVED new finding
+wait_kinds none RESOLVED new
 
 echo; echo "== 5. negative control: the drill job never ran"
 x "both 'test ! -e $MK && echo marker-absent'"
 check "marker $MK absent on both hosts" "$(ok_if '[ "$(grep -cx marker-absent <<<"$XOUT")" = 2 ]')"
-x "both 'sudo -n journalctl --utc -u cron --since @$since --no-pager -o cat | grep -E \"pft-sadrill|$MK\" || echo \"(no cron line names the drill file)\"'"
+x "both 'sudo -n journalctl --utc _COMM=cron --since @$since --no-pager -o cat | grep -E \"pft-sadrill|$MK\" || echo \"(no cron line names the drill file)\"'"
 check "no cron CMD line for the drill job on either host" "$(ok_if '! grep -q "CMD" <<<"$XOUT"')"
 
 echo; echo "== 6. restore (privesc re-run, drain, bridge, window, target), read back"
