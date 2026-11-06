@@ -173,6 +173,10 @@ x "curl -s $PROM/api/v1/query --data-urlencode 'query=pft_jobwatch_up' | jq -r '
 x "curl -s $PROM/api/v1/query --data-urlencode 'query=pft_jobwatch_jobs' | jq -r '.data.result[] | \"\(.metric.host) \(.metric.state) \(.value[1])\"' | sort"
 x "curl -s $PROM/api/v1/query --data-urlencode 'query=ALERTS{alertname=~\"PFTJob.*\"}' | jq -r '.data.result | length'"
 [ "$XOUT" = 0 ] || { echo "  a PFTJob* alert is already active (investigate it first) - stopping" >&2; exit 4; }
+# run 06: the install run's rollout silence (alertname=~"PFTJob...|...", left to run out) would have swallowed every
+# drill notification. Refuse while any active silence has a matcher naming PFTJob.
+x "curl -s $AM/api/v2/silences | jq -r '[.[] | select(.status.state == \"active\") | select(any(.matchers[]; .isEqual and (.value | test(\"PFTJob\"))))] | length'"
+[ "$XOUT" = 0 ] || { echo "  an active silence covers PFTJob* alerts - stopping" >&2; exit 4; }
 x "curl -s $PROM/api/v1/rules | jq -r '.data.groups[] | select(.name == \"pft-jobwatch\") | .rules[] | [.name, .health] | @tsv'"
 [ "$(grep -cE '^PFTJob(Failed|Missed|Disabled|watchStale)	ok$' <<<"$XOUT")" = 4 ] || { echo "  jobwatch rules not loaded/healthy - stopping" >&2; exit 4; }
 [ -r "$BRIDGE_ENV" ] || { echo "  bridge env not readable - stopping" >&2; exit 3; }
@@ -242,7 +246,9 @@ echo "  $UD/$JOB:"; printf '%s\n' "$TMR_TXT" | sed 's/^/    | /'
 B64S="$(printf '%s\n' "$SVC_TXT" | base64 -w0)"; B64T="$(printf '%s\n' "$TMR_TXT" | base64 -w0)"
 DRILL_UNITS=1
 x "both \"sudo -n install -d -m 755 $FD && echo $B64S | base64 -d | sudo -n tee $UD/$SVC >/dev/null && echo $B64T | base64 -d | sudo -n tee $UD/$JOB >/dev/null && sudo -n systemctl daemon-reload && sudo -n systemctl enable --runtime --now $JOB 2>&1 && systemctl show -p UnitFileState,ActiveState --value $JOB | tr '\n' ' '; echo\""
-check "drill job installed + enabled (runtime) on both hosts" "$(ok_if '[ "$XRC" = 0 ] && [ "$(grep -c "enabled-runtime active" <<<"$XOUT")" = 2 ]')"
+# systemctl show prints properties in its own order (ActiveState first), whatever the -p order (run 06 checked the
+# wrong order and failed a correct install)
+check "drill job installed + enabled (runtime) on both hosts" "$(ok_if '[ "$XRC" = 0 ] && [ "$(grep -cE "^(active enabled-runtime|enabled-runtime active) *$" <<<"$XOUT")" = 2 ]')"
 sleep 75
 x "both \"systemctl show -p Result,ExecMainStatus --value $SVC | tr '\n' ' '; echo\"; collect_now; jobline"
 for hl in sentry validator; do
