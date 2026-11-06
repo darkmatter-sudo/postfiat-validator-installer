@@ -21,6 +21,7 @@ starts, stops, enables or resets a unit).
 | `pft-jobwatch.env.example` | `/etc/pft-jobwatch.env` (root-owned 0600): `HOST_LABEL`, `JOB_GLOBS`, `PULL_SSH` |
 | `drill/checks-run.sh` | recorded lint + suite + promtool + mutants run at a pushed commit |
 | `drill/install-run.sh` | recorded two-host install through pft-fleet in a pft-maint window (throwaway [MAINT] topic; keyescrow re-run + drift 0 check after the restore) |
+| `drill/alert-run.sh` | step-4 alert drill: a runtime drill job (`/run/systemd/system`, outside pft-integrity's set) on both hosts at once, succeed -> fail -> disable -> hang (missed) -> remove; PFTJobFailed, PFTJobDisabled (x2), PFTJobMissed FIRING then RESOLVED for both hosts on a throwaway topic (bridge re-created on a temp env, alertpath paused, everything else silenced), operator topics read back; `PREFLIGHT_ONLY=1` changes nothing |
 
 Rules: `../alerts/jobwatch.rules.yml`, tests `../alerts/jobwatch.tests.yml`; the rule file is listed in
 `../alerts/prometheus.yml`; `../rulecheck/pft-rulecheck*.conf.example` grade `pft_jobwatch_*.prom` stale after 15 min.
