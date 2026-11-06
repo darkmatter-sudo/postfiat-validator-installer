@@ -134,4 +134,6 @@ PFTJobDisabled (never PFTJobFailed).
 | `logs/10-update-run10.log` | fleet update @87eb49f (size fix) | PASS 24/0: validator file back under 64 KiB, `pft_jobwatch_up 1` for both hosts in Prometheus (49/26 timer series, 0 `exported_job`), integrity PASS, fleet CURRENT, keyescrow drift 0, operator topics 0 |
 | `logs/11-alert-preflight-run13.log` | drill preflight @87eb49f | ready |
 
-Drill re-run (run 14) results follow.
+| `logs/12-alert-drill-run14-stopped.log` | drill run 14 @87eb49f | **label fix verified live**: PFTJobFailed fired for exactly the two drill series (`host=sentry/validator, timer=pft-jobwatch-drill.timer`) 197 s after the fail flag and resolved; succeed phase quiet; the bridge delivered every [FIRING]/[RESOLVED] (HTTP 200). But the 4 throwaway-topic checks FAILed: a checker bug (`ok_if` evaluates `$1..$3` as its own arguments). Stopped in step 4 with SIGINT to the drill shell only; its restore completed (units, bridge, alertpath, silence), operator bridge sent 0 messages afterwards. Fixed @(next commit): named locals, tested on a synthetic positive/negative case |
+
+Drill re-run (run 15) results follow.

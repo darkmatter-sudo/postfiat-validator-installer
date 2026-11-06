@@ -82,7 +82,9 @@ jobline() { # print the drill job's flags for both hosts from the two textfiles 
 flag() { grep -E "^$1\{host=\"$2\"\} " <<<"$XOUT" | awk '{print $2}'; } # METRIC HOST (from a jobline XOUT)
 firing() { pq "ALERTS{alertname=\"$1\",alertstate=\"firing\",timer=\"$JOB\"}"; }
 wait_fire() { # ALERTNAME PHRASE MIN_MSGS: Prometheus firing for both hosts, then >= MIN_MSGS [FIRING] per host
-  local t0 F w ok hl; t0="$(date -u +%s)"; F=""
+  # ok_if evals its condition inside ok_if, where $1..$3 are ok_if's own arguments (run 14 failed delivered messages
+  # on that): the conditions use these named locals, which eval sees through bash's dynamic scope
+  local an="$1" ph="$2" mn="$3" t0 F w ok hl; t0="$(date -u +%s)"; F=""
   while [ $(( $(date -u +%s) - t0 )) -lt "$FIRE_WAIT" ]; do
     F="$(firing "$1")"; [ "$(grep -cE 'host=(sentry|validator)' <<<"$F")" -ge 2 ] && break; sleep 15
   done
@@ -93,11 +95,11 @@ wait_fire() { # ALERTNAME PHRASE MIN_MSGS: Prometheus firing for both hosts, the
     [ "$ok" = 2 ] && break; w=$((w + 15)); [ "$w" -le 300 ] || break; sleep 15
   done
   for hl in sentry validator; do
-    check "[FIRING] $1 '$hl: scheduled job $JOB $2...' on the throwaway topic (>= $3)" "$(ok_if '[ "$(n_msgs FIRING "$1" "$hl" "$2")" -ge "$3" ]')"
+    check "[FIRING] $1 '$hl: scheduled job $JOB $2...' on the throwaway topic (>= $3)" "$(ok_if '[ "$(n_msgs FIRING "$an" "$hl" "$ph")" -ge "$mn" ]')"
   done
 }
-wait_resolve() { # ALERTNAME PHRASE MIN_MSGS
-  local t0 F ok hl; t0="$(date -u +%s)"; F="x"
+wait_resolve() { # ALERTNAME PHRASE MIN_MSGS (named locals for ok_if: see wait_fire)
+  local an="$1" ph="$2" mn="$3" t0 F ok hl; t0="$(date -u +%s)"; F="x"
   while [ $(( $(date -u +%s) - t0 )) -lt "$RESOLVE_WAIT" ]; do
     F="$(pq "ALERTS{alertname=\"$1\",timer=\"$JOB\"}")"
     ok=0; for hl in sentry validator; do [ "$(n_msgs RESOLVED "$1" "$hl" "$2")" -ge "$3" ] && ok=$((ok + 1)); done
@@ -106,7 +108,7 @@ wait_resolve() { # ALERTNAME PHRASE MIN_MSGS
   echo "  $(ts) ($(( $(date -u +%s) - t0 ))s after the fix): $1 series left in Prometheus: $(grep -c . <<<"$F")"
   check "no $1 for $JOB left in Prometheus" "$(ok_if '[ -z "$F" ]')"
   for hl in sentry validator; do
-    check "[RESOLVED] $1 '$hl: scheduled job $JOB $2...' on the throwaway topic (>= $3)" "$(ok_if '[ "$(n_msgs RESOLVED "$1" "$hl" "$2")" -ge "$3" ]')"
+    check "[RESOLVED] $1 '$hl: scheduled job $JOB $2...' on the throwaway topic (>= $3)" "$(ok_if '[ "$(n_msgs RESOLVED "$an" "$hl" "$ph")" -ge "$mn" ]')"
   done
 }
 
