@@ -94,7 +94,7 @@ vanishing; `pull` validates against 65536.
 
 | Alert | Expression (`../alerts/jobwatch.rules.yml`) | for |
 |---|---|---|
-| `PFTJobFailed` | `consecutive_failures and failed == 1 and present == 1` (value = runs in a row) | 3m |
+| `PFTJobFailed` | `consecutive_failures > 0 and failed == 1 and present == 1` (value = runs in a row, never 0) | 3m |
 | `PFTJobMissed` | `missed == 1` | 5m |
 | `PFTJobDisabled` | `disabled == 1` (includes removed) | 5m |
 | `PFTJobwatchStale` | `time() - collect_timestamp > 600 or up == 0` | 10m |
@@ -102,6 +102,14 @@ vanishing; `pull` validates against 65536.
 `for: 3m` on PFTJobFailed: a 1-minute job that fails once and succeeds on the next run clears within one collection and
 does not page; a daily job that fails stays failed until its next run, so it pages. A removed job raises only
 PFTJobDisabled (never PFTJobFailed).
+
+A failed last run always counts as at least 1 in a row: the helper exports `consecutive_failures >= 1` whenever
+`failed == 1`, even when that run is not counted yet (state reset, `Restart=` auto-restart), and the rule's `> 0`
+guards against any exporter that does not. So no message ever says "failed (0 run(s) in a row)".
+
+Phone delivery goes through `../alerts/ntfy_bridge.py`, which sends **one message per state change** per alert and folds
+alerts of the same name and status in one webhook into one message (`[FIRING] PFTJobFailed x2`), see
+[`../alerts/README.md`](../alerts/README.md#one-message-per-state-change).
 
 ## Scope limits
 
@@ -123,7 +131,7 @@ PFTJobDisabled (never PFTJobFailed).
 | `logs/02-install.log` | two-host install @a572ec6 via pft-fleet, pft-maint window on a throwaway topic | PASS 31/0; real inventory validator 47 + 2 own = 49 timers, sentry 25 + 1 = 26; 0 failed, 0 missed, 0 disabled on both |
 | `logs/03-alert-preflight-run05.log` | drill preflight @3e42ab2 | ready, nothing changed |
 | `logs/04-alert-drill-run06-stopped.log` | drill run 06 | stopped by hand in step 2: the checker read `systemctl show` output in `-p` order (systemd prints its own order) and failed a correct install; restore completed. Fixed @07fc9a4 (also: preflight now refuses an active silence naming PFTJob*, because the install's rollout silence was still active and would have muted the drill) |
-| `logs/05-alert-drill-run07-stopped.log` | drill run 07 | **found**: PFTJobFailed fired for 27 sentry series when only the drill job failed, and for no validator series. Cause: the per-job label was `job`; the scrape renamed it `exported_job`, so `on (host, job)` joined every sentry timer to the one failed drill job. Notifications went only to the throwaway topic (operator topics: 0 messages). Stopped by hand; the stop also killed the restore, which was then completed by hand (drill units, flags and state entry removed on both hosts, bridge back on the operator env with alertpath paused around it, silence expired). **Fixed**: label renamed `timer`; suite check that no sample uses `job`/`instance`; promtool test with two timers on one host; mutants M33, R08 |
+| `logs/05-alert-drill-run07-stopped.log` | drill run 07 | **found**: PFTJobFailed fired for 27 sentry series when only the drill job failed, and for no validator series. Cause: the per-job label was `job`; the scrape renamed it `exported_job`, so `on (host, job)` joined every sentry timer to the one failed drill job. Stopped by hand; the stop also killed the restore, which was then completed by hand (drill units, flags and state entry removed on both hosts, bridge back on the operator env with alertpath paused around it, silence expired). **Correction (2026-11-06T19:16Z):** an earlier version of this row said the operator topics got 0 messages. That is true only while the run was going. The hand restore put the bridge back on the operator env while the 27 mis-joined series were still firing (16:54-17:05Z in Prometheus), so their RESOLVED notifications reached the **operator** topic at 17:06Z, 16 messages reading "sentry: scheduled job postfiat failed (0 run(s) in a row)" (`postfiat` = the scrape `job` label, 0 = the joined count). Fixed in logs 15-17 below. **Fixed**: label renamed `timer`; suite check that no sample uses `job`/`instance`; promtool test with two timers on one host; mutants M33, R08 |
 
 | `logs/06-checks.log` | checks @6b3087e (fix) | shellcheck/ruff clean, promtool ok (incl. the two-timer test), suite 102/102, mutants 52/52 CAUGHT |
 
@@ -138,6 +146,9 @@ PFTJobDisabled (never PFTJobFailed).
 
 | `logs/13-alert-drill-run16.log` | drill run 16 @2a81527, both hosts at once, throwaway topic | **PASS 59/0**: succeed quiet; every alert FIRING then RESOLVED for both hosts on the throwaway topic (16 messages), operator topics 0; final `pft_jobwatch_up 1` both, inventory validator 49 / sentry 26 (0 failed/missed/disabled), pft-integrity PASS both (176/103), `server_state` full both |
 | `logs/14-final-lint.log` | lint at c0db5e8 (drill scripts changed after log 09) | shellcheck + ruff clean; tool, helper, tests, rules unchanged since 3ec4c00 (log 09) |
+| `logs/15-checks.log` | checks after the 17:06Z operator-topic incident | the fixes: (1) `PFTJobFailed` needs `consecutive_failures > 0`, the helper never exports 0 while `failed == 1` (unit test, promtool test, mutants M35, R09); (2) `../alerts/ntfy_bridge.py` sends one message per state change and folds bursts (unit tests, bridge mutants B01-B11); (3) `drill/alert-run.sh` + `drill/dedup-run.sh` restore drains (waits until no PFTJob* alert is pending/firing/active and its RESOLVED reached the throwaway topic, else silences PFTJob.* for 60 min) before the bridge goes back to the operator env |
+| `logs/16-update-run17.log` | fleet update of `jobwatch_lib.py` on both hosts (pft-maint window on a throwaway topic) + Prometheus rule reload | installed helper = repo bytes, rules healthy, integrity PASS, operator topics 0 |
+| `logs/17-dedup-drill.log` | `drill/dedup-run.sh`, both hosts, throwaway topic | live proof of (1)-(3): staggered failure, so Alertmanager re-sends the sentry alert inside the validator's webhook and the bridge does not forward it again; exactly one FIRING and one RESOLVED line per host; no "(0 run(s)"; drain before restore; operator topics 0 |
 
 Drill run 16 timeline (UTC, Prometheus `ALERTS` firing / throwaway-topic message times from the log):
 

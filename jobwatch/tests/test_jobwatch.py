@@ -286,6 +286,13 @@ check(
     m["failed"] == 1 and m["consecutive_failures"] == 1,
     m,
 )
+ar = dict(fl_s, ActiveState=["activating"], SubState=["auto-restart"])
+m, _ = jl.derive(fl_t, ar, {}, int(T_HB) + 30)
+check(
+    "failed run not counted yet (auto-restart) still reports consecutive >= 1, never 0",
+    (m["failed"], m["running"], m["consecutive_failures"]) == (1, 1, 1),
+    m,
+)
 to = dict(hb_s, Result=["timeout"])
 check(
     "Result=timeout with ActiveState inactive is a failure",

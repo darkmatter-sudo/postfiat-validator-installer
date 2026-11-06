@@ -1,0 +1,366 @@
+#!/usr/bin/env bash
+# dedup-run: recorded two-host drill for the operator-topic fix of 2026-11-06 (follow-up to task_de7c65f8, jobwatch).
+# At 17:06Z the operator topic got 16 "sentry: scheduled job postfiat failed (0 run(s) in a row)" messages: a manual
+# restore of alert-run 07 put the bridge back on the operator env while 27 mis-joined PFTJobFailed series (label bug,
+# fixed @6b3087e) were still firing, so their RESOLVED notifications reached the operator, one per alert.
+# This drill proves the three fixes on the live stack, on a THROWAWAY topic only:
+#   a) ntfy_bridge.py sends one message per state change: an alert re-sent by Alertmanager (group change) is not
+#      forwarded again, and alerts of one alertname + status in one webhook are folded into one message;
+#   b) PFTJobFailed never fires with a count of 0 (rule `> 0`, jobwatch_lib reports >= 1 whenever failed == 1);
+#   c) restore drains: the bridge goes back to the operator env only after no PFTJob* alert is pending/firing/active
+#      and its RESOLVED reached the throwaway topic.
+#   bash jobwatch/drill/dedup-run.sh 2>&1 | tee LOG      (agent user, repo root; sudo -n, `ssh relay`)
+# Same drill job, runtime units, bridge redirect, silence and read-back as alert-run.sh (see there); postfiatd is never
+# touched.
+# 0  preflight (as alert-run). 1  bridge -> throwaway (re-created: loads ntfy_bridge.py at HEAD), silence all but
+#    PFTAlertPipelineWatchdog|PFTJob.*. 2  SUCCEED: drill job on both hosts, quiet.
+# 3  STAGGERED FAIL: fail flag on the sentry first, then (after its FIRING message) on the validator. Alertmanager
+#    re-sends the group with BOTH alerts; the bridge must forward only the validator: exactly one FIRING line per host.
+# 4  RESOLVE: remove both flags -> exactly one RESOLVED line per host (folded into one message if they resolve in one
+#    flush).
+# 5  no message on the topic says "(0 run(s)"; no job on either host exports failed 1 with consecutive 0.
+# 6  restore (drill units gone, drain, bridge, silence), read back every topic (operator 0), integrity PASS, nodes full.
+# Env: RELAY (relay) NTFY (https://ntfy.sh) AM PROM BRIDGE_ENV AGENT_ENV SIL_TTL (150 min) FIRE_WAIT (900 s)
+#      RESOLVE_WAIT (900 s) QUIET_WAIT (240 s) DRAIN_WAIT (600 s) DRAIN_SETTLE (90 s) PREFLIGHT_ONLY=1: step 0 only (exit 0 ready).
+# shellcheck disable=SC2016,SC2015,SC2034  # ok_if conditions are evaluated later; A && B || C only reports
+set -uo pipefail
+HERE="$(cd "$(dirname "$0")" && pwd)"
+REPO="$(cd "$HERE/../.." && pwd)"; cd "$REPO" || exit 3
+REDACT="$REPO/peerexpose/drill/redact.py"; RUNSTACK="$REPO/alerts/run-stack.sh"
+RELAY="${RELAY:-relay}"; NTFY="${NTFY:-https://ntfy.sh}"
+AM="${AM:-http://127.0.0.1:9093}"; PROM="${PROM:-http://127.0.0.1:9090}"
+LOCAL_ENVS="/etc/postfiat-monitor.env /etc/pft-integrity.env"
+REMOTE_ENVS="/etc/pft-watchdog/ntfy.env /etc/pft-integrity.env /etc/pft-alertpath/ntfy.env"
+BRIDGE_ENV="${BRIDGE_ENV:-$HOME/.config/pft-alerts/ntfy.env}"; AGENT_ENV="${AGENT_ENV:-/opt/pft-agent/config.env}"
+AP_WAIT="${AP_WAIT:-180}"; SIL_TTL="${SIL_TTL:-90}"; FIRE_WAIT="${FIRE_WAIT:-900}"; RESOLVE_WAIT="${RESOLVE_WAIT:-900}"
+QUIET_WAIT="${QUIET_WAIT:-240}"; PREFLIGHT_ONLY="${PREFLIGHT_ONLY:-0}"; DRAIN_WAIT="${DRAIN_WAIT:-600}"
+TASK=task_de7c65f8
+SHA_HEAD="$(git rev-parse HEAD)"
+TF=/var/lib/pft-exporter/textfile
+JOB=pft-jobwatch-drill.timer; SVC=pft-jobwatch-drill.service; UD=/run/systemd/system; FD=/run/pft-jobwatch-drill
+
+rnd() { head -c 12 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
+ALERT="jwdrill-$(rnd)"
+since="$(date -u +%s)"; RUN="$(date -u +%Y%m%dT%H%M%SZ)"
+ts() { date -u +%FT%TZ; }
+SEC="$(mktemp -d)"; chmod 700 "$SEC"; LIT="$SEC/literals.tsv"; : > "$LIT"; chmod 600 "$LIT"
+OPS="$SEC/operator-topics"; : > "$OPS"
+printf 'topic\t%s\nuser\t%s\n' "$ALERT" "$(id -un)" >> "$LIT"
+HN="$(hostname)"; RHN="$HN"
+red() { python3 -u "$REDACT" filter --literals "$LIT" | sed -E "s#$HOME#~#g; s#$HN#<host>#g; s#$RHN#<host>#g"; }
+R() { ssh -o LogLevel=ERROR -o ConnectTimeout=10 -o ServerAliveInterval=30 -o BatchMode=yes "$RELAY" "$@" </dev/null; }
+L() { bash -c "$1" </dev/null; }
+on() { if [ "$1" = relay ]; then R "$2"; else L "$2"; fi; } # HOST CMDSTRING
+both() { R "$1"; local a=$?; L "$1"; local b=$?; [ "$a" = 0 ] && [ "$b" = 0 ]; } # sentry first, then validator
+cn() { if [ "$1" = relay ]; then echo postfiatd-sentry; else echo postfiatd; fi; }
+lb() { if [ "$1" = relay ]; then echo sentry; else echo validator; fi; }
+FAILS=0
+check() { if [ "$2" = 0 ]; then echo "CHECK ok   $1${3:+ ($3)}"; else echo "CHECK FAIL $1${3:+ ($3)}"; FAILS=$((FAILS + 1)); fi; }
+ok_if() { if eval "$1"; then echo 0; else echo 1; fi; }
+XRC=0; XOUT=""
+x() { echo "\$ $*" | red; XOUT="$(eval "$*" 2>&1)"; XRC=$?; printf '%s\n' "$XOUT" | red | sed 's/^/  /'; echo "  (exit $XRC)"; }
+info() { on "$1" "sudo -n docker exec $(cn "$1") curl -s -m 10 -d '{\"method\":\"server_info\"}' http://127.0.0.1:5005"; }
+node_state() { info "$1" | jq -r '.result.info.server_state // "down"' 2>/dev/null; }
+pq() { curl -s --max-time 10 "$PROM/api/v1/query" --data-urlencode "query=$1" | jq -r '.data.result[] | "\(.metric | to_entries | map("\(.key)=\(.value)") | join(",")) \(.value[1])"'; }
+topic_msgs() { curl -s --max-time 20 "$NTFY/$1/json?poll=1&since=$since" | jq -c 'select(.event == "message")' 2>/dev/null; }
+n_msgs() { # STATUS ALERTNAME HOST PHRASE -> count of matching throwaway-topic messages about the drill job
+  # titles are "[STATUS] NAME" or, when the bridge folds several alerts into one message, "[STATUS] NAME xN"
+  topic_msgs "$ALERT" | jq -r --arg t "[$1] $2" 'select(.title == $t or (.title | startswith($t + " x"))) | .message' | grep -c "^$3: scheduled job $JOB $4"
+}
+collect_now() { # run both collectors and the validator's pull now (instead of waiting up to 2 + 2 min)
+  R 'sudo -n systemctl start pft-jobwatch.service' && sudo -n systemctl start pft-jobwatch.service pft-jobwatch-pull.service </dev/null
+}
+jobline() { # print the drill job's flags for both hosts from the two textfiles on the validator
+  grep -hE "^pft_jobwatch_job_(present|disabled|running|failed|consecutive_failures|missed|runs_observed_total)\{host=\"(validator|sentry)\",timer=\"$JOB\"\}" \
+    "$TF/pft_jobwatch_validator.prom" "$TF/pft_jobwatch_sentry.prom" 2>/dev/null | sed -E 's/^pft_jobwatch_job_//; s/,timer="[^"]*"//'
+}
+flag() { grep -E "^$1\{host=\"$2\"\} " <<<"$XOUT" | awk '{print $2}'; } # METRIC HOST (from a jobline XOUT)
+firing() { pq "ALERTS{alertname=\"$1\",alertstate=\"firing\",timer=\"$JOB\"}"; }
+wait_fire() { # ALERTNAME PHRASE MIN_MSGS: Prometheus firing for both hosts, then >= MIN_MSGS [FIRING] per host
+  # ok_if evals its condition inside ok_if, where $1..$3 are ok_if's own arguments (run 14 failed delivered messages
+  # on that): the conditions use these named locals, which eval sees through bash's dynamic scope
+  local an="$1" ph="$2" mn="$3" t0 F w ok hl; t0="$(date -u +%s)"; F=""
+  while [ $(( $(date -u +%s) - t0 )) -lt "$FIRE_WAIT" ]; do
+    F="$(firing "$1")"; [ "$(grep -cE 'host=(sentry|validator)' <<<"$F")" -ge 2 ] && break; sleep 15
+  done
+  echo "  $(ts) ($(( $(date -u +%s) - t0 ))s after the change): firing in Prometheus:"; printf '%s\n' "${F:-none}" | red | sed 's/^/    /'
+  for hl in sentry validator; do check "$1{host=$hl,timer=$JOB} firing in Prometheus" "$(ok_if 'grep -q "host=$hl" <<<"$F"')"; done
+  w=0; while :; do
+    ok=0; for hl in sentry validator; do [ "$(n_msgs FIRING "$1" "$hl" "$2")" -ge "$3" ] && ok=$((ok + 1)); done
+    [ "$ok" = 2 ] && break; w=$((w + 15)); [ "$w" -le 300 ] || break; sleep 15
+  done
+  for hl in sentry validator; do
+    check "[FIRING] $1 '$hl: scheduled job $JOB $2...' on the throwaway topic (>= $3)" "$(ok_if '[ "$(n_msgs FIRING "$an" "$hl" "$ph")" -ge "$mn" ]')"
+  done
+}
+wait_resolve() { # ALERTNAME PHRASE MIN_MSGS (named locals for ok_if: see wait_fire)
+  local an="$1" ph="$2" mn="$3" t0 F ok hl; t0="$(date -u +%s)"; F="x"
+  while [ $(( $(date -u +%s) - t0 )) -lt "$RESOLVE_WAIT" ]; do
+    F="$(pq "ALERTS{alertname=\"$1\",timer=\"$JOB\"}")"
+    ok=0; for hl in sentry validator; do [ "$(n_msgs RESOLVED "$1" "$hl" "$2")" -ge "$3" ] && ok=$((ok + 1)); done
+    [ -z "$F" ] && [ "$ok" = 2 ] && break; sleep 20
+  done
+  echo "  $(ts) ($(( $(date -u +%s) - t0 ))s after the fix): $1 series left in Prometheus: $(grep -c . <<<"$F")"
+  check "no $1 for $JOB left in Prometheus" "$(ok_if '[ -z "$F" ]')"
+  for hl in sentry validator; do
+    check "[RESOLVED] $1 '$hl: scheduled job $JOB $2...' on the throwaway topic (>= $3)" "$(ok_if '[ "$(n_msgs RESOLVED "$an" "$hl" "$ph")" -ge "$mn" ]')"
+  done
+}
+
+RESTORED=0; RESTORE_OK=true; SIL=""; BRIDGE_SWAPPED=0; AP_PAUSED=0; DRILL_UNITS=0
+ap_pause() { R 'sudo -n systemctl stop pft-alertpath-check.timer' && AP_PAUSED=1
+  echo "  sentry pft-alertpath-check.timer stopped: $([ "$AP_PAUSED" = 1 ] && echo yes || echo NO)"; }
+ap_resume() { # wait (<= AP_WAIT s) for a read-only check to be OK again, then start the timer whatever the result
+  local t0 rc=9; t0="$(date -u +%s)"
+  while [ $(( $(date -u +%s) - t0 )) -lt "$AP_WAIT" ]; do
+    R 'sudo -n pft-alertpath check >/dev/null 2>&1'; rc=$?; [ "$rc" = 0 ] && break; sleep 10
+  done
+  R 'sudo -n systemctl start pft-alertpath-check.timer' && AP_PAUSED=0
+  echo "  sentry pft-alertpath check rc $rc after $(( $(date -u +%s) - t0 ))s; timer started again: $([ "$AP_PAUSED" = 0 ] && echo yes || echo NO)"
+  [ "$rc" = 0 ] && [ "$AP_PAUSED" = 0 ]; }
+bridge_src() { sudo -n docker inspect pft-alert-bridge --format '{{range .Mounts}}{{if eq .Destination "/run/secrets/ntfy.env"}}{{.Source}}{{end}}{{end}}'; }
+UNDRILL="sudo -n rm -rf $FD; sudo -n systemctl disable --runtime --now $JOB >/dev/null 2>&1; sudo -n systemctl stop $SVC >/dev/null 2>&1; sudo -n rm -f $UD/$JOB $UD/$SVC; sudo -n systemctl daemon-reload; sudo -n systemctl reset-failed $SVC >/dev/null 2>&1; sudo -n pft-jobwatch forget $JOB >/dev/null 2>&1; sudo -n systemctl start pft-jobwatch.service; test ! -e $UD/$JOB && test ! -e $UD/$SVC && test ! -e $FD"
+pftjob_active() { # PFTJob* alerts still pending/firing in Prometheus + active in Alertmanager (any timer, any host)
+  local p a
+  p="$(curl -s --max-time 10 "$PROM/api/v1/query" --data-urlencode 'query=count(ALERTS{alertname=~"PFTJob.*"})' | jq -r '.data.result[0].value[1] // 0' 2>/dev/null)"
+  a="$(curl -s --max-time 10 "$AM/api/v2/alerts?active=true&silenced=false&inhibited=false" | jq '[.[] | select(.labels.alertname | test("^PFTJob"))] | length' 2>/dev/null)"
+  echo "$(( ${p:-1} + ${a:-1} ))"; }
+drain() { # before the bridge goes back to the operator env: let every PFTJob* alert of the run resolve and its
+  # RESOLVED notification reach the THROWAWAY bridge (group_wait 10s + group_interval 1m + margin). Without this, a
+  # restore while alerts still fire sends their RESOLVED (or repeats) to the operator (2026-11-06T17:06Z, run 07).
+  local t0 n=1 settle="${DRAIN_SETTLE:-90}"
+  t0="$(date -u +%s)"
+  while [ $(( $(date -u +%s) - t0 )) -lt "$DRAIN_WAIT" ]; do
+    n="$(pftjob_active)"; [ "$n" = 0 ] && break; sleep 10
+  done
+  if [ "$n" = 0 ]; then
+    echo "  drain: no PFTJob* alert pending/firing/active after $(( $(date -u +%s) - t0 ))s; waiting ${settle}s for RESOLVED delivery to the throwaway bridge"
+    sleep "$settle"
+    n="$(pftjob_active)"
+  fi
+  if [ "$n" = 0 ]; then echo "  drain: done, nothing left that could reach the operator topic: yes"; return 0; fi
+  # still active: mute what is left for an hour so it cannot reach the operator topic, and report a failed restore
+  local e body id
+  e="$(date -u -d '+60 min' +%FT%TZ)"
+  body="$(jq -nc --arg s "$(ts)" --arg e "$e" --arg c "$TASK jobwatch drill $RUN drain timeout" '{matchers: [{name: "alertname", value: "PFTJob.*", isRegex: true, isEqual: true}], startsAt: $s, endsAt: $e, createdBy: "jobwatch-drill", comment: $c}')"
+  id="$(curl -s --max-time 10 -H 'Content-Type: application/json' -X POST "$AM/api/v2/silences" -d "$body" | jq -r '.silenceID // empty')"
+  echo "  drain: NO - $n PFTJob* alert(s) still active after ${DRAIN_WAIT}s; silenced alertname=~PFTJob.* until $e (${id:+id set}${id:-silence FAILED})"
+  return 1; }
+restore() {
+  [ "$RESTORED" -eq 1 ] && return 0
+  RESTORED=1
+  if [ "$DRILL_UNITS" = 1 ]; then
+    both "$UNDRILL" && echo "  drill units, flags and state entry removed on both hosts: yes" || { echo "  drill cleanup: NO"; RESTORE_OK=false; }
+    sudo -n systemctl start pft-jobwatch-pull.service </dev/null
+  fi
+  if [ "$BRIDGE_SWAPPED" = 1 ]; then
+    drain || RESTORE_OK=false
+    [ "$AP_PAUSED" = 1 ] || ap_pause
+    DOCKER="sudo -n docker" NTFY_ENV_FILE="$BRIDGE_ENV" "$RUNSTACK" bridge 2>&1 | red | sed 's/^/  /'
+    if [ "$(bridge_src)" = "$BRIDGE_ENV" ]; then echo "  restored bridge: mounts the operator env file again: yes"
+    else echo "  restored bridge: mounts the operator env file again: NO"; RESTORE_OK=false; fi
+  fi
+  if [ "$AP_PAUSED" = 1 ]; then ap_resume || RESTORE_OK=false; fi
+  [ -n "$SIL" ] && curl -s --max-time 10 -o /dev/null -w "  silence expired: HTTP %{http_code}\n" -X DELETE "$AM/api/v2/silence/$SIL"
+}
+cleanup() { restore; rm -rf "$SEC"; }
+trap cleanup EXIT
+trap 'echo "interrupted"; exit 6' INT TERM
+
+{ echo "pft-jobwatch two-host dedup drill - $(ts) - $(lsb_release -ds) - run $RUN"
+  echo "repo HEAD $SHA_HEAD (clean: $([ -z "$(git status --short)" ] && echo yes || echo NO))"
+  for f in jobwatch/drill/dedup-run.sh alerts/ntfy_bridge.py jobwatch/pft-jobwatch.sh jobwatch/jobwatch_lib.py alerts/jobwatch.rules.yml "${REDACT#"$REPO"/}"; do
+    echo "sha256 $(sha256sum < "$f" | cut -c1-64) $f"; done; }
+
+echo; echo "== 0. preflight (nothing changed yet)"
+[ -z "$(git status --short)" ] || { echo "  dirty tree - stopping"; exit 3; }
+[ "$(git rev-parse origin/main)" = "$SHA_HEAD" ] || { echo "  HEAD is not pushed - stopping"; exit 3; }
+R true || { echo "  relay unreachable - stopping" >&2; exit 3; }
+curl -s --max-time 5 -o /dev/null "$AM/-/ready" || { echo "  Alertmanager not reachable - stopping" >&2; exit 3; }
+curl -s --max-time 5 -o /dev/null "$PROM/-/ready" || { echo "  Prometheus not reachable - stopping" >&2; exit 3; }
+for h in local relay; do
+  on "$h" "command -v pft-jobwatch >/dev/null && systemctl is-active --quiet pft-jobwatch.timer" \
+    || { echo "  $(lb "$h"): pft-jobwatch or its timer missing - stopping" >&2; exit 3; }
+  for f in "$UD/$JOB" "$UD/$SVC" "$FD"; do
+    on "$h" "test ! -e $f" || { echo "  $(lb "$h"): $f left over from an earlier run - stopping" >&2; exit 3; }
+  done
+  on "$h" "sudo -n pft-jobwatch inventory --format json | jq -e 'map(select(.job == \"$JOB\")) | length == 0' >/dev/null" \
+    || { echo "  $(lb "$h"): $JOB still in the jobwatch state - stopping" >&2; exit 3; }
+done
+echo "  pft-jobwatch + timer on both hosts; no drill unit, flag dir or state entry left over"
+systemctl is-active --quiet pft-jobwatch-pull.timer || { echo "  pft-jobwatch-pull.timer not active - stopping" >&2; exit 3; }
+R 'systemctl is-active --quiet pft-alertpath-check.timer && sudo -n pft-alertpath check >/dev/null 2>&1' \
+  || { echo "  sentry pft-alertpath-check.timer not active or check not OK - stopping" >&2; exit 3; }
+echo "  sentry pft-alertpath-check.timer active, check OK"
+x "curl -s $PROM/api/v1/query --data-urlencode 'query=pft_jobwatch_up' | jq -r '.data.result[] | \"\(.metric.host) \(.value[1])\"' | sort"
+[ "$(grep -cE '^(sentry|validator) 1$' <<<"$XOUT")" = 2 ] || { echo "  pft_jobwatch_up is not 1 for both hosts - stopping" >&2; exit 4; }
+x "curl -s $PROM/api/v1/query --data-urlencode 'query=pft_jobwatch_jobs' | jq -r '.data.result[] | \"\(.metric.host) \(.metric.state) \(.value[1])\"' | sort"
+x "curl -s $PROM/api/v1/query --data-urlencode 'query=ALERTS{alertname=~\"PFTJob.*\"}' | jq -r '.data.result | length'"
+[ "$XOUT" = 0 ] || { echo "  a PFTJob* alert is already active (investigate it first) - stopping" >&2; exit 4; }
+# run 06: the install run's rollout silence (alertname=~"PFTJob...|...", left to run out) would have swallowed every
+# drill notification. Refuse while any active silence has a matcher naming PFTJob.
+x "curl -s $AM/api/v2/silences | jq -r '[.[] | select(.status.state == \"active\") | select(any(.matchers[]; .isEqual and (.value | test(\"PFTJob\"))))] | length'"
+[ "$XOUT" = 0 ] || { echo "  an active silence covers PFTJob* alerts - stopping" >&2; exit 4; }
+x "curl -s $PROM/api/v1/rules | jq -r '.data.groups[] | select(.name == \"pft-jobwatch\") | .rules[] | [.name, .health] | @tsv'"
+[ "$(grep -cE '^PFTJob(Failed|Missed|Disabled|watchStale)	ok$' <<<"$XOUT")" = 4 ] || { echo "  jobwatch rules not loaded/healthy - stopping" >&2; exit 4; }
+[ -r "$BRIDGE_ENV" ] || { echo "  bridge env not readable - stopping" >&2; exit 3; }
+[ "$(bridge_src)" = "$BRIDGE_ENV" ] || { echo "  bridge does not mount the operator env file now - stopping" >&2; exit 3; }
+echo "  bridge mounts the operator env file: yes"
+{ for f in $LOCAL_ENVS; do L "sudo -n sed -n 's/^NTFY_TOPIC=//p' $f 2>/dev/null"; done
+  for f in $REMOTE_ENVS; do R "sudo -n sed -n 's/^NTFY_TOPIC=//p' $f 2>/dev/null"; done
+  sed -n 's|^NTFY_URL=.*/||p' "$BRIDGE_ENV" 2>/dev/null
+  sed -n 's/^NTFY_TOPIC=//p' "$AGENT_ENV" 2>/dev/null
+} | tr -d "\"'\r" | grep -E '^[A-Za-z0-9_-]{8,}$' | sort -u > "$OPS"
+while read -r t; do printf 'topic\t%s\n' "$t" >> "$LIT"; done < "$OPS"
+echo "  operator topics to watch: $(wc -l < "$OPS") (not printed)"
+[ -s "$OPS" ] || { echo "  no operator topic found - stopping" >&2; exit 3; }
+VIP="$(R 'echo "${SSH_CLIENT%% *}"')"; [ -z "$VIP" ] || printf 'ip\t%s\n' "$VIP" >> "$LIT"
+SIP="$(R 'ip -4 route get 1.1.1.1 2>/dev/null | sed -nE "s/.* src ([0-9.]+).*/\1/p"')"; [ -z "$SIP" ] || printf 'ip\t%s\n' "$SIP" >> "$LIT"
+RHOST="$(ssh -G "$RELAY" | awk '$1 == "hostname" { print $2 }')"; [ -z "$RHOST" ] || printf 'ip\t%s\n' "$RHOST" >> "$LIT"
+RHN="$(R hostname)"; [ -n "$RHN" ] || RHN="$HN"
+for h in relay local; do
+  s="$(node_state "$h")"; echo "  $(cn "$h"): server_state=${s:-down}"
+  case "$s" in full|proposing) ;; *) echo "  node not full - stopping" >&2; exit 4 ;; esac
+done
+for h in local relay; do
+  r="$(on "$h" "sudo -n pft-integrity verify" 2>&1 | grep '^RESULT')"; echo "  pft-integrity $(lb "$h"): $r"
+  case "$r" in "RESULT: PASS"*) ;; *) echo "  integrity not clean on $h - stopping" >&2; exit 4 ;; esac
+done
+echo "  literals for redaction: $(cut -f1 "$LIT" | sort | uniq -c | awk '{printf "%s %s, ", $1, $2}' | sed 's/, $//') (values not printed)"
+echo "\$ redact.py control --literals <literals>"
+python3 -u "$REDACT" control --literals "$LIT" | sed 's/^/  /'; RCTL="${PIPESTATUS[0]}"
+[ "$RCTL" -eq 0 ] || { echo "  redaction positive control FAILED - stopping before any change" >&2; exit 3; }
+if [ "$PREFLIGHT_ONLY" = 1 ]; then
+  echo; echo "PREFLIGHT_ONLY: stopping before step 1, nothing changed (ready: yes)"
+  exit 0
+fi
+
+echo; echo "== 1. bridge -> throwaway topic; silence everything except PFTJob* and the watchdog"
+( umask 077; printf 'NTFY_URL=%s/%s\n' "$NTFY" "$ALERT" > "$SEC/bridge.env" )
+ap_pause; check "sentry pft-alertpath-check.timer paused for the bridge re-create" "$(ok_if '[ "$AP_PAUSED" = 1 ]')"
+[ "$FAILS" = 0 ] || exit 3
+BRIDGE_SWAPPED=1
+DOCKER="sudo -n docker" NTFY_ENV_FILE="$SEC/bridge.env" "$RUNSTACK" bridge 2>&1 | red | sed 's/^/  /'
+check "Alertmanager bridge -> throwaway env file (0700 temp dir)" "$(ok_if '[ "$(bridge_src)" = "$SEC/bridge.env" ]')"
+ap_resume; check "sentry pft-alertpath OK again, check timer running" "$?"
+ends="$(date -u -d "+$SIL_TTL min" +%FT%TZ)"
+SBODY="$(jq -nc --arg s "$(ts)" --arg e "$ends" --arg c "$TASK pft-jobwatch dedup drill $RUN" \
+  '{matchers: [{name: "alertname", value: ".+", isRegex: true, isEqual: true}, {name: "alertname", value: "PFTAlertPipelineWatchdog|PFTJob.*", isRegex: true, isEqual: false}], startsAt: $s, endsAt: $e, createdBy: "jobwatch-drill", comment: $c}')"
+SIL="$(curl -s --max-time 10 -H 'Content-Type: application/json' -X POST "$AM/api/v2/silences" -d "$SBODY" | jq -r '.silenceID // empty')"
+check "silence alertname=~\".+\", alertname!~\"PFTAlertPipelineWatchdog|PFTJob.*\" until $ends" "$(ok_if '[ -n "$SIL" ]')"
+[ "$FAILS" = 0 ] || exit 3
+
+echo; echo "== 2. SUCCEED: runtime drill job on both hosts"
+SVC_TXT="[Unit]
+Description=pft-jobwatch drill job (runtime unit; $FD/hang and $FD/fail select the outcome)
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'while [ -e $FD/hang ]; do sleep 5; done; [ ! -e $FD/fail ]'
+TimeoutStartSec=3600"
+TMR_TXT="[Unit]
+Description=pft-jobwatch drill timer (every minute)
+[Timer]
+OnActiveSec=5s
+OnUnitActiveSec=1min
+AccuracySec=1s
+[Install]
+WantedBy=timers.target"
+echo "  $UD/$SVC:"; printf '%s\n' "$SVC_TXT" | sed 's/^/    | /'
+echo "  $UD/$JOB:"; printf '%s\n' "$TMR_TXT" | sed 's/^/    | /'
+B64S="$(printf '%s\n' "$SVC_TXT" | base64 -w0)"; B64T="$(printf '%s\n' "$TMR_TXT" | base64 -w0)"
+DRILL_UNITS=1
+x "both \"sudo -n install -d -m 755 $FD && echo $B64S | base64 -d | sudo -n tee $UD/$SVC >/dev/null && echo $B64T | base64 -d | sudo -n tee $UD/$JOB >/dev/null && sudo -n systemctl daemon-reload && sudo -n systemctl enable --runtime --now $JOB 2>&1 && systemctl show -p UnitFileState,ActiveState --value $JOB | tr '\n' ' '; echo\""
+# systemctl show prints properties in its own order (ActiveState first), whatever the -p order (run 06 checked the
+# wrong order and failed a correct install)
+check "drill job installed + enabled (runtime) on both hosts" "$(ok_if '[ "$XRC" = 0 ] && [ "$(grep -cE "^(active enabled-runtime|enabled-runtime active) *$" <<<"$XOUT")" = 2 ]')"
+sleep 75
+x "both \"systemctl show -p Result,ExecMainStatus --value $SVC | tr '\n' ' '; echo\"; collect_now; jobline"
+for hl in sentry validator; do
+  check "$hl: drill job present 1, disabled 0, failed 0, runs >= 1" "$(ok_if '[ "$(flag present "$hl")" = 1 ] && [ "$(flag disabled "$hl")" = 0 ] && [ "$(flag failed "$hl")" = 0 ] && [ "$(flag runs_observed_total "$hl")" -ge 1 ]')"
+done
+t_q="$(date -u +%s)"; while [ $(( $(date -u +%s) - t_q )) -lt "$QUIET_WAIT" ]; do sleep 30; done
+x "curl -s $PROM/api/v1/query --data-urlencode 'query=ALERTS{alertname=~\"PFTJob.*\",timer=\"$JOB\"}' | jq -r '.data.result | length'"
+check "succeeding job: no PFTJob* alert (pending or firing) after $QUIET_WAIT s" "$(ok_if '[ "$XOUT" = 0 ]')"
+
+bridge_log() { sudo -n docker logs pft-alert-bridge 2>&1; }
+x "bridge_log | head -1"
+check "bridge re-created from ntfy_bridge.py at HEAD (sha256 matches the repo file)" "$(ok_if '[ "$(sudo -n docker exec pft-alert-bridge sha256sum /app/ntfy_bridge.py | cut -c1-64)" = "$(sha256sum < alerts/ntfy_bridge.py | cut -c1-64)" ]')"
+lines() { # STATUS HOST -> number of PFTJobFailed message lines naming HOST's drill job, across all messages
+  topic_msgs "$ALERT" | jq -r --arg t "[$1] PFTJobFailed" 'select(.title == $t or (.title | startswith($t + " x"))) | .message' | grep -c "^$2: scheduled job $JOB failed"; }
+wait_host() { # STATE HOST STATUS: Prometheus state for the drill job on HOST (firing|none), then >= 1 STATUS line
+  local st="$1" hl="$2" s="$3" t0 F; t0="$(date -u +%s)"
+  while [ $(( $(date -u +%s) - t0 )) -lt "$FIRE_WAIT" ]; do
+    F="$(pq "ALERTS{alertname=\"PFTJobFailed\",alertstate=\"firing\",timer=\"$JOB\",host=\"$hl\"}")"
+    if { [ "$st" = firing ] && [ -n "$F" ]; } || { [ "$st" = none ] && [ -z "$F" ]; }; then
+      [ "$(lines "$s" "$hl")" -ge 1 ] && break
+    fi
+    sleep 15
+  done
+  echo "  $(ts) ($(( $(date -u +%s) - t0 ))s): PFTJobFailed{host=$hl} in Prometheus: ${F:-none}; [$s] lines for $hl: $(lines "$s" "$hl")" | red
+}
+
+echo; echo "== 3. STAGGERED FAIL: $FD/fail on the sentry first, the validator after the sentry's FIRING message"
+x "R 'sudo -n touch $FD/fail'"
+sleep 70; x "collect_now; jobline | grep -E '^(failed|consecutive_failures)'"
+check "sentry: drill job failed 1, consecutive >= 1; validator failed 0" "$(ok_if '[ "$(flag failed sentry)" = 1 ] && [ "$(flag consecutive_failures sentry)" -ge 1 ] && [ "$(flag failed validator)" = 0 ]')"
+wait_host firing sentry FIRING
+check "[FIRING] line for sentry on the throwaway topic" "$(ok_if '[ "$(lines FIRING sentry)" -ge 1 ]')"
+x "L 'sudo -n touch $FD/fail'"
+sleep 70; x "collect_now; jobline | grep -E '^(failed|consecutive_failures)'"
+check "validator: drill job failed 1, consecutive >= 1" "$(ok_if '[ "$(flag failed validator)" = 1 ] && [ "$(flag consecutive_failures validator)" -ge 1 ]')"
+wait_host firing validator FIRING
+echo "  waiting 150 s (> 2 x group_interval) for any repeat of the group"; sleep 150
+x "pq 'ALERTS{alertname=\"PFTJobFailed\",alertstate=\"firing\",timer=\"$JOB\"}'"
+check "PFTJobFailed firing for both hosts in Prometheus (one Alertmanager group: alertname + instance)" "$(ok_if '[ "$(grep -cE "host=(sentry|validator)" <<<"$XOUT")" = 2 ]')"
+x "curl -s $AM/api/v2/alerts/groups | jq -r '.[] | select(.labels.alertname == \"PFTJobFailed\") | \"group \(.labels | to_entries | map(\"\(.key)=\(.value)\") | join(\",\")): \(.alerts | length) alert(s)\"'"
+x "bridge_log | grep -E 'alertname=PFTJobFailed|dedup:|ntfy '"
+check "bridge got the sentry alert again in the validator's webhook and did not forward it (dedup line)" "$(ok_if 'grep -q "^dedup: 1 of 2 alert(s) unchanged" <<<"$XOUT"')"
+for hl in sentry validator; do check "exactly one [FIRING] PFTJobFailed line for $hl on the throwaway topic" "$(ok_if '[ "$(lines FIRING "$hl")" = 1 ]')" "$(lines FIRING "$hl")"; done
+
+echo; echo "== 4. RESOLVE: remove the fail flag on both hosts"
+x "both 'sudo -n rm -f $FD/fail'"
+sleep 70; x "collect_now; jobline | grep -E '^(failed|consecutive_failures)'"
+for hl in sentry validator; do check "$hl: drill job failed 0, consecutive 0 after a successful run" "$(ok_if '[ "$(flag failed "$hl")" = 0 ] && [ "$(flag consecutive_failures "$hl")" = 0 ]')"; done
+wait_host none sentry RESOLVED; wait_host none validator RESOLVED
+echo "  waiting 150 s (> 2 x group_interval) for any repeat"; sleep 150
+x "bridge_log | grep -E 'status=resolved alertname=PFTJobFailed|dedup:|ntfy \[RESOLVED\]'"
+for hl in sentry validator; do check "exactly one [RESOLVED] PFTJobFailed line for $hl on the throwaway topic" "$(ok_if '[ "$(lines RESOLVED "$hl")" = 1 ]')" "$(lines RESOLVED "$hl")"; done
+x "topic_msgs \"\$ALERT\" | jq -r 'select(.title | startswith(\"[RESOLVED] PFTJobFailed\")) | .title'"
+check "RESOLVED PFTJobFailed messages on the topic: 1 or 2 (folded when both resolve in one flush)" "$(ok_if '[ "$(grep -c . <<<"$XOUT")" -ge 1 ] && [ "$(grep -c . <<<"$XOUT")" -le 2 ]')"
+
+echo; echo "== 5. never a count of 0"
+x "topic_msgs \"\$ALERT\" | jq -r '.message' | grep -c '(0 run(s)'"
+check "no message on the throwaway topic says '(0 run(s) in a row)'" "$(ok_if '[ "$XOUT" = 0 ]')"
+x "for h in validator sentry; do awk -v h=\$h '/^pft_jobwatch_job_failed\\{/ && \$2 == 1 { sub(/^pft_jobwatch_job_failed/, \"\"); f[\$1] = 1 } /^pft_jobwatch_job_consecutive_failures\\{/ { sub(/^pft_jobwatch_job_consecutive_failures/, \"\"); c[\$1] = \$2 } END { n = 0; z = 0; for (k in f) { n++; if (c[k] == 0) z++ }; print h, \"failed\", n, \"with_consecutive_0\", z }' $TF/pft_jobwatch_\$h.prom; done"
+check "no job on either host exports failed 1 with consecutive_failures 0" "$(ok_if '[ "$(grep -c "with_consecutive_0 0$" <<<"$XOUT")" = 2 ]')"
+x "pq 'ALERTS{alertname=~\"PFTJob.*\"}'"
+check "no PFTJob* alert (any job, any host) pending or firing before restore" "$(ok_if '[ -z "$XOUT" ]')"
+
+echo; echo "== 6. restore (drain first), read back"
+restore
+check "drill units/flags/state gone, bridge back on the operator env, silence expired" "$(ok_if '[ "$RESTORE_OK" = true ]')"
+sleep 60
+readback() { # TOPIC LABEL [quiet]
+  local out
+  if out="$(curl -s --max-time 20 "$NTFY/$1/json?poll=1&since=$since")"; then
+    N_MSG="$(jq -c 'select(.event == "message")' <<<"$out" 2>/dev/null | wc -l)"
+    echo "  $2 topic: $N_MSG message(s)"
+    [ -n "${3:-}" ] || jq -c 'select(.event == "message") | {time: (.time | todate), title, message}' <<<"$out" 2>/dev/null | red | sed 's/^/    /'
+  else N_MSG=-1; echo "  $2 topic: could not be read from ntfy"; fi
+}
+readback "$ALERT" throwaway
+i=0; OPN=0
+while read -r t; do i=$((i + 1)); readback "$t" "operator #$i" quiet; [ "$N_MSG" = 0 ] || OPN=$((OPN + 1)); done < "$OPS"
+check "operator topics received nothing during the run" "$(ok_if '[ "$OPN" = 0 ]')" "$i topic(s), $OPN with messages"
+x "curl -s $PROM/api/v1/query --data-urlencode 'query=pft_jobwatch_up' | jq -r '.data.result[] | \"\(.metric.host) \(.value[1])\"' | sort; curl -s $PROM/api/v1/query --data-urlencode 'query=pft_jobwatch_jobs' | jq -r '.data.result[] | \"\(.metric.host) \(.metric.state) \(.value[1])\"' | sort"
+check "pft_jobwatch_up 1 for both hosts at the end" "$(ok_if '[ "$(grep -cE "^(sentry|validator) 1$" <<<"$XOUT")" = 2 ]')"
+for h in local relay; do
+  r="$(on "$h" "sudo -n pft-integrity verify" 2>&1 | grep '^RESULT')"; echo "  pft-integrity $(lb "$h"): $r"
+  check "pft-integrity PASS on $(lb "$h") at the end" "$(case "$r" in "RESULT: PASS"*) echo 0 ;; *) echo 1 ;; esac)"
+done
+for h in relay local; do
+  s="$(node_state "$h")"
+  check "$(cn "$h") full at the end" "$(case "$s" in full|proposing) echo 0 ;; *) echo 1 ;; esac)" "$s"
+done
+echo; echo "dedup-run done $(ts): $FAILS check(s) failed -> $([ "$FAILS" = 0 ] && echo PASS || echo FAIL)"
+[ "$FAILS" = 0 ]

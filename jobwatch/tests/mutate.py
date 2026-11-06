@@ -341,7 +341,7 @@ MUTANTS = [
         "R07",
         R,
         "Failed: value = failed flag, not consecutive count",
-        "          pft_jobwatch_job_consecutive_failures\n          and on (host, timer) pft_jobwatch_job_failed == 1\n",
+        "          pft_jobwatch_job_consecutive_failures > 0\n          and on (host, timer) pft_jobwatch_job_failed == 1\n",
         "          pft_jobwatch_job_failed == 1\n",
     ),
 ]
@@ -369,6 +369,22 @@ MUTANTS += [
         "timestamps exported with fractions",
         'int(j[key]) if key.endswith("_timestamp_seconds") else j[key]',
         "j[key]",
+    ),
+]
+MUTANTS += [
+    (
+        "M35",
+        L,
+        "failed with an uncounted run reports consecutive 0",
+        "consecutive = max(consecutive, 1)",
+        "pass",
+    ),
+    (
+        "R09",
+        R,
+        "Failed: fires on a consecutive count of 0",
+        "          pft_jobwatch_job_consecutive_failures > 0\n",
+        "          pft_jobwatch_job_consecutive_failures\n",
     ),
 ]
 EQUIVALENT = []

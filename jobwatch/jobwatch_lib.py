@@ -235,6 +235,10 @@ def derive(timer, service, prev, now):
         missed = 1  # no trigger for longer than one interval (+ grace); a run still going counts too
     if enabled and kind in ("calendar", "mixed") and next_rt and now - next_rt > grace:
         missed = 1  # the next elapse is in the past: the timer did not fire
+    consecutive = st["consecutive_failures"]
+    if failed_now:
+        # a failed last run is at least 1 in a row, even when it is not counted yet (state reset, auto-restart)
+        consecutive = max(consecutive, 1)
     m = {
         "job": name,
         "service": st["service"],
@@ -244,7 +248,7 @@ def derive(timer, service, prev, now):
         "running": 1 if running else 0,
         "never_run": 1 if never_run else 0,
         "failed": 1 if failed_now else 0,
-        "consecutive_failures": st["consecutive_failures"],
+        "consecutive_failures": consecutive,
         "missed": missed,
         "interval_seconds": round(interval_s, 3),
         "last_trigger_timestamp_seconds": last_trigger,

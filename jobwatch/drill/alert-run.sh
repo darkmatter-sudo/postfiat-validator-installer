@@ -25,9 +25,11 @@
 #    remove it -> the run ends with success, the timer fires again -> RESOLVED.
 # 6  REMOVE: disable + delete the unit files + daemon-reload -> present 0 -> PFTJobDisabled FIRING (2nd time);
 #    pft-jobwatch forget on both hosts -> the series disappear -> RESOLVED.
-# 7  restore (drill units + flags + state entry gone, bridge, silence), read back every topic, integrity PASS, nodes full.
+# 7  restore (drill units + flags + state entry gone; drain: wait until no PFTJob* alert is pending/firing/active and
+#    its RESOLVED reached the throwaway topic, else silence PFTJob.* 60 min; bridge, silence), read back every topic,
+#    integrity PASS, nodes full.
 # Env: RELAY (relay) NTFY (https://ntfy.sh) AM PROM BRIDGE_ENV AGENT_ENV SIL_TTL (150 min) FIRE_WAIT (900 s)
-#      RESOLVE_WAIT (900 s) QUIET_WAIT (240 s) PREFLIGHT_ONLY=1: step 0 only (exit 0 ready).
+#      RESOLVE_WAIT (900 s) QUIET_WAIT (240 s) DRAIN_WAIT (600 s) DRAIN_SETTLE (90 s) PREFLIGHT_ONLY=1: step 0 only (exit 0 ready).
 # shellcheck disable=SC2016,SC2015,SC2034  # ok_if conditions are evaluated later; A && B || C only reports
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -39,7 +41,7 @@ LOCAL_ENVS="/etc/postfiat-monitor.env /etc/pft-integrity.env"
 REMOTE_ENVS="/etc/pft-watchdog/ntfy.env /etc/pft-integrity.env /etc/pft-alertpath/ntfy.env"
 BRIDGE_ENV="${BRIDGE_ENV:-$HOME/.config/pft-alerts/ntfy.env}"; AGENT_ENV="${AGENT_ENV:-/opt/pft-agent/config.env}"
 AP_WAIT="${AP_WAIT:-180}"; SIL_TTL="${SIL_TTL:-150}"; FIRE_WAIT="${FIRE_WAIT:-900}"; RESOLVE_WAIT="${RESOLVE_WAIT:-900}"
-QUIET_WAIT="${QUIET_WAIT:-240}"; PREFLIGHT_ONLY="${PREFLIGHT_ONLY:-0}"
+QUIET_WAIT="${QUIET_WAIT:-240}"; PREFLIGHT_ONLY="${PREFLIGHT_ONLY:-0}"; DRAIN_WAIT="${DRAIN_WAIT:-600}"
 TASK=task_de7c65f8
 SHA_HEAD="$(git rev-parse HEAD)"
 TF=/var/lib/pft-exporter/textfile
@@ -70,7 +72,8 @@ node_state() { info "$1" | jq -r '.result.info.server_state // "down"' 2>/dev/nu
 pq() { curl -s --max-time 10 "$PROM/api/v1/query" --data-urlencode "query=$1" | jq -r '.data.result[] | "\(.metric | to_entries | map("\(.key)=\(.value)") | join(",")) \(.value[1])"'; }
 topic_msgs() { curl -s --max-time 20 "$NTFY/$1/json?poll=1&since=$since" | jq -c 'select(.event == "message")' 2>/dev/null; }
 n_msgs() { # STATUS ALERTNAME HOST PHRASE -> count of matching throwaway-topic messages about the drill job
-  topic_msgs "$ALERT" | jq -r --arg t "[$1] $2" 'select(.title == $t) | .message' | grep -c "^$3: scheduled job $JOB $4"
+  # titles are "[STATUS] NAME" or, when the bridge folds several alerts into one message, "[STATUS] NAME xN"
+  topic_msgs "$ALERT" | jq -r --arg t "[$1] $2" 'select(.title == $t or (.title | startswith($t + " x"))) | .message' | grep -c "^$3: scheduled job $JOB $4"
 }
 collect_now() { # run both collectors and the validator's pull now (instead of waiting up to 2 + 2 min)
   R 'sudo -n systemctl start pft-jobwatch.service' && sudo -n systemctl start pft-jobwatch.service pft-jobwatch-pull.service </dev/null
@@ -125,6 +128,32 @@ ap_resume() { # wait (<= AP_WAIT s) for a read-only check to be OK again, then s
   [ "$rc" = 0 ] && [ "$AP_PAUSED" = 0 ]; }
 bridge_src() { sudo -n docker inspect pft-alert-bridge --format '{{range .Mounts}}{{if eq .Destination "/run/secrets/ntfy.env"}}{{.Source}}{{end}}{{end}}'; }
 UNDRILL="sudo -n rm -rf $FD; sudo -n systemctl disable --runtime --now $JOB >/dev/null 2>&1; sudo -n systemctl stop $SVC >/dev/null 2>&1; sudo -n rm -f $UD/$JOB $UD/$SVC; sudo -n systemctl daemon-reload; sudo -n systemctl reset-failed $SVC >/dev/null 2>&1; sudo -n pft-jobwatch forget $JOB >/dev/null 2>&1; sudo -n systemctl start pft-jobwatch.service; test ! -e $UD/$JOB && test ! -e $UD/$SVC && test ! -e $FD"
+pftjob_active() { # PFTJob* alerts still pending/firing in Prometheus + active in Alertmanager (any timer, any host)
+  local p a
+  p="$(curl -s --max-time 10 "$PROM/api/v1/query" --data-urlencode 'query=count(ALERTS{alertname=~"PFTJob.*"})' | jq -r '.data.result[0].value[1] // 0' 2>/dev/null)"
+  a="$(curl -s --max-time 10 "$AM/api/v2/alerts?active=true&silenced=false&inhibited=false" | jq '[.[] | select(.labels.alertname | test("^PFTJob"))] | length' 2>/dev/null)"
+  echo "$(( ${p:-1} + ${a:-1} ))"; }
+drain() { # before the bridge goes back to the operator env: let every PFTJob* alert of the run resolve and its
+  # RESOLVED notification reach the THROWAWAY bridge (group_wait 10s + group_interval 1m + margin). Without this, a
+  # restore while alerts still fire sends their RESOLVED (or repeats) to the operator (2026-11-06T17:06Z, run 07).
+  local t0 n=1 settle="${DRAIN_SETTLE:-90}"
+  t0="$(date -u +%s)"
+  while [ $(( $(date -u +%s) - t0 )) -lt "$DRAIN_WAIT" ]; do
+    n="$(pftjob_active)"; [ "$n" = 0 ] && break; sleep 10
+  done
+  if [ "$n" = 0 ]; then
+    echo "  drain: no PFTJob* alert pending/firing/active after $(( $(date -u +%s) - t0 ))s; waiting ${settle}s for RESOLVED delivery to the throwaway bridge"
+    sleep "$settle"
+    n="$(pftjob_active)"
+  fi
+  if [ "$n" = 0 ]; then echo "  drain: done, nothing left that could reach the operator topic: yes"; return 0; fi
+  # still active: mute what is left for an hour so it cannot reach the operator topic, and report a failed restore
+  local e body id
+  e="$(date -u -d '+60 min' +%FT%TZ)"
+  body="$(jq -nc --arg s "$(ts)" --arg e "$e" --arg c "$TASK jobwatch drill $RUN drain timeout" '{matchers: [{name: "alertname", value: "PFTJob.*", isRegex: true, isEqual: true}], startsAt: $s, endsAt: $e, createdBy: "jobwatch-drill", comment: $c}')"
+  id="$(curl -s --max-time 10 -H 'Content-Type: application/json' -X POST "$AM/api/v2/silences" -d "$body" | jq -r '.silenceID // empty')"
+  echo "  drain: NO - $n PFTJob* alert(s) still active after ${DRAIN_WAIT}s; silenced alertname=~PFTJob.* until $e (${id:+id set}${id:-silence FAILED})"
+  return 1; }
 restore() {
   [ "$RESTORED" -eq 1 ] && return 0
   RESTORED=1
@@ -133,6 +162,7 @@ restore() {
     sudo -n systemctl start pft-jobwatch-pull.service </dev/null
   fi
   if [ "$BRIDGE_SWAPPED" = 1 ]; then
+    drain || RESTORE_OK=false
     [ "$AP_PAUSED" = 1 ] || ap_pause
     DOCKER="sudo -n docker" NTFY_ENV_FILE="$BRIDGE_ENV" "$RUNSTACK" bridge 2>&1 | red | sed 's/^/  /'
     if [ "$(bridge_src)" = "$BRIDGE_ENV" ]; then echo "  restored bridge: mounts the operator env file again: yes"

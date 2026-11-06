@@ -9,9 +9,10 @@ groups:
       - alert: PFTJobFailed
         # the job's last finished run failed; stays until a run succeeds (a 1-min job that recovers within one
         # collection does not page)
-        # value = consecutive failed runs observed
+        # value = consecutive failed runs observed; never fires on a count of 0 (jobwatch_lib reports >= 1 whenever
+        # failed == 1, and the `> 0` here guards against any exporter that does not)
         expr: |
-          pft_jobwatch_job_consecutive_failures
+          pft_jobwatch_job_consecutive_failures > 0
           and on (host, timer) pft_jobwatch_job_failed == 1
           and on (host, timer) pft_jobwatch_job_present == 1
         for: 3m
