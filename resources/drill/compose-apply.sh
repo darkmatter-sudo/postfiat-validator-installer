@@ -9,7 +9,7 @@
 # pft-maint suppresses postfiat-monitor, pft-integrity and the sentry's pft-watchdog; an Alertmanager silence covers
 # everything but PFTAlertPipelineWatchdog for the window; every operator topic is read back at the end (must be 0).
 #   bash resources/drill/compose-apply.sh 2>&1 | tee LOG    (repo root, agent user; sudo -n)
-# Env: RES_FILE (resources/docker-compose.resources.yml) FULL_WAIT (1800 s) WIN (45m) PREFLIGHT_ONLY=1
+# Env: RES_FILE (resources/docker-compose.resources.yml) FULL_WAIT (1800 s) WIN (45m) QUIET_WAIT (1500 s) PREFLIGHT_ONLY=1
 # shellcheck disable=SC2016  # single-quoted commands are expanded by eval in x()
 set -uo pipefail
 export TZ=UTC
@@ -123,10 +123,19 @@ NOW_SHA=absent; if sudo -n test -e "$NE"; then NOW_SHA="$(sudo -n sha256sum "$NE
 check "pft-maint target back to its pre-run state" "$([ "$ORIG_SHA" = "$NOW_SHA" ] && echo 0 || echo 1)"
 x "sudo -n systemctl start pft-keyescrow.service; grep -h '^pft_keyescrow_drift_items{node=\"validator\"}' /var/lib/pft-exporter/textfile/pft_keyescrow.prom"
 check "pft-keyescrow re-run: validator drift_items 0" "$(grep -q '} 0$' <<<"$XOUT" && echo 0 || echo 1)"
-echo "  waiting 120 s for restart-related alerts to resolve under the silence"; sleep 120
-x "curl -s $PROM/api/v1/alerts | jq -r '.data.alerts[] | select(.labels.alertname != \"PFTAlertPipelineWatchdog\") | \"\(.labels.alertname) \(.state)\"' | sort | uniq -c"
+# run 02 (2026-11-06T19:56Z): PFTContainerRestarted is `resets(uptime[15m]) > 0`, so it fires for 15 min after the
+# re-create; the old 120 s wait expired the silence while it fired and the bridge sent it to the operator. Wait (<=
+# QUIET_WAIT) until nothing but the pipeline watchdog is pending/firing; if something still is, leave the silence to
+# run out instead of expiring it.
+active() { curl -s "$PROM/api/v1/alerts" | jq -r '.data.alerts[] | select(.labels.alertname != "PFTAlertPipelineWatchdog") | "\(.labels.alertname) \(.state)"' | sort | uniq -c; }
+t1="$(date -u +%s)"; while [ $(( $(date -u +%s) - t1 )) -lt "${QUIET_WAIT:-1500}" ]; do [ -z "$(active)" ] && break; sleep 30; done
+x "active"
 check "no alert pending or firing (besides the pipeline watchdog) before the silence ends" "$([ -z "$XOUT" ] && echo 0 || echo 1)"
-curl -s --max-time 10 -o /dev/null -w "  silence expired: HTTP %{http_code}\n" -X DELETE "$AM/api/v2/silence/$SIL"
+if [ -z "$XOUT" ]; then
+  sleep 30 # resolved notifications of silenced alerts are muted; let Alertmanager settle before the expiry
+  curl -s --max-time 10 -o /dev/null -w "  silence expired: HTTP %{http_code}\n" -X DELETE "$AM/api/v2/silence/$SIL"
+else echo "  alerts still active: silence left to run out at $ends"; fi
+sleep 90 # group_wait 10 s + group_interval 1 m: anything the expiry released has reached ntfy before the read-back
 x "sleep 5; curl -s --max-time 15 \"https://ntfy.sh/\$TT/json?poll=1&since=$since\" | jq -r '.title'"
 check "the [MAINT] start and end messages reached the throwaway topic" "$([ "$(grep -c '^\[MAINT\]' <<<"$XOUT")" -ge 2 ] && echo 0 || echo 1)"
 i=0; OPN=0

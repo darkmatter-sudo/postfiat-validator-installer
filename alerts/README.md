@@ -169,7 +169,7 @@ messages. Since then the bridge:
 Limits: the memory is in the process, so after a bridge restart an alert that is still firing is sent once more.
 There are no reminders for long-running alerts (by design: one message per state change). Tests:
 `python3 -m unittest test_ntfy_bridge` and `python3 mutate_bridge.py`; live proof in
-[`../jobwatch/logs/17-dedup-drill.log`](../jobwatch/logs/17-dedup-drill.log).
+[`../jobwatch/logs/18-dedup-drill.log`](../jobwatch/logs/18-dedup-drill.log).
 
 ## Tests
 

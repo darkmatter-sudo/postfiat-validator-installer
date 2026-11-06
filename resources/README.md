@@ -191,7 +191,7 @@ rebuild, restore) would have dropped them. They are now permanent:
   the last entry of `COMPOSE_FILE` in `.env`, so every compose re-create keeps them (and `../backup` copies the file,
   because it follows `COMPOSE_FILE`). Applied with `drill/compose-apply.sh`: one planned re-create inside a
   pft-maint window, [MAINT] messages on a throwaway topic, an Alertmanager silence for the window, integrity accept of
-  exactly the three expected items, operator topics read back (log 41).
+  exactly the three expected items, operator topics read back (logs 41-42). Run 02 applied cleanly (back to full in 51 s, values now from compose, cgroup unchanged, integrity accepted), but **one** `[FIRING] PFTContainerRestarted` reached the operator topic: the alert fires for 15 min after a restart and the script expired its silence after 120 s; the read-back ran before Alertmanager delivered it, so it showed 0. Fixed in the script (wait until nothing is pending/firing, else let the silence run out; read back after group_interval).
 - **sentry (`docker run`, no compose project):** `../sentry/sentry-node.sh` now passes `--cpu-shares 8192
   --memory-reservation 1280m`, so re-running it keeps them too.
 
@@ -219,4 +219,4 @@ the topic, `verdict.txt`); `logs/35-report-24h.json` is the `--json` form of `RE
 | 29-33 | report.py: tests + mutants, real-data smokes on partial windows (30 superseded) |
 | 34, 37-39 | HELP-text fix: tests, install on both hosts, scrape afterwards |
 | 35, 36 | **24h baseline report**, memory composition from Prometheus |
-| 41 | `drill/compose-apply.sh`: resources overlay made permanent on the validator (operator directive 2026-11-06) |
+| 41-42 | `drill/compose-apply.sh`: preflight, then the live apply on the validator (operator directive 2026-11-06); 42 has 1 FAIL (the silence expiry above) |

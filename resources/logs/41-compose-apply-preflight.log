@@ -1,0 +1,53 @@
+resources compose-apply - 2026-11-06T19:51:48Z - Ubuntu 22.04.5 LTS - HEAD 333e34c9bd4db7c47e741ca13a37917f67e0f3b6 (clean: yes)
+sha256 0d1898207a759a41b22389874994be9fa6deb64c85c8605cedcabf9dc9d63caf resources/docker-compose.resources.yml
+sha256 164ea975adc0e65ab67bf002276c7e507cea1a2ae02b43b3572932fb02985f82 resources/drill/compose-apply.sh
+== this file
+  | # written by resources/ (operator directive 2026-11-06): keep the CPU weight and memory floor that protect postfiatd
+  | # from agent workloads across every compose recreate (were live-only `docker update` values since 2026-11-02)
+  | services:
+  |   postfiatd:
+  |     cpu_shares: 8192
+  |     mem_reservation: 1536m
+
+== 0. preflight (changes nothing)
+CHECK ok   clean tree, HEAD pushed
+$ sudo -n pft-integrity verify | tail -1
+  RESULT: PASS - 176 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS before
+$ state
+  full
+  (exit 0)
+CHECK ok   validator full or proposing
+$ res
+  8192 1610612736
+  (exit 0)
+CHECK ok   live values before = wanted (8192 1610612736; set by docker update 2026-11-02, kept by pft-seccomp re-creates)
+$ cgv
+  532 1610612736
+  (exit 0)
+CHECK ok   cgroup cpu.weight + memory.low read (before) (532 1610612736)
+$ sudo -n sed -n 's/^COMPOSE_FILE=//p' /opt/postfiatd/.env
+  docker-compose.yml:docker-compose.override.yml:docker-compose.confine.yml:docker-compose.apparmor.yml:docker-compose.seccomp.yml
+  (exit 0)
+CHECK ok   COMPOSE_FILE set, overlay not in it yet
+$ sudo -n grep -rlE 'cpu_shares|mem_reservation' /opt/postfiatd/*.yml | wc -l
+  0
+  (exit 1)
+CHECK ok   no compose file sets cpu_shares/mem_reservation yet
+$ sudo -n docker compose --project-directory /opt/postfiatd -f /opt/postfiatd/docker-compose.yml -f /opt/postfiatd/docker-compose.override.yml -f /opt/postfiatd/docker-compose.confine.yml -f /opt/postfiatd/docker-compose.apparmor.yml -f /opt/postfiatd/docker-compose.seccomp.yml  -f ~/work/postfiat-validator-installer/resources/docker-compose.resources.yml config 2>/dev/null | grep -E '^ +(cpu_shares|mem_reservation):'
+      cpu_shares: 8192
+      mem_reservation: "1610612736"
+  (exit 0)
+CHECK ok   merged config (current overlays + this file) has cpu_shares 8192 + mem_reservation 1610612736
+$ curl -s http://<redacted-ip>:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'
+  0
+  (exit 0)
+CHECK ok   no active Alertmanager silence (nothing else owns the window)
+$ sudo -n pft-maint status | head -3
+  no maintenance window (alerting is live)
+  no data-collection locks
+  (exit 0)
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+PREFLIGHT_ONLY: ready, nothing changed

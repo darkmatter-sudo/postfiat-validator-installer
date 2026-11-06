@@ -1,0 +1,275 @@
+jobwatch checks - 2026-11-06T19:17:59Z - OS: Ubuntu 22.04.5 LTS - HEAD 996413c8a5df516997690785328b699de060605a (clean: yes)
+== this script
+  | #!/usr/bin/env bash
+  | # Recorded checks for jobwatch at the current (pushed, clean) HEAD: shellcheck, ruff check + format --check,
+  | # promtool check + test rules, the offline suite and the mutant harness, plus the alerts/ ntfy bridge (unit tests +
+  | # mutants; one message per state change, 2026-11-06). Changes nothing on the host.
+  | #   bash jobwatch/drill/checks-run.sh 2>&1 | tee LOG    (from the repo root)
+  | # shellcheck disable=SC1091
+  | set -uo pipefail
+  | cd "$(git rev-parse --show-toplevel)" || exit 3
+  | export TZ=UTC TEST_TMPDIR="$HOME/.cache"
+  | x() { echo "\$ $*"; eval "$*"; local rc=$?; echo "(exit $rc)"; return "$rc"; }
+  | FAILS=0
+  | check() { if [ "$2" = 0 ]; then echo "CHECK ok   $1"; else echo "CHECK FAIL $1"; FAILS=$((FAILS + 1)); fi; }
+  | # shellcheck disable=SC2016 # expanded by eval in x(), so the log shows $PWD, not the local path
+  | P='docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /w prom/prometheus:v3.5.0'
+  | echo "jobwatch checks - $(date -u +%FT%TZ) - OS: $(. /etc/os-release; echo "$PRETTY_NAME") - HEAD $(git rev-parse HEAD) (clean: $([ -z "$(git status --short)" ] && echo yes || echo NO))"
+  | echo "== this script"; sed 's/^/  | /' jobwatch/drill/checks-run.sh
+  | x "sha256sum jobwatch/pft-jobwatch.sh jobwatch/jobwatch_lib.py jobwatch/install.sh jobwatch/systemd/* alerts/jobwatch.rules.yml alerts/jobwatch.tests.yml jobwatch/tests/*.py alerts/ntfy_bridge.py alerts/test_ntfy_bridge.py alerts/mutate_bridge.py"
+  | x "shellcheck --version | sed -n 2p; shellcheck jobwatch/pft-jobwatch.sh jobwatch/install.sh jobwatch/drill/*.sh"; check "shellcheck clean" $?
+  | x "ruff --version; ruff check jobwatch/ alerts/ntfy_bridge.py alerts/test_ntfy_bridge.py alerts/mutate_bridge.py && ruff format --check jobwatch/ alerts/ntfy_bridge.py alerts/test_ntfy_bridge.py alerts/mutate_bridge.py"; check "ruff check + format clean" $?
+  | x "$P check rules jobwatch.rules.yml"; check "promtool check rules" $?
+  | x "$P test rules jobwatch.tests.yml"; check "promtool test rules" $?
+  | x "python3 -u jobwatch/tests/test_jobwatch.py"; check "offline suite" $?
+  | x "python3 -u jobwatch/tests/mutate.py --jobs 4"; check "mutants: all CAUGHT, 0 orphans" $?
+  | x "(cd alerts && python3 -m unittest -v test_ntfy_bridge 2>&1)"; check "ntfy bridge unit tests" $?
+  | x "python3 -u alerts/mutate_bridge.py"; check "ntfy bridge mutants: all CAUGHT" $?
+  | echo "RESULT: $([ "$FAILS" = 0 ] && echo PASS || echo FAIL) ($FAILS failed checks) - end $(date -u +%FT%TZ)"
+  | [ "$FAILS" = 0 ]
+$ sha256sum jobwatch/pft-jobwatch.sh jobwatch/jobwatch_lib.py jobwatch/install.sh jobwatch/systemd/* alerts/jobwatch.rules.yml alerts/jobwatch.tests.yml jobwatch/tests/*.py alerts/ntfy_bridge.py alerts/test_ntfy_bridge.py alerts/mutate_bridge.py
+194a3810f0e07983eef6847bc680d8840c8ac7de2cc8fb14b134d9ca2046ce0c  jobwatch/pft-jobwatch.sh
+8fb599f739b791931bfa7cf6fe5b35cb343ecb3298e81c6c32f0d129e092ade1  jobwatch/jobwatch_lib.py
+4e751cef8b3dd92f5d3afdea09e6976a0c65e5c15b53d14f9e175c022afa3184  jobwatch/install.sh
+a6faad0816db8300536445415e038d7bab368d207bf5aa73f84e417a53bfebdb  jobwatch/systemd/pft-jobwatch-pull.service
+060f630e2eb922c7803144d52c4c12325f2d12ca20ff35cce8f6062e2ef14e2f  jobwatch/systemd/pft-jobwatch-pull.timer
+7a09555c46f69fbe44bb6462f341aafc30fe022c21f4836c84e06090cbf1be01  jobwatch/systemd/pft-jobwatch.service
+9b80036e6b621d97a61068181f7b25d13cac5cfcbbefb95598527bde8dd32e0f  jobwatch/systemd/pft-jobwatch.timer
+a604a7b01ba635dce1690817acc6b2d8ae7a357558269a928004035346d8bbf1  alerts/jobwatch.rules.yml
+87f237a6f5911c32517b6271c5691418e2a9cf1a5c933164b080b78340a5dbf2  alerts/jobwatch.tests.yml
+8ad673ddee042bc72e4c17e342a1d37d36dad61315ddb10bfb2f5d6d9cb4e01c  jobwatch/tests/mutate.py
+1bd9caa6fdc77e2448585a8b8e4969070a856a3753788ff048abcc1b7a952f86  jobwatch/tests/stub_systemctl.py
+5505631eea36ad1a21cd6c648ef740f68801bd518c93c97ce619a1d2efe1c266  jobwatch/tests/test_jobwatch.py
+86035cd2b9acfd06d0ab478223c08c86460e1f11e08230ad0d6d3b42b92e4ddc  alerts/ntfy_bridge.py
+0f0e4589fa3d83cb5c5caed511c48cd932c21ee25a960cd90014b2614ce283c1  alerts/test_ntfy_bridge.py
+443bf90e85317facaf51859bc1f19c8fe450100f96b6e445f2cb7aa399eea995  alerts/mutate_bridge.py
+(exit 0)
+$ shellcheck --version | sed -n 2p; shellcheck jobwatch/pft-jobwatch.sh jobwatch/install.sh jobwatch/drill/*.sh
+version: 0.8.0
+(exit 0)
+CHECK ok   shellcheck clean
+$ ruff --version; ruff check jobwatch/ alerts/ntfy_bridge.py alerts/test_ntfy_bridge.py alerts/mutate_bridge.py && ruff format --check jobwatch/ alerts/ntfy_bridge.py alerts/test_ntfy_bridge.py alerts/mutate_bridge.py
+ruff 0.17.1
+All checks passed!
+8 files already formatted
+(exit 0)
+CHECK ok   ruff check + format clean
+$ docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /w prom/prometheus:v3.5.0 check rules jobwatch.rules.yml
+Checking jobwatch.rules.yml
+  SUCCESS: 4 rules found
+
+(exit 0)
+CHECK ok   promtool check rules
+$ docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /w prom/prometheus:v3.5.0 test rules jobwatch.tests.yml
+  SUCCESS
+
+(exit 0)
+CHECK ok   promtool test rules
+$ python3 -u jobwatch/tests/test_jobwatch.py
+PASS span 1min
+PASS span 1h 30min
+PASS span 500ms
+PASS span 1w 1d 13h
+PASS span 0 / empty
+PASS span junk -> None
+PASS ts with usec
+PASS ts without usec
+PASS ts n/a / empty / local zone -> 0
+PASS parse_show: blocks + repeated keys
+PASS monotonic: OnUnitActiveSec=1min -> 60 s, OnBootSec ignored
+PASS calendar: kind calendar, spec kept
+PASS monotonic: two repeating settings -> the shorter interval
+PASS template instance: monotonic 5 min
+PASS boot-only timer: no repeating interval
+PASS success: failed 0, consecutive 0, never_run 0, present 1, disabled 0
+PASS success: last_success = ExecMainExitTimestamp
+PASS success: last trigger from LastTriggerUSec
+PASS success: interval 60, missed 0
+PASS success: one run counted
+PASS same run seen twice is counted once
+PASS monotonic: 364 s after last trigger is not missed
+PASS monotonic: 366 s after last trigger is missed
+PASS calendar: interval learned = next - last (within accuracy 1 s of 120)
+PASS calendar: next elapse exported
+PASS calendar: on time -> missed 0
+PASS calendar: next elapse passed by > accuracy + grace -> missed
+PASS calendar: next elapse passed by < grace -> not missed
+PASS calendar: a 2-period gap first, then the 1-period gap wins (min kept)
+PASS calendar: changed spec resets the learned interval
+PASS random delay: learned interval within one delay of 24 h
+PASS random delay: grace = accuracy + 2 x delay + 300 (not missed just inside)
+PASS random delay: no trigger for interval + full grace -> missed
+PASS failed: failed 1, consecutive 1, failed_runs 1
+PASS failed: no last success
+PASS failed: same failed run not counted twice
+PASS failed: next failed run -> consecutive 2
+PASS failed: a successful run resets consecutive to 0 and sets last success
+PASS start-limit-hit (no new start) counts as one failure
+PASS failed run not counted yet (auto-restart) still reports consecutive >= 1, never 0
+PASS Result=timeout with ActiveState inactive is a failure
+PASS ActiveState=failed is a failure even if Result reads success
+PASS Result=success with exit 2 (SuccessExitStatus=) is not a failure
+PASS killed by signal is a failure
+PASS running: running 1, run not counted yet
+PASS running past interval + grace -> missed (no new triggers while it runs)
+PASS never run: never_run 1, failed 0, last success 0, runs 0
+PASS never run: no learned calendar interval yet
+PASS never run: next elapse long past -> missed
+PASS never run (monotonic): not missed within interval + grace of timer activation
+PASS never run (monotonic): missed after interval + grace from timer activation
+PASS never triggered but service started by hand: never_run 0
+PASS disabled: disabled 1, present 1, missed 0 (a disabled job is not also 'missed')
+PASS UnitFileState enabled -> disabled 0
+PASS UnitFileState static -> disabled 0
+PASS UnitFileState masked -> disabled 1
+PASS UnitFileState disabled -> disabled 1
+PASS UnitFileState enabled-runtime -> disabled 0
+PASS enabled but stopped -> disabled 1
+PASS removed: present 0, disabled 1, failed 0, missed 0
+PASS removed: kind/service/last success kept from state
+PASS render: up 1 + timestamp
+PASS render: jobs totals
+PASS render: every gauge has one sample per job
+PASS render: first label is host on every sample
+PASS render: failed job sample
+PASS render: no sample uses a scrape-reserved label (job, instance): drill run 07
+PASS render: label escaping
+PASS render: up 0 has no job samples
+PASS e2e: stub answered (not the real systemctl)
+PASS e2e collect: rc 0, textfile written
+PASS e2e: 7 fixture jobs inventoried
+PASS e2e: failed/disabled counted
+PASS e2e: textfile 0644, no temp file left
+PASS e2e: state dir 0700, state 0600
+PASS e2e: validate accepts own textfile
+PASS e2e inventory: table + summary line
+PASS e2e inventory json
+PASS e2e removed: still exported with present 0, disabled 1
+PASS e2e forget: rc 0
+PASS e2e after forget: job gone, 6 jobs
+PASS e2e forget unknown job: rc 1
+PASS e2e forget bad name: rc 3
+PASS e2e systemctl fails: rc 1, textfile up 0 with timestamp
+PASS e2e systemctl fails: state untouched
+PASS e2e: the up-0 file still validates (pull can carry it)
+PASS helper prints then fails: rc 1 and up 0 (partial output discarded)
+PASS script itself refuses a bad HOST_LABEL (rc 3, helper not run)
+PASS script itself refuses a job name with metacharacters (rc 3)
+PASS over TEXT_BUDGET: rc 1, up 0, no job samples, reason on stderr
+PASS default TEXT_BUDGET (61440) leaves room for the fixture inventory
+PASS timestamps exported as whole seconds
+PASS bad HOST_LABEL: rc 3
+PASS JOB_GLOBS entry not ending in .timer: rc 3
+PASS JOB_GLOBS with shell metacharacters: rc 3
+PASS unknown command: rc 3
+PASS read-only: every systemctl call was `show`
+PASS validate rejects: other host label
+PASS validate rejects: foreign metric
+PASS validate rejects: no timestamp
+PASS validate rejects: malformed value
+PASS validate rejects: oversize
+PASS pull: valid peer file installed byte-identical
+PASS pull: invalid peer file refused (rc 2), old copy kept, no temp left
+PASS pull: refuses to overwrite own textfile
+PASS pull: fetch failure rc 1, old copy kept
+RESULT: PASS (106 checks, 0 failed)
+(exit 0)
+CHECK ok   offline suite
+$ python3 -u jobwatch/tests/mutate.py --jobs 4
+control suite (unmutated copy): PASS RESULT: PASS (106 checks, 0 failed)
+control promtool (unmutated copy): PASS SUCCESS
+M01 CAUGHT - span: '0' not special-cased [1 failing: span 0 / empty :: ]
+M02 CAUGHT - span: trailing junk accepted [1 failing: span junk -> None :: ]
+M03 CAUGHT - ts: microseconds dropped [1 failing: ts with usec :: ]
+M04 CAUGHT - ts: any zone accepted as UTC [1 failing: ts n/a / empty / local zone -> 0 :: ]
+M05 CAUGHT - parse_show: repeated keys overwrite [9 failing: parse_show: blocks + repeated keys :: [{'Id': ['a.timer'], 'TimersMonotonic': ['y']}, {'Id; monotonic: OnUnitActiveSec=1min -> 60 s, OnBootSec ignored :: ('none', 0.0, 'OnBootUSec=1m]
+M06 CAUGHT - monotonic: OnBootSec counted as repeating [2 failing: template instance: monotonic 5 min :: ('monotonic', 60.0); boot-only timer: no repeating interval :: ('monotonic', 60.0)]
+M07 CAUGHT - monotonic: largest interval used [1 failing: monotonic: two repeating settings -> the shorter interval :: ('monotonic', 300.0)]
+M08 CAUGHT - calendar: learned interval keeps the largest gap [1 failing: calendar: a 2-period gap first, then the 1-period gap wins (min kept) :: {'kind': 'calenda]
+M09 CAUGHT - calendar: learned interval kept across a spec change [1 failing: calendar: changed spec resets the learned interval :: {'kind': 'calendar', 'spec': 'OnCale]
+M10 CAUGHT - disabled: stopped timer counts as enabled [1 failing: enabled but stopped -> disabled 1 :: ]
+M11 CAUGHT - disabled: unit file state ignored [2 failing: UnitFileState masked -> disabled 1 :: ; UnitFileState disabled -> disabled 1 :: ]
+M12 CAUGHT - disabled: static unit file counts as disabled [1 failing: UnitFileState static -> disabled 0 :: ]
+M13 CAUGHT - removed: missing timer counts as present [3 failing: removed: present 0, disabled 1, failed 0, missed 0 :: {'job': 'pft-heartbeat.timer', 'serv; removed: kind/service/last success kept from state :: {'job': 'pft-heartbeat.timer', 'serv]
+M14 CAUGHT - failed: only ActiveState=failed counts [2 failing: failed run not counted yet (auto-restart) still reports consecutive >= 1, never 0 :: {'job; Result=timeout with ActiveState inactive is a failure :: ]
+M15 CAUGHT - failed: ActiveState=failed ignored [1 failing: ActiveState=failed is a failure even if Result reads success :: ]
+M16 CAUGHT - consecutive: same run counted again [3 failing: same run seen twice is counted once :: {'job': 'pft-heartbeat.timer', 'service': 'pft-hear; failed: same failed run not counted twice :: {'job': 'pft-jwfail.timer', 'service': 'pft-j]
+M17 CAUGHT - consecutive: success does not reset [2 failing: failed: a successful run resets consecutive to 0 and sets last success :: {'job': 'pft-jwf; start-limit-hit (no new start) counts as one failure :: {'job': 'pft-jwfail.timer', 'servi]
+M18 CAUGHT - consecutive: failure does not count [1 failing: failed: next failed run -> consecutive 2 :: {'job': 'pft-jwfail.timer', 'service': 'pft-jw]
+M19 CAUGHT - last success: not updated [2 failing: success: last_success = ExecMainExitTimestamp :: {'job': 'pft-heartbeat.timer', 'service':; failed: a successful run resets consecutive to 0 and sets last success :: {'job': 'pft-jwf]
+M20 SURVIVED - run key ignores result (start-limit-hit missed)
+M21 CAUGHT - running run counted as finished [1 failing: running: running 1, run not counted yet :: {'job': 'pft-heartbeat.timer', 'service': 'pft-]
+M22 CAUGHT - missed: grace dropped [4 failing: monotonic: 364 s after last trigger is not missed :: {'job': 'pft-heartbeat.timer', 'servi; calendar: next elapse passed by < grace -> not missed :: {'job': 'pft-kernwatch.timer', 's]
+M23 CAUGHT - missed: randomized delay counted once [1 failing: random delay: grace = accuracy + 2 x delay + 300 (not missed just inside) :: {'job': 'pft-]
+M24 CAUGHT - missed: interval check never fires [4 failing: monotonic: 366 s after last trigger is missed :: {'job': 'pft-heartbeat.timer', 'service':; random delay: no trigger for interval + full grace -> missed :: {'job': 'pft-vulnscan.time]
+M25 CAUGHT - missed: next-elapse check removed [1 failing: never run: next elapse long past -> missed :: {'job': 'pft-jwnever.timer', 'service': 'pft]
+M26 CAUGHT - missed: disabled jobs also missed [1 failing: disabled: disabled 1, present 1, missed 0 (a disabled job is not also 'missed') :: {'job':]
+M27 CAUGHT - never run: ActiveEnterTimestamp not used as reference [1 failing: never run (monotonic): missed after interval + grace from timer activation :: {'job': 'pft]
+M28 CAUGHT - never_run: ignores service start [1 failing: never triggered but service started by hand: never_run 0 :: {'job': 'pft-heartbeat.timer',]
+M29 CAUGHT - inventory: state jobs not re-read (removed jobs vanish) [2 failing: e2e removed: still exported with present 0, disabled 1 :: ; e2e forget: rc 0 :: (1, '', 'pft-heartbeat.timer: not in the state\n')]
+M30 CAUGHT - state written 0644 [1 failing: e2e: state dir 0700, state 0600 :: ]
+M31 CAUGHT - render: job samples written when up 0 [1 failing: render: up 0 has no job samples :: ]
+M32 CAUGHT - render: label value not escaped [1 failing: render: label escaping :: ]
+S01 CAUGHT - collect: helper failure still publishes nothing [1 failing: helper prints then fails: rc 1 and up 0 (partial output discarded) :: (1, 'pft_jobwatch_up]
+S02 CAUGHT - collect: failure exits 0 [3 failing: e2e systemctl fails: rc 1, textfile up 0 with timestamp :: (0, '# HELP pft_jobwatch_up 1 i; helper prints then fails: rc 1 and up 0 (partial output discarded) :: (0, '# HELP pft_jobw]
+S03 CAUGHT - validate: host label not checked [3 failing: validate rejects: other host label :: (0, ''); pull: invalid peer file refused (rc 2), old copy kept, no temp left :: (0, '')]
+S04 CAUGHT - validate: foreign metrics accepted [3 failing: e2e: validate accepts own textfile :: (2, 'line 3: first label is not host="validator"\n',; e2e: the up-0 file still validates (pull can carry it) :: (2, 'line 3: first label is not ]
+S05 CAUGHT - validate: size not checked [1 failing: validate rejects: oversize :: (2, 'line 3: not a pft_jobwatch_ sample\n')]
+S06 CAUGHT - validate: timestamp not required [1 failing: validate rejects: no timestamp :: (0, '')]
+S07 CAUGHT - pull: own host accepted [1 failing: pull: refuses to overwrite own textfile :: (1, 'pft-jobwatch: fetch of pft_jobwatch_valida]
+S08 CAUGHT - pull: invalid file installed [2 failing: pull: invalid peer file refused (rc 2), old copy kept, no temp left :: (0, ''); pull: fetch failure rc 1, old copy kept :: (1, 'pft-jobwatch: fetch of pft_jobwatch_sentry]
+S09 CAUGHT - globs: any unit type accepted [1 failing: JOB_GLOBS entry not ending in .timer: rc 3 :: ]
+S10 CAUGHT - host label not validated [1 failing: script itself refuses a bad HOST_LABEL (rc 3, helper not run) :: (0, 'pft_jobwatch_up 1', ]
+S11 CAUGHT - forget: any name accepted [1 failing: script itself refuses a job name with metacharacters (rc 3) :: (1, 'a;b.timer: not in the ]
+R01 CAUGHT - Failed: for 3m -> 0m (transient failure pages) [promtool FAILED: a failed run fires after 3 min with the consecutive count, per host + job, and resolves on success; a failure that clears within 2 min (one collection) does not page]
+R02 CAUGHT - Failed: removed job still Failed [promtool FAILED: a removed job (present 0) fires Disabled, not Failed, and clears after forget (series ends)]
+R03 CAUGHT - Missed: for 5m dropped [promtool FAILED: missed for 5 min fires and resolves]
+R04 CAUGHT - Disabled: for 5m -> 1m [promtool FAILED: a removed job (present 0) fires Disabled, not Failed, and clears after forget (series ends); disabled for 5 min fires, re-enabled resolves; 3 min pending does not fire]
+R05 CAUGHT - Stale: up == 0 branch removed [promtool FAILED: stale collector (timestamp stops) fires after 10 + 10 min; up 0 fires after 10 min]
+R06 CAUGHT - Stale: 600 s -> 1800 s [promtool FAILED: stale collector (timestamp stops) fires after 10 + 10 min; up 0 fires after 10 min]
+R07 CAUGHT - Failed: value = failed flag, not consecutive count [promtool FAILED: a failed run fires after 3 min with the consecutive count, per host + job, and resolves on success; failed 1 with a consecutive count of 0 never fires (17:06Z "0 run(s) in a row" messages); two timers]
+M33 CAUGHT - label named job again (the scrape renames it) [3 failing: render: failed job sample :: ; render: no sample uses a scrape-reserved label (job, instance): drill run 07 :: ]
+R08 SURVIVED - Failed: join on host only
+S12 CAUGHT - size guard removed [1 failing: over TEXT_BUDGET: rc 1, up 0, no job samples, reason on stderr :: (0, '# HELP pft_jobwatch]
+M34 CAUGHT - timestamps exported with fractions [1 failing: timestamps exported as whole seconds :: ]
+M35 CAUGHT - failed with an uncounted run reports consecutive 0 [1 failing: failed run not counted yet (auto-restart) still reports consecutive >= 1, never 0 :: {'job]
+R09 CAUGHT - Failed: fires on a consecutive count of 0 [promtool FAILED: failed 1 with a consecutive count of 0 never fires (17:06Z "0 run(s) in a row" messages)]
+orphan check: 0 process(es) still running from mutant copies
+RESULT: 54 caught, 2 survived, 0 not applied, 0 broken of 56 (+ 0 documented equivalent: )
+(exit 1)
+CHECK FAIL mutants: all CAUGHT, 0 orphans
+$ (cd alerts && python3 -m unittest -v test_ntfy_bridge 2>&1)
+test_each_transition_sent_once (test_ntfy_bridge.DedupTest) ... ok
+test_first_sight_then_repeats_suppressed (test_ntfy_bridge.DedupTest) ... ok
+test_no_fingerprint_uses_labels (test_ntfy_bridge.DedupTest) ... ok
+test_resolved_forgotten_after_a_day_firing_kept (test_ntfy_bridge.DedupTest) ... ok
+test_bad_json_400 (test_ntfy_bridge.EndToEndTest) ... ok
+test_incident_replay (test_ntfy_bridge.EndToEndTest) ... ok
+test_burst_folds_into_one_message (test_ntfy_bridge.MessagesTest) ... ok
+test_identical_summaries_listed_once (test_ntfy_bridge.MessagesTest) ... ok
+test_single_alert_keeps_old_format (test_ntfy_bridge.MessagesTest) ... ok
+test_split_by_status_and_name_critical_high (test_ntfy_bridge.MessagesTest) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 1.038s
+
+OK
+(exit 0)
+CHECK ok   ntfy bridge unit tests
+$ python3 -u alerts/mutate_bridge.py
+control (unmutated): PASS
+B01 CAUGHT   dedup off: repeats forwarded
+B02 CAUGHT   dedup keyed on status only
+B03 CAUGHT   transition not remembered
+B04 CAUGHT   no folding: key per alert
+B05 CAUGHT   folded title without count
+B06 CAUGHT   body not capped
+B07 CAUGHT   resolved not low priority
+B08 CAUGHT   critical not high
+B09 CAUGHT   forgetting drops firing alerts too
+B10 CAUGHT   duplicate summaries listed twice
+B11 CAUGHT   forward the whole webhook, not the changes
+RESULT: 11/11 CAUGHT -> PASS
+(exit 0)
+CHECK ok   ntfy bridge mutants: all CAUGHT
+RESULT: FAIL (1 failed checks) - end 2026-11-06T19:19:12Z

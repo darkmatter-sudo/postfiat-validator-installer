@@ -1,0 +1,146 @@
+resources compose-apply - 2026-11-06T19:52:06Z - Ubuntu 22.04.5 LTS - HEAD 333e34c9bd4db7c47e741ca13a37917f67e0f3b6 (clean: yes)
+sha256 0d1898207a759a41b22389874994be9fa6deb64c85c8605cedcabf9dc9d63caf resources/docker-compose.resources.yml
+sha256 164ea975adc0e65ab67bf002276c7e507cea1a2ae02b43b3572932fb02985f82 resources/drill/compose-apply.sh
+== this file
+  | # written by resources/ (operator directive 2026-11-06): keep the CPU weight and memory floor that protect postfiatd
+  | # from agent workloads across every compose recreate (were live-only `docker update` values since 2026-11-02)
+  | services:
+  |   postfiatd:
+  |     cpu_shares: 8192
+  |     mem_reservation: 1536m
+
+== 0. preflight (changes nothing)
+CHECK ok   clean tree, HEAD pushed
+$ sudo -n pft-integrity verify | tail -1
+  RESULT: PASS - 176 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS before
+$ state
+  full
+  (exit 0)
+CHECK ok   validator full or proposing
+$ res
+  8192 1610612736
+  (exit 0)
+CHECK ok   live values before = wanted (8192 1610612736; set by docker update 2026-11-02, kept by pft-seccomp re-creates)
+$ cgv
+  532 1610612736
+  (exit 0)
+CHECK ok   cgroup cpu.weight + memory.low read (before) (532 1610612736)
+$ sudo -n sed -n 's/^COMPOSE_FILE=//p' /opt/postfiatd/.env
+  docker-compose.yml:docker-compose.override.yml:docker-compose.confine.yml:docker-compose.apparmor.yml:docker-compose.seccomp.yml
+  (exit 0)
+CHECK ok   COMPOSE_FILE set, overlay not in it yet
+$ sudo -n grep -rlE 'cpu_shares|mem_reservation' /opt/postfiatd/*.yml | wc -l
+  0
+  (exit 1)
+CHECK ok   no compose file sets cpu_shares/mem_reservation yet
+$ sudo -n docker compose --project-directory /opt/postfiatd -f /opt/postfiatd/docker-compose.yml -f /opt/postfiatd/docker-compose.override.yml -f /opt/postfiatd/docker-compose.confine.yml -f /opt/postfiatd/docker-compose.apparmor.yml -f /opt/postfiatd/docker-compose.seccomp.yml  -f ~/work/postfiat-validator-installer/resources/docker-compose.resources.yml config 2>/dev/null | grep -E '^ +(cpu_shares|mem_reservation):'
+      cpu_shares: 8192
+      mem_reservation: "1610612736"
+  (exit 0)
+CHECK ok   merged config (current overlays + this file) has cpu_shares 8192 + mem_reservation 1610612736
+$ curl -s http://<redacted-ip>:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'
+  0
+  (exit 0)
+CHECK ok   no active Alertmanager silence (nothing else owns the window)
+$ sudo -n pft-maint status | head -3
+  no maintenance window (alerting is live)
+  no data-collection locks
+  (exit 0)
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+
+== 1. silence (all but the pipeline watchdog) + pft-maint window, [MAINT] to a throwaway topic
+CHECK ok   Alertmanager silence until 2026-11-06T20:47:15Z
+$ { [ $HAD = 0 ] || sudo -n cp -p $NE $BK; } && printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' "$TT" | sudo -n tee $NE >/dev/null && sudo -n chmod 600 $NE && sudo -n stat -c '%a %U' $NE
+  600 root
+  (exit 0)
+CHECK ok   throwaway pft-maint target installed
+$ sudo -n pft-maint start --ttl 45m --reason 'directive-20261106-resources: compose resources overlay, planned postfiatd re-create'
+  window started: id m1793994735-1822065 until 2026-11-06T20:37:15Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint window open
+CHECK ok   sentry has the window (watchdog channel) after 30s
+
+== 2. install the overlay, add it to COMPOSE_FILE, docker compose up -d
+$ sudo -n cp -p /opt/postfiatd/.env /opt/postfiatd/.env.pre-resources-20261106T195249Z && sudo -n install -m 644 -o root -g root ~/work/postfiat-validator-installer/resources/docker-compose.resources.yml /opt/postfiatd/docker-compose.resources.yml && sudo -n sed -i 's#^COMPOSE_FILE=.*#&:docker-compose.resources.yml#' /opt/postfiatd/.env && sudo -n sed -n 's/^COMPOSE_FILE=//p' /opt/postfiatd/.env
+  docker-compose.yml:docker-compose.override.yml:docker-compose.confine.yml:docker-compose.apparmor.yml:docker-compose.seccomp.yml:docker-compose.resources.yml
+  (exit 0)
+CHECK ok   overlay installed, COMPOSE_FILE = old + :docker-compose.resources.yml (old .env kept as backup)
+$ (cd /opt/postfiatd && sudo -n docker compose up -d 2>&1 | { grep -v 'attribute .version. is obsolete' || true; })
+   Container postfiatd  Recreate
+   Container postfiatd  Recreated
+   Container postfiatd  Starting
+   Container postfiatd  Started
+  (exit 0)
+CHECK ok   docker compose up -d exit 0
+  2026-11-06T19:53:41Z: server_state full after 51s
+CHECK ok   validator back to full after the re-create
+
+== 3. verify
+$ res
+  8192 1610612736
+  (exit 0)
+CHECK ok   container: CpuShares 8192, MemoryReservation 1610612736 (now from compose)
+$ sudo -n docker inspect postfiatd --format '{{index .Config.Labels "com.docker.compose.project.config_files"}}' | tr ',' '\n' | sed 's#.*/##'
+  docker-compose.yml
+  docker-compose.override.yml
+  docker-compose.confine.yml
+  docker-compose.apparmor.yml
+  docker-compose.seccomp.yml
+  docker-compose.resources.yml
+  (exit 0)
+CHECK ok   compose labels list the overlay
+$ sudo -n docker inspect postfiatd --format '{{json .HostConfig.SecurityOpt}} mem={{.HostConfig.Memory}} pids={{.HostConfig.PidsLimit}}' | sed -E 's/seccomp=[^"]*/seccomp=<profile>/'
+  ["no-new-privileges:true","apparmor=pft-postfiatd","seccomp=<profile>"architectures\":[\"SCMP_ARCH_X86_64\"],\"defaultAction\":\"SCMP_ACT_ERRNO\",\"defaultErrnoRet\":1,\"flags\":[\"SECCOMP_FILTER_FLAG_LOG\"],\"syscalls\":[{\"action\":\"SCMP_ACT_ALLOW\",\"names\":[\"accept\",\"access\",\"arch_prctl\",\"bind\",\"brk\",\"capget\",\"capset\",\"chdir\",\"clock_getres\",\"clock_gettime\",\"clock_nanosleep\",\"close\",\"connect\",\"copy_file_range\",\"creat\",\"dup2\",\"dup3\",\"epoll_create1\",\"epoll_ctl\",\"epoll_wait\",\"eventfd2\",\"execve\",\"exit\",\"exit_group\",\"faccessat2\",\"fadvise64\",\"fchdir\",\"fchmod\",\"fchown\",\"fcntl\",\"fdatasync\",\"fgetxattr\",\"flistxattr\",\"flock\",\"fsetxattr\",\"fstat\",\"fstatfs\",\"fsync\",\"ftruncate\",\"futex\",\"getcwd\",\"getdents64\",\"getegid\",\"geteuid\",\"getgid\",\"getpeername\",\"getpgrp\",\"getpid\",\"getppid\",\"getpriority\",\"getrandom\",\"getresgid\",\"getresuid\",\"getsockname\",\"getsockopt\",\"gettid\",\"gettimeofday\",\"getuid\",\"ioctl\",\"kill\",\"listen\",\"lseek\",\"madvise\",\"mkdir\",\"mmap\",\"mprotect\",\"mremap\",\"munmap\",\"newfstatat\",\"openat\",\"openat2\",\"pipe2\",\"poll\",\"prctl\",\"pread64\",\"prlimit64\",\"pselect6\",\"pwrite64\",\"read\",\"readlink\",\"recvfrom\",\"recvmsg\",\"rename\",\"renameat2\",\"restart_syscall\",\"rseq\",\"rt_sigaction\",\"rt_sigprocmask\",\"rt_sigreturn\",\"rt_sigsuspend\",\"sched_getparam\",\"sched_getscheduler\",\"sched_yield\",\"sendmmsg\",\"sendmsg\",\"sendto\",\"set_robust_list\",\"set_tid_address\",\"setgid\",\"setgroups\",\"setpgid\",\"setpriority\",\"setresgid\",\"setresuid\",\"setsid\",\"setsockopt\",\"setuid\",\"shutdown\",\"sigaltstack\",\"socketpair\",\"statfs\",\"statx\",\"sysinfo\",\"tgkill\",\"time\",\"timer_create\",\"timer_settime\",\"timerfd_create\",\"timerfd_settime\",\"umask\",\"uname\",\"unlink\",\"unlinkat\",\"utimensat\",\"vfork\",\"wait4\",\"write\",\"writev\"]},{\"action\":\"SCMP_ACT_ALLOW\",\"args\":[{\"index\":0,\"op\":\"SCMP_CMP_NE\",\"value\":40}],\"names\":[\"socket\"]},{\"action\":\"SCMP_ACT_ALLOW\",\"args\":[{\"index\":0,\"op\":\"SCMP_CMP_MASKED_EQ\",\"value\":2114060288}],\"names\":[\"clone\"]},{\"action\":\"SCMP_ACT_ERRNO\",\"errnoRet\":38,\"names\":[\"clone3\"]}]}"] mem=2415919104 pids=256
+  (exit 0)
+CHECK ok   earlier overlays still applied (no-new-privileges, apparmor, seccomp, memory limit)
+$ cgv
+  532 1610612736
+  (exit 0)
+CHECK ok   new container's cgroup: cpu.weight + memory.low equal to before (532 1610612736)
+$ sudo -n pft-integrity verify | grep -E 'WARN|FAIL|RESULT' | sed -E 's/[0-9a-f]{12,}/<sha>/g'
+    [FAIL] compose:.env                                 changed  mtime, sha256
+    [WARN] compose:docker-compose.resources.yml         added    new file
+    [FAIL] container:postfiatd                          changed  labels
+  RESULT: FAIL - 174 unchanged, 1 warn, 2 fail -> exit 2
+  (exit 2)
+CHECK ok   integrity: changed items are only compose:.env, compose:docker-compose.resources.yml, container:postfiatd
+$ sudo -n pft-integrity accept --reason 'directive-20261106-resources: docker-compose.resources.yml (cpu_shares 8192, mem_reservation 1536m) in COMPOSE_FILE, postfiatd re-created @333e34c' | tail -2; sudo -n pft-integrity verify | tail -1
+  pft-integrity accept - 2026-11-06T19:53:56Z: re-baselined 177 items by <user>
+  manifest sha256: affc3bbf52913549a032fae65d7652baabe457aab948218b343c2da91a747b9f -> 6526924557ff02fe87b04b5a6ef6fa4cc2fcf57e55f2c06a925d11884439dfd2 (logged to accept.log)
+  RESULT: PASS - 177 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS after accept
+
+== 4. end window, restore the real target, read back
+  pft-maint window ended
+  pft-maint target restored
+CHECK ok   pft-maint target back to its pre-run state
+$ sudo -n systemctl start pft-keyescrow.service; grep -h '^pft_keyescrow_drift_items{node="validator"}' /var/lib/pft-exporter/textfile/pft_keyescrow.prom
+  pft_keyescrow_drift_items{node="validator"} 0
+  (exit 0)
+CHECK ok   pft-keyescrow re-run: validator drift_items 0
+  waiting 120 s for restart-related alerts to resolve under the silence
+$ curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '.data.alerts[] | select(.labels.alertname != "PFTAlertPipelineWatchdog") | "\(.labels.alertname) \(.state)"' | sort | uniq -c
+        1 PFTContainerRestarted firing
+  (exit 0)
+CHECK FAIL no alert pending or firing (besides the pipeline watchdog) before the silence ends
+  silence expired: HTTP 200
+$ sleep 5; curl -s --max-time 15 "https://ntfy.sh/$TT/json?poll=1&since=1793994726" | jq -r '.title'
+  [MAINT] start validator
+  [MAINT] end validator
+  (exit 0)
+CHECK ok   the [MAINT] start and end messages reached the throwaway topic
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the run (2 topic(s), 0 with messages)
+$ sudo -n postfiat-health | tail -3
+    [INFO] node full - add validator token (official guide steps 5-8) to start proposing
+  
+  RESULT: HEALTHY
+  (exit 0)
+CHECK ok   postfiat-health HEALTHY
+
+compose-apply done 2026-11-06T19:56:23Z: 1 check(s) failed -> FAIL
