@@ -1,7 +1,7 @@
 # schedaudit — scheduled-execution entry-point audit (pft-schedaudit)
 
-Status: **in progress**: tool, offline suite, mutant harness and alert rules done; two-host install, found → fixed →
-verified run and tamper drill not run yet (see [Results](#results)).
+Status: **in progress**: installed on both hosts, found → fixed → verified (log 03, 45/45 checks PASS); the
+non-executing tamper drill on a throwaway topic is not run yet (see [Results](#results)).
 
 `../jobwatch` watches the OUTCOME of the `pft-*`/`postfiat*` timers. Nothing in this repo looked at the other ways
 code gets run on a schedule on a validator or sentry: `/etc/crontab`, `/etc/cron.d`, user crontab spools, the
@@ -145,4 +145,23 @@ cd alerts && promtool test rules schedaudit.tests.yml
 
 ## Results
 
-Pending: two-host install, found → fixed → verified run, and the non-executing tamper drill on a throwaway topic.
+| Log | What | Result |
+|---|---|---|
+| `logs/01-checks.log` | shellcheck, ruff, promtool check + test, offline suite, mutant harness at `d44e5d4` | PASS: suite 98/98, mutants 56/56 caught, 0 orphans |
+| `logs/02-install-preflight.log` | `PREFLIGHT_ONLY=1 drill/install-run.sh` at `c081cd4` (changes nothing) | 12/12 checks ok |
+| `logs/03-install.log` | two-host install at `c081cd4` through pft-fleet in a pft-maint window | PASS, 45/45 checks ok |
+
+Found → fixed → verified (log 03):
+
+| Host | Entries (step 0 → after install) | Found (step 0, HEAD helper, nothing installed) | Fix | Verified (step 9, installed tool) |
+|---|---|---|---|---|
+| validator | 89 → 91 (+ `pft-schedaudit.timer`, `pft-schedaudit-pull.timer`) | 11 `untracked` (job scripts in `/usr/local/sbin`, provider cron files in `/etc/cron.d` and `/etc/cron.hourly`), 1 `nonsystem_user` (the operator's own unprivileged agent cron) | `pft-integrity` `collect_sched` hook synced by pft-fleet: 31 `sched:*` items tracked; allowlist line with its reason for the agent cron | 0 unexpected findings, 1 ALLOWED, 0 new / removed, baseline yes |
+| sentry | 65 → 66 (+ `pft-schedaudit.timer`) | 6 `untracked` | the same hook: 26 `sched:*` items | 0 findings, 0 new / removed, baseline yes |
+
+No `chain_writable`, `chain_owner`, `writable_dir`, `pkg_modified` or `timer_target` finding on either host. Both
+textfiles scrape with `up 1` and all 8 `pft_schedaudit_unexpected` series 0; `pft-fleet skew` CURRENT for schedaudit
+and integrity on both hosts; pft-rulecheck `RESULT OK` on both; pft-integrity PASS on both; both nodes `full`; the
+[MAINT] messages reached the throwaway topic and the operator topics received 0 messages during the run.
+
+Pending: the non-executing tamper drill (a never-firing cron.d entry, `PFTSchedEntryUnexpected` FIRING then
+RESOLVED on a throwaway topic, `apply` on a deliberately 0666 drill file).

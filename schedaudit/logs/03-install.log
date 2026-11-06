@@ -1,0 +1,567 @@
+schedaudit two-host install - 2026-11-06T22:36:09Z - Ubuntu 22.04.5 LTS - repo HEAD c081cd4b036ed0a9ba74f0e3ebfba1cf24ce7fe4 (clean: yes)
+
+== 0. preflight + FOUND (read-only audit of both hosts with the HEAD helper, nothing installed)
+$ sha256sum schedaudit/pft-schedaudit.sh schedaudit/schedaudit_lib.py schedaudit/install.sh schedaudit/drill/install-run.sh schedaudit/systemd/* alerts/schedaudit.rules.yml integrity/pft-integrity.sh
+  cebe0936e5e28126d9c5ebf63adcc6bedad169406c840106044d0c952c1caab7  schedaudit/pft-schedaudit.sh
+  adfa121b6a829159ac15a0bb19179be6a915cf9a3370318b02a213e286993f03  schedaudit/schedaudit_lib.py
+  5db571b60763ad1e494a9efdd3f2c2328bf3c552ce6f5584a79e18f18a20826b  schedaudit/install.sh
+  509550c56c89190c18dd927ee2961dd138196559aada7e94a92a3c86a7b89f5b  schedaudit/drill/install-run.sh
+  e409b4b59ffa67ebd9aafd4e6cb45849be1abe661182345ea2f5fa716064eb8d  schedaudit/systemd/pft-schedaudit-pull.service
+  fb67faf95b3a76499a97f961a48d0e360dffbba6840c2440fa1403c2b03261c1  schedaudit/systemd/pft-schedaudit-pull.timer
+  eeb630fa0ba11f26bf2fcbdf104a668feb183b84f24c2c53cd0b7d65b6756057  schedaudit/systemd/pft-schedaudit.service
+  9c9b74c6552232e8210315cdef20c8bd7d11fbf6fa5be43a654d8eec971bc6db  schedaudit/systemd/pft-schedaudit.timer
+  34dd9127efa670162cbb80c951915c83d49ec8ead1a6d4fbb5c4ac69e265ffac  alerts/schedaudit.rules.yml
+  c7d45dea830d519c8bb1c730ce81951f4c8d89263affbe21579c746d404f1755  integrity/pft-integrity.sh
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 177 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 103 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts before install
+$ sudo -n docker exec postfiatd curl -s -m 10 -d '{"method":"server_info"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state; R "sudo -n docker exec postfiatd-sentry curl -s -m 10 -d '{\"method\":\"server_info\"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state"
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ ls /usr/local/bin/pft-schedaudit /etc/pft-schedaudit.env 2>&1; R 'ls /usr/local/bin/pft-schedaudit 2>&1'
+  ls: cannot access '/usr/local/bin/pft-schedaudit': No such file or directory
+  ls: cannot access '/etc/pft-schedaudit.env': No such file or directory
+  ls: cannot access '/usr/local/bin/pft-schedaudit': No such file or directory
+  (exit 2)
+CHECK ok   not installed yet on either host
+$ grep -c '^collect_sched()' /usr/local/bin/pft-integrity; R 'grep -c ^collect_sched\(\) /usr/local/bin/pft-integrity'
+  0
+  0
+  (exit 1)
+CHECK ok   installed pft-integrity has no collect_sched hook yet (both hosts)
+$ grep -n schedaudit alerts/prometheus.yml fleet/manifest.tsv rulecheck/pft-rulecheck.conf.example rulecheck/pft-rulecheck.sentry.conf.example 2>&1 | cut -c1-150
+  alerts/prometheus.yml:29:  - /etc/pft-alerts/schedaudit.rules.yml  # ../schedaudit (cron/anacron/at/timer entry points: new/removed vs accepted set, u
+  fleet/manifest.tsv:156:schedaudit  schedaudit/pft-schedaudit.sh                       /usr/local/bin/pft-schedaudit                       0755 both
+  fleet/manifest.tsv:157:schedaudit  schedaudit/schedaudit_lib.py                       /usr/local/lib/pft-schedaudit/schedaudit_lib.py     0644 both
+  fleet/manifest.tsv:158:schedaudit  schedaudit/systemd/pft-schedaudit.service          /etc/systemd/system/pft-schedaudit.service          0644 both
+  fleet/manifest.tsv:159:schedaudit  schedaudit/systemd/pft-schedaudit.timer            /etc/systemd/system/pft-schedaudit.timer            0644 both
+  fleet/manifest.tsv:160:schedaudit  schedaudit/systemd/pft-schedaudit-pull.service     /etc/systemd/system/pft-schedaudit-pull.service     0644 validat
+  fleet/manifest.tsv:161:schedaudit  schedaudit/systemd/pft-schedaudit-pull.timer       /etc/systemd/system/pft-schedaudit-pull.timer       0644 validat
+  rulecheck/pft-rulecheck.conf.example:55:# pft-schedaudit (5-minute collector; sentry copy pulled every 5 min)
+  rulecheck/pft-rulecheck.conf.example:56:textfile pft_schedaudit_*.prom   20m   pft_schedaudit_collect_timestamp_seconds
+  rulecheck/pft-rulecheck.conf.example:57:require pft_schedaudit_validator.prom
+  rulecheck/pft-rulecheck.conf.example:58:require pft_schedaudit_sentry.prom
+  rulecheck/pft-rulecheck.sentry.conf.example:30:# pft-schedaudit (5-minute collector)
+  rulecheck/pft-rulecheck.sentry.conf.example:31:textfile pft_schedaudit_*.prom   20m   pft_schedaudit_collect_timestamp_seconds
+  rulecheck/pft-rulecheck.sentry.conf.example:32:require pft_schedaudit_sentry.prom
+  (exit 0)
+CHECK ok   HEAD lists the rule file, 6 manifest lines and the 7 rulecheck example lines
+$ sudo -n grep -c '^PULL_SSH=' /etc/pft-jobwatch.env
+  1
+  (exit 0)
+CHECK ok   a PULL_SSH line to copy exists (/etc/pft-jobwatch.env, not printed)
+$ sudo -n python3 -I - audit < schedaudit/schedaudit_lib.py | grep -vE '^(INFO|ALLOWED)'
+  WARN	untracked	cron.d/<operator-agent>@cbad6e8169	/etc/cron.d/<operator-agent>	not in any package and not tracked by pft-integrity
+  WARN	untracked	cron.d/<operator-agent>@cbad6e8169	<operator-agent-path>	not in any package and not tracked by pft-integrity
+  WARN	nonsystem_user	cron.d/<operator-agent>@cbad6e8169	/etc/cron.d/<operator-agent>	runs as a regular user (uid >= 1000)
+  WARN	untracked	cron.d/staticroute@de5a860418	/etc/cron.d/staticroute	not in any package and not tracked by pft-integrity
+  WARN	untracked	run-parts/cron.hourly/free@333aef7286	/etc/cron.hourly/free	not in any package and not tracked by pft-integrity
+  WARN	untracked	run-parts/cron.hourly/fstrim@bd6e6448bf	/etc/cron.hourly/fstrim	not in any package and not tracked by pft-integrity
+  WARN	untracked	timer/pft-backup.timer@c85d5257d6	/usr/local/sbin/pft-backup.sh	not in any package and not tracked by pft-integrity
+  WARN	untracked	timer/pft-egress-reapply@postfiatd.timer@880764f017	/usr/local/sbin/pft-egress	not in any package and not tracked by pft-integrity
+  WARN	untracked	timer/pft-fleet.timer@5e9c54b8a1	/usr/local/sbin/pft-fleet	not in any package and not tracked by pft-integrity
+  WARN	untracked	timer/pft-logship-check.timer@38ebc95cba	/usr/local/sbin/pft-logship	not in any package and not tracked by pft-integrity
+  WARN	untracked	timer/pft-timesync-pull.timer@529aabea17	/usr/local/sbin/pft-timesync-pull	not in any package and not tracked by pft-integrity
+  WARN	untracked	timer/pft-timesync.timer@6304e8f892	/usr/local/sbin/pft-timesync	not in any package and not tracked by pft-integrity
+  SUMMARY entries=89 enabled=76 findings=12 allowed=0 unexpected_findings=12 new=0 removed=0 baseline=no unused_allow=0
+  (exit 1)
+CHECK ok   FOUND validator: audit ran (SUMMARY line, baseline=no)
+$ R 'sudo -n python3 -I - audit' < schedaudit/schedaudit_lib.py | grep -vE '^(INFO|ALLOWED)'
+  WARN	untracked	cron.d/staticroute@de5a860418	/etc/cron.d/staticroute	not in any package and not tracked by pft-integrity
+  WARN	untracked	run-parts/cron.hourly/free@333aef7286	/etc/cron.hourly/free	not in any package and not tracked by pft-integrity
+  WARN	untracked	run-parts/cron.hourly/fstrim@bd6e6448bf	/etc/cron.hourly/fstrim	not in any package and not tracked by pft-integrity
+  WARN	untracked	timer/pft-egress-reapply@postfiatd-sentry.timer@a632e4e848	/usr/local/sbin/pft-egress	not in any package and not tracked by pft-integrity
+  WARN	untracked	timer/pft-logship-check.timer@38ebc95cba	/usr/local/sbin/pft-logship	not in any package and not tracked by pft-integrity
+  WARN	untracked	timer/pft-timesync.timer@6304e8f892	/usr/local/sbin/pft-timesync	not in any package and not tracked by pft-integrity
+  SUMMARY entries=65 enabled=52 findings=6 allowed=0 unexpected_findings=6 new=0 removed=0 baseline=no unused_allow=0
+  (exit 1)
+CHECK ok   FOUND sentry: audit ran (SUMMARY line, baseline=no)
+found: validator 12 finding(s) (1 nonsystem_user 11 untracked), sentry 6 (6 untracked)
+CHECK ok   every finding is a class this run fixes (untracked -> integrity hook) or allowlists (operator agent nonsystem_user) (none other)
+CHECK ok   the only nonsystem_user entry is the operator agent cron on the validator (cron.d/<operator-agent>)
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+$ curl -s http://<redacted-ip>:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'; curl -s http://<redacted-ip>:9093/api/v2/alerts | jq -r '.[].labels.alertname' | sort | uniq -c
+  0
+        1 PFTAlertPipelineWatchdog
+  (exit 0)
+CHECK ok   no active silence; only the pipeline watchdog active in Alertmanager
+
+== 1. rollout silence (new rules; rulecheck/fleet see new files during the install; not the watchdog)
+CHECK ok   Alertmanager silence created (schedaudit rules, PFTRuleDead, PFTTextfileStale, PFTRulecheck*, PFTFleet*; not the watchdog) until 2026-11-06T23:21:34Z
+
+== 2. pft-maint window, [MAINT] messages to a throwaway topic (real file kept as $BK)
+real /etc/pft-maint/ntfy.env present before: 0
+$ { [ $HAD = 0 ] || sudo -n cp -p $NE $BK; } && printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' "$TT" | sudo -n tee $NE >/dev/null && sudo -n chmod 600 $NE && sudo -n stat -c '%a %U' $NE
+  600 root
+  (exit 0)
+CHECK ok   throwaway target installed
+$ sudo -n pft-maint start --ttl 30m --reason 'task_63b12600 schedaudit install'
+  window started: id m1794004594-2089746 until 2026-11-06T23:06:34Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint window open
+CHECK ok   sentry has the window (via the watchdog channel) after 40s
+
+== 3. pft-fleet: manifest (fleet add-on), the pft-integrity hook (integrity add-on), the schedaudit files
+$ sudo -n pft-fleet sync --addon fleet --to c081cd4b036ed0a9ba74f0e3ebfba1cf24ce7fe4 --apply --reason 'task_63b12600 schedaudit manifest lines'
+  [2026-11-06T22:37:34Z] sync fleet to c081cd4b036ed0a9ba74f0e3ebfba1cf24ce7fe4 (2026-11-06T22:35:26+00:00) REF main=c081cd4b036ed0a9ba74f0e3ebfba1cf24ce7fe4
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN validator validator /usr/local/sbin/pft-fleet 0755 CURRENT 61cafcfcdaa9 61cafcfcdaa9 keep
+  PLAN validator validator /usr/local/lib/pft-fleet/fleet_lib.py 0644 CURRENT dcb37d26f33f dcb37d26f33f keep
+  PLAN validator validator /usr/local/lib/pft-fleet/manifest.tsv 0644 BEHIND 11395a545cab 216763197528 write
+  PLAN validator validator /etc/systemd/system/pft-fleet.service 0644 CURRENT 3105a2f0a144 3105a2f0a144 keep
+  PLAN validator validator /etc/systemd/system/pft-fleet.timer 0644 CURRENT 79839ee00a81 79839ee00a81 keep
+  [2026-11-06T22:37:34Z] order: sentry validator
+  [2026-11-06T22:37:34Z] sentry: every fleet file already at c081cd4b036e - nothing to do
+  [2026-11-06T22:37:34Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/lib/pft-fleet/manifest.tsv sha256 11395a545cab -> /var/lib/pft-fleet/backup/20261106T223734Z-fleet-validator
+  WRITE validator /usr/local/lib/pft-fleet/manifest.tsv 11395a545cab -> 216763197528 mode 0644
+  GATE validator sha256 /usr/local/lib/pft-fleet/manifest.tsv = target 216763197528 PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync fleet@c081cd4b036e (manifest.tsv)
+  [2026-11-06T22:37:50Z] SYNCED validator fleet -> c081cd4b036e
+  [2026-11-06T22:37:50Z] sync complete
+  (exit 0)
+CHECK ok   fleet manifest sync exit 0
+$ sudo -n pft-fleet sync --addon integrity --to c081cd4b036ed0a9ba74f0e3ebfba1cf24ce7fe4 --apply --reason 'task_63b12600 pft-integrity collect_sched hook'
+  [2026-11-06T22:38:07Z] sync integrity to c081cd4b036ed0a9ba74f0e3ebfba1cf24ce7fe4 (2026-11-06T22:35:26+00:00) REF main=c081cd4b036ed0a9ba74f0e3ebfba1cf24ce7fe4
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN sentry sentry /usr/local/bin/pft-integrity 0755 BEHIND 1e8813be3c15 c7d45dea830d write
+  PLAN sentry sentry /etc/systemd/system/pft-integrity.service 0644 CURRENT 9fce37f605f4 9fce37f605f4 keep
+  PLAN sentry sentry /etc/systemd/system/pft-integrity.timer 0644 CURRENT 1979df22afcb 1979df22afcb keep
+  PLAN validator validator /usr/local/bin/pft-integrity 0755 BEHIND 1e8813be3c15 c7d45dea830d write
+  PLAN validator validator /etc/systemd/system/pft-integrity.service 0644 CURRENT 9fce37f605f4 9fce37f605f4 keep
+  PLAN validator validator /etc/systemd/system/pft-integrity.timer 0644 CURRENT 1979df22afcb 1979df22afcb keep
+  [2026-11-06T22:38:07Z] order: sentry validator
+  [2026-11-06T22:38:07Z] sentry: 1 file(s) to write
+  PRE sentry pft-maint window active PASS
+  PRE sentry node server_state=full PASS
+  PRE sentry pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP sentry /usr/local/bin/pft-integrity sha256 1e8813be3c15 -> /var/lib/pft-fleet/backup/20261106T223807Z-integrity-sentry
+  WRITE sentry /usr/local/bin/pft-integrity 1e8813be3c15 -> c7d45dea830d mode 0755
+  GATE sentry sha256 /usr/local/bin/pft-integrity = target c7d45dea830d PASS
+  GATE sentry syntax /usr/local/bin/pft-integrity bash -n PASS
+  GATE sentry addon units failed=none PASS
+  GATE sentry node server_state=full PASS
+  ACCEPT sentry pft-integrity baseline updated: pft-fleet sync integrity@c081cd4b036e (pft-integrity)
+  [2026-11-06T22:38:26Z] SYNCED sentry integrity -> c081cd4b036e
+  [2026-11-06T22:38:26Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/bin/pft-integrity sha256 1e8813be3c15 -> /var/lib/pft-fleet/backup/20261106T223807Z-integrity-validator
+  WRITE validator /usr/local/bin/pft-integrity 1e8813be3c15 -> c7d45dea830d mode 0755
+  GATE validator sha256 /usr/local/bin/pft-integrity = target c7d45dea830d PASS
+  GATE validator syntax /usr/local/bin/pft-integrity bash -n PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync integrity@c081cd4b036e (pft-integrity)
+  [2026-11-06T22:38:43Z] SYNCED validator integrity -> c081cd4b036e
+  [2026-11-06T22:38:43Z] sync complete
+  (exit 0)
+CHECK ok   integrity sync exit 0 (pft-integrity.sh with collect_sched on both hosts)
+$ sudo -n pft-fleet sync --addon schedaudit --to c081cd4b036ed0a9ba74f0e3ebfba1cf24ce7fe4 --apply --reason 'task_63b12600 schedaudit c081cd4 first install'
+  [2026-11-06T22:38:59Z] sync schedaudit to c081cd4b036ed0a9ba74f0e3ebfba1cf24ce7fe4 (2026-11-06T22:35:26+00:00) REF main=c081cd4b036ed0a9ba74f0e3ebfba1cf24ce7fe4
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN sentry sentry /usr/local/bin/pft-schedaudit 0755 MISSING - cebe0936e5e2 write
+  PLAN sentry sentry /usr/local/lib/pft-schedaudit/schedaudit_lib.py 0644 MISSING - adfa121b6a82 write
+  PLAN sentry sentry /etc/systemd/system/pft-schedaudit.service 0644 MISSING - eeb630fa0ba1 write
+  PLAN sentry sentry /etc/systemd/system/pft-schedaudit.timer 0644 MISSING - 9c9b74c65522 write
+  PLAN validator validator /usr/local/bin/pft-schedaudit 0755 MISSING - cebe0936e5e2 write
+  PLAN validator validator /usr/local/lib/pft-schedaudit/schedaudit_lib.py 0644 MISSING - adfa121b6a82 write
+  PLAN validator validator /etc/systemd/system/pft-schedaudit.service 0644 MISSING - eeb630fa0ba1 write
+  PLAN validator validator /etc/systemd/system/pft-schedaudit.timer 0644 MISSING - 9c9b74c65522 write
+  PLAN validator validator /etc/systemd/system/pft-schedaudit-pull.service 0644 MISSING - e409b4b59ffa write
+  PLAN validator validator /etc/systemd/system/pft-schedaudit-pull.timer 0644 MISSING - fb67faf95b3a write
+  [2026-11-06T22:38:59Z] order: sentry validator
+  [2026-11-06T22:38:59Z] sentry: 4 file(s) to write
+  PRE sentry pft-maint window active PASS
+  PRE sentry node server_state=full PASS
+  PRE sentry pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP sentry /usr/local/bin/pft-schedaudit absent before sync (rollback removes it)
+  BACKUP sentry /usr/local/lib/pft-schedaudit/schedaudit_lib.py absent before sync (rollback removes it)
+  BACKUP sentry /etc/systemd/system/pft-schedaudit.service absent before sync (rollback removes it)
+  BACKUP sentry /etc/systemd/system/pft-schedaudit.timer absent before sync (rollback removes it)
+  WRITE sentry /usr/local/bin/pft-schedaudit - -> cebe0936e5e2 mode 0755
+  WRITE sentry /usr/local/lib/pft-schedaudit/schedaudit_lib.py - -> adfa121b6a82 mode 0644
+  WRITE sentry /etc/systemd/system/pft-schedaudit.service - -> eeb630fa0ba1 mode 0644
+  WRITE sentry /etc/systemd/system/pft-schedaudit.timer - -> 9c9b74c65522 mode 0644
+  RELOAD sentry systemctl daemon-reload
+  GATE sentry sha256 /usr/local/bin/pft-schedaudit = target cebe0936e5e2 PASS
+  GATE sentry syntax /usr/local/bin/pft-schedaudit bash -n PASS
+  GATE sentry sha256 /usr/local/lib/pft-schedaudit/schedaudit_lib.py = target adfa121b6a82 PASS
+  GATE sentry syntax /usr/local/lib/pft-schedaudit/schedaudit_lib.py python PASS
+  GATE sentry sha256 /etc/systemd/system/pft-schedaudit.service = target eeb630fa0ba1 PASS
+  GATE sentry unit pft-schedaudit.service LoadState=loaded PASS
+  GATE sentry sha256 /etc/systemd/system/pft-schedaudit.timer = target 9c9b74c65522 PASS
+  GATE sentry unit pft-schedaudit.timer LoadState=loaded PASS
+  GATE sentry addon units failed=none PASS
+  GATE sentry node server_state=full PASS
+  ACCEPT sentry pft-integrity baseline updated: pft-fleet sync schedaudit@c081cd4b036e (pft-schedaudit,schedaudit_lib.py,pft-schedaudit.service,pft-schedaudit.timer)
+  [2026-11-06T22:39:26Z] SYNCED sentry schedaudit -> c081cd4b036e
+  [2026-11-06T22:39:26Z] validator: 6 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/bin/pft-schedaudit absent before sync (rollback removes it)
+  BACKUP validator /usr/local/lib/pft-schedaudit/schedaudit_lib.py absent before sync (rollback removes it)
+  BACKUP validator /etc/systemd/system/pft-schedaudit.service absent before sync (rollback removes it)
+  BACKUP validator /etc/systemd/system/pft-schedaudit.timer absent before sync (rollback removes it)
+  BACKUP validator /etc/systemd/system/pft-schedaudit-pull.service absent before sync (rollback removes it)
+  BACKUP validator /etc/systemd/system/pft-schedaudit-pull.timer absent before sync (rollback removes it)
+  WRITE validator /usr/local/bin/pft-schedaudit - -> cebe0936e5e2 mode 0755
+  WRITE validator /usr/local/lib/pft-schedaudit/schedaudit_lib.py - -> adfa121b6a82 mode 0644
+  WRITE validator /etc/systemd/system/pft-schedaudit.service - -> eeb630fa0ba1 mode 0644
+  WRITE validator /etc/systemd/system/pft-schedaudit.timer - -> 9c9b74c65522 mode 0644
+  WRITE validator /etc/systemd/system/pft-schedaudit-pull.service - -> e409b4b59ffa mode 0644
+  WRITE validator /etc/systemd/system/pft-schedaudit-pull.timer - -> fb67faf95b3a mode 0644
+  RELOAD validator systemctl daemon-reload
+  GATE validator sha256 /usr/local/bin/pft-schedaudit = target cebe0936e5e2 PASS
+  GATE validator syntax /usr/local/bin/pft-schedaudit bash -n PASS
+  GATE validator sha256 /usr/local/lib/pft-schedaudit/schedaudit_lib.py = target adfa121b6a82 PASS
+  GATE validator syntax /usr/local/lib/pft-schedaudit/schedaudit_lib.py python PASS
+  GATE validator sha256 /etc/systemd/system/pft-schedaudit.service = target eeb630fa0ba1 PASS
+  GATE validator unit pft-schedaudit.service LoadState=loaded PASS
+  GATE validator sha256 /etc/systemd/system/pft-schedaudit.timer = target 9c9b74c65522 PASS
+  GATE validator unit pft-schedaudit.timer LoadState=loaded PASS
+  GATE validator sha256 /etc/systemd/system/pft-schedaudit-pull.service = target e409b4b59ffa PASS
+  GATE validator unit pft-schedaudit-pull.service LoadState=loaded PASS
+  GATE validator sha256 /etc/systemd/system/pft-schedaudit-pull.timer = target fb67faf95b3a PASS
+  GATE validator unit pft-schedaudit-pull.timer LoadState=loaded PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync schedaudit@c081cd4b036e (pft-schedaudit,schedaudit_lib.py,pft-schedaudit.service,pft-schedaudit.timer,pft-schedaudit-pull.service,pft-schedaudit-pull.timer)
+  [2026-11-06T22:39:47Z] SYNCED validator schedaudit -> c081cd4b036e
+  [2026-11-06T22:39:47Z] sync complete
+  (exit 0)
+CHECK ok   schedaudit sync exit 0 (files written + integrity accepted by pft-fleet)
+$ sha256sum schedaudit/pft-schedaudit.sh schedaudit/schedaudit_lib.py integrity/pft-integrity.sh | cut -c1-64; sudo -n sha256sum /usr/local/bin/pft-schedaudit /usr/local/lib/pft-schedaudit/schedaudit_lib.py /usr/local/bin/pft-integrity | cut -c1-64; R 'sha256sum /usr/local/bin/pft-schedaudit /usr/local/lib/pft-schedaudit/schedaudit_lib.py /usr/local/bin/pft-integrity | cut -c1-64'
+  cebe0936e5e28126d9c5ebf63adcc6bedad169406c840106044d0c952c1caab7
+  adfa121b6a829159ac15a0bb19179be6a915cf9a3370318b02a213e286993f03
+  c7d45dea830d519c8bb1c730ce81951f4c8d89263affbe21579c746d404f1755
+  cebe0936e5e28126d9c5ebf63adcc6bedad169406c840106044d0c952c1caab7
+  adfa121b6a829159ac15a0bb19179be6a915cf9a3370318b02a213e286993f03
+  c7d45dea830d519c8bb1c730ce81951f4c8d89263affbe21579c746d404f1755
+  cebe0936e5e28126d9c5ebf63adcc6bedad169406c840106044d0c952c1caab7
+  adfa121b6a829159ac15a0bb19179be6a915cf9a3370318b02a213e286993f03
+  c7d45dea830d519c8bb1c730ce81951f4c8d89263affbe21579c746d404f1755
+  (exit 0)
+CHECK ok   installed script + helper + pft-integrity = repo bytes on both hosts
+
+== 4. sentry: install.sh (first accept after the step-0 review; collect through the sandboxed unit)
+$ git archive c081cd4b036ed0a9ba74f0e3ebfba1cf24ce7fe4 schedaudit | R 'rm -rf /tmp/pft-schedaudit-c081cd4 && mkdir -m 700 /tmp/pft-schedaudit-c081cd4 && tar -x -C /tmp/pft-schedaudit-c081cd4'
+  
+  (exit 0)
+$ R "sudo -n bash /tmp/pft-schedaudit-c081cd4/schedaudit/install.sh --host sentry --reason 'task_63b12600 first install: step-0 audit reviewed, only untracked findings (fixed by the integrity hook)'"
+  2026-11-06T22:39:49Z unchanged /usr/local/bin/pft-schedaudit
+  2026-11-06T22:39:49Z unchanged /usr/local/lib/pft-schedaudit/schedaudit_lib.py
+  2026-11-06T22:39:49Z set HOST_LABEL=sentry in /etc/pft-schedaudit.env
+  2026-11-06T22:39:49Z created empty /etc/pft-schedaudit.allow
+  2026-11-06T22:39:49Z unchanged /etc/systemd/system/pft-schedaudit.service
+  2026-11-06T22:39:49Z unchanged /etc/systemd/system/pft-schedaudit.timer
+  2026-11-06T22:39:49Z first collection (through the sandboxed unit):
+  Starting pft-schedaudit: audit of every cron/anacron/at/systemd-timer entry point as textfile metrics (read-only)...
+  pft-schedaudit.service: Deactivated successfully.
+  Finished pft-schedaudit: audit of every cron/anacron/at/systemd-timer entry point as textfile metrics (read-only).
+  pft-schedaudit.service: Consumed 1.213s CPU time.
+  pft_schedaudit_up{host="sentry"} 1
+  pft_schedaudit_collect_timestamp_seconds{host="sentry"} 1794004790
+    Created symlink /etc/systemd/system/timers.target.wants/pft-schedaudit.timer → /etc/systemd/system/pft-schedaudit.timer.
+  2026-11-06T22:39:54Z pft-schedaudit.timer active (every 5 min at :20); changed=true
+  accepted 66 entries (+66 -0): task_63b12600 first install: step-0 audit reviewed, only untracked findings (fixed by the integrity hook)
+  2026-11-06T22:39:57Z second collection (accepted set in place):
+  Starting pft-schedaudit: audit of every cron/anacron/at/systemd-timer entry point as textfile metrics (read-only)...
+  pft-schedaudit.service: Deactivated successfully.
+  Finished pft-schedaudit: audit of every cron/anacron/at/systemd-timer entry point as textfile metrics (read-only).
+  pft-schedaudit.service: Consumed 1.378s CPU time.
+  pft_schedaudit_up{host="sentry"} 1
+  pft_schedaudit_unexpected{host="sentry",kind="new"} 0
+  pft_schedaudit_unexpected{host="sentry",kind="removed"} 0
+  pft_schedaudit_unexpected{host="sentry",kind="finding"} 0
+  pft_schedaudit_unexpected{host="sentry",kind="unaccepted"} 0
+  pft_schedaudit_allowlist_unused{host="sentry"} 0
+  2026-11-06T22:40:01Z remember: sudo pft-integrity accept --reason 'pft-schedaudit installed'
+  (exit 0)
+CHECK ok   sentry install exit 0, up 1
+
+== 5. validator: allowlist (operator agent cron), install.sh, then the pull of the sentry file
+$ sudo -n test -e /etc/pft-schedaudit.allow || { printf '%s\n' '# pft-schedaudit allowlist: CHECK ENTRY_GLOB PATH_GLOB REASON (reason required; see README)' 'nonsystem_user cron.d/<operator-agent>@* /etc/cron.d/<operator-agent> operator task agent: an unprivileged cron job that runs as its own login user by design' | sudo -n tee /etc/pft-schedaudit.allow >/dev/null && sudo -n chmod 600 /etc/pft-schedaudit.allow; }; sudo -n grep -vc '^#' /etc/pft-schedaudit.allow; sudo -n stat -c '%a %U' /etc/pft-schedaudit.allow
+  1
+  600 root
+  (exit 0)
+CHECK ok   validator allowlist: 1 reasoned line, 600 root
+$ sudo -n bash schedaudit/install.sh --host validator --reason 'task_63b12600 first install: step-0 audit reviewed, untracked findings fixed by the integrity hook, operator agent cron allowlisted'
+  2026-11-06T22:40:02Z unchanged /usr/local/bin/pft-schedaudit
+  2026-11-06T22:40:02Z unchanged /usr/local/lib/pft-schedaudit/schedaudit_lib.py
+  2026-11-06T22:40:02Z set HOST_LABEL=validator in /etc/pft-schedaudit.env
+  2026-11-06T22:40:02Z unchanged /etc/systemd/system/pft-schedaudit.service
+  2026-11-06T22:40:02Z unchanged /etc/systemd/system/pft-schedaudit.timer
+  2026-11-06T22:40:04Z first collection (through the sandboxed unit):
+  Starting pft-schedaudit: audit of every cron/anacron/at/systemd-timer entry point as textfile metrics (read-only)...
+  pft-schedaudit.service: Deactivated successfully.
+  Finished pft-schedaudit: audit of every cron/anacron/at/systemd-timer entry point as textfile metrics (read-only).
+  pft-schedaudit.service: Consumed 1.163s CPU time.
+  pft_schedaudit_up{host="validator"} 1
+  pft_schedaudit_collect_timestamp_seconds{host="validator"} 1794004804
+    Created symlink /etc/systemd/system/timers.target.wants/pft-schedaudit.timer → /etc/systemd/system/pft-schedaudit.timer.
+  2026-11-06T22:40:09Z pft-schedaudit.timer active (every 5 min at :20); changed=true
+  accepted 91 entries (+91 -0): task_63b12600 first install: step-0 audit reviewed, untracked findings fixed by the integrity hook, operator agent cron allowlisted
+  2026-11-06T22:40:13Z second collection (accepted set in place):
+  Starting pft-schedaudit: audit of every cron/anacron/at/systemd-timer entry point as textfile metrics (read-only)...
+  pft-schedaudit.service: Deactivated successfully.
+  Finished pft-schedaudit: audit of every cron/anacron/at/systemd-timer entry point as textfile metrics (read-only).
+  pft_schedaudit_up{host="validator"} 1
+  pft_schedaudit_unexpected{host="validator",kind="new"} 0
+  pft_schedaudit_unexpected{host="validator",kind="removed"} 0
+  pft_schedaudit_unexpected{host="validator",kind="finding"} 0
+  pft_schedaudit_unexpected{host="validator",kind="unaccepted"} 0
+  pft_schedaudit_allowlist_unused{host="validator"} 0
+  2026-11-06T22:40:16Z remember: sudo pft-integrity accept --reason 'pft-schedaudit installed'
+  (exit 0)
+CHECK ok   validator install exit 0, up 1
+$ sudo -n grep -q '^PULL_SSH=' /etc/pft-schedaudit.env || { sudo -n grep '^PULL_SSH=' /etc/pft-jobwatch.env | sudo -n tee -a /etc/pft-schedaudit.env >/dev/null; }; sudo -n chmod 600 /etc/pft-schedaudit.env; sudo -n grep -c '^PULL_SSH=' /etc/pft-schedaudit.env; sudo -n stat -c '%a %U' /etc/pft-schedaudit.env
+  1
+  600 root
+  (exit 0)
+CHECK ok   validator conf: one PULL_SSH line, 600 root
+$ sudo -n bash schedaudit/install.sh --pull --host sentry --reason 'task_63b12600 pft-schedaudit-pull.timer installed'
+  2026-11-06T22:40:16Z unchanged /usr/local/bin/pft-schedaudit
+  2026-11-06T22:40:16Z unchanged /usr/local/lib/pft-schedaudit/schedaudit_lib.py
+  2026-11-06T22:40:16Z unchanged /etc/systemd/system/pft-schedaudit-pull.service
+  2026-11-06T22:40:16Z unchanged /etc/systemd/system/pft-schedaudit-pull.timer
+  2026-11-06T22:40:16Z first pull (through the sandboxed unit):
+  Starting pft-schedaudit pull: copy the sentry's schedaudit textfile to this host's exporter (validated)...
+  pft-schedaudit-pull.service: Deactivated successfully.
+  Finished pft-schedaudit pull: copy the sentry's schedaudit textfile to this host's exporter (validated).
+  pft_schedaudit_up{host="sentry"} 1
+  pft_schedaudit_collect_timestamp_seconds{host="sentry"} 1794004798
+  pft_schedaudit_unexpected{host="sentry",kind="new"} 0
+  pft_schedaudit_unexpected{host="sentry",kind="removed"} 0
+  pft_schedaudit_unexpected{host="sentry",kind="finding"} 0
+  pft_schedaudit_unexpected{host="sentry",kind="unaccepted"} 0
+    Created symlink /etc/systemd/system/timers.target.wants/pft-schedaudit-pull.timer → /etc/systemd/system/pft-schedaudit-pull.timer.
+  2026-11-06T22:40:18Z pft-schedaudit-pull.timer active (:01:50 every 5 min); changed=false
+  accepted 91 entries (+0 -0): task_63b12600 pft-schedaudit-pull.timer installed
+  pft-schedaudit.service: Deactivated successfully.
+  Finished pft-schedaudit: audit of every cron/anacron/at/systemd-timer entry point as textfile metrics (read-only).
+  SUMMARY entries=91 enabled=78 findings=1 allowed=1 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+  (exit 0)
+CHECK ok   pull install exit 0, sentry file on the validator, pull timer accepted (0 new)
+
+== 6. rulecheck inputs: append the schedaudit lines (idempotent; the live confs carry earlier add-ons' lines)
+$ sudo -n grep -qF 'pft_schedaudit_' /etc/pft-rulecheck.conf || printf '%s\n' '# pft-schedaudit (5-minute collector; sentry copy pulled every 5 min)' 'textfile pft_schedaudit_*.prom   20m   pft_schedaudit_collect_timestamp_seconds' 'require pft_schedaudit_validator.prom' 'require pft_schedaudit_sentry.prom' | sudo -n tee -a /etc/pft-rulecheck.conf >/dev/null; sudo -n grep -n schedaudit /etc/pft-rulecheck.conf
+  78:# pft-schedaudit (5-minute collector; sentry copy pulled every 5 min)
+  79:textfile pft_schedaudit_*.prom   20m   pft_schedaudit_collect_timestamp_seconds
+  80:require pft_schedaudit_validator.prom
+  81:require pft_schedaudit_sentry.prom
+  (exit 0)
+CHECK ok   validator rulecheck.conf has the 4 schedaudit lines
+$ R "sudo -n grep -qF 'pft_schedaudit_' /etc/pft-rulecheck.conf || printf '%s\n' '# pft-schedaudit (5-minute collector)' 'textfile pft_schedaudit_*.prom   20m   pft_schedaudit_collect_timestamp_seconds' 'require pft_schedaudit_sentry.prom' | sudo -n tee -a /etc/pft-rulecheck.conf >/dev/null; sudo -n grep -n schedaudit /etc/pft-rulecheck.conf"
+  51:# pft-schedaudit (5-minute collector)
+  52:textfile pft_schedaudit_*.prom   20m   pft_schedaudit_collect_timestamp_seconds
+  53:require pft_schedaudit_sentry.prom
+  (exit 0)
+CHECK ok   sentry rulecheck.conf has the 3 schedaudit lines
+
+== 7. load the alert rules (alerts/ is mounted at /etc/pft-alerts) and check them
+$ sudo -n docker kill -s HUP pft-prometheus >/dev/null && sleep 30 && curl -s http://<redacted-ip>:9090/api/v1/rules | jq -r '.data.groups[] | select(.name == "pft-schedaudit") | .rules[] | [.name, .health, .state] | @tsv'
+  PFTSchedEntryUnexpected	ok	inactive
+  PFTSchedauditStale	ok	inactive
+  (exit 0)
+CHECK ok   2 schedaudit rules loaded, health ok
+
+== 8. FIX: the untracked files are now pft-integrity sched:* items (pft-fleet's post-sync accept took the first
+   set in with its own reason; anything install.sh added since is accepted here), then PASS on both hosts
+$ sudo -n tail -n 4 /var/lib/pft-integrity/accept.log | cut -c1-200
+  2026-11-06T19:53:56Z	by=<user>	old=affc3bbf52913549a032fae65d7652baabe457aab948218b343c2da91a747b9f	new=6526924557ff02fe87b04b5a6ef6fa4cc2fcf57e55f2c06a925d11884439dfd2	reason=directive-20261106-res
+  2026-11-06T22:37:50Z	by=<user>	old=6526924557ff02fe87b04b5a6ef6fa4cc2fcf57e55f2c06a925d11884439dfd2	new=782bee4309ec9217d2842f0b0a31949b1af8f49e283c42221175c282f90641a8	reason=pft-fleet sync fleet@c
+  2026-11-06T22:38:43Z	by=<user>	old=782bee4309ec9217d2842f0b0a31949b1af8f49e283c42221175c282f90641a8	new=61ae588ba2362848626af0c552769aed0e02c441730dfcf33ae17f0ea6e3a1da	reason=pft-fleet sync integri
+  2026-11-06T22:39:47Z	by=<user>	old=61ae588ba2362848626af0c552769aed0e02c441730dfcf33ae17f0ea6e3a1da	new=cbbfb2a2ac594e103ca5cdd9b4614c0bfa93ac107c918377f1df3fe44784f576	reason=pft-fleet sync schedau
+  (exit 0)
+$ sudo -n pft-integrity verify | grep -E '^(WARN|FAIL|RESULT)' | sed -E 's/ +sha256.*//' | cut -c1-140 | head -60
+  RESULT: PASS - 213 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+$ sudo -n pft-integrity accept --reason 'task_63b12600: schedaudit c081cd4 installed (sched:* scope items, env, allowlist, timers, rulecheck.conf)' | tail -2
+  pft-integrity accept - 2026-11-06T22:41:22Z: re-baselined 213 items by <user>
+  manifest sha256: cbbfb2a2ac594e103ca5cdd9b4614c0bfa93ac107c918377f1df3fe44784f576 -> ed10a9497a1a833b34ac051dcd8e111dbb6e3198c926b4c40653001b99f7b824 (logged to accept.log)
+  (exit 0)
+$ R 'sudo -n tail -n 4 /var/lib/pft-integrity/accept.log' | cut -c1-200
+  2026-11-06T17:19:51Z	by=root	old=01ac981c2d135833b47b616d476adeab42904d87c90dc38daa48dfd362c8298e	new=ceab72c4288cc097c4b234640c2476c2547b0159db81bf5db2a9dc0e631b0474	reason=pft-fleet sync jobwatch@87
+  2026-11-06T19:22:55Z	by=root	old=ceab72c4288cc097c4b234640c2476c2547b0159db81bf5db2a9dc0e631b0474	new=f405e54efa0bb3fda3ea4300744ec2bdba416605087f7446274b02c462f486f0	reason=pft-fleet sync jobwatch@ad
+  2026-11-06T22:38:26Z	by=root	old=f405e54efa0bb3fda3ea4300744ec2bdba416605087f7446274b02c462f486f0	new=34b8fd4d028b13bd7557e1d7f7350c6a094ce77c4bb956bb12d6fb18eac4d02c	reason=pft-fleet sync integrity@c
+  2026-11-06T22:39:26Z	by=root	old=34b8fd4d028b13bd7557e1d7f7350c6a094ce77c4bb956bb12d6fb18eac4d02c	new=4182408ad8817f0a65ca9c59ba98a6e049eb43ead3911ca24131000acf2f02e5	reason=pft-fleet sync schedaudit@
+  (exit 0)
+$ R 'sudo -n pft-integrity verify' | grep -E '^(WARN|FAIL|RESULT)' | sed -E 's/ +sha256.*//' | cut -c1-140 | head -60
+  RESULT: PASS - 132 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+$ R "sudo -n pft-integrity accept --reason 'task_63b12600: schedaudit c081cd4 installed (sched:* scope items, env, timer, rulecheck.conf)'" | tail -2
+  pft-integrity accept - 2026-11-06T22:41:43Z: re-baselined 132 items by root
+  manifest sha256: 4182408ad8817f0a65ca9c59ba98a6e049eb43ead3911ca24131000acf2f02e5 -> 65c76183a83e059353fbf9100fd3fc6ca722105ca307211a64f3d422e551f101 (logged to accept.log)
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 213 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 132 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts
+$ sudo -n pft-integrity verify --verbose | grep -c 'sched:'; R 'sudo -n pft-integrity verify --verbose | grep -c sched:'
+  31
+  26
+  (exit 0)
+CHECK ok   both hosts now track sched:* items
+
+== 9. VERIFIED: audit both hosts with the installed tool (hook on), collect, Prometheus
+$ sudo -n systemctl start pft-schedaudit.service; sudo -n pft-schedaudit audit | grep -vE '^INFO'
+  ALLOWED	nonsystem_user	cron.d/<operator-agent>@cbad6e8169	/etc/cron.d/<operator-agent>	runs as a regular user (uid >= 1000)	# operator task agent: an unprivileged cron job that runs as its own login user by design
+  SUMMARY entries=91 enabled=78 findings=1 allowed=1 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+  (exit 0)
+CHECK ok   validator: 0 unexpected findings, 0 new/removed, baseline yes (found 12)
+$ R 'sudo -n systemctl start pft-schedaudit.service; sudo -n pft-schedaudit audit' | grep -vE '^INFO'
+  SUMMARY entries=66 enabled=53 findings=0 allowed=0 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+  (exit 0)
+CHECK ok   sentry: 0 unexpected findings, 0 new/removed, baseline yes (found 6)
+$ sudo -n systemctl start pft-schedaudit-pull.service; sleep 40; curl -s http://<redacted-ip>:9090/api/v1/query --data-urlencode 'query={__name__=~"pft_schedaudit_(up|unexpected)"}' | jq -r '.data.result[] | "\(.metric.host) \(.metric.__name__) \(.metric.kind // "-") \(.value[1])"' | sort
+  sentry pft_schedaudit_unexpected finding 0
+  sentry pft_schedaudit_unexpected new 0
+  sentry pft_schedaudit_unexpected removed 0
+  sentry pft_schedaudit_unexpected unaccepted 0
+  sentry pft_schedaudit_up - 1
+  validator pft_schedaudit_unexpected finding 0
+  validator pft_schedaudit_unexpected new 0
+  validator pft_schedaudit_unexpected removed 0
+  validator pft_schedaudit_unexpected unaccepted 0
+  validator pft_schedaudit_up - 1
+  (exit 0)
+CHECK ok   Prometheus: pft_schedaudit_up 1 for both hosts
+CHECK ok   Prometheus: all 8 unexpected series 0
+
+== 10. fleet skew, rulecheck, timers
+$ sudo -n pft-fleet skew
+  ref main = c081cd4b036ed0a9ba74f0e3ebfba1cf24ce7fe4
+  host sentry     role sentry    ok
+  host validator  role validator ok
+  HOST       ADDON       STATE      DETAIL
+  sentry     alertpath   CURRENT    
+  sentry     apparmor    CURRENT    
+  sentry     audittrail  CURRENT    
+  sentry     authwatch   CURRENT    
+  sentry     backfill    CURRENT    
+  sentry     cluster     CURRENT    
+  sentry     divergence  CURRENT    
+  sentry     egress      CURRENT    
+  sentry     feewatch    CURRENT    
+  sentry     integrity   CURRENT    
+  sentry     jobwatch    CURRENT    
+  sentry     kernwatch   CURRENT    
+  sentry     keyescrow   CURRENT    
+  sentry     logship     CURRENT    
+  sentry     maint       CURRENT    
+  sentry     mounts      CURRENT    
+  sentry     patch       CURRENT    
+  sentry     privesc     CURRENT    
+  sentry     resources   CURRENT    
+  sentry     rulecheck   CURRENT    
+  sentry     schedaudit  CURRENT    
+  sentry     seccomp     CURRENT    
+  sentry     statewatch  CURRENT    
+  sentry     sysctl      CURRENT    
+  sentry     timesync    CURRENT    
+  sentry     upgradewatch CURRENT    
+  sentry     vulnscan    CURRENT    
+  sentry     watchdog    CURRENT    
+  validator  alertpath   CURRENT    
+  validator  apparmor    CURRENT    
+  validator  audittrail  CURRENT    
+  validator  authwatch   CURRENT    
+  validator  backfill    CURRENT    
+  validator  backup      CURRENT    
+  validator  cluster     CURRENT    
+  validator  divergence  CURRENT    
+  validator  egress      CURRENT    
+  validator  exporter    CURRENT    
+  validator  feewatch    CURRENT    
+  validator  fleet       CURRENT    
+  validator  integrity   CURRENT    
+  validator  jobwatch    CURRENT    
+  validator  kernwatch   CURRENT    
+  validator  keyescrow   CURRENT    
+  validator  logship     CURRENT    
+  validator  maint       CURRENT    
+  validator  monitor     CURRENT    
+  validator  mounts      CURRENT    
+  validator  patch       CURRENT    
+  validator  privesc     CURRENT    
+  validator  resources   CURRENT    
+  validator  retention   CURRENT    
+  validator  rulecheck   CURRENT    
+  validator  schedaudit  CURRENT    
+  validator  seccomp     CURRENT    
+  validator  statewatch  CURRENT    
+  validator  sysctl      CURRENT    
+  validator  timesync    CURRENT    
+  validator  upgradewatch CURRENT    
+  validator  vulnscan    CURRENT    
+  validator  watchdog    CURRENT    
+  SUMMARY CURRENT=61 BEHIND=0 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 0)
+CHECK ok   pft-fleet skew exit 0, schedaudit + integrity CURRENT on both hosts
+$ sudo -n systemctl start pft-rulecheck.service; sudo -n journalctl -u pft-rulecheck.service --since -1min --no-pager -o cat | grep -E '^RESULT '
+  RESULT OK - rules: LIVE 112 PARTIAL 0 DEAD 0 ERROR 0 IGNORED 0 | textfiles: FRESH 43 STALE 0 MISSING 0 LEFTOVER 0 UNCONFIGURED 0 -> exit 0
+  (exit 0)
+CHECK ok   validator pft-rulecheck RESULT OK
+$ R 'sudo -n systemctl start pft-rulecheck.service; sudo -n journalctl -u pft-rulecheck.service --since -1min --no-pager -o cat' | grep -E '^RESULT '
+  RESULT OK - rules: skipped | textfiles: FRESH 22 STALE 0 MISSING 0 LEFTOVER 0 UNCONFIGURED 0 -> exit 0
+  (exit 0)
+CHECK ok   sentry pft-rulecheck RESULT OK
+$ systemctl is-active pft-schedaudit.timer pft-schedaudit-pull.timer; R 'systemctl is-active pft-schedaudit.timer'
+  active
+  active
+  active
+  (exit 0)
+CHECK ok   3 timers active
+
+== 11. end window, restore the real target, compare, keyescrow, read back the throwaway and every operator topic
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+$ sudo -n rm -f $NE   (no ntfy.env before: pft-maint falls back to the real monitor target again)
+CHECK ok   pft-maint target back to its pre-run state (/etc/pft-maint/ntfy.env: absent again)
+$ sudo -n test ! -e $BK && echo backup gone
+  backup gone
+  (exit 0)
+$ sudo -n systemctl start pft-keyescrow.service; grep -h '^pft_keyescrow_drift_items{node="validator"}' /var/lib/pft-exporter/textfile/pft_keyescrow.prom
+  pft_keyescrow_drift_items{node="validator"} 0
+  (exit 0)
+CHECK ok   pft-keyescrow re-run after the ntfy.env restore: validator drift_items 0
+$ sleep 5; curl -s --max-time 15 "https://ntfy.sh/$TT/json?poll=1&since=1794004569" | jq -r '.title'
+  [MAINT] start validator
+  [MAINT] end validator
+  (exit 0)
+CHECK ok   the [MAINT] start and end messages reached the throwaway topic
+$ curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '[.data.alerts[] | select(.labels.alertname | test("PFTSched|RuleDead|TextfileStale|Rulecheck|Fleet|Integrity"))] | length'
+  0
+  (exit 0)
+CHECK ok   no schedaudit/rulecheck/fleet alert pending or firing (silence left to run out, lesson 185)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 213 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 132 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts at the end
+$ sudo -n docker exec postfiatd curl -s -m 10 -d '{"method":"server_info"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state; R "sudo -n docker exec postfiatd-sentry curl -s -m 10 -d '{\"method\":\"server_info\"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state"
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing at the end
+operator topic read-back waits 90 s (>= group_interval + 30 s after the last change)
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the run (2 topic(s), 0 with messages)
+
+install-run done 2026-11-06T22:45:47Z: 0 check(s) failed -> PASS
