@@ -1,0 +1,67 @@
+pft-jobwatch two-host alert drill - 2026-11-06T17:22:02Z - Ubuntu 22.04.5 LTS - run 20261106T172202Z
+repo HEAD 87eb49f80dafc1a2f182272b95de7a4aec593b83 (clean: yes)
+sha256 3e8208b459e8cfacaa39aa468f21817f9802cfebd5cdf0ec0a3b632bed5c7aaf jobwatch/drill/alert-run.sh
+sha256 194a3810f0e07983eef6847bc680d8840c8ac7de2cc8fb14b134d9ca2046ce0c jobwatch/pft-jobwatch.sh
+sha256 8fab252b40de8003a1e490d2ffdcbc3dc371a16eb46992c95fd4740bb343a1ec jobwatch/jobwatch_lib.py
+sha256 4ea9f1d8c4d31ce3e3638f2bcc0723f4a7be5399f30413a8554f03876fe8c175 alerts/jobwatch.rules.yml
+sha256 f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8 peerexpose/drill/redact.py
+
+== 0. preflight (nothing changed yet)
+  pft-jobwatch + timer on both hosts; no drill unit, flag dir or state entry left over
+  sentry pft-alertpath-check.timer active, check OK
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=pft_jobwatch_up' | jq -r '.data.result[] | "\(.metric.host) \(.value[1])"' | sort
+  sentry 1
+  validator 1
+  (exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=pft_jobwatch_jobs' | jq -r '.data.result[] | "\(.metric.host) \(.metric.state) \(.value[1])"' | sort
+  sentry disabled 0
+  sentry failed 0
+  sentry missed 0
+  sentry present 26
+  sentry total 26
+  validator disabled 0
+  validator failed 0
+  validator missed 0
+  validator present 49
+  validator total 49
+  (exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=ALERTS{alertname=~"PFTJob.*"}' | jq -r '.data.result | length'
+  0
+  (exit 0)
+$ curl -s http://127.0.0.1:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active") | select(any(.matchers[]; .isEqual and (.value | test("PFTJob"))))] | length'
+  0
+  (exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/rules | jq -r '.data.groups[] | select(.name == "pft-jobwatch") | .rules[] | [.name, .health] | @tsv'
+  PFTJobFailed	ok
+  PFTJobMissed	ok
+  PFTJobDisabled	ok
+  PFTJobwatchStale	ok
+  (exit 0)
+  bridge mounts the operator env file: yes
+  operator topics to watch: 2 (not printed)
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+  postfiatd-sentry: server_state=full
+  postfiatd: server_state=full
+  pft-integrity validator: RESULT: PASS - 176 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity sentry: RESULT: PASS - 103 unchanged, 0 warn, 0 fail -> exit 0
+  literals for redaction: 3 ip, 3 topic, 1 user (values not printed)
+$ redact.py control --literals <literals>
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (16/16)
+
+PREFLIGHT_ONLY: stopping before step 1, nothing changed (ready: yes)

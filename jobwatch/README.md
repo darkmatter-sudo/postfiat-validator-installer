@@ -129,4 +129,9 @@ PFTJobDisabled (never PFTJobFailed).
 
 | `logs/07-update-run09-failed.log` | fleet update @20caf12 (label fix) | label fix verified (0 `job=` labels, rules join on (host, timer), Prometheus 0 `exported_job` series, operator topics 0), but **found**: 2 checks FAIL, the validator's series were gone from Prometheus: its textfile grew to 66,071 bytes and the pft exporter skips files over 64 KiB whole. **Fixed**: two gauges moved to `inventory --format json`, whole-second timestamps (55,583 bytes for 49 timers), `TEXT_BUDGET` guard (writes up 0), pull limit 65536; tests + mutants S12, M34 |
 
-Verification of the size fix on the hosts (redeploy + drill re-run) follows.
+| `logs/08-checks-m33-not-applied.log` | checks @c4f7e1a | FAIL: mutant M33's text no longer matched the changed render line (NOT APPLIED); fixed @3ec4c00 |
+| `logs/09-checks.log` | checks @3ec4c00 | PASS: suite 105/105, mutants 54/54 CAUGHT, promtool ok |
+| `logs/10-update-run10.log` | fleet update @87eb49f (size fix) | PASS 24/0: validator file back under 64 KiB, `pft_jobwatch_up 1` for both hosts in Prometheus (49/26 timer series, 0 `exported_job`), integrity PASS, fleet CURRENT, keyescrow drift 0, operator topics 0 |
+| `logs/11-alert-preflight-run13.log` | drill preflight @87eb49f | ready |
+
+Drill re-run (run 14) results follow.
