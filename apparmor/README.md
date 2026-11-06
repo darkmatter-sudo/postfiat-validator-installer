@@ -207,6 +207,13 @@ Exit codes: 0 PASS/ok, 1 findings, 2 error, 3 usage, 4 refused. Config: `/etc/pf
 | `confine:*` | cap_drop ALL, read-only root and no-new-privileges are still set |
 | `denials` | no `apparmor="DENIED"` event for the profile in `/var/log/audit/audit.log*` during `--since` (default 24 h); WARN lists the top three operation + path pairs |
 
+Records carrying `namespace="root//..."` come from a **nested** AppArmor namespace, not from this host's container:
+an LXD system container that loads a profile with the same name (the `rebuild/` drill applies `pft-postfiatd` inside
+its sandbox) writes its DENIED records to the HOST `audit.log`. `denials`, the apply/rollback gate and `learn`'s event
+normalisation skip them; `denials` prints how many it skipped. Records without a namespace field, or with
+`namespace="root"`, still count. (Found 2026-11-06: rebuild drill runs 21-31 left 144 sandbox records in the
+validator's audit log, `denials` graded them WARN and `PFTAppArmorDrift` fired, while the live container had 0.)
+
 `ack-denials` records in `/var/lib/pft-apparmor/denials-ack.json` that the DENIED records for the profile up to
 `--until` (default now; never in the future, never before the previous ack) were investigated, with a required
 reason that every later audit prints. Records after that time still count. It exists for the live drill: its

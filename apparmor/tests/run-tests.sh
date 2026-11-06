@@ -156,6 +156,18 @@ run audit --since 45
 expect "denials --since 45: only the last one" denials WARN "1 DENIED"
 fresh; avc $((NOW - 10)) DENIED pft-postfiatd//null-/bin/x open /child; run audit
 expect "denials: child profile counted" denials WARN "1 DENIED"
+# nested AppArmor namespace (an LXD sandbox loading the same profile name, rebuild/): reported, never counted
+avcns() { # EPOCH PROFILE OP NAME (record from namespace root//lxd-sbx_<...>)
+  printf 'type=AVC msg=audit(%s.100:1): apparmor="DENIED" operation="%s" namespace="root//lxd-sbx_<var-snap-lxd-common-lxd>" profile="%s" name="%s" pid=7 comm="x" requested_mask="r" denied_mask="r" fsuid=1000000 ouid=1000000\n' \
+    "$1" "$3" "$2" "$4" >> "$E/root/var/log/audit/audit.log"
+}
+fresh; avcns $((NOW - 10)) pft-postfiatd file_mmap /usr/bin/bash; avcns $((NOW - 9)) pft-postfiatd file_mmap /usr/bin/bash; run audit
+expect "denials: nested-namespace records only -> PASS" denials PASS "0 DENIED.*2 record\(s\) from a nested AppArmor namespace not counted"
+[ "$RC" = 0 ] && ok "denials: nested-namespace records only -> exit 0" || ko "denials nested: exit $RC" "$OUT"
+avc $((NOW - 8)) DENIED pft-postfiatd open /live; run audit
+expect "denials: live record next to nested ones still WARNs (count 1)" denials WARN "^  \[WARN\] denials +1 DENIED.*open /live x1; 2 record\(s\) from a nested"
+fresh; printf 'type=AVC msg=audit(%s.100:1): apparmor="DENIED" operation="open" namespace="root" profile="pft-postfiatd" name="/rootns" pid=7 comm="x"\n' $((NOW - 5)) >> "$E/root/var/log/audit/audit.log"; run audit
+expect "denials: namespace=\"root\" (not nested) still counted" denials WARN "1 DENIED"
 fresh; cp "$E/root/var/log/audit/audit.log" "$E/root/var/log/audit/audit.log.1"
 avc $((NOW - 10)) DENIED pft-postfiatd open /rotated; cp "$E/root/var/log/audit/audit.log" "$E/root/var/log/audit/audit.log.1"; : > "$E/root/var/log/audit/audit.log"
 run audit

@@ -29,6 +29,8 @@
 #              denials    apparmor="DENIED" events for PROFILE in /var/log/audit/audit.log* during the last --since
 #                         seconds (default 86400). WARN with the top three operation+path pairs. Records up to
 #                         an acknowledged time (ack-denials) are not counted; a malformed ack file is a FAIL.
+#                         Records with namespace="root//..." come from a NESTED AppArmor namespace (e.g. an LXD
+#                         sandbox loading the same profile name, rebuild/) and are reported but never counted.
 #  learn     loads a COMPLAIN copy of a seed profile (abstractions/base + network, nothing else) as PROFILE-learn,
 #            starts a throwaway container with the live container's confine arguments (same image, caps, tmpfs,
 #            read-only, pids/memory) but fresh anonymous volumes, no published ports, under PROFILE-learn; waits for
@@ -170,6 +172,7 @@ denials() { # SINCE_EPOCH PROFILE -> "COUNT<TAB>top3 summary"
       if (!match($0, /audit\([0-9]+/)) next
       e = substr($0, RSTART + 6, RLENGTH - 6) + 0
       if (e < t + 0) next
+      if (index($0, " namespace=\"root//")) { nested++; next }
       n++; op = ""; nm = ""
       if (match($0, /operation="[^"]*"/)) op = substr($0, RSTART + 11, RLENGTH - 12)
       if (match($0, / name="[^"]*"/)) nm = substr($0, RSTART + 7, RLENGTH - 8)
@@ -178,6 +181,7 @@ denials() { # SINCE_EPOCH PROFILE -> "COUNT<TAB>top3 summary"
     END {
       s = ""; for (i = 0; i < 3; i++) { b = ""; bn = 0; for (x in k) if (k[x] > bn) { bn = k[x]; b = x }
         if (bn == 0) break; s = s (s == "" ? "" : "; ") b " x" bn; delete k[b] }
+      if (nested) s = s (s == "" ? "" : "; ") nested " record(s) from a nested AppArmor namespace not counted"
       printf "%d\t%s\n", n + 0, s
     }'
 }
@@ -238,7 +242,7 @@ audit_checks() {
   elif ! "$SYSTEMCTL" is-enabled apparmor.service >/dev/null 2>&1; then add FAIL boot "apparmor.service not enabled"
   else add PASS boot "$f parses; apparmor.service enabled"
   fi
-  local eff="$since" note="" au
+  local eff="$since" note="" au sm
   if [ -e "$ACK_FILE" ]; then
     if ! au="$(jq -er --arg p "$PROFILE" 'select(type == "object" and .profile == $p and (.until | type) == "number" and (.reason | type) == "string") | .until' "$ACK_FILE" 2>/dev/null)" \
       || ! [[ "$au" =~ ^[0-9]+$ ]]; then
@@ -253,8 +257,8 @@ audit_checks() {
   fi
   if ! d="$(denials "$eff" "$PROFILE")"; then DENIED=0; add FAIL denials "${d#*$'\t'} (run as root)"
   else
-    DENIED="${d%%$'\t'*}"
-    if [ "$DENIED" = 0 ]; then add PASS denials "0 DENIED events in the last $(( $(now) - since ))s$note"
+    DENIED="${d%%$'\t'*}"; sm="${d#*$'\t'}"
+    if [ "$DENIED" = 0 ]; then add PASS denials "0 DENIED events in the last $(( $(now) - since ))s${sm:+; $sm}$note"
     else add WARN denials "$DENIED DENIED event(s) in the last $(( $(now) - since ))s: ${d#*$'\t'}$note"
     fi
   fi
@@ -343,6 +347,7 @@ normalize_events() { # SINCE_EPOCH PROFILE_PREFIX < audit lines
     function field(k,   r) { if (match($0, " " k "=\"[^\"]*\"")) { r = substr($0, RSTART + length(k) + 3, RLENGTH - length(k) - 4); return r } return "" }
     index($0, "apparmor=\"ALLOWED\"") || index($0, "apparmor=\"DENIED\"") {
       if (!index($0, "profile=\"" p)) next
+      if (index($0, " namespace=\"root//")) next
       if (!match($0, /audit\([0-9]+/)) next
       if (substr($0, RSTART + 6, RLENGTH - 6) + 0 < t + 0) next
       op = field("operation"); nm = field("name"); mk = field("requested_mask")
@@ -694,6 +699,7 @@ count_events() { # SINCE_EPOCH PROFILE KIND(DENIED|ALLOWED) -> number of audit r
   [ ${#files[@]} -gt 0 ] || { echo 0; return 1; }
   cat -- "${files[@]}" | awk -v t="$1" -v q="$2" -v k="$3" '
     index($0, "apparmor=\"" k "\"") && (index($0, "profile=\"" q "\"") || index($0, "profile=\"" q "//")) {
+      if (index($0, " namespace=\"root//")) next
       if (match($0, /audit\([0-9]+/) && substr($0, RSTART + 6, RLENGTH - 6) + 0 >= t + 0) n++ }
     END { print n + 0 }'
 }
