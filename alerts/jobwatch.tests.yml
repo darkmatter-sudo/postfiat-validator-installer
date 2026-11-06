@@ -205,6 +205,13 @@ tests:
     values: 0x20
   - series: pft_jobwatch_job_consecutive_failures{host="sentry",timer="pft-b.timer"}
     values: 0x20
+  # pft-c failed 3 times and is running again (failed 0, count kept until a run succeeds): must not fire either
+  - series: pft_jobwatch_job_present{host="sentry",timer="pft-c.timer"}
+    values: 1x20
+  - series: pft_jobwatch_job_failed{host="sentry",timer="pft-c.timer"}
+    values: 0x20
+  - series: pft_jobwatch_job_consecutive_failures{host="sentry",timer="pft-c.timer"}
+    values: 3x20
   alert_rule_test:
   - eval_time: 10m
     alertname: PFTJobFailed

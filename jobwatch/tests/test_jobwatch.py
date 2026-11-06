@@ -282,8 +282,10 @@ sl = dict(
 )  # same start as the last (successful) run: only Result changes
 m, _ = jl.derive(fl_t, sl, st, int(T_HB) + 160)
 check(
-    "start-limit-hit (no new start) counts as one failure",
-    m["failed"] == 1 and m["consecutive_failures"] == 1,
+    "start-limit-hit (no new start) counts as one failure (a new failed run is observed)",
+    m["failed"] == 1
+    and m["consecutive_failures"] == 1
+    and m["failed_runs_observed_total"] == st["failed_runs"] + 1,
     m,
 )
 ar = dict(fl_s, ActiveState=["activating"], SubState=["auto-restart"])
