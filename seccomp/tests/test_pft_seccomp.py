@@ -306,5 +306,35 @@ class TestCensus(Base):
         self.assertNotIn("mount", out)
 
 
+class TestShippedProfile(unittest.TestCase):
+    # Syscalls of in-container jobs that no learn run saw. pselect6: the image's cron.daily runs
+    # `run-parts --report`, which died "select: Operation not permitted" daily without it (2026-11-06).
+    NEEDED = ("pselect6",)
+    PROFILE = os.environ.get(
+        "SC_SHIPPED_PROFILE", os.path.join(HERE, "..", "profile", "pft-postfiatd.json")
+    )
+
+    def test_shipped_profile_allows_job_syscalls(self):
+        with open(self.PROFILE) as f:
+            prof = json.load(f)
+        allowed = {
+            n
+            for s in prof["syscalls"]
+            if s["action"] == "SCMP_ACT_ALLOW" and not s.get("args")
+            for n in s["names"]
+        }
+        with open(os.path.join(HERE, "..", "margin.tsv")) as f:
+            margin = dict(
+                line.rstrip("\n").split("\t", 1)
+                for line in f
+                if line.strip() and not line.startswith("#")
+            )
+        for name in self.NEEDED:
+            self.assertIn(name, allowed, f"{name} not allowed by the shipped profile")
+            self.assertTrue(
+                margin.get(name, "").strip(), f"{name} has no margin reason"
+            )
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

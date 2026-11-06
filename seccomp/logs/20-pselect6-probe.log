@@ -1,0 +1,11 @@
+OS: Ubuntu 22.04.5 LTS | 2026-11-06T08:09:43Z | validator-host | probe: container cron.daily run-parts --report under the live seccomp profile vs + pselect6 (throwaway, --network none, --rm)
+# old profile sha256 8568e1728fa413e81e4fb256fd16286f4874d9cdaed6adf224ad35610b9e2457 (= /etc/pft-seccomp/pft-postfiatd.json)
+# new profile sha256 d72b9fe7380b456054ff6a29f19c0a0796fb6a8d18fd9c1ccc35e675e034f5f4 (old + pselect6)
+$ docker run --rm --network none --security-opt no-new-privileges --cap-drop ALL --security-opt seccomp=old.json -v jobs:/jobs:ro --entrypoint run-parts agtipft/postfiatd:testnet-light-latest --report /jobs
+run-parts: select: Operation not permitted
+(exit 1)
+$ docker run --rm --network none --security-opt no-new-privileges --cap-drop ALL --security-opt seccomp=new.json -v jobs:/jobs:ro --entrypoint run-parts agtipft/postfiatd:testnet-light-latest --report /jobs
+/jobs/a-job:
+job-ran
+(exit 0)
+# done 2026-11-06T08:09:45Z

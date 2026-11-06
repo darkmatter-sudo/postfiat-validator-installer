@@ -1,0 +1,12 @@
+OS: Ubuntu 22.04.5 LTS | 2026-11-06T08:10:44Z | validator-host + sentry-host | ack of the investigated pselect6 (run-parts) denial
+$ sudo pft-seccomp ack-denials --reason "$R" --yes   (validator)
+2026-11-06T08:10:46Z ack-denials: 1 seccomp denial(s) after 1793874826 up to 1793952645 (2026-11-06T08:10:45Z) acknowledged: investigated: container cron.daily run-parts --report needs pselect6 (probe log seccomp-pselect6-01); margin fix + re-apply follows
+(exit 0)
+$ sudo pft-seccomp audit | grep denials
+  [PASS] denials            0 seccomp denials (subj pft-postfiatd) in the last 86401s; up to 2026-11-06T08:10:45Z acknowledged: investigated: container cron.daily run-parts --report needs pselect6 (probe log seccomp-pselect6-01); margin fix + re-ap
+RESULT: PASS
+$ ssh relay sudo pft-seccomp ack-denials --reason "$R" --yes   (sentry)
+2026-11-06T08:10:48Z ack-denials: 1 seccomp denial(s) after 1793874450 up to 1793952647 (2026-11-06T08:10:47Z) acknowledged: investigated: container cron.daily run-parts --report needs pselect6 (probe log seccomp-pselect6-01); margin fix + re-apply follows
+(exit 0)
+  [PASS] denials            0 seccomp denials (subj pft-postfiatd) in the last 86401s; up to 2026-11-06T08:10:47Z acknowledged: investigated: container cron.daily run-parts --report needs pselect6 (probe log seccomp-pselect6-01); margin fix + re-ap
+RESULT: PASS

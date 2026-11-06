@@ -177,7 +177,7 @@ prlimit64	allow	allow	census 649
 process_mrelease	allow	deny	never observed
 process_vm_readv	allow	deny	never observed
 process_vm_writev	allow	deny	never observed
-pselect6	allow	deny	never observed
+pselect6	allow	allow	margin: run-parts --report (the image's cron.daily: logrotate, dpkg) waits on job output with select(); glibc issues pselect6. Absent from both learns (cron.daily not exercised under LOG), so run-parts died "select: Operation not permitted" daily from 2026-11-06T06:25Z
 ptrace	allow	deny	never observed
 pwrite64	allow	allow	census 77410
 pwritev	allow	deny	never observed
@@ -294,4 +294,4 @@ wait4	allow	allow	census 692
 waitid	allow	deny	never observed
 write	allow	allow	census 325087
 writev	allow	allow	census 32
-# summary: Docker default allows 294 x86_64 syscalls for these caps; profile keeps 129, removes 165
+# summary: Docker default allows 294 x86_64 syscalls for these caps; profile keeps 130, removes 164

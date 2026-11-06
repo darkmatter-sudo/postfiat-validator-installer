@@ -1,0 +1,23 @@
+OS: Ubuntu 22.04.5 LTS | 2026-11-06T08:11:34Z | validator-host | seccomp suite after the pselect6 margin fix + reverted-profile control
+$ ruff format --check seccomp/ && ruff check seccomp/ && shellcheck seccomp/*.sh seccomp/drill/*.sh seccomp/tests/*.sh
+6 files already formatted
+All checks passed!
+(exit 0)
+$ nice -n 15 bash seccomp/tests/run-tests.sh
+ok lines: 188
+ok   stop lib: any other changed item -> refuse
+ok   stop lib: a look-alike unit name -> refuse
+ok   stop lib: nothing changed -> rc 0 (caller says nothing to accept)
+ok   stop lib: live-run.sh passes the verify output, the host's container and the audit's container grade (static check)
+ok   helper unit tests: Ran 13 tests
+RESULT: 188 passed, 0 failed
+(exit 0)
+$ SC_SHIPPED_PROFILE=<pre-fix live profile, sha256 8568e172...2457> python3 -I seccomp/tests/test_pft_seccomp.py TestShippedProfile   (control: must FAIL)
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)
+(exit 1)
+$ SC_SHIPPED_PROFILE=<pre-fix live profile> python3 -I seccomp/tests/test_pft_seccomp.py TestShippedProfile 2>&1 | grep AssertionError   (control assertion message)
+AssertionError: 'pselect6' not found in {'geteuid', 'getppid', 'getpeername', 'eventfd2', 'utimensat', 'clock_getres', 'getpid', 'gettimeofday', 'pwrite64', 'arch_prctl', 'pipe2', 'ftruncate', 'access', 'exit', 'flistxattr', 'renameat2', 'creat', 'readlink', 'setpgid', 'recvfrom', 'kill', 'set_tid_address', 'mmap', 'fchmod', 'rt_sigreturn', 'close', 'exit_group', 'faccessat2', 'fstatfs', 'pread64', 'statx', 'newfstatat', 'sysinfo', 'sendmsg', 'shutdown', 'fdatasync', 'fstat', 'lseek', 'set_robust_list', 'rename', 'getrandom', 'dup3', 'getcwd', 'getsockopt', 'getgid', 'rseq', 'sendmmsg', 'sched_getparam', 'epoll_ctl', 'madvise', 'mprotect', 'setgroups', 'setsid', 'getresuid', 'timerfd_create', 'capset', 'connect', 'unlinkat', 'setresuid', 'setuid', 'fchown', 'getuid', 'getpgrp', 'uname', 'getdents64', 'rt_sigaction', 'write', 'getegid', 'mkdir', 'setresgid', 'mremap', 'wait4', 'unlink', 'sched_getscheduler', 'setpriority', 'dup2', 'recvmsg', 'chdir', 'flock', 'prlimit64', 'poll', 'fgetxattr', 'capget', 'getresgid', 'ioctl', 'sigaltstack', 'getpriority', 'bind', 'openat', 'getsockname', 'timer_settime', 'umask', 'rt_sigprocmask', 'copy_file_range', 'timer_create', 'epoll_create1', 'fsetxattr', 'gettid', 'openat2', 'fsync', 'timerfd_settime', 'tgkill', 'munmap', 'fchdir', 'accept', 'setgid', 'setsockopt', 'restart_syscall', 'vfork', 'rt_sigsuspend', 'prctl', 'read', 'sched_yield', 'sendto', 'fcntl', 'statfs', 'epoll_wait', 'clock_gettime', 'listen', 'brk', 'socketpair', 'fadvise64', 'clock_nanosleep', 'writev', 'execve', 'futex', 'time'} : pselect6 not allowed by the shipped profile

@@ -16,3 +16,4 @@ gettimeofday	same vDSO fallback as clock_gettime
 time	same vDSO fallback as clock_gettime
 clock_getres	same vDSO fallback as clock_gettime
 kill	timeout(1) in the add-ons' docker exec commands (pft-egress: timeout 5 bash -c ...) signals its child only when the child hangs
+pselect6	run-parts --report (the image's cron.daily: logrotate, dpkg) waits on job output with select(); glibc issues pselect6. Absent from both learns (cron.daily not exercised under LOG), so run-parts died "select: Operation not permitted" daily from 2026-11-06T06:25Z

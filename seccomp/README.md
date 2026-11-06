@@ -25,6 +25,23 @@ helper: syscall table from libseccomp, Docker rule resolution, profile + diff, c
 | 4 audit, rules, promtool, tests, mutants | done offline: recorded [10](logs/10-lint-suite-mutants.log) at 80d944a (git archive, script sha256 in l.3-11): shellcheck/ruff/ruff format/promtool clean (l.12-35), suite 147 passed, 0 failed (l.185), mutants 59 caught, 0 survived, 0 not applied, 0 broken of 59 + M54 documented equivalent, 0 orphans (l.249-250). Replaces [04](logs/04-lint-suite-mutants.log) (its 54 CAUGHT lines all read `[0 failing: ]`: the mutant copies lacked `pft_seccomp.py`, so no check ever ran; harness fixed, see Tests) and [09](logs/09-lint-suite-mutants-superseded.log) (56 caught / 4 survived at fffc1d6: M16, M19, M37 got tests in 80d944a, M54 is equivalent because no caller reads `lx`'s status) |
 | 5 two-host live proof | **done: live run [19](logs/19-live-run-pass.log) (2026-11-05T10:12-11:52Z, run commit 7ef49b4) PASS, 0 checks failed**, see [Results](#results-live-run-19-2026-11-05-pass). Earlier runs that stopped at the canary (kept as evidence): first live run [11](logs/11-live-run-stopped-at-canary.log) (2026-11-05T01:14Z, run commit 72b614f) stopped at the sentry canary, by design: the apply gate counted 2 `clone3` records as denials and rolled the sentry back automatically; the validator was never changed. Found → fixed → verified offline, see [Live run 11](#live-run-11-2026-11-05-stopped-at-the-sentry-canary). Second live run [16](logs/16-live-run-stopped-at-canary-drill-counter.log) (2026-11-05T09:10Z, run commit 5e62fb3) passed the gate this time but stopped at the canary on the drill script's own denial counter, see [Live run 16](#live-run-16-2026-11-05-stopped-at-the-sentry-canary-drill-counter) | |
 
+## Fix (2026-11-06): `pselect6` for the container's cron.daily
+
+Found: at the first cron.daily after the live apply (2026-11-06T06:25Z) both nodes' audits graded 1 denial,
+`pselect6 (run-parts)`, and PFTSeccompDenied fired. The image's crontab runs `run-parts --report /etc/cron.daily`
+(logrotate, dpkg, apt-compat), which waits on job output with `select()` (glibc: `pselect6`). Neither learn ran
+cron.daily, so the profile did not allow it. A throwaway probe ([20](logs/20-pselect6-probe.log)) shows the effect:
+under the live profile `run-parts --report` exits 1 with `select: Operation not permitted` and runs no job (l.4-6),
+so the daily jobs stopped running after the apply; with `pselect6` added the job runs, exit 0 (l.7-10). (The echoed
+`docker run` lines in that log shorten the scratch paths of `old.json`/`new.json`/`jobs` and omit `--name pft-scprobe-*`.)
+
+Fixed: `pselect6` added to [`margin.tsv`](margin.tsv) with its reason (Docker's default allows it); profile rebuilt
+with `drill/generate-run.sh`: 130 allowed, canonical sha256 `b636b6b802555fa30c31d20e194aecb22969cd6fecb73d8dda51e20a0f1e7524`
+(= the probe's `new.json`). New test `TestShippedProfile` asserts the shipped profile allows `pselect6` and that the
+margin gives a reason; suite 188 passed, 0 failed, and the same test FAILs on the pre-fix profile
+([22](logs/22-pselect6-lint-suite-control.log) l.7-14, l.15-23). The investigated denial was acknowledged on both
+hosts ([21](logs/21-pselect6-ack.log)). Re-apply on both hosts: with `drill/live-run.sh` (see below).
+
 ## Results: live run 19 (2026-11-05): PASS
 
 Every row cites a line of [`logs/19-live-run-pass.log`](logs/19-live-run-pass.log) (run commit
