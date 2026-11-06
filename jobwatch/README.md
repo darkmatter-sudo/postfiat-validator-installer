@@ -21,6 +21,7 @@ starts, stops, enables or resets a unit).
 | `pft-jobwatch.env.example` | `/etc/pft-jobwatch.env` (root-owned 0600): `HOST_LABEL`, `JOB_GLOBS`, `PULL_SSH` |
 | `drill/checks-run.sh` | recorded lint + suite + promtool + mutants run at a pushed commit |
 | `drill/install-run.sh` | recorded two-host install through pft-fleet in a pft-maint window (throwaway [MAINT] topic; keyescrow re-run + drift 0 check after the restore) |
+| `drill/update-run.sh` | recorded two-host update of the installed files through pft-fleet in a pft-maint window (throwaway [MAINT] topic), Prometheus rule reload, label check, keyescrow re-run |
 | `drill/alert-run.sh` | step-4 alert drill: a runtime drill job (`/run/systemd/system`, outside pft-integrity's set) on both hosts at once, succeed -> fail -> disable -> hang (missed) -> remove; PFTJobFailed, PFTJobDisabled (x2), PFTJobMissed FIRING then RESOLVED for both hosts on a throwaway topic (bridge re-created on a temp env, alertpath paused, everything else silenced), operator topics read back; `PREFLIGHT_ONLY=1` changes nothing |
 
 Rules: `../alerts/jobwatch.rules.yml`, tests `../alerts/jobwatch.tests.yml`; the rule file is listed in
@@ -115,5 +116,7 @@ PFTJobDisabled (never PFTJobFailed).
 | `logs/03-alert-preflight-run05.log` | drill preflight @3e42ab2 | ready, nothing changed |
 | `logs/04-alert-drill-run06-stopped.log` | drill run 06 | stopped by hand in step 2: the checker read `systemctl show` output in `-p` order (systemd prints its own order) and failed a correct install; restore completed. Fixed @07fc9a4 (also: preflight now refuses an active silence naming PFTJob*, because the install's rollout silence was still active and would have muted the drill) |
 | `logs/05-alert-drill-run07-stopped.log` | drill run 07 | **found**: PFTJobFailed fired for 27 sentry series when only the drill job failed, and for no validator series. Cause: the per-job label was `job`; the scrape renamed it `exported_job`, so `on (host, job)` joined every sentry timer to the one failed drill job. Notifications went only to the throwaway topic (operator topics: 0 messages). Stopped by hand; the stop also killed the restore, which was then completed by hand (drill units, flags and state entry removed on both hosts, bridge back on the operator env with alertpath paused around it, silence expired). **Fixed**: label renamed `timer`; suite check that no sample uses `job`/`instance`; promtool test with two timers on one host; mutants M33, R08 |
+
+| `logs/06-checks.log` | checks @6b3087e (fix) | shellcheck/ruff clean, promtool ok (incl. the two-timer test), suite 102/102, mutants 52/52 CAUGHT |
 
 Verification of the fix on the hosts (redeploy + drill re-run) follows.
