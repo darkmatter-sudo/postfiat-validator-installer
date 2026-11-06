@@ -40,7 +40,30 @@ with `drill/generate-run.sh`: 130 allowed, canonical sha256 `b636b6b802555fa30c3
 (= the probe's `new.json`). New test `TestShippedProfile` asserts the shipped profile allows `pselect6` and that the
 margin gives a reason; suite 188 passed, 0 failed, and the same test FAILs on the pre-fix profile
 ([22](logs/22-pselect6-lint-suite-control.log) l.7-14, l.15-23). The investigated denial was acknowledged on both
-hosts ([21](logs/21-pselect6-ack.log)). Re-apply on both hosts: with `drill/live-run.sh` (see below).
+hosts ([21](logs/21-pselect6-ack.log)). Re-applied on both hosts with `drill/live-run.sh`: live run [23](logs/23-live-run-pass.log) PASS, see below.
+
+## Results: live run 23 (2026-11-06): PASS (re-apply with `pselect6`)
+
+Every row cites a line of [`logs/23-live-run-pass.log`](logs/23-live-run-pass.log) (run commit
+`e2a3a59c3df8a77577e2c05a30f1df792c8490d0`, clean tree, l.2). The log is the run's own output, already redacted by
+the run; nothing was changed when publishing it. Same drill as run 19, so the rows are the same checks.
+
+| Check | Result | log 23 |
+|---|---|---|
+| earlier apply rolled back first | rollback PASS on sentry and validator (the run starts from Docker's default) | l.74, l.89 |
+| profile sha256: repo = both hosts | file `44958496…4b09`, canonical `b636b6b8…7524` (the profile with `pselect6`) | l.10, l.152, l.158 |
+| apply gate (sentry, validator) | `seccomp denials since T0: 0`, clone3 shown as by-design ENOSYS | l.270, l.698 |
+| SecurityOpt after apply | `seccomp=<inline profile, sha256 b636b6b8…7524>` on both | l.275, l.703 |
+| negative controls (EPERM + record) | symlinkat, linkat, inotify_init on both hosts | l.325-337, l.753-765 |
+| alert drill FIRING → RESOLVED (throwaway topic) | sentry and validator | l.393-395, l.593-595, l.817-818, l.937-939 |
+| host runs | sentry pre 23/0, post 21/0; validator pre 20/0, post 19/0 (PASS/FAIL) | l.378, l.581, l.806, l.929 |
+| 60-min hold | 13 polls 08:53:31Z-09:54:23Z, both full, 11 peers, container PASS, denied=0 | l.941-956 |
+| metrics, alerts, fleet, rules, integrity | findings 0 on both, no PFTSeccomp* alert, fleet skew 0 (seccomp CURRENT on both), rulecheck OK, integrity PASS after accept | l.973, l.977, l.1082-1095 |
+| zero operator-topic messages, end state | env files restored byte-identical, 0 messages on both operator topics, integrity PASS, both nodes full; `0 check(s) failed -> PASS` | l.1110, l.1123-1132 |
+
+Limit: the run's positive controls run `/etc/cron.hourly`, not cron.daily. The `pselect6` fix itself is shown by
+probe [20](logs/20-pselect6-probe.log); the first real cron.daily under this profile is 2026-11-07T06:25Z and is
+checked after it runs.
 
 ## Results: live run 19 (2026-11-05): PASS
 
