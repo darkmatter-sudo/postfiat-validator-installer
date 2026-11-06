@@ -137,6 +137,7 @@ PFTJobDisabled (never PFTJobFailed).
 | `logs/12-alert-drill-run14-stopped.log` | drill run 14 @87eb49f | **label fix verified live**: PFTJobFailed fired for exactly the two drill series (`host=sentry/validator, timer=pft-jobwatch-drill.timer`) 197 s after the fail flag and resolved; succeed phase quiet; the bridge delivered every [FIRING]/[RESOLVED] (HTTP 200). But the 4 throwaway-topic checks FAILed: a checker bug (`ok_if` evaluates `$1..$3` as its own arguments). Stopped in step 4 with SIGINT to the drill shell only; its restore completed (units, bridge, alertpath, silence), operator bridge sent 0 messages afterwards. Fixed @(next commit): named locals, tested on a synthetic positive/negative case |
 
 | `logs/13-alert-drill-run16.log` | drill run 16 @2a81527, both hosts at once, throwaway topic | **PASS 59/0**: succeed quiet; every alert FIRING then RESOLVED for both hosts on the throwaway topic (16 messages), operator topics 0; final `pft_jobwatch_up 1` both, inventory validator 49 / sentry 26 (0 failed/missed/disabled), pft-integrity PASS both (176/103), `server_state` full both |
+| `logs/14-final-lint.log` | lint at c0db5e8 (drill scripts changed after log 09) | shellcheck + ruff clean; tool, helper, tests, rules unchanged since 3ec4c00 (log 09) |
 
 Drill run 16 timeline (UTC, Prometheus `ALERTS` firing / throwaway-topic message times from the log):
 

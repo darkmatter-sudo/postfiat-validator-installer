@@ -1,0 +1,12 @@
+# jobwatch final lint at c0db5e85efd7fa93be208593ae21b9f25bbbc7d1 (drill scripts changed after checks log 09) 2026-11-06T18:25:24Z
+OS: PRETTY_NAME="Ubuntu 22.04.5 LTS"
+$ shellcheck --version | sed -n 2p; shellcheck jobwatch/pft-jobwatch.sh jobwatch/install.sh jobwatch/drill/*.sh
+version: 0.8.0
+(exit 0)
+$ ruff check jobwatch/ && ruff format --check jobwatch/
+All checks passed!
+5 files already formatted
+(exit 0)
+$ git diff --stat 3ec4c00 HEAD -- jobwatch/pft-jobwatch.sh jobwatch/jobwatch_lib.py jobwatch/tests alerts/jobwatch.rules.yml alerts/jobwatch.tests.yml jobwatch/install.sh | wc -l
+0
+(0 = tool, helper, tests and rules unchanged since checks log 09)
