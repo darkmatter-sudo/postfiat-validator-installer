@@ -270,8 +270,8 @@ MUTANTS = [
     (
         "S05",
         S,
-        "345 egressfix     scapply,egress             systemctl start pft-egress-reapply@postfiatd.service && ",
-        "345 egressfix     scapply,egress             ",
+        '[ "$rc" = 0 ] && iptables -S DOCKER-USER | grep -q',
+        "iptables -S DOCKER-USER | grep -q",
     ),
     # helpers
     (

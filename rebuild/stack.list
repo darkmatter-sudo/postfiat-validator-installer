@@ -15,6 +15,8 @@
 # (rb-limit apparmor-nested / kernel-audit, runs 21/22); the drill then proves on the LIVE host that the same profile
 # bytes are enforced there (pft-rebuild-drill.sh cmd_limits). Every re-create drops pft-egress's DOCKER-USER jump until
 # the 5-min pft-egress-reapply timer runs (run 22 dumps), so egressfix runs that unit before the diff reads the firewall.
+# Run 25: egressfix exited 1 with no output (systemctl start reported nothing, the jump grep failed), so the step now
+# prints the unit's rc, its journal and DOCKER-USER before it checks.
 # unitguard runs after `firstrun`: a unit's ReadWritePaths dirs (/var/backups/postfiat, /var/lib/pft-integrity) only exist
 # after its first run, and a drop-in naming a missing dir fails with 226/NAMESPACE (run 11). Its drop-ins are then
 # accepted into the sandbox's integrity baseline, as on the live host.
@@ -60,5 +62,5 @@
 340 rebaseline    unitguard       pft-integrity accept --reason "rebuild: unitguard drop-ins"
 342 aaapply       rebaseline,apparmor,maint  pft-maint start --ttl 40m --reason rebuild-apparmor --no-sentry && { rb-limit apparmor-nested pft-apparmor apply --profile-file apparmor/profile/pft-postfiatd --yes; rc=$?; pft-maint end --reason rebuild-apparmor; exit $rc; }
 344 scapply       aaapply,seccomp,maint      pft-maint start --ttl 40m --reason rebuild-seccomp --no-sentry && { rb-limit kernel-audit pft-seccomp apply --profile-file seccomp/profile/pft-postfiatd.json --yes; rc=$?; pft-maint end --reason rebuild-seccomp; exit $rc; }
-345 egressfix     scapply,egress             systemctl start pft-egress-reapply@postfiatd.service && iptables -S DOCKER-USER | grep -q -- '-j PFT-EGRESS'
+345 egressfix     scapply,egress             systemctl start pft-egress-reapply@postfiatd.service; rc=$?; echo "reapply rc $rc"; journalctl -u pft-egress-reapply@postfiatd.service --no-pager -n 15 -o cat; iptables -S DOCKER-USER | sed 's/^/fw: /'; [ "$rc" = 0 ] && iptables -S DOCKER-USER | grep -q -- '-j PFT-EGRESS'
 346 rebaseline2   egressfix                  pft-integrity accept --reason "rebuild: apparmor + seccomp apply"

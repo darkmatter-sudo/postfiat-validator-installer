@@ -142,8 +142,12 @@ check(
     all(idx(n) >= 0 for n in ("aaapply", "scapply", "egressfix"))
     and "rb-limit apparmor-nested pft-apparmor apply" in real[idx("aaapply")]["cmd"]
     and "rb-limit kernel-audit pft-seccomp apply" in real[idx("scapply")]["cmd"]
-    and "pft-egress-reapply@postfiatd.service" in real[idx("egressfix")]["cmd"]
-    and "-j PFT-EGRESS" in real[idx("egressfix")]["cmd"],
+    and real[idx("egressfix")]["cmd"].startswith(
+        "systemctl start pft-egress-reapply@postfiatd.service; rc=$?;"
+    )
+    and real[idx("egressfix")]["cmd"].endswith(
+        "[ \"$rc\" = 0 ] && iptables -S DOCKER-USER | grep -q -- '-j PFT-EGRESS'"
+    ),
     [
         real[idx(n)]["cmd"][:80]
         for n in ("aaapply", "scapply", "egressfix")
