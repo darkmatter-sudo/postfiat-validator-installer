@@ -333,9 +333,10 @@ cmd_run() {
 
   echo; echo "== 6. diff sandbox vs live"
   # Re-collect the sandbox manifest from its final state: the last accept can predate later steps, and run 28's
-  # rolled-back egress jump hid behind the manifest that `rebaseline` wrote before aaapply.
-  sx pft-integrity baseline >/dev/null 2>&1
-  check "sandbox manifest re-collected after the last step (pft-integrity baseline in the sandbox)" "$?"
+  # rolled-back egress jump hid behind the manifest that `rebaseline` wrote before aaapply. `accept` rewrites an
+  # existing manifest; `baseline` refuses one with exit 3 (run 30).
+  sx pft-integrity accept --reason "rebuild drill: final sandbox state for the diff" >/dev/null 2>&1
+  check "sandbox manifest re-collected after the last step (pft-integrity accept in the sandbox)" "$?"
   "$LXC" file pull "$SBX/var/lib/pft-integrity/manifest.tsv" "$W/sandbox-manifest.tsv" 2>/dev/null
   local fargs=()
   if [ -s "$W/live-fleet.json" ] && sx pft-fleet inventory --json --hosts validator > "$W/sandbox-fleet.json" 2>/dev/null \

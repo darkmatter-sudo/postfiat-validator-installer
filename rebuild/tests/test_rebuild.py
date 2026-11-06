@@ -165,6 +165,19 @@ check(
     ),
     real[idx("egresswait")]["cmd"][-80:] if idx("egresswait") >= 0 else "missing",
 )
+with open(os.path.join(RB, "pft-rebuild-drill.sh"), encoding="utf-8") as fh:
+    _drill = fh.read()
+_sec6 = _drill[_drill.find('echo "== 6. diff sandbox vs live"') :]
+_pull = _sec6.find("sandbox-manifest.tsv")
+_acc = _sec6.find(
+    'sx pft-integrity accept --reason "rebuild drill: final sandbox state for the diff"'
+)
+check(
+    "drill: section 6 re-collects the sandbox manifest with accept (baseline refuses an existing one, run 30)"
+    " before pulling it",
+    0 <= _acc < _pull and "sx pft-integrity baseline" not in _sec6,
+    (_acc, _pull),
+)
 check(
     "stack.list (repo): restore before backup",
     idx("restore") < idx("backup"),

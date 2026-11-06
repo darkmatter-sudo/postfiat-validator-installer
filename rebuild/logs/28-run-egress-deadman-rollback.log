@@ -1,0 +1,320 @@
+OS: Ubuntu 22.04.5 LTS | kernel 5.15.0-202-generic | lxd 5.0.11
+run 20261106T001125Z commit 9331448be4d40a156fff82e61bd2eba1e3e2852f sandbox pftrb-sbx cpu=2 mem=3GiB disk=25GiB procs=6000 image=ubuntu:22.04
+stack: stack.list sha256 17152416e2ac06a3dffb8ef50c4096f66220fad3c0af480d543a1aded6ccfa53
+
+== 0. preflight
+[2026-11-06T00:11:25Z] preflight (read-only), commit 9331448be4d40a156fff82e61bd2eba1e3e2852f
+CHECK ok   LXD available
+CHECK ok   live node postfiatd server_state full
+CHECK ok   live pft-integrity verify PASS
+CHECK ok   no leftover instance pftrb-sbx
+CHECK ok   no leftover network pftrb0
+CHECK ok   no leftover pool pftrb
+CHECK ok   no leftover chain PFT-REBUILD
+CHECK ok   subnet 10.209.77.1/24 unused on the host
+CHECK ok   RB_MEM=3GiB and RB_DISK=25GiB parse as sizes
+CHECK ok   MemAvailable 6004 MiB >= sandbox cap + 1 GiB
+CHECK ok   free disk 69 GiB >= RB_DISK + 10 GiB
+CHECK ok   nightly backup archive present in /var/backups/postfiat
+CHECK ok   commit is a full 40-hex SHA
+CHECK ok   commit public on GitHub (HTTP 200)
+CHECK ok   stack.list valid
+CHECK ok   operator ntfy topics found (2, not printed)
+  host snapshot: 184 items; live baseline: 668 rows
+
+== 1. sandbox infrastructure
+CHECK ok   pool pftrb (lvm loop, size 25GiB)
+CHECK ok   bridge pftrb0 NAT-only IPv4 10.209.77.1/24
+CHECK ok   firewall chains PFT-REBUILD (forward) / PFT-REBUILD-IN (input) for pftrb0 only
+CHECK ok   instance pftrb-sbx created (not started)
+CHECK ok   custom volume rb-docker (4GiB) on pftrb at /var/lib/docker
+CHECK ok   custom volume rb-containerd (16GiB) on pftrb at /var/lib/containerd
+CHECK ok   live pft-integrity verify still PASS with the sandbox infrastructure up
+
+== 2. sandbox isolation preflight
+CHECK ok   backup sanitized (keys refused, peering stripped)
+  PREFLIGHT: ISOLATED (0 refusals)
+CHECK ok   no sandbox device exposes 2559 5005 51235
+
+== 3. start + network
+CHECK ok   sandbox started
+CHECK ok   sandbox DNS + IPv4 up (12 s)
+CHECK ok   cloud-init finished
+CHECK ok   sandbox cannot reach host admin port 5005 via the bridge
+CHECK ok   sandbox cannot reach host sshd via the bridge
+
+== 4. checkout pinned commit inside the sandbox
+CHECK ok   git + jq installed
+CHECK ok   sandbox HEAD = 9331448be4d40a156fff82e61bd2eba1e3e2852f
+CHECK ok   sanitized backup + blackhole ntfy.env pushed
+
+== 5. install steps (rebuild/stack.list @ 9331448be4d40a156fff82e61bd2eba1e3e2852f)
+STEP  10 base          rc=0     487s  $ bash install.sh
+STEP  20 restore       rc=0      58s  $ rb-restore
+STEP  30 exporter      rc=0       3s  $ rb-manifest exporter
+STEP  35 alerts        rc=0     103s  $ for i in $(seq 1 30); do curl -sf -o /dev/null http://127.0.0.1:9877/metrics && break; sleep 2; done; bash alerts/run-stack.sh up
+STEP  40 integrity     rc=0       1s  $ rb-manifest integrity
+STEP  50 backup        rc=0       2s  $ rb-manifest backup
+STEP  60 monitor       rc=0       1s  $ rb-manifest monitor
+STEP  70 maint         rc=0       2s  $ bash maint/install.sh install --label validator --ntfy-env /etc/pft-rebuild/ntfy.env
+STEP  80 retention     rc=0       2s  $ rb-manifest retention
+STEP  90 resources     rc=0       4s  $ bash resources/install.sh --container postfiatd
+STEP 100 statewatch    rc=0       2s  $ bash statewatch/install.sh --container postfiatd
+STEP 110 feewatch      rc=0       4s  $ bash feewatch/install.sh --container postfiatd
+STEP 120 upgradewatch  rc=0       5s  $ bash upgradewatch/install.sh --container postfiatd
+STEP 130 backfill      rc=0       4s  $ bash backfill/install.sh
+STEP 140 kernwatch     rc=0       2s  $ rb-limit kernel-log bash kernwatch/install.sh --host validator
+STEP 150 authwatch     rc=0       3s  $ bash authwatch/install.sh --host validator
+STEP 160 timesync      rc=0       2s  $ bash timesync/install.sh
+STEP 170 vulnscan      rc=0      54s  $ bash vulnscan/install.sh --host validator
+STEP 180 privesc       rc=0      21s  $ id rbagent >/dev/null 2>&1 || useradd -m -s /bin/bash rbagent; bash privesc/install.sh --host validator --agent rbagent
+STEP 190 mounts        rc=0       3s  $ bash mounts/install.sh --host validator
+STEP 194 sshharden     rc=0       1s  $ install -m 0644 -o root -g root audit/fixes/40-pft-hardening.conf /etc/ssh/sshd_config.d/ && sshd -t && systemctl reload ssh
+STEP 196 sshcrypto     rc=0      11s  $ bash sshcrypto/install.sh --host validator && pft-sshcrypto apply
+STEP 200 apparmor      rc=0       3s  $ bash apparmor/install.sh --host validator
+STEP 210 seccomp       rc=0       3s  $ bash seccomp/install.sh --host validator
+STEP 220 cluster       rc=0       4s  $ bash cluster/install.sh
+STEP 230 keyescrow     rc=0      18s  $ apt-get -qq install -y age >/dev/null && bash keyescrow/install.sh --host validator
+STEP 240 rulecheck     rc=0       3s  $ bash rulecheck/install.sh --host-label validator
+STEP 250 divergence    rc=0       1s  $ rb-manifest divergence
+STEP 260 egress        rc=0       8s  $ pft-maint start --ttl 30m --reason rebuild-egress --no-sentry && { bash egress/pft-egress.sh apply --yes --container postfiatd; rc=$?; pft-maint end --reason rebuild-egress; exit $rc; }
+STEP 270 sysctl        rc=0       2s  $ rb-manifest sysctl
+STEP 280 audittrail    rc=0       1s  $ rb-manifest audittrail
+STEP 290 logship       rc=0       1s  $ rb-manifest logship
+STEP 300 patch         rc=0       1s  $ bash patch/install.sh
+STEP 310 alertpath     rc=0       2s  $ rb-manifest alertpath
+STEP 320 watchdog      rc=0       2s  $ rb-manifest watchdog
+STEP 330 fleet         rc=0      11s  $ rb-fleet-conf && bash fleet/install.sh
+STEP 332 baseline      rc=0       8s  $ pft-integrity baseline
+STEP 334 firstrun      rc=0       9s  $ systemctl start pft-backup.service pft-integrity.service
+STEP 336 unitguard     rc=0      52s  $ bash unitguard/pft-unitguard.sh apply --all --skip pft-heartbeat.service
+STEP 340 rebaseline    rc=0       9s  $ pft-integrity accept --reason "rebuild: unitguard drop-ins"
+STEP 342 aaapply       rc=0    1034s  $ pft-maint start --ttl 40m --reason rebuild-apparmor --no-sentry && { rb-limit apparmor-nested pft-apparmor apply --profile-file apparmor/profile/pft-postfiatd --yes; rc=$?; pft-maint end --reason rebuild-apparmor; exit $rc; }
+STEP 344 scapply       rc=0     120s  $ pft-maint start --ttl 40m --reason rebuild-seccomp --no-sentry && { rb-limit kernel-audit pft-seccomp apply --profile-file seccomp/profile/pft-postfiatd.json --yes; rc=$?; pft-maint end --reason rebuild-seccomp; exit $rc; }
+STEP 345 egressfix     rc=1       1s  $ systemctl start pft-egress-reapply@postfiatd.service; rc=$?; echo "reapply rc $rc"; journalctl -u pft-egress-reapply@postfiatd.service --no-pager -n 15 -o cat; iptables -S DOCKER-USER | sed 's/^/fw: /'; [ "$rc" = 0 ] && iptables -S DOCKER-USER | grep -q -- '-j PFT-EGRESS'
+  --- last 25 lines of egressfix ---
+  | reapply rc 0
+  | Starting pft-egress: re-apply the egress policy for container postfiatd...
+  | pft-egress-reapply@postfiatd.service: Deactivated successfully.
+  | Finished pft-egress: re-apply the egress policy for container postfiatd.
+  | Starting pft-egress: re-apply the egress policy for container postfiatd...
+  | pft-egress-reapply@postfiatd.service: Deactivated successfully.
+  | Finished pft-egress: re-apply the egress policy for container postfiatd.
+  | Starting pft-egress: re-apply the egress policy for container postfiatd...
+  | [2026-11-06T00:30:24Z] reapply: drift found (chain changed, jump missing/moved/duplicated, or container IP now 172.18.0.2) - reloading
+  | [2026-11-06T00:30:24Z] reapply: done
+  | pft-egress-reapply@postfiatd.service: Deactivated successfully.
+  | Finished pft-egress: re-apply the egress policy for container postfiatd.
+  | Starting pft-egress: re-apply the egress policy for container postfiatd...
+  | pft-egress-reapply@postfiatd.service: Deactivated successfully.
+  | Finished pft-egress: re-apply the egress policy for container postfiatd.
+  | fw: -N DOCKER-USER
+  | fw: -A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state RELATED,ESTABLISHED -j ACCEPT
+  | fw: -A DOCKER-USER -p tcp -m tcp --dport 2559 -m connlimit --connlimit-above 50 --connlimit-mask 32 --connlimit-saddr -j DROP
+  | fw: -A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -m limit --limit 100/sec --limit-burst 50 -j ACCEPT
+  | fw: -A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -j DROP
+  | fw: -A DOCKER-USER -j RETURN
+TIME_TO_FULL 57 s (restore step start -> server_state full, cap 3600 s)
+sandbox server_state now: full
+
+== 5b. sandbox limits vs the live host
+  kernwatch: SANDBOX_LIMIT kernel-log: LXD system container: no kernel log, and sandboxed units see the host boot id (step rc 1)
+  aaapply: SANDBOX_LIMIT apparmor-nested: nested AppArmor namespace: container paths are disconnected in the sandbox, profile rules cannot match (step rc 1)
+CHECK ok   apparmor-nested: step start time recorded (1793925038)
+    sandbox-denied   24  file_mmap /usr/bin/bash
+    AA_NESTED: CONFIRMED (sandbox namespace 24, live 0 DENIED for pft-postfiatd)
+CHECK ok   apparmor-nested: DENIED only in the sandbox namespace (host audit log)
+CHECK ok   apparmor-nested: live /etc/apparmor.d/pft-postfiatd = committed profile bytes
+CHECK ok   apparmor-nested: live postfiatd runs pft-postfiatd
+  scapply: SANDBOX_LIMIT kernel-audit: LXD system container: no kernel audit log, the seccomp denial gate fails closed (step rc 1)
+CHECK ok   kernel-audit: live /etc/pft-seccomp/pft-postfiatd.json = committed profile bytes
+CHECK ok   kernel-audit: live postfiatd runs a custom seccomp profile
+  3 SANDBOX_LIMIT line(s)
+
+== 6. diff sandbox vs live
+CLASS       ITEM                                                         DETAIL
+DIFFERENT   addon:apparmor                                               state [exception: add-on state follows its files: all 2 differing file(s) are excepted]
+DIFFERENT   addon:authwatch                                              state [exception: add-on state follows its files: all 2 differing file(s) are excepted]
+DIFFERENT   addon:backfill                                               state [exception: add-on state follows its files: all 2 differing file(s) are excepted]
+DIFFERENT   addon:cluster                                                state [exception: add-on state follows its files: all 2 differing file(s) are excepted]
+DIFFERENT   addon:feewatch                                               state [exception: add-on state follows its files: all 2 differing file(s) are excepted]
+DIFFERENT   addon:kernwatch                                              state [exception: add-on state follows its files: all 2 differing file(s) are excepted]
+DIFFERENT   addon:keyescrow                                              state [exception: add-on state follows its files: all 4 differing file(s) are excepted]
+DIFFERENT   addon:mounts                                                 state [exception: add-on state follows its files: all 2 differing file(s) are excepted]
+DIFFERENT   addon:privesc                                                state [exception: add-on state follows its files: all 2 differing file(s) are excepted]
+DIFFERENT   addon:resources                                              state [exception: add-on state follows its files: all 3 differing file(s) are excepted]
+DIFFERENT   addon:rulecheck                                              state [exception: add-on state follows its files: all 2 differing file(s) are excepted]
+DIFFERENT   addon:seccomp                                                state [exception: add-on state follows its files: all 2 differing file(s) are excepted]
+DIFFERENT   addon:statewatch                                             state [exception: add-on state follows its files: all 2 differing file(s) are excepted]
+DIFFERENT   addon:timesync                                               state [exception: add-on state follows its files: all 3 differing file(s) are excepted]
+DIFFERENT   addon:upgradewatch                                           state [exception: add-on state follows its files: all 2 differing file(s) are excepted]
+DIFFERENT   addon:vulnscan                                               state [exception: add-on state follows its files: all 2 differing file(s) are excepted]
+MISSING     bin:pft-agent                                                [exception: the operator's own agent runner (/usr/local/bin/pft-agent), installed outside this repo]
+MISSING     bin:pft-resources-pull                                       [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   cfgvol:postfiatd.cfg                                         mode,sha256 [exception: drill strips [ips_fixed]/[peer_private]/[cluster_nodes] and refuses key sections (sanitize_backup); live 0600 is set by pft-cluster apply, which writes the node key (cross-host)]
+MISSING     cfgvol:postfiatd.cfg.pre-fixed                               [exception: backup copies left in the config volume by earlier one-off edits (sentry peering, fixed peers); not read by postfiatd]
+MISSING     cfgvol:postfiatd.cfg.pre-sentry                              [exception: backup copies left in the config volume by earlier one-off edits (sentry peering, fixed peers); not read by postfiatd]
+DIFFERENT   compose:.env                                                 sha256 [exception: COMPOSE_FILE: live lists docker-compose.apparmor.yml + docker-compose.seccomp.yml, removed again by the two rollbacks (SANDBOX_LIMIT apparmor-nested / kernel-audit)]
+MISSING     compose:docker-compose.apparmor.yml                          [exception: SANDBOX_LIMIT apparmor-nested: pft-apparmor apply rolls back in the nested AppArmor namespace and removes its overlay (live profile = committed bytes, checked)]
+MISSING     compose:docker-compose.seccomp.yml                           [exception: SANDBOX_LIMIT kernel-audit: pft-seccomp apply's denial gate needs the kernel audit log, which an LXD container lacks; rollback removes the overlay (live profile = committed bytes, checked)]
+DIFFERENT   container:postfiatd                                          labels,security_opt [exception: compose config-hash label: it hashes the merged compose files, which differ by the two overlays above; live runs apparmor=pft-postfiatd + the custom seccomp JSON; the sandbox keeps docker-default + seccomp default after the two rollbacks (SANDBOX_LIMIT apparmor-nested / kernel-audit)]
+MISSING     dropin:pft-heartbeat.service.d/50-unitguard.conf             [exception: pft-heartbeat signs and sends to the watchdog on the sentry (cross-host; fails without a peer), so unitguard skips it]
+MISSING     dropin:pft-logship-check.service.d/50-unitguard.conf         [exception: unitguard drop-in of a logship unit, and logship apply needs the sentry (no unit to guard)]
+MISSING     dropin:pft-logship-dockerlog@.service.d/50-unitguard.conf    [exception: unitguard drop-in of a logship unit, and logship apply needs the sentry (no unit to guard)]
+MISSING     dropin:pft-logship-vacuum.service.d/50-unitguard.conf        [exception: unitguard drop-in of a logship unit, and logship apply needs the sentry (no unit to guard)]
+DIFFERENT   file:/etc/systemd/system/pft-apparmor-pull.service           sha256,state [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   file:/etc/systemd/system/pft-apparmor-pull.timer             sha256,state [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   file:/etc/systemd/system/pft-authwatch-pull.service          sha256,state [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   file:/etc/systemd/system/pft-authwatch-pull.timer            sha256,state [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   file:/etc/systemd/system/pft-backfill-pull.service           sha256,state [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   file:/etc/systemd/system/pft-backfill-pull.timer             sha256,state [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   file:/etc/systemd/system/pft-cluster-pull.service            sha256,state [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   file:/etc/systemd/system/pft-cluster-pull.timer              sha256,state [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   file:/etc/systemd/system/pft-feewatch-pull@.service          sha256,state [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   file:/etc/systemd/system/pft-feewatch-pull@.timer            sha256,state [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   file:/etc/systemd/system/pft-kernwatch-pull.service          sha256,state [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   file:/etc/systemd/system/pft-kernwatch-pull.timer            sha256,state [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   file:/etc/systemd/system/pft-keyescrow-escrow.service        sha256,state [exception: install.sh --escrow-host runs a real escrow to the peer (age recipient + PEER_SSH of the sentry)]
+DIFFERENT   file:/etc/systemd/system/pft-keyescrow-escrow.timer          sha256,state [exception: install.sh --escrow-host runs a real escrow to the peer (age recipient + PEER_SSH of the sentry)]
+DIFFERENT   file:/etc/systemd/system/pft-keyescrow-pull.service          sha256,state [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   file:/etc/systemd/system/pft-keyescrow-pull.timer            sha256,state [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   file:/etc/systemd/system/pft-mounts-pull.service             sha256,state [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   file:/etc/systemd/system/pft-mounts-pull.timer               sha256,state [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   file:/etc/systemd/system/pft-privesc-pull.service            sha256,state [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   file:/etc/systemd/system/pft-privesc-pull.timer              sha256,state [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   file:/etc/systemd/system/pft-resources-pull@.service         sha256,state [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   file:/etc/systemd/system/pft-resources-pull@.timer           sha256,state [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   file:/etc/systemd/system/pft-rulecheck-pull.service          sha256,state [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   file:/etc/systemd/system/pft-rulecheck-pull.timer            sha256,state [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   file:/etc/systemd/system/pft-seccomp-pull.service            sha256,state [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   file:/etc/systemd/system/pft-seccomp-pull.timer              sha256,state [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   file:/etc/systemd/system/pft-statewatch-pull@.service        sha256,state [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   file:/etc/systemd/system/pft-statewatch-pull@.timer          sha256,state [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   file:/etc/systemd/system/pft-timesync-pull.service           sha256,state [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   file:/etc/systemd/system/pft-timesync-pull.timer             sha256,state [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   file:/etc/systemd/system/pft-upgradewatch-pull@.service      sha256,state [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   file:/etc/systemd/system/pft-upgradewatch-pull@.timer        sha256,state [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   file:/etc/systemd/system/pft-vulnscan-pull.service           sha256,state [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   file:/etc/systemd/system/pft-vulnscan-pull.timer             sha256,state [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   file:/usr/local/bin/pft-resources-pull                       sha256,state [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   file:/usr/local/sbin/pft-timesync-pull                       sha256,state [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   fw:docker-user                                               sha256 [exception: raw `iptables -S` text: pft-egress's jump names the container's /32 and Docker's random per-network bridge (br-<id>), unique per host; the rule COUNT is still compared]
+DIFFERENT   fw:ufw                                                       rules,sha256 [exception: the only extra live rule is logship's 19532/tcp ALLOW from the sentry's address (logship apply, cross-host)]
+MISSING     image:local:pft-exporter:latest                              [exception: unused image of the exporter's optional Dockerfile; the live exporter runs as the systemd unit]
+DIFFERENT   image:local:python:3.12-alpine                               id [exception: alerts/run-stack.sh uses the rolling python:3.12-alpine tag for the bridge; the image id is whatever the tag pointed to on pull day]
+MISSING     image:local:python:3.12-slim                                 [exception: unused image left by earlier test work on the live host (no container uses it: docker ps -a)]
+DIFFERENT   sshd:sshd_config                                             sha256 [exception: stock file of the cloud provider's 22.04 image differs from the LXD ubuntu:22.04 image's; no repo script edits sshd_config (drop-ins only)]
+MISSING     sshd:sshd_config.d/50-cloud-init.conf                        [exception: written by the cloud provider's cloud-init at first boot; the LXD ubuntu:22.04 image has no such file]
+MISSING     unit-enabled:pft-apparmor-pull.service                       [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit-enabled:pft-apparmor-pull.timer                         [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit-enabled:pft-authwatch-pull.service                      [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit-enabled:pft-authwatch-pull.timer                        [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit-enabled:pft-backfill-pull.service                       [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit-enabled:pft-backfill-pull.timer                         [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit-enabled:pft-cluster-pull.service                        [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit-enabled:pft-cluster-pull.timer                          [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit-enabled:pft-feewatch-pull@postfiatd-sentry.service      [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit-enabled:pft-feewatch-pull@postfiatd-sentry.timer        [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit-enabled:pft-kernwatch-pull.service                      [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit-enabled:pft-kernwatch-pull.timer                        [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   unit-enabled:pft-kernwatch.timer                             enabled [exception: SANDBOX_LIMIT kernel-log: install.sh leaves the timer disabled when the first audit cannot read a kernel log (rb-limit)]
+MISSING     unit-enabled:pft-keyescrow-escrow.service                    [exception: install.sh --escrow-host runs a real escrow to the peer (age recipient + PEER_SSH of the sentry)]
+MISSING     unit-enabled:pft-keyescrow-escrow.timer                      [exception: install.sh --escrow-host runs a real escrow to the peer (age recipient + PEER_SSH of the sentry)]
+MISSING     unit-enabled:pft-keyescrow-pull.service                      [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit-enabled:pft-keyescrow-pull.timer                        [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+DIFFERENT   unit-enabled:pft-keyescrow.timer                             enabled [exception: install.sh --enable needs a held generation, which only exists after a cross-host escrow]
+MISSING     unit-enabled:pft-mounts-pull.service                         [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit-enabled:pft-mounts-pull.timer                           [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit-enabled:pft-privesc-pull.service                        [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit-enabled:pft-privesc-pull.timer                          [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit-enabled:pft-resources-pull@postfiatd-sentry.service     [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit-enabled:pft-resources-pull@postfiatd-sentry.timer       [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit-enabled:pft-rulecheck-pull.service                      [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit-enabled:pft-rulecheck-pull.timer                        [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit-enabled:pft-seccomp-pull.service                        [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit-enabled:pft-seccomp-pull.timer                          [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit-enabled:pft-statewatch-pull@postfiatd-sentry.service    [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit-enabled:pft-statewatch-pull@postfiatd-sentry.timer      [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit-enabled:pft-timesync-pull.service                       [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit-enabled:pft-timesync-pull.timer                         [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit-enabled:pft-upgradewatch-pull@postfiatd-sentry.service  [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit-enabled:pft-upgradewatch-pull@postfiatd-sentry.timer    [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit-enabled:pft-vulnscan-pull.service                       [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit-enabled:pft-vulnscan-pull.timer                         [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit:pft-apparmor-pull.service                               [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit:pft-apparmor-pull.timer                                 [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit:pft-authwatch-pull.service                              [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit:pft-authwatch-pull.timer                                [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit:pft-backfill-pull.service                               [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit:pft-backfill-pull.timer                                 [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit:pft-cluster-pull.service                                [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit:pft-cluster-pull.timer                                  [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit:pft-feewatch-pull@.service                              [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit:pft-feewatch-pull@.timer                                [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit:pft-kernwatch-pull.service                              [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit:pft-kernwatch-pull.timer                                [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit:pft-keyescrow-escrow.service                            [exception: install.sh --escrow-host runs a real escrow to the peer (age recipient + PEER_SSH of the sentry)]
+MISSING     unit:pft-keyescrow-escrow.timer                              [exception: install.sh --escrow-host runs a real escrow to the peer (age recipient + PEER_SSH of the sentry)]
+MISSING     unit:pft-keyescrow-pull.service                              [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit:pft-keyescrow-pull.timer                                [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit:pft-ledger-stats.service                                [exception: collector of the separate pft-ledger-stats repo (data analysis), not this repo's stack]
+MISSING     unit:pft-logship-check.service                               [exception: logship apply pairs two hosts (mutual TLS keys + the peer's journal-remote); needs the sentry]
+MISSING     unit:pft-logship-check.timer                                 [exception: logship apply pairs two hosts (mutual TLS keys + the peer's journal-remote); needs the sentry]
+MISSING     unit:pft-logship-dockerlog@.service                          [exception: logship apply pairs two hosts (mutual TLS keys + the peer's journal-remote); needs the sentry]
+MISSING     unit:pft-logship-vacuum.service                              [exception: logship apply pairs two hosts (mutual TLS keys + the peer's journal-remote); needs the sentry]
+MISSING     unit:pft-logship-vacuum.timer                                [exception: logship apply pairs two hosts (mutual TLS keys + the peer's journal-remote); needs the sentry]
+MISSING     unit:pft-mounts-pull.service                                 [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit:pft-mounts-pull.timer                                   [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit:pft-privesc-pull.service                                [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit:pft-privesc-pull.timer                                  [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit:pft-resources-pull@.service                             [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit:pft-resources-pull@.timer                               [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit:pft-rulecheck-pull.service                              [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit:pft-rulecheck-pull.timer                                [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit:pft-seccomp-pull.service                                [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit:pft-seccomp-pull.timer                                  [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit:pft-sshcrypto-pull.service                              [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit:pft-sshcrypto-pull.timer                                [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit:pft-statewatch-pull@.service                            [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit:pft-statewatch-pull@.timer                              [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit:pft-timesync-pull.service                               [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit:pft-timesync-pull.timer                                 [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit:pft-txmix-collect.service                               [exception: collector of the separate pft-ledger-stats repo (data analysis), not this repo's stack]
+MISSING     unit:pft-upgradewatch-pull@.service                          [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit:pft-upgradewatch-pull@.timer                            [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit:pft-validators-record.service                           [exception: collector of the separate pft-ledger-stats repo (data analysis), not this repo's stack]
+MISSING     unit:pft-vulnscan-pull.service                               [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+MISSING     unit:pft-vulnscan-pull.timer                                 [exception: cross-host pull from the sentry (needs a second host; sandbox must not reach the live sentry)]
+SUMMARY: REPRODUCED=279 MISSING=91 EXTRA=0 DIFFERENT=61 excepted=152 open=0
+
+== 7. teardown
+[2026-11-06T00:50:07Z] teardown: instance pftrb-sbx, network pftrb0, pool pftrb, image cache, chains PFT-REBUILD/PFT-REBUILD-IN
+  instance deleted
+  cached image deleted
+Network pftrb0 deleted
+  network deleted
+Storage volume rb-docker deleted
+  volume rb-docker deleted
+Storage volume rb-containerd deleted
+  volume rb-containerd deleted
+Storage pool pftrb deleted
+  pool deleted
+  removed jump: FORWARD -i pftrb0 -j PFT-REBUILD
+  removed jump: FORWARD -o pftrb0 -j PFT-REBUILD
+  removed jump: INPUT -i pftrb0 -j PFT-REBUILD-IN
+  removed chain PFT-REBUILD
+  removed chain PFT-REBUILD-IN
+  removed empty nft table inet lxd
+  teardown complete: no sandbox resource left
+CHECK ok   teardown removed every sandbox resource
+  TEARDOWN: CLEAN (0 leftovers)
+CHECK ok   teardown complete (host snapshot identical)
+
+== 8. live host after
+CHECK ok   live server_state full
+  RESULT: PASS - 171 unchanged, 0 warn, 0 fail -> exit 0
+CHECK ok   live pft-integrity verify PASS
+CHECK ok   operator ntfy topics: 0 messages since run start
+
+per-step timings: /var/lib/pft-rebuild/20261106T001125Z/timings.tsv; per-step logs: /var/lib/pft-rebuild/20261106T001125Z/steps/
+RESULT: FAIL (1 checks/steps failed, diff rc 0)
