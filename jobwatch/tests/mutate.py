@@ -350,8 +350,8 @@ MUTANTS += [
         "M33",
         L,
         "label named job again (the scrape renames it)",
-        'timer="{esc(j["job"])}"}} {fmt(j[key])}',
-        'job="{esc(j["job"])}"}} {fmt(j[key])}',
+        'timer="{esc(j["job"])}"}} {fmt(v)}',
+        'job="{esc(j["job"])}"}} {fmt(v)}',
     ),
     (
         "R08",
