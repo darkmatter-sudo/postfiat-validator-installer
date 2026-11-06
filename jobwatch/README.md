@@ -1,7 +1,7 @@
 # jobwatch — scheduled-job outcome monitor (pft-jobwatch)
 
-Status: **in progress**: steps 1-3 done; installed on both hosts (log 02); the alert drill found a label bug (run 07,
-fixed, see [Results](#results)); the fixed build is being redeployed and the drill re-run.
+Status: **done**: installed on both hosts (log 02, fixes rolled out in log 10); alert drill run 16 PASS (log 13). Two
+bugs found by the drill and fixed before it passed (label collision, textfile size), see [Results](#results).
 
 Every add-on in this repo reports through a systemd timer (47 `pft-*`/`postfiat*` timers on the validator, 25 on the
 sentry). When a timer is disabled, removed, failing or no longer firing, its last textfile stays in place and its
@@ -136,4 +136,17 @@ PFTJobDisabled (never PFTJobFailed).
 
 | `logs/12-alert-drill-run14-stopped.log` | drill run 14 @87eb49f | **label fix verified live**: PFTJobFailed fired for exactly the two drill series (`host=sentry/validator, timer=pft-jobwatch-drill.timer`) 197 s after the fail flag and resolved; succeed phase quiet; the bridge delivered every [FIRING]/[RESOLVED] (HTTP 200). But the 4 throwaway-topic checks FAILed: a checker bug (`ok_if` evaluates `$1..$3` as its own arguments). Stopped in step 4 with SIGINT to the drill shell only; its restore completed (units, bridge, alertpath, silence), operator bridge sent 0 messages afterwards. Fixed @(next commit): named locals, tested on a synthetic positive/negative case |
 
-Drill re-run (run 15) results follow.
+| `logs/13-alert-drill-run16.log` | drill run 16 @2a81527, both hosts at once, throwaway topic | **PASS 59/0**: succeed quiet; every alert FIRING then RESOLVED for both hosts on the throwaway topic (16 messages), operator topics 0; final `pft_jobwatch_up 1` both, inventory validator 49 / sentry 26 (0 failed/missed/disabled), pft-integrity PASS both (176/103), `server_state` full both |
+
+Drill run 16 timeline (UTC, Prometheus `ALERTS` firing / throwaway-topic message times from the log):
+
+| Phase | Alert | Firing in Prometheus | [FIRING] on topic | [RESOLVED] on topic | Cleared in Prometheus |
+|---|---|---|---|---|---|
+| fail flag | PFTJobFailed | 17:50:57 (196 s) | 17:51:02 / 17:51:03 | 17:53:03 | 17:53:13 |
+| `disable --runtime --now` | PFTJobDisabled | 17:58:51 (332 s) | 17:58:47 / 17:58:48 | 17:59:47 / 17:59:48 | 18:00:07 |
+| hang flag (timer stops re-firing) | PFTJobMissed | 18:12:51 (332 s; missed after 428 s) | 18:12:47 / 18:12:48 | 18:14:47 / 18:14:48 | 18:14:55 |
+| remove unit files + `forget` | PFTJobDisabled | 18:20:23 (317 s) | 18:20:32 / 18:20:33 | 18:21:32 / 18:21:33 | 18:21:52 |
+
+Topic times are sentry / validator. The drill's poll interval is coarser than Alertmanager's, so a topic message can
+be a few seconds earlier than the poll that saw the alert in Prometheus. PFTJobwatchStale is covered by promtool tests
+(`../alerts/jobwatch.tests.yml`) and the mutants, not by the live drill (it would mean stopping the collector).

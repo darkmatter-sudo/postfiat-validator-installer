@@ -1,0 +1,402 @@
+pft-jobwatch two-host alert drill - 2026-11-06T17:40:37Z - Ubuntu 22.04.5 LTS - run 20261106T174036Z
+repo HEAD 2a81527cee4b8a19aaafe5ae161b87576644b995 (clean: yes)
+sha256 ff70e5f9a64d04a17fdc2a89cdad8158502e86a5b20c54c75c5517db64db9e23 jobwatch/drill/alert-run.sh
+sha256 194a3810f0e07983eef6847bc680d8840c8ac7de2cc8fb14b134d9ca2046ce0c jobwatch/pft-jobwatch.sh
+sha256 8fab252b40de8003a1e490d2ffdcbc3dc371a16eb46992c95fd4740bb343a1ec jobwatch/jobwatch_lib.py
+sha256 4ea9f1d8c4d31ce3e3638f2bcc0723f4a7be5399f30413a8554f03876fe8c175 alerts/jobwatch.rules.yml
+sha256 f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8 peerexpose/drill/redact.py
+
+== 0. preflight (nothing changed yet)
+  pft-jobwatch + timer on both hosts; no drill unit, flag dir or state entry left over
+  sentry pft-alertpath-check.timer active, check OK
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=pft_jobwatch_up' | jq -r '.data.result[] | "\(.metric.host) \(.value[1])"' | sort
+  sentry 1
+  validator 1
+  (exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=pft_jobwatch_jobs' | jq -r '.data.result[] | "\(.metric.host) \(.metric.state) \(.value[1])"' | sort
+  sentry disabled 0
+  sentry failed 0
+  sentry missed 0
+  sentry present 26
+  sentry total 26
+  validator disabled 0
+  validator failed 0
+  validator missed 0
+  validator present 49
+  validator total 49
+  (exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=ALERTS{alertname=~"PFTJob.*"}' | jq -r '.data.result | length'
+  0
+  (exit 0)
+$ curl -s http://127.0.0.1:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active") | select(any(.matchers[]; .isEqual and (.value | test("PFTJob"))))] | length'
+  0
+  (exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/rules | jq -r '.data.groups[] | select(.name == "pft-jobwatch") | .rules[] | [.name, .health] | @tsv'
+  PFTJobFailed	ok
+  PFTJobMissed	ok
+  PFTJobDisabled	ok
+  PFTJobwatchStale	ok
+  (exit 0)
+  bridge mounts the operator env file: yes
+  operator topics to watch: 2 (not printed)
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+  postfiatd-sentry: server_state=full
+  postfiatd: server_state=full
+  pft-integrity validator: RESULT: PASS - 176 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity sentry: RESULT: PASS - 103 unchanged, 0 warn, 0 fail -> exit 0
+  literals for redaction: 3 ip, 3 topic, 1 user (values not printed)
+$ redact.py control --literals <literals>
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (16/16)
+
+== 1. bridge -> throwaway topic; silence everything except PFTJob* and the watchdog
+  sentry pft-alertpath-check.timer stopped: yes
+CHECK ok   sentry pft-alertpath-check.timer paused for the bridge re-create
+  2026-11-06T17:41:05Z starting pft-alert-bridge (ntfy: on)
+  2026-11-06T17:41:06Z pft-alert-bridge listening
+CHECK ok   Alertmanager bridge -> throwaway env file (0700 temp dir)
+  sentry pft-alertpath check rc 0 after 1s; timer started again: yes
+CHECK ok   sentry pft-alertpath OK again, check timer running
+CHECK ok   silence alertname=~".+", alertname!~"PFTAlertPipelineWatchdog|PFTJob.*" until 2026-11-06T20:11:08Z
+
+== 2. SUCCEED: runtime drill job on both hosts
+  /run/systemd/system/pft-jobwatch-drill.service:
+    | [Unit]
+    | Description=pft-jobwatch drill job (runtime unit; /run/pft-jobwatch-drill/hang and /run/pft-jobwatch-drill/fail select the outcome)
+    | [Service]
+    | Type=oneshot
+    | ExecStart=/bin/sh -c 'while [ -e /run/pft-jobwatch-drill/hang ]; do sleep 5; done; [ ! -e /run/pft-jobwatch-drill/fail ]'
+    | TimeoutStartSec=3600
+  /run/systemd/system/pft-jobwatch-drill.timer:
+    | [Unit]
+    | Description=pft-jobwatch drill timer (every minute)
+    | [Timer]
+    | OnActiveSec=5s
+    | OnUnitActiveSec=1min
+    | AccuracySec=1s
+    | [Install]
+    | WantedBy=timers.target
+$ both "sudo -n install -d -m 755 /run/pft-jobwatch-drill && echo W1VuaXRdCkRlc2NyaXB0aW9uPXBmdC1qb2J3YXRjaCBkcmlsbCBqb2IgKHJ1bnRpbWUgdW5pdDsgL3J1bi9wZnQtam9id2F0Y2gtZHJpbGwvaGFuZyBhbmQgL3J1bi9wZnQtam9id2F0Y2gtZHJpbGwvZmFpbCBzZWxlY3QgdGhlIG91dGNvbWUpCltTZXJ2aWNlXQpUeXBlPW9uZXNob3QKRXhlY1N0YXJ0PS9iaW4vc2ggLWMgJ3doaWxlIFsgLWUgL3J1bi9wZnQtam9id2F0Y2gtZHJpbGwvaGFuZyBdOyBkbyBzbGVlcCA1OyBkb25lOyBbICEgLWUgL3J1bi9wZnQtam9id2F0Y2gtZHJpbGwvZmFpbCBdJwpUaW1lb3V0U3RhcnRTZWM9MzYwMAo= | base64 -d | sudo -n tee /run/systemd/system/pft-jobwatch-drill.service >/dev/null && echo W1VuaXRdCkRlc2NyaXB0aW9uPXBmdC1qb2J3YXRjaCBkcmlsbCB0aW1lciAoZXZlcnkgbWludXRlKQpbVGltZXJdCk9uQWN0aXZlU2VjPTVzCk9uVW5pdEFjdGl2ZVNlYz0xbWluCkFjY3VyYWN5U2VjPTFzCltJbnN0YWxsXQpXYW50ZWRCeT10aW1lcnMudGFyZ2V0Cg== | base64 -d | sudo -n tee /run/systemd/system/pft-jobwatch-drill.timer >/dev/null && sudo -n systemctl daemon-reload && sudo -n systemctl enable --runtime --now pft-jobwatch-drill.timer 2>&1 && systemctl show -p UnitFileState,ActiveState --value pft-jobwatch-drill.timer | tr '\n' ' '; echo"
+  Created symlink /run/systemd/system/timers.target.wants/pft-jobwatch-drill.timer → /run/systemd/system/pft-jobwatch-drill.timer.
+  active enabled-runtime 
+  Created symlink /run/systemd/system/timers.target.wants/pft-jobwatch-drill.timer → /run/systemd/system/pft-jobwatch-drill.timer.
+  active enabled-runtime 
+  (exit 0)
+CHECK ok   drill job installed + enabled (runtime) on both hosts
+$ both "systemctl show -p Result,ExecMainStatus --value pft-jobwatch-drill.service | tr '\n' ' '; echo"; collect_now; jobline
+  success 0 
+  success 0 
+  present{host="validator"} 1
+  disabled{host="validator"} 0
+  running{host="validator"} 0
+  failed{host="validator"} 0
+  consecutive_failures{host="validator"} 0
+  missed{host="validator"} 0
+  runs_observed_total{host="validator"} 1
+  present{host="sentry"} 1
+  disabled{host="sentry"} 0
+  running{host="sentry"} 0
+  failed{host="sentry"} 0
+  consecutive_failures{host="sentry"} 0
+  missed{host="sentry"} 0
+  runs_observed_total{host="sentry"} 1
+  (exit 0)
+CHECK ok   sentry: drill job present 1, disabled 0, failed 0, runs >= 1
+CHECK ok   validator: drill job present 1, disabled 0, failed 0, runs >= 1
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=ALERTS{alertname=~"PFTJob.*",timer="pft-jobwatch-drill.timer"}' | jq -r '.data.result | length'
+  0
+  (exit 0)
+CHECK ok   succeeding job: no PFTJob* alert (pending or firing) after 240 s
+
+== 3. FAIL: create /run/pft-jobwatch-drill/fail on both hosts
+$ both 'sudo -n touch /run/pft-jobwatch-drill/fail'
+  
+  (exit 0)
+$ collect_now; jobline
+  present{host="validator"} 1
+  disabled{host="validator"} 0
+  running{host="validator"} 0
+  failed{host="validator"} 1
+  consecutive_failures{host="validator"} 1
+  missed{host="validator"} 0
+  runs_observed_total{host="validator"} 4
+  present{host="sentry"} 1
+  disabled{host="sentry"} 0
+  running{host="sentry"} 0
+  failed{host="sentry"} 1
+  consecutive_failures{host="sentry"} 1
+  missed{host="sentry"} 0
+  runs_observed_total{host="sentry"} 4
+  (exit 0)
+CHECK ok   sentry: drill job failed 1, consecutive >= 1
+CHECK ok   validator: drill job failed 1, consecutive >= 1
+  2026-11-06T17:50:57Z (196s after the change): firing in Prometheus:
+    __name__=ALERTS,alertname=PFTJobFailed,alertstate=firing,host=sentry,instance=127.0.0.1:9877,job=postfiat,severity=warning,timer=pft-jobwatch-drill.timer 1
+    __name__=ALERTS,alertname=PFTJobFailed,alertstate=firing,host=validator,instance=127.0.0.1:9877,job=postfiat,severity=warning,timer=pft-jobwatch-drill.timer 1
+CHECK ok   PFTJobFailed{host=sentry,timer=pft-jobwatch-drill.timer} firing in Prometheus
+CHECK ok   PFTJobFailed{host=validator,timer=pft-jobwatch-drill.timer} firing in Prometheus
+CHECK ok   [FIRING] PFTJobFailed 'sentry: scheduled job pft-jobwatch-drill.timer failed...' on the throwaway topic (>= 1)
+CHECK ok   [FIRING] PFTJobFailed 'validator: scheduled job pft-jobwatch-drill.timer failed...' on the throwaway topic (>= 1)
+$ jobline | grep consecutive
+  consecutive_failures{host="validator"} 3
+  consecutive_failures{host="sentry"} 3
+  (exit 0)
+$ both 'sudo -n rm -f /run/pft-jobwatch-drill/fail'
+  
+  (exit 0)
+$ collect_now; jobline
+  present{host="validator"} 1
+  disabled{host="validator"} 0
+  running{host="validator"} 0
+  failed{host="validator"} 0
+  consecutive_failures{host="validator"} 0
+  missed{host="validator"} 0
+  runs_observed_total{host="validator"} 7
+  present{host="sentry"} 1
+  disabled{host="sentry"} 0
+  running{host="sentry"} 0
+  failed{host="sentry"} 0
+  consecutive_failures{host="sentry"} 0
+  missed{host="sentry"} 0
+  runs_observed_total{host="sentry"} 7
+  (exit 0)
+CHECK ok   sentry: drill job failed 0, consecutive 0 after a successful run
+CHECK ok   validator: drill job failed 0, consecutive 0 after a successful run
+  2026-11-06T17:53:13Z (44s after the fix): PFTJobFailed series left in Prometheus: 0
+CHECK ok   no PFTJobFailed for pft-jobwatch-drill.timer left in Prometheus
+CHECK ok   [RESOLVED] PFTJobFailed 'sentry: scheduled job pft-jobwatch-drill.timer failed...' on the throwaway topic (>= 1)
+CHECK ok   [RESOLVED] PFTJobFailed 'validator: scheduled job pft-jobwatch-drill.timer failed...' on the throwaway topic (>= 1)
+
+== 4. DISABLE: systemctl disable --runtime --now pft-jobwatch-drill.timer on both hosts
+$ both "sudo -n systemctl disable --runtime --now pft-jobwatch-drill.timer 2>&1; systemctl show -p UnitFileState,ActiveState --value pft-jobwatch-drill.timer | tr '\n' ' '; echo"
+  Removed /run/systemd/system/timers.target.wants/pft-jobwatch-drill.timer.
+  inactive disabled 
+  Removed /run/systemd/system/timers.target.wants/pft-jobwatch-drill.timer.
+  inactive disabled 
+  (exit 0)
+$ collect_now; jobline
+  present{host="validator"} 1
+  disabled{host="validator"} 1
+  running{host="validator"} 0
+  failed{host="validator"} 0
+  consecutive_failures{host="validator"} 0
+  missed{host="validator"} 0
+  runs_observed_total{host="validator"} 7
+  present{host="sentry"} 1
+  disabled{host="sentry"} 1
+  running{host="sentry"} 0
+  failed{host="sentry"} 0
+  consecutive_failures{host="sentry"} 0
+  missed{host="sentry"} 0
+  runs_observed_total{host="sentry"} 7
+  (exit 0)
+CHECK ok   sentry: drill job disabled 1, present 1, missed 0
+CHECK ok   validator: drill job disabled 1, present 1, missed 0
+  2026-11-06T17:58:51Z (332s after the change): firing in Prometheus:
+    __name__=ALERTS,alertname=PFTJobDisabled,alertstate=firing,host=sentry,instance=127.0.0.1:9877,job=postfiat,severity=warning,timer=pft-jobwatch-drill.timer 1
+    __name__=ALERTS,alertname=PFTJobDisabled,alertstate=firing,host=validator,instance=127.0.0.1:9877,job=postfiat,severity=warning,timer=pft-jobwatch-drill.timer 1
+CHECK ok   PFTJobDisabled{host=sentry,timer=pft-jobwatch-drill.timer} firing in Prometheus
+CHECK ok   PFTJobDisabled{host=validator,timer=pft-jobwatch-drill.timer} firing in Prometheus
+CHECK ok   [FIRING] PFTJobDisabled 'sentry: scheduled job pft-jobwatch-drill.timer is disabled...' on the throwaway topic (>= 1)
+CHECK ok   [FIRING] PFTJobDisabled 'validator: scheduled job pft-jobwatch-drill.timer is disabled...' on the throwaway topic (>= 1)
+$ both "sudo -n systemctl enable --runtime --now pft-jobwatch-drill.timer 2>&1; systemctl show -p UnitFileState,ActiveState --value pft-jobwatch-drill.timer | tr '\n' ' '; echo"
+  Created symlink /run/systemd/system/timers.target.wants/pft-jobwatch-drill.timer → /run/systemd/system/pft-jobwatch-drill.timer.
+  active enabled-runtime 
+  Created symlink /run/systemd/system/timers.target.wants/pft-jobwatch-drill.timer → /run/systemd/system/pft-jobwatch-drill.timer.
+  active enabled-runtime 
+  (exit 0)
+$ collect_now; jobline
+  present{host="validator"} 1
+  disabled{host="validator"} 0
+  running{host="validator"} 0
+  failed{host="validator"} 0
+  consecutive_failures{host="validator"} 0
+  missed{host="validator"} 0
+  runs_observed_total{host="validator"} 7
+  present{host="sentry"} 1
+  disabled{host="sentry"} 0
+  running{host="sentry"} 0
+  failed{host="sentry"} 0
+  consecutive_failures{host="sentry"} 0
+  missed{host="sentry"} 0
+  runs_observed_total{host="sentry"} 7
+  (exit 0)
+CHECK ok   sentry: drill job disabled 0 after enable
+CHECK ok   validator: drill job disabled 0 after enable
+  2026-11-06T18:00:07Z (68s after the fix): PFTJobDisabled series left in Prometheus: 0
+CHECK ok   no PFTJobDisabled for pft-jobwatch-drill.timer left in Prometheus
+CHECK ok   [RESOLVED] PFTJobDisabled 'sentry: scheduled job pft-jobwatch-drill.timer is disabled...' on the throwaway topic (>= 1)
+CHECK ok   [RESOLVED] PFTJobDisabled 'validator: scheduled job pft-jobwatch-drill.timer is disabled...' on the throwaway topic (>= 1)
+
+== 5. HANG: create /run/pft-jobwatch-drill/hang on both hosts (the next run never ends; the timer stops re-firing)
+$ both 'sudo -n touch /run/pft-jobwatch-drill/hang'
+  
+  (exit 0)
+$ jobline; both "systemctl show -p ActiveState,SubState --value pft-jobwatch-drill.service | tr '\n' ' '; echo"
+  present{host="validator"} 1
+  disabled{host="validator"} 0
+  running{host="validator"} 1
+  failed{host="validator"} 0
+  consecutive_failures{host="validator"} 0
+  missed{host="validator"} 1
+  runs_observed_total{host="validator"} 8
+  present{host="sentry"} 1
+  disabled{host="sentry"} 0
+  running{host="sentry"} 1
+  failed{host="sentry"} 0
+  consecutive_failures{host="sentry"} 0
+  missed{host="sentry"} 1
+  runs_observed_total{host="sentry"} 8
+  activating start 
+  activating start 
+  (exit 0)
+CHECK ok   sentry: drill job missed 1, running 1, failed 0
+CHECK ok   validator: drill job missed 1, running 1, failed 0
+  missed after 428s (threshold: interval 60 + accuracy 1 + 300 s from the last trigger)
+  2026-11-06T18:12:51Z (332s after the change): firing in Prometheus:
+    __name__=ALERTS,alertname=PFTJobMissed,alertstate=firing,host=sentry,instance=127.0.0.1:9877,job=postfiat,severity=warning,timer=pft-jobwatch-drill.timer 1
+    __name__=ALERTS,alertname=PFTJobMissed,alertstate=firing,host=validator,instance=127.0.0.1:9877,job=postfiat,severity=warning,timer=pft-jobwatch-drill.timer 1
+CHECK ok   PFTJobMissed{host=sentry,timer=pft-jobwatch-drill.timer} firing in Prometheus
+CHECK ok   PFTJobMissed{host=validator,timer=pft-jobwatch-drill.timer} firing in Prometheus
+CHECK ok   [FIRING] PFTJobMissed 'sentry: scheduled job pft-jobwatch-drill.timer is overdue...' on the throwaway topic (>= 1)
+CHECK ok   [FIRING] PFTJobMissed 'validator: scheduled job pft-jobwatch-drill.timer is overdue...' on the throwaway topic (>= 1)
+$ both 'sudo -n rm -f /run/pft-jobwatch-drill/hang'
+  
+  (exit 0)
+$ collect_now; jobline; both "systemctl show -p Result --value pft-jobwatch-drill.service"
+  present{host="validator"} 1
+  disabled{host="validator"} 0
+  running{host="validator"} 0
+  failed{host="validator"} 0
+  consecutive_failures{host="validator"} 0
+  missed{host="validator"} 0
+  runs_observed_total{host="validator"} 9
+  present{host="sentry"} 1
+  disabled{host="sentry"} 0
+  running{host="sentry"} 0
+  failed{host="sentry"} 0
+  consecutive_failures{host="sentry"} 0
+  missed{host="sentry"} 0
+  runs_observed_total{host="sentry"} 9
+  success
+  success
+  (exit 0)
+CHECK ok   sentry: drill job missed 0, running 0, failed 0 after the run ended
+CHECK ok   validator: drill job missed 0, running 0, failed 0 after the run ended
+  2026-11-06T18:14:55Z (44s after the fix): PFTJobMissed series left in Prometheus: 0
+CHECK ok   no PFTJobMissed for pft-jobwatch-drill.timer left in Prometheus
+CHECK ok   [RESOLVED] PFTJobMissed 'sentry: scheduled job pft-jobwatch-drill.timer is overdue...' on the throwaway topic (>= 1)
+CHECK ok   [RESOLVED] PFTJobMissed 'validator: scheduled job pft-jobwatch-drill.timer is overdue...' on the throwaway topic (>= 1)
+
+== 6. REMOVE: disable + delete the drill unit files + daemon-reload on both hosts
+$ both "sudo -n systemctl disable --runtime --now pft-jobwatch-drill.timer >/dev/null 2>&1; sudo -n rm -f /run/systemd/system/pft-jobwatch-drill.timer /run/systemd/system/pft-jobwatch-drill.service && sudo -n systemctl daemon-reload && systemctl show -p LoadState --value pft-jobwatch-drill.timer"
+  not-found
+  not-found
+  (exit 0)
+$ collect_now; jobline
+  present{host="validator"} 0
+  disabled{host="validator"} 1
+  running{host="validator"} 0
+  failed{host="validator"} 0
+  consecutive_failures{host="validator"} 0
+  missed{host="validator"} 0
+  runs_observed_total{host="validator"} 9
+  present{host="sentry"} 0
+  disabled{host="sentry"} 1
+  running{host="sentry"} 0
+  failed{host="sentry"} 0
+  consecutive_failures{host="sentry"} 0
+  missed{host="sentry"} 0
+  runs_observed_total{host="sentry"} 9
+  (exit 0)
+CHECK ok   sentry: drill job present 0, disabled 1, failed 0 (kept in the state)
+CHECK ok   validator: drill job present 0, disabled 1, failed 0 (kept in the state)
+  2026-11-06T18:20:23Z (317s after the change): firing in Prometheus:
+    __name__=ALERTS,alertname=PFTJobDisabled,alertstate=firing,host=sentry,instance=127.0.0.1:9877,job=postfiat,severity=warning,timer=pft-jobwatch-drill.timer 1
+    __name__=ALERTS,alertname=PFTJobDisabled,alertstate=firing,host=validator,instance=127.0.0.1:9877,job=postfiat,severity=warning,timer=pft-jobwatch-drill.timer 1
+CHECK ok   PFTJobDisabled{host=sentry,timer=pft-jobwatch-drill.timer} firing in Prometheus
+CHECK ok   PFTJobDisabled{host=validator,timer=pft-jobwatch-drill.timer} firing in Prometheus
+CHECK ok   [FIRING] PFTJobDisabled 'sentry: scheduled job pft-jobwatch-drill.timer is disabled...' on the throwaway topic (>= 2)
+CHECK ok   [FIRING] PFTJobDisabled 'validator: scheduled job pft-jobwatch-drill.timer is disabled...' on the throwaway topic (>= 2)
+$ both 'sudo -n pft-jobwatch forget pft-jobwatch-drill.timer'
+  forgot pft-jobwatch-drill.timer
+  forgot pft-jobwatch-drill.timer
+  (exit 0)
+CHECK ok   pft-jobwatch forget on both hosts
+$ collect_now; jobline | wc -l
+  0
+  (exit 1)
+CHECK ok   the drill job's series are gone from both textfiles
+  2026-11-06T18:21:52Z (67s after the fix): PFTJobDisabled series left in Prometheus: 0
+CHECK ok   no PFTJobDisabled for pft-jobwatch-drill.timer left in Prometheus
+CHECK ok   [RESOLVED] PFTJobDisabled 'sentry: scheduled job pft-jobwatch-drill.timer is disabled...' on the throwaway topic (>= 2)
+CHECK ok   [RESOLVED] PFTJobDisabled 'validator: scheduled job pft-jobwatch-drill.timer is disabled...' on the throwaway topic (>= 2)
+
+== 7. restore, read back
+  drill units, flags and state entry removed on both hosts: yes
+  sentry pft-alertpath-check.timer stopped: yes
+  2026-11-06T18:22:01Z starting pft-alert-bridge (ntfy: on)
+  2026-11-06T18:22:05Z pft-alert-bridge listening
+  restored bridge: mounts the operator env file again: yes
+  sentry pft-alertpath check rc 0 after 34s; timer started again: yes
+  silence expired: HTTP 200
+CHECK ok   drill units/flags/state gone, bridge back on the operator env, silence expired
+  throwaway topic: 16 message(s)
+    {"time":"2026-11-06T17:51:02Z","title":"[FIRING] PFTJobFailed","message":"sentry: scheduled job pft-jobwatch-drill.timer failed (2 run(s) in a row)"}
+    {"time":"2026-11-06T17:51:03Z","title":"[FIRING] PFTJobFailed","message":"validator: scheduled job pft-jobwatch-drill.timer failed (3 run(s) in a row)"}
+    {"time":"2026-11-06T17:53:03Z","title":"[RESOLVED] PFTJobFailed","message":"sentry: scheduled job pft-jobwatch-drill.timer failed (3 run(s) in a row)"}
+    {"time":"2026-11-06T17:53:03Z","title":"[RESOLVED] PFTJobFailed","message":"validator: scheduled job pft-jobwatch-drill.timer failed (3 run(s) in a row)"}
+    {"time":"2026-11-06T17:58:47Z","title":"[FIRING] PFTJobDisabled","message":"sentry: scheduled job pft-jobwatch-drill.timer is disabled or removed"}
+    {"time":"2026-11-06T17:58:48Z","title":"[FIRING] PFTJobDisabled","message":"validator: scheduled job pft-jobwatch-drill.timer is disabled or removed"}
+    {"time":"2026-11-06T17:59:47Z","title":"[RESOLVED] PFTJobDisabled","message":"sentry: scheduled job pft-jobwatch-drill.timer is disabled or removed"}
+    {"time":"2026-11-06T17:59:48Z","title":"[RESOLVED] PFTJobDisabled","message":"validator: scheduled job pft-jobwatch-drill.timer is disabled or removed"}
+    {"time":"2026-11-06T18:12:47Z","title":"[FIRING] PFTJobMissed","message":"sentry: scheduled job pft-jobwatch-drill.timer is overdue"}
+    {"time":"2026-11-06T18:12:48Z","title":"[FIRING] PFTJobMissed","message":"validator: scheduled job pft-jobwatch-drill.timer is overdue"}
+    {"time":"2026-11-06T18:14:47Z","title":"[RESOLVED] PFTJobMissed","message":"sentry: scheduled job pft-jobwatch-drill.timer is overdue"}
+    {"time":"2026-11-06T18:14:48Z","title":"[RESOLVED] PFTJobMissed","message":"validator: scheduled job pft-jobwatch-drill.timer is overdue"}
+    {"time":"2026-11-06T18:20:32Z","title":"[FIRING] PFTJobDisabled","message":"sentry: scheduled job pft-jobwatch-drill.timer is disabled or removed"}
+    {"time":"2026-11-06T18:20:33Z","title":"[FIRING] PFTJobDisabled","message":"validator: scheduled job pft-jobwatch-drill.timer is disabled or removed"}
+    {"time":"2026-11-06T18:21:32Z","title":"[RESOLVED] PFTJobDisabled","message":"sentry: scheduled job pft-jobwatch-drill.timer is disabled or removed"}
+    {"time":"2026-11-06T18:21:33Z","title":"[RESOLVED] PFTJobDisabled","message":"validator: scheduled job pft-jobwatch-drill.timer is disabled or removed"}
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the run (2 topic(s), 0 with messages)
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=pft_jobwatch_up' | jq -r '.data.result[] | "\(.metric.host) \(.value[1])"' | sort; curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=pft_jobwatch_jobs' | jq -r '.data.result[] | "\(.metric.host) \(.metric.state) \(.value[1])"' | sort
+  sentry 1
+  validator 1
+  sentry disabled 0
+  sentry failed 0
+  sentry missed 0
+  sentry present 26
+  sentry total 26
+  validator disabled 0
+  validator failed 0
+  validator missed 0
+  validator present 49
+  validator total 49
+  (exit 0)
+CHECK ok   pft_jobwatch_up 1 for both hosts at the end
+  pft-integrity validator: RESULT: PASS - 176 unchanged, 0 warn, 0 fail -> exit 0
+CHECK ok   pft-integrity PASS on validator at the end
+  pft-integrity sentry: RESULT: PASS - 103 unchanged, 0 warn, 0 fail -> exit 0
+CHECK ok   pft-integrity PASS on sentry at the end
+CHECK ok   postfiatd-sentry full at the end (full)
+CHECK ok   postfiatd full at the end (full)
+
+alert-run done 2026-11-06T18:24:00Z: 0 check(s) failed -> PASS
+(alert-run exit 0)
