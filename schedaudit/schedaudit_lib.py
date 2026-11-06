@@ -244,6 +244,22 @@ class Host:
         return p.stdout
 
 
+def pkg_verified(h, p):
+    """Package name if p is a packaged regular file whose content matches dpkg's md5 (md5sums or Conffiles), else
+    None. Such files are identified by package, not content: an unattended-upgrades update of a packaged
+    cron.daily script or timer unit must not look like a new scheduled entry (a non-package edit fails the md5,
+    keeps the content id and is a pkg_modified finding)."""
+    owner, md5 = h.dpkg()
+    r = h.resolve(p) or p
+    cands = usr_merge_variants(p) + usr_merge_variants(r)
+    pkg = next((owner[c] for c in cands if c in owner), None)
+    want = next((md5[c] for c in cands if c in md5), None)
+    st = h.lstat(r)
+    if not pkg or not want or st is None or not stat.S_ISREG(st.st_mode):
+        return None
+    return pkg if hashlib.md5(h.read(r) or b"").hexdigest() == want else None
+
+
 def usr_merge_variants(p):
     out = [p]
     for a, b in (
@@ -350,7 +366,10 @@ def run_parts_entries(h, d, cron_active):
             state = "no-schedule"
         else:
             state = "active"
-        sha = hashlib.sha256(h.read(p) or b"").hexdigest()
+        pkg = pkg_verified(h, p)
+        sha = hashlib.sha256(
+            f"pkg:{pkg}".encode() if pkg else (h.read(p) or b"")
+        ).hexdigest()
         out.append(
             {
                 "id": f"run-parts/{d.rsplit('/', 1)[1]}/{f}@{sha[:10]}",
@@ -558,17 +577,25 @@ def timer_inventory(h):
         for b in (t, s):
             files += [x for x in one(b, "DropInPaths").split() if x]
         desc = f"{unit} -> " + " ".join(execs) if unit else "(no unit)"
-        fp = hashlib.sha256(
-            "\n".join(
-                [
-                    sched,
-                    unit,
-                    one(s, "ExecStart").split(" ; ignore_errors")[0],
-                    one(s, "User"),
-                ]
-                + files
-            ).encode()
-        ).hexdigest()
+        frags = [x for x in [one(t, "FragmentPath"), one(s, "FragmentPath")] if x]
+        pkgs = [pkg_verified(h, x) for x in frags]
+        if len(frags) == 2 and all(pkgs) and len(files) == 2:
+            # both unit files packaged + md5-verified, no drop-ins: identified by package (see pkg_verified)
+            fp = hashlib.sha256(
+                "\n".join([name, unit, "pkg:" + ",".join(pkgs)]).encode()
+            ).hexdigest()
+        else:
+            fp = hashlib.sha256(
+                "\n".join(
+                    [
+                        sched,
+                        unit,
+                        one(s, "ExecStart").split(" ; ignore_errors")[0],
+                        one(s, "User"),
+                    ]
+                    + files
+                ).encode()
+            ).hexdigest()
         out.append(
             {
                 "id": f"timer/{name}@{fp[:10]}",

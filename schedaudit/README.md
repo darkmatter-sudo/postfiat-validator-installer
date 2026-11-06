@@ -52,6 +52,10 @@ sudo pft-schedaudit scope                 # files/dirs pft-integrity tracks as s
 Each entry has a stable id `SOURCE/NAME@HASH`: for cron lines the hash is over the normalised line, for files over
 their content, for timers over schedule + unit + `ExecStart` + `User` + unit file paths (never `next_elapse` or run
 times, so ids do not move between runs). Editing a line therefore shows up as one `new` and one `removed` id.
+Packaged files whose content matches dpkg's md5 are identified by package instead of content: a `run-parts` script
+like `/etc/cron.daily/apport`, and a timer whose timer and service unit files are both packaged, md5-verified and have
+no drop-ins. An unattended-upgrades update of such a file keeps its id (no alert); a non-package edit fails the md5,
+gets a content id (`new` + `removed`) and a `pkg_modified` finding.
 
 ## Checks
 
@@ -162,6 +166,10 @@ No `chain_writable`, `chain_owner`, `writable_dir`, `pkg_modified` or `timer_tar
 textfiles scrape with `up 1` and all 8 `pft_schedaudit_unexpected` series 0; `pft-fleet skew` CURRENT for schedaudit
 and integrity on both hosts; pft-rulecheck `RESULT OK` on both; pft-integrity PASS on both; both nodes `full`; the
 [MAINT] messages reached the throwaway topic and the operator topics received 0 messages during the run.
+
+Since log 03: package-verified run-parts scripts and packaged timers are identified by package (see
+[What is inventoried](#what-is-inventoried)); the installed copies get this in the next update run, which re-accepts
+the 28 changed ids on the validator.
 
 Pending: the non-executing tamper drill (a never-firing cron.d entry, `PFTSchedEntryUnexpected` FIRING then
 RESOLVED on a throwaway topic, `apply` on a deliberately 0666 drill file).
