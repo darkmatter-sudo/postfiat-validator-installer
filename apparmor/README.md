@@ -213,6 +213,12 @@ its sandbox) writes its DENIED records to the HOST `audit.log`. `denials`, the a
 normalisation skip them; `denials` prints how many it skipped. Records without a namespace field, or with
 `namespace="root"`, still count. (Found 2026-11-06: rebuild drill runs 21-31 left 144 sandbox records in the
 validator's audit log, `denials` graded them WARN and `PFTAppArmorDrift` fired, while the live container had 0.)
+Fix commit `e536f3e1e3550f358956a64f87f2e194bb5911a7`: suite [`logs/25-nested-namespace-suite.log`](logs/25-nested-namespace-suite.log)
+273 passed / 0 failed; the same suite against the previous `pft-apparmor.sh` (negative control, run as
+`run-tests.sh OLD_COPY`, output tee'd without a header line) [`logs/26-nested-namespace-negative-control.log`](logs/26-nested-namespace-negative-control.log)
+270 passed / 3 failed, exactly the 3 new nested-namespace cases; live audit on the validator after install
+[`logs/27-nested-namespace-live-audit.log`](logs/27-nested-namespace-live-audit.log): `denials` PASS, 0 live records,
+144 nested records not counted. The alert resolved at the next scrape.
 
 `ack-denials` records in `/var/lib/pft-apparmor/denials-ack.json` that the DENIED records for the profile up to
 `--until` (default now; never in the future, never before the previous ack) were investigated, with a required

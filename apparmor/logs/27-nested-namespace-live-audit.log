@@ -1,0 +1,15 @@
+$ sudo pft-apparmor audit  # validator, 2026-11-06T03:14:32Z, commit e536f3e
+pft-apparmor audit - 2026-11-06T03:14:34Z | host validator | container postfiatd | profile pft-postfiatd
+  [PASS] kernel             AppArmor enabled in the kernel
+  [PASS] parser             apparmor_parser present
+  [PASS] loaded             pft-postfiatd loaded (enforce)
+  [PASS] container          postfiatd runs under pft-postfiatd
+  [PASS] mode               pft-postfiatd enforce
+  [PASS] recreate           compose file sets apparmor=pft-postfiatd
+  [PASS] confine:cap_drop   cap_drop ALL
+  [PASS] confine:read_only  read-only root fs
+  [PASS] confine:nnp        no-new-privileges
+  [PASS] boot               /etc/apparmor.d/pft-postfiatd parses; apparmor.service enabled
+  [PASS] denials            0 DENIED events in the last 86401s; 144 record(s) from a nested AppArmor namespace not counted
+RESULT: PASS
+(exit 0)

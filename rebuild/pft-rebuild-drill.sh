@@ -361,6 +361,11 @@ cmd_run() {
   echo; echo "== 8. live host after"
   local s; s="$(live_state)"; case "$s" in full|proposing) check "live server_state $s" 0 ;; *) check "live server_state $s" 1 ;; esac
   pft-integrity verify | tail -1 | sed 's/^/  /'; check "live pft-integrity verify PASS" "${PIPESTATUS[0]}"
+  # aaapply's sandbox records land in the HOST audit.log; the live hourly audit must not grade them (run 31: it did,
+  # and PFTAppArmorDrift paged the operator mid-run). Print the denials line, then test the audit's own rc.
+  if command -v pft-apparmor >/dev/null; then
+    pft-apparmor audit | grep -E ' denials |^RESULT' | sed 's/^ */  /'; check "live pft-apparmor audit PASS" "${PIPESTATUS[0]}"
+  fi
   local n; n="$(topic_msgs_since "$W/topics" "$t_start")"; [ "$n" = 0 ]; check "operator ntfy topics: $n messages since run start" "$?"
   echo; echo "per-step timings: $W/timings.tsv; per-step logs: $W/steps/"
   if [ "$FAILS" != 0 ]; then echo "RESULT: FAIL ($FAILS checks/steps failed, diff rc $drc)"; exit 2; fi
