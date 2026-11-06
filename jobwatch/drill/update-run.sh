@@ -5,6 +5,8 @@
 # (6b3087e: per-job label `job` -> `timer`). Only files pft-fleet tracks are written; nothing is restarted or
 # re-enabled. Prometheus is sent SIGHUP to load the updated rule file (alerts/ is mounted at /etc/pft-alerts).
 # Restore re-runs pft-keyescrow and checks drift 0; the run's own silence is expired at the end (run 06 lesson).
+# Run 10 (3ec4c00, size fix after update run 09): writes pft-jobwatch.sh + jobwatch_lib.py; checks the validator's
+# series are back in Prometheus and the textfile is under 64 KiB.
 # pft-maint's [MAINT] start/end messages go to a throwaway topic; the real target is restored and compared at the end,
 # and every operator topic is read back (must be 0 messages, kmsg drill run 06 lesson).
 #   bash jobwatch/drill/update-run.sh 2>&1 | tee LOG    (from the repo root, as the agent user)
@@ -47,9 +49,10 @@ check "pft-integrity PASS on both hosts before the update" "$([ "$(grep -c 'RESU
 x "sudo -n docker exec postfiatd curl -s -m 10 -d '{\"method\":\"server_info\"}' http://127.0.0.1:5005 | jq -r .result.info.server_state; R \"sudo -n docker exec postfiatd-sentry curl -s -m 10 -d '{\\\"method\\\":\\\"server_info\\\"}' http://127.0.0.1:5005 | jq -r .result.info.server_state\""
 check "both nodes full or proposing" "$([ "$(grep -cE '^(full|proposing)$' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
 x "sudo -n pft-fleet sync --addon jobwatch --to $SHA | grep -E '^PLAN .* (write|keep)$' | awk '{print \$2, \$4, \$6, \$NF}'"
-check "dry run: only jobwatch_lib.py is written, on both hosts" "$([ "$(grep -c ' write$' <<<"$XOUT")" = 2 ] && [ "$(grep ' write$' <<<"$XOUT" | grep -c 'jobwatch_lib.py')" = 2 ] && echo 0 || echo 1)"
+check "dry run: pft-jobwatch.sh + jobwatch_lib.py written, on both hosts (4 writes)" "$([ "$(grep -c ' write$' <<<"$XOUT")" = 4 ] && [ "$(grep ' write$' <<<"$XOUT" | grep -c 'jobwatch_lib.py')" = 2 ] && echo 0 || echo 1)"
 x "grep -c ',job=\"' /var/lib/pft-exporter/textfile/pft_jobwatch_validator.prom /var/lib/pft-exporter/textfile/pft_jobwatch_sentry.prom"
-check "before: both textfiles carry the old job= label (the run 07 bug)" "$([ "$(grep -cE ':[1-9][0-9]*$' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
+x "stat -c '%s %n' /var/lib/pft-exporter/textfile/pft_jobwatch_validator.prom /var/lib/pft-exporter/textfile/pft_jobwatch_sentry.prom; curl -s $PROM/api/v1/query --data-urlencode 'query=pft_jobwatch_up' | jq -r '.data.result[] | .metric.host' | sort"
+check "before: validator textfile over 65536 bytes and missing from Prometheus (the run 09 finding)" "$([ "$(awk '/validator.prom/ {print ($1 > 65536)}' <<<"$XOUT")" = 1 ] && ! grep -qx validator <<<"$XOUT" && echo 0 || echo 1)"
 { for f in /etc/postfiat-monitor.env /etc/pft-integrity.env; do sudo -n sed -n 's/^NTFY_TOPIC=//p' "$f" 2>/dev/null; done
   R 'for f in /etc/pft-watchdog/ntfy.env /etc/pft-integrity.env /etc/pft-alertpath/ntfy.env; do sudo -n sed -n "s/^NTFY_TOPIC=//p" $f 2>/dev/null; done'
   sed -n 's|^NTFY_URL=.*/||p' "$HOME/.config/pft-alerts/ntfy.env" 2>/dev/null
@@ -82,7 +85,7 @@ w=0; until R "sudo -n pft-maint active" >/dev/null 2>&1; do w=$((w + 10)); [ "$w
 R "sudo -n pft-maint active" >/dev/null 2>&1; check "sentry has the window (via the watchdog channel) after ${w}s" "$?"
 
 echo; echo "== 3. pft-fleet: jobwatch files to HEAD on both hosts (writes + integrity accept by pft-fleet)"
-x "sudo -n pft-fleet sync --addon jobwatch --to $SHA --apply --reason '$TASK: jobwatch_lib.py label job->timer fix ($SHORT)'"
+x "sudo -n pft-fleet sync --addon jobwatch --to $SHA --apply --reason '$TASK: jobwatch textfile size fix ($SHORT)'"
 check "jobwatch sync exit 0" "$XRC"
 x "sha256sum jobwatch/pft-jobwatch.sh jobwatch/jobwatch_lib.py | cut -c1-64; sudo -n sha256sum /usr/local/bin/pft-jobwatch /usr/local/lib/pft-jobwatch/jobwatch_lib.py | cut -c1-64; R 'sudo -n sha256sum /usr/local/bin/pft-jobwatch /usr/local/lib/pft-jobwatch/jobwatch_lib.py | cut -c1-64'"
 check "installed script + helper = repo bytes on both hosts" "$([ "$(sort <<<"$XOUT" | uniq -c | awk '$1 == 3' | wc -l)" = 2 ] && echo 0 || echo 1)"
@@ -96,6 +99,8 @@ x "sudo -n docker kill -s HUP pft-prometheus >/dev/null && sleep 45 && curl -s $
 check "4 jobwatch rules loaded, health ok, inactive; PFTJobFailed joins on (host, timer)" "$([ "$(grep -c '	ok	inactive' <<<"$XOUT")" = 4 ] && grep -q '^PFTJobFailed	ok	inactive	true$' <<<"$XOUT" && echo 0 || echo 1)"
 x "curl -s $PROM/api/v1/query --data-urlencode 'query=count by (host) (pft_jobwatch_job_present{timer!=\"\"})' | jq -r '.data.result[] | \"\(.metric.host) \(.value[1])\"' | sort; curl -s $PROM/api/v1/query --data-urlencode 'query=count(pft_jobwatch_job_present{exported_job!=\"\"}) or vector(0)' | jq -r '.data.result[0].value[1]'"
 check "Prometheus: timer-labelled series for both hosts (49/26), 0 exported_job series" "$(grep -qx 'sentry 26' <<<"$XOUT" && grep -qx 'validator 49' <<<"$XOUT" && [ "$(tail -1 <<<"$XOUT")" = 0 ] && echo 0 || echo 1)"
+x "stat -c '%s %n' /var/lib/pft-exporter/textfile/pft_jobwatch_validator.prom /var/lib/pft-exporter/textfile/pft_jobwatch_sentry.prom"
+check "both textfiles under the exporter's 65536-byte limit" "$([ "$(awk '$1 < 65536' <<<"$XOUT" | wc -l)" = 2 ] && echo 0 || echo 1)"
 x "curl -s $PROM/api/v1/query --data-urlencode 'query=pft_jobwatch_up' | jq -r '.data.result[] | \"\(.metric.host) \(.value[1])\"' | sort"
 check "Prometheus: pft_jobwatch_up 1 for both hosts" "$([ "$(grep -cE '^(sentry|validator) 1$' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
 
