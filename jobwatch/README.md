@@ -20,6 +20,7 @@ starts, stops, enables or resets a unit).
 | `systemd/` | `pft-jobwatch.service/.timer` (both hosts, every 2 min at :40 of even minutes; sandboxed: no network, no capabilities) and `pft-jobwatch-pull.service/.timer` (validator, odd minutes at :10) |
 | `pft-jobwatch.env.example` | `/etc/pft-jobwatch.env` (root-owned 0600): `HOST_LABEL`, `JOB_GLOBS`, `PULL_SSH` |
 | `drill/checks-run.sh` | recorded lint + suite + promtool + mutants run at a pushed commit |
+| `drill/install-run.sh` | recorded two-host install through pft-fleet in a pft-maint window (throwaway [MAINT] topic; keyescrow re-run + drift 0 check after the restore) |
 
 Rules: `../alerts/jobwatch.rules.yml`, tests `../alerts/jobwatch.tests.yml`; the rule file is listed in
 `../alerts/prometheus.yml`; `../rulecheck/pft-rulecheck*.conf.example` grade `pft_jobwatch_*.prom` stale after 15 min.

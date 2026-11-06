@@ -3,8 +3,8 @@
 #   sudo ./install.sh [--host NAME]   script -> /usr/local/bin/pft-jobwatch, helper ->
 #       /usr/local/lib/pft-jobwatch/, pft-jobwatch.service/.timer, state dir /var/lib/pft-jobwatch (0700).
 #       NAME (default validator; sentry on the sentry) goes to HOST_LABEL in /etc/pft-jobwatch.env (0600 root).
-#       Runs one collection through the sandboxed unit (must give up 1), prints the job inventory, then enables
-#       pft-jobwatch.timer (even minutes at :40).
+#       Runs one collection through the sandboxed unit (must give up 1), enables pft-jobwatch.timer (even minutes at
+#       :40), collects again (the first run saw its own timer still disabled) and prints the job inventory.
 #   sudo ./install.sh --pull [--host sentry]   on the host that runs ../alerts: pft-jobwatch-pull.service/.timer;
 #       needs PULL_SSH in /etc/pft-jobwatch.env (see pft-jobwatch.env.example). Runs one pull (must exit 0), then
 #       enables pft-jobwatch-pull.timer (odd minutes at :10; the peer collects at even minutes :40).
@@ -77,6 +77,11 @@ if $pull; then
   grep -E '^pft_jobwatch_(up|collect_timestamp_seconds|jobs)\{' "$TEXTDIR/pft_jobwatch_$host.prom"
   systemctl enable --now pft-jobwatch-pull.timer 2>&1 | sed 's/^/  /'
   log "pft-jobwatch-pull.timer $(systemctl is-active pft-jobwatch-pull.timer) (odd minutes at :10); changed=$changed"
+  if [ -f /etc/systemd/system/pft-jobwatch.service ]; then
+    log "re-collect so the local inventory sees the pull timer enabled:"
+    run_unit pft-jobwatch.service
+    grep -E '^pft_jobwatch_jobs\{' "$TEXTDIR/pft_jobwatch_$(sed -n 's/^HOST_LABEL=//p' "$CONF")".prom || true
+  fi
   exit 0
 fi
 if $uninstall; then
@@ -96,9 +101,12 @@ systemctl daemon-reload
 log "first collection (through the sandboxed unit):"
 run_unit pft-jobwatch.service
 grep -E '^pft_jobwatch_(up|collect_timestamp_seconds|jobs)\{' "$TEXTDIR/pft_jobwatch_$host.prom"
-log "job inventory:"
-/usr/local/bin/pft-jobwatch inventory
 grep -qx "pft_jobwatch_up{host=\"$host\"} 1" "$TEXTDIR/pft_jobwatch_$host.prom" || { log "ERROR: up != 1"; exit 1; }
 systemctl enable --now pft-jobwatch.timer 2>&1 | sed 's/^/  /'
 log "pft-jobwatch.timer $(systemctl is-active pft-jobwatch.timer) (even minutes at :40); changed=$changed"
+# the first run saw its own timer not yet enabled (disabled 1): collect once more, then print the real inventory
+log "second collection (own timer now enabled) and the job inventory:"
+run_unit pft-jobwatch.service
+grep -E '^pft_jobwatch_jobs\{' "$TEXTDIR/pft_jobwatch_$host.prom"
+/usr/local/bin/pft-jobwatch inventory
 log "remember: sudo pft-integrity accept --reason 'pft-jobwatch installed'"
