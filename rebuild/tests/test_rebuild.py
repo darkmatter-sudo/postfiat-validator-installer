@@ -155,6 +155,17 @@ check(
     ],
 )
 check(
+    "stack.list (repo): egresswait requires the egress dead-man PASS before the profile applies stop the node (run 28)",
+    idx("egress") < idx("egresswait") < idx("aaapply")
+    and "egresswait" in real[idx("aaapply")]["after"]
+    and "systemctl is-active -q pft-egress-deadman@postfiatd || break"
+    in real[idx("egresswait")]["cmd"]
+    and real[idx("egresswait")]["cmd"].endswith(
+        "jq -e -r .deadman_passed_at /var/lib/pft-egress/postfiatd.json"
+    ),
+    real[idx("egresswait")]["cmd"][-80:] if idx("egresswait") >= 0 else "missing",
+)
+check(
     "stack.list (repo): restore before backup",
     idx("restore") < idx("backup"),
 )
