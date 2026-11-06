@@ -621,6 +621,28 @@ check(
 rc, out, err = sh("forget", "a;b.timer")
 check("script itself refuses a job name with metacharacters (rc 3)", rc == 3, (rc, err))
 
+# size guard: a textfile over TEXT_BUDGET is never written (the exporter would drop it whole); up 0 instead
+rc, out, err = sh("collect", "--stdout", env=dict(ENV, TEXT_BUDGET="2000"))
+check(
+    "over TEXT_BUDGET: rc 1, up 0, no job samples, reason on stderr",
+    rc == 1
+    and 'pft_jobwatch_up{host="validator"} 0' in out
+    and "pft_jobwatch_job_" not in out
+    and "TEXT_BUDGET" in err,
+    (rc, out[:200], err),
+)
+rc, out, err = sh("collect", "--stdout")
+check(
+    "default TEXT_BUDGET (61440) leaves room for the fixture inventory",
+    rc == 0 and len(out) < 61440,
+    (rc, len(out)),
+)
+check(
+    "timestamps exported as whole seconds",
+    re.search(r"pft_jobwatch_job_last_success_timestamp_seconds\{[^}]*\} \d+\.", out)
+    is None,
+)
+
 # usage / config errors
 rc, _, _ = sh("collect", env=dict(ENV, HOST_LABEL="Bad Host"))
 check("bad HOST_LABEL: rc 3", rc == 3)

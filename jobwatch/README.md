@@ -82,8 +82,13 @@ run 07, see [Results](#results)).
 | `pft_jobwatch_job_present` / `_disabled` / `_running` / `_never_run` / `_failed` / `_missed` | per-job 0/1 flags (above) |
 | `pft_jobwatch_job_consecutive_failures` | failed runs in a row, as observed |
 | `pft_jobwatch_job_interval_seconds` | derived repeat interval (0 = none known) |
-| `pft_jobwatch_job_last_trigger_timestamp_seconds` / `_last_success_timestamp_seconds` / `_next_elapse_timestamp_seconds` | Unix times (0 = never / none / monotonic) |
-| `pft_jobwatch_job_runs_observed_total` / `_failed_runs_observed_total` | finished runs counted since the state was created |
+| `pft_jobwatch_job_last_trigger_timestamp_seconds` / `_last_success_timestamp_seconds` | Unix times, whole seconds (0 = never / none) |
+| `pft_jobwatch_job_runs_observed_total` | finished runs counted since the state was created |
+
+Next elapse and the failed-run counter are in `pft-jobwatch inventory --format json` only: the pft exporter skips a
+textfile over 64 KiB whole, and with them 49 timers reached 66 KB (update run 09). `collect` refuses to write a file
+over `TEXT_BUDGET` (61440 bytes) and writes `up 0` instead, so PFTJobwatchStale fires rather than every series
+vanishing; `pull` validates against 65536.
 
 ## Alerts
 
@@ -106,6 +111,9 @@ PFTJobDisabled (never PFTJobFailed).
   after a missed run can learn two periods until the next run corrects it (the next-elapse check still catches a
   timer that stops firing).
 - A job that is meant to be removed must be `forget`-ed, or PFTJobDisabled stays active.
+- Size: about 1.1 KB per timer; the validator's 49 timers give 55.6 KB, so roughly 5 more timers fit under
+  `TEXT_BUDGET`. Past that, collect publishes `up 0` (PFTJobwatchStale) until JOB_GLOBS is narrowed or the exporter's
+  64 KiB cap is raised.
 
 ## Results
 
@@ -119,4 +127,6 @@ PFTJobDisabled (never PFTJobFailed).
 
 | `logs/06-checks.log` | checks @6b3087e (fix) | shellcheck/ruff clean, promtool ok (incl. the two-timer test), suite 102/102, mutants 52/52 CAUGHT |
 
-Verification of the fix on the hosts (redeploy + drill re-run) follows.
+| `logs/07-update-run09-failed.log` | fleet update @20caf12 (label fix) | label fix verified (0 `job=` labels, rules join on (host, timer), Prometheus 0 `exported_job` series, operator topics 0), but **found**: 2 checks FAIL, the validator's series were gone from Prometheus: its textfile grew to 66,071 bytes and the pft exporter skips files over 64 KiB whole. **Fixed**: two gauges moved to `inventory --format json`, whole-second timestamps (55,583 bytes for 49 timers), `TEXT_BUDGET` guard (writes up 0), pull limit 65536; tests + mutants S12, M34 |
+
+Verification of the size fix on the hosts (redeploy + drill re-run) follows.

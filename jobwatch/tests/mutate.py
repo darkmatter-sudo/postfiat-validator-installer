@@ -361,6 +361,16 @@ MUTANTS += [
         "          and on (host) pft_jobwatch_job_failed == 1\n",
     ),
 ]
+MUTANTS += [
+    ("S12", S, "size guard removed", '[ "${#text}" -gt "$TEXT_BUDGET" ]', "false"),
+    (
+        "M34",
+        L,
+        "timestamps exported with fractions",
+        'int(j[key]) if key.endswith("_timestamp_seconds") else j[key]',
+        "j[key]",
+    ),
+]
 EQUIVALENT = []
 
 

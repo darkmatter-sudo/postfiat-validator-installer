@@ -303,18 +303,12 @@ GAUGES = (
         "Unix time the last successful run ended, as observed by jobwatch (0 = none yet)",
     ),
     (
-        "next_elapse_timestamp_seconds",
-        "Unix time of the next calendar elapse (0 for monotonic timers)",
-    ),
-    (
         "runs_observed_total",
         "finished runs counted by jobwatch since its state was created",
     ),
-    (
-        "failed_runs_observed_total",
-        "failed runs counted by jobwatch since its state was created",
-    ),
 )
+# next_elapse_timestamp_seconds and failed_runs_observed_total stay in `inventory --format json` but are not exported:
+# the pft exporter skips a textfile over 64 KiB whole (49 timers on the validator reached 66 KB, update run 09).
 
 
 def render(host, jobs, now, ok=True, err=""):
@@ -359,8 +353,11 @@ def render(host, jobs, now, ok=True, err=""):
             f"# TYPE pft_jobwatch_job_{key} {typ}",
         ]
         for j in jobs:
+            v = (
+                int(j[key]) if key.endswith("_timestamp_seconds") else j[key]
+            )  # whole seconds: smaller file
             out.append(
-                f'pft_jobwatch_job_{key}{{host="{h}",timer="{esc(j["job"])}"}} {fmt(j[key])}'
+                f'pft_jobwatch_job_{key}{{host="{h}",timer="{esc(j["job"])}"}} {fmt(v)}'
             )
     return "\n".join(out) + "\n"
 

@@ -24,7 +24,8 @@
 # Conf: PFT_JW_CONF (/etc/pft-jobwatch.env, root-owned, sourced first): HOST_LABEL (validator; [a-z][a-z0-9_-]*,
 #       never a hostname), TEXTFILE_DIR (/var/lib/pft-exporter/textfile), STATE_DIR (/var/lib/pft-jobwatch),
 #       JOB_GLOBS ("pft-*.timer postfiat*.timer"), RUN_TIMEOUT (90), PULL_SSH (pull only),
-#       REMOTE_DIR (/var/lib/pft-exporter/textfile), PULL_TIMEOUT (20), MAX_BYTES (262144)
+#       REMOTE_DIR (/var/lib/pft-exporter/textfile), PULL_TIMEOUT (20), MAX_BYTES (65536: the pft exporter skips
+#       bigger textfiles), TEXT_BUDGET (61440: collect writes up 0 instead of a file the exporter would drop)
 # Test hooks: PFT_JW_HELPER (/usr/local/lib/pft-jobwatch/jobwatch_lib.py)  PFT_JW_NOW (epoch)
 #             PFT_JW_SYSTEMCTL (passed through to the helper)
 
@@ -43,7 +44,8 @@ RUN_TIMEOUT="${RUN_TIMEOUT:-90}"
 PULL_SSH="${PULL_SSH:-}"
 REMOTE_DIR="${REMOTE_DIR:-/var/lib/pft-exporter/textfile}"
 PULL_TIMEOUT="${PULL_TIMEOUT:-20}"
-MAX_BYTES="${MAX_BYTES:-262144}"
+MAX_BYTES="${MAX_BYTES:-65536}"
+TEXT_BUDGET="${TEXT_BUDGET:-61440}"
 HELPER="${PFT_JW_HELPER:-/usr/local/lib/pft-jobwatch/jobwatch_lib.py}"
 
 die() { printf 'pft-jobwatch: %s\n' "$1" >&2; exit "${2:-3}"; }
@@ -60,6 +62,7 @@ write_atomic() { # DIR FILE CONTENT
 check_common() {
   valid_host "$HOST_LABEL" || die "bad HOST_LABEL"
   posint "$RUN_TIMEOUT" || die "bad RUN_TIMEOUT"
+  posint "$TEXT_BUDGET" || die "bad TEXT_BUDGET"
   [ -r "$HELPER" ] || die "helper not found: $HELPER"
   globs=()
   local g
@@ -95,6 +98,11 @@ collect() {
     --now "$now" "${globs[@]}" 2> "$errf")"
   rc=$?
   err="$(head -c 300 "$errf")"; rm -f "$errf"
+  if [ "$rc" = 0 ] && [ "${#text}" -gt "$TEXT_BUDGET" ]; then
+    # the exporter skips a textfile over 64 KiB WHOLE, which would make every jobwatch series vanish silently
+    # (update run 09); publish up 0 instead, so PFTJobwatchStale fires
+    err="textfile would be ${#text} bytes, over TEXT_BUDGET $TEXT_BUDGET (narrow JOB_GLOBS)"; rc=1; text=""
+  fi
   if [ "$rc" != 0 ] || [ -z "$text" ]; then
     # systemctl failure, timeout or a helper crash: still publish up 0 so a broken collector is visible
     # (the helper writes the state only after a complete inventory)
