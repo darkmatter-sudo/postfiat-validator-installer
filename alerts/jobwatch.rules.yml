@@ -1,0 +1,53 @@
+# Alert rules for pft-jobwatch (../jobwatch). pft-jobwatch.timer writes pft_jobwatch_<host>.prom every 2 min
+# (validator: local; sentry: pulled by pft-jobwatch-pull.timer); the pft exporter serves it as pft_jobwatch_*{host=...}.
+# One series per (host, job). A removed timer stays exported (present 0, disabled 1) until `pft-jobwatch forget`.
+# Tests: jobwatch.tests.yml (promtool test rules jobwatch.tests.yml), 1m sample interval.
+groups:
+  - name: pft-jobwatch
+    rules:
+      - alert: PFTJobFailed
+        # the job's last finished run failed; stays until a run succeeds (a 1-min job that recovers within one
+        # collection does not page)
+        # value = consecutive failed runs observed
+        expr: |
+          pft_jobwatch_job_consecutive_failures
+          and on (host, job) pft_jobwatch_job_failed == 1
+          and on (host, job) pft_jobwatch_job_present == 1
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.host }}: scheduled job {{ $labels.job }} failed ({{ $value | printf \"%.0f\" }} run(s) in a row)"
+          description: "The service triggered by {{ $labels.job }} ended its last run with a non-success Result. Its own textfile metrics (if any) are now stale and still look healthy. Run `systemctl status <service>` and `journalctl -u <service> -n 50` on the host, fix, then `systemctl start <service>` once to clear."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/jobwatch/README.md#alerts"
+      - alert: PFTJobMissed
+        # no trigger for longer than interval + accuracy + 2 x randomized delay + 5 min, or a calendar elapse passed
+        expr: pft_jobwatch_job_missed == 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.host }}: scheduled job {{ $labels.job }} is overdue"
+          description: "{{ $labels.job }} is enabled but has not triggered for longer than its interval plus grace (or its next calendar elapse has passed): a hung run, a clock jump or a stuck timer. Run `sudo pft-jobwatch inventory` and `systemctl list-timers {{ $labels.job }}` on the host."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/jobwatch/README.md#alerts"
+      - alert: PFTJobDisabled
+        # inactive, disabled, masked or removed (present 0): the job will not run, its metrics will silently go stale
+        expr: pft_jobwatch_job_disabled == 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.host }}: scheduled job {{ $labels.job }} is disabled or removed"
+          description: "{{ $labels.job }} was watched but is now not scheduling (timer inactive, unit file disabled/masked, or the unit is gone). If intended, run `sudo pft-jobwatch forget {{ $labels.job }}` after removing it; otherwise `systemctl enable --now {{ $labels.job }}`."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/jobwatch/README.md#alerts"
+      - alert: PFTJobwatchStale
+        expr: |
+          time() - pft_jobwatch_collect_timestamp_seconds > 600
+          or pft_jobwatch_up == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pft-jobwatch on {{ $labels.host }} is stale or failing"
+          description: "For 10 min either the last collection is older than 10 min (pft-jobwatch.timer, or for the sentry pft-jobwatch-pull.timer on the validator, is not running) or `systemctl show` fails (pft_jobwatch_up 0). The job alerts for this host are blind. Run `sudo pft-jobwatch collect --stdout` on the host."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/jobwatch/README.md#alerts"

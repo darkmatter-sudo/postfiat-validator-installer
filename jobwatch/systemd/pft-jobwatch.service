@@ -1,0 +1,36 @@
+[Unit]
+Description=pft-jobwatch: scheduled-job outcome of every pft-*/postfiat* timer (systemctl show only) as textfile metrics
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/jobwatch
+
+[Service]
+Type=oneshot
+# root without capabilities: systemd's private socket only answers uid 0; writes only its state and its textfile.
+# A failed `systemctl show` still writes "pft_jobwatch_up 0" and exits 1 (this unit fails: jobwatch sees itself too).
+ExecStart=/usr/local/bin/pft-jobwatch collect
+ProtectSystem=strict
+ReadWritePaths=/var/lib/pft-exporter/textfile /var/lib/pft-jobwatch
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateNetwork=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+UMask=0022
+Nice=10
+# RUN_TIMEOUT (90 s) bounds the helper; this bounds the whole run
+TimeoutStartSec=120

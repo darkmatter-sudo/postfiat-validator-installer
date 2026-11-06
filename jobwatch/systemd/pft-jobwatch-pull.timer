@@ -1,0 +1,10 @@
+[Unit]
+Description=Pull the sentry's pft-jobwatch textfile every 2 minutes (the sentry collects at even minutes :40)
+
+[Timer]
+OnCalendar=*-*-* *:1/2:10
+AccuracySec=1s
+Persistent=false
+
+[Install]
+WantedBy=timers.target
