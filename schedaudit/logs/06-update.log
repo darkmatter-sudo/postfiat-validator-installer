@@ -1,0 +1,299 @@
+schedaudit two-host update - 2026-11-06T22:58:33Z - Ubuntu 22.04.5 LTS - repo HEAD 7e923ec74e6c64df633752f4f6c657c147e97cfb (clean: yes)
+
+== 0. preflight
+$ sha256sum schedaudit/pft-schedaudit.sh schedaudit/schedaudit_lib.py schedaudit/drill/update-run.sh
+  cebe0936e5e28126d9c5ebf63adcc6bedad169406c840106044d0c952c1caab7  schedaudit/pft-schedaudit.sh
+  d0fd11a79c456e118ad9d0c2848b20d53f316f60335adaa4b2948626206f8071  schedaudit/schedaudit_lib.py
+  c53b50470052fe69a719b69fa4d6b369b1e5ddbccb5a91a49dbe0a296cbb738d  schedaudit/drill/update-run.sh
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 213 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 132 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts before the update
+$ sudo -n docker exec postfiatd curl -s -m 10 -d '{"method":"server_info"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state; R "sudo -n docker exec postfiatd-sentry curl -s -m 10 -d '{\"method\":\"server_info\"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state"
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ sudo -n pft-schedaudit audit | grep -E '^(NEW|REMOVED|CRIT|WARN|SUMMARY)'; R 'sudo -n pft-schedaudit audit' | grep -E '^(NEW|REMOVED|CRIT|WARN|SUMMARY)'
+  SUMMARY entries=91 enabled=78 findings=1 allowed=1 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+  SUMMARY entries=66 enabled=53 findings=0 allowed=0 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+  (exit 0)
+CHECK ok   installed tool: 0 unexpected on both hosts before the update
+$ sudo -n pft-fleet sync --addon schedaudit --to 7e923ec74e6c64df633752f4f6c657c147e97cfb | grep -E '^PLAN .* (write|keep)$' | awk '{print $2, $4, $6, $NF}'
+  sentry /usr/local/bin/pft-schedaudit CURRENT keep
+  sentry /usr/local/lib/pft-schedaudit/schedaudit_lib.py BEHIND write
+  sentry /etc/systemd/system/pft-schedaudit.service CURRENT keep
+  sentry /etc/systemd/system/pft-schedaudit.timer CURRENT keep
+  validator /usr/local/bin/pft-schedaudit CURRENT keep
+  validator /usr/local/lib/pft-schedaudit/schedaudit_lib.py BEHIND write
+  validator /etc/systemd/system/pft-schedaudit.service CURRENT keep
+  validator /etc/systemd/system/pft-schedaudit.timer CURRENT keep
+  validator /etc/systemd/system/pft-schedaudit-pull.service CURRENT keep
+  validator /etc/systemd/system/pft-schedaudit-pull.timer CURRENT keep
+  (exit 0)
+CHECK ok   dry run: schedaudit_lib.py written on both hosts, nothing else (2 writes)
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+$ curl -s http://<redacted-ip>:9093/api/v2/silences | jq -r '.[] | select(.status.state == "active") | .createdBy' | sort | uniq -c; curl -s http://<redacted-ip>:9093/api/v2/alerts | jq -r '.[].labels.alertname' | sort | uniq -c
+        1 schedaudit-install
+        1 PFTAlertPipelineWatchdog
+  (exit 0)
+CHECK ok   active silences only from the schedaudit install; only the pipeline watchdog active
+
+== 1. rollout silence (the new helper re-identifies packaged entries until the accept; not the watchdog)
+CHECK ok   Alertmanager silence created (PFTSchedEntryUnexpected, PFTSchedauditStale, PFTFleet*; not the watchdog) until 2026-11-06T23:29:19Z
+
+== 2. pft-maint window, [MAINT] messages to a throwaway topic (real file kept as $BK)
+real /etc/pft-maint/ntfy.env present before: 0
+$ { [ $HAD = 0 ] || sudo -n cp -p $NE $BK; } && printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' "$TT" | sudo -n tee $NE >/dev/null && sudo -n chmod 600 $NE && sudo -n stat -c '%a %U' $NE
+  600 root
+  (exit 0)
+CHECK ok   throwaway target installed
+$ sudo -n pft-maint start --ttl 30m --reason 'task_63b12600 schedaudit update 7e923ec'
+  window started: id m1794005959-2186536 until 2026-11-06T23:29:19Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint window open
+CHECK ok   sentry has the window (via the watchdog channel) after 20s
+
+== 3. pft-fleet: schedaudit files to HEAD on both hosts (writes + integrity accept by pft-fleet)
+$ sudo -n pft-fleet sync --addon schedaudit --to 7e923ec74e6c64df633752f4f6c657c147e97cfb --apply --reason 'task_63b12600: schedaudit package ids (7e923ec)'
+  [2026-11-06T22:59:58Z] sync schedaudit to 7e923ec74e6c64df633752f4f6c657c147e97cfb (2026-11-06T22:57:40+00:00) REF main=7e923ec74e6c64df633752f4f6c657c147e97cfb
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN sentry sentry /usr/local/bin/pft-schedaudit 0755 CURRENT cebe0936e5e2 cebe0936e5e2 keep
+  PLAN sentry sentry /usr/local/lib/pft-schedaudit/schedaudit_lib.py 0644 BEHIND adfa121b6a82 d0fd11a79c45 write
+  PLAN sentry sentry /etc/systemd/system/pft-schedaudit.service 0644 CURRENT eeb630fa0ba1 eeb630fa0ba1 keep
+  PLAN sentry sentry /etc/systemd/system/pft-schedaudit.timer 0644 CURRENT 9c9b74c65522 9c9b74c65522 keep
+  PLAN validator validator /usr/local/bin/pft-schedaudit 0755 CURRENT cebe0936e5e2 cebe0936e5e2 keep
+  PLAN validator validator /usr/local/lib/pft-schedaudit/schedaudit_lib.py 0644 BEHIND adfa121b6a82 d0fd11a79c45 write
+  PLAN validator validator /etc/systemd/system/pft-schedaudit.service 0644 CURRENT eeb630fa0ba1 eeb630fa0ba1 keep
+  PLAN validator validator /etc/systemd/system/pft-schedaudit.timer 0644 CURRENT 9c9b74c65522 9c9b74c65522 keep
+  PLAN validator validator /etc/systemd/system/pft-schedaudit-pull.service 0644 CURRENT e409b4b59ffa e409b4b59ffa keep
+  PLAN validator validator /etc/systemd/system/pft-schedaudit-pull.timer 0644 CURRENT fb67faf95b3a fb67faf95b3a keep
+  [2026-11-06T22:59:58Z] order: sentry validator
+  [2026-11-06T22:59:58Z] sentry: 1 file(s) to write
+  PRE sentry pft-maint window active PASS
+  PRE sentry node server_state=full PASS
+  PRE sentry pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP sentry /usr/local/lib/pft-schedaudit/schedaudit_lib.py sha256 adfa121b6a82 -> /var/lib/pft-fleet/backup/20261106T225958Z-schedaudit-sentry
+  WRITE sentry /usr/local/lib/pft-schedaudit/schedaudit_lib.py adfa121b6a82 -> d0fd11a79c45 mode 0644
+  GATE sentry sha256 /usr/local/lib/pft-schedaudit/schedaudit_lib.py = target d0fd11a79c45 PASS
+  GATE sentry syntax /usr/local/lib/pft-schedaudit/schedaudit_lib.py python PASS
+  GATE sentry addon units failed=none PASS
+  GATE sentry node server_state=full PASS
+  ACCEPT sentry pft-integrity baseline updated: pft-fleet sync schedaudit@7e923ec74e6c (schedaudit_lib.py)
+  [2026-11-06T23:00:31Z] SYNCED sentry schedaudit -> 7e923ec74e6c
+  [2026-11-06T23:00:31Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/lib/pft-schedaudit/schedaudit_lib.py sha256 adfa121b6a82 -> /var/lib/pft-fleet/backup/20261106T225958Z-schedaudit-validator
+  WRITE validator /usr/local/lib/pft-schedaudit/schedaudit_lib.py adfa121b6a82 -> d0fd11a79c45 mode 0644
+  GATE validator sha256 /usr/local/lib/pft-schedaudit/schedaudit_lib.py = target d0fd11a79c45 PASS
+  GATE validator syntax /usr/local/lib/pft-schedaudit/schedaudit_lib.py python PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync schedaudit@7e923ec74e6c (schedaudit_lib.py)
+  [2026-11-06T23:00:58Z] SYNCED validator schedaudit -> 7e923ec74e6c
+  [2026-11-06T23:00:58Z] sync complete
+  (exit 0)
+CHECK ok   schedaudit sync exit 0
+$ sha256sum schedaudit/schedaudit_lib.py | cut -c1-64; sudo -n sha256sum /usr/local/lib/pft-schedaudit/schedaudit_lib.py | cut -c1-64; R 'sha256sum /usr/local/lib/pft-schedaudit/schedaudit_lib.py | cut -c1-64'
+  d0fd11a79c456e118ad9d0c2848b20d53f316f60335adaa4b2948626206f8071
+  d0fd11a79c456e118ad9d0c2848b20d53f316f60335adaa4b2948626206f8071
+  d0fd11a79c456e118ad9d0c2848b20d53f316f60335adaa4b2948626206f8071
+  (exit 0)
+CHECK ok   installed helper = repo bytes on both hosts
+
+== 4. id migration: every NEW id has a REMOVED partner with the same SOURCE/NAME, then accept, then 0 unexpected
+  NEW	-	run-parts/cron.daily/.placeholder@74d3750736	-	not in the accepted entry set
+  NEW	-	run-parts/cron.daily/apport@979cb2c8ec	-	not in the accepted entry set
+  NEW	-	run-parts/cron.daily/apt-compat@4f463759e2	-	not in the accepted entry set
+  NEW	-	run-parts/cron.daily/dpkg@0a3ad4b2db	-	not in the accepted entry set
+  NEW	-	run-parts/cron.daily/logrotate@24f606ef34	-	not in the accepted entry set
+  NEW	-	run-parts/cron.daily/man-db@0ceecfccdf	-	not in the accepted entry set
+  NEW	-	run-parts/cron.hourly/.placeholder@74d3750736	-	not in the accepted entry set
+  NEW	-	run-parts/cron.monthly/.placeholder@74d3750736	-	not in the accepted entry set
+  NEW	-	run-parts/cron.weekly/.placeholder@74d3750736	-	not in the accepted entry set
+  NEW	-	run-parts/cron.weekly/man-db@0ceecfccdf	-	not in the accepted entry set
+  NEW	-	timer/apport-autoreport.timer@7e2b705047	-	not in the accepted entry set
+  NEW	-	timer/apt-daily-upgrade.timer@8b6656cc69	-	not in the accepted entry set
+  NEW	-	timer/apt-daily.timer@fb6d7f15c8	-	not in the accepted entry set
+  NEW	-	timer/dpkg-db-backup.timer@c18d8e393c	-	not in the accepted entry set
+  NEW	-	timer/e2scrub_all.timer@0878b0caa7	-	not in the accepted entry set
+  NEW	-	timer/fstrim.timer@ee1094eaf5	-	not in the accepted entry set
+  NEW	-	timer/logrotate.timer@97d43b3f9d	-	not in the accepted entry set
+  NEW	-	timer/man-db.timer@7cf92f08f8	-	not in the accepted entry set
+  NEW	-	timer/mdcheck_continue.timer@52309ac26c	-	not in the accepted entry set
+  NEW	-	timer/mdcheck_start.timer@24efd8ed66	-	not in the accepted entry set
+  NEW	-	timer/mdmonitor-oneshot.timer@5cc9821d84	-	not in the accepted entry set
+  NEW	-	timer/motd-news.timer@cc523dae11	-	not in the accepted entry set
+  NEW	-	timer/snapd.snap-repair.timer@037a139d21	-	not in the accepted entry set
+  NEW	-	timer/systemd-tmpfiles-clean.timer@a47d0c99ea	-	not in the accepted entry set
+  NEW	-	timer/ua-timer.timer@160b391123	-	not in the accepted entry set
+  NEW	-	timer/update-notifier-download.timer@32c1019f18	-	not in the accepted entry set
+  NEW	-	timer/update-notifier-motd.timer@3b624a52be	-	not in the accepted entry set
+  NEW	-	timer/xfs_scrub_all.timer@a0fb792338	-	not in the accepted entry set
+  REMOVED	-	run-parts/cron.daily/.placeholder@49674d9b1b	-	accepted entry is gone
+  REMOVED	-	run-parts/cron.daily/apport@ece406240b	-	accepted entry is gone
+  REMOVED	-	run-parts/cron.daily/apt-compat@1983c659b0	-	accepted entry is gone
+  REMOVED	-	run-parts/cron.daily/dpkg@9f2fdd4b4e	-	accepted entry is gone
+  REMOVED	-	run-parts/cron.daily/logrotate@12b36ff706	-	accepted entry is gone
+  REMOVED	-	run-parts/cron.daily/man-db@c0130ac86e	-	accepted entry is gone
+  REMOVED	-	run-parts/cron.hourly/.placeholder@49674d9b1b	-	accepted entry is gone
+  REMOVED	-	run-parts/cron.monthly/.placeholder@49674d9b1b	-	accepted entry is gone
+  REMOVED	-	run-parts/cron.weekly/.placeholder@49674d9b1b	-	accepted entry is gone
+  REMOVED	-	run-parts/cron.weekly/man-db@33f6cd0fe8	-	accepted entry is gone
+  REMOVED	-	timer/apport-autoreport.timer@f3be38c8db	-	accepted entry is gone
+  REMOVED	-	timer/apt-daily-upgrade.timer@0ced525657	-	accepted entry is gone
+  REMOVED	-	timer/apt-daily.timer@59eb3e4a6f	-	accepted entry is gone
+  REMOVED	-	timer/dpkg-db-backup.timer@09f477429a	-	accepted entry is gone
+  REMOVED	-	timer/e2scrub_all.timer@76d08976af	-	accepted entry is gone
+  REMOVED	-	timer/fstrim.timer@305b896f11	-	accepted entry is gone
+  REMOVED	-	timer/logrotate.timer@3c82a8915f	-	accepted entry is gone
+  REMOVED	-	timer/man-db.timer@29926248cb	-	accepted entry is gone
+  REMOVED	-	timer/mdcheck_continue.timer@932f0b93ba	-	accepted entry is gone
+  REMOVED	-	timer/mdcheck_start.timer@e9beade055	-	accepted entry is gone
+  REMOVED	-	timer/mdmonitor-oneshot.timer@02ab12eb18	-	accepted entry is gone
+  REMOVED	-	timer/motd-news.timer@f18874e70e	-	accepted entry is gone
+  REMOVED	-	timer/snapd.snap-repair.timer@cca4c7607b	-	accepted entry is gone
+  REMOVED	-	timer/systemd-tmpfiles-clean.timer@d82d455c0b	-	accepted entry is gone
+  REMOVED	-	timer/ua-timer.timer@b72838df35	-	accepted entry is gone
+  REMOVED	-	timer/update-notifier-download.timer@5cf7eaa2c4	-	accepted entry is gone
+  REMOVED	-	timer/update-notifier-motd.timer@35c6ecf803	-	accepted entry is gone
+  REMOVED	-	timer/xfs_scrub_all.timer@7ad41180c0	-	accepted entry is gone
+  SUMMARY entries=91 enabled=78 findings=1 allowed=1 unexpected_findings=0 new=28 removed=28 baseline=yes unused_allow=0
+CHECK ok   validator: 28 new / 28 removed ids, same SOURCE/NAME set (re-identification only), no unexpected finding
+$ bash -c "sudo -n pft-schedaudit accept --reason 'task_63b12600: 7e923ec package ids for package-verified run-parts scripts and timers (28 re-identified)'"
+  accepted 91 entries (+28 -28): task_63b12600: 7e923ec package ids for package-verified run-parts scripts and timers (28 re-identified)
+  (exit 0)
+$ bash -c 'sudo -n systemctl start pft-schedaudit.service; sudo -n pft-schedaudit audit' | grep -E '^(NEW|REMOVED|CRIT|WARN|SUMMARY)'
+  SUMMARY entries=91 enabled=78 findings=1 allowed=1 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+  (exit 0)
+CHECK ok   validator: 0 unexpected findings, 0 new/removed after the accept
+  NEW	-	run-parts/cron.daily/.placeholder@74d3750736	-	not in the accepted entry set
+  NEW	-	run-parts/cron.daily/apport@979cb2c8ec	-	not in the accepted entry set
+  NEW	-	run-parts/cron.daily/apt-compat@4f463759e2	-	not in the accepted entry set
+  NEW	-	run-parts/cron.daily/dpkg@0a3ad4b2db	-	not in the accepted entry set
+  NEW	-	run-parts/cron.daily/logrotate@24f606ef34	-	not in the accepted entry set
+  NEW	-	run-parts/cron.daily/man-db@0ceecfccdf	-	not in the accepted entry set
+  NEW	-	run-parts/cron.hourly/.placeholder@74d3750736	-	not in the accepted entry set
+  NEW	-	run-parts/cron.monthly/.placeholder@74d3750736	-	not in the accepted entry set
+  NEW	-	run-parts/cron.weekly/.placeholder@74d3750736	-	not in the accepted entry set
+  NEW	-	run-parts/cron.weekly/man-db@0ceecfccdf	-	not in the accepted entry set
+  NEW	-	timer/apport-autoreport.timer@7e2b705047	-	not in the accepted entry set
+  NEW	-	timer/apt-daily-upgrade.timer@8b6656cc69	-	not in the accepted entry set
+  NEW	-	timer/apt-daily.timer@fb6d7f15c8	-	not in the accepted entry set
+  NEW	-	timer/dpkg-db-backup.timer@c18d8e393c	-	not in the accepted entry set
+  NEW	-	timer/e2scrub_all.timer@0878b0caa7	-	not in the accepted entry set
+  NEW	-	timer/fstrim.timer@ee1094eaf5	-	not in the accepted entry set
+  NEW	-	timer/logrotate.timer@97d43b3f9d	-	not in the accepted entry set
+  NEW	-	timer/man-db.timer@7cf92f08f8	-	not in the accepted entry set
+  NEW	-	timer/mdcheck_continue.timer@52309ac26c	-	not in the accepted entry set
+  NEW	-	timer/mdcheck_start.timer@24efd8ed66	-	not in the accepted entry set
+  NEW	-	timer/mdmonitor-oneshot.timer@5cc9821d84	-	not in the accepted entry set
+  NEW	-	timer/motd-news.timer@cc523dae11	-	not in the accepted entry set
+  NEW	-	timer/snapd.snap-repair.timer@037a139d21	-	not in the accepted entry set
+  NEW	-	timer/systemd-tmpfiles-clean.timer@a47d0c99ea	-	not in the accepted entry set
+  NEW	-	timer/ua-timer.timer@160b391123	-	not in the accepted entry set
+  NEW	-	timer/update-notifier-download.timer@32c1019f18	-	not in the accepted entry set
+  NEW	-	timer/update-notifier-motd.timer@3b624a52be	-	not in the accepted entry set
+  NEW	-	timer/xfs_scrub_all.timer@a0fb792338	-	not in the accepted entry set
+  REMOVED	-	run-parts/cron.daily/.placeholder@49674d9b1b	-	accepted entry is gone
+  REMOVED	-	run-parts/cron.daily/apport@ece406240b	-	accepted entry is gone
+  REMOVED	-	run-parts/cron.daily/apt-compat@1983c659b0	-	accepted entry is gone
+  REMOVED	-	run-parts/cron.daily/dpkg@9f2fdd4b4e	-	accepted entry is gone
+  REMOVED	-	run-parts/cron.daily/logrotate@12b36ff706	-	accepted entry is gone
+  REMOVED	-	run-parts/cron.daily/man-db@c0130ac86e	-	accepted entry is gone
+  REMOVED	-	run-parts/cron.hourly/.placeholder@49674d9b1b	-	accepted entry is gone
+  REMOVED	-	run-parts/cron.monthly/.placeholder@49674d9b1b	-	accepted entry is gone
+  REMOVED	-	run-parts/cron.weekly/.placeholder@49674d9b1b	-	accepted entry is gone
+  REMOVED	-	run-parts/cron.weekly/man-db@33f6cd0fe8	-	accepted entry is gone
+  REMOVED	-	timer/apport-autoreport.timer@f3be38c8db	-	accepted entry is gone
+  REMOVED	-	timer/apt-daily-upgrade.timer@0ced525657	-	accepted entry is gone
+  REMOVED	-	timer/apt-daily.timer@59eb3e4a6f	-	accepted entry is gone
+  REMOVED	-	timer/dpkg-db-backup.timer@09f477429a	-	accepted entry is gone
+  REMOVED	-	timer/e2scrub_all.timer@76d08976af	-	accepted entry is gone
+  REMOVED	-	timer/fstrim.timer@305b896f11	-	accepted entry is gone
+  REMOVED	-	timer/logrotate.timer@3c82a8915f	-	accepted entry is gone
+  REMOVED	-	timer/man-db.timer@29926248cb	-	accepted entry is gone
+  REMOVED	-	timer/mdcheck_continue.timer@932f0b93ba	-	accepted entry is gone
+  REMOVED	-	timer/mdcheck_start.timer@e9beade055	-	accepted entry is gone
+  REMOVED	-	timer/mdmonitor-oneshot.timer@02ab12eb18	-	accepted entry is gone
+  REMOVED	-	timer/motd-news.timer@f18874e70e	-	accepted entry is gone
+  REMOVED	-	timer/snapd.snap-repair.timer@cca4c7607b	-	accepted entry is gone
+  REMOVED	-	timer/systemd-tmpfiles-clean.timer@d82d455c0b	-	accepted entry is gone
+  REMOVED	-	timer/ua-timer.timer@b72838df35	-	accepted entry is gone
+  REMOVED	-	timer/update-notifier-download.timer@5cf7eaa2c4	-	accepted entry is gone
+  REMOVED	-	timer/update-notifier-motd.timer@35c6ecf803	-	accepted entry is gone
+  REMOVED	-	timer/xfs_scrub_all.timer@7ad41180c0	-	accepted entry is gone
+  SUMMARY entries=66 enabled=53 findings=0 allowed=0 unexpected_findings=0 new=28 removed=28 baseline=yes unused_allow=0
+CHECK ok   sentry: 28 new / 28 removed ids, same SOURCE/NAME set (re-identification only), no unexpected finding
+$ R "sudo -n pft-schedaudit accept --reason 'task_63b12600: 7e923ec package ids for package-verified run-parts scripts and timers (28 re-identified)'"
+  accepted 66 entries (+28 -28): task_63b12600: 7e923ec package ids for package-verified run-parts scripts and timers (28 re-identified)
+  (exit 0)
+$ R 'sudo -n systemctl start pft-schedaudit.service; sudo -n pft-schedaudit audit' | grep -E '^(NEW|REMOVED|CRIT|WARN|SUMMARY)'
+  SUMMARY entries=66 enabled=53 findings=0 allowed=0 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+  (exit 0)
+CHECK ok   sentry: 0 unexpected findings, 0 new/removed after the accept
+$ sudo -n systemctl start pft-schedaudit-pull.service; sleep 40; curl -s http://<redacted-ip>:9090/api/v1/query --data-urlencode 'query={__name__=~"pft_schedaudit_(up|unexpected)"}' | jq -r '.data.result[] | "\(.metric.host) \(.metric.__name__) \(.metric.kind // "-") \(.value[1])"' | sort
+  sentry pft_schedaudit_unexpected finding 0
+  sentry pft_schedaudit_unexpected new 0
+  sentry pft_schedaudit_unexpected removed 0
+  sentry pft_schedaudit_unexpected unaccepted 0
+  sentry pft_schedaudit_up - 1
+  validator pft_schedaudit_unexpected finding 0
+  validator pft_schedaudit_unexpected new 0
+  validator pft_schedaudit_unexpected removed 0
+  validator pft_schedaudit_unexpected unaccepted 0
+  validator pft_schedaudit_up - 1
+  (exit 0)
+CHECK ok   Prometheus: pft_schedaudit_up 1 for both hosts
+CHECK ok   Prometheus: all 8 unexpected series 0
+
+== 5. integrity and fleet skew
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 213 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 132 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts
+$ sudo -n pft-fleet skew | grep -E 'schedaudit|SUMMARY'
+  sentry     schedaudit  CURRENT    
+  validator  schedaudit  CURRENT    
+  SUMMARY CURRENT=61 BEHIND=0 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 0)
+CHECK ok   schedaudit CURRENT on both hosts
+
+== 6. end window, restore the real target, compare, keyescrow, read back the throwaway and every operator topic
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+$ sudo -n rm -f $NE   (no ntfy.env before: pft-maint falls back to the real monitor target again)
+CHECK ok   pft-maint target back to its pre-run state (/etc/pft-maint/ntfy.env: absent again)
+$ sudo -n test ! -e $BK && echo backup gone
+  backup gone
+  (exit 0)
+$ sudo -n systemctl start pft-keyescrow.service; grep -h '^pft_keyescrow_drift_items{node="validator"}' /var/lib/pft-exporter/textfile/pft_keyescrow.prom
+  pft_keyescrow_drift_items{node="validator"} 0
+  (exit 0)
+CHECK ok   pft-keyescrow re-run after the ntfy.env restore: validator drift_items 0
+$ sleep 5; curl -s --max-time 15 "https://ntfy.sh/$TT/json?poll=1&since=1794005913" | jq -r '.title'
+  [MAINT] start validator
+  [MAINT] end validator
+  (exit 0)
+CHECK ok   the [MAINT] start and end messages reached the throwaway topic
+$ curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '[.data.alerts[] | select(.labels.alertname | test("PFTSched|Fleet|Integrity"))] | length'
+  0
+  (exit 0)
+CHECK ok   no schedaudit/fleet alert pending or firing (silence left to run out, lesson 185)
+$ sudo -n docker exec postfiatd curl -s -m 10 -d '{"method":"server_info"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state; R "sudo -n docker exec postfiatd-sentry curl -s -m 10 -d '{\"method\":\"server_info\"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state"
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing at the end
+operator topic read-back waits 90 s (>= group_interval + 30 s after the last change)
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the run (2 topic(s), 0 with messages)
+
+update-run done 2026-11-06T23:04:23Z: 0 check(s) failed -> PASS

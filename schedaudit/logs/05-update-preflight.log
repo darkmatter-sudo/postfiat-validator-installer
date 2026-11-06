@@ -1,0 +1,44 @@
+schedaudit two-host update - 2026-11-06T22:57:42Z - Ubuntu 22.04.5 LTS - repo HEAD 7e923ec74e6c64df633752f4f6c657c147e97cfb (clean: yes)
+
+== 0. preflight
+$ sha256sum schedaudit/pft-schedaudit.sh schedaudit/schedaudit_lib.py schedaudit/drill/update-run.sh
+  cebe0936e5e28126d9c5ebf63adcc6bedad169406c840106044d0c952c1caab7  schedaudit/pft-schedaudit.sh
+  d0fd11a79c456e118ad9d0c2848b20d53f316f60335adaa4b2948626206f8071  schedaudit/schedaudit_lib.py
+  c53b50470052fe69a719b69fa4d6b369b1e5ddbccb5a91a49dbe0a296cbb738d  schedaudit/drill/update-run.sh
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 213 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 132 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts before the update
+$ sudo -n docker exec postfiatd curl -s -m 10 -d '{"method":"server_info"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state; R "sudo -n docker exec postfiatd-sentry curl -s -m 10 -d '{\"method\":\"server_info\"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state"
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ sudo -n pft-schedaudit audit | grep -E '^(NEW|REMOVED|CRIT|WARN|SUMMARY)'; R 'sudo -n pft-schedaudit audit' | grep -E '^(NEW|REMOVED|CRIT|WARN|SUMMARY)'
+  SUMMARY entries=91 enabled=78 findings=1 allowed=1 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+  SUMMARY entries=66 enabled=53 findings=0 allowed=0 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+  (exit 0)
+CHECK ok   installed tool: 0 unexpected on both hosts before the update
+$ sudo -n pft-fleet sync --addon schedaudit --to 7e923ec74e6c64df633752f4f6c657c147e97cfb | grep -E '^PLAN .* (write|keep)$' | awk '{print $2, $4, $6, $NF}'
+  sentry /usr/local/bin/pft-schedaudit CURRENT keep
+  sentry /usr/local/lib/pft-schedaudit/schedaudit_lib.py BEHIND write
+  sentry /etc/systemd/system/pft-schedaudit.service CURRENT keep
+  sentry /etc/systemd/system/pft-schedaudit.timer CURRENT keep
+  validator /usr/local/bin/pft-schedaudit CURRENT keep
+  validator /usr/local/lib/pft-schedaudit/schedaudit_lib.py BEHIND write
+  validator /etc/systemd/system/pft-schedaudit.service CURRENT keep
+  validator /etc/systemd/system/pft-schedaudit.timer CURRENT keep
+  validator /etc/systemd/system/pft-schedaudit-pull.service CURRENT keep
+  validator /etc/systemd/system/pft-schedaudit-pull.timer CURRENT keep
+  (exit 0)
+CHECK ok   dry run: schedaudit_lib.py written on both hosts, nothing else (2 writes)
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+$ curl -s http://<redacted-ip>:9093/api/v2/silences | jq -r '.[] | select(.status.state == "active") | .createdBy' | sort | uniq -c; curl -s http://<redacted-ip>:9093/api/v2/alerts | jq -r '.[].labels.alertname' | sort | uniq -c
+        1 schedaudit-install
+        1 PFTAlertPipelineWatchdog
+  (exit 0)
+CHECK ok   active silences only from the schedaudit install; only the pipeline watchdog active
+PREFLIGHT_ONLY: stopping before any change (0 failed)

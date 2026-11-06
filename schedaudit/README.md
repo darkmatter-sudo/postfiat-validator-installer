@@ -1,7 +1,7 @@
 # schedaudit — scheduled-execution entry-point audit (pft-schedaudit)
 
-Status: **in progress**: installed on both hosts, found → fixed → verified (log 03, 45/45 checks PASS); the
-non-executing tamper drill on a throwaway topic is not run yet (see [Results](#results)).
+Status: **in progress**: installed on both hosts, found → fixed → verified (log 03, 45/45 checks PASS), package-id
+update (log 06, PASS); the non-executing tamper drill on a throwaway topic is not run yet (see [Results](#results)).
 
 `../jobwatch` watches the OUTCOME of the `pft-*`/`postfiat*` timers. Nothing in this repo looked at the other ways
 code gets run on a schedule on a validator or sentry: `/etc/crontab`, `/etc/cron.d`, user crontab spools, the
@@ -154,6 +154,9 @@ cd alerts && promtool test rules schedaudit.tests.yml
 | `logs/01-checks.log` | shellcheck, ruff, promtool check + test, offline suite, mutant harness at `d44e5d4` | PASS: suite 98/98, mutants 56/56 caught, 0 orphans |
 | `logs/02-install-preflight.log` | `PREFLIGHT_ONLY=1 drill/install-run.sh` at `c081cd4` (changes nothing) | 12/12 checks ok |
 | `logs/03-install.log` | two-host install at `c081cd4` through pft-fleet in a pft-maint window | PASS, 45/45 checks ok |
+| `logs/04-checks.log` | the same checks at `1ad593b` (package ids) | PASS: suite 107/107, mutants 60/60 caught, 0 orphans |
+| `logs/05-update-preflight.log` | `PREFLIGHT_ONLY=1 drill/update-run.sh` at `7e923ec` | 6/6 checks ok |
+| `logs/06-update.log` | two-host update to `7e923ec` through pft-fleet in a pft-maint window: 28 re-identified ids per host (every NEW id has a REMOVED partner with the same SOURCE/NAME), accepted with a reason | PASS, 26/26 checks ok |
 
 Found → fixed → verified (log 03):
 
@@ -168,8 +171,8 @@ and integrity on both hosts; pft-rulecheck `RESULT OK` on both; pft-integrity PA
 [MAINT] messages reached the throwaway topic and the operator topics received 0 messages during the run.
 
 Since log 03: package-verified run-parts scripts and packaged timers are identified by package (see
-[What is inventoried](#what-is-inventoried)); the installed copies get this in the next update run, which re-accepts
-the 28 changed ids on the validator.
+[What is inventoried](#what-is-inventoried)), installed on both hosts by update run 06 (28 ids re-identified and
+accepted per host, 0 unexpected afterwards, operator topics 0 messages).
 
 Pending: the non-executing tamper drill (a never-firing cron.d entry, `PFTSchedEntryUnexpected` FIRING then
 RESOLVED on a throwaway topic, `apply` on a deliberately 0666 drill file).
