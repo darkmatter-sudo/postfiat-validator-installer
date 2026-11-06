@@ -179,6 +179,28 @@ by the drill smoke, log 22). It was fixed in the repo during the window but inst
 ran the whole 24 h: offline suite 44/44 (log 34), install + `pft-integrity accept` on both hosts (logs 37, 38), pull
 and Prometheus scrape of both hosts afterwards, 0 alerts (log 39). Only the HELP string changed, no values.
 
+## CPU weight and memory floor for postfiatd (`docker-compose.resources.yml`)
+
+Since 2026-11-02 postfiatd runs with `cpu_shares 8192` (cgroup `cpu.weight` 532 instead of the default 100) and a
+memory floor (`mem_reservation`, cgroup `memory.low`: 1536 MiB on the validator, 1280 MiB on the sentry), so agent
+workloads on the same host cannot starve it. These were first set live with `docker update`. pft-seccomp and
+pft-confine carry them over when they re-create the container, but a plain `docker compose up -d` (upgrade, rollout,
+rebuild, restore) would have dropped them. They are now permanent:
+
+- **validator (compose):** `docker-compose.resources.yml` sits in `/opt/postfiatd` next to the other overlays and is
+  the last entry of `COMPOSE_FILE` in `.env`, so every compose re-create keeps them (and `../backup` copies the file,
+  because it follows `COMPOSE_FILE`). Applied with `drill/compose-apply.sh`: one planned re-create inside a
+  pft-maint window, [MAINT] messages on a throwaway topic, an Alertmanager silence for the window, integrity accept of
+  exactly the three expected items, operator topics read back (log 41).
+- **sentry (`docker run`, no compose project):** `../sentry/sentry-node.sh` now passes `--cpu-shares 8192
+  --memory-reservation 1280m`, so re-running it keeps them too.
+
+```
+sudo install -m 644 docker-compose.resources.yml /opt/postfiatd/
+sudo sed -i 's#^COMPOSE_FILE=.*#&:docker-compose.resources.yml#' /opt/postfiatd/.env    # if COMPOSE_FILE is set
+cd /opt/postfiatd && sudo docker compose up -d    # re-creates postfiatd: do it in a pft-maint window
+```
+
 ## Logs
 
 `logs/NN-*.log` are every recorded run of this task, in order, including the failed and superseded ones (each says
@@ -197,3 +219,4 @@ the topic, `verdict.txt`); `logs/35-report-24h.json` is the `--json` form of `RE
 | 29-33 | report.py: tests + mutants, real-data smokes on partial windows (30 superseded) |
 | 34, 37-39 | HELP-text fix: tests, install on both hosts, scrape afterwards |
 | 35, 36 | **24h baseline report**, memory composition from Prometheus |
+| 41 | `drill/compose-apply.sh`: resources overlay made permanent on the validator (operator directive 2026-11-06) |

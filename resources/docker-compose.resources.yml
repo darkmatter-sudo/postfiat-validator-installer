@@ -1,0 +1,6 @@
+# written by resources/ (operator directive 2026-11-06): keep the CPU weight and memory floor that protect postfiatd
+# from agent workloads across every compose recreate (were live-only `docker update` values since 2026-11-02)
+services:
+  postfiatd:
+    cpu_shares: 8192
+    mem_reservation: 1536m
