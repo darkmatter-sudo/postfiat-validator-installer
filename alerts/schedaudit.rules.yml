@@ -1,0 +1,33 @@
+# Alert rules for pft-schedaudit (../schedaudit). pft-schedaudit.timer writes pft_schedaudit_<host>.prom every 5 min
+# (validator: local; sentry: pulled by pft-schedaudit-pull.timer); the pft exporter serves it as pft_schedaudit_*{host=...}.
+# pft_schedaudit_unexpected{kind}: new / removed = scheduled entries that differ from the last `pft-schedaudit accept`
+# (a changed cron line is one new + one removed id), finding = findings without an allowlist reason, unaccepted = 1
+# until the first accept. Tests: schedaudit.tests.yml (promtool test rules schedaudit.tests.yml), 1m sample interval.
+groups:
+  - name: pft-schedaudit
+    rules:
+      - alert: PFTSchedEntryUnexpected
+        # one alert per (host, kind); value = number of entries/findings of that kind. Only trusted while the
+        # audit itself works (up 1): a failing audit is PFTSchedauditStale's job, and its up-0 file has no
+        # unexpected series at all.
+        expr: |
+          pft_schedaudit_unexpected{kind=~"new|removed|finding|unaccepted"} > 0
+          and on (host) pft_schedaudit_up == 1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.host }}: unexpected scheduled-execution entry ({{ $labels.kind }}: {{ $value | printf \"%.0f\" }})"
+          description: "pft-schedaudit found {{ $value | printf \"%.0f\" }} scheduled entr(y/ies) of kind {{ $labels.kind }} on {{ $labels.host }}: a cron/at/anacron/timer entry that was not there at the last accept (new), an accepted entry that is gone or changed (removed), or a path-chain / package / user / timer-target finding with no allowlist reason (finding). Run `sudo pft-schedaudit audit` on the host. If the change is yours: `sudo pft-schedaudit accept --reason \"...\"` (and `sudo pft-integrity accept`). If not, treat it as possible tampering."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/schedaudit/README.md#alerts"
+      - alert: PFTSchedauditStale
+        expr: |
+          time() - pft_schedaudit_collect_timestamp_seconds > 900
+          or pft_schedaudit_up == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pft-schedaudit on {{ $labels.host }} is stale or failing"
+          description: "For 10 min either the last audit is older than 15 min (pft-schedaudit.timer, or for the sentry pft-schedaudit-pull.timer on the validator, is not running) or the audit could not read a scheduling source (pft_schedaudit_up 0). New cron jobs or timers on this host would go unnoticed. Run `sudo pft-schedaudit collect --stdout` on the host."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/schedaudit/README.md#alerts"

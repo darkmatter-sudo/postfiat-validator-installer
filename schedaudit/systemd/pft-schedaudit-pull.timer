@@ -1,0 +1,10 @@
+[Unit]
+Description=Pull the sentry's pft-schedaudit textfile every 5 minutes (the sentry collects at :00:20, :05:20, ...)
+
+[Timer]
+OnCalendar=*-*-* *:1/5:50
+AccuracySec=1s
+Persistent=false
+
+[Install]
+WantedBy=timers.target

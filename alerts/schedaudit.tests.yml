@@ -1,0 +1,126 @@
+# promtool unit tests for schedaudit.rules.yml. Run: promtool test rules schedaudit.tests.yml
+rule_files:
+- schedaudit.rules.yml
+evaluation_interval: 1m
+tests:
+- name: clean accepted hosts for 2h fire nothing
+  interval: 1m
+  input_series:
+  - series: pft_schedaudit_up{host="validator"}
+    values: 1x120
+  - series: pft_schedaudit_collect_timestamp_seconds{host="validator"}
+    values: 0+60x120
+  - series: pft_schedaudit_up{host="sentry"}
+    values: 1x120
+  - series: pft_schedaudit_collect_timestamp_seconds{host="sentry"}
+    values: 0+60x120
+  - series: pft_schedaudit_unexpected{host="validator",kind="new"}
+    values: 0x120
+  - series: pft_schedaudit_unexpected{host="validator",kind="removed"}
+    values: 0x120
+  - series: pft_schedaudit_unexpected{host="validator",kind="finding"}
+    values: 0x120
+  - series: pft_schedaudit_unexpected{host="validator",kind="unaccepted"}
+    values: 0x120
+  - series: pft_schedaudit_unexpected{host="sentry",kind="new"}
+    values: 0x120
+  - series: pft_schedaudit_unexpected{host="sentry",kind="finding"}
+    values: 0x120
+  alert_rule_test:
+  - {eval_time: 60m, alertname: PFTSchedEntryUnexpected, exp_alerts: []}
+  - {eval_time: 119m, alertname: PFTSchedEntryUnexpected, exp_alerts: []}
+  - {eval_time: 119m, alertname: PFTSchedauditStale, exp_alerts: []}
+- name: a new cron entry on the sentry fires after 2 min with its count, only for that host+kind, and resolves
+  interval: 1m
+  input_series:
+  - series: pft_schedaudit_up{host="sentry"}
+    values: 1x40
+  - series: pft_schedaudit_unexpected{host="sentry",kind="new"}
+    values: 0x10 1x15 0x15
+  - series: pft_schedaudit_unexpected{host="sentry",kind="finding"}
+    values: 0x40
+  - series: pft_schedaudit_up{host="validator"}
+    values: 1x40
+  - series: pft_schedaudit_unexpected{host="validator",kind="new"}
+    values: 0x40
+  alert_rule_test:
+  - {eval_time: 12m, alertname: PFTSchedEntryUnexpected, exp_alerts: []}
+  - eval_time: 13m
+    alertname: PFTSchedEntryUnexpected
+    exp_alerts:
+    - exp_labels: {severity: warning, host: sentry, kind: new}
+      exp_annotations:
+        summary: "sentry: unexpected scheduled-execution entry (new: 1)"
+        description: "pft-schedaudit found 1 scheduled entr(y/ies) of kind new on sentry: a cron/at/anacron/timer entry that was not there at the last accept (new), an accepted entry that is gone or changed (removed), or a path-chain / package / user / timer-target finding with no allowlist reason (finding). Run `sudo pft-schedaudit audit` on the host. If the change is yours: `sudo pft-schedaudit accept --reason \"...\"` (and `sudo pft-integrity accept`). If not, treat it as possible tampering."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/schedaudit/README.md#alerts"
+  - {eval_time: 27m, alertname: PFTSchedEntryUnexpected, exp_alerts: []}
+- name: findings and an unaccepted host fire per kind with the count as value
+  interval: 1m
+  input_series:
+  - series: pft_schedaudit_up{host="validator"}
+    values: 1x20
+  - series: pft_schedaudit_unexpected{host="validator",kind="finding"}
+    values: 3x20
+  - series: pft_schedaudit_unexpected{host="validator",kind="unaccepted"}
+    values: 1x20
+  - series: pft_schedaudit_unexpected{host="validator",kind="removed"}
+    values: 2x20
+  alert_rule_test:
+  - eval_time: 5m
+    alertname: PFTSchedEntryUnexpected
+    exp_alerts:
+    - exp_labels: {severity: warning, host: validator, kind: finding}
+      exp_annotations:
+        summary: "validator: unexpected scheduled-execution entry (finding: 3)"
+        description: "pft-schedaudit found 3 scheduled entr(y/ies) of kind finding on validator: a cron/at/anacron/timer entry that was not there at the last accept (new), an accepted entry that is gone or changed (removed), or a path-chain / package / user / timer-target finding with no allowlist reason (finding). Run `sudo pft-schedaudit audit` on the host. If the change is yours: `sudo pft-schedaudit accept --reason \"...\"` (and `sudo pft-integrity accept`). If not, treat it as possible tampering."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/schedaudit/README.md#alerts"
+    - exp_labels: {severity: warning, host: validator, kind: removed}
+      exp_annotations:
+        summary: "validator: unexpected scheduled-execution entry (removed: 2)"
+        description: "pft-schedaudit found 2 scheduled entr(y/ies) of kind removed on validator: a cron/at/anacron/timer entry that was not there at the last accept (new), an accepted entry that is gone or changed (removed), or a path-chain / package / user / timer-target finding with no allowlist reason (finding). Run `sudo pft-schedaudit audit` on the host. If the change is yours: `sudo pft-schedaudit accept --reason \"...\"` (and `sudo pft-integrity accept`). If not, treat it as possible tampering."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/schedaudit/README.md#alerts"
+    - exp_labels: {severity: warning, host: validator, kind: unaccepted}
+      exp_annotations:
+        summary: "validator: unexpected scheduled-execution entry (unaccepted: 1)"
+        description: "pft-schedaudit found 1 scheduled entr(y/ies) of kind unaccepted on validator: a cron/at/anacron/timer entry that was not there at the last accept (new), an accepted entry that is gone or changed (removed), or a path-chain / package / user / timer-target finding with no allowlist reason (finding). Run `sudo pft-schedaudit audit` on the host. If the change is yours: `sudo pft-schedaudit accept --reason \"...\"` (and `sudo pft-integrity accept`). If not, treat it as possible tampering."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/schedaudit/README.md#alerts"
+- name: unexpected series are ignored while the audit itself is down (Stale owns that) and a 1-min blip does not page
+  interval: 1m
+  input_series:
+  - series: pft_schedaudit_up{host="sentry"}
+    values: 0x30
+  - series: pft_schedaudit_collect_timestamp_seconds{host="sentry"}
+    values: 0+60x30
+  - series: pft_schedaudit_unexpected{host="sentry",kind="new"}
+    values: 5x30
+  - series: pft_schedaudit_up{host="validator"}
+    values: 1x30
+  - series: pft_schedaudit_unexpected{host="validator",kind="new"}
+    values: 0x10 1 0x19
+  alert_rule_test:
+  - {eval_time: 20m, alertname: PFTSchedEntryUnexpected, exp_alerts: []}
+  - eval_time: 20m
+    alertname: PFTSchedauditStale
+    exp_alerts:
+    - exp_labels: {severity: warning, host: sentry}
+      exp_annotations:
+        summary: "pft-schedaudit on sentry is stale or failing"
+        description: "For 10 min either the last audit is older than 15 min (pft-schedaudit.timer, or for the sentry pft-schedaudit-pull.timer on the validator, is not running) or the audit could not read a scheduling source (pft_schedaudit_up 0). New cron jobs or timers on this host would go unnoticed. Run `sudo pft-schedaudit collect --stdout` on the host."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/schedaudit/README.md#alerts"
+- name: an audit that stopped writing at 5m goes stale once older than 15 min (21m) + 10 min for
+  interval: 1m
+  input_series:
+  - series: pft_schedaudit_up{host="validator"}
+    values: 1x60
+  - series: pft_schedaudit_collect_timestamp_seconds{host="validator"}
+    values: 0+60x5 300x55
+  alert_rule_test:
+  - {eval_time: 30m, alertname: PFTSchedauditStale, exp_alerts: []}
+  - eval_time: 31m
+    alertname: PFTSchedauditStale
+    exp_alerts:
+    - exp_labels: {severity: warning, host: validator}
+      exp_annotations:
+        summary: "pft-schedaudit on validator is stale or failing"
+        description: "For 10 min either the last audit is older than 15 min (pft-schedaudit.timer, or for the sentry pft-schedaudit-pull.timer on the validator, is not running) or the audit could not read a scheduling source (pft_schedaudit_up 0). New cron jobs or timers on this host would go unnoticed. Run `sudo pft-schedaudit collect --stdout` on the host."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/schedaudit/README.md#alerts"

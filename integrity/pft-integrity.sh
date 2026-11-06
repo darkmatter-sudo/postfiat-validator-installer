@@ -5,7 +5,8 @@
 # `baseline` records a root-only 0600 manifest, `verify` compares the host against it item by item.
 # Covered: compose files (+ .env), config-volume files (sha256 only, never contents), add-on systemd units and their drop-ins,
 # /usr/local/bin scripts, sshd_config(.d) + effective `sshd -T`, normalized UFW and DOCKER-USER rules,
-# running image id/digest vs the registry manifest, local image tags, and the container's effective config.
+# running image id/digest vs the registry manifest, local image tags, the container's effective config, and (if
+# ../schedaudit is installed) every scheduled-execution file and dir from `pft-schedaudit scope` as sched:* items.
 # The manifest stores hashes, modes, owners and mtimes only. Output names changed items and fields only.
 #
 # Usage: sudo ./pft-integrity.sh baseline
@@ -52,7 +53,7 @@ while [ $# -gt 0 ]; do
 done
 case "$CMD" in
   baseline|verify|accept|manifest-sha) ;;
-  help|"") sed -n '4,25p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  help|"") sed -n '4,26p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
   *) echo "unknown command: $CMD" >&2; exit 3 ;;
 esac
 [ "$(id -u)" -eq 0 ] || { echo "run as root (reads root-only files, docker and iptables)" >&2; exit 3; }
@@ -111,6 +112,26 @@ collect_files() {
   file_item sshd:sshd_config /etc/ssh/sshd_config
   for f in /etc/ssh/sshd_config.d/*; do [ -f "$f" ] && file_item "sshd:sshd_config.d/$(basename "$f")" "$f"; done
   command -v sshd >/dev/null && emit sshd:effective sha256 "$(sshd -T 2>/dev/null | sort | sha256sum | cut -d' ' -f1)"
+}
+# ../schedaudit: every scheduled-execution file the lists above miss (cron.d files, run-parts scripts, spools, timer
+# targets outside /usr/local/bin); `pft-schedaudit scope` names them. A directory is tracked by its listing (names,
+# modes, owners), so a NEW cron job changes an item too. Not installed: no items. Scope failure: sched:scope error.
+collect_sched() {
+  local bin="${PFT_SCHEDAUDIT_BIN:-/usr/local/bin/pft-schedaudit}" list p st
+  [ -x "$bin" ] || return 0
+  if ! list="$(timeout 120 "$bin" scope 2>/dev/null < /dev/null)"; then emit sched:scope status error; return 0; fi
+  emit sched:scope status ok
+  while IFS= read -r p; do
+    case "$p" in /*) ;; *) continue ;; esac
+    if [ -d "$p" ] && [ ! -L "$p" ]; then
+      st="$(stat -c '%a %U:%G' -- "$p")" || continue
+      emit "sched:$p" listing "$(find "$p" -mindepth 1 -maxdepth 1 -printf '%f %m %U:%G %y\n' 2>/dev/null | LC_ALL=C sort | h16)"
+      emit "sched:$p" mode "${st%% *}"
+      emit "sched:$p" owner "${st#* }"
+    else
+      file_item "sched:$p" "$p"
+    fi
+  done <<<"$list"
 }
 collect_fw() {
   local r
@@ -174,7 +195,7 @@ collect_container() {
   done
 }
 collect_all() {
-  { collect_compose; collect_cfgvol; collect_files; collect_fw; collect_images; collect_container; } | LC_ALL=C sort -u
+  { collect_compose; collect_cfgvol; collect_files; collect_sched; collect_fw; collect_images; collect_container; } | LC_ALL=C sort -u
 }
 
 # ---------- commands ----------
@@ -231,7 +252,7 @@ while IFS= read -r it; do
   b="$(awk -F'\t' -v i="$it" '$1==i {print $2"\t"$3}' <<<"$BASE")"
   c="$(awk -F'\t' -v i="$it" '$1==i {print $2"\t"$3}' <<<"$CUR")"
   if [ -z "$b" ]; then
-    case "$it" in compose:*|cfgvol:*|unit:*|dropin:*|bin:*|sshd:*) add WARN "$it" added "new file" ;; *) add WARN "$it" added "new item" ;; esac
+    case "$it" in compose:*|cfgvol:*|unit:*|dropin:*|bin:*|sshd:*|sched:*) add WARN "$it" added "new file" ;; *) add WARN "$it" added "new item" ;; esac
     continue
   fi
   if [ -z "$c" ]; then add FAIL "$it" removed "missing since baseline"; continue; fi
