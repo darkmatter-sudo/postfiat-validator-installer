@@ -1,7 +1,7 @@
 # jobwatch — scheduled-job outcome monitor (pft-jobwatch)
 
-Status: **in progress (steps 1-3 done)**: collector, helper, metrics, 4 rules + promtool tests, offline suite, mutant
-harness. Install on both hosts and the succeed/fail/disable/remove drill are next; results will be added [below](#results).
+Status: **in progress**: steps 1-3 done; installed on both hosts (log 02); the alert drill found a label bug (run 07,
+fixed, see [Results](#results)); the fixed build is being redeployed and the drill re-run.
 
 Every add-on in this repo reports through a systemd timer (47 `pft-*`/`postfiat*` timers on the validator, 25 on the
 sentry). When a timer is disabled, removed, failing or no longer firing, its last textfile stays in place and its
@@ -68,12 +68,16 @@ Exit codes: 0 ok, 1 `systemctl` / fetch failed, 2 validation failed, 3 usage/con
 
 ## Metrics (`pft_jobwatch_HOST.prom`, label `host` = validator | sentry, never a hostname)
 
+Per-job series carry `timer="<unit>.timer"`. Not `job`: Prometheus owns `job` (the scrape job), so a textfile `job`
+label arrives renamed `exported_job`, and every `on (host, job)` join then matches all timers of a host (found in drill
+run 07, see [Results](#results)).
+
 | Metric | Meaning |
 |---|---|
 | `pft_jobwatch_up` | 1 if the last `systemctl show` inventory succeeded (0: only up/timestamp/version are written, state untouched) |
 | `pft_jobwatch_collect_timestamp_seconds` | Unix time of the last collection attempt |
 | `pft_jobwatch_jobs{state}` | watched timers: total, present, disabled, failed, missed |
-| `pft_jobwatch_job_info{job,service,kind}` | 1 per watched timer (kind monotonic, calendar, mixed, none) |
+| `pft_jobwatch_job_info{timer,service,kind}` | 1 per watched timer (kind monotonic, calendar, mixed, none) |
 | `pft_jobwatch_job_present` / `_disabled` / `_running` / `_never_run` / `_failed` / `_missed` | per-job 0/1 flags (above) |
 | `pft_jobwatch_job_consecutive_failures` | failed runs in a row, as observed |
 | `pft_jobwatch_job_interval_seconds` | derived repeat interval (0 = none known) |
@@ -104,4 +108,12 @@ PFTJobDisabled (never PFTJobFailed).
 
 ## Results
 
-Pending (install + drill).
+| Log | What | Result |
+|---|---|---|
+| `logs/01-checks.log` | checks @1421002 | shellcheck/ruff clean, promtool ok, suite 101/101, mutants 50/50 CAUGHT |
+| `logs/02-install.log` | two-host install @a572ec6 via pft-fleet, pft-maint window on a throwaway topic | PASS 31/0; real inventory validator 47 + 2 own = 49 timers, sentry 25 + 1 = 26; 0 failed, 0 missed, 0 disabled on both |
+| `logs/03-alert-preflight-run05.log` | drill preflight @3e42ab2 | ready, nothing changed |
+| `logs/04-alert-drill-run06-stopped.log` | drill run 06 | stopped by hand in step 2: the checker read `systemctl show` output in `-p` order (systemd prints its own order) and failed a correct install; restore completed. Fixed @07fc9a4 (also: preflight now refuses an active silence naming PFTJob*, because the install's rollout silence was still active and would have muted the drill) |
+| `logs/05-alert-drill-run07-stopped.log` | drill run 07 | **found**: PFTJobFailed fired for 27 sentry series when only the drill job failed, and for no validator series. Cause: the per-job label was `job`; the scrape renamed it `exported_job`, so `on (host, job)` joined every sentry timer to the one failed drill job. Notifications went only to the throwaway topic (operator topics: 0 messages). Stopped by hand; the stop also killed the restore, which was then completed by hand (drill units, flags and state entry removed on both hosts, bridge back on the operator env with alertpath paused around it, silence expired). **Fixed**: label renamed `timer`; suite check that no sample uses `job`/`instance`; promtool test with two timers on one host; mutants M33, R08 |
+
+Verification of the fix on the hosts (redeploy + drill re-run) follows.

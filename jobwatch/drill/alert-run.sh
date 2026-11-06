@@ -76,18 +76,18 @@ collect_now() { # run both collectors and the validator's pull now (instead of w
   R 'sudo -n systemctl start pft-jobwatch.service' && sudo -n systemctl start pft-jobwatch.service pft-jobwatch-pull.service </dev/null
 }
 jobline() { # print the drill job's flags for both hosts from the two textfiles on the validator
-  grep -hE "^pft_jobwatch_job_(present|disabled|running|failed|consecutive_failures|missed|runs_observed_total)\{host=\"(validator|sentry)\",job=\"$JOB\"\}" \
-    "$TF/pft_jobwatch_validator.prom" "$TF/pft_jobwatch_sentry.prom" 2>/dev/null | sed -E 's/^pft_jobwatch_job_//; s/,job="[^"]*"//'
+  grep -hE "^pft_jobwatch_job_(present|disabled|running|failed|consecutive_failures|missed|runs_observed_total)\{host=\"(validator|sentry)\",timer=\"$JOB\"\}" \
+    "$TF/pft_jobwatch_validator.prom" "$TF/pft_jobwatch_sentry.prom" 2>/dev/null | sed -E 's/^pft_jobwatch_job_//; s/,timer="[^"]*"//'
 }
 flag() { grep -E "^$1\{host=\"$2\"\} " <<<"$XOUT" | awk '{print $2}'; } # METRIC HOST (from a jobline XOUT)
-firing() { pq "ALERTS{alertname=\"$1\",alertstate=\"firing\",job=\"$JOB\"}"; }
+firing() { pq "ALERTS{alertname=\"$1\",alertstate=\"firing\",timer=\"$JOB\"}"; }
 wait_fire() { # ALERTNAME PHRASE MIN_MSGS: Prometheus firing for both hosts, then >= MIN_MSGS [FIRING] per host
   local t0 F w ok hl; t0="$(date -u +%s)"; F=""
   while [ $(( $(date -u +%s) - t0 )) -lt "$FIRE_WAIT" ]; do
     F="$(firing "$1")"; [ "$(grep -cE 'host=(sentry|validator)' <<<"$F")" -ge 2 ] && break; sleep 15
   done
   echo "  $(ts) ($(( $(date -u +%s) - t0 ))s after the change): firing in Prometheus:"; printf '%s\n' "${F:-none}" | red | sed 's/^/    /'
-  for hl in sentry validator; do check "$1{host=$hl,job=$JOB} firing in Prometheus" "$(ok_if 'grep -q "host=$hl" <<<"$F"')"; done
+  for hl in sentry validator; do check "$1{host=$hl,timer=$JOB} firing in Prometheus" "$(ok_if 'grep -q "host=$hl" <<<"$F"')"; done
   w=0; while :; do
     ok=0; for hl in sentry validator; do [ "$(n_msgs FIRING "$1" "$hl" "$2")" -ge "$3" ] && ok=$((ok + 1)); done
     [ "$ok" = 2 ] && break; w=$((w + 15)); [ "$w" -le 300 ] || break; sleep 15
@@ -99,7 +99,7 @@ wait_fire() { # ALERTNAME PHRASE MIN_MSGS: Prometheus firing for both hosts, the
 wait_resolve() { # ALERTNAME PHRASE MIN_MSGS
   local t0 F ok hl; t0="$(date -u +%s)"; F="x"
   while [ $(( $(date -u +%s) - t0 )) -lt "$RESOLVE_WAIT" ]; do
-    F="$(pq "ALERTS{alertname=\"$1\",job=\"$JOB\"}")"
+    F="$(pq "ALERTS{alertname=\"$1\",timer=\"$JOB\"}")"
     ok=0; for hl in sentry validator; do [ "$(n_msgs RESOLVED "$1" "$hl" "$2")" -ge "$3" ] && ok=$((ok + 1)); done
     [ -z "$F" ] && [ "$ok" = 2 ] && break; sleep 20
   done
@@ -255,7 +255,7 @@ for hl in sentry validator; do
   check "$hl: drill job present 1, disabled 0, failed 0, runs >= 1" "$(ok_if '[ "$(flag present "$hl")" = 1 ] && [ "$(flag disabled "$hl")" = 0 ] && [ "$(flag failed "$hl")" = 0 ] && [ "$(flag runs_observed_total "$hl")" -ge 1 ]')"
 done
 t_q="$(date -u +%s)"; while [ $(( $(date -u +%s) - t_q )) -lt "$QUIET_WAIT" ]; do sleep 30; done
-x "curl -s $PROM/api/v1/query --data-urlencode 'query=ALERTS{alertname=~\"PFTJob.*\",job=\"$JOB\"}' | jq -r '.data.result | length'"
+x "curl -s $PROM/api/v1/query --data-urlencode 'query=ALERTS{alertname=~\"PFTJob.*\",timer=\"$JOB\"}' | jq -r '.data.result | length'"
 check "succeeding job: no PFTJob* alert (pending or firing) after $QUIET_WAIT s" "$(ok_if '[ "$XOUT" = 0 ]')"
 
 echo; echo "== 3. FAIL: create $FD/fail on both hosts"

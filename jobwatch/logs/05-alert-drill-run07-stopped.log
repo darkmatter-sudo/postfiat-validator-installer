@@ -1,0 +1,151 @@
+pft-jobwatch two-host alert drill - 2026-11-06T16:42:57Z - Ubuntu 22.04.5 LTS - run 20261106T164257Z
+repo HEAD 07fc9a40ae6363e67fcdf4460955271c17cd2d4f (clean: yes)
+sha256 32f66935aca3c34b12b8074779dc9098c32d0847e178d33c0a0d5bb146b2381b jobwatch/drill/alert-run.sh
+sha256 d6d5a6a7a99aba7450ae0f88a31908402241f2662530c28d2639f3960b596db2 jobwatch/pft-jobwatch.sh
+sha256 f38c39f42e23306b38564e4a839ec4dd60adffd6838cfbc7c198bb033da25cfe jobwatch/jobwatch_lib.py
+sha256 85f39ba74bdf023bc4997359bbc1d8a1032faf384520d3af8e11a9dbea8164f4 alerts/jobwatch.rules.yml
+sha256 f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8 peerexpose/drill/redact.py
+
+== 0. preflight (nothing changed yet)
+  pft-jobwatch + timer on both hosts; no drill unit, flag dir or state entry left over
+  sentry pft-alertpath-check.timer active, check OK
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=pft_jobwatch_up' | jq -r '.data.result[] | "\(.metric.host) \(.value[1])"' | sort
+  sentry 1
+  validator 1
+  (exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=pft_jobwatch_jobs' | jq -r '.data.result[] | "\(.metric.host) \(.metric.state) \(.value[1])"' | sort
+  sentry disabled 0
+  sentry failed 0
+  sentry missed 0
+  sentry present 26
+  sentry total 26
+  validator disabled 0
+  validator failed 0
+  validator missed 0
+  validator present 49
+  validator total 49
+  (exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=ALERTS{alertname=~"PFTJob.*"}' | jq -r '.data.result | length'
+  0
+  (exit 0)
+$ curl -s http://127.0.0.1:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active") | select(any(.matchers[]; .isEqual and (.value | test("PFTJob"))))] | length'
+  0
+  (exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/rules | jq -r '.data.groups[] | select(.name == "pft-jobwatch") | .rules[] | [.name, .health] | @tsv'
+  PFTJobFailed	ok
+  PFTJobMissed	ok
+  PFTJobDisabled	ok
+  PFTJobwatchStale	ok
+  (exit 0)
+  bridge mounts the operator env file: yes
+  operator topics to watch: 2 (not printed)
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+  postfiatd-sentry: server_state=full
+  postfiatd: server_state=full
+  pft-integrity validator: RESULT: PASS - 176 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity sentry: RESULT: PASS - 103 unchanged, 0 warn, 0 fail -> exit 0
+  literals for redaction: 3 ip, 3 topic, 1 user (values not printed)
+$ redact.py control --literals <literals>
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (16/16)
+
+== 1. bridge -> throwaway topic; silence everything except PFTJob* and the watchdog
+  sentry pft-alertpath-check.timer stopped: yes
+CHECK ok   sentry pft-alertpath-check.timer paused for the bridge re-create
+  2026-11-06T16:43:25Z starting pft-alert-bridge (ntfy: on)
+  2026-11-06T16:43:26Z pft-alert-bridge listening
+CHECK ok   Alertmanager bridge -> throwaway env file (0700 temp dir)
+  sentry pft-alertpath check rc 0 after 1s; timer started again: yes
+CHECK ok   sentry pft-alertpath OK again, check timer running
+CHECK ok   silence alertname=~".+", alertname!~"PFTAlertPipelineWatchdog|PFTJob.*" until 2026-11-06T19:13:27Z
+
+== 2. SUCCEED: runtime drill job on both hosts
+  /run/systemd/system/pft-jobwatch-drill.service:
+    | [Unit]
+    | Description=pft-jobwatch drill job (runtime unit; /run/pft-jobwatch-drill/hang and /run/pft-jobwatch-drill/fail select the outcome)
+    | [Service]
+    | Type=oneshot
+    | ExecStart=/bin/sh -c 'while [ -e /run/pft-jobwatch-drill/hang ]; do sleep 5; done; [ ! -e /run/pft-jobwatch-drill/fail ]'
+    | TimeoutStartSec=3600
+  /run/systemd/system/pft-jobwatch-drill.timer:
+    | [Unit]
+    | Description=pft-jobwatch drill timer (every minute)
+    | [Timer]
+    | OnActiveSec=5s
+    | OnUnitActiveSec=1min
+    | AccuracySec=1s
+    | [Install]
+    | WantedBy=timers.target
+$ both "sudo -n install -d -m 755 /run/pft-jobwatch-drill && echo W1VuaXRdCkRlc2NyaXB0aW9uPXBmdC1qb2J3YXRjaCBkcmlsbCBqb2IgKHJ1bnRpbWUgdW5pdDsgL3J1bi9wZnQtam9id2F0Y2gtZHJpbGwvaGFuZyBhbmQgL3J1bi9wZnQtam9id2F0Y2gtZHJpbGwvZmFpbCBzZWxlY3QgdGhlIG91dGNvbWUpCltTZXJ2aWNlXQpUeXBlPW9uZXNob3QKRXhlY1N0YXJ0PS9iaW4vc2ggLWMgJ3doaWxlIFsgLWUgL3J1bi9wZnQtam9id2F0Y2gtZHJpbGwvaGFuZyBdOyBkbyBzbGVlcCA1OyBkb25lOyBbICEgLWUgL3J1bi9wZnQtam9id2F0Y2gtZHJpbGwvZmFpbCBdJwpUaW1lb3V0U3RhcnRTZWM9MzYwMAo= | base64 -d | sudo -n tee /run/systemd/system/pft-jobwatch-drill.service >/dev/null && echo W1VuaXRdCkRlc2NyaXB0aW9uPXBmdC1qb2J3YXRjaCBkcmlsbCB0aW1lciAoZXZlcnkgbWludXRlKQpbVGltZXJdCk9uQWN0aXZlU2VjPTVzCk9uVW5pdEFjdGl2ZVNlYz0xbWluCkFjY3VyYWN5U2VjPTFzCltJbnN0YWxsXQpXYW50ZWRCeT10aW1lcnMudGFyZ2V0Cg== | base64 -d | sudo -n tee /run/systemd/system/pft-jobwatch-drill.timer >/dev/null && sudo -n systemctl daemon-reload && sudo -n systemctl enable --runtime --now pft-jobwatch-drill.timer 2>&1 && systemctl show -p UnitFileState,ActiveState --value pft-jobwatch-drill.timer | tr '\n' ' '; echo"
+  Created symlink /run/systemd/system/timers.target.wants/pft-jobwatch-drill.timer → /run/systemd/system/pft-jobwatch-drill.timer.
+  active enabled-runtime 
+  Created symlink /run/systemd/system/timers.target.wants/pft-jobwatch-drill.timer → /run/systemd/system/pft-jobwatch-drill.timer.
+  active enabled-runtime 
+  (exit 0)
+CHECK ok   drill job installed + enabled (runtime) on both hosts
+$ both "systemctl show -p Result,ExecMainStatus --value pft-jobwatch-drill.service | tr '\n' ' '; echo"; collect_now; jobline
+  success 0 
+  success 0 
+  present{host="validator"} 1
+  disabled{host="validator"} 0
+  running{host="validator"} 0
+  failed{host="validator"} 0
+  consecutive_failures{host="validator"} 0
+  missed{host="validator"} 0
+  runs_observed_total{host="validator"} 1
+  present{host="sentry"} 1
+  disabled{host="sentry"} 0
+  running{host="sentry"} 0
+  failed{host="sentry"} 0
+  consecutive_failures{host="sentry"} 0
+  missed{host="sentry"} 0
+  runs_observed_total{host="sentry"} 1
+  (exit 0)
+CHECK ok   sentry: drill job present 1, disabled 0, failed 0, runs >= 1
+CHECK ok   validator: drill job present 1, disabled 0, failed 0, runs >= 1
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=ALERTS{alertname=~"PFTJob.*",job="pft-jobwatch-drill.timer"}' | jq -r '.data.result | length'
+  0
+  (exit 0)
+CHECK ok   succeeding job: no PFTJob* alert (pending or firing) after 240 s
+
+== 3. FAIL: create /run/pft-jobwatch-drill/fail on both hosts
+$ both 'sudo -n touch /run/pft-jobwatch-drill/fail'
+  
+  (exit 0)
+$ collect_now; jobline
+  present{host="validator"} 1
+  disabled{host="validator"} 0
+  running{host="validator"} 0
+  failed{host="validator"} 1
+  consecutive_failures{host="validator"} 1
+  missed{host="validator"} 0
+  runs_observed_total{host="validator"} 4
+  present{host="sentry"} 1
+  disabled{host="sentry"} 0
+  running{host="sentry"} 0
+  failed{host="sentry"} 1
+  consecutive_failures{host="sentry"} 1
+  missed{host="sentry"} 0
+  runs_observed_total{host="sentry"} 4
+  (exit 0)
+CHECK ok   sentry: drill job failed 1, consecutive >= 1
+CHECK ok   validator: drill job failed 1, consecutive >= 1
+Terminated
+interrupted
+Terminated
+interrupted

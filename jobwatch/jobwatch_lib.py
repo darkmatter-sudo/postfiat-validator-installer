@@ -267,6 +267,9 @@ def fmt(v):
     return str(v)
 
 
+# The per-job label is `timer`, never `job`: Prometheus would rename a textfile `job` label to `exported_job`
+# (the scrape job owns `job`), and every `on (host, job)` join in the rules would then match all jobs of a host.
+RESERVED_LABELS = ("job", "instance")
 GAUGES = (
     (
         "present",
@@ -347,7 +350,7 @@ def render(host, jobs, now, ok=True, err=""):
     ]
     for j in jobs:
         out.append(
-            f'pft_jobwatch_job_info{{host="{h}",job="{esc(j["job"])}",service="{esc(j["service"])}",kind="{j["kind"]}"}} 1'
+            f'pft_jobwatch_job_info{{host="{h}",timer="{esc(j["job"])}",service="{esc(j["service"])}",kind="{j["kind"]}"}} 1'
         )
     for key, help_ in GAUGES:
         typ = "counter" if key.endswith("_total") else "gauge"
@@ -357,7 +360,7 @@ def render(host, jobs, now, ok=True, err=""):
         ]
         for j in jobs:
             out.append(
-                f'pft_jobwatch_job_{key}{{host="{h}",job="{esc(j["job"])}"}} {fmt(j[key])}'
+                f'pft_jobwatch_job_{key}{{host="{h}",timer="{esc(j["job"])}"}} {fmt(j[key])}'
             )
     return "\n".join(out) + "\n"
 

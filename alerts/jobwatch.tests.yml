@@ -14,25 +14,25 @@ tests:
     values: 1x120
   - series: pft_jobwatch_collect_timestamp_seconds{host="sentry"}
     values: 0+60x120
-  - series: pft_jobwatch_job_present{host="validator",job="pft-heartbeat.timer"}
+  - series: pft_jobwatch_job_present{host="validator",timer="pft-heartbeat.timer"}
     values: 1x120
-  - series: pft_jobwatch_job_failed{host="validator",job="pft-heartbeat.timer"}
+  - series: pft_jobwatch_job_failed{host="validator",timer="pft-heartbeat.timer"}
     values: 0x120
-  - series: pft_jobwatch_job_consecutive_failures{host="validator",job="pft-heartbeat.timer"}
+  - series: pft_jobwatch_job_consecutive_failures{host="validator",timer="pft-heartbeat.timer"}
     values: 0x120
-  - series: pft_jobwatch_job_missed{host="validator",job="pft-heartbeat.timer"}
+  - series: pft_jobwatch_job_missed{host="validator",timer="pft-heartbeat.timer"}
     values: 0x120
-  - series: pft_jobwatch_job_disabled{host="validator",job="pft-heartbeat.timer"}
+  - series: pft_jobwatch_job_disabled{host="validator",timer="pft-heartbeat.timer"}
     values: 0x120
-  - series: pft_jobwatch_job_present{host="sentry",job="pft-kernwatch.timer"}
+  - series: pft_jobwatch_job_present{host="sentry",timer="pft-kernwatch.timer"}
     values: 1x120
-  - series: pft_jobwatch_job_failed{host="sentry",job="pft-kernwatch.timer"}
+  - series: pft_jobwatch_job_failed{host="sentry",timer="pft-kernwatch.timer"}
     values: 0x120
-  - series: pft_jobwatch_job_consecutive_failures{host="sentry",job="pft-kernwatch.timer"}
+  - series: pft_jobwatch_job_consecutive_failures{host="sentry",timer="pft-kernwatch.timer"}
     values: 0x120
-  - series: pft_jobwatch_job_missed{host="sentry",job="pft-kernwatch.timer"}
+  - series: pft_jobwatch_job_missed{host="sentry",timer="pft-kernwatch.timer"}
     values: 0x120
-  - series: pft_jobwatch_job_disabled{host="sentry",job="pft-kernwatch.timer"}
+  - series: pft_jobwatch_job_disabled{host="sentry",timer="pft-kernwatch.timer"}
     values: 0x120
   alert_rule_test:
   - {eval_time: 60m, alertname: PFTJobFailed, exp_alerts: []}
@@ -43,24 +43,24 @@ tests:
 - name: a failed run fires after 3 min with the consecutive count, per host + job, and resolves on success
   interval: 1m
   input_series:
-  - series: pft_jobwatch_job_present{host="sentry",job="pft-drill.timer"}
+  - series: pft_jobwatch_job_present{host="sentry",timer="pft-drill.timer"}
     values: 1x60
-  - series: pft_jobwatch_job_failed{host="sentry",job="pft-drill.timer"}
+  - series: pft_jobwatch_job_failed{host="sentry",timer="pft-drill.timer"}
     values: 0x10 1x20 0x29
-  - series: pft_jobwatch_job_consecutive_failures{host="sentry",job="pft-drill.timer"}
+  - series: pft_jobwatch_job_consecutive_failures{host="sentry",timer="pft-drill.timer"}
     values: 0x10 1x5 2x5 4x10 0x29
-  - series: pft_jobwatch_job_present{host="validator",job="pft-drill.timer"}
+  - series: pft_jobwatch_job_present{host="validator",timer="pft-drill.timer"}
     values: 1x60
-  - series: pft_jobwatch_job_failed{host="validator",job="pft-drill.timer"}
+  - series: pft_jobwatch_job_failed{host="validator",timer="pft-drill.timer"}
     values: 0x60
-  - series: pft_jobwatch_job_consecutive_failures{host="validator",job="pft-drill.timer"}
+  - series: pft_jobwatch_job_consecutive_failures{host="validator",timer="pft-drill.timer"}
     values: 0x60
   alert_rule_test:
   - {eval_time: 12m, alertname: PFTJobFailed, exp_alerts: []}
   - eval_time: 14m
     alertname: PFTJobFailed
     exp_alerts:
-    - exp_labels: {severity: warning, host: sentry, job: pft-drill.timer}
+    - exp_labels: {severity: warning, host: sentry, timer: pft-drill.timer}
       exp_annotations:
         summary: "sentry: scheduled job pft-drill.timer failed (1 run(s) in a row)"
         description: "The service triggered by pft-drill.timer ended its last run with a non-success Result. Its own textfile metrics (if any) are now stale and still look healthy. Run `systemctl status <service>` and `journalctl -u <service> -n 50` on the host, fix, then `systemctl start <service>` once to clear."
@@ -68,21 +68,21 @@ tests:
   - eval_time: 25m
     alertname: PFTJobFailed
     exp_alerts:
-    - exp_labels: {severity: warning, host: sentry, job: pft-drill.timer}
+    - exp_labels: {severity: warning, host: sentry, timer: pft-drill.timer}
       exp_annotations:
         summary: "sentry: scheduled job pft-drill.timer failed (4 run(s) in a row)"
         description: "The service triggered by pft-drill.timer ended its last run with a non-success Result. Its own textfile metrics (if any) are now stale and still look healthy. Run `systemctl status <service>` and `journalctl -u <service> -n 50` on the host, fix, then `systemctl start <service>` once to clear."
         runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/jobwatch/README.md#alerts"
-  - {eval_time: 31m, alertname: PFTJobFailed, exp_alerts: [{exp_labels: {severity: warning, host: sentry, job: pft-drill.timer}, exp_annotations: {summary: "sentry: scheduled job pft-drill.timer failed (4 run(s) in a row)", description: "The service triggered by pft-drill.timer ended its last run with a non-success Result. Its own textfile metrics (if any) are now stale and still look healthy. Run `systemctl status <service>` and `journalctl -u <service> -n 50` on the host, fix, then `systemctl start <service>` once to clear.", runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/jobwatch/README.md#alerts"}}]}
+  - {eval_time: 31m, alertname: PFTJobFailed, exp_alerts: [{exp_labels: {severity: warning, host: sentry, timer: pft-drill.timer}, exp_annotations: {summary: "sentry: scheduled job pft-drill.timer failed (4 run(s) in a row)", description: "The service triggered by pft-drill.timer ended its last run with a non-success Result. Its own textfile metrics (if any) are now stale and still look healthy. Run `systemctl status <service>` and `journalctl -u <service> -n 50` on the host, fix, then `systemctl start <service>` once to clear.", runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/jobwatch/README.md#alerts"}}]}
   - {eval_time: 32m, alertname: PFTJobFailed, exp_alerts: []}
 - name: a failure that clears within 2 min (one collection) does not page
   interval: 1m
   input_series:
-  - series: pft_jobwatch_job_present{host="validator",job="pft-heartbeat.timer"}
+  - series: pft_jobwatch_job_present{host="validator",timer="pft-heartbeat.timer"}
     values: 1x30
-  - series: pft_jobwatch_job_failed{host="validator",job="pft-heartbeat.timer"}
+  - series: pft_jobwatch_job_failed{host="validator",timer="pft-heartbeat.timer"}
     values: 0x10 1x2 0x18
-  - series: pft_jobwatch_job_consecutive_failures{host="validator",job="pft-heartbeat.timer"}
+  - series: pft_jobwatch_job_consecutive_failures{host="validator",timer="pft-heartbeat.timer"}
     values: 0x10 1x2 0x18
   alert_rule_test:
   - {eval_time: 12m, alertname: PFTJobFailed, exp_alerts: []}
@@ -91,19 +91,19 @@ tests:
 - name: a removed job (present 0) fires Disabled, not Failed, and clears after forget (series ends)
   interval: 1m
   input_series:
-  - series: pft_jobwatch_job_present{host="validator",job="pft-drill.timer"}
+  - series: pft_jobwatch_job_present{host="validator",timer="pft-drill.timer"}
     values: 1x10 0x20
-  - series: pft_jobwatch_job_failed{host="validator",job="pft-drill.timer"}
+  - series: pft_jobwatch_job_failed{host="validator",timer="pft-drill.timer"}
     values: 1x30
-  - series: pft_jobwatch_job_consecutive_failures{host="validator",job="pft-drill.timer"}
+  - series: pft_jobwatch_job_consecutive_failures{host="validator",timer="pft-drill.timer"}
     values: 1x30
-  - series: pft_jobwatch_job_disabled{host="validator",job="pft-drill.timer"}
+  - series: pft_jobwatch_job_disabled{host="validator",timer="pft-drill.timer"}
     values: 0x10 1x20
   alert_rule_test:
   - eval_time: 9m
     alertname: PFTJobFailed
     exp_alerts:
-    - exp_labels: {severity: warning, host: validator, job: pft-drill.timer}
+    - exp_labels: {severity: warning, host: validator, timer: pft-drill.timer}
       exp_annotations:
         summary: "validator: scheduled job pft-drill.timer failed (1 run(s) in a row)"
         description: "The service triggered by pft-drill.timer ended its last run with a non-success Result. Its own textfile metrics (if any) are now stale and still look healthy. Run `systemctl status <service>` and `journalctl -u <service> -n 50` on the host, fix, then `systemctl start <service>` once to clear."
@@ -113,7 +113,7 @@ tests:
   - eval_time: 16m
     alertname: PFTJobDisabled
     exp_alerts:
-    - exp_labels: {severity: warning, host: validator, job: pft-drill.timer}
+    - exp_labels: {severity: warning, host: validator, timer: pft-drill.timer}
       exp_annotations:
         summary: "validator: scheduled job pft-drill.timer is disabled or removed"
         description: "pft-drill.timer was watched but is now not scheduling (timer inactive, unit file disabled/masked, or the unit is gone). If intended, run `sudo pft-jobwatch forget pft-drill.timer` after removing it; otherwise `systemctl enable --now pft-drill.timer`."
@@ -122,7 +122,7 @@ tests:
 - name: disabled for 5 min fires, re-enabled resolves; 3 min pending does not fire
   interval: 1m
   input_series:
-  - series: pft_jobwatch_job_disabled{host="sentry",job="pft-drill.timer"}
+  - series: pft_jobwatch_job_disabled{host="sentry",timer="pft-drill.timer"}
     values: 0x10 1x3 0x10 1x10 0x10
   alert_rule_test:
   - {eval_time: 14m, alertname: PFTJobDisabled, exp_alerts: []}
@@ -130,7 +130,7 @@ tests:
   - eval_time: 31m
     alertname: PFTJobDisabled
     exp_alerts:
-    - exp_labels: {severity: warning, host: sentry, job: pft-drill.timer}
+    - exp_labels: {severity: warning, host: sentry, timer: pft-drill.timer}
       exp_annotations:
         summary: "sentry: scheduled job pft-drill.timer is disabled or removed"
         description: "pft-drill.timer was watched but is now not scheduling (timer inactive, unit file disabled/masked, or the unit is gone). If intended, run `sudo pft-jobwatch forget pft-drill.timer` after removing it; otherwise `systemctl enable --now pft-drill.timer`."
@@ -139,14 +139,14 @@ tests:
 - name: missed for 5 min fires and resolves
   interval: 1m
   input_series:
-  - series: pft_jobwatch_job_missed{host="validator",job="pft-drill.timer"}
+  - series: pft_jobwatch_job_missed{host="validator",timer="pft-drill.timer"}
     values: 0x10 1x10 0x10
   alert_rule_test:
   - {eval_time: 15m, alertname: PFTJobMissed, exp_alerts: []}
   - eval_time: 16m
     alertname: PFTJobMissed
     exp_alerts:
-    - exp_labels: {severity: warning, host: validator, job: pft-drill.timer}
+    - exp_labels: {severity: warning, host: validator, timer: pft-drill.timer}
       exp_annotations:
         summary: "validator: scheduled job pft-drill.timer is overdue"
         description: "pft-drill.timer is enabled but has not triggered for longer than its interval plus grace (or its next calendar elapse has passed): a hung run, a clock jump or a stuck timer. Run `sudo pft-jobwatch inventory` and `systemctl list-timers pft-drill.timer` on the host."
@@ -177,4 +177,28 @@ tests:
       exp_annotations:
         summary: "pft-jobwatch on validator is stale or failing"
         description: "For 10 min either the last collection is older than 10 min (pft-jobwatch.timer, or for the sentry pft-jobwatch-pull.timer on the validator, is not running) or `systemctl show` fails (pft_jobwatch_up 0). The job alerts for this host are blind. Run `sudo pft-jobwatch collect --stdout` on the host."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/jobwatch/README.md#alerts"
+- name: two timers on one host, only the failed one fires (drill run 07 label collision regression)
+  interval: 1m
+  input_series:
+  - series: pft_jobwatch_job_present{host="sentry",timer="pft-a.timer"}
+    values: 1x20
+  - series: pft_jobwatch_job_failed{host="sentry",timer="pft-a.timer"}
+    values: 1x20
+  - series: pft_jobwatch_job_consecutive_failures{host="sentry",timer="pft-a.timer"}
+    values: 2x20
+  - series: pft_jobwatch_job_present{host="sentry",timer="pft-b.timer"}
+    values: 1x20
+  - series: pft_jobwatch_job_failed{host="sentry",timer="pft-b.timer"}
+    values: 0x20
+  - series: pft_jobwatch_job_consecutive_failures{host="sentry",timer="pft-b.timer"}
+    values: 0x20
+  alert_rule_test:
+  - eval_time: 10m
+    alertname: PFTJobFailed
+    exp_alerts:
+    - exp_labels: {severity: warning, host: sentry, timer: pft-a.timer}
+      exp_annotations:
+        summary: "sentry: scheduled job pft-a.timer failed (2 run(s) in a row)"
+        description: "The service triggered by pft-a.timer ended its last run with a non-success Result. Its own textfile metrics (if any) are now stale and still look healthy. Run `systemctl status <service>` and `journalctl -u <service> -n 50` on the host, fix, then `systemctl start <service>` once to clear."
         runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/jobwatch/README.md#alerts"

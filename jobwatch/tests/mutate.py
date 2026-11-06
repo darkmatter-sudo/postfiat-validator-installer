@@ -306,7 +306,7 @@ MUTANTS = [
         "R02",
         R,
         "Failed: removed job still Failed",
-        "          and on (host, job) pft_jobwatch_job_present == 1\n",
+        "          and on (host, timer) pft_jobwatch_job_present == 1\n",
         "",
     ),
     (
@@ -341,8 +341,24 @@ MUTANTS = [
         "R07",
         R,
         "Failed: value = failed flag, not consecutive count",
-        "          pft_jobwatch_job_consecutive_failures\n          and on (host, job) pft_jobwatch_job_failed == 1\n",
+        "          pft_jobwatch_job_consecutive_failures\n          and on (host, timer) pft_jobwatch_job_failed == 1\n",
         "          pft_jobwatch_job_failed == 1\n",
+    ),
+]
+MUTANTS += [
+    (
+        "M33",
+        L,
+        "label named job again (the scrape renames it)",
+        'timer="{esc(j["job"])}"}} {fmt(j[key])}',
+        'job="{esc(j["job"])}"}} {fmt(j[key])}',
+    ),
+    (
+        "R08",
+        R,
+        "Failed: join on host only",
+        "          and on (host, timer) pft_jobwatch_job_failed == 1\n",
+        "          and on (host) pft_jobwatch_job_failed == 1\n",
     ),
 ]
 EQUIVALENT = []

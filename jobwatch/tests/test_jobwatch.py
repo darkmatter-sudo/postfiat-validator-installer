@@ -13,6 +13,7 @@ import atexit
 import calendar
 import json
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -451,11 +452,17 @@ check(
 )
 check(
     "render: failed job sample",
-    'pft_jobwatch_job_failed{host="validator",job="pft-jwfail.timer"} 1' in lines,
+    'pft_jobwatch_job_failed{host="validator",timer="pft-jwfail.timer"} 1' in lines,
+)
+check(
+    "render: no sample uses a scrape-reserved label (job, instance): drill run 07",
+    not any(
+        re.search(r"[{,](" + "|".join(jl.RESERVED_LABELS) + ')="', ln) for ln in lines
+    ),
 )
 check(
     "render: label escaping",
-    'job="a\\"b"' in jl.render("validator", [dict(jobs[0], job='a"b')], 0),
+    'timer="a\\"b"' in jl.render("validator", [dict(jobs[0], job='a"b')], 0),
 )
 check(
     "render: up 0 has no job samples",
@@ -546,8 +553,9 @@ rc, out, err = sh("collect", "--stdout")
 check(
     "e2e removed: still exported with present 0, disabled 1",
     rc == 0
-    and 'pft_jobwatch_job_present{host="validator",job="pft-heartbeat.timer"} 0' in out
-    and 'pft_jobwatch_job_disabled{host="validator",job="pft-heartbeat.timer"} 1'
+    and 'pft_jobwatch_job_present{host="validator",timer="pft-heartbeat.timer"} 0'
+    in out
+    and 'pft_jobwatch_job_disabled{host="validator",timer="pft-heartbeat.timer"} 1'
     in out,
     err,
 )
@@ -558,7 +566,7 @@ check(
 rc, out, err = sh("collect", "--stdout")
 check(
     "e2e after forget: job gone, 6 jobs",
-    'job="pft-heartbeat.timer"' not in out and 'state="total"} 6' in out,
+    'timer="pft-heartbeat.timer"' not in out and 'state="total"} 6' in out,
     err,
 )
 rc, out, err = sh("forget", "pft-nosuch.timer")
