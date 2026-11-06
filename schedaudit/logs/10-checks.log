@@ -1,0 +1,242 @@
+schedaudit checks - 2026-11-06T23:39:56Z - OS: Ubuntu 22.04.5 LTS - HEAD b592f2e97571acc7762736ea582384d518360d1d (clean: yes)
+== this script
+  | #!/usr/bin/env bash
+  | # shellcheck disable=SC1091
+  | # Recorded checks for schedaudit at the current (pushed, clean) HEAD: shellcheck (schedaudit + the pft-integrity hook),
+  | # ruff check + format --check, promtool check + test rules, the offline suite and the mutant harness. Changes nothing
+  | # on the host (promtool runs in the pinned prom/prometheus:v3.5.0 image already on the host, --network none).
+  | #   bash schedaudit/drill/checks-run.sh 2>&1 | tee LOG    (from the repo root)
+  | set -uo pipefail
+  | cd "$(git rev-parse --show-toplevel)" || exit 3
+  | export TZ=UTC TEST_TMPDIR="$HOME/.cache"
+  | x() { echo "\$ $*"; eval "$*"; local rc=$?; echo "(exit $rc)"; return "$rc"; }
+  | FAILS=0
+  | check() { if [ "$2" = 0 ]; then echo "CHECK ok   $1"; else echo "CHECK FAIL $1"; FAILS=$((FAILS + 1)); fi; }
+  | # shellcheck disable=SC2016 # expanded by eval in x(), so the log shows $PWD, not the local path
+  | P='docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /w prom/prometheus:v3.5.0'
+  | echo "schedaudit checks - $(date -u +%FT%TZ) - OS: $(. /etc/os-release; echo "$PRETTY_NAME") - HEAD $(git rev-parse HEAD) (clean: $([ -z "$(git status --short)" ] && echo yes || echo NO))"
+  | echo "== this script"; sed 's/^/  | /' schedaudit/drill/checks-run.sh
+  | x "sha256sum schedaudit/pft-schedaudit.sh schedaudit/schedaudit_lib.py schedaudit/install.sh schedaudit/systemd/* alerts/schedaudit.rules.yml alerts/schedaudit.tests.yml schedaudit/tests/*.py integrity/pft-integrity.sh"
+  | x "shellcheck --version | sed -n 2p; shellcheck schedaudit/pft-schedaudit.sh schedaudit/install.sh schedaudit/drill/*.sh integrity/pft-integrity.sh"; check "shellcheck clean" $?
+  | x "ruff --version; ruff check schedaudit/ && ruff format --check schedaudit/"; check "ruff check + format clean" $?
+  | x "$P check rules schedaudit.rules.yml"; check "promtool check rules" $?
+  | x "$P test rules schedaudit.tests.yml"; check "promtool test rules" $?
+  | x "nice -n 15 python3 -u schedaudit/tests/test_schedaudit.py"; check "offline suite" $?
+  | x "nice -n 15 python3 -u schedaudit/tests/mutate.py --jobs 2 --timeout 180"; check "mutants: all CAUGHT, 0 orphans" $?
+  | echo "RESULT: $([ "$FAILS" = 0 ] && echo PASS || echo FAIL) ($FAILS failed checks) - end $(date -u +%FT%TZ)"
+  | [ "$FAILS" = 0 ]
+$ sha256sum schedaudit/pft-schedaudit.sh schedaudit/schedaudit_lib.py schedaudit/install.sh schedaudit/systemd/* alerts/schedaudit.rules.yml alerts/schedaudit.tests.yml schedaudit/tests/*.py integrity/pft-integrity.sh
+cebe0936e5e28126d9c5ebf63adcc6bedad169406c840106044d0c952c1caab7  schedaudit/pft-schedaudit.sh
+d0fd11a79c456e118ad9d0c2848b20d53f316f60335adaa4b2948626206f8071  schedaudit/schedaudit_lib.py
+5db571b60763ad1e494a9efdd3f2c2328bf3c552ce6f5584a79e18f18a20826b  schedaudit/install.sh
+e409b4b59ffa67ebd9aafd4e6cb45849be1abe661182345ea2f5fa716064eb8d  schedaudit/systemd/pft-schedaudit-pull.service
+fb67faf95b3a76499a97f961a48d0e360dffbba6840c2440fa1403c2b03261c1  schedaudit/systemd/pft-schedaudit-pull.timer
+eeb630fa0ba11f26bf2fcbdf104a668feb183b84f24c2c53cd0b7d65b6756057  schedaudit/systemd/pft-schedaudit.service
+9c9b74c6552232e8210315cdef20c8bd7d11fbf6fa5be43a654d8eec971bc6db  schedaudit/systemd/pft-schedaudit.timer
+34dd9127efa670162cbb80c951915c83d49ec8ead1a6d4fbb5c4ac69e265ffac  alerts/schedaudit.rules.yml
+b549149734d70f49f04a8de27ad775546b8a12410a6f72bfe8513f5da1b6a9e7  alerts/schedaudit.tests.yml
+bfbe53b4c1d75e561c33274d98e1df898c56d51b428a34e955dd685d4440374e  schedaudit/tests/mutate.py
+483736cf5153f010f35ef04e4d2ed342d812085dc8c24835a16090cab234f9d5  schedaudit/tests/stub_systemctl.py
+b381ebfcfa1fba0044fbff314b0c2db5587467bfbc547228c9316638e31e5578  schedaudit/tests/test_schedaudit.py
+c7d45dea830d519c8bb1c730ce81951f4c8d89263affbe21579c746d404f1755  integrity/pft-integrity.sh
+(exit 0)
+$ shellcheck --version | sed -n 2p; shellcheck schedaudit/pft-schedaudit.sh schedaudit/install.sh schedaudit/drill/*.sh integrity/pft-integrity.sh
+version: 0.8.0
+(exit 0)
+CHECK ok   shellcheck clean
+$ ruff --version; ruff check schedaudit/ && ruff format --check schedaudit/
+ruff 0.17.1
+All checks passed!
+5 files already formatted
+(exit 0)
+CHECK ok   ruff check + format clean
+$ docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /w prom/prometheus:v3.5.0 check rules schedaudit.rules.yml
+Checking schedaudit.rules.yml
+  SUCCESS: 2 rules found
+
+(exit 0)
+CHECK ok   promtool check rules
+$ docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /w prom/prometheus:v3.5.0 test rules schedaudit.tests.yml
+  SUCCESS
+
+(exit 0)
+CHECK ok   promtool test rules
+$ nice -n 15 python3 -u schedaudit/tests/test_schedaudit.py
+PASS inventory: json rc 0
+PASS inventory: /etc/crontab 3 entries (2 active + 1 commented), help line skipped
+PASS inventory: commented crontab job keeps its command
+PASS inventory: cron.d name with a dot is inert (cron skips it)
+PASS inventory: cron.d .placeholder (comments only) has no entry
+PASS inventory: @reboot special parsed
+PASS inventory: PATH= line is not an entry, job after it is
+PASS inventory: run-parts states (active / inert-name / not-executable / no-schedule)
+PASS inventory: weekly run-parts driven by anacrontab counts as active
+PASS inventory: anacrontab 1 active + 1 commented
+PASS inventory: spool crontab entry with its user
+PASS inventory: at jobs queued (0700) and done (0600), .SEQ skipped
+PASS inventory: timers active/disabled/masked, template @.timer skipped
+PASS inventory: user-unit timer files listed (system-wide + per-user)
+PASS inventory: monotonic timer schedule has no next_elapse (stable id)
+PASS inventory: ids stable across runs
+PASS inventory: tsv header + one row per entry
+PASS id: package upgrade of a packaged run-parts script (content + dpkg md5 both new) keeps its id
+PASS id: a non-package edit of that script changes its id and is pkg_modified
+PASS id: restored script is back on its first id
+PASS control: an unpackaged run-parts script edit changes its id
+PASS id: packaged + md5-verified timer/service (no drop-ins) keeps its id when the package changes ExecStart
+PASS id: a non-package edit of the packaged service file changes the timer id
+PASS id: with a drop-in the packaged timer is content-identified (an override's ExecStart change shows)
+PASS control: an unpackaged timer's ExecStart change changes its id
+PASS ids: fixture back to the first inventory
+PASS audit: rc 1 with findings and no baseline
+PASS finding: chain_writable on a 0666 cron.d file (fixable)
+PASS finding: chain_writable on a 0777 parent dir of a job script
+PASS finding: writable_dir for a job under sticky /tmp
+PASS finding: writable_dir for a user crontab job under /home
+PASS finding: pkg_modified on an edited conffile (status Conffiles md5)
+PASS control: unedited conffile and /etc/crontab are not pkg_modified
+PASS finding: pkg_modified on a PATH-resolved bare command (md5sums)
+PASS control: matching md5sums binary not flagged
+PASS finding: untracked unpackaged timer binary in /usr/local/sbin
+PASS control: /usr/local/bin and pft-* units count as integrity-tracked
+PASS finding: nonsystem_user for a cron.d job as alice
+PASS finding: nonsystem_user for the user crontab
+PASS finding: nonsystem_user for a timer with User=alice
+PASS finding: timer_target for a timer whose unit is not found (detail names not-found)
+PASS control: obsolete conffile md5 is ignored (packaged run-parts script with a stale obsolete hash)
+PASS finding: timer_target for a missing ExecStart binary
+PASS control: ExecStart path=sh resolves through the systemd PATH (no timer_target)
+PASS control: inert/done entries carry no findings
+PASS control: no chain_owner when every file is owned by the trusted uid
+PASS control: user crontab owned by its user is not chain_owner (trusted 0 run checked below)
+PASS finding: chain_owner with --trusted-uid 0 (fixture owned by the test user)
+PASS control: user crontab file itself never chain_owner (owned by its user by design)
+PASS integrity hook: untracked clears when pft-integrity tracks the scope
+PASS scope: lists unpackaged job files + scheduling dirs, not packaged binaries or /tmp
+PASS scope: packaged /etc conffiles are still tracked (they can be edited)
+PASS unexpected: no baseline alone makes the audit unexpected (rc 1)
+PASS allowlist: line without a reason refused (rc 3)
+PASS allowlist: unknown check refused (rc 3)
+PASS allowlist: too-short reason refused (rc 3)
+PASS allowlist: matching finding marked allowed with its reason
+PASS allowlist: entry glob matching but path glob not -> not allowed
+PASS allowlist: other nonsystem_user findings not allowed
+PASS allowlist: unused line counted
+PASS allowlist: tsv shows ALLOWED row with reason and the unused line
+PASS accept: reason under 8 chars refused
+PASS accept: writes state 0600
+PASS drift: none right after accept
+PASS drift: added cron.d file -> exactly 1 new entry (Feb 30: never fires)
+PASS drift: edited line -> 1 new + 1 removed for that file
+PASS drift: back to the accepted set after removal/revert
+PASS drift: run-parts script losing +x stays the same id (state not-executable)
+PASS state: wrong-typed state file refused (rc 3), not read as empty
+PASS state: corrupt state file refused (rc 3)
+PASS apply --dry-run: plans chmod for both chain_writable paths, changes nothing
+PASS apply: FIXED lines + RESULT remaining 0
+PASS apply: modes really changed
+PASS apply: no file content changed, nothing created or removed
+PASS apply: never touches sticky /tmp (writable_dir is not permissions-fixable)
+PASS apply: re-audit has no chain_writable
+PASS apply: path owned by a non-trusted uid is SKIPped (owner is not a permissions fix)
+PASS prom: up 1, timestamp, rc 1 (unaccepted)
+PASS prom: chain_writable crit count 1 (badperm re-opened)
+PASS prom: every check has allowed 0/1 series (no missing series for rules)
+PASS prom: unexpected kinds new/removed/finding/unaccepted
+PASS prom: entries by source/state
+PASS prom: systemctl failure -> up 0 only, rc 2
+PASS stub: only list-unit-files/list-units/show were ever run
+PASS integrity hook: collect_sched/emit/file_item/h16 found in pft-integrity.sh
+PASS integrity hook: dir -> listing/mode/owner, file -> sha256/mode/owner/mtime, scope ok item
+PASS integrity hook: relative and missing paths emit nothing
+PASS integrity hook: a new file in a scheduling dir changes the listing item
+PASS integrity hook: scope failure -> one sched:scope error item (a change, never silence)
+PASS integrity hook: schedaudit not installed -> no items
+PASS wrapper collect: rc 0 with findings, file written for HOST_LABEL from conf
+PASS wrapper collect: no temp files left
+PASS wrapper: integrity hook off when pft-integrity lacks collect_sched
+PASS wrapper: integrity hook on when pft-integrity has collect_sched()
+PASS wrapper collect: systemctl failure -> rc 2, file has up 0
+PASS wrapper: missing helper is a config error (rc 3)
+PASS wrapper collect: over TEXT_BUDGET -> up 0 instead of a file the exporter drops
+PASS wrapper accept: usage error without --reason (rc 3)
+PASS wrapper accept: logged with reason
+PASS wrapper audit: rc 1 (findings remain), SUMMARY baseline=yes
+PASS wrapper apply --dry-run: PLAN line, no apply.log
+PASS wrapper apply: FIXED recorded in apply.log
+PASS validate: own file ok, wrong host refused
+PASS validate: missing timestamp refused
+PASS wrapper: conf not owned by the trusted uid is ignored (HOST_LABEL stays default)
+PASS wrapper: unknown command rc 3
+PASS wrapper: version
+RESULT: PASS (107 checks, 0 failed)
+(exit 0)
+CHECK ok   offline suite
+$ nice -n 15 python3 -u schedaudit/tests/mutate.py --jobs 2 --timeout 180
+control suite (unmutated copy): PASS RESULT: PASS (107 checks, 0 failed)
+control promtool (unmutated copy): PASS SUCCESS
+M01 CAUGHT - commented cron lines dropped [2 failing: inventory: /etc/crontab 3 entries (2 active + 1 commented), help line skipped :: [{'comman; inventory: commented crontab job keeps its command :: ]
+M02 CAUGHT - stock help line (unknown user) kept as a commented job [1 failing: inventory: /etc/crontab 3 entries (2 active + 1 commented), help line skipped :: [{'comman]
+M03 CAUGHT - run-parts name rule ignored [1 failing: inventory: run-parts states (active / inert-name / not-executable / no-schedule) :: {'/etc]
+M04 CAUGHT - non-executable run-parts file counted active [2 failing: inventory: run-parts states (active / inert-name / not-executable / no-schedule) :: {'/etc; drift: run-parts script losing +x stays the same id (state not-executable) :: ]
+M05 CAUGHT - undriven run-parts dir counted active [1 failing: inventory: run-parts states (active / inert-name / not-executable / no-schedule) :: {'/etc]
+M06 CAUGHT - anacron does not drive run-parts dirs [2 failing: inventory: weekly run-parts driven by anacrontab counts as active :: {'/etc/cron.hourly/.p; inventory: anacrontab 1 active + 1 commented :: None]
+M07 CAUGHT - cron.d dotted names not inert [1 failing: inventory: cron.d name with a dot is inert (cron skips it) :: ]
+M08 CAUGHT - at job state ignores the x bit [1 failing: inventory: at jobs queued (0700) and done (0600), .SEQ skipped :: [{'command': '/var/spool]
+M09 CAUGHT - template @.timer units listed [1 failing: inventory: timers active/disabled/masked, template @.timer skipped :: {'timer/mdmonitor-on]
+M10 CAUGHT - next_elapse kept in the schedule (unstable id) [1 failing: inventory: monotonic timer schedule has no next_elapse (stable id) :: [{'command': 'pft-he]
+M11 CAUGHT - masked timers read as disabled [2 failing: inventory: timers active/disabled/masked, template @.timer skipped :: {'timer/mdmonitor-on; prom: entries by source/state :: ]
+M12 CAUGHT - user-unit dirs not scanned [1 failing: inventory: user-unit timer files listed (system-wide + per-user) :: None]
+M13 CAUGHT - spool crontabs not scanned [4 failing: inventory: spool crontab entry with its user :: None; finding: writable_dir for a user crontab job under /home :: ]
+M14 CAUGHT - package-verified run-parts scripts keep the content id [1 failing: id: package upgrade of a packaged run-parts script (content + dpkg md5 both new) keeps its]
+M15 CAUGHT - packaged timer id ignores drop-ins [1 failing: id: with a drop-in the packaged timer is content-identified (an override's ExecStart chang]
+M16 CAUGHT - pkg_verified ignores the md5 [2 failing: id: a non-package edit of that script changes its id and is pkg_modified :: run-parts/cron; id: a non-package edit of the packaged service file changes the timer id :: ]
+M17 CAUGHT - packaged timer id needs only one verified unit file [1 failing: id: a non-package edit of the packaged service file changes the timer id :: ]
+M20 CAUGHT - group/world-writable bits not checked [10 failing: finding: chain_writable on a 0666 cron.d file (fixable) :: ; finding: chain_writable on a 0777 parent dir of a job script :: ]
+M21 CAUGHT - owner not checked [1 failing: finding: chain_owner with --trusted-uid 0 (fixture owned by the test user) :: ]
+M22 CAUGHT - sticky dirs not reported as writable_dir [1 failing: finding: writable_dir for a job under sticky /tmp :: ]
+M23 CAUGHT - user-tree paths not flagged [1 failing: finding: writable_dir for a user crontab job under /home :: ]
+M24 CAUGHT - md5 mismatch ignored [3 failing: id: a non-package edit of that script changes its id and is pkg_modified :: run-parts/cron; finding: pkg_modified on an edited conffile (status Conffiles md5) :: ]
+M25 CAUGHT - obsolete conffiles kept [1 failing: control: obsolete conffile md5 is ignored (packaged run-parts script with a stale obsolete]
+M26 CAUGHT - untracked never reported [3 failing: finding: untracked unpackaged timer binary in /usr/local/sbin :: ; integrity hook: untracked clears when pft-integrity tracks the scope :: []]
+M27 CAUGHT - uid >= UID_MIN not a regular user [6 failing: finding: nonsystem_user for a cron.d job as alice :: ; finding: nonsystem_user for a timer with User=alice :: ]
+M28 CAUGHT - missing timer unit not reported [1 failing: finding: timer_target for a timer whose unit is not found (detail names not-found) :: ]
+M29 CAUGHT - missing ExecStart binary not reported [1 failing: finding: timer_target for a missing ExecStart binary :: ]
+M30 CAUGHT - bare ExecStart names not resolved [1 failing: control: ExecStart path=sh resolves through the systemd PATH (no timer_target) :: ]
+M31 CAUGHT - user crontab ownership flagged [1 failing: control: user crontab file itself never chain_owner (owned by its user by design) :: ]
+M32 CAUGHT - bare cron command not resolved through PATH [1 failing: finding: pkg_modified on a PATH-resolved bare command (md5sums) :: ]
+M33 CAUGHT - inert entries audited [1 failing: control: inert/done entries carry no findings :: ]
+M34 CAUGHT - integrity hook ignored [2 failing: integrity hook: untracked clears when pft-integrity tracks the scope :: ['/etc/cron.d/badp; wrapper: integrity hook on when pft-integrity has collect_sched() :: (0, '')]
+M40 CAUGHT - packaged /etc files dropped from scope [1 failing: scope: packaged /etc conffiles are still tracked (they can be edited) :: ['/bin/sh', '/etc]
+M41 CAUGHT - user trees in scope [1 failing: scope: lists unpackaged job files + scheduling dirs, not packaged binaries or /tmp :: ['/b]
+M42 CAUGHT - scheduling dirs not in scope [1 failing: scope: lists unpackaged job files + scheduling dirs, not packaged binaries or /tmp :: ['/b]
+M50 CAUGHT - allow line without reason accepted [1 failing: allowlist: line without a reason refused (rc 3) :: (1, 'Traceback (most recent call last):]
+M51 CAUGHT - short reasons accepted [1 failing: allowlist: too-short reason refused (rc 3) :: (1, '')]
+M52 CAUGHT - allow path glob ignored [2 failing: allowlist: entry glob matching but path glob not -> not allowed :: ; allowlist: unused line counted :: {'allowed': 2, 'baseline': False, 'enabled': 20, 'entrie]
+M53 CAUGHT - wrong-typed state read as empty [1 failing: state: wrong-typed state file refused (rc 3), not read as empty :: (1, 'Traceback (most re]
+M54 CAUGHT - removed entries not reported [1 failing: drift: edited line -> 1 new + 1 removed for that file :: (['cron.d/drill@6cfa1c6b77', 'cro]
+M55 CAUGHT - no baseline is not unexpected [1 failing: unexpected: no baseline alone makes the audit unexpected (rc 1) :: ]
+M56 CAUGHT - state file world-readable [1 failing: accept: writes state 0600 :: (0, '')]
+M57 CAUGHT - accept reason length unchecked [1 failing: accept: reason under 8 chars refused :: (0, '')]
+M60 CAUGHT - apply also removes the owner write bit [4 failing: apply --dry-run: plans chmod for both chain_writable paths, changes nothing :: (0, 'PLAN\t; apply: FIXED lines + RESULT remaining 0 :: (0, 'FIXED\t/\t0775 -> 0555\nFIXED\t/bin\t0775 ]
+M61 CAUGHT - apply chmods files of other owners [4 failing: apply: path owned by a non-trusted uid is SKIPped (owner is not a permissions fix) :: (0, ; prom: chain_writable crit count 1 (badperm re-opened) :: # HELP pft_schedaudit_up 1 if the]
+M62 CAUGHT - apply ignores --dry-run [3 failing: apply --dry-run: plans chmod for both chain_writable paths, changes nothing :: (0, 'FIXED\; apply: FIXED lines + RESULT remaining 0 :: (0, 'RESULT apply: planned=0 remaining_fixable=]
+M63 CAUGHT - apply touches non-fixable findings [3 failing: apply: FIXED lines + RESULT remaining 0 :: (1, 'FIXED\t/\t0775 -> 0755\nFIXED\t/bin\t0775 ; apply: never touches sticky /tmp (writable_dir is not permissions-fixable) :: ]
+S01 CAUGHT - findings make collect fail [3 failing: wrapper collect: rc 0 with findings, file written for HOST_LABEL from conf :: (2, 'pft-sch; wrapper: integrity hook off when pft-integrity lacks collect_sched :: []]
+S02 CAUGHT - size guard removed [1 failing: wrapper collect: over TEXT_BUDGET -> up 0 instead of a file the exporter drops :: (0, '# H]
+S03 CAUGHT - conf owner not checked [1 failing: wrapper: conf not owned by the trusted uid is ignored (HOST_LABEL stays default) :: # HELP]
+S04 CAUGHT - hook detection always on [1 failing: wrapper: integrity hook off when pft-integrity lacks collect_sched :: ['pft_schedaudit_fin]
+S06 CAUGHT - textfile mode not set [1 failing: wrapper collect: rc 0 with findings, file written for HOST_LABEL from conf :: (0, '')]
+I01 CAUGHT - scope failure silent [1 failing: integrity hook: scope failure -> one sched:scope error item (a change, never silence) :: ]
+I02 CAUGHT - dirs hashed as files (no listing) [2 failing: integrity hook: dir -> listing/mode/owner, file -> sha256/mode/owner/mtime, scope ok item ; integrity hook: a new file in a scheduling dir changes the listing item :: ([], [])]
+I03 CAUGHT - relative paths accepted [1 failing: integrity hook: relative and missing paths emit nothing :: sched:scope	status	ok]
+R01 CAUGHT - Unexpected: up guard removed [promtool FAILED: unexpected series are ignored while the audit itself is down (Stale owns that) and a 1-min blip does not page]
+R02 CAUGHT - Unexpected: unaccepted kind not alerted [promtool FAILED: findings and an unaccepted host fire per kind with the count as value]
+R03 CAUGHT - Unexpected: no for (1-min blip pages) [promtool FAILED: a new cron entry on the sentry fires after 2 min with its count, only for that host+kind, and resolves]
+R04 CAUGHT - Stale: up 0 not stale [promtool FAILED: unexpected series are ignored while the audit itself is down (Stale owns that) and a 1-min blip does not page]
+R05 CAUGHT - Stale: age threshold 1h [promtool FAILED: an audit that stopped writing at 5m goes stale once older than 15 min (21m) + 10 min for]
+orphan check: 0 process(es) still running from mutant copies
+RESULT: 60 caught, 0 survived, 0 not applied, 0 broken of 60 (+ 0 documented equivalent: )
+(exit 0)
+CHECK ok   mutants: all CAUGHT, 0 orphans
+RESULT: PASS (0 failed checks) - end 2026-11-06T23:45:40Z

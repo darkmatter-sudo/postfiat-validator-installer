@@ -161,6 +161,7 @@ cd alerts && promtool test rules schedaudit.tests.yml
 | `logs/07-tamper-preflight.log` | `PREFLIGHT_ONLY=1 drill/tamper-run.sh` at `44c862a` (changes nothing) | 16/16 checks ok |
 | `logs/08-tamper-run02-harness-fail.log` | tamper drill run 02 at `44c862a` | FAIL 4 of 68 checks, all the harness's own expectation: it wanted an `untracked` finding for the drill file, but the scope hook hands every entry file to pft-integrity, so a new cron.d file is never `untracked` (by design). Every alert, apply, negative-control, restore and read-back check passed; fixed in `7b8f2f2` |
 | `logs/09-tamper.log` | two-host tamper drill run 03 at `7b8f2f2` | PASS, 75/75 checks ok |
+| `logs/10-checks.log` | the checks of log 04 again at `b592f2e` (adds `drill/tamper-run.sh` to shellcheck; tool code unchanged since `1ad593b`) | PASS: suite 107/107, mutants 60/60 caught, 0 orphans |
 
 Found → fixed → verified (log 03):
 
