@@ -20,6 +20,7 @@ before the check returns.
 
 import argparse
 import calendar
+import gzip
 import hashlib
 import io
 import json
@@ -128,8 +129,15 @@ def decrypt_gpg(path, passfile, scratch, gpg="gpg"):
 
 def read_members(data, stem):
     """({relpath: bytes}, None) or (None, reason). Every regular file must sit under STEM/."""
+    # the whole gzip stream first (length + CRC checked): tarfile reading "r:gz" stops at the first bad header and
+    # never reaches the CRC, so a corrupt archive read as a PARTIAL member set (drill run 14: false drift, "manifest
+    # missing" instead of "corrupt")
     try:
-        tf = tarfile.open(fileobj=io.BytesIO(data), mode="r:gz")  # noqa: SIM115 (closed in finally)
+        raw = gzip.decompress(data)
+    except (OSError, EOFError, zlib.error) as e:
+        return None, f"archive truncated or corrupt ({type(e).__name__})"
+    try:
+        tf = tarfile.open(fileobj=io.BytesIO(raw), mode="r:")  # noqa: SIM115 (closed in finally)
     except (tarfile.TarError, OSError, EOFError) as e:
         return None, f"not a readable tar.gz ({type(e).__name__})"
     members = {}
@@ -143,10 +151,18 @@ def read_members(data, stem):
             if not m.isfile():
                 return None, f"non-regular member: {m.name[:80]}"
             members[rel] = tf.extractfile(m).read()
+        end = tf.offset
     except (tarfile.TarError, OSError, EOFError, zlib.error) as e:
         return None, f"archive truncated or corrupt ({type(e).__name__})"
     finally:
         tf.close()
+    # tarfile also ends silently at an unreadable header after the first member: only end-of-archive zero blocks
+    # may follow the last member it read
+    if raw[end:].strip(b"\0"):
+        return (
+            None,
+            f"archive corrupt (tar stream ends early at byte {end} of {len(raw)})",
+        )
     return members, None
 
 

@@ -8,6 +8,7 @@ BW_DIR points the suite at a mutant copy (tests/mutate.py).
 """
 
 import calendar
+import gzip
 import hashlib
 import io
 import json
@@ -305,9 +306,12 @@ def t_corrupt(c):
         state(j, "sidecar"),
     )
     check(
-        "byte flip: manifest FAIL",
-        state(j, "manifest")[0] == "FAIL",
-        state(j, "manifest"),
+        "byte flip: manifest FAIL corrupt, content + drift not readable (no partial read)",
+        state(j, "manifest")[0] == "FAIL"
+        and "corrupt" in state(j, "manifest")[1]
+        and state(j, "content") == ("FAIL", "archive not readable")
+        and state(j, "drift") == ("FAIL", "archive not readable"),
+        j,
     )
     # regenerated sidecar: only the archive itself can tell
     with open(p, "rb") as fh:
@@ -324,6 +328,60 @@ def t_corrupt(c):
         "byte flip + new sidecar: manifest FAIL corrupt",
         state(j, "manifest")[0] == "FAIL",
         state(j, "manifest"),
+    )
+
+
+def t_bad_inner_header(c):
+    """A tar header garbled after the first member inside a VALID gzip stream (CRC ok, sidecar regenerated): tarfile
+    stops there silently, so the old reader saw a partial member set (drill run 14 on a real archive)."""
+    p = write_archive(c.bdir, "20261108T023000Z", members_for(c.root))
+    with open(p, "rb") as fh:
+        raw = bytearray(gzip.decompress(fh.read()))
+    with tarfile.open(fileobj=io.BytesIO(bytes(raw)), mode="r:") as tf:
+        offs = [m.offset for m in tf]
+    o = offs[len(offs) // 2]
+    raw[o : o + 512] = b"\xa5" * 512
+    data = gzip.compress(bytes(raw))
+    with open(p, "wb") as fh:
+        fh.write(data)
+    with open(p + ".sha256", "w") as fh:
+        fh.write(f"{hashlib.sha256(data).hexdigest()}  x\n")
+    rc, j = run(c.bdir, c.root)
+    check("bad inner header: rc 2", rc == 2, j)
+    check(
+        "bad inner header: sidecar OK (regenerated)",
+        state(j, "sidecar")[0] == "OK",
+        state(j, "sidecar"),
+    )
+    check(
+        "bad inner header: manifest FAIL 'ends early', content + drift not readable",
+        state(j, "manifest")[0] == "FAIL"
+        and "ends early" in state(j, "manifest")[1]
+        and state(j, "content") == ("FAIL", "archive not readable")
+        and state(j, "drift") == ("FAIL", "archive not readable"),
+        j,
+    )
+
+
+def t_bad_crc(c):
+    """Only the gzip trailer (CRC32) is wrong, every byte of data intact, sidecar regenerated: only reading the
+    stream to its end can tell (the old "r:gz" reader stopped at the end-of-archive blocks and accepted it)."""
+    p = write_archive(c.bdir, "20261108T023000Z", members_for(c.root))
+    with open(p, "rb") as fh:
+        data = bytearray(fh.read())
+    data[-8] ^= 0xFF
+    with open(p, "wb") as fh:
+        fh.write(data)
+    with open(p + ".sha256", "w") as fh:
+        fh.write(f"{hashlib.sha256(bytes(data)).hexdigest()}  x\n")
+    rc, j = run(c.bdir, c.root)
+    check(
+        "bad gzip CRC: rc 2, sidecar OK, manifest FAIL corrupt (BadGzipFile)",
+        rc == 2
+        and state(j, "sidecar")[0] == "OK"
+        and state(j, "manifest")[0] == "FAIL"
+        and "BadGzipFile" in state(j, "manifest")[1],
+        j,
     )
 
 
@@ -1518,6 +1576,8 @@ def main():
         ("old", t_old),
         ("missing", t_missing),
         ("corrupt", t_corrupt),
+        ("innerheader", t_bad_inner_header),
+        ("badcrc", t_bad_crc),
         ("truncated", t_truncated),
         ("size", t_size_ratio),
         ("sidecar", t_sidecar_missing),

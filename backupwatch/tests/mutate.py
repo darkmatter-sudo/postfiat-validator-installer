@@ -366,6 +366,20 @@ MUTANTS = [
         "or os.path.getsize(passfile) == 0",
         "or os.path.getsize(passfile) < 0",
     ),
+    (
+        "M26",
+        L,
+        "read: early tar end after a bad inner header accepted (drill run 14)",
+        'if raw[end:].strip(b"\\0"):',
+        "if False:",
+    ),
+    (
+        "M27",
+        L,
+        "read: gzip stream not checked whole (old r:gz reader)",
+        "raw = gzip.decompress(data)",
+        "raw = zlib.decompressobj(31).decompress(data[:-8])",
+    ),
 ]
 
 
