@@ -1,0 +1,148 @@
+# pft-migrate offline checks - 2026-11-08T05:52:42Z
+OS: Ubuntu 22.04.5 LTS
+commit-base: 8ca8b5cd874dd012ebf8b1deb8f13aec0aa55c18 (+ working tree: pft-migrate.sh, tests/)
+sha256: pft-migrate.sh=caa5692aa566f41a tests/run-tests.sh=f39dcd22993a32cd tests/mutate.sh=a0b78b4a023a3dee 
+shellcheck 0.8.0
+$ shellcheck -x pft-migrate.sh tests/run-tests.sh tests/mutate.sh
+shellcheck exit 0
+$ bash tests/run-tests.sh
+ok   self-check: the docker stub answered
+ok   no command (exit 3)
+ok   unknown command (exit 3)
+ok   export without --to (exit 3)
+ok   export --to an IDENTITY file refused (exit 3)
+ok   identity refusal says why
+ok   export --to malformed recipient (exit 3)
+ok   fence bad bundle id (exit 3)
+ok   verify bad pubkey (exit 3)
+ok   start-target bad address (exit 3)
+ok   import missing bundle (exit 3)
+ok   plan bad role (exit 3)
+ok   plan ok (exit 0)
+ok   plan lists cfgvol/postfiatd.cfg
+ok   plan lists cfgvol/validators.txt
+ok   plan lists compose/docker-compose.yml
+ok   plan lists compose/docker-compose.override.yml
+ok   plan lists compose/docker-compose.seccomp.yml
+ok   plan lists compose/docker-compose.apparmor.yml
+ok   plan lists compose/.env
+ok   plan lists cluster/node_seed
+ok   plan lists host/etc/pft-seccomp/pft-postfiatd.json
+ok   plan lists host/etc/apparmor.d/pft-postfiatd
+ok   plan: live identity + pinned
+ok   plan --json: 11 files, ok
+ok   plan: COMPOSE_FILE member missing (exit 1)
+ok   plan names the missing member
+ok   plan: overlay host file missing (exit 1)
+ok   plan: stage removed
+ok   export ok (exit 0)
+ok   export prints bundle id
+ok   bundle is age, 0600
+ok   sidecar sha256 matches
+ok   bundle holds no plaintext
+ok   export: RAM stage removed
+ok   export record: pubkey, no seed
+ok   bundle: META + MANIFEST + 11 files
+ok   inner manifest: 12 files verify
+ok   META: pubkey + restart policy
+ok   export does not stop the node
+ok   fence: unknown bundle (exit 4)
+ok   start-target on the source (nothing imported) (exit 4)
+ok   fence ok (exit 0)
+ok   fence: container exited, restart=no
+ok   proof: kind=pft-migrate-fence
+ok   proof: bundle_id=20261108T055245Z-16f94c79
+ok   proof: pubkey=n9MASi45ub7Qe4ZE36UT5G6cU4ud8Fhhe4deS4F3cw9KTAb8dLcu
+ok   proof: container_state=exited
+ok   proof: restart_policy=no
+ok   proof: compose_guard=on
+ok   proof: peer_port_local=closed
+ok   proof: rpc=down
+ok   proof: fenced_at=1900000000
+ok   fence: pft-maint lock until +LOCK_TTL
+ok   fence: guard in COMPOSE_FILE
+ok   fenced source: plain 'docker compose up -d' does not run the node
+ok   fence again (same bundle) idempotent (exit 0)
+ok   re-fence keeps the first fenced_at
+ok   fence for another bundle while fenced (exit 4)
+ok   import: wrong identity (exit 2)
+ok   wrong identity: says decryption failed
+ok   import: one flipped byte (sidecar) (exit 2)
+ok   import: flipped byte with re-made sidecar (age MAC) (exit 2)
+ok   import: truncated bundle (exit 2)
+ok   import: no sidecar (exit 2)
+ok   import: valid bundle, sidecar of another bundle (exit 2)
+ok   sidecar mismatch is what refused it
+ok   import: file changed, manifest not (exit 2)
+ok   import: extra file not in manifest (exit 2)
+ok   import: path outside the layout (exit 2)
+ok   import: path outside the layout, listed in the manifest (exit 2)
+ok   layout check is what refused it
+ok   import: symlink (exit 2)
+ok   import: ../ path escape (exit 2)
+ok   path escape wrote nothing
+ok   import: META compose_dir with .. (exit 2)
+ok   import negatives installed nothing
+ok   import negatives: RAM stage removed
+ok   import: a copy is RUNNING here (exit 4)
+ok   import: cannot skip the base file (exit 3)
+ok   import ok (exit 0)
+ok   import: cfg byte-identical, mode kept
+ok   import: node_seed 0600 in 0700
+ok   import: overlay host files
+ok   import: env kept, guard on
+ok   import never starts the node
+ok   import: volume created with compose labels
+ok   imported target: plain compose up refused by guard
+ok   start-target: proof says running (exit 4)
+ok   start-target: proof for another bundle (exit 4)
+ok   start-target: proof for another pubkey (exit 4)
+ok   start-target: proof without guard (exit 4)
+ok   start-target: source still answers (exit 4)
+ok   source probe was made
+ok   refusals started nothing
+ok   start-target ok (exit 0)
+ok   target running, restart unless-stopped
+ok   target guard removed, .env = source's
+ok   verify target ok (exit 0)
+ok   verify: identity matches, downtime_s=100
+ok   verify: wrong identity (exit 2)
+ok   verify: not full -> timeout (exit 1)
+ok   rollback: target running (exit 4)
+ok   refused rollback left source fenced
+ok   fence the target (alias) (exit 0)
+ok   target fenced, proof written
+ok   start-target on a fenced target (exit 4)
+ok   rollback: target proof older than the source fence (exit 4)
+ok   rollback: wrong bundle id (exit 4)
+ok   rollback on the target (not the source) (exit 4)
+ok   rollback ok (exit 0)
+ok   rollback: .env byte-identical to before the fence
+ok   rollback: source running, restart unless-stopped
+ok   rollback: FENCED archived, lock removed
+ok   verify source after rollback (exit 0)
+ok   rollback downtime_s=60
+ok   second rollback: not fenced (exit 4)
+ok   seed never printed by any command
+ok   age identity never printed
+RESULT: 119 passed, 0 failed
+run-tests exit 0
+$ bash tests/mutate.sh
+killed   no source probe: RESULT: 116 passed, 3 failed
+killed   no target probe: RESULT: 116 passed, 3 failed
+killed   no sidecar check: RESULT: 116 passed, 3 failed
+killed   no layout check: RESULT: 116 passed, 3 failed
+killed   no manifest check: RESULT: 117 passed, 2 failed
+killed   no extra-file check: RESULT: 117 passed, 2 failed
+killed   no link check: RESULT: 117 passed, 2 failed
+killed   no guard on fence: RESULT: 102 passed, 17 failed
+killed   no proof check (start): RESULT: 114 passed, 5 failed
+killed   proof ignores container_state: RESULT: 117 passed, 2 failed
+killed   rollback keeps restart=no: RESULT: 118 passed, 1 failed
+killed   import over running copy: RESULT: 118 passed, 1 failed
+killed   start on fenced host: RESULT: 112 passed, 7 failed
+killed   verify ignores identity: RESULT: 118 passed, 1 failed
+killed   rollback ignores proof age: RESULT: 117 passed, 2 failed
+SURVIVED export accepts identity file: RESULT: 119 passed, 0 failed
+MUTANTS: 15 killed, 1 survived/not applied
+mutate exit 1

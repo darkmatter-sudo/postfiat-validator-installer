@@ -1,7 +1,7 @@
 # pft-migrate: planned host migration with fencing
 
-Status: **design (step 1)**. Nothing below is implemented yet; this section is the contract the code and tests will be
-written against.
+Status: **implemented, offline-tested (steps 2-3)**; the live LXD drill (step 4) is not run yet. `pft-migrate.sh` +
+`tests/run-tests.sh` (two fake hosts, stubbed docker/RPC/probe, real age keys).
 
 Moving a Post Fiat node (validator or sentry, `postfiatd` in Docker) to a new host means copying its identity
 (`[node_seed]`, so `pubkey_node` stays the same and the peer's `[peer_private]`/`[ips_fixed]` pairing keeps working)
@@ -22,14 +22,34 @@ refuses to enter.
 ## Commands
 
 ```
-pft-migrate.sh plan        --role validator|sentry [--json]          # read-only: what would move, sizes, checks
-pft-migrate.sh export      --to RECIPIENT.pub --out DIR               # age bundle + MANIFEST.sha256 + sidecar sha256
-pft-migrate.sh fence-source --bundle-id ID                            # stop node, restart=no, fence file, maint lock
-pft-migrate.sh import      --bundle FILE --identity KEY               # verify outer+inner sha256, unpack, no start
-pft-migrate.sh start-target --fence-proof FILE                        # refuses unless the source fence is proven
-pft-migrate.sh verify      --expect-pubkey PUB                        # server_state full + pubkey_node match
-pft-migrate.sh rollback    --bundle-id ID                             # stop/fence target, unfence + start source
+# source                                                  # target
+pft-migrate.sh plan [--role validator|sentry] [--json]    age-keygen -o target.key   # recipient: age-keygen -y
+sudo pft-migrate.sh export --to age1... --out DIR         # copy DIR/pft-migrate-ID.age + .sha256 to the target
+sudo pft-migrate.sh fence-source --bundle-id ID --proof-out source.proof   # copy source.proof to the target
+                                                          sudo pft-migrate.sh import --bundle B.age --identity target.key
+                                                          sudo pft-migrate.sh start-target --fence-proof source.proof --source SRC_ADDR
+                                                          pft-migrate.sh verify --expect-pubkey n9... --since-proof source.proof
+# rollback: on the target first                           sudo pft-migrate.sh fence --bundle-id ID --proof-out target.proof
+sudo pft-migrate.sh rollback --bundle-id ID --fence-proof target.proof --target TGT_ADDR
+pft-migrate.sh verify --expect-pubkey n9... --since-proof target.proof
 ```
+
+Exit codes: 0 ok, 1 check failed / timeout, 2 integrity or crypto error (sidecar, age, layout, manifest, wrong
+identity), 3 usage, 4 refused by a fencing rule. `verify` prints `downtime_s` = seconds from the proof's `fenced_at`
+to `server_state full` with the expected `pubkey_node`.
+
+Bundle contents (paths inside the encrypted tar; `import` rejects anything else, links and devices included):
+`META`, `MANIFEST.sha256`, `cfgvol/postfiatd.cfg` + `validators.txt` (from the config volume, secrets kept: the
+bundle is the identity), `compose/` (every COMPOSE_FILE member + `.env`), `cluster/node_seed` + `node_pub`
+(pft-cluster), and the overlays' host files `host/etc/pft-seccomp/*.json`, `host/etc/apparmor.d/pft-*`. Plaintext is
+staged only under `STAGE_BASE` (`/dev/shm`, RAM) and removed on exit. `import --skip-overlay NAME` drops one overlay
+(and its host file) for a target that cannot load it, e.g. AppArmor inside a nested LXD sandbox; this is recorded in
+`IMPORTED` as `skipped=`.
+
+The compose guard is `docker-compose.migrate-fence.yml` (appended to COMPOSE_FILE): `restart: "no"` and an entrypoint
+that does not exist, so a plain `docker compose up -d` on a fenced or freshly imported host creates a container that
+cannot run. `import` installs it, `start-target` removes it, `fence` adds it, `rollback` restores the source's `.env`
+byte-identical from the copy taken at the first fence.
 
 ## Fencing guarantees
 
@@ -48,6 +68,30 @@ pft-migrate.sh rollback    --bundle-id ID                             # stop/fen
 - Fencing is cooperative for anything outside this tool: someone running plain `docker start` on the source bypasses
   the guard. The fence proof makes that visible, it cannot make it impossible.
 - No validator token is moved by the drill host (it has none); the token path is covered by offline tests only.
+
+## Offline tests
+
+`bash migrate/tests/run-tests.sh` (no root, docker or network): arguments, plan (file list, missing overlay member
+or host file), export (age header, 0600, sidecar, inner manifest, no plaintext seed in the bundle, RAM stage
+removed), fence (state, proof fields, guard against `compose up`, idempotent re-fence, second bundle refused),
+import negatives (wrong identity, flipped byte with and without a re-made sidecar, truncation, no sidecar, changed file,
+extra file, out-of-layout path, symlink, `../` escape, bad META, running copy), import (modes, volume labels, never
+starts), start-target refusals (proof running / other bundle / other pubkey / no guard, source still answering, host
+fenced), verify (match, wrong identity, timeout, downtime), rollback (target running, older proof, wrong bundle, on
+the target, byte-identical `.env`, restart policy restored, lock removed) and seed/age-identity never printed.
+
+Mutation check: `bash migrate/tests/mutate.sh` removes one safety check at a time (16 mutants: source/target probe,
+sidecar, layout, manifest, extra file, links, guard, proof checks, restart-policy restore, running-copy refusal,
+fenced-host refusal, identity check, proof age, identity-file recipient) and needs the suite to fail for each.
+
+| Log | What | Result |
+|---|---|---|
+| [logs/01-offline-checks.log](logs/01-offline-checks.log) | shellcheck, suite, mutants | shellcheck 0, suite 119 passed / 0 failed, mutants 15 killed / **1 survived** ("export accepts identity file": an age-keygen identity also fails the recipient match, so the secret-key guard was never tested alone) |
+| [logs/02-offline-checks.log](logs/02-offline-checks.log) | same, after adding a recipient+secret-key file test | shellcheck 0, suite 120 passed / 0 failed, mutants 16 killed / 0 survived |
+
+A read-only `plan` on the live validator listed 13 files (cfg, validators.txt, 6 compose files + `.env`, pinned
+seed + pub, AppArmor profile, seccomp JSON), `RESULT: OK`, and left nothing in `/dev/shm`; its output is not
+published (host layout).
 
 ## Drill (step 4, planned)
 
