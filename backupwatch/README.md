@@ -1,6 +1,7 @@
 # pft-backupwatch: backup freshness, integrity and restore-readiness monitor
 
-Status: **step 1 (check) done offline + one read-only live run; steps 2-5 to do**. Nothing is installed on any host yet; no rule, fleet-manifest or
+Status: **step 1 (check) done + live; first finding fixed (log 03); step 2 replication (`replicate`, `serve`,
+`check --offhost`) done offline (log 04); metrics, timers, rules, install and drills to do**. Nothing is installed on any host yet; no rule, fleet-manifest or
 rulecheck line exists until the live install run (lesson: rule lines ship in the same commit as the install).
 
 `../backup` writes one config archive a day (`pft-backup.timer`), and `../jobwatch` sees whether that timer ran and
@@ -30,14 +31,16 @@ object per check (`name`, `state`, `detail`) plus the archive name, age and size
 
 | File | What it is |
 |---|---|
-| `pft-backupwatch.sh` | CLI: `check [--json]`, `version` (usage in its header); conf `/etc/pft-backupwatch.env` (root-owned, sourced only if owned by root) |
+| `pft-backupwatch.sh` | CLI: `check [--json] [--offhost]`, `replicate`, `serve receive\|status\|verify` (the only verbs `PEER_SSH` runs on the peer), `version` (usage in its header); conf `/etc/pft-backupwatch.env` (root-owned, sourced only if owned by root) |
 | `backupwatch_lib.py` | stdlib helper: archive listing, in-memory tar/manifest/content/drift checks, gpg decrypt to a pipe, `render` (the table) |
-| `tests/test_backupwatch.py` | offline suite: synthetic archives in pft-backup's exact layout (fresh, old + age boundaries, missing, byte flip, truncated, size ratio, no sidecar, unlisted extra file, listed-but-absent, edited member, missing COMPOSE_FILE member, firewall reference error, drifted / gone files, cfg drift vs secret-only change, gpg right / wrong / no passphrase, usage) + the wrapper with a stub docker |
+| `tests/test_backupwatch.py` | offline suite: synthetic archives in pft-backup's exact layout (fresh, old + age boundaries, missing, byte flip, truncated, size ratio, no sidecar, unlisted extra file, listed-but-absent, edited member, missing COMPOSE_FILE member, firewall reference error, drifted / gone files, cfg drift vs secret-only change, gpg right / wrong / no passphrase, usage) + the wrapper with a stub docker that answers only the exact inspect it must send + replication against a fake peer (`PEER_SSH` = a script running this same CLI's `serve` with its own dirs and a real age identity): replicate OK, ciphertext only on the peer, 0700 store, local record, no scratch left; `--offhost` OK / newer archive not replicated (WARN) / keep-3 prune / tampered replica / tampered replica + re-hashed meta / no local record / peer down (FAIL); refusals: wrong recipient (peer cannot decrypt, nothing stored), archive != sidecar (no peer call), bad recipient, no PEER_SSH, forged ciphertext sha, oversize, name outside the pattern, unknown verb |
 | `drill/checks-run.sh` | recorded lint + suite + read-only live check (helper JSON and wrapper table) at a pushed commit |
 
 ```
-sudo pft-backupwatch check          # table + RESULT line, exit 0/1/2
-sudo pft-backupwatch check --json   # the helper's JSON
+sudo pft-backupwatch check            # table + RESULT line, exit 0/1/2
+sudo pft-backupwatch check --json     # the helper's JSON
+sudo pft-backupwatch replicate        # validator: newest archive -> encrypted replica on the sentry
+sudo pft-backupwatch check --offhost  # + the offhost check (status + verify on the sentry over PEER_SSH)
 ```
 
 ## Off-host replica (`replicate`)
@@ -47,7 +50,10 @@ archive (plain or gpg) to the sentry's age recipient (the one `../keyescrow` alr
 pipe and streams it over the admin SSH link (`PEER_SSH`) into `serve receive` on the sentry, which writes ciphertext
 only, checks its sha256 against the sender's, decrypts it in memory with its own identity, compares the result with
 the archive sidecar sha256, and keeps the newest `REPLICA_KEEP` (default 7) generations. Plaintext never touches the
-sentry's disk and never crosses the network.
+sentry's disk and never crosses the network. On the validator the ciphertext exists only in `SCRATCH`
+(`/dev/shm`) for the transfer and is removed right after. The validator records name, ciphertext sha256 and
+plaintext (sidecar) sha256 in `STATE_DIR/replica.tsv`; `check --offhost` compares the sentry's `serve status` and
+`serve verify` answers with that record, so a replica swapped or re-hashed on the sentry still fails.
 
 ## Metrics and alerts (step 2)
 
@@ -62,6 +68,7 @@ are filled in when they are built.
 | [`logs/01-checks-step1.log`](logs/01-checks-step1.log) | ruff clean, suite 62 passed / 0 failed, live read-only check of the validator's newest archive: fresh, size, sidecar, manifest (22 members), drift (17 files equal the live host) OK; **content WARN**: the timer-made archives hold `ufw-status.txt` = `ERROR: Couldn't determine iptables version` and no `docker-user.rules`. Cause: `pft-backup.service`'s unitguard drop-in (`RestrictAddressFamilies=AF_UNIX`, no `CAP_NET_ADMIN`) stops ufw/iptables, and pft-backup keeps going. A real gap backupwatch was built to find; fixed and verified in log 03 |
 | [`logs/03-backupfix.log`](logs/03-backupfix.log) | **found -> fixed -> verified** (`drill/backupfix-run.sh`): before = content WARN (exit 1); probe of pft-backup's two firewall commands in a transient unit: installed profile fails both (`Couldn't determine iptables version`, `Failed to initialize nft: Address family not supported`), new profile (`../unitguard/profiles/pft-backup.service.conf`: + `CAP_NET_ADMIN CAP_NET_RAW`, + `AF_NETLINK`; `/run` stays read-only, not needed) runs both; `pft-unitguard apply` (one real backup + the profile's check, which now requires both firewall members) exit 0; `pft-integrity` FAIL on the changed drop-in, accepted, PASS; after = every check OK on the new archive (23 members, 3 reference members present). `RESULT: PASS - 0 failed` |
 | [`logs/02-checks-wrapper.log`](logs/02-checks-wrapper.log) | with `pft-backupwatch.sh`: shellcheck exit 0, ruff clean, suite 77 passed / 0 failed; live check through the helper (JSON) and the wrapper (table) give the same result: 5 OK + content WARN, exit 1 both |
+| [`logs/04-checks-replication.log`](logs/04-checks-replication.log) | with replication: shellcheck exit 0, ruff clean, suite 109 passed / 0 failed; live check (after the log 03 fix) exit 0, every check OK, through the helper and the wrapper |
 
 ## Not covered
 

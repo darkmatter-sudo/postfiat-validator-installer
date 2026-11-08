@@ -1,0 +1,258 @@
+OS: Ubuntu 22.04.5 LTS
+date: 2026-11-08T08:09:48Z  commit: f80d42d8cc87df7e8d379810b4fe74e6b5f034ed  dirty: 0
+$ sha256sum backupwatch/pft-backupwatch.sh backupwatch/backupwatch_lib.py backupwatch/tests/test_backupwatch.py backupwatch/drill/checks-run.sh
+63dcd70bcbe6428aa25b612fe92661ff7c69c5e05e9c4d94944508953dc1347b  backupwatch/pft-backupwatch.sh
+d752a481ecb36a43329da88fb500b12abaac47525b6aef5a860e9b40954e1d3d  backupwatch/backupwatch_lib.py
+cec759472b043bb097c292d4ecc056c19a5a60e50a3786a42eb13cbbfba43603  backupwatch/tests/test_backupwatch.py
+2d19c74efd563590fb70a3a42a0054b2bc25e5a1aa956f1740b017bffadff641  backupwatch/drill/checks-run.sh
+(exit 0)
+$ shellcheck --version | sed -n 2p && shellcheck backupwatch/pft-backupwatch.sh backupwatch/drill/checks-run.sh
+version: 0.8.0
+(exit 0)
+$ ruff --version && ruff check backupwatch/ && ruff format --check backupwatch/
+ruff 0.17.1
+All checks passed!
+3 files already formatted
+(exit 0)
+$ TEST_TMPDIR=$HOME/.cache timeout 300 nice -n 15 python3 -u backupwatch/tests/test_backupwatch.py
+PASS fresh: rc 0
+PASS fresh: worst OK
+PASS fresh: fresh OK
+PASS fresh: size OK
+PASS fresh: sidecar OK
+PASS fresh: manifest OK
+PASS fresh: content OK
+PASS fresh: drift OK
+PASS fresh: newest archive picked
+PASS fresh: secret section never in output
+PASS fresh: drift rows all same
+PASS fresh: units-enabled.txt not drift-checked
+PASS old 30h: rc 1
+PASS old 30h: fresh WARN
+PASS old 54h: rc 2
+PASS old 54h: fresh FAIL
+PASS boundary 26h-1s: fresh OK
+PASS boundary 26h+1s: fresh WARN
+PASS no archive: rc 2
+PASS no archive: fresh FAIL 'no archive'
+PASS only foreign names: still no archive
+PASS dir missing: rc 2 + unreadable
+PASS byte flip: rc 2
+PASS byte flip: sidecar FAIL mismatch
+PASS byte flip: manifest FAIL
+PASS byte flip + new sidecar: sidecar OK
+PASS byte flip + new sidecar: manifest FAIL corrupt
+PASS truncated: size FAIL (< MIN_BYTES)
+PASS truncated: manifest FAIL
+PASS size 3x previous: size WARN
+PASS size 3x previous: rc 1
+PASS no sidecar: sidecar FAIL
+PASS no sidecar: manifest still checked OK
+PASS extra unlisted member: manifest FAIL
+PASS extra unlisted member: names it
+PASS extra unlisted member: sidecar OK (the archive is what was written)
+PASS listed but absent: names it
+PASS member edited after manifest: mismatch named
+PASS COMPOSE_FILE member missing: content FAIL
+PASS COMPOSE_FILE member missing: manifest OK (consistent archive)
+PASS postfiatd.cfg missing: content FAIL
+PASS firewall reference incomplete: content WARN
+PASS firewall: names missing docker-user.rules
+PASS firewall: names tool error in ufw-status
+PASS firewall reference incomplete: rc 1
+PASS drift: WARN
+PASS drift: changed file named
+PASS drift: gone file named
+PASS drift: rc 1
+PASS drift: cfg (secret section stripped on the live side) is same
+PASS cfg drift: postfiatd.cfg changed
+PASS secret-only cfg change: drift OK
+PASS no cfg dir: cfg files unchecked (WARN), not same
+PASS gpg right passphrase: manifest OK
+PASS gpg right passphrase: rc 0
+PASS gpg wrong passphrase: rc 2
+PASS gpg wrong passphrase: manifest FAIL 'wrong passphrase'
+PASS gpg wrong passphrase: sidecar still OK
+PASS gpg no passfile: manifest FAIL named
+PASS gpg scratch home removed
+PASS usage: missing --now -> rc 3
+PASS usage: fail-age < max-age -> rc 3
+PASS wrapper: rc 0 on a clean archive
+PASS wrapper: RESULT: OK line
+PASS wrapper: one line per check (6)
+PASS wrapper: stub docker answered (drift compared the cfg volume)
+PASS wrapper --json: helper JSON passed through, worst OK
+PASS wrapper: docker inspect fails -> cfg files unchecked -> WARN rc 1
+PASS wrapper: 39 h old -> rc 1 + fresh WARN
+PASS wrapper: 69 h old -> rc 2 + RESULT: FAIL
+PASS wrapper: a conf not owned by root is not sourced
+PASS wrapper: bad MAX_AGE_H -> rc 3
+PASS wrapper: bad SIZE_HI -> rc 3
+PASS wrapper: missing helper -> rc 3
+PASS wrapper: unknown check argument -> rc 3
+PASS wrapper: unknown command -> rc 3
+PASS wrapper: version
+PASS replicate: rc 0 + REPLICATED
+PASS replicate: peer confirmed OK
+PASS replicate: ciphertext + meta stored on the peer
+PASS replicate: peer holds age ciphertext, not the tar.gz
+PASS replicate: replica dir is 0700
+PASS replicate: local record = name, peer ciphertext sha256, sidecar sha256
+PASS replicate: no scratch left (ciphertext removed)
+PASS replicate: no partial file left on the peer
+PASS check --offhost: rc 0 + offhost OK
+PASS OFFHOST=1 in conf/env = --offhost
+PASS check without --offhost: no offhost line, peer not called for it
+PASS newer archive not replicated: offhost WARN
+PASS prune: REPLICA_KEEP=3 -> 3 replicas kept
+PASS prune: the oldest was pruned (PRUNED line, meta gone)
+PASS tampered replica on the peer: offhost FAIL SHA_MISMATCH
+PASS tampered replica + re-hashed meta: FAIL vs the local record
+PASS no local replica record: offhost FAIL
+PASS peer down (ssh rc 255): offhost FAIL unreachable
+PASS peer down: replicate rc 2, not recorded
+PASS wrong recipient: peer cannot decrypt -> DECRYPT_MISMATCH, rc 2
+PASS wrong recipient: nothing stored, no partial file
+PASS wrong recipient: nothing recorded locally
+PASS archive != sidecar: replicate refused rc 2 before any peer call
+PASS malformed recipient: rc 3
+PASS no PEER_SSH: rc 3
+PASS serve receive: forged CIPHER_SHA -> SHA_MISMATCH rc 2
+PASS serve receive: over REPLICA_MAX_BYTES -> TOO_BIG rc 2
+PASS serve receive refusals: nothing stored
+PASS serve receive: name outside the pft-backup pattern -> rc 3
+PASS serve verify: missing replica -> MISSING rc 2
+PASS serve status: empty store -> END only
+PASS serve: unknown verb -> rc 3
+RESULT: PASS (109 checks, 0 failed)
+(exit 0)
+config volume host path: found (docker inspect .Mounts, /etc/postfiatd)
+$ ls /dev/shm | grep -c '^pft-bw' || true
+0
+(exit 0)
+$ sudo -n python3 -u backupwatch/backupwatch_lib.py check --dir /var/backups/postfiat --now $(date +%s) --cfg-dir "$CFG" | python3 -m json.tool
+{
+    "age_s": 375,
+    "archive": "pft-backup-20261108T080341Z.tar.gz",
+    "bytes": 29942,
+    "checks": [
+        {
+            "detail": "newest 6 min old",
+            "name": "fresh",
+            "state": "OK"
+        },
+        {
+            "detail": "29942 B, 1.01x previous",
+            "name": "size",
+            "state": "OK"
+        },
+        {
+            "detail": "sha256 matches",
+            "name": "sidecar",
+            "state": "OK"
+        },
+        {
+            "detail": "23 members match",
+            "name": "manifest",
+            "state": "OK"
+        },
+        {
+            "detail": "9 required + 3 reference members present",
+            "name": "content",
+            "state": "OK"
+        },
+        {
+            "detail": "17 files equal the live host",
+            "name": "drift",
+            "state": "OK"
+        }
+    ],
+    "drift": [
+        {
+            "path": "/etc/postfiatd/postfiatd.cfg",
+            "state": "same"
+        },
+        {
+            "path": "/etc/postfiatd/validators.txt",
+            "state": "same"
+        },
+        {
+            "path": "/etc/systemd/system/pft-exporter.service",
+            "state": "same"
+        },
+        {
+            "path": "/etc/systemd/system/postfiat-docker-user.service",
+            "state": "same"
+        },
+        {
+            "path": "/etc/systemd/system/postfiat-monitor.service",
+            "state": "same"
+        },
+        {
+            "path": "/etc/systemd/system/postfiat-monitor.timer",
+            "state": "same"
+        },
+        {
+            "path": "/opt/pft-exporter/pft_exporter.py",
+            "state": "same"
+        },
+        {
+            "path": "/opt/postfiatd/.env",
+            "state": "same"
+        },
+        {
+            "path": "/opt/postfiatd/docker-compose.apparmor.yml",
+            "state": "same"
+        },
+        {
+            "path": "/opt/postfiatd/docker-compose.confine.yml",
+            "state": "same"
+        },
+        {
+            "path": "/opt/postfiatd/docker-compose.override.yml",
+            "state": "same"
+        },
+        {
+            "path": "/opt/postfiatd/docker-compose.resources.yml",
+            "state": "same"
+        },
+        {
+            "path": "/opt/postfiatd/docker-compose.seccomp.yml",
+            "state": "same"
+        },
+        {
+            "path": "/opt/postfiatd/docker-compose.yml",
+            "state": "same"
+        },
+        {
+            "path": "/usr/local/bin/postfiat-health",
+            "state": "same"
+        },
+        {
+            "path": "/usr/local/bin/postfiat-monitor",
+            "state": "same"
+        },
+        {
+            "path": "/usr/local/sbin/postfiat-docker-user.sh",
+            "state": "same"
+        }
+    ],
+    "sidecar_sha256": "3d95e13cedf7de27ad4cc45b7fd6e6f6e1cbe2761f0e8ecde340543d913f65f9",
+    "worst": "OK"
+}
+(exit 0)
+$ sudo -n PFT_BW_HELPER=backupwatch/backupwatch_lib.py bash backupwatch/pft-backupwatch.sh check
+pft-backupwatch check | archive pft-backup-20261108T080341Z.tar.gz | age_s 375 | bytes 29942
+  [OK  ] fresh     newest 6 min old
+  [OK  ] size      29942 B, 1.01x previous
+  [OK  ] sidecar   sha256 matches
+  [OK  ] manifest  23 members match
+  [OK  ] content   9 required + 3 reference members present
+  [OK  ] drift     17 files equal the live host
+RESULT: OK - 0 finding(s)
+(exit 0)
+$ ls /dev/shm | grep -c '^pft-bw' || true
+0
+(exit 0)
+live check exit: 0 (0 OK / 1 WARN / 2 FAIL)
+RESULT: PASS (lint+suite failures: 0; live check exit 0)
