@@ -1,0 +1,302 @@
+backupwatch two-host install - 2026-11-08T12:14:20Z - Ubuntu 22.04.5 LTS - repo HEAD a2e10cc269cca76607b5f74273cad0c6db2faa55 (clean: yes)
+
+== 0. preflight (read-only)
+$ sha256sum backupwatch/pft-backupwatch.sh backupwatch/backupwatch_lib.py backupwatch/install.sh backupwatch/drill/install-run.sh backupwatch/systemd/* alerts/backupwatch.rules.yml
+  5dc453d9bc7edabc3a6d3ac1080457b63c7cbe6b8d155c27a4974ced80a29536  backupwatch/pft-backupwatch.sh
+  45e8423bf8d5f19dd48faaa7bf2dc4333491792aefed8893bc4cbca3df9cab98  backupwatch/backupwatch_lib.py
+  426bb5944a49d548091b1fd6e2372637149bd8d01878acaefe567573be4e49b4  backupwatch/install.sh
+  f8ba3ffa5fbd651f05f88a3adf2d560bb213be8007691db09a10a19be0d4af2d  backupwatch/drill/install-run.sh
+  93c0af66983e7d2d3fb3fc672bdfde21f54216dd420b11604687bc1c3287d2ef  backupwatch/systemd/pft-backupwatch-pull.service
+  ba406d1c0e5ccd4295efcb70c69916f537a31ebc9d84344f94f4b41bea0a4f86  backupwatch/systemd/pft-backupwatch-pull.timer
+  eeaa0fd7418b78345ea3c7b177d48061447774b486c7beca86799b5d4d6401cf  backupwatch/systemd/pft-backupwatch-replicate.service
+  d97ccba98a4106ebbf97ff9dfc88f01def3c94f039d57794a23fe2d273b180c5  backupwatch/systemd/pft-backupwatch-replicate.timer
+  ba425f8989c570ff41dcf5b4e3ea8a28fa286043c8c6a2759dba90fb6e76bd03  backupwatch/systemd/pft-backupwatch.service
+  55e5f36dda57448fbbdf11e8d61c67f16484ef3fd06af3ac71f2613fecf77433  backupwatch/systemd/pft-backupwatch.timer
+  e46783764b2275cc73f876481ed8a37c70ce3ac27e612d478cf89d4ee9c8343f  alerts/backupwatch.rules.yml
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 213 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 132 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts before install
+$ sudo -n docker exec postfiatd curl -s -m 10 -d '{"method":"server_info"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state; R "sudo -n docker exec postfiatd-sentry curl -s -m 10 -d '{\"method\":\"server_info\"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state"
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ ls /usr/local/bin/pft-backupwatch /etc/pft-backupwatch.env 2>&1; R 'ls /usr/local/bin/pft-backupwatch /etc/pft-backupwatch.env 2>&1'
+  ls: cannot access '/usr/local/bin/pft-backupwatch': No such file or directory
+  ls: cannot access '/etc/pft-backupwatch.env': No such file or directory
+  ls: cannot access '/usr/local/bin/pft-backupwatch': No such file or directory
+  ls: cannot access '/etc/pft-backupwatch.env': No such file or directory
+  (exit 2)
+CHECK ok   not installed yet on either host
+$ grep -c backupwatch fleet/manifest.tsv; grep -c backupwatch.rules.yml alerts/prometheus.yml; grep -c pft_backupwatch_ rulecheck/pft-rulecheck.conf.example rulecheck/pft-rulecheck.sentry.conf.example
+  8
+  1
+  rulecheck/pft-rulecheck.conf.example:3
+  rulecheck/pft-rulecheck.sentry.conf.example:2
+  (exit 0)
+CHECK ok   HEAD lists 8 manifest lines, the rule file and 3 + 2 rulecheck lines
+$ sudo -n grep -c '^PEER_SSH=' /etc/pft-keyescrow.env; sudo -n sed -n 's/^PEER_RECIPIENT=//p' /etc/pft-keyescrow.env | tr -d '"\n' | sha256sum | cut -c1-16; R 'tr -d "\n" < /var/lib/pft-keyescrow/age.pub | sha256sum | cut -c1-16; test -s /var/lib/pft-keyescrow/age.key && echo identity present'
+  1
+  500fdad8333b3c33
+  500fdad8333b3c33
+  identity present
+  (exit 0)
+CHECK ok   keyescrow link: PEER_SSH set, PEER_RECIPIENT == the sentry's age.pub (hash prefix), sentry identity present
+$ R 'command -v age python3 sha256sum | wc -l'; command -v age python3 sha256sum | wc -l
+  3
+  3
+  (exit 0)
+CHECK ok   age, python3, sha256sum on both hosts
+$ sudo -n env PFT_BW_HELPER=$PWD/backupwatch/backupwatch_lib.py STATE_DIR=/nonexistent bash backupwatch/pft-backupwatch.sh check
+  pft-backupwatch check | archive pft-backup-20261108T080341Z.tar.gz | age_s 15069 | bytes 29942
+    [OK  ] fresh     newest 251 min old
+    [OK  ] size      29942 B, 1.01x previous
+    [OK  ] sidecar   sha256 matches
+    [OK  ] manifest  23 members match
+    [OK  ] content   9 required + 3 reference members present
+    [OK  ] drift     17 files equal the live host
+  RESULT: OK - 0 finding(s)
+  (exit 0)
+CHECK ok   FOUND: read-only check of the newest archive with the HEAD code: every local check OK
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+$ curl -s http://<redacted-ip>:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'; curl -s http://<redacted-ip>:9093/api/v2/alerts | jq -r '.[].labels.alertname' | sort | uniq -c
+  0
+        1 PFTAlertPipelineWatchdog
+  (exit 0)
+CHECK ok   no active silence; only the pipeline watchdog active in Alertmanager
+
+== 1. rollout silence (new rules; rulecheck/fleet/schedaudit/jobwatch see new files and timers; not the watchdog)
+CHECK ok   Alertmanager silence created (backupwatch rules, rulecheck, fleet, schedaudit, jobwatch, keyescrow; not the watchdog) until 2026-11-08T13:14:51Z
+
+== 2. pft-maint window, [MAINT] messages to a throwaway topic (real file kept as $BK)
+real /etc/pft-maint/ntfy.env present before: 0
+$ { [ $HAD = 0 ] || sudo -n cp -p $NE $BK; } && printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' "$TT" | sudo -n tee $NE >/dev/null && sudo -n chmod 600 $NE && sudo -n stat -c '%a %U' $NE
+  600 root
+  (exit 0)
+CHECK ok   throwaway target installed
+$ sudo -n pft-maint start --ttl 40m --reason 'task_e65845e5 backupwatch install'
+  window started: id m1794140091-2183911 until 2026-11-08T12:54:51Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint window open
+CHECK ok   sentry has the window (via the watchdog channel) after 50s
+
+== 3. pft-fleet: manifest (fleet add-on), then the backupwatch files
+$ sudo -n pft-fleet sync --addon fleet --to a2e10cc269cca76607b5f74273cad0c6db2faa55 --apply --reason 'task_e65845e5 backupwatch manifest lines'
+  [2026-11-08T12:16:13Z] sync fleet to a2e10cc269cca76607b5f74273cad0c6db2faa55 (2026-11-08T12:13:28+00:00) REF main=a2e10cc269cca76607b5f74273cad0c6db2faa55
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN validator validator /usr/local/sbin/pft-fleet 0755 CURRENT 61cafcfcdaa9 61cafcfcdaa9 keep
+  PLAN validator validator /usr/local/lib/pft-fleet/fleet_lib.py 0644 CURRENT dcb37d26f33f dcb37d26f33f keep
+  PLAN validator validator /usr/local/lib/pft-fleet/manifest.tsv 0644 BEHIND 216763197528 a8fe6dd7ecb0 write
+  PLAN validator validator /etc/systemd/system/pft-fleet.service 0644 CURRENT 3105a2f0a144 3105a2f0a144 keep
+  PLAN validator validator /etc/systemd/system/pft-fleet.timer 0644 CURRENT 79839ee00a81 79839ee00a81 keep
+  [2026-11-08T12:16:13Z] order: sentry validator
+  [2026-11-08T12:16:13Z] sentry: every fleet file already at a2e10cc269cc - nothing to do
+  [2026-11-08T12:16:13Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/lib/pft-fleet/manifest.tsv sha256 216763197528 -> /var/lib/pft-fleet/backup/20261108T121613Z-fleet-validator
+  WRITE validator /usr/local/lib/pft-fleet/manifest.tsv 216763197528 -> a8fe6dd7ecb0 mode 0644
+  GATE validator sha256 /usr/local/lib/pft-fleet/manifest.tsv = target a8fe6dd7ecb0 PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync fleet@a2e10cc269cc (manifest.tsv)
+  [2026-11-08T12:16:39Z] SYNCED validator fleet -> a2e10cc269cc
+  [2026-11-08T12:16:39Z] sync complete
+  (exit 0)
+CHECK ok   fleet manifest sync exit 0
+$ sudo -n pft-fleet sync --addon backupwatch --to a2e10cc269cca76607b5f74273cad0c6db2faa55 --apply --reason 'task_e65845e5 backupwatch a2e10cc first install'
+  [2026-11-08T12:16:58Z] sync backupwatch to a2e10cc269cca76607b5f74273cad0c6db2faa55 (2026-11-08T12:13:28+00:00) REF main=a2e10cc269cca76607b5f74273cad0c6db2faa55
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN sentry sentry /usr/local/bin/pft-backupwatch 0755 MISSING - 5dc453d9bc7e write
+  PLAN sentry sentry /usr/local/lib/pft-backupwatch/backupwatch_lib.py 0644 MISSING - 45e8423bf8d5 write
+  PLAN sentry sentry /etc/systemd/system/pft-backupwatch.service 0644 MISSING - ba425f8989c5 write
+  PLAN sentry sentry /etc/systemd/system/pft-backupwatch.timer 0644 MISSING - 55e5f36dda57 write
+  PLAN validator validator /usr/local/bin/pft-backupwatch 0755 MISSING - 5dc453d9bc7e write
+  PLAN validator validator /usr/local/lib/pft-backupwatch/backupwatch_lib.py 0644 MISSING - 45e8423bf8d5 write
+  PLAN validator validator /etc/systemd/system/pft-backupwatch.service 0644 MISSING - ba425f8989c5 write
+  PLAN validator validator /etc/systemd/system/pft-backupwatch.timer 0644 MISSING - 55e5f36dda57 write
+  PLAN validator validator /etc/systemd/system/pft-backupwatch-pull.service 0644 MISSING - 93c0af66983e write
+  PLAN validator validator /etc/systemd/system/pft-backupwatch-pull.timer 0644 MISSING - ba406d1c0e5c write
+  PLAN validator validator /etc/systemd/system/pft-backupwatch-replicate.service 0644 MISSING - eeaa0fd7418b write
+  PLAN validator validator /etc/systemd/system/pft-backupwatch-replicate.timer 0644 MISSING - d97ccba98a41 write
+  [2026-11-08T12:16:58Z] order: sentry validator
+  [2026-11-08T12:16:58Z] sentry: 4 file(s) to write
+  PRE sentry pft-maint window active PASS
+  PRE sentry node server_state=full PASS
+  PRE sentry pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP sentry /usr/local/bin/pft-backupwatch absent before sync (rollback removes it)
+  BACKUP sentry /usr/local/lib/pft-backupwatch/backupwatch_lib.py absent before sync (rollback removes it)
+  BACKUP sentry /etc/systemd/system/pft-backupwatch.service absent before sync (rollback removes it)
+  BACKUP sentry /etc/systemd/system/pft-backupwatch.timer absent before sync (rollback removes it)
+  WRITE sentry /usr/local/bin/pft-backupwatch - -> 5dc453d9bc7e mode 0755
+  WRITE sentry /usr/local/lib/pft-backupwatch/backupwatch_lib.py - -> 45e8423bf8d5 mode 0644
+  WRITE sentry /etc/systemd/system/pft-backupwatch.service - -> ba425f8989c5 mode 0644
+  WRITE sentry /etc/systemd/system/pft-backupwatch.timer - -> 55e5f36dda57 mode 0644
+  RELOAD sentry systemctl daemon-reload
+  GATE sentry sha256 /usr/local/bin/pft-backupwatch = target 5dc453d9bc7e PASS
+  GATE sentry syntax /usr/local/bin/pft-backupwatch bash -n PASS
+  GATE sentry sha256 /usr/local/lib/pft-backupwatch/backupwatch_lib.py = target 45e8423bf8d5 PASS
+  GATE sentry syntax /usr/local/lib/pft-backupwatch/backupwatch_lib.py python PASS
+  GATE sentry sha256 /etc/systemd/system/pft-backupwatch.service = target ba425f8989c5 PASS
+  GATE sentry unit pft-backupwatch.service LoadState=loaded PASS
+  GATE sentry sha256 /etc/systemd/system/pft-backupwatch.timer = target 55e5f36dda57 PASS
+  GATE sentry unit pft-backupwatch.timer LoadState=loaded PASS
+  GATE sentry addon units failed=none PASS
+  GATE sentry node server_state=full PASS
+  ACCEPT sentry pft-integrity baseline updated: pft-fleet sync backupwatch@a2e10cc269cc (pft-backupwatch,backupwatch_lib.py,pft-backupwatch.service,pft-backupwatch.timer)
+  [2026-11-08T12:18:01Z] SYNCED sentry backupwatch -> a2e10cc269cc
+  [2026-11-08T12:18:01Z] validator: 8 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/bin/pft-backupwatch absent before sync (rollback removes it)
+  BACKUP validator /usr/local/lib/pft-backupwatch/backupwatch_lib.py absent before sync (rollback removes it)
+  BACKUP validator /etc/systemd/system/pft-backupwatch.service absent before sync (rollback removes it)
+  BACKUP validator /etc/systemd/system/pft-backupwatch.timer absent before sync (rollback removes it)
+  BACKUP validator /etc/systemd/system/pft-backupwatch-pull.service absent before sync (rollback removes it)
+  BACKUP validator /etc/systemd/system/pft-backupwatch-pull.timer absent before sync (rollback removes it)
+  BACKUP validator /etc/systemd/system/pft-backupwatch-replicate.service absent before sync (rollback removes it)
+  BACKUP validator /etc/systemd/system/pft-backupwatch-replicate.timer absent before sync (rollback removes it)
+  WRITE validator /usr/local/bin/pft-backupwatch - -> 5dc453d9bc7e mode 0755
+  WRITE validator /usr/local/lib/pft-backupwatch/backupwatch_lib.py - -> 45e8423bf8d5 mode 0644
+  WRITE validator /etc/systemd/system/pft-backupwatch.service - -> ba425f8989c5 mode 0644
+  WRITE validator /etc/systemd/system/pft-backupwatch.timer - -> 55e5f36dda57 mode 0644
+  WRITE validator /etc/systemd/system/pft-backupwatch-pull.service - -> 93c0af66983e mode 0644
+  WRITE validator /etc/systemd/system/pft-backupwatch-pull.timer - -> ba406d1c0e5c mode 0644
+  WRITE validator /etc/systemd/system/pft-backupwatch-replicate.service - -> eeaa0fd7418b mode 0644
+  WRITE validator /etc/systemd/system/pft-backupwatch-replicate.timer - -> d97ccba98a41 mode 0644
+  RELOAD validator systemctl daemon-reload
+  GATE validator sha256 /usr/local/bin/pft-backupwatch = target 5dc453d9bc7e PASS
+  GATE validator syntax /usr/local/bin/pft-backupwatch bash -n PASS
+  GATE validator sha256 /usr/local/lib/pft-backupwatch/backupwatch_lib.py = target 45e8423bf8d5 PASS
+  GATE validator syntax /usr/local/lib/pft-backupwatch/backupwatch_lib.py python PASS
+  GATE validator sha256 /etc/systemd/system/pft-backupwatch.service = target ba425f8989c5 PASS
+  GATE validator unit pft-backupwatch.service LoadState=loaded PASS
+  GATE validator sha256 /etc/systemd/system/pft-backupwatch.timer = target 55e5f36dda57 PASS
+  GATE validator unit pft-backupwatch.timer LoadState=loaded PASS
+  GATE validator sha256 /etc/systemd/system/pft-backupwatch-pull.service = target 93c0af66983e PASS
+  GATE validator unit pft-backupwatch-pull.service LoadState=loaded PASS
+  GATE validator sha256 /etc/systemd/system/pft-backupwatch-pull.timer = target ba406d1c0e5c PASS
+  GATE validator unit pft-backupwatch-pull.timer LoadState=loaded PASS
+  GATE validator sha256 /etc/systemd/system/pft-backupwatch-replicate.service = target eeaa0fd7418b PASS
+  GATE validator unit pft-backupwatch-replicate.service LoadState=loaded PASS
+  GATE validator sha256 /etc/systemd/system/pft-backupwatch-replicate.timer = target d97ccba98a41 PASS
+  GATE validator unit pft-backupwatch-replicate.timer LoadState=loaded PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync backupwatch@a2e10cc269cc (pft-backupwatch,backupwatch_lib.py,pft-backupwatch.service,pft-backupwatch.timer,pft-backupwatch-pull.service,pft-backupwatch-pull.timer,pft-backupwatch-replicate.service,pft-backupwatch-replicate.timer)
+  [2026-11-08T12:18:31Z] SYNCED validator backupwatch -> a2e10cc269cc
+  [2026-11-08T12:18:31Z] sync complete
+  (exit 0)
+CHECK ok   backupwatch sync exit 0 (files written + integrity accepted by pft-fleet)
+$ sha256sum backupwatch/pft-backupwatch.sh backupwatch/backupwatch_lib.py | cut -c1-64; sudo -n sha256sum /usr/local/bin/pft-backupwatch /usr/local/lib/pft-backupwatch/backupwatch_lib.py | cut -c1-64; R 'sha256sum /usr/local/bin/pft-backupwatch /usr/local/lib/pft-backupwatch/backupwatch_lib.py | cut -c1-64'
+  5dc453d9bc7edabc3a6d3ac1080457b63c7cbe6b8d155c27a4974ced80a29536
+  45e8423bf8d5f19dd48faaa7bf2dc4333491792aefed8893bc4cbca3df9cab98
+  5dc453d9bc7edabc3a6d3ac1080457b63c7cbe6b8d155c27a4974ced80a29536
+  45e8423bf8d5f19dd48faaa7bf2dc4333491792aefed8893bc4cbca3df9cab98
+  5dc453d9bc7edabc3a6d3ac1080457b63c7cbe6b8d155c27a4974ced80a29536
+  45e8423bf8d5f19dd48faaa7bf2dc4333491792aefed8893bc4cbca3df9cab98
+  (exit 0)
+CHECK ok   installed script + helper = repo bytes on both hosts
+
+== 4. sentry: install.sh --role replica (collect through the sandboxed unit)
+$ git archive a2e10cc269cca76607b5f74273cad0c6db2faa55 backupwatch | R 'rm -rf /tmp/pft-backupwatch-a2e10cc && mkdir -m 700 /tmp/pft-backupwatch-a2e10cc && tar -x -C /tmp/pft-backupwatch-a2e10cc'
+  
+  (exit 0)
+$ R 'sudo -n bash /tmp/pft-backupwatch-a2e10cc/backupwatch/install.sh --role replica --host sentry'
+  2026-11-08T12:18:34Z unchanged /usr/local/bin/pft-backupwatch
+  2026-11-08T12:18:34Z unchanged /usr/local/lib/pft-backupwatch/backupwatch_lib.py
+  2026-11-08T12:18:34Z set ROLE in /etc/pft-backupwatch.env
+  2026-11-08T12:18:34Z set HOST_LABEL in /etc/pft-backupwatch.env
+  2026-11-08T12:18:34Z unchanged /etc/systemd/system/pft-backupwatch.service
+  2026-11-08T12:18:34Z unchanged /etc/systemd/system/pft-backupwatch.timer
+  2026-11-08T12:18:34Z first collection (through the sandboxed unit):
+  Starting pft-backupwatch collect: backup freshness/integrity/drift (archive host) or replica store (replica host) as textfile metrics...
+  pft-backupwatch.service: Deactivated successfully.
+  Finished pft-backupwatch collect: backup freshness/integrity/drift (archive host) or replica store (replica host) as textfile metrics.
+  pft_backupwatch_up{host="sentry"} 1
+  pft_backupwatch_replicas{host="sentry"} 0
+  pft_backupwatch_replica_verify_ok{host="sentry"} 0
+    Created symlink /etc/systemd/system/timers.target.wants/pft-backupwatch.timer → /etc/systemd/system/pft-backupwatch.timer.
+  2026-11-08T12:18:36Z timers: pft-backupwatch.timer=active changed=true
+  2026-11-08T12:18:36Z remember: sudo pft-integrity accept --reason 'pft-backupwatch installed'; pft-schedaudit accept (new timers)
+  (exit 0)
+CHECK ok   sentry install exit 0, up 1
+
+== 5. validator: install.sh --role archive (first replicate, collect with --offhost, pull of the sentry file)
+$ sudo -n bash backupwatch/install.sh --role archive --host validator
+  2026-11-08T12:18:36Z unchanged /usr/local/bin/pft-backupwatch
+  2026-11-08T12:18:36Z unchanged /usr/local/lib/pft-backupwatch/backupwatch_lib.py
+  2026-11-08T12:18:37Z set ROLE in /etc/pft-backupwatch.env
+  2026-11-08T12:18:37Z set HOST_LABEL in /etc/pft-backupwatch.env
+  2026-11-08T12:18:37Z set PEER_SSH in /etc/pft-backupwatch.env
+  2026-11-08T12:18:37Z set REPLICA_RECIPIENT in /etc/pft-backupwatch.env
+  2026-11-08T12:18:37Z set OFFHOST in /etc/pft-backupwatch.env
+  2026-11-08T12:18:37Z unchanged /etc/systemd/system/pft-backupwatch.service
+  2026-11-08T12:18:37Z unchanged /etc/systemd/system/pft-backupwatch.timer
+  2026-11-08T12:18:37Z unchanged /etc/systemd/system/pft-backupwatch-replicate.service
+  2026-11-08T12:18:37Z unchanged /etc/systemd/system/pft-backupwatch-replicate.timer
+  2026-11-08T12:18:37Z unchanged /etc/systemd/system/pft-backupwatch-pull.service
+  2026-11-08T12:18:37Z unchanged /etc/systemd/system/pft-backupwatch-pull.timer
+  2026-11-08T12:18:37Z first replicate (through the sandboxed unit):
+  Starting pft-backupwatch replicate: newest pft-backup archive -> age-encrypted replica on the sentry...
+    peer: RECEIVED pft-backup-20261108T080341Z.tar.gz af9ac01aff4843fbdf41b21cdab6b3bb9ba0d17bd333e4617397380236422443 OK
+  REPLICATED pft-backup-20261108T080341Z.tar.gz cipher_sha256 af9ac01aff4843fbdf41b21cdab6b3bb9ba0d17bd333e4617397380236422443 plain_sha256 3d95e13cedf7de27ad4cc45b7fd6e6f6e1cbe2761f0e8ecde340543d913f65f9
+  pft-backupwatch-replicate.service: Deactivated successfully.
+  Finished pft-backupwatch replicate: newest pft-backup archive -> age-encrypted replica on the sentry.
+  2026-11-08T12:18:39Z first collection (through the sandboxed unit):
+  Starting pft-backupwatch collect: backup freshness/integrity/drift (archive host) or replica store (replica host) as textfile metrics...
+  pft-backupwatch.service: Deactivated successfully.
+  Finished pft-backupwatch collect: backup freshness/integrity/drift (archive host) or replica store (replica host) as textfile metrics.
+  pft_backupwatch_up{host="validator"} 1
+  pft_backupwatch_check_state{host="validator",check="fresh"} 0
+  pft_backupwatch_check_state{host="validator",check="size"} 0
+  pft_backupwatch_check_state{host="validator",check="sidecar"} 0
+  pft_backupwatch_check_state{host="validator",check="manifest"} 0
+  pft_backupwatch_check_state{host="validator",check="content"} 0
+  pft_backupwatch_check_state{host="validator",check="drift"} 0
+  pft_backupwatch_check_state{host="validator",check="offhost"} 0
+  2026-11-08T12:18:41Z first pull of the peer's textfile (through the sandboxed unit):
+  Starting pft-backupwatch pull: copy the sentry's backupwatch textfile to this host's exporter (validated)...
+  pft-backupwatch-pull.service: Deactivated successfully.
+  Finished pft-backupwatch pull: copy the sentry's backupwatch textfile to this host's exporter (validated).
+  pft_backupwatch_up{host="sentry"} 1
+  pft_backupwatch_replicas{host="sentry"} 0
+  pft_backupwatch_replica_verify_ok{host="sentry"} 0
+    Created symlink /etc/systemd/system/timers.target.wants/pft-backupwatch.timer → /etc/systemd/system/pft-backupwatch.timer.
+    Created symlink /etc/systemd/system/timers.target.wants/pft-backupwatch-replicate.timer → /etc/systemd/system/pft-backupwatch-replicate.timer.
+    Created symlink /etc/systemd/system/timers.target.wants/pft-backupwatch-pull.timer → /etc/systemd/system/pft-backupwatch-pull.timer.
+  2026-11-08T12:18:44Z timers: pft-backupwatch.timer=active pft-backupwatch-replicate.timer=active pft-backupwatch-pull.timer=active changed=true
+  2026-11-08T12:18:44Z remember: sudo pft-integrity accept --reason 'pft-backupwatch installed'; pft-schedaudit accept (new timers)
+  (exit 0)
+CHECK ok   validator install exit 0, up 1, offhost 0
+$ sudo -n grep -E '^pft_backupwatch_(up|replicas|replica_verify_ok)' /var/lib/pft-exporter/textfile/pft_backupwatch_sentry.prom
+  pft_backupwatch_up{host="sentry"} 1
+  pft_backupwatch_replicas{host="sentry"} 0
+  pft_backupwatch_replica_verify_ok{host="sentry"} 0
+  (exit 0)
+CHECK FAIL pulled sentry file on the validator: up 1, replicas 1, replica_verify_ok 1
+$ sudo -n bash -c 'grep -E "^(ROLE|HOST_LABEL|OFFHOST)=" /etc/pft-backupwatch.env; grep -c "^PEER_SSH=" /etc/pft-backupwatch.env; grep -c "^REPLICA_RECIPIENT=age1" /etc/pft-backupwatch.env; stat -c "%a %U" /etc/pft-backupwatch.env'
+  ROLE=archive
+  HOST_LABEL=validator
+  OFFHOST=1
+  1
+  1
+  600 root
+  (exit 0)
+CHECK ok   validator conf: ROLE archive, OFFHOST 1, one PEER_SSH, one recipient, 600 root
+$ sudo -n bash backupwatch/install.sh --role archive --host validator 2>&1 | grep -E 'installed|set |changed='
+  2026-11-08T12:18:52Z timers: pft-backupwatch.timer=active pft-backupwatch-replicate.timer=active pft-backupwatch-pull.timer=active changed=false
+  2026-11-08T12:18:52Z remember: sudo pft-integrity accept --reason 'pft-backupwatch installed'; pft-schedaudit accept (new timers)
+  (exit 0)
+CHECK ok   second install run is idempotent (changed=false, nothing installed or set)
+a step failed - stopping before the next host change (restore runs)
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+$ sudo -n rm -f $NE   (no ntfy.env before: pft-maint falls back to the real monitor target again)
+rc=1

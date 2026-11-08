@@ -1,0 +1,71 @@
+backupwatch two-host install - 2026-11-08T12:13:36Z - Ubuntu 22.04.5 LTS - repo HEAD a2e10cc269cca76607b5f74273cad0c6db2faa55 (clean: yes)
+
+== 0. preflight (read-only)
+$ sha256sum backupwatch/pft-backupwatch.sh backupwatch/backupwatch_lib.py backupwatch/install.sh backupwatch/drill/install-run.sh backupwatch/systemd/* alerts/backupwatch.rules.yml
+  5dc453d9bc7edabc3a6d3ac1080457b63c7cbe6b8d155c27a4974ced80a29536  backupwatch/pft-backupwatch.sh
+  45e8423bf8d5f19dd48faaa7bf2dc4333491792aefed8893bc4cbca3df9cab98  backupwatch/backupwatch_lib.py
+  426bb5944a49d548091b1fd6e2372637149bd8d01878acaefe567573be4e49b4  backupwatch/install.sh
+  f8ba3ffa5fbd651f05f88a3adf2d560bb213be8007691db09a10a19be0d4af2d  backupwatch/drill/install-run.sh
+  93c0af66983e7d2d3fb3fc672bdfde21f54216dd420b11604687bc1c3287d2ef  backupwatch/systemd/pft-backupwatch-pull.service
+  ba406d1c0e5ccd4295efcb70c69916f537a31ebc9d84344f94f4b41bea0a4f86  backupwatch/systemd/pft-backupwatch-pull.timer
+  eeaa0fd7418b78345ea3c7b177d48061447774b486c7beca86799b5d4d6401cf  backupwatch/systemd/pft-backupwatch-replicate.service
+  d97ccba98a4106ebbf97ff9dfc88f01def3c94f039d57794a23fe2d273b180c5  backupwatch/systemd/pft-backupwatch-replicate.timer
+  ba425f8989c570ff41dcf5b4e3ea8a28fa286043c8c6a2759dba90fb6e76bd03  backupwatch/systemd/pft-backupwatch.service
+  55e5f36dda57448fbbdf11e8d61c67f16484ef3fd06af3ac71f2613fecf77433  backupwatch/systemd/pft-backupwatch.timer
+  e46783764b2275cc73f876481ed8a37c70ce3ac27e612d478cf89d4ee9c8343f  alerts/backupwatch.rules.yml
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 213 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 132 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts before install
+$ sudo -n docker exec postfiatd curl -s -m 10 -d '{"method":"server_info"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state; R "sudo -n docker exec postfiatd-sentry curl -s -m 10 -d '{\"method\":\"server_info\"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state"
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ ls /usr/local/bin/pft-backupwatch /etc/pft-backupwatch.env 2>&1; R 'ls /usr/local/bin/pft-backupwatch /etc/pft-backupwatch.env 2>&1'
+  ls: cannot access '/usr/local/bin/pft-backupwatch': No such file or directory
+  ls: cannot access '/etc/pft-backupwatch.env': No such file or directory
+  ls: cannot access '/usr/local/bin/pft-backupwatch': No such file or directory
+  ls: cannot access '/etc/pft-backupwatch.env': No such file or directory
+  (exit 2)
+CHECK ok   not installed yet on either host
+$ grep -c backupwatch fleet/manifest.tsv; grep -c backupwatch.rules.yml alerts/prometheus.yml; grep -c pft_backupwatch_ rulecheck/pft-rulecheck.conf.example rulecheck/pft-rulecheck.sentry.conf.example
+  8
+  1
+  rulecheck/pft-rulecheck.conf.example:3
+  rulecheck/pft-rulecheck.sentry.conf.example:2
+  (exit 0)
+CHECK ok   HEAD lists 8 manifest lines, the rule file and 3 + 2 rulecheck lines
+$ sudo -n grep -c '^PEER_SSH=' /etc/pft-keyescrow.env; sudo -n sed -n 's/^PEER_RECIPIENT=//p' /etc/pft-keyescrow.env | tr -d '"\n' | sha256sum | cut -c1-16; R 'tr -d "\n" < /var/lib/pft-keyescrow/age.pub | sha256sum | cut -c1-16; test -s /var/lib/pft-keyescrow/age.key && echo identity present'
+  1
+  500fdad8333b3c33
+  500fdad8333b3c33
+  identity present
+  (exit 0)
+CHECK ok   keyescrow link: PEER_SSH set, PEER_RECIPIENT == the sentry's age.pub (hash prefix), sentry identity present
+$ R 'command -v age python3 sha256sum | wc -l'; command -v age python3 sha256sum | wc -l
+  3
+  3
+  (exit 0)
+CHECK ok   age, python3, sha256sum on both hosts
+$ sudo -n env PFT_BW_HELPER=$PWD/backupwatch/backupwatch_lib.py STATE_DIR=/nonexistent bash backupwatch/pft-backupwatch.sh check
+  pft-backupwatch check | archive pft-backup-20261108T080341Z.tar.gz | age_s 15029 | bytes 29942
+    [OK  ] fresh     newest 250 min old
+    [OK  ] size      29942 B, 1.01x previous
+    [OK  ] sidecar   sha256 matches
+    [OK  ] manifest  23 members match
+    [OK  ] content   9 required + 3 reference members present
+    [OK  ] drift     17 files equal the live host
+  RESULT: OK - 0 finding(s)
+  (exit 0)
+CHECK ok   FOUND: read-only check of the newest archive with the HEAD code: every local check OK
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+$ curl -s http://<redacted-ip>:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'; curl -s http://<redacted-ip>:9093/api/v2/alerts | jq -r '.[].labels.alertname' | sort | uniq -c
+  0
+        1 PFTAlertPipelineWatchdog
+  (exit 0)
+CHECK ok   no active silence; only the pipeline watchdog active in Alertmanager
+PREFLIGHT_ONLY: stopping before any change (0 failed)
