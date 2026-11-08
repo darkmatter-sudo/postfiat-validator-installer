@@ -589,8 +589,11 @@ def wrap(c, *args, env=None, docker_src=None):
         if docker_src is None:
             fh.write("#!/bin/sh\necho 'Error: No such object' >&2\nexit 1\n")
         else:
+            # answers only the exact inspect the wrapper must send (container + the /etc/postfiatd mount)
             fh.write(
-                f"#!/bin/sh\n[ \"$1\" = inspect ] || exit 9\necho '{docker_src}'\n"
+                '#!/bin/sh\n[ "$1" = inspect ] && [ "$2" = postfiatd ] || exit 9\n'
+                'case "$4" in *\'.Destination "/etc/postfiatd"\'*) ;; *) exit 8 ;; esac\n'
+                f"echo '{docker_src}'\n"
             )
     os.chmod(stub, 0o755)
     e = dict(os.environ)
@@ -702,6 +705,313 @@ def t_wrapper(c):
     check("wrapper: version", rc == 0 and out.startswith("pft-backupwatch "), out)
 
 
+def readf(path):
+    try:
+        with open(path) as fh:
+            return fh.read()
+    except FileNotFoundError:
+        return ""
+
+
+def agekey(path):
+    subprocess.run(
+        ["age-keygen", "-o", path],
+        check=True,
+        capture_output=True,
+        stdin=subprocess.DEVNULL,
+    )
+    p = subprocess.run(
+        ["age-keygen", "-y", path],
+        check=True,
+        capture_output=True,
+        text=True,
+        stdin=subprocess.DEVNULL,
+    )
+    return p.stdout.strip()
+
+
+def peer_setup(c, keep=3, max_bytes=None):
+    """A fake sentry: PEER_SSH = peer.sh, which runs this same script's `serve` with the peer's own env."""
+    pdir = os.path.join(c.base, "peer")
+    os.makedirs(pdir)
+    rcpt = agekey(os.path.join(pdir, "age.key"))
+    sh = os.path.join(c.base, "peer.sh")
+    extra = f" REPLICA_MAX_BYTES={max_bytes}" if max_bytes else ""
+    with open(sh, "w") as fh:
+        fh.write(
+            "#!/bin/sh\n"
+            f'echo "$*" >> "{c.base}/peer-calls"\n'
+            f'[ -e "{c.base}/peer-down" ] && exit 255\n'
+            '[ "$1" = pft-backupwatch ] || exit 9\nshift\n'
+            f"exec env PFT_BW_CONF=/nonexistent REPLICA_DIR={pdir}/replicas REPLICA_IDENTITY={pdir}/age.key "
+            f'REPLICA_KEEP={keep}{extra} bash {SCRIPT} "$@"\n'
+        )
+    os.chmod(sh, 0o755)
+    return rcpt, sh, os.path.join(pdir, "replicas")
+
+
+def t_replica(c):
+    rcpt, sh, rdir = peer_setup(c)
+    state = os.path.join(c.base, "state")
+    cfg = os.path.join(c.root, "cfgvol")
+    env = {"PEER_SSH": sh, "REPLICA_RECIPIENT": rcpt, "STATE_DIR": state}
+    write_archive(c.bdir, "20261107T023000Z", members_for(c.root))
+    a = write_archive(c.bdir, "20261108T023000Z", members_for(c.root))
+    n = os.path.basename(a)
+    rc, out, err = wrap(c, "replicate", env=env, docker_src=cfg)
+    check(
+        "replicate: rc 0 + REPLICATED",
+        rc == 0 and f"REPLICATED {n} " in out,
+        (rc, out, err),
+    )
+    check(
+        "replicate: peer confirmed OK",
+        f"peer: RECEIVED {n} " in out and " OK" in out,
+        out,
+    )
+    stored = os.path.join(rdir, n + ".age")
+    check(
+        "replicate: ciphertext + meta stored on the peer",
+        os.path.isfile(stored) and os.path.isfile(stored + ".meta"),
+        rdir,
+    )
+    with open(stored, "rb") as fh:
+        head = fh.read(22)
+    check(
+        "replicate: peer holds age ciphertext, not the tar.gz",
+        head.startswith(b"age-encryption.org/v1"),
+        head,
+    )
+    check(
+        "replicate: replica dir is 0700",
+        os.path.isdir(rdir) and (os.stat(rdir).st_mode & 0o777) == 0o700,
+        oct(os.stat(rdir).st_mode),
+    )
+    with open(os.path.join(state, "replica.tsv")) as fh:
+        rec = fh.read().split("\n")[0].split("\t")
+    with open(stored, "rb") as fh:
+        csha = hashlib.sha256(fh.read()).hexdigest()
+    with open(a + ".sha256") as fh:
+        plain = fh.read().split()[0]
+    check(
+        "replicate: local record = name, peer ciphertext sha256, sidecar sha256",
+        rec[:3] == [n, csha, plain],
+        rec,
+    )
+    left = [x for x in os.listdir(TMP_BASE) if x.startswith("pft-bw-")]
+    check("replicate: no scratch left (ciphertext removed)", not left, left)
+    check(
+        "replicate: no partial file left on the peer",
+        not [x for x in os.listdir(rdir) if x.startswith(".in.")],
+        os.listdir(rdir),
+    )
+
+    rc, out, err = wrap(c, "check", "--offhost", env=env, docker_src=cfg)
+    check(
+        "check --offhost: rc 0 + offhost OK",
+        rc == 0 and "[OK  ] offhost" in out,
+        (rc, out, err),
+    )
+    rc, out, err = wrap(c, "check", env=dict(env, OFFHOST="1"), docker_src=cfg)
+    check("OFFHOST=1 in conf/env = --offhost", "offhost" in out and rc == 0, (rc, out))
+    rc, out, err = wrap(c, "check", env=env, docker_src=cfg)
+    check(
+        "check without --offhost: no offhost line, peer not called for it",
+        "offhost" not in out,
+        out,
+    )
+
+    # a newer local archive that is not replicated yet -> WARN
+    write_archive(c.bdir, "20261108T090000Z", members_for(c.root))
+    rc, out, err = wrap(c, "check", "--offhost", env=env, docker_src=cfg)
+    check(
+        "newer archive not replicated: offhost WARN",
+        rc == 1 and "[WARN] offhost" in out and n[:-7] in out,
+        (rc, out),
+    )
+    # replicate twice more -> keep 3 on the peer, oldest pruned
+    rc, out, err = wrap(c, "replicate", env=env, docker_src=cfg)
+    write_archive(c.bdir, "20261108T100000Z", members_for(c.root))
+    rc2, _out2, _err2 = wrap(c, "replicate", env=env, docker_src=cfg)
+    write_archive(c.bdir, "20261108T110000Z", members_for(c.root))
+    rc3, out3, _err3 = wrap(c, "replicate", env=env, docker_src=cfg)
+    ages = sorted(x for x in os.listdir(rdir) if x.endswith(".age"))
+    check(
+        "prune: REPLICA_KEEP=3 -> 3 replicas kept",
+        len(ages) == 3 and rc == rc2 == rc3 == 0,
+        (ages, out3),
+    )
+    check(
+        "prune: the oldest was pruned (PRUNED line, meta gone)",
+        f"PRUNED {n}" in out3 and not os.path.exists(stored + ".meta"),
+        out3,
+    )
+
+    newest = max(ages)
+    path = os.path.join(rdir, newest)
+    with open(path, "r+b") as fh:
+        fh.seek(200)
+        b = fh.read(1)
+        fh.seek(200)
+        fh.write(bytes([b[0] ^ 1]))
+    rc, out, err = wrap(c, "check", "--offhost", env=env, docker_src=cfg)
+    check(
+        "tampered replica on the peer: offhost FAIL SHA_MISMATCH",
+        rc == 2 and "[FAIL] offhost" in out and "SHA_MISMATCH" in out,
+        (rc, out),
+    )
+    # tamper the meta too (an attacker on the peer re-hashes): the local record still disagrees
+    meta = path + ".meta"
+    with open(path, "rb") as fh:
+        newsha = hashlib.sha256(fh.read()).hexdigest()
+    with open(meta) as fh:
+        m = fh.read()
+    with open(meta, "w") as fh:
+        fh.write(
+            "\n".join(
+                f"cipher_sha256={newsha}" if x.startswith("cipher_sha256=") else x
+                for x in m.split("\n")
+            )
+        )
+    rc, out, err = wrap(c, "check", "--offhost", env=env, docker_src=cfg)
+    check(
+        "tampered replica + re-hashed meta: FAIL vs the local record",
+        rc == 2 and "differs from the one recorded" in out,
+        (rc, out),
+    )
+    os.rename(
+        os.path.join(state, "replica.tsv"), os.path.join(state, "replica.tsv.bak")
+    )
+    rc, out, err = wrap(c, "check", "--offhost", env=env, docker_src=cfg)
+    check(
+        "no local replica record: offhost FAIL",
+        rc == 2 and "not recorded locally" in out,
+        (rc, out),
+    )
+    os.rename(
+        os.path.join(state, "replica.tsv.bak"), os.path.join(state, "replica.tsv")
+    )
+
+    open(os.path.join(c.base, "peer-down"), "w").close()
+    rc, out, err = wrap(c, "check", "--offhost", env=env, docker_src=cfg)
+    check(
+        "peer down (ssh rc 255): offhost FAIL unreachable",
+        rc == 2 and "peer unreachable (PEER_DOWN 255)" in out,
+        (rc, out),
+    )
+    rc, out, err = wrap(c, "replicate", env=env, docker_src=cfg)
+    check(
+        "peer down: replicate rc 2, not recorded",
+        rc == 2 and "did not confirm" in err,
+        (rc, out, err),
+    )
+    os.remove(os.path.join(c.base, "peer-down"))
+
+
+def t_replica_refusals(c):
+    rcpt, sh, rdir = peer_setup(c, max_bytes=100000)
+    other = agekey(os.path.join(c.base, "other.key"))
+    state = os.path.join(c.base, "state")
+    cfg = os.path.join(c.root, "cfgvol")
+    env = {"PEER_SSH": sh, "REPLICA_RECIPIENT": other, "STATE_DIR": state}
+    a = write_archive(c.bdir, "20261108T023000Z", members_for(c.root))
+    n = os.path.basename(a)
+    rc, out, err = wrap(c, "replicate", env=env, docker_src=cfg)
+    check(
+        "wrong recipient: peer cannot decrypt -> DECRYPT_MISMATCH, rc 2",
+        rc == 2 and "DECRYPT_MISMATCH" in out,
+        (rc, out, err),
+    )
+    check(
+        "wrong recipient: nothing stored, no partial file",
+        not os.path.isdir(rdir) or not os.listdir(rdir),
+        os.listdir(rdir) if os.path.isdir(rdir) else "",
+    )
+    check(
+        "wrong recipient: nothing recorded locally",
+        not os.path.exists(os.path.join(state, "replica.tsv")),
+        "recorded",
+    )
+    env["REPLICA_RECIPIENT"] = rcpt
+    with open(a + ".sha256", "w") as fh:
+        fh.write("0" * 64 + "  x\n")
+    calls = os.path.join(c.base, "peer-calls")
+    before = readf(calls)
+    rc, out, err = wrap(c, "replicate", env=env, docker_src=cfg)
+    after = readf(calls)
+    check(
+        "archive != sidecar: replicate refused rc 2 before any peer call",
+        rc == 2 and "does not match its sidecar" in err and before == after,
+        (rc, err),
+    )
+    with open(a, "rb") as fh:
+        good = hashlib.sha256(fh.read()).hexdigest()
+    with open(a + ".sha256", "w") as fh:
+        fh.write(f"{good}  {n}\n")
+    rc, out, err = wrap(
+        c, "replicate", env=dict(env, REPLICA_RECIPIENT="age1short"), docker_src=cfg
+    )
+    check(
+        "malformed recipient: rc 3", rc == 3 and "REPLICA_RECIPIENT" in err, (rc, err)
+    )
+    rc, out, err = wrap(c, "replicate", env=dict(env, PEER_SSH=""), docker_src=cfg)
+    check("no PEER_SSH: rc 3", rc == 3 and "PEER_SSH" in err, (rc, err))
+
+    def serve(*args, data=b""):
+        e = dict(
+            os.environ,
+            PFT_BW_CONF="/nonexistent",
+            REPLICA_DIR=rdir,
+            REPLICA_IDENTITY=os.path.join(c.base, "peer", "age.key"),
+            REPLICA_MAX_BYTES="100000",
+        )
+        p = subprocess.run(
+            ["bash", SCRIPT, "serve", *args],
+            input=data,
+            capture_output=True,
+            timeout=60,
+            env=e,
+            check=False,
+        )
+        return p.returncode, p.stdout.decode(), p.stderr.decode()
+
+    rc, out, err = serve("receive", n, good, "f" * 64, data=b"not the ciphertext")
+    check(
+        "serve receive: forged CIPHER_SHA -> SHA_MISMATCH rc 2",
+        rc == 2 and "SHA_MISMATCH" in out,
+        (rc, out, err),
+    )
+    rc, out, err = serve("receive", n, good, "f" * 64, data=os.urandom(100001))
+    check(
+        "serve receive: over REPLICA_MAX_BYTES -> TOO_BIG rc 2",
+        rc == 2 and "TOO_BIG" in out,
+        (rc, out, err),
+    )
+    check(
+        "serve receive refusals: nothing stored",
+        not [x for x in os.listdir(rdir) if not x.startswith("x")],
+        os.listdir(rdir),
+    )
+    rc, out, err = serve("receive", "../../etc/x.tar.gz", good, good)
+    check(
+        "serve receive: name outside the pft-backup pattern -> rc 3", rc == 3, (rc, err)
+    )
+    rc, out, err = serve("verify", "pft-backup-20990101T000000Z.tar.gz")
+    check(
+        "serve verify: missing replica -> MISSING rc 2",
+        rc == 2 and "MISSING" in out,
+        (rc, out),
+    )
+    rc, out, err = serve("status")
+    check(
+        "serve status: empty store -> END only",
+        rc == 0 and out.strip() == "END",
+        (rc, out),
+    )
+    rc, out, err = serve("shell", "id")
+    check("serve: unknown verb -> rc 3", rc == 3, (rc, err))
+
+
 def main():
     os.makedirs(TMP_BASE, exist_ok=True)
     for label, fn in [
@@ -720,6 +1030,8 @@ def main():
         ("gpg", t_gpg),
         ("usage", t_usage),
         ("wrapper", t_wrapper),
+        ("replica", t_replica),
+        ("refusals", t_replica_refusals),
     ]:
         case(label, fn)
     ok = all(results)

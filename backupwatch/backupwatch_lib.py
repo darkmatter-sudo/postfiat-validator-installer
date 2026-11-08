@@ -245,6 +245,62 @@ def check_drift(members, root, cfg_dir, secrets_included):
     return "WARN", "; ".join(f"{r['path']} {r['state']}" for r in odd), rows
 
 
+def check_offhost(report_path, state_path, name, plain):
+    """(state, detail) from the peer report (PEER_DOWN rc | REPLICA name csha plain received... | VERIFY name state)
+    and the local replica record (name csha plain epoch per line, newest last)."""
+    try:
+        with open(report_path) as fh:
+            lines = fh.read().splitlines()
+    except OSError:
+        return "FAIL", "no peer report"
+    down = [x for x in lines if x.startswith("PEER_DOWN")]
+    if down:
+        return "FAIL", f"peer unreachable ({down[0]})"
+    if not name:
+        return "FAIL", "no local archive to compare"
+    reps, verify = {}, {}
+    for x in lines:
+        f = x.split()
+        if len(f) >= 4 and f[0] == "REPLICA":
+            reps[f[1].removesuffix(".age")] = (f[2], f[3])
+        elif len(f) == 3 and f[0] == "VERIFY":
+            verify[f[1]] = f[2]
+    if not reps:
+        return "FAIL", "no replica on the peer"
+    rec = {}
+    try:
+        with open(state_path) as fh:
+            for line in fh:
+                f = line.rstrip("\n").split("\t")
+                if len(f) == 4:
+                    rec[f[0]] = (f[1], f[2])
+    except OSError:
+        pass
+    if name not in reps:
+        newest = max(reps)
+        return "WARN", f"newest archive not replicated; newest replica {newest}"
+    csha, rplain = reps[name]
+    if name not in rec:
+        return (
+            "FAIL",
+            "replica not recorded locally (state file missing or replicated elsewhere)",
+        )
+    if rec[name][0] != csha:
+        return (
+            "FAIL",
+            "replica ciphertext sha256 differs from the one recorded at replication",
+        )
+    if rplain != plain or rec[name][1] != plain:
+        return "FAIL", "replica plaintext sha256 differs from the archive sidecar"
+    v = verify.get(name)
+    if v != "OK":
+        return "FAIL", f"peer verify: {v or 'no answer'}"
+    return (
+        "OK",
+        f"peer holds {name}: ciphertext sha256 = recorded, decrypts to the sidecar sha256 ({len(reps)} replica(s))",
+    )
+
+
 def secrets_flag(members):
     for line in members.get("META.txt", b"").decode(errors="replace").splitlines():
         if line.startswith("secrets_included="):
@@ -262,9 +318,11 @@ def cmd_check(a):
         arch = list_archives(a.dir)
     except OSError as e:
         add("fresh", "FAIL", f"backup dir unreadable ({type(e).__name__})")
+        offhost(a, res, add, "")
         return finish(res)
     if not arch:
         add("fresh", "FAIL", "no archive")
+        offhost(a, res, add, "")
         return finish(res)
     ts, name = arch[-1]
     path = os.path.join(a.dir, name)
@@ -301,6 +359,7 @@ def cmd_check(a):
     try:
         with open(side) as fh:
             want = fh.read().split()[0]
+        res["sidecar_sha256"] = want
         if want == sha256(blob):
             add("sidecar", "OK", "sha256 matches")
         else:
@@ -324,13 +383,25 @@ def cmd_check(a):
         add("manifest", "FAIL", why)
         add("content", "FAIL", "archive not readable")
         add("drift", "FAIL", "archive not readable")
+        offhost(a, res, add, name)
         return finish(res)
     add("manifest", *check_manifest(members))
     add("content", *check_content(members))
     st, detail, rows = check_drift(members, a.root, a.cfg_dir, secrets_flag(members))
     add("drift", st, detail)
     res["drift"] = rows
+    offhost(a, res, add, name)
     return finish(res)
+
+
+def offhost(a, res, add, name):
+    if a.offhost:
+        add(
+            "offhost",
+            *check_offhost(
+                a.offhost, a.replica_state, name, res.get("sidecar_sha256", "")
+            ),
+        )
 
 
 def finish(res):
@@ -372,6 +443,12 @@ def main(argv):
     c.add_argument("--size-hi", type=float, default=2.0)
     c.add_argument("--scratch", default="/dev/shm")
     c.add_argument("--gpg", default="gpg")
+    c.add_argument(
+        "--offhost",
+        default="",
+        help="peer report file (pft-backupwatch.sh offhost_report)",
+    )
+    c.add_argument("--replica-state", default="/var/lib/pft-backupwatch/replica.tsv")
     sub.add_parser("render")
     try:
         a = ap.parse_args(argv)
