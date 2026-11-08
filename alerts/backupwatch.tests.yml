@@ -1,0 +1,213 @@
+# promtool unit tests for backupwatch.rules.yml. Run: promtool test rules backupwatch.tests.yml
+# NxM in values = N, then M more samples (1x20 covers t 0..20). Every alert has a fire case at its `for` boundary and a recovery case (the alert is gone after the input recovers).
+rule_files:
+- backupwatch.rules.yml
+evaluation_interval: 1m
+tests:
+- name: healthy validator (archive) and sentry (replica) for 3h fire nothing
+  interval: 1m
+  input_series:
+  - series: pft_backupwatch_up{host="validator"}
+    values: 1x180
+  - series: pft_backupwatch_collect_timestamp_seconds{host="validator"}
+    values: 0+60x180
+  - series: pft_backupwatch_check_state{host="validator",check="fresh"}
+    values: 0x180
+  - series: pft_backupwatch_check_state{host="validator",check="size"}
+    values: 0x180
+  - series: pft_backupwatch_check_state{host="validator",check="sidecar"}
+    values: 0x180
+  - series: pft_backupwatch_check_state{host="validator",check="manifest"}
+    values: 0x180
+  - series: pft_backupwatch_check_state{host="validator",check="content"}
+    values: 0x180
+  - series: pft_backupwatch_check_state{host="validator",check="drift"}
+    values: 0x180
+  - series: pft_backupwatch_check_state{host="validator",check="offhost"}
+    values: 0x180
+  - series: pft_backupwatch_drift_overdue{host="validator"}
+    values: 0x180
+  - series: pft_backupwatch_up{host="sentry"}
+    values: 1x180
+  - series: pft_backupwatch_collect_timestamp_seconds{host="sentry"}
+    values: 0+60x180
+  - series: pft_backupwatch_replica_verify_ok{host="sentry"}
+    values: 1x180
+  alert_rule_test:
+  - {eval_time: 179m, alertname: PFTBackupStale, exp_alerts: []}
+  - {eval_time: 179m, alertname: PFTBackupBroken, exp_alerts: []}
+  - {eval_time: 179m, alertname: PFTBackupConfigDrift, exp_alerts: []}
+  - {eval_time: 179m, alertname: PFTBackupNoOffhostCopy, exp_alerts: []}
+  - {eval_time: 179m, alertname: PFTBackupwatchStale, exp_alerts: []}
+
+- name: stale archive (WARN, then FAIL) fires after 30 min and resolves when a fresh archive appears
+  interval: 1m
+  input_series:
+  - series: pft_backupwatch_check_state{host="validator",check="fresh"}
+    values: 0x10 1x30 2x20 0x30
+  alert_rule_test:
+  - {eval_time: 40m, alertname: PFTBackupStale, exp_alerts: []}
+  - eval_time: 41m
+    alertname: PFTBackupStale
+    exp_alerts:
+    - exp_labels: {severity: warning, host: validator, check: fresh}
+      exp_annotations:
+        summary: "validator: newest config backup is too old or missing"
+        description: "pft-backupwatch's fresh check is not OK: no pft-backup archive younger than MAX_AGE_H. Run `sudo pft-backupwatch check` and `systemctl status pft-backup.timer pft-backup.service` on the host."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/backupwatch/README.md#alerts"
+  - eval_time: 62m
+    alertname: PFTBackupStale
+    exp_alerts:
+    - exp_labels: {severity: warning, host: validator, check: fresh}
+      exp_annotations:
+        summary: "validator: newest config backup is too old or missing"
+        description: "pft-backupwatch's fresh check is not OK: no pft-backup archive younger than MAX_AGE_H. Run `sudo pft-backupwatch check` and `systemctl status pft-backup.timer pft-backup.service` on the host."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/backupwatch/README.md#alerts"
+  - {eval_time: 63m, alertname: PFTBackupStale, exp_alerts: []}
+
+- name: a broken archive fires per failing check after 15 min, WARN does not fire, and it resolves on a good archive
+  interval: 1m
+  input_series:
+  - series: pft_backupwatch_check_state{host="validator",check="manifest"}
+    values: 0x5 2x20 0x20
+  - series: pft_backupwatch_check_state{host="validator",check="sidecar"}
+    values: 0x5 2x20 0x20
+  - series: pft_backupwatch_check_state{host="validator",check="content"}
+    values: 1x45
+  - series: pft_backupwatch_check_state{host="validator",check="size"}
+    values: 1x45
+  - series: pft_backupwatch_check_state{host="validator",check="drift"}
+    values: 2x45
+  alert_rule_test:
+  - {eval_time: 20m, alertname: PFTBackupBroken, exp_alerts: []}
+  - eval_time: 21m
+    alertname: PFTBackupBroken
+    exp_alerts:
+    - exp_labels: {severity: critical, host: validator, check: manifest}
+      exp_annotations:
+        summary: "validator: newest config backup fails its manifest check"
+        description: "The newest pft-backup archive fails the manifest check and would not restore cleanly. Run `sudo pft-backupwatch check` on the host, then `sudo systemctl start pft-backup.service` once the cause is fixed and check again."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/backupwatch/README.md#alerts"
+    - exp_labels: {severity: critical, host: validator, check: sidecar}
+      exp_annotations:
+        summary: "validator: newest config backup fails its sidecar check"
+        description: "The newest pft-backup archive fails the sidecar check and would not restore cleanly. Run `sudo pft-backupwatch check` on the host, then `sudo systemctl start pft-backup.service` once the cause is fixed and check again."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/backupwatch/README.md#alerts"
+  - {eval_time: 27m, alertname: PFTBackupBroken, exp_alerts: []}
+  - {eval_time: 44m, alertname: PFTBackupBroken, exp_alerts: []}
+
+- name: required member missing or truncated archive (content / size FAIL) fire too
+  interval: 1m
+  input_series:
+  - series: pft_backupwatch_check_state{host="validator",check="content"}
+    values: 2x20 0x10
+  - series: pft_backupwatch_check_state{host="validator",check="size"}
+    values: 2x20 0x10
+  alert_rule_test:
+  - eval_time: 15m
+    alertname: PFTBackupBroken
+    exp_alerts:
+    - exp_labels: {severity: critical, host: validator, check: content}
+      exp_annotations:
+        summary: "validator: newest config backup fails its content check"
+        description: "The newest pft-backup archive fails the content check and would not restore cleanly. Run `sudo pft-backupwatch check` on the host, then `sudo systemctl start pft-backup.service` once the cause is fixed and check again."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/backupwatch/README.md#alerts"
+    - exp_labels: {severity: critical, host: validator, check: size}
+      exp_annotations:
+        summary: "validator: newest config backup fails its size check"
+        description: "The newest pft-backup archive fails the size check and would not restore cleanly. Run `sudo pft-backupwatch check` on the host, then `sudo systemctl start pft-backup.service` once the cause is fixed and check again."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/backupwatch/README.md#alerts"
+  - {eval_time: 21m, alertname: PFTBackupBroken, exp_alerts: []}
+
+- name: drift overdue fires after 15 min and resolves when a backup picks the change up
+  interval: 1m
+  input_series:
+  - series: pft_backupwatch_drift_overdue{host="validator"}
+    values: 0x5 1x20 0x20
+  alert_rule_test:
+  - {eval_time: 20m, alertname: PFTBackupConfigDrift, exp_alerts: []}
+  - eval_time: 21m
+    alertname: PFTBackupConfigDrift
+    exp_alerts:
+    - exp_labels: {severity: warning, host: validator}
+      exp_annotations:
+        summary: "validator: live config has differed from the newest backup for over DRIFT_GRACE_H"
+        description: "Archived config files differ from the live host and no backup has picked the change up. Run `sudo pft-backupwatch check` (drift lines) and `sudo systemctl start pft-backup.service`."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/backupwatch/README.md#alerts"
+  - {eval_time: 27m, alertname: PFTBackupConfigDrift, exp_alerts: []}
+
+- name: no off-host copy fires from either side after 30 min and resolves
+  interval: 1m
+  input_series:
+  - series: pft_backupwatch_check_state{host="validator",check="offhost"}
+    values: 0x5 1x40 0x20
+  - series: pft_backupwatch_replica_verify_ok{host="sentry"}
+    values: 1x10 0x40 1x20
+  alert_rule_test:
+  - {eval_time: 35m, alertname: PFTBackupNoOffhostCopy, exp_alerts: []}
+  - eval_time: 36m
+    alertname: PFTBackupNoOffhostCopy
+    exp_alerts:
+    - exp_labels: {severity: warning, host: validator, check: offhost}
+      exp_annotations:
+        summary: "validator: no verified off-host copy of the newest config backup"
+        description: "The newest pft-backup archive has no verified encrypted replica on the peer (validator: offhost check not OK; sentry: newest replica does not re-hash/decrypt). A lost validator could not be rebuilt from the peer. Run `sudo pft-backupwatch check --offhost` on the validator and `sudo pft-backupwatch replicate`."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/backupwatch/README.md#alerts"
+  - eval_time: 41m
+    alertname: PFTBackupNoOffhostCopy
+    exp_alerts:
+    - exp_labels: {severity: warning, host: validator, check: offhost}
+      exp_annotations:
+        summary: "validator: no verified off-host copy of the newest config backup"
+        description: "The newest pft-backup archive has no verified encrypted replica on the peer (validator: offhost check not OK; sentry: newest replica does not re-hash/decrypt). A lost validator could not be rebuilt from the peer. Run `sudo pft-backupwatch check --offhost` on the validator and `sudo pft-backupwatch replicate`."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/backupwatch/README.md#alerts"
+    - exp_labels: {severity: warning, host: sentry}
+      exp_annotations:
+        summary: "sentry: no verified off-host copy of the newest config backup"
+        description: "The newest pft-backup archive has no verified encrypted replica on the peer (validator: offhost check not OK; sentry: newest replica does not re-hash/decrypt). A lost validator could not be rebuilt from the peer. Run `sudo pft-backupwatch check --offhost` on the validator and `sudo pft-backupwatch replicate`."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/backupwatch/README.md#alerts"
+  - eval_time: 47m
+    alertname: PFTBackupNoOffhostCopy
+    exp_alerts:
+    - exp_labels: {severity: warning, host: sentry}
+      exp_annotations:
+        summary: "sentry: no verified off-host copy of the newest config backup"
+        description: "The newest pft-backup archive has no verified encrypted replica on the peer (validator: offhost check not OK; sentry: newest replica does not re-hash/decrypt). A lost validator could not be rebuilt from the peer. Run `sudo pft-backupwatch check --offhost` on the validator and `sudo pft-backupwatch replicate`."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/backupwatch/README.md#alerts"
+  - {eval_time: 52m, alertname: PFTBackupNoOffhostCopy, exp_alerts: []}
+
+- name: collector stale (timestamps stop) or up 0 fires after 10 min and resolves when collection resumes
+  interval: 1m
+  input_series:
+  # sentry: timestamps stop at 10m (last sample 600); expr true from 56m (> 3300 s), firing at 66m; resumes at 81m
+  # (NxM = N, then M more samples: 0+60x10 is t 0..10)
+  - series: pft_backupwatch_collect_timestamp_seconds{host="sentry"}
+    values: 0+60x10 600x69 4800+60x30
+  - series: pft_backupwatch_up{host="sentry"}
+    values: 1x110
+  # validator: fresh timestamps, up 0 for t 21..41 -> firing at 31m, gone at 42m
+  - series: pft_backupwatch_collect_timestamp_seconds{host="validator"}
+    values: 0+60x110
+  - series: pft_backupwatch_up{host="validator"}
+    values: 1x20 0x20 1x70
+  alert_rule_test:
+  - {eval_time: 30m, alertname: PFTBackupwatchStale, exp_alerts: []}
+  - eval_time: 31m
+    alertname: PFTBackupwatchStale
+    exp_alerts:
+    - exp_labels: {severity: warning, host: validator}
+      exp_annotations:
+        summary: "pft-backupwatch on validator is stale or failing"
+        description: "For 10 min either the last collection is older than 45 min (pft-backupwatch.timer, or for the sentry pft-backupwatch-pull.timer on the validator, is not running) or the check produced no result (pft_backupwatch_up 0). The backup alerts for this host are blind. Run `sudo pft-backupwatch collect --stdout` on the host."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/backupwatch/README.md#alerts"
+  - {eval_time: 42m, alertname: PFTBackupwatchStale, exp_alerts: []}
+  - {eval_time: 65m, alertname: PFTBackupwatchStale, exp_alerts: []}
+  - eval_time: 66m
+    alertname: PFTBackupwatchStale
+    exp_alerts:
+    - exp_labels: {severity: warning, host: sentry}
+      exp_annotations:
+        summary: "pft-backupwatch on sentry is stale or failing"
+        description: "For 10 min either the last collection is older than 45 min (pft-backupwatch.timer, or for the sentry pft-backupwatch-pull.timer on the validator, is not running) or the check produced no result (pft_backupwatch_up 0). The backup alerts for this host are blind. Run `sudo pft-backupwatch collect --stdout` on the host."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/backupwatch/README.md#alerts"
+  - {eval_time: 81m, alertname: PFTBackupwatchStale, exp_alerts: []}

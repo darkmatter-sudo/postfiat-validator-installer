@@ -371,6 +371,39 @@ def t_sidecar_missing(c):
     )
 
 
+def t_outside_stem(c):
+    """A member outside NAME/ (path traversal or a foreign archive) makes the archive unreadable, whatever else it holds."""
+    a = write_archive(c.bdir, "20261108T023000Z", members_for(c.root))
+    with open(a, "rb") as fh:
+        data = fh.read()
+    buf = io.BytesIO()
+    with (
+        tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as src,
+        tarfile.open(fileobj=buf, mode="w:gz") as dst,
+    ):
+        for m in src:
+            dst.addfile(m, src.extractfile(m) if m.isfile() else None)
+        ti = tarfile.TarInfo("other/etc/cron.d/x")
+        ti.size = 2
+        dst.addfile(ti, io.BytesIO(b"x\n"))
+    with open(a, "wb") as fh:
+        fh.write(buf.getvalue())
+    with open(a + ".sha256", "w") as fh:
+        fh.write(
+            f"{hashlib.sha256(buf.getvalue()).hexdigest()}  {os.path.basename(a)}\n"
+        )
+    rc, j = run(c.bdir, c.root)
+    st, detail = state(j, "manifest")
+    check(
+        "member outside NAME/: manifest FAIL naming it, rc 2",
+        rc == 2
+        and st == "FAIL"
+        and "outside" in detail
+        and "other/etc/cron.d/x" in detail,
+        (rc, j),
+    )
+
+
 def t_extra(c):
     m = members_for(c.root)
     m["files/etc/cron.d/evil"] = b"* * * * * root sh\n"
@@ -1012,6 +1045,453 @@ def t_replica_refusals(c):
     check("serve: unknown verb -> rc 3", rc == 3, (rc, err))
 
 
+def prom_samples(text):
+    """{'name{labels}': value} for every sample line."""
+    out = {}
+    for line in text.splitlines():
+        if line and not line.startswith("#"):
+            k, v = line.rsplit(" ", 1)
+            out[k] = float(v)
+    return out
+
+
+def helper(args, stdin):
+    p = subprocess.run(
+        [sys.executable, HELPER, *args],
+        input=stdin,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    return p.returncode, p.stdout, p.stderr
+
+
+def t_metrics(c):
+    ds = os.path.join(c.base, "drift.since")
+    j = {
+        "archive": "pft-backup-20261108T023000Z.tar.gz",
+        "age_s": 34200,
+        "bytes": 9000,
+        "checks": [
+            {"name": "fresh", "state": "OK", "detail": ""},
+            {"name": "manifest", "state": "FAIL", "detail": ""},
+            {"name": "drift", "state": "WARN", "detail": ""},
+        ],
+        "drift": [
+            {"path": "/a", "state": "changed"},
+            {"path": "/b", "state": "same"},
+            {"path": "/c", "state": "gone"},
+        ],
+        "worst": "FAIL",
+    }
+    base = [
+        "metrics",
+        "--host",
+        "validator",
+        "--drift-state",
+        ds,
+        "--drift-grace-h",
+        "30",
+    ]
+    rc, out, err = helper(base + ["--now", str(NOW)], json.dumps(j))
+    m = prom_samples(out)
+    check(
+        "metrics: rc 0, up 1, collect timestamp = now",
+        rc == 0
+        and m.get('pft_backupwatch_up{host="validator"}') == 1
+        and m.get('pft_backupwatch_collect_timestamp_seconds{host="validator"}') == NOW,
+        (rc, out, err),
+    )
+    check(
+        "metrics: check_state 0/2/1 per check, only checks that ran",
+        m.get('pft_backupwatch_check_state{host="validator",check="fresh"}') == 0
+        and m.get('pft_backupwatch_check_state{host="validator",check="manifest"}') == 2
+        and m.get('pft_backupwatch_check_state{host="validator",check="drift"}') == 1
+        and not any("offhost" in k for k in m),
+        out,
+    )
+    check(
+        "metrics: archive age + bytes",
+        m.get('pft_backupwatch_archive_age_seconds{host="validator"}') == 34200
+        and m.get('pft_backupwatch_archive_bytes{host="validator"}') == 9000,
+        out,
+    )
+    check(
+        "metrics: drift_files counts changed + gone, not same",
+        m.get('pft_backupwatch_drift_files{host="validator"}') == 2,
+        out,
+    )
+    check(
+        "metrics: first drift -> since = now, not overdue, state file written",
+        m.get('pft_backupwatch_drift_since_timestamp_seconds{host="validator"}') == NOW
+        and m.get('pft_backupwatch_drift_overdue{host="validator"}') == 0
+        and readf(ds).strip() == str(NOW),
+        (out, readf(ds)),
+    )
+    rc, out, _ = helper(base + ["--now", str(NOW + 30 * 3600)], json.dumps(j))
+    m = prom_samples(out)
+    check(
+        "metrics: drift exactly DRIFT_GRACE_H old -> not overdue, since kept",
+        m.get('pft_backupwatch_drift_overdue{host="validator"}') == 0
+        and m.get('pft_backupwatch_drift_since_timestamp_seconds{host="validator"}')
+        == NOW,
+        out,
+    )
+    rc, out, _ = helper(base + ["--now", str(NOW + 30 * 3600 + 1)], json.dumps(j))
+    m = prom_samples(out)
+    check(
+        "metrics: drift older than DRIFT_GRACE_H -> overdue 1",
+        m.get('pft_backupwatch_drift_overdue{host="validator"}') == 1,
+        out,
+    )
+    j2 = dict(j, checks=[{"name": "drift", "state": "OK", "detail": ""}], drift=[])
+    rc, out, _ = helper(base + ["--now", str(NOW + 31 * 3600)], json.dumps(j2))
+    m = prom_samples(out)
+    check(
+        "metrics: drift OK again -> since 0, overdue 0, state file removed",
+        m.get('pft_backupwatch_drift_since_timestamp_seconds{host="validator"}') == 0
+        and m.get('pft_backupwatch_drift_overdue{host="validator"}') == 0
+        and not os.path.exists(ds),
+        out,
+    )
+    with open(ds, "w") as fh:
+        fh.write(f"{NOW + 99999}\n")
+    rc, out, _ = helper(base + ["--now", str(NOW)], json.dumps(j))
+    m = prom_samples(out)
+    check(
+        "metrics: a future/garbled since is reset to now",
+        m.get('pft_backupwatch_drift_since_timestamp_seconds{host="validator"}') == NOW,
+        out,
+    )
+    rc, out, _ = helper(
+        base + ["--now", str(NOW), "--drift-grace-h", "0"], json.dumps(j)
+    )
+    rc, out, _ = helper(
+        base + ["--now", str(NOW + 1), "--drift-grace-h", "0"], json.dumps(j)
+    )
+    check(
+        "metrics: DRIFT_GRACE_H 0 -> overdue one second after first seen",
+        prom_samples(out).get('pft_backupwatch_drift_overdue{host="validator"}') == 1,
+        out,
+    )
+    j3 = {
+        "archive": None,
+        "age_s": None,
+        "bytes": None,
+        "checks": [{"name": "fresh", "state": "FAIL", "detail": "no archive"}],
+        "drift": [],
+        "worst": "FAIL",
+    }
+    rc, out, _ = helper(base + ["--now", str(NOW)], json.dumps(j3))
+    m = prom_samples(out)
+    check(
+        "metrics: no archive -> age/bytes -1, fresh 2, up 1",
+        m.get('pft_backupwatch_archive_age_seconds{host="validator"}') == -1
+        and m.get('pft_backupwatch_archive_bytes{host="validator"}') == -1
+        and m.get('pft_backupwatch_check_state{host="validator",check="fresh"}') == 2
+        and m.get('pft_backupwatch_up{host="validator"}') == 1,
+        out,
+    )
+    for bad in ("", "not json", '{"checks": [{"name": "fresh", "state": "MAYBE"}]}'):
+        rc, out, _ = helper(base + ["--now", str(NOW)], bad)
+        m = prom_samples(out)
+        check(
+            f"metrics: input {bad[:12]!r} -> up 0 + timestamp, rc 1, no check_state",
+            rc == 1
+            and m.get('pft_backupwatch_up{host="validator"}') == 0
+            and 'pft_backupwatch_collect_timestamp_seconds{host="validator"}' in m
+            and not any("check_state" in k for k in m),
+            (rc, out),
+        )
+    rc, out, err = helper(["metrics", "--host", 'x"}', "--now", str(NOW)], "{}")
+    check("metrics: label-breaking host -> rc 3", rc == 3 and not out, (rc, out))
+    rc, out, err = helper(
+        ["metrics", "--host", "validator", "--now", str(NOW), "--drift-grace-h", "-1"],
+        "{}",
+    )
+    check("metrics: negative drift grace -> rc 3", rc == 3, (rc, err))
+    # replica role
+    sha = "a" * 64
+    st = "\n".join(
+        [
+            f"REPLICA pft-backup-20261107T023000Z.tar.gz {sha} {sha} {NOW - 90000}",
+            f"REPLICA pft-backup-20261108T023000Z.tar.gz {sha} {sha} {NOW - 3000}",
+            "END",
+            "VERIFY pft-backup-20261108T023000Z.tar.gz OK",
+        ]
+    )
+    rc, out, _ = helper(["replica-metrics", "--host", "sentry", "--now", str(NOW)], st)
+    m = prom_samples(out)
+    check(
+        "replica-metrics: up 1, 2 replicas, newest age from its name, verify ok 1",
+        rc == 0
+        and m.get('pft_backupwatch_up{host="sentry"}') == 1
+        and m.get('pft_backupwatch_replicas{host="sentry"}') == 2
+        and m.get('pft_backupwatch_replica_newest_age_seconds{host="sentry"}')
+        == NOW - calendar.timegm(time.strptime("20261108T023000Z", "%Y%m%dT%H%M%SZ"))
+        and m.get('pft_backupwatch_replica_verify_ok{host="sentry"}') == 1,
+        out,
+    )
+    rc, out, _ = helper(
+        ["replica-metrics", "--host", "sentry", "--now", str(NOW)],
+        st.replace("tar.gz OK", "tar.gz DECRYPT_FAIL"),
+    )
+    check(
+        "replica-metrics: newest does not verify -> verify ok 0",
+        prom_samples(out).get('pft_backupwatch_replica_verify_ok{host="sentry"}') == 0,
+        out,
+    )
+    rc, out, _ = helper(
+        ["replica-metrics", "--host", "sentry", "--now", str(NOW)],
+        st.replace("VERIFY pft-backup-20261108", "VERIFY pft-backup-20261107"),
+    )
+    check(
+        "replica-metrics: an OK for an older replica does not count",
+        prom_samples(out).get('pft_backupwatch_replica_verify_ok{host="sentry"}') == 0,
+        out,
+    )
+    rc, out, _ = helper(
+        ["replica-metrics", "--host", "sentry", "--now", str(NOW)], "END\n"
+    )
+    m = prom_samples(out)
+    check(
+        "replica-metrics: empty store -> 0 replicas, age -1, verify 0",
+        m.get('pft_backupwatch_replicas{host="sentry"}') == 0
+        and m.get('pft_backupwatch_replica_newest_age_seconds{host="sentry"}') == -1
+        and m.get('pft_backupwatch_replica_verify_ok{host="sentry"}') == 0,
+        out,
+    )
+    rc, out, _ = helper(
+        ["replica-metrics", "--host", "sentry", "--now", str(NOW)],
+        st.replace("END", "x"),
+    )
+    check(
+        "replica-metrics: no END (status failed) -> up 0, rc 1",
+        rc == 1 and prom_samples(out).get('pft_backupwatch_up{host="sentry"}') == 0,
+        (rc, out),
+    )
+
+
+def t_collect(c):
+    write_archive(c.bdir, "20261107T023000Z", members_for(c.root))
+    write_archive(c.bdir, "20261108T023000Z", members_for(c.root))
+    cfg = os.path.join(c.root, "cfgvol")
+    tdir = os.path.join(c.base, "textfile")
+    os.makedirs(tdir)
+    state = os.path.join(c.base, "state")
+    env = {"TEXTFILE_DIR": tdir, "STATE_DIR": state}
+    rc, out, err = wrap(c, "collect", env=env, docker_src=cfg)
+    f = os.path.join(tdir, "pft_backupwatch_validator.prom")
+    m = prom_samples(readf(f))
+    check(
+        "collect: rc 0, textfile written with up 1 and 6 check states all 0",
+        rc == 0
+        and m.get('pft_backupwatch_up{host="validator"}') == 1
+        and sum(1 for k, v in m.items() if "check_state" in k and v == 0) == 6,
+        (rc, out, err, readf(f)),
+    )
+    check(
+        "collect: textfile 0644, no temp file left",
+        os.path.isfile(f)
+        and (os.stat(f).st_mode & 0o777) == 0o644
+        and os.listdir(tdir) == ["pft_backupwatch_validator.prom"],
+        os.listdir(tdir),
+    )
+    with open(
+        os.path.join(c.root, "opt/postfiatd/docker-compose.override.yml"), "a"
+    ) as fh:
+        fh.write("# drill\n")
+    rc, out, err = wrap(
+        c, "collect", "--stdout", env=dict(env, DRIFT_GRACE_H="0"), docker_src=cfg
+    )
+    m = prom_samples(out)
+    check(
+        "collect --stdout: live edit -> drift 1, drift_files 1, since = now, stdout only",
+        m.get('pft_backupwatch_check_state{host="validator",check="drift"}') == 1
+        and m.get('pft_backupwatch_drift_files{host="validator"}') == 1
+        and m.get('pft_backupwatch_drift_since_timestamp_seconds{host="validator"}')
+        == NOW
+        and prom_samples(readf(f)).get(
+            'pft_backupwatch_check_state{host="validator",check="drift"}'
+        )
+        == 0,
+        (out, err),
+    )
+    rc, out, err = wrap(
+        c,
+        "collect",
+        "--stdout",
+        env=dict(env, DRIFT_GRACE_H="0", PFT_BW_NOW=str(NOW + 60)),
+        docker_src=cfg,
+    )
+    check(
+        "collect: DRIFT_GRACE_H from conf reaches the helper (overdue at grace 0)",
+        prom_samples(out).get('pft_backupwatch_drift_overdue{host="validator"}') == 1,
+        out,
+    )
+    rc, out, err = wrap(
+        c,
+        "collect",
+        "--stdout",
+        env=dict(env, PFT_BW_NOW=str(NOW + 60)),
+        docker_src=cfg,
+    )
+    check(
+        "collect: default DRIFT_GRACE_H 30 -> not overdue after 1 min",
+        prom_samples(out).get('pft_backupwatch_drift_overdue{host="validator"}') == 0,
+        out,
+    )
+    rc, out, err = wrap(
+        c,
+        "collect",
+        env=dict(env, PFT_BW_HELPER=os.path.join(c.base, "no-helper.py")),
+        docker_src=cfg,
+    )
+    check(
+        "collect: helper missing -> rc 3, old textfile kept",
+        rc == 3
+        and prom_samples(readf(f)).get('pft_backupwatch_up{host="validator"}') == 1,
+        (rc, err),
+    )
+    rc, out, err = wrap(
+        c, "collect", "--stdout", env=dict(env, MAX_AGE_H="x"), docker_src=cfg
+    )
+    m = prom_samples(out)
+    check(
+        "collect: check cannot run (bad conf) -> up 0 sample, rc 1",
+        rc == 1 and m.get('pft_backupwatch_up{host="validator"}') == 0,
+        (rc, out, err),
+    )
+    for k, v in (("HOST_LABEL", 'v"x'), ("DRIFT_GRACE_H", "-1"), ("ROLE", "both")):
+        rc, out, err = wrap(
+            c, "collect", "--stdout", env=dict(env, **{k: v}), docker_src=cfg
+        )
+        check(f"collect: bad {k} -> rc 3", rc == 3 and not out, (rc, out, err))
+
+
+def t_collect_pull(c):
+    rcpt, sh, rdir = peer_setup(c)
+    cfg = os.path.join(c.root, "cfgvol")
+    state = os.path.join(c.base, "state")
+    vt = os.path.join(c.base, "textfile")
+    st = os.path.join(c.base, "sentry-textfile")
+    os.makedirs(vt)
+    os.makedirs(st)
+    a = write_archive(c.bdir, "20261108T023000Z", members_for(c.root))
+    n = os.path.basename(a)
+    env = {
+        "PEER_SSH": sh,
+        "REPLICA_RECIPIENT": rcpt,
+        "STATE_DIR": state,
+        "TEXTFILE_DIR": vt,
+    }
+    rc, out, err = wrap(c, "replicate", env=env, docker_src=cfg)
+    check("collect/pull: replicate first rc 0", rc == 0, (rc, out, err))
+    peer = {
+        "ROLE": "replica",
+        "HOST_LABEL": "sentry",
+        "REPLICA_DIR": rdir,
+        "REPLICA_IDENTITY": os.path.join(c.base, "peer", "age.key"),
+        "TEXTFILE_DIR": st,
+    }
+    rc, out, err = wrap(c, "collect", env=peer)
+    m = prom_samples(readf(os.path.join(st, "pft_backupwatch_sentry.prom")))
+    check(
+        "collect ROLE=replica: 1 replica, newest verifies, up 1",
+        rc == 0
+        and m.get('pft_backupwatch_replicas{host="sentry"}') == 1
+        and m.get('pft_backupwatch_replica_verify_ok{host="sentry"}') == 1
+        and m.get('pft_backupwatch_up{host="sentry"}') == 1,
+        (rc, out, err, m),
+    )
+    rc, out, err = wrap(c, "collect", env=dict(env, OFFHOST="1"), docker_src=cfg)
+    m = prom_samples(readf(os.path.join(vt, "pft_backupwatch_validator.prom")))
+    check(
+        "collect OFFHOST=1: offhost check_state 0 via the peer",
+        rc == 0
+        and m.get('pft_backupwatch_check_state{host="validator",check="offhost"}') == 0,
+        (rc, err, m),
+    )
+    # the fake peer's `serve metrics` must read the sentry textfile dir: give the peer script that env
+    with open(sh) as fh:
+        body = fh.read()
+    with open(sh, "w") as fh:
+        fh.write(
+            body.replace("exec env ", f"exec env HOST_LABEL=sentry TEXTFILE_DIR={st} ")
+        )
+    rc, out, err = wrap(c, "pull", env=env)
+    pf = os.path.join(vt, "pft_backupwatch_sentry.prom")
+    check(
+        "pull: rc 0, sentry textfile copied byte-identical, 0644",
+        rc == 0
+        and readf(pf) == readf(os.path.join(st, "pft_backupwatch_sentry.prom"))
+        and (os.stat(pf).st_mode & 0o777) == 0o644,
+        (rc, err),
+    )
+    check(
+        "pull: only `serve metrics` ran on the peer for the pull",
+        readf(os.path.join(c.base, "peer-calls")).strip().splitlines()[-1]
+        == "pft-backupwatch serve metrics",
+        readf(os.path.join(c.base, "peer-calls")),
+    )
+    good = readf(pf)
+    sentry_prom = os.path.join(st, "pft_backupwatch_sentry.prom")
+    for label, text in (
+        ("a foreign metric", good + 'node_load1{host="sentry"} 1\n'),
+        ("the wrong host label", good.replace('host="sentry"', 'host="validator"')),
+        (
+            "no up sample",
+            "\n".join(x for x in good.splitlines() if "pft_backupwatch_up{" not in x)
+            + "\n",
+        ),
+        (
+            "no timestamp sample",
+            "\n".join(x for x in good.splitlines() if "collect_timestamp" not in x)
+            + "\n",
+        ),
+    ):
+        with open(sentry_prom, "w") as fh:
+            fh.write(text)
+        rc, out, err = wrap(c, "pull", env=env)
+        check(
+            f"pull: {label} -> rc 2, validator copy unchanged, no temp left",
+            rc == 2
+            and readf(pf) == good
+            and sorted(os.listdir(vt))
+            == ["pft_backupwatch_sentry.prom", "pft_backupwatch_validator.prom"],
+            (rc, err, os.listdir(vt)),
+        )
+    open(os.path.join(c.base, "peer-down"), "w").close()
+    rc, out, err = wrap(c, "pull", env=env)
+    check(
+        "pull: SSH down -> rc 1, copy unchanged (goes stale -> PFTBackupwatchStale)",
+        rc == 1 and readf(pf) == good,
+        (rc, err),
+    )
+    rc, out, err = wrap(c, "collect", env=dict(env, OFFHOST="1"), docker_src=cfg)
+    m = prom_samples(readf(os.path.join(vt, "pft_backupwatch_validator.prom")))
+    check(
+        "collect OFFHOST=1 with SSH down -> offhost FAIL (2), rc 0",
+        m.get('pft_backupwatch_check_state{host="validator",check="offhost"}') == 2,
+        (rc, err, m),
+    )
+    os.remove(os.path.join(c.base, "peer-down"))
+    rc, out, err = wrap(c, "pull", env=dict(env, PEER_LABEL="validator"))
+    check("pull: PEER_LABEL = own HOST_LABEL -> rc 3", rc == 3, (rc, err))
+    rc, out, err = wrap(c, "pull", env=dict(env, PEER_SSH=""))
+    check("pull: no PEER_SSH -> rc 3", rc == 3, (rc, err))
+    os.remove(os.path.join(rdir, n + ".age"))
+    rc, out, err = wrap(c, "collect", env=peer)
+    m = prom_samples(readf(os.path.join(st, "pft_backupwatch_sentry.prom")))
+    check(
+        "collect ROLE=replica: replica removed -> 0 replicas, verify 0",
+        m.get('pft_backupwatch_replicas{host="sentry"}') == 0
+        and m.get('pft_backupwatch_replica_verify_ok{host="sentry"}') == 0,
+        m,
+    )
+
+
 def main():
     os.makedirs(TMP_BASE, exist_ok=True)
     for label, fn in [
@@ -1023,6 +1503,7 @@ def main():
         ("size", t_size_ratio),
         ("sidecar", t_sidecar_missing),
         ("extra", t_extra),
+        ("outside", t_outside_stem),
         ("absent", t_listed_absent_and_tamper),
         ("content", t_content),
         ("drift", t_drift),
@@ -1032,6 +1513,9 @@ def main():
         ("wrapper", t_wrapper),
         ("replica", t_replica),
         ("refusals", t_replica_refusals),
+        ("metrics", t_metrics),
+        ("collect", t_collect),
+        ("collectpull", t_collect_pull),
     ]:
         case(label, fn)
     ok = all(results)

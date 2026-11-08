@@ -5,7 +5,9 @@
 #
 # Usage: sudo pft-backupwatch check [--json] [--offhost]   one line per check (OK/WARN/FAIL) + RESULT, or JSON
 #        sudo pft-backupwatch replicate                    (validator) newest archive -> encrypted replica on the peer
-#        pft-backupwatch serve receive NAME PLAIN_SHA CIPHER_SHA | status | verify NAME   (what PEER_SSH runs there)
+#        sudo pft-backupwatch collect [--stdout]           textfile metrics (ROLE=archive: check; ROLE=replica: store)
+#        sudo pft-backupwatch pull                         (validator) the peer's textfile via `serve metrics`
+#        pft-backupwatch serve receive NAME PLAIN_SHA CIPHER_SHA | status | verify NAME | metrics   (what PEER_SSH runs)
 #        pft-backupwatch version
 #
 #  check  fresh     newest pft-backup-<UTC>.tar.gz[.gpg] in BACKUP_DIR younger than MAX_AGE_H (WARN) / FAIL_AGE_H (FAIL)
@@ -25,6 +27,14 @@
 #  serve receive  stores stdin (ciphertext, at most REPLICA_MAX_BYTES) under REPLICA_DIR only if its sha256 is
 #             CIPHER_SHA and `age -d` with REPLICA_IDENTITY gives PLAIN_SHA (plaintext only in a pipe); keeps the newest
 #             REPLICA_KEEP replicas. status: one REPLICA line per stored replica. verify: re-hash + decrypt one replica.
+#             metrics: prints this host's own pft_backupwatch_HOST_LABEL.prom (for the validator's pull).
+#  collect  ROLE=archive: runs check --json (with --offhost if OFFHOST=1) and writes TEXTFILE_DIR/
+#           pft_backupwatch_HOST_LABEL.prom atomically: up, collect timestamp, check_state{check} 0/1/2, archive age
+#           and bytes, drift files / since / overdue (drift older than DRIFT_GRACE_H: no backup picked it up).
+#           ROLE=replica: serve status + verify of the newest replica -> up, replicas, replica_newest_age_seconds,
+#           replica_verify_ok. A run that cannot produce a result still writes up 0 (and exits 1).
+#  pull     runs `serve metrics` over PEER_SSH, validates the text (only pft_backupwatch_* lines, host="PEER_LABEL",
+#           an up and a collect timestamp sample) and renames it into TEXTFILE_DIR as pft_backupwatch_PEER_LABEL.prom.
 #
 # Exit codes: 0 all OK, 1 WARN, 2 FAIL (replicate/serve: refused or failed), 3 usage/config error.
 # Conf: PFT_BW_CONF (/etc/pft-backupwatch.env, root-owned, sourced first): BACKUP_DIR (/var/backups/postfiat),
@@ -32,7 +42,8 @@
 #       PASSFILE (gpg archives only), SCRATCH (/dev/shm: gpg home / ciphertext scratch, removed after each run),
 #       OFFHOST (0), PEER_SSH, PEER_TIMEOUT (120), REPLICA_RECIPIENT (age1..., the peer's), STATE_DIR
 #       (/var/lib/pft-backupwatch), peer side: REPLICA_DIR (/var/lib/pft-backupwatch/replicas), REPLICA_IDENTITY
-#       (/var/lib/pft-keyescrow/age.key), REPLICA_KEEP (7), REPLICA_MAX_BYTES (67108864)
+#       (/var/lib/pft-keyescrow/age.key), REPLICA_KEEP (7), REPLICA_MAX_BYTES (67108864); metrics: ROLE (archive),
+#       HOST_LABEL (validator), PEER_LABEL (sentry), TEXTFILE_DIR (/var/lib/pft-exporter/textfile), DRIFT_GRACE_H (30)
 # Test hooks: PFT_BW_HELPER (/usr/local/lib/pft-backupwatch/backupwatch_lib.py)  PFT_BW_NOW (epoch)
 #             PFT_BW_DOCKER (docker)  PFT_BW_ROOT (/)  PFT_BW_AGE (age)
 
@@ -61,12 +72,18 @@ REPLICA_DIR="${REPLICA_DIR:-/var/lib/pft-backupwatch/replicas}"
 REPLICA_IDENTITY="${REPLICA_IDENTITY:-/var/lib/pft-keyescrow/age.key}"
 REPLICA_KEEP="${REPLICA_KEEP:-7}"
 REPLICA_MAX_BYTES="${REPLICA_MAX_BYTES:-67108864}"
+ROLE="${ROLE:-archive}"
+HOST_LABEL="${HOST_LABEL:-validator}"
+PEER_LABEL="${PEER_LABEL:-sentry}"
+TEXTFILE_DIR="${TEXTFILE_DIR:-/var/lib/pft-exporter/textfile}"
+DRIFT_GRACE_H="${DRIFT_GRACE_H:-30}"
 HELPER="${PFT_BW_HELPER:-/usr/local/lib/pft-backupwatch/backupwatch_lib.py}"
 DOCKER="${PFT_BW_DOCKER:-docker}"
 ROOT="${PFT_BW_ROOT:-/}"
 AGE="${PFT_BW_AGE:-age}"
 NAME_RE='^pft-backup-[0-9]{8}T[0-9]{6}Z\.tar\.gz(\.gpg)?$'
 HEX_RE='^[0-9a-f]{64}$'
+HOST_RE='^[a-z][a-z0-9-]{0,31}$'
 
 die() { printf 'pft-backupwatch: %s\n' "$1" >&2; exit "${2:-3}"; }
 posint() { [[ "$1" =~ ^[1-9][0-9]{0,8}$ ]]; }
@@ -206,21 +223,94 @@ serve_verify() { # NAME
   echo "VERIFY $n OK"
 }
 
+write_atomic() { # DIR FILE CONTENT
+  local tmp
+  tmp="$(mktemp "$1/.$2.XXXXXX")" || return 1
+  if printf '%s' "$3" > "$tmp" && chmod 644 "$tmp" && mv -f "$tmp" "$1/$2"; then return 0; fi
+  rm -f "$tmp"; return 1
+}
+
+valid_prom() { # FILE LABEL -> empty + 0, or the reason + 1
+  awk -v h="host=\"$2\"" '
+    /^#/ || /^$/ { next }
+    $0 !~ /^pft_backupwatch_[a-z_]+\{[^}]*\} -?[0-9]+(\.[0-9]+)?$/ { print "line " NR " is not a pft_backupwatch_ sample"; bad = 1; exit }
+    index($0, h) == 0 { print "line " NR " is not labelled " h; bad = 1; exit }
+    /^pft_backupwatch_up\{/ { up = 1 }
+    /^pft_backupwatch_collect_timestamp_seconds\{/ { ts = 1 }
+    END {
+      if (bad) exit 1
+      if (!up) { print "no pft_backupwatch_up sample"; exit 1 }
+      if (!ts) { print "no pft_backupwatch_collect_timestamp_seconds sample"; exit 1 }
+    }' "$1"
+}
+
+cmd_collect() {
+  local to_stdout=0 now json text rc=0 st
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --stdout) to_stdout=1 ;;
+      *) die "collect: unknown argument '$1'" ;;
+    esac
+    shift
+  done
+  [[ "$HOST_LABEL" =~ $HOST_RE ]] || die "bad HOST_LABEL"
+  [[ "$DRIFT_GRACE_H" =~ ^[0-9]{1,6}$ ]] || die "DRIFT_GRACE_H must be an integer"
+  [ -f "$HELPER" ] || die "helper missing: $HELPER"
+  now="${PFT_BW_NOW:-$(date +%s)}"
+  case "$ROLE" in
+    archive)
+      (umask 077; mkdir -p "$STATE_DIR") || die "cannot create $STATE_DIR" 1
+      json="$(cmd_check --json 2>/dev/null)"
+      text="$(printf '%s\n' "$json" | python3 "$HELPER" metrics --host "$HOST_LABEL" --now "$now" \
+        --drift-state "$STATE_DIR/drift.since" --drift-grace-h "$DRIFT_GRACE_H")" || rc=1 ;;
+    replica)
+      st="$(serve_status 2>/dev/null)"
+      local n; n="$(printf '%s\n' "$st" | awk '$1 == "REPLICA" { n = $2 } END { print n }')"
+      [ -z "$n" ] || st+=$'\n'"$(serve_verify "$n" 2>/dev/null)"
+      text="$(printf '%s\n' "$st" | python3 "$HELPER" replica-metrics --host "$HOST_LABEL" --now "$now")" || rc=1 ;;
+    *) die "ROLE must be archive or replica" ;;
+  esac
+  [ -n "$text" ] || die "helper produced no metrics" 1
+  if [ "$to_stdout" = 1 ]; then printf '%s' "$text"
+  else write_atomic "$TEXTFILE_DIR" "pft_backupwatch_$HOST_LABEL.prom" "$text" || die "cannot write $TEXTFILE_DIR" 1
+  fi
+  return "$rc"
+}
+
+cmd_pull() {
+  local tmp why
+  [ $# = 0 ] || die "pull takes no arguments"
+  [[ "$PEER_LABEL" =~ $HOST_RE ]] || die "bad PEER_LABEL"
+  [ "$PEER_LABEL" != "$HOST_LABEL" ] || die "refusing to pull over this host's own textfile ($PEER_LABEL)"
+  posint "$PEER_TIMEOUT" || die "PEER_TIMEOUT must be an integer"
+  [ -n "$PEER_SSH" ] || die "PEER_SSH is not set"
+  tmp="$(mktemp "$TEXTFILE_DIR/.pull-backupwatch-$PEER_LABEL.XXXXXX")" || die "cannot create a temp file in $TEXTFILE_DIR" 1
+  if ! peer metrics </dev/null > "$tmp" 2>/dev/null; then rm -f "$tmp"; die "fetch of the peer's metrics failed" 1; fi
+  if ! why="$(valid_prom "$tmp" "$PEER_LABEL")"; then rm -f "$tmp"; die "validation failed: $why" 2; fi
+  if ! { chmod 644 "$tmp" && mv -f "$tmp" "$TEXTFILE_DIR/pft_backupwatch_$PEER_LABEL.prom"; }; then
+    rm -f "$tmp"; die "rename failed" 1
+  fi
+}
+
 cmd_serve() {
   local v="${1:-}"; shift || true
   case "$v" in
     receive) [ $# = 3 ] || die "serve receive NAME PLAIN_SHA CIPHER_SHA"; serve_receive "$@" ;;
     status) [ $# = 0 ] || die "serve status"; serve_status ;;
     verify) [ $# = 1 ] || die "serve verify NAME"; serve_verify "$1" ;;
-    *) die "serve: unknown verb '$v' (receive | status | verify)" ;;
+    metrics) [ $# = 0 ] || die "serve metrics"; [[ "$HOST_LABEL" =~ $HOST_RE ]] || die "bad HOST_LABEL"
+      cat -- "$TEXTFILE_DIR/pft_backupwatch_$HOST_LABEL.prom" || die "no metrics file" 2 ;;
+    *) die "serve: unknown verb '$v' (receive | status | verify | metrics)" ;;
   esac
 }
 
 case "${1:-}" in
   check) shift; cmd_check "$@"; exit $? ;;
   replicate) shift; cmd_replicate "$@"; exit $? ;;
+  collect) shift; cmd_collect "$@"; exit $? ;;
+  pull) shift; cmd_pull "$@"; exit $? ;;
   serve) shift; cmd_serve "$@"; exit $? ;;
   version) echo "pft-backupwatch $VERSION"; exit 0 ;;
-  ""|-h|--help) sed -n '2,41p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-  *) die "unknown command '$1' (check | replicate | serve | version)" ;;
+  ""|-h|--help) sed -n '2,48p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  *) die "unknown command '$1' (check | replicate | collect | pull | serve | version)" ;;
 esac

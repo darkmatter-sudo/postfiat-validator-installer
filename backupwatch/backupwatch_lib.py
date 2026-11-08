@@ -8,6 +8,10 @@ Usage (called by pft-backupwatch.sh; every path comes from its conf):
       prints one JSON object: archive, age_s, bytes, checks[{name,state,detail}], drift[...], worst
       exit 0 OK | 1 WARN | 2 FAIL | 3 usage
   backupwatch_lib.py render < CHECK_JSON      the table pft-backupwatch check prints
+  backupwatch_lib.py metrics --host H --now EPOCH [--drift-state F] [--drift-grace-h H] < CHECK_JSON
+      pft_backupwatch_* textfile for the archive host (empty/invalid input -> up 0, exit 1)
+  backupwatch_lib.py replica-metrics --host H --now EPOCH < SERVE_STATUS_AND_VERIFY
+      pft_backupwatch_* textfile for the replica host (no END line -> up 0, exit 1)
 
 Archives are read into memory and opened as tar streams; nothing is extracted. A gpg archive is decrypted by
 `gpg --decrypt` to a pipe; gpg's home dir is a fresh dir under --scratch (a tmpfs, /dev/shm by default), removed
@@ -411,6 +415,169 @@ def finish(res):
     return worst
 
 
+CHECKS = ("fresh", "size", "sidecar", "manifest", "content", "drift", "offhost")
+HOST_RE = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
+REPLICA_LINE = re.compile(
+    r"^REPLICA (pft-backup-(\d{8}T\d{6}Z)\.tar\.gz(?:\.gpg)?) [0-9a-f]{64} [0-9a-f]{64} (\d+)$"
+)
+
+
+def drift_since(state_path, drifted, now):
+    """First time the drift check was seen non-OK (epoch), kept in state_path; 0 and removed once it is OK again."""
+    if not drifted:
+        try:
+            os.unlink(state_path)
+        except FileNotFoundError:
+            pass
+        return 0
+    try:
+        with open(state_path) as fh:
+            since = int(fh.read().split()[0])
+        if 0 < since <= now:
+            return since
+    except (OSError, ValueError, IndexError):
+        pass
+    tmp = state_path + ".new"
+    with open(tmp, "w") as fh:
+        fh.write(f"{now}\n")
+    os.replace(tmp, state_path)
+    return now
+
+
+def prom(host, rows):
+    out = []
+    for name, help_, labels, value in rows:
+        if help_:
+            out.append(f"# HELP pft_backupwatch_{name} {help_}")
+            out.append(f"# TYPE pft_backupwatch_{name} gauge")
+        lab = ",".join(f'{k}="{v}"' for k, v in (("host", host),) + labels)
+        out.append(f"pft_backupwatch_{name}{{{lab}}} {value}")
+    return "\n".join(out) + "\n"
+
+
+def cmd_metrics(a, text):
+    """Archive-host textfile from check's JSON on stdin (empty/invalid stdin -> up 0)."""
+    try:
+        j = json.loads(text)
+        states = {c["name"]: RANK[c["state"]] for c in j["checks"]}
+    except (ValueError, KeyError, TypeError):
+        j, states = None, None
+    rows = [
+        (
+            "collect_timestamp_seconds",
+            "Last pft-backupwatch collect (epoch).",
+            (),
+            a.now,
+        )
+    ]
+    if states is None:
+        rows.append(("up", "1 if the check ran and produced a result.", (), 0))
+        sys.stdout.write(prom(a.host, rows))
+        return 1
+    rows.append(("up", "1 if the check ran and produced a result.", (), 1))
+    first = True
+    for name in CHECKS:
+        if name in states:
+            rows.append(
+                (
+                    "check_state",
+                    "Per check: 0 OK, 1 WARN, 2 FAIL." if first else "",
+                    (("check", name),),
+                    states[name],
+                )
+            )
+            first = False
+    rows.append(
+        (
+            "archive_age_seconds",
+            "Age of the newest archive (-1: none).",
+            (),
+            j.get("age_s") if j.get("age_s") is not None else -1,
+        )
+    )
+    rows.append(
+        (
+            "archive_bytes",
+            "Size of the newest archive (-1: none).",
+            (),
+            j.get("bytes") if j.get("bytes") is not None else -1,
+        )
+    )
+    drifted = states.get("drift", 0) != 0
+    since = drift_since(a.drift_state, drifted, a.now) if a.drift_state else 0
+    rows.append(
+        (
+            "drift_files",
+            "Archived config files that differ from the live host.",
+            (),
+            sum(1 for r in j.get("drift", []) if r.get("state") != "same"),
+        )
+    )
+    rows.append(
+        (
+            "drift_since_timestamp_seconds",
+            "First collect that saw drift (0: none).",
+            (),
+            since,
+        )
+    )
+    overdue = 1 if since and a.now - since > a.drift_grace_h * 3600 else 0
+    rows.append(
+        (
+            "drift_overdue",
+            "1 if drift outlived DRIFT_GRACE_H (no backup picked the change up).",
+            (),
+            overdue,
+        )
+    )
+    sys.stdout.write(prom(a.host, rows))
+    return 0
+
+
+def cmd_replica_metrics(a, text):
+    """Replica-host textfile from `serve status` (+ one VERIFY line for the newest) on stdin."""
+    lines = text.splitlines()
+    rows = [
+        (
+            "collect_timestamp_seconds",
+            "Last pft-backupwatch collect (epoch).",
+            (),
+            a.now,
+        )
+    ]
+    if "END" not in lines:
+        rows.append(("up", "1 if the check ran and produced a result.", (), 0))
+        sys.stdout.write(prom(a.host, rows))
+        return 1
+    reps = [m for m in (REPLICA_LINE.match(x) for x in lines) if m]
+    rows.append(("up", "1 if the check ran and produced a result.", (), 1))
+    rows.append(("replicas", "Encrypted replicas held for the peer.", (), len(reps)))
+    if reps:
+        newest = max(reps, key=lambda m: m.group(2))
+        age = a.now - ts_epoch(newest.group(2))
+        ok = 1 if any(x == f"VERIFY {newest.group(1)} OK" for x in lines) else 0
+    else:
+        age, ok = -1, 0
+    rows.append(
+        (
+            "replica_newest_age_seconds",
+            "Archive age of the newest replica (-1: none).",
+            (),
+            age,
+        )
+    )
+    rows.append(
+        (
+            "replica_verify_ok",
+            "1 if the newest replica re-hashes and decrypts to its recorded sha256.",
+            (),
+            ok,
+        )
+    )
+    sys.stdout.write(prom(a.host, rows))
+    return 0
+
+
 def cmd_render(text):
     """Table for a terminal: one line per check + RESULT, from check's JSON on stdin."""
     try:
@@ -450,12 +617,29 @@ def main(argv):
     )
     c.add_argument("--replica-state", default="/var/lib/pft-backupwatch/replica.tsv")
     sub.add_parser("render")
+    for nm in ("metrics", "replica-metrics"):
+        m = sub.add_parser(nm)
+        m.add_argument("--host", required=True)
+        m.add_argument("--now", type=int, required=True)
+        if nm == "metrics":
+            m.add_argument("--drift-state", default="")
+            m.add_argument("--drift-grace-h", type=int, default=30)
     try:
         a = ap.parse_args(argv)
     except SystemExit:
         return 3
     if a.cmd == "render":
         return cmd_render(sys.stdin.read())
+    if a.cmd in ("metrics", "replica-metrics"):
+        if not HOST_RE.match(a.host) or a.now <= 0:
+            print("backupwatch_lib: bad --host/--now", file=sys.stderr)
+            return 3
+        if a.cmd == "metrics":
+            if a.drift_grace_h < 0:
+                print("backupwatch_lib: bad --drift-grace-h", file=sys.stderr)
+                return 3
+            return cmd_metrics(a, sys.stdin.read())
+        return cmd_replica_metrics(a, sys.stdin.read())
     if (
         a.fail_age_h < a.max_age_h
         or a.min_bytes < 0

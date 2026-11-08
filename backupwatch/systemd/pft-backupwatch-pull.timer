@@ -1,0 +1,10 @@
+[Unit]
+Description=Pull the sentry's pft-backupwatch textfile every 15 minutes (2 min after the sentry collects)
+
+[Timer]
+OnCalendar=*-*-* *:9/15:20
+AccuracySec=1s
+Persistent=false
+
+[Install]
+WantedBy=timers.target

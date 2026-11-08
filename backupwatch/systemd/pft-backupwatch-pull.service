@@ -1,0 +1,34 @@
+[Unit]
+Description=pft-backupwatch pull: copy the sentry's backupwatch textfile to this host's exporter (validated)
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/backupwatch
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# validator only. root: writes into the root-owned textfile dir; the ssh runs as the operator account named in
+# PEER_SSH (/etc/pft-backupwatch.env), which already holds the admin key for the peer.
+ExecStart=/usr/local/bin/pft-backupwatch pull
+ProtectSystem=strict
+ReadWritePaths=/var/lib/pft-exporter/textfile
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_AUDIT_WRITE CAP_DAC_READ_SEARCH
+UMask=0022
+Nice=10
+TimeoutStartSec=120

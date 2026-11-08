@@ -1,0 +1,33 @@
+[Unit]
+Description=pft-backupwatch replicate: newest pft-backup archive -> age-encrypted replica on the sentry
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/backupwatch
+After=network-online.target pft-backup.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# validator only. Ciphertext exists only in /dev/shm for the transfer; the record goes to /var/lib/pft-backupwatch.
+ExecStart=/usr/local/bin/pft-backupwatch replicate
+ProtectSystem=strict
+ReadWritePaths=/var/lib/pft-backupwatch /dev/shm
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_AUDIT_WRITE CAP_DAC_READ_SEARCH
+UMask=0022
+Nice=10
+TimeoutStartSec=300

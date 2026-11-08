@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# backupwatch/drill/checks-run.sh: recorded lint + offline suite + one read-only live `check` of the newest local
-# archive, at a pushed commit. Run from the repo root: bash backupwatch/drill/checks-run.sh | tee LOG
+# backupwatch/drill/checks-run.sh: recorded lint + offline suite + promtool (check + unit tests of
+# ../../alerts/backupwatch.rules.yml) + the mutation harness (tests/mutate.py) + systemd-analyze verify of the units +
+# one read-only live `check` and `collect --stdout` of the newest local archive, at a pushed commit. Run from the repo root: bash backupwatch/drill/checks-run.sh | tee LOG
 # The live check runs twice: the helper (JSON) and the pft-backupwatch.sh wrapper (table); both exits must agree.
 # Read-only on the host: the live step reads /var/backups/postfiat and the node's config volume (host path from
-# docker inspect); no docker exec, nothing extracted, gpg/age scratch only under /dev/shm and removed.
+# docker inspect); no docker exec, nothing extracted, gpg/age scratch only under /dev/shm and removed. collect runs
+# with --stdout and STATE_DIR in a scratch dir (removed), so it writes no textfile and nothing under /var/lib.
 export TZ=UTC
 set -o pipefail
 cd "$(dirname "$0")/../.." || exit 3
@@ -11,10 +13,15 @@ x() { echo "\$ $*"; eval "$*"; local rc=$?; echo "(exit $rc)"; return "$rc"; }
 fails=0
 echo "OS: $(grep ^PRETTY_NAME= /etc/os-release | cut -d= -f2- | tr -d '"')"
 echo "date: $(date -u +%FT%TZ)  commit: $(git rev-parse HEAD)  dirty: $(git status --short | wc -l)"
-x "sha256sum backupwatch/pft-backupwatch.sh backupwatch/backupwatch_lib.py backupwatch/tests/test_backupwatch.py backupwatch/drill/checks-run.sh"
+x "sha256sum backupwatch/pft-backupwatch.sh backupwatch/backupwatch_lib.py backupwatch/tests/test_backupwatch.py backupwatch/tests/mutate.py backupwatch/drill/checks-run.sh alerts/backupwatch.rules.yml alerts/backupwatch.tests.yml backupwatch/systemd/*"
 x "shellcheck --version | sed -n 2p && shellcheck backupwatch/pft-backupwatch.sh backupwatch/drill/checks-run.sh" || fails=$((fails + 1))
 x "ruff --version && ruff check backupwatch/ && ruff format --check backupwatch/" || fails=$((fails + 1))
 x "TEST_TMPDIR=\$HOME/.cache timeout 300 nice -n 15 python3 -u backupwatch/tests/test_backupwatch.py" || fails=$((fails + 1))
+P="docker run --rm --network none --entrypoint promtool -v $PWD/alerts:/w:ro -w /w prom/prometheus:v3.5.0"
+x "$P --version | head -1 && $P check rules backupwatch.rules.yml" || fails=$((fails + 1))
+x "$P test rules backupwatch.tests.yml" || fails=$((fails + 1))
+x "TEST_TMPDIR=\$HOME/.cache timeout 2400 nice -n 15 python3 -u backupwatch/tests/mutate.py --jobs 4" || fails=$((fails + 1))
+x "for u in backupwatch/systemd/*; do systemd-analyze verify \"\$u\" 2>&1 | grep -F \"\$(basename \"\$u\")\" | grep -v 'pft-backupwatch is not executable\\|/usr/local/bin/pft-backupwatch'; done; echo 'units: no findings above = clean'"
 CFG="$(sudo -n docker inspect postfiatd --format '{{range .Mounts}}{{if eq .Destination "/etc/postfiatd"}}{{.Source}}{{end}}{{end}}')"
 echo "config volume host path: ${CFG:+found (docker inspect .Mounts, /etc/postfiatd)}"
 x "ls /dev/shm | grep -c '^pft-bw' || true"
@@ -22,7 +29,12 @@ x "sudo -n python3 -u backupwatch/backupwatch_lib.py check --dir /var/backups/po
 live=$?
 x "sudo -n PFT_BW_HELPER=backupwatch/backupwatch_lib.py bash backupwatch/pft-backupwatch.sh check"
 wrap=$?
+ST="$(mktemp -d "$HOME/.cache/bw-state.XXXXXX")"
+x "sudo -n STATE_DIR=$ST PFT_BW_HELPER=backupwatch/backupwatch_lib.py bash backupwatch/pft-backupwatch.sh collect --stdout"
+coll=$?
+sudo -n rm -rf -- "$ST"
 x "ls /dev/shm | grep -c '^pft-bw' || true"
+[ "$coll" = 0 ] || { echo "collect --stdout exit $coll"; fails=$((fails + 1)); }
 [ "$wrap" = "$live" ] || { echo "wrapper exit $wrap != helper exit $live"; fails=$((fails + 1)); }
 echo "live check exit: $live (0 OK / 1 WARN / 2 FAIL)"
 echo "RESULT: $([ "$fails" = 0 ] && echo PASS || echo FAIL) (lint+suite failures: $fails; live check exit $live)"

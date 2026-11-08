@@ -1,8 +1,11 @@
 # pft-backupwatch: backup freshness, integrity and restore-readiness monitor
 
 Status: **step 1 (check) done + live; first finding fixed (log 03); step 2 replication (`replicate`, `serve`,
-`check --offhost`) done offline (log 04); metrics, timers, rules, install and drills to do**. Nothing is installed on any host yet; no rule, fleet-manifest or
-rulecheck line exists until the live install run (lesson: rule lines ship in the same commit as the install).
+`check --offhost`) done offline (log 04); step 3 metrics (`collect`, `pull`, `serve metrics`), units, five alert rules
+with promtool tests and the mutation harness done offline (log 05); install on both hosts and the live drills to do**.
+Nothing is installed on any host yet. `../alerts/backupwatch.rules.yml` is in the repo but not loaded by Prometheus,
+and no fleet-manifest or rulecheck line exists until the live install run (lesson: rule lines ship in the same commit
+as the install).
 
 `../backup` writes one config archive a day (`pft-backup.timer`), and `../jobwatch` sees whether that timer ran and
 exited 0. Neither says whether the newest archive is **fresh, intact, current and restorable**: a timer can exit 0
@@ -34,13 +37,18 @@ object per check (`name`, `state`, `detail`) plus the archive name, age and size
 | `pft-backupwatch.sh` | CLI: `check [--json] [--offhost]`, `replicate`, `serve receive\|status\|verify` (the only verbs `PEER_SSH` runs on the peer), `version` (usage in its header); conf `/etc/pft-backupwatch.env` (root-owned, sourced only if owned by root) |
 | `backupwatch_lib.py` | stdlib helper: archive listing, in-memory tar/manifest/content/drift checks, gpg decrypt to a pipe, `render` (the table) |
 | `tests/test_backupwatch.py` | offline suite: synthetic archives in pft-backup's exact layout (fresh, old + age boundaries, missing, byte flip, truncated, size ratio, no sidecar, unlisted extra file, listed-but-absent, edited member, missing COMPOSE_FILE member, firewall reference error, drifted / gone files, cfg drift vs secret-only change, gpg right / wrong / no passphrase, usage) + the wrapper with a stub docker that answers only the exact inspect it must send + replication against a fake peer (`PEER_SSH` = a script running this same CLI's `serve` with its own dirs and a real age identity): replicate OK, ciphertext only on the peer, 0700 store, local record, no scratch left; `--offhost` OK / newer archive not replicated (WARN) / keep-3 prune / tampered replica / tampered replica + re-hashed meta / no local record / peer down (FAIL); refusals: wrong recipient (peer cannot decrypt, nothing stored), archive != sidecar (no peer call), bad recipient, no PEER_SSH, forged ciphertext sha, oversize, name outside the pattern, unknown verb |
-| `drill/checks-run.sh` | recorded lint + suite + read-only live check (helper JSON and wrapper table) at a pushed commit |
+| `tests/mutate.py` | mutation harness: 47 mutants (24 helper, 15 CLI, 8 rule), each in its own copy with its own temp base; a mutant must make the suite (or `promtool test rules`) fail with a FAIL line |
+| `systemd/` | `pft-backupwatch.service/.timer` (both hosts, `collect` every 15 min), `pft-backupwatch-pull.service/.timer` (validator: the sentry's textfile, 2 min after it collects), `pft-backupwatch-replicate.service/.timer` (validator, daily 04:05 + up to 10 min, after pft-backup's 03:17 + 15 min) |
+| `../alerts/backupwatch.rules.yml`, `../alerts/backupwatch.tests.yml` | the five alerts and their promtool tests (fire at each `for` boundary + recovery for every alert) |
+| `drill/checks-run.sh` | recorded lint + suite + promtool + mutation harness + unit verify + read-only live check (helper JSON and wrapper table) and `collect --stdout` at a pushed commit |
 
 ```
 sudo pft-backupwatch check            # table + RESULT line, exit 0/1/2
 sudo pft-backupwatch check --json     # the helper's JSON
 sudo pft-backupwatch replicate        # validator: newest archive -> encrypted replica on the sentry
 sudo pft-backupwatch check --offhost  # + the offhost check (status + verify on the sentry over PEER_SSH)
+sudo pft-backupwatch collect --stdout # the textfile it would write (ROLE=archive on the validator, ROLE=replica on the sentry)
+sudo pft-backupwatch pull             # validator: the sentry's textfile via `serve metrics`, validated
 ```
 
 ## Off-host replica (`replicate`)
@@ -55,11 +63,41 @@ sentry's disk and never crosses the network. On the validator the ciphertext exi
 plaintext (sidecar) sha256 in `STATE_DIR/replica.tsv`; `check --offhost` compares the sentry's `serve status` and
 `serve verify` answers with that record, so a replica swapped or re-hashed on the sentry still fails.
 
-## Metrics and alerts (step 2)
+## Metrics
 
-`pft_backupwatch_*.prom` textfiles on both hosts (the sentry's file is pulled to the validator, which runs the only
-Prometheus), five alerts in `../alerts/backupwatch.rules.yml` with promtool tests including recovery cases. Details
-are filled in when they are built.
+`collect` writes `TEXTFILE_DIR/pft_backupwatch_<HOST_LABEL>.prom` atomically (0644, temp file + rename). The
+validator (`ROLE=archive`) runs `check` (with `--offhost` when `OFFHOST=1`); the sentry (`ROLE=replica`) reads its
+own replica store (`serve status` + `serve verify` of the newest replica). The validator runs the only Prometheus, so
+`pull` fetches the sentry's file with `serve metrics` over `PEER_SSH` and installs it only if every sample is a
+`pft_backupwatch_*` line labelled `host="sentry"` and the file has an `up` and a collect timestamp sample.
+
+| Metric | Host | Meaning |
+|---|---|---|
+| `pft_backupwatch_up` | both | 1 if the run produced a result; 0 = the check or the store read failed (the file still gets written) |
+| `pft_backupwatch_collect_timestamp_seconds` | both | time of the last collect |
+| `pft_backupwatch_check_state{check}` | validator | 0 OK / 1 WARN / 2 FAIL for `fresh`, `size`, `sidecar`, `manifest`, `content`, `drift`, `offhost` (only the checks that ran) |
+| `pft_backupwatch_archive_age_seconds`, `pft_backupwatch_archive_bytes` | validator | newest archive (-1: none) |
+| `pft_backupwatch_drift_files` | validator | archived config files that differ from (or are gone on) the live host |
+| `pft_backupwatch_drift_since_timestamp_seconds` | validator | first collect that saw drift (kept in `STATE_DIR/drift.since`; 0 and removed once drift is OK) |
+| `pft_backupwatch_drift_overdue` | validator | 1 if drift is older than `DRIFT_GRACE_H` (30 h): a daily backup ran since and still did not capture the change |
+| `pft_backupwatch_replicas` | sentry | encrypted replicas held |
+| `pft_backupwatch_replica_newest_age_seconds` | sentry | archive age of the newest replica (from its name; -1: none) |
+| `pft_backupwatch_replica_verify_ok` | sentry | 1 if the newest replica re-hashes to its recorded ciphertext sha256 and decrypts to its plaintext sha256 |
+
+Drift alone is not an alert: a config change is normal, and the next daily backup picks it up. Drift that outlives a
+backup cycle means the backups no longer hold what a restore would need.
+
+## Alerts
+
+`../alerts/backupwatch.rules.yml`, tested by `../alerts/backupwatch.tests.yml`:
+
+| Alert | Expression (short) | for | Severity |
+|---|---|---|---|
+| `PFTBackupStale` | `check_state{check="fresh"} >= 1` (newest archive older than 26 h, or none) | 30m | warning |
+| `PFTBackupBroken` | `check_state{check=~"sidecar\|manifest\|content\|size"} == 2` (one alert per failing check) | 15m | critical |
+| `PFTBackupConfigDrift` | `drift_overdue == 1` | 15m | warning |
+| `PFTBackupNoOffhostCopy` | `check_state{check="offhost"} >= 1 or replica_verify_ok == 0` (either side) | 30m | warning |
+| `PFTBackupwatchStale` | collect older than 45 min (3 timer periods) or `up == 0`, per host | 10m | warning |
 
 ## Results so far
 

@@ -1,0 +1,33 @@
+[Unit]
+Description=pft-backupwatch collect: backup freshness/integrity/drift (archive host) or replica store (replica host) as textfile metrics
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/backupwatch
+
+[Service]
+Type=oneshot
+# root: reads the root-only archives, the container's config volume and (replica host) the age identity; writes only
+# its state dir and its textfile. ROLE, OFFHOST and PEER_SSH come from /etc/pft-backupwatch.env (root-owned).
+# A run without a result still writes pft_backupwatch_up 0 and exits 1 (jobwatch then sees the failed run too).
+ExecStart=/usr/local/bin/pft-backupwatch collect
+ProtectSystem=strict
+ReadWritePaths=/var/lib/pft-exporter/textfile /var/lib/pft-backupwatch /dev/shm
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_AUDIT_WRITE CAP_DAC_READ_SEARCH
+UMask=0022
+Nice=10
+TimeoutStartSec=300
