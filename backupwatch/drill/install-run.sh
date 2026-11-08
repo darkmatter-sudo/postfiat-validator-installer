@@ -182,7 +182,8 @@ check "Prometheus: 7 validator check states 0, drift_overdue 0, sentry replicas 
 
 echo; echo "== 10. fleet skew, rulecheck, timers, jobwatch"
 x "sudo -n pft-fleet skew"
-check "pft-fleet skew exit 0, backupwatch + fleet CURRENT on both hosts" "$([ "$XRC" = 0 ] && [ "$(grep -cE '^ *(validator|sentry) +(backupwatch|fleet) +CURRENT' <<<"$XOUT")" = 4 ] && echo 0 || echo 1)"
+# fleet is a validator-only add-on (no sentry row): run 11 expected 4 rows here and printed a false FAIL
+check "pft-fleet skew exit 0, backupwatch CURRENT on both hosts, nothing BEHIND/MODIFIED/MISSING/UNEXPECTED/DIVERGED" "$([ "$XRC" = 0 ] && [ "$(grep -cE '^ *(validator|sentry) +backupwatch +CURRENT' <<<"$XOUT")" = 2 ] && grep -qE '^ *SUMMARY CURRENT=[0-9]+ BEHIND=0 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0$' <<<"$XOUT" && echo 0 || echo 1)"
 x "sudo -n systemctl start pft-rulecheck.service; sudo -n journalctl -u pft-rulecheck.service --since -1min --no-pager -o cat | grep -E '^RESULT |backupwatch'"
 check "validator pft-rulecheck RESULT OK" "$(grep -q '^RESULT OK ' <<<"$XOUT" && echo 0 || echo 1)"
 x "R 'sudo -n systemctl start pft-rulecheck.service; sudo -n journalctl -u pft-rulecheck.service --since -1min --no-pager -o cat' | grep -E '^RESULT |backupwatch'"
