@@ -1,0 +1,7 @@
+# migrate/drill/target.stack: the fresh target host for the pft-migrate live drill, built by
+# rebuild/pft-rebuild-drill.sh (RB_STACK=migrate/drill/target.stack ... run --keep) in its isolated LXD sandbox.
+# Only the base install (Docker, compose project, image) plus age: the node identity and config arrive with the
+# pft-migrate bundle, nothing is restored from a backup. The sandbox's own fresh node (random identity) is stopped by
+# the drill before `import`. ORDER STEP AFTER COMMAND (format: rebuild/stack.list).
+10 base - bash install.sh
+20 age  base apt-get -qq install -y age >/dev/null && age --version
