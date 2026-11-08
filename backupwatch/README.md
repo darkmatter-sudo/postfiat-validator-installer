@@ -2,7 +2,7 @@
 
 Status: **step 1 (check) done + live; first finding fixed (log 03); step 2 replication (`replicate`, `serve`,
 `check --offhost`) done offline (log 04); step 3 metrics (`collect`, `pull`, `serve metrics`), units, five alert rules
-with promtool tests and the mutation harness done offline (log 05); install on both hosts and the live drills to do**.
+with promtool tests and the mutation harness done offline (logs 05-06); install on both hosts and the live drills to do**.
 Nothing is installed on any host yet. `../alerts/backupwatch.rules.yml` is in the repo but not loaded by Prometheus,
 and no fleet-manifest or rulecheck line exists until the live install run (lesson: rule lines ship in the same commit
 as the install).
@@ -107,6 +107,8 @@ backup cycle means the backups no longer hold what a restore would need.
 | [`logs/03-backupfix.log`](logs/03-backupfix.log) | **found -> fixed -> verified** (`drill/backupfix-run.sh`): before = content WARN (exit 1); probe of pft-backup's two firewall commands in a transient unit: installed profile fails both (`Couldn't determine iptables version`, `Failed to initialize nft: Address family not supported`), new profile (`../unitguard/profiles/pft-backup.service.conf`: + `CAP_NET_ADMIN CAP_NET_RAW`, + `AF_NETLINK`; `/run` stays read-only, not needed) runs both; `pft-unitguard apply` (one real backup + the profile's check, which now requires both firewall members) exit 0; `pft-integrity` FAIL on the changed drop-in, accepted, PASS; after = every check OK on the new archive (23 members, 3 reference members present). `RESULT: PASS - 0 failed` |
 | [`logs/02-checks-wrapper.log`](logs/02-checks-wrapper.log) | with `pft-backupwatch.sh`: shellcheck exit 0, ruff clean, suite 77 passed / 0 failed; live check through the helper (JSON) and the wrapper (table) give the same result: 5 OK + content WARN, exit 1 both |
 | [`logs/04-checks-replication.log`](logs/04-checks-replication.log) | with replication: shellcheck exit 0, ruff clean, suite 109 passed / 0 failed; live check (after the log 03 fix) exit 0, every check OK, through the helper and the wrapper |
+| [`logs/05-checks-step3.log`](logs/05-checks-step3.log) | step 3 at `32cafcf`: shellcheck 0, ruff clean, suite 155/0, promtool check 5 rules + unit tests SUCCESS, units clean, live `check` exit 0 and `collect --stdout` OK; **RESULT: FAIL**: mutant M14 (empty PASSFILE accepted) SURVIVED, 46/47 caught. An earlier dev pass had shown M14 caught, but only because parallel copies shared one temp base and tripped each other's "no scratch left" checks; the committed harness gives each copy its own. Fixed in `c2d5561`: own test for an empty PASSFILE, plus two finds of the same run: the textfile lacked its final newline (`$(...)` strips it), and the recorded commands printed a local home path (redacted to `<home>` in this published copy, 3 lines; the script now lets `$PWD`/`$ST` expand only inside the eval) |
+| [`logs/06-checks-step3.log`](logs/06-checks-step3.log) | at `c2d5561`: shellcheck 0, ruff clean, suite **158/0**, promtool SUCCESS (5 rules; every alert fires at its `for` boundary and recovers), mutants **50 caught / 0 survived / 0 not applied / 0 broken**, orphans 0, units clean, live `check` exit 0 (all OK) and `collect --stdout` exit 0 (6 check states 0, drift 0), `/dev/shm` clean. `RESULT: PASS` |
 
 ## Not covered
 
