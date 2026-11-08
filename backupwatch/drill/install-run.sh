@@ -15,6 +15,7 @@
 # left to run out.
 #   bash backupwatch/drill/install-run.sh 2>&1 | tee LOG    (from the repo root, as the agent user)
 #   PREFLIGHT_ONLY=1 bash backupwatch/drill/install-run.sh   (step 0 only; changes nothing)
+#   RESUME=<run> bash ...   re-run after a stopped run at the same HEAD (checks installed bytes == HEAD instead of absent)
 set -uo pipefail
 REPO="$(git rev-parse --show-toplevel)"; cd "$REPO" || exit 3
 export TZ=UTC
@@ -57,7 +58,13 @@ check "pft-integrity PASS on both hosts before install" "$([ "$(grep -c 'RESULT:
 x "sudo -n docker exec postfiatd curl -s -m 10 -d '{\"method\":\"server_info\"}' http://127.0.0.1:5005 | jq -r .result.info.server_state; R \"sudo -n docker exec postfiatd-sentry curl -s -m 10 -d '{\\\"method\\\":\\\"server_info\\\"}' http://127.0.0.1:5005 | jq -r .result.info.server_state\""
 check "both nodes full or proposing" "$([ "$(grep -cE '^(full|proposing)$' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
 x "ls /usr/local/bin/pft-backupwatch /etc/pft-backupwatch.env 2>&1; R 'ls /usr/local/bin/pft-backupwatch /etc/pft-backupwatch.env 2>&1'"
-check "not installed yet on either host" "$([ "$(grep -c 'No such file' <<<"$XOUT")" = 4 ] && echo 0 || echo 1)"
+if [ -n "${RESUME:-}" ]; then
+  # re-run after a stopped run that installed at this same HEAD (steps 3-5 are idempotent: they must change nothing)
+  x "sha256sum backupwatch/pft-backupwatch.sh backupwatch/backupwatch_lib.py | cut -c1-64; sudo -n sha256sum /usr/local/bin/pft-backupwatch /usr/local/lib/pft-backupwatch/backupwatch_lib.py | cut -c1-64; R 'sha256sum /usr/local/bin/pft-backupwatch /usr/local/lib/pft-backupwatch/backupwatch_lib.py | cut -c1-64'"
+  check "RESUME after run $RESUME: installed script + helper = HEAD bytes on both hosts" "$([ "$(sort <<<"$XOUT" | uniq -c | awk '$1 == 3' | wc -l)" = 2 ] && echo 0 || echo 1)"
+else
+  check "not installed yet on either host" "$([ "$(grep -c 'No such file' <<<"$XOUT")" = 4 ] && echo 0 || echo 1)"
+fi
 x "grep -c backupwatch fleet/manifest.tsv; grep -c backupwatch.rules.yml alerts/prometheus.yml; grep -c pft_backupwatch_ rulecheck/pft-rulecheck.conf.example rulecheck/pft-rulecheck.sentry.conf.example"
 check "HEAD lists 8 manifest lines, the rule file and 3 + 2 rulecheck lines" "$([ "$(tr '\n' ' ' <<<"$XOUT")" = "8 1 rulecheck/pft-rulecheck.conf.example:3 rulecheck/pft-rulecheck.sentry.conf.example:2 " ] && echo 0 || echo 1)"
 x "sudo -n grep -c '^PEER_SSH=' /etc/pft-keyescrow.env; sudo -n sed -n 's/^PEER_RECIPIENT=//p' /etc/pft-keyescrow.env | tr -d '\"\n' | sha256sum | cut -c1-16; R 'tr -d \"\\n\" < /var/lib/pft-keyescrow/age.pub | sha256sum | cut -c1-16; test -s /var/lib/pft-keyescrow/age.key && echo identity present'"
@@ -73,8 +80,8 @@ check "FOUND: read-only check of the newest archive with the HEAD code: every lo
 } | tr -d "\"'\r" | grep -E '^[A-Za-z0-9_-]{8,}$' | sort -u > "$OPS"
 echo "operator topics to read back: $(wc -l < "$OPS") (not printed)"
 check "operator topics found" "$([ -s "$OPS" ] && echo 0 || echo 1)"
-x "curl -s $AM/api/v2/silences | jq -r '[.[] | select(.status.state == \"active\")] | length'; curl -s $AM/api/v2/alerts | jq -r '.[].labels.alertname' | sort | uniq -c"
-check "no active silence; only the pipeline watchdog active in Alertmanager" "$([ "$(head -1 <<<"$XOUT")" = 0 ] && [ "$(sed 1d <<<"$XOUT" | grep -vc PFTAlertPipelineWatchdog)" = 0 ] && echo 0 || echo 1)"
+x "curl -s $AM/api/v2/silences | jq -r '[.[] | select(.status.state == \"active\" and (env.RESUME == null or .createdBy != \"backupwatch-install\"))] | length'; curl -s $AM/api/v2/alerts | jq -r '.[].labels.alertname' | sort | uniq -c"
+check "no active silence (RESUME: other than the stopped run's own rollout silence); only the pipeline watchdog active in Alertmanager" "$([ "$(head -1 <<<"$XOUT")" = 0 ] && [ "$(sed 1d <<<"$XOUT" | grep -vc PFTAlertPipelineWatchdog)" = 0 ] && echo 0 || echo 1)"
 [ "$FAILS" = 0 ] || { echo "preflight failed - stopping before any change"; exit 3; }
 [ "${PREFLIGHT_ONLY:-0}" = 1 ] && { echo "PREFLIGHT_ONLY: stopping before any change ($FAILS failed)"; exit 0; }
 
@@ -117,6 +124,9 @@ check "sentry install exit 0, up 1" "$([ "$XRC" = 0 ] && grep -q 'pft_backupwatc
 echo; echo "== 5. validator: install.sh --role archive (first replicate, collect with --offhost, pull of the sentry file)"
 x "sudo -n bash backupwatch/install.sh --role archive --host validator"
 check "validator install exit 0, up 1, offhost 0" "$([ "$XRC" = 0 ] && grep -q 'pft_backupwatch_up{host="validator"} 1' <<<"$XOUT" && grep -q 'check_state{host="validator",check="offhost"} 0' <<<"$XOUT" && echo 0 || echo 1)"
+# the sentry wrote its textfile at its own install (0 replicas); its next timer collect is up to 15 min away, so
+# collect there now and pull again (run 08 checked the stale copy and stopped here)
+x "R 'sudo -n systemctl start pft-backupwatch.service; systemctl is-failed pft-backupwatch.service'; sudo -n systemctl start pft-backupwatch-pull.service; systemctl is-failed pft-backupwatch-pull.service"
 x "sudo -n grep -E '^pft_backupwatch_(up|replicas|replica_verify_ok)' $TF/pft_backupwatch_sentry.prom"
 check "pulled sentry file on the validator: up 1, replicas 1, replica_verify_ok 1" "$(grep -q 'up{host="sentry"} 1' <<<"$XOUT" && grep -q 'replicas{host="sentry"} 1' <<<"$XOUT" && grep -q 'replica_verify_ok{host="sentry"} 1' <<<"$XOUT" && echo 0 || echo 1)"
 x "sudo -n bash -c 'grep -E \"^(ROLE|HOST_LABEL|OFFHOST)=\" /etc/pft-backupwatch.env; grep -c \"^PEER_SSH=\" /etc/pft-backupwatch.env; grep -c \"^REPLICA_RECIPIENT=age1\" /etc/pft-backupwatch.env; stat -c \"%a %U\" /etc/pft-backupwatch.env'"
