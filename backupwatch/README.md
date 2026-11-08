@@ -1,6 +1,6 @@
 # pft-backupwatch: backup freshness, integrity and restore-readiness monitor
 
-Status: **design + step 1 (check) in progress**. Nothing is installed on any host yet; no rule, fleet-manifest or
+Status: **step 1 (check) done offline + one read-only live run; steps 2-5 to do**. Nothing is installed on any host yet; no rule, fleet-manifest or
 rulecheck line exists until the live install run (lesson: rule lines ship in the same commit as the install).
 
 `../backup` writes one config archive a day (`pft-backup.timer`), and `../jobwatch` sees whether that timer ran and
@@ -26,6 +26,20 @@ stdlib helper; nothing is extracted to disk.
 Exit codes: 0 every check OK, 1 at least one WARN, 2 at least one FAIL, 3 usage/config error. `--json` prints one
 object per check (`name`, `state`, `detail`) plus the archive name, age and size.
 
+## Files and usage
+
+| File | What it is |
+|---|---|
+| `pft-backupwatch.sh` | CLI: `check [--json]`, `version` (usage in its header); conf `/etc/pft-backupwatch.env` (root-owned, sourced only if owned by root) |
+| `backupwatch_lib.py` | stdlib helper: archive listing, in-memory tar/manifest/content/drift checks, gpg decrypt to a pipe, `render` (the table) |
+| `tests/test_backupwatch.py` | offline suite: synthetic archives in pft-backup's exact layout (fresh, old + age boundaries, missing, byte flip, truncated, size ratio, no sidecar, unlisted extra file, listed-but-absent, edited member, missing COMPOSE_FILE member, firewall reference error, drifted / gone files, cfg drift vs secret-only change, gpg right / wrong / no passphrase, usage) + the wrapper with a stub docker |
+| `drill/checks-run.sh` | recorded lint + suite + read-only live check (helper JSON and wrapper table) at a pushed commit |
+
+```
+sudo pft-backupwatch check          # table + RESULT line, exit 0/1/2
+sudo pft-backupwatch check --json   # the helper's JSON
+```
+
 ## Off-host replica (`replicate`)
 
 Archives that live only on the validator do not survive losing the validator. `replicate` encrypts the newest
@@ -40,6 +54,12 @@ sentry's disk and never crosses the network.
 `pft_backupwatch_*.prom` textfiles on both hosts (the sentry's file is pulled to the validator, which runs the only
 Prometheus), five alerts in `../alerts/backupwatch.rules.yml` with promtool tests including recovery cases. Details
 are filled in when they are built.
+
+## Results so far
+
+| Log | What it shows |
+|---|---|
+| [`logs/01-checks-step1.log`](logs/01-checks-step1.log) | ruff clean, suite 62 passed / 0 failed, live read-only check of the validator's newest archive: fresh, size, sidecar, manifest (22 members), drift (17 files equal the live host) OK; **content WARN**: the timer-made archives hold `ufw-status.txt` = `ERROR: Couldn't determine iptables version` and no `docker-user.rules`. Cause: `pft-backup.service`'s unitguard drop-in (`RestrictAddressFamilies=AF_UNIX`, no `CAP_NET_ADMIN`) stops ufw/iptables, and pft-backup keeps going. A real gap backupwatch was built to find; fix to follow in step 4 (found -> fixed -> verified) |
 
 ## Not covered
 

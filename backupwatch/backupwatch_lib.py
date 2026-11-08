@@ -7,6 +7,7 @@ Usage (called by pft-backupwatch.sh; every path comes from its conf):
                            [--scratch DIR] [--gpg BIN]
       prints one JSON object: archive, age_s, bytes, checks[{name,state,detail}], drift[...], worst
       exit 0 OK | 1 WARN | 2 FAIL | 3 usage
+  backupwatch_lib.py render < CHECK_JSON      the table pft-backupwatch check prints
 
 Archives are read into memory and opened as tar streams; nothing is extracted. A gpg archive is decrypted by
 `gpg --decrypt` to a pipe; gpg's home dir is a fresh dir under --scratch (a tmpfs, /dev/shm by default), removed
@@ -339,6 +340,22 @@ def finish(res):
     return worst
 
 
+def cmd_render(text):
+    """Table for a terminal: one line per check + RESULT, from check's JSON on stdin."""
+    try:
+        j = json.loads(text)
+    except ValueError:
+        return 3
+    print(
+        f"pft-backupwatch check | archive {j.get('archive') or '-'} | age_s {j.get('age_s')} | bytes {j.get('bytes')}"
+    )
+    for c in j["checks"]:
+        print(f"  [{c['state']:<4}] {c['name']:<9} {c['detail']}")
+    n = sum(c["state"] != "OK" for c in j["checks"])
+    print(f"RESULT: {j['worst']} - {n} finding(s)")
+    return 0
+
+
 def main(argv):
     ap = argparse.ArgumentParser(prog="backupwatch_lib.py")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -355,10 +372,13 @@ def main(argv):
     c.add_argument("--size-hi", type=float, default=2.0)
     c.add_argument("--scratch", default="/dev/shm")
     c.add_argument("--gpg", default="gpg")
+    sub.add_parser("render")
     try:
         a = ap.parse_args(argv)
     except SystemExit:
         return 3
+    if a.cmd == "render":
+        return cmd_render(sys.stdin.read())
     if (
         a.fail_age_h < a.max_age_h
         or a.min_bytes < 0

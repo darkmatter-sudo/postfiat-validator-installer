@@ -22,6 +22,7 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 BW = os.environ.get("BW_DIR") or os.path.dirname(HERE)
 HELPER = os.path.join(BW, "backupwatch_lib.py")
+SCRIPT = os.path.join(BW, "pft-backupwatch.sh")
 TMP_BASE = os.environ.get("TEST_TMPDIR") or os.path.expanduser("~/.cache")
 NOW = calendar.timegm(time.strptime("20261108T120000Z", "%Y%m%dT%H%M%SZ"))
 
@@ -581,6 +582,126 @@ def t_usage(c):
     check("usage: fail-age < max-age -> rc 3", rc == 3, rc)
 
 
+def wrap(c, *args, env=None, docker_src=None):
+    """Run pft-backupwatch.sh with a stub docker that answers inspect with DOCKER_SRC (or fails)."""
+    stub = os.path.join(c.base, "docker")
+    with open(stub, "w") as fh:
+        if docker_src is None:
+            fh.write("#!/bin/sh\necho 'Error: No such object' >&2\nexit 1\n")
+        else:
+            fh.write(
+                f"#!/bin/sh\n[ \"$1\" = inspect ] || exit 9\necho '{docker_src}'\n"
+            )
+    os.chmod(stub, 0o755)
+    e = dict(os.environ)
+    e.update(
+        PFT_BW_HELPER=HELPER,
+        PFT_BW_NOW=str(NOW),
+        PFT_BW_DOCKER=stub,
+        PFT_BW_ROOT=c.root,
+        PFT_BW_CONF=os.path.join(c.base, "no.conf"),
+        BACKUP_DIR=c.bdir,
+        SCRATCH=TMP_BASE,
+    )
+    e.update(env or {})
+    p = subprocess.run(
+        ["bash", SCRIPT, *args],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env=e,
+        stdin=subprocess.DEVNULL,
+        check=False,
+    )
+    return p.returncode, p.stdout, p.stderr
+
+
+def t_wrapper(c):
+    write_archive(c.bdir, "20261107T023000Z", members_for(c.root))
+    write_archive(c.bdir, "20261108T023000Z", members_for(c.root))
+    cfg = os.path.join(c.root, "cfgvol")
+    # stub self-check: the stub, not a real docker, answered (lesson: stubs in a noexec dir fall through)
+    rc, out, err = wrap(c, "check", docker_src=cfg)
+    check("wrapper: rc 0 on a clean archive", rc == 0, (rc, out, err))
+    check("wrapper: RESULT: OK line", "RESULT: OK - 0 finding(s)" in out, out)
+    check(
+        "wrapper: one line per check (6)",
+        sum(1 for x in out.splitlines() if x.startswith("  [")) == 6,
+        out,
+    )
+    check(
+        "wrapper: stub docker answered (drift compared the cfg volume)",
+        "[OK  ] drift" in out,
+        out,
+    )
+    rc, out, err = wrap(c, "check", "--json", docker_src=cfg)
+    try:
+        j = json.loads(out)
+    except ValueError:
+        j = {}
+    check(
+        "wrapper --json: helper JSON passed through, worst OK",
+        j.get("worst") == "OK" and rc == 0,
+        (rc, out),
+    )
+    rc, out, err = wrap(c, "check", docker_src=None)
+    check(
+        "wrapper: docker inspect fails -> cfg files unchecked -> WARN rc 1",
+        rc == 1 and "unchecked" in out,
+        (rc, out),
+    )
+    rc, out, err = wrap(
+        c, "check", docker_src=cfg, env={"PFT_BW_NOW": str(NOW + 30 * 3600)}
+    )
+    check(
+        "wrapper: 39 h old -> rc 1 + fresh WARN",
+        rc == 1 and "[WARN] fresh" in out,
+        (rc, out),
+    )
+    rc, out, err = wrap(
+        c, "check", docker_src=cfg, env={"PFT_BW_NOW": str(NOW + 60 * 3600)}
+    )
+    check(
+        "wrapper: 69 h old -> rc 2 + RESULT: FAIL",
+        rc == 2 and "RESULT: FAIL" in out,
+        (rc, out),
+    )
+    conf = os.path.join(c.base, "user.conf")
+    with open(conf, "w") as fh:
+        fh.write("MAX_AGE_H=1\n")
+    rc, out, err = wrap(c, "check", docker_src=cfg, env={"PFT_BW_CONF": conf})
+    check(
+        "wrapper: a conf not owned by root is not sourced",
+        rc == 0 and "[OK  ] fresh" in out,
+        (rc, out),
+    )
+    rc, out, err = wrap(c, "check", docker_src=cfg, env={"MAX_AGE_H": "x"})
+    check(
+        "wrapper: bad MAX_AGE_H -> rc 3",
+        rc == 3 and "must be integers" in err,
+        (rc, err),
+    )
+    rc, out, err = wrap(c, "check", docker_src=cfg, env={"SIZE_HI": "two"})
+    check("wrapper: bad SIZE_HI -> rc 3", rc == 3, (rc, err))
+    rc, out, err = wrap(
+        c,
+        "check",
+        docker_src=cfg,
+        env={"PFT_BW_HELPER": os.path.join(c.base, "nope.py")},
+    )
+    check(
+        "wrapper: missing helper -> rc 3",
+        rc == 3 and "helper missing" in err,
+        (rc, err),
+    )
+    rc, out, err = wrap(c, "check", "--bogus", docker_src=cfg)
+    check("wrapper: unknown check argument -> rc 3", rc == 3, (rc, err))
+    rc, out, err = wrap(c, "frobnicate", docker_src=cfg)
+    check("wrapper: unknown command -> rc 3", rc == 3, (rc, err))
+    rc, out, err = wrap(c, "version", docker_src=cfg)
+    check("wrapper: version", rc == 0 and out.startswith("pft-backupwatch "), out)
+
+
 def main():
     os.makedirs(TMP_BASE, exist_ok=True)
     for label, fn in [
@@ -598,6 +719,7 @@ def main():
         ("cfgdrift", t_cfg_drift),
         ("gpg", t_gpg),
         ("usage", t_usage),
+        ("wrapper", t_wrapper),
     ]:
         case(label, fn)
     ok = all(results)
