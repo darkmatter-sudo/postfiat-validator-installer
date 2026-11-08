@@ -1,0 +1,125 @@
+OS: Ubuntu 22.04.5 LTS
+date: 2026-11-08T08:03:25Z  commit: cd915bea61f1366bac66d2dd09ebe419dd0b45bd  dirty: 0
+$ sha256sum backupwatch/pft-backupwatch.sh backupwatch/backupwatch_lib.py backupwatch/drill/backupfix-run.sh unitguard/pft-unitguard.sh unitguard/profiles/pft-backup.service.conf
+27e726e34463f5e72d60fdbfb8d1dca658c0d29ac4d550d58d9eab3dc943fbf8  backupwatch/pft-backupwatch.sh
+726a0d08faf0478b4e4c276ff211d783a8b6be236b201eea6d9be712051f8a67  backupwatch/backupwatch_lib.py
+ff12aecba5bb2058dc77530e94c850fdc03092ed8bfec55b5b01c105529b9020  backupwatch/drill/backupfix-run.sh
+5f97d4bed324f1044bf31e0b42a5a5c69371603a9328a927250b3b7865f445f8  unitguard/pft-unitguard.sh
+c5eb4a1a261c7786e1b383f98c57a3a85e270afe35c5770c23a356d97cfc0834  unitguard/profiles/pft-backup.service.conf
+(exit 0)
+
+== 1. before
+$ sudo -n PFT_BW_HELPER=backupwatch/backupwatch_lib.py bash backupwatch/pft-backupwatch.sh check
+pft-backupwatch check | archive pft-backup-20261108T023014Z.tar.gz | age_s 19991 | bytes 29577
+  [OK  ] fresh     newest 333 min old
+  [OK  ] size      29577 B, 1.00x previous
+  [OK  ] sidecar   sha256 matches
+  [OK  ] manifest  22 members match
+  [WARN] content   reference member: firewall/ufw-status.txt holds a tool error; firewall/docker-user.rules missing
+  [OK  ] drift     17 files equal the live host
+RESULT: WARN - 1 finding(s)
+(exit 1)
+CHECK ok   before: check exit 1 (WARN)
+$ systemctl show pft-backup.service -p CapabilityBoundingSet -p RestrictAddressFamilies -p ReadWritePaths
+CapabilityBoundingSet=cap_chown cap_dac_override cap_dac_read_search cap_fowner
+ReadWritePaths=/var/backups/postfiat
+RestrictAddressFamilies=AF_UNIX
+(exit 0)
+$ sudo -n pft-integrity verify | tail -1
+RESULT: PASS - 213 unchanged, 0 warn, 0 fail -> exit 0
+(exit 0)
+CHECK ok   before: pft-integrity PASS
+
+== 2. probe: firewall commands under the old (HEAD~ drop-in, as installed) and new profile
+$ diff <(sed -n '/^\[Service\]/,$p' unitguard/profiles/pft-backup.service.conf) "$OLD"
+25,26c25,26
+< CapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_DAC_OVERRIDE CAP_FOWNER CAP_CHOWN CAP_NET_ADMIN CAP_NET_RAW
+< RestrictAddressFamilies=AF_UNIX AF_NETLINK
+---
+> CapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_DAC_OVERRIDE CAP_FOWNER CAP_CHOWN
+> RestrictAddressFamilies=AF_UNIX
+(exit 1)
+-- old (installed drop-in): ufw status verbose
+probe command: sh -c out=$(ufw status verbose 2>&1); r=$?; printf '%s\n' "$out" | head -1 | cut -c1-80; exit $r
+ERROR: Couldn't determine iptables version
+probe exit 1
+PROBE FAIL
+CHECK ok   old profile: 'ufw status verbose' fails
+-- new (repo profile): ufw status verbose
+probe command: sh -c out=$(ufw status verbose 2>&1); r=$?; printf '%s\n' "$out" | head -1 | cut -c1-80; exit $r
+Status: active
+probe exit 0
+PROBE PASS
+CHECK ok   new profile: 'ufw status verbose' works
+-- old (installed drop-in): iptables -S DOCKER-USER
+probe command: sh -c out=$(iptables -S DOCKER-USER 2>&1); r=$?; printf '%s\n' "$out" | head -1 | cut -c1-80; exit $r
+iptables/1.8.7 Failed to initialize nft: Address family not supported by protoco
+probe exit 1
+PROBE FAIL
+CHECK ok   old profile: 'iptables -S DOCKER-USER' fails
+-- new (repo profile): iptables -S DOCKER-USER
+probe command: sh -c out=$(iptables -S DOCKER-USER 2>&1); r=$?; printf '%s\n' "$out" | head -1 | cut -c1-80; exit $r
+-N DOCKER-USER
+probe exit 0
+PROBE PASS
+CHECK ok   new profile: 'iptables -S DOCKER-USER' works
+
+== 3. fix: unitguard apply (one real backup + the profile's check) + integrity accept
+$ sudo -n bash unitguard/pft-unitguard.sh apply pft-backup.service
+[2026-11-08T08:03:40Z] APPLY pft-backup.service class=docker target<=<before -> /etc/systemd/system/pft-backup.service.d/50-unitguard.conf
+[2026-11-08T08:03:40Z]   exposure before: 9.6
+[2026-11-08T08:03:41Z]   run pft-backup.service (oneshot, start): Result=success ExecMainStatus=0
+[2026-11-08T08:03:41Z]   check: cd /var/backups/postfiat && f="$(ls -t pft-backup-*.tar.gz | head -1)" && [ $(( $(date +%s) - $(stat -c %Y "$f") )) -lt 600 ] && sha256sum -c "$f.sha256" && l="$(tar -tzf "$f")" && grep -q "/firewall/docker-user.rules$" <<<"$l" && u="$(tar -xzOf "$f" --wildcards "*/firewall/ufw-status.txt")" && ! grep -q "^ERROR" <<<"$u"
+    | pft-backup-20261108T080341Z.tar.gz: OK
+[2026-11-08T08:03:41Z]   check exit 0
+[2026-11-08T08:03:42Z] PASS pft-backup.service exposure now: 2.3 OK 15
+(exit 0)
+CHECK ok   unitguard apply pft-backup.service exit 0
+$ systemctl show pft-backup.service -p CapabilityBoundingSet -p RestrictAddressFamilies -p ReadWritePaths -p Result
+Result=success
+CapabilityBoundingSet=cap_chown cap_dac_override cap_dac_read_search cap_fowner cap_net_admin cap_net_raw
+ReadWritePaths=/var/backups/postfiat
+RestrictAddressFamilies=AF_NETLINK AF_UNIX
+(exit 0)
+$ sudo -n pft-integrity verify | grep -E 'WARN|FAIL|RESULT'
+  [FAIL] dropin:pft-backup.service.d/50-unitguard.conf changed  mtime, sha256
+RESULT: FAIL - 212 unchanged, 0 warn, 1 fail -> exit 2
+(exit 0)
+$ sudo -n pft-integrity accept --reason 'task_e65845e5: unitguard pft-backup drop-in += CAP_NET_ADMIN CAP_NET_RAW AF_NETLINK (firewall reference copy)' | tail -1 | sed 's/ by .*//'
+manifest sha256: 4df76c454c60f58eb95414e2f67e2633c791610b252bf737b0e1fb1371db652d -> e8b353359c16e145ef78f01274e062e3d4c731f5cc430035484924ac097e98de (logged to accept.log)
+(exit 0)
+CHECK ok   pft-integrity accept
+$ sudo -n pft-integrity verify | tail -1
+RESULT: PASS - 213 unchanged, 0 warn, 0 fail -> exit 0
+(exit 0)
+CHECK ok   pft-integrity PASS after accept
+
+== 4. after: the new archive
+$ sudo -n ls -1 /var/backups/postfiat | tail -4
+pft-backup-20261108T023014Z.tar.gz
+pft-backup-20261108T023014Z.tar.gz.sha256
+pft-backup-20261108T080341Z.tar.gz
+pft-backup-20261108T080341Z.tar.gz.sha256
+(exit 0)
+$ sudo -n PFT_BW_HELPER=backupwatch/backupwatch_lib.py bash backupwatch/pft-backupwatch.sh check
+pft-backupwatch check | archive pft-backup-20261108T080341Z.tar.gz | age_s 35 | bytes 29942
+  [OK  ] fresh     newest 0 min old
+  [OK  ] size      29942 B, 1.01x previous
+  [OK  ] sidecar   sha256 matches
+  [OK  ] manifest  23 members match
+  [OK  ] content   9 required + 3 reference members present
+  [OK  ] drift     17 files equal the live host
+RESULT: OK - 0 finding(s)
+(exit 0)
+CHECK ok   after: check exit 0 (every check OK)
+$ sudo -n bash -c 'f=$(ls -t /var/backups/postfiat/pft-backup-*.tar.gz | head -1); tar -tzf "$f" | grep /firewall/ | sed "s#^[^/]*/##"'
+firewall/
+firewall/ufw-status.txt
+firewall/user6.rules
+firewall/docker-user.rules
+firewall/user.rules
+(exit 0)
+$ ls /dev/shm | grep -c '^pft-bw' || true
+0
+(exit 0)
+RESULT: PASS - 0 failed
