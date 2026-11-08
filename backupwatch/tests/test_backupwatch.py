@@ -598,6 +598,14 @@ def t_gpg(c):
         "no PASSFILE" in state(j, "manifest")[1],
         j,
     )
+    empty = os.path.join(c.base, "emptypass")
+    open(empty, "w").close()
+    rc, j = run(c.bdir, c.root, "--passfile", empty)
+    check(
+        "gpg empty PASSFILE: manifest FAIL 'PASSFILE missing or empty', rc 2",
+        rc == 2 and state(j, "manifest") == ("FAIL", "PASSFILE missing or empty"),
+        j,
+    )
     left = [n for n in os.listdir(TMP_BASE) if n.startswith("pft-bw-gpg.")]
     check("gpg scratch home removed", not left, left)
 
@@ -1291,6 +1299,12 @@ def t_collect(c):
         and sum(1 for k, v in m.items() if "check_state" in k and v == 0) == 6,
         (rc, out, err, readf(f)),
     )
+    t = readf(f)
+    check(
+        "collect: textfile ends with exactly one newline",
+        t.endswith("\n") and not t.endswith("\n\n"),
+        repr(t[-40:]),
+    )
     check(
         "collect: textfile 0644, no temp file left",
         os.path.isfile(f)
@@ -1306,6 +1320,11 @@ def t_collect(c):
         c, "collect", "--stdout", env=dict(env, DRIFT_GRACE_H="0"), docker_src=cfg
     )
     m = prom_samples(out)
+    check(
+        "collect --stdout: output ends with exactly one newline",
+        out.endswith("\n") and not out.endswith("\n\n"),
+        repr(out[-40:]),
+    )
     check(
         "collect --stdout: live edit -> drift 1, drift_files 1, since = now, stdout only",
         m.get('pft_backupwatch_check_state{host="validator",check="drift"}') == 1

@@ -271,8 +271,9 @@ cmd_collect() {
     *) die "ROLE must be archive or replica" ;;
   esac
   [ -n "$text" ] || die "helper produced no metrics" 1
-  if [ "$to_stdout" = 1 ]; then printf '%s' "$text"
-  else write_atomic "$TEXTFILE_DIR" "pft_backupwatch_$HOST_LABEL.prom" "$text" || die "cannot write $TEXTFILE_DIR" 1
+  # $(...) dropped the helper's final newline; the text format needs every line terminated
+  if [ "$to_stdout" = 1 ]; then printf '%s\n' "$text"
+  else write_atomic "$TEXTFILE_DIR" "pft_backupwatch_$HOST_LABEL.prom" "$text"$'\n' || die "cannot write $TEXTFILE_DIR" 1
   fi
   return "$rc"
 }

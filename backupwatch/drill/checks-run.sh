@@ -17,7 +17,9 @@ x "sha256sum backupwatch/pft-backupwatch.sh backupwatch/backupwatch_lib.py backu
 x "shellcheck --version | sed -n 2p && shellcheck backupwatch/pft-backupwatch.sh backupwatch/drill/checks-run.sh" || fails=$((fails + 1))
 x "ruff --version && ruff check backupwatch/ && ruff format --check backupwatch/" || fails=$((fails + 1))
 x "TEST_TMPDIR=\$HOME/.cache timeout 300 nice -n 15 python3 -u backupwatch/tests/test_backupwatch.py" || fails=$((fails + 1))
-P="docker run --rm --network none --entrypoint promtool -v $PWD/alerts:/w:ro -w /w prom/prometheus:v3.5.0"
+# single quotes: $PWD expands in x's eval, so the recorded command line holds no local path
+# shellcheck disable=SC2016
+P='docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /w prom/prometheus:v3.5.0'
 x "$P --version | head -1 && $P check rules backupwatch.rules.yml" || fails=$((fails + 1))
 x "$P test rules backupwatch.tests.yml" || fails=$((fails + 1))
 x "TEST_TMPDIR=\$HOME/.cache timeout 2400 nice -n 15 python3 -u backupwatch/tests/mutate.py --jobs 4" || fails=$((fails + 1))
@@ -30,7 +32,7 @@ live=$?
 x "sudo -n PFT_BW_HELPER=backupwatch/backupwatch_lib.py bash backupwatch/pft-backupwatch.sh check"
 wrap=$?
 ST="$(mktemp -d "$HOME/.cache/bw-state.XXXXXX")"
-x "sudo -n STATE_DIR=$ST PFT_BW_HELPER=backupwatch/backupwatch_lib.py bash backupwatch/pft-backupwatch.sh collect --stdout"
+x "sudo -n STATE_DIR=\"\$ST\" PFT_BW_HELPER=backupwatch/backupwatch_lib.py bash backupwatch/pft-backupwatch.sh collect --stdout"
 coll=$?
 sudo -n rm -rf -- "$ST"
 x "ls /dev/shm | grep -c '^pft-bw' || true"

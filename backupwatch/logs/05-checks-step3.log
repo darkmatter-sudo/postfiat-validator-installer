@@ -1,0 +1,409 @@
+OS: Ubuntu 22.04.5 LTS
+date: 2026-11-08T10:20:38Z  commit: 32cafcf4352214026476323ac8de8c1c274ef62e  dirty: 0
+$ sha256sum backupwatch/pft-backupwatch.sh backupwatch/backupwatch_lib.py backupwatch/tests/test_backupwatch.py backupwatch/tests/mutate.py backupwatch/drill/checks-run.sh alerts/backupwatch.rules.yml alerts/backupwatch.tests.yml backupwatch/systemd/*
+f5022c1a9213e76c6f68f1548a1b60fe23c33ac7483958fb5d2e129b085dfe13  backupwatch/pft-backupwatch.sh
+45e8423bf8d5f19dd48faaa7bf2dc4333491792aefed8893bc4cbca3df9cab98  backupwatch/backupwatch_lib.py
+c39d24a5ce7c19aef1a86e1230e2fdaae5a45f6a376a7714c8c1c64133822f77  backupwatch/tests/test_backupwatch.py
+abfb2338a4a289de7e89dcf438c63af1a140c3810f369017b59a490151fe0797  backupwatch/tests/mutate.py
+7b76651992a3875304820562699d9a628fcf5d89be774a2931d58c945cd4b967  backupwatch/drill/checks-run.sh
+e46783764b2275cc73f876481ed8a37c70ce3ac27e612d478cf89d4ee9c8343f  alerts/backupwatch.rules.yml
+08d36fb1241d07e8475cec79f997cc1901d20072235179acc1645c3cd69657b4  alerts/backupwatch.tests.yml
+93c0af66983e7d2d3fb3fc672bdfde21f54216dd420b11604687bc1c3287d2ef  backupwatch/systemd/pft-backupwatch-pull.service
+ba406d1c0e5ccd4295efcb70c69916f537a31ebc9d84344f94f4b41bea0a4f86  backupwatch/systemd/pft-backupwatch-pull.timer
+eeaa0fd7418b78345ea3c7b177d48061447774b486c7beca86799b5d4d6401cf  backupwatch/systemd/pft-backupwatch-replicate.service
+d97ccba98a4106ebbf97ff9dfc88f01def3c94f039d57794a23fe2d273b180c5  backupwatch/systemd/pft-backupwatch-replicate.timer
+ba425f8989c570ff41dcf5b4e3ea8a28fa286043c8c6a2759dba90fb6e76bd03  backupwatch/systemd/pft-backupwatch.service
+55e5f36dda57448fbbdf11e8d61c67f16484ef3fd06af3ac71f2613fecf77433  backupwatch/systemd/pft-backupwatch.timer
+(exit 0)
+$ shellcheck --version | sed -n 2p && shellcheck backupwatch/pft-backupwatch.sh backupwatch/drill/checks-run.sh
+version: 0.8.0
+(exit 0)
+$ ruff --version && ruff check backupwatch/ && ruff format --check backupwatch/
+ruff 0.17.1
+All checks passed!
+4 files already formatted
+(exit 0)
+$ TEST_TMPDIR=$HOME/.cache timeout 300 nice -n 15 python3 -u backupwatch/tests/test_backupwatch.py
+PASS fresh: rc 0
+PASS fresh: worst OK
+PASS fresh: fresh OK
+PASS fresh: size OK
+PASS fresh: sidecar OK
+PASS fresh: manifest OK
+PASS fresh: content OK
+PASS fresh: drift OK
+PASS fresh: newest archive picked
+PASS fresh: secret section never in output
+PASS fresh: drift rows all same
+PASS fresh: units-enabled.txt not drift-checked
+PASS old 30h: rc 1
+PASS old 30h: fresh WARN
+PASS old 54h: rc 2
+PASS old 54h: fresh FAIL
+PASS boundary 26h-1s: fresh OK
+PASS boundary 26h+1s: fresh WARN
+PASS no archive: rc 2
+PASS no archive: fresh FAIL 'no archive'
+PASS only foreign names: still no archive
+PASS dir missing: rc 2 + unreadable
+PASS byte flip: rc 2
+PASS byte flip: sidecar FAIL mismatch
+PASS byte flip: manifest FAIL
+PASS byte flip + new sidecar: sidecar OK
+PASS byte flip + new sidecar: manifest FAIL corrupt
+PASS truncated: size FAIL (< MIN_BYTES)
+PASS truncated: manifest FAIL
+PASS size 3x previous: size WARN
+PASS size 3x previous: rc 1
+PASS no sidecar: sidecar FAIL
+PASS no sidecar: manifest still checked OK
+PASS extra unlisted member: manifest FAIL
+PASS extra unlisted member: names it
+PASS extra unlisted member: sidecar OK (the archive is what was written)
+PASS member outside NAME/: manifest FAIL naming it, rc 2
+PASS listed but absent: names it
+PASS member edited after manifest: mismatch named
+PASS COMPOSE_FILE member missing: content FAIL
+PASS COMPOSE_FILE member missing: manifest OK (consistent archive)
+PASS postfiatd.cfg missing: content FAIL
+PASS firewall reference incomplete: content WARN
+PASS firewall: names missing docker-user.rules
+PASS firewall: names tool error in ufw-status
+PASS firewall reference incomplete: rc 1
+PASS drift: WARN
+PASS drift: changed file named
+PASS drift: gone file named
+PASS drift: rc 1
+PASS drift: cfg (secret section stripped on the live side) is same
+PASS cfg drift: postfiatd.cfg changed
+PASS secret-only cfg change: drift OK
+PASS no cfg dir: cfg files unchecked (WARN), not same
+PASS gpg right passphrase: manifest OK
+PASS gpg right passphrase: rc 0
+PASS gpg wrong passphrase: rc 2
+PASS gpg wrong passphrase: manifest FAIL 'wrong passphrase'
+PASS gpg wrong passphrase: sidecar still OK
+PASS gpg no passfile: manifest FAIL named
+PASS gpg scratch home removed
+PASS usage: missing --now -> rc 3
+PASS usage: fail-age < max-age -> rc 3
+PASS wrapper: rc 0 on a clean archive
+PASS wrapper: RESULT: OK line
+PASS wrapper: one line per check (6)
+PASS wrapper: stub docker answered (drift compared the cfg volume)
+PASS wrapper --json: helper JSON passed through, worst OK
+PASS wrapper: docker inspect fails -> cfg files unchecked -> WARN rc 1
+PASS wrapper: 39 h old -> rc 1 + fresh WARN
+PASS wrapper: 69 h old -> rc 2 + RESULT: FAIL
+PASS wrapper: a conf not owned by root is not sourced
+PASS wrapper: bad MAX_AGE_H -> rc 3
+PASS wrapper: bad SIZE_HI -> rc 3
+PASS wrapper: missing helper -> rc 3
+PASS wrapper: unknown check argument -> rc 3
+PASS wrapper: unknown command -> rc 3
+PASS wrapper: version
+PASS replicate: rc 0 + REPLICATED
+PASS replicate: peer confirmed OK
+PASS replicate: ciphertext + meta stored on the peer
+PASS replicate: peer holds age ciphertext, not the tar.gz
+PASS replicate: replica dir is 0700
+PASS replicate: local record = name, peer ciphertext sha256, sidecar sha256
+PASS replicate: no scratch left (ciphertext removed)
+PASS replicate: no partial file left on the peer
+PASS check --offhost: rc 0 + offhost OK
+PASS OFFHOST=1 in conf/env = --offhost
+PASS check without --offhost: no offhost line, peer not called for it
+PASS newer archive not replicated: offhost WARN
+PASS prune: REPLICA_KEEP=3 -> 3 replicas kept
+PASS prune: the oldest was pruned (PRUNED line, meta gone)
+PASS tampered replica on the peer: offhost FAIL SHA_MISMATCH
+PASS tampered replica + re-hashed meta: FAIL vs the local record
+PASS no local replica record: offhost FAIL
+PASS peer down (ssh rc 255): offhost FAIL unreachable
+PASS peer down: replicate rc 2, not recorded
+PASS wrong recipient: peer cannot decrypt -> DECRYPT_MISMATCH, rc 2
+PASS wrong recipient: nothing stored, no partial file
+PASS wrong recipient: nothing recorded locally
+PASS archive != sidecar: replicate refused rc 2 before any peer call
+PASS malformed recipient: rc 3
+PASS no PEER_SSH: rc 3
+PASS serve receive: forged CIPHER_SHA -> SHA_MISMATCH rc 2
+PASS serve receive: over REPLICA_MAX_BYTES -> TOO_BIG rc 2
+PASS serve receive refusals: nothing stored
+PASS serve receive: name outside the pft-backup pattern -> rc 3
+PASS serve verify: missing replica -> MISSING rc 2
+PASS serve status: empty store -> END only
+PASS serve: unknown verb -> rc 3
+PASS metrics: rc 0, up 1, collect timestamp = now
+PASS metrics: check_state 0/2/1 per check, only checks that ran
+PASS metrics: archive age + bytes
+PASS metrics: drift_files counts changed + gone, not same
+PASS metrics: first drift -> since = now, not overdue, state file written
+PASS metrics: drift exactly DRIFT_GRACE_H old -> not overdue, since kept
+PASS metrics: drift older than DRIFT_GRACE_H -> overdue 1
+PASS metrics: drift OK again -> since 0, overdue 0, state file removed
+PASS metrics: a future/garbled since is reset to now
+PASS metrics: DRIFT_GRACE_H 0 -> overdue one second after first seen
+PASS metrics: no archive -> age/bytes -1, fresh 2, up 1
+PASS metrics: input '' -> up 0 + timestamp, rc 1, no check_state
+PASS metrics: input 'not json' -> up 0 + timestamp, rc 1, no check_state
+PASS metrics: input '{"checks": [' -> up 0 + timestamp, rc 1, no check_state
+PASS metrics: label-breaking host -> rc 3
+PASS metrics: negative drift grace -> rc 3
+PASS replica-metrics: up 1, 2 replicas, newest age from its name, verify ok 1
+PASS replica-metrics: newest does not verify -> verify ok 0
+PASS replica-metrics: an OK for an older replica does not count
+PASS replica-metrics: empty store -> 0 replicas, age -1, verify 0
+PASS replica-metrics: no END (status failed) -> up 0, rc 1
+PASS collect: rc 0, textfile written with up 1 and 6 check states all 0
+PASS collect: textfile 0644, no temp file left
+PASS collect --stdout: live edit -> drift 1, drift_files 1, since = now, stdout only
+PASS collect: DRIFT_GRACE_H from conf reaches the helper (overdue at grace 0)
+PASS collect: default DRIFT_GRACE_H 30 -> not overdue after 1 min
+PASS collect: helper missing -> rc 3, old textfile kept
+PASS collect: check cannot run (bad conf) -> up 0 sample, rc 1
+PASS collect: bad HOST_LABEL -> rc 3
+PASS collect: bad DRIFT_GRACE_H -> rc 3
+PASS collect: bad ROLE -> rc 3
+PASS collect/pull: replicate first rc 0
+PASS collect ROLE=replica: 1 replica, newest verifies, up 1
+PASS collect OFFHOST=1: offhost check_state 0 via the peer
+PASS pull: rc 0, sentry textfile copied byte-identical, 0644
+PASS pull: only `serve metrics` ran on the peer for the pull
+PASS pull: a foreign metric -> rc 2, validator copy unchanged, no temp left
+PASS pull: the wrong host label -> rc 2, validator copy unchanged, no temp left
+PASS pull: no up sample -> rc 2, validator copy unchanged, no temp left
+PASS pull: no timestamp sample -> rc 2, validator copy unchanged, no temp left
+PASS pull: SSH down -> rc 1, copy unchanged (goes stale -> PFTBackupwatchStale)
+PASS collect OFFHOST=1 with SSH down -> offhost FAIL (2), rc 0
+PASS pull: PEER_LABEL = own HOST_LABEL -> rc 3
+PASS pull: no PEER_SSH -> rc 3
+PASS collect ROLE=replica: replica removed -> 0 replicas, verify 0
+RESULT: PASS (155 checks, 0 failed)
+(exit 0)
+$ docker run --rm --network none --entrypoint promtool -v <home>/work/postfiat-validator-installer/alerts:/w:ro -w /w prom/prometheus:v3.5.0 --version | head -1 && docker run --rm --network none --entrypoint promtool -v <home>/work/postfiat-validator-installer/alerts:/w:ro -w /w prom/prometheus:v3.5.0 check rules backupwatch.rules.yml
+promtool, version 3.5.0 (branch: HEAD, revision: 8be3a9560fbdd18a94dedec4b747c35178177202)
+Checking backupwatch.rules.yml
+  SUCCESS: 5 rules found
+
+(exit 0)
+$ docker run --rm --network none --entrypoint promtool -v <home>/work/postfiat-validator-installer/alerts:/w:ro -w /w prom/prometheus:v3.5.0 test rules backupwatch.tests.yml
+  SUCCESS
+
+(exit 0)
+$ TEST_TMPDIR=$HOME/.cache timeout 2400 nice -n 15 python3 -u backupwatch/tests/mutate.py --jobs 4
+control suite (unmutated copy): PASS RESULT: PASS (155 checks, 0 failed)
+control promtool (unmutated copy): PASS SUCCESS
+M01 CAUGHT - fresh: FAIL age boundary ignored [3 failing: old 54h: rc 2 :: {'age_s': 194400, 'archive': 'pft-backup-20261107T060000Z.tar.gz', 'bytes; old 54h: fresh FAIL :: ('WARN', 'newest 54 h old > 26 h')]
+M02 CAUGHT - fresh: WARN age uses FAIL threshold [4 failing: old 30h: rc 1 :: {'age_s': 108000, 'archive': 'pft-backup-20261107T060000Z.tar.gz', 'bytes; old 30h: fresh WARN :: ('OK', 'newest 1800 min old')]
+M03 CAUGHT - size: MIN_BYTES not enforced [1 failing: truncated: size FAIL (< MIN_BYTES) :: ('WARN', '2746 B, 0.33x previous (allowed 0.5..2.0)']
+M04 CAUGHT - size: ratio upper bound dropped [2 failing: size 3x previous: size WARN :: ('OK', '24621 B, 2.99x previous'); size 3x previous: rc 1 :: {'age_s': 34200, 'archive': 'pft-backup-20261108T023000Z.tar.gz']
+M05 CAUGHT - sidecar: mismatch accepted [1 failing: byte flip: sidecar FAIL mismatch :: ('OK', 'sha256 matches')]
+M06 CAUGHT - manifest: bad member hash ignored [3 failing: byte flip: manifest FAIL :: ('OK', '12 members match'); byte flip + new sidecar: manifest FAIL corrupt :: ('OK', '12 members match')]
+M07 CAUGHT - manifest: listed-but-absent ignored [1 failing: listed but absent: names it :: {'age_s': 34200, 'archive': 'pft-backup-20261108T023000Z.ta]
+M08 CAUGHT - manifest: unlisted extra member ignored [2 failing: extra unlisted member: manifest FAIL :: ('OK', '12 members match'); extra unlisted member: names it :: 12 members match]
+M09 CAUGHT - archive: member outside STEM/ accepted [1 failing: member outside NAME/: manifest FAIL naming it, rc 2 :: (2, {'age_s': 34200, 'archive': 'pf]
+M10 CAUGHT - content: COMPOSE_FILE members not required [1 failing: COMPOSE_FILE member missing: content FAIL :: ('OK', '4 required + 3 reference members pres]
+M11 CAUGHT - content: firewall tool error not flagged [1 failing: firewall: names tool error in ufw-status :: reference member: firewall/docker-user.rules m]
+M12 CAUGHT - drift: secrets not stripped before compare [16 failing: fresh: rc 0 :: {'age_s': 34200, 'archive': 'pft-backup-20261108T023000Z.tar.gz', 'bytes': ; fresh: worst OK :: {'age_s': 34200, 'archive': 'pft-backup-20261108T023000Z.tar.gz', 'byte]
+M13 CAUGHT - drift: gone file reported as same [1 failing: drift: gone file named :: /opt/postfiatd/docker-compose.override.yml changed]
+M14 SURVIVED - gpg: empty PASSFILE accepted
+M15 CAUGHT - offhost: recorded ciphertext sha not compared [1 failing: tampered replica + re-hashed meta: FAIL vs the local record :: (2, 'pft-backupwatch check ]
+M16 CAUGHT - offhost: peer verify result ignored [1 failing: tampered replica on the peer: offhost FAIL SHA_MISMATCH :: (0, 'pft-backupwatch check | ar]
+M17 CAUGHT - offhost: peer down not a FAIL [1 failing: peer down (ssh rc 255): offhost FAIL unreachable :: (2, 'pft-backupwatch check | archive p]
+M18 CAUGHT - metrics: drift grace boundary off by one [1 failing: metrics: drift exactly DRIFT_GRACE_H old -> not overdue, since kept :: # HELP pft_backupwa]
+M19 CAUGHT - metrics: drift since not kept between runs [4 failing: metrics: drift exactly DRIFT_GRACE_H old -> not overdue, since kept :: # HELP pft_backupwa; metrics: drift older than DRIFT_GRACE_H -> overdue 1 :: # HELP pft_backupwatch_collect_tim]
+M20 CAUGHT - metrics: drift state never cleared [1 failing: metrics: drift OK again -> since 0, overdue 0, state file removed :: # HELP pft_backupwatc]
+M21 CAUGHT - metrics: invalid input still up 1 [4 failing: metrics: input '' -> up 0 + timestamp, rc 1, no check_state :: (1, '# HELP pft_backupwatch; metrics: input 'not json' -> up 0 + timestamp, rc 1, no check_state :: (1, '# HELP pft_bac]
+M22 CAUGHT - replica-metrics: any VERIFY OK counts [1 failing: replica-metrics: an OK for an older replica does not count :: # HELP pft_backupwatch_colle]
+M23 CAUGHT - replica-metrics: oldest replica used for age [2 failing: replica-metrics: up 1, 2 replicas, newest age from its name, verify ok 1 :: # HELP pft_bac; replica-metrics: an OK for an older replica does not count :: # HELP pft_backupwatch_colle]
+M24 CAUGHT - metrics: host label not validated [1 failing: metrics: label-breaking host -> rc 3 :: (1, '# HELP pft_backupwatch_collect_timestamp_seco]
+S01 CAUGHT - replicate: archive not checked against its sidecar [1 failing: archive != sidecar: replicate refused rc 2 before any peer call :: (2, 'pft-backupwatch: p]
+S02 CAUGHT - receive: ciphertext sha not checked [1 failing: serve receive: forged CIPHER_SHA -> SHA_MISMATCH rc 2 :: (2, 'RECEIVED pft-backup-20261108]
+S03 CAUGHT - receive: decrypt result not checked [5 failing: wrong recipient: peer cannot decrypt -> DECRYPT_MISMATCH, rc 2 :: (0, '  peer: RECEIVED pf; wrong recipient: nothing stored, no partial file :: ['pft-backup-20261108T023000Z.tar.gz.a]
+S04 CAUGHT - receive: size cap not enforced [1 failing: serve receive: over REPLICA_MAX_BYTES -> TOO_BIG rc 2 :: (2, 'RECEIVED pft-backup-20261108]
+S05 CAUGHT - receive: keep N + 1 [2 failing: prune: REPLICA_KEEP=3 -> 3 replicas kept :: (['pft-backup-20261108T023000Z.tar.gz.age', 'p; prune: the oldest was pruned (PRUNED line, meta gone) ::   peer: RECEIVED pft-backup-20261]
+S06 CAUGHT - verify: re-hash skipped [1 failing: tampered replica on the peer: offhost FAIL SHA_MISMATCH :: (2, 'pft-backupwatch check | ar]
+S07 CAUGHT - replicate: record written without peer OK [3 failing: peer down: replicate rc 2, not recorded :: (0, 'REPLICATED pft-backup-20261108T110000Z.tar; wrong recipient: peer cannot decrypt -> DECRYPT_MISMATCH, rc 2 :: (0, '  peer: RECEIVED pf]
+S08 CAUGHT - pull: foreign sample lines accepted [5 failing: pull: a foreign metric -> rc 2, validator copy unchanged, no temp left :: (0, '', ['pft_ba; pull: the wrong host label -> rc 2, validator copy unchanged, no temp left :: (2, 'pft-bac]
+S09 CAUGHT - pull: host label not checked [4 failing: pull: the wrong host label -> rc 2, validator copy unchanged, no temp left :: (0, '', ['pf; pull: no up sample -> rc 2, validator copy unchanged, no temp left :: (2, 'pft-backupwatch]
+S10 CAUGHT - pull: missing up sample accepted [3 failing: pull: no up sample -> rc 2, validator copy unchanged, no temp left :: (0, '', ['pft_backup; pull: no timestamp sample -> rc 2, validator copy unchanged, no temp left :: (2, 'pft-back]
+S11 CAUGHT - pull: validation failure still installs the file [5 failing: pull: a foreign metric -> rc 2, validator copy unchanged, no temp left :: (0, '', ['pft_ba; pull: the wrong host label -> rc 2, validator copy unchanged, no temp left :: (0, '', ['pf]
+S12 CAUGHT - collect: DRIFT_GRACE_H not passed to the helper [1 failing: collect: DRIFT_GRACE_H from conf reaches the helper (overdue at grace 0) :: # HELP pft_bac]
+S13 CAUGHT - collect: replica role skips verify of the newest [1 failing: collect ROLE=replica: 1 replica, newest verifies, up 1 :: (0, '', '', {'pft_backupwatch_co]
+S14 CAUGHT - collect: OFFHOST ignored [3 failing: OFFHOST=1 in conf/env = --offhost :: (0, 'pft-backupwatch check | archive pft-backup-20261; collect OFFHOST=1: offhost check_state 0 via the peer :: (0, '', {'pft_backupwatch_collect]
+S15 CAUGHT - pull: may overwrite own textfile [1 failing: pull: PEER_LABEL = own HOST_LABEL -> rc 3 :: (2, 'pft-backupwatch: validation failed: line]
+R01 CAUGHT - Stale: WARN (1) no longer fires [promtool FAILED: stale archive (WARN, then FAIL) fires after 30 min and resolves when a fresh archive appears]
+R02 CAUGHT - Broken: manifest dropped from the selector [promtool FAILED: a broken archive fires per failing check after 15 min, WARN does not fire, and it resolves on a good archive]
+R03 CAUGHT - Broken: WARN fires too [promtool FAILED: a broken archive fires per failing check after 15 min, WARN does not fire, and it resolves on a good archive]
+R04 CAUGHT - Drift: for 15m -> 5m [promtool FAILED: drift overdue fires after 15 min and resolves when a backup picks the change up]
+R05 CAUGHT - NoOffhostCopy: sentry side dropped [promtool FAILED: no off-host copy fires from either side after 30 min and resolves]
+R06 CAUGHT - Stale collector: up 0 dropped [promtool FAILED: collector stale (timestamps stop) or up 0 fires after 10 min and resolves when collection resumes]
+R07 CAUGHT - Stale collector: 45 min -> 60 min [promtool FAILED: collector stale (timestamps stop) or up 0 fires after 10 min and resolves when collection resumes]
+R08 CAUGHT - Broken: severity critical -> warning [promtool FAILED: a broken archive fires per failing check after 15 min, WARN does not fire, and it resolves on a good archive; required member missing or truncated archive (content / size FAIL) fire too]
+orphan check: 0 process(es) still running from mutant copies
+RESULT: 46 caught, 1 survived, 0 not applied, 0 broken of 47
+(exit 1)
+$ for u in backupwatch/systemd/*; do systemd-analyze verify "$u" 2>&1 | grep -F "$(basename "$u")" | grep -v 'pft-backupwatch is not executable\|/usr/local/bin/pft-backupwatch'; done; echo 'units: no findings above = clean'
+units: no findings above = clean
+(exit 0)
+config volume host path: found (docker inspect .Mounts, /etc/postfiatd)
+$ ls /dev/shm | grep -c '^pft-bw' || true
+0
+(exit 0)
+$ sudo -n python3 -u backupwatch/backupwatch_lib.py check --dir /var/backups/postfiat --now $(date +%s) --cfg-dir "$CFG" | python3 -m json.tool
+{
+    "age_s": 8380,
+    "archive": "pft-backup-20261108T080341Z.tar.gz",
+    "bytes": 29942,
+    "checks": [
+        {
+            "detail": "newest 139 min old",
+            "name": "fresh",
+            "state": "OK"
+        },
+        {
+            "detail": "29942 B, 1.01x previous",
+            "name": "size",
+            "state": "OK"
+        },
+        {
+            "detail": "sha256 matches",
+            "name": "sidecar",
+            "state": "OK"
+        },
+        {
+            "detail": "23 members match",
+            "name": "manifest",
+            "state": "OK"
+        },
+        {
+            "detail": "9 required + 3 reference members present",
+            "name": "content",
+            "state": "OK"
+        },
+        {
+            "detail": "17 files equal the live host",
+            "name": "drift",
+            "state": "OK"
+        }
+    ],
+    "drift": [
+        {
+            "path": "/etc/postfiatd/postfiatd.cfg",
+            "state": "same"
+        },
+        {
+            "path": "/etc/postfiatd/validators.txt",
+            "state": "same"
+        },
+        {
+            "path": "/etc/systemd/system/pft-exporter.service",
+            "state": "same"
+        },
+        {
+            "path": "/etc/systemd/system/postfiat-docker-user.service",
+            "state": "same"
+        },
+        {
+            "path": "/etc/systemd/system/postfiat-monitor.service",
+            "state": "same"
+        },
+        {
+            "path": "/etc/systemd/system/postfiat-monitor.timer",
+            "state": "same"
+        },
+        {
+            "path": "/opt/pft-exporter/pft_exporter.py",
+            "state": "same"
+        },
+        {
+            "path": "/opt/postfiatd/.env",
+            "state": "same"
+        },
+        {
+            "path": "/opt/postfiatd/docker-compose.apparmor.yml",
+            "state": "same"
+        },
+        {
+            "path": "/opt/postfiatd/docker-compose.confine.yml",
+            "state": "same"
+        },
+        {
+            "path": "/opt/postfiatd/docker-compose.override.yml",
+            "state": "same"
+        },
+        {
+            "path": "/opt/postfiatd/docker-compose.resources.yml",
+            "state": "same"
+        },
+        {
+            "path": "/opt/postfiatd/docker-compose.seccomp.yml",
+            "state": "same"
+        },
+        {
+            "path": "/opt/postfiatd/docker-compose.yml",
+            "state": "same"
+        },
+        {
+            "path": "/usr/local/bin/postfiat-health",
+            "state": "same"
+        },
+        {
+            "path": "/usr/local/bin/postfiat-monitor",
+            "state": "same"
+        },
+        {
+            "path": "/usr/local/sbin/postfiat-docker-user.sh",
+            "state": "same"
+        }
+    ],
+    "sidecar_sha256": "3d95e13cedf7de27ad4cc45b7fd6e6f6e1cbe2761f0e8ecde340543d913f65f9",
+    "worst": "OK"
+}
+(exit 0)
+$ sudo -n PFT_BW_HELPER=backupwatch/backupwatch_lib.py bash backupwatch/pft-backupwatch.sh check
+pft-backupwatch check | archive pft-backup-20261108T080341Z.tar.gz | age_s 8380 | bytes 29942
+  [OK  ] fresh     newest 139 min old
+  [OK  ] size      29942 B, 1.01x previous
+  [OK  ] sidecar   sha256 matches
+  [OK  ] manifest  23 members match
+  [OK  ] content   9 required + 3 reference members present
+  [OK  ] drift     17 files equal the live host
+RESULT: OK - 0 finding(s)
+(exit 0)
+$ sudo -n STATE_DIR=<home>/.cache/bw-state.8Nscjo PFT_BW_HELPER=backupwatch/backupwatch_lib.py bash backupwatch/pft-backupwatch.sh collect --stdout
+# HELP pft_backupwatch_collect_timestamp_seconds Last pft-backupwatch collect (epoch).
+# TYPE pft_backupwatch_collect_timestamp_seconds gauge
+pft_backupwatch_collect_timestamp_seconds{host="validator"} 1794133401
+# HELP pft_backupwatch_up 1 if the check ran and produced a result.
+# TYPE pft_backupwatch_up gauge
+pft_backupwatch_up{host="validator"} 1
+# HELP pft_backupwatch_check_state Per check: 0 OK, 1 WARN, 2 FAIL.
+# TYPE pft_backupwatch_check_state gauge
+pft_backupwatch_check_state{host="validator",check="fresh"} 0
+pft_backupwatch_check_state{host="validator",check="size"} 0
+pft_backupwatch_check_state{host="validator",check="sidecar"} 0
+pft_backupwatch_check_state{host="validator",check="manifest"} 0
+pft_backupwatch_check_state{host="validator",check="content"} 0
+pft_backupwatch_check_state{host="validator",check="drift"} 0
+# HELP pft_backupwatch_archive_age_seconds Age of the newest archive (-1: none).
+# TYPE pft_backupwatch_archive_age_seconds gauge
+pft_backupwatch_archive_age_seconds{host="validator"} 8380
+# HELP pft_backupwatch_archive_bytes Size of the newest archive (-1: none).
+# TYPE pft_backupwatch_archive_bytes gauge
+pft_backupwatch_archive_bytes{host="validator"} 29942
+# HELP pft_backupwatch_drift_files Archived config files that differ from the live host.
+# TYPE pft_backupwatch_drift_files gauge
+pft_backupwatch_drift_files{host="validator"} 0
+# HELP pft_backupwatch_drift_since_timestamp_seconds First collect that saw drift (0: none).
+# TYPE pft_backupwatch_drift_since_timestamp_seconds gauge
+pft_backupwatch_drift_since_timestamp_seconds{host="validator"} 0
+# HELP pft_backupwatch_drift_overdue 1 if drift outlived DRIFT_GRACE_H (no backup picked the change up).
+# TYPE pft_backupwatch_drift_overdue gauge
+pft_backupwatch_drift_overdue{host="validator"} 0(exit 0)
+$ ls /dev/shm | grep -c '^pft-bw' || true
+0
+(exit 0)
+live check exit: 0 (0 OK / 1 WARN / 2 FAIL)
+RESULT: FAIL (lint+suite failures: 1; live check exit 0)

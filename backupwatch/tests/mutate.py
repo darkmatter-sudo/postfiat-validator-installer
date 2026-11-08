@@ -345,6 +345,27 @@ MUTANTS = [
         "        for: 15m\n        labels:\n          severity: critical",
         "        for: 15m\n        labels:\n          severity: warning",
     ),
+    (
+        "S16",
+        S,
+        "collect: textfile without its final newline",
+        '"$text"$\'\\n\' || die "cannot write $TEXTFILE_DIR" 1',
+        '"$text" || die "cannot write $TEXTFILE_DIR" 1',
+    ),
+    (
+        "S17",
+        S,
+        "collect --stdout without its final newline",
+        "then printf '%s\\n' \"$text\"",
+        "then printf '%s' \"$text\"",
+    ),
+    (
+        "M25",
+        L,
+        "gpg: empty PASSFILE accepted, variant 2",
+        "or os.path.getsize(passfile) == 0",
+        "or os.path.getsize(passfile) < 0",
+    ),
 ]
 
 
