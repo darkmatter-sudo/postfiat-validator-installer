@@ -17,8 +17,9 @@ validator learn log (11, line 2) and the P2 generate log (13, line 2), and each 
 l.424). P2 = `generate` over the sentry's P1 events + a recorded learn on the validator that also ran every host
 add-on's in-container commands (log 11); diff vs P1 = 8 `ix` exec rules (`bash cat curl cut du ls tail wc`) and
 `@{PROC}/@{pid}/mountinfo r` (log 13). P2 had sha256 `f3a023fc…0e34` (log 16 l.126, l.739). Since 2026-11-04 08:16Z
-[`profile/pft-postfiatd`](profile/pft-postfiatd) is P2 + the cron.daily fix (Run 2 below), sha256 `a57315ab…adb3`,
-reloaded in place on both hosts (logs 22-23).
+[`profile/pft-postfiatd`](profile/pft-postfiatd) was P2 + the cron.daily fix (Run 2 below), sha256 `a57315ab…adb3`,
+reloaded in place on both hosts (logs 22-23). Since 2026-11-08 07:52Z it is that + the cron.weekly/monthly fix (Run 3
+below), sha256 `6144c55e48c15fb65194da060594eba9b9a4759e573e361739dc033ea8fd29ba`, reloaded in place (logs 29-30).
 
 | Host | Found | Fixed by | Verified (after) |
 |---|---|---|---|
@@ -54,6 +55,33 @@ Logs: [07 rollback, refused](logs/07-validator-rollback-refused.log) · [08 roll
 fd9bbd8) · [15 preflight, ready](logs/15-preflight-reapply.log) · [16 live re-apply](logs/16-live-reapply.log) ·
 [17 resources re-applied](logs/17-resources-reapply.log). The retention-side fix has its own proof in
 [`../logs/retention/2-sandbox-readonly-cfg.log`](../logs/retention/2-sandbox-readonly-cfg.log).
+
+## Run 3 (2026-11-08): cron.weekly / cron.monthly gap found → fixed → verified
+
+**Found.** 2026-11-08 was the first Sunday under the profile. At 06:47:01Z the container crontab's weekly line
+(`47 6 * * 7 ... run-parts --report /etc/cron.weekly`) wrote one `DENIED` record per host
+(`operation="open" name="/etc/cron.weekly/" comm="run-parts"`), and `PFTAppArmorDrift` fired on both hosts and
+reached the operator. Cause: no learn ran across a Sunday or the 1st, so neither `/etc/cron.weekly/` nor
+`/etc/cron.monthly/` was ever opened in a learn; the monthly line (1st, 06:52Z) would have failed on 2026-12-01 the
+same way. Both directories hold only `.placeholder` in the image, so no job was skipped; `run-parts` exited 1.
+Lessons 204/227 (exercise skips are profile gaps) covered `cron.daily` but not the other crontab lines. Not an
+intrusion; the two records were acknowledged (`ack-denials`) after the fix.
+
+**Fixed** in `generate` (no new learn needed), commit 9de2234ba11dd0e6b280eed79f10f60a47b2b7e1: `EXTRA_FILE` default
+`/:r` → `/:r /etc/cron.weekly/:r /etc/cron.monthly/:r` (read of the directory only: a job that a new image adds there
+is still exec-denied and shows up in the audit). The current code first regenerated the shipped profile
+byte-identically from `/var/lib/pft-apparmor/pft-postfiatd.merged.events.tsv`; with the change, the diff is the two
+added lines. Tests: 5 new checks (generate + shipped profile), suite 278 passed, 0 failed.
+
+**Verified.**
+
+| Log | What it shows |
+|---|---|
+| [`logs/28-cronweekly-probe-validator.log`](logs/28-cronweekly-probe-validator.log) | `drill/cronweekly-probe.sh`: old and new profile under throwaway names, the container's real weekly + monthly run-parts lines in throwaway containers (`--network none`, live confine arguments). Old: both `open` denials reproduced, both run-parts exit 1. New: 0 DENIED, both exit 0. Nothing is run inside the live container (its crontab is read through `/proc/<pid>/root`). `RESULT: PASS - 0 failed` |
+| [`logs/29-reload-validator.log`](logs/29-reload-validator.log), [`logs/30-reload-sentry.log`](logs/30-reload-sentry.log) | `drill/reload-run.sh` (now with `REASON`/`ACK_REASON`): in-place `apparmor_parser -r -W`, same container ID and start time, enforce, `server_state` full, `pft-integrity accept` + verify PASS, `ack-denials` (1 record per host), `pft-apparmor audit` PASS. `RESULT: PASS - 0 failed` on both |
+| [`logs/31-fleet-sync.log`](logs/31-fleet-sync.log) | `drill/update-run.sh`: `pft-fleet sync --addon apparmor` (the changed script) on both hosts in a `pft-maint` window ([MAINT] to a throwaway topic), audit + pull Result success, 0 WARN/FAIL checks, integrity PASS, skew CURRENT, operator topics read back |
+
+The next real proof is the container's own Sunday 06:47Z run (2026-11-15) and the 1st 06:52Z run (2026-12-01).
 
 ## Run 2 (2026-11-04): cron.daily gap found → fixed → verified
 

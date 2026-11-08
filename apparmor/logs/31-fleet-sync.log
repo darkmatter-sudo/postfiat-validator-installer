@@ -1,0 +1,154 @@
+apparmor two-host update - 2026-11-08T07:54:39Z - Ubuntu 22.04.5 LTS - repo HEAD 4f013136234652c5dc2d3a55c344966e2c623f7d (clean: yes)
+
+== 0. preflight
+$ sha256sum apparmor/pft-apparmor.sh apparmor/profile/pft-postfiatd apparmor/drill/update-run.sh
+  578e924d77998086338e532384e5268ef3fe4b3f6d87e6c83ab8d66a48b1a7c9  apparmor/pft-apparmor.sh
+  6144c55e48c15fb65194da060594eba9b9a4759e573e361739dc033ea8fd29ba  apparmor/profile/pft-postfiatd
+  239d74c115e5bba7088565f310ff34aa52838096c76ee8fec0e00832958375fa  apparmor/drill/update-run.sh
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 213 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 132 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts before the update
+$ sudo -n docker exec postfiatd curl -s -m 10 -d '{"method":"server_info"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state; R "sudo -n docker exec postfiatd-sentry curl -s -m 10 -d '{\"method\":\"server_info\"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state"
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ sudo -n pft-fleet sync --addon apparmor --to 4f013136234652c5dc2d3a55c344966e2c623f7d | grep -E '^PLAN .* (write|keep)$' | awk '{print $2, $4, $6, $NF}'
+  sentry /usr/local/bin/pft-apparmor BEHIND write
+  sentry /etc/systemd/system/pft-apparmor.service CURRENT keep
+  sentry /etc/systemd/system/pft-apparmor.timer CURRENT keep
+  validator /usr/local/bin/pft-apparmor BEHIND write
+  validator /etc/systemd/system/pft-apparmor.service CURRENT keep
+  validator /etc/systemd/system/pft-apparmor.timer CURRENT keep
+  validator /etc/systemd/system/pft-apparmor-pull.service CURRENT keep
+  validator /etc/systemd/system/pft-apparmor-pull.timer CURRENT keep
+  (exit 0)
+CHECK ok   dry run: /usr/local/bin/pft-apparmor written on both hosts, nothing else (2 writes)
+$ sudo -n sha256sum /etc/apparmor.d/pft-postfiatd | cut -c1-64; R 'sha256sum /etc/apparmor.d/pft-postfiatd | cut -c1-64'; sha256sum apparmor/profile/pft-postfiatd | cut -c1-64
+  6144c55e48c15fb65194da060594eba9b9a4759e573e361739dc033ea8fd29ba
+  6144c55e48c15fb65194da060594eba9b9a4759e573e361739dc033ea8fd29ba
+  6144c55e48c15fb65194da060594eba9b9a4759e573e361739dc033ea8fd29ba
+  (exit 0)
+CHECK ok   installed profile = repo profile on both hosts (reloaded before this run)
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+
+== 1. rollout silence (pft-fleet/rulecheck see a changed file during the update; not the watchdog)
+CHECK ok   Alertmanager silence created (PFTRuleDead, PFTTextfileStale, PFTRulecheck*, PFTFleet*) until 2026-11-08T08:25:24Z
+
+== 2. pft-maint window, [MAINT] messages to a throwaway topic (real file kept as $BK)
+real /etc/pft-maint/ntfy.env present before: 0
+$ { [ $HAD = 0 ] || sudo -n cp -p $NE $BK; } && printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' "$TT" | sudo -n tee $NE >/dev/null && sudo -n chmod 600 $NE && sudo -n stat -c '%a %U' $NE
+  600 root
+  (exit 0)
+CHECK ok   throwaway target installed
+$ sudo -n pft-maint start --ttl 30m --reason 'task_e65845e5 apparmor update 4f01313'
+  window started: id m1794124524-1631774 until 2026-11-08T08:25:24Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint window open
+CHECK ok   sentry has the window (via the watchdog channel) after 20s
+
+== 3. pft-fleet: pft-apparmor to HEAD on both hosts (writes + integrity accept by pft-fleet)
+$ sudo -n pft-fleet sync --addon apparmor --to 4f013136234652c5dc2d3a55c344966e2c623f7d --apply --reason 'task_e65845e5: pft-apparmor generator default EXTRA_FILE += cron.weekly/monthly (4f01313)'
+  [2026-11-08T07:56:05Z] sync apparmor to 4f013136234652c5dc2d3a55c344966e2c623f7d (2026-11-08T07:54:33+00:00) REF main=4f013136234652c5dc2d3a55c344966e2c623f7d
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN sentry sentry /usr/local/bin/pft-apparmor 0755 BEHIND 89aab9bb0924 578e924d7799 write
+  PLAN sentry sentry /etc/systemd/system/pft-apparmor.service 0644 CURRENT 174a14db9bf3 174a14db9bf3 keep
+  PLAN sentry sentry /etc/systemd/system/pft-apparmor.timer 0644 CURRENT 5e3efcdd1fcb 5e3efcdd1fcb keep
+  PLAN validator validator /usr/local/bin/pft-apparmor 0755 BEHIND 89aab9bb0924 578e924d7799 write
+  PLAN validator validator /etc/systemd/system/pft-apparmor.service 0644 CURRENT 174a14db9bf3 174a14db9bf3 keep
+  PLAN validator validator /etc/systemd/system/pft-apparmor.timer 0644 CURRENT 5e3efcdd1fcb 5e3efcdd1fcb keep
+  PLAN validator validator /etc/systemd/system/pft-apparmor-pull.service 0644 CURRENT 8d57fcb42933 8d57fcb42933 keep
+  PLAN validator validator /etc/systemd/system/pft-apparmor-pull.timer 0644 CURRENT a3fd2a7f1349 a3fd2a7f1349 keep
+  [2026-11-08T07:56:05Z] order: sentry validator
+  [2026-11-08T07:56:05Z] sentry: 1 file(s) to write
+  PRE sentry pft-maint window active PASS
+  PRE sentry node server_state=full PASS
+  PRE sentry pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP sentry /usr/local/bin/pft-apparmor sha256 89aab9bb0924 -> /var/lib/pft-fleet/backup/20261108T075605Z-apparmor-sentry
+  WRITE sentry /usr/local/bin/pft-apparmor 89aab9bb0924 -> 578e924d7799 mode 0755
+  GATE sentry sha256 /usr/local/bin/pft-apparmor = target 578e924d7799 PASS
+  GATE sentry syntax /usr/local/bin/pft-apparmor bash -n PASS
+  GATE sentry addon units failed=none PASS
+  GATE sentry node server_state=full PASS
+  ACCEPT sentry pft-integrity baseline updated: pft-fleet sync apparmor@4f0131362346 (pft-apparmor)
+  [2026-11-08T07:56:30Z] SYNCED sentry apparmor -> 4f0131362346
+  [2026-11-08T07:56:30Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/bin/pft-apparmor sha256 89aab9bb0924 -> /var/lib/pft-fleet/backup/20261108T075605Z-apparmor-validator
+  WRITE validator /usr/local/bin/pft-apparmor 89aab9bb0924 -> 578e924d7799 mode 0755
+  GATE validator sha256 /usr/local/bin/pft-apparmor = target 578e924d7799 PASS
+  GATE validator syntax /usr/local/bin/pft-apparmor bash -n PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync apparmor@4f0131362346 (pft-apparmor)
+  [2026-11-08T07:56:51Z] SYNCED validator apparmor -> 4f0131362346
+  [2026-11-08T07:56:51Z] sync complete
+  (exit 0)
+CHECK ok   apparmor sync exit 0
+$ sha256sum apparmor/pft-apparmor.sh | cut -c1-64; sudo -n sha256sum /usr/local/bin/pft-apparmor | cut -c1-64; R 'sha256sum /usr/local/bin/pft-apparmor | cut -c1-64'
+  578e924d77998086338e532384e5268ef3fe4b3f6d87e6c83ab8d66a48b1a7c9
+  578e924d77998086338e532384e5268ef3fe4b3f6d87e6c83ab8d66a48b1a7c9
+  578e924d77998086338e532384e5268ef3fe4b3f6d87e6c83ab8d66a48b1a7c9
+  (exit 0)
+CHECK ok   installed pft-apparmor = repo bytes on both hosts
+
+== 4. behaviour: audit units + pull with the new script
+$ R 'sudo -n systemctl start pft-apparmor.service; systemctl show -p Result --value pft-apparmor.service' && sudo -n systemctl start pft-apparmor.service pft-apparmor-pull.service && for u in pft-apparmor.service pft-apparmor-pull.service; do systemctl show -p Result --value $u; done
+  success
+  success
+  success
+  (exit 0)
+CHECK ok   audit (both hosts) + pull: Result success x3
+$ grep -chE 'status="(WARN|FAIL)"\} 1' /var/lib/pft-exporter/textfile/pft_apparmor_validator.prom /var/lib/pft-exporter/textfile/pft_apparmor_sentry.prom
+  0
+  0
+  (exit 1)
+CHECK ok   both textfiles: 0 WARN/FAIL checks
+
+== 5. integrity and fleet skew
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 213 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 132 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts
+$ sudo -n pft-fleet skew | grep -E 'apparmor|SUMMARY'
+  sentry     apparmor    CURRENT    
+  validator  apparmor    CURRENT    
+  SUMMARY CURRENT=61 BEHIND=0 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 0)
+CHECK ok   apparmor CURRENT on both hosts
+
+== 6. end window, restore the real target, compare, read back the throwaway and every operator topic
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+$ sudo -n rm -f $NE   (no ntfy.env before: pft-maint falls back to the real monitor target again)
+CHECK ok   pft-maint target back to its pre-run state (/etc/pft-maint/ntfy.env: absent again)
+$ sudo -n test ! -e $BK && echo backup gone
+  backup gone
+  (exit 0)
+$ sudo -n systemctl start pft-keyescrow.service; grep -h '^pft_keyescrow_drift_items{node="validator"}' /var/lib/pft-exporter/textfile/pft_keyescrow.prom
+  pft_keyescrow_drift_items{node="validator"} 0
+  (exit 0)
+CHECK ok   pft-keyescrow re-run after the ntfy.env restore: validator drift_items 0
+$ sleep 5; curl -s --max-time 15 "https://ntfy.sh/$TT/json?poll=1&since=1794124479" | jq -r '.title'
+  [MAINT] start validator
+  [MAINT] end validator
+  (exit 0)
+CHECK ok   the [MAINT] start and end messages reached the throwaway topic
+  operator #1 topic: 0 message(s), 0 about the AppArmor alert this fix cleared
+  operator #2 topic: 0 message(s), 0 about the AppArmor alert this fix cleared
+CHECK ok   operator topics received nothing from this run (2 topic(s); 0 message(s) about the real PFTAppArmorDrift (expected [RESOLVED]), 0 topic(s) with other messages)
+$ curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '[.data.alerts[] | select(.labels.alertname | test("AppArmor|RuleDead|TextfileStale|Rulecheck|Fleet"))] | length'
+  0
+  (exit 0)
+  rollout silence expired: HTTP 200
+CHECK ok   no apparmor/rulecheck/fleet alert pending or firing; rollout silence expired
+
+update-run done 2026-11-08T07:57:43Z: 0 check(s) failed -> PASS
+runner exit 0

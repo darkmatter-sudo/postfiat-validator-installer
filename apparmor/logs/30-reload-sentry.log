@@ -1,0 +1,47 @@
+commit: 9de2234ba11dd0e6b280eed79f10f60a47b2b7e1 (profile + reload-run.sh copied to the sentry's /var/lib/pft-aa-reload/)
+6144c55e48c15fb65194da060594eba9b9a4759e573e361739dc033ea8fd29ba  /var/lib/pft-aa-reload/pft-postfiatd
+3705c518dc1355db9318ec6bc3c083ddae442980b265712bcff761bad18b6177  /var/lib/pft-aa-reload/reload-run.sh
+$ ssh sentry: REASON=... ACK_REASON=... bash /var/lib/pft-aa-reload/reload-run.sh /var/lib/pft-aa-reload/pft-postfiatd sentry task_e65845e5 postfiatd-sentry
+== reload-run sentry 2026-11-08T07:51:52Z on Ubuntu 22.04.5 LTS
+container before: b26a40f31c3a 2026-11-06T08:37:26.531415244Z pft-postfiatd
+CHECK PASS preflight: postfiatd-sentry runs under pft-postfiatd (enforce)
+CHECK PASS preflight: server_state full
+CHECK PASS preflight: new profile defines pft-postfiatd and compiles
+installed sha256: a57315ab83095b5a39b06cb85436ff24674af5776796ba4364aa9188d1b9adb3
+new       sha256: 6144c55e48c15fb65194da060594eba9b9a4759e573e361739dc033ea8fd29ba
+-- diff installed -> new
+70a71,72
+>   /etc/cron.monthly/ r,
+>   /etc/cron.weekly/ r,
+CHECK PASS install + apparmor_parser -r -W (backup pft-postfiatd.bak-20261108T075153Z)
+CHECK PASS installed file = new profile
+container after:  b26a40f31c3a 2026-11-06T08:37:26.531415244Z pft-postfiatd
+CHECK PASS same container ID + start time, still pft-postfiatd (no re-create, no restart)
+CHECK PASS pft-postfiatd loaded in enforce mode
+CHECK PASS server_state full
+pft-integrity accept - 2026-11-08T07:52:12Z: re-baselined 132 items by root
+manifest sha256: 14af6054c4876f275a5caa0895824573c1f41c26f7caafbfb857de68b6864030 -> db78f05b260c4a70d769b84a3dcba3bb7e0e3bedac5b5244b06677c2894b5888 (logged to accept.log)
+CHECK PASS pft-integrity accept
+RESULT: PASS - 132 unchanged, 0 warn, 0 fail -> exit 0
+CHECK PASS pft-integrity verify after accept
+-- pft-apparmor ack-denials (records up to the reload: the gap this profile fixes)
+2026-11-08T07:52:25Z ack-denials: 1 DENIED record(s) for pft-postfiatd after 1793842260 up to 1794124313 (2026-11-08T07:51:53Z) acknowledged: task_e65845e5: first Sunday cron.weekly run 06:47Z denied open /etc/cron.weekly/ (profile gap, fixed by 9de2234)
+CHECK PASS pft-apparmor ack-denials
+-- pft-apparmor audit
+pft-apparmor audit - 2026-11-08T07:52:26Z | host sentry | container postfiatd-sentry | profile pft-postfiatd
+  [PASS] kernel             AppArmor enabled in the kernel
+  [PASS] parser             apparmor_parser present
+  [PASS] loaded             pft-postfiatd loaded (enforce)
+  [PASS] container          postfiatd-sentry runs under pft-postfiatd
+  [PASS] mode               pft-postfiatd enforce
+  [PASS] recreate           docker run container: HostConfig keeps pft-postfiatd across restarts
+  [PASS] confine:cap_drop   cap_drop ALL
+  [PASS] confine:read_only  read-only root fs
+  [PASS] confine:nnp        no-new-privileges
+  [PASS] boot               /etc/apparmor.d/pft-postfiatd parses; apparmor.service enabled
+  [PASS] denials            0 DENIED events in the last 86401s; up to 2026-11-08T07:51:53Z acknowledged: task_e65845e5: first Sunday cron.weekly run 06:47Z denied open /etc/cron.weekly/ (profile gap, fixed by 9de2234)
+RESULT: PASS
+CHECK PASS pft-apparmor audit exit 0
+RESULT: PASS - 0 failed
+(exit 0)
+copy dir removed

@@ -1,0 +1,44 @@
+commit: 9de2234ba11dd0e6b280eed79f10f60a47b2b7e1
+$ sudo bash apparmor/drill/cronweekly-probe.sh /etc/apparmor.d/pft-postfiatd apparmor/profile/pft-postfiatd
+== cronweekly-probe 2026-11-08T07:50:41Z on Ubuntu 22.04.5 LTS
+image: agtipft/postfiatd:testnet-light-latest
+live container profile: pft-postfiatd
+old profile sha256: a57315ab83095b5a39b06cb85436ff24674af5776796ba4364aa9188d1b9adb3
+new profile sha256: 6144c55e48c15fb65194da060594eba9b9a4759e573e361739dc033ea8fd29ba
+-- diff old -> new
+70a71,72
+>   /etc/cron.monthly/ r,
+>   /etc/cron.weekly/ r,
+-- live container's weekly/monthly crontab lines and directories (read from the host via /proc/<pid>/root)
+47 6	* * 7	root	test -x /usr/sbin/anacron || { cd / && run-parts --report /etc/cron.weekly; }
+52 6	1 * *	root	test -x /usr/sbin/anacron || { cd / && run-parts --report /etc/cron.monthly; }
+/proc/1367661/root/etc/cron.monthly:
+.placeholder
+
+/proc/1367661/root/etc/cron.weekly:
+.placeholder
+CHECK PASS old: probe profile pft-aa-probe-old loaded
+-- old: run-parts cron.weekly + cron.monthly in a throwaway container under pft-aa-probe-old (since 1794124241)
+run-parts cron.weekly exit 1
+run-parts cron.monthly exit 1
+run-parts: failed to open directory /etc/cron.weekly: Permission denied
+run-parts: failed to open directory /etc/cron.monthly: Permission denied
+-- old: DENIED records for pft-aa-probe-old
+      1 operation="open" name="/etc/cron.monthly/" comm="run-parts"
+      1 operation="open" name="/etc/cron.weekly/" comm="run-parts"
+CHECK PASS old: open of /etc/cron.weekly/ and /etc/cron.monthly/ denied (the 06:47Z record reproduced)
+CHECK PASS old: both run-parts lines fail (exit 1)
+CHECK PASS old: probe profile pft-aa-probe-old unloaded
+CHECK PASS new: probe profile pft-aa-probe-new loaded
+-- new: run-parts cron.weekly + cron.monthly in a throwaway container under pft-aa-probe-new (since 1794124246)
+run-parts cron.weekly exit 0
+run-parts cron.monthly exit 0
+-- new: DENIED records for pft-aa-probe-new
+(none)
+CHECK PASS new: 0 DENIED records
+CHECK PASS new: both run-parts lines exit 0
+CHECK PASS new: probe profile pft-aa-probe-new unloaded
+CHECK PASS no probe profile left loaded
+CHECK PASS no probe container left
+RESULT: PASS - 0 failed
+(exit 0)
