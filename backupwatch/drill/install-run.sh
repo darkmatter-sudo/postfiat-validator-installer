@@ -71,7 +71,7 @@ x "sudo -n grep -c '^PEER_SSH=' /etc/pft-keyescrow.env; sudo -n sed -n 's/^PEER_
 check "keyescrow link: PEER_SSH set, PEER_RECIPIENT == the sentry's age.pub (hash prefix), sentry identity present" "$([ "$(sed -n 1p <<<"$XOUT")" = 1 ] && [ "$(sed -n 2p <<<"$XOUT")" = "$(sed -n 3p <<<"$XOUT")" ] && grep -qx 'identity present' <<<"$XOUT" && echo 0 || echo 1)"
 x "R 'command -v age python3 sha256sum | wc -l'; command -v age python3 sha256sum | wc -l"
 check "age, python3, sha256sum on both hosts" "$([ "$(tr '\n' ' ' <<<"$XOUT")" = "3 3 " ] && echo 0 || echo 1)"
-x "sudo -n env PFT_BW_HELPER=\$PWD/backupwatch/backupwatch_lib.py STATE_DIR=/nonexistent bash backupwatch/pft-backupwatch.sh check"
+x "sudo -n env PFT_BW_CONF=/nonexistent PFT_BW_HELPER=\$PWD/backupwatch/backupwatch_lib.py STATE_DIR=/nonexistent bash backupwatch/pft-backupwatch.sh check"
 check "FOUND: read-only check of the newest archive with the HEAD code: every local check OK" "$([ "$XRC" = 0 ] && grep -q '^RESULT: OK' <<<"$XOUT" && echo 0 || echo 1)"
 { for f in /etc/postfiat-monitor.env /etc/pft-integrity.env; do sudo -n sed -n 's/^NTFY_TOPIC=//p' "$f" 2>/dev/null; done
   R 'for f in /etc/pft-watchdog/ntfy.env /etc/pft-integrity.env /etc/pft-alertpath/ntfy.env; do sudo -n sed -n "s/^NTFY_TOPIC=//p" $f 2>/dev/null; done'
