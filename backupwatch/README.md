@@ -60,6 +60,7 @@ are filled in when they are built.
 | Log | What it shows |
 |---|---|
 | [`logs/01-checks-step1.log`](logs/01-checks-step1.log) | ruff clean, suite 62 passed / 0 failed, live read-only check of the validator's newest archive: fresh, size, sidecar, manifest (22 members), drift (17 files equal the live host) OK; **content WARN**: the timer-made archives hold `ufw-status.txt` = `ERROR: Couldn't determine iptables version` and no `docker-user.rules`. Cause: `pft-backup.service`'s unitguard drop-in (`RestrictAddressFamilies=AF_UNIX`, no `CAP_NET_ADMIN`) stops ufw/iptables, and pft-backup keeps going. A real gap backupwatch was built to find; fix to follow in step 4 (found -> fixed -> verified) |
+| [`logs/02-checks-wrapper.log`](logs/02-checks-wrapper.log) | with `pft-backupwatch.sh`: shellcheck exit 0, ruff clean, suite 77 passed / 0 failed; live check through the helper (JSON) and the wrapper (table) give the same result: 5 OK + content WARN, exit 1 both |
 
 ## Not covered
 
