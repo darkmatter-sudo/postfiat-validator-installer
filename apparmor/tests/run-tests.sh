@@ -255,6 +255,9 @@ has "deny /etc/cron.daily/apt-compat x,"
 has "deny /usr/lib/apt/apt.systemd.daily x,"
 hasnt "audit deny /etc/cron.daily/apt-compat"
 has "/ r,"
+has "/etc/cron.weekly/ r,"
+has "/etc/cron.monthly/ r,"
+hasnt "/etc/cron.weekly/ rix,"
 [ "$(grep -n '^  deny /etc/cron.daily/apt-compat x,$' <<<"$OUT" | cut -d: -f1)" -lt "$(grep -n 'pft-apparmor explicit denials' <<<"$OUT" | cut -d: -f1)" ] \
   && ok "generate: quiet denials come before the logged block" || ko "generate: quiet deny placement" "$OUT"
 [ "$(grep -c '^  capability setgid,$' <<<"$OUT")" = 1 ] && ok "generate: learned + --caps capability not duplicated" || ko "generate: dup capability" "$OUT"
@@ -331,5 +334,9 @@ fi
 # shellcheck source=SCRIPTDIR/ack-tests.inc.sh
 . "$HERE/ack-tests.inc.sh"
 
+# shipped profile: the weekly/monthly run-parts directories (2026-11-08 06:47Z DENIED open /etc/cron.weekly/)
+for l in "/etc/cron.weekly/ r," "/etc/cron.monthly/ r,"; do
+  grep -qxF -- "  $l" "$HERE/../profile/pft-postfiatd" && ok "shipped profile: '$l'" || ko "shipped profile: missing '$l'" ""
+done
 echo "RESULT: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

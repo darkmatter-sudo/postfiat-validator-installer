@@ -122,7 +122,11 @@ EXTRA_EXEC="${EXTRA_EXEC-/usr/bin/logger}" # set and empty = none
 QUIET_DENY_EXEC="${QUIET_DENY_EXEC-/etc/cron.daily/apt-compat /usr/lib/apt/apt.systemd.daily}" # set and empty = none
 # Files every run needs that a learn may not see: logrotate (cron.daily) opens the root directory "/" read-only
 # (DENIED on both hosts at 2026-11-04 06:25Z). Listing / reveals nothing beyond the image's own layout.
-EXTRA_FILE="${EXTRA_FILE-/:r}" # PATH:MASK ...; set and empty = none
+# The crontab's weekly (Sun 06:47) and monthly (1st, 06:52) lines run run-parts on /etc/cron.weekly and
+# /etc/cron.monthly; both hold only .placeholder in the image, and no learn ran across a Sunday or a 1st, so the
+# first Sunday under the profile (2026-11-08 06:47Z) was DENIED open of /etc/cron.weekly/ on both hosts. Read of the
+# directory only: a job added there by a new image is still denied (exec) and shows up in the audit.
+EXTRA_FILE="${EXTRA_FILE-/:r /etc/cron.weekly/:r /etc/cron.monthly/:r}" # PATH:MASK ...; set and empty = none
 TREES="${TREES:-/var/lib/postfiatd/db/ /var/log/postfiatd/ /etc/postfiatd/ /var/backups/ /var/lib/logrotate/ /var/lib/apt/ /var/opt/postfiat/ /run/ /tmp/ /var/lib/dpkg/alternatives/ /etc/logrotate.d/ /etc/cron.d/ /etc/cron.daily/ /etc/cron.hourly/ /etc/cron.weekly/ /etc/cron.monthly/ /var/spool/cron/}"
 
 die() { echo "pft-apparmor: $1" >&2; exit "${2:-2}"; }
