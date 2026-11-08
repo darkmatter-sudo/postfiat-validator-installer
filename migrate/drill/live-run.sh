@@ -219,7 +219,8 @@ for h in local relay; do
   r="$(on "$h" "sudo -n pft-integrity verify" 2>&1 | grep '^RESULT')"; echo "  pft-integrity $(lb "$h"): $r"
   case "$r" in "RESULT: PASS"*) ;; *) echo "  integrity not clean on $h - stopping" >&2; exit 4 ;; esac
 done
-sudo -n lxc info "$SBX" 2>/dev/null | grep -q '^Status: RUNNING' || { echo "  sandbox $SBX not running (build it with target.stack --keep) - stopping" >&2; exit 3; }
+# capture first: `lxc info | grep -q` under pipefail returns lxc's SIGPIPE (141) once grep exits (live run 05)
+SBXINFO="$(sudo -n lxc info "$SBX" 2>/dev/null)"; grep -q '^Status: RUNNING' <<<"$SBXINFO" || { echo "  sandbox $SBX not running (build it with target.stack --keep) - stopping" >&2; exit 3; }
 SBXIP="$(sudo -n lxc list "$SBX" -c4 --format csv | grep -oE '[0-9.]+ \(eth0\)' | cut -d' ' -f1)"   # not the sandbox's own docker bridges
 [[ "$SBXIP" =~ ^[0-9.]+$ ]] || { echo "  sandbox address unknown - stopping" >&2; exit 3; }
 x "T 'docker compose version --short; age --version; test -f $CDIR/docker-compose.yml && echo compose-dir ok; . /etc/os-release; echo \$PRETTY_NAME'"
