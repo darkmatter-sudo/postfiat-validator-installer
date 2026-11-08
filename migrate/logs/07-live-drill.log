@@ -1,0 +1,430 @@
+pft-migrate live drill (real validator -> fresh LXD target -> rollback) - 2026-11-08T06:25:02Z - Ubuntu 22.04.5 LTS - run 20261108T062502Z
+repo HEAD d8bbaf75fd70a062bf3282ca210f092332f94c41 (clean: yes)
+sha256 9d9a2e1ed23ab54b1f1f4aad14e940e22d7d618a7919987b970a8197e10fe69a migrate/drill/live-run.sh
+sha256 caa5692aa566f41a3f61b9fd879cd0d303ed587fec7c19af696013ba8da1c7d1 migrate/pft-migrate.sh
+sha256 a813762aab644ce8498112289a95786bf274fcc2ac2f96df9867d90c52c5654e migrate/drill/target.stack
+sha256 ed1c204e4d8622fd8d9846154a1cbee60693468f111586f0c0b68aa6d270007e rebuild/pft-rebuild-drill.sh
+sha256 f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8 peerexpose/drill/redact.py
+
+== 0. preflight (nothing changed yet)
+  bridge mounts the operator env file: yes
+  operator topics to watch: 2 (not printed)
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+  postfiatd-sentry: server_state=full, peers 21
+  postfiatd: server_state=full, peers 13
+  validator pubkey_node fingerprint (sha256 of the key, first 16 hex): 89a7ccb8d16f88bf
+  pft-integrity validator: RESULT: PASS - 213 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity sentry: RESULT: PASS - 132 unchanged, 0 warn, 0 fail -> exit 0
+$ T 'docker compose version --short; age --version; test -f /opt/postfiatd/docker-compose.yml && echo compose-dir ok; . /etc/os-release; echo $PRETTY_NAME'
+  2.40.3+ds1-0ubuntu1~22.04.1
+  1.0.0
+  compose-dir ok
+  Ubuntu 22.04.5 LTS
+  (exit 0)
+CHECK ok   target: docker compose + age present, /opt/postfiatd exists
+  no FENCED/IMPORTED record on the source or the target, no leftover bundle dir
+CHECK ok   target reaches the live source's peer port (so its 'source closed' probe is meaningful)
+$ sudo -n bash migrate/pft-migrate.sh plan | grep -E '^RESULT|^  (node|fenced|identity):' | sed -E 's/pubkey_node [^ ]+/pubkey_node <key>/'; sudo -n bash migrate/pft-migrate.sh plan --json | jq '.files | length'
+    node: server_state full, pubkey_node <key>
+    fenced: no
+    identity: pinned by pft-cluster (moves with the bundle)
+  RESULT: OK - ready to export
+  13
+  (exit 0)
+CHECK ok   source plan RESULT OK
+  literals for redaction: 4 ip, 2 key, 3 topic, 1 user (values not printed)
+$ redact.py control --literals <literals>
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (19/19)
+
+== 1. redirect notifiers + bridge, silence everything except the dead-man switch, maintenance window
+  validator:/etc/postfiat-monitor.env sha256 6dc3b10fb491 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/postfiat-monitor.env.pre-migrate-live
+  validator:/etc/pft-integrity.env sha256 b3cd1c3da7ff -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-integrity.env.pre-migrate-live
+  sentry:/etc/pft-watchdog/ntfy.env sha256 ddb52721a668 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-watchdog/ntfy.env.pre-migrate-live
+  sentry:/etc/pft-integrity.env sha256 cdd330a974d2 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-integrity.env.pre-migrate-live
+  sentry:/etc/pft-alertpath/ntfy.env sha256 ddb52721a668 -> https://ntfy.sh/<redacted> (throwaway), original kept as /etc/pft-alertpath/ntfy.env.pre-migrate-live
+CHECK ok   /etc/pft-maint/ntfy.env created with the throwaway topic (0600)
+  2026-11-08T06:25:43Z starting pft-alert-bridge (ntfy: on)
+  2026-11-08T06:25:46Z pft-alert-bridge listening
+CHECK ok   Alertmanager bridge -> throwaway env file (0700 temp dir)
+CHECK ok   silence alertname=~".+", alertname!="PFTAlertPipelineWatchdog" until 2026-11-08T09:25:46Z
+$ sudo -n pft-maint start --ttl 3h --reason 'task_2756079c pft-migrate live drill 20261108T062502Z'
+  window started: id m1794119146-1362151 until 2026-11-08T09:25:46Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   sentry has the window (via the watchdog channel) after 50s
+
+== 2. target preparation (sandbox)
+$ sudo -n iptables -I PFT-REBUILD-IN 1 -s <redacted-ip> -p tcp --sport 2559 -m conntrack --ctstate ESTABLISHED -j ACCEPT && sudo -n iptables -S PFT-REBUILD-IN
+  -N PFT-REBUILD-IN
+  -A PFT-REBUILD-IN -s <redacted-ip>/32 -p tcp -m tcp --sport 2559 -m conntrack --ctstate ESTABLISHED -j ACCEPT
+  -A PFT-REBUILD-IN -p udp -m udp --dport 67 -j ACCEPT
+  -A PFT-REBUILD-IN -p udp -m udp --dport 53 -j ACCEPT
+  -A PFT-REBUILD-IN -p tcp -m tcp --dport 53 -j ACCEPT
+  -A PFT-REBUILD-IN -j DROP
+  (exit 0)
+CHECK ok   source reaches the target's peer port (sandbox's own node; so the 'target closed' probe is meaningful)
+CHECK ok   sandbox still cannot reach the host's sshd via the bridge
+$ git show d8bbaf75fd70a062bf3282ca210f092332f94c41:migrate/pft-migrate.sh | sudo -n lxc exec pftrb-sbx -- sh -c 'install -d -m 700 /root/mig && cat > /root/mig/pft-migrate.sh' && T 'sha256sum < /root/mig/pft-migrate.sh | cut -c1-64'; git show d8bbaf75fd70a062bf3282ca210f092332f94c41:migrate/pft-migrate.sh | sha256sum | cut -c1-64
+  caa5692aa566f41a3f61b9fd879cd0d303ed587fec7c19af696013ba8da1c7d1
+  caa5692aa566f41a3f61b9fd879cd0d303ed587fec7c19af696013ba8da1c7d1
+  (exit 0)
+CHECK ok   pinned pft-migrate.sh pushed to the target, sha256 identical
+$ T 'cd /opt/postfiatd && docker compose down 2>&1 | tail -3; docker ps -a --format "{{.Names}} {{.State}}"'
+   Container postfiatd  Removed
+   Network postfiatd_default  Removing
+   Network postfiatd_default  Removed
+  (exit 0)
+CHECK ok   target: the sandbox's own fresh node stopped and removed
+$ T 'umask 077; age-keygen -o /root/mig/target.key 2>/dev/null; age-keygen -y /root/mig/target.key; stat -c "%a %n" /root/mig/target.key'
+  age17vc3agpks6efujv3eky9kakztlxu6e40psj2haspxmulahzw9emq0lsn89
+  600 /root/mig/target.key
+  (exit 0)
+CHECK ok   target age identity generated in the sandbox (0600), recipient read
+
+== 3. export (source keeps running), copy, import on the target
+$ sudo -n install -d -m 700 /var/lib/pft-migrate/drill-out && sudo -n bash migrate/pft-migrate.sh export --to age17vc3agpks6efujv3eky9kakztlxu6e40psj2haspxmulahzw9emq0lsn89 --out /var/lib/pft-migrate/drill-out
+  [2026-11-08T06:26:49Z] bundle /var/lib/pft-migrate/drill-out/pft-migrate-20261108T062648Z-271a043f.age (92376 bytes, 14 files + manifest, encrypted to 2 arg(s) of age)
+  [2026-11-08T06:26:49Z] sha256 af79c2f86d73e709d07fb7e8ddbb3e75f2996f42d6fa6bb0aa1eb0c4e94b85f3
+    cfgvol/postfiatd.cfg 57125
+    cfgvol/validators.txt 2756
+    compose/docker-compose.yml 608
+    compose/docker-compose.override.yml 173
+    compose/docker-compose.confine.yml 591
+    compose/docker-compose.apparmor.yml 153
+    compose/docker-compose.seccomp.yml 172
+    compose/docker-compose.resources.yml 298
+    compose/.env 209
+    cluster/node_seed 30
+    cluster/node_pub 53
+    host/etc/apparmor.d/pft-postfiatd 5139
+    host/etc/pft-seccomp/pft-postfiatd.json 3351
+  20261108T062648Z-271a043f
+  (exit 0)
+CHECK ok   export exit 0, bundle id printed (20261108T062648Z-271a043f)
+$ sudo -n stat -c '%a %s %n' /var/lib/pft-migrate/drill-out/pft-migrate-20261108T062648Z-271a043f.age /var/lib/pft-migrate/drill-out/pft-migrate-20261108T062648Z-271a043f.age.sha256; sudo -n head -c 22 /var/lib/pft-migrate/drill-out/pft-migrate-20261108T062648Z-271a043f.age; echo; ls /dev/shm | grep -c pft-migrate; running local && echo source-running
+  600 92376 /var/lib/pft-migrate/drill-out/pft-migrate-20261108T062648Z-271a043f.age
+  600 108 /var/lib/pft-migrate/drill-out/pft-migrate-20261108T062648Z-271a043f.age.sha256
+  age-encryption.org/v1
+  
+  0
+  source-running
+  (exit 0)
+CHECK ok   bundle 0600 age-encrypted (age-encryption.org header), RAM stage removed, source still running
+$ sudo -n lxc file push --quiet --mode 0600 /var/lib/pft-migrate/drill-out/pft-migrate-20261108T062648Z-271a043f.age /var/lib/pft-migrate/drill-out/pft-migrate-20261108T062648Z-271a043f.age.sha256 pftrb-sbx/root/mig/ && T 'cd /root/mig && sha256sum -c pft-migrate-20261108T062648Z-271a043f.age.sha256'
+  pft-migrate-20261108T062648Z-271a043f.age: OK
+  (exit 0)
+CHECK ok   bundle + sidecar copied to the target, sidecar verifies there
+$ T 'umask 077; age-keygen -o /root/mig/wrong.key 2>/dev/null; bash /root/mig/pft-migrate.sh import --bundle /root/mig/pft-migrate-20261108T062648Z-271a043f.age --identity /root/mig/wrong.key --replace --skip-overlay docker-compose.apparmor.yml; rc=$?; rm -f /root/mig/wrong.key; exit $rc'
+    age: age: error: no identity matched any of the recipients
+    age: age: report unexpected or unhelpful errors at https://filippo.io/age/report
+  [2026-11-08T06:26:50Z] ERROR: age decryption failed (wrong identity or damaged bundle)
+  (exit 2)
+CHECK ok   import with a WRONG age identity refused (exit 2, age decryption failed)
+$ T 'bash /root/mig/pft-migrate.sh import --bundle /root/mig/pft-migrate-20261108T062648Z-271a043f.age --identity /root/mig/target.key --replace --skip-overlay docker-compose.apparmor.yml'
+  [2026-11-08T06:26:51Z] bundle 20261108T062648Z-271a043f verified: sidecar ok, age ok, layout ok, manifest 14 files ok
+  [2026-11-08T06:26:51Z]   skip /etc/apparmor.d/pft-postfiatd (its overlay is skipped)
+  [2026-11-08T06:26:51Z]   + /etc/pft-seccomp/pft-postfiatd.json
+  [2026-11-08T06:26:51Z]   + /opt/postfiatd/docker-compose.apparmor.yml
+  [2026-11-08T06:26:51Z]   + /opt/postfiatd/docker-compose.confine.yml
+  [2026-11-08T06:26:51Z]   + /opt/postfiatd/docker-compose.override.yml
+  [2026-11-08T06:26:51Z]   + /opt/postfiatd/docker-compose.resources.yml
+  [2026-11-08T06:26:51Z]   + /opt/postfiatd/docker-compose.seccomp.yml
+  [2026-11-08T06:26:51Z]   + /opt/postfiatd/docker-compose.yml
+  [2026-11-08T06:26:51Z]   + /opt/postfiatd/.env
+  [2026-11-08T06:26:51Z]   - overlay docker-compose.apparmor.yml skipped
+  [2026-11-08T06:26:51Z]   + volume postfiatd_postfiatd-config/postfiatd.cfg
+  [2026-11-08T06:26:51Z]   + volume postfiatd_postfiatd-config/validators.txt
+  [2026-11-08T06:26:51Z]   + /var/lib/pft-cluster/node_pub
+  [2026-11-08T06:26:51Z]   + /var/lib/pft-cluster/node_seed
+  [2026-11-08T06:26:51Z] imported bundle 20261108T062648Z-271a043f; node NOT started (compose guard on); next: start-target --fence-proof ... --source ...
+  20261108T062648Z-271a043f
+  (exit 0)
+CHECK ok   import with the target identity exit 0 (AppArmor overlay skipped: nested LXD cannot load it)
+$ T 'bash /root/mig/pft-migrate.sh status; grep ^COMPOSE_FILE= /opt/postfiatd/.env'
+  FENCED: no
+  IMPORTED:
+    bundle_id=20261108T062648Z-271a043f
+    imported=2026-11-08T06:26:51Z
+    role=validator
+    container=postfiatd
+    pubkey=<redacted-key>
+    compose_dir=/opt/postfiatd
+    skipped=docker-compose.apparmor.yml
+  COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.confine.yml:docker-compose.seccomp.yml:docker-compose.resources.yml:docker-compose.migrate-fence.yml
+  (exit 0)
+$ T 'cd /opt/postfiatd && docker compose up -d 2>&1 | tail -4; sleep 5; docker inspect -f "{{.State.Status}} exit={{.State.ExitCode}} restart={{.HostConfig.RestartPolicy.Name}}" postfiatd'
+   Container postfiatd  Creating
+   Container postfiatd  Created
+   Container postfiatd  Starting
+  Error response from daemon: failed to create task for container: failed to create shim task: OCI runtime create failed: runc create failed: unable to start container process: error during container init: exec: "/pft-migrate-FENCED-20261108T062648Z-271a043f": stat /pft-migrate-FENCED-20261108T062648Z-271a043f: no such file or directory
+  created exit=127 restart=no
+  (exit 0)
+CHECK ok   plain 'docker compose up -d' on the imported target refused by the guard (container not running)
+CHECK ok   target peer port closed after the refused start
+
+== 4. fence the source (downtime 1 starts)
+$ sudo -n bash migrate/pft-migrate.sh fence-source --bundle-id 20261108T062648Z-271a043f --proof-out /var/lib/pft-migrate/drill-out/source.proof
+  lock pft-migrate held until 2026-11-08T08:26:58Z
+  [2026-11-08T06:27:04Z] FENCED: postfiatd exited, restart=no, compose guard on, peer port closed, RPC down (bundle 20261108T062648Z-271a043f)
+  v=1
+  kind=pft-migrate-fence
+  bundle_id=20261108T062648Z-271a043f
+  pubkey=<redacted-key>
+  container=postfiatd
+  fenced_at=1794119218
+  fenced_at_iso=2026-11-08T06:26:58Z
+  container_state=exited
+  restart_policy=no
+  compose_guard=on
+  peer_port_local=closed
+  rpc=down
+  (exit 0)
+CHECK ok   fence-source exit 0 (exited, restart=no, guard on, peer port closed, RPC down)
+CHECK ok   target's probe: source peer port now closed
+$ sudo -n sh -c 'cd /opt/postfiatd && docker compose up -d' 2>&1 | tail -4; sleep 5; sudo -n docker inspect -f '{{.State.Status}} exit={{.State.ExitCode}} restart={{.HostConfig.RestartPolicy.Name}}' postfiatd
+   Container postfiatd  Recreate
+   Container postfiatd  Recreated
+   Container postfiatd  Starting
+  Error response from daemon: failed to create task for container: failed to create shim task: OCI runtime create failed: runc create failed: unable to start container process: error during container init: exec: "/pft-migrate-FENCED-20261108T062648Z-271a043f": stat /pft-migrate-FENCED-20261108T062648Z-271a043f: no such file or directory
+  created exit=127 restart=no
+  (exit 0)
+CHECK ok   plain 'docker compose up -d' on the FENCED source refused by the guard (container not running)
+CHECK ok   source peer port still closed after the refused start
+$ sudo -n bash migrate/pft-migrate.sh status | sed -E 's/^(  pubkey=).*/\1<key>/'; sudo -n pft-maint status --json | jq -c '[.locks[] | .name]'
+  FENCED:
+    v=1
+    kind=pft-migrate-fence
+    bundle_id=20261108T062648Z-271a043f
+    pubkey=<key>
+    container=postfiatd
+    fenced_at=1794119218
+    fenced_at_iso=2026-11-08T06:26:58Z
+    container_state=exited
+    restart_policy=no
+    compose_guard=on
+    peer_port_local=closed
+    rpc=down
+  IMPORTED: no
+  jq: error (at <stdin>:1): Cannot index string with string "name"
+  (exit 5)
+$ sudo -n cat /var/lib/pft-migrate/drill-out/source.proof | sudo -n lxc exec pftrb-sbx -- sh -c 'cat > /root/mig/source.proof'
+  
+  (exit 0)
+CHECK ok   source fence proof copied to the target
+
+== 5. start the target, verify identity + full (downtime 1)
+$ T 'bash /root/mig/pft-migrate.sh start-target --fence-proof /root/mig/source.proof --source <redacted-ip>:2559'
+  [2026-11-08T06:27:22Z] source fenced (proof 2026-11-08T06:26:58Z) and silent on port 2559
+  time="2026-11-08T06:27:22Z" level=warning msg="/opt/postfiatd/docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+   Container postfiatd  Recreate
+   Container postfiatd  Recreated
+   Container postfiatd  Starting
+   Container postfiatd  Started
+  [2026-11-08T06:27:24Z] target started at 2026-11-08T06:27:22Z; next: verify --expect-pubkey <redacted-key> --since-proof /root/mig/source.proof
+  (exit 0)
+CHECK ok   start-target exit 0 (proof accepted, source probe closed)
+$ T 'bash /root/mig/pft-migrate.sh verify --expect-pubkey <redacted-key> --since-proof /root/mig/source.proof --timeout 1800'
+  server_state=full
+  pubkey_node=<redacted-key> (matches)
+  full_at=2026-11-08T06:28:00Z
+  waited_s=36
+  downtime_s=62
+  (exit 0)
+CHECK ok   target full with the source's pubkey_node
+  target pubkey_node fingerprint: 89a7ccb8d16f88bf (source: 89a7ccb8d16f88bf)
+CHECK ok   target pubkey_node == source pubkey_node (independent read)
+DOWNTIME_1_S 62 (source fenced_at -> target full)
+CHECK ok   sentry lists the migrated node by public key (after 0s)
+$ T 'docker exec postfiatd curl -s -m 10 -d "{\"method\":\"server_info\"}" http://127.0.0.1:5005' | jq -c '.result.info | {server_state, peers, complete_ledgers, build_version}'
+  {"server_state":"full","peers":11,"complete_ledgers":"7863076-7863080","build_version":"1.0.9"}
+  (exit 0)
+CHECK ok   source container still not running
+
+== 6. rollback
+$ sudo -n bash migrate/pft-migrate.sh rollback --bundle-id 20261108T062648Z-271a043f --fence-proof /var/lib/pft-migrate/drill-out/source.proof --target <redacted-ip>:2559
+  [2026-11-08T06:28:04Z] ERROR: the target still answers on its peer port (2559): rollback refused
+  (exit 4)
+CHECK ok   rollback while the target runs refused (exit 4, target still answers)
+$ T 'bash /root/mig/pft-migrate.sh fence --bundle-id 20261108T062648Z-271a043f --proof-out /root/mig/target.proof'
+  [2026-11-08T06:28:06Z] FENCED: postfiatd exited, restart=no, compose guard on, peer port closed, RPC down (bundle 20261108T062648Z-271a043f)
+  v=1
+  kind=pft-migrate-fence
+  bundle_id=20261108T062648Z-271a043f
+  pubkey=<redacted-key>
+  container=postfiatd
+  fenced_at=1794119284
+  fenced_at_iso=2026-11-08T06:28:04Z
+  container_state=exited
+  restart_policy=no
+  compose_guard=on
+  peer_port_local=closed
+  rpc=down
+  (exit 0)
+CHECK ok   target fenced (exited, restart=no, guard on, peer port closed, RPC down)
+$ T 'cat /root/mig/target.proof' | sudo -n sh -c 'umask 022; cat > /var/lib/pft-migrate/drill-out/target.proof' && sudo -n grep -c = /var/lib/pft-migrate/drill-out/target.proof
+  12
+  (exit 0)
+CHECK ok   target fence proof copied to the source
+$ sudo -n bash migrate/pft-migrate.sh rollback --bundle-id 20261108T062648Z-271a043f --fence-proof /var/lib/pft-migrate/drill-out/target.proof --target <redacted-ip>:2559
+  time="2026-11-08T06:28:07Z" level=warning msg="/opt/postfiatd/docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+   Container postfiatd  Recreate
+   Container postfiatd  Recreated
+   Container postfiatd  Starting
+   Container postfiatd  Started
+  lock pft-migrate removed
+  [2026-11-08T06:28:08Z] source unfenced and started (restart=unless-stopped) at 2026-11-08T06:28:06Z; next: verify --expect-pubkey <redacted-key> --since-proof /var/lib/pft-migrate/drill-out/target.proof
+  (exit 0)
+CHECK ok   rollback exit 0 (target proof accepted, target probe closed, source started)
+$ sudo -n bash migrate/pft-migrate.sh verify --expect-pubkey <redacted-key> --since-proof /var/lib/pft-migrate/drill-out/target.proof --timeout 1800
+  server_state=full
+  pubkey_node=<redacted-key> (matches)
+  full_at=2026-11-08T06:28:49Z
+  waited_s=41
+  downtime_s=45
+  (exit 0)
+CHECK ok   source full again with its own pubkey_node
+DOWNTIME_2_S 45 (target fenced_at -> source full)
+$ T 'bash /root/mig/pft-migrate.sh status | sed -E "s/^(  pubkey=).*/\1<key>/"; cd /opt/postfiatd && docker compose up -d 2>&1 | tail -2; sleep 5; docker inspect -f "{{.State.Running}}" postfiatd'
+  FENCED:
+    v=1
+    kind=pft-migrate-fence
+    bundle_id=20261108T062648Z-271a043f
+    pubkey=<key>
+    container=postfiatd
+    fenced_at=1794119284
+    fenced_at_iso=2026-11-08T06:28:04Z
+    container_state=exited
+    restart_policy=no
+    compose_guard=on
+    peer_port_local=closed
+    rpc=down
+  IMPORTED:
+    bundle_id=20261108T062648Z-271a043f
+    imported=2026-11-08T06:26:51Z
+    role=validator
+    container=postfiatd
+    pubkey=<key>
+    compose_dir=/opt/postfiatd
+    skipped=docker-compose.apparmor.yml
+    started_at=1794119242
+   Container postfiatd  Starting
+  Error response from daemon: failed to create task for container: failed to create shim task: OCI runtime create failed: runc create failed: unable to start container process: error during container init: exec: "/pft-migrate-FENCED-20261108T062648Z-271a043f": stat /pft-migrate-FENCED-20261108T062648Z-271a043f: no such file or directory
+  false
+  (exit 0)
+CHECK ok   target stays fenced: a plain compose up there is refused
+
+== 7. aftercare on the source
+$ sudo -n docker inspect -f 'restart={{.HostConfig.RestartPolicy.Name}} secopt={{len .HostConfig.SecurityOpt}} cpu_shares={{.HostConfig.CpuShares}}' postfiatd; sudo -n docker inspect -f '{{range .HostConfig.SecurityOpt}}{{println .}}{{end}}' postfiatd | cut -c1-40
+  restart=unless-stopped secopt=3 cpu_shares=8192
+  no-new-privileges:true
+  apparmor=pft-postfiatd
+  seccomp={"architectures":["SCMP_ARCH_X86
+  (exit 0)
+CHECK ok   source container: restart unless-stopped, AppArmor + seccomp + no-new-privileges, cpu_shares 8192
+$ sudo -n bash migrate/pft-migrate.sh status | sed -E 's/^(  pubkey=).*/\1<key>/'; sudo -n ls /var/lib/pft-migrate; sudo -n pft-maint status --json | jq -c '[.locks[] | .name]'; sudo -n grep -c migrate-fence /opt/postfiatd/.env
+  FENCED: no
+  IMPORTED: no
+  drill-out
+  exports
+  rolled-back-20261108T062648Z-271a043f
+  []
+  0
+  (exit 1)
+CHECK ok   source unfenced: no FENCED record, pft-migrate lock gone, guard not in COMPOSE_FILE
+$ sudo -n systemctl start pft-egress-reapply@postfiatd.service; echo reapply rc $?; sudo -n iptables -S DOCKER-USER | grep -c -- '-j PFT-EGRESS'
+  reapply rc 0
+  1
+  (exit 0)
+CHECK ok   pft-egress jump back in DOCKER-USER after the re-create
+$ sudo -n pft-apparmor audit | grep -E '^RESULT|container'; sudo -n pft-seccomp audit | grep -E '^RESULT|container'
+  pft-apparmor audit - 2026-11-08T06:28:58Z | host validator | container postfiatd | profile pft-postfiatd
+    [PASS] container          postfiatd runs under pft-postfiatd
+  RESULT: PASS
+  pft-seccomp audit - 2026-11-08T06:28:59Z | host validator | container postfiatd | profile /etc/pft-seccomp/pft-postfiatd.json
+    [PASS] container          postfiatd runs under pft-postfiatd (stored profile = /etc/pft-seccomp/pft-postfiatd.json)
+    [PASS] filter             container init: Seccomp 2 (filter), 1 filter(s)
+  RESULT: PASS
+  (exit 0)
+CHECK ok   pft-apparmor + pft-seccomp audits PASS on the source
+  [2026-11-08T06:28:59Z] teardown: instance pftrb-sbx, network pftrb0, pool pftrb, image cache, chains PFT-REBUILD/PFT-REBUILD-IN
+    instance deleted
+    cached image deleted
+  Network pftrb0 deleted
+    network deleted
+  Storage volume rb-docker deleted
+    volume rb-docker deleted
+  Storage volume rb-containerd deleted
+    volume rb-containerd deleted
+  Storage pool pftrb deleted
+    pool deleted
+    removed jump: FORWARD -i pftrb0 -j PFT-REBUILD
+    removed jump: FORWARD -o pftrb0 -j PFT-REBUILD
+    removed jump: INPUT -i pftrb0 -j PFT-REBUILD-IN
+    removed chain PFT-REBUILD
+    removed chain PFT-REBUILD-IN
+    removed empty nft table inet lxd
+    teardown complete: no sandbox resource left
+  sandbox pftrb-sbx gone (the target copy of the identity with it)
+CHECK ok   sandbox torn down
+CHECK ok   bundle dir removed on the source
+$ sudo -n pft-integrity verify | grep -E '^(  \[(WARN|FAIL)\]|RESULT)' | sed -E 's/ +sha256.*//' | head -20
+  RESULT: PASS - 213 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+  pft-integrity validator: nothing to accept
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 213 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 132 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts after the re-baseline
+
+== 8. restore, key-escrow re-run, read back
+  removed /var/lib/pft-migrate/drill-out (bundle, sidecar, proofs)
+  $ sudo -n pft-maint end
+    window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+  removed /etc/pft-maint/ntfy.env (absent before the run)
+  restored local:/etc/postfiat-monitor.env: sha256 matches pre-run copy: yes
+  restored local:/etc/pft-integrity.env: sha256 matches pre-run copy: yes
+  restored relay:/etc/pft-watchdog/ntfy.env: sha256 matches pre-run copy: yes
+  restored relay:/etc/pft-integrity.env: sha256 matches pre-run copy: yes
+  restored relay:/etc/pft-alertpath/ntfy.env: sha256 matches pre-run copy: yes
+  2026-11-08T06:29:49Z starting pft-alert-bridge (ntfy: on)
+  2026-11-08T06:29:50Z pft-alert-bridge listening
+  restored bridge: mounts the operator env file again: yes
+  narrow silence alertname=PFTContainerRestarted until last node start 06:28:08Z + 25 min (1398s); expires by itself
+  catch-all silence expired: HTTP 200
+CHECK ok   env files byte-identical, bridge back on the operator env, pft-maint env removed, window ended
+$ R 'sudo -n systemctl start pft-keyescrow.service'; sudo -n systemctl start pft-keyescrow.service; sudo -n systemctl start pft-keyescrow-pull.service; grep -h '^pft_keyescrow_drift_items' /var/lib/pft-exporter/textfile/pft_keyescrow*.prom
+  pft_keyescrow_drift_items{node="validator"} 0
+  pft_keyescrow_drift_items{node="sentry"} 0
+  (exit 0)
+CHECK ok   pft-keyescrow re-run on both hosts after the env restore: drift_items 0 for validator and sentry
+  throwaway topic: 2 message(s)
+    {"time":"2026-11-08T06:25:48Z","title":"[MAINT] start validator","message":"task_2756079c pft-migrate live drill 20261108T062502Z | until 2026-11-08T09:25:46Z (ttl 10800s) | sentry copy: pushed"}
+    {"time":"2026-11-08T06:29:47Z","title":"[MAINT] end validator","message":"task_2756079c pft-migrate live drill 20261108T062502Z | ended by operator after 240s | suppressed here: watchdog=0 monitor=0 integrity=0 | sentry copy: pushed"}
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the run (2 topic(s), 0 with messages)
+CHECK ok   postfiatd-sentry full at the end (full)
+CHECK ok   postfiatd full at the end (full)
+
+DOWNTIMES: migrate 62 s, rollback 45 s
+live-run done 2026-11-08T06:31:27Z: 0 check(s) failed -> PASS
+exit 0

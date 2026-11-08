@@ -1,7 +1,8 @@
 # pft-migrate: planned host migration with fencing
 
-Status: **implemented, offline-tested (steps 2-3)**; the live LXD drill (step 4) is not run yet. `pft-migrate.sh` +
-`tests/run-tests.sh` (two fake hosts, stubbed docker/RPC/probe, real age keys).
+Status: **implemented, offline-tested, live-drilled**: the real validator was migrated to a fresh LXD target and rolled
+back (log 07: 47 checks ok, 0 failed; downtimes 62 s and 45 s; 0 operator-topic messages). `pft-migrate.sh` +
+`tests/run-tests.sh` (two fake hosts, stubbed docker/RPC/probe, real age keys) + `drill/live-run.sh`.
 
 Moving a Post Fiat node (validator or sentry, `postfiatd` in Docker) to a new host means copying its identity
 (`[node_seed]`, so `pubkey_node` stays the same and the peer's `[peer_private]`/`[ips_fixed]` pairing keeps working)
@@ -93,8 +94,57 @@ A read-only `plan` on the live validator listed 13 files (cfg, validators.txt, 6
 seed + pub, AppArmor profile, seccomp JSON), `RESULT: OK`, and left nothing in `/dev/shm`; its output is not
 published (host layout).
 
-## Drill (step 4, planned)
+## Live drill (step 4)
 
-Real source = this validator host, target = a fresh LXD sandbox (rebuild/ infrastructure). Alerts during the drill
-go to a throwaway ntfy topic; an Alertmanager silence covers only the planned source stop; afterwards: operator-topic
-read-back = 0, `pft-integrity` re-baselined for every intended change, source back at `full`.
+Source = the real validator on this host. Target = a fresh, resource-capped Ubuntu 22.04 LXD sandbox built by
+`rebuild/pft-rebuild-drill.sh` with `RB_STACK=migrate/drill/target.stack --keep` (base `install.sh` + age only; its
+own node started with a random identity). `drill/live-run.sh` then runs, in one recorded run:
+
+1. Redirects every notifier env on both hosts (2 on the validator, 3 on the sentry, the complete list of ntfy env
+   files there) and the Alertmanager bridge to a throwaway topic, silences every alert except the
+   `PFTAlertPipelineWatchdog` dead-man switch, and opens a pft-maint window (the sentry gets it too).
+2. On the target: pushes the pinned `pft-migrate.sh` (sha256 checked), stops the sandbox's own node, and creates the
+   age identity there. Only the recipient leaves the sandbox.
+3. `export` on the running source, then copies the bundle and sidecar. The sidecar is re-checked on the target. Import
+   with a wrong identity is **refused** (exit 2). Import with the target identity is skipped for the AppArmor overlay:
+   nested LXD cannot load the profile (rebuild runs 21/22). Seccomp, confine, resources and no-new-privileges stay.
+   A plain `docker compose up -d` on the imported target is **refused** by the guard.
+4. `fence-source`. The target's probe then sees the source port closed. A plain `docker compose up -d` on the
+   **fenced source** is **refused** by the guard (`runc create failed`, exit 127, `restart=no`, port still closed).
+5. `start-target` + `verify`: the target reaches `full` with the source's `pubkey_node` (the tool's check plus an
+   independent read, fingerprint printed because keys are redacted), and the sentry lists the node by public key.
+6. `rollback` while the target runs is **refused** (exit 4, "target still answers"). Then the target is fenced,
+   `rollback` runs with the target's proof, and `verify` on the source passes.
+7. Aftercare: restart policy, AppArmor + seccomp + cpu_shares are back on the source; the pft-egress jump is
+   re-applied after the re-create; both audits PASS. The sandbox is torn down, and the target copy of the identity goes
+   with it. The bundle dir is removed. pft-integrity runs verify, then accept only if the changes are the container
+   re-create (here: nothing changed, PASS 213/0/0).
+8. Restore: env files byte-identical, bridge back, window ended. pft-keyescrow is re-run on both hosts (it
+   fingerprints the redirected env files): drift 0. Then a read-back of every operator topic.
+
+The firewall needs one extra rule. The rebuild sandbox's `PFT-REBUILD-IN` drops everything from the sandbox bridge,
+replies included, so the source could never see the target's peer port, and rollback's "target closed" probe would
+pass vacuously (dev probe). The drill inserts one rule: `ACCEPT` for **established replies** from the target's
+port 2559 only. The sandbox still cannot open a connection to the host; the run checks this against sshd. Teardown
+removes the chain.
+
+**Downtime figures and what they cover.** `downtime_s` runs from the proof's `fenced_at` to `server_state full` with
+the expected key. Migrate: 62 s (fence 06:26:58Z -> target full 06:28:00Z). Rollback: 45 s. Neither node started
+from an empty ledger database. The target's data volume still held the DB of the sandbox's own node, which had synced
+during preparation (the DB is not identity-bound; the bundle moves no DB, by design). The source kept its own DB.
+A target with an empty data volume must first sync, and that time was **not measured** here (log 03 has no time-to-full
+line).
+
+| Log | What | Result |
+|---|---|---|
+| [logs/03-target-prep.log](logs/03-target-prep.log) | sandbox target built with `target.stack --keep` | base 323 s, age 16 s; the 2 FAILs are rebuild's diff/baseline steps, which have nothing to compare for a target-only stack; live integrity/AppArmor PASS, operator topics 0 |
+| [logs/04-preflight.log](logs/04-preflight.log) | `PREFLIGHT_ONLY=1` on d70a631 | ready: yes (passed by timing; see 05) |
+| [logs/05-live-stopped-preflight-sigpipe.log](logs/05-live-stopped-preflight-sigpipe.log) | first live attempt | stopped in preflight, nothing changed: `lxc info \| grep -q` under pipefail returned SIGPIPE (fixed in d8bbaf7) |
+| [logs/06-preflight.log](logs/06-preflight.log) | `PREFLIGHT_ONLY=1` on the fixed runner | ready: yes |
+| [logs/07-live-drill.log](logs/07-live-drill.log) | the live drill | **PASS**, 47 ok / 0 failed, downtimes 62 s / 45 s, operator topics 0 |
+| [logs/08-checks.log](logs/08-checks.log) | shellcheck (incl. `drill/live-run.sh`), suite, mutants on the final code | shellcheck 0, 120/0, 16/16 killed |
+| [logs/09-post-drill.log](logs/09-post-drill.log) | after the narrow PFTContainerRestarted silence ran out: operator read-back, explicit pft-integrity re-baseline, node + Alertmanager state | both drill silences expired, only the dead-man alert active, operator topics 0 since run start, accept done (verify PASS 213/0/0 before and after), node HEALTHY, 0 sandbox instances / PFT-REBUILD rules / transient units left |
+
+Published logs are filtered by `peerexpose/drill/redact.py` (addresses, node keys, topics, user) and checked
+CLEAN. No bundle, age identity, seed or token is in the repo or the logs; the bundle only ever existed in a root-only
+dir on the source (removed) and in the sandbox (destroyed).

@@ -1,0 +1,19 @@
+pft-migrate live drill (real validator -> fresh LXD target -> rollback) - 2026-11-08T06:23:21Z - Ubuntu 22.04.5 LTS - run 20261108T062321Z
+repo HEAD d70a631aa9173cd0e9b930e8f9d6b5e16bb48f03 (clean: yes)
+sha256 5f4e017e37c9384c8b30c60c1eb60718c3a7b5be1519362a04b932aabeee6372 migrate/drill/live-run.sh
+sha256 caa5692aa566f41a3f61b9fd879cd0d303ed587fec7c19af696013ba8da1c7d1 migrate/pft-migrate.sh
+sha256 a813762aab644ce8498112289a95786bf274fcc2ac2f96df9867d90c52c5654e migrate/drill/target.stack
+sha256 ed1c204e4d8622fd8d9846154a1cbee60693468f111586f0c0b68aa6d270007e rebuild/pft-rebuild-drill.sh
+sha256 f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8 peerexpose/drill/redact.py
+
+== 0. preflight (nothing changed yet)
+  bridge mounts the operator env file: yes
+  operator topics to watch: 2 (not printed)
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+  postfiatd-sentry: server_state=full, peers 21
+  postfiatd: server_state=full, peers 13
+  validator pubkey_node fingerprint (sha256 of the key, first 16 hex): 89a7ccb8d16f88bf
+  pft-integrity validator: RESULT: PASS - 213 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity sentry: RESULT: PASS - 132 unchanged, 0 warn, 0 fail -> exit 0
+  sandbox pftrb-sbx not running (build it with target.stack --keep) - stopping
+exit 3

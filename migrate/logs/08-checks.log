@@ -1,0 +1,34 @@
+# pft-migrate checks run 08 (final code, after live drill log 07) - 2026-11-08T06:32:26Z
+OS: Ubuntu 22.04.5 LTS
+repo HEAD d8bbaf75fd70a062bf3282ca210f092332f94c41 (clean: yes)
+sha256 caa5692aa566f41a3f61b9fd879cd0d303ed587fec7c19af696013ba8da1c7d1 pft-migrate.sh
+sha256 8ef031d4fc851e010c7c4c675827d84fa9a50a735c76a6a2bce64abce5b5971a tests/run-tests.sh
+sha256 a0b78b4a023a3dee53ebdb65b92735ce0dd3a3168654dd8bdaa51d604565a839 tests/mutate.sh
+sha256 9d9a2e1ed23ab54b1f1f4aad14e940e22d7d618a7919987b970a8197e10fe69a drill/live-run.sh
+shellcheck 0.8.0
+$ shellcheck -x pft-migrate.sh tests/run-tests.sh tests/mutate.sh drill/live-run.sh
+(exit 0)
+$ nice -n 15 bash tests/run-tests.sh </dev/null 2>&1 | tail -3
+ok   seed never printed by any command
+ok   age identity never printed
+RESULT: 120 passed, 0 failed
+(exit 0)
+$ nice -n 15 bash tests/mutate.sh </dev/null 2>&1 | tail -20
+killed   no source probe: RESULT: 117 passed, 3 failed
+killed   no target probe: RESULT: 117 passed, 3 failed
+killed   no sidecar check: RESULT: 117 passed, 3 failed
+killed   no layout check: RESULT: 117 passed, 3 failed
+killed   no manifest check: RESULT: 118 passed, 2 failed
+killed   no extra-file check: RESULT: 118 passed, 2 failed
+killed   no link check: RESULT: 118 passed, 2 failed
+killed   no guard on fence: RESULT: 103 passed, 17 failed
+killed   no proof check (start): RESULT: 115 passed, 5 failed
+killed   proof ignores container_state: RESULT: 118 passed, 2 failed
+killed   rollback keeps restart=no: RESULT: 119 passed, 1 failed
+killed   import over running copy: RESULT: 119 passed, 1 failed
+killed   start on fenced host: RESULT: 113 passed, 7 failed
+killed   verify ignores identity: RESULT: 119 passed, 1 failed
+killed   rollback ignores proof age: RESULT: 118 passed, 2 failed
+killed   export accepts identity file: RESULT: 119 passed, 1 failed
+MUTANTS: 16 killed, 0 survived/not applied
+(exit 0)

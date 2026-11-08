@@ -1,0 +1,80 @@
+OS: Ubuntu 22.04.5 LTS | kernel 5.15.0-202-generic | lxd 5.0.11
+run 20261108T061037Z commit 80fa43925f71252818b5fb8f54533f3d0345386f sandbox pftrb-sbx cpu=2 mem=3GiB disk=25GiB procs=6000 image=ubuntu:22.04
+stack: ~/work/postfiat-validator-installer/migrate/drill/target.stack sha256 a813762aab644ce8498112289a95786bf274fcc2ac2f96df9867d90c52c5654e
+
+== 0. preflight
+[2026-11-08T06:10:38Z] preflight (read-only), commit 80fa43925f71252818b5fb8f54533f3d0345386f
+CHECK ok   LXD available
+CHECK ok   live node postfiatd server_state full
+CHECK ok   live pft-integrity verify PASS
+CHECK ok   no leftover instance pftrb-sbx
+CHECK ok   no leftover network pftrb0
+CHECK ok   no leftover pool pftrb
+CHECK ok   no leftover chain PFT-REBUILD
+CHECK ok   subnet <redacted-ip>/24 unused on the host
+CHECK ok   RB_MEM=3GiB and RB_DISK=25GiB parse as sizes
+CHECK ok   MemAvailable 5984 MiB >= sandbox cap + 1 GiB
+CHECK ok   free disk 69 GiB >= RB_DISK + 10 GiB
+CHECK ok   nightly backup archive present in /var/backups/postfiat
+CHECK ok   commit is a full 40-hex SHA
+CHECK ok   this checkout is clean at 80fa43925f71252818b5fb8f54533f3d0345386f
+CHECK ok   commit public on GitHub (HTTP 200)
+CHECK ok   stack.list valid
+CHECK ok   operator ntfy topics found (2, not printed)
+  host snapshot: 185 items; live baseline: 827 rows
+
+== 1. sandbox infrastructure
+CHECK ok   pool pftrb (lvm loop, size 25GiB)
+CHECK ok   bridge pftrb0 NAT-only IPv4 <redacted-ip>/24
+CHECK ok   firewall chains PFT-REBUILD (forward) / PFT-REBUILD-IN (input) for pftrb0 only
+CHECK ok   instance pftrb-sbx created (not started)
+CHECK ok   custom volume rb-docker (4GiB) on pftrb at /var/lib/docker
+CHECK ok   custom volume rb-containerd (16GiB) on pftrb at /var/lib/containerd
+CHECK ok   live pft-integrity verify still PASS with the sandbox infrastructure up
+
+== 2. sandbox isolation preflight
+CHECK ok   backup sanitized (keys refused, peering stripped)
+  PREFLIGHT: ISOLATED (0 refusals)
+CHECK ok   no sandbox device exposes 2559 5005 51235
+
+== 3. start + network
+CHECK ok   sandbox started
+CHECK ok   sandbox DNS + IPv4 up (9 s)
+CHECK ok   cloud-init finished
+CHECK ok   sandbox cannot reach host admin port 5005 via the bridge
+CHECK ok   sandbox cannot reach host sshd via the bridge
+
+== 4. checkout pinned commit inside the sandbox
+CHECK ok   git + jq installed
+CHECK ok   sandbox HEAD = 80fa43925f71252818b5fb8f54533f3d0345386f
+CHECK ok   sanitized backup + blackhole ntfy.env pushed
+
+== 5. install steps (rebuild/stack.list @ 80fa43925f71252818b5fb8f54533f3d0345386f)
+STEP  10 base          rc=0     323s  $ bash install.sh
+STEP  20 age           rc=0      16s  $ apt-get -qq install -y age >/dev/null && age --version
+TIME_TO_FULL n/a s (restore step start -> server_state full, cap 600 s)
+sandbox server_state now: connected
+
+== 5b. sandbox limits vs the live host
+  0 SANDBOX_LIMIT line(s)
+
+== 6. diff sandbox vs live
+CHECK FAIL sandbox manifest re-collected after the last step (pft-integrity accept in the sandbox)
+  sandbox pft-fleet inventory unavailable: diff uses pft-integrity items only
+  no sandbox baseline (baseline step not reached)
+
+== 7. teardown
+  --keep: sandbox left running for inspection
+
+== 8. live host after
+CHECK ok   live server_state full
+  RESULT: PASS - 213 unchanged, 0 warn, 0 fail -> exit 0
+CHECK ok   live pft-integrity verify PASS
+  [PASS] denials            0 DENIED events in the last 86403s
+  RESULT: PASS
+CHECK ok   live pft-apparmor audit PASS
+CHECK ok   operator ntfy topics: 0 messages since run start
+
+per-step timings: /var/lib/pft-rebuild/20261108T061037Z/timings.tsv; per-step logs: /var/lib/pft-rebuild/20261108T061037Z/steps/
+RESULT: FAIL (2 checks/steps failed, diff rc 3)
+exit 2

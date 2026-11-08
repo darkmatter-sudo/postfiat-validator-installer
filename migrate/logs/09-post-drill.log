@@ -1,0 +1,74 @@
+# pft-migrate post-drill checks (after live run 07) - 2026-11-08T06:55:03Z
+OS: Ubuntu 22.04.5 LTS | repo HEAD d8bbaf75fd70a062bf3282ca210f092332f94c41
+## the script
+  | #!/usr/bin/env bash
+  | # post-drill read-back for task_2756079c live run 07 (not committed: one-off; the published log prints this script)
+  | set -u
+  | export TZ=UTC
+  | AM=http://127.0.0.1:9093
+  | SINCE="$(date -u -d 2026-11-08T06:25:02Z +%s)"   # live run 07 start
+  | x() { echo "\$ $*"; eval "$*"; rc=$?; echo "(exit $rc)"; return $rc; }
+  | echo "# pft-migrate post-drill checks (after live run 07) - $(date -u +%FT%TZ)"
+  | echo "OS: $(lsb_release -ds) | repo HEAD $(git -C ~/work/postfiat-validator-installer rev-parse HEAD)"
+  | echo "## the script"; sed 's/^/  | /' "$0"
+  | echo "## 1. drill silences gone, Alertmanager state"
+  | x "curl -s $AM/api/v2/silences | jq -r '.[] | select(.createdBy == \"migrate-live\") | \"\(.status.state) ends \(.endsAt) \(.comment)\"'"
+  | x "curl -s $AM/api/v2/alerts | jq -r '.[] | \"\(.labels.alertname) \(.status.state)\"'"
+  | echo "## 2. operator topics since run start ($(date -u -d "@$SINCE" +%FT%TZ)), >= group_interval after the last silence ended"
+  | i=0
+  | for t in $( { sudo -n sed -n 's/^NTFY_TOPIC=//p' /etc/postfiat-monitor.env /etc/pft-integrity.env; sed -n 's/^NTFY_TOPIC=//p' /opt/pft-agent/config.env
+  |              ssh -o LogLevel=ERROR relay "sudo -n sed -n 's/^NTFY_TOPIC=//p' /etc/pft-watchdog/ntfy.env /etc/pft-integrity.env /etc/pft-alertpath/ntfy.env"
+  |              sed -n 's|^NTFY_URL=.*/||p' ~/.config/pft-alerts/ntfy.env; } | tr -d "\"'\r" | sort -u ); do
+  |   i=$((i + 1)); n="$(curl -s --max-time 20 "https://ntfy.sh/$t/json?poll=1&since=$SINCE" | jq -c 'select(.event == "message")' | wc -l)"
+  |   echo "  operator topic #$i: $n message(s)"
+  | done
+  | echo "## 3. explicit post-drill re-baseline of pft-integrity on the validator (the source)"
+  | x "sudo -n pft-integrity verify | tail -1"
+  | x "sudo -n pft-integrity accept --reason 'task_2756079c: post-drill re-baseline after pft-migrate live run 07 (postfiatd re-created by guard test + rollback)' 2>&1 | tail -1 | sed -E 's/ by [a-z_][a-z0-9_-]*\$/ by <user>/'"
+  | x "sudo -n pft-integrity verify | head -3 | tail -2; sudo -n pft-integrity verify | tail -1"
+  | x "ssh -o LogLevel=ERROR relay 'sudo -n pft-integrity verify | tail -1'"
+  | echo "## 4. node + host state"
+  | x "sudo -n postfiat-health 2>&1 | grep -E 'RESULT|server_state'"
+  | x "curl -s -d '{\"method\":\"server_info\"}' http://127.0.0.1:5005 | jq -c '.result.info | {server_state, peers, uptime}'"
+  | x "sudo -n lxc list --format csv | wc -l; sudo -n iptables -S | grep -c PFT-REBUILD; systemctl list-units --all --no-legend 'run-u*' | wc -l; sudo -n ls /var/lib/pft-migrate"
+## 1. drill silences gone, Alertmanager state
+$ curl -s http://127.0.0.1:9093/api/v2/silences | jq -r '.[] | select(.createdBy == "migrate-live") | "\(.status.state) ends \(.endsAt) \(.comment)"'
+expired ends 2026-11-08T06:53:08.000Z task_2756079c post-run: PFTContainerRestarted only
+expired ends 2026-11-08T06:29:50.996Z task_2756079c pft-migrate live drill 20261108T062502Z (planned validator stop, migration, rollback)
+(exit 0)
+$ curl -s http://127.0.0.1:9093/api/v2/alerts | jq -r '.[] | "\(.labels.alertname) \(.status.state)"'
+PFTAlertPipelineWatchdog active
+(exit 0)
+## 2. operator topics since run start (2026-11-08T06:25:02Z), >= group_interval after the last silence ended
+  operator topic #1: 0 message(s)
+  operator topic #2: 0 message(s)
+## 3. explicit post-drill re-baseline of pft-integrity on the validator (the source)
+$ sudo -n pft-integrity verify | tail -1
+RESULT: PASS - 213 unchanged, 0 warn, 0 fail -> exit 0
+(exit 0)
+$ sudo -n pft-integrity accept --reason 'task_2756079c: post-drill re-baseline after pft-migrate live run 07 (postfiatd re-created by guard test + rollback)' 2>&1 | tail -1 | sed -E 's/ by [a-z_][a-z0-9_-]*$/ by <user>/'
+manifest sha256: 7eddb5b9323b97c3e147fc0a93d379ef82a2b681138b81fb94e2f5512b7b56d2 -> 7e193ff65f18d09a729c2d0ab2b65478955ee0faa3b8468c4ff9b6d85397f5cc (logged to accept.log)
+(exit 0)
+$ sudo -n pft-integrity verify | head -3 | tail -2; sudo -n pft-integrity verify | tail -1
+OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-11-08T06:55:23Z
+RESULT: PASS - 213 unchanged, 0 warn, 0 fail -> exit 0
+RESULT: PASS - 213 unchanged, 0 warn, 0 fail -> exit 0
+(exit 0)
+$ ssh -o LogLevel=ERROR relay 'sudo -n pft-integrity verify | tail -1'
+RESULT: PASS - 132 unchanged, 0 warn, 0 fail -> exit 0
+(exit 0)
+## 4. node + host state
+$ sudo -n postfiat-health 2>&1 | grep -E 'RESULT|server_state'
+  [PASS] RPC responding (server_state: full)
+RESULT: HEALTHY
+(exit 0)
+$ curl -s -d '{"method":"server_info"}' http://127.0.0.1:5005 | jq -c '.result.info | {server_state, peers, uptime}'
+{"server_state":"full","peers":11,"uptime":1680}
+(exit 0)
+$ sudo -n lxc list --format csv | wc -l; sudo -n iptables -S | grep -c PFT-REBUILD; systemctl list-units --all --no-legend 'run-u*' | wc -l; sudo -n ls /var/lib/pft-migrate
+0
+0
+0
+exports
+rolled-back-20261108T062648Z-271a043f
+(exit 0)

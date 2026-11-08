@@ -1,0 +1,59 @@
+pft-migrate live drill (real validator -> fresh LXD target -> rollback) - 2026-11-08T06:24:23Z - Ubuntu 22.04.5 LTS - run 20261108T062423Z
+repo HEAD d8bbaf75fd70a062bf3282ca210f092332f94c41 (clean: yes)
+sha256 9d9a2e1ed23ab54b1f1f4aad14e940e22d7d618a7919987b970a8197e10fe69a migrate/drill/live-run.sh
+sha256 caa5692aa566f41a3f61b9fd879cd0d303ed587fec7c19af696013ba8da1c7d1 migrate/pft-migrate.sh
+sha256 a813762aab644ce8498112289a95786bf274fcc2ac2f96df9867d90c52c5654e migrate/drill/target.stack
+sha256 ed1c204e4d8622fd8d9846154a1cbee60693468f111586f0c0b68aa6d270007e rebuild/pft-rebuild-drill.sh
+sha256 f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8 peerexpose/drill/redact.py
+
+== 0. preflight (nothing changed yet)
+  bridge mounts the operator env file: yes
+  operator topics to watch: 2 (not printed)
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+  postfiatd-sentry: server_state=full, peers 21
+  postfiatd: server_state=full, peers 13
+  validator pubkey_node fingerprint (sha256 of the key, first 16 hex): 89a7ccb8d16f88bf
+  pft-integrity validator: RESULT: PASS - 213 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity sentry: RESULT: PASS - 132 unchanged, 0 warn, 0 fail -> exit 0
+$ T 'docker compose version --short; age --version; test -f /opt/postfiatd/docker-compose.yml && echo compose-dir ok; . /etc/os-release; echo $PRETTY_NAME'
+  2.40.3+ds1-0ubuntu1~22.04.1
+  1.0.0
+  compose-dir ok
+  Ubuntu 22.04.5 LTS
+  (exit 0)
+CHECK ok   target: docker compose + age present, /opt/postfiatd exists
+  no FENCED/IMPORTED record on the source or the target, no leftover bundle dir
+CHECK ok   target reaches the live source's peer port (so its 'source closed' probe is meaningful)
+$ sudo -n bash migrate/pft-migrate.sh plan | grep -E '^RESULT|^  (node|fenced|identity):' | sed -E 's/pubkey_node [^ ]+/pubkey_node <key>/'; sudo -n bash migrate/pft-migrate.sh plan --json | jq '.files | length'
+    node: server_state full, pubkey_node <key>
+    fenced: no
+    identity: pinned by pft-cluster (moves with the bundle)
+  RESULT: OK - ready to export
+  13
+  (exit 0)
+CHECK ok   source plan RESULT OK
+  literals for redaction: 4 ip, 2 key, 3 topic, 1 user (values not printed)
+$ redact.py control --literals <literals>
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (19/19)
+
+PREFLIGHT_ONLY: stopping before step 1, nothing changed (ready: yes)
+exit 0
