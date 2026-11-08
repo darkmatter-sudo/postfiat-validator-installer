@@ -1,0 +1,349 @@
+pft-backupwatch two-host alert drill - 2026-11-08T14:11:48Z - Ubuntu 22.04.5 LTS - run 20261108T141148Z
+repo HEAD 772028c2eeba87387aad0a97481da1eedbd3a862 (clean: yes)
+sha256 346461c7fc13e599c26cc67938f8fbd32ee9521f2f6a32ec8ee6f7935e2c9fa7 backupwatch/drill/alert-run.sh
+sha256 5dc453d9bc7edabc3a6d3ac1080457b63c7cbe6b8d155c27a4974ced80a29536 backupwatch/pft-backupwatch.sh
+sha256 ec6b9575583bf300fcf6501aa9e238df5b500867da79fde60d5913a7f1254086 backupwatch/backupwatch_lib.py
+sha256 e46783764b2275cc73f876481ed8a37c70ce3ac27e612d478cf89d4ee9c8343f alerts/backupwatch.rules.yml
+sha256 f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8 peerexpose/drill/redact.py
+installed on validator: ec6b9575583bf300 /usr/local/lib/pft-backupwatch/backupwatch_lib.py  5dc453d9bc7edabc /usr/local/bin/pft-backupwatch  
+installed on sentry: ec6b9575583bf300 /usr/local/lib/pft-backupwatch/backupwatch_lib.py  5dc453d9bc7edabc /usr/local/bin/pft-backupwatch  
+
+== 0. preflight (nothing changed yet)
+  pft-backupwatch + timer on both hosts, pull timer active, no drill dir left over
+$ sudo -n pft-backupwatch check --offhost
+  pft-backupwatch check | archive pft-backup-20261108T080341Z.tar.gz | age_s 22092 | bytes 29942
+    [OK  ] fresh     newest 368 min old
+    [OK  ] size      29942 B, 1.01x previous
+    [OK  ] sidecar   sha256 matches
+    [OK  ] manifest  23 members match
+    [OK  ] content   9 required + 3 reference members present
+    [OK  ] drift     17 files equal the live host
+    [OK  ] offhost   peer holds pft-backup-20261108T080341Z.tar.gz: ciphertext sha256 = recorded, decrypts to the sidecar sha256 (1 replica(s))
+  RESULT: OK - 0 finding(s)
+  (exit 0)
+$ R 'sudo -n pft-backupwatch collect --stdout' | grep -E '_(up|replicas|replica_verify_ok)\{'
+  pft_backupwatch_up{host="sentry"} 1
+  pft_backupwatch_replicas{host="sentry"} 1
+  pft_backupwatch_replica_verify_ok{host="sentry"} 1
+  (exit 0)
+  sentry pft-alertpath-check.timer active, check OK
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=pft_backupwatch_up' | jq -r '.data.result[] | "\(.metric.host) \(.value[1])"' | sort
+  sentry 1
+  validator 1
+  (exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=ALERTS{alertname=~"PFTBackup.*"}' | jq -r '.data.result | length'
+  0
+  (exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/rules | jq -r '.data.groups[] | select(.name == "pft-backupwatch") | .rules[] | [.name, .health] | @tsv'
+  PFTBackupStale	ok
+  PFTBackupBroken	ok
+  PFTBackupConfigDrift	ok
+  PFTBackupNoOffhostCopy	ok
+  PFTBackupwatchStale	ok
+  (exit 0)
+$ curl -s http://127.0.0.1:9093/api/v2/silences | jq -r '.[] | select(.status.state == "active") | select(any(.matchers[]; .isEqual and (.value | test("PFTBackup")))) | "\(.createdBy) until \(.endsAt)"'
+  
+  (exit 0)
+  bridge mounts the operator env file: yes
+  operator topics to watch: 2 (not printed)
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+  postfiatd-sentry: server_state=full
+  postfiatd: server_state=full
+  pft-integrity validator: RESULT: PASS - 220 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity sentry: RESULT: PASS - 135 unchanged, 0 warn, 0 fail -> exit 0
+  literals for redaction: 3 ip, 3 topic, 1 user (values not printed)
+$ redact.py control --literals <literals>
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (16/16)
+
+== 1. bridge -> throwaway topic; rollout silences expired; silence everything except PFTBackup* and the watchdog
+  sentry pft-alertpath-check.timer stopped: yes
+CHECK ok   sentry pft-alertpath-check.timer paused for the bridge re-create
+  2026-11-08T14:12:40Z starting pft-alert-bridge (ntfy: on)
+  2026-11-08T14:12:42Z pft-alert-bridge listening
+CHECK ok   Alertmanager bridge -> throwaway env file (0700 temp dir)
+  sentry pft-alertpath check rc 0 after 2s; timer started again: yes
+CHECK ok   sentry pft-alertpath OK again, check timer running
+CHECK ok   silence alertname=~".+", alertname!~"PFTAlertPipelineWatchdog|PFTBackup.*" until 2026-11-08T16:42:44Z
+  rollout silences (createdBy backupwatch-install) expired: 0
+$ curl -s http://127.0.0.1:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active") | select(any(.matchers[]; .isEqual and (.value | test("PFTBackup"))))] | length'
+  0
+  (exit 0)
+CHECK ok   no active silence names PFTBackup* any more
+
+== 2. BREAK: pft-backupwatch.timer stopped on both hosts; drill copies on tmpfs; collect from the copies
+$ R 'sudo -n systemctl stop pft-backupwatch.timer; systemctl is-active pft-backupwatch.timer'; sudo -n systemctl stop pft-backupwatch.timer; systemctl is-active pft-backupwatch.timer
+  inactive
+  inactive
+  (exit 3)
+CHECK ok   pft-backupwatch.timer stopped on both hosts
+  validator drill conf (/dev/shm/pft-bw-drill/drill.env; + the installed PEER_SSH/REPLICA_RECIPIENT lines, so offhost asks the real peer):
+    | BACKUP_DIR=/dev/shm/pft-bw-drill/archives
+    | STATE_DIR=/dev/shm/pft-bw-drill/state
+    | MAX_AGE_H=1
+    | FAIL_AGE_H=2
+    | DRIFT_GRACE_H=0
+    | ROLE=archive
+    | HOST_LABEL=validator
+    | OFFHOST=1
+  validator blind conf (/dev/shm/pft-bw-drill/blind.env, step 4):
+    | BACKUP_DIR=/dev/shm/pft-bw-drill/archives
+    | STATE_DIR=/dev/shm/pft-bw-drill/state
+    | MAX_AGE_H=not-a-number
+    | ROLE=archive
+    | HOST_LABEL=validator
+  sentry drill conf (/dev/shm/pft-bw-drill/drill.env):
+    | ROLE=replica
+    | HOST_LABEL=sentry
+    | REPLICA_DIR=/dev/shm/pft-bw-drill/replicas
+  validator setup script:
+    | set -e; sudo -n install -d -m 700 /dev/shm/pft-bw-drill /dev/shm/pft-bw-drill/archives /dev/shm/pft-bw-drill/state /dev/shm/pft-bw-drill/root
+    | N=$(sudo -n find /var/backups/postfiat -maxdepth 1 -name 'pft-backup-*.tar.gz' -printf '%f\n' | LC_ALL=C sort | tail -n 1)
+    | echo "newest archive: $N"
+    | sudo -n cp -p /var/backups/postfiat/$N /var/backups/postfiat/$N.sha256 /dev/shm/pft-bw-drill/archives/
+    | echo "copy sha256 equals sidecar: $(sudo -n sha256sum /dev/shm/pft-bw-drill/archives/$N | cut -c1-64 | grep -qxF "$(sudo -n cut -c1-64 /dev/shm/pft-bw-drill/archives/$N.sha256)" && echo yes || echo no)"
+    | P=$(sudo -n pft-backupwatch check --json | jq -r '.drift[].path' | grep -v '^/etc/postfiatd/')
+    | for p in $P; do sudo -n cp -p --parents "$p" /dev/shm/pft-bw-drill/root/; done
+    | echo "host files copied to the drill root: $(echo "$P" | grep -c .)"
+    | echo '# pft-backupwatch drill 20261108T141148Z: harmless appended comment (copy only)' | sudo -n tee -a /dev/shm/pft-bw-drill/root/opt/postfiatd/docker-compose.resources.yml >/dev/null
+    | echo "drill copy differs from the live file: $(sudo -n cmp -s /dev/shm/pft-bw-drill/root/opt/postfiatd/docker-compose.resources.yml /opt/postfiatd/docker-compose.resources.yml && echo no || echo yes)"
+    | echo QkFDS1VQX0RJUj0vZGV2L3NobS9wZnQtYnctZHJpbGwvYXJjaGl2ZXMKU1RBVEVfRElSPS9kZXYvc2htL3BmdC1idy1kcmlsbC9zdGF0ZQpNQVhfQUdFX0g9MQpGQUlMX0FHRV9IPTIKRFJJRlRfR1JBQ0VfSD0wClJPTEU9YXJjaGl2ZQpIT1NUX0xBQkVMPXZhbGlkYXRvcgpPRkZIT1NUPTEK | base64 -d | sudo -n tee /dev/shm/pft-bw-drill/drill.env >/dev/null; echo QkFDS1VQX0RJUj0vZGV2L3NobS9wZnQtYnctZHJpbGwvYXJjaGl2ZXMKU1RBVEVfRElSPS9kZXYvc2htL3BmdC1idy1kcmlsbC9zdGF0ZQpNQVhfQUdFX0g9bm90LWEtbnVtYmVyClJPTEU9YXJjaGl2ZQpIT1NUX0xBQkVMPXZhbGlkYXRvcgo= | base64 -d | sudo -n tee /dev/shm/pft-bw-drill/blind.env >/dev/null
+    | sudo -n grep -E '^(PEER_SSH|PEER_TIMEOUT|REPLICA_RECIPIENT)=' /etc/pft-backupwatch.env | sudo -n tee -a /dev/shm/pft-bw-drill/drill.env >/dev/null
+    | echo "peer lines copied from the installed conf into drill.env: $(sudo -n grep -cE '^(PEER_SSH|PEER_TIMEOUT|REPLICA_RECIPIENT)=' /dev/shm/pft-bw-drill/drill.env) (not printed)"
+    | sudo -n chmod 600 /dev/shm/pft-bw-drill/drill.env /dev/shm/pft-bw-drill/blind.env
+$ L "$VSETUP"
+  newest archive: pft-backup-20261108T080341Z.tar.gz
+  copy sha256 equals sidecar: yes
+  host files copied to the drill root: 15
+  drill copy differs from the live file: yes
+  peer lines copied from the installed conf into drill.env: 2 (not printed)
+  (exit 0)
+CHECK ok   validator drill copies built (archive copy intact, one host-file copy changed)
+  sentry setup script:
+    | set -e; sudo -n install -d -m 700 /dev/shm/pft-bw-drill; sudo -n cp -a /var/lib/pft-backupwatch/replicas /dev/shm/pft-bw-drill/replicas
+    | N=$(sudo -n find /dev/shm/pft-bw-drill/replicas -maxdepth 1 -name 'pft-backup-*.age' -printf '%f\n' | LC_ALL=C sort | tail -n 1)
+    | echo "newest replica copy: $N"; sudo -n python3 -c 'import sys; p = sys.argv[1]; b = bytearray(open(p, "rb").read()); i = len(b) // 2; b[i] ^= 0xFF; open(p, "wb").write(b); print("flipped byte", i, "of", len(b))' /dev/shm/pft-bw-drill/replicas/$N
+    | echo Uk9MRT1yZXBsaWNhCkhPU1RfTEFCRUw9c2VudHJ5ClJFUExJQ0FfRElSPS9kZXYvc2htL3BmdC1idy1kcmlsbC9yZXBsaWNhcwo= | base64 -d | sudo -n tee /dev/shm/pft-bw-drill/drill.env >/dev/null; sudo -n chmod 600 /dev/shm/pft-bw-drill/drill.env
+    | sudo -n env PFT_BW_CONF=/dev/shm/pft-bw-drill/drill.env pft-backupwatch serve status | cut -c1-60
+    | sudo -n env PFT_BW_CONF=/dev/shm/pft-bw-drill/drill.env pft-backupwatch serve verify "${N%.age}" || true
+$ R "$SSETUP"
+  newest replica copy: pft-backup-20261108T080341Z.tar.gz.age
+  flipped byte 15071 of 30142
+  REPLICA pft-backup-20261108T080341Z.tar.gz 4ed7fc46978bad100
+  END
+  VERIFY pft-backup-20261108T080341Z.tar.gz SHA_MISMATCH
+  (exit 0)
+CHECK ok   sentry drill copy built (newest replica copy corrupted, verify SHA_MISMATCH)
+
+-- 2a. DRIFT (intact archive copy, changed host-file copy, stale thresholds, no replica record)
+$ sudo -n env PFT_BW_CONF=/dev/shm/pft-bw-drill/drill.env PFT_BW_ROOT=/dev/shm/pft-bw-drill/root pft-backupwatch check --offhost
+  pft-backupwatch check | archive pft-backup-20261108T080341Z.tar.gz | age_s 22147 | bytes 29942
+    [FAIL] fresh     newest 6 h old > 2 h
+    [OK  ] size      29942 B (no previous archive)
+    [OK  ] sidecar   sha256 matches
+    [OK  ] manifest  23 members match
+    [OK  ] content   9 required + 3 reference members present
+    [WARN] drift     /opt/postfiatd/docker-compose.resources.yml changed
+    [FAIL] offhost   replica not recorded locally (state file missing or replicated elsewhere)
+  RESULT: FAIL - 3 finding(s)
+  (exit 2)
+CHECK ok   validator drill check: fresh FAIL, drift WARN (1 changed), offhost FAIL (peer reached, no record), sidecar+manifest OK (exit 2)
+$ bwlines
+  up{host="validator"} 1
+  check_state{host="validator",check="fresh"} 2
+  check_state{host="validator",check="size"} 0
+  check_state{host="validator",check="sidecar"} 0
+  check_state{host="validator",check="manifest"} 0
+  check_state{host="validator",check="content"} 0
+  check_state{host="validator",check="drift"} 1
+  check_state{host="validator",check="offhost"} 2
+  drift_files{host="validator"} 1
+  drift_overdue{host="validator"} 1
+  up{host="sentry"} 1
+  replicas{host="sentry"} 1
+  replica_verify_ok{host="sentry"} 0
+  (exit 0)
+CHECK ok   textfiles: validator fresh 2, drift 1, drift_overdue 1, offhost 2, sidecar 0; sentry replica_verify_ok 0
+  broken at 2026-11-08T14:12:55Z; for: windows Drift/Broken 15m, Stale/NoOffhost 30m; re-collecting every 300s
+  2026-11-08T14:28:33Z (1005s into the run): PFTBackupConfigDrift firing in Prometheus:
+    __name__=ALERTS,alertname=PFTBackupConfigDrift,alertstate=firing,host=validator,instance=127.0.0.1:9877,job=postfiat,severity=warning 1
+CHECK ok   PFTBackupConfigDrift{host=validator} firing in Prometheus
+CHECK ok   [FIRING] PFTBackupConfigDrift 'validator...' on the throwaway topic
+
+-- 2b. CORRUPT: flip one byte in the archive COPY
+$ sudo -n python3 -c "$FLIP" "$(sudo -n find /dev/shm/pft-bw-drill/archives -name 'pft-backup-*.tar.gz' -printf '/dev/shm/pft-bw-drill/archives/%f')" && sudo -n env PFT_BW_CONF=/dev/shm/pft-bw-drill/drill.env PFT_BW_ROOT=/dev/shm/pft-bw-drill/root pft-backupwatch check --offhost
+  flipped byte 14971 of 29942
+  pft-backupwatch check | archive pft-backup-20261108T080341Z.tar.gz | age_s 23095 | bytes 29942
+    [FAIL] fresh     newest 6 h old > 2 h
+    [OK  ] size      29942 B (no previous archive)
+    [FAIL] sidecar   sha256 mismatch
+    [FAIL] manifest  archive truncated or corrupt (BadGzipFile)
+    [FAIL] content   archive not readable
+    [FAIL] drift     archive not readable
+    [FAIL] offhost   replica not recorded locally (state file missing or replicated elsewhere)
+  RESULT: FAIL - 6 finding(s)
+  (exit 2)
+CHECK ok   validator drill check: sidecar FAIL, manifest FAIL, drift FAIL (archive not readable) (exit 2)
+$ bwlines | grep -E 'check="(sidecar|manifest|content)"|drift_overdue'
+  check_state{host="validator",check="sidecar"} 2
+  check_state{host="validator",check="manifest"} 2
+  check_state{host="validator",check="content"} 2
+  drift_overdue{host="validator"} 1
+  (exit 0)
+CHECK ok   textfile: sidecar 2, manifest 2, content 2, drift_overdue still 1
+  2026-11-08T14:44:10Z (1942s into the run): PFTBackupBroken firing in Prometheus:
+    __name__=ALERTS,alertname=PFTBackupBroken,alertstate=firing,check=manifest,host=validator,instance=127.0.0.1:9877,job=postfiat,severity=critical 1
+    __name__=ALERTS,alertname=PFTBackupBroken,alertstate=firing,check=content,host=validator,instance=127.0.0.1:9877,job=postfiat,severity=critical 1
+    __name__=ALERTS,alertname=PFTBackupBroken,alertstate=firing,check=sidecar,host=validator,instance=127.0.0.1:9877,job=postfiat,severity=critical 1
+CHECK ok   PFTBackupBroken{host=validator} firing in Prometheus
+CHECK ok   [FIRING] PFTBackupBroken 'validator...' on the throwaway topic
+  2026-11-08T14:44:28Z (1960s into the run): PFTBackupStale firing in Prometheus:
+    __name__=ALERTS,alertname=PFTBackupStale,alertstate=firing,check=fresh,host=validator,instance=127.0.0.1:9877,job=postfiat,severity=warning 1
+CHECK ok   PFTBackupStale{host=validator} firing in Prometheus
+CHECK ok   [FIRING] PFTBackupStale 'validator...' on the throwaway topic
+  2026-11-08T14:44:29Z (1961s into the run): PFTBackupNoOffhostCopy firing in Prometheus:
+    __name__=ALERTS,alertname=PFTBackupNoOffhostCopy,alertstate=firing,check=offhost,host=validator,instance=127.0.0.1:9877,job=postfiat,severity=warning 1
+    __name__=ALERTS,alertname=PFTBackupNoOffhostCopy,alertstate=firing,host=sentry,instance=127.0.0.1:9877,job=postfiat,severity=warning 1
+CHECK ok   PFTBackupNoOffhostCopy{host=validator} firing in Prometheus
+CHECK ok   PFTBackupNoOffhostCopy{host=sentry} firing in Prometheus
+CHECK ok   [FIRING] PFTBackupNoOffhostCopy 'validator...' on the throwaway topic
+CHECK ok   [FIRING] PFTBackupNoOffhostCopy 'sentry...' on the throwaway topic
+  all four fired 1898s after the break
+
+== 3. FIX: real collect on both hosts + pull (the real archives, replicas and config were never changed)
+$ R 'sudo -n systemctl start pft-backupwatch.service'; sudo -n systemctl start pft-backupwatch.service; sudo -n systemctl start pft-backupwatch-pull.service; bwlines
+  up{host="validator"} 1
+  check_state{host="validator",check="fresh"} 0
+  check_state{host="validator",check="size"} 0
+  check_state{host="validator",check="sidecar"} 0
+  check_state{host="validator",check="manifest"} 0
+  check_state{host="validator",check="content"} 0
+  check_state{host="validator",check="drift"} 0
+  check_state{host="validator",check="offhost"} 0
+  drift_files{host="validator"} 0
+  drift_overdue{host="validator"} 0
+  up{host="sentry"} 1
+  replicas{host="sentry"} 1
+  replica_verify_ok{host="sentry"} 1
+  (exit 0)
+CHECK ok   textfiles back to the real state: validator all check_state 0, drift_overdue 0; sentry replica_verify_ok 1
+  2026-11-08T14:45:18Z (42s after the fix): PFTBackupBroken series left in Prometheus: 0
+CHECK ok   no PFTBackupBroken left in Prometheus
+CHECK ok   [RESOLVED] PFTBackupBroken 'validator...' on the throwaway topic
+  2026-11-08T14:45:41Z (22s after the fix): PFTBackupConfigDrift series left in Prometheus: 0
+CHECK ok   no PFTBackupConfigDrift left in Prometheus
+CHECK ok   [RESOLVED] PFTBackupConfigDrift 'validator...' on the throwaway topic
+  2026-11-08T14:45:43Z (1s after the fix): PFTBackupStale series left in Prometheus: 0
+CHECK ok   no PFTBackupStale left in Prometheus
+CHECK ok   [RESOLVED] PFTBackupStale 'validator...' on the throwaway topic
+  2026-11-08T14:45:46Z (2s after the fix): PFTBackupNoOffhostCopy series left in Prometheus: 0
+CHECK ok   no PFTBackupNoOffhostCopy left in Prometheus
+CHECK ok   [RESOLVED] PFTBackupNoOffhostCopy 'validator...' on the throwaway topic
+CHECK ok   [RESOLVED] PFTBackupNoOffhostCopy 'sentry...' on the throwaway topic
+
+== 4. BLIND: validator collect with an invalid drill conf (no check result -> up 0)
+$ L "sudo -n env PFT_BW_CONF=/dev/shm/pft-bw-drill/blind.env pft-backupwatch collect"; echo "collect exit $?"; bwlines | grep '^up'
+  collect exit 1
+  up{host="validator"} 0
+  up{host="sentry"} 1
+  (exit 0)
+CHECK ok   validator collect exit 1 and up 0 (sentry up 1)
+  2026-11-08T14:56:14Z (2666s into the run): PFTBackupwatchStale firing in Prometheus:
+    __name__=ALERTS,alertname=PFTBackupwatchStale,alertstate=firing,host=validator,instance=127.0.0.1:9877,job=postfiat,severity=warning 1
+CHECK ok   PFTBackupwatchStale{host=validator} firing in Prometheus
+CHECK ok   [FIRING] PFTBackupwatchStale 'validator...' on the throwaway topic
+$ sudo -n systemctl start pft-backupwatch.service; bwlines | grep '^up'
+  up{host="validator"} 1
+  up{host="sentry"} 1
+  (exit 0)
+CHECK ok   validator up 1 after a real collect
+  2026-11-08T14:57:22Z (65s after the fix): PFTBackupwatchStale series left in Prometheus: 0
+CHECK ok   no PFTBackupwatchStale left in Prometheus
+CHECK ok   [RESOLVED] PFTBackupwatchStale 'validator...' on the throwaway topic
+
+== 5. restore, ALERTS query_range, read back
+  sentry: drill dir removed, real collect, pft-backupwatch.timer active: yes
+  validator: drill dir removed, real collect + pull, pft-backupwatch.timer active: yes
+  drain: no PFTBackup* alert pending/firing/active after 0s; waiting 90s for RESOLVED delivery to the throwaway bridge
+  drain: done, nothing left that could reach the operator topic: yes
+  sentry pft-alertpath-check.timer stopped: yes
+  2026-11-08T14:58:57Z starting pft-alert-bridge (ntfy: on)
+  2026-11-08T14:58:59Z pft-alert-bridge listening
+  restored bridge: mounts the operator env file again: yes
+  sentry pft-alertpath check rc 0 after 2s; timer started again: yes
+  silence left to run out (1 other alert series pending/firing in Prometheus)
+CHECK ok   drill dirs gone, timers active, bridge back on the operator env
+$ curl -s -G http://127.0.0.1:9090/api/v1/query_range --data-urlencode 'query=ALERTS{alertname=~"PFTBackupStale|PFTBackupBroken|PFTBackupConfigDrift|PFTBackupNoOffhostCopy|PFTBackupwatchStale"}' --data-urlencode start=1794147108 --data-urlencode end=1794149942 --data-urlencode step=30 | jq -r '.data.result[] | "\(.metric.alertname) host=\(.metric.host) check=\(.metric.check // "-") \(.metric.alertstate) first=\(.values[0][0] | todate) last=\(.values[-1][0] | todate) samples=\(.values | length)"' | sort
+  PFTBackupBroken host=validator check=content firing first=2026-11-08T14:44:18Z last=2026-11-08T14:44:48Z samples=2
+  PFTBackupBroken host=validator check=content pending first=2026-11-08T14:29:18Z last=2026-11-08T14:43:48Z samples=30
+  PFTBackupBroken host=validator check=manifest firing first=2026-11-08T14:44:18Z last=2026-11-08T14:44:48Z samples=2
+  PFTBackupBroken host=validator check=manifest pending first=2026-11-08T14:29:18Z last=2026-11-08T14:43:48Z samples=30
+  PFTBackupBroken host=validator check=sidecar firing first=2026-11-08T14:44:18Z last=2026-11-08T14:44:48Z samples=2
+  PFTBackupBroken host=validator check=sidecar pending first=2026-11-08T14:29:18Z last=2026-11-08T14:43:48Z samples=30
+  PFTBackupConfigDrift host=validator check=- firing first=2026-11-08T14:28:18Z last=2026-11-08T14:44:48Z samples=34
+  PFTBackupConfigDrift host=validator check=- pending first=2026-11-08T14:13:18Z last=2026-11-08T14:27:48Z samples=30
+  PFTBackupNoOffhostCopy host=sentry check=- firing first=2026-11-08T14:43:18Z last=2026-11-08T14:44:48Z samples=4
+  PFTBackupNoOffhostCopy host=sentry check=- pending first=2026-11-08T14:13:18Z last=2026-11-08T14:42:48Z samples=60
+  PFTBackupNoOffhostCopy host=validator check=offhost firing first=2026-11-08T14:43:18Z last=2026-11-08T14:44:48Z samples=4
+  PFTBackupNoOffhostCopy host=validator check=offhost pending first=2026-11-08T14:13:18Z last=2026-11-08T14:42:48Z samples=60
+  PFTBackupStale host=validator check=fresh firing first=2026-11-08T14:43:18Z last=2026-11-08T14:44:48Z samples=4
+  PFTBackupStale host=validator check=fresh pending first=2026-11-08T14:13:18Z last=2026-11-08T14:42:48Z samples=60
+  PFTBackupwatchStale host=validator check=- firing first=2026-11-08T14:56:18Z last=2026-11-08T14:56:18Z samples=1
+  PFTBackupwatchStale host=validator check=- pending first=2026-11-08T14:46:18Z last=2026-11-08T14:55:48Z samples=20
+  (exit 0)
+CHECK ok   query_range: PFTBackupStale{host=validator} firing during the run
+CHECK ok   query_range: PFTBackupBroken{host=validator} firing during the run
+CHECK ok   query_range: PFTBackupConfigDrift{host=validator} firing during the run
+CHECK ok   query_range: PFTBackupwatchStale{host=validator} firing during the run
+CHECK ok   query_range: PFTBackupNoOffhostCopy{host=validator} firing during the run
+CHECK ok   query_range: PFTBackupNoOffhostCopy{host=sentry} firing during the run
+  throwaway topic: 10 message(s)
+    {"time":"2026-11-08T14:28:25Z","title":"[FIRING] PFTBackupConfigDrift","message":"validator: live config has differed from the newest backup for over DRIFT_GRACE_H"}
+    {"time":"2026-11-08T14:43:25Z","title":"[FIRING] PFTBackupStale","message":"validator: newest config backup is too old or missing"}
+    {"time":"2026-11-08T14:43:25Z","title":"[FIRING] PFTBackupNoOffhostCopy x2","message":"sentry: no verified off-host copy of the newest config backup\nvalidator: no verified off-host copy of the newest config backup"}
+    {"time":"2026-11-08T14:44:10Z","title":"[FIRING] PFTBackupBroken x3","message":"validator: newest config backup fails its content check\nvalidator: newest config backup fails its manifest check\nvalidator: newest config backup fails its sidecar check"}
+    {"time":"2026-11-08T14:45:10Z","title":"[RESOLVED] PFTBackupBroken x3","message":"validator: newest config backup fails its content check\nvalidator: newest config backup fails its manifest check\nvalidator: newest config backup fails its sidecar check"}
+    {"time":"2026-11-08T14:45:25Z","title":"[RESOLVED] PFTBackupNoOffhostCopy x2","message":"sentry: no verified off-host copy of the newest config backup\nvalidator: no verified off-host copy of the newest config backup"}
+    {"time":"2026-11-08T14:45:26Z","title":"[RESOLVED] PFTBackupStale","message":"validator: newest config backup is too old or missing"}
+    {"time":"2026-11-08T14:45:26Z","title":"[RESOLVED] PFTBackupConfigDrift","message":"validator: live config has differed from the newest backup for over DRIFT_GRACE_H"}
+    {"time":"2026-11-08T14:56:10Z","title":"[FIRING] PFTBackupwatchStale","message":"pft-backupwatch on validator is stale or failing"}
+    {"time":"2026-11-08T14:57:10Z","title":"[RESOLVED] PFTBackupwatchStale","message":"pft-backupwatch on validator is stale or failing"}
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the run (2 topic(s), 0 with messages)
+$ sudo -n pft-backupwatch check --offhost | tail -n 1; R 'sudo -n pft-backupwatch collect --stdout' | grep -E 'replica_verify_ok'
+  RESULT: OK - 0 finding(s)
+  # HELP pft_backupwatch_replica_verify_ok 1 if the newest replica re-hashes and decrypts to its recorded sha256.
+  # TYPE pft_backupwatch_replica_verify_ok gauge
+  pft_backupwatch_replica_verify_ok{host="sentry"} 1
+  (exit 0)
+CHECK ok   real validator check --offhost OK and sentry replica verifies at the end
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=pft_backupwatch_up' | jq -r '.data.result[] | "\(.metric.host) \(.value[1])"' | sort
+  sentry 1
+  validator 1
+  (exit 0)
+CHECK ok   pft_backupwatch_up 1 for both hosts at the end
+  pft-integrity validator: RESULT: PASS - 220 unchanged, 0 warn, 0 fail -> exit 0
+CHECK ok   pft-integrity PASS on validator at the end
+  pft-integrity sentry: RESULT: PASS - 135 unchanged, 0 warn, 0 fail -> exit 0
+CHECK ok   pft-integrity PASS on sentry at the end
+CHECK ok   postfiatd-sentry full at the end (full)
+CHECK ok   postfiatd full at the end (full)
+
+alert-run done 2026-11-08T15:00:27Z: 0 check(s) failed -> PASS
+rc=0

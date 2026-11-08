@@ -1,0 +1,74 @@
+pft-backupwatch two-host alert drill - 2026-11-08T14:10:49Z - Ubuntu 22.04.5 LTS - run 20261108T141049Z
+repo HEAD 772028c2eeba87387aad0a97481da1eedbd3a862 (clean: yes)
+sha256 346461c7fc13e599c26cc67938f8fbd32ee9521f2f6a32ec8ee6f7935e2c9fa7 backupwatch/drill/alert-run.sh
+sha256 5dc453d9bc7edabc3a6d3ac1080457b63c7cbe6b8d155c27a4974ced80a29536 backupwatch/pft-backupwatch.sh
+sha256 ec6b9575583bf300fcf6501aa9e238df5b500867da79fde60d5913a7f1254086 backupwatch/backupwatch_lib.py
+sha256 e46783764b2275cc73f876481ed8a37c70ce3ac27e612d478cf89d4ee9c8343f alerts/backupwatch.rules.yml
+sha256 f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8 peerexpose/drill/redact.py
+installed on validator: ec6b9575583bf300 /usr/local/lib/pft-backupwatch/backupwatch_lib.py  5dc453d9bc7edabc /usr/local/bin/pft-backupwatch  
+installed on sentry: ec6b9575583bf300 /usr/local/lib/pft-backupwatch/backupwatch_lib.py  5dc453d9bc7edabc /usr/local/bin/pft-backupwatch  
+
+== 0. preflight (nothing changed yet)
+  pft-backupwatch + timer on both hosts, pull timer active, no drill dir left over
+$ sudo -n pft-backupwatch check --offhost
+  pft-backupwatch check | archive pft-backup-20261108T080341Z.tar.gz | age_s 22034 | bytes 29942
+    [OK  ] fresh     newest 367 min old
+    [OK  ] size      29942 B, 1.01x previous
+    [OK  ] sidecar   sha256 matches
+    [OK  ] manifest  23 members match
+    [OK  ] content   9 required + 3 reference members present
+    [OK  ] drift     17 files equal the live host
+    [OK  ] offhost   peer holds pft-backup-20261108T080341Z.tar.gz: ciphertext sha256 = recorded, decrypts to the sidecar sha256 (1 replica(s))
+  RESULT: OK - 0 finding(s)
+  (exit 0)
+$ R 'sudo -n pft-backupwatch collect --stdout' | grep -E '_(up|replicas|replica_verify_ok)\{'
+  pft_backupwatch_up{host="sentry"} 1
+  pft_backupwatch_replicas{host="sentry"} 1
+  pft_backupwatch_replica_verify_ok{host="sentry"} 1
+  (exit 0)
+  sentry pft-alertpath-check.timer active, check OK
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=pft_backupwatch_up' | jq -r '.data.result[] | "\(.metric.host) \(.value[1])"' | sort
+  sentry 1
+  validator 1
+  (exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=ALERTS{alertname=~"PFTBackup.*"}' | jq -r '.data.result | length'
+  0
+  (exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/rules | jq -r '.data.groups[] | select(.name == "pft-backupwatch") | .rules[] | [.name, .health] | @tsv'
+  PFTBackupStale	ok
+  PFTBackupBroken	ok
+  PFTBackupConfigDrift	ok
+  PFTBackupNoOffhostCopy	ok
+  PFTBackupwatchStale	ok
+  (exit 0)
+$ curl -s http://127.0.0.1:9093/api/v2/silences | jq -r '.[] | select(.status.state == "active") | select(any(.matchers[]; .isEqual and (.value | test("PFTBackup")))) | "\(.createdBy) until \(.endsAt)"'
+  
+  (exit 0)
+  bridge mounts the operator env file: yes
+  operator topics to watch: 2 (not printed)
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+  postfiatd-sentry: server_state=full
+  postfiatd: server_state=full
+  pft-integrity validator: RESULT: PASS - 220 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity sentry: RESULT: PASS - 135 unchanged, 0 warn, 0 fail -> exit 0
+  literals for redaction: 3 ip, 3 topic, 1 user (values not printed)
+$ redact.py control --literals <literals>
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (16/16)
+
+PREFLIGHT_ONLY: stopping before step 1, nothing changed (ready: yes)
