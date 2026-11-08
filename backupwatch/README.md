@@ -1,11 +1,8 @@
 # pft-backupwatch: backup freshness, integrity and restore-readiness monitor
 
-Status: **step 1 (check) done + live; first finding fixed (log 03); step 2 replication (`replicate`, `serve`,
-`check --offhost`) done offline (log 04); step 3 metrics (`collect`, `pull`, `serve metrics`), units, five alert rules
-with promtool tests and the mutation harness done offline (logs 05-06); install on both hosts and the live drills to do**.
-Nothing is installed on any host yet. `../alerts/backupwatch.rules.yml` is in the repo but not loaded by Prometheus,
-and no fleet-manifest or rulecheck line exists until the live install run (lesson: rule lines ship in the same commit
-as the install).
+Status: **installed on both hosts (logs 07-12); live alert drill `drill/alert-run.sh` (logs 13-14).** The validator
+runs `ROLE=archive` (check + replicate + pull), the sentry `ROLE=replica`; `../alerts/backupwatch.rules.yml` is loaded
+by Prometheus and listed in `../fleet` and `../rulecheck`.
 
 `../backup` writes one config archive a day (`pft-backup.timer`), and `../jobwatch` sees whether that timer ran and
 exited 0. Neither says whether the newest archive is **fresh, intact, current and restorable**: a timer can exit 0
@@ -44,6 +41,8 @@ object per check (`name`, `state`, `detail`) plus the archive name, age and size
 | `install.sh` | `--role replica` (sentry: script, helper, conf `ROLE=replica`, state + replica dirs 0700, collect unit/timer; needs keyescrow's age identity) and `--role archive` (validator: + `OFFHOST=1`, `PEER_SSH` and `REPLICA_RECIPIENT` copied from `/etc/pft-keyescrow.env`, replicate + pull units/timers; runs one replicate, collect and pull through the sandboxed units, each must succeed with offhost OK, then enables the timers). Idempotent; `--uninstall` disables the timers and removes the textfiles. Install the replica role first |
 | `drill/install-run.sh` | recorded two-host install at a pushed commit: preflight, rollout silence (not the pipeline watchdog), pft-maint window with `[MAINT]` on a throwaway topic, pft-fleet sync, both install.sh roles, rulecheck lines, rule load, schedaudit + integrity accept, offhost check, cross-host replica sha256, Prometheus, fleet skew, rulecheck, jobwatch, restore + keyescrow re-run + operator-topic read-back. `PREFLIGHT_ONLY=1`: step 0 only; `RESUME=<run>`: re-run at already-installed bytes |
 | `drill/verify-run.sh` | read-only re-verification of the installed state on both hosts (no window, no silence, nothing started but `check --offhost` and `serve verify`) |
+| `drill/alert-run.sh` | recorded two-host alert drill at a pushed commit: the INSTALLED CLI collects from copies on tmpfs (`/dev/shm/pft-bw-drill`, 0700, removed at the end) while `pft-backupwatch.timer` is stopped on both hosts. Validator: drift on copies of the archived host files (one copy gets an appended comment line, `PFT_BW_ROOT`), lowered thresholds (`MAX_AGE_H 1`, `FAIL_AGE_H 2`, `DRIFT_GRACE_H 0`), an empty drill `STATE_DIR` (no replication record -> offhost FAIL against the real peer), then one byte flipped in the archive COPY; sentry: one byte flipped in a copy of the newest replica. Then a real collect (all resolve), then a conf with an invalid `MAX_AGE_H` (`up 0`, PFTBackupwatchStale) and a real collect again. Throwaway ntfy topic (bridge re-created on a 0600 temp env), silence on everything but `PFTBackup*` and the pipeline watchdog, ALERTS `query_range`, operator-topic read-back. Real archives, replicas and config are only read |
+| `drill/update-run.sh` | recorded two-host update of the installed helper through pft-fleet inside a pft-maint window (`[MAINT]` on a throwaway topic, rollout silence, keyescrow re-run, operator-topic read-back); used for the run 14 read fix |
 
 ```
 sudo pft-backupwatch check            # table + RESULT line, exit 0/1/2
@@ -118,9 +117,18 @@ backup cycle means the backups no longer hold what a restore would need.
 | [`logs/10-preflight.log`](logs/10-preflight.log) | `RESUME=08` preflight at `220a906`: 9 ok / 0 failed |
 | [`logs/11-install.log`](logs/11-install.log) | full install at `220a906` (`RESUME=08`): **45 ok / 1 FAIL**. Every functional check passed: sentry + validator install, pulled sentry file `replicas 1` / `replica_verify_ok 1`, idempotent second run, rulecheck lines, 5 rules loaded (health ok, none firing), schedaudit 0 new/removed on both, integrity PASS on both, `check --offhost` all OK, replica ciphertext sha256 on the sentry == the validator's record, plaintext sha256 == archive == sidecar, `serve verify` OK, Prometheus series, rulecheck OK on both, 4 timers, jobwatch 0 failed/missed/disabled, restore + keyescrow drift 0, `[MAINT]` start/end on the throwaway topic, **operator topics 0 messages**. The FAIL is a checker bug: it expected a sentry row for `fleet`, which is a validator-only add-on (the skew output in the log is exit 0, every add-on CURRENT, 0 BEHIND/MODIFIED/MISSING/UNEXPECTED/DIVERGED). Check fixed in `0673b55` |
 | [`logs/12-verify.log`](logs/12-verify.log) | read-only re-verify at `0673b55` with the fixed skew check: **8 ok / 0 failed, PASS** (installed bytes == repo on both hosts, fleet skew, integrity PASS both, `check --offhost` OK, cross-host replica sha256 + `serve verify`, timers, Prometheus, rules inactive, Alertmanager only the pipeline watchdog) |
+| [`logs/13-alert-preflight.log`](logs/13-alert-preflight.log) | alert drill `PREFLIGHT_ONLY=1` at `1c7a3a4`: real `check --offhost` all OK, sentry replica verifies, 5 rules healthy, no PFTBackup* alert, only this task's own rollout silences name PFTBackup*, both nodes full, integrity PASS both, redaction control 16/16; nothing changed |
+| [`logs/14-alert-drill.log`](logs/14-alert-drill.log) | **two-host alert drill at `1c7a3a4`: every alert FIRING and RESOLVED, 1 check FAIL = a real finding.** 2a drift on host-file copies: PFTBackupConfigDrift FIRING 13:02Z (`for` 15m); 2b one byte flipped in the archive COPY: PFTBackupBroken x3 (sidecar, manifest, content) FIRING 13:17Z; PFTBackupStale and PFTBackupNoOffhostCopy (validator offhost FAIL + sentry `replica_verify_ok 0` from a corrupted replica copy) FIRING 13:17Z (`for` 30m); real collect -> all RESOLVED by 13:19Z; invalid drill conf -> `up 0` -> PFTBackupwatchStale FIRING 13:29Z, RESOLVED 13:30Z. 10 messages on the throwaway topic, **operator topics 0 messages**, ALERTS `query_range` pending -> firing for all 6 alert/host pairs, real `check --offhost` OK and replica verify 1 at the end, integrity PASS both, nodes full. **Finding (the FAIL):** after the byte flip the helper did not say "archive not readable". `tarfile` (`r:gz`) stopped silently at the first garbled header after member 1 and never reached the gzip CRC, so it saw a PARTIAL member set: manifest "MANIFEST.sha256 missing" and a false drift `postfiatd.cfg changed`. The alerts were right (Broken fired), the reason was not. Fixed in `f17ae01`: the whole gzip stream is decoded first (length + CRC), and only zero padding may follow the last tar member; new tests: byte flip asserts content + drift "archive not readable", a bad inner header inside a valid gzip, a bad CRC with intact data; mutants M26/M27. Fail-before: the new tests on the old helper fail 2 checks |
+| [`logs/15-checks.log`](logs/15-checks.log) | at `f17ae01`: shellcheck 0, ruff clean, suite **162/0**, promtool SUCCESS, mutants **52 caught / 0 survived**, live check exit 0. `RESULT: PASS` |
 
 ## Not covered
 
 - The ledger database (`postfiatd-data` volume): pft-backup does not save it by design (a node re-syncs), so
   backupwatch does not check it either.
 - Secrets that pft-backup strips by default (`[node_seed]`, ntfy env): `../keyescrow` escrows those.
+- Drill limits (`drill/alert-run.sh`): the thresholds are lowered in the drill conf (`MAX_AGE_H 1`, `FAIL_AGE_H 2`,
+  `DRIFT_GRACE_H 0`) so the real 4-5 h old archive reads stale and drift is overdue at once; the corruption and drift
+  are made on tmpfs COPIES, and pft-backupwatch.timer is stopped on both hosts for the run, so the textfiles are the
+  only real thing the drill writes. PFTBackupwatchStale was exercised live through its `up == 0` branch on the
+  validator only; its age branch (collect older than 45 min) and the sentry side are covered by the promtool tests,
+  not by the live drill.
