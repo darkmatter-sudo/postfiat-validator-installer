@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """jobwatch_lib: derive scheduled-job health from `systemctl show` output (pft-jobwatch's helper, stdlib only).
 
-Read-only: the only command it runs is `systemctl show` (never start/stop/enable). For every watched timer and the
+Read-only: it runs only `systemctl show` (never start/stop/enable) and `systemd-analyze calendar` (the period of an
+OnCalendar spec: pure computation, asked once per spec). For every watched timer and the
 service it triggers it derives the schedule kind and interval, the last trigger, last success and last result, the
 number of consecutive failed runs it has observed, and whether the job is missed (overdue), disabled or removed, and
 renders them as Prometheus textfile metrics.
@@ -15,6 +16,7 @@ Exit codes: 0 ok, 1 systemctl failed (nothing printed, state untouched), 3 usage
 """
 
 import calendar
+import itertools
 import json
 import os
 import re
@@ -114,7 +116,7 @@ def parse_ts(s):
 
 def schedule(timer):
     """-> (kind, interval_s, spec). kind: monotonic | calendar | mixed | none. interval 0 = no repeating interval
-    known from the unit itself (calendar: learned from next - last trigger, see derive())."""
+    known from the unit itself (calendar: from the spec via calendar_period(), see derive())."""
     mono, specs = [], []
     for v in timer.get("TimersMonotonic", []):
         m = re.match(r"^\{ (\w+)=([^;]*) ;", v)
@@ -143,8 +145,51 @@ def schedule(timer):
     return kind, (min(mono) if mono else 0.0), " | ".join(specs)
 
 
-def derive(timer, service, prev, now):
+CAL_ITER = 12  # elapses asked from `systemd-analyze calendar` per spec (weekly/monthly specs need a few)
+CAL_LINE_RE = re.compile(r"^\s*(?:Next elapse|Iter\. #\d+): (.+ UTC)$")
+
+
+def calendar_period(specs):
+    """OnCalendar expressions -> the LONGEST gap between consecutive elapses of their union over CAL_ITER elapses
+    each (s), from `systemd-analyze calendar` (pure computation, no bus); 0.0 if it fails or gives < 2 elapses.
+    Longest, not shortest: an irregular schedule (Mon,Thu) must not look missed in its long gap."""
+    if not specs:
+        return 0.0
+    base = os.environ.get("PFT_JW_SYSTEMD_ANALYZE", "systemd-analyze").split()
+    env = dict(
+        os.environ, TZ="UTC", LC_ALL="C", SYSTEMD_PAGER="cat", SYSTEMD_COLORS="0"
+    )
+    try:
+        p = subprocess.run(
+            base + ["calendar", f"--iterations={CAL_ITER}", "--"] + list(specs),
+            check=False,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=20,
+            stdin=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return 0.0
+    if p.returncode != 0:
+        return 0.0
+    ts = sorted(
+        {
+            t
+            for t in (
+                parse_ts(m.group(1))
+                for m in map(CAL_LINE_RE.match, p.stdout.splitlines())
+                if m
+            )
+            if t
+        }
+    )
+    return max((b - a for a, b in itertools.pairwise(ts)), default=0.0)
+
+
+def derive(timer, service, prev, now, period_fn=calendar_period):
     """One job. timer/service: parsed show blocks ({} if absent); prev: this job's state entry ({} if new).
+    period_fn: OnCalendar specs -> period (s), asked once per spec and kept in the state (0 = unknown, ask again).
     -> (metrics dict, new state entry)."""
     name = one(timer, "Id")
     present = one(timer, "LoadState") == "loaded"
@@ -160,6 +205,7 @@ def derive(timer, service, prev, now):
         "cal_interval": prev.get("cal_interval", 0.0)
         if prev.get("spec") == spec
         else 0.0,
+        "cal_period": prev.get("cal_period", 0.0) if prev.get("spec") == spec else 0.0,
         "last_success": prev.get("last_success", 0.0),
         "consecutive_failures": prev.get("consecutive_failures", 0),
         "seen_run": prev.get("seen_run", ""),
@@ -173,16 +219,22 @@ def derive(timer, service, prev, now):
         # the smallest gap seen is the schedule's period (a gap of 2 periods follows a missed run)
         if not st["cal_interval"] or gap < st["cal_interval"]:
             st["cal_interval"] = gap
+    if kind in ("calendar", "mixed") and present and not st["cal_period"]:
+        cal_specs = [
+            s[len("OnCalendar=") :]
+            for s in spec.split(" | ")
+            if s.startswith("OnCalendar=")
+        ]
+        st["cal_period"] = float(period_fn(cal_specs) or 0.0)
+    # the period from the spec wins; the learned gap is only a fallback (systemd-analyze missing/failed): a gap that
+    # starts at a Persistent=yes timer's first activation or at a boot catch-up run is shorter than the period
+    cal = st["cal_period"] or st["cal_interval"]
     if kind == "monotonic":
         interval_s = interval
     elif kind == "mixed":
-        interval_s = (
-            min(x for x in (interval, st["cal_interval"]) if x)
-            if (interval or st["cal_interval"])
-            else 0.0
-        )
+        interval_s = min(x for x in (interval, cal) if x) if (interval or cal) else 0.0
     elif kind == "calendar":
-        interval_s = st["cal_interval"]
+        interval_s = cal
     else:
         interval_s = 0.0
 

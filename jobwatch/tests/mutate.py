@@ -387,6 +387,43 @@ MUTANTS += [
         "          pft_jobwatch_job_consecutive_failures\n",
     ),
 ]
+MUTANTS += [
+    (
+        "M36",
+        L,
+        "calendar: spec period ignored (learned gap only)",
+        'cal = st["cal_period"] or st["cal_interval"]',
+        'cal = st["cal_interval"]',
+    ),
+    (
+        "M37",
+        L,
+        "period: shortest gap instead of the longest",
+        "return max((b - a for a, b in itertools.pairwise(ts)), default=0.0)",
+        "return min((b - a for a, b in itertools.pairwise(ts)), default=0.0)",
+    ),
+    (
+        "M38",
+        L,
+        "period: kept across a changed spec",
+        '"cal_period": prev.get("cal_period", 0.0) if prev.get("spec") == spec else 0.0,',
+        '"cal_period": prev.get("cal_period", 0.0),',
+    ),
+    (
+        "M39",
+        L,
+        "period: asked on every run",
+        'if kind in ("calendar", "mixed") and present and not st["cal_period"]:',
+        'if kind in ("calendar", "mixed") and present:',
+    ),
+    (
+        "M40",
+        L,
+        "period: failed systemd-analyze not checked",
+        "    if p.returncode != 0:\n        return 0.0\n    ts = sorted(",
+        "    ts = sorted(",
+    ),
+]
 EQUIVALENT = []
 
 

@@ -182,9 +182,17 @@ check("monotonic: 364 s after last trigger is not missed", m["missed"] == 0, m)
 m, _ = jl.derive(hb_t, hb_s, {}, int(T_HB) + 366)
 check("monotonic: 366 s after last trigger is missed", m["missed"] == 1, m)
 
-# ---- calendar (captured kernwatch: 2-min schedule, learned from next - last) ----
+# ---- calendar fallback (systemd-analyze unavailable): captured kernwatch, 2-min schedule, learned from next - last ----
+# period_fn that knows nothing: derive() falls back to the learned gap
+NOPER = lambda specs: 0.0
+
+
+def learned(*a):
+    return jl.derive(*a, period_fn=NOPER)
+
+
 T_KW = jl.parse_ts(jl.one(kw_t, "LastTriggerUSec"))
-m, st = jl.derive(kw_t, kw_s, {}, int(T_KW) + 30)
+m, st = learned(kw_t, kw_s, {}, int(T_KW) + 30)
 # LastTriggerUSec is the real (accuracy-delayed) trigger: 16:10:16 for the :15 slot, so next - last = 119 s
 check(
     "calendar: interval learned = next - last (within accuracy 1 s of 120)",
@@ -197,21 +205,21 @@ check(
     m,
 )
 check("calendar: on time -> missed 0", m["missed"] == 0, m)
-m, _ = jl.derive(kw_t, kw_s, {}, int(T_KW) + 120 + 1 + 300 + 1)
+m, _ = learned(kw_t, kw_s, {}, int(T_KW) + 120 + 1 + 300 + 1)
 check(
     "calendar: next elapse passed by > accuracy + grace -> missed", m["missed"] == 1, m
 )
-m, _ = jl.derive(kw_t, kw_s, {}, int(T_KW) + 120 + 300)
+m, _ = learned(kw_t, kw_s, {}, int(T_KW) + 120 + 300)
 check("calendar: next elapse passed by < grace -> not missed", m["missed"] == 0, m)
 big = dict(kw_t, NextElapseUSecRealtime=["Fri 2026-11-06 16:20:15 UTC"])
-_, stb = jl.derive(big, kw_s, {}, int(T_KW))
+_, stb = learned(big, kw_s, {}, int(T_KW))
 check(
     "calendar: a 2-period gap first, then the 1-period gap wins (min kept)",
     stb["cal_interval"] > 120
-    and jl.derive(kw_t, kw_s, stb, int(T_KW))[1]["cal_interval"] == 119,
+    and learned(kw_t, kw_s, stb, int(T_KW))[1]["cal_interval"] == 119,
     stb,
 )
-_, st_spec = jl.derive(
+_, st_spec = learned(
     kw_t, kw_s, dict(stb, spec="OnCalendar=*:*:00", cal_interval=60.0), int(T_KW)
 )
 check(
@@ -222,14 +230,14 @@ check(
 
 # ---- calendar + RandomizedDelaySec=30min (captured vulnscan) ----
 T_VS = jl.parse_ts(jl.one(vs_t, "LastTriggerUSec"))
-m, _ = jl.derive(vs_t, vs_s, {}, int(T_VS) + 3600)
+m, _ = learned(vs_t, vs_s, {}, int(T_VS) + 3600)
 iv = m["interval_seconds"]
 check(
     "random delay: learned interval within one delay of 24 h",
     86400 - 1800 <= iv <= 86400 + 1800,
     iv,
 )
-m, _ = jl.derive(vs_t, vs_s, {}, int(T_VS + iv + 60 + 3600 + 300) - 5)
+m, _ = learned(vs_t, vs_s, {}, int(T_VS + iv + 60 + 3600 + 300) - 5)
 check(
     "random delay: grace = accuracy + 2 x delay + 300 (not missed just inside)",
     m["missed"] == 0
@@ -237,7 +245,7 @@ check(
     m,
 )
 nofire = dict(vs_t, NextElapseUSecRealtime=[""])
-m, _ = jl.derive(
+m, _ = learned(
     nofire,
     vs_s,
     {"spec": jl.schedule(vs_t)[2], "cal_interval": iv},
@@ -246,6 +254,138 @@ m, _ = jl.derive(
 check(
     "random delay: no trigger for interval + full grace -> missed", m["missed"] == 1, m
 )
+
+# ---- calendar period from the spec (systemd-analyze calendar) ----
+check("period: hourly spec = 3600", jl.calendar_period(["*-*-* *:23:00"]) == 3600)
+check(
+    "period: irregular spec -> the LONGEST gap (Mon,Thu = 4 d)",
+    jl.calendar_period(["Mon,Thu *-*-* 03:00:00 UTC"]) == 4 * 86400,
+)
+check(
+    "period: two OnCalendar lines -> gaps of their union",
+    jl.calendar_period(["*-*-* 00:00:00 UTC", "*-*-* 12:00:00 UTC"]) == 43200,
+)
+os.environ["PFT_JW_SYSTEMD_ANALYZE"] = "false"
+check("period: systemd-analyze fails -> 0", jl.calendar_period(["*-*-* *:23:00"]) == 0)
+os.environ["PFT_JW_SYSTEMD_ANALYZE"] = os.path.join(TMP, "no-such-analyze")
+check(
+    "period: systemd-analyze missing -> 0", jl.calendar_period(["*-*-* *:23:00"]) == 0
+)
+ELAPSES = (
+    "echo '    Next elapse: Mon 2026-11-09 19:23:00 UTC'\n"
+    "echo '       Iter. #2: Mon 2026-11-09 19:24:00 UTC'\n"
+)
+for rc_ in (0, 1):
+    with open(os.path.join(TMP, f"analyze-rc{rc_}"), "w") as fh:
+        fh.write(f"#!/bin/sh\n{ELAPSES}exit {rc_}\n")
+    os.chmod(os.path.join(TMP, f"analyze-rc{rc_}"), 0o755)
+os.environ["PFT_JW_SYSTEMD_ANALYZE"] = os.path.join(TMP, "analyze-rc1")
+check(
+    "period: elapses printed but rc 1 -> 0 (not trusted)",
+    jl.calendar_period(["*-*-* *:23:00"]) == 0,
+)
+os.environ["PFT_JW_SYSTEMD_ANALYZE"] = os.path.join(TMP, "analyze-rc0")
+check(
+    "period: same output with rc 0 -> parsed (control for the rc test)",
+    jl.calendar_period(["*-*-* *:23:00"]) == 60,
+)
+del os.environ["PFT_JW_SYSTEMD_ANALYZE"]
+check("period: no spec -> 0, nothing run", jl.calendar_period([]) == 0)
+
+# regression (sentry 2026-11-09, pft-kmod.timer): Persistent=yes timer installed at 18:14:11 -> systemd stamps
+# LastTriggerUSec with the activation time, next elapse 18:25:51 (:23 + random delay), so the learned gap was 700 s
+# and the job read "missed" 26 min after every hourly run
+KM = "{ OnCalendar=*-*-* *:23:00 ; next_elapse=Mon 2026-11-09 18:23:00.000000 UTC }"
+km1 = dict(
+    kw_t,
+    Id=["pft-kmod.timer"],
+    Unit=["pft-kmod.service"],
+    TimersCalendar=[KM],
+    RandomizedDelayUSec=["5min"],
+    Persistent=["yes"],
+    ActiveEnterTimestamp=["Mon 2026-11-09 18:14:11.000000 UTC"],
+    LastTriggerUSec=["Mon 2026-11-09 18:14:11 UTC"],
+    NextElapseUSecRealtime=["Mon 2026-11-09 18:25:51 UTC"],
+)
+km2 = dict(
+    km1,
+    LastTriggerUSec=["Mon 2026-11-09 18:25:51 UTC"],
+    NextElapseUSecRealtime=["Mon 2026-11-09 19:23:05 UTC"],
+)
+T1, T2 = utc("2026-11-09 18:16:00"), utc("2026-11-09 19:00:22")
+_, st1 = learned(km1, kw_s, {}, int(T1))
+m_old, _ = learned(km2, kw_s, st1, int(T2))
+check(
+    "kmod regression reproduced on the fallback: learned 700 s, missed 1 at 19:00:22",
+    (m_old["interval_seconds"], m_old["missed"]) == (700, 1),
+    m_old,
+)
+_, st1 = jl.derive(km1, kw_s, {}, int(T1))
+m_new, st2 = jl.derive(km2, kw_s, st1, int(T2))
+check(
+    "kmod regression fixed: period 3600 from the spec, missed 0 at 19:00:22",
+    (m_new["interval_seconds"], m_new["missed"]) == (3600, 0),
+    m_new,
+)
+m_late, _ = jl.derive(
+    dict(km2, NextElapseUSecRealtime=[""]),
+    kw_s,
+    st2,
+    int(utc("2026-11-09 18:25:51") + 3600 + 600 + 300) + 5,
+)
+check(
+    "kmod: no trigger for period + 2 x delay + 300 s -> missed",
+    m_late["missed"] == 1,
+    m_late,
+)
+m_up, _ = jl.derive(
+    km2, kw_s, {"spec": "OnCalendar=*-*-* *:23:00", "cal_interval": 700.0}, int(T2)
+)
+check(
+    "upgrade: a state learned by the old version (700 s) is re-derived from the spec",
+    (m_up["interval_seconds"], m_up["missed"]) == (3600, 0),
+    m_up,
+)
+calls = []
+
+
+def counting(specs):
+    calls.append(list(specs))
+    return 3600.0
+
+
+_, sa = jl.derive(km2, kw_s, {}, int(T2), period_fn=counting)
+_, sb = jl.derive(km2, kw_s, sa, int(T2) + 60, period_fn=counting)
+check(
+    "period: asked once per spec with the bare OnCalendar expression, then kept in the state",
+    calls == [["*-*-* *:23:00"]] and sb["cal_period"] == 3600,
+    (calls, sb),
+)
+jl.derive(
+    dict(
+        km2,
+        TimersCalendar=[
+            "{ OnCalendar=*-*-* *:53:00 ; next_elapse=Mon 2026-11-09 19:53:00.000000 UTC }"
+        ],
+    ),
+    kw_s,
+    sb,
+    int(T2) + 120,
+    period_fn=counting,
+)
+check(
+    "period: a changed spec is asked again",
+    calls[-1] == ["*-*-* *:53:00"] and len(calls) == 2,
+    calls,
+)
+_, s0 = jl.derive(km2, kw_s, {}, int(T2), period_fn=NOPER)
+jl.derive(km2, kw_s, s0, int(T2) + 60, period_fn=counting)
+check("period: an unknown (0) period is asked again next run", len(calls) == 3, calls)
+mono_calls = []
+jl.derive(
+    hb_t, hb_s, {}, int(T_HB) + 30, period_fn=lambda sp: mono_calls.append(sp) or 0.0
+)
+check("period: never asked for a monotonic-only timer", mono_calls == [], mono_calls)
 
 # ---- failed run (non-zero exit) ----
 fl_t, fl_s = load("pft-jwfail.timer"), load("pft-jwfail.service")
@@ -346,7 +486,17 @@ check(
     == (1, 0, 0, 0),
     m,
 )
-check("never run: no learned calendar interval yet", m["interval_seconds"] == 0, m)
+check(
+    "never run: interval known from the spec before the first trigger",
+    m["interval_seconds"] == 120,
+    m,
+)
+m, _ = jl.derive(nv_t, nv_s, {}, int(T_ENTER) + 60, period_fn=NOPER)
+check(
+    "never run, fallback: no learned calendar interval yet",
+    m["interval_seconds"] == 0,
+    m,
+)
 T_NEXT = jl.parse_ts(jl.one(nv_t, "NextElapseUSecRealtime"))
 m, _ = jl.derive(nv_t, nv_s, {}, int(T_NEXT) + 400)
 check("never run: next elapse long past -> missed", m["missed"] == 1, m)

@@ -5,6 +5,8 @@
 # (6b3087e: per-job label `job` -> `timer`). Only files pft-fleet tracks are written; nothing is restarted or
 # re-enabled. Prometheus is sent SIGHUP to load the updated rule file (alerts/ is mounted at /etc/pft-alerts).
 # Restore re-runs pft-keyescrow and checks drift 0; the run's own silence is expired at the end (run 06 lesson).
+# Run 20 (2026-11-09, calendar period fix): writes jobwatch_lib.py only; calendar intervals now come from the OnCalendar
+# spec (systemd-analyze calendar), so the sentry's pft-kmod.timer (learned 700 s -> false PFTJobMissed) must read 3600.
 # Run 17 (operator-topic fix, 2026-11-06): writes jobwatch_lib.py only; PFTJobFailed rule now needs consecutive > 0.
 # Run 10 (3ec4c00, size fix after update run 09): writes pft-jobwatch.sh + jobwatch_lib.py; checks the validator's
 # series are back in Prometheus and the textfile is under 64 KiB.
@@ -16,7 +18,8 @@ REPO="$(git rev-parse --show-toplevel)"; cd "$REPO" || exit 3
 SHA="$(git rev-parse HEAD)"; SHORT="$(git rev-parse --short HEAD)"
 AM=http://127.0.0.1:9093; PROM=http://127.0.0.1:9090
 ME="$(id -un)"; HN="$(hostname)"
-TASK=task_de7c65f8
+TASK=ops-jobwatch-calperiod
+WHY="calendar interval from the OnCalendar spec (false PFTJobMissed on sentry pft-kmod.timer)"
 TT="pft-drill-jobwatch-$(head -c 6 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 R() { ssh -o LogLevel=ERROR -o BatchMode=yes relay "$@"; }
 RHN="$(R hostname 2>/dev/null)"; RHN="${RHN:-$HN}"
@@ -87,7 +90,7 @@ w=0; until R "sudo -n pft-maint active" >/dev/null 2>&1; do w=$((w + 10)); [ "$w
 R "sudo -n pft-maint active" >/dev/null 2>&1; check "sentry has the window (via the watchdog channel) after ${w}s" "$?"
 
 echo; echo "== 3. pft-fleet: jobwatch files to HEAD on both hosts (writes + integrity accept by pft-fleet)"
-x "sudo -n pft-fleet sync --addon jobwatch --to $SHA --apply --reason '$TASK: jobwatch textfile size fix ($SHORT)'"
+x "sudo -n pft-fleet sync --addon jobwatch --to $SHA --apply --reason '$TASK: $WHY ($SHORT)'"
 check "jobwatch sync exit 0" "$XRC"
 x "sha256sum jobwatch/pft-jobwatch.sh jobwatch/jobwatch_lib.py | cut -c1-64; sudo -n sha256sum /usr/local/bin/pft-jobwatch /usr/local/lib/pft-jobwatch/jobwatch_lib.py | cut -c1-64; R 'sudo -n sha256sum /usr/local/bin/pft-jobwatch /usr/local/lib/pft-jobwatch/jobwatch_lib.py | cut -c1-64'"
 check "installed script + helper = repo bytes on both hosts" "$([ "$(sort <<<"$XOUT" | uniq -c | awk '$1 == 3' | wc -l)" = 2 ] && echo 0 || echo 1)"
@@ -97,10 +100,15 @@ x "R 'sudo -n systemctl start pft-jobwatch.service; systemctl show -p Result --v
 check "collector (both hosts) + pull: Result success x3" "$([ "$(grep -cx success <<<"$XOUT")" = 3 ] && echo 0 || echo 1)"
 x "for f in validator sentry; do echo \"\$f job= \$(grep -c ',job=\"' /var/lib/pft-exporter/textfile/pft_jobwatch_\$f.prom) timer= \$(grep -c ',timer=\"' /var/lib/pft-exporter/textfile/pft_jobwatch_\$f.prom)\"; done"
 check "both textfiles: 0 job= labels, timer= labels present" "$([ "$(grep -cE ' job= 0 timer= [1-9][0-9]*$' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
-x "sudo -n docker kill -s HUP pft-prometheus >/dev/null && sleep 45 && curl -s $PROM/api/v1/rules | jq -r '.data.groups[] | select(.name == \"pft-jobwatch\") | .rules[] | [.name, .health, .state, (.query | contains(\"on (host, timer)\"))] | @tsv'"
+x "sudo -n docker kill -s HUP pft-prometheus >/dev/null && sleep 75 && curl -s $PROM/api/v1/rules | jq -r '.data.groups[] | select(.name == \"pft-jobwatch\") | .rules[] | [.name, .health, .state, (.query | contains(\"on (host, timer)\"))] | @tsv'"
 check "4 jobwatch rules loaded, health ok, inactive; PFTJobFailed joins on (host, timer)" "$([ "$(grep -c '	ok	inactive' <<<"$XOUT")" = 4 ] && grep -q '^PFTJobFailed	ok	inactive	true$' <<<"$XOUT" && echo 0 || echo 1)"
 x "curl -s $PROM/api/v1/query --data-urlencode 'query=count by (host) (pft_jobwatch_job_present{timer!=\"\"})' | jq -r '.data.result[] | \"\(.metric.host) \(.value[1])\"' | sort; curl -s $PROM/api/v1/query --data-urlencode 'query=count(pft_jobwatch_job_present{exported_job!=\"\"}) or vector(0)' | jq -r '.data.result[0].value[1]'"
-check "Prometheus: timer-labelled series for both hosts (49/26), 0 exported_job series" "$(grep -qx 'sentry 26' <<<"$XOUT" && grep -qx 'validator 49' <<<"$XOUT" && [ "$(tail -1 <<<"$XOUT")" = 0 ] && echo 0 || echo 1)"
+check "Prometheus: timer-labelled series for both hosts, 0 exported_job series" "$(grep -qE '^sentry [1-9][0-9]*$' <<<"$XOUT" && grep -qE '^validator [1-9][0-9]*$' <<<"$XOUT" && [ "$(tail -1 <<<"$XOUT")" = 0 ] && echo 0 || echo 1)"
+# run 20: the fix itself. inventory columns: job kind interval ... (header row first)
+x "sudo -n pft-jobwatch inventory | awk -F'\\t' 'NR == 1 || \$1 == \"pft-kmod.timer\"'; R 'sudo -n pft-jobwatch inventory' | awk -F'\\t' '\$1 == \"pft-kmod.timer\"'"
+check "pft-kmod.timer: calendar, interval 3600, missed 0 on both hosts" "$(awk -F'\t' 'NR == 1 { for (i = 1; i <= NF; i++) c[$i] = i; next } $c["job"] == "pft-kmod.timer" && $c["kind"] == "calendar" && $c["interval_seconds"] + 0 == 3600 && $c["missed"] == "0" { n++ } END { exit n != 2 }' <<<"$XOUT" && echo 0 || echo 1)"
+x "for h in validator sentry; do echo \"\$h missed \$(grep -E '^pft_jobwatch_jobs\\{host=\"'\$h'\",state=\"missed\"\\}' /var/lib/pft-exporter/textfile/pft_jobwatch_\$h.prom | awk '{print \$2}')\"; done"
+check "0 missed jobs on both hosts" "$([ "$(grep -cE '^(validator|sentry) missed 0$' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
 x "stat -c '%s %n' /var/lib/pft-exporter/textfile/pft_jobwatch_validator.prom /var/lib/pft-exporter/textfile/pft_jobwatch_sentry.prom"
 check "both textfiles under the exporter's 65536-byte limit" "$([ "$(awk '$1 < 65536' <<<"$XOUT" | wc -l)" = 2 ] && echo 0 || echo 1)"
 x "curl -s $PROM/api/v1/query --data-urlencode 'query=pft_jobwatch_up' | jq -r '.data.result[] | \"\(.metric.host) \(.value[1])\"' | sort"

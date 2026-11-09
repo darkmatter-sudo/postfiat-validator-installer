@@ -6,14 +6,14 @@ bugs found by the drill and fixed before it passed (label collision, textfile si
 Every add-on in this repo reports through a systemd timer (47 `pft-*`/`postfiat*` timers on the validator, 25 on the
 sentry). When a timer is disabled, removed, failing or no longer firing, its last textfile stays in place and its
 numbers still look healthy; only `../rulecheck`'s staleness check notices, and only for textfiles it was told about.
-`pft-jobwatch` watches the timers themselves. It is read-only: the only command it runs is `systemctl show` (it never
-starts, stops, enables or resets a unit).
+`pft-jobwatch` watches the timers themselves. It is read-only: it runs only `systemctl show` and `systemd-analyze
+calendar` (the period of an `OnCalendar` spec, a pure computation); it never starts, stops, enables or resets a unit.
 
 | File | What it is |
 |---|---|
 | `pft-jobwatch.sh` | CLI: `collect`, `inventory`, `forget`, `pull`, `validate`, `version` (usage in its header) |
 | `jobwatch_lib.py` | stdlib helper: `systemctl show` parser, schedule/interval derivation, per-job state, textfile renderer |
-| `tests/test_jobwatch.py` | offline suite: captured `systemctl show` fixtures + `tests/stub_systemctl.py` (101 checks) |
+| `tests/test_jobwatch.py` | offline suite: captured `systemctl show` fixtures + `tests/stub_systemctl.py` (123 checks) |
 | `tests/mutate.py` | mutant harness: 50 helper/script/rule mutants; the suite or promtool must fail each |
 | `tests/fixtures/` | `systemctl show` output captured on the validator (heartbeat = monotonic, kernwatch = calendar, vulnscan = calendar + 30 min RandomizedDelaySec, egress-reapply@ = template instance) and three variants with only the named fields changed (jwfail = exit 1, jwnever = never run, jwdis = `disable --now`) |
 | `install.sh` | install/uninstall: collector (`--host NAME`) or the validator's pull of the sentry file (`--pull`) |
@@ -48,9 +48,14 @@ Exit codes: 0 ok, 1 `systemctl` / fetch failed, 2 validation failed, 3 usage/con
   calls per run (globs -> Ids, timer properties, service properties), with `TZ=UTC --timestamp=us+utc`.
 - **Schedule kind and interval.** `monotonic`: the smallest `OnUnitActiveSec`/`OnUnitInactiveSec` (`OnBootSec`,
   `OnStartupSec`, `OnActiveSec` fire once and give no interval). `calendar`: `systemctl show` gives no period, so the
-  interval is learned as the smallest `NextElapseUSecRealtime - LastTriggerUSec` seen (a gap of two periods after a
-  missed run is replaced by the next one-period gap; a changed `OnCalendar` spec resets it). `LastTriggerUSec` is the
-  real, accuracy-delayed trigger, so a 2-minute timer with `AccuracySec=1s` learns 119 s. `mixed`: the smaller of both.
+  period comes from the spec: `systemd-analyze calendar --iterations=12` over every `OnCalendar` line of the timer,
+  and the interval is the **longest** gap between consecutive elapses of their union (hourly `*:23:00` = 3600 s;
+  `Mon,Thu` = 4 days, so the long gap never reads as missed). It is asked once per spec and kept in the state (a changed
+  spec, or an unknown period, is asked again). Fallback, only if `systemd-analyze` fails: the smallest
+  `NextElapseUSecRealtime - LastTriggerUSec` seen (the pre-2026-11-09 method). That gap is wrong for a `Persistent=yes`
+  timer: on its first activation systemd stamps `LastTriggerUSec` with the activation time, and a boot catch-up run
+  does the same, so the first gap is shorter than the period (see the 2026-11-09 row below). `mixed`: the smaller of
+  the monotonic and calendar intervals.
 - **Failed.** The service's `Result` is not `success` or its `ActiveState` is `failed` (`Result` honours
   `SuccessExitStatus=`, so a configured non-zero success exit is not a failure; a signal, timeout or start-limit-hit is).
 - **Consecutive failures and last success.** A finished run is identified by `ExecMainStartTimestampMonotonic` +
@@ -61,7 +66,8 @@ Exit codes: 0 ok, 1 `systemctl` / fetch failed, 2 validation failed, 3 usage/con
 - **Missed.** Enabled job, and either no trigger for longer than `interval + AccuracySec + 2 x RandomizedDelaySec +
   300 s` (reference: the last trigger, or the timer's activation if it never ran; a run still going counts, because a
   monotonic timer does not re-fire while its service runs), or a calendar job's next elapse is more than that grace in
-  the past. Twice the randomized delay: the learned interval can be one delay short and a real gap one delay long.
+  the past. Twice the randomized delay: a real gap can be one delay longer than the period (and the fallback's learned
+  interval one delay short).
 - **Disabled.** The timer is not `active`, or its unit file state is not one of enabled, enabled-runtime, static,
   linked(-runtime), generated, transient (so `disable`, `mask`, `stop` and removal all count). A disabled job is never
   also reported missed.
@@ -115,9 +121,9 @@ alerts of the same name and status in one webhook into one message (`[FIRING] PF
 
 - Watches systemd timers and the service each one triggers; not cron, not in-container jobs (e.g. the container's own
   `cron.daily`), not services without a timer.
-- Run counts are observed, not exhaustive (see above). Calendar intervals are learned, so the very first observation
-  after a missed run can learn two periods until the next run corrects it (the next-elapse check still catches a
-  timer that stops firing).
+- Run counts are observed, not exhaustive (see above). Calendar intervals come from the spec; only when
+  `systemd-analyze` is unavailable are they learned from observed gaps, with the limits described above (the
+  next-elapse check still catches a timer that stops firing).
 - A job that is meant to be removed must be `forget`-ed, or PFTJobDisabled stays active.
 - Size: about 1.1 KB per timer; the validator's 49 timers give 55.6 KB, so roughly 5 more timers fit under
   `TEXT_BUDGET`. Past that, collect publishes `up 0` (PFTJobwatchStale) until JOB_GLOBS is narrowed or the exporter's
