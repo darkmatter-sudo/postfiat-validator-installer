@@ -16,16 +16,8 @@ groups:
           summary: "{{ $labels.host }}: SSH login with a key that is not allowlisted"
           description: "{{ $value | printf \"%.0f\" }} accepted SSH login(s) in the last 15 min used a key that is not in /etc/pft-authwatch/allowlist (or no key at all). If this was not you, treat the host as compromised: `sudo journalctl -t sshd --since -20min | grep Accepted` shows the user, source and fingerprint. If it was a new key of yours: `sudo pft-authwatch allow add SHA256:...`."
           runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/authwatch/README.md#alerts"
-      - alert: PFTAuthUnknownSourceLogin
-        # any accepted login (allowlisted key or not) from an address outside /etc/pft-authwatch/sources;
-        # pft_authwatch_sources_entries == 0 means the check is off (source_class="unconfigured", never fires)
-        expr: sum by (instance, job, host) (increase(pft_authwatch_ssh_accepted_source_total{source_class="unknown"}[15m])) > 0
-        labels:
-          severity: critical
-        annotations:
-          summary: "{{ $labels.host }}: SSH login from an unknown source address"
-          description: "{{ $value | printf \"%.0f\" }} accepted SSH login(s) in the last 15 min came from an address that is not in /etc/pft-authwatch/sources. If this was not you, treat the host as compromised: `sudo journalctl -t sshd --since -20min | grep Accepted` shows the user, source and fingerprint. If it was you from a new network: `sudo pft-authwatch sources add ADDR/32 COMMENT`."
-          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/authwatch/README.md#alerts"
+      # PFTAuthUnknownSourceLogin removed 2026-11-09 (operator decision: logins come from networks with
+      # changing addresses). pft_authwatch_ssh_accepted_source_total is still collected and shown in the digest.
       - alert: PFTAuthFailedBurst
         # internet background on both hosts peaked at 337 failed attempts per 10 min (README baseline)
         expr: sum by (instance, job, host) (increase(pft_authwatch_ssh_failed_total[10m])) > 400

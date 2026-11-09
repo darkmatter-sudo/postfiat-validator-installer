@@ -83,8 +83,6 @@ MUTANTS = [
     ("R04", "rules", "stale after 10 min instead of 5", "pft_authwatch_collect_timestamp_seconds > 300",
      "pft_authwatch_collect_timestamp_seconds > 600"),
     ("R05", "rules", "stale without for: 2m", "        for: 2m\n", ""),
-    ("R06", "rules", "unknown-source alert also counts known logins", 'source_class="unknown"}[15m]',
-     'source_class!="unconfigured"}[15m]'),
     ("R07", "rules", "brute-force burst paged again (digest label dropped)", "          notify: digest\n", ""),
 ]
 

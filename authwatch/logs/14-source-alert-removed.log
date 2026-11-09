@@ -1,0 +1,45 @@
+## 2026-11-09T23:09:24Z promtool check+test (authwatch rules, prom image from run-stack.sh)
+PROM_IMAGE="${PROM_IMAGE:-prom/prometheus:v3.5.0}"
+Checking authwatch.rules.yml
+  SUCCESS: 3 rules found
+
+  SUCCESS
+
+rc=0
+## 2026-11-09T23:09:35Z authwatch suite + mutants
+== 9. digest: only after a burst, at most once per UTC day, low priority, dry run sends nothing
+PASS no burst in 24 h -> nothing sent
+PASS dry run prints the summary, sends nothing, writes no stamp
+PASS burst -> one message sent, stamp = today (UTC)
+PASS message: low priority, digest title, ntfy topic from NTFY_ENV
+PASS second run the same day -> not sent again
+PASS NTFY_ENV without a topic -> exit 3, nothing sent
+RESULT: 76/76 passed
+suite rc=0
+    failed: failed burst: summed over reasons, > 400 per 10m fires, background (337 peak) does not, resolves
+R04 CAUGHT - stale after 10 min instead of 5
+    failed: stale: fires 2m after the timestamp is 5m old, per host; a fresh host stays quiet; resolves on collection
+R05 CAUGHT - stale without for: 2m
+    failed: stale: fires 2m after the timestamp is 5m old, per host; a fresh host stays quiet; resolves on collection
+R07 CAUGHT - brute-force burst paged again (digest label dropped)
+    failed: failed burst: summed over reasons, > 400 per 10m fires, background (337 peak) does not, resolves
+MUTANTS: 35/35 caught, 0 not applied, 0 broken, 0 survived
+mutants rc=0
+## 2026-11-09T23:17:46Z prometheus SIGHUP + loaded authwatch rules
+{"reloadConfigSuccess":true,"lastConfigTime":"2026-11-09T23:17:46Z"}
+PFTAuthUnknownKeyLogin unknown critical
+PFTAuthFailedBurst unknown warning
+PFTAuthwatchStale unknown warning
+-- active/pending auth alerts:
+PFTAlertPipelineWatchdog firing 
+## 2026-11-09T23:18:25Z after first eval
+PFTAuthUnknownKeyLogin ok
+PFTAuthFailedBurst ok
+PFTAuthwatchStale ok
+-- amtool route for unknown-key (host=sentry):
+web.hook
+RESULT: PASS - 228 unchanged, 0 warn, 0 fail -> exit 0
+-- amtool routes (live config /etc/pft-alerts/alertmanager.yml):
+alertname=PFTAuthUnknownKeyLogin severity=critical host=sentry -> bridge
+alertname=PFTAuthUnknownKeyLogin severity=critical host=validator -> bridge
+alertname=PFTAuthFailedBurst severity=warning notify=digest host=sentry -> digest

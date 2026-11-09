@@ -20,8 +20,8 @@ Design choices:
   `../integrity`, archived by `../backup`) and the `DOCKER-USER` chain stay unchanged, so bans never show up as drift.
 - **Not `ufw limit 22/tcp`.** ufw's limit is per connection (6 in 30 s), which the admin link and the pull timers
   exceed; fail2ban only counts failed authentication.
-- What still pages is in `../authwatch`: any login with an unknown key, without a key, or from an unknown source
-  address (`PFTAuthUnknownKeyLogin`, `PFTAuthUnknownSourceLogin`). Routine brute force is summarised at most once a
+- What still pages is in `../authwatch`: any login with an unknown key or without a key (`PFTAuthUnknownKeyLogin`;
+  the unknown-source alert was removed 2026-11-09). Routine brute force is summarised at most once a
   day (`pft-authwatch digest`).
 
 Install (each host, peer address first; keep an SSH session open and test a fresh key login before closing it):
