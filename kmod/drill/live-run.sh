@@ -15,6 +15,8 @@ REPO="$(git rev-parse --show-toplevel)"; cd "$REPO" || exit 3
 SHA="$(git rev-parse HEAD)"; ME="$(id -un)"
 TASK=task_07a6e13e99620b3df65ef2056ed835f9
 AM=http://127.0.0.1:9093
+PROM=http://127.0.0.1:9090
+REBOOT_EPOCH=0
 TT="pft-drill-kmod-$(head -c 6 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 red() { sed -E "s#$HOME#~#g; s#\b$ME\b#<user>#g; s#\b([0-9]{1,3}\.){3}[0-9]{1,3}\b#<redacted-ip>#g; s#$TT#<throwaway-topic>#g; s#$(hostname)#validator-host#g"; }
 XRC=0; XOUT=""
@@ -50,7 +52,7 @@ unswap() {
   check "$h $f restored ($([ "$now" = absent ] && echo 'absent again' || echo 'sha256 equal, not printed'))" "$(is "$now" = "${PRE[$h:$f]}")"
   unset "PRE[$h:$f]"
 }
-MAINT=0; SIL=""
+MAINT=0; SIL=""; ends=""
 restore() {
   trap - EXIT
   echo; echo "== restore ($(ts))"
@@ -59,10 +61,15 @@ restore() {
   for f in $V_FILES; do unswap validator "$f"; done
   for f in $S_FILES; do unswap sentry "$f"; done
   if [ -n "$SIL" ]; then
-    local firing
+    # Expire only when nothing the run caused can still fire: no alert held by the silence in Alertmanager, nothing
+    # pending/firing in Prometheus (except the dead-man), and >= 25 min since the last node start (the reboot), since
+    # PFTContainerRestarted (resets(uptime[15m])) fires up to ~15 min + for after a restart.
+    local firing pend wait_s
     firing="$(curl -s "$AM/api/v2/alerts?silenced=true" | jq -r --arg id "$SIL" '[.[] | select(.status.silencedBy | index($id)) | .labels.alertname] | unique | join(",")')"
-    if [ -z "$firing" ]; then x "curl -s -X DELETE $AM/api/v2/silence/$SIL -o /dev/null -w '%{http_code}'"
-    else echo "silence ${SIL:0:8} left to run out (alerts it still holds: $firing)"; fi
+    pend="$(curl -s "$PROM/api/v1/alerts" | jq -r '[.data.alerts[] | select(.labels.alertname != "PFTAlertPipelineWatchdog") | .labels.alertname] | unique | join(",")')"
+    wait_s=$(( ${REBOOT_EPOCH:-0} + 1500 - $(date -u +%s) ))
+    if [ -z "$firing" ] && [ -z "$pend" ] && [ "$wait_s" -le 0 ]; then x "curl -s -X DELETE $AM/api/v2/silence/$SIL -o /dev/null -w '%{http_code}'"
+    else echo "silence ${SIL:0:8} left to run out until $ends (held: ${firing:-none}; prometheus pending/firing: ${pend:-none}; reboot + 25 min in ${wait_s}s)"; fi
   fi
   x "sleep 5; curl -s --max-time 15 \"https://ntfy.sh/\$TT/json?poll=1&since=2h\" | jq -r '.title'"
   echo "throwaway topic received $(grep -c . <<<"$XOUT") message(s) (operator topics: none of the above)"
@@ -114,7 +121,7 @@ if [ "$WHO" = sentry ]; then
   x "R \"cd $D && bash kmod/drill/host-run.sh apply sentry\""; check "sentry host-run apply PASS" "$XRC"
   echo; echo "== 4. sentry reboot (persistence)"
   B0="$(R 'cat /proc/sys/kernel/random/boot_id')"
-  echo "$(ts) \$ sudo systemctl reboot   (sentry)"; R 'sudo -n systemctl reboot' >/dev/null 2>&1 || true
+  REBOOT_EPOCH="$(date -u +%s)"; echo "$(ts) \$ sudo systemctl reboot   (sentry)"; R 'sudo -n systemctl reboot' >/dev/null 2>&1 || true
   sleep 45; up=0
   for _ in $(seq 1 60); do R true 2>/dev/null && { up=1; break; }; sleep 10; done
   check "sentry back over ssh ($(ts))" "$(is "$up" = 1)"
