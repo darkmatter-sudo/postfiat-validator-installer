@@ -1,0 +1,201 @@
+jobwatch two-host update - 2026-11-09T19:20:41Z - Ubuntu 22.04.5 LTS - repo HEAD 8d9ec806f7456448b388975450bdb09d19b0b334 (clean: yes)
+
+== 0. preflight
+$ sha256sum jobwatch/pft-jobwatch.sh jobwatch/jobwatch_lib.py jobwatch/drill/update-run.sh alerts/jobwatch.rules.yml
+  194a3810f0e07983eef6847bc680d8840c8ac7de2cc8fb14b134d9ca2046ce0c  jobwatch/pft-jobwatch.sh
+  8144d018cb10378120dbfcc83ff8d0a951320f2d73df7853d138ead83d60a3a8  jobwatch/jobwatch_lib.py
+  ca2fd001202ae8f983f9619acce1123e02e776b2f703971ee4285922f25f99d9  jobwatch/drill/update-run.sh
+  a604a7b01ba635dce1690817acc6b2d8ae7a357558269a928004035346d8bbf1  alerts/jobwatch.rules.yml
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 227 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 138 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts before the update
+$ sudo -n docker exec postfiatd curl -s -m 10 -d '{"method":"server_info"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state; R "sudo -n docker exec postfiatd-sentry curl -s -m 10 -d '{\"method\":\"server_info\"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state"
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ sudo -n pft-fleet sync --addon jobwatch --to 8d9ec806f7456448b388975450bdb09d19b0b334 | grep -E '^PLAN .* (write|keep)$' | awk '{print $2, $4, $6, $NF}'
+  sentry /usr/local/bin/pft-jobwatch CURRENT keep
+  sentry /usr/local/lib/pft-jobwatch/jobwatch_lib.py BEHIND write
+  sentry /etc/systemd/system/pft-jobwatch.service CURRENT keep
+  sentry /etc/systemd/system/pft-jobwatch.timer CURRENT keep
+  validator /usr/local/bin/pft-jobwatch CURRENT keep
+  validator /usr/local/lib/pft-jobwatch/jobwatch_lib.py BEHIND write
+  validator /etc/systemd/system/pft-jobwatch.service CURRENT keep
+  validator /etc/systemd/system/pft-jobwatch.timer CURRENT keep
+  validator /etc/systemd/system/pft-jobwatch-pull.service CURRENT keep
+  validator /etc/systemd/system/pft-jobwatch-pull.timer CURRENT keep
+  (exit 0)
+CHECK ok   dry run: jobwatch_lib.py written on both hosts, nothing else (2 writes)
+$ grep -c ',job="' /var/lib/pft-exporter/textfile/pft_jobwatch_validator.prom /var/lib/pft-exporter/textfile/pft_jobwatch_sentry.prom
+  /var/lib/pft-exporter/textfile/pft_jobwatch_validator.prom:0
+  /var/lib/pft-exporter/textfile/pft_jobwatch_sentry.prom:0
+  (exit 1)
+$ stat -c '%s %n' /var/lib/pft-exporter/textfile/pft_jobwatch_validator.prom /var/lib/pft-exporter/textfile/pft_jobwatch_sentry.prom; curl -s http://<redacted-ip>:9090/api/v1/query --data-urlencode 'query=pft_jobwatch_up' | jq -r '.data.result[] | .metric.host' | sort
+  63238 /var/lib/pft-exporter/textfile/pft_jobwatch_validator.prom
+  32505 /var/lib/pft-exporter/textfile/pft_jobwatch_sentry.prom
+  sentry
+  validator
+  (exit 0)
+CHECK ok   before: both textfiles under 65536 bytes, both hosts in Prometheus
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+
+== 1. rollout silence (pft-fleet/rulecheck see a changed file during the update; not the watchdog)
+CHECK ok   Alertmanager silence created (PFTJob*, PFTRuleDead, PFTTextfileStale, PFTRulecheck*, PFTFleet*) until 2026-11-09T19:51:34Z
+
+== 2. pft-maint window, [MAINT] messages to a throwaway topic (real file kept as $BK)
+real /etc/pft-maint/ntfy.env present before: 0
+$ { [ $HAD = 0 ] || sudo -n cp -p $NE $BK; } && printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' "$TT" | sudo -n tee $NE >/dev/null && sudo -n chmod 600 $NE && sudo -n stat -c '%a %U' $NE
+  600 root
+  (exit 0)
+CHECK ok   throwaway target installed
+$ sudo -n pft-maint start --ttl 30m --reason 'ops-jobwatch-calperiod jobwatch update 8d9ec80'
+  window started: id m1794252095-1764405 until 2026-11-09T19:51:35Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint window open
+CHECK ok   sentry has the window (via the watchdog channel) after 40s
+
+== 3. pft-fleet: jobwatch files to HEAD on both hosts (writes + integrity accept by pft-fleet)
+$ sudo -n pft-fleet sync --addon jobwatch --to 8d9ec806f7456448b388975450bdb09d19b0b334 --apply --reason 'ops-jobwatch-calperiod: calendar interval from the OnCalendar spec (false PFTJobMissed on sentry pft-kmod.timer) (8d9ec80)'
+  [2026-11-09T19:22:44Z] sync jobwatch to 8d9ec806f7456448b388975450bdb09d19b0b334 (2026-11-09T19:19:10+00:00) REF main=8d9ec806f7456448b388975450bdb09d19b0b334
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN sentry sentry /usr/local/bin/pft-jobwatch 0755 CURRENT 194a3810f0e0 194a3810f0e0 keep
+  PLAN sentry sentry /usr/local/lib/pft-jobwatch/jobwatch_lib.py 0644 BEHIND 8fb599f739b7 8144d018cb10 write
+  PLAN sentry sentry /etc/systemd/system/pft-jobwatch.service 0644 CURRENT 7a09555c46f6 7a09555c46f6 keep
+  PLAN sentry sentry /etc/systemd/system/pft-jobwatch.timer 0644 CURRENT 9b80036e6b62 9b80036e6b62 keep
+  PLAN validator validator /usr/local/bin/pft-jobwatch 0755 CURRENT 194a3810f0e0 194a3810f0e0 keep
+  PLAN validator validator /usr/local/lib/pft-jobwatch/jobwatch_lib.py 0644 BEHIND 8fb599f739b7 8144d018cb10 write
+  PLAN validator validator /etc/systemd/system/pft-jobwatch.service 0644 CURRENT 7a09555c46f6 7a09555c46f6 keep
+  PLAN validator validator /etc/systemd/system/pft-jobwatch.timer 0644 CURRENT 9b80036e6b62 9b80036e6b62 keep
+  PLAN validator validator /etc/systemd/system/pft-jobwatch-pull.service 0644 CURRENT a6faad0816db a6faad0816db keep
+  PLAN validator validator /etc/systemd/system/pft-jobwatch-pull.timer 0644 CURRENT 060f630e2eb9 060f630e2eb9 keep
+  [2026-11-09T19:22:44Z] order: sentry validator
+  [2026-11-09T19:22:44Z] sentry: 1 file(s) to write
+  PRE sentry pft-maint window active PASS
+  PRE sentry node server_state=full PASS
+  PRE sentry pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP sentry /usr/local/lib/pft-jobwatch/jobwatch_lib.py sha256 8fb599f739b7 -> /var/lib/pft-fleet/backup/20261109T192244Z-jobwatch-sentry
+  WRITE sentry /usr/local/lib/pft-jobwatch/jobwatch_lib.py 8fb599f739b7 -> 8144d018cb10 mode 0644
+  GATE sentry sha256 /usr/local/lib/pft-jobwatch/jobwatch_lib.py = target 8144d018cb10 PASS
+  GATE sentry syntax /usr/local/lib/pft-jobwatch/jobwatch_lib.py python PASS
+  GATE sentry addon units failed=none PASS
+  GATE sentry node server_state=full PASS
+  ACCEPT sentry pft-integrity baseline updated: pft-fleet sync jobwatch@8d9ec806f745 (jobwatch_lib.py)
+  [2026-11-09T19:23:10Z] SYNCED sentry jobwatch -> 8d9ec806f745
+  [2026-11-09T19:23:10Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/lib/pft-jobwatch/jobwatch_lib.py sha256 8fb599f739b7 -> /var/lib/pft-fleet/backup/20261109T192244Z-jobwatch-validator
+  WRITE validator /usr/local/lib/pft-jobwatch/jobwatch_lib.py 8fb599f739b7 -> 8144d018cb10 mode 0644
+  GATE validator sha256 /usr/local/lib/pft-jobwatch/jobwatch_lib.py = target 8144d018cb10 PASS
+  GATE validator syntax /usr/local/lib/pft-jobwatch/jobwatch_lib.py python PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync jobwatch@8d9ec806f745 (jobwatch_lib.py)
+  [2026-11-09T19:23:38Z] SYNCED validator jobwatch -> 8d9ec806f745
+  [2026-11-09T19:23:38Z] sync complete
+  (exit 0)
+CHECK ok   jobwatch sync exit 0
+$ sha256sum jobwatch/pft-jobwatch.sh jobwatch/jobwatch_lib.py | cut -c1-64; sudo -n sha256sum /usr/local/bin/pft-jobwatch /usr/local/lib/pft-jobwatch/jobwatch_lib.py | cut -c1-64; R 'sudo -n sha256sum /usr/local/bin/pft-jobwatch /usr/local/lib/pft-jobwatch/jobwatch_lib.py | cut -c1-64'
+  194a3810f0e07983eef6847bc680d8840c8ac7de2cc8fb14b134d9ca2046ce0c
+  8144d018cb10378120dbfcc83ff8d0a951320f2d73df7853d138ead83d60a3a8
+  194a3810f0e07983eef6847bc680d8840c8ac7de2cc8fb14b134d9ca2046ce0c
+  8144d018cb10378120dbfcc83ff8d0a951320f2d73df7853d138ead83d60a3a8
+  194a3810f0e07983eef6847bc680d8840c8ac7de2cc8fb14b134d9ca2046ce0c
+  8144d018cb10378120dbfcc83ff8d0a951320f2d73df7853d138ead83d60a3a8
+  (exit 0)
+CHECK ok   installed script + helper = repo bytes on both hosts
+
+== 4. behaviour: collect, label is timer= everywhere, rules reloaded and healthy
+$ R 'sudo -n systemctl start pft-jobwatch.service; systemctl show -p Result --value pft-jobwatch.service' && sudo -n systemctl start pft-jobwatch.service pft-jobwatch-pull.service; systemctl show -p Result --value pft-jobwatch.service pft-jobwatch-pull.service
+  success
+  success
+  
+  success
+  (exit 0)
+CHECK ok   collector (both hosts) + pull: Result success x3
+$ for f in validator sentry; do echo "$f job= $(grep -c ',job="' /var/lib/pft-exporter/textfile/pft_jobwatch_$f.prom) timer= $(grep -c ',timer="' /var/lib/pft-exporter/textfile/pft_jobwatch_$f.prom)"; done
+  validator job= 0 timer= 672
+  sentry job= 0 timer= 348
+  (exit 0)
+CHECK ok   both textfiles: 0 job= labels, timer= labels present
+$ sudo -n docker kill -s HUP pft-prometheus >/dev/null && sleep 75 && curl -s http://<redacted-ip>:9090/api/v1/rules | jq -r '.data.groups[] | select(.name == "pft-jobwatch") | .rules[] | [.name, .health, .state, (.query | contains("on (host, timer)"))] | @tsv'
+  PFTJobFailed	ok	inactive	true
+  PFTJobMissed	ok	inactive	false
+  PFTJobDisabled	ok	inactive	false
+  PFTJobwatchStale	ok	inactive	false
+  (exit 0)
+CHECK ok   4 jobwatch rules loaded, health ok, inactive; PFTJobFailed joins on (host, timer)
+$ curl -s http://<redacted-ip>:9090/api/v1/query --data-urlencode 'query=count by (host) (pft_jobwatch_job_present{timer!=""})' | jq -r '.data.result[] | "\(.metric.host) \(.value[1])"' | sort; curl -s http://<redacted-ip>:9090/api/v1/query --data-urlencode 'query=count(pft_jobwatch_job_present{exported_job!=""}) or vector(0)' | jq -r '.data.result[0].value[1]'
+  sentry 29
+  validator 56
+  0
+  (exit 0)
+CHECK ok   Prometheus: timer-labelled series for both hosts, 0 exported_job series
+$ sudo -n pft-jobwatch inventory | awk -F'\t' 'NR == 1 || $1 == "pft-kmod.timer"'; R 'sudo -n pft-jobwatch inventory' | awk -F'\t' '$1 == "pft-kmod.timer"'
+  job	kind	interval_seconds	disabled	failed	consecutive_failures	missed	present	spec
+  pft-kmod.timer	calendar	3600	0	0	0	0	1	OnCalendar=*-*-* *:23:00
+  pft-kmod.timer	calendar	3600	0	0	0	0	1	OnCalendar=*-*-* *:23:00
+  (exit 0)
+CHECK ok   pft-kmod.timer: calendar, interval 3600, missed 0 on both hosts
+$ for h in validator sentry; do echo "$h missed $(grep -E '^pft_jobwatch_jobs\{host="'$h'",state="missed"\}' /var/lib/pft-exporter/textfile/pft_jobwatch_$h.prom | awk '{print $2}')"; done
+  validator missed 0
+  sentry missed 0
+  (exit 0)
+CHECK ok   0 missed jobs on both hosts
+$ stat -c '%s %n' /var/lib/pft-exporter/textfile/pft_jobwatch_validator.prom /var/lib/pft-exporter/textfile/pft_jobwatch_sentry.prom
+  63238 /var/lib/pft-exporter/textfile/pft_jobwatch_validator.prom
+  32506 /var/lib/pft-exporter/textfile/pft_jobwatch_sentry.prom
+  (exit 0)
+CHECK ok   both textfiles under the exporter's 65536-byte limit
+$ curl -s http://<redacted-ip>:9090/api/v1/query --data-urlencode 'query=pft_jobwatch_up' | jq -r '.data.result[] | "\(.metric.host) \(.value[1])"' | sort
+  sentry 1
+  validator 1
+  (exit 0)
+CHECK ok   Prometheus: pft_jobwatch_up 1 for both hosts
+
+== 5. integrity and fleet skew
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 227 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 138 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts
+$ sudo -n pft-fleet skew | grep -E 'jobwatch|SUMMARY'
+  sentry     jobwatch    CURRENT    
+  validator  jobwatch    CURRENT    
+  SUMMARY CURRENT=65 BEHIND=0 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 0)
+CHECK ok   jobwatch CURRENT on both hosts
+
+== 6. end window, restore the real target, compare, read back the throwaway and every operator topic
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+$ sudo -n rm -f $NE   (no ntfy.env before: pft-maint falls back to the real monitor target again)
+CHECK ok   pft-maint target back to its pre-run state (/etc/pft-maint/ntfy.env: absent again)
+$ sudo -n test ! -e $BK && echo backup gone
+  backup gone
+  (exit 0)
+$ sudo -n systemctl start pft-keyescrow.service; grep -h '^pft_keyescrow_drift_items{node="validator"}' /var/lib/pft-exporter/textfile/pft_keyescrow.prom
+  pft_keyescrow_drift_items{node="validator"} 0
+  (exit 0)
+CHECK ok   pft-keyescrow re-run after the ntfy.env restore: validator drift_items 0
+$ sleep 5; curl -s --max-time 15 "https://ntfy.sh/$TT/json?poll=1&since=1794252041" | jq -r '.title'
+  [MAINT] start validator
+  [MAINT] end validator
+  (exit 0)
+CHECK ok   the [MAINT] start and end messages reached the throwaway topic
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the run (2 topic(s), 0 with messages)
+$ curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '[.data.alerts[] | select(.labels.alertname | test("PFTJob|RuleDead|TextfileStale|Rulecheck|Fleet"))] | length'
+  0
+  (exit 0)
+  rollout silence expired: HTTP 200
+CHECK ok   no jobwatch/rulecheck/fleet alert pending or firing; rollout silence expired
+
+update-run done 2026-11-09T19:26:07Z: 0 check(s) failed -> PASS
