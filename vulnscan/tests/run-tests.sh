@@ -21,20 +21,26 @@ NOW=4070908800    # 2099-01-01T00:00:00Z = the fixture feed's default <oval:time
 L='host="validator"'
 mkdir -p "$T/bin" "$T/tf" "$T/cache" "$T/srv"
 
-# stub curl: mode in $T/curl_mode (200 | 304 | fail | 304stale | 304fail); serves $T/srv/feed.xml.bz2; records its args
-# in $T/curl_args (last call) and appends them to $T/curl_calls. 304stale/304fail: 304 to a request with an ETag (a
-# content cache holding an old copy), 200 / network failure to one without.
+# stub curl: mode in $T/curl_mode (200 | 304 | fail | 304stale | 304fail | cache | cache304); serves
+# $T/srv/feed.xml.bz2; records its args in $T/curl_args (last call) and appends them to $T/curl_calls.
+# 304stale/304fail: 304 to a request with an ETag (a content cache holding an old copy), 200 / network failure to one
+# without. cache/cache304: a content cache that answers every URL without a query string from its old copy
+# ($T/srv/feed.xml.bz2: 200, or 304 if the request has an ETag) and only a URL with a query from the origin
+# ($T/srv/origin.xml.bz2: 200).
 cat > "$T/bin/curl" <<EOF
 #!/bin/bash
 printf '%s\n' "\$*" > "$T/curl_args"; printf '%s\n' "\$*" >> "$T/curl_calls"
-out=""; esave=""; cond=0
+out=""; esave=""; cond=0; url=""
 while [ \$# -gt 0 ]; do
-  case "\$1" in -o) out="\$2"; shift ;; --etag-save) esave="\$2"; shift ;; --etag-compare) cond=1; shift ;; -w|--max-time|-H) shift ;; esac
+  case "\$1" in -o) out="\$2"; shift ;; --etag-save) esave="\$2"; shift ;; --etag-compare) cond=1; shift ;; -w|--max-time|-H) shift ;; -*) ;; *) url="\$1" ;; esac
   shift
 done
 mode="\$(cat "$T/curl_mode")"
 case "\$mode" in 304stale) [ \$cond = 1 ] && mode=304 || mode=200 ;; 304fail) [ \$cond = 1 ] && mode=304 || mode=fail ;; esac
+case "\$mode" in cache|cache304)
+  case "\$url" in *\\?*) mode=origin ;; *) [ "\$mode" = cache304 ] && [ \$cond = 1 ] && mode=304 || mode=200 ;; esac ;; esac
 case "\$mode" in
+  origin) cp "$T/srv/origin.xml.bz2" "\$out"; echo '"etag-2"' > "\$esave"; printf 200 ;;
   200) cp "$T/srv/feed.xml.bz2" "\$out"; echo '"etag-1"' > "\$esave"; printf 200 ;;
   304) : > "\$esave"; printf 304 ;;
   fail) echo "curl: (6) Could not resolve host: security-metadata.canonical.com" >&2; printf 000; exit 6 ;;
@@ -261,6 +267,35 @@ python3 -I "$MK" feed "$T/nots.xml" --ts ""; python3 -I -c 'import bz2, sys; ope
 printf 'sha256=%s\n' "$(sha256sum < "$T/cache/feed.xml.bz2" | cut -c1-64)" > "$T/cache/feed.meta"
 : > "$T/curl_calls"; run
 check "cached feed without a timestamp: 304 is not trusted, unconditional GET" 'grep -q "fetch: not modified, but cached feed timestamp unreadable -> unconditional GET: fetched$" "$T/out" && [ "$(wc -l < "$T/curl_calls")" = 2 ]'
+
+echo "== 11. stale content cache: only a URL with a query reaches the origin (2026-11-09: a plain no-cache GET got a 3-day-old copy)"
+rm -rf "$T/cache"; mkdir "$T/cache"; rm -f "$T/oscap_args"
+printf 'CACHE_DIR=%s\nTEXTFILE_DIR=%s\n' "$T/cache" "$T/tf" > "$T/conf"
+serve; echo 200 > "$T/curl_mode"; : > "$T/curl_calls"; run              # cache: feed with <oval:timestamp> = NOW
+check "fresh 200: fetched, exactly one request, no query string" 'rc 1 && grep -q "fetch: fetched$" "$T/out" && [ "$(wc -l < "$T/curl_calls")" = 1 ] && ! grep -q "nocache" "$T/curl_calls"'
+cp "$T/srv/feed.xml.bz2" "$T/old.bz2"
+serve --ts 2099-01-02T05:00:00; cp "$T/srv/feed.xml.bz2" "$T/srv/origin.xml.bz2"; cp "$T/old.bz2" "$T/srv/feed.xml.bz2"
+NOWB=$((NOW + 30 * 3600))
+echo cache304 > "$T/curl_mode"; : > "$T/curl_calls"; NOWV=$NOWB run
+check "stale 304: unconditional GET reaches the origin, fetched" 'rc 1 && grep -q "fetch: not modified, but cached feed is 30 h old (> 24 h) -> unconditional GET: fetched$" "$T/out"'
+check "stale 304: 2nd request = FEED_URL?pft-vulnscan-nocache=NOW, no ETag, no-cache header" '[ "$(wc -l < "$T/curl_calls")" = 2 ] && sed -n 2p "$T/curl_calls" | grep -q -- "com.ubuntu.jammy.usn.oval.xml.bz2?pft-vulnscan-nocache=$NOWB$" && sed -n 2p "$T/curl_calls" | grep -v -q -- "--etag-compare" && sed -n 2p "$T/curl_calls" | grep -q -- "-H Cache-Control: no-cache"'
+check "stale 304: cache = origin feed, meta sha256 matches, url= is FEED_URL without the query" 'cmp -s "$T/srv/origin.xml.bz2" "$T/cache/feed.xml.bz2" && grep -qx "sha256=$(sha256sum < "$T/srv/origin.xml.bz2" | cut -c1-64)" "$T/cache/feed.meta" && grep -qx "url=https://security-metadata.canonical.com/oval/com.ubuntu.jammy.usn.oval.xml.bz2" "$T/cache/feed.meta"'
+check "stale 304: feed timestamp metric = origin feed" 'has "$OUT" "pft_vulnscan_feed_timestamp_seconds{$L} $((NOW + 29 * 3600))"'
+rm -f "$T/cache/"*                                                      # no cache, no ETag: the cache's 200 is old
+echo cache > "$T/curl_mode"; : > "$T/curl_calls"; NOWV=$NOWB run
+check "old 200 (no ETag): message names the age, unconditional GET fetched" 'rc 1 && grep -q "fetch: fetched, but downloaded feed is 30 h old (> 24 h) -> unconditional GET: fetched$" "$T/out"'
+check "old 200: two requests, the 2nd with the query" '[ "$(wc -l < "$T/curl_calls")" = 2 ] && ! sed -n 1p "$T/curl_calls" | grep -q nocache && sed -n 2p "$T/curl_calls" | grep -q "?pft-vulnscan-nocache=$NOWB$"'
+check "old 200: cache = origin feed" 'cmp -s "$T/srv/origin.xml.bz2" "$T/cache/feed.xml.bz2"'
+cp "$T/old.bz2" "$T/srv/origin.xml.bz2"; rm -f "$T/cache/"*                # the origin has nothing newer either
+echo cache > "$T/curl_mode"; : > "$T/curl_calls"; NOWV=$NOWB run
+check "origin also old: no recursion (exactly 2 requests), says so, scan still runs" 'rc 1 && [ "$(wc -l < "$T/curl_calls")" = 2 ] && grep -q "fetch: fetched, but downloaded feed is 30 h old (> 24 h) -> unconditional GET: fetched, but downloaded feed is 30 h old (> 24 h)$" "$T/out" && has "$OUT" "pft_vulnscan_up{$L} 1"'
+echo 304stale > "$T/curl_mode"; : > "$T/curl_calls"; NOWV=$NOWB run       # 304 + origin old: still 2 requests
+check "stale 304 + origin old: 2 requests, says the downloaded feed is still old" '[ "$(wc -l < "$T/curl_calls")" = 2 ] && grep -q "fetch: not modified, but cached feed is 30 h old (> 24 h) -> unconditional GET: fetched, but downloaded feed is 30 h old (> 24 h)$" "$T/out"'
+printf 'CACHE_DIR=%s\nTEXTFILE_DIR=%s\nFEED_URL=https://mirror.example/f.xml.bz2?k=v\n' "$T/cache" "$T/tf" > "$T/conf"
+echo cache304 > "$T/curl_mode"; : > "$T/curl_calls"; NOWV=$NOWB run
+check "FEED_URL with a query: cache-buster appended with &" 'sed -n 2p "$T/curl_calls" | grep -q -- "f.xml.bz2?k=v&pft-vulnscan-nocache=$NOWB$"'
+printf 'CACHE_DIR=%s\nTEXTFILE_DIR=%s\n' "$T/cache" "$T/tf" > "$T/conf"
+check "no temp dirs left in the cache" '[ "$(find "$T/cache" -name ".fetch.*" | wc -l)" = 0 ]'
 
 echo "RESULT: $pass/$total passed"
 [ "$pass" = "$total" ]

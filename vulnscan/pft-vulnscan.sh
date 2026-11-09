@@ -16,6 +16,9 @@
 #         Stale 304: if the server says "not modified" but the cached feed's own <oval:timestamp> is older than
 #         REFETCH_AGE_HOURS (24), one unconditional GET (no ETag, Cache-Control: no-cache) follows. Canonical's
 #         content caches answered 304 to an old ETag for 3 days while the origin had newer feeds (2026-10-31..11-02).
+#         The same GET follows a 200 whose feed is older than REFETCH_AGE_HOURS. The unconditional GET adds a
+#         cache-busting query (?pft-vulnscan-nocache=EPOCH): on 2026-11-09 a Canonical cache answered the plain
+#         no-cache GET with a 3-day-old copy (x-cache-status HIT), while a query string is a cache MISS (origin).
 #  scan   1. fetch (unless --no-fetch); if that fails a cached feed is still used (the age check below decides).
 #         2. the cached .bz2 must match the sha256 in feed.meta (else exit 2: cache changed behind our back).
 #         3. decompress, `oscap oval eval --results`, then vulnscan_parse.py: refuses (exit 2) a feed older than
@@ -45,7 +48,7 @@
 # shellcheck disable=SC2016,SC1091
 set -uo pipefail
 umask 022
-VERSION=1.1.0
+VERSION=1.2.0
 
 HOST_LABEL=validator; PEER_LABEL=sentry
 FEED_URL=https://security-metadata.canonical.com/oval/com.ubuntu.jammy.usn.oval.xml.bz2
@@ -90,32 +93,46 @@ m = re.search(r"<oval:timestamp>([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0
 sys.exit(1) if not m else print(calendar.timegm(time.strptime(m.group(1), "%Y-%m-%dT%H:%M:%S")))' "$1" 2>/dev/null
 }
 
-# fetch [force] -> rc 0 (stdout: "fetched" | "not modified" | "not modified, ... -> unconditional GET: fetched"),
-# rc 1 with the reason on stdout. force = no ETag and Cache-Control: no-cache.
+# feed_age FILE.bz2 -> rc 0 if the feed's <oval:timestamp> is younger than REFETCH_AGE_HOURS; else rc 1 and the
+# reason on stdout ("cached feed is N h old (> 24 h)" | "cached feed timestamp unreadable"; WHAT replaces "cached")
+feed_age() {
+  local fts age
+  fts="$(feed_ts "$1")" || fts=""
+  if [[ "$fts" =~ ^[0-9]+$ ]]; then
+    age=$(( $(now) - fts ))
+    [ "$age" -lt $(( REFETCH_AGE_HOURS * 3600 )) ] && return 0
+    echo "${2:-cached} feed is $(( age / 3600 )) h old (> ${REFETCH_AGE_HOURS} h)"; return 1
+  fi
+  echo "${2:-cached} feed timestamp unreadable"; return 1
+}
+
+# fetch [force] -> rc 0 (stdout: "fetched" | "not modified" | "not modified, ... -> unconditional GET: fetched" |
+# "fetched, but ... -> unconditional GET: fetched"; a forced fetch that still gets an old feed says
+# "fetched, but downloaded feed is N h old (> 24 h)"), rc 1 with the reason on stdout.
+# force = no ETag, Cache-Control: no-cache, cache-busting query; it never recurses.
 fetch() {
-  local force="${1:-}" tmp etag_args=() code fts age
+  local force="${1:-}" tmp etag_args=() code url="$FEED_URL" why
   mkdir -p "$CACHE_DIR" || { echo "cannot create $CACHE_DIR"; return 1; }
   tmp="$(mktemp -d "$CACHE_DIR/.fetch.XXXXXX")" || { echo "cannot create a temp dir in $CACHE_DIR"; return 1; }
   if [ -n "$force" ]; then
     etag_args=(-H "Cache-Control: no-cache")
+    case "$url" in *\?*) url="$url&" ;; *) url="$url?" ;; esac
+    url="${url}pft-vulnscan-nocache=$(now)"
   elif [ -s "$CACHE_DIR/feed.xml.bz2" ] && [ -s "$CACHE_DIR/feed.etag" ]; then
     etag_args=(--etag-compare "$CACHE_DIR/feed.etag")
   fi
   code="$("$CURL" -sS -f --max-time "$FETCH_TIMEOUT" "${etag_args[@]}" --etag-save "$tmp/etag" \
-          -o "$tmp/feed.xml.bz2" -w '%{http_code}' "$FEED_URL" 2> "$tmp/err")"
+          -o "$tmp/feed.xml.bz2" -w '%{http_code}' "$url" 2> "$tmp/err")"
   local rc=$?
   if [ "$rc" -ne 0 ]; then
     echo "download failed (curl rc $rc, http ${code:-none}: $(head -c 200 "$tmp/err" | tr '\n' ' '))"; rm -rf "$tmp"; return 1
   fi
   if [ "$code" = 304 ] && [ -z "$force" ]; then
     rm -rf "$tmp"
-    fts="$(feed_ts "$CACHE_DIR/feed.xml.bz2")" || fts=""
-    if [[ "$fts" =~ ^[0-9]+$ ]] && age=$(( $(now) - fts )) && [ "$age" -lt $(( REFETCH_AGE_HOURS * 3600 )) ]; then
+    if why="$(feed_age "$CACHE_DIR/feed.xml.bz2")"; then
       sed -i "s/^last_checked=.*/last_checked=$(now)/" "$CACHE_DIR/feed.meta"
       echo "not modified"; return 0
     fi
-    local why="cached feed timestamp unreadable"
-    [[ "$fts" =~ ^[0-9]+$ ]] && why="cached feed is $(( age / 3600 )) h old (> ${REFETCH_AGE_HOURS} h)"
     local msg; msg="$(fetch force)"; rc=$?
     echo "not modified, but $why -> unconditional GET: $msg"; return "$rc"
   fi
@@ -130,7 +147,11 @@ fetch() {
           && mv -f "$tmp/feed.meta" "$CACHE_DIR/feed.meta"; }; then
     echo "cannot update the cache"; rm -rf "$tmp"; return 1
   fi
-  rm -rf "$tmp"; echo "fetched"
+  rm -rf "$tmp"
+  if why="$(feed_age "$CACHE_DIR/feed.xml.bz2" downloaded)"; then echo "fetched"; return 0; fi
+  if [ -n "$force" ]; then echo "fetched, but $why"; return 0; fi
+  local msg; msg="$(fetch force)"; rc=$?
+  echo "fetched, but $why -> unconditional GET: $msg"; return "$rc"
 }
 
 # kernel -> "running newest flag" (flag: present|absent)

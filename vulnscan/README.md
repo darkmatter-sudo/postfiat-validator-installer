@@ -54,6 +54,13 @@ RESULT: 3 affected USNs (0 critical, 0 high, 2 medium, 0 low, 0 negligible, 1 no
    and the output says so (`fetch: not modified, but cached feed is 63 h old (> 24 h) -> unconditional GET: fetched`).
    Why: from 2026-10-31 to 2026-11-02 Canonical's content caches answered 304 to the cached ETag on both hosts while
    the origin already served newer feeds, so the cache stayed on the 2026-10-30 feed and `PFTVulnFeedStale` fired.
+   **Stale 200 / cache-busting (1.2.0):** the same unconditional GET also follows a 200 whose feed is older than
+   `REFETCH_AGE_HOURS`, and the unconditional GET now adds a query string (`?pft-vulnscan-nocache=<epoch>`, `&` if
+   `FEED_URL` already has one). Why: on 2026-11-09 the plain no-cache GET was answered by a Canonical content cache
+   with the 2026-11-06 feed (the origin had 2026-11-08), the next try was 24 h away, and `PFTVulnFeedStale` fired on
+   both hosts. A `HEAD` with a query string showed `x-cache-status: MISS` (origin) where the plain URL showed `HIT`.
+   The unconditional GET never repeats itself: at most 2 requests per run, and if the origin has nothing newer the
+   output says so (`fetched, but downloaded feed is 30 h old (> 24 h)`); the 7-day refusal still applies.
 2. **Cache integrity.** The cached `.bz2` must match the sha256 in `feed.meta`, else exit 2.
 3. **Freshness.** The feed's own `<oval:timestamp>` must be at most `MAX_FEED_AGE_DAYS` (7) old, else exit 2. A
    stale feed would silently miss every USN published since, so it is never used.
@@ -117,7 +124,7 @@ pull: every 15 min.
 
 ## Tests
 
-`bash tests/run-tests.sh` (no root, nothing on the host changes; 119 assertions):
+`bash tests/run-tests.sh` (no root, nothing on the host changes; 141 assertions):
 
 - stub `curl`/`oscap`/`dpkg-query` and a fake clock, with a feed built by `tests/make_fixture.py` in the exact shape of
   Canonical's (`oscap oval validate` passes on it);
@@ -127,6 +134,10 @@ pull: every 15 min.
 - ETag caching (`--etag-compare` only with a cache; 304 keeps it); stale 304 (section 10: a 23 h old copy is kept
   with one request, a 25 h old copy triggers exactly one unconditional GET that replaces it, a failing refetch keeps the
   cache and shows both reasons, `REFETCH_AGE_HOURS` from the config, a cached feed without a timestamp is refetched);
+  stale content cache (section 11: a stub cache that serves its old copy to every URL without a query; a fresh 200 is
+  one request with no query, a stale 304 and an old 200 each reach the origin through the query, `url=` in
+  `feed.meta` stays the plain URL, an old origin gives exactly 2 requests, `&` for a URL that has a query; 9 of these
+  fail against 1.1.0, log 17);
 - **negative controls, each proving exit 2 + `up 0` + no affected series + `last_success` carried over + the
   specific message:** stale feed (8 days; exactly 7 is accepted), missing result, duplicate result, `error` and
   `unknown` results, inventory false, oscap failure, oscap missing, 1-byte tampered cache, valid bzip2 of a truncated
@@ -171,3 +182,5 @@ Both kernels are the newest installed (no reboot owed).
 | `09-live-negatives.log` | live stale/tampered/truncated feed controls (its `(exit)` lines are `tail`'s, see the NOTE) |
 | `10-live-negatives-rc.log` | the same controls with the scan's own exit code: 0 / 2 / 2 / 2 / 0 |
 | `11-tests-final.log` | final tests at the final code: sha256 of every file, installed copies identical, 119/119, promtool |
+| `17-tests-cachebust.log` | 1.2.0 (stale 200 + cache-busting query): shellcheck, 141/141, fail-before control: the same tests against 1.1.0 fail 9 |
+| `18-fleet-sync-1.2.0.log` | pft-fleet sync of 1.2.0 on both hosts (throwaway [MAINT] topic), integrity PASS, live scans afterwards |
