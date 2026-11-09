@@ -8,7 +8,8 @@
 #   sudo ./install.sh --role archive [--host validator]   (the host with the pft-backup archives)
 #       same files + ROLE=archive, OFFHOST=1, PEER_SSH and REPLICA_RECIPIENT copied from /etc/pft-keyescrow.env
 #       (PEER_SSH / PEER_RECIPIENT: the same admin link and the peer's age recipient keyescrow uses) unless already
-#       set; pft-backupwatch-replicate.service/.timer (daily 04:05 + up to 10 min) and pft-backupwatch-pull
+#       set; pft-backupwatch-replicate.service (started by pft-backup.service's OnSuccess= drop-in right after each
+#       backup, then OnSuccess= a collect) + .timer (fallback, daily 04:05 + up to 10 min) and pft-backupwatch-pull
 #       .service/.timer (:09:20 every 15 min). The replica role must be installed on the peer first: this runs one
 #       replicate, one collect and one pull through the sandboxed units (each must succeed, offhost OK), then
 #       enables the three timers.
@@ -37,8 +38,9 @@ done
 
 if $uninstall; then
   systemctl disable --now pft-backupwatch.timer pft-backupwatch-pull.timer pft-backupwatch-replicate.timer 2>/dev/null || true
-  rm -f "$TEXTDIR"/pft_backupwatch_*.prom
-  log "disabled the pft-backupwatch timers, removed the textfiles (kept $STATEDIR, $CONF and the script/units)"
+  rm -f "$TEXTDIR"/pft_backupwatch_*.prom /etc/systemd/system/pft-backup.service.d/pft-backupwatch.conf
+  systemctl daemon-reload
+  log "disabled the pft-backupwatch timers, removed the textfiles and the pft-backup OnSuccess drop-in (kept $STATEDIR, $CONF and the script/units)"
   exit 0
 fi
 case "$role" in
@@ -98,6 +100,8 @@ else
   fi
   conf_set OFFHOST 1
   units+=(pft-backupwatch-replicate pft-backupwatch-pull)
+  # pft-backup.service -> replicate as soon as a backup succeeds (the 04:05 timer stays as the fallback)
+  put "$HERE/systemd/pft-backup.service.d/pft-backupwatch.conf" /etc/systemd/system/pft-backup.service.d/pft-backupwatch.conf 644
 fi
 for u in "${units[@]}"; do
   put "$HERE/systemd/$u.service" "/etc/systemd/system/$u.service" 644

@@ -3,6 +3,8 @@ Description=pft-backupwatch replicate: newest pft-backup archive -> age-encrypte
 Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/backupwatch
 After=network-online.target pft-backup.service
 Wants=network-online.target
+# re-collect at once so the offhost check reads the new replica, not the 15-min-old textfile
+OnSuccess=pft-backupwatch.service
 
 [Service]
 Type=oneshot
