@@ -1,0 +1,31 @@
+fresh public clone verification 2026-11-09T18:35:25Z
+$ git clone https://github.com/darkmatter-sudo/postfiat-validator-installer (anonymous, no credential helper)
+(exit 0)
+$ git checkout 0c96efe64d08b75afd29d109208395887e4a570c
+(exit 0) HEAD 0c96efe64d08b75afd29d109208395887e4a570c
+$ git log --format='%H %s' -6 -- kmod alerts/prometheus.yml fleet/manifest.tsv
+0c96efe64d08b75afd29d109208395887e4a570c kmod/logs: 09-18 two-host live rollout (sentry first, reboot, rollback/re-apply), Prometheus load, fleet sync, operator-topic read-back, final suite
+67f1d4e577c0082ef7ff81b7ddbf6cabc5c7e9d0 kmod: load kmod.rules.yml in Prometheus; track pft-kmod in the pft-fleet manifest
+70216d9e56171e498fb9694a62b11e0fd6826844 kmod drill: quote the sentry's sed and accept reasons for ssh; sentry copy outside /tmp (emptied at boot)
+6795691843fa227854830f101be8e54e750ecd98 kmod drill: keep the run's silence until nothing is pending in Prometheus and reboot + 25 min has passed
+f4bb40a2751cee365ac5d71b84247ddfffd50992 kmod: node gate passes --conf to postfiatd server_info; stub docker enforces it
+ec4d409f3d10e96e23f03eaf9a356bf6ea393862 kmod: kernel-module attack-surface audit + dependency-guarded apply/rollback (offline-tested)
+$ ls kmod kmod/logs
+kmod: README.md drill install.sh logs pft-kmod.env.example pft-kmod.sh systemd tests  kmod/logs: 01-suite.log 02-mutants.log 03-suite.log 04-mutants.log 05-rule-mutants.log 06-lint.log 07-suite-conf-fix.log 08-mutants.log 09-live-sentry-run11-setup-stopped.log 10-live-sentry.log 11-sentry-integrity-after-reboot.log 12-live-validator.log 13-promtool-config.log 14-prometheus-reload.log 15-fleet-skew-before-sync.log 16-fleet-sync.log 17-operator-topic-readback.log 18-final-lint-suite.log 
+$ sha256sum kmod/pft-kmod.sh kmod/drill/*.sh alerts/kmod.rules.yml
+19251a0b13694f2979bf812ca3bc5d65b14239661f4e02e027e4a9ef109768b6  kmod/pft-kmod.sh
+3ce0a965c6a6812b8340fb1d25dea586ec87a027a73cb398a1fb4a5b739f77bf  kmod/drill/host-run.sh
+77148e8fc49c68e5d58d774f72ff1ef2f9ff38ed438cd2d23dbb97ae4e4777a5  kmod/drill/live-run.sh
+13b67a60970c89a892091a1e6abf2e9ff6d09299a94bfda176dd0732ebcfce78  alerts/kmod.rules.yml
+$ installed pft-kmod sha256 (validator, sentry) == repo copy?
+  validator equal, sentry equal
+$ shellcheck kmod/*.sh kmod/drill/*.sh kmod/tests/*.sh
+(exit 0)
+$ bash kmod/tests/run-tests.sh
+RESULT: 22/109 passed
+(exit 1)
+$ promtool test rules alerts/kmod.tests.yml
+
+$ cmp published logs vs agent raw runlogs (10,12)
+  10 identical
+  12 identical

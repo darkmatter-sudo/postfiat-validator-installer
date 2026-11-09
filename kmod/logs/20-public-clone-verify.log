@@ -1,0 +1,28 @@
+fresh public clone verification 2026-11-09T18:36:34Z (clone dir under the agent's home, mode 0755: /tmp on this host is noexec, and the promtool container user must read the dir; a first attempt in /tmp gave 'Permission denied' on every script exec)
+$ git clone https://github.com/darkmatter-sudo/postfiat-validator-installer (anonymous, no credential helper)
+(exit 0)
+$ git checkout 0c96efe64d08b75afd29d109208395887e4a570c -> (exit 0) HEAD 0c96efe64d08b75afd29d109208395887e4a570c, clean: yes
+$ sha256sum kmod/pft-kmod.sh kmod/install.sh kmod/drill/*.sh kmod/systemd/* alerts/kmod.rules.yml alerts/kmod.tests.yml
+19251a0b13694f2979bf812ca3bc5d65b14239661f4e02e027e4a9ef109768b6  kmod/pft-kmod.sh
+0289851e5c3cc1d6929de09a5ac75319687db44cfe18321080d8c4b7bd29dcc8  kmod/install.sh
+3ce0a965c6a6812b8340fb1d25dea586ec87a027a73cb398a1fb4a5b739f77bf  kmod/drill/host-run.sh
+77148e8fc49c68e5d58d774f72ff1ef2f9ff38ed438cd2d23dbb97ae4e4777a5  kmod/drill/live-run.sh
+2c58224d50ff783e71d4a763c1e16fa5c3445db297af80abfd2ac00845a60b99  kmod/systemd/pft-kmod.service
+245f485fb4d825540225f088adad1f0ada231da464db20e67bc1899a40c8990b  kmod/systemd/pft-kmod.timer
+13b67a60970c89a892091a1e6abf2e9ff6d09299a94bfda176dd0732ebcfce78  alerts/kmod.rules.yml
+7468fd63ddd1cd30c0e3f4659f82341f4efa99b1896290aa9085efdd82f6d8f8  alerts/kmod.tests.yml
+$ installed /usr/local/bin/pft-kmod == clone's kmod/pft-kmod.sh?
+  validator equal, sentry equal
+$ shellcheck kmod/*.sh kmod/drill/*.sh kmod/tests/*.sh
+(exit 0)
+$ bash kmod/tests/run-tests.sh
+  PASS lines: 109
+RESULT: 109/109 passed
+(exit 0)
+$ promtool test rules alerts/kmod.tests.yml
+  SUCCESS
+
+$ cmp clone logs vs agent raw runlogs
+  10-live-sentry.log identical to raw run 12
+  12-live-validator.log identical to raw run 14
+  11-sentry-integrity-after-reboot.log identical to raw run 13

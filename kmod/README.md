@@ -164,6 +164,7 @@ found → fixed → verified results are published.
 | operator topics | read back every real notifier topic on both hosts and the agent's own topic: 0 messages since 18:05Z (drill notifications went to throwaway topics only: `[MAINT]` start/end) | [`logs/17-operator-topic-readback.log`](logs/17-operator-topic-readback.log) |
 
 | final lint + suite | shellcheck (every kmod script, drills included) and ruff clean; offline suite 109/109 on the rollout HEAD | [`logs/18-final-lint-suite.log`](logs/18-final-lint-suite.log) |
+| fresh public clone | anonymous clone at the pushed commit: shellcheck clean, suite 109/109, promtool SUCCESS, installed `pft-kmod` equal to the repo copy on both hosts, logs 10-12 byte-identical to the raw runs. The first attempt ran in `/tmp`, which is noexec on this host, so every script exec was refused (22/109); re-run from a 0755 dir under the agent's home | [`logs/20-public-clone-verify.log`](logs/20-public-clone-verify.log), [`logs/19-public-clone-attempt1-tmp-noexec.log`](logs/19-public-clone-attempt1-tmp-noexec.log) |
 
 Two jobs on the validator that pull from the sentry (keyescrow, upgradewatch) failed while the sentry rebooted; they
 were re-run once it was back, and PFTJobFailed cleared under the run's silence.
