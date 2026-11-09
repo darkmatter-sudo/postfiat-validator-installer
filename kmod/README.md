@@ -147,5 +147,23 @@ guard.
 
 `drill/live-run.sh sentry|validator` (on the validator, from a clean committed HEAD that is pushed after the rollout) drives `drill/host-run.sh` on each
 host. Before any change it points every notifier at a throwaway ntfy topic, opens a pft-maint window and creates an
-Alertmanager silence that excludes the pipeline watchdog. It restores all three on exit. Results are added here as
-they are produced. Only found → fixed → verified results are published.
+Alertmanager silence that excludes the pipeline watchdog. It restores all three on exit, and expires the silence only
+when nothing is pending in Prometheus and 25 min have passed since the reboot (PFTContainerRestarted's window). Only
+found → fixed → verified results are published.
+
+| step | result | log |
+| --- | --- | --- |
+| sentry run 11 | **stopped at setup, nothing changed**: ssh joins its arguments into one remote shell line, so the `;` in the sed script split it and the sentry's notifier files were never redirected. The run restored every file (sha256 equal) and expired its silence. Fixed by quoting per host (`printf %q` for ssh only; the same fix for `--reason '...(...)'`) and by keeping the sentry copy outside `/tmp`, which tmpfiles empties at boot. Both helpers were dev-checked on scratch files on both hosts before the next run | [`logs/09-live-sentry-run11-setup-stopped.log`](logs/09-live-sentry-run11-setup-stopped.log) |
+| sentry: install, apply | before: `deny 20: 0 enforced, 13 loadable, 7 absent` (exit 1); dccp `insmod` in dry run. After apply: `deny 20: 20 enforced, 0 loadable` (exit 0); `modprobe dccp` and `modprobe cramfs` refused (`install /bin/false`); SCTP `socket()` fails with `Protocol not supported`; crc7 (not on the list) loads and unloads; required closure (97 modules) unblocked; node `full 22` before and after, container networks/ports hash and egress 200 unchanged | [`logs/10-live-sentry.log`](logs/10-live-sentry.log) |
+| sentry reboot | boot_id changed, back over ssh in 76 s, `full` 2 min 21 s after the reboot command; audit PASS 20 enforced, no deny module loaded, dccp still refused | same log, section 4 |
+| sentry rollback + re-apply | rollback restores the pre-apply state (file absent) and the audit shows 13 loadable again; re-apply writes a file byte-identical to the first apply; PASS; dccp refused again | same log, section 5 |
+| sentry integrity after the reboot | the run's last check FAILed: pft-integrity WARNed on one sshd config file, **mtime only** (sha256 unchanged). Cause, traced via auditd: the hosting provider's cloud-init boot command rewrites that file at every boot with identical content; effective sshd settings were confirmed unchanged. Explained by the planned reboot, so accepted into the baseline; verify PASS | [`logs/11-sentry-integrity-after-reboot.log`](logs/11-sentry-integrity-after-reboot.log) |
+| validator: install, apply, rollback + re-apply, pull | same before/after (13 loadable → 20 enforced), refused dccp/cramfs/SCTP, crc7 control, required closure 111 unblocked, node `full 14` and network hash unchanged throughout; rollback byte-identical, re-apply identical; `install --pull` brings the sentry's `pft_kmod_up 1` into the validator textfile; **0 checks failed** | [`logs/12-live-validator.log`](logs/12-live-validator.log) |
+| Prometheus | `promtool check config` with kmod.rules.yml listed: SUCCESS; `promtool test rules kmod.tests.yml`: SUCCESS; both rule expressions evaluated empty on live data before the reload; after SIGHUP both rules `ok`/inactive | [`logs/13-promtool-config.log`](logs/13-promtool-config.log), [`logs/14-prometheus-reload.log`](logs/14-prometheus-reload.log) |
+| pft-fleet | manifest tracks pft-kmod; first sync refused without a pft-maint window (by design), then synced inside one (throwaway topic); skew `kmod CURRENT` on both hosts, `CURRENT=65 BEHIND=0 DIVERGED=0`; integrity PASS both | [`logs/15-fleet-skew-before-sync.log`](logs/15-fleet-skew-before-sync.log), [`logs/16-fleet-sync.log`](logs/16-fleet-sync.log) |
+| operator topics | read back every real notifier topic on both hosts and the agent's own topic: 0 messages since 18:05Z (drill notifications went to throwaway topics only: `[MAINT]` start/end) | [`logs/17-operator-topic-readback.log`](logs/17-operator-topic-readback.log) |
+
+| final lint + suite | shellcheck (every kmod script, drills included) and ruff clean; offline suite 109/109 on the rollout HEAD | [`logs/18-final-lint-suite.log`](logs/18-final-lint-suite.log) |
+
+Two jobs on the validator that pull from the sentry (keyescrow, upgradewatch) failed while the sentry rebooted; they
+were re-run once it was back, and PFTJobFailed cleared under the run's silence.

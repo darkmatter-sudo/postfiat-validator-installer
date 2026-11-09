@@ -1,0 +1,40 @@
+$ ls /etc/pft-maint/ntfy.env (expect absent)
+absent
+pft-maint ntfy.env -> <throwaway-topic>
+$ sudo pft-maint start --ttl 20m
+window started: id m1794248943-1608443 until 2026-11-09T18:49:03Z | sentry copy: pushed
+(exit 0)
+$ sudo pft-fleet sync --addon fleet --to 67f1d4e577c0082ef7ff81b7ddbf6cabc5c7e9d0 --apply
+[2026-11-09T18:29:25Z] sync fleet to 67f1d4e577c0082ef7ff81b7ddbf6cabc5c7e9d0 (2026-11-09T18:26:13+00:00) REF main=67f1d4e577c0082ef7ff81b7ddbf6cabc5c7e9d0
+PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+PLAN validator validator /usr/local/lib/pft-fleet/manifest.tsv 0644 BEHIND ffb9d73a6933 0131af674787 write
+[2026-11-09T18:29:25Z] order: sentry validator
+[2026-11-09T18:29:25Z] sentry: every fleet file already at 67f1d4e577c0 - nothing to do
+[2026-11-09T18:29:25Z] validator: 1 file(s) to write
+PRE validator pft-maint window active PASS
+PRE validator node server_state=full PASS
+PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+BACKUP validator /usr/local/lib/pft-fleet/manifest.tsv sha256 ffb9d73a6933 -> /var/lib/pft-fleet/backup/20261109T182925Z-fleet-validator
+WRITE validator /usr/local/lib/pft-fleet/manifest.tsv ffb9d73a6933 -> 0131af674787 mode 0644
+GATE validator sha256 /usr/local/lib/pft-fleet/manifest.tsv = target 0131af674787 PASS
+GATE validator addon units failed=none PASS
+GATE validator node server_state=full PASS
+ACCEPT validator pft-integrity baseline updated: pft-fleet sync fleet@67f1d4e577c0 (manifest.tsv)
+[2026-11-09T18:29:52Z] SYNCED validator fleet -> 67f1d4e577c0
+[2026-11-09T18:29:52Z] sync complete
+(exit 0)
+$ sudo pft-maint end
+window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+(exit 0)
+pft-maint ntfy.env removed (absent again: yes)
+$ sudo pft-fleet skew
+sentry     kmod        CURRENT    
+validator  kmod        CURRENT    
+SUMMARY CURRENT=65 BEHIND=0 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+(exit 0)
+$ pft-integrity verify (validator, sentry)
+RESULT: PASS - 227 unchanged, 0 warn, 0 fail -> exit 0
+RESULT: PASS - 138 unchanged, 0 warn, 0 fail -> exit 0
+$ throwaway topic messages
+[MAINT] start validator
+[MAINT] end validator

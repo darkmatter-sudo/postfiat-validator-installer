@@ -1,0 +1,51 @@
+kmod live-run sentry - 2026-11-09T18:09:41Z - Ubuntu 22.04.5 LTS - repo HEAD 6795691843fa227854830f101be8e54e750ecd98 (clean: yes)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 223 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 135 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   preflight: pft-integrity PASS on both hosts
+
+== 1. alert targets -> throwaway topic, silence (all but the watchdog), pft-maint window
+CHECK ok   validator /etc/pft-maint/ntfy.env -> throwaway
+CHECK ok   validator /etc/postfiat-monitor.env -> throwaway
+CHECK ok   validator /etc/pft-integrity.env -> throwaway
+sed: no input files
+bash: line 1: s#^NTFY_SERVER=.*#NTFY_SERVER=https://ntfy.sh#: No such file or directory
+bash: line 1: s#^NTFY_TOKEN=.*#NTFY_TOKEN=#: command not found
+CHECK FAIL sentry /etc/pft-watchdog/ntfy.env -> throwaway
+sed: no input files
+bash: line 1: s#^NTFY_SERVER=.*#NTFY_SERVER=https://ntfy.sh#: No such file or directory
+bash: line 1: s#^NTFY_TOKEN=.*#NTFY_TOKEN=#: command not found
+CHECK FAIL sentry /etc/pft-alertpath/ntfy.env -> throwaway
+sed: no input files
+bash: line 1: s#^NTFY_SERVER=.*#NTFY_SERVER=https://ntfy.sh#: No such file or directory
+bash: line 1: s#^NTFY_TOKEN=.*#NTFY_TOKEN=#: command not found
+CHECK FAIL sentry /etc/pft-integrity.env -> throwaway
+CHECK ok   Alertmanager silence f6848c3b (alertname=~.+, alertname!=PFTAlertPipelineWatchdog) until 2026-11-09T19:20:27Z
+$ sudo -n pft-maint start --ttl 60m --reason 'task_07a6e13e99620b3df65ef2056ed835f9 kmod sentry rollout'
+  window started: id m1794247828-1547330 until 2026-11-09T19:10:28Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint window open
+CHECK ok   sentry has the window (via the watchdog channel) after 20s
+setup failed - restoring, nothing changed
+
+== restore (2026-11-09T18:10:53Z)
+$ sudo -n pft-maint end --reason 'kmod sentry rollout done'
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+  (exit 0)
+CHECK ok   validator /etc/pft-maint/ntfy.env restored (absent again)
+CHECK ok   validator /etc/postfiat-monitor.env restored (sha256 equal, not printed)
+CHECK ok   validator /etc/pft-integrity.env restored (sha256 equal, not printed)
+CHECK ok   sentry /etc/pft-watchdog/ntfy.env restored (sha256 equal, not printed)
+CHECK ok   sentry /etc/pft-alertpath/ntfy.env restored (sha256 equal, not printed)
+CHECK ok   sentry /etc/pft-integrity.env restored (sha256 equal, not printed)
+$ curl -s -X DELETE http://<redacted-ip>:9093/api/v2/silence/f6848c3b-1e23-41c3-b045-ec8d15f22d96 -o /dev/null -w '%{http_code}'
+  200
+  (exit 0)
+$ sleep 5; curl -s --max-time 15 "https://ntfy.sh/$TT/json?poll=1&since=2h" | jq -r '.title'
+  [MAINT] start validator
+  [MAINT] end validator
+  (exit 0)
+throwaway topic received 2 message(s) (operator topics: none of the above)
+
+live-run sentry done 2026-11-09T18:11:06Z: 3 check(s) failed -> FAIL

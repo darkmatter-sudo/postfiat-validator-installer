@@ -1,0 +1,86 @@
+$ sudo pft-fleet sync --addon fleet --to 67f1d4e577c0082ef7ff81b7ddbf6cabc5c7e9d0 --apply --reason 'task_07a6e13e99620b3df65ef2056ed835f9: manifest tracks pft-kmod'
+[2026-11-09T18:27:54Z] sync fleet to 67f1d4e577c0082ef7ff81b7ddbf6cabc5c7e9d0 (2026-11-09T18:26:13+00:00) REF main=67f1d4e577c0082ef7ff81b7ddbf6cabc5c7e9d0
+PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+PLAN validator validator /usr/local/sbin/pft-fleet 0755 CURRENT 61cafcfcdaa9 61cafcfcdaa9 keep
+PLAN validator validator /usr/local/lib/pft-fleet/fleet_lib.py 0644 CURRENT dcb37d26f33f dcb37d26f33f keep
+PLAN validator validator /usr/local/lib/pft-fleet/manifest.tsv 0644 BEHIND ffb9d73a6933 0131af674787 write
+PLAN validator validator /etc/systemd/system/pft-fleet.service 0644 CURRENT 3105a2f0a144 3105a2f0a144 keep
+PLAN validator validator /etc/systemd/system/pft-fleet.timer 0644 CURRENT 79839ee00a81 79839ee00a81 keep
+[2026-11-09T18:27:54Z] order: sentry validator
+[2026-11-09T18:27:54Z] sentry: every fleet file already at 67f1d4e577c0 - nothing to do
+[2026-11-09T18:27:54Z] validator: 1 file(s) to write
+[2026-11-09T18:27:54Z] REFUSED validator: no active pft-maint window (sudo pft-maint start --ttl 30m --reason ...)
+(exit 4)
+$ sudo pft-fleet skew
+ref main = 67f1d4e577c0082ef7ff81b7ddbf6cabc5c7e9d0
+host sentry     role sentry    ok
+host validator  role validator ok
+HOST       ADDON       STATE      DETAIL
+sentry     alertpath   CURRENT    
+sentry     apparmor    CURRENT    
+sentry     audittrail  CURRENT    
+sentry     authwatch   CURRENT    
+sentry     backfill    CURRENT    
+sentry     backupwatch CURRENT    
+sentry     cluster     CURRENT    
+sentry     divergence  CURRENT    
+sentry     egress      CURRENT    
+sentry     feewatch    CURRENT    
+sentry     integrity   CURRENT    
+sentry     jobwatch    CURRENT    
+sentry     kernwatch   CURRENT    
+sentry     keyescrow   CURRENT    
+sentry     logship     CURRENT    
+sentry     maint       CURRENT    
+sentry     mounts      CURRENT    
+sentry     patch       CURRENT    
+sentry     privesc     CURRENT    
+sentry     resources   CURRENT    
+sentry     rulecheck   CURRENT    
+sentry     schedaudit  CURRENT    
+sentry     seccomp     CURRENT    
+sentry     statewatch  CURRENT    
+sentry     sysctl      CURRENT    
+sentry     timesync    CURRENT    
+sentry     upgradewatch CURRENT    
+sentry     vulnscan    CURRENT    
+sentry     watchdog    CURRENT    
+validator  alertpath   CURRENT    
+validator  apparmor    CURRENT    
+validator  audittrail  CURRENT    
+validator  authwatch   CURRENT    
+validator  backfill    CURRENT    
+validator  backup      CURRENT    
+validator  backupwatch CURRENT    
+validator  cluster     CURRENT    
+validator  divergence  CURRENT    
+validator  egress      CURRENT    
+validator  exporter    CURRENT    
+validator  feewatch    CURRENT    
+validator  fleet       BEHIND     /usr/local/lib/pft-fleet/manifest.tsv BEHIND @e8c28a0401ba (-1)
+validator  integrity   CURRENT    
+validator  jobwatch    CURRENT    
+validator  kernwatch   CURRENT    
+validator  keyescrow   CURRENT    
+validator  logship     CURRENT    
+validator  maint       CURRENT    
+validator  monitor     CURRENT    
+validator  mounts      CURRENT    
+validator  patch       CURRENT    
+validator  privesc     CURRENT    
+validator  resources   CURRENT    
+validator  retention   CURRENT    
+validator  rulecheck   CURRENT    
+validator  schedaudit  CURRENT    
+validator  seccomp     CURRENT    
+validator  statewatch  CURRENT    
+validator  sysctl      CURRENT    
+validator  timesync    CURRENT    
+validator  upgradewatch CURRENT    
+validator  vulnscan    CURRENT    
+validator  watchdog    CURRENT    
+SUMMARY CURRENT=62 BEHIND=1 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+(exit 1)
+$ pft-integrity verify (both)
+RESULT: PASS - 227 unchanged, 0 warn, 0 fail -> exit 0
+RESULT: PASS - 138 unchanged, 0 warn, 0 fail -> exit 0

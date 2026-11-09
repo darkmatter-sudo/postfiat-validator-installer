@@ -1,0 +1,381 @@
+kmod live-run sentry - 2026-11-09T18:12:45Z - Ubuntu 22.04.5 LTS - repo HEAD 70216d9e56171e498fb9694a62b11e0fd6826844 (clean: yes)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 223 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 135 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   preflight: pft-integrity PASS on both hosts
+
+== 1. alert targets -> throwaway topic, silence (all but the watchdog), pft-maint window
+CHECK ok   validator /etc/pft-maint/ntfy.env -> throwaway
+CHECK ok   validator /etc/postfiat-monitor.env -> throwaway
+CHECK ok   validator /etc/pft-integrity.env -> throwaway
+CHECK ok   sentry /etc/pft-watchdog/ntfy.env -> throwaway
+CHECK ok   sentry /etc/pft-alertpath/ntfy.env -> throwaway
+CHECK ok   sentry /etc/pft-integrity.env -> throwaway
+CHECK ok   Alertmanager silence 5347f999 (alertname=~.+, alertname!=PFTAlertPipelineWatchdog) until 2026-11-09T19:23:24Z
+$ sudo -n pft-maint start --ttl 60m --reason 'task_07a6e13e99620b3df65ef2056ed835f9 kmod sentry rollout'
+  window started: id m1794248004-1553514 until 2026-11-09T19:13:24Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint window open
+CHECK ok   sentry has the window (via the watchdog channel) after 30s
+
+== 2. ship 70216d9e56171e498fb9694a62b11e0fd6826844 to the sentry (git archive -> fresh temp dir), install
+$ git archive --format=tar 70216d9e56171e498fb9694a62b11e0fd6826844 kmod | R "tar -x -C /root/kmod-drill.GAdlAi" && R "cd /root/kmod-drill.GAdlAi && sha256sum kmod/pft-kmod.sh kmod/install.sh kmod/systemd/*"
+  19251a0b13694f2979bf812ca3bc5d65b14239661f4e02e027e4a9ef109768b6  kmod/pft-kmod.sh
+  0289851e5c3cc1d6929de09a5ac75319687db44cfe18321080d8c4b7bd29dcc8  kmod/install.sh
+  2c58224d50ff783e71d4a763c1e16fa5c3445db297af80abfd2ac00845a60b99  kmod/systemd/pft-kmod.service
+  245f485fb4d825540225f088adad1f0ada231da464db20e67bc1899a40c8990b  kmod/systemd/pft-kmod.timer
+  (exit 0)
+$ R "cd /root/kmod-drill.GAdlAi && sudo -n bash kmod/install.sh --host sentry"
+  2026-11-09T18:14:03Z installed /usr/local/bin/pft-kmod (sha256 19251a0b13694f2979bf812ca3bc5d65b14239661f4e02e027e4a9ef109768b6)
+  2026-11-09T18:14:04Z added the pft_kmod textfile line to /etc/pft-rulecheck.conf
+  2026-11-09T18:14:04Z first audit (through the sandboxed unit, HOST_LABEL=sentry):
+  pft_kmod_up{host="sentry"} 1
+  pft_kmod_deny_modules{host="sentry",state="enforced"} 0
+  pft_kmod_deny_modules{host="sentry",state="loaded"} 0
+  pft_kmod_deny_modules{host="sentry",state="loadable"} 13
+  pft_kmod_deny_modules{host="sentry",state="absent"} 7
+  pft_kmod_deny_modules{host="sentry",state="builtin"} 0
+  pft_kmod_required_blocked{host="sentry"} 0
+  pft_kmod_autoload_ok{host="sentry"} 1
+  Created symlink /etc/systemd/system/timers.target.wants/pft-kmod.timer → /etc/systemd/system/pft-kmod.timer.
+  2026-11-09T18:14:10Z enabled pft-kmod.timer (hourly at :23 + up to 5 min)
+  2026-11-09T18:14:10Z remember: sudo pft-integrity accept --reason 'pft-kmod installed'; sudo pft-schedaudit accept + collect
+  (exit 0)
+CHECK ok   sentry install exit 0 (first audit up 1)
+$ R sudo -n pft-schedaudit accept --reason "'task_07a6e13e99620b3df65ef2056ed835f9: pft-kmod installed (binary, service, timer)'" | tail -2; R sudo -n pft-schedaudit collect >/dev/null; R sudo -n grep -E '^pft_schedaudit_unexpected' /var/lib/pft-exporter/textfile/pft_schedaudit_sentry.prom
+  accepted 68 entries (+1 -0): task_07a6e13e99620b3df65ef2056ed835f9: pft-kmod installed (binary, service, timer)
+  pft_schedaudit_unexpected{host="sentry",kind="new"} 0
+  pft_schedaudit_unexpected{host="sentry",kind="removed"} 0
+  pft_schedaudit_unexpected{host="sentry",kind="finding"} 0
+  pft_schedaudit_unexpected{host="sentry",kind="unaccepted"} 0
+  (exit 0)
+CHECK ok   sentry schedaudit unexpected all 0 after accept + collect
+$ R sudo -n pft-integrity accept --reason "'task_07a6e13e99620b3df65ef2056ed835f9: pft-kmod installed (binary, service, timer)'" | tail -2; R sudo -n pft-integrity verify | tail -1
+  pft-integrity accept - 2026-11-09T18:14:30Z: re-baselined 138 items by root
+  manifest sha256: a05833a49b8aa4cdf0dc08fc1524d2c990b072696f7350c0eb97da6469e827a5 -> a5b999d283dacd7b0667fdd0783e20d0c534675a6fd957aff600432dac547cd7 (logged to accept.log)
+  RESULT: PASS - 138 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   sentry pft-integrity PASS after accept
+
+== 3. sentry: apply (found -> fixed -> verified)
+$ R "cd /root/kmod-drill.GAdlAi && bash kmod/drill/host-run.sh apply sentry"
+  kmod drill apply - 2026-11-09T18:14:44Z - Ubuntu 22.04.5 LTS - host: sentry-host - kernel 5.15.0-202-generic - repo tree - container postfiatd-sentry
+  $ /usr/local/bin/pft-kmod version
+    pft-kmod 1.0.0
+    (exit 0)
+  before: node(state peers)=full 22 | egress https=200 | net=5548f3bb71173cdf
+  
+  == 1. audit before (found)
+  $ sudo -n /usr/local/bin/pft-kmod audit
+    pft-kmod audit 1.0.0 - 2026-11-09T18:14:48Z  host=sentry  kernel 5.15.0-202-generic  OS: Ubuntu 22.04.5 LTS
+    WARN  deny:cramfs            not in this kernel's module tree and no install rule (a linux-modules-extra install would make it loadable)
+    WARN  deny:freevxfs          not in this kernel's module tree and no install rule (a linux-modules-extra install would make it loadable)
+    WARN  deny:jffs2             not in this kernel's module tree and no install rule (a linux-modules-extra install would make it loadable)
+    WARN  deny:hfs               not in this kernel's module tree and no install rule (a linux-modules-extra install would make it loadable)
+    WARN  deny:hfsplus           not in this kernel's module tree and no install rule (a linux-modules-extra install would make it loadable)
+    FAIL  deny:udf               loadable: in the module tree, no install rule (fs)
+    FAIL  deny:usb-storage       loadable: in the module tree, no install rule (dev)
+    FAIL  deny:dccp              loadable: in the module tree, no install rule (net)
+    FAIL  deny:sctp              loadable: in the module tree, no install rule (net)
+    WARN  deny:rds               not in this kernel's module tree and no install rule (a linux-modules-extra install would make it loadable)
+    FAIL  deny:tipc              loadable: in the module tree, no install rule (net)
+    FAIL  deny:atm               loadable: in the module tree, no install rule (net)
+    FAIL  deny:can               loadable: in the module tree, no install rule (net)
+    FAIL  deny:ieee802154        loadable: in the module tree, no install rule (net)
+    FAIL  deny:appletalk         loadable: in the module tree, no install rule (net)
+    FAIL  deny:x25               loadable: in the module tree, no install rule (net)
+    FAIL  deny:ax25              loadable: in the module tree, no install rule (net)
+    FAIL  deny:netrom            loadable: in the module tree, no install rule (net)
+    FAIL  deny:rose              loadable: in the module tree, no install rule (net)
+    WARN  deny:n_hdlc            not in this kernel's module tree and no install rule (a linux-modules-extra install would make it loadable)
+    PASS  autoload               kernel.modprobe=/sbin/modprobe: autoload requests go through the install rules
+    PASS  required               97 required/loaded modules resolve to insmod/builtin only
+    WARN  managed                /etc/modprobe.d/60-pft-kmod.conf missing (not applied)
+    RESULT: FINDINGS - deny 20: 0 enforced, 0 loaded, 13 loadable, 7 absent, 0 builtin; required blocked 0; autoload ok -> exit 1
+    (exit 1)
+  CHECK ok   audit before: findings (exit 1)
+  $ sudo -n /usr/local/bin/pft-kmod audit --json | jq -c '[.checks[] | select(.status=="FAIL") | .check]'
+    ["deny:udf","deny:usb-storage","deny:dccp","deny:sctp","deny:tipc","deny:atm","deny:can","deny:ieee802154","deny:appletalk","deny:x25","deny:ax25","deny:netrom","deny:rose"]
+    (exit 1)
+  
+  == 2. dry-run controls before apply (nothing is loaded: modprobe -n only)
+  $ modprobe -n -v dccp
+    insmod /lib/modules/5.15.0-202-generic/kernel/net/dccp/dccp.ko 
+    (exit 0)
+  CHECK ok   before: dccp would load (insmod)
+  $ modprobe -n -v cramfs
+    modprobe: FATAL: Module cramfs not found in directory /lib/modules/5.15.0-202-generic
+    (exit 1)
+  CHECK ok   before: cramfs absent from this kernel's tree (modprobe -n fails)
+  $ sudo -n /usr/local/bin/pft-kmod apply --dry-run | tail -3
+      +install n_hdlc /bin/false
+      +blacklist n_hdlc
+    2026-11-09T18:14:56Z dry-run: guards pass, nothing written
+    (exit 0)
+  
+  == 3. apply
+  $ sudo -n /usr/local/bin/pft-kmod apply --yes | grep -v '^  [-+ ]'
+    2026-11-09T18:15:01Z apply on sentry: node (running/state/peers) true full 22; 20 deny rules; CONF_FILE sha256 before absent
+      @@ -0,0 +1,62 @@
+    2026-11-09T18:15:01Z wrote /etc/modprobe.d/60-pft-kmod.conf (sha256 ae430d26f2e19567fc15b3d3d77bf93edc7b47120a643ec5744eb8fc98d162c9); backup: none (file did not exist)
+    2026-11-09T18:15:07Z verify ok: 20 deny modules resolve to install /bin/false; required closure unblocked; node true full 22
+    (exit 0)
+  CHECK ok   apply exit 0, verify ok
+  $ sha256sum /etc/modprobe.d/60-pft-kmod.conf; stat -c '%a %U:%G' /etc/modprobe.d/60-pft-kmod.conf; grep -c '^install .* /bin/false$' /etc/modprobe.d/60-pft-kmod.conf
+    ae430d26f2e19567fc15b3d3d77bf93edc7b47120a643ec5744eb8fc98d162c9  /etc/modprobe.d/60-pft-kmod.conf
+    644 <user>:<user>
+    20
+    (exit 0)
+  
+  == 4. audit after (fixed)
+  $ sudo -n /usr/local/bin/pft-kmod audit
+    pft-kmod audit 1.0.0 - 2026-11-09T18:15:11Z  host=sentry  kernel 5.15.0-202-generic  OS: Ubuntu 22.04.5 LTS
+    PASS  deny:cramfs            install rule blocks load and autoload
+    PASS  deny:freevxfs          install rule blocks load and autoload
+    PASS  deny:jffs2             install rule blocks load and autoload
+    PASS  deny:hfs               install rule blocks load and autoload
+    PASS  deny:hfsplus           install rule blocks load and autoload
+    PASS  deny:udf               install rule blocks load and autoload
+    PASS  deny:usb-storage       install rule blocks load and autoload
+    PASS  deny:dccp              install rule blocks load and autoload
+    PASS  deny:sctp              install rule blocks load and autoload
+    PASS  deny:rds               install rule blocks load and autoload
+    PASS  deny:tipc              install rule blocks load and autoload
+    PASS  deny:atm               install rule blocks load and autoload
+    PASS  deny:can               install rule blocks load and autoload
+    PASS  deny:ieee802154        install rule blocks load and autoload
+    PASS  deny:appletalk         install rule blocks load and autoload
+    PASS  deny:x25               install rule blocks load and autoload
+    PASS  deny:ax25              install rule blocks load and autoload
+    PASS  deny:netrom            install rule blocks load and autoload
+    PASS  deny:rose              install rule blocks load and autoload
+    PASS  deny:n_hdlc            install rule blocks load and autoload
+    PASS  autoload               kernel.modprobe=/sbin/modprobe: autoload requests go through the install rules
+    PASS  required               97 required/loaded modules resolve to insmod/builtin only
+    PASS  managed                /etc/modprobe.d/60-pft-kmod.conf matches the deny list (sha256 ae430d26f2e1)
+    RESULT: PASS - deny 20: 20 enforced, 0 loaded, 0 loadable, 0 absent, 0 builtin; required blocked 0; autoload ok -> exit 0
+    (exit 0)
+  CHECK ok   audit after: PASS (exit 0), 20 enforced
+  
+  == 5. refused loads (real modprobe, real socket)
+  $ sudo -n modprobe -v dccp
+    modprobe: ERROR: ../libkmod/libkmod-module.c:990 command_do() Error running install command '/bin/false' for module dccp: retcode 1
+    modprobe: ERROR: could not insert 'dccp': Invalid argument
+    install /bin/false 
+    (exit 1)
+  CHECK ok   modprobe dccp refused (non-zero, 'install /bin/false')
+  $ sudo -n modprobe -v cramfs
+    modprobe: ERROR: ../libkmod/libkmod-module.c:990 command_do() Error running install command '/bin/false' for module cramfs: retcode 1
+    modprobe: ERROR: could not insert 'cramfs': Invalid argument
+    install /bin/false 
+    (exit 1)
+  CHECK ok   modprobe cramfs refused
+  $ python3 -I -c 'import socket; socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_SCTP)'
+    Traceback (most recent call last):
+      File "<string>", line 1, in <module>
+      File "/usr/lib/python3.10/socket.py", line 232, in __init__
+        _socket.socket.__init__(self, family, type, proto, fileno)
+    OSError: [Errno 93] Protocol not supported
+    (exit 1)
+  CHECK ok   SCTP socket() fails (autoload refused)
+  $ grep -cE '^(dccp|sctp|cramfs) ' /proc/modules
+    0
+    (exit 1)
+  CHECK ok   dccp/sctp/cramfs not loaded
+  
+  == 6. allowed-module control (crc7: library module, not on the list, no side effects)
+  $ grep -c '^crc7 ' /proc/modules
+    0
+    (exit 1)
+  $ sudo -n modprobe -v crc7 && grep '^crc7 ' /proc/modules | cut -d' ' -f1
+    insmod /lib/modules/5.15.0-202-generic/kernel/lib/crc7.ko 
+    crc7
+    (exit 0)
+  CHECK ok   crc7 loads
+  $ sudo -n modprobe -r -v crc7; grep -c '^crc7 ' /proc/modules
+    rmmod crc7
+    0
+    (exit 1)
+  CHECK ok   crc7 unloaded again
+  
+  == node, network, egress unchanged
+  after:  node(state peers)=full 22 | egress https=200 | net=5548f3bb71173cdf
+  CHECK ok   server_state full, peers >= 1 (full 22)
+  CHECK ok   container networks + published ports unchanged
+  CHECK ok   host egress https 200
+  $ sudo -n /usr/local/bin/pft-kmod audit --textfile >/dev/null; grep -E '^pft_kmod_(up|deny_modules\{[^}]*enforced|required_blocked|autoload_ok)' /var/lib/pft-exporter/textfile/pft_kmod_sentry.prom
+    pft_kmod_up{host="sentry"} 1
+    pft_kmod_deny_modules{host="sentry",state="enforced"} 20
+    pft_kmod_required_blocked{host="sentry"} 0
+    pft_kmod_autoload_ok{host="sentry"} 1
+    (exit 0)
+  
+  kmod drill apply done 2026-11-09T18:15:17Z: 0 check(s) failed -> PASS
+  (exit 0)
+CHECK ok   sentry host-run apply PASS
+
+== 4. sentry reboot (persistence)
+2026-11-09T18:15:17Z $ sudo systemctl reboot   (sentry)
+CHECK ok   sentry back over ssh (2026-11-09T18:16:33Z)
+CHECK ok   boot_id changed (really rebooted)
+2026-11-09T18:17:38Z sentry server_state full after poll 3
+CHECK ok   sentry full after reboot
+$ R "cd /root/kmod-drill.GAdlAi && bash kmod/drill/host-run.sh after-reboot sentry"
+  kmod drill after-reboot - 2026-11-09T18:17:39Z - Ubuntu 22.04.5 LTS - host: sentry-host - kernel 5.15.0-202-generic - repo tree - container postfiatd-sentry
+  $ /usr/local/bin/pft-kmod version
+    pft-kmod 1.0.0
+    (exit 0)
+  before: node(state peers)=full 11 | egress https=200 | net=5548f3bb71173cdf
+  
+  == 1. persistence after reboot
+  $ uptime -s; cat /proc/sys/kernel/random/boot_id | cut -c1-8
+    2026-11-09 19:15:52
+    e8d83749
+    (exit 0)
+  $ sha256sum /etc/modprobe.d/60-pft-kmod.conf
+    ae430d26f2e19567fc15b3d3d77bf93edc7b47120a643ec5744eb8fc98d162c9  /etc/modprobe.d/60-pft-kmod.conf
+    (exit 0)
+  $ sudo -n /usr/local/bin/pft-kmod audit
+    pft-kmod audit 1.0.0 - 2026-11-09T18:17:44Z  host=sentry  kernel 5.15.0-202-generic  OS: Ubuntu 22.04.5 LTS
+    PASS  deny:cramfs            install rule blocks load and autoload
+    PASS  deny:freevxfs          install rule blocks load and autoload
+    PASS  deny:jffs2             install rule blocks load and autoload
+    PASS  deny:hfs               install rule blocks load and autoload
+    PASS  deny:hfsplus           install rule blocks load and autoload
+    PASS  deny:udf               install rule blocks load and autoload
+    PASS  deny:usb-storage       install rule blocks load and autoload
+    PASS  deny:dccp              install rule blocks load and autoload
+    PASS  deny:sctp              install rule blocks load and autoload
+    PASS  deny:rds               install rule blocks load and autoload
+    PASS  deny:tipc              install rule blocks load and autoload
+    PASS  deny:atm               install rule blocks load and autoload
+    PASS  deny:can               install rule blocks load and autoload
+    PASS  deny:ieee802154        install rule blocks load and autoload
+    PASS  deny:appletalk         install rule blocks load and autoload
+    PASS  deny:x25               install rule blocks load and autoload
+    PASS  deny:ax25              install rule blocks load and autoload
+    PASS  deny:netrom            install rule blocks load and autoload
+    PASS  deny:rose              install rule blocks load and autoload
+    PASS  deny:n_hdlc            install rule blocks load and autoload
+    PASS  autoload               kernel.modprobe=/sbin/modprobe: autoload requests go through the install rules
+    PASS  required               95 required/loaded modules resolve to insmod/builtin only
+    PASS  managed                /etc/modprobe.d/60-pft-kmod.conf matches the deny list (sha256 ae430d26f2e1)
+    RESULT: PASS - deny 20: 20 enforced, 0 loaded, 0 loadable, 0 absent, 0 builtin; required blocked 0; autoload ok -> exit 0
+    (exit 0)
+  CHECK ok   audit after reboot: PASS, 20 enforced
+  $ loaded_deny
+    
+    (exit 0)
+  CHECK ok   no deny-list module loaded after boot
+  $ sudo -n modprobe -v dccp
+    modprobe: ERROR: ../libkmod/libkmod-module.c:990 command_do() Error running install command '/bin/false' for module dccp: retcode 1
+    modprobe: ERROR: could not insert 'dccp': Invalid argument
+    install /bin/false 
+    (exit 1)
+  CHECK ok   modprobe dccp still refused
+  
+  == node, network, egress unchanged
+  after:  node(state peers)=full 11 | egress https=200 | net=5548f3bb71173cdf
+  CHECK ok   server_state full, peers >= 1 (full 11)
+  CHECK ok   container networks + published ports unchanged
+  CHECK ok   host egress https 200
+  $ sudo -n /usr/local/bin/pft-kmod audit --textfile >/dev/null; grep -E '^pft_kmod_(up|deny_modules\{[^}]*enforced|required_blocked|autoload_ok)' /var/lib/pft-exporter/textfile/pft_kmod_sentry.prom
+    pft_kmod_up{host="sentry"} 1
+    pft_kmod_deny_modules{host="sentry",state="enforced"} 20
+    pft_kmod_required_blocked{host="sentry"} 0
+    pft_kmod_autoload_ok{host="sentry"} 1
+    (exit 0)
+  
+  kmod drill after-reboot done 2026-11-09T18:17:51Z: 0 check(s) failed -> PASS
+  (exit 0)
+CHECK ok   sentry host-run after-reboot PASS
+
+== 5. sentry: rollback + re-apply
+$ R "cd /root/kmod-drill.GAdlAi && bash kmod/drill/host-run.sh rollback-reapply sentry"
+  kmod drill rollback-reapply - 2026-11-09T18:17:51Z - Ubuntu 22.04.5 LTS - host: sentry-host - kernel 5.15.0-202-generic - repo tree - container postfiatd-sentry
+  $ /usr/local/bin/pft-kmod version
+    pft-kmod 1.0.0
+    (exit 0)
+  before: node(state peers)=full 11 | egress https=200 | net=5548f3bb71173cdf
+  
+  == 1. rollback (byte-identical)
+  before rollback: conf sha256 ae430d26f2e19567fc15b3d3d77bf93edc7b47120a643ec5744eb8fc98d162c9, recorded pre-apply sha256 absent
+  $ sudo -n /usr/local/bin/pft-kmod rollback --yes
+    2026-11-09T18:17:55Z rollback on sentry: /etc/modprobe.d/60-pft-kmod.conf restored byte-identical (sha256 absent); required blocked: 0; node true full 11
+    (exit 0)
+  CHECK ok   rollback exit 0
+  CHECK ok   conf back to the pre-apply state (absent)
+  $ sudo -n /usr/local/bin/pft-kmod audit | tail -1
+    RESULT: FINDINGS - deny 20: 0 enforced, 0 loaded, 13 loadable, 7 absent, 0 builtin; required blocked 0; autoload ok -> exit 1
+    (exit 1)
+  CHECK ok   audit after rollback: modules loadable again (exit 1)
+  $ modprobe -n -v dccp
+    insmod /lib/modules/5.15.0-202-generic/kernel/net/dccp/dccp.ko 
+    (exit 0)
+  CHECK ok   dccp would load again (dry run)
+  
+  == 2. re-apply
+  $ sudo -n /usr/local/bin/pft-kmod apply --yes | grep -v '^  [-+ ]'
+    2026-11-09T18:18:06Z apply on sentry: node (running/state/peers) true full 11; 20 deny rules; CONF_FILE sha256 before absent
+      @@ -0,0 +1,62 @@
+    2026-11-09T18:18:06Z wrote /etc/modprobe.d/60-pft-kmod.conf (sha256 ae430d26f2e19567fc15b3d3d77bf93edc7b47120a643ec5744eb8fc98d162c9); backup: none (file did not exist)
+    2026-11-09T18:18:12Z verify ok: 20 deny modules resolve to install /bin/false; required closure unblocked; node true full 11
+    (exit 0)
+  CHECK ok   re-apply exit 0
+  $ sha256sum /etc/modprobe.d/60-pft-kmod.conf
+    ae430d26f2e19567fc15b3d3d77bf93edc7b47120a643ec5744eb8fc98d162c9  /etc/modprobe.d/60-pft-kmod.conf
+    (exit 0)
+  CHECK ok   re-applied file identical to the first apply
+  $ sudo -n /usr/local/bin/pft-kmod audit | tail -1
+    RESULT: PASS - deny 20: 20 enforced, 0 loaded, 0 loadable, 0 absent, 0 builtin; required blocked 0; autoload ok -> exit 0
+    (exit 0)
+  CHECK ok   audit after re-apply: PASS
+  $ sudo -n modprobe -v dccp
+    modprobe: ERROR: ../libkmod/libkmod-module.c:990 command_do() Error running install command '/bin/false' for module dccp: retcode 1
+    modprobe: ERROR: could not insert 'dccp': Invalid argument
+    install /bin/false 
+    (exit 1)
+  CHECK ok   dccp refused again
+  
+  == node, network, egress unchanged
+  after:  node(state peers)=full 11 | egress https=200 | net=5548f3bb71173cdf
+  CHECK ok   server_state full, peers >= 1 (full 11)
+  CHECK ok   container networks + published ports unchanged
+  CHECK ok   host egress https 200
+  $ sudo -n /usr/local/bin/pft-kmod audit --textfile >/dev/null; grep -E '^pft_kmod_(up|deny_modules\{[^}]*enforced|required_blocked|autoload_ok)' /var/lib/pft-exporter/textfile/pft_kmod_sentry.prom
+    pft_kmod_up{host="sentry"} 1
+    pft_kmod_deny_modules{host="sentry",state="enforced"} 20
+    pft_kmod_required_blocked{host="sentry"} 0
+    pft_kmod_autoload_ok{host="sentry"} 1
+    (exit 0)
+  
+  kmod drill rollback-reapply done 2026-11-09T18:18:22Z: 0 check(s) failed -> PASS
+  (exit 0)
+CHECK ok   sentry host-run rollback-reapply PASS
+$ R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: WARN - 137 unchanged, 1 warn, 0 fail -> exit 1
+  (exit 0)
+CHECK FAIL sentry integrity PASS at the end
+$ R "rm -rf /root/kmod-drill.GAdlAi"
+  
+  (exit 0)
+
+== restore (2026-11-09T18:18:37Z)
+$ sudo -n pft-maint end --reason 'kmod sentry rollout done'
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+  (exit 0)
+CHECK ok   validator /etc/pft-maint/ntfy.env restored (absent again)
+CHECK ok   validator /etc/postfiat-monitor.env restored (sha256 equal, not printed)
+CHECK ok   validator /etc/pft-integrity.env restored (sha256 equal, not printed)
+CHECK ok   sentry /etc/pft-watchdog/ntfy.env restored (sha256 equal, not printed)
+CHECK ok   sentry /etc/pft-alertpath/ntfy.env restored (sha256 equal, not printed)
+CHECK ok   sentry /etc/pft-integrity.env restored (sha256 equal, not printed)
+silence 5347f999 left to run out until 2026-11-09T19:23:24Z (held: none; prometheus pending/firing: PFTClusterMissing,PFTJobFailed; reboot + 25 min in 1294s)
+$ sleep 5; curl -s --max-time 15 "https://ntfy.sh/$TT/json?poll=1&since=2h" | jq -r '.title'
+  [MAINT] start validator
+  [MAINT] end validator
+  (exit 0)
+throwaway topic received 2 message(s) (operator topics: none of the above)
+
+live-run sentry done 2026-11-09T18:18:49Z: 1 check(s) failed -> FAIL
