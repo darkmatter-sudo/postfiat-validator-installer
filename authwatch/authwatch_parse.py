@@ -3,9 +3,10 @@
 
 Reads `journalctl -o json` lines on stdin (SYSLOG_IDENTIFIER sshd or sudo), adds them to the counters kept in a
 state file and writes a node_exporter textfile. Usernames, addresses and key fingerprints are never written to the
-textfile or the state file; a fingerprint is only compared with the allowlist and then dropped.
+textfile or the state file; a fingerprint is only compared with the allowlist and a source address only with the
+sources file (CIDRs of known admin/peer hosts), then both are dropped.
 
-  authwatch_parse.py collect --state F --allowlist F --textfile F --host NAME [--now T] [--baseline]
+  authwatch_parse.py collect --state F --allowlist F [--sources F] --textfile F --host NAME [--now T] [--baseline]
       stdin: journal entries after the state's cursor. Writes the state (new cursor + counters) and the textfile,
       each to a temp file renamed into place, so a run that dies half way changes nothing and the next run reads
       the same entries again from the old cursor (no double counting).
@@ -15,20 +16,21 @@ textfile or the state file; a fingerprint is only compared with the allowlist an
       stdin: one sshd/sudo MESSAGE per line, "IDENT<TAB>MESSAGE". Prints "CLASS<TAB>LABEL" (tests).
 """
 import argparse
+import ipaddress
 import json
 import os
 import re
 import sys
 import tempfile
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 PREFIX = "pft_authwatch_"
 FP_RE = re.compile(r"^SHA256:[A-Za-z0-9+/]{43}$")
 
 # one counted event per connection attempt; companion lines of the same attempt are ignored on purpose
 SSHD = [
     (re.compile(r"^Accepted (publickey|password|keyboard-interactive/pam|hostbased|gssapi-with-mic) for \S+ "
-                r"from \S+ port \d+ ssh2(?:: \S+ (SHA256:\S+))?"), "accepted"),
+                r"from (\S+) port \d+ ssh2(?:: \S+ (SHA256:\S+))?"), "accepted"),
     (re.compile(r"^Invalid user .* from \S+ port \d+$"), "invalid_user"),
     (re.compile(r"^Failed (password|publickey|keyboard-interactive/pam|none|hostbased) for "), "failed"),
     (re.compile(r"^error: maximum authentication attempts exceeded for "), "max_auth"),
@@ -47,6 +49,8 @@ NEGOTIATE = ("cipher", "mac", "kex", "hostkey")
 METHODS = ("publickey", "password", "other")
 KEY_CLASSES = ("allowlisted", "unknown", "none")
 SUDO_RESULTS = ("ok", "auth_failure", "denied")
+SOURCE_CLASSES = ("known", "unknown", "unconfigured")
+ACCEPTED_ADDR = SSHD[0][0]
 
 
 def classify(ident, msg, allow):
@@ -59,7 +63,7 @@ def classify(ident, msg, allow):
             if kind == "accepted":
                 method = m.group(1)
                 if method == "publickey":
-                    fp = m.group(2) or ""
+                    fp = m.group(3) or ""
                     return "accepted", ("publickey", "allowlisted" if fp in allow else "unknown")
                 return "accepted", ("password" if method == "password" else "other", "none")
             if kind == "failed":
@@ -79,6 +83,38 @@ def classify(ident, msg, allow):
         if SUDO_NOPW.match(msg):
             return "sudo", "auth_failure"
     return None
+
+
+def source_class(msg, sources):
+    """Accepted line -> known|unknown (address in / not in a sources CIDR) or unconfigured (empty sources file)."""
+    if not sources:
+        return "unconfigured"
+    m = ACCEPTED_ADDR.match(msg)
+    try:
+        addr = ipaddress.ip_address(m.group(2)) if m else None
+    except ValueError:
+        addr = None
+    if addr is not None and addr.version == 6 and addr.ipv4_mapped:
+        addr = addr.ipv4_mapped
+    return "known" if addr is not None and any(addr in n for n in sources) else "unknown"
+
+
+def read_sources(path):
+    """Sources file: one CIDR or address per line, '#' comments. Unparsable lines are skipped."""
+    nets = []
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                tok = line.split("#", 1)[0].split()
+                if not tok:
+                    continue
+                try:
+                    nets.append(ipaddress.ip_network(tok[0], strict=False))
+                except ValueError:
+                    pass
+    except FileNotFoundError:
+        pass
+    return nets
 
 
 def message(entry):
@@ -108,6 +144,7 @@ def empty_state():
         "failed": {r: 0 for r in FAILED_REASONS},
         "negotiate": {r: 0 for r in NEGOTIATE},
         "sudo": {r: 0 for r in SUDO_RESULTS},
+        "source": {r: 0 for r in SOURCE_CLASSES}, "last_unknown_source_seconds": 0,
         "last_unknown_login_seconds": 0, "last_failed_seconds": 0, "last_entry_seconds": 0,
     }
 
@@ -127,7 +164,7 @@ def load_state(path):
     return st
 
 
-def apply(st, entries, allow):
+def apply(st, entries, allow, sources=()):
     for e in entries:
         ident = e.get("SYSLOG_IDENTIFIER", "")
         try:
@@ -138,7 +175,8 @@ def apply(st, entries, allow):
             st["cursor"] = e["__CURSOR"]
         st["entries_total"] += 1
         st["last_entry_seconds"] = max(st["last_entry_seconds"], ts)
-        c = classify(ident, message(e), allow)
+        msg = message(e)
+        c = classify(ident, msg, allow)
         if c is None:
             st["unmatched_total"] += 1
             continue
@@ -147,6 +185,10 @@ def apply(st, entries, allow):
             st["accepted"]["|".join(label)] += 1
             if label[1] != "allowlisted":
                 st["last_unknown_login_seconds"] = max(st["last_unknown_login_seconds"], ts)
+            sc = source_class(msg, sources)
+            st["source"][sc] += 1
+            if sc == "unknown":
+                st["last_unknown_source_seconds"] = max(st["last_unknown_source_seconds"], ts)
         elif counter == "failed":
             st["failed"][label] += 1
             st["last_failed_seconds"] = max(st["last_failed_seconds"], ts)
@@ -168,7 +210,7 @@ def read_entries(stream):
             yield e
 
 
-def render(st, host, now, allow_n):
+def render(st, host, now, allow_n, sources_n=0):
     h = f'host="{host}"'
     out = []
 
@@ -183,6 +225,9 @@ def render(st, host, now, allow_n):
     metric("ssh_accepted_total", "counter", "Accepted SSH logins by method and key class (allowlist).",
            [(f',method="{m}",key_class="{k}"', st["accepted"][f"{m}|{k}"])
             for m in METHODS for k in KEY_CLASSES])
+    metric("ssh_accepted_source_total", "counter", "Accepted SSH logins by source class: address inside a sources "
+           "CIDR (known), outside (unknown), or no sources configured.",
+           [(f',source_class="{c}"', st["source"][c]) for c in SOURCE_CLASSES])
     metric("ssh_failed_total", "counter", "Failed SSH authentication attempts by reason (one per attempt).",
            [(f',reason="{r}"', st["failed"][r]) for r in FAILED_REASONS])
     metric("ssh_negotiation_failed_total", "counter", "Connections refused before authentication: no common "
@@ -196,7 +241,10 @@ def render(st, host, now, allow_n):
            "allowlisted, or without a key (0 = never).", [("", st["last_unknown_login_seconds"])])
     metric("last_failed_timestamp_seconds", "gauge", "Unix time of the last failed attempt (0 = never).",
            [("", st["last_failed_seconds"])])
+    metric("last_unknown_source_login_timestamp_seconds", "gauge", "Unix time of the last accepted login from an "
+           "address outside the sources file (0 = never).", [("", st["last_unknown_source_seconds"])])
     metric("allowlist_entries", "gauge", "Fingerprints in the allowlist.", [("", allow_n)])
+    metric("sources_entries", "gauge", "CIDRs in the sources file (0 = source check off).", [("", sources_n)])
     metric("info", "gauge", "Parser version.", [(f',version="{VERSION}"', 1)])
     return "\n".join(out) + "\n"
 
@@ -225,6 +273,7 @@ def main(argv):
     c = sub.add_parser("collect")
     c.add_argument("--state", required=True)
     c.add_argument("--allowlist", required=True)
+    c.add_argument("--sources", default="/nonexistent")
     c.add_argument("--textfile", required=True)
     c.add_argument("--host", required=True)
     c.add_argument("--now", type=int)
@@ -264,15 +313,16 @@ def main(argv):
         print("bad --host", file=sys.stderr)
         return 3
     allow = read_allowlist(a.allowlist)
+    sources = read_sources(a.sources)
     st = load_state(a.state)
     if a.baseline:
         for e in read_entries(sys.stdin):
             st["cursor"] = e.get("__CURSOR") or st["cursor"]
     else:
-        st = apply(st, read_entries(sys.stdin), allow)
+        st = apply(st, read_entries(sys.stdin), allow, sources)
     now = a.now if a.now is not None else int(__import__("time").time())
     atomic_write(a.state, json.dumps(st, sort_keys=True) + "\n", 0o600)
-    atomic_write(a.textfile, render(st, a.host, now, len(allow)), 0o644)
+    atomic_write(a.textfile, render(st, a.host, now, len(allow), len(sources)), 0o644)
     return 0
 
 

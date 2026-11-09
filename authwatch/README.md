@@ -95,8 +95,15 @@ validator's textfile dir, and every `host="sentry"` alert is evaluated on the va
 | Alert | Expression | Why this threshold |
 |---|---|---|
 | `PFTAuthUnknownKeyLogin` (critical) | `sum by (host) (increase(pft_authwatch_ssh_accepted_total{key_class!="allowlisted"}[15m])) > 0` | any login with a key outside the allowlist, or without a key, pages at the next evaluation |
-| `PFTAuthFailedBurst` (warning) | `sum by (host) (increase(pft_authwatch_ssh_failed_total[10m])) > 400` | above the highest 10-min count of the baseline below (337) |
+| `PFTAuthUnknownSourceLogin` (critical) | `sum by (host) (increase(pft_authwatch_ssh_accepted_source_total{source_class="unknown"}[15m])) > 0` | any accepted login (even with an allowlisted key) from an address outside `/etc/pft-authwatch/sources` pages at the next evaluation; a leaked key used from elsewhere is caught even though the key is known. Empty sources file = `unconfigured`, never fires |
+| `PFTAuthFailedBurst` (warning, `notify: digest`) | `sum by (host) (increase(pft_authwatch_ssh_failed_total[10m])) > 400` | above the highest 10-min count of the baseline below (337). **Not paged** (v1.1.0): `../alerts/alertmanager.yml` routes `notify="digest"` to a receiver with no integrations; `pft-authwatch-digest.timer` (07:30 UTC) sends at most one low-priority summary per UTC day, and only if the alert fired in the last 24 h (failed attempts and 10-min peak per host, unknown-key and unknown-source login counts, this host's fail2ban bans). Brute force against keys-only hosts is noise; the two alerts above are what matter |
 | `PFTAuthwatchStale` (warning, for 2m) | `time() - pft_authwatch_collect_timestamp_seconds > 300` | the collector (or, for the sentry, the pull) stopped; logins would go unseen |
+
+Known sources: `sudo pft-authwatch sources list|count|add CIDR [COMMENT]|remove CIDR|seed [--since -30d]`. `install.sh`
+seeds the file (root, 0600) from the addresses of allowlisted-key logins in the journal before its first collection,
+plus any `--source CIDR`. Logging in from a new network pages once; add it with `sources add`. Addresses never leave
+the sources file: the textfile only carries `source_class` known / unknown / unconfigured. Rate limiting of the
+brute force itself is `../sshban` (fail2ban).
 
 `../alerts/authwatch.tests.yml` holds the promtool tests. They cover firing, resolving, summing over series,
 counter resets, the background-level non-firing case and per-host staleness.

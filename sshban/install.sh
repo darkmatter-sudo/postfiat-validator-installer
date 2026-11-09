@@ -26,7 +26,7 @@ while [ $# -gt 0 ]; do
 done
 check() {
   fail2ban-client ping
-  fail2ban-client get sshd backend 2>/dev/null | sed 's/^/backend: /' || true
+  echo "journal matches: $(fail2ban-client get sshd journalmatch | tr "\n" " ")"
   fail2ban-client get sshd maxretry | sed 's/^/maxretry: /'
   fail2ban-client get sshd findtime | sed 's/^/findtime: /'
   fail2ban-client get sshd bantime | sed 's/^/bantime: /'

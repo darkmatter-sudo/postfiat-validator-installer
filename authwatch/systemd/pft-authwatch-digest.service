@@ -1,0 +1,32 @@
+[Unit]
+Description=pft-authwatch digest: at most one daily summary of routine SSH brute force (PFTAuthFailedBurst is not paged)
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/authwatch
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# root: reads the root-only ntfy env (NTFY_ENV) and fail2ban-client's socket; writes only the digest stamp in /var/lib/pft-authwatch.
+ExecStart=/usr/local/bin/pft-authwatch digest
+ProtectSystem=strict
+ReadWritePaths=/var/lib/pft-authwatch
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+UMask=0022
+TimeoutStartSec=60

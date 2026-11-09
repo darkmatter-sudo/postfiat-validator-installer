@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
 # Install / uninstall pft-authwatch (+ 1-minute sandboxed timer). Idempotent: a second run changes nothing.
-#   sudo ./install.sh [--host NAME]   script -> /usr/local/bin/pft-authwatch, parser ->
+#   sudo ./install.sh [--host NAME] [--source CIDR]...   script -> /usr/local/bin/pft-authwatch, parser ->
 #       /usr/local/lib/pft-authwatch/authwatch_parse.py, pft-authwatch.service/.timer, state dir /var/lib/pft-authwatch
 #       (0700), allowlist /etc/pft-authwatch/allowlist (0600). NAME (default validator; sentry on the sentry) goes to
 #       HOST_LABEL in /etc/pft-authwatch.env. Imports the fingerprints of every key sshd accepts today: the
 #       AuthorizedKeysFile patterns of `sshd -T`, for every account in passwd (service accounts outside /home too).
-#       Runs one collection through the sandboxed unit (must give up 1), then enables pft-authwatch.timer.
+#       Known sources /etc/pft-authwatch/sources (0600): each --source plus `sources seed` (addresses of allowlisted-key
+#       logins in the journal, 30 d). Runs one collection through the sandboxed unit (must give up 1), then enables
+#       pft-authwatch.timer.
 #   sudo ./install.sh --pull [--host sentry]   on the host that runs ../alerts: pft-authwatch-pull.service/.timer;
 #       needs PULL_SSH in /etc/pft-authwatch.env (see pft-authwatch.env.example). Runs one pull (must exit 0), then
-#       enables pft-authwatch-pull.timer (every minute at :50; the peer collects at :25).
+#       enables pft-authwatch-pull.timer (every minute at :50; the peer collects at :25). Also installs
+#       pft-authwatch-digest.service/.timer (07:30 UTC + up to 5 min: at most one brute-force summary a day, only if
+#       PFTAuthFailedBurst fired; that alert is routed to a silent receiver) and enables the timer without a first run.
 #   sudo ./install.sh --uninstall | --pull --uninstall   disable the timer, remove the textfile (keeps state/allowlist)
 # Alert rules: copy ../alerts/authwatch.rules.yml to /etc/pft-alerts/ and list it in prometheus.yml (../alerts).
 # Afterwards: sudo pft-integrity accept --reason "<why>" (new binary + units + conf).
@@ -19,7 +23,7 @@ STATEDIR=/var/lib/pft-authwatch
 LIBDIR=/usr/local/lib/pft-authwatch
 CONF=/etc/pft-authwatch.env
 ALLOWDIR=/etc/pft-authwatch
-host=""; uninstall=false; pull=false
+host=""; uninstall=false; pull=false; srcs=()
 log() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*"; }
 [ "$(id -u)" -eq 0 ] || { echo "run as root" >&2; exit 3; }
 while [ $# -gt 0 ]; do
@@ -27,6 +31,7 @@ while [ $# -gt 0 ]; do
     --host) host="${2:?}"; shift ;;
     --uninstall) uninstall=true ;;
     --pull) pull=true ;;
+    --source) srcs+=("${2:?}"); shift ;;
     *) echo "unknown argument: $1" >&2; exit 3 ;;
   esac
   shift
@@ -54,9 +59,9 @@ conf_set() { # KEY VALUE: set KEY in the root-owned conf (create it 0600)
 
 if $pull; then
   if $uninstall; then
-    systemctl disable --now pft-authwatch-pull.timer 2>/dev/null || true
+    systemctl disable --now pft-authwatch-pull.timer pft-authwatch-digest.timer 2>/dev/null || true
     rm -f "$TEXTDIR/pft_authwatch_$host.prom"
-    log "disabled pft-authwatch-pull.timer, removed the pulled textfile"
+    log "disabled pft-authwatch-pull.timer + pft-authwatch-digest.timer, removed the pulled textfile"
     exit 0
   fi
   if ! { [ -f "$CONF" ] && [ "$(stat -c %u "$CONF")" = 0 ] && grep -q '^PULL_SSH=' "$CONF"; }; then
@@ -67,6 +72,8 @@ if $pull; then
   install_bin
   put "$HERE/systemd/pft-authwatch-pull.service" /etc/systemd/system/pft-authwatch-pull.service 644
   put "$HERE/systemd/pft-authwatch-pull.timer" /etc/systemd/system/pft-authwatch-pull.timer 644
+  put "$HERE/systemd/pft-authwatch-digest.service" /etc/systemd/system/pft-authwatch-digest.service 644
+  put "$HERE/systemd/pft-authwatch-digest.timer" /etc/systemd/system/pft-authwatch-digest.timer 644
   systemctl daemon-reload
   log "first pull (through the sandboxed unit):"
   systemctl start pft-authwatch-pull.service || true
@@ -75,7 +82,11 @@ if $pull; then
   fi
   grep -E '^pft_authwatch_(up|collect_timestamp_seconds|allowlist_entries)\{' "$TEXTDIR/pft_authwatch_$host.prom"
   systemctl enable --now pft-authwatch-pull.timer 2>&1 | sed 's/^/  /'
-  log "pft-authwatch-pull.timer $(systemctl is-active pft-authwatch-pull.timer) (every minute at :50); changed=$changed"
+  systemctl enable --now pft-authwatch-digest.timer 2>&1 | sed 's/^/  /'
+  log "digest preview (dry run, nothing sent):"
+  /usr/local/bin/pft-authwatch digest --dry-run --force | sed 's/^/  /' || log "WARN: digest dry run failed"
+  log "pft-authwatch-pull.timer $(systemctl is-active pft-authwatch-pull.timer) (every minute at :50)," \
+    "pft-authwatch-digest.timer $(systemctl is-active pft-authwatch-digest.timer); changed=$changed"
   exit 0
 fi
 if $uninstall; then
@@ -111,13 +122,19 @@ if [ ${#keys[@]} -gt 0 ]; then
 else
   log "no authorized_keys files found; every login will be 'unknown' until you run: pft-authwatch allow add SHA256:..."
 fi
+# known sources: --source CIDRs, plus the addresses of allowlisted-key logins in the journal (counts only), before
+# the first collection, so an upgrade does not count the operator's own logins as unknown-source
+for c in "${srcs[@]}"; do log "sources add: $(/usr/local/bin/pft-authwatch sources add "$c" install --source)"; done
+log "sources seed from the journal (allowlisted keys, last 30 d): $(/usr/local/bin/pft-authwatch sources seed)"
+[ "$(/usr/local/bin/pft-authwatch sources count)" -gt 0 ] \
+  || log "WARN: no known sources; the unknown-source check stays off until: pft-authwatch sources add CIDR"
 systemctl daemon-reload
 log "first collection (through the sandboxed unit):"
 systemctl start pft-authwatch.service || true
 if systemctl is-failed -q pft-authwatch.service; then
   log "ERROR: first collection failed"; journalctl -u pft-authwatch.service -n 5 --no-pager --utc; exit 1
 fi
-grep -E '^pft_authwatch_(up|collect_timestamp_seconds|allowlist_entries)\{' "$TEXTDIR/pft_authwatch_$host.prom"
+grep -E '^pft_authwatch_(up|collect_timestamp_seconds|allowlist_entries|sources_entries|ssh_accepted_source_total)\{' "$TEXTDIR/pft_authwatch_$host.prom"
 grep -qx "pft_authwatch_up{host=\"$host\"} 1" "$TEXTDIR/pft_authwatch_$host.prom" || { log "ERROR: up != 1"; exit 1; }
 systemctl enable --now pft-authwatch.timer 2>&1 | sed 's/^/  /'
 log "pft-authwatch.timer $(systemctl is-active pft-authwatch.timer) (every minute at :25); changed=$changed"

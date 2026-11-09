@@ -1,6 +1,7 @@
 # Alertmanager config used by run-stack.sh. Every notification (firing and resolved) goes to the
 # loopback ntfy bridge, which logs it and forwards to ntfy only if NTFY_URL is set, except the always-firing
-# PFTAlertPipelineWatchdog (../alertpath), which goes only to the loopback alertpath sink.
+# PFTAlertPipelineWatchdog (../alertpath), which goes only to the loopback alertpath sink, and alerts labelled
+# notify="digest" (../authwatch brute-force burst), which are summarised once a day instead of paged.
 route:
   receiver: bridge
   group_by: ["alertname", "instance"]
@@ -16,6 +17,11 @@ route:
       group_wait: 0s
       group_interval: 30s
       repeat_interval: 1m
+    # authwatch/: routine SSH brute force (PFTAuthFailedBurst, label notify="digest") is never paged; it stays
+    # visible in Prometheus/Alertmanager and pft-authwatch-digest.timer sends at most one summary a day
+    - matchers: ['notify="digest"']
+      receiver: digest
+      continue: false
 inhibit_rules:
   # When the RPC is down, every node-level alert is a symptom of that; page once.
   - source_matchers: ['alertname="PFTNodeRPCDown"']
@@ -29,6 +35,8 @@ receivers:
     webhook_configs:
       - url: http://127.0.0.1:9095/alert
         send_resolved: true
+  # no integrations: alerts routed here are kept in Alertmanager only (see the notify="digest" route)
+  - name: digest
   - name: alertpath
     webhook_configs:
       - url: http://127.0.0.1:9096/watchdog

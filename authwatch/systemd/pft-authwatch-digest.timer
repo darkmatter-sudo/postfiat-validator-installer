@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily pft-authwatch SSH brute-force digest (sent only if PFTAuthFailedBurst fired in the last 24 h)
+
+[Timer]
+OnCalendar=*-*-* 07:30:00 UTC
+RandomizedDelaySec=5m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

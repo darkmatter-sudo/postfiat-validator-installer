@@ -40,8 +40,9 @@ if "--after-cursor" in a:
     lines = lines[i + 1:] if i is not None else lines
 if "-n" in a:
     n = int(a[a.index("-n") + 1]); lines = lines[-n:] if n else []
+cat = "-o" in a and a[a.index("-o") + 1] == "cat"
 for l in lines:
-    print(l)
+    print(json.loads(l).get("MESSAGE", "") if cat else l)
 STUB
 # stub ssh-keygen -lf FILE: one "256 FP comment (ED25519)" line per non-comment line of FILE whose 2nd field is the
 # fingerprint to report (test files hold "ssh-ed25519 SHA256:..." lines)
@@ -59,14 +60,15 @@ cat "$T/remote.prom"
 STUB
 chmod +x "$T/bin/journalctl" "$T/bin/ssh-keygen" "$T/bin/ssh"
 ALLOW="$T/etc/allowlist"
+SRC="$T/etc/sources"
 export PFT_AW_CONF=/nonexistent PFT_AW_JOURNALCTL="$T/bin/journalctl" PFT_AW_SSHKEYGEN="$T/bin/ssh-keygen" \
   PFT_AW_PARSER="$P" PFT_AW_NOW=1700000000
 run() { # HOST [collect args] -> $T/out, $T/rc, $T/err
   local host="$1"; shift
-  ALLOWLIST="$ALLOW" bash "$S" collect --host "$host" --textfile-dir "$T/tf" --state-dir "$T/st" "$@" > "$T/out" 2> "$T/err"
+  ALLOWLIST="$ALLOW" SOURCES="$SRC" bash "$S" collect --host "$host" --textfile-dir "$T/tf" --state-dir "$T/st" "$@" > "$T/out" 2> "$T/err"
   echo $? > "$T/rc"
 }
-aw() { ALLOWLIST="$ALLOW" bash "$S" "$@"; }
+aw() { ALLOWLIST="$ALLOW" SOURCES="$SRC" bash "$S" "$@"; }
 OUT="$T/tf/pft_authwatch_validator.prom"
 H='host="validator"'
 # independent counts straight from the fixture messages (grep, not the parser)
@@ -151,6 +153,26 @@ check "other keys stay unknown ($e_other)" '[ "$(val "$OUT" "pft_authwatch_ssh_a
 check "allowlist_entries 1" 'has "$OUT" "pft_authwatch_allowlist_entries{$H} 1"'
 e_lu="$(jq -r --arg fp "$fp1" 'select((.MESSAGE|startswith("Accepted")) and (.MESSAGE|endswith($fp)|not)) | .__REALTIME_TIMESTAMP' "$T/new.jsonl" | sort -n | tail -1 | cut -c1-10)"
 check "last_unknown_login ignores allowlisted logins" '[ -n "$e_lu" ] && [ "$(val "$OUT" "pft_authwatch_last_unknown_login_timestamp_seconds{$H}")" = "$e_lu" ]'
+
+echo "== 5b. sources: unconfigured, known / unknown by CIDR, seed from allowlisted logins"
+e_acc_all=$(cnt "$T/new.jsonl" '^Accepted ')
+check "no sources file -> every accepted login unconfigured ($e_acc_all), sources_entries 0" '[ "$(val "$OUT" "pft_authwatch_ssh_accepted_source_total{$H,source_class=\"unconfigured\"}")" = "$e_acc_all" ] && has "$OUT" "pft_authwatch_sources_entries{$H} 0" && has "$OUT" "pft_authwatch_ssh_accepted_source_total{$H,source_class=\"unknown\"} 0"'
+check "sources add rejects a non-CIDR (exit 3)" 'aw sources add not-an-ip 2>/dev/null; [ $? = 3 ]'
+check "sources add 203.0.113.48/28 -> 1 total" '[ "$(aw sources add 203.0.113.48/28 test net)" = "sources: 1 added, 1 total" ]'
+check "sources file mode 600" '[ "$(stat -c %a "$SRC")" = 600 ]'
+e_known=$(cnt "$T/new.jsonl" '^Accepted \S+ for \S+ from 203\.0\.113\.(4[89]|5[0-9]|6[0-3]) port ')
+e_unk=$((e_acc_all - e_known))
+rm -f "$T/st/state-validator.json"; head -1 "$FXV" > "$T/journal.jsonl"; run validator
+cp "$FXV" "$T/journal.jsonl"; run validator
+check "inside the CIDR -> known ($e_known), outside -> unknown ($e_unk), none unconfigured" '[ "$e_known" -gt 0 ] && [ "$e_unk" -gt 0 ] && [ "$(val "$OUT" "pft_authwatch_ssh_accepted_source_total{$H,source_class=\"known\"}")" = "$e_known" ] && [ "$(val "$OUT" "pft_authwatch_ssh_accepted_source_total{$H,source_class=\"unknown\"}")" = "$e_unk" ] && has "$OUT" "pft_authwatch_ssh_accepted_source_total{$H,source_class=\"unconfigured\"} 0"'
+check "sources_entries 1" 'has "$OUT" "pft_authwatch_sources_entries{$H} 1"'
+e_lus="$(jq -r 'select((.MESSAGE|startswith("Accepted")) and (.MESSAGE|test(" from 203\\.0\\.113\\.(4[89]|5[0-9]|6[0-3]) ")|not)) | .__REALTIME_TIMESTAMP' "$T/new.jsonl" | sort -n | tail -1 | cut -c1-10)"
+check "last_unknown_source_login = newest Accepted entry outside the CIDR" '[ -n "$e_lus" ] && [ "$(val "$OUT" "pft_authwatch_last_unknown_source_login_timestamp_seconds{$H}")" = "$e_lus" ]'
+check "sources remove -> 0 total" '[ "$(aw sources remove 203.0.113.48/28)" = "sources: 0 total" ]'
+e_seed=$(jq -r '.MESSAGE' "$FXV" | grep "^Accepted publickey .*$fp1$" | awk '{print $6}' | sort -u | wc -l)
+check "seed adds only the addresses of allowlisted-key logins ($e_seed)" '[ "$e_seed" -gt 0 ] && [ "$(aw sources seed --since -1d)" = "sources: $e_seed added, $e_seed total" ] && [ "$(aw sources list | awk "{print \$1}" | sort | tr "\n" " ")" = "$(jq -r .MESSAGE "$FXV" | grep "^Accepted publickey .*$fp1$" | awk "{print \$6}" | sort -u | tr "\n" " ")" ]'
+check "seed again adds 0" '[ "$(aw sources seed)" = "sources: 0 added, $e_seed total" ]'
+rm -f "$SRC"
 check "remove -> 0 total" '[ "$(aw allow remove "$fp1")" = "allowlist: 0 total" ]'
 
 echo "== 6. privacy: no identity reaches the textfile or the state file"
@@ -159,7 +181,7 @@ head -1 "$FXS" > "$T/journal.jsonl"; run sentry; cp "$FXS" "$T/journal.jsonl"; r
 for f in "$OUT" "$T/tf/pft_authwatch_sentry.prom" "$T/st/state-validator.json" "$T/st/state-sentry.json"; do
   check "$(basename "$f"): no address, user name or fingerprint" '! grep -qE "198\.51\.100|203\.0\.113|2001:db8|user[0-9]|SHA256:|root|probe" "$f"'
 done
-check "only label keys host/method/key_class/reason/kind/result/version" '[ -z "$(grep -hv "^#" "$OUT" "$T/tf/pft_authwatch_sentry.prom" | grep -oE "[a-z_]+=" | sort -u | grep -vxE "(host|method|key_class|reason|kind|result|version)=")" ]'
+check "only label keys host/method/key_class/source_class/reason/kind/result/version" '[ -z "$(grep -hv "^#" "$OUT" "$T/tf/pft_authwatch_sentry.prom" | grep -oE "[a-z_]+=" | sort -u | grep -vxE "(host|method|key_class|source_class|reason|kind|result|version)=")" ]'
 check "sentry file carries host=\"sentry\" and passes validate" 'bash "$S" validate "$T/tf/pft_authwatch_sentry.prom" sentry'
 check "the sentry fixtures count accepted logins" '[ "$(val "$T/tf/pft_authwatch_sentry.prom" "pft_authwatch_ssh_accepted_total{host=\"sentry\",method=\"publickey\",key_class=\"unknown\"}")" = "$(tail -n +2 "$FXS" | jq -r .MESSAGE | grep -c "^Accepted publickey ")" ]'
 
@@ -199,6 +221,36 @@ rm -f "$T/shang"; touch "$T/sfail"
 check "ssh failure -> exit 1" '"${PULLENV[@]}" bash "$S" pull --host sentry --textfile-dir "$T/tf" 2>/dev/null; [ $? = 1 ]'
 check "no temp files left after failed pulls" '[ -z "$(find "$T/tf" -name ".pull-*")" ]'
 check "pull without PULL_SSH -> exit 3" 'bash "$S" pull --host sentry --textfile-dir "$T/tf" 2>/dev/null; [ $? = 3 ]'
+
+echo "== 9. digest: only after a burst, at most once per UTC day, low priority, dry run sends nothing"
+# stub curl: Prometheus queries answer from $T/alerts.json (ALERTS query) or a fixed per-host vector; any other call
+# is the ntfy POST: its args go to $T/sent.N, one file per call, one arg per line
+cat > "$T/bin/curl" <<STUB
+#!/usr/bin/env python3
+import glob, json, sys
+a = sys.argv[1:]
+q = next((x[6:] for x in a if x.startswith("query=")), None)
+if q is not None:
+    if "ALERTS" in q:
+        print(open("$T/alerts.json").read())
+    else:
+        print(json.dumps({"data": {"result": [{"metric": {"host": "sentry"}, "value": [0, "444.4"]}]}}))
+    sys.exit(0)
+with open("$T/sent.%d" % len(glob.glob("$T/sent.*")), "w") as f:
+    f.writelines(x + chr(10) for x in a)
+STUB
+chmod +x "$T/bin/curl"
+printf 'NTFY_SERVER=https://ntfy.invalid\nNTFY_TOPIC=drill-topic\n' > "$T/ntfy.env"
+dg() { PATH="$T/bin:$PATH" NTFY_ENV="$T/ntfy.env" PROM_URL=http://prom.invalid STATE_DIR="$T/dg" bash "$S" digest "$@"; }
+nn() { find "$T" -maxdepth 1 -name 'sent.[0-9]*' | wc -l; }
+echo '{"data":{"result":[]}}' > "$T/alerts.json"
+check "no burst in 24 h -> nothing sent" '[ "$(dg)" = "digest: no PFTAuthFailedBurst in the last 24 h, nothing to send" ] && [ "$(nn)" = 0 ]'
+echo '{"data":{"result":[{"metric":{"host":"sentry"},"value":[0,"1"]}]}}' > "$T/alerts.json"
+check "dry run prints the summary, sends nothing, writes no stamp" 'dg --dry-run | grep -qx "sentry: failed attempts 444" && [ "$(nn)" = 0 ] && [ ! -e "$T/dg/digest-last" ]'
+check "burst -> one message sent, stamp = today (UTC)" 'dg | grep -q "^digest: sent for $(date -u +%F)" && [ "$(nn)" = 1 ] && [ "$(cat "$T/dg/digest-last")" = "$(date -u +%F)" ]'
+check "message: low priority, digest title, ntfy topic from NTFY_ENV" 'grep -qx "Priority: low" "$T/sent.0" && grep -qx "Title: SSH brute-force digest $(date -u +%F)" "$T/sent.0" && grep -qx "https://ntfy.invalid/drill-topic" "$T/sent.0"'
+check "second run the same day -> not sent again" '[ "$(dg)" = "digest: already sent for $(date -u +%F)" ] && [ "$(nn)" = 1 ]'
+check "NTFY_ENV without a topic -> exit 3, nothing sent" 'printf "NTFY_SERVER=https://ntfy.invalid\n" > "$T/ntfy.env"; rm -f "$T/dg/digest-last"; dg 2>/dev/null; [ $? = 3 ] && [ "$(nn)" = 1 ]'
 
 echo "RESULT: $pass/$total passed"
 [ "$pass" = "$total" ]
