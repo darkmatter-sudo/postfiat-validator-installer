@@ -1,0 +1,214 @@
+vulnscan fleet sync - 2026-11-09T12:45:12Z - Ubuntu 22.04.5 LTS - repo HEAD a0380eae592db1049bcf90b9b9dc7e7af5f62616 (clean: yes)
+
+== 1. point pft-maint at a throwaway topic (real file kept with mode/owner/mtime as $BK)
+real /etc/pft-maint/ntfy.env present before: 0
+$ { [ $HAD = 0 ] || sudo -n cp -p $NE $BK; } && printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' "$TT" | sudo -n tee $NE >/dev/null && sudo -n chmod 600 $NE && sudo -n stat -c '%a %U' $NE
+  600 root
+  (exit 0)
+CHECK ok   throwaway target installed
+
+== 2. window + sync of the vulnscan add-on (1.2.0)
+$ sudo -n pft-maint start --ttl 25m --reason "vulnscan 1.2.0 fix deploy"
+  window started: id m1794228312-192594 until 2026-11-09T13:10:12Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint window open
+CHECK ok   sentry has the window (via the watchdog channel) after 0s
+$ sudo -n pft-fleet sync --addon vulnscan --to a0380eae592db1049bcf90b9b9dc7e7af5f62616 --apply --reason "vulnscan 1.2.0: refetch fixes"
+  [2026-11-09T12:46:05Z] sync vulnscan to a0380eae592db1049bcf90b9b9dc7e7af5f62616 (2026-11-09T13:44:59+01:00) REF main=a0380eae592db1049bcf90b9b9dc7e7af5f62616
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN sentry sentry /usr/local/bin/pft-vulnscan 0755 BEHIND 2208113eb65c c533f87c313d write
+  PLAN sentry sentry /usr/local/lib/pft-vulnscan/vulnscan_parse.py 0644 CURRENT 8b3b6c9cad5d 8b3b6c9cad5d keep
+  PLAN sentry sentry /etc/systemd/system/pft-vulnscan.service 0644 CURRENT 156a28dcfafa 156a28dcfafa keep
+  PLAN sentry sentry /etc/systemd/system/pft-vulnscan.timer 0644 CURRENT 0abdc52cf860 0abdc52cf860 keep
+  PLAN validator validator /usr/local/bin/pft-vulnscan 0755 BEHIND 2208113eb65c c533f87c313d write
+  PLAN validator validator /usr/local/lib/pft-vulnscan/vulnscan_parse.py 0644 CURRENT 8b3b6c9cad5d 8b3b6c9cad5d keep
+  PLAN validator validator /etc/systemd/system/pft-vulnscan.service 0644 CURRENT 156a28dcfafa 156a28dcfafa keep
+  PLAN validator validator /etc/systemd/system/pft-vulnscan.timer 0644 CURRENT 0abdc52cf860 0abdc52cf860 keep
+  PLAN validator validator /etc/systemd/system/pft-vulnscan-pull.service 0644 CURRENT 06a53b993993 06a53b993993 keep
+  PLAN validator validator /etc/systemd/system/pft-vulnscan-pull.timer 0644 CURRENT 235a42c17dbe 235a42c17dbe keep
+  [2026-11-09T12:46:05Z] order: sentry validator
+  [2026-11-09T12:46:05Z] sentry: 1 file(s) to write
+  PRE sentry pft-maint window active PASS
+  PRE sentry node server_state=full PASS
+  PRE sentry pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP sentry /usr/local/bin/pft-vulnscan sha256 2208113eb65c -> /var/lib/pft-fleet/backup/20261109T124605Z-vulnscan-sentry
+  WRITE sentry /usr/local/bin/pft-vulnscan 2208113eb65c -> c533f87c313d mode 0755
+  GATE sentry sha256 /usr/local/bin/pft-vulnscan = target c533f87c313d PASS
+  GATE sentry syntax /usr/local/bin/pft-vulnscan bash -n PASS
+  GATE sentry addon units failed=none PASS
+  GATE sentry node server_state=full PASS
+  ACCEPT sentry pft-integrity baseline updated: pft-fleet sync vulnscan@a0380eae592d (pft-vulnscan)
+  [2026-11-09T12:47:09Z] SYNCED sentry vulnscan -> a0380eae592d
+  [2026-11-09T12:47:09Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/bin/pft-vulnscan sha256 2208113eb65c -> /var/lib/pft-fleet/backup/20261109T124605Z-vulnscan-validator
+  WRITE validator /usr/local/bin/pft-vulnscan 2208113eb65c -> c533f87c313d mode 0755
+  GATE validator sha256 /usr/local/bin/pft-vulnscan = target c533f87c313d PASS
+  GATE validator syntax /usr/local/bin/pft-vulnscan bash -n PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync vulnscan@a0380eae592d (pft-vulnscan)
+  [2026-11-09T12:47:41Z] SYNCED validator vulnscan -> a0380eae592d
+  [2026-11-09T12:47:41Z] sync complete
+  (exit 0)
+CHECK ok   fleet sync exit 0
+$ sudo -n pft-fleet skew
+  ref main = a0380eae592db1049bcf90b9b9dc7e7af5f62616
+  host sentry     role sentry    ok
+  host validator  role validator ok
+  HOST       ADDON       STATE      DETAIL
+  sentry     alertpath   CURRENT    
+  sentry     apparmor    CURRENT    
+  sentry     audittrail  CURRENT    
+  sentry     authwatch   CURRENT    
+  sentry     backfill    CURRENT    
+  sentry     backupwatch CURRENT    
+  sentry     cluster     CURRENT    
+  sentry     divergence  CURRENT    
+  sentry     egress      CURRENT    
+  sentry     feewatch    CURRENT    
+  sentry     integrity   CURRENT    
+  sentry     jobwatch    CURRENT    
+  sentry     kernwatch   CURRENT    
+  sentry     keyescrow   CURRENT    
+  sentry     logship     CURRENT    
+  sentry     maint       CURRENT    
+  sentry     mounts      CURRENT    
+  sentry     patch       CURRENT    
+  sentry     privesc     CURRENT    
+  sentry     resources   CURRENT    
+  sentry     rulecheck   CURRENT    
+  sentry     schedaudit  CURRENT    
+  sentry     seccomp     CURRENT    
+  sentry     statewatch  CURRENT    
+  sentry     sysctl      CURRENT    
+  sentry     timesync    CURRENT    
+  sentry     upgradewatch CURRENT    
+  sentry     vulnscan    CURRENT    
+  sentry     watchdog    CURRENT    
+  validator  alertpath   CURRENT    
+  validator  apparmor    CURRENT    
+  validator  audittrail  CURRENT    
+  validator  authwatch   CURRENT    
+  validator  backfill    CURRENT    
+  validator  backup      CURRENT    
+  validator  backupwatch CURRENT    
+  validator  cluster     CURRENT    
+  validator  divergence  CURRENT    
+  validator  egress      CURRENT    
+  validator  exporter    CURRENT    
+  validator  feewatch    CURRENT    
+  validator  fleet       CURRENT    
+  validator  integrity   CURRENT    
+  validator  jobwatch    CURRENT    
+  validator  kernwatch   CURRENT    
+  validator  keyescrow   CURRENT    
+  validator  logship     CURRENT    
+  validator  maint       CURRENT    
+  validator  monitor     CURRENT    
+  validator  mounts      CURRENT    
+  validator  patch       CURRENT    
+  validator  privesc     CURRENT    
+  validator  resources   CURRENT    
+  validator  retention   CURRENT    
+  validator  rulecheck   CURRENT    
+  validator  schedaudit  CURRENT    
+  validator  seccomp     CURRENT    
+  validator  statewatch  CURRENT    
+  validator  sysctl      CURRENT    
+  validator  timesync    CURRENT    
+  validator  upgradewatch CURRENT    
+  validator  vulnscan    CURRENT    
+  validator  watchdog    CURRENT    
+  SUMMARY CURRENT=63 BEHIND=0 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 0)
+CHECK ok   pft-fleet skew exit 0, vulnscan CURRENT on both hosts
+
+== 3. end window, restore the real target, compare
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+$ sudo -n rm -f $NE   (no ntfy.env before: pft-maint falls back to the real monitor target again)
+CHECK ok   pft-maint target back to its pre-run state (/etc/pft-maint/ntfy.env: absent again)
+$ sudo -n test ! -e $BK && echo backup gone
+  backup gone
+  (exit 0)
+$ sleep 5; curl -s --max-time 15 "https://ntfy.sh/$TT/json?poll=1&since=10m" | jq -r '.title'
+  [MAINT] start validator
+  [MAINT] end validator
+  (exit 0)
+CHECK ok   the [MAINT] start and end messages reached the throwaway topic
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 223 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 135 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts
+
+fleet-run done 2026-11-09T12:49:06Z: 0 check(s) failed -> PASS
+
+########## live checks after the sync (separate command, run right after) ##########
+grep: /etc/pft-vulnscan.env: Permission denied
+OS: Ubuntu 22.04.5 LTS | 2026-11-09T12:49:35Z | pft-vulnscan pft-vulnscan 1.2.0 sha256 c533f87c313dfac4af361aa6a269bde5b62abb0b78512e80b84c1b3f77f33f6e
+
+== live cache-busting path (validator, agent user, scratch CACHE_DIR, fake clock = now + 30 h so the real feed counts as old)
+$ PFT_VS_CONF=$D/conf PFT_VS_NOW=1794336575 pft-vulnscan fetch
+fetched, but downloaded feed is 44 h old (> 24 h) -> unconditional GET: fetched, but downloaded feed is 44 h old (> 24 h) (sha256 ee08d4119ea05e6d655afb02f6be944846c616ed8f24dfd0914174026dd49a0c)
+(exit 0)
+$ grep -v sha256 $D/cache/feed.meta
+fetched_at=1794336575
+last_checked=1794336575
+url=https://security-metadata.canonical.com/oval/com.ubuntu.jammy.usn.oval.xml.bz2
+
+== real scans through the units
+$ sudo systemctl start pft-vulnscan.service; journalctl -u pft-vulnscan.service --since -3min -o cat | grep -E "fetch:|RESULT"
+(exit 0)
+         sha256 ee08d4119ea05e6d655afb02f6be944846c616ed8f24dfd0914174026dd49a0c  fetch: fetched
+RESULT: 0 affected USNs (0 critical, 0 high, 0 medium, 0 low, 0 negligible, 0 none, 0 unknown; 0 fixable only via Ubuntu Pro/ESM), 0 CVEs; reboot owed: no -> exit 0
+         sha256 ee08d4119ea05e6d655afb02f6be944846c616ed8f24dfd0914174026dd49a0c  fetch: not modified
+RESULT: 0 affected USNs (0 critical, 0 high, 0 medium, 0 low, 0 negligible, 0 none, 0 unknown; 0 fixable only via Ubuntu Pro/ESM), 0 CVEs; reboot owed: no -> exit 0
+$ ssh relay (sentry): same
+(exit 0)
+         sha256 ee08d4119ea05e6d655afb02f6be944846c616ed8f24dfd0914174026dd49a0c  fetch: fetched
+RESULT: 0 affected USNs (0 critical, 0 high, 0 medium, 0 low, 0 negligible, 0 none, 0 unknown; 0 fixable only via Ubuntu Pro/ESM), 0 CVEs; reboot owed: no -> exit 0
+         sha256 ee08d4119ea05e6d655afb02f6be944846c616ed8f24dfd0914174026dd49a0c  fetch: not modified
+RESULT: 0 affected USNs (0 critical, 0 high, 0 medium, 0 low, 0 negligible, 0 none, 0 unknown; 0 fixable only via Ubuntu Pro/ESM), 0 CVEs; reboot owed: no -> exit 0
+$ sudo systemctl start pft-vulnscan-pull.service; grep -h "_up\|feed_timestamp" textfiles
+(exit 0)
+pft_vulnscan_up{host="sentry"} 1
+pft_vulnscan_feed_timestamp_seconds{host="sentry"} 1794176233
+pft_vulnscan_up{host="validator"} 1
+pft_vulnscan_feed_timestamp_seconds{host="validator"} 1794176233
+$ sudo pft-integrity verify | tail -1 (both)
+RESULT: PASS - 223 unchanged, 0 warn, 0 fail -> exit 0
+RESULT: PASS - 135 unchanged, 0 warn, 0 fail -> exit 0
+$ sudo pft-schedaudit collect; unexpected (both)
+pft_schedaudit_unexpected{host="sentry",kind="new"} 0
+pft_schedaudit_unexpected{host="sentry",kind="removed"} 0
+pft_schedaudit_unexpected{host="sentry",kind="finding"} 0
+pft_schedaudit_unexpected{host="sentry",kind="unaccepted"} 0
+pft_schedaudit_unexpected{host="validator",kind="new"} 0
+pft_schedaudit_unexpected{host="validator",kind="removed"} 0
+pft_schedaudit_unexpected{host="validator",kind="finding"} 0
+pft_schedaudit_unexpected{host="validator",kind="unaccepted"} 0
+
+NOTE 2026-11-09T12:52:05Z: the two journal greps above are wrong as commands: the echo says '--since -3min' but the command ran was
+  --since "$(date -u '+%F %T')", which journalctl reads as LOCAL time (this host is not on UTC), so each grep also printed the
+  12:08Z manual run ('fetch: fetched'). The 1.2.0 unit run is the second pair on each host ('fetch: not modified'). Re-run below,
+  selecting the run by its systemd InvocationID instead.
+
+$ sudo systemctl start pft-vulnscan.service; ID=$(systemctl show -p InvocationID --value pft-vulnscan.service); sudo journalctl _SYSTEMD_INVOCATION_ID=$ID -o short-iso-precise --utc | grep -E "pft-vulnscan scan|fetch:|RESULT"
+(exit 0)
+2026-11-09T12:52:08.607185+0000 validator pft-vulnscan[214544]: pft-vulnscan scan - 2026-11-09T12:52:05Z  host=validator  OS: Ubuntu 22.04.5 LTS
+2026-11-09T12:52:08.607185+0000 validator pft-vulnscan[214544]:          sha256 ee08d4119ea05e6d655afb02f6be944846c616ed8f24dfd0914174026dd49a0c  fetch: not modified
+2026-11-09T12:52:34.078950+0000 validator pft-vulnscan[216445]: RESULT: 0 affected USNs (0 critical, 0 high, 0 medium, 0 low, 0 negligible, 0 none, 0 unknown; 0 fixable only via Ubuntu Pro/ESM), 0 CVEs; reboot owed: no -> exit 0
+$ ssh relay (sentry): same
+(exit 0)
+2026-11-09T12:52:39.719860+0000 sentry pft-vulnscan[1969546]: pft-vulnscan scan - 2026-11-09T12:52:35Z  host=sentry  OS: Ubuntu 22.04.5 LTS
+2026-11-09T12:52:39.780038+0000 sentry pft-vulnscan[1969546]:          sha256 ee08d4119ea05e6d655afb02f6be944846c616ed8f24dfd0914174026dd49a0c  fetch: not modified
+2026-11-09T12:53:09.283614+0000 sentry pft-vulnscan[1971126]: RESULT: 0 affected USNs (0 critical, 0 high, 0 medium, 0 low, 0 negligible, 0 none, 0 unknown; 0 fixable only via Ubuntu Pro/ESM), 0 CVEs; reboot owed: no -> exit 0
+$ sudo systemctl start pft-vulnscan-pull.service; grep -h "^pft_vulnscan_up" textfiles
+(exit 0)
+pft_vulnscan_up{host="sentry"} 1
+pft_vulnscan_up{host="validator"} 1
+NOTE: in the two journal blocks just above, the hostname column of journalctl's output was replaced by the role label (validator/sentry) with sed before it was written to this log (rule: no hostnames in published logs).
