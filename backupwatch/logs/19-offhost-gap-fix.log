@@ -1,0 +1,119 @@
+## 2026-11-09T05:40:56Z backupwatch OnSuccess fix: install + live proof on the validator at a268c41904a5e0f1becc83136cdadc5a751a12e9
+## git status (must be clean):
+(end status)
+## install.sh --role archive
+2026-11-09T05:40:56Z unchanged /usr/local/bin/pft-backupwatch
+2026-11-09T05:40:56Z unchanged /usr/local/lib/pft-backupwatch/backupwatch_lib.py
+2026-11-09T05:40:56Z installed /etc/systemd/system/pft-backup.service.d/pft-backupwatch.conf (sha256 a7c4f74ed610c2cea464d909338c11b6bc82de494ca86d61b0b665e5702b14fb)
+2026-11-09T05:40:56Z unchanged /etc/systemd/system/pft-backupwatch.service
+2026-11-09T05:40:56Z unchanged /etc/systemd/system/pft-backupwatch.timer
+2026-11-09T05:40:56Z installed /etc/systemd/system/pft-backupwatch-replicate.service (sha256 e0a85a6cadf84e707b517ee0bf0a95052a36f9f9987620fac3c37974a0ee5134)
+2026-11-09T05:40:56Z installed /etc/systemd/system/pft-backupwatch-replicate.timer (sha256 cf9f2ae8fe5738d11c4e3d5fd2b3591760ece3cb64a402acbe6125d0342d170c)
+2026-11-09T05:40:56Z unchanged /etc/systemd/system/pft-backupwatch-pull.service
+2026-11-09T05:40:56Z unchanged /etc/systemd/system/pft-backupwatch-pull.timer
+2026-11-09T05:40:57Z first replicate (through the sandboxed unit):
+Starting pft-backupwatch replicate: newest pft-backup archive -> age-encrypted replica on the sentry...
+  peer: RECEIVED pft-backup-20261109T022551Z.tar.gz e3f30e2e4282187017ff281fe4d71be116cc757248a5f8ec2344e12f66bf327f OK
+REPLICATED pft-backup-20261109T022551Z.tar.gz cipher_sha256 e3f30e2e4282187017ff281fe4d71be116cc757248a5f8ec2344e12f66bf327f plain_sha256 7372b4584f87d3cf1c6e02e03402f9c2a9a0af6c927609f9d5d6956d4227e104
+pft-backupwatch-replicate.service: Deactivated successfully.
+Finished pft-backupwatch replicate: newest pft-backup archive -> age-encrypted replica on the sentry.
+pft-backupwatch-replicate.service: Triggering OnSuccess= dependencies.
+2026-11-09T05:40:58Z first collection (through the sandboxed unit):
+Starting pft-backupwatch collect: backup freshness/integrity/drift (archive host) or replica store (replica host) as textfile metrics...
+pft-backupwatch.service: Deactivated successfully.
+Finished pft-backupwatch collect: backup freshness/integrity/drift (archive host) or replica store (replica host) as textfile metrics.
+pft-backupwatch.service: Consumed 1.057s CPU time.
+pft_backupwatch_up{host="validator"} 1
+pft_backupwatch_check_state{host="validator",check="fresh"} 0
+pft_backupwatch_check_state{host="validator",check="size"} 0
+pft_backupwatch_check_state{host="validator",check="sidecar"} 0
+pft_backupwatch_check_state{host="validator",check="manifest"} 0
+pft_backupwatch_check_state{host="validator",check="content"} 0
+pft_backupwatch_check_state{host="validator",check="drift"} 0
+pft_backupwatch_check_state{host="validator",check="offhost"} 0
+2026-11-09T05:41:01Z first pull of the peer's textfile (through the sandboxed unit):
+Starting pft-backupwatch pull: copy the sentry's backupwatch textfile to this host's exporter (validated)...
+pft-backupwatch-pull.service: Deactivated successfully.
+Finished pft-backupwatch pull: copy the sentry's backupwatch textfile to this host's exporter (validated).
+pft_backupwatch_up{host="sentry"} 1
+pft_backupwatch_replicas{host="sentry"} 2
+pft_backupwatch_replica_verify_ok{host="sentry"} 1
+2026-11-09T05:41:06Z timers: pft-backupwatch.timer=active pft-backupwatch-replicate.timer=active pft-backupwatch-pull.timer=active changed=true
+2026-11-09T05:41:06Z remember: sudo pft-integrity accept --reason 'pft-backupwatch installed'; pft-schedaudit accept (new timers)
+install rc=0
+## installed drop-in == repo:
+cmp rc=0
+## systemctl show pft-backup.service OnSuccess / replicate OnSuccess:
+OnSuccess=pft-backupwatch-replicate.service
+OnSuccess=pft-backupwatch.service
+## live: start pft-backup.service (real nightly backup unit), then wait for the chained units
+pft-backup start rc=0
+## journal since start (UTC), chained units:
+2026-11-09T05:41:07+0000 pft-agent-01 systemd[1]: Starting Post Fiat node config backup (pft-backup.sh)...
+2026-11-09T05:41:07+0000 pft-agent-01 pft-backup.sh[3741664]: [2026-11-09T05:41:07Z] OS: Ubuntu 22.04.5 LTS
+2026-11-09T05:41:07+0000 pft-agent-01 pft-backup.sh[3741664]: [2026-11-09T05:41:07Z] collecting node config from container 'postfiatd'
+2026-11-09T05:41:07+0000 pft-agent-01 pft-backup.sh[3741664]: [2026-11-09T05:41:07Z]   + /etc/postfiatd/validators.txt (container)
+2026-11-09T05:41:07+0000 pft-agent-01 pft-backup.sh[3741664]: [2026-11-09T05:41:07Z]   + /etc/postfiatd/postfiatd.cfg (container, stripped sections: [node_seed] )
+2026-11-09T05:41:07+0000 pft-agent-01 pft-backup.sh[3741664]: [2026-11-09T05:41:07Z] collecting compose files from /opt/postfiatd
+2026-11-09T05:41:07+0000 pft-agent-01 pft-backup.sh[3741664]: [2026-11-09T05:41:07Z]   + /opt/postfiatd/docker-compose.yml
+2026-11-09T05:41:07+0000 pft-agent-01 pft-backup.sh[3741664]: [2026-11-09T05:41:07Z]   + /opt/postfiatd/docker-compose.override.yml
+2026-11-09T05:41:07+0000 pft-agent-01 pft-backup.sh[3741664]: [2026-11-09T05:41:07Z]   + /opt/postfiatd/.env
+2026-11-09T05:41:07+0000 pft-agent-01 pft-backup.sh[3741664]: [2026-11-09T05:41:07Z]   + /opt/postfiatd/docker-compose.confine.yml
+2026-11-09T05:41:07+0000 pft-agent-01 pft-backup.sh[3741664]: [2026-11-09T05:41:07Z]   + /opt/postfiatd/docker-compose.apparmor.yml
+2026-11-09T05:41:07+0000 pft-agent-01 pft-backup.sh[3741664]: [2026-11-09T05:41:07Z]   + /opt/postfiatd/docker-compose.seccomp.yml
+2026-11-09T05:41:07+0000 pft-agent-01 pft-backup.sh[3741664]: [2026-11-09T05:41:07Z]   + /opt/postfiatd/docker-compose.resources.yml
+2026-11-09T05:41:07+0000 pft-agent-01 pft-backup.sh[3741664]: [2026-11-09T05:41:07Z] collecting add-on systemd units and helper scripts
+2026-11-09T05:41:07+0000 pft-agent-01 pft-backup.sh[3741664]: [2026-11-09T05:41:07Z]   + /etc/systemd/system/postfiat-monitor.service
+2026-11-09T05:41:07+0000 pft-agent-01 pft-backup.sh[3741664]: [2026-11-09T05:41:07Z]   + /etc/systemd/system/postfiat-monitor.timer
+2026-11-09T05:41:07+0000 pft-agent-01 pft-backup.sh[3741664]: [2026-11-09T05:41:07Z]   + /etc/systemd/system/postfiat-docker-user.service
+2026-11-09T05:41:07+0000 pft-agent-01 pft-backup.sh[3741664]: [2026-11-09T05:41:07Z]   + /etc/systemd/system/pft-exporter.service
+2026-11-09T05:41:07+0000 pft-agent-01 pft-backup.sh[3741664]: [2026-11-09T05:41:07Z]   + /usr/local/bin/postfiat-health
+2026-11-09T05:41:07+0000 pft-agent-01 pft-backup.sh[3741664]: [2026-11-09T05:41:07Z]   + /usr/local/bin/postfiat-monitor
+2026-11-09T05:41:07+0000 pft-agent-01 pft-backup.sh[3741664]: [2026-11-09T05:41:07Z]   + /usr/local/sbin/postfiat-docker-user.sh
+2026-11-09T05:41:07+0000 pft-agent-01 pft-backup.sh[3741664]: [2026-11-09T05:41:07Z]   + /opt/pft-exporter/pft_exporter.py
+2026-11-09T05:41:07+0000 pft-agent-01 pft-backup.sh[3741664]: [2026-11-09T05:41:07Z]   - /etc/postfiat-monitor.env (secret, excluded)
+2026-11-09T05:41:07+0000 pft-agent-01 pft-backup.sh[3741664]: [2026-11-09T05:41:07Z] collecting firewall rules
+2026-11-09T05:41:07+0000 pft-agent-01 pft-backup.sh[3741664]: [2026-11-09T05:41:07Z]   + /etc/ufw/user.rules
+2026-11-09T05:41:07+0000 pft-agent-01 pft-backup.sh[3741664]: [2026-11-09T05:41:07Z]   + /etc/ufw/user6.rules
+2026-11-09T05:41:08+0000 pft-agent-01 pft-backup.sh[3741664]: [2026-11-09T05:41:08Z]   + ufw status verbose
+2026-11-09T05:41:08+0000 pft-agent-01 pft-backup.sh[3741664]: [2026-11-09T05:41:08Z]   + iptables -S DOCKER-USER (7 rules)
+2026-11-09T05:41:08+0000 pft-agent-01 pft-backup.sh[3741664]: [2026-11-09T05:41:08Z] manifest: 23 files
+2026-11-09T05:41:08+0000 pft-agent-01 pft-backup.sh[3741664]: [2026-11-09T05:41:08Z] archive: /var/backups/postfiat/pft-backup-20261109T054107Z.tar.gz (29952 bytes)
+2026-11-09T05:41:08+0000 pft-agent-01 pft-backup.sh[3741664]: [2026-11-09T05:41:08Z] sha256 : 8a7bee8a5dee1201e6597a92ca5f159ca359132b54108d30ff20975331a51d20
+2026-11-09T05:41:08+0000 pft-agent-01 pft-backup.sh[3741664]: [2026-11-09T05:41:08Z] retention: keep newest 14
+2026-11-09T05:41:08+0000 pft-agent-01 pft-backup.sh[3741664]: [2026-11-09T05:41:08Z]   pruned pft-backup-20261029T022448Z.tar.gz
+2026-11-09T05:41:08+0000 pft-agent-01 pft-backup.sh[3741664]: [2026-11-09T05:41:08Z] retention: 14 kept, 1 pruned
+2026-11-09T05:41:08+0000 pft-agent-01 pft-backup.sh[3741664]: [2026-11-09T05:41:08Z] done
+2026-11-09T05:41:08+0000 pft-agent-01 systemd[1]: pft-backup.service: Deactivated successfully.
+2026-11-09T05:41:08+0000 pft-agent-01 systemd[1]: Finished Post Fiat node config backup (pft-backup.sh).
+2026-11-09T05:41:08+0000 pft-agent-01 systemd[1]: pft-backup.service: Consumed 1.426s CPU time.
+2026-11-09T05:41:08+0000 pft-agent-01 systemd[1]: pft-backup.service: Triggering OnSuccess= dependencies.
+2026-11-09T05:41:08+0000 pft-agent-01 systemd[1]: Starting pft-backupwatch replicate: newest pft-backup archive -> age-encrypted replica on the sentry...
+2026-11-09T05:41:10+0000 pft-agent-01 pft-backupwatch[3741915]:   peer: RECEIVED pft-backup-20261109T054107Z.tar.gz 65082a6785bcd8e613bbfcff133302ca29f3bcc9d1dde119b1327573e50de608 OK
+2026-11-09T05:41:10+0000 pft-agent-01 pft-backupwatch[3741881]: REPLICATED pft-backup-20261109T054107Z.tar.gz cipher_sha256 65082a6785bcd8e613bbfcff133302ca29f3bcc9d1dde119b1327573e50de608 plain_sha256 8a7bee8a5dee1201e6597a92ca5f159ca359132b54108d30ff20975331a51d20
+2026-11-09T05:41:10+0000 pft-agent-01 systemd[1]: pft-backupwatch-replicate.service: Deactivated successfully.
+2026-11-09T05:41:10+0000 pft-agent-01 systemd[1]: Finished pft-backupwatch replicate: newest pft-backup archive -> age-encrypted replica on the sentry.
+2026-11-09T05:41:10+0000 pft-agent-01 systemd[1]: pft-backupwatch-replicate.service: Triggering OnSuccess= dependencies.
+2026-11-09T05:41:10+0000 pft-agent-01 systemd[1]: Starting pft-backupwatch collect: backup freshness/integrity/drift (archive host) or replica store (replica host) as textfile metrics...
+2026-11-09T05:41:11+0000 pft-agent-01 systemd[1]: pft-backupwatch.service: Deactivated successfully.
+2026-11-09T05:41:11+0000 pft-agent-01 systemd[1]: Finished pft-backupwatch collect: backup freshness/integrity/drift (archive host) or replica store (replica host) as textfile metrics.
+## newest archive + validator textfile after the chain:
+ls: cannot access '/var/backups/postfiat/*.tar.gz': Permission denied
+basename: missing operand
+Try 'basename --help' for more information.
+pft_backupwatch_check_state{host="validator",check="fresh"} 0
+pft_backupwatch_check_state{host="validator",check="offhost"} 0
+# HELP pft_backupwatch_archive_age_seconds Age of the newest archive (-1: none).
+# TYPE pft_backupwatch_archive_age_seconds gauge
+pft_backupwatch_archive_age_seconds{host="validator"} 4
+## check --offhost:
+pft-backupwatch check | archive pft-backup-20261109T054107Z.tar.gz | age_s 9 | bytes 29952
+  [OK  ] fresh     newest 0 min old
+  [OK  ] size      29952 B, 1.00x previous
+  [OK  ] sidecar   sha256 matches
+  [OK  ] manifest  23 members match
+  [OK  ] content   9 required + 3 reference members present
+  [OK  ] drift     17 files equal the live host
+  [OK  ] offhost   peer holds pft-backup-20261109T054107Z.tar.gz: ciphertext sha256 = recorded, decrypts to the sidecar sha256 (3 replica(s))
+RESULT: OK - 0 finding(s)
+check rc=0
