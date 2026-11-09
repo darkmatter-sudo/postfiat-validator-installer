@@ -22,7 +22,7 @@ FAILS=0
 check() { if [ "$2" = 0 ]; then echo "CHECK ok   $1"; else echo "CHECK FAIL $1"; FAILS=$((FAILS + 1)); fi; }
 is() { [ "$@" ] && echo 0 || echo 1; }
 C="$(for c in postfiatd postfiatd-sentry; do [ "$(sudo -n docker inspect -f '{{.State.Running}}' "$c" 2>/dev/null)" = true ] && echo "$c"; done | head -1)"
-node() { sudo -n docker exec "$C" postfiatd server_info 2>/dev/null | jq -r '"\(.result.info.server_state) \(.result.info.peers)"'; }
+node() { sudo -n docker exec "$C" postfiatd --conf /etc/postfiatd/postfiatd.cfg server_info 2>/dev/null | jq -r '"\(.result.info.server_state) \(.result.info.peers)"'; }
 netsig() { # container networks (name, gateway, prefix; addresses redacted by red()) + published ports
   sudo -n docker inspect -f '{{range $n, $v := .NetworkSettings.Networks}}{{$n}} gw={{$v.Gateway}} ip={{$v.IPAddress}}/{{$v.IPPrefixLen}} {{end}}ports={{json .NetworkSettings.Ports}}' "$C"
 }

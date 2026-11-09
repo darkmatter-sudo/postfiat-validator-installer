@@ -18,13 +18,15 @@ export PFT_KM_MODPROBE="$T/bin/modprobe" PFT_KM_DOCKER="$T/bin/docker" PFT_KM_MA
 export CONF_FILE="$T/md/60-pft-kmod.conf" STATE_DIR="$T/state" TEXTFILE_DIR="$T/tf" PFT_KM_CONF="$T/pft-kmod.env"
 mkdir -p "$T/bin" "$T/md" "$T/tf" "$T/root/proc/sys/kernel" "$T/root/lib/modules/test"
 printf '#!/bin/sh\nexec python3 -I %s "$@"\n' "$HERE/stub_modprobe.py" > "$T/bin/modprobe"
-# stub docker: inspect -> $T/running (true); exec C postfiatd server_info -> $T/node ("full 10"); after CONF_FILE is
+# stub docker: inspect -> $T/running (true); exec C postfiatd --conf /etc/postfiatd/postfiatd.cfg server_info (fails
+# like the real image without --conf: it then reads /etc/opt/postfiat) -> $T/node ("full 10"); after CONF_FILE is
 # written, $T/node_after (if present) replaces $T/node (a node that breaks because of the apply)
 cat > "$T/bin/docker" <<EOF
 #!/bin/bash
 case "\$1" in
   inspect) cat "$T/running" ;;
-  exec) f="$T/node"; [ -e "$T/node_after" ] && [ -e "$CONF_FILE" ] && f="$T/node_after"
+  exec) [ "\$3 \$4 \$5 \$6" = "postfiatd --conf /etc/postfiatd/postfiatd.cfg server_info" ] || { echo 'Failed to read "/etc/opt/postfiat/postfiatd.cfg"' >&2; exit 1; }
+        f="$T/node"; [ -e "$T/node_after" ] && [ -e "$CONF_FILE" ] && f="$T/node_after"
         read -r st p < "\$f"; printf '{"result":{"info":{"server_state":"%s","peers":%s}}}\n' "\$st" "\$p" ;;
   *) exit 9 ;;
 esac

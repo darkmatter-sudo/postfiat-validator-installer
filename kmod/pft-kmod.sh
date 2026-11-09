@@ -46,7 +46,7 @@
 #   EXTRA_DENY (more module names to deny), KEEP (deny-list modules this host needs; never written).
 # Env: CONF_FILE (/etc/modprobe.d/60-pft-kmod.conf)  STATE_DIR (/var/lib/pft-kmod)  TEXTFILE_DIR
 #      (/var/lib/pft-exporter/textfile)  REMOTE_DIR (same)  CONTAINER (auto: postfiatd or postfiatd-sentry)
-#      MAINT_MIN (600)  MIN_PEERS (1)  VERIFY_INJECT=required (the post-apply verify fails: restore drill)
+#      MAINT_MIN (600)  MIN_PEERS (1)  NODE_CFG (/etc/postfiatd/postfiatd.cfg, in the container)  VERIFY_INJECT=required (the post-apply verify fails: restore drill)
 #   Test hooks: PFT_KM_ROOT (prefix for /proc, /sys, /lib/modules)  PFT_KM_MODPROBE  PFT_KM_DOCKER  PFT_KM_MAINT
 #      PFT_KM_UNAME_R  PFT_KM_NOW (epoch)
 # shellcheck disable=SC2016
@@ -65,6 +65,7 @@ TEXTFILE_DIR="${TEXTFILE_DIR:-/var/lib/pft-exporter/textfile}"
 REMOTE_DIR="${REMOTE_DIR:-/var/lib/pft-exporter/textfile}"
 MAINT_MIN="${MAINT_MIN:-600}"
 MIN_PEERS="${MIN_PEERS:-1}"
+NODE_CFG="${NODE_CFG:-/etc/postfiatd/postfiatd.cfg}" # inside the container; without --conf postfiatd looks in /etc/opt
 INJECT="${VERIFY_INJECT:-}"
 MAX_BYTES=16384
 HOST_LABEL=validator; PEER_LABEL=sentry; PULL_SSH=""; PULL_TIMEOUT=30; EXTRA_REQUIRED=""; EXTRA_DENY=""; KEEP=""
@@ -181,7 +182,7 @@ render_conf() {
   deny_lines | while read -r m c r; do printf '# %s (%s)\ninstall %s /bin/false\nblacklist %s\n' "$m" "$c: $r" "$m" "$m"; done
 }
 
-# ---------- node health (docker exec <container> postfiatd server_info) ----------
+# ---------- node health (docker exec <container> postfiatd --conf NODE_CFG server_info) ----------
 container() {
   if [ -n "${CONTAINER:-}" ]; then echo "$CONTAINER"; return; fi
   local c
@@ -194,7 +195,7 @@ node_state() { # -> "running state peers"
   local c run info
   c="$(container)"
   run="$("$DOCKER" inspect -f '{{.State.Running}}' "$c" 2>/dev/null)"; [ "$run" = true ] || run=false
-  info="$("$DOCKER" exec "$c" postfiatd server_info 2>/dev/null)"
+  info="$("$DOCKER" exec "$c" postfiatd --conf "$NODE_CFG" server_info 2>/dev/null)"
   printf '%s %s %s\n' "$run" "$(jq -r '.result.info.server_state // "down"' <<<"$info" 2>/dev/null || echo down)" \
     "$(jq -r '.result.info.peers // 0' <<<"$info" 2>/dev/null || echo 0)"
 }

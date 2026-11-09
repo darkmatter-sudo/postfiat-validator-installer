@@ -120,7 +120,7 @@ if [ "$WHO" = sentry ]; then
   check "sentry back over ssh ($(ts))" "$(is "$up" = 1)"
   check "boot_id changed (really rebooted)" "$(is "$(R 'cat /proc/sys/kernel/random/boot_id')" != "$B0")"
   st=""; for i in $(seq 1 50); do
-    st="$(R "sudo -n docker exec postfiatd-sentry postfiatd server_info 2>/dev/null | jq -r '.result.info.server_state'")"
+    st="$(R "sudo -n docker exec postfiatd-sentry postfiatd --conf /etc/postfiatd/postfiatd.cfg server_info 2>/dev/null | jq -r '.result.info.server_state'")"
     [ "$st" = full ] && break; sleep 30
   done
   echo "$(ts) sentry server_state $st after poll $i"; check "sentry full after reboot" "$(is "$st" = full)"

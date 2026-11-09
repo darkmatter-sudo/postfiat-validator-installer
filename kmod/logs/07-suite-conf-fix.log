@@ -1,0 +1,126 @@
+kmod suite + lint after the --conf fix (node_state: docker exec C postfiatd --conf /etc/postfiatd/postfiatd.cfg server_info; the stub now fails without --conf, like the real image) - 2026-11-09T17:38:48Z - Ubuntu 22.04.5 LTS - host: validator-host
+$ shellcheck kmod/pft-kmod.sh kmod/install.sh kmod/tests/*.sh kmod/drill/*.sh
+(exit 0)
+$ ruff check kmod && ruff format --check kmod
+All checks passed!
+3 files already formatted
+(exit 0)
+$ TEST_TMPDIR=~/.cache bash kmod/tests/run-tests.sh
+== 1. audit before apply (fixture = live validator shape)
+PASS audit exit 1 (findings)
+PASS 13 loadable deny modules FAIL
+PASS 7 absent deny modules WARN
+PASS absent: cramfs is WARN
+PASS absent: freevxfs is WARN
+PASS absent: jffs2 is WARN
+PASS absent: hfs is WARN
+PASS absent: hfsplus is WARN
+PASS absent: rds is WARN
+PASS absent: n_hdlc is WARN
+PASS autoload PASS
+PASS required PASS
+PASS managed WARN (missing)
+PASS RESULT line
+PASS json parses, exit 1, 23 checks
+PASS textfile written
+PASS metrics: up 1, loadable 13, absent 7, enforced 0, managed 0
+PASS metrics: last_run = clock
+PASS own textfile passes validate
+PASS textfile < 2 KiB (jobwatch/exporter budget untouched: separate file)
+== 2. audit classifications
+PASS loaded deny module FAIL
+PASS builtin deny module INFO
+PASS autoload bypass FAIL
+PASS autoload_ok 0 metric
+PASS modules_disabled INFO
+PASS a foreign rule that blocks a required dependency FAILs required:*
+PASS required_blocked metric > 0
+PASS KEEP drops sctp and usb-storage, EXTRA_DENY adds bogusfs
+PASS modprobe missing: exit 2, up 0, no findings series
+== 3. apply guards (each refusal: exit 4, nothing written)
+PASS no --yes: exit 4
+PASS no --yes: reason
+PASS no --yes: CONF_FILE unchanged
+PASS no maint window: exit 4
+PASS no maint window: reason
+PASS no maint window: CONF_FILE unchanged
+PASS window too short: exit 4
+PASS window too short: reason
+PASS window too short: CONF_FILE unchanged
+PASS lock held: exit 4
+PASS lock held: reason
+PASS lock held: CONF_FILE unchanged
+PASS node not full: exit 4
+PASS node not full: reason
+PASS node not full: CONF_FILE unchanged
+PASS no peers: exit 4
+PASS no peers: reason
+PASS no peers: CONF_FILE unchanged
+PASS container not running: exit 4
+PASS container not running: reason
+PASS container not running: CONF_FILE unchanged
+PASS autoload bypassed: exit 4
+PASS autoload bypassed: reason
+PASS autoload bypassed: CONF_FILE unchanged
+PASS deny module loaded: exit 4
+PASS deny module loaded: reason
+PASS deny module loaded: CONF_FILE unchanged
+PASS deny module builtin: exit 4
+PASS deny module builtin: reason
+PASS deny module builtin: CONF_FILE unchanged
+PASS deny module REQUIRED (not loaded): exit 4
+PASS deny module REQUIRED (not loaded): reason
+PASS deny module REQUIRED (not loaded): CONF_FILE unchanged
+PASS deny module is a dependency of a loaded module: exit 4
+PASS deny module is a dependency of a loaded module: reason
+PASS deny module is a dependency of a loaded module: CONF_FILE unchanged
+PASS deny module is a dependency of EXTRA_REQUIRED: exit 4
+PASS deny module is a dependency of EXTRA_REQUIRED: reason
+PASS deny module is a dependency of EXTRA_REQUIRED: CONF_FILE unchanged
+PASS last apply still in place: exit 4
+PASS last apply still in place: reason
+PASS last apply still in place: CONF_FILE unchanged
+== 4. apply, audit after, idempotence
+PASS dry-run exit 0, writes nothing
+PASS apply exit 0
+PASS verify ok line
+PASS CONF_FILE has 20 install + 20 blacklist lines
+PASS apply record kept (sha_before absent)
+PASS audit after: exit 0, 20 enforced
+PASS audit after: managed PASS
+PASS stub: dccp now resolves to install /bin/false (refused load)
+PASS stub: allowed-module control (sctp dep libcrc32c, overlay) still insmod
+PASS second apply refused while applied: exit 4
+PASS second apply refused while applied: reason
+PASS second apply refused while applied: CONF_FILE unchanged
+PASS drifted CONF_FILE: managed WARN
+== 5. post-apply verify failure restores byte-identical
+PASS inject required: exit 1
+PASS inject required: VERIFY FAILED names required:overlay
+PASS restored byte-identical, mode and mtime kept
+PASS no apply record after a restore
+PASS a later file overrides our dccp rule: exit 1, VERIFY FAILED deny:dccp, removed again
+PASS node breaks after write: exit 1, removed again (did not exist)
+== 6. rollback
+PASS apply over an existing file
+PASS rollback without --yes refused
+PASS rollback without window refused
+PASS rollback exit 0, byte-identical, mode 640
+PASS apply record archived
+PASS second rollback refused (no apply on record)
+PASS re-apply after rollback
+PASS rollback of a fresh apply removes the file
+PASS tampered backup: exit 5 ROLLBACK MISMATCH
+== 7. pull / validate
+PASS validate good sentry file
+PASS validate wrong host
+PASS validate foreign metric
+PASS validate missing up
+PASS validate missing last_run
+PASS validate too big (valid content, 21551 bytes)
+PASS validate just under the cap (valid content, 9951 bytes) passes
+PASS pull ok
+PASS pull fetch failure: exit 1, old copy kept
+PASS pull invalid file: exit 2, old copy kept, no temp left
+RESULT: 109/109 passed
+(exit 0)

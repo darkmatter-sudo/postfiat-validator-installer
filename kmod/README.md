@@ -137,8 +137,10 @@ guard.
 | lint + promtool + offline suite | shellcheck and ruff clean; `promtool test rules kmod.tests.yml` SUCCESS; suite 107/107 | [`logs/01-suite.log`](logs/01-suite.log) |
 | mutation pass 1 | **22/24 caught, 2 survived** (real gaps): M14, because no test had a later modprobe.d file overriding our rule, so post-apply verify was never exercised; M22, because the "too big" fixture was also malformed, so the content check refused it before the size cap could | [`logs/02-mutants.log`](logs/02-mutants.log) |
 | tests for both gaps | `99-override.conf` (`install dccp /sbin/modprobe --ignore-install dccp`) must fail verify and restore; an oversized file made only of valid samples, plus an under-cap control; suite 109/109 | [`logs/03-suite.log`](logs/03-suite.log) |
-| mutation pass 2 | see log | [`logs/04-mutants.log`](logs/04-mutants.log) |
+| mutation pass 2 | 24/24 caught (M14 by the override test, M22 by the 21551-byte valid file) | [`logs/04-mutants.log`](logs/04-mutants.log) |
 | alert-rule mutants (`tests/rules-mutants.sh`) | unmutated tests SUCCESS first, then **8/8 killed** (thresholds, both `for`s, the loaded, required and autoload terms, the up term). The first attempt stopped at its baseline check: the promtool container (user nobody) could not read a 0700 temp dir, so every mutant would have "failed" | [`logs/05-rule-mutants.log`](logs/05-rule-mutants.log) |
+| node check fix | a read-only dry run on the hosts showed `postfiatd server_info` in the container needs `--conf /etc/postfiatd/postfiatd.cfg` (without it the image reads /etc/opt/postfiat and fails), so the node gate would always refuse. Fixed in pft-kmod and both drill scripts; the stub docker now fails without `--conf` like the real image; suite 109/109 | [`logs/07-suite-conf-fix.log`](logs/07-suite-conf-fix.log) |
+| mutation pass 3 (after the fix) | 24/24 caught | [`logs/08-mutants.log`](logs/08-mutants.log) |
 
 
 ### Live proof (sentry first, then validator)
