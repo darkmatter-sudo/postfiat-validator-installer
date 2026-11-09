@@ -338,6 +338,17 @@ check(
     m_late["missed"] == 1,
     m_late,
 )
+m_stuck, _ = jl.derive(
+    dict(km2, NextElapseUSecRealtime=["Mon 2026-11-09 18:30:00 UTC"]),
+    kw_s,
+    st2,
+    int(T2),
+)
+check(
+    "kmod: next elapse 30 min in the past, last trigger 35 min ago -> missed (next-elapse check alone)",
+    m_stuck["missed"] == 1 and T2 - utc("2026-11-09 18:25:51") < 3600 + 600 + 300,
+    m_stuck,
+)
 m_up, _ = jl.derive(
     km2, kw_s, {"spec": "OnCalendar=*-*-* *:23:00", "cal_interval": 700.0}, int(T2)
 )
@@ -500,6 +511,12 @@ check(
 T_NEXT = jl.parse_ts(jl.one(nv_t, "NextElapseUSecRealtime"))
 m, _ = jl.derive(nv_t, nv_s, {}, int(T_NEXT) + 400)
 check("never run: next elapse long past -> missed", m["missed"] == 1, m)
+m, _ = jl.derive(nv_t, nv_s, {}, int(T_NEXT) + 400, period_fn=NOPER)
+check(
+    "never run, no interval known: only the next-elapse check can say missed",
+    (m["interval_seconds"], m["missed"]) == (0, 1),
+    m,
+)
 
 nvm = dict(hb_t, LastTriggerUSec=[""])
 nvm_s = dict(

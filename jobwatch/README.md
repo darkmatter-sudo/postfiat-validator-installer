@@ -13,7 +13,7 @@ calendar` (the period of an `OnCalendar` spec, a pure computation); it never sta
 |---|---|
 | `pft-jobwatch.sh` | CLI: `collect`, `inventory`, `forget`, `pull`, `validate`, `version` (usage in its header) |
 | `jobwatch_lib.py` | stdlib helper: `systemctl show` parser, schedule/interval derivation, per-job state, textfile renderer |
-| `tests/test_jobwatch.py` | offline suite: captured `systemctl show` fixtures + `tests/stub_systemctl.py` (123 checks) |
+| `tests/test_jobwatch.py` | offline suite: captured `systemctl show` fixtures + `tests/stub_systemctl.py` (125 checks) |
 | `tests/mutate.py` | mutant harness: 50 helper/script/rule mutants; the suite or promtool must fail each |
 | `tests/fixtures/` | `systemctl show` output captured on the validator (heartbeat = monotonic, kernwatch = calendar, vulnscan = calendar + 30 min RandomizedDelaySec, egress-reapply@ = template instance) and three variants with only the named fields changed (jwfail = exit 1, jwnever = never run, jwdis = `disable --now`) |
 | `install.sh` | install/uninstall: collector (`--host NAME`) or the validator's pull of the sentry file (`--pull`) |
