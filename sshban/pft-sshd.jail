@@ -1,0 +1,17 @@
+# /etc/fail2ban/jail.d/pft-sshd.local (installed by sshban/install.sh). Bans sources that keep failing SSH auth.
+# Keys-only hosts: a successful key login never counts, so the admin link and the operator are not affected;
+# the peer host and any --ignore CIDRs are also in ignoreip (appended at install, kept off the repo).
+# banaction iptables-multiport: runtime-only rules in the f2b-sshd chain (INPUT), so ufw's user.rules (watched by
+# pft-integrity, archived by pft-backup) never change.
+[sshd]
+enabled  = true
+backend  = systemd
+mode     = aggressive
+port     = 22
+maxretry = 5
+findtime = 10m
+bantime  = 1h
+bantime.increment = true
+bantime.factor    = 2
+bantime.maxtime   = 1w
+banaction = iptables-multiport
