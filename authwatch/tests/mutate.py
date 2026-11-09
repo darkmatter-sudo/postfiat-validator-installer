@@ -46,6 +46,14 @@ MUTANTS = [
      "awk -v fp=\"$fp\" '$1 == fp { found = 1 } END { exit !found }' \"$ALLOWLIST\" && continue", "false && continue"),
     ("S09", "sh", "pull: no timeout around ssh", 'timeout "$PULL_TIMEOUT" $PULL_SSH', "$PULL_SSH"),
     ("S10", "sh", "validate: up sample not required", "if (!up) {", "if (0) {"),
+    ("S11", "sh", "sources file not passed to the parser", '--sources "$SOURCES" ', ""),
+    ("S12", "sh", "seed takes every accepted address, not only allowlisted keys", "if (fp in a) print $6", "print $6"),
+    ("S13", "sh", "sources add does not dedupe",
+     "awk -v c=\"$c\" '$1 == c { found = 1 } END { exit !found }' \"$SOURCES\" && continue", "false && continue"),
+    ("S14", "sh", "digest: daily stamp ignored (more than one message a day)",
+     'if ! $force && [ "$(cat "$stamp" 2>/dev/null)" = "$day" ]; then', "if false; then"),
+    ("S15", "sh", "digest: sent without a burst", 'if [ -z "$hosts" ] && ! $force; then', "if false; then"),
+    ("S16", "sh", "digest: --dry-run sends", 'if $dry; then printf', "if false; then printf"),
     # --- parser (py)
     ("P01", "py", "companion lines of an invalid user counted as aborted auth (double count)",
      "(?:Connection closed by|Connection reset by|Disconnected from) authenticating user",
@@ -61,6 +69,10 @@ MUTANTS = [
     ("P09", "py", "sudo wrong-password lines counted as ok", 'return "sudo", "auth_failure" if m.group(1) else "ok"',
      'return "sudo", "ok"'),
     ("P10", "py", "password login classed allowlisted", '"other", "none")', '"other", "allowlisted")'),
+    ("P11", "py", "every source known",
+     'return "known" if addr is not None and any(addr in n for n in sources) else "unknown"', 'return "known"'),
+    ("P12", "py", "empty sources file classes every login unknown", "    if not sources:\n", "    if False:\n"),
+    ("P13", "py", "known-source logins move last_unknown_source", 'if sc == "unknown":', "if True:"),
     # --- rules
     ("R01", "rules", "unknown-key alert ignores keyless (password) logins", 'key_class!="allowlisted"',
      'key_class="unknown"'),
@@ -71,6 +83,9 @@ MUTANTS = [
     ("R04", "rules", "stale after 10 min instead of 5", "pft_authwatch_collect_timestamp_seconds > 300",
      "pft_authwatch_collect_timestamp_seconds > 600"),
     ("R05", "rules", "stale without for: 2m", "        for: 2m\n", ""),
+    ("R06", "rules", "unknown-source alert also counts known logins", 'source_class="unknown"}[15m]',
+     'source_class!="unconfigured"}[15m]'),
+    ("R07", "rules", "brute-force burst paged again (digest label dropped)", "          notify: digest\n", ""),
 ]
 
 

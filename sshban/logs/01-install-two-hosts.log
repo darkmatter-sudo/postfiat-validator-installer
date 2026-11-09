@@ -1,0 +1,87 @@
+## 2026-11-09T05:47:44Z sshban install on the sentry at 246e8aedff71200a28607ca96849dfe82642a53f
+11c08fa9eafa99fc2211ac3a79de239ce6241b9c2f7b2a2c7f8de3c0eef4393d  install.sh
+45c278858bb35ce0e391e71f8c61ba47ab5a3bd37e4dd617bc7ea447684278d0  pft-sshd.jail
+## sshd auth settings before (must be unchanged after):
+pubkeyauthentication yes
+passwordauthentication no
+kbdinteractiveauthentication no
+2026-11-09T05:47:45Z installing fail2ban from the Ubuntu archive
+No user sessions are running outdated binaries.
+
+No VM guests are running outdated hypervisor (qemu) binaries on this host.
+2026-11-09T05:48:16Z fail2ban 0.11.2-6
+2026-11-09T05:48:16Z installed /etc/fail2ban/jail.d/pft-sshd.local (+1 ignore entries)
+Server replied: pong
+backend: Invalid command (no get action or not yet implemented)
+maxretry: 5
+findtime: 600
+bantime: 3600
+ignoreip entries: 3
+Status for the jail: sshd
+|- Filter
+|  |- Currently failed:	2
+|  |- Total failed:	2
+|  `- Journal matches:	_SYSTEMD_UNIT=sshd.service + _COMM=sshd
+`- Actions
+   |- Currently banned:	0
+   |- Total banned:	0
+   `- Banned IP list: <redacted>
+2026-11-09T05:48:20Z remember: sudo pft-integrity accept --reason 'pft-sshban installed'
+install rc=0
+## sshd auth settings after:
+pubkeyauthentication yes
+passwordauthentication no
+kbdinteractiveauthentication no
+## fresh key login (new connection, no control master):
+FRESH_LOGIN_OK pft-relay-01
+fresh rc=0
+## 2026-11-09T05:48:32Z sshban install on the validator at 246e8aedff71200a28607ca96849dfe82642a53f (ignore: peer + 2 admin sources seen with allowlisted keys)
+11c08fa9eafa99fc2211ac3a79de239ce6241b9c2f7b2a2c7f8de3c0eef4393d  sshban/install.sh
+45c278858bb35ce0e391e71f8c61ba47ab5a3bd37e4dd617bc7ea447684278d0  sshban/pft-sshd.jail
+## sshd auth settings before:
+pubkeyauthentication yes
+passwordauthentication no
+kbdinteractiveauthentication no
+2026-11-09T05:48:32Z installing fail2ban from the Ubuntu archive
+No user sessions are running outdated binaries.
+
+No VM guests are running outdated hypervisor (qemu) binaries on this host.
+2026-11-09T05:48:54Z fail2ban 0.11.2-6
+2026-11-09T05:48:54Z installed /etc/fail2ban/jail.d/pft-sshd.local (+3 ignore entries)
+Server replied: pong
+backend: Invalid command (no get action or not yet implemented)
+maxretry: 5
+findtime: 600
+bantime: 3600
+ignoreip entries: 5
+Status for the jail: sshd
+|- Filter
+|  |- Currently failed:	5
+|  |- Total failed:	8
+|  `- Journal matches:	_SYSTEMD_UNIT=sshd.service + _COMM=sshd
+`- Actions
+   |- Currently banned:	0
+   |- Total banned:	0
+   `- Banned IP list: <redacted>
+2026-11-09T05:48:58Z remember: sudo pft-integrity accept --reason 'pft-sshban installed'
+install rc=0
+## sshd auth settings after:
+pubkeyauthentication yes
+passwordauthentication no
+kbdinteractiveauthentication no
+## 2026-11-09T06:11:09Z jail status ~20 min after install (--check)
+# sentry:
+|  |- Currently failed:	5
+|  |- Total failed:	8
+|  `- Journal matches:	_SYSTEMD_UNIT=sshd.service + _COMM=sshd
+   |- Currently banned:	0
+   |- Total banned:	0
+# validator:
+journal matches: Current match filter: _SYSTEMD_UNIT=sshd.service + _COMM=sshd 
+|  |- Currently failed:	8
+|  |- Total failed:	22
+|  `- Journal matches:	_SYSTEMD_UNIT=sshd.service + _COMM=sshd
+   |- Currently banned:	1
+   |- Total banned:	1
+# fresh key login to the sentry (no control master):
+FRESH_LOGIN_OK pft-relay-01

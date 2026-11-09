@@ -1,0 +1,180 @@
+## 2026-11-09T06:03:19Z authwatch 1.1.0 install on the sentry at e8c28a0401ba11b5a2f0fd93c8ef351307025ff5
+432026dbbadb806a9129a3babff23f8eecd4e5f9574dea9e194a6f1dfe9f78c0  install.sh
+ae0a751cf15ebc40653265dce2b53b88d8f5d1abecafaff65f18b7706f8fbab6  pft-authwatch.sh
+b5664b9bdb65b430b224091ee78c8ca9e6b97523c9ce1a0344e00eadd661a78e  authwatch_parse.py
+2026-11-09T06:03:19Z installed /usr/local/bin/pft-authwatch (sha256 ae0a751cf15ebc40653265dce2b53b88d8f5d1abecafaff65f18b7706f8fbab6)
+2026-11-09T06:03:19Z installed /usr/local/lib/pft-authwatch/authwatch_parse.py (sha256 b5664b9bdb65b430b224091ee78c8ca9e6b97523c9ce1a0344e00eadd661a78e)
+2026-11-09T06:03:19Z unchanged /etc/systemd/system/pft-authwatch.service
+2026-11-09T06:03:19Z unchanged /etc/systemd/system/pft-authwatch.timer
+2026-11-09T06:03:20Z allowlist import from 4 authorized_keys file(s): allowlist: 0 added, 5 total
+2026-11-09T06:03:23Z sources seed from the journal (allowlisted keys, last 30 d): sources: 1 added, 1 total
+2026-11-09T06:03:23Z first collection (through the sandboxed unit):
+pft_authwatch_up{host="sentry"} 1
+pft_authwatch_collect_timestamp_seconds{host="sentry"} 1794204204
+pft_authwatch_ssh_accepted_source_total{host="sentry",source_class="known"} 11
+pft_authwatch_ssh_accepted_source_total{host="sentry",source_class="unknown"} 0
+pft_authwatch_ssh_accepted_source_total{host="sentry",source_class="unconfigured"} 0
+pft_authwatch_allowlist_entries{host="sentry"} 5
+pft_authwatch_sources_entries{host="sentry"} 1
+2026-11-09T06:03:24Z pft-authwatch.timer active (every minute at :25); changed=true
+2026-11-09T06:03:24Z remember: sudo pft-integrity accept --reason 'pft-authwatch installed'
+install rc=0
+## second run (idempotent):
+2026-11-09T06:03:26Z sources seed from the journal (allowlisted keys, last 30 d): sources: 0 added, 1 total
+pft_authwatch_sources_entries{host="sentry"} 1
+2026-11-09T06:03:28Z pft-authwatch.timer active (every minute at :25); changed=false
+## sources file: mode + count (addresses not shown):
+600 root
+1
+## textfile after the next timer run:
+pft_authwatch_ssh_accepted_source_total{host="sentry",source_class="known"} 25
+pft_authwatch_ssh_accepted_source_total{host="sentry",source_class="unknown"} 0
+pft_authwatch_ssh_accepted_source_total{host="sentry",source_class="unconfigured"} 0
+pft_authwatch_last_unknown_source_login_timestamp_seconds{host="sentry"} 0
+pft_authwatch_sources_entries{host="sentry"} 1
+pft_authwatch_info{host="sentry",version="1.1.0"} 1
+## 2026-11-09T06:04:42Z authwatch 1.1.0 install on the validator at e8c28a0401ba11b5a2f0fd93c8ef351307025ff5
+432026dbbadb806a9129a3babff23f8eecd4e5f9574dea9e194a6f1dfe9f78c0  authwatch/install.sh
+ae0a751cf15ebc40653265dce2b53b88d8f5d1abecafaff65f18b7706f8fbab6  authwatch/pft-authwatch.sh
+b5664b9bdb65b430b224091ee78c8ca9e6b97523c9ce1a0344e00eadd661a78e  authwatch/authwatch_parse.py
+2026-11-09T06:04:42Z installed /usr/local/bin/pft-authwatch (sha256 ae0a751cf15ebc40653265dce2b53b88d8f5d1abecafaff65f18b7706f8fbab6)
+2026-11-09T06:04:42Z installed /usr/local/lib/pft-authwatch/authwatch_parse.py (sha256 b5664b9bdb65b430b224091ee78c8ca9e6b97523c9ce1a0344e00eadd661a78e)
+2026-11-09T06:04:42Z unchanged /etc/systemd/system/pft-authwatch.service
+2026-11-09T06:04:42Z unchanged /etc/systemd/system/pft-authwatch.timer
+2026-11-09T06:04:42Z allowlist import from 2 authorized_keys file(s): allowlist: 0 added, 2 total
+2026-11-09T06:04:42Z sources seed from the journal (allowlisted keys, last 30 d): sources: 2 added, 2 total
+2026-11-09T06:04:43Z first collection (through the sandboxed unit):
+pft_authwatch_up{host="validator"} 1
+pft_authwatch_collect_timestamp_seconds{host="validator"} 1794204283
+pft_authwatch_ssh_accepted_source_total{host="validator",source_class="known"} 0
+pft_authwatch_ssh_accepted_source_total{host="validator",source_class="unknown"} 0
+pft_authwatch_ssh_accepted_source_total{host="validator",source_class="unconfigured"} 0
+pft_authwatch_allowlist_entries{host="validator"} 2
+pft_authwatch_sources_entries{host="validator"} 2
+2026-11-09T06:04:44Z pft-authwatch.timer active (every minute at :25); changed=true
+2026-11-09T06:04:44Z remember: sudo pft-integrity accept --reason 'pft-authwatch installed'
+install rc=0
+## --pull (sentry copy + digest units):
+2026-11-09T06:04:44Z unchanged /usr/local/bin/pft-authwatch
+2026-11-09T06:04:44Z unchanged /usr/local/lib/pft-authwatch/authwatch_parse.py
+2026-11-09T06:04:44Z unchanged /etc/systemd/system/pft-authwatch-pull.service
+2026-11-09T06:04:44Z unchanged /etc/systemd/system/pft-authwatch-pull.timer
+2026-11-09T06:04:44Z installed /etc/systemd/system/pft-authwatch-digest.service (sha256 14cf10f070794dfea0509310a473bcfceeacdce4f8535f51b24b29de6599cc45)
+2026-11-09T06:04:44Z installed /etc/systemd/system/pft-authwatch-digest.timer (sha256 08067c1258b2a5976be547e437aa2f6235b70e2408d32ffb412246bdfd9623f9)
+2026-11-09T06:04:45Z first pull (through the sandboxed unit):
+pft_authwatch_up{host="sentry"} 1
+pft_authwatch_collect_timestamp_seconds{host="sentry"} 1794204266
+pft_authwatch_allowlist_entries{host="sentry"} 5
+  Created symlink /etc/systemd/system/timers.target.wants/pft-authwatch-digest.timer → /etc/systemd/system/pft-authwatch-digest.timer.
+2026-11-09T06:04:46Z digest preview (dry run, nothing sent):
+  SSH brute-force digest 2026-11-09
+  Routine SSH brute force, last 24 h (keys only; summarised, not paged):
+  sentry: failed attempts 1222
+  validator: failed attempts 1349
+  sentry: peak per 10 min 444
+  validator: peak per 10 min 89
+  burst alert fired on: sentry 
+  sentry: unknown-key logins (paged at once) 0
+  validator: unknown-key logins (paged at once) 0
+  sentry: unknown-source logins (paged at once) 0
+  this host fail2ban: Currently banned: 1
+  this host fail2ban: Total banned: 1
+2026-11-09T06:04:47Z pft-authwatch-pull.timer active (every minute at :50), pft-authwatch-digest.timer active; changed=true
+pull install rc=0
+## sources: mode + count
+600 root
+2
+NEXT                        LEFT          LAST PASSED UNIT                       ACTIVATES
+Mon 2026-11-09 08:33:05 CET 1h 28min left n/a  n/a    pft-authwatch-digest.timer pft-authwatch-digest.service
+## 2026-11-09T06:04:56Z reload Alertmanager (digest route) then Prometheus (rules)
+alertmanager reload HTTP 200
+alertmanager running config has digest receiver: 1
+prometheus reload HTTP 403
+PFTAuthUnknownKeyLogin health=ok state=inactive labels={"severity":"critical"}
+PFTAuthFailedBurst health=ok state=inactive labels={"severity":"warning"}
+PFTAuthwatchStale health=ok state=inactive labels={"severity":"warning"}
+route PFTAuthFailedBurst -> digest
+route PFTAuthUnknownSourceLogin -> bridge
+## active alerts:
+PFTAlertPipelineWatchdog active
+## 2026-11-09T06:05:24Z Prometheus: lifecycle API is off (403), reload with SIGHUP
+SIGHUP sent
+reloadConfigSuccess=true lastConfigTime=2026-11-09T06:05:24Z
+PFTAuthUnknownKeyLogin health=ok state=inactive labels={"severity":"critical"}
+PFTAuthUnknownSourceLogin health=ok state=inactive labels={"severity":"critical"}
+PFTAuthFailedBurst health=ok state=inactive labels={"notify":"digest","severity":"warning"}
+PFTAuthwatchStale health=ok state=inactive labels={"severity":"warning"}
+sentry known 25
+sentry unknown 0
+sentry unconfigured 0
+validator known 0
+validator unknown 0
+validator unconfigured 0
+## 2026-11-09T06:07:48Z fleet manifest (adds digest units + backupwatch drop-in) installed from e8c28a0401ba11b5a2f0fd93c8ef351307025ff5
+installed == repo
+sentry     authwatch   CURRENT    
+sentry     backupwatch CURRENT    
+validator  authwatch   CURRENT    
+validator  backupwatch CURRENT    
+validator  fleet       CURRENT    
+SUMMARY CURRENT=63 BEHIND=0 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+skew rc=0
+## 2026-11-09T06:08:49Z live classifier check on the sentry, dry run (--stdout: copy of the state, real journal since the cursor)
+# real sources file:
+# HELP pft_authwatch_ssh_accepted_source_total Accepted SSH logins by source class: address inside a sources CIDR (known), outside (unknown), or no sources configured.
+# TYPE pft_authwatch_ssh_accepted_source_total counter
+pft_authwatch_ssh_accepted_source_total{host="sentry",source_class="known"} 96
+pft_authwatch_ssh_accepted_source_total{host="sentry",source_class="unknown"} 0
+pft_authwatch_ssh_accepted_source_total{host="sentry",source_class="unconfigured"} 0
+# HELP pft_authwatch_sources_entries CIDRs in the sources file (0 = source check off).
+# TYPE pft_authwatch_sources_entries gauge
+pft_authwatch_sources_entries{host="sentry"} 1
+# same journal, SOURCES = a file holding only 192.0.2.0/24 (TEST-NET-1; the validator is outside it):
+# HELP pft_authwatch_ssh_accepted_source_total Accepted SSH logins by source class: address inside a sources CIDR (known), outside (unknown), or no sources configured.
+# TYPE pft_authwatch_ssh_accepted_source_total counter
+pft_authwatch_ssh_accepted_source_total{host="sentry",source_class="known"} 81
+pft_authwatch_ssh_accepted_source_total{host="sentry",source_class="unknown"} 15
+pft_authwatch_ssh_accepted_source_total{host="sentry",source_class="unconfigured"} 0
+# HELP pft_authwatch_last_unknown_source_login_timestamp_seconds Unix time of the last accepted login from an address outside the sources file (0 = never).
+# TYPE pft_authwatch_last_unknown_source_login_timestamp_seconds gauge
+pft_authwatch_last_unknown_source_login_timestamp_seconds{host="sentry"} 1794204551
+# HELP pft_authwatch_sources_entries CIDRs in the sources file (0 = source check off).
+# TYPE pft_authwatch_sources_entries gauge
+pft_authwatch_sources_entries{host="sentry"} 1
+# real state untouched, textfile still known-only:
+pft_authwatch_ssh_accepted_source_total{host="sentry",source_class="unknown"} 0
+# HELP pft_authwatch_last_unknown_source_login_timestamp_seconds Unix time of the last accepted login from an address outside the sources file (0 = never).
+# TYPE pft_authwatch_last_unknown_source_login_timestamp_seconds gauge
+pft_authwatch_last_unknown_source_login_timestamp_seconds{host="sentry"} 0
+## 2026-11-09T06:09:32Z digest drill through the sandboxed unit: temporary drop-in -> throwaway ntfy topic <drill-topic>, drill STATE_DIR
+unit start rc=0 result=success
+Starting pft-authwatch digest: at most one daily summary of routine SSH brute force (PFTAuthFailedBurst is not paged)...
+digest: sent for 2026-11-09 (12 lines)
+pft-authwatch-digest.service: Deactivated successfully.
+Finished pft-authwatch digest: at most one daily summary of routine SSH brute force (PFTAuthFailedBurst is not paged).
+# second start the same day (must not send again):
+Starting pft-authwatch digest: at most one daily summary of routine SSH brute force (PFTAuthFailedBurst is not paged)...
+digest: already sent for 2026-11-09
+Finished pft-authwatch digest: at most one daily summary of routine SSH brute force (PFTAuthFailedBurst is not paged).
+# drill stamp: 2026-11-09
+# read back from the throwaway topic (ntfy.sh JSON poll):
+messages=1 title=SSH brute-force digest 2026-11-09 priority=2 tags=["shield"]
+Routine SSH brute force, last 24 h (keys only; summarised, not paged):
+sentry: failed attempts 1223
+validator: failed attempts 1340
+sentry: peak per 10 min 444
+validator: peak per 10 min 89
+burst alert fired on: sentry 
+sentry: unknown-key logins (paged at once) 0
+validator: unknown-key logins (paged at once) 0
+sentry: unknown-source logins (paged at once) 0
+validator: unknown-source logins (paged at once) 0
+this host fail2ban: Currently banned: 1
+this host fail2ban: Total banned: 1
+# message count on the throwaway topic: 1
+# restore: remove the drop-in, the drill env and the drill state
+DropInPaths=
+## 2026-11-09T06:09:48Z operator alert path since cycle start (05:37Z): bridge webhooks + agent notify log
+bridge webhooks received: 1
+webhook status=firing alertname=PFTSchedEntryUnexpected severity=warning startsAt=2026-11-09T06:07:40.76Z endsAt=0001-01-01T00:00:00Z
+agent notifications since 05:00Z: 0
