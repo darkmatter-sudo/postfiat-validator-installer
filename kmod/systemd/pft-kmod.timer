@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the pft-kmod audit every hour
+
+[Timer]
+OnCalendar=*-*-* *:23:00
+RandomizedDelaySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,32 @@
+# Alert rules for pft-kmod (../kmod). pft-kmod.timer audits once an hour and writes pft_kmod_*{host="..."} to the
+# textfile dir (validator: local; the validator's run also pulls the sentry's file over PULL_SSH); the pft exporter
+# serves it. A failed audit writes up 0 and drops the finding series, so PFTKmodAuditStale covers that gap.
+# The sentry runs no Prometheus: every host="sentry" alert is evaluated here.
+# Tests: kmod.tests.yml (promtool test rules kmod.tests.yml).
+groups:
+  - name: pft-kmod
+    rules:
+      - alert: PFTKmodFinding
+        expr: >-
+          sum by (host) (pft_kmod_deny_modules{state=~"loaded|loadable"})
+          + on (host) max by (host) (pft_kmod_required_blocked)
+          + on (host) (1 - max by (host) (pft_kmod_autoload_ok))
+          > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.host }}: {{ $value }} kernel-module finding(s) (deny-list module loadable/loaded, required module blocked, or autoload bypass)"
+          description: "The hourly pft-kmod audit found a deny-list module that is loaded or loadable without an install rule, a required module (Docker/netfilter/overlay) whose resolution hits an install rule, or kernel.modprobe not pointing at modprobe. Run `sudo pft-kmod audit` and read the FAIL lines; `sudo pft-kmod apply --yes` (in a pft-maint window) or `rollback --yes` fixes the common cases."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/kmod/README.md#alerts"
+      - alert: PFTKmodAuditStale
+        expr: >-
+          max by (host) (pft_kmod_up) == 0
+          or max by (host) (time() - pft_kmod_last_run_timestamp_seconds) > 3 * 3600
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pft-kmod audit on {{ $labels.host }} failing or older than 3 h"
+          description: "The last pft-kmod audit wrote up 0 (modprobe or /proc/modules unreadable) or no audit has been recorded for 3 hours (pft-kmod.timer stopped, or on the sentry the validator's pull cannot copy the file). Module hardening status is unknown. Check `systemctl list-timers pft-kmod.timer` and `journalctl -u pft-kmod.service`."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/kmod/README.md#alerts"

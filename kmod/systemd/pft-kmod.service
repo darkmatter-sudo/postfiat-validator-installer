@@ -1,0 +1,36 @@
+[Unit]
+Description=pft-kmod: kernel-module attack-surface audit (writes textfile metrics; validator also pulls the sentry's)
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/kmod
+
+[Service]
+Type=oneshot
+# exit 1 = findings (reported in the metrics), not a unit failure; exit 2 (audit error) fails the unit
+SuccessExitStatus=1
+ExecStart=/usr/local/bin/pft-kmod audit --textfile
+# validator only (install.sh --pull writes the drop-in that sets PFT_KM_PULL=1): copy the sentry's textfile in the
+# same run ($$ = a literal $ for sh, not a systemd expansion), so the pull needs no timer of its own (pft-jobwatch's textfile is near its budget, ~1.1 KB per timer)
+ExecStartPost=/bin/sh -c '[ "$${PFT_KM_PULL:-0}" = 1 ] || exit 0; exec /usr/local/bin/pft-kmod pull'
+ReadWritePaths=/var/lib/pft-exporter/textfile
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+# no ProtectKernelModules=: it hides /lib/modules (modprobe --show-depends, modules.builtin); the unit loads nothing
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+# CAP_SETUID/SETGID/AUDIT_WRITE: the pull's runuser + ssh as the operator account; the audit itself needs none
+CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_AUDIT_WRITE
+Nice=10
+UMask=0022
+TimeoutStartSec=120

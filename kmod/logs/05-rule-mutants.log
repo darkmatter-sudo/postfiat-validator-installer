@@ -1,0 +1,14 @@
+kmod alert-rule mutants - 2026-11-09T17:35:25Z - Ubuntu 22.04.5 LTS - host: validator-host
+(first attempt at 17:35:12Z stopped: 'unmutated rules fail their tests' - the 0700 temp dir was unreadable for the promtool container's nobody user; fixed with chmod 755/644)
+$ bash kmod/tests/rules-mutants.sh
+unmutated: SUCCESS
+KILLED   [s/> 0$/> 100/]
+KILLED   [s/for: 15m/for: 1m/]
+KILLED   [s/for: 10m/for: 30m/]
+KILLED   [s/> 3 \* 3600/> 6 * 3600/]
+KILLED   [s/loaded|loadable/loadable/]
+KILLED   [s/ + on (host) max by (host) (pft_kmod_required_blocked)//]
+KILLED   [s/ + on (host) (1 - max by (host) (pft_kmod_autoload_ok))//]
+KILLED   [s/max by (host) (pft_kmod_up) == 0/max by (host) (pft_kmod_up) == 5/]
+RULE MUTANTS: killed 8/8
+(exit 0)

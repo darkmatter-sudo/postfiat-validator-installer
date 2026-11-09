@@ -1,0 +1,28 @@
+kmod mutation pass 2 (tests added for M14 and M22) - 2026-11-09T17:24:01Z - Ubuntu 22.04.5 LTS - host: validator-host
+$ TEST_TMPDIR=~/.cache python3 -I kmod/tests/mutants.py -j 3
+CAUGHT   M01 apply without --yes                    by: no --yes: exit 4
+CAUGHT   M02 apply maintenance gate                 by: no maint window: exit 4
+CAUGHT   M03 rollback maintenance gate              by: rollback without window refused
+CAUGHT   M04 window remaining time                  by: window too short: exit 4
+CAUGHT   M05 maint data-collection locks            by: lock held: exit 4
+CAUGHT   M06 last apply still in place              by: last apply still in place: exit 4
+CAUGHT   M07 node healthy before apply              by: node not full: exit 4
+CAUGHT   M08 autoload path guard                    by: autoload bypassed: exit 4
+CAUGHT   M09 loaded deny module guard               by: deny module loaded: reason
+CAUGHT   M10 builtin deny module guard              by: deny module builtin: exit 4
+CAUGHT   M11 required-closure guard                 by: deny module REQUIRED (not loaded): exit 4
+CAUGHT   M12 loaded modules in the required set     by: deny module is a dependency of a loaded module: exit 4
+CAUGHT   M13 required_blocked sees install rules    by: a foreign rule that blocks a required dependency FAILs required:*
+CAUGHT   M14 verify: deny rules effective           by: a later file overrides our dccp rule: exit 1, VERIFY FAILED deny:dccp, removed again
+CAUGHT   M15 verify: required unblocked             by: inject required: exit 1
+CAUGHT   M16 verify: node still healthy             by: node breaks after write: exit 1, removed again (did not exist)
+CAUGHT   M17 restore keeps mode/mtime               by: restored byte-identical, mode and mtime kept
+CAUGHT   M18 rollback sha check                     by: tampered backup: exit 5 ROLLBACK MISMATCH
+CAUGHT   M19 audit: loaded classification           by: loaded deny module FAIL
+CAUGHT   M20 audit: loadable vs absent              by: 13 loadable deny modules FAIL
+CAUGHT   M21 validate: host label                   by: validate wrong host
+CAUGHT   M22 validate: size cap                     by: validate too big (valid content, 21551 bytes)
+CAUGHT   M23 pull: invalid file kept out            by: pull invalid file: exit 2, old copy kept, no temp left
+CAUGHT   M24 up 0 on a failed audit                 by: modprobe missing: exit 2, up 0, no findings series
+MUTANTS: caught 24/24
+(exit 0)

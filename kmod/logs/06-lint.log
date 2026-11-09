@@ -1,0 +1,16 @@
+kmod final lint of the committed tree (after the drill's committed-HEAD change) - 2026-11-09T17:37:09Z - Ubuntu 22.04.5 LTS - host: validator-host
+$ shellcheck kmod/pft-kmod.sh kmod/install.sh kmod/tests/run-tests.sh kmod/tests/rules-mutants.sh kmod/drill/host-run.sh kmod/drill/live-run.sh
+(exit 0)
+$ ruff check kmod && ruff format --check kmod
+All checks passed!
+3 files already formatted
+(exit 0)
+$ sha256sum kmod/pft-kmod.sh kmod/install.sh kmod/tests/run-tests.sh kmod/tests/mutants.py kmod/drill/*.sh alerts/kmod.rules.yml alerts/kmod.tests.yml
+669a10aac179ce693d60f5ca21e2d5077b8f1d6fa3050a6b9ca0e2d527093070  kmod/pft-kmod.sh
+0289851e5c3cc1d6929de09a5ac75319687db44cfe18321080d8c4b7bd29dcc8  kmod/install.sh
+a60bee08be1f5f7caeb1aeac50997a7f59bef3fe94a2731bcd4188d5b5d03b5e  kmod/tests/run-tests.sh
+ebf86f06f1c217337b939f68d817a0f722cd84d6ce105b9bb5d11c596068845f  kmod/tests/mutants.py
+493c25b1360d04f0dcc99b2c74b1c0c9398a441b2639f2dcf63d37a325b7d7e0  kmod/drill/host-run.sh
+f761dfabac4f628920e80e3edf0dc18f38a082037f2811497c25b9818002643c  kmod/drill/live-run.sh
+13b67a60970c89a892091a1e6abf2e9ff6d09299a94bfda176dd0732ebcfce78  alerts/kmod.rules.yml
+7468fd63ddd1cd30c0e3f4659f82341f4efa99b1896290aa9085efdd82f6d8f8  alerts/kmod.tests.yml
