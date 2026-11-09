@@ -36,7 +36,10 @@ swap() { # HOST FILE: keep FILE as FILE.pre-kmod (cp -p), write the throwaway ta
   if [ "$h" = validator ]; then run="sudo -n"; else run="R sudo -n"; fi
   if $run test -e "$f"; then
     PRE[$h:$f]="$($run sha256sum "$f" | cut -c1-64)"
-    $run cp -p "$f" "$f.pre-kmod" && $run sed -i -E "s#^NTFY_TOPIC=.*#NTFY_TOPIC=$TT#; s#^NTFY_SERVER=.*#NTFY_SERVER=https://ntfy.sh#; s#^NTFY_TOKEN=.*#NTFY_TOKEN=#" "$f"
+    # one quoted word for ssh too: ssh joins its args into a remote shell line, so an unquoted ';' would split it
+    local ex="s#^NTFY_TOPIC=.*#NTFY_TOPIC=$TT#; s#^NTFY_SERVER=.*#NTFY_SERVER=https://ntfy.sh#; s#^NTFY_TOKEN=.*#NTFY_TOKEN=#"
+    [ "$h" = validator ] || ex="$(printf %q "$ex")"
+    $run cp -p "$f" "$f.pre-kmod" && $run sed -i -E "$ex" "$f"
     $run grep -q "^NTFY_TOPIC=$TT\$" "$f"
   else
     PRE[$h:$f]=absent
@@ -104,16 +107,16 @@ R "sudo -n pft-maint active" >/dev/null 2>&1; check "sentry has the window (via 
 [ "$FAILS" = 0 ] || { echo "setup failed - restoring, nothing changed"; exit 1; }
 
 accept() { # HOST REASON: schedaudit accept + collect (unexpected 0), integrity accept + verify PASS
-  local run; if [ "$1" = validator ]; then run=""; else run="R"; fi
-  x "$run sudo -n pft-schedaudit accept --reason '$TASK: $2' | tail -2; $run sudo -n pft-schedaudit collect >/dev/null; $run sudo -n grep -E '^pft_schedaudit_unexpected' /var/lib/pft-exporter/textfile/pft_schedaudit_$1.prom"
+  local run rs="'$TASK: $2'"; if [ "$1" = validator ]; then run=""; else run="R"; rs="\"$rs\""; fi  # ssh: quote twice
+  x "$run sudo -n pft-schedaudit accept --reason $rs | tail -2; $run sudo -n pft-schedaudit collect >/dev/null; $run sudo -n grep -E '^pft_schedaudit_unexpected' /var/lib/pft-exporter/textfile/pft_schedaudit_$1.prom"
   check "$1 schedaudit unexpected all 0 after accept + collect" "$(is -z "$(grep -E '^pft_schedaudit_unexpected.* [1-9]' <<<"$XOUT")")"
-  x "$run sudo -n pft-integrity accept --reason '$TASK: $2' | tail -2; $run sudo -n pft-integrity verify | tail -1"
+  x "$run sudo -n pft-integrity accept --reason $rs | tail -2; $run sudo -n pft-integrity verify | tail -1"
   check "$1 pft-integrity PASS after accept" "$(is -n "$(grep 'RESULT: PASS' <<<"$XOUT")")"
 }
 
 if [ "$WHO" = sentry ]; then
   echo; echo "== 2. ship $SHA to the sentry (git archive -> fresh temp dir), install"
-  D="$(R 'mktemp -d')"
+  D="$(R 'mktemp -d ~/kmod-drill.XXXXXX')"   # not /tmp: tmpfiles empties it at boot, and after-reboot runs from here
   x "git archive --format=tar $SHA kmod | R \"tar -x -C $D\" && R \"cd $D && sha256sum kmod/pft-kmod.sh kmod/install.sh kmod/systemd/*\""
   x "R \"cd $D && sudo -n bash kmod/install.sh --host sentry\""; check "sentry install exit 0 (first audit up 1)" "$XRC"
   accept sentry "pft-kmod installed (binary, service, timer)"
