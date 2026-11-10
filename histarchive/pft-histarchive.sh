@@ -173,10 +173,17 @@ peer() { # VERB ARGS... : run serve on the peer through PEER_SSH
 }
 
 
+replica_prom() { # OK(1|0): write pft_histarchive_replica.prom
+  printf '# HELP pft_histarchive_replica_ok 1 if the peer holds every encrypted file with the expected sha256\n# TYPE pft_histarchive_replica_ok gauge\npft_histarchive_replica_ok{host="%s"} %s\n# HELP pft_histarchive_replica_check_timestamp_seconds unix time of the last replica comparison\n# TYPE pft_histarchive_replica_check_timestamp_seconds gauge\npft_histarchive_replica_check_timestamp_seconds{host="%s"} %s\n' \
+    "$HOST_LABEL" "$1" "$HOST_LABEL" "$(date +%s)" | prom_write pft_histarchive_replica
+}
+
 cmd_replicate() {
   local have name rc fails=0
   echo "pft-histarchive replicate - $(ts) | $HOST_LABEL -> peer"
-  [ -s "$ARCHIVE/MANIFEST.jsonl" ] || { echo "nothing sealed yet: no replica to build"; return 0; }
+  if [ ! -s "$ARCHIVE/MANIFEST.jsonl" ]; then # an empty replica is a correct replica: export it as ok
+    echo "nothing sealed yet: no replica to build (replica_ok 1, 0 files)"; replica_prom 1; return 0
+  fi
   echo "== 1. encrypt (age) sealed segments + metadata into the outbox"
   build_outbox | sed 's/^/  /'; [ "${PIPESTATUS[0]}" = 0 ] || return 2
   echo "== 2. push files the peer does not hold yet"
@@ -201,8 +208,7 @@ compare_replica() { # local REPLICA.json vs the peer index (+ textfile); 0 same,
   if [ "$rc" != 0 ]; then echo "FAIL peer index (rc $rc): $(head -c 300 "$STATE_DIR/.peer.err")"; ok=1
   else helper replica-compare --local "$OUTBOX/REPLICA.json" <<<"$idx" || ok=1
   fi
-  printf '# HELP pft_histarchive_replica_ok 1 if the peer holds every encrypted file with the expected sha256\n# TYPE pft_histarchive_replica_ok gauge\npft_histarchive_replica_ok{host="%s"} %s\n# HELP pft_histarchive_replica_check_timestamp_seconds unix time of the last replica comparison\n# TYPE pft_histarchive_replica_check_timestamp_seconds gauge\npft_histarchive_replica_check_timestamp_seconds{host="%s"} %s\n' \
-    "$HOST_LABEL" "$([ "$ok" = 0 ] && echo 1 || echo 0)" "$HOST_LABEL" "$(date +%s)" | prom_write pft_histarchive_replica
+  replica_prom "$([ "$ok" = 0 ] && echo 1 || echo 0)"
   return "$ok"
 }
 

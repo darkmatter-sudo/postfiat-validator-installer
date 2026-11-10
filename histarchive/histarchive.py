@@ -1005,7 +1005,7 @@ def cmd_crosscheck(a):
 
 def crosscheck_loop(a, pick, recs, answers, rpc, rec_fh):
     ok = bad = 0
-    for i in pick:
+    for k, i in enumerate(pick):
         r = recs[i]
         mine_ids = sorted(tx_ids(r))
         if a.offline:
@@ -1049,15 +1049,14 @@ def crosscheck_loop(a, pick, recs, answers, rpc, rec_fh):
                 continue
             if rec_fh:
                 rec_fh.write(canon(ans) + "\n")
-        if a.negative:
-            ans = dict(
-                ans,
-                h=ans["h"][:-1] + ("0" if ans["h"][-1] != "0" else "1"),
-                ids=ans["ids"] + ["NEG"],
-            )
+        if a.negative and k % 2 == 0:  # even picks: hash altered, tx IDs as answered
+            ans = dict(ans, h=ans["h"][:-1] + ("0" if ans["h"][-1] != "0" else "1"))
+        elif a.negative:  # odd picks: only the tx ID list altered
+            ans = dict(ans, ids=ans["ids"] + ["NEG"])
         same = ans["h"] == r["h"] and ans["ids"] == mine_ids
         print(
-            f"{'MATCH' if same else 'MISMATCH'} {i} hash {r['h'][:16]} vs {ans['h'][:16]} "
+            f"{'MATCH' if same else 'MISMATCH'} {i} hash {'same' if ans['h'] == r['h'] else 'differ'} "
+            f"({r['h'][:16]} vs {ans['h'][:16]}..{ans['h'][-4:]}) "
             f"txs {len(mine_ids)} vs {len(ans['ids'])} ids {'same' if ans['ids'] == mine_ids else 'differ'}"
         )
         ok += same

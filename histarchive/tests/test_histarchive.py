@@ -633,6 +633,59 @@ class TestVerify(Base):
             out,
         )
 
+    def only_fails(self):
+        _rc, out = self.verify()
+        return [x for x in out.splitlines() if x.startswith("FAIL")]
+
+    def edit_manifest(self, **changes):
+        ar = ha.Archive(self.dir)
+        es = ar.manifest_entries()
+        es[0].update(changes)
+        es[0]["entry"] = ha.entry_hash(es[0])
+        with open(ar.manifest, "w") as fh:
+            fh.write(ha.canon(es[0]) + "\n")
+
+    def test_regzipped_segment_only_file_sha_differs(self):
+        # same content, other compression level: valid gzip, content sha ok, file sha differs
+        self.build(20)
+        p = ha.Archive(self.dir).seg_path("2026-11-10")
+        _gz, raw = ha.read_segment(p)
+        wb(p, gzip.compress(raw, compresslevel=1, mtime=0))
+        self.assertEqual(
+            self.only_fails(),
+            [
+                "FAIL segment segments/2026-11-10.jsonl.gz: sha256 of the file differs from MANIFEST"
+            ],
+        )
+
+    def test_manifest_raw_sha_checked(self):
+        self.build(20)
+        self.edit_manifest(sha256_raw="00" * 32)
+        self.assertEqual(
+            self.only_fails(),
+            [
+                "FAIL segment segments/2026-11-10.jsonl.gz: sha256 of the content differs from MANIFEST"
+            ],
+        )
+
+    def test_manifest_last_hash_checked(self):
+        self.build(20)
+        self.edit_manifest(last_hash="AB" * 32)
+        self.assertEqual(
+            self.only_fails(),
+            [
+                "FAIL segments/2026-11-10.jsonl.gz: last ledger hash differs from MANIFEST"
+            ],
+        )
+
+    def test_manifest_first_parent_checked(self):
+        self.build(20)
+        self.edit_manifest(first_parent="CD" * 32)
+        self.assertEqual(
+            self.only_fails(),
+            ["FAIL segments/2026-11-10.jsonl.gz: first_parent differs from MANIFEST"],
+        )
+
     def test_textfile_metrics(self):
         self.build(20, seal=False)
         tf = os.path.join(self.tmp, "ha.prom")
@@ -711,6 +764,13 @@ class TestReplicaAndCrosscheck(Base):
         self.assertEqual(rc, 1)
         self.assertEqual(out.count("MISMATCH"), 10, out)
         self.assertIn("0/10 MATCH", out)
+        # even picks: hash altered only; odd picks: tx IDs altered only (both comparisons proven)
+        mm = [x for x in out.splitlines() if x.startswith("MISMATCH")]
+        self.assertEqual(sum(" ids differ" in x for x in mm), 5, out)
+        self.assertEqual(sum(" hash differ " in x for x in mm), 5, out)
+        self.assertFalse(
+            any(" hash differ " in x and " ids differ" in x for x in mm), out
+        )
 
     def test_crosscheck_detects_differing_tx_ids(self):
         self.build(40, tx_every=1)

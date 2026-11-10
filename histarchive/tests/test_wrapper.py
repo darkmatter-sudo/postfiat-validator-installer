@@ -317,6 +317,21 @@ class Wrapper(unittest.TestCase):
         self.assertEqual(len(now), 1)
         self.assertNotEqual(first, now)
 
+    def test_nothing_sealed_exports_an_ok_empty_replica(self):
+        ar = os.path.join(self.state, "archive")
+        os.unlink(os.path.join(ar, "MANIFEST.jsonl"))
+        for f in os.listdir(os.path.join(ar, "segments")):
+            os.unlink(os.path.join(ar, "segments", f))
+        self.assertEqual(self.sh("keygen")[0], 0)
+        rc, out = self.sh("replicate")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("nothing sealed yet", out)
+        self.assertIn(
+            'pft_histarchive_replica_ok{host="validator"} 1\n',
+            self.prom("pft_histarchive_replica"),
+        )
+        self.assertFalse(os.path.isdir(os.path.join(self.peer, "replica")))
+
     def test_replicate_needs_keygen(self):
         rc, out = self.sh("replicate")
         self.assertEqual(rc, 2, out)
@@ -360,6 +375,11 @@ class Wrapper(unittest.TestCase):
             'pft_histarchive_verify_ok{host="validator"} 0\n',
             self.prom("pft_histarchive"),
         )
+        self.assertIn("replicate skipped: the local archive did not verify", out)
+        self.assertFalse(
+            os.path.exists(os.path.join(self.tf, "pft_histarchive_replica.prom"))
+        )
+        self.assertFalse(os.path.isdir(os.path.join(self.peer, "replica")))
 
 
 if __name__ == "__main__":
