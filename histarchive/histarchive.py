@@ -787,16 +787,12 @@ def cmd_verify(a):
             f"({res['gap_ledgers']} ledgers) fails {len(res['fail'])}"
         )
     if a.textfile:
-        write_prom(a.textfile, verify_metrics(res, a.dir))
+        write_prom(a.textfile, verify_metrics(res), a.host)
     return 0 if res["ok"] else 1
 
 
-def verify_metrics(res, root):
-    st = {}
-    p = os.path.join(root, "status.json")
-    if os.path.exists(p):
-        with open(p) as fh:
-            st = json.load(fh)
+def verify_metrics(res):
+    # follower freshness (status.json) is exported by `pft-histarchive metrics` into its own file
     m = [
         (
             "pft_histarchive_verify_ok",
@@ -831,28 +827,19 @@ def verify_metrics(res, root):
             res["last"] or 0,
         ),
     ]
-    if st:
-        m.append(
-            (
-                "pft_histarchive_last_ingest_timestamp_seconds",
-                "unix time the follower wrote its last ledger",
-                st["ingest_unix"],
-            )
-        )
-        m.append(
-            (
-                "pft_histarchive_lag_ledgers",
-                "validated ledgers not yet archived at the last write",
-                st["lag"],
-            )
-        )
     return m
 
 
-def write_prom(path, metrics):
+def write_prom(path, metrics, host="validator"):
+    if not all(c.isalnum() or c in "_-" for c in host):
+        raise ValueError(f"bad host label {host!r}")
     lines = []
     for name, help_, val in metrics:
-        lines += [f"# HELP {name} {help_}", f"# TYPE {name} gauge", f"{name} {val}"]
+        lines += [
+            f"# HELP {name} {help_}",
+            f"# TYPE {name} gauge",
+            f'{name}{{host="{host}"}} {val}',
+        ]
     atomic_write(path, "\n".join(lines) + "\n")
 
 
@@ -921,6 +908,37 @@ def cmd_replica_check(a):
     print(
         f"RESULT: {'PASS' if not fails else 'FAIL'} - replica files {len(want['files'])} "
         f"head_entry {str(want.get('head_entry'))[:16]} fails {len(fails)}"
+    )
+    return 0 if not fails else 1
+
+
+def cmd_replica_compare(a):
+    """Local REPLICA.json vs the peer's `serve index` JSON on stdin. 0 same, 1 differs."""
+    with open(a.local) as fh:
+        want = json.load(fh)
+    got = json.loads(sys.stdin.read())
+    rep, cipher = got.get("replica") or {}, got.get("cipher") or {}
+    fails = []
+    if rep.get("head_entry") != want.get("head_entry"):
+        fails.append(
+            f"peer REPLICA.json head_entry {str(rep.get('head_entry'))[:16]} != local {str(want.get('head_entry'))[:16]}"
+        )
+    for name, sha in sorted(want["files"].items()):
+        if name not in cipher:
+            fails.append(f"{name}: missing on the peer")
+        elif cipher[name] != sha:
+            fails.append(f"{name}: peer sha256 differs from the local encrypted copy")
+    for name in sorted(set(cipher) - set(want["files"])):
+        fails.append(f"{name}: on the peer but not in the local REPLICA.json")
+    if got.get("check_rc") != 0:
+        fails.append(
+            f"peer replica-check rc {got.get('check_rc')}: {str(got.get('check', '')).strip()[-200:]}"
+        )
+    for f in fails:
+        print(f"FAIL {f}")
+    print(
+        f"RESULT: {'PASS' if not fails else 'FAIL'} - local files {len(want['files'])}, "
+        f"peer files {len(cipher)}, fails {len(fails)}"
     )
     return 0 if not fails else 1
 
@@ -1097,6 +1115,11 @@ def main(argv=None):
     v.add_argument(
         "--textfile", default=None, help="also write Prometheus metrics here"
     )
+    v.add_argument(
+        "--host",
+        default="validator",
+        help="host label for the textfile (default validator)",
+    )
     v.add_argument("--max-lines", type=int, default=50)
 
     s = sub.add_parser("seal", help="seal finished days (all active days with --all)")
@@ -1110,6 +1133,11 @@ def main(argv=None):
         "cipher-index", help="sha256 of every *.age file in a dir (JSON)"
     )
     ci.add_argument("--dir", required=True)
+
+    rcmp = sub.add_parser(
+        "replica-compare", help="local REPLICA.json vs a peer index (stdin)"
+    )
+    rcmp.add_argument("--local", required=True)
 
     rc = sub.add_parser(
         "replica-check", help="check a replica dir against its REPLICA.json"
@@ -1150,6 +1178,7 @@ def main(argv=None):
             "status": cmd_status,
             "cipher-index": cmd_cipher_index,
             "replica-check": cmd_replica_check,
+            "replica-compare": cmd_replica_compare,
             "crosscheck": cmd_crosscheck,
         }[a.cmd](a)
     except (OSError, ValueError, KeyError, RuntimeError, urllib.error.URLError) as e:

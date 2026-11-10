@@ -639,16 +639,15 @@ class TestVerify(Base):
         self.assertEqual(self.verify("--textfile", tf)[0], 0)
         txt = rb(tf).decode()
         for want in (
-            "pft_histarchive_verify_ok 1",
-            "pft_histarchive_ledgers 20",
-            "pft_histarchive_gaps 0",
-            "pft_histarchive_last_ledger 1019",
-            "pft_histarchive_lag_ledgers 0",
+            'pft_histarchive_verify_ok{host="validator"} 1',
+            'pft_histarchive_ledgers{host="validator"} 20',
+            'pft_histarchive_gaps{host="validator"} 0',
+            'pft_histarchive_last_ledger{host="validator"} 1019',
         ):
             self.assertIn(want + "\n", txt)
         os.unlink(os.path.join(ha.Archive(self.dir).active_path("2026-11-10")))
         self.assertEqual(self.verify("--textfile", tf)[0], 0)
-        self.assertIn("pft_histarchive_ledgers 0\n", rb(tf).decode())
+        self.assertIn('pft_histarchive_ledgers{host="validator"} 0\n', rb(tf).decode())
 
 
 class TestReplicaAndCrosscheck(Base):

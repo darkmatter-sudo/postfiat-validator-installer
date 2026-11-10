@@ -1,0 +1,163 @@
+# promtool unit tests for histarchive.rules.yml. Run: promtool test rules histarchive.tests.yml
+# NxM in values = N, then M more samples (1x20 covers t 0..20). Timestamps are unix seconds at 1m samples, so an
+# ingest/check timestamp that keeps pace with the clock is 0+60xN. Every alert has a fire case at its `for` boundary
+# (one minute before = not yet) and a recovery case.
+rule_files:
+- histarchive.rules.yml
+evaluation_interval: 1m
+tests:
+- name: healthy archive for 3h fires nothing
+  interval: 1m
+  input_series:
+  - series: pft_histarchive_last_ingest_timestamp_seconds{host="validator"}
+    values: 0+60x180
+  - series: pft_histarchive_lag_ledgers{host="validator"}
+    values: 0x180
+  - series: pft_histarchive_follow_gaps{host="validator"}
+    values: 0x180
+  - series: pft_histarchive_verify_ok{host="validator"}
+    values: 1x180
+  - series: pft_histarchive_verify_timestamp_seconds{host="validator"}
+    values: 0+60x180
+  - series: pft_histarchive_replica_ok{host="validator"}
+    values: 1x180
+  - series: pft_histarchive_replica_check_timestamp_seconds{host="validator"}
+    values: 0+60x180
+  alert_rule_test:
+  - {eval_time: 179m, alertname: PFTHistarchiveStale, exp_alerts: []}
+  - {eval_time: 179m, alertname: PFTHistarchiveIntegrity, exp_alerts: []}
+  - {eval_time: 179m, alertname: PFTHistarchiveReplica, exp_alerts: []}
+
+- name: follower stops at 30m -> stale after 15m + for 10m (55m), recovers when ingest resumes
+  interval: 1m
+  input_series:
+  # ingest timestamp advances to 1800 s (t=30m), freezes until t=80m, then follows the clock again
+  - series: pft_histarchive_last_ingest_timestamp_seconds{host="validator"}
+    values: 0+60x30 1800x50 4860+60x40
+  - series: pft_histarchive_lag_ledgers{host="validator"}
+    values: 0x120
+  alert_rule_test:
+  - {eval_time: 54m, alertname: PFTHistarchiveStale, exp_alerts: []}
+  - eval_time: 56m
+    alertname: PFTHistarchiveStale
+    exp_alerts:
+    - exp_labels: {severity: warning, host: validator}
+      exp_annotations: &stale
+        summary: "validator: ledger history archive is not keeping up"
+        description: "pft-histarchive's follower has not written a ledger for over 15 min or is over 300 ledgers behind. With online_delete=512 the node prunes unarchived ledgers within ~30-60 min, after which they become a recorded gap. Run `systemctl status pft-histarchive.service` and `sudo pft-histarchive status`."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/histarchive/README.md#alerts"
+  - {eval_time: 90m, alertname: PFTHistarchiveStale, exp_alerts: []}
+
+- name: follower falling behind (lag 301) fires after 10m, recovers at lag 300
+  interval: 1m
+  input_series:
+  - series: pft_histarchive_last_ingest_timestamp_seconds{host="validator"}
+    values: 0+60x60
+  - series: pft_histarchive_lag_ledgers{host="validator"}
+    values: 0x10 301x20 300x30
+  alert_rule_test:
+  - {eval_time: 20m, alertname: PFTHistarchiveStale, exp_alerts: []}
+  - eval_time: 21m
+    alertname: PFTHistarchiveStale
+    exp_alerts:
+    - exp_labels: {severity: warning, host: validator}
+      exp_annotations: *stale
+  - {eval_time: 32m, alertname: PFTHistarchiveStale, exp_alerts: []}
+
+- name: verify failure fires at once and clears on the next passing verify
+  interval: 1m
+  input_series:
+  - series: pft_histarchive_verify_ok{host="validator"}
+    values: 1x10 0x10 1x10
+  - series: pft_histarchive_verify_timestamp_seconds{host="validator"}
+    values: 0+60x30
+  - series: pft_histarchive_follow_gaps{host="validator"}
+    values: 0x30
+  alert_rule_test:
+  - {eval_time: 10m, alertname: PFTHistarchiveIntegrity, exp_alerts: []}
+  - eval_time: 11m
+    alertname: PFTHistarchiveIntegrity
+    exp_alerts:
+    - exp_labels: {severity: critical, host: validator}
+      exp_annotations: &integrity
+        summary: "validator: ledger history archive failed verification or has a new gap"
+        description: "Run `sudo pft-histarchive verify` (FAIL lines name the segment, ledger and check) and read gaps.jsonl for new gap ranges with their reason. A gap alert clears by itself after 1 h; the ledgers in it stay recorded as missing."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/histarchive/README.md#alerts"
+  - {eval_time: 23m, alertname: PFTHistarchiveIntegrity, exp_alerts: []}
+
+- name: no verification for 26h fires; a fresh one clears it
+  interval: 1m
+  input_series:
+  # verify timestamp frozen at 0 while the clock runs: 93600 s = 1560 min
+  - series: pft_histarchive_verify_ok{host="validator"}
+    values: 1x1600
+  - series: pft_histarchive_verify_timestamp_seconds{host="validator"}
+    values: 0x1580 94800+60x20
+  - series: pft_histarchive_follow_gaps{host="validator"}
+    values: 0x1600
+  alert_rule_test:
+  - {eval_time: 1560m, alertname: PFTHistarchiveIntegrity, exp_alerts: []}
+  - eval_time: 1561m
+    alertname: PFTHistarchiveIntegrity
+    exp_alerts:
+    - exp_labels: {severity: critical, host: validator}
+      exp_annotations: *integrity
+  - {eval_time: 1590m, alertname: PFTHistarchiveIntegrity, exp_alerts: []}
+
+- name: a new gap fires for about an hour and clears (old gaps never re-fire)
+  interval: 1m
+  input_series:
+  - series: pft_histarchive_verify_ok{host="validator"}
+    values: 1x200
+  - series: pft_histarchive_verify_timestamp_seconds{host="validator"}
+    values: 0+60x200
+  # 2 old gaps from the start; a third recorded at t=60m
+  - series: pft_histarchive_follow_gaps{host="validator"}
+    values: 2x60 3x140
+  alert_rule_test:
+  - {eval_time: 59m, alertname: PFTHistarchiveIntegrity, exp_alerts: []}
+  - eval_time: 61m
+    alertname: PFTHistarchiveIntegrity
+    exp_alerts:
+    - exp_labels: {severity: critical, host: validator}
+      exp_annotations: *integrity
+  - eval_time: 115m
+    alertname: PFTHistarchiveIntegrity
+    exp_alerts:
+    - exp_labels: {severity: critical, host: validator}
+      exp_annotations: *integrity
+  - {eval_time: 125m, alertname: PFTHistarchiveIntegrity, exp_alerts: []}
+
+- name: replica mismatch fires after 30m and clears when the replica matches again
+  interval: 1m
+  input_series:
+  - series: pft_histarchive_replica_ok{host="validator"}
+    values: 1x10 0x40 1x20
+  - series: pft_histarchive_replica_check_timestamp_seconds{host="validator"}
+    values: 0+60x70
+  alert_rule_test:
+  - {eval_time: 40m, alertname: PFTHistarchiveReplica, exp_alerts: []}
+  - eval_time: 41m
+    alertname: PFTHistarchiveReplica
+    exp_alerts:
+    - exp_labels: {severity: warning, host: validator}
+      exp_annotations: &replica
+        summary: "validator: off-host ledger archive replica is missing, stale or altered"
+        description: "Run `sudo pft-histarchive verify-replica` (FAIL lines name each file) and `sudo pft-histarchive replicate` to push missing files; an altered file needs a look at the sentry before it is replaced."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/histarchive/README.md#alerts"
+  - {eval_time: 52m, alertname: PFTHistarchiveReplica, exp_alerts: []}
+
+- name: replica not compared for 26h fires after for 30m
+  interval: 1m
+  input_series:
+  - series: pft_histarchive_replica_ok{host="validator"}
+    values: 1x1620
+  - series: pft_histarchive_replica_check_timestamp_seconds{host="validator"}
+    values: 0x1620
+  alert_rule_test:
+  - {eval_time: 1590m, alertname: PFTHistarchiveReplica, exp_alerts: []}
+  - eval_time: 1591m
+    alertname: PFTHistarchiveReplica
+    exp_alerts:
+    - exp_labels: {severity: warning, host: validator}
+      exp_annotations: *replica

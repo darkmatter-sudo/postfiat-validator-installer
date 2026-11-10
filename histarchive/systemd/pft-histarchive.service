@@ -1,0 +1,51 @@
+[Unit]
+Description=pft-histarchive follower: archive every validated ledger (hash-chained, verified at ingest) before online_delete prunes it
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/histarchive
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Unprivileged system user created by install.sh; it only reads the node's public JSON-RPC on 127.0.0.1 (server_info,
+# ledger) and writes the archive dir. A SIGKILL/crash restarts it (resume cuts a torn last line and continues at the
+# last archived ledger + 1); a clean stop (SIGTERM) stays stopped.
+User=pft-histarchive
+Group=pft-histarchive
+ExecStart=/usr/bin/python3 -u /usr/local/lib/pft-histarchive/histarchive.py follow --dir /var/lib/pft-histarchive/archive --rpc http://127.0.0.1:5005/ --rate 4 --progress 3600
+Restart=on-failure
+RestartSec=10
+UMask=0022
+ProtectSystem=strict
+ReadWritePaths=/var/lib/pft-histarchive/archive
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+IPAddressDeny=any
+IPAddressAllow=localhost
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+MemoryMax=256M
+CPUQuota=50%
+TasksMax=16
+Nice=10
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=multi-user.target

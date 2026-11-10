@@ -1,0 +1,35 @@
+[Unit]
+Description=pft-histarchive periodic: follower metrics; full offline verify when due; encrypted replica to the peer when due
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/histarchive
+
+[Service]
+Type=oneshot
+# root: reads the root-only age identity and runs PEER_SSH (runuser -u <admin user> -- ssh ...) from the root-owned
+# /etc/pft-histarchive.env; writes only its state dir and its textfiles. Exits 1 when verify or the replica comparison
+# fails (jobwatch sees the failed run, the textfile carries the detail).
+ExecStart=/usr/local/bin/pft-histarchive periodic
+ProtectSystem=strict
+ReadWritePaths=/var/lib/pft-exporter/textfile /var/lib/pft-histarchive
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_AUDIT_WRITE CAP_DAC_READ_SEARCH
+UMask=0022
+Nice=10
+IOSchedulingClass=idle
+MemoryMax=512M
+TimeoutStartSec=1800

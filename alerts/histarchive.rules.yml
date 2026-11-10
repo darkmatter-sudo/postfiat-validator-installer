@@ -1,0 +1,48 @@
+# Alert rules for pft-histarchive (../histarchive). On the validator, pft-histarchive.timer (every 5 min) writes
+# pft_histarchive_follow.prom (follower freshness from status.json), pft_histarchive.prom (last full offline verify,
+# daily and after every new sealed segment) and pft_histarchive_replica.prom (last comparison of the sentry's
+# encrypted replica with the local copy). The sentry runs no Prometheus: its replica is checked from the validator.
+# Tests: histarchive.tests.yml (promtool test rules histarchive.tests.yml), 1m sample interval.
+groups:
+  - name: pft-histarchive
+    rules:
+      - alert: PFTHistarchiveStale
+        # the follower has not archived a ledger for 15 min (service down, node down, RPC refused) or is more than
+        # 300 ledgers (~20 min) behind validated; a frozen textfile (timer stopped) also ages the ingest timestamp
+        expr: |
+          time() - pft_histarchive_last_ingest_timestamp_seconds > 900
+          or pft_histarchive_lag_ledgers > 300
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.host }}: ledger history archive is not keeping up"
+          description: "pft-histarchive's follower has not written a ledger for over 15 min or is over 300 ledgers behind. With online_delete=512 the node prunes unarchived ledgers within ~30-60 min, after which they become a recorded gap. Run `systemctl status pft-histarchive.service` and `sudo pft-histarchive status`."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/histarchive/README.md#alerts"
+      - alert: PFTHistarchiveIntegrity
+        # the last full offline verification failed (hash, tx root, parent chain, missing ledger, segment sha256,
+        # MANIFEST chain), no verification ran for 26 h, or the follower recorded a new gap within the last hour
+        expr: |
+          pft_histarchive_verify_ok == 0
+          or time() - pft_histarchive_verify_timestamp_seconds > 93600
+          or delta(pft_histarchive_follow_gaps[1h]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.host }}: ledger history archive failed verification or has a new gap"
+          description: "Run `sudo pft-histarchive verify` (FAIL lines name the segment, ledger and check) and read gaps.jsonl for new gap ranges with their reason. A gap alert clears by itself after 1 h; the ledgers in it stay recorded as missing."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/histarchive/README.md#alerts"
+      - alert: PFTHistarchiveReplica
+        # the sentry's encrypted replica differs from the local copy (missing / extra / altered file, stale index,
+        # its own check failed, peer unreachable) or has not been compared for 26 h
+        expr: |
+          pft_histarchive_replica_ok == 0
+          or time() - pft_histarchive_replica_check_timestamp_seconds > 93600
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.host }}: off-host ledger archive replica is missing, stale or altered"
+          description: "Run `sudo pft-histarchive verify-replica` (FAIL lines name each file) and `sudo pft-histarchive replicate` to push missing files; an altered file needs a look at the sentry before it is replaced."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/histarchive/README.md#alerts"
