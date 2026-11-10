@@ -1,0 +1,55 @@
+OS: Ubuntu 22.04.5 LTS | 2026-11-10T21:40:08Z | histarchive kill -9 resume drill on live run 1 | drill = histarchive/drill/kill-resume.sh @ 8bf2035c7cc1c31d3289a3a2fde684ff937a6ebe (sha256 a620072c6a7b46a4495b0c4d8313302cf85a491fde0cd9febaf368616f5cfa26)
+kill -9 resume drill - 2026-11-10T21:40:08Z | unit histarchive-live
+code sha256: bdefc5f62ad28d470e500143ad16ffc55d457315fa86ec6fe8ee2762a61aafdb code/histarchive.py
+$ systemctl show -p Restart -p RestartUSec -p ActiveState histarchive-live
+Restart=on-failure
+RestartUSec=10s
+ActiveState=active
+(exit 0)
+
+== kill 1: SIGKILL
+$ sudo systemctl kill --kill-who=main -s KILL histarchive-live
+(exit 0)
+killed PID 1971752; archived up to 7938254 at the kill (status.json said 7938254 before it)
+resumed after 10s: new main PID archived 2 ledgers
+CHECK ok   kill 1: follower restarted by systemd and archived new ledgers
+$ grep -n 'RESUME' follow.log | tail -n 3
+6:2026-11-10T21:23:29Z RESUME at ledger 7937926 (archive start 7937915, node validated 7937925)
+9:2026-11-10T21:40:19Z RESUME at ledger 7938255 (archive start 7937915, node validated 7938258)
+(exit 0)
+CHECK ok   kill 1: RESUME at ledger 7938255
+CHECK ok   kill 1: no torn line to cut
+CHECK ok   kill 1: pre-kill bytes are an unchanged prefix
+$ python3 code/histarchive.py verify --dir archive | tail -n 3
+RESULT: PASS - segments 0 active 1 ledgers 343 (7937915-7938257) txs 134 gaps 0 (0 ledgers) fails 0
+(exit 0)
+CHECK ok   kill 1: full offline verify PASS
+CHECK ok   kill 1: no gap recorded
+active lines: duplicates 0, lines 344, index span 344
+CHECK ok   kill 1: no duplicate index and lines == index span (no gap)
+
+== kill 2: SIGKILL + torn half-line appended before the restart
+$ sudo systemctl kill --kill-who=main -s KILL histarchive-live
+(exit 0)
+killed PID 2027981; archived up to 7938260 at the kill (status.json said 7938260 before it)
+appended 55 torn bytes to archive/active/2026-11-10.jsonl
+resumed after 11s: new main PID archived 4 ledgers
+CHECK ok   kill 2: follower restarted by systemd and archived new ledgers
+$ grep -n 'RESUME' follow.log | tail -n 3
+9:2026-11-10T21:40:19Z RESUME at ledger 7938255 (archive start 7937915, node validated 7938258)
+12:2026-11-10T21:40:36Z RESUME cut torn last line of active/2026-11-10.jsonl (55 bytes)
+13:2026-11-10T21:40:36Z RESUME at ledger 7938261 (archive start 7937915, node validated 7938263)
+(exit 0)
+CHECK ok   kill 2: RESUME at ledger 7938261
+CHECK ok   kill 2: resume cut exactly the 55 torn bytes
+CHECK ok   kill 2: pre-kill bytes are an unchanged prefix
+$ python3 code/histarchive.py verify --dir archive | tail -n 3
+RESULT: PASS - segments 0 active 1 ledgers 350 (7937915-7938264) txs 135 gaps 0 (0 ledgers) fails 0
+(exit 0)
+CHECK ok   kill 2: full offline verify PASS
+CHECK ok   kill 2: no gap recorded
+active lines: duplicates 0, lines 350, index span 350
+CHECK ok   kill 2: no duplicate index and lines == index span (no gap)
+
+RESULT: PASS - 14/14 checks ok
+(drill exit 0)

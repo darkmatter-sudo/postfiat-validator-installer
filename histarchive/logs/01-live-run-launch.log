@@ -1,0 +1,27 @@
+OS: Ubuntu 22.04.5 LTS | 2026-11-10T21:22:56Z | histarchive live run 1 (6 h window) | code = git show dde88f88dee154a510ed4ef3dfa09fc8e67c8614:histarchive/{histarchive.py,lib_hashverify.py}
+bdefc5f62ad28d470e500143ad16ffc55d457315fa86ec6fe8ee2762a61aafdb  code/histarchive.py
+64ec1dacc49fcc955975a6c5f5ee85d657c9c7921dbe0ef15cd9b9411ef4e414  code/lib_hashverify.py
+$ sudo pft-maint lock add histarchive-live --until 2026-11-11T03:50:00Z --reason 'task_e9cfe999 6h histarchive live run'
+lock histarchive-live held until 2026-11-11T03:50:00Z
+(exit 0)
+$ sudo systemd-run --unit histarchive-live --collect -p User=<agent-user> -p WorkingDirectory=<scratch>/ha-live -p Restart=always -p RestartSec=10 -p Nice=10 -p MemoryMax=256M -p CPUQuota=50% python3 -u code/histarchive.py follow --dir archive --rpc http://127.0.0.1:5005/ --rate 4 --until 2026-11-11T03:40:00Z --progress 1800 --log follow.log
+Running as unit: histarchive-live.service
+(exit 0)
+
+NOTE 2026-11-10T21:23:27Z: Restart=always would respawn the follower after --until (exit 0); relaunching with Restart=on-failure (SIGKILL still restarts). Clean SIGTERM stop + resume:
+$ sudo systemctl stop histarchive-live
+(exit 0)
+$ sudo systemd-run --unit histarchive-live --collect -p User=<agent-user> -p WorkingDirectory=<scratch>/ha-live -p Restart=on-failure -p RestartSec=10 -p Nice=10 -p MemoryMax=256M -p CPUQuota=50% python3 -u code/histarchive.py follow --dir archive --rpc http://127.0.0.1:5005/ --rate 4 --until 2026-11-11T03:40:00Z --progress 1800 --log follow.log
+Running as unit: histarchive-live.service
+(exit 0)
+$ tail -6 follow.log
+2026-11-10T21:22:56Z START archive at ledger 7937915
+2026-11-10T21:22:56Z this run stops at 2026-11-11T03:40:00Z (--until)
+2026-11-10T21:23:28Z STOP (signal) last=7937925 archived_this_run=11 requests=48
+2026-11-10T21:23:29Z histarchive 1.0.0 follow: node build 1.0.9 state full complete_ledgers 7937158-7937925
+2026-11-10T21:23:29Z RESUME at ledger 7937926 (archive start 7937915, node validated 7937925)
+2026-11-10T21:23:29Z this run stops at 2026-11-11T03:40:00Z (--until)
+$ systemctl show histarchive-live -p Restart -p ActiveState -p MemoryMax
+Restart=on-failure
+MemoryMax=268435456
+ActiveState=active

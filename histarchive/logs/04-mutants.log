@@ -1,0 +1,46 @@
+OS: Ubuntu 22.04.5 LTS | 2026-11-10T21:59:26Z | histarchive mutation run at d6f9f90640e55778cb649b2e3a106dbdc4f03cdb | python3 3.10.12 | age 1.0.0
+$ cd histarchive && nice -n 15 python3 -u tests/mutate.py --jobs 3
+histarchive mutation harness - 2026-11-10T21:59:26Z
+mutants: 38, jobs 3, per-suite timeout 300s
+BASELINE PASS (rc 0, Ran 60 tests, 129s)
+M01 CAUGHT      ledger hash check skipped [2 failing: test_bad_hash_at_ingest_becomes_gap, test_check_record_hash_only]
+M02 CAUGHT      tx-tree root check skipped [3 failing: test_check_record_dropped_tx, test_check_record_txroot_only, test_tampered_tx_with_consistent_manifest]
+M03 CAUGHT      header index check skipped [1 failing: test_check_record_index_only]
+M04 CAUGHT      verify: broken parent link not reported [2 failing: test_broken_parent_link_in_segment, test_rehashed_header_breaks_chain]
+M05 CAUGHT      verify: missing ledgers accepted without a gaps.jsonl entry [2 failing: test_missing_ledger, test_pruned_while_down_records_gap]
+M06 CAUGHT      verify: duplicate ledger accepted [1 failing: test_duplicate_ledger]
+M07 CAUGHT      verify: segment file sha256 not compared [1 failing: test_regzipped_segment_only_file_sha_differs]
+M08 CAUGHT      verify: segment content sha256 not compared [1 failing: test_manifest_raw_sha_checked]
+M09 CAUGHT      MANIFEST entry hash not checked [1 failing: test_manifest_entry_edited]
+M10 CAUGHT      MANIFEST chain link not checked [1 failing: test_manifest_entry_edited]
+M11 CAUGHT      unlisted segment accepted [1 failing: test_segment_removed_or_unlisted]
+M12 CAUGHT      MANIFEST last_hash not compared [1 failing: test_manifest_last_hash_checked]
+M13 CAUGHT      MANIFEST first_parent not compared [1 failing: test_manifest_first_parent_checked]
+M14 CAUGHT      verify: torn last line accepted [1 failing: test_torn_line_cut_on_resume]
+M15 CAUGHT      resume: torn line that ends in a newline is kept [2 failing: test_drop_torn_tail, test_torn_line_ending_in_newline_cut]
+M16 CAUGHT      resume re-fetches the last ledger (duplicate) [4 failing: test_crash_after_manifest_append_removes_active, test_pruned_while_down_records_gap, test_resume_continues_without_dup_or_gap, test_torn_line_cut_on_resume]
+M17 CAUGHT      ingest: parent chain not checked [1 failing: test_wrong_parent_at_ingest_refused]
+M18 CAUGHT      gap ranges never recorded [2 failing: test_bad_hash_at_ingest_becomes_gap, test_pruned_while_down_records_gap]
+M19 CAUGHT      resume: half-finished seal leaves the active copy [1 failing: test_crash_after_manifest_append_removes_active]
+M20 CAUGHT      crosscheck ignores tx ID differences [2 failing: test_crosscheck_detects_differing_tx_ids, test_crosscheck_online_offline_negative]
+M21 CAUGHT      replica-check ignores altered files [2 failing: test_replica_check, test_tampered_replica_detected_everywhere]
+M22 CAUGHT      replica-check ignores extra files [1 failing: test_replica_check]
+M23 CAUGHT      replica-compare ignores a peer sha256 mismatch [2 failing: test_tamper_with_rewritten_peer_index_still_caught, test_tampered_replica_detected_everywhere]
+M24 CAUGHT      replica-compare ignores a stale peer index [1 failing: test_stale_peer_head_detected]
+M25 CAUGHT      replica-compare ignores the peer's own check [1 failing: test_tampered_replica_detected_everywhere]
+M26 CAUGHT      negative crosscheck leaves tx IDs unaltered on odd picks [1 failing: test_crosscheck_online_offline_negative]
+M27 CAUGHT      negative crosscheck leaves the hash unaltered on even picks [1 failing: test_crosscheck_online_offline_negative]
+S11 CAUGHT      nothing sealed: no replica textfile (rulecheck would read MISSING) [1 failing: test_nothing_sealed_exports_an_ok_empty_replica]
+S01 CAUGHT      restore: fetched copy sha256 not compared [1 failing: test_tampered_replica_detected_everywhere]
+S02 CAUGHT      restore: decryption failure ignored [2 failing: test_tamper_with_rewritten_peer_index_still_caught, test_wrong_identity_cannot_restore]
+S03 CAUGHT      receive accepts any file name [1 failing: test_receive_refuses_bad_names]
+S04 CAUGHT      export serves any path [1 failing: test_receive_refuses_bad_names]
+S05 CAUGHT      periodic replicates an archive that failed verify [1 failing: test_periodic_reports_verify_failure]
+S06 CAUGHT      keygen replaces an existing identity [1 failing: test_keygen_never_replaces]
+S07 CAUGHT      restore: restored-vs-local differences ignored [1 failing: test_restored_copy_differs_from_local]
+S08 CAUGHT      peer keeps every old metadata generation [2 failing: test_old_metadata_generations_pruned_on_peer, test_stale_peer_head_detected]
+S09 CAUGHT      every replicate re-encrypts and re-sends every segment [4 failing: test_missing_and_extra_files_then_self_heal, test_old_metadata_generations_pruned_on_peer, test_second_replicate_sends_nothing_new, test_stale_peer_head_detected]
+S10 CAUGHT      replica mismatch reported as ok (rc and textfile) [4 failing: test_missing_and_extra_files_then_self_heal, test_stale_peer_head_detected, test_tamper_with_rewritten_peer_index_still_caught, test_tampered_replica_detected_everywhere]
+RESULT: PASS - 38/38 caught; not caught: none
+(exit 0)
+orphans: 1
