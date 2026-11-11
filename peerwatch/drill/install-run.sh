@@ -114,6 +114,9 @@ x "sudo -n pft-fleet sync --addon fleet --to $SHA --apply --reason '$TASK peerwa
 check "fleet manifest sync exit 0" "$XRC"
 x "sudo -n pft-fleet sync --addon peerwatch --to $SHA --apply --reason '$TASK peerwatch $SHORT first install'"
 check "peerwatch sync exit 0 (files written + integrity accepted by pft-fleet)" "$XRC"
+# run 06 FOUND: pft-aptrust keeps a copy of fleet/manifest.tsv as its offpkg allowlist; new manifest rows leave it BEHIND
+x "sudo -n pft-fleet sync --addon aptrust --to $SHA --apply --reason '$TASK aptrust allowlist copy += peerwatch rows'"
+check "aptrust sync exit 0 (its manifest copy follows the new rows)" "$XRC"
 x "sha256sum peerwatch/pft-peerwatch.sh peerwatch/peerwatch_parse.py | cut -c1-64; sudo -n sha256sum /usr/local/bin/pft-peerwatch /usr/local/lib/pft-peerwatch/peerwatch_parse.py | cut -c1-64; R 'sha256sum /usr/local/bin/pft-peerwatch /usr/local/lib/pft-peerwatch/peerwatch_parse.py | cut -c1-64'"
 check "installed script + parser = repo bytes on both hosts" "$([ "$(sort <<<"$XOUT" | uniq -c | awk '$1 == 3' | wc -l)" = 2 ] && echo 0 || echo 1)"
 
@@ -199,8 +202,8 @@ x "sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tai
 check "pft-integrity PASS on both hosts at the end" "$([ "$(grep -c 'RESULT: PASS' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
 x "sudo -n docker exec postfiatd curl -s -m 10 -d '{\"method\":\"server_info\"}' http://127.0.0.1:5005 | jq -r .result.info.server_state; R \"sudo -n docker exec postfiatd-sentry curl -s -m 10 -d '{\\\"method\\\":\\\"server_info\\\"}' http://127.0.0.1:5005 | jq -r .result.info.server_state\""
 check "both nodes full or proposing at the end" "$([ "$(grep -cE '^(full|proposing)$' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
-x "systemctl list-units --all --no-legend 'run-u*' | grep -v pft-peerwatch-devcap | wc -l; R 'ls -d ~/pft-peerwatch-* 2>/dev/null | wc -l'"
-check "no transient run-u units, no install copy left on the sentry" "$([ "$(tr '\n' ' ' <<<"$XOUT")" = "0 0 " ] && echo 0 || echo 1)"
+x "systemctl list-units --all --no-legend 'run-u*.service' 'run-u*.timer' | wc -l; R 'ls -d ~/pft-peerwatch-* 2>/dev/null | wc -l'"
+check "no transient run-u services/timers (run-user-N.mount login mounts are not transient units), no install copy left on the sentry" "$([ "$(tr '\n' ' ' <<<"$XOUT")" = "0 0 " ] && echo 0 || echo 1)"
 echo "operator topic read-back waits 90 s (>= group_interval + 30 s after the last change)"; sleep 90
 i=0; OPN=0
 while read -r t; do
