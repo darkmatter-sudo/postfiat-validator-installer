@@ -67,3 +67,7 @@ textfile pft_histarchive_replica.prom   27h   pft_histarchive_replica_check_time
 require pft_histarchive_follow.prom
 require pft_histarchive.prom
 require pft_histarchive_replica.prom
+# pft-aptrust (twice-daily audit; the validator copy of the sentry file is pulled by the same run)
+textfile pft_aptrust_*.prom   15h  pft_aptrust_last_run_timestamp_seconds
+require pft_aptrust_validator.prom
+require pft_aptrust_sentry.prom

@@ -33,3 +33,6 @@ require pft_schedaudit_sentry.prom
 # pft-backupwatch (15-minute collector, replica role)
 textfile pft_backupwatch_*.prom   45m   pft_backupwatch_collect_timestamp_seconds
 require pft_backupwatch_sentry.prom
+# pft-aptrust (twice-daily audit)
+textfile pft_aptrust_*.prom   15h  pft_aptrust_last_run_timestamp_seconds
+require pft_aptrust_sentry.prom

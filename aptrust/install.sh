@@ -3,14 +3,15 @@
 #   sudo ./install.sh [--host LABEL]   script -> /usr/local/bin/pft-aptrust, ../fleet/manifest.tsv ->
 #       /usr/local/lib/pft-aptrust/manifest.tsv (the off-package allowlist: INSTALL_PATH column), pft-aptrust.service/
 #       .timer, writes HOST_LABEL into /etc/pft-aptrust.env (validator by default; --host sentry on a sentry), adds
-#       `textfile pft_aptrust_*.prom 15h pft_aptrust_last_run_timestamp_seconds` to /etc/pft-rulecheck.conf if
-#       pft-rulecheck is installed, runs one audit through the sandboxed unit (must write up 1), then enables the timer.
+#       `textfile pft_aptrust_*.prom 15h pft_aptrust_last_run_timestamp_seconds` + `require pft_aptrust_LABEL.prom`
+#       to /etc/pft-rulecheck.conf if pft-rulecheck is installed, runs one audit through the sandboxed unit (must
+#       write up 1), then enables the timer.
 #       Re-run it after installing more add-ons so the allowlist copy knows their files (until then: offpkg WARN only).
 #   sudo ./install.sh --pull           on the host that runs ../alerts (after the line above): a drop-in that makes the
-#       same run pull the peer's textfile (no second timer). Needs PULL_SSH (and PEER_LABEL, default sentry) in
-#       /etc/pft-aptrust.env. Runs the unit once (the pull must succeed).
+#       same run pull the peer's textfile (no second timer; adds `require pft_aptrust_PEER.prom`). Needs PULL_SSH
+#       (and PEER_LABEL, default sentry) in /etc/pft-aptrust.env. Runs the unit once (the pull must succeed).
 #   sudo ./install.sh --uninstall      refuses while an apply is in place (rollback first); disables the timer,
-#       removes the drop-in and this host's textfile(s).
+#       removes the drop-in, this host's textfile(s) and the pft_aptrust lines in /etc/pft-rulecheck.conf.
 # Alert rules: ../alerts/aptrust.rules.yml, listed in ../alerts/prometheus.yml.
 # Afterwards: sudo pft-integrity accept --reason "<why>" (new binary + units), pft-schedaudit accept + collect,
 #   pft-jobwatch inventory (interval 43200).
@@ -38,6 +39,11 @@ done
 conf_get() { [ -f "$CONF" ] || return 0; sed -n "s/^$1=//p" "$CONF" | tail -1 | tr -d '"'; }
 host="${label:-$(conf_get HOST_LABEL)}"; host="${host:-validator}"
 
+rc_add() { # $1 = exact line; appended once to the pft-rulecheck conf if pft-rulecheck is installed
+  [ -f "$RC_CONF" ] || return 0
+  grep -qxF "$1" "$RC_CONF" || { echo "$1" >> "$RC_CONF"; log "added to $RC_CONF: $1"; }
+}
+
 run_unit() { # one run through the sandboxed unit; must not fail
   systemctl start pft-aptrust.service || true
   if systemctl is-failed -q pft-aptrust.service; then
@@ -50,8 +56,9 @@ if $uninstall; then
   systemctl disable --now pft-aptrust.timer 2>/dev/null || true
   rm -f "$DROPIN"; rmdir "$(dirname "$DROPIN")" 2>/dev/null || true; systemctl daemon-reload
   rm -f "$TEXTDIR/pft_aptrust_$host.prom"
+  [ ! -f "$RC_CONF" ] || sed -i '/pft_aptrust_/d' "$RC_CONF"
   peer="$(conf_get PEER_LABEL)"; [ -z "$(conf_get PULL_SSH)" ] || rm -f "$TEXTDIR/pft_aptrust_${peer:-sentry}.prom"
-  log "disabled pft-aptrust.timer, removed the drop-in and textfile(s) (kept the script, $LIBDIR and $CONF)"
+  log "disabled pft-aptrust.timer, removed the drop-in, textfile(s) and rulecheck lines (kept the script, $LIBDIR and $CONF)"
   exit 0
 fi
 
@@ -68,6 +75,7 @@ if $pull; then
   log "audit + pull (through the sandboxed unit):"
   run_unit
   grep -E "^pft_aptrust_(up|last_run_timestamp_seconds)\{" "$TEXTDIR/pft_aptrust_$peer.prom"
+  rc_add "require pft_aptrust_$peer.prom"
   log "every pft-aptrust run now also pulls pft_aptrust_$peer.prom"
   exit 0
 fi
@@ -87,7 +95,8 @@ fi
 chown root:root "$CONF"; chmod 600 "$CONF"
 install -m 644 "$HERE/systemd/pft-aptrust.service" "$HERE/systemd/pft-aptrust.timer" /etc/systemd/system/
 systemctl daemon-reload
-if [ -f "$RC_CONF" ] && ! grep -qF 'pft_aptrust_*.prom' "$RC_CONF"; then echo "$RC_LINE" >> "$RC_CONF"; log "added the pft_aptrust textfile line to $RC_CONF"; fi
+grep -qF 'pft_aptrust_*.prom' "$RC_CONF" 2>/dev/null || rc_add "$RC_LINE"
+rc_add "require pft_aptrust_$host.prom"
 log "first audit (through the sandboxed unit, HOST_LABEL=$host):"
 run_unit
 grep -E "^pft_aptrust_(up|checks|sources|keys)\{" "$TEXTDIR/pft_aptrust_$host.prom"

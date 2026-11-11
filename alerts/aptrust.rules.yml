@@ -1,4 +1,4 @@
-# Alert rules for pft-aptrust (../aptrust). On each host, pft-aptrust.timer (daily) runs `pft-aptrust audit --textfile`,
+# Alert rules for pft-aptrust (../aptrust). On each host, pft-aptrust.timer (twice a day) runs `pft-aptrust audit --textfile`,
 # which writes pft_aptrust_HOST.prom: pft_aptrust_up, pft_aptrust_last_run_timestamp_seconds and, when the audit
 # completed, pft_aptrust_checks{result="pass|info|warn|fail"} plus source/key counts. The sentry runs no Prometheus:
 # its textfile is pulled to the validator and evaluated there like every other host="sentry" series.

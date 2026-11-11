@@ -264,14 +264,38 @@ scan_prefs() {
   done <"$TMP/prefs.tsv"
 }
 
-# unvar REF -> compose interpolation ${VAR:-default} / ${VAR-default} replaced by the default, ${VAR} by "VAR"
-unvar() { sed -E 's/\$\{[A-Za-z_][A-Za-z0-9_]*:?-([^}]*)\}/\1/g; s/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/\1/g' <<<"$1"; }
+# load_env FILE -> CENV = KEY=VALUE lines of a compose project's .env (read, never sourced; one pair of quotes stripped)
+declare -A CENV=()
+load_env() {
+  local line k v
+  CENV=()
+  [ -r "$1" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    [[ "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]] || continue
+    k="${BASH_REMATCH[1]}"; v="${BASH_REMATCH[2]}"
+    if [[ "$v" =~ ^\"(.*)\"$ ]] || [[ "$v" =~ ^\'(.*)\'$ ]]; then v="${BASH_REMATCH[1]}"; fi
+    CENV[$k]="$v"
+  done <"$1"
+}
+# unvar REF -> compose interpolation from CENV: ${VAR} / ${VAR:-default} / ${VAR-default}; :- also replaces an empty
+# value; a variable that is not set takes the default, or its own name when there is none
+unvar() {
+  local s="$1" out="" name op val
+  while [[ "$s" =~ ^([^$]*)\$\{([A-Za-z_][A-Za-z0-9_]*)(:?-([^}]*))?\}(.*)$ ]]; do
+    out+="${BASH_REMATCH[1]}"; name="${BASH_REMATCH[2]}"; op="${BASH_REMATCH[3]}"; val="${BASH_REMATCH[4]}"
+    s="${BASH_REMATCH[5]}"
+    if [ -n "${CENV[$name]+set}" ] && { [ -n "${CENV[$name]}" ] || [[ "$op" != :-* ]]; }; then val="${CENV[$name]}"
+    elif [ -z "$op" ]; then val="$name"; fi
+    out+="$val"
+  done
+  printf '%s\n' "$out$s"
+}
 in_words() { local x; for x in $2; do [ "$x" = "$1" ] && return 0; done; return 1; }
 img_repo() { local r="${1%%@*}"; [[ "${r##*/}" == *:* ]] && r="${r%:*}"; r="${r#docker.io/}"; r="${r#library/}"; echo "$r"; }
 img_tag() { local r="${1%%@*}"; if [[ "${r##*/}" == *:* ]]; then echo "${r##*:}"; else echo ""; fi; }
 
 scan_images() {
-  local names name ref id rd repo tag files f n line
+  local names name ref id rd repo tag files f n line wd
   names="$("$DOCKER" ps --format '{{.Names}}' 2>/dev/null)" || { row WARN image "docker ps failed: image provenance not checked"; return; }
   declare -A seen=()
   while IFS= read -r name; do
@@ -288,6 +312,8 @@ scan_images() {
     elif [ -z "$tag" ] || [ "$tag" = latest ]; then row WARN "image:$name" "$ref: '${tag:-untagged}' third-party image: what runs after the next pull is unknown; pin a version tag (and digest)"
     else row PASS "image:$name" "$ref: version tag, registry digest ${rd%% *}"; fi
     files="$("$DOCKER" inspect -f '{{index .Config.Labels "com.docker.compose.project.config_files"}}' "$name" 2>/dev/null)"
+    wd="$("$DOCKER" inspect -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$name" 2>/dev/null)"
+    load_env "$R${wd:-/nonexistent}/.env"
     IFS=',' read -r -a fl <<<"$files"
     for f in "${fl[@]}"; do
       if [ -z "$f" ] || [ -n "${seen[$f]:-}" ]; then continue; fi

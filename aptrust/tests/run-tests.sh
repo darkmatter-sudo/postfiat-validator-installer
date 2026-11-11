@@ -36,13 +36,14 @@ STUB
 printf '#!/bin/sh\n[ "$1 $2" = "list --installed" ] || exit 9\ncat %s/aptlist\n' "$T" > "$T/bin/apt"
 printf '#!/bin/sh\n[ "$1" = dump ] || exit 9\ncat %s/aptdump\n' "$T" > "$T/bin/apt-config"
 # stub docker: ps -> names in $T/docker/ps (or exit 1 if $T/docker/psfail); inspect -f FMT NAME -> the line for
-# FMT kind from $T/docker/NAME.{ref,label}; image inspect -f FMT ID -> $T/docker/ID.rd
+# FMT kind from $T/docker/NAME.{ref,label,wd}; image inspect -f FMT ID -> $T/docker/ID.rd
 cat > "$T/bin/docker" <<STUB
 #!/bin/bash
 D="$T/docker"
 case "\$1" in
   ps) [ -e "\$D/psfail" ] && exit 1; cat "\$D/ps" ;;
-  inspect) case "\$3" in *Labels*) cat "\$D/\$4.label" 2>/dev/null; echo ;; *) cat "\$D/\$4.ref" ;; esac ;;
+  inspect) case "\$3" in *working_dir*) cat "\$D/\$4.wd" 2>/dev/null; echo ;; *Labels*) cat "\$D/\$4.label" 2>/dev/null; echo ;;
+             *) cat "\$D/\$4.ref" ;; esac ;;
   image) cat "\$D/\$5.rd" 2>/dev/null; echo ;;
   *) exit 9 ;;
 esac
@@ -74,6 +75,8 @@ reset() { # the clean fixture: Ubuntu archive + one https/signed-by vendor sourc
   echo "agtipft/postfiatd:testnet-light-latest sha256:aaa" > "$T/docker/postfiatd.ref"
   echo "agtipft/postfiatd@sha256:$(printf '%064d' 1)" > "$T/docker/sha256:aaa.rd"
   echo "/opt/postfiatd/docker-compose.yml" > "$T/docker/postfiatd.label"
+  echo "/opt/postfiatd" > "$T/docker/postfiatd.wd"
+  printf '# compose .env\nNETWORK="testnet"\n' > "$T/root/opt/postfiatd/.env"
   echo "prom/prometheus:v3.5.0 sha256:bbb" > "$T/docker/pft-prometheus.ref"
   echo "prom/prometheus@sha256:$(printf '%064d' 2)" > "$T/docker/sha256:bbb.rd"
   : > "$T/pft-aptrust.env"
@@ -102,7 +105,7 @@ check "clean: aptconf PASS" 'has "^PASS  aptconf "'
 check "clean: stock pin INFO" 'has "^INFO  pin:/etc/apt/preferences.d/ubuntu-pro-esm-apps:1 stock file of ubuntu-pro-client"'
 check "clean: official rolling image INFO" 'has "^INFO  image:postfiatd .*official rolling tag"'
 check "clean: version-tag image with RepoDigest PASS" 'has "^PASS  image:pft-prometheus "'
-check "clean: compose \${NETWORK:-devnet} resolved, official INFO" 'has "^INFO  compose:/opt/postfiatd/docker-compose.yml:3 agtipft/postfiatd:devnet-light-latest: official"'
+check "clean: compose \${NETWORK:-devnet} resolved from the project .env (testnet), official INFO" 'has "^INFO  compose:/opt/postfiatd/docker-compose.yml:3 agtipft/postfiatd:testnet-light-latest: official"'
 check "clean: compose digest pin PASS (quoted)" 'has "^PASS  compose:/opt/postfiatd/docker-compose.yml:5 prom/prometheus:v3.5.0@sha256:0+ pinned"'
 check "clean: 2 allowlisted add-on files (manifest + default pft-agent), packaged file skipped" 'has "^INFO  offpkg +2 add-on file"'
 run audit --json
@@ -185,6 +188,22 @@ reset; printf '  x:\n    image: redis:latest\n' >> "$T/root/opt/postfiatd/docker
 reset; printf '  x:\n    image: redis:7.2\n' >> "$T/root/opt/postfiatd/docker-compose.yml"; run audit
 check "compose version tag is INFO" '[ "$RC" = 0 ] && has "^INFO  compose:.*:7 redis:7.2: version tag without digest"'
 reset; echo "/opt/postfiatd/missing.yml" > "$T/docker/postfiatd.label"; neg "compose file listed but missing" "^WARN  compose:/opt/postfiatd/missing.yml listed by container postfiatd"
+# compose interpolation from the project .env (working_dir label), never sourced
+reset; rm "$T/root/opt/postfiatd/.env"; run audit
+check "compose: no project .env -> \${NETWORK:-devnet} takes its default" '[ "$RC" = 0 ] && has "^INFO  compose:.*:3 agtipft/postfiatd:devnet-light-latest: official"'
+reset; rm "$T/docker/postfiatd.wd"; run audit
+check "compose: no working_dir label -> no .env read, default used" '[ "$RC" = 0 ] && has "^INFO  compose:.*:3 agtipft/postfiatd:devnet-light-latest: official"'
+reset; printf 'NETWORK=\n' > "$T/root/opt/postfiatd/.env"; run audit
+check "compose: empty NETWORK= with :- -> default" '[ "$RC" = 0 ] && has "^INFO  compose:.*:3 agtipft/postfiatd:devnet-light-latest: official"'
+reset; printf "NETWORK='mainnet'\nTAG=latest\nEMPTY=\n" > "$T/root/opt/postfiatd/.env"
+printf '  x:\n    image: redis:${TAG:-7.2}\n  y:\n    image: busybox:1.36${EMPTY-x}\n  z:\n    image: ${REG}/tool:1\n' >> "$T/root/opt/postfiatd/docker-compose.yml"
+run audit
+check "compose: single-quoted .env value used (mainnet)" 'has "^INFO  compose:.*:3 agtipft/postfiatd:mainnet-light-latest: official"'
+check "compose: .env TAG=latest turns a pinned-looking default into a WARN" '[ "$RC" = 1 ] && has "^WARN  compose:.*:7 redis:latest"'
+check "compose: \${EMPTY-x} with EMPTY set but empty -> empty (version tag INFO)" 'has "^INFO  compose:.*:9 busybox:1.36: version tag"'
+check "compose: unset \${REG} without default -> its name" 'has "^INFO  compose:.*:11 REG/tool:1: version tag"'
+reset; printf 'NETWORK=$(touch %s/pwned)\n' "$T" > "$T/root/opt/postfiatd/.env"; run audit
+check "compose: .env value is text, never executed" '[ ! -e "$T/pwned" ] && has "compose:.*:3 agtipft/postfiatd:\\\$\\(touch"'
 reset; printf '#!/bin/sh\n' > "$T/root/usr/local/bin/evil"; chmod 755 "$T/root/usr/local/bin/evil"; neg "unknown /usr/local/bin file" "^WARN  offpkg:/usr/local/bin/evil not from a package"
 reset; printf '#!/bin/sh\n' > "$T/root/usr/local/sbin/evil"; chmod 755 "$T/root/usr/local/sbin/evil"; neg "unknown /usr/local/sbin file" "^WARN  offpkg:/usr/local/sbin/evil "
 reset; printf '#!/bin/sh\n' > "$T/root/usr/local/bin/extra"; echo 'OFFPKG_ALLOW="/usr/local/bin/extra /usr/local/bin/pft-agent"' > "$T/pft-aptrust.env"; run audit
