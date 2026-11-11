@@ -1,0 +1,98 @@
+OS: Ubuntu 22.04.5 LTS | 2026-11-11T03:40:11Z | histarchive live run 1 (6 h window) end | repo HEAD 01d20ba9349c46cde77efec10c6c915b8d125439
+$ sha256sum ../scratch/ha-live/code/histarchive.py ../scratch/ha-live/code/lib_hashverify.py
+bdefc5f62ad28d470e500143ad16ffc55d457315fa86ec6fe8ee2762a61aafdb  ../scratch/ha-live/code/histarchive.py
+64ec1dacc49fcc955975a6c5f5ee85d657c9c7921dbe0ef15cd9b9411ef4e414  ../scratch/ha-live/code/lib_hashverify.py
+(exit 0)
+$ git show dde88f88dee154a510ed4ef3dfa09fc8e67c8614:histarchive/histarchive.py | sha256sum
+bdefc5f62ad28d470e500143ad16ffc55d457315fa86ec6fe8ee2762a61aafdb  -
+(exit 0)
+$ systemctl is-active histarchive-live
+inactive
+(exit 3)
+$ sudo journalctl -u histarchive-live -o json | jq (time + message of every systemd/unit line)
+2026-11-10T21:22:56Z Started /usr/bin/python3 -u code/histarchive.py follow --dir archive --rpc http://127.0.0.1:5005/ --rate 4 --until 2026-11-11T03:40:00Z --progress 1800 --log follow.log.
+2026-11-10T21:23:28Z histarchive-live.service: Deactivated successfully.
+2026-11-10T21:23:28Z Stopped /usr/bin/python3 -u code/histarchive.py follow --dir archive --rpc http://127.0.0.1:5005/ --rate 4 --until 2026-11-11T03:40:00Z --progress 1800 --log follow.log.
+2026-11-10T21:23:28Z Started /usr/bin/python3 -u code/histarchive.py follow --dir archive --rpc http://127.0.0.1:5005/ --rate 4 --until 2026-11-11T03:40:00Z --progress 1800 --log follow.log.
+2026-11-10T21:40:09Z histarchive-live.service: Main process exited, code=killed, status=9/KILL
+2026-11-10T21:40:09Z histarchive-live.service: Failed with result 'signal'.
+2026-11-10T21:40:09Z histarchive-live.service: Consumed 8.652s CPU time.
+2026-11-10T21:40:19Z histarchive-live.service: Scheduled restart job, restart counter is at 1.
+2026-11-10T21:40:19Z Stopped /usr/bin/python3 -u code/histarchive.py follow --dir archive --rpc http://127.0.0.1:5005/ --rate 4 --until 2026-11-11T03:40:00Z --progress 1800 --log follow.log.
+2026-11-10T21:40:19Z histarchive-live.service: Consumed 8.652s CPU time.
+2026-11-10T21:40:19Z Started /usr/bin/python3 -u code/histarchive.py follow --dir archive --rpc http://127.0.0.1:5005/ --rate 4 --until 2026-11-11T03:40:00Z --progress 1800 --log follow.log.
+2026-11-10T21:40:25Z histarchive-live.service: Main process exited, code=killed, status=9/KILL
+2026-11-10T21:40:25Z histarchive-live.service: Failed with result 'signal'.
+2026-11-10T21:40:35Z histarchive-live.service: Scheduled restart job, restart counter is at 2.
+2026-11-10T21:40:35Z Stopped /usr/bin/python3 -u code/histarchive.py follow --dir archive --rpc http://127.0.0.1:5005/ --rate 4 --until 2026-11-11T03:40:00Z --progress 1800 --log follow.log.
+2026-11-10T21:40:35Z Started /usr/bin/python3 -u code/histarchive.py follow --dir archive --rpc http://127.0.0.1:5005/ --rate 4 --until 2026-11-11T03:40:00Z --progress 1800 --log follow.log.
+2026-11-11T03:40:01Z histarchive-live.service: Deactivated successfully.
+2026-11-11T03:40:01Z histarchive-live.service: Consumed 4min 3.496s CPU time.
+2026-11-11T03:40:01Z histarchive-live.service: Failed to open /run/systemd/transient/histarchive-live.service: No such file or directory
+2026-11-11T03:40:02Z histarchive-live.service: Failed to open /run/systemd/transient/histarchive-live.service: No such file or directory
+2026-11-11T03:40:05Z histarchive-live.service: Failed to open /run/systemd/transient/histarchive-live.service: No such file or directory
+2026-11-11T03:40:12Z histarchive-live.service: Failed to open /run/systemd/transient/histarchive-live.service: No such file or directory
+(exit 0)
+$ cat ../scratch/ha-live/follow.log
+2026-11-10T21:22:56Z histarchive 1.0.0 follow: node build 1.0.9 state full complete_ledgers 7937158-7937915
+2026-11-10T21:22:56Z START archive at ledger 7937915
+2026-11-10T21:22:56Z this run stops at 2026-11-11T03:40:00Z (--until)
+2026-11-10T21:23:28Z STOP (signal) last=7937925 archived_this_run=11 requests=48
+2026-11-10T21:23:29Z histarchive 1.0.0 follow: node build 1.0.9 state full complete_ledgers 7937158-7937925
+2026-11-10T21:23:29Z RESUME at ledger 7937926 (archive start 7937915, node validated 7937925)
+2026-11-10T21:23:29Z this run stops at 2026-11-11T03:40:00Z (--until)
+2026-11-10T21:40:19Z histarchive 1.0.0 follow: node build 1.0.9 state full complete_ledgers 7937670-7938258
+2026-11-10T21:40:19Z RESUME at ledger 7938255 (archive start 7937915, node validated 7938258)
+2026-11-10T21:40:19Z this run stops at 2026-11-11T03:40:00Z (--until)
+2026-11-10T21:40:36Z histarchive 1.0.0 follow: node build 1.0.9 state full complete_ledgers 7937670-7938263
+2026-11-10T21:40:36Z RESUME cut torn last line of active/2026-11-10.jsonl (55 bytes)
+2026-11-10T21:40:36Z RESUME at ledger 7938261 (archive start 7937915, node validated 7938263)
+2026-11-10T21:40:36Z this run stops at 2026-11-11T03:40:00Z (--until)
+2026-11-10T22:10:36Z PROGRESS last=7938857 lag=0 archived_this_run=597 requests=2650
+2026-11-10T22:40:36Z PROGRESS last=7939450 lag=0 archived_this_run=1190 requests=5297
+2026-11-10T23:10:37Z PROGRESS last=7940046 lag=0 archived_this_run=1786 requests=7955
+2026-11-10T23:40:38Z PROGRESS last=7940642 lag=0 archived_this_run=2382 requests=10604
+2026-11-10T23:59:59Z SEAL 2026-11-10 ledgers 7937915-7941026 count=3112 raw=3407223 gz=792777 sha256_gz=70b4ad7c1d93efa3
+2026-11-11T00:10:38Z PROGRESS last=7941238 lag=0 archived_this_run=2978 requests=13222
+2026-11-11T00:40:39Z PROGRESS last=7941835 lag=0 archived_this_run=3575 requests=15829
+2026-11-11T01:10:39Z PROGRESS last=7942432 lag=0 archived_this_run=4172 requests=18390
+2026-11-11T01:40:39Z PROGRESS last=7943025 lag=0 archived_this_run=4765 requests=20932
+2026-11-11T02:10:39Z PROGRESS last=7943622 lag=0 archived_this_run=5362 requests=23552
+2026-11-11T02:40:40Z PROGRESS last=7944217 lag=0 archived_this_run=5957 requests=26159
+2026-11-11T03:10:40Z PROGRESS last=7944811 lag=0 archived_this_run=6551 requests=28795
+2026-11-11T03:40:00Z STOP (run time reached) last=7945393 archived_this_run=7133 requests=31374
+(exit 0)
+$ cat ../scratch/ha-live/archive/state.json
+{"start_seq":7937915,"start_utc":"2026-11-10T21:22:56Z","tool":"histarchive 1.0.0","v":1}
+(exit 0)
+$ cat ../scratch/ha-live/archive/status.json
+{"archived_this_run":7133,"close_time":847683592,"gaps":0,"ingest_unix":1794368397,"lag":0,"last":7945393,"last_hash":"2891F5C532ED91FB42092C69CB2DFCE75258FEA0463FDEDD0256ECF03760204B","pid":2028559,"validated":7945393}
+(exit 0)
+$ cat ../scratch/ha-live/archive/MANIFEST.jsonl
+{"bytes_gz":792777,"bytes_raw":3407223,"count":3112,"day":"2026-11-10","entry":"bf1c160f2e55b17a215ec71fc8cb1ba694d8dfeb8a255eb3f757ae4b1cb4569f","first":7937915,"first_parent":"C3BA86B2C8C851CEC891AA0D639D11C6C3331066F6BB8E2AA12CFC79F7258E28","last":7941026,"last_hash":"4D5C72642ED485B3B9510E508778FFAA6ADF297B022E83D2AEA439B3467ABAFA","prev_entry":null,"sealed_utc":"2026-11-10T23:59:59Z","segment":"segments/2026-11-10.jsonl.gz","sha256_gz":"70b4ad7c1d93efa395ad535957c033d363b46ed4a19eb25f3d393935f856342a","sha256_raw":"289c1959607c9e03144f2eaae3a9d41d5bbfcad93f7cf4d620053b2ad0b6a8df","txs":1122,"v":1}
+(exit 0)
+$ ls -l --time-style=+%FT%T ../scratch/ha-live/archive/segments ../scratch/ha-live/archive/active
+../scratch/ha-live/archive/active:
+total 4768
+-rw-r--r-- 1 <agent-user> <agent-user> 4874761 2026-11-11T03:39:57 2026-11-11.jsonl
+
+../scratch/ha-live/archive/segments:
+total 776
+-rw-r--r-- 1 <agent-user> <agent-user> 792777 2026-11-10T23:59:59 2026-11-10.jsonl.gz
+(exit 0)
+$ test ! -s ../scratch/ha-live/archive/gaps.jsonl && echo 'gaps.jsonl absent or empty'
+gaps.jsonl absent or empty
+(exit 0)
+$ python3 -u histarchive/histarchive.py verify --dir ../scratch/ha-live/archive > ../scratch/ha-live/verify-end.txt; tail -n 8 ../scratch/ha-live/verify-end.txt
+RESULT: PASS - segments 1 active 1 ledgers 7479 (7937915-7945393) txs 2606 gaps 0 (0 ledgers) fails 0
+(verify exit 0)
+$ independent sequence check (python3: every ledger line of the sealed segment + active day, in order)
+lines 7479 first 7937915 last 7945393 expected 7479 duplicates 0 missing 0 out_of_order 0
+(exit 0)
+$ sudo pft-maint lock rm histarchive-live
+lock histarchive-live removed
+(exit 0)
+$ sudo pft-maint lock list
+no data-collection locks
+(exit 0)
+END 2026-11-11T03:40:13Z

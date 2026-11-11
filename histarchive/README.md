@@ -102,10 +102,46 @@ days (`sudo python3 diskcost.py --dir /var/lib/pft-histarchive/archive --outbox 
 | validator outbox (encrypted copies) | 803.99 KB in 3 files |
 | sentry replica (ciphertext) | 803.99 KB in 3 files |
 
+The whole six-hour live run (log `logs/12-live-run-end.log`, data in `logs/data/live-run-1/`) gives the same figure:
+
+| part | ledgers | txs | raw | gzip | gzip per ledger |
+|---|---|---|---|---|---|
+| sealed 2026-11-10 | 3112 | 1122 | 3407223 B | 792777 B | 254.7 B |
+| active 2026-11-11 (to 03:40Z; `gzip -9n` copy, not a sealed segment) | 4367 | 1484 | 4874761 B | 1134407 B | 259.8 B |
+| whole run | 7479 | 2606 | 8.28 MB | 1.93 MB | 257.7 B (7.35 MB/day at 28537 ledgers/day) |
+
 Testnet traffic is light (1122 txs in 3112 ledgers); ledgers with many transactions are larger, so treat the
 per-ledger figure as a floor and watch `pft_histarchive_ledgers` / disk usage. The sentry stores the same size again
 (ciphertext of each sealed day, plus one metadata tar). The follower used 12.7 MB of memory
 (`MemoryMax=256M`) and ~13 s of CPU in its first 16 minutes.
+
+## Proof (logs in `logs/`)
+
+| log | what | result |
+|---|---|---|
+| 01 | six-hour live run launch (transient unit, code pinned to `dde88f8`) | started 2026-11-10T21:22:56Z at ledger 7937915 |
+| 02 | kill -9 resume drill on the live follower (two SIGKILLs; the second with a torn half-line injected before the restart, 55 bytes cut on resume) | 14/14 checks ok |
+| 03 / 04 | mutation harness: dev pass, then the recorded run | dev 35/36 (M26 survived, fixed in `d6f9f90`); recorded 38/38 caught, baseline 60 tests pass |
+| 05 | mid-window public-RPC crosscheck, seed 20261110, sample 40 (snapshot copy) | 40/40 MATCH live and offline; `--negative` 0/40 MATCH |
+| 06 / 07 | two-host install preflight and recorded install (adopts a copy of the live archive) | 10/10; 45 checks ok, 0 failed, operator topics 0 |
+| 08 / 09 | replica / tamper / alert drill on tmpfs copies (throwaway ntfy topic) | 41 checks ok, 0 failed: 3 alerts FIRING + RESOLVED, operator topics 0 |
+| 10 | disk cost (`diskcost.py`) | table above |
+| 12 | live run end: unit journal, follow log, full `verify`, independent sequence check | 7479 ledgers (7937915-7945393), 2606 txs, gaps 0, duplicates 0, missing 0, lag 0 at all 11 progress lines |
+| 13 | final public-RPC crosscheck over the whole archive, seed 20261111, sample 60 (7938329-7945387) | 60/60 MATCH live and offline (`xc-public-final.jsonl`); `--negative` 60/60 MISMATCH |
+| 14 | fresh public clone at the pinned commit: sha256, shellcheck, ruff, fixture tests, promtool, offline verify + crosscheck of `logs/data/live-run-1` | see log |
+
+Anyone can re-check the live run without a node: unpack `logs/data/live-run-1` into an archive dir
+(`segments/`, `MANIFEST.jsonl`, `state.json`, and `active-2026-11-11.jsonl.gz` gunzipped to `active/2026-11-11.jsonl`),
+then run `histarchive.py verify --dir DIR` and
+`histarchive.py crosscheck --dir DIR --offline logs/data/live-run-1/xc-public-final.jsonl --seed 20261111 --sample 60`.
+
+**Deviations.** (1) The six-hour run used a transient unit in a scratch dir (code pinned to `dde88f8`), not the
+installed `pft-histarchive.service`, because the install (07) came after the run had started; the install adopted a
+verified copy of that archive and its own follower resumed without a gap. (2) `histarchive.py` changed after
+`dde88f8` (verify metrics, crosscheck negative mode, `replica-compare`); the follower functions are unchanged
+(function-level AST compare in log 14), and the end-of-run `verify` and both crosschecks ran the final code.
+(3) Log 01 records a first launch with `Restart=always`, stopped after 32 s and relaunched with `Restart=on-failure`
+(so the `--until` exit is final); the archive resumed at the next ledger.
 
 ## Install
 

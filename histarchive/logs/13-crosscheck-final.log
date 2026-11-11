@@ -1,0 +1,164 @@
+OS: Ubuntu 22.04.5 LTS | 2026-11-11T03:40:19Z | histarchive final public-RPC crosscheck (whole live-run archive) | repo HEAD 01d20ba9349c46cde77efec10c6c915b8d125439
+$ sha256sum histarchive/histarchive.py histarchive/lib_hashverify.py
+089b828e1215e35ce12ddd9a02aa85613ab7ccee2820bd2ca7079f14431efbb3  histarchive/histarchive.py
+64ec1dacc49fcc955975a6c5f5ee85d657c9c7921dbe0ef15cd9b9411ef4e414  histarchive/lib_hashverify.py
+(exit 0)
+$ rm -rf ../scratch/ha-xc-end && mkdir -p ../scratch/ha-xc-end && cp -a ../scratch/ha-live/archive ../scratch/ha-xc-end/archive
+(exit 0)
+$ curl -s -m 20 -H 'Content-Type: application/json' -d '{"method":"server_info"}' https://rpc.testnet.postfiat.org/ | jq -c '.result.info | {build_version, server_state, complete_ledgers}'
+{"build_version":"1.0.9","server_state":"full","complete_ledgers":"7850054-7945400"}
+(exit 0)
+$ python3 -u histarchive/histarchive.py verify --dir ../scratch/ha-xc-end/archive > ../scratch/ha-xc-end/verify.txt
+(exit 0)
+$ tail -n 2 ../scratch/ha-xc-end/verify.txt
+RESULT: PASS - segments 1 active 1 ledgers 7479 (7937915-7945393) txs 2606 gaps 0 (0 ledgers) fails 0
+(exit 0)
+$ python3 -u histarchive/histarchive.py crosscheck --dir ../scratch/ha-xc-end/archive --rpc https://rpc.testnet.postfiat.org/ --seed 20261111 --sample 60 --rate 2 --record ../scratch/ha-xc-end/xc-public.jsonl
+public RPC https://rpc.testnet.postfiat.org/: build 1.0.9 complete_ledgers 7850054-7945401
+archived ledgers 7479; checkable (inside public complete_ledgers) 7479
+seed 20261111: sample 60 (with txs 48, without 12)
+MATCH 7938329 hash same (457FF88DD66A1EE1 vs 457FF88DD66A1EE1..7A37) txs 1 vs 1 ids same
+MATCH 7938438 hash same (21CACA2F0FCAAF1F vs 21CACA2F0FCAAF1F..B71E) txs 1 vs 1 ids same
+MATCH 7938641 hash same (B8666EAD745FDD9F vs B8666EAD745FDD9F..494C) txs 1 vs 1 ids same
+MATCH 7938652 hash same (C24BEF0F2ED4DC29 vs C24BEF0F2ED4DC29..5A4E) txs 1 vs 1 ids same
+MATCH 7938700 hash same (7401F4AAB172D6A1 vs 7401F4AAB172D6A1..C4F8) txs 1 vs 1 ids same
+MATCH 7938755 hash same (C784E594832CA725 vs C784E594832CA725..A911) txs 1 vs 1 ids same
+MATCH 7938982 hash same (57824A0744FAF892 vs 57824A0744FAF892..47AE) txs 1 vs 1 ids same
+MATCH 7938985 hash same (5BF8FF45510D0179 vs 5BF8FF45510D0179..91BA) txs 1 vs 1 ids same
+MATCH 7939051 hash same (851443B15D051D7D vs 851443B15D051D7D..9275) txs 1 vs 1 ids same
+MATCH 7939191 hash same (6A80BE481627F208 vs 6A80BE481627F208..F7A9) txs 1 vs 1 ids same
+MATCH 7939249 hash same (4AFE82472896D1FD vs 4AFE82472896D1FD..8899) txs 1 vs 1 ids same
+MATCH 7939375 hash same (5DB8C4954D24F201 vs 5DB8C4954D24F201..7BB7) txs 2 vs 2 ids same
+MATCH 7939643 hash same (3C9FFF62A7559473 vs 3C9FFF62A7559473..EF1E) txs 0 vs 0 ids same
+MATCH 7939649 hash same (70003DA3DC72A3A6 vs 70003DA3DC72A3A6..3696) txs 0 vs 0 ids same
+MATCH 7939674 hash same (01EDA50C5899FE83 vs 01EDA50C5899FE83..0F41) txs 3 vs 3 ids same
+MATCH 7939834 hash same (173862778201C37C vs 173862778201C37C..A8C3) txs 1 vs 1 ids same
+MATCH 7939845 hash same (D59EC16743A16767 vs D59EC16743A16767..A05D) txs 0 vs 0 ids same
+MATCH 7939875 hash same (BBA8E59A6607F243 vs BBA8E59A6607F243..1CDE) txs 2 vs 2 ids same
+MATCH 7939886 hash same (7B2910F8BDFC2FB8 vs 7B2910F8BDFC2FB8..46B0) txs 0 vs 0 ids same
+MATCH 7939915 hash same (736BC04EACC3B0D7 vs 736BC04EACC3B0D7..73D1) txs 2 vs 2 ids same
+MATCH 7940321 hash same (17174992B3076DFC vs 17174992B3076DFC..E872) txs 1 vs 1 ids same
+MATCH 7940467 hash same (49BCF45E0165C034 vs 49BCF45E0165C034..2924) txs 2 vs 2 ids same
+MATCH 7940655 hash same (BB5F6D919F6CAEF1 vs BB5F6D919F6CAEF1..BDDF) txs 1 vs 1 ids same
+MATCH 7940710 hash same (3B76AAA376FD186E vs 3B76AAA376FD186E..F5A8) txs 1 vs 1 ids same
+MATCH 7940837 hash same (84EFE3AC2CD71D45 vs 84EFE3AC2CD71D45..3F22) txs 0 vs 0 ids same
+MATCH 7940889 hash same (F2860E4EBDEF6E30 vs F2860E4EBDEF6E30..1A2F) txs 3 vs 3 ids same
+MATCH 7941062 hash same (81623700B8AEF04E vs 81623700B8AEF04E..ED46) txs 3 vs 3 ids same
+MATCH 7941189 hash same (66A617207F20D651 vs 66A617207F20D651..9DA2) txs 1 vs 1 ids same
+MATCH 7941219 hash same (A73D890FB74E618F vs A73D890FB74E618F..6EFF) txs 4 vs 4 ids same
+MATCH 7941522 hash same (8E9483ADF6786314 vs 8E9483ADF6786314..2F9E) txs 0 vs 0 ids same
+MATCH 7941557 hash same (80AD5965F7C9C4DC vs 80AD5965F7C9C4DC..7803) txs 1 vs 1 ids same
+MATCH 7941758 hash same (86C8B6EDE7D68058 vs 86C8B6EDE7D68058..C56C) txs 1 vs 1 ids same
+MATCH 7942092 hash same (A9836925080464C1 vs A9836925080464C1..8468) txs 0 vs 0 ids same
+MATCH 7942132 hash same (0ADBC19C9FEBE999 vs 0ADBC19C9FEBE999..C691) txs 0 vs 0 ids same
+MATCH 7942449 hash same (DE9132667BB78982 vs DE9132667BB78982..9536) txs 2 vs 2 ids same
+MATCH 7942668 hash same (C7996841E6136805 vs C7996841E6136805..AE04) txs 1 vs 1 ids same
+MATCH 7942698 hash same (6EA9DDBC3B660DEF vs 6EA9DDBC3B660DEF..542A) txs 0 vs 0 ids same
+MATCH 7942822 hash same (3FF2BEA5C67DDA57 vs 3FF2BEA5C67DDA57..01D9) txs 1 vs 1 ids same
+MATCH 7942889 hash same (B3C5586FB83278E3 vs B3C5586FB83278E3..D528) txs 0 vs 0 ids same
+MATCH 7942906 hash same (B7D356BDD21A3379 vs B7D356BDD21A3379..39C6) txs 1 vs 1 ids same
+MATCH 7942935 hash same (A3626910FA2DA0DC vs A3626910FA2DA0DC..1D3F) txs 1 vs 1 ids same
+MATCH 7942968 hash same (64E85A360DD19771 vs 64E85A360DD19771..9EF1) txs 4 vs 4 ids same
+MATCH 7943007 hash same (469FBD22408D5FB3 vs 469FBD22408D5FB3..616F) txs 1 vs 1 ids same
+MATCH 7943052 hash same (BDEE1EBFF39495DF vs BDEE1EBFF39495DF..BF28) txs 2 vs 2 ids same
+MATCH 7943133 hash same (15EBD566C6D97B33 vs 15EBD566C6D97B33..6229) txs 1 vs 1 ids same
+MATCH 7943928 hash same (B6E75A9129AFFF7A vs B6E75A9129AFFF7A..AC61) txs 3 vs 3 ids same
+MATCH 7944135 hash same (D9DCB237C885F566 vs D9DCB237C885F566..547C) txs 3 vs 3 ids same
+MATCH 7944385 hash same (05AEE8F8F2119AE2 vs 05AEE8F8F2119AE2..72FC) txs 1 vs 1 ids same
+MATCH 7944505 hash same (2F110282FB529CBC vs 2F110282FB529CBC..615D) txs 1 vs 1 ids same
+MATCH 7944561 hash same (2244E4778EAB3339 vs 2244E4778EAB3339..4139) txs 1 vs 1 ids same
+MATCH 7944578 hash same (D3B49D62234322D4 vs D3B49D62234322D4..8828) txs 1 vs 1 ids same
+MATCH 7944712 hash same (3F2E95358F3611C1 vs 3F2E95358F3611C1..7309) txs 1 vs 1 ids same
+MATCH 7944742 hash same (DC508EB496B0688F vs DC508EB496B0688F..9B12) txs 0 vs 0 ids same
+MATCH 7944953 hash same (700C65F04BDE05D3 vs 700C65F04BDE05D3..45DC) txs 3 vs 3 ids same
+MATCH 7944961 hash same (CA7E7B3E22B8F2D2 vs CA7E7B3E22B8F2D2..9741) txs 3 vs 3 ids same
+MATCH 7945025 hash same (96F839647D0DE1ED vs 96F839647D0DE1ED..45E9) txs 0 vs 0 ids same
+MATCH 7945037 hash same (7B02ED62CD9FCD22 vs 7B02ED62CD9FCD22..5A85) txs 3 vs 3 ids same
+MATCH 7945204 hash same (7254B52874017E88 vs 7254B52874017E88..8AD5) txs 2 vs 2 ids same
+MATCH 7945379 hash same (BE58AFC2A6881DCC vs BE58AFC2A6881DCC..628E) txs 1 vs 1 ids same
+MATCH 7945387 hash same (E8F6F77DC916BF97 vs E8F6F77DC916BF97..1E6D) txs 1 vs 1 ids same
+RESULT: PASS - 60/60 MATCH, 0 not matching
+(exit 0)
+$ python3 -u histarchive/histarchive.py crosscheck --dir ../scratch/ha-xc-end/archive --offline ../scratch/ha-xc-end/xc-public.jsonl --seed 20261111 --sample 60
+offline: 60 recorded public answers from ../scratch/ha-xc-end/xc-public.jsonl
+seed 20261111: sample 60 (with txs 48, without 12)
+MATCH 7938329 hash same (457FF88DD66A1EE1 vs 457FF88DD66A1EE1..7A37) txs 1 vs 1 ids same
+MATCH 7938438 hash same (21CACA2F0FCAAF1F vs 21CACA2F0FCAAF1F..B71E) txs 1 vs 1 ids same
+MATCH 7938641 hash same (B8666EAD745FDD9F vs B8666EAD745FDD9F..494C) txs 1 vs 1 ids same
+MATCH 7938652 hash same (C24BEF0F2ED4DC29 vs C24BEF0F2ED4DC29..5A4E) txs 1 vs 1 ids same
+MATCH 7938700 hash same (7401F4AAB172D6A1 vs 7401F4AAB172D6A1..C4F8) txs 1 vs 1 ids same
+MATCH 7938755 hash same (C784E594832CA725 vs C784E594832CA725..A911) txs 1 vs 1 ids same
+MATCH 7938982 hash same (57824A0744FAF892 vs 57824A0744FAF892..47AE) txs 1 vs 1 ids same
+MATCH 7938985 hash same (5BF8FF45510D0179 vs 5BF8FF45510D0179..91BA) txs 1 vs 1 ids same
+MATCH 7939051 hash same (851443B15D051D7D vs 851443B15D051D7D..9275) txs 1 vs 1 ids same
+MATCH 7939191 hash same (6A80BE481627F208 vs 6A80BE481627F208..F7A9) txs 1 vs 1 ids same
+MATCH 7939249 hash same (4AFE82472896D1FD vs 4AFE82472896D1FD..8899) txs 1 vs 1 ids same
+MATCH 7939375 hash same (5DB8C4954D24F201 vs 5DB8C4954D24F201..7BB7) txs 2 vs 2 ids same
+MATCH 7939643 hash same (3C9FFF62A7559473 vs 3C9FFF62A7559473..EF1E) txs 0 vs 0 ids same
+MATCH 7939649 hash same (70003DA3DC72A3A6 vs 70003DA3DC72A3A6..3696) txs 0 vs 0 ids same
+MATCH 7939674 hash same (01EDA50C5899FE83 vs 01EDA50C5899FE83..0F41) txs 3 vs 3 ids same
+MATCH 7939834 hash same (173862778201C37C vs 173862778201C37C..A8C3) txs 1 vs 1 ids same
+MATCH 7939845 hash same (D59EC16743A16767 vs D59EC16743A16767..A05D) txs 0 vs 0 ids same
+MATCH 7939875 hash same (BBA8E59A6607F243 vs BBA8E59A6607F243..1CDE) txs 2 vs 2 ids same
+MATCH 7939886 hash same (7B2910F8BDFC2FB8 vs 7B2910F8BDFC2FB8..46B0) txs 0 vs 0 ids same
+MATCH 7939915 hash same (736BC04EACC3B0D7 vs 736BC04EACC3B0D7..73D1) txs 2 vs 2 ids same
+MATCH 7940321 hash same (17174992B3076DFC vs 17174992B3076DFC..E872) txs 1 vs 1 ids same
+MATCH 7940467 hash same (49BCF45E0165C034 vs 49BCF45E0165C034..2924) txs 2 vs 2 ids same
+MATCH 7940655 hash same (BB5F6D919F6CAEF1 vs BB5F6D919F6CAEF1..BDDF) txs 1 vs 1 ids same
+MATCH 7940710 hash same (3B76AAA376FD186E vs 3B76AAA376FD186E..F5A8) txs 1 vs 1 ids same
+MATCH 7940837 hash same (84EFE3AC2CD71D45 vs 84EFE3AC2CD71D45..3F22) txs 0 vs 0 ids same
+MATCH 7940889 hash same (F2860E4EBDEF6E30 vs F2860E4EBDEF6E30..1A2F) txs 3 vs 3 ids same
+MATCH 7941062 hash same (81623700B8AEF04E vs 81623700B8AEF04E..ED46) txs 3 vs 3 ids same
+MATCH 7941189 hash same (66A617207F20D651 vs 66A617207F20D651..9DA2) txs 1 vs 1 ids same
+MATCH 7941219 hash same (A73D890FB74E618F vs A73D890FB74E618F..6EFF) txs 4 vs 4 ids same
+MATCH 7941522 hash same (8E9483ADF6786314 vs 8E9483ADF6786314..2F9E) txs 0 vs 0 ids same
+MATCH 7941557 hash same (80AD5965F7C9C4DC vs 80AD5965F7C9C4DC..7803) txs 1 vs 1 ids same
+MATCH 7941758 hash same (86C8B6EDE7D68058 vs 86C8B6EDE7D68058..C56C) txs 1 vs 1 ids same
+MATCH 7942092 hash same (A9836925080464C1 vs A9836925080464C1..8468) txs 0 vs 0 ids same
+MATCH 7942132 hash same (0ADBC19C9FEBE999 vs 0ADBC19C9FEBE999..C691) txs 0 vs 0 ids same
+MATCH 7942449 hash same (DE9132667BB78982 vs DE9132667BB78982..9536) txs 2 vs 2 ids same
+MATCH 7942668 hash same (C7996841E6136805 vs C7996841E6136805..AE04) txs 1 vs 1 ids same
+MATCH 7942698 hash same (6EA9DDBC3B660DEF vs 6EA9DDBC3B660DEF..542A) txs 0 vs 0 ids same
+MATCH 7942822 hash same (3FF2BEA5C67DDA57 vs 3FF2BEA5C67DDA57..01D9) txs 1 vs 1 ids same
+MATCH 7942889 hash same (B3C5586FB83278E3 vs B3C5586FB83278E3..D528) txs 0 vs 0 ids same
+MATCH 7942906 hash same (B7D356BDD21A3379 vs B7D356BDD21A3379..39C6) txs 1 vs 1 ids same
+MATCH 7942935 hash same (A3626910FA2DA0DC vs A3626910FA2DA0DC..1D3F) txs 1 vs 1 ids same
+MATCH 7942968 hash same (64E85A360DD19771 vs 64E85A360DD19771..9EF1) txs 4 vs 4 ids same
+MATCH 7943007 hash same (469FBD22408D5FB3 vs 469FBD22408D5FB3..616F) txs 1 vs 1 ids same
+MATCH 7943052 hash same (BDEE1EBFF39495DF vs BDEE1EBFF39495DF..BF28) txs 2 vs 2 ids same
+MATCH 7943133 hash same (15EBD566C6D97B33 vs 15EBD566C6D97B33..6229) txs 1 vs 1 ids same
+MATCH 7943928 hash same (B6E75A9129AFFF7A vs B6E75A9129AFFF7A..AC61) txs 3 vs 3 ids same
+MATCH 7944135 hash same (D9DCB237C885F566 vs D9DCB237C885F566..547C) txs 3 vs 3 ids same
+MATCH 7944385 hash same (05AEE8F8F2119AE2 vs 05AEE8F8F2119AE2..72FC) txs 1 vs 1 ids same
+MATCH 7944505 hash same (2F110282FB529CBC vs 2F110282FB529CBC..615D) txs 1 vs 1 ids same
+MATCH 7944561 hash same (2244E4778EAB3339 vs 2244E4778EAB3339..4139) txs 1 vs 1 ids same
+MATCH 7944578 hash same (D3B49D62234322D4 vs D3B49D62234322D4..8828) txs 1 vs 1 ids same
+MATCH 7944712 hash same (3F2E95358F3611C1 vs 3F2E95358F3611C1..7309) txs 1 vs 1 ids same
+MATCH 7944742 hash same (DC508EB496B0688F vs DC508EB496B0688F..9B12) txs 0 vs 0 ids same
+MATCH 7944953 hash same (700C65F04BDE05D3 vs 700C65F04BDE05D3..45DC) txs 3 vs 3 ids same
+MATCH 7944961 hash same (CA7E7B3E22B8F2D2 vs CA7E7B3E22B8F2D2..9741) txs 3 vs 3 ids same
+MATCH 7945025 hash same (96F839647D0DE1ED vs 96F839647D0DE1ED..45E9) txs 0 vs 0 ids same
+MATCH 7945037 hash same (7B02ED62CD9FCD22 vs 7B02ED62CD9FCD22..5A85) txs 3 vs 3 ids same
+MATCH 7945204 hash same (7254B52874017E88 vs 7254B52874017E88..8AD5) txs 2 vs 2 ids same
+MATCH 7945379 hash same (BE58AFC2A6881DCC vs BE58AFC2A6881DCC..628E) txs 1 vs 1 ids same
+MATCH 7945387 hash same (E8F6F77DC916BF97 vs E8F6F77DC916BF97..1E6D) txs 1 vs 1 ids same
+RESULT: PASS - 60/60 MATCH, 0 not matching
+(exit 0)
+$ python3 -u histarchive/histarchive.py crosscheck --dir ../scratch/ha-xc-end/archive --offline ../scratch/ha-xc-end/xc-public.jsonl --seed 20261111 --sample 60 --negative > ../scratch/ha-xc-end/neg.txt
+(exit 1)
+$ grep -c '^MISMATCH' ../scratch/ha-xc-end/neg.txt
+60
+(exit 0)
+$ grep -c '^MATCH' ../scratch/ha-xc-end/neg.txt
+0
+(exit 1)
+$ tail -n 1 ../scratch/ha-xc-end/neg.txt
+RESULT: FAIL - 0/60 MATCH, 60 not matching
+(exit 0)
+$ wc -l < ../scratch/ha-xc-end/xc-public.jsonl
+60
+(exit 0)
+$ sha256sum ../scratch/ha-xc-end/xc-public.jsonl
+fe3ee01f181d11ed92f18dd7be1a68d1f19a7cbb670afef161804c81bebf09a1  ../scratch/ha-xc-end/xc-public.jsonl
+(exit 0)
+END 2026-11-11T03:41:16Z
