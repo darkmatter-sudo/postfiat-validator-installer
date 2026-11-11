@@ -189,6 +189,10 @@ reset; printf '#!/bin/sh\n' > "$T/root/usr/local/bin/evil"; chmod 755 "$T/root/u
 reset; printf '#!/bin/sh\n' > "$T/root/usr/local/sbin/evil"; chmod 755 "$T/root/usr/local/sbin/evil"; neg "unknown /usr/local/sbin file" "^WARN  offpkg:/usr/local/sbin/evil "
 reset; printf '#!/bin/sh\n' > "$T/root/usr/local/bin/extra"; echo 'OFFPKG_ALLOW="/usr/local/bin/extra /usr/local/bin/pft-agent"' > "$T/pft-aptrust.env"; run audit
 check "OFFPKG_ALLOW from the env file allows a path" '[ "$RC" = 0 ] && has "^INFO  offpkg +3 add-on"'
+reset; printf '#!/bin/sh\n' > "$T/root/usr/local/bin/postfiat-health"; printf '#!/bin/sh\n' > "$T/root/usr/local/sbin/postfiat-docker-user.sh"; run audit
+check "default allowlist: the installer's postfiat-health + postfiat-docker-user.sh are known (no WARN)" '[ "$RC" = 0 ] && ! has "offpkg:/usr/local/(s?bin)/postfiat-"'
+reset; printf '#!/bin/sh\n' > "$T/root/usr/local/bin/postfiat-healthx"; run audit
+check "default allowlist matches whole paths: postfiat-healthx -> WARN" '[ "$RC" = 1 ] && has "^WARN  offpkg:/usr/local/bin/postfiat-healthx "'
 reset; chmod 775 "$T/root/usr/local/bin/pft-kmod"; neg "group-writable add-on file" "^FAIL  perm:/usr/local/bin/pft-kmod mode 775"
 reset; chmod 777 "$T/root/usr/local/bin"; neg "world-writable /usr/local/bin" "^FAIL  perm:/usr/local/bin mode 777"
 reset; rm "$T/root/usr/local/lib/pft-aptrust/manifest.tsv"; neg "allowlist missing" "^WARN  offpkg +allowlist .* missing"
@@ -314,6 +318,45 @@ check "rollback restores the old modes (666 / 775) byte-identical" '[ "$RC" = 0 
 areset; run apply --yes; bk="$(jq -r .backup "$T/state/apply.json")"
 ( cd "$T" && mkdir -p evil/etc/apt/sources.list.d && echo tampered > evil/etc/apt/sources.list.d/tp.list && tar -C evil -cf "$bk/files.tar" etc/apt/sources.list.d/tp.list ); run rollback --yes
 check "rollback whose backup restores wrong bytes: exit 5 RESTORE MISMATCH" '[ "$RC" = 5 ] && has "RESTORE MISMATCH /etc/apt/sources.list.d/tp.list"'
+
+# ---------- validate / pull (the validator copies the sentry's textfile) ----------
+RD="$T/remote"; P="$T/tf/pft_aptrust_sentry.prom"
+printf '#!/bin/sh\nexec "$@"\n' > "$T/bin/rssh"; printf '#!/bin/sh\nexit 255\n' > "$T/bin/rssh-fail"
+printf '#!/bin/sh\nsleep 5\nexec "$@"\n' > "$T/bin/rssh-hang"; chmod +x "$T/bin/rssh"*
+preset() { # a sentry textfile in the "remote" dir, the validator's env pointing PULL_SSH at a stub
+  reset; rm -rf "$RD"; mkdir -p "$RD"
+  echo 'HOST_LABEL=sentry' > "$T/pft-aptrust.env"; TEXTFILE_DIR="$RD" bash "$S" audit --textfile >/dev/null 2>&1
+  printf 'HOST_LABEL=validator\nPULL_SSH=%s\nREMOTE_DIR=%s\nPULL_TIMEOUT=%s\n' "$T/bin/${1:-rssh}" "$RD" "${2:-30}" > "$T/pft-aptrust.env"
+}
+preset; run validate "$RD/pft_aptrust_sentry.prom" sentry
+check "validate: a real sentry textfile is accepted for host sentry" '[ "$RC" = 0 ]'
+run validate "$RD/pft_aptrust_sentry.prom" validator
+check "validate: the same file for host validator -> exit 2, first label is not host=validator" '[ "$RC" = 2 ] && has "first label is not host=\"validator\""'
+cp "$RD/pft_aptrust_sentry.prom" "$T/v.prom"; echo 'node_exporter_build_info{host="sentry"} 1' >> "$T/v.prom"; run validate "$T/v.prom" sentry
+check "validate: a foreign metric -> exit 2, not a pft_aptrust_ sample" '[ "$RC" = 2 ] && has "not a pft_aptrust_ sample"'
+grep -v '^pft_aptrust_up{' "$RD/pft_aptrust_sentry.prom" > "$T/v.prom"; run validate "$T/v.prom" sentry
+check "validate: no up sample -> exit 2" '[ "$RC" = 2 ] && has "no pft_aptrust_up sample"'
+grep -v '^pft_aptrust_last_run_timestamp_seconds{' "$RD/pft_aptrust_sentry.prom" > "$T/v.prom"; run validate "$T/v.prom" sentry
+check "validate: no last_run sample -> exit 2" '[ "$RC" = 2 ] && has "no pft_aptrust_last_run_timestamp_seconds sample"'
+sed 's/^\(pft_aptrust_up{host="sentry"}\) 1$/\1 1 x/' "$RD/pft_aptrust_sentry.prom" > "$T/v.prom"; run validate "$T/v.prom" sentry
+check "validate: trailing junk on a sample -> exit 2, malformed" '[ "$RC" = 2 ] && has "malformed sample"'
+{ cat "$RD/pft_aptrust_sentry.prom"; head -c 70000 /dev/zero | tr '\0' '#'; echo; } > "$T/v.prom"; run validate "$T/v.prom" sentry
+check "validate: over 65536 bytes -> exit 2, too big" '[ "$RC" = 2 ] && has "too big"'
+preset; run pull
+check "pull: copies the peer file byte-identical, 0644, no temp left" '[ "$RC" = 0 ] && cmp -s "$P" "$RD/pft_aptrust_sentry.prom" && [ "$(stat -c %a "$P")" = 644 ] && [ -z "$(ls -A "$T/tf" | grep "^\.")" ]'
+echo old > "$P"; preset rssh-fail; echo old > "$P"; run pull
+check "pull: failed fetch -> exit 1, old copy kept, no temp left" '[ "$RC" = 1 ] && has "fetch of pft_aptrust_sentry.prom failed" && [ "$(cat "$P")" = old ] && [ -z "$(ls -A "$T/tf" | grep "^\.")" ]'
+preset rssh-hang 1; echo old > "$P"; t0=$(date +%s); run pull; t1=$(date +%s)
+check "pull: hanging fetch is cut at PULL_TIMEOUT 1 s -> exit 1 in < 4 s, old copy kept" '[ "$RC" = 1 ] && [ $((t1 - t0)) -lt 4 ] && [ "$(cat "$P")" = old ]'
+preset; echo 'pft_aptrust_up{host="validator"} 1' >> "$RD/pft_aptrust_sentry.prom"; echo old > "$P"; run pull
+check "pull: a fetched file that fails validation -> exit 2, old copy kept, no temp left" '[ "$RC" = 2 ] && has "validation failed: line" && [ "$(cat "$P")" = old ] && [ -z "$(ls -A "$T/tf" | grep "^\.")" ]'
+preset; printf 'HOST_LABEL=sentry\nPEER_LABEL=sentry\nPULL_SSH=%s\nREMOTE_DIR=%s\n' "$T/bin/rssh" "$RD" > "$T/pft-aptrust.env"; rm -f "$P"; run pull
+check "pull: PEER_LABEL = HOST_LABEL -> exit 3, nothing written" '[ "$RC" = 3 ] && has "refusing to pull over this host" && [ ! -e "$P" ]'
+preset; printf 'HOST_LABEL=validator\n' > "$T/pft-aptrust.env"; run pull
+check "pull: no PULL_SSH -> exit 3" '[ "$RC" = 3 ] && has "PULL_SSH not set"'
+preset; printf 'PULL_SSH=%s\nREMOTE_DIR=%s\nPULL_TIMEOUT=0\n' "$T/bin/rssh" "$RD" > "$T/pft-aptrust.env"; run pull
+check "pull: PULL_TIMEOUT 0 -> exit 3" '[ "$RC" = 3 ] && has "bad PULL_TIMEOUT"'
+run pull extra; check "pull takes no arguments: exit 3" '[ "$RC" = 3 ]'
 
 # ---------- real gpg: the colon parser against a real keyring ----------
 if command -v gpg >/dev/null; then

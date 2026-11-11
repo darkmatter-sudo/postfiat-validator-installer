@@ -517,6 +517,94 @@ MUTANTS = [
     ),
     ("R05", R, "rule: Stale for 30m -> 20m", "        for: 30m", "        for: 20m"),
 ]
+# pull / validate (the validator copies the sentry's textfile) and the default allowlist, 2026-11-11
+MUTANTS += [
+    (
+        "V01",
+        S,
+        "validate: size limit off",
+        '[ "$size" -le "$MAX_BYTES" ] ||',
+        "true ||",
+    ),
+    (
+        "V02",
+        S,
+        "validate: foreign metric accepted",
+        'if (match($0, /^pft_aptrust_[a-z_]+\\{/) == 0) { printf "line %d: not a pft_aptrust_ sample\\n", NR; bad = 1; exit }',
+        'if (match($0, /^[a-z_]+\\{/) == 0) { printf "line %d: not a pft_aptrust_ sample\\n", NR; bad = 1; exit }',
+    ),
+    (
+        "V03",
+        S,
+        "validate: host label not checked",
+        "if (index(rest, pre) != 1) { printf",
+        "if (0) { printf",
+    ),
+    (
+        "V04",
+        S,
+        "validate: trailing junk accepted",
+        "if (rest !~ /^[^{}]*\\} -?[0-9]+(\\.[0-9]+)?$/)",
+        "if (rest !~ /^[^{}]*\\} -?[0-9]+/)",
+    ),
+    (
+        "V05",
+        S,
+        "validate: up not required",
+        'if (!up) { print "no pft_aptrust_up sample"; exit 1 }',
+        "",
+    ),
+    (
+        "V06",
+        S,
+        "validate: last_run not required",
+        'if (!ts) { print "no pft_aptrust_last_run_timestamp_seconds sample"; exit 1 }',
+        "",
+    ),
+    (
+        "V07",
+        S,
+        "pull: own label not refused",
+        '[ "$PEER_LABEL" != "$HOST_LABEL" ] || die',
+        "true || die",
+    ),
+    (
+        "V08",
+        S,
+        "pull: no timeout",
+        'if ! timeout "$PULL_TIMEOUT" $PULL_SSH',
+        "if ! $PULL_SSH",
+    ),
+    (
+        "V09",
+        S,
+        "pull: failed validation still renamed",
+        'if ! why="$(validate "$tmp" "$PEER_LABEL")"; then rm -f "$tmp"; die "validation failed: $why" 2; fi',
+        'why="$(validate "$tmp" "$PEER_LABEL")" || true',
+    ),
+    (
+        "V10",
+        S,
+        "pull: failed fetch not stopped",
+        'rm -f "$tmp"; die "fetch of pft_aptrust_$PEER_LABEL.prom failed" 1',
+        "true",
+    ),
+    (
+        "V11",
+        S,
+        "pull: bad PULL_TIMEOUT accepted",
+        '[[ "$PULL_TIMEOUT" =~ ^[1-9][0-9]*$ ]] || die',
+        "true || die",
+    ),
+    ("V12", S, "pull: copy keeps 0600 temp mode", 'chmod 644 "$tmp" && mv -f', "mv -f"),
+    (
+        "O01",
+        S,
+        "default allowlist drops the installer files",
+        'OFFPKG_ALLOW="/usr/local/bin/pft-agent /usr/local/bin/postfiat-health /usr/local/sbin/postfiat-docker-user.sh"',
+        'OFFPKG_ALLOW="/usr/local/bin/pft-agent"',
+    ),
+]
 
 
 def run(cmd, timeout, env=None):

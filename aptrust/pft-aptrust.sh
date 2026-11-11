@@ -6,6 +6,10 @@
 # (../integrity) or deployments (../rollout).
 #
 # Usage: pft-aptrust audit [--json] [--textfile]   read-only; --textfile also writes TEXTFILE_DIR/pft_aptrust_HOST.prom
+#        sudo pft-aptrust apply --dry-run|--yes   safe-only fixes (see "apply / rollback" below)
+#        sudo pft-aptrust rollback [--yes]        undo the last apply from its backup
+#        sudo pft-aptrust pull                    validator: copy the peer's textfile (PULL_SSH in the env file)
+#        pft-aptrust validate FILE HOST           the check pull applies to a fetched textfile
 #        pft-aptrust version
 #
 #  audit   one line per check, PASS / WARN / FAIL / INFO; exit 0 PASS (INFO allowed), 1 any WARN/FAIL, 2 error.
@@ -39,9 +43,13 @@
 #
 # Exit codes: 0 ok, 1 findings, 2 error, 3 usage.
 # Config: /etc/pft-aptrust.env (KEY=VALUE, read, never sourced; PFT_AT_CONF overrides the path): HOST_LABEL
-#   (validator), OFFICIAL_IMAGES (agtipft/postfiatd), LOCAL_IMAGES (pft-exporter), OFFPKG_ALLOW (more allowed
-#   /usr/local paths), UBUNTU_HOSTS (archive/security/ports/esm .ubuntu.com and *.archive.ubuntu.com mirrors),
-#   EXPIRY_WARN_DAYS (30).
+#   (validator), OFFICIAL_IMAGES (agtipft/postfiatd), LOCAL_IMAGES (pft-exporter), OFFPKG_ALLOW (allowed
+#   /usr/local paths beyond the manifest; default pft-agent + the installer's postfiat-health / postfiat-docker-user.sh), UBUNTU_HOSTS (archive/security/ports/esm .ubuntu.com and *.archive.ubuntu.com mirrors),
+#   EXPIRY_WARN_DAYS (30); for pull: PEER_LABEL (sentry), PULL_SSH (command line that runs `cat` on the peer, e.g.
+#   runuser -u OPERATOR -- ssh -o BatchMode=yes relay sudo -n), PULL_TIMEOUT (30), REMOTE_DIR (the peer's TEXTFILE_DIR).
+#  pull    runs "$PULL_SSH cat -- REMOTE_DIR/pft_aptrust_PEER.prom" (timeout PULL_TIMEOUT), validates it (only
+#          pft_aptrust_ samples whose first label is host="PEER", up + last_run present, <= MAX_BYTES 65536) and
+#          renames it into TEXTFILE_DIR; a failed fetch or validation leaves the old copy (PFTAptrustStale then fires).
 # Env: TEXTFILE_DIR (/var/lib/pft-exporter/textfile)  ALLOW_MANIFEST (/usr/local/lib/pft-aptrust/manifest.tsv)
 #   Test hooks: PFT_AT_ROOT (prefix for /etc/apt, /usr/local, /var/lib/dpkg paths)  PFT_AT_DOCKER  PFT_AT_GPG
 #      PFT_AT_DPKG  PFT_AT_APTCONFIG  PFT_AT_APT  PFT_AT_NOW (epoch)
@@ -63,13 +71,16 @@ MAINT_MIN="${MAINT_MIN:-600}"
 INJECT="${VERIFY_INJECT:-}"
 TEXTFILE_DIR="${TEXTFILE_DIR:-/var/lib/pft-exporter/textfile}"
 ALLOW_MANIFEST="${ALLOW_MANIFEST:-/usr/local/lib/pft-aptrust/manifest.tsv}"
-HOST_LABEL=validator; OFFICIAL_IMAGES="agtipft/postfiatd"; LOCAL_IMAGES="pft-exporter"; OFFPKG_ALLOW="/usr/local/bin/pft-agent"
+HOST_LABEL=validator; OFFICIAL_IMAGES="agtipft/postfiatd"; LOCAL_IMAGES="pft-exporter"; # default allowlist beyond the manifest: the operator's agent CLI and the two files the repo's top-level install.sh
+# writes from quoted heredocs (constant bytes, no repo file of their own for pft-fleet to track)
+OFFPKG_ALLOW="/usr/local/bin/pft-agent /usr/local/bin/postfiat-health /usr/local/sbin/postfiat-docker-user.sh"
 UBUNTU_HOSTS="archive.ubuntu.com security.ubuntu.com ports.ubuntu.com esm.ubuntu.com"; EXPIRY_WARN_DAYS=30
+PEER_LABEL=sentry; PULL_SSH=""; PULL_TIMEOUT=30; REMOTE_DIR=/var/lib/pft-exporter/textfile; MAX_BYTES=65536
 CONF="${PFT_AT_CONF:-/etc/pft-aptrust.env}"
 if [ -f "$CONF" ]; then
   while IFS='=' read -r k v; do
     case "$k" in
-      HOST_LABEL|OFFICIAL_IMAGES|LOCAL_IMAGES|OFFPKG_ALLOW|UBUNTU_HOSTS|EXPIRY_WARN_DAYS)
+      HOST_LABEL|OFFICIAL_IMAGES|LOCAL_IMAGES|OFFPKG_ALLOW|UBUNTU_HOSTS|EXPIRY_WARN_DAYS|PEER_LABEL|PULL_SSH|PULL_TIMEOUT|REMOTE_DIR)
         v="${v%\"}"; v="${v#\"}"; printf -v "$k" '%s' "$v" ;;
     esac
   done < <(grep -E '^[A-Z_]+=' "$CONF")
@@ -630,11 +641,52 @@ rollback() {
   rm -rf "$TMP"
 }
 
+# ---------- pull / validate ----------
+validate() { # FILE HOST -> rc 0, or rc 1 with the first reason on stdout
+  local f="$1" h="$2" size
+  [ -f "$f" ] || { echo "not a file"; return 1; }
+  size="$(stat -c %s "$f")"; [ "$size" -le "$MAX_BYTES" ] || { echo "too big ($size bytes)"; return 1; }
+  awk -v h="$h" '
+    BEGIN { pre = "host=\"" h "\"" }
+    /^# (HELP|TYPE) pft_aptrust_[a-z_]+ / || /^$/ { next }
+    {
+      if (match($0, /^pft_aptrust_[a-z_]+\{/) == 0) { printf "line %d: not a pft_aptrust_ sample\n", NR; bad = 1; exit }
+      rest = substr($0, RLENGTH + 1)
+      if (index(rest, pre) != 1) { printf "line %d: first label is not %s\n", NR, pre; bad = 1; exit }
+      if (rest !~ /^[^{}]*\} -?[0-9]+(\.[0-9]+)?$/) { printf "line %d: malformed sample\n", NR; bad = 1; exit }
+      if ($0 ~ /^pft_aptrust_up\{/) up = 1
+      if ($0 ~ /^pft_aptrust_last_run_timestamp_seconds\{/) ts = 1
+    }
+    END {
+      if (bad) exit 1
+      if (!up) { print "no pft_aptrust_up sample"; exit 1 }
+      if (!ts) { print "no pft_aptrust_last_run_timestamp_seconds sample"; exit 1 }
+    }' "$f"
+}
+
+pull() {
+  local tmp why
+  valid_label "$PEER_LABEL" || die "bad PEER_LABEL" 3
+  [ "$PEER_LABEL" != "$HOST_LABEL" ] || die "refusing to pull over this host's own textfile ($PEER_LABEL)" 3
+  [ -n "$PULL_SSH" ] || die "PULL_SSH not set (see $CONF)" 3
+  [[ "$PULL_TIMEOUT" =~ ^[1-9][0-9]*$ ]] || die "bad PULL_TIMEOUT" 3
+  tmp="$(mktemp "$TEXTFILE_DIR/.pull-aptrust-$PEER_LABEL.XXXXXX")" || die "cannot create a temp file in $TEXTFILE_DIR" 1
+  # shellcheck disable=SC2086 # PULL_SSH is a command line from the root-owned env file
+  if ! timeout "$PULL_TIMEOUT" $PULL_SSH cat -- "$REMOTE_DIR/pft_aptrust_$PEER_LABEL.prom" >"$tmp" 2>/dev/null </dev/null; then
+    rm -f "$tmp"; die "fetch of pft_aptrust_$PEER_LABEL.prom failed" 1
+  fi
+  if ! why="$(validate "$tmp" "$PEER_LABEL")"; then rm -f "$tmp"; die "validation failed: $why" 2; fi
+  if ! { chmod 644 "$tmp" && mv -f "$tmp" "$TEXTFILE_DIR/pft_aptrust_$PEER_LABEL.prom"; }; then rm -f "$tmp"; die "rename failed" 1; fi
+}
+
 cmd="${1:-}"; [ $# -gt 0 ] && shift
 case "$cmd" in
   audit) audit "$@" ;;
   apply) apply "$@" ;;
   rollback) rollback "$@" ;;
+  pull) [ $# -eq 0 ] || die "pull takes no arguments" 3; pull ;;
+  validate) [ $# -eq 2 ] || die "usage: pft-aptrust validate FILE HOST" 3; valid_label "$2" || die "bad host label" 3
+            why="$(validate "$1" "$2")" && exit 0; echo "$why"; exit 2 ;;
   version) echo "pft-aptrust $VERSION" ;;
-  *) die "usage: pft-aptrust audit|apply|rollback|version (see the header of this script)" 3 ;;
+  *) die "usage: pft-aptrust audit|apply|rollback|pull|validate|version (see the header of this script)" 3 ;;
 esac
