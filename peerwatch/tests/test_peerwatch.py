@@ -333,6 +333,19 @@ class Grades(Base):
         self.metrics(self.collect(p, i))
         self.assertEqual(self.checks()["fixed"], "PASS")
 
+    def test_count_boundary(self):
+        p, i = self.peers()
+        p["result"]["peers"] = p["result"]["peers"][:5]  # exactly MIN_PEERS_WARN
+        self.metrics(self.collect(p, i))
+        self.assertEqual(self.checks()["count"], "PASS")
+        self.write_conf("COUNT_PRIVATE_OUTBOUND=1\nMIN_OUTBOUND_WARN=4\n")
+        p, i = self.peers()
+        p["result"]["peers"] = [x for x in p["result"]["peers"] if x.get("inbound")] + [
+            x for x in p["result"]["peers"] if not x.get("inbound")
+        ][:4]
+        self.metrics(self.collect(p, i, NOW + 60))
+        self.assertEqual(self.checks()["direction"], "PASS")  # outbound 4 == MIN_OUTBOUND_WARN
+
     def test_count(self):
         p, i = self.peers()
         p["result"]["peers"] = []
@@ -410,10 +423,127 @@ class BadInput(Base):
         r = self.collect(load("validator-peers.json"), load("validator-server_info.json"))
         self.assertEqual(r.returncode, 3)
         self.assertIn("CHURN_WARN", r.stderr)
+        for bad in ("CHURN_WINDOW_MIN=0", "MAX_LEDGER_LAG=100001", "AGREE_WARN_PCT=101"):
+            self.write_conf(bad + "\n")
+            r = self.collect(load("validator-peers.json"), load("validator-server_info.json"))
+            self.assertEqual(r.returncode, 3, bad)
+            self.assertIn("want an integer", r.stderr)
+        for bad in ("bad-tag=n9abc", "sentry=x9abc", "sentry=n9a/b"):
+            self.write_conf(f"FIXED_LINKS={bad}\n")
+            r = self.collect(load("validator-peers.json"), load("validator-server_info.json"))
+            self.assertEqual(r.returncode, 3, bad)
+            self.assertIn("TAG=NODE_PUBKEY", r.stderr)
         self.write_conf("FIXED_LINKS=sentry\n")
         r = self.collect(load("validator-peers.json"), load("validator-server_info.json"))
         self.assertEqual(r.returncode, 3)
         self.assertIn("TAG=NODE_PUBKEY", r.stderr)
+
+
+class Usage(Base):
+    def test_parser_usage_errors_exit_3(self):
+        for args in (["status", "--state", self.state], ["collect", "--peers", "x"], ["bogus"]):
+            r = subprocess.run(
+                [sys.executable, "-I", PARSER, *args],
+                check=False,
+                capture_output=True,
+                text=True,
+                stdin=subprocess.DEVNULL,
+                timeout=30,
+            )
+            self.assertEqual(r.returncode, 3, args)  # never 2, which status uses for FAIL
+
+
+class Summary(Base):
+    SUMMARY = os.path.join(ROOT, "summarize_peerwatch.py")
+
+    def test_summary_hand_computed(self):
+        rows = [
+            {
+                "ts": 0,
+                "peers": 10,
+                "peers_outbound": 6,
+                "joins": 0,
+                "leaves": 0,
+                "gap": True,
+                "status": "PASS",
+                "latency_p50_ms": 100,
+                "latency_p95_ms": 300,
+                "ledger_agree_ratio": 1.0,
+                "outbound_prefix16": 6,
+                "outbound_prefix16_max_share": 0.1667,
+                "links": {"sentry": 1},
+                "checks": {"count": "PASS", "fixed": "PASS"},
+            },
+            {
+                "ts": 60,
+                "peers": 9,
+                "peers_outbound": 5,
+                "joins": 0,
+                "leaves": 1,
+                "gap": False,
+                "status": "FAIL",
+                "latency_p50_ms": 120,
+                "latency_p95_ms": 900,
+                "ledger_agree_ratio": 0.5,
+                "outbound_prefix16": 4,
+                "outbound_prefix16_max_share": 0.4,
+                "churn_leaves": 1,
+                "links": {"sentry": 0},
+                "checks": {"count": "PASS", "fixed": "FAIL"},
+            },
+            {
+                "ts": 300,
+                "peers": 12,
+                "peers_outbound": 7,
+                "joins": 3,
+                "leaves": 0,
+                "gap": True,
+                "status": "WARN",
+                "latency_p50_ms": 110,
+                "latency_p95_ms": 500,
+                "ledger_agree_ratio": 0.75,
+                "outbound_prefix16": 5,
+                "outbound_prefix16_max_share": 0.25,
+                "churn_joins": 3,
+                "churn_leaves": 1,
+                "links": {"sentry": 1},
+                "checks": {"count": "WARN", "fixed": "PASS"},
+            },
+        ]
+        h = self.dump("history-postfiatd.jsonl", "\n".join(json.dumps(r) for r in rows) + "\nnot json\n")
+        r = subprocess.run(
+            [sys.executable, "-I", self.SUMMARY, "--json", h],
+            check=False,
+            capture_output=True,
+            text=True,
+            stdin=subprocess.DEVNULL,
+            timeout=30,
+        )
+        self.assertEqual(r.returncode, 0, r.stderr)
+        s = json.loads(r.stdout)[0]
+        self.assertEqual(
+            (s["container"], s["samples"], s["unparsed_lines"], s["expected_samples"]), ("postfiatd", 3, 1, 6)
+        )
+        self.assertEqual((s["gaps_over_90s"], s["longest_gap_s"], s["rebaselines"]), (1, 240, 2))
+        self.assertEqual((s["joins"], s["leaves"], s["max_churn_window_events"]), (3, 1, 4))
+        self.assertEqual(s["peers_min_median_max"], [9, 10, 12])
+        self.assertEqual(s["latency_p95_median_max_ms"], [500, 900])
+        self.assertEqual(s["latency_p50_median_ms"], 110)
+        self.assertEqual(s["ledger_agree_min_median"], [0.5, 0.75])
+        self.assertEqual(s["outbound_prefix16_min"], 4)
+        self.assertEqual(s["links"], {"sentry": {"samples": 3, "down_samples": 1}})
+        self.assertEqual(s["check_samples"]["fixed"], {"PASS": 2, "WARN": 0, "FAIL": 1})
+        self.assertEqual(s["status_samples"], {"PASS": 1, "WARN": 1, "FAIL": 1})
+        r = subprocess.run(
+            [sys.executable, "-I", self.SUMMARY, "--from", "60", "--to", "120", "--json", h],
+            check=False,
+            capture_output=True,
+            text=True,
+            stdin=subprocess.DEVNULL,
+            timeout=30,
+        )
+        s = json.loads(r.stdout)[0]
+        self.assertEqual((s["samples"], s["expected_samples"], s["coverage"]), (1, 2, 0.5))
 
 
 class StatusAndHistory(Base):
@@ -548,6 +678,25 @@ case "$*" in *'"method":"peers"'*) cat "{self.d}/peers.json" ;; *'"method":"serv
         self.assertEqual(r.returncode, 0)
         self.assertIn("RESULT: PASS", r.stdout)
 
+    def test_conf_not_root_owned_ignored(self):
+        conf = os.path.join(self.d, "user.env")
+        with open(conf, "w", encoding="utf-8") as f:
+            f.write("CONTAINER=evil\n")
+        self.assertNotEqual(os.stat(conf).st_uid, 0)
+        r = self.run_sh("collect", env_extra={"PFT_PW_CONF": conf})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue(os.path.exists(os.path.join(self.tf, "pft_peerwatch_postfiatd.prom")))
+        self.assertFalse(os.path.exists(os.path.join(self.tf, "pft_peerwatch_evil.prom")))
+
+    def test_status_json_via_shell(self):
+        self.assertEqual(self.run_sh("collect").returncode, 0)
+        r = self.run_sh("status", "--json")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        doc = json.loads(r.stdout)
+        self.assertEqual(
+            (doc["status"], doc["container"], doc["checks"]["fixed"]["result"]), ("PASS", "postfiatd", "PASS")
+        )
+
     def test_docker_warning_not_glued(self):
         self.stub("warn")
         r = self.run_sh("collect", "--container", "postfiatd")
@@ -603,10 +752,16 @@ case "$*" in *'"method":"peers"'*) cat "{self.d}/peers.json" ;; *'"method":"serv
         self.assertIn("first label is not", r.stdout)
         r = self.validate(good + "node_load1 3\n")
         self.assertIn("not a pft_peerwatch_ sample", r.stdout)
+        r = self.validate(good + 'node_load1{container="postfiatd-sentry"} 3\n')  # well-formed, foreign name
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("line 3: not a pft_peerwatch_ sample", r.stdout)
         r = self.validate(good + 'pft_peerwatch_status{container="postfiatd-sentry"} x\n')
         self.assertIn("malformed sample", r.stdout)
         r = self.validate('pft_peerwatch_up{container="postfiatd-sentry"} 1\n')
         self.assertIn("no pft_peerwatch_collect_timestamp_seconds", r.stdout)
+        r = self.validate('pft_peerwatch_collect_timestamp_seconds{container="postfiatd-sentry"} 1\n')
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("no pft_peerwatch_up sample", r.stdout)
         r = self.validate(good + "#" * 20000 + "\n")
         self.assertIn("too big", r.stdout)
 
