@@ -55,6 +55,12 @@ GPG="${PFT_AT_GPG:-gpg}"
 DPKG="${PFT_AT_DPKG:-dpkg}"
 APTCONFIG="${PFT_AT_APTCONFIG:-apt-config}"
 APT="${PFT_AT_APT:-apt}"
+APTGET="${PFT_AT_APTGET:-apt-get}"
+GPGV="${PFT_AT_GPGV:-gpgv}"
+MAINT="${PFT_AT_MAINT:-pft-maint}"
+STATE_DIR="${STATE_DIR:-/var/lib/pft-aptrust}"
+MAINT_MIN="${MAINT_MIN:-600}"
+INJECT="${VERIFY_INJECT:-}"
 TEXTFILE_DIR="${TEXTFILE_DIR:-/var/lib/pft-exporter/textfile}"
 ALLOW_MANIFEST="${ALLOW_MANIFEST:-/usr/local/lib/pft-aptrust/manifest.tsv}"
 HOST_LABEL=validator; OFFICIAL_IMAGES="agtipft/postfiatd"; LOCAL_IMAGES="pft-exporter"; OFFPKG_ALLOW="/usr/local/bin/pft-agent"
@@ -77,6 +83,8 @@ valid_label() { [[ "$1" =~ ^[a-z][a-z0-9_-]{0,31}$ ]]; }
 ROWS=()
 row() { ROWS+=("$(printf '%s\t%s\t%s' "$1" "$2" "$3")"); }
 declare -A KEYRINGS=()   # keyring path (without R) -> "global" or "signed-by"
+UNSIGNED=()   # third-party sources with no signed-by: FILE<TAB>LINE<TAB>URI<TAB>SUITE<TAB>FORMAT (list|deb822)
+PERMFIX=()    # APT paths apply can fix: PATH<TAB>own|mode<TAB>MODE
 N_SRC=0 N_KEYS=0 N_IMG=0 N_OFFPKG_OK=0
 
 # ubuntu_host URI -> rc 0 if the URI's host is an Ubuntu archive (UBUNTU_HOSTS or an *.archive.ubuntu.com mirror)
@@ -86,9 +94,9 @@ ubuntu_host() {
   [[ "$h" == *.archive.ubuntu.com ]]
 }
 
-# grade_source WHERE TYPE URI OPTS   OPTS: space-separated lower-case key=value (deb822 keys are mapped to these)
+# grade_source WHERE TYPE URI OPTS SUITE FORMAT   OPTS: space-separated lower-case key=value (deb822 keys are mapped)
 grade_source() {
-  local where="$1" uri="$3" opts=" $4 " o k v sb="" bad="" scheme="${3%%://*}"
+  local where="$1" uri="$3" opts=" $4 " suite="${5:-}" fmt="${6:-list}" o k v sb="" bad="" scheme="${3%%://*}"
   N_SRC=$((N_SRC + 1))
   for o in $opts; do
     k="${o%%=*}"; v="${o#*=}"; v="${v,,}"
@@ -110,6 +118,7 @@ grade_source() {
     else row PASS "src:$where" "Ubuntu archive over $scheme (${sb:+signed-by }${sb:-stock global keys})"; fi
     return
   fi
+  [ -z "$sb" ] && UNSIGNED+=("$(printf '%s\t%s\t%s\t%s\t%s' "${where%:*}" "${where##*:}" "$uri" "$suite" "$fmt")")
   if [ -z "$sb" ] && [ "$scheme" != https ]; then row FAIL "src:$where" "third-party source over $scheme with no signed-by: any global key can sign it and the transport is plain ($uri)"
   elif [ -z "$sb" ]; then row WARN "src:$where" "third-party source with no signed-by: every global key in trusted.gpg.d can sign it ($uri)"
   elif [ "$scheme" != https ]; then row WARN "src:$where" "third-party source over $scheme (signed-by $sb): metadata is signed but readable and replayable until Valid-Until ($uri)"
@@ -118,15 +127,15 @@ grade_source() {
 
 # one-line format: deb [opt=v opt2=v] URI suite comps...
 scan_list() {
-  local f="$1" n=0 line rest opts uri
+  local f="$1" n=0 line rest opts uri suite
   while IFS= read -r line || [ -n "$line" ]; do
     n=$((n + 1)); line="${line%%#*}"; read -r -a w <<<"$line"
     [ "${#w[@]}" -gt 0 ] || continue
     case "${w[0]}" in deb|deb-src) ;; *) continue ;; esac
     rest="${line#*"${w[0]}"}"; opts=""
     if [[ "$rest" =~ ^[[:space:]]*\[([^]]*)\][[:space:]]*(.*)$ ]]; then opts="${BASH_REMATCH[1]}"; rest="${BASH_REMATCH[2]}"; fi
-    read -r uri _ <<<"$rest"
-    grade_source "${f#"$R"}:$n" "${w[0]}" "$uri" "$opts"
+    read -r uri suite _ <<<"$rest"
+    grade_source "${f#"$R"}:$n" "${w[0]}" "$uri" "$opts" "$suite" list
   done <"$f"
 }
 
@@ -151,7 +160,7 @@ scan_sources() {
       for u in $uris; do printf '%s\t%s\t%s\t%s\n' "$n" "${types%% *}" "$u" "$opts"; done
     done >"$TMP/sources.tsv"
   local n t u o
-  while IFS=$'\t' read -r n t u o; do grade_source "${f#"$R"}:$n" "$t" "$u" "$o"; done <"$TMP/sources.tsv"
+  while IFS=$'\t' read -r n t u o; do grade_source "${f#"$R"}:$n" "$t" "$u" "$o" "" deb822; done <"$TMP/sources.tsv"
 }
 
 # perm PATH -> FAIL if not root-owned or group/world-writable (symlinks: the target)
@@ -161,8 +170,14 @@ perm_check() {
   st="$(stat -L -c '%u %a' "$R$p" 2>/dev/null)" || return 0
   local uid="${st%% *}" mode="${st##* }"
   if [ -n "${PFT_AT_ROOT:-}" ] && [ -n "${PFT_AT_UID_ROOT:-}" ]; then [ "$uid" = "$PFT_AT_UID_ROOT" ] && uid=0; fi
-  if [ "$uid" != 0 ]; then row FAIL "perm:$p" "owned by uid $uid, not root: that user can change what APT trusts"; return 1; fi
-  if (( 8#$mode & 8#022 )); then row FAIL "perm:$p" "mode $mode is group/world-writable: a non-root writer can change what APT trusts"; return 1; fi
+  if [ "$uid" != 0 ]; then
+    row FAIL "perm:$p" "owned by uid $uid, not root: that user can change what APT trusts"
+    PERMFIX+=("$(printf '%s\town\t%o' "$p" $((8#$mode & ~8#022)))"); return 1
+  fi
+  if (( 8#$mode & 8#022 )); then
+    row FAIL "perm:$p" "mode $mode is group/world-writable: a non-root writer can change what APT trusts"
+    PERMFIX+=("$(printf '%s\tmode\t%o' "$p" $((8#$mode & ~8#022)))"); return 1
+  fi
   return 0
 }
 
@@ -345,7 +360,7 @@ run_audit() {
   done
   scan_images
   scan_offpkg
-  rm -rf "$TMP"
+  [ "${1:-}" = keep ] || rm -rf "$TMP"
 }
 
 count() { local r n=0; for r in "${ROWS[@]}"; do [ "${r%%$'\t'*}" = "$1" ] && n=$((n + 1)); done; echo "$n"; }
@@ -415,9 +430,211 @@ audit() {
   return "$rc"
 }
 
+# ---------- apply / rollback (safe-only) ----------
+# A plan line is one of
+#   perm  PATH  own|mode  MODE          chown root:root (own) and/or chmod MODE (group/world write bits removed)
+#   sign  FILE  LINE  URI  KEYRING  FPR  add signed-by=KEYRING to a one-line source; KEYRING gets the key that signs
+#                                        the source's cached InRelease (exported from the global keyring that has it)
+#   drop  GLOBALFILE                     a non-stock global keyring (/etc/apt/trusted.gpg or trusted.gpg.d) whose every
+#                                        key was moved to a signed-by keyring: removed (backed up)
+# Nothing else is ever changed: options, pins, packages and images are report-only.
+refuse() { echo "$(ts) REFUSED - $1; nothing written"; exit 4; }
+sha() { if [ -f "$1" ]; then sha256sum <"$1" | cut -c1-64; else echo absent; fi; }
+
+maint_gate() { # rc 0, or the reason on stdout
+  local j w rem nl
+  j="$("$MAINT" status --json 2>/dev/null)" || { echo "pft-maint status failed (is pft-maint installed?)"; return 1; }
+  w="$(jq -r '.window // "none"' <<<"$j")"; rem="$(jq -r '.remaining_sec // 0' <<<"$j")"; nl="$(jq -r '.locks | length' <<<"$j")"
+  if [ "$w" != active ]; then echo "no active pft-maint window (window=$w); run: sudo pft-maint start --ttl 30m --reason ..."; return 1; fi
+  if [ "${rem%.*}" -lt "$MAINT_MIN" ]; then echo "pft-maint window has ${rem%.*} s left (< MAINT_MIN $MAINT_MIN)"; return 1; fi
+  if [ "$nl" -gt 0 ]; then echo "$nl pft-maint data-collection lock(s) held"; return 1; fi
+}
+
+# list_name URI SUITE -> the InRelease file APT caches for it (apt's URItoFileName: scheme and user dropped, / -> _)
+list_name() {
+  local u="${1#*://}"; u="${u#*@}"; u="${u%/}"
+  printf '%s/var/lib/apt/lists/%s_dists_%s_InRelease\n' "$R" "${u//\//_}" "${2//\//_}"
+}
+global_keyrings() { # non-stock global keyring files (paths without R), one per line
+  local f
+  [ -s "$R/etc/apt/trusted.gpg" ] && echo /etc/apt/trusted.gpg
+  for f in "$R"/etc/apt/trusted.gpg.d/*; do
+    [ -f "$f" ] || continue; f="${f#"$R"}"
+    pkg_stock "$f" >/dev/null || echo "$f"
+  done
+}
+fprs() { # KEYRING -> primary fingerprints, one per line
+  "$GPG" --batch --no-options --homedir "$TMP/gnupg" --show-keys --with-colons "$R$1" 2>/dev/null |
+    awk -F: '$1 == "pub" { want = 1; next } $1 == "fpr" && want { print $10; want = 0 }'
+}
+signer() { # INRELEASE -> primary fingerprint of the key that made a valid signature (from the global keyrings), rc 1 if none
+  local a=() g
+  while IFS= read -r g; do a+=(--keyring "$R$g"); done < <(global_keyrings; for g in "$R"/etc/apt/trusted.gpg.d/*; do [ -f "$g" ] && echo "${g#"$R"}"; done)
+  [ "${#a[@]}" -gt 0 ] || return 1
+  "$GPGV" --homedir "$TMP/gnupg" --status-fd 1 "${a[@]}" "$1" 2>/dev/null | awk '$2 == "VALIDSIG" { print $NF; f = 1 } END { exit !f }'
+}
+
+# make_plan -> $TMP/plan (tab-separated) and $TMP/manual (findings apply will not touch). Needs run_audit's arrays.
+make_plan() {
+  local e p k m f n u s fmt fp g kr host
+  : >"$TMP/plan"; : >"$TMP/manual"
+  for e in "${PERMFIX[@]}"; do IFS=$'\t' read -r p k m <<<"$e"; printf 'perm\t%s\t%s\t%s\n' "$p" "$k" "$m" >>"$TMP/plan"; done
+  declare -A moved=()
+  for e in "${UNSIGNED[@]}"; do
+    IFS=$'\t' read -r f n u s fmt <<<"$e"
+    if [ "$fmt" != list ]; then echo "$f:$n deb822 stanza without Signed-By: add Signed-By by hand" >>"$TMP/manual"; continue; fi
+    if [ ! -f "$(list_name "$u" "$s")" ]; then echo "$f:$n no cached InRelease for $u $s (run apt-get update first; flat or Release.gpg-only repos are manual)" >>"$TMP/manual"; continue; fi
+    if ! fp="$(signer "$(list_name "$u" "$s")")"; then echo "$f:$n the cached InRelease of $u verifies with no global key" >>"$TMP/manual"; continue; fi
+    host="${u#*://}"; host="${host#*@}"; host="${host%%/*}"; host="${host%%:*}"
+    kr="/etc/apt/keyrings/pft-aptrust-${host//[^A-Za-z0-9.-]/_}.gpg"
+    printf 'sign\t%s\t%s\t%s\t%s\t%s\n' "$f" "$n" "$u" "$kr" "$fp" >>"$TMP/plan"
+    moved[$fp]=1
+  done
+  # a non-stock global keyring is dropped only if every one of its keys now has a signed-by home and no source
+  # left without signed-by (that apply cannot sign) might still need it
+  [ -s "$TMP/manual" ] && grep -q 'without Signed-By\|no cached\|verifies with no' "$TMP/manual" && return 0
+  while IFS= read -r g; do
+    local all=1 any=0
+    while IFS= read -r fp; do any=1; [ -n "${moved[$fp]:-}" ] || all=0; done < <(fprs "$g")
+    if [ "$any" = 1 ] && [ "$all" = 1 ]; then printf 'drop\t%s\n' "$g" >>"$TMP/plan"
+    else echo "$g keeps key(s) no source here is signed by: left in place (remove by hand if unused)" >>"$TMP/manual"; fi
+  done < <(global_keyrings)
+}
+
+# update_gate LOG -> rc 0 if `apt-get update` exited 0 with no signature/fetch error; the index lines go to LOG
+update_gate() {
+  local out rc
+  out="$("$APTGET" update 2>&1)"; rc=$?
+  printf '%s\n' "$out" >"$1"
+  [ "$rc" = 0 ] || { echo "apt-get update exit $rc"; return 1; }
+  if grep -qE '^(Err:|E:)|NO_PUBKEY|is not signed|signatures (were invalid|couldn.t be verified)|EXPKEYSIG|BADSIG' "$1"; then
+    echo "apt-get update reported: $(grep -m1 -E '^(Err:|E:)|NO_PUBKEY|is not signed|signatures|EXPKEYSIG|BADSIG' "$1")"; return 1
+  fi
+}
+indexes() { awk '$1 ~ /^(Hit|Get):[0-9]+$/ { print $2, $3 }' "$1" | sort -u; }
+
+plan_paths() { # paths the plan writes or removes (without R)
+  awk -F'\t' '$1 == "perm" || $1 == "drop" { print $2 } $1 == "sign" { print $2; print $5 }' "$TMP/plan" | sort -u
+}
+
+apply() {
+  local yes=0 dry=0 why id bk p rc=0 kind a b c d e fails="" migrated=0
+  while [ $# -gt 0 ]; do case "$1" in --yes) yes=1 ;; --dry-run) dry=1 ;; *) die "unknown argument: $1" 3 ;; esac; shift; done
+  [ "$dry" = 1 ] || [ "$(id -u)" = 0 ] || [ -n "${PFT_AT_TEST:-}" ] || die "apply needs root" 3
+  if [ "$dry" = 0 ]; then
+    [ "$yes" = 1 ] || refuse "apply changes APT trust files: add --yes"
+    why="$(maint_gate)" || refuse "$why"
+    [ -f "$STATE_DIR/apply.json" ] && refuse "the last apply ($(jq -r .id "$STATE_DIR/apply.json" 2>/dev/null)) is still in place: rollback first"
+  fi
+  run_audit keep
+  make_plan
+  echo "$(ts) apply on $HOST_LABEL: $(grep -c . "$TMP/plan") planned change(s), $(grep -c . "$TMP/manual") manual item(s)"
+  sed 's/^/  plan    /' "$TMP/plan"; sed 's/^/  manual  /' "$TMP/manual"
+  if [ ! -s "$TMP/plan" ]; then rm -rf "$TMP"; echo "$(ts) nothing to apply"; return 0; fi
+  if [ "$dry" = 1 ]; then rm -rf "$TMP"; echo "$(ts) dry-run: nothing written"; return 0; fi
+  while IFS= read -r p; do
+    [ -e "$R$p" ] && { rm -rf "$TMP"; refuse "$p already exists (not written by this apply)"; }
+  done < <(awk -F'\t' '$1 == "sign" { print $5 }' "$TMP/plan" | sort -u)
+  why="$(update_gate "$TMP/pre.log")" || { rm -rf "$TMP"; refuse "pre-apply gate: $why"; }
+  id="$(date -u -d "@$(now)" +%Y%m%dT%H%M%SZ)"; bk="$STATE_DIR/backup-$id"
+  install -d -m 700 "$STATE_DIR" "$bk" || die "cannot create $STATE_DIR"
+  cp "$TMP/plan" "$bk/plan"; indexes "$TMP/pre.log" >"$bk/pre-indexes"
+  # backup: every path the plan touches, bytes + mode + owner (tar -p, numeric owner); new files are listed
+  : >"$bk/created"
+  while IFS= read -r p; do
+    if [ -e "$R$p" ]; then printf '%s\t%s\n' "$p" "$(sha "$R$p")" >>"$bk/sha-before"; else echo "$p" >>"$bk/created"; fi
+  done < <(plan_paths)
+  touch "$bk/sha-before"
+  if [ -s "$bk/sha-before" ]; then
+    cut -f1 "$bk/sha-before" | sed 's#^/##' >"$bk/files.list"
+    tar -C "${R:-/}" --numeric-owner -cpf "$bk/files.tar" -T "$bk/files.list" || die "backup failed"
+  fi
+  jq -n --arg id "$id" --arg host "$HOST_LABEL" --arg bk "$bk" '{id: $id, host: $host, backup: $bk}' >"$STATE_DIR/apply.json"
+  echo "$(ts) backup $bk: $(grep -c . "$bk/sha-before") file(s) saved, $(grep -c . "$bk/created") to be created"
+  while IFS=$'\t' read -r kind a b c d e; do
+    case "$kind" in
+      perm)
+        [ "$b" = own ] && { chown 0:0 "$R$a" || fails+=" chown:$a"; }
+        chmod "$c" "$R$a" || fails+=" chmod:$a"
+        echo "$(ts) perm $a -> root-owned mode $c" ;;
+      sign)
+        if [ ! -e "$R$d" ]; then
+          local g ex=""
+          while IFS= read -r g; do
+            ex="$("$GPG" --batch --no-options --homedir "$TMP/gnupg" --no-default-keyring --keyring "$R$g" --export "$e" 2>/dev/null | base64 -w0)"
+            [ -n "$ex" ] && break
+          done < <(global_keyrings; for g in "$R"/etc/apt/trusted.gpg.d/*; do [ -f "$g" ] && echo "${g#"$R"}"; done)
+          if [ -z "$ex" ]; then fails+=" export:$e"; continue; fi
+          if ! { install -d -m 755 "$R/etc/apt/keyrings" && base64 -d <<<"$ex" >"$R$d" && chmod 644 "$R$d"; }; then
+            fails+=" write:$d"; continue
+          fi
+        fi
+        awk -v n="$b" -v kr="$d" 'NR == n {
+            if (match($0, /^[[:space:]]*deb(-src)?[[:space:]]+\[/)) { $0 = substr($0, 1, RLENGTH) "signed-by=" kr " " substr($0, RLENGTH + 1) }
+            else { sub(/^[[:space:]]*deb(-src)?/, "& [signed-by=" kr "]") } }
+          { print }' "$R$a" >"$TMP/src.new" && cat "$TMP/src.new" >"$R$a" || fails+=" edit:$a:$b"
+        migrated=$((migrated + 1))
+        echo "$(ts) sign $a:$b ($c) -> signed-by=$d (key ${e: -16})" ;;
+      drop) rm -f "$R$a" || fails+=" drop:$a"; echo "$(ts) drop global keyring $a (all its keys now in signed-by keyrings)" ;;
+    esac
+  done <"$TMP/plan"
+  # verify: the post gate must see every index the pre gate saw, with no signature error; then re-audit
+  if [ -z "$fails" ]; then
+    why="$(update_gate "$TMP/post.log")" || fails+=" post-gate:[$why]"
+    indexes "$TMP/post.log" >"$TMP/post-indexes"; cp "$TMP/post.log" "$bk/post.log"
+    local lost; lost="$(comm -23 "$bk/pre-indexes" "$TMP/post-indexes")"
+    [ -z "$lost" ] || fails+=" lost-index:[$(tr '\n' ';' <<<"$lost")]"
+    [ -n "$INJECT" ] && fails+=" injected:$INJECT"
+  fi
+  if [ -n "$fails" ]; then
+    echo "$(ts) VERIFY FAILED:$fails -> restoring"
+    restore "$bk" || rc=5
+    rm -f "$STATE_DIR/apply.json"
+    why="$(update_gate "$TMP/restore.log")" && echo "$(ts) restored; apt-get update after restore ok" || echo "$(ts) restored; apt-get update after restore: $why"
+    rm -rf "$TMP"
+    return "$([ "$rc" = 5 ] && echo 5 || echo 1)"
+  fi
+  while IFS= read -r p; do printf '%s\t%s\n' "$p" "$(sha "$R$p")"; done < <(plan_paths) >"$bk/sha-after"
+  echo "$(ts) verify ok: apt-get update exit 0, no signature error, $(grep -c . "$bk/pre-indexes") index(es) before = $(grep -c . "$TMP/post-indexes") after; $migrated source(s) moved to signed-by"
+  rm -rf "$TMP"
+}
+
+restore() { # BACKUP_DIR: remove created files, untar the saved ones, check every sha256; rc 1 on mismatch
+  local bk="$1" p want ok=0
+  while IFS= read -r p; do [ -n "$p" ] && rm -f "$R$p"; done <"$bk/created"
+  [ -f "$bk/files.tar" ] && tar -C "${R:-/}" --numeric-owner -xpf "$bk/files.tar"
+  while IFS=$'\t' read -r p want; do
+    [ "$(sha "$R$p")" = "$want" ] || { echo "$(ts) RESTORE MISMATCH $p: $(sha "$R$p") != $want"; ok=1; }
+  done <"$bk/sha-before"
+  while IFS= read -r p; do [ -z "$p" ] || [ ! -e "$R$p" ] || { echo "$(ts) RESTORE: $p still present"; ok=1; }; done <"$bk/created"
+  return "$ok"
+}
+
+rollback() {
+  local yes=0 why bk id p want
+  while [ $# -gt 0 ]; do case "$1" in --yes) yes=1 ;; *) die "unknown argument: $1" 3 ;; esac; shift; done
+  [ "$(id -u)" = 0 ] || [ -n "${PFT_AT_TEST:-}" ] || die "rollback needs root" 3
+  [ "$yes" = 1 ] || refuse "rollback changes APT trust files: add --yes"
+  why="$(maint_gate)" || refuse "$why"
+  [ -f "$STATE_DIR/apply.json" ] || refuse "no apply on record in $STATE_DIR"
+  bk="$(jq -r .backup "$STATE_DIR/apply.json")"; id="$(jq -r .id "$STATE_DIR/apply.json")"
+  [ -d "$bk" ] || die "backup $bk missing" 5
+  while IFS=$'\t' read -r p want; do
+    [ "$(sha "$R$p")" = "$want" ] || echo "$(ts) note: $p changed since the apply; restoring the pre-apply copy anyway"
+  done <"$bk/sha-after"
+  if ! restore "$bk"; then echo "$(ts) ROLLBACK MISMATCH (see above)"; exit 5; fi
+  mv -f "$STATE_DIR/apply.json" "$STATE_DIR/rolled-back-$id.json"
+  TMP="$(mktemp -d)"
+  if why="$(update_gate "$TMP/rb.log")"; then echo "$(ts) rollback on $HOST_LABEL: $(grep -c . "$bk/sha-before") file(s) restored byte-identical, $(grep -c . "$bk/created") removed; apt-get update ok"
+  else echo "$(ts) rollback on $HOST_LABEL: files restored byte-identical; apt-get update after rollback: $why"; rm -rf "$TMP"; exit 1; fi
+  rm -rf "$TMP"
+}
+
 cmd="${1:-}"; [ $# -gt 0 ] && shift
 case "$cmd" in
   audit) audit "$@" ;;
+  apply) apply "$@" ;;
+  rollback) rollback "$@" ;;
   version) echo "pft-aptrust $VERSION" ;;
-  *) die "usage: pft-aptrust audit|version (see the header of this script)" 3 ;;
+  *) die "usage: pft-aptrust audit|apply|rollback|version (see the header of this script)" 3 ;;
 esac

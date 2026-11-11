@@ -82,7 +82,7 @@ reset() { # the clean fixture: Ubuntu archive + one https/signed-by vendor sourc
 }
 run() { OUT="$(bash "$S" "$@" 2>&1)"; RC=$?; }
 # output columns are padded: compare with runs of spaces squeezed to one, in the output and the pattern
-sq() { sed -E 's/ {2,}/ /g'; }
+sq() { tr '\t' ' ' | sed -E 's/ {2,}/ /g'; }   # plan lines are tab-separated
 has() { grep -qE "$(sq <<<"$1")" < <(sq <<<"$OUT"); }
 cnt() { grep -cE "$(sq <<<"$1")" < <(sq <<<"$OUT"); }
 
@@ -209,6 +209,106 @@ reset; echo 'HOST_LABEL=Bad Label' > "$T/pft-aptrust.env"; run audit; check "bad
 reset; echo 'EXPIRY_WARN_DAYS=x' > "$T/pft-aptrust.env"; run audit; check "bad EXPIRY_WARN_DAYS: exit 3" '[ "$RC" = 3 ]'
 reset; echo 'HOST_LABEL=sentry' > "$T/pft-aptrust.env"; run audit --textfile; check "HOST_LABEL from env names the textfile" '[ -s "$T/tf/pft_aptrust_sentry.prom" ]'
 run nonsense; check "unknown command: exit 3" '[ "$RC" = 3 ]'
+
+# ---------- apply / rollback ----------
+export PFT_AT_TEST=1 PFT_AT_APTGET="$T/bin/apt-get" PFT_AT_GPGV="$T/bin/gpgv" PFT_AT_MAINT="$T/bin/pft-maint" STATE_DIR="$T/state"
+# stub gpg, extended: --export FPR prints the pub+fpr lines of FPR from the --keyring file; otherwise pub/fpr lines
+cat > "$T/bin/gpg" <<STUB
+#!/bin/bash
+kr=""; ex=""; last=""
+while [ \$# -gt 0 ]; do case "\$1" in --keyring) kr="\$2"; shift ;; --export) ex="\$2"; shift ;; esac; last="\$1"; shift; done
+if [ -n "\$ex" ]; then awk -v f="\$ex" '/^pub:/ { p = \$0; next } /^fpr:/ && index(\$0, f) { print p; print }' "\$kr"; exit 0; fi
+grep -E "^(pub|fpr):" "\$last"; exit 0
+STUB
+# stub gpgv: VALIDSIG <signfpr> if one of the --keyring files holds it (and the signed file exists)
+cat > "$T/bin/gpgv" <<STUB
+#!/bin/bash
+f=\$(cat "$T/signfpr"); hit=0; last=""
+while [ \$# -gt 0 ]; do case "\$1" in --keyring) grep -q "fpr:::::::::\$f:" "\$2" && hit=1; shift ;; esac; last="\$1"; shift; done
+[ -f "\$last" ] && [ "\$hit" = 1 ] || exit 2
+echo "[GNUPG:] VALIDSIG \$f 2026-01-01 0 0 4 0 1 10 01 \$f"
+STUB
+# stub apt-get update: $T/aptget.out (rc in $T/aptget.rc); once a source line carries signed-by and $T/break_after
+# exists, prints a NO_PUBKEY error (a migration that broke verification); $T/drop_after drops one index line
+cat > "$T/bin/apt-get" <<STUB
+#!/bin/bash
+[ "\$1" = update ] || exit 9
+if [ -e "$T/break_after" ] && grep -qs 'signed-by=/etc/apt/keyrings/pft-aptrust' "$RA"/sources.list.d/*.list; then
+  echo "W: GPG error: https://pkg.tp.example/apt stable InRelease: NO_PUBKEY 1111222233334444"; echo "E: The repository is not signed."; exit 100
+fi
+if [ -e "$T/drop_after" ] && grep -qs 'signed-by=/etc/apt/keyrings/pft-aptrust' "$RA"/sources.list.d/*.list; then grep -v pkg.tp.example "$T/aptget.out"; exit 0; fi
+cat "$T/aptget.out"; exit "\$(cat "$T/aptget.rc")"
+STUB
+printf '#!/bin/sh\n[ "$1 $2" = "status --json" ] || exit 9\ncat %s/maint.json\n' "$T" > "$T/bin/pft-maint"
+chmod +x "$T/bin/"*
+VF=1111222233334444555566667777888899990000
+areset() { # clean fixture + a legacy third-party source: key in /etc/apt/trusted.gpg, no signed-by
+  reset; rm -rf "$T/state" "$T/break_after" "$T/drop_after"
+  printf 'pub:-:4096:1:9999000011112222:1600000000:::-:::scESC::::::23::0:\nfpr:::::::::%s:\n' "$VF" > "$RA/trusted.gpg"
+  echo 'deb https://pkg.tp.example/apt stable main' > "$RA/sources.list.d/tp.list"
+  mkdir -p "$T/root/var/lib/apt/lists"; echo signed > "$T/root/var/lib/apt/lists/pkg.tp.example_apt_dists_stable_InRelease"
+  echo "$VF" > "$T/signfpr"
+  printf 'Hit:1 http://archive.ubuntu.com/ubuntu jammy InRelease\nHit:2 https://pkg.tp.example/apt stable InRelease\nReading package lists...\n' > "$T/aptget.out"
+  echo 0 > "$T/aptget.rc"
+  printf '{"window":"active","remaining_sec":1500,"locks":[]}\n' > "$T/maint.json"
+  chmod 644 "$RA/trusted.gpg" "$RA/sources.list.d/tp.list"
+}
+tree() { (cd "$T/root" && find . -printf '%P %m %s\n' | sort && find . -type f -exec sha256sum {} + | sort -k2); }
+KR=/etc/apt/keyrings/pft-aptrust-pkg.tp.example.gpg
+areset; run audit
+check "apply fixture: audit sees legacy keyring FAIL + unsigned source WARN" '[ "$RC" = 1 ] && has "^FAIL  legacy " && has "^WARN  src:/etc/apt/sources.list.d/tp.list:1 third-party source with no signed-by"'
+B="$(tree)"
+run apply; check "apply without --yes: exit 4, nothing written" '[ "$RC" = 4 ] && has "REFUSED - apply changes APT trust files: add --yes" && [ "$(tree)" = "$B" ]'
+echo '{"window":"none","remaining_sec":0,"locks":[]}' > "$T/maint.json"; run apply --yes
+check "apply without a maint window: exit 4" '[ "$RC" = 4 ] && has "REFUSED - no active pft-maint window" && [ "$(tree)" = "$B" ]'
+echo '{"window":"active","remaining_sec":300,"locks":[]}' > "$T/maint.json"; run apply --yes
+check "apply with < MAINT_MIN left: exit 4" '[ "$RC" = 4 ] && has "REFUSED - pft-maint window has 300 s left" && [ "$(tree)" = "$B" ]'
+echo '{"window":"active","remaining_sec":1500,"locks":[{"name":"x"}]}' > "$T/maint.json"; run apply --yes
+check "apply with a data-collection lock: exit 4" '[ "$RC" = 4 ] && has "REFUSED - 1 pft-maint data-collection lock" && [ "$(tree)" = "$B" ]'
+printf '{"window":"active","remaining_sec":1500,"locks":[]}\n' > "$T/maint.json"
+run apply --dry-run
+check "dry-run: plan sign + drop, nothing written" '[ "$RC" = 0 ] && has "plan sign /etc/apt/sources.list.d/tp.list 1 https://pkg.tp.example/apt $KR $VF" && has "plan drop /etc/apt/trusted.gpg" && has "dry-run: nothing written" && [ "$(tree)" = "$B" ] && [ ! -e "$T/state" ]'
+echo 100 > "$T/aptget.rc"; run apply --yes
+check "pre-gate apt-get update fails: refused, nothing written" '[ "$RC" = 4 ] && has "REFUSED - pre-apply gate: apt-get update exit 100" && [ "$(tree)" = "$B" ]'
+echo 0 > "$T/aptget.rc"; echo "W: GPG error: x InRelease: NO_PUBKEY 1234" >> "$T/aptget.out"; run apply --yes
+check "pre-gate signature error: refused, nothing written" '[ "$RC" = 4 ] && has "REFUSED - pre-apply gate: apt-get update reported: W: GPG error" && [ "$(tree)" = "$B" ]'
+areset; B="$(tree)"; run apply --yes
+check "apply: exit 0, verify ok" '[ "$RC" = 0 ] && has "verify ok: apt-get update exit 0, no signature error, 2 index\(es\) before = 2 after; 1 source"'
+check "apply: source line now has signed-by" 'grep -qx "deb \[signed-by=$KR\] https://pkg.tp.example/apt stable main" "$RA/sources.list.d/tp.list"'
+check "apply: new keyring holds exactly the signer key, 0644" 'grep -q "fpr:::::::::$VF:" "$T/root$KR" && [ "$(grep -c "^pub:" "$T/root$KR")" = 1 ] && [ "$(stat -c %a "$T/root$KR")" = 644 ]'
+check "apply: legacy trusted.gpg dropped" '[ ! -e "$RA/trusted.gpg" ]'
+run audit; check "after apply: audit exit 0 (legacy + unsigned findings gone)" '[ "$RC" = 0 ] && has "^PASS  src:/etc/apt/sources.list.d/tp.list:1 https \+ signed-by $KR"'
+run apply --yes; check "second apply while the first is in place: exit 4" '[ "$RC" = 4 ] && has "REFUSED - the last apply .* is still in place"'
+run rollback; check "rollback without --yes: exit 4" '[ "$RC" = 4 ]'
+run rollback --yes
+check "rollback: exit 0, tree byte-identical to before apply (bytes, modes, removed keyring)" '[ "$RC" = 0 ] && has "rollback on validator: 2 file\(s\) restored byte-identical, 1 removed; apt-get update ok" && [ "$(tree | grep -v "^var/lib/apt/lists\|^$")" = "$(grep -v "^var/lib/apt/lists\|^$" <<<"$B")" ]'
+check "rollback: apply record archived" '[ ! -e "$T/state/apply.json" ] && ls "$T/state"/rolled-back-*.json >/dev/null'
+run rollback --yes; check "rollback with no apply on record: exit 4" '[ "$RC" = 4 ] && has "REFUSED - no apply on record"'
+areset; sed -i 's#^deb #deb [arch=amd64] #' "$RA/sources.list.d/tp.list"; run apply --yes
+check "apply into an existing [options] block" '[ "$RC" = 0 ] && grep -qx "deb \[signed-by=$KR arch=amd64\] https://pkg.tp.example/apt stable main" "$RA/sources.list.d/tp.list"'
+areset; B="$(tree)"; touch "$T/break_after"; run apply --yes
+check "post-gate NO_PUBKEY: exit 1, auto-restored byte-identical, no apply record" '[ "$RC" = 1 ] && has "VERIFY FAILED: post-gate:\[apt-get update exit 100\]" && has "restored; apt-get update after restore ok" && [ "$(tree)" = "$B" ] && [ ! -e "$T/state/apply.json" ]'
+areset; B="$(tree)"; touch "$T/drop_after"; run apply --yes
+check "post-gate lost an index: exit 1, restored" '[ "$RC" = 1 ] && has "VERIFY FAILED: lost-index:\[https://pkg.tp.example/apt stable;\]" && [ "$(tree)" = "$B" ]'
+areset; B="$(tree)"; OUT="$(VERIFY_INJECT=drill bash "$S" apply --yes 2>&1)"; RC=$?
+check "VERIFY_INJECT: exit 1, restored byte-identical" '[ "$RC" = 1 ] && has "VERIFY FAILED: injected:drill" && [ "$(tree)" = "$B" ]'
+areset; mkdir -p "$T/root/etc/apt/keyrings"; echo other > "$T/root$KR"; chmod 644 "$T/root$KR"; B="$(tree)"; run apply --yes
+check "target keyring already exists: refused, nothing written" '[ "$RC" = 4 ] && has "REFUSED - $KR already exists" && [ "$(tree)" = "$B" ]'
+areset; printf 'pub:-:4096:1:AAAA000011112222:1600000000:::-:::scESC::::::23::0:\nfpr:::::::::%s:\n' AAAA0000111122223333444455556666777788ZZ >> "$RA/trusted.gpg"; run apply --yes
+check "global keyring with an unused extra key: source signed, keyring kept (manual)" '[ "$RC" = 0 ] && [ -e "$RA/trusted.gpg" ] && has "manual /etc/apt/trusted.gpg keeps key\(s\) no source here is signed by" && grep -q "signed-by=$KR" "$RA/sources.list.d/tp.list"'
+areset; rm "$T/root/var/lib/apt/lists/"*; run apply --yes
+check "no cached InRelease: manual, keyring kept, nothing to apply" '[ "$RC" = 0 ] && has "manual /etc/apt/sources.list.d/tp.list:1 no cached InRelease" && has "nothing to apply" && [ -e "$RA/trusted.gpg" ]'
+areset; echo 0000000000000000000000000000000000000000 > "$T/signfpr"; run apply --yes
+check "InRelease verifies with no global key: manual, nothing written" '[ "$RC" = 0 ] && has "verifies with no global key" && has "nothing to apply"'
+areset; rm "$RA/sources.list.d/tp.list"; printf 'Types: deb\nURIs: https://pkg.tp.example/apt\nSuites: stable\nComponents: main\n' > "$RA/sources.list.d/tp.sources"; chmod 644 "$RA/sources.list.d/tp.sources"; run apply --yes
+check "deb822 without Signed-By: manual, legacy keyring NOT dropped" '[ "$RC" = 0 ] && has "manual /etc/apt/sources.list.d/tp.sources:1 deb822 stanza without Signed-By" && [ -e "$RA/trusted.gpg" ] && ! has "plan drop"'
+areset; chmod 666 "$RA/keyrings/vendor.gpg"; chmod 775 "$RA/sources.list.d"; B="$(tree)"; run apply --yes
+check "perm fixes: keyring 0644, sources.list.d 0755" '[ "$RC" = 0 ] && [ "$(stat -c %a "$RA/keyrings/vendor.gpg")" = 644 ] && [ "$(stat -c %a "$RA/sources.list.d")" = 755 ]'
+run rollback --yes
+check "rollback restores the old modes (666 / 775) byte-identical" '[ "$RC" = 0 ] && [ "$(stat -c %a "$RA/keyrings/vendor.gpg")" = 666 ] && [ "$(stat -c %a "$RA/sources.list.d")" = 775 ]'
+areset; run apply --yes; bk="$(jq -r .backup "$T/state/apply.json")"
+( cd "$T" && mkdir -p evil/etc/apt/sources.list.d && echo tampered > evil/etc/apt/sources.list.d/tp.list && tar -C evil -cf "$bk/files.tar" etc/apt/sources.list.d/tp.list ); run rollback --yes
+check "rollback whose backup restores wrong bytes: exit 5 RESTORE MISMATCH" '[ "$RC" = 5 ] && has "RESTORE MISMATCH /etc/apt/sources.list.d/tp.list"'
 
 # ---------- real gpg: the colon parser against a real keyring ----------
 if command -v gpg >/dev/null; then
