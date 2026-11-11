@@ -29,6 +29,7 @@ rule_files:
   - /etc/pft-alerts/schedaudit.rules.yml  # ../schedaudit (cron/anacron/at/timer entry points: new/removed vs accepted set, unallowlisted findings; stale collector)
   - /etc/pft-alerts/backupwatch.rules.yml # ../backupwatch (pft-backup archive stale/broken, config drift a backup missed, no verified off-host replica; stale collector)
   - /etc/pft-alerts/kmod.rules.yml        # ../kmod (deny-list module loaded or loadable, required module blocked, autoload guard off; stale collector)
+  - /etc/pft-alerts/histarchive.rules.yml # ../histarchive (ledger history archive follower stale/behind, verification failed or new gap, off-host replica missing/stale/altered)
   - /etc/pft-slo/*.rules.yml    # ../slo (availability SLO + burn-rate alerts); run-stack.sh mounts it
 alerting:
   alertmanagers:

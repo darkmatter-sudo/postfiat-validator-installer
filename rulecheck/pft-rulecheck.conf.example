@@ -60,3 +60,10 @@ require pft_schedaudit_sentry.prom
 textfile pft_backupwatch_*.prom   45m   pft_backupwatch_collect_timestamp_seconds
 require pft_backupwatch_validator.prom
 require pft_backupwatch_sentry.prom
+# pft-histarchive (5-minute periodic: follower metrics every run; verify + replica compare daily and after each seal)
+textfile pft_histarchive_follow.prom    15m   -
+textfile pft_histarchive.prom           27h   pft_histarchive_verify_timestamp_seconds
+textfile pft_histarchive_replica.prom   27h   pft_histarchive_replica_check_timestamp_seconds
+require pft_histarchive_follow.prom
+require pft_histarchive.prom
+require pft_histarchive_replica.prom
