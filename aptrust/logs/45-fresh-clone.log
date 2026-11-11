@@ -1,0 +1,58 @@
+OS: Ubuntu 22.04.5 LTS | 2026-11-11T11:24:47Z | aptrust fresh-clone verification at a89c719c77a093a0e8ab3302ed3ac48127c57540 | shellcheck 0.8.0 | Python 3.10.12 | jq-1.6 | gpg (GnuPG) 2.2.27
+(work dir: a new mktemp dir under ~/.cache, mode 755; /tmp is noexec on this host)
+$ env -u GH_TOKEN -u GITHUB_TOKEN GIT_TERMINAL_PROMPT=0 git -c credential.helper= clone -q https://github.com/darkmatter-sudo/postfiat-validator-installer.git repo
+(exit 0)
+$ git checkout -q a89c719c77a093a0e8ab3302ed3ac48127c57540 && git rev-parse HEAD
+a89c719c77a093a0e8ab3302ed3ac48127c57540
+(exit 0)
+$ git status --short | wc -l
+0
+(exit 0)
+$ sha256sum aptrust/pft-aptrust.sh aptrust/install.sh aptrust/systemd/* aptrust/drill/*.sh aptrust/tests/* alerts/aptrust.rules.yml alerts/aptrust.tests.yml
+0e7722706169d1af4d5fac63341ade4804e3d5faa406ecf31911535c25fb835b  aptrust/pft-aptrust.sh
+7ee13e894391dcec739bf932a767946bc405193c3095f51ed8be136657296ceb  aptrust/install.sh
+5eda4d742e76b244c86e8c80a453884b36c988f58ba83cc2d1509df5159694f4  aptrust/systemd/pft-aptrust.service
+7b2dabe7abd89a9c59f7c81870bc8a60c4ef75728466de7f81a378dff3d3ab72  aptrust/systemd/pft-aptrust.timer
+f90d3fc720d261f3c0435cb406f613de21d5f7890d41e0f1707235a7dc5ba6c9  aptrust/drill/fresh-clone.sh
+4f58006c6b41879cec53a5d742267e17014c709deca6d3627e36a16a0506c5ad  aptrust/drill/install-run.sh
+e5bb1150243c2bd78b2759144ccd61377ad2181f903bec3dd8a548a10ed77617  aptrust/drill/live-run.sh
+33c88c9037c1d260c39851bfe02c486d70155a2737767851f51230982ff6e612  aptrust/tests/mutate.py
+4dc05761f96af70c277027150eff1ec22391cc22332562ed3d2463827825af2f  aptrust/tests/orphan-controls.sh
+411d4e983913cdac4c16142da5566bac37f722f8b2703dd4a5ade42b14c036b6  aptrust/tests/run-tests.sh
+ac7d5a23dd3a75542847004734c63c196c97dbc757947c282aa93e085e0dea25  alerts/aptrust.rules.yml
+1f4610c6064c390ffe123778f1b46f263a3b789ee71923b40b9584db6fc8b30e  alerts/aptrust.tests.yml
+(exit 0)
+== static checks
+$ shellcheck aptrust/pft-aptrust.sh aptrust/install.sh aptrust/tests/run-tests.sh aptrust/tests/orphan-controls.sh aptrust/drill/*.sh
+(exit 0)
+$ bash -n aptrust/pft-aptrust.sh && python3 -m py_compile aptrust/tests/mutate.py && echo syntax ok
+syntax ok
+(exit 0)
+== fixture suite
+$ TEST_TMPDIR=~/.cache/tmp.8EFDKCkO84 bash aptrust/tests/run-tests.sh | tail -n 3
+PASS real gpg: only the expired key -> FAIL no usable key (the only FAIL)
+PASS real gpg: armored Ed25519 keyring -> PASS
+RESULT: 153/153 passed
+(exit 0)
+== promtool
+$ docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /w prom/prometheus:v3.5.0 test rules aptrust.tests.yml
+  SUCCESS
+
+(exit 0)
+$ docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /w prom/prometheus:v3.5.0 check rules aptrust.rules.yml
+Checking aptrust.rules.yml
+  SUCCESS: 2 rules found
+
+(exit 0)
+== mutation harness: not re-run here (91 mutants x the full suite is ~70 min); the recorded run is logs/43, made
+   at de6189ef01382f10bab8b8b5204dacdc0f89bf6b; the mutated files and the suite must be unchanged since then (0 below).
+   (tests/mutate.py itself changed after it: orphan-check fix, logs/44)
+$ git diff de6189ef01382f10bab8b8b5204dacdc0f89bf6b HEAD -- aptrust/pft-aptrust.sh aptrust/tests/run-tests.sh alerts/aptrust.rules.yml alerts/aptrust.tests.yml | wc -l
+0
+(exit 0)
+$ git diff --stat de6189ef01382f10bab8b8b5204dacdc0f89bf6b HEAD -- aptrust/tests
+ aptrust/tests/mutate.py          | 25 +++++++++++++++++++++----
+ aptrust/tests/orphan-controls.sh | 27 +++++++++++++++++++++++++++
+ 2 files changed, 48 insertions(+), 4 deletions(-)
+(exit 0)
+fresh-clone done 2026-11-11T11:26:35Z
