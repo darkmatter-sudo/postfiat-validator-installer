@@ -1,0 +1,89 @@
+OS: Ubuntu 22.04.5 LTS | 2026-11-11T03:44:02Z | histarchive fresh-clone verification at 3666a37bfbb74a79c1ebf8c534fe8fc98c7b5d67 | python3 3.10.12 | age 1.0.0 | shellcheck 0.8.0 | ruff 0.17.1
+(work dir: a new mktemp dir under ~/.cache, mode 755; /tmp is noexec on this host)
+$ git clone -q https://github.com/darkmatter-sudo/postfiat-validator-installer.git repo
+(exit 0)
+$ git checkout -q 3666a37bfbb74a79c1ebf8c534fe8fc98c7b5d67 && git rev-parse HEAD
+3666a37bfbb74a79c1ebf8c534fe8fc98c7b5d67
+(exit 0)
+$ git status --short | wc -l
+0
+(exit 0)
+$ sha256sum histarchive/histarchive.py histarchive/lib_hashverify.py histarchive/pft-histarchive.sh histarchive/install.sh histarchive/diskcost.py histarchive/systemd/* alerts/histarchive.rules.yml alerts/histarchive.tests.yml
+089b828e1215e35ce12ddd9a02aa85613ab7ccee2820bd2ca7079f14431efbb3  histarchive/histarchive.py
+64ec1dacc49fcc955975a6c5f5ee85d657c9c7921dbe0ef15cd9b9411ef4e414  histarchive/lib_hashverify.py
+63c0f60aaa1d1ada3e45e4c0644acdb893e5d3f2cf89c864891c3dda4908c961  histarchive/pft-histarchive.sh
+67e7f780fe8c62a48581389560ea5a4edc9a084f30bf729dfb79c24bfc616d51  histarchive/install.sh
+3643dd83ffdf21ac538c6b1c87baf0a9bb6b53a1aeff518f6c887cf94718b54e  histarchive/diskcost.py
+fb56ee0c134d9bc1da530907f0700fe7a96fd217863d1373f73d8afd71aab028  histarchive/systemd/pft-histarchive-periodic.service
+5fd21d6abe830331df8fbd5dda244fbcf3034fc6f97d398cd0f8a6561927858d  histarchive/systemd/pft-histarchive-periodic.timer
+533d9996be4b0595f4feb3e56b09992f5d4aff0c1482a064766a8f3eb5ec6375  histarchive/systemd/pft-histarchive.service
+8de625c1dd8634b271f4f80921df8954abb1e02dbea21f19f562cbd92e671e48  alerts/histarchive.rules.yml
+d9e5b15deaccb8398c43837f0601f7a46e3d8c0ef3a70496153631b6ff04b618  alerts/histarchive.tests.yml
+(exit 0)
+$ sha256sum histarchive/logs/data/live-run-1/segments/2026-11-10.jsonl.gz histarchive/logs/data/live-run-1/active-2026-11-11.jsonl.gz histarchive/logs/data/live-run-1/xc-public-final.jsonl
+70b4ad7c1d93efa395ad535957c033d363b46ed4a19eb25f3d393935f856342a  histarchive/logs/data/live-run-1/segments/2026-11-10.jsonl.gz
+1690d1fdb607195d689f7c7e13690c209e7b68c97316a7cf558c1cd728be2aa4  histarchive/logs/data/live-run-1/active-2026-11-11.jsonl.gz
+fe3ee01f181d11ed92f18dd7be1a68d1f19a7cbb670afef161804c81bebf09a1  histarchive/logs/data/live-run-1/xc-public-final.jsonl
+(exit 0)
+== static checks
+$ shellcheck histarchive/pft-histarchive.sh histarchive/install.sh histarchive/drill/*.sh
+(exit 0)
+$ ruff check histarchive
+All checks passed!
+(exit 0)
+$ ruff format --check histarchive/histarchive.py histarchive/diskcost.py histarchive/tests
+6 files already formatted
+(exit 0)
+$ python3 -m py_compile histarchive/histarchive.py histarchive/lib_hashverify.py histarchive/diskcost.py && echo compiled
+compiled
+(exit 0)
+== fixture tests (fake JSON-RPC node, real age)
+$ cd histarchive && TMPDIR=~/.cache/ha-fresh.UcJGnb/t TEST_TMPDIR=~/.cache/ha-fresh.UcJGnb/t timeout 900 python3 -m unittest tests/test_histarchive.py tests/test_wrapper.py tests/test_diskcost.py </dev/null > ~/.cache/ha-fresh.UcJGnb/unit.txt 2>&1
+(exit 0)
+$ tail -n 4 ~/.cache/ha-fresh.UcJGnb/unit.txt
+----------------------------------------------------------------------
+Ran 65 tests in 92.141s
+
+OK
+(exit 0)
+== promtool (pinned image already on the host)
+$ docker run --rm -v ~/.cache/ha-fresh.UcJGnb/repo/alerts:/w:ro -w /w --entrypoint promtool prom/prometheus:v3.5.0 check rules histarchive.rules.yml
+Checking histarchive.rules.yml
+  SUCCESS: 3 rules found
+
+(exit 0)
+$ docker run --rm -v ~/.cache/ha-fresh.UcJGnb/repo/alerts:/w:ro -w /w --entrypoint promtool prom/prometheus:v3.5.0 test rules histarchive.tests.yml
+  SUCCESS
+
+(exit 0)
+== offline re-verify of the published six-hour live-run data (no node, no RPC)
+$ mkdir -p ~/.cache/ha-fresh.UcJGnb/live-archive/segments ~/.cache/ha-fresh.UcJGnb/live-archive/active && cp histarchive/logs/data/live-run-1/MANIFEST.jsonl histarchive/logs/data/live-run-1/state.json ~/.cache/ha-fresh.UcJGnb/live-archive/ && cp histarchive/logs/data/live-run-1/segments/2026-11-10.jsonl.gz ~/.cache/ha-fresh.UcJGnb/live-archive/segments/ && gunzip -c histarchive/logs/data/live-run-1/active-2026-11-11.jsonl.gz > ~/.cache/ha-fresh.UcJGnb/live-archive/active/2026-11-11.jsonl
+(exit 0)
+$ python3 -u histarchive/histarchive.py verify --dir ~/.cache/ha-fresh.UcJGnb/live-archive > ~/.cache/ha-fresh.UcJGnb/verify.txt
+(exit 0)
+$ tail -n 1 ~/.cache/ha-fresh.UcJGnb/verify.txt
+RESULT: PASS - segments 1 active 1 ledgers 7479 (7937915-7945393) txs 2606 gaps 0 (0 ledgers) fails 0
+(exit 0)
+$ python3 -u histarchive/histarchive.py crosscheck --dir ~/.cache/ha-fresh.UcJGnb/live-archive --offline histarchive/logs/data/live-run-1/xc-public-final.jsonl --seed 20261111 --sample 60 > ~/.cache/ha-fresh.UcJGnb/xc.txt
+(exit 0)
+$ tail -n 1 ~/.cache/ha-fresh.UcJGnb/xc.txt
+RESULT: PASS - 60/60 MATCH, 0 not matching
+(exit 0)
+$ grep -c '^MATCH' ~/.cache/ha-fresh.UcJGnb/xc.txt
+60
+(exit 0)
+$ python3 -u histarchive/histarchive.py crosscheck --dir ~/.cache/ha-fresh.UcJGnb/live-archive --offline histarchive/logs/data/live-run-1/xc-public-final.jsonl --seed 20261111 --sample 60 --negative > ~/.cache/ha-fresh.UcJGnb/neg.txt
+(exit 1)
+$ tail -n 1 ~/.cache/ha-fresh.UcJGnb/neg.txt
+RESULT: FAIL - 0/60 MATCH, 60 not matching
+(exit 0)
+== live-run code (dde88f8) vs this commit: function-level AST compare of histarchive.py
+$ python3 (ast.dump of every function at dde88f8 vs 3666a37bfbb74a79c1ebf8c534fe8fc98c7b5d67)
+changed: ['cmd_verify', 'crosscheck_loop', 'main', 'verify_metrics', 'write_prom']
+added: ['cmd_replica_compare'] removed: []
+unchanged: ['__init__', '_handle', 'active_days', 'active_path', 'add_gap', 'append_line', 'atomic_write', 'call', 'canon', 'check_record', 'cmd_cipher_index', 'cmd_crosscheck', 'cmd_follow', 'cmd_replica_check', 'cmd_seal', 'cmd_status', 'day_of', 'drop_torn_tail', 'entry_hash', 'follow', 'fsync_dir', 'gap_ranges', 'iter_records', 'last_archived', 'last_line_record', 'log', 'manifest_entries', 'mkdirs', 'oldest_complete', 'open_log', 'parse_header', 'read_jsonl', 'read_segment', 'record_from_rpc', 'seal_day', 'seg_path', 'sha256_file', 'tx_ids', 'utcnow', 'verify_archive']
+(exit 0)
+$ git diff --stat dde88f88dee154a510ed4ef3dfa09fc8e67c8614 3666a37bfbb74a79c1ebf8c534fe8fc98c7b5d67 -- histarchive/lib_hashverify.py | wc -l
+0
+(exit 0)
+END 2026-11-11T03:45:51Z (work dir removed)
