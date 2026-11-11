@@ -13,14 +13,17 @@
 #   sudo ./install.sh --pull NAME --uninstall   disables that timer and removes the pulled textfile
 # Conf: /etc/pft-peerwatch.env (root-owned) from pft-peerwatch.env.example if absent; never overwritten.
 # Alert rules: ../alerts/peerwatch.rules.yml, listed in ../alerts/prometheus.yml in the same commit as the install.
-# Afterwards (fleet installs do this themselves): pft-integrity accept, pft-schedaudit accept + collect,
-# pft-jobwatch inventory (new timers), pft-rulecheck lines for pft_peerwatch_*.prom.
+# pft-rulecheck: if /etc/pft-rulecheck.conf exists, the textfile age line (5m) and `require pft_peerwatch_NAME.prom`
+# are appended once (uninstall removes the require line).
+# Afterwards: pft-integrity accept, pft-schedaudit accept + collect, pft-jobwatch inventory (new timers).
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEXTDIR=/var/lib/pft-exporter/textfile
 STATEDIR=/var/lib/pft-peerwatch
 LIBDIR=/usr/local/lib/pft-peerwatch
 CONF=/etc/pft-peerwatch.env
+RC_CONF=/etc/pft-rulecheck.conf
+RC_LINE="textfile pft_peerwatch_*.prom   5m   pft_peerwatch_collect_timestamp_seconds"
 name=postfiatd; uninstall=false; pull=""
 log() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*"; }
 [ "$(id -u)" -eq 0 ] || { echo "run as root" >&2; exit 3; }
@@ -36,6 +39,14 @@ done
 valid() { [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || { echo "bad container name" >&2; exit 3; }; }
 valid "$name"
 
+rc_add() { # $1 = exact line; appended once to the pft-rulecheck conf if pft-rulecheck is installed
+  [ -f "$RC_CONF" ] || return 0
+  grep -qxF "$1" "$RC_CONF" || { echo "$1" >> "$RC_CONF"; log "added to $RC_CONF: $1"; }
+}
+rc_del() { # $1 = container: drop its require line (the shared textfile line stays)
+  [ ! -f "$RC_CONF" ] || sed -i "/^require pft_peerwatch_$1\.prom\$/d" "$RC_CONF"
+}
+
 install_bin() {
   install -m 755 "$HERE/pft-peerwatch.sh" /usr/local/bin/pft-peerwatch
   install -d -m 755 "$LIBDIR"
@@ -44,8 +55,8 @@ install_bin() {
   log "installed $LIBDIR/peerwatch_parse.py (sha256 $(sha256sum < "$HERE/peerwatch_parse.py" | cut -c1-64))"
   mkdir -p "$TEXTDIR"; chmod 755 "$TEXTDIR"
   if [ ! -e "$CONF" ]; then
-    install -m 644 "$HERE/pft-peerwatch.env.example" "$CONF"
-    log "created $CONF from pft-peerwatch.env.example"
+    sed "s/^CONTAINER=.*/CONTAINER=$name/" "$HERE/pft-peerwatch.env.example" > "$CONF.tmp" && chmod 644 "$CONF.tmp" && mv -f "$CONF.tmp" "$CONF"
+    log "created $CONF from pft-peerwatch.env.example (CONTAINER=$name)"
   fi
   [ "$(stat -c %u "$CONF")" = 0 ] || { echo "$CONF is not root-owned" >&2; exit 3; }
 }
@@ -54,7 +65,7 @@ if [ -n "$pull" ]; then
   valid "$pull"
   if $uninstall; then
     systemctl disable --now "pft-peerwatch-pull@$pull.timer" 2>/dev/null || true
-    rm -f "$TEXTDIR/pft_peerwatch_$pull.prom"
+    rm -f "$TEXTDIR/pft_peerwatch_$pull.prom"; rc_del "$pull"
     log "disabled pft-peerwatch-pull@$pull.timer, removed the pulled textfile"
     exit 0
   fi
@@ -70,12 +81,14 @@ if [ -n "$pull" ]; then
   fi
   grep -E "^pft_peerwatch_(up|collect_timestamp_seconds|status)\{" "$TEXTDIR/pft_peerwatch_$pull.prom"
   systemctl enable --now "pft-peerwatch-pull@$pull.timer"
+  grep -qF 'pft_peerwatch_*.prom' "$RC_CONF" 2>/dev/null || rc_add "$RC_LINE"
+  rc_add "require pft_peerwatch_$pull.prom"
   log "enabled pft-peerwatch-pull@$pull.timer (every minute at :55)"
   exit 0
 fi
 if $uninstall; then
   systemctl disable --now "pft-peerwatch@$name.timer" 2>/dev/null || true
-  rm -f "$TEXTDIR/pft_peerwatch_$name.prom"
+  rm -f "$TEXTDIR/pft_peerwatch_$name.prom"; rc_del "$name"
   log "disabled pft-peerwatch@$name.timer, removed its textfile (kept $STATEDIR and the shared units/script)"
   exit 0
 fi
@@ -96,3 +109,5 @@ grep -E "^pft_peerwatch_(up|peers|fixed_link_up|status)\{" "$f"
 grep -qx "pft_peerwatch_up{container=\"$name\"} 1" "$f" || { log "ERROR: up != 1"; exit 1; }
 systemctl enable --now "pft-peerwatch@$name.timer"
 log "enabled pft-peerwatch@$name.timer (every minute at :25)"
+grep -qF 'pft_peerwatch_*.prom' "$RC_CONF" 2>/dev/null || rc_add "$RC_LINE"
+rc_add "require pft_peerwatch_$name.prom"
