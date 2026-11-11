@@ -545,6 +545,63 @@ class Summary(Base):
         s = json.loads(r.stdout)[0]
         self.assertEqual((s["samples"], s["expected_samples"], s["coverage"]), (1, 2, 0.5))
 
+    def test_summary_in_range_churn(self):
+        # leave at ts 60, 3 joins at ts 300; the collector gauge at 300 (1 leave + 3 joins) also covers ts 60
+        rows = [
+            {
+                "ts": 60,
+                "joins": 0,
+                "leaves": 1,
+                "churn_leaves": 1,
+                "peers": 10,
+                "peers_outbound": 6,
+                "ledger_agree_ratio": 1.0,
+            },
+            {
+                "ts": 300,
+                "joins": 3,
+                "leaves": 0,
+                "churn_joins": 3,
+                "churn_leaves": 1,
+                "peers": 10,
+                "peers_outbound": 6,
+                "ledger_agree_ratio": 1.0,
+            },
+        ]
+        h = self.dump("history-postfiatd.jsonl", "\n".join(json.dumps(r) for r in rows) + "\n")
+        cases = [
+            ([], 4, 4),  # both events inside one 60 min window
+            (["--from", "300"], 3, 4),  # the ts 60 leave is before the range: gauge 4, in-range 3
+            (["--churn-window-min", "3"], 3, 4),  # 240 s apart > 180 s window
+            (["--churn-window-min", "4"], 4, 4),  # 240 s apart = window: inclusive, as in the collector
+        ]
+        for args, in_range, gauge in cases:
+            r = subprocess.run(
+                [sys.executable, "-I", self.SUMMARY, *args, "--json", h],
+                check=False,
+                capture_output=True,
+                text=True,
+                stdin=subprocess.DEVNULL,
+                timeout=30,
+            )
+            self.assertEqual(r.returncode, 0, r.stderr)
+            s = json.loads(r.stdout)[0]
+            self.assertEqual(
+                (s["max_in_range_churn_window_events"], s["max_churn_window_events"]), (in_range, gauge), args
+            )
+        r = subprocess.run(
+            [sys.executable, "-I", self.SUMMARY, "--from", "300", h],
+            check=False,
+            capture_output=True,
+            text=True,
+            stdin=subprocess.DEVNULL,
+            timeout=30,
+        )
+        self.assertIn(
+            "| max join+leave events in one churn window, in-range events only / max flapping peers | 3 / 0 |", r.stdout
+        )
+        self.assertIn("can include events before the range) | 4 |", r.stdout)
+
 
 class StatusAndHistory(Base):
     def test_status_exit_codes(self):

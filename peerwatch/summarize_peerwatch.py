@@ -5,7 +5,11 @@ History lines carry counts, ratios and link tags only (no address or public key)
 summary can be published. Per container: samples and coverage (expected one a minute), re-baselines, minutes per grade
 of every check, joins/leaves, latency, version mix, outbound diversity, ledger agreement and fixed-link downtime.
 
-Usage: summarize_peerwatch.py [--from EPOCH] [--to EPOCH] [--json] history-postfiatd.jsonl [history-...jsonl ...]
+The collector's churn gauge (churn_joins/churn_leaves) is a rolling CHURN_WINDOW_MIN window, so rows near --from can
+carry events from before the range. The summary therefore also recomputes the same window from in-range joins/leaves
+only (max_in_range_churn_window_events); --churn-window-min must match the collector's CHURN_WINDOW_MIN.
+
+Usage: summarize_peerwatch.py [--from EPOCH] [--to EPOCH] [--churn-window-min N] [--json] history-postfiatd.jsonl [...]
 """
 
 import argparse
@@ -43,7 +47,12 @@ def q(values, p):
     return s[max(1, -(-p * len(s) // 100)) - 1] if s else None
 
 
-def summarize(name, rows, bad, lo, hi):
+def in_range_churn(rows, window_s):
+    ev = [(r["ts"], r.get("joins", 0) + r.get("leaves", 0)) for r in rows]
+    return max((sum(n for t, n in ev if 0 <= ts - t <= window_s) for ts, _ in ev), default=0)
+
+
+def summarize(name, rows, bad, lo, hi, churn_window_min=60):
     out = {"container": name, "samples": len(rows), "unparsed_lines": bad}
     if not rows:
         return out
@@ -71,6 +80,7 @@ def summarize(name, rows, bad, lo, hi):
     out["status_samples"] = {k: sum(1 for r in rows if r.get("status") == k) for k in ("PASS", "WARN", "FAIL")}
     out["joins"] = sum(r.get("joins", 0) for r in rows)
     out["leaves"] = sum(r.get("leaves", 0) for r in rows)
+    out["max_in_range_churn_window_events"] = in_range_churn(rows, churn_window_min * 60)
     out["max_churn_window_events"] = max(r.get("churn_joins", 0) + r.get("churn_leaves", 0) for r in rows)
     out["max_flapping_peers"] = max(r.get("churn_flapping_peers", 0) for r in rows)
     peers = [r["peers"] for r in rows if isinstance(r.get("peers"), int)]
@@ -124,7 +134,8 @@ def md(sums, lo, hi):
             f"| peers min / median / max | {' / '.join(str(x) for x in s['peers_min_median_max'])} |",
             f"| outbound min / median / max | {' / '.join(str(x) for x in s['outbound_min_median_max'])} |",
             f"| joins / leaves (by public key) | {s['joins']} / {s['leaves']} |",
-            f"| max join+leave events in one churn window / max flapping peers | {s['max_churn_window_events']} / {s['max_flapping_peers']} |",
+            f"| max join+leave events in one churn window, in-range events only / max flapping peers | {s['max_in_range_churn_window_events']} / {s['max_flapping_peers']} |",
+            f"| max collector churn gauge (rolling window, can include events before the range) | {s['max_churn_window_events']} |",
             f"| latency p50 (median of samples) | {s['latency_p50_median_ms']} ms |",
             f"| latency p95: median / max / p99 of samples | {s['latency_p95_median_max_ms'][0]} / {s['latency_p95_median_max_ms'][1]} / {s['latency_p95_p99_of_samples_ms']} ms |"
             if s["latency_p95_median_max_ms"]
@@ -148,6 +159,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--from", dest="lo", type=int)
     ap.add_argument("--to", dest="hi", type=int)
+    ap.add_argument("--churn-window-min", type=int, default=60)
     ap.add_argument("--json", action="store_true")
     ap.add_argument("files", nargs="+")
     a = ap.parse_args()
@@ -155,7 +167,7 @@ def main():
     for f in a.files:
         name = os.path.basename(f).removeprefix("history-").removesuffix(".jsonl")
         rows, bad = load(f, a.lo, a.hi)
-        sums.append(summarize(name, rows, bad, a.lo, a.hi))
+        sums.append(summarize(name, rows, bad, a.lo, a.hi, a.churn_window_min))
     sys.stdout.write(json.dumps(sums, indent=1, sort_keys=True) + "\n" if a.json else md(sums, a.lo, a.hi))
     return 0
 
