@@ -1,0 +1,10 @@
+control suite (unmutated copy): PASS RESULT: 150/150 passed
+control promtool (unmutated copy): PASS SUCCESS
+A37 CAUGHT - compose: ${VAR:-default} not resolved [9 failing: clean: compose ${NETWORK:-devnet} resolved from the project .env (testnet), official INFO; compose: no project .env -> ${NETWORK:-devnet} takes its default]
+A50 CAUGHT - compose: project .env never read (working_dir label ignored) [5 failing: clean: compose ${NETWORK:-devnet} resolved from the project .env (testnet), official INFO; compose: single-quoted .env value used (mainnet)]
+A51 CAUGHT - compose: .env value ignored (always the default) [5 failing: clean: compose ${NETWORK:-devnet} resolved from the project .env (testnet), official INFO; compose: single-quoted .env value used (mainnet)]
+A52 CAUGHT - compose: :- does not replace an empty value [1 failing: compose: empty NETWORK= with :- -> default]
+A53 CAUGHT - compose: .env quotes kept [2 failing: clean: compose ${NETWORK:-devnet} resolved from the project .env (testnet), official INFO; compose: single-quoted .env value used (mainnet)]
+A54 CAUGHT - compose: unset ${VAR} without default becomes empty, not its name [1 failing: compose: unset ${REG} without default -> its name]
+orphan check: 0 process(es) still running from mutant copies
+RESULT: 6 caught, 0 survived, 0 not applied, 0 broken of 6 (--only subset of 89)

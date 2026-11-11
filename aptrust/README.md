@@ -36,7 +36,7 @@ One line per check: `PASS`, `INFO`, `WARN` or `FAIL`, then `RESULT:`. Exit 0 = n
 | `aptconf:KEY` (`apt-config dump`) | `AllowInsecureRepositories`, `AllowDowngradeToInsecureRepositories`, `AllowWeakRepositories`, `AllowUnauthenticated` true; https `Verify-Peer`/`Verify-Host` false | `Check-Valid-Until`/`Check-Date` false | |
 | `pin:FILE:N` | | `Pin-Priority >= 1000` (allows downgrades), third-party pin > 500 for every package | INFO stock package files |
 | `image:NAME` (running containers) | | `latest`/untagged third-party image, or no RepoDigest (unknown local build) | **INFO official rolling tag** (`agtipft/postfiatd:*-light-latest`, per Post Fiat's validator guide) or known local build; PASS registry RepoDigest |
-| `compose:FILE:N` | | `latest`/untagged | INFO official rolling tag or version tag without digest; PASS `tag@sha256` |
+| `compose:FILE:N` | | `latest`/untagged | INFO official rolling tag or version tag without digest; PASS `tag@sha256`. `${VAR}`, `${VAR:-default}`, `${VAR-default}` are resolved from the project's `.env` (compose `working_dir` label; read as text, never sourced), so `TAG=latest` in `.env` is a WARN |
 | `offpkg:PATH` (`/usr/local/{bin,sbin}`) | group/world-writable or not root-owned | not from a package and not in the allowlist | counted when the path is in the installed manifest copy or `OFFPKG_ALLOW` |
 | `pip:` / `npm:` / `dpkg-local:` | | package installed outside APT (global pip/npm, `dpkg -i` with no archive) | |
 
@@ -85,7 +85,12 @@ sudo ./install.sh --pull                 # validator, after PULL_SSH is set in /
 ```
 
 Then `sudo pft-integrity accept --reason "pft-aptrust installed"`, `sudo pft-schedaudit accept` + `collect`, and
-`sudo pft-jobwatch inventory` (the timer's interval must read 43200).
+`sudo pft-jobwatch inventory` (the timer's interval must read 43200). install.sh adds the `textfile` and `require` lines
+to `/etc/pft-rulecheck.conf`. The files are listed in `../fleet/manifest.tsv`, including the allowlist copy
+(`fleet/manifest.tsv` -> `/usr/local/lib/pft-aptrust/manifest.tsv`), so `pft-fleet sync --addon aptrust` keeps the allowlist
+current. Re-sync aptrust whenever the manifest changes (until then `pft-fleet skew` shows aptrust BEHIND).
+`drill/install-run.sh` is the recorded two-host install, done through pft-fleet inside a pft-maint window with a
+throwaway topic.
 
 ## Tests
 
@@ -97,4 +102,11 @@ docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /
 
 ## Results
 
-(In progress: filled from the published logs after the two-host install, apply/rollback and alert drill.)
+(In progress: apply/rollback and the alert drill are still to be added.)
+
+| step | log | result |
+|---|---|---|
+| install preflight | [31](logs/31-install-preflight.log), [32](logs/32-install-preflight.log) | 31: the pull-ssh probe FAILed because it read `PULL_SSH` from a file that only has `PEER_SSH`, so it ran an empty command. Fixed in the runner (37db036: read pft-kmod's `PULL_SSH`, refuse an empty command); 32: preflight 10/10 |
+| two-host install | [33](logs/33-install-run.log) | 44 ok / 1 FAIL. The FAIL is the final "no rollout alert pending" check. It ran seconds after pft-keyescrow was re-run, before Prometheus had scraped `drift_items 0`, so PFTKeyEscrowStale (reason=drift, pending since the throwaway ntfy.env swap, silenced) was still listed. [34](logs/34-install-aftercheck.log) shows its last pending sample at 08:06:30Z and drift_items 0 on both hosts. The rollout silence was then expired by hand, and the operator topics got 0 messages (read back after the expiry). The runner now polls that check for up to 150 s |
+| FOUND -> FIXED -> VERIFIED | [33](logs/33-install-run.log) step 9 | FOUND (dev audits): offpkg WARN for `/usr/local/bin/pft-sshcrypto` on both hosts, because the sshcrypto add-on was missing from the fleet manifest (installed bytes = repo bytes on both hosts). FIXED: 7 sshcrypto lines added to `fleet/manifest.tsv`. VERIFIED: audit 0 warn / 0 fail on both hosts, offpkg 43 (validator) / 35 (sentry) add-on files match the allowlist, `pft-fleet skew` shows sshcrypto + aptrust CURRENT on both |
+| compose `.env` resolution | [30](logs/30-mutants-dev-compose.log) | new mutants A50-A54 + A37: 6 caught, 0 survived |

@@ -1,0 +1,65 @@
+aptrust two-host install - 2026-11-11T07:52:46Z - Ubuntu 22.04.5 LTS - repo HEAD 67edae8060fc38b1b09ba8205af5008369d6649b (clean: yes)
+
+== 0. preflight (read-only)
+$ sha256sum aptrust/pft-aptrust.sh aptrust/install.sh aptrust/drill/install-run.sh aptrust/systemd/* alerts/aptrust.rules.yml fleet/manifest.tsv
+  6ce6c38e2a15c238a3fb3855737cf287795d8d2ea04f96b0aaa3cf06aa6c5378  aptrust/pft-aptrust.sh
+  7ee13e894391dcec739bf932a767946bc405193c3095f51ed8be136657296ceb  aptrust/install.sh
+  cec82b3053ee5fc26f13b700b9303b27d3ab0d2499e54ed01fc33ae7c3c85f0c  aptrust/drill/install-run.sh
+  5eda4d742e76b244c86e8c80a453884b36c988f58ba83cc2d1509df5159694f4  aptrust/systemd/pft-aptrust.service
+  7b2dabe7abd89a9c59f7c81870bc8a60c4ef75728466de7f81a378dff3d3ab72  aptrust/systemd/pft-aptrust.timer
+  ac7d5a23dd3a75542847004734c63c196c97dbc757947c282aa93e085e0dea25  alerts/aptrust.rules.yml
+  50e83873849b9dd4ccb76aa7bd9c6c660ceea43e0934520c4f515eeaa9693c66  fleet/manifest.tsv
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 232 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 139 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts before install
+$ sudo -n docker exec postfiatd curl -s -m 10 -d '{"method":"server_info"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state; R "sudo -n docker exec postfiatd-sentry curl -s -m 10 -d '{\"method\":\"server_info\"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state"
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ ls /usr/local/bin/pft-aptrust /etc/pft-aptrust.env 2>&1; R 'ls /usr/local/bin/pft-aptrust /etc/pft-aptrust.env 2>&1'
+  ls: cannot access '/usr/local/bin/pft-aptrust': No such file or directory
+  ls: cannot access '/etc/pft-aptrust.env': No such file or directory
+  ls: cannot access '/usr/local/bin/pft-aptrust': No such file or directory
+  ls: cannot access '/etc/pft-aptrust.env': No such file or directory
+  (exit 2)
+CHECK ok   not installed yet on either host
+$ grep -c '^aptrust ' fleet/manifest.tsv; grep -c '^sshcrypto ' fleet/manifest.tsv; grep -c aptrust.rules.yml alerts/prometheus.yml; grep -c pft_aptrust rulecheck/pft-rulecheck.conf.example; grep -c pft_aptrust rulecheck/pft-rulecheck.sentry.conf.example
+  4
+  7
+  1
+  3
+  2
+  (exit 0)
+CHECK ok   HEAD lists 4 aptrust + 7 sshcrypto manifest lines, the rule file and 3 + 2 rulecheck lines
+$ command -v gpg gpgv jq apt-config dpkg | wc -l; R 'command -v gpg gpgv jq apt-config dpkg | wc -l'; sudo -n test -f /etc/pft-rulecheck.conf && echo rc-conf; R 'sudo -n test -f /etc/pft-rulecheck.conf && echo rc-conf'
+  5
+  5
+  rc-conf
+  rc-conf
+  (exit 0)
+CHECK ok   gpg, gpgv, jq, apt-config, dpkg and a pft-rulecheck conf on both hosts
+$ sudo -n env TEXT_BUDGET=999999 pft-jobwatch collect --stdout 2>/dev/null | wc -c; R 'sudo -n env TEXT_BUDGET=999999 pft-jobwatch collect --stdout 2>/dev/null | wc -c'; sudo -n sed -n 's/^TEXT_BUDGET=//p' /etc/pft-jobwatch.env
+  34305
+  17477
+  65000
+  (exit 0)
+CHECK ok   jobwatch textfiles have room for one more timer (validator 34305, sentry 17477, + 1200 <= 65000)
+$ pull_probe
+  0
+  pull-ssh-ok
+  (exit 0)
+CHECK FAIL the pull's ssh command (same as pft-backupwatch's PULL_SSH) reaches the sentry as root's runuser
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+$ curl -s http://<redacted-ip>:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'; curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '.data.alerts[] | "\(.labels.alertname) \(.state)"' | sort | uniq -c
+  0
+        1 PFTAlertPipelineWatchdog firing
+        1 PFTVulnRebootOwed pending
+  (exit 0)
+known pending/firing before the run (accepted by the preflight): PFTVulnRebootOwed
+CHECK ok   no active silence; only the pipeline watchdog (+ KNOWN_PENDING) pending/firing in Prometheus
+preflight failed - stopping before any change
