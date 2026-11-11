@@ -1,0 +1,104 @@
+pft-peerwatch two-host fixed-link drill - 2026-11-11T13:14:11Z - Ubuntu 22.04.5 LTS - run 20261111T131411Z
+repo HEAD 80880d730dd5dd4da1304baea51817d6732fef30 (clean: yes)
+sha256 07c8d507ec9f92f1d31ad3264b70402bb042d396daf81ded05d3f046d0e8dfb6 peerwatch/drill/link-drill.sh
+sha256 b2bd7de5c8a8a6ba6f1e6b2c41fc3578aed0a0a62954c35413b262c42ed4c9f8 peerwatch/pft-peerwatch.sh
+sha256 e5c5f3f208f1f25861c0fa8cab683deeb129e45ed8ecdc87b7c7e16ba669416a peerwatch/peerwatch_parse.py
+sha256 02d3db39bb994f5590cf4e97fa146fd219c0c12811d0ad9542859e143faae412 alerts/peerwatch.rules.yml
+
+== 0. preflight (nothing changed yet)
+  pft-peerwatch installed, collect timers active on both hosts, sentry pull timer active on the validator
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+  sentry address = the relay address in the validator's [ips_fixed]: yes; validator container address 172.18.0.2 (private)
+$ sudo -n iptables -S DOCKER-USER
+  -N DOCKER-USER
+  -A DOCKER-USER -s <redacted-ip>/32 -i br-8cedebf23a84 ! -o br-8cedebf23a84 -m comment --comment "pft-egress:postfiatd" -j PFT-EGRESS
+  -A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state RELATED,ESTABLISHED -j ACCEPT
+  -A DOCKER-USER -p tcp -m tcp --dport 2559 -m connlimit --connlimit-above 50 --connlimit-mask 32 --connlimit-saddr -j DROP
+  -A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -m limit --limit 100/sec --limit-burst 50 -j ACCEPT
+  -A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -j DROP
+  -A DOCKER-USER -j RETURN
+  (exit 0)
+CHECK ok   no drill rule in DOCKER-USER, pft-egress jump at position 1
+$ systemctl list-units --all --no-legend 'pft-peerwatch-drill-deadman*' | wc -l
+  0
+  (exit 0)
+CHECK ok   no pft-peerwatch-drill-deadman unit left over
+$ links_prom
+  container=postfiatd,instance=127.0.0.1:9877,job=postfiat,link=sentry 1
+  container=postfiatd-sentry,instance=127.0.0.1:9877,job=postfiat,link=validator 1
+  (exit 0)
+CHECK ok   Prometheus: fixed_link_up 1 for container=postfiatd link=sentry and container=postfiatd-sentry link=validator
+$ curl -s http://127.0.0.1:9090/api/v1/rules | jq -r '.data.groups[] | select(.name == "pft-peerwatch") | .rules[] | [.name, .health, .state] | @tsv'
+  PFTPeerFixedLinkDown	ok	inactive
+  PFTPeerQualityDegraded	ok	inactive
+  PFTPeerwatchStale	ok	inactive
+  (exit 0)
+CHECK ok   peerwatch rules loaded, healthy, inactive
+$ curl -s http://127.0.0.1:9090/api/v1/alerts | jq -r '.data.alerts[] | "\(.labels.alertname) \(.labels.host // .labels.container // "-") \(.state)"' | sort
+  PFTAlertPipelineWatchdog - firing
+  PFTVulnRebootOwed validator pending
+  (exit 0)
+$ curl -s http://127.0.0.1:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'
+  0
+  (exit 0)
+  bridge mounts the operator env file; sentry alertpath timer active, check OK
+  operator topics to watch: 2 (not printed)
+  postfiatd: server_state=full StartedAt=2026-11-08T06:28:08.182353985Z
+  postfiatd-sentry: server_state=full StartedAt=2026-11-09T18:16:30.378254196Z
+  pft-integrity validator: RESULT: PASS - 241 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity sentry: RESULT: PASS - 145 unchanged, 0 warn, 0 fail -> exit 0
+$ sudo -n pft-egress check --container postfiatd | tail -n 1
+  RESULT: PASS
+  (exit 0)
+CHECK ok   pft-egress check PASS before the drill
+$ on local 'sudo -n pft-maint active; echo maint-active rc $?; sudo -n pft-maint lock list'
+  maint-active rc 1
+  no data-collection locks
+  (exit 0)
+$ on relay 'sudo -n pft-maint active; echo maint-active rc $?; sudo -n pft-maint lock list'
+  maint-active rc 1
+  no data-collection locks
+  (exit 0)
+$ on local 'sudo -n pft-peerwatch status'; on relay 'sudo -n pft-peerwatch status --container postfiatd-sentry'
+  pft-peerwatch postfiatd sample age 35 s
+    [PASS] count     14 peers
+    [PASS] churn     0 join/leave events in 60m (0 joins, 0 leaves, 0 peers left twice or more)
+    [PASS] latency   p50 276 ms, p95 403 ms, max 403 ms over 14 peers
+    [PASS] versions  1/14 peers older than own 1.0.9 (7 %), 0 newer, 0 unknown
+    [PASS] direction 4 inbound, 10 outbound
+    [PASS] diversity 10 routable outbound peers in 10 /16 and 10 /24 prefixes, largest /16 holds 10 %
+    [PASS] ledgers   14/14 peers within 8 ledgers of own validated 7956788
+    [PASS] fixed     up: sentry
+  RESULT: PASS
+  pft-peerwatch postfiatd-sentry sample age 38 s
+    [PASS] count     22 peers
+    [PASS] churn     0 join/leave events in 60m (0 joins, 0 leaves, 0 peers left twice or more)
+    [PASS] latency   p50 239 ms, p95 407 ms, max 439 ms over 22 peers
+    [PASS] versions  0/22 peers older than own 1.0.9 (0 %), 0 newer, 0 unknown
+    [PASS] direction 11 inbound, 11 outbound
+    [PASS] diversity 11 routable outbound peers in 11 /16 and 11 /24 prefixes, largest /16 holds 9 %
+    [PASS] ledgers   22/22 peers within 8 ledgers of own validated 7956787
+    [PASS] fixed     up: validator
+  RESULT: PASS
+  (exit 0)
+$ redact.py control --literals <literals>
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (17/17)
+
+PREFLIGHT_ONLY: stopping before step 1, nothing changed (0 check(s) failed)

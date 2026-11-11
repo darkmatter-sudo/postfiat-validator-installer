@@ -1,0 +1,48 @@
+peerwatch installed-state verification (read-only, script sha256 086834509232faca1ad1ee9773f3b5a6996d198b182d2567dee6c8305b17f6d3) - 2026-11-11T12:36:15Z - Ubuntu 22.04.5 LTS - repo HEAD a25ccb3f4c9334321919f80a1789b0298a20550c
+$ sudo -n pft-aptrust audit | grep -E '^(WARN|FAIL) |offpkg|^RESULT'
+  INFO  offpkg                                       44 add-on file(s) in /usr/local/{bin,sbin} match the allowlist
+  RESULT: PASS - 11 sources, 4 keys, 4 containers; 8 pass, 18 info, 0 warn, 0 fail -> exit 0
+  (exit 0)
+$ R 'sudo -n pft-aptrust audit' | grep -E '^(WARN|FAIL) |offpkg|^RESULT'
+  INFO  offpkg                                       36 add-on file(s) in /usr/local/{bin,sbin} match the allowlist
+  RESULT: PASS - 10 sources, 2 keys, 1 containers; 4 pass, 16 info, 0 warn, 0 fail -> exit 0
+  (exit 0)
+$ grep -c '/usr/local/bin/pft-peerwatch' fleet/manifest.tsv; sudo -n grep -c '/usr/local/bin/pft-peerwatch' /usr/local/lib/pft-aptrust/manifest.tsv; R 'grep -c /usr/local/bin/pft-peerwatch /usr/local/lib/pft-aptrust/manifest.tsv'
+  1
+  1
+  1
+  (exit 0)
+$ sudo -n pft-fleet skew | grep -E 'peerwatch|aptrust|SUMMARY'
+  sentry     aptrust     CURRENT    
+  sentry     peerwatch   CURRENT    
+  validator  aptrust     CURRENT    
+  validator  peerwatch   CURRENT    
+  SUMMARY CURRENT=73 BEHIND=0 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 0)
+$ sudo -n pft-peerwatch status; R 'sudo -n pft-peerwatch status --container postfiatd-sentry'
+  pft-peerwatch postfiatd sample age 48 s
+    [PASS] count     14 peers
+    [PASS] churn     0 join/leave events in 60m (0 joins, 0 leaves, 0 peers left twice or more)
+    [PASS] latency   p50 288 ms, p95 469 ms, max 469 ms over 14 peers
+    [PASS] versions  1/14 peers older than own 1.0.9 (7 %), 0 newer, 0 unknown
+    [PASS] direction 4 inbound, 10 outbound
+    [PASS] diversity 10 routable outbound peers in 10 /16 and 10 /24 prefixes, largest /16 holds 10 %
+    [PASS] ledgers   14/14 peers within 8 ledgers of own validated 7956034
+    [PASS] fixed     up: sentry
+  RESULT: PASS
+  pft-peerwatch postfiatd-sentry sample age 50 s
+    [PASS] count     22 peers
+    [PASS] churn     0 join/leave events in 60m (0 joins, 0 leaves, 0 peers left twice or more)
+    [PASS] latency   p50 308 ms, p95 412 ms, max 431 ms over 22 peers
+    [PASS] versions  0/22 peers older than own 1.0.9 (0 %), 0 newer, 0 unknown
+    [PASS] direction 11 inbound, 11 outbound
+    [PASS] diversity 11 routable outbound peers in 11 /16 and 11 /24 prefixes, largest /16 holds 9 %
+    [PASS] ledgers   22/22 peers within 8 ledgers of own validated 7956034
+    [PASS] fixed     up: validator
+  RESULT: PASS
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 241 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 145 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+done 2026-11-11T12:37:57Z

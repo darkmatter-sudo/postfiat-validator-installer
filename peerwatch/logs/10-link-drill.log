@@ -1,0 +1,280 @@
+pft-peerwatch two-host fixed-link drill - 2026-11-11T13:15:18Z - Ubuntu 22.04.5 LTS - run 20261111T131518Z
+repo HEAD 80880d730dd5dd4da1304baea51817d6732fef30 (clean: yes)
+sha256 07c8d507ec9f92f1d31ad3264b70402bb042d396daf81ded05d3f046d0e8dfb6 peerwatch/drill/link-drill.sh
+sha256 b2bd7de5c8a8a6ba6f1e6b2c41fc3578aed0a0a62954c35413b262c42ed4c9f8 peerwatch/pft-peerwatch.sh
+sha256 e5c5f3f208f1f25861c0fa8cab683deeb129e45ed8ecdc87b7c7e16ba669416a peerwatch/peerwatch_parse.py
+sha256 02d3db39bb994f5590cf4e97fa146fd219c0c12811d0ad9542859e143faae412 alerts/peerwatch.rules.yml
+
+== 0. preflight (nothing changed yet)
+  pft-peerwatch installed, collect timers active on both hosts, sentry pull timer active on the validator
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+  sentry address = the relay address in the validator's [ips_fixed]: yes; validator container address 172.18.0.2 (private)
+$ sudo -n iptables -S DOCKER-USER
+  -N DOCKER-USER
+  -A DOCKER-USER -s <redacted-ip>/32 -i br-8cedebf23a84 ! -o br-8cedebf23a84 -m comment --comment "pft-egress:postfiatd" -j PFT-EGRESS
+  -A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state RELATED,ESTABLISHED -j ACCEPT
+  -A DOCKER-USER -p tcp -m tcp --dport 2559 -m connlimit --connlimit-above 50 --connlimit-mask 32 --connlimit-saddr -j DROP
+  -A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -m limit --limit 100/sec --limit-burst 50 -j ACCEPT
+  -A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -j DROP
+  -A DOCKER-USER -j RETURN
+  (exit 0)
+CHECK ok   no drill rule in DOCKER-USER, pft-egress jump at position 1
+$ systemctl list-units --all --no-legend 'pft-peerwatch-drill-deadman*' | wc -l
+  0
+  (exit 0)
+CHECK ok   no pft-peerwatch-drill-deadman unit left over
+$ links_prom
+  container=postfiatd,instance=127.0.0.1:9877,job=postfiat,link=sentry 1
+  container=postfiatd-sentry,instance=127.0.0.1:9877,job=postfiat,link=validator 1
+  (exit 0)
+CHECK ok   Prometheus: fixed_link_up 1 for container=postfiatd link=sentry and container=postfiatd-sentry link=validator
+$ curl -s http://127.0.0.1:9090/api/v1/rules | jq -r '.data.groups[] | select(.name == "pft-peerwatch") | .rules[] | [.name, .health, .state] | @tsv'
+  PFTPeerFixedLinkDown	ok	inactive
+  PFTPeerQualityDegraded	ok	inactive
+  PFTPeerwatchStale	ok	inactive
+  (exit 0)
+CHECK ok   peerwatch rules loaded, healthy, inactive
+$ curl -s http://127.0.0.1:9090/api/v1/alerts | jq -r '.data.alerts[] | "\(.labels.alertname) \(.labels.host // .labels.container // "-") \(.state)"' | sort
+  PFTAlertPipelineWatchdog - firing
+  PFTVulnRebootOwed validator pending
+  (exit 0)
+$ curl -s http://127.0.0.1:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'
+  0
+  (exit 0)
+  bridge mounts the operator env file; sentry alertpath timer active, check OK
+  operator topics to watch: 2 (not printed)
+  postfiatd: server_state=full StartedAt=2026-11-08T06:28:08.182353985Z
+  postfiatd-sentry: server_state=full StartedAt=2026-11-09T18:16:30.378254196Z
+  pft-integrity validator: RESULT: PASS - 241 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity sentry: RESULT: PASS - 145 unchanged, 0 warn, 0 fail -> exit 0
+$ sudo -n pft-egress check --container postfiatd | tail -n 1
+  RESULT: PASS
+  (exit 0)
+CHECK ok   pft-egress check PASS before the drill
+$ on local 'sudo -n pft-maint active; echo maint-active rc $?; sudo -n pft-maint lock list'
+  maint-active rc 1
+  no data-collection locks
+  (exit 0)
+$ on relay 'sudo -n pft-maint active; echo maint-active rc $?; sudo -n pft-maint lock list'
+  maint-active rc 1
+  no data-collection locks
+  (exit 0)
+$ on local 'sudo -n pft-peerwatch status'; on relay 'sudo -n pft-peerwatch status --container postfiatd-sentry'
+  pft-peerwatch postfiatd sample age 55 s
+    [PASS] count     14 peers
+    [PASS] churn     0 join/leave events in 60m (0 joins, 0 leaves, 0 peers left twice or more)
+    [PASS] latency   p50 286 ms, p95 420 ms, max 420 ms over 14 peers
+    [PASS] versions  1/14 peers older than own 1.0.9 (7 %), 0 newer, 0 unknown
+    [PASS] direction 4 inbound, 10 outbound
+    [PASS] diversity 10 routable outbound peers in 10 /16 and 10 /24 prefixes, largest /16 holds 10 %
+    [PASS] ledgers   14/14 peers within 8 ledgers of own validated 7956808
+    [PASS] fixed     up: sentry
+  RESULT: PASS
+  pft-peerwatch postfiatd-sentry sample age 57 s
+    [PASS] count     22 peers
+    [PASS] churn     0 join/leave events in 60m (0 joins, 0 leaves, 0 peers left twice or more)
+    [PASS] latency   p50 247 ms, p95 400 ms, max 498 ms over 22 peers
+    [PASS] versions  0/22 peers older than own 1.0.9 (0 %), 0 newer, 0 unknown
+    [PASS] direction 11 inbound, 11 outbound
+    [PASS] diversity 11 routable outbound peers in 11 /16 and 11 /24 prefixes, largest /16 holds 9 %
+    [PASS] ledgers   22/22 peers within 8 ledgers of own validated 7956808
+    [PASS] fixed     up: validator
+  RESULT: PASS
+  (exit 0)
+$ redact.py control --literals <literals>
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (17/17)
+
+== 1. throwaway targets, catch-all silence, pft-maint window
+  sentry pft-alertpath-check.timer stopped: yes
+CHECK ok   sentry pft-alertpath-check.timer paused for the bridge re-create
+  2026-11-11T13:16:25Z starting pft-alert-bridge (ntfy: on)
+  2026-11-11T13:16:31Z pft-alert-bridge listening
+CHECK ok   Alertmanager bridge -> throwaway env file (0700 temp dir)
+  sentry pft-alertpath check rc 0 after 3s; timer started again: yes
+CHECK ok   sentry pft-alertpath OK again, check timer running
+CHECK ok   silence alertname=~".+", alertname!~"PFTAlertPipelineWatchdog|PFTPeer.*" until 2026-11-11T14:46:34Z
+$ { [ 0 = 0 ] || sudo -n cp -p /etc/pft-maint/ntfy.env /etc/pft-maint/ntfy.env.pre-peerwatch-drill; } && printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' "$MT" | sudo -n tee /etc/pft-maint/ntfy.env >/dev/null && sudo -n chmod 600 /etc/pft-maint/ntfy.env && sudo -n stat -c '%a %U' /etc/pft-maint/ntfy.env
+  600 root
+  (exit 0)
+CHECK ok   pft-maint [MAINT] target -> second throwaway topic (real file present before: 0)
+$ sudo -n pft-maint start --ttl 60m --reason 'task_dd37a539 peerwatch fixed-link drill'
+  window started: id m1794402995-3327700 until 2026-11-11T14:16:35Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint window open on the validator
+CHECK ok   sentry has the window (via the watchdog channel) after 50s
+
+== 2. break the validator<->sentry link (dead-man first, then two REJECT rules at DOCKER-USER 2)
+$ sudo -n systemd-run --collect --unit=pft-peerwatch-drill-deadman --description=pft-peerwatch drill dead-man: deletes the drill REJECT rules -p /bin/bash -c "$DMCMD"
+  DMCMD: sleep 600; n=0; while iptables -C DOCKER-USER -s <redacted-ip>/32 -d <redacted-ip>/32 -p tcp -m comment --comment pft-peerwatch-drill -j REJECT --reject-with tcp-reset 2>/dev/null; do iptables -D DOCKER-USER -s <redacted-ip>/32 -d <redacted-ip>/32 -p tcp -m comment --comment pft-peerwatch-drill -j REJECT --reject-with tcp-reset && n=$((n+1)); done; while iptables -C DOCKER-USER -s <redacted-ip>/32 -d <redacted-ip>/32 -p tcp -m comment --comment pft-peerwatch-drill -j REJECT --reject-with tcp-reset 2>/dev/null; do iptables -D DOCKER-USER -s <redacted-ip>/32 -d <redacted-ip>/32 -p tcp -m comment --comment pft-peerwatch-drill -j REJECT --reject-with tcp-reset && n=$((n+1)); done; echo "pft-peerwatch-drill dead-man: deleted $n rule(s)"
+  Running as unit: pft-peerwatch-drill-deadman.service
+  (exit 0)
+CHECK ok   dead-man unit pft-peerwatch-drill-deadman.service started (deletes the rules at 13:27:37Z)
+$ sudo -n iptables -I DOCKER-USER 2 -s <redacted-ip>/32 -d <redacted-ip>/32 -p tcp -m comment --comment pft-peerwatch-drill -j REJECT --reject-with tcp-reset && sudo -n iptables -I DOCKER-USER 2 -s <redacted-ip>/32 -d <redacted-ip>/32 -p tcp -m comment --comment pft-peerwatch-drill -j REJECT --reject-with tcp-reset && sudo -n iptables -S DOCKER-USER
+  -N DOCKER-USER
+  -A DOCKER-USER -s <redacted-ip>/32 -i br-8cedebf23a84 ! -o br-8cedebf23a84 -m comment --comment "pft-egress:postfiatd" -j PFT-EGRESS
+  -A DOCKER-USER -s <redacted-ip>/32 -d <redacted-ip>/32 -p tcp -m comment --comment pft-peerwatch-drill -j REJECT --reject-with tcp-reset
+  -A DOCKER-USER -s <redacted-ip>/32 -d <redacted-ip>/32 -p tcp -m comment --comment pft-peerwatch-drill -j REJECT --reject-with tcp-reset
+  -A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state RELATED,ESTABLISHED -j ACCEPT
+  -A DOCKER-USER -p tcp -m tcp --dport 2559 -m connlimit --connlimit-above 50 --connlimit-mask 32 --connlimit-saddr -j DROP
+  -A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -m limit --limit 100/sec --limit-burst 50 -j ACCEPT
+  -A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -j DROP
+  -A DOCKER-USER -j RETURN
+  (exit 0)
+CHECK ok   two drill rules at DOCKER-USER 2-3, after the pft-egress jump and before the established accept
+  2026-11-11T13:18:59Z (82s after the break): textfiles fixed_link_up postfiatd=0 postfiatd-sentry=0
+CHECK ok   textfiles: fixed_link_up 0 for postfiatd (link=sentry) and postfiatd-sentry (link=validator, pulled)
+$ on local 'sudo -n pft-peerwatch status'; on relay 'sudo -n pft-peerwatch status --container postfiatd-sentry'
+  pft-peerwatch postfiatd sample age 33 s
+    [PASS] count     13 peers
+    [PASS] churn     1 join/leave events in 60m (0 joins, 1 leaves, 0 peers left twice or more)
+    [PASS] latency   p50 301 ms, p95 449 ms, max 449 ms over 13 peers
+    [PASS] versions  1/13 peers older than own 1.0.9 (8 %), 0 newer, 0 unknown
+    [PASS] direction 3 inbound, 10 outbound
+    [PASS] diversity 10 routable outbound peers in 10 /16 and 10 /24 prefixes, largest /16 holds 10 %
+    [PASS] ledgers   13/13 peers within 8 ledgers of own validated 7956867
+    [FAIL] fixed     down: sentry
+  RESULT: FAIL
+  pft-peerwatch postfiatd-sentry sample age 35 s
+    [PASS] count     21 peers
+    [PASS] churn     1 join/leave events in 60m (0 joins, 1 leaves, 0 peers left twice or more)
+    [PASS] latency   p50 268 ms, p95 439 ms, max 523 ms over 21 peers
+    [PASS] versions  0/21 peers older than own 1.0.9 (0 %), 0 newer, 0 unknown
+    [PASS] direction 11 inbound, 10 outbound
+    [PASS] diversity 10 routable outbound peers in 10 /16 and 10 /24 prefixes, largest /16 holds 10 %
+    [PASS] ledgers   21/21 peers within 8 ledgers of own validated 7956867
+    [FAIL] fixed     down: validator
+  RESULT: FAIL
+  (exit 2)
+CHECK ok   status: only the fixed check fails, the other 7 checks stay PASS on both hosts
+CHECK ok   postfiatd still full with the link down (full)
+CHECK ok   postfiatd-sentry still full with the link down (full)
+  2026-11-11T13:22:21Z (284s after the break): PFTPeerFixedLinkDown firing in Prometheus:
+    __name__=ALERTS,alertname=PFTPeerFixedLinkDown,alertstate=firing,container=postfiatd,instance=127.0.0.1:9877,job=postfiat,link=sentry,severity=critical 1
+    __name__=ALERTS,alertname=PFTPeerFixedLinkDown,alertstate=firing,container=postfiatd-sentry,instance=127.0.0.1:9877,job=postfiat,link=validator,severity=critical 1
+CHECK ok   PFTPeerFixedLinkDown{container=postfiatd} firing before the dead-man fires
+CHECK ok   PFTPeerFixedLinkDown{container=postfiatd-sentry} firing before the dead-man fires
+CHECK ok   [FIRING] PFTPeerFixedLinkDown 'postfiatd lost its fixed peer link ...' on the throwaway topic
+CHECK ok   [FIRING] PFTPeerFixedLinkDown 'postfiatd-sentry lost its fixed peer link ...' on the throwaway topic
+$ sudo -n iptables -S DOCKER-USER | grep -c 'pft-peerwatch-drill'
+  2
+  (exit 0)
+CHECK ok   drill rules still in place (no manual restore before the dead-man)
+
+== 3. automatic restore by the dead-man, reconnect, RESOLVED
+  2026-11-11T13:27:42Z: pft-peerwatch-drill-deadman.service finished 605s after it started
+$ sudo -n journalctl --utc -o short-iso -u pft-peerwatch-drill-deadman.service --since @1794403057 --no-pager | grep -E 'dead-man|Started|Finished|Deactivated|Succeeded' 
+  2026-11-11T13:17:37+0000 <host> systemd[1]: Started pft-peerwatch drill dead-man: deletes the drill REJECT rules.
+  2026-11-11T13:27:37+0000 <host> bash[3330634]: pft-peerwatch-drill dead-man: deleted 2 rule(s)
+  2026-11-11T13:27:37+0000 <host> systemd[1]: pft-peerwatch-drill-deadman.service: Deactivated successfully.
+  (exit 0)
+CHECK ok   dead-man deleted exactly 2 rules
+CHECK ok   DOCKER-USER identical to the pre-run snapshot after the dead-man
+  2026-11-11T13:30:06Z (144s after the dead-man): textfiles fixed_link_up postfiatd=1 postfiatd-sentry=1
+CHECK ok   link reconnected by itself: fixed_link_up 1 on both containers
+$ on local 'sudo -n pft-peerwatch status'; on relay 'sudo -n pft-peerwatch status --container postfiatd-sentry'
+  pft-peerwatch postfiatd sample age 40 s
+    [PASS] count     14 peers
+    [PASS] churn     2 join/leave events in 60m (1 joins, 1 leaves, 0 peers left twice or more)
+    [PASS] latency   p50 327 ms, p95 495 ms, max 495 ms over 13 peers
+    [PASS] versions  1/14 peers older than own 1.0.9 (7 %), 0 newer, 0 unknown
+    [PASS] direction 3 inbound, 11 outbound
+    [PASS] diversity 11 routable outbound peers in 11 /16 and 11 /24 prefixes, largest /16 holds 9 %
+    [PASS] ledgers   14/14 peers within 8 ledgers of own validated 7957085
+    [PASS] fixed     up: sentry
+  RESULT: PASS
+  pft-peerwatch postfiatd-sentry sample age 46 s
+    [PASS] count     22 peers
+    [PASS] churn     2 join/leave events in 60m (1 joins, 1 leaves, 0 peers left twice or more)
+    [PASS] latency   p50 276 ms, p95 430 ms, max 450 ms over 21 peers
+    [PASS] versions  0/22 peers older than own 1.0.9 (0 %), 0 newer, 0 unknown
+    [PASS] direction 12 inbound, 10 outbound
+    [PASS] diversity 10 routable outbound peers in 10 /16 and 10 /24 prefixes, largest /16 holds 10 %
+    [PASS] ledgers   22/22 peers within 8 ledgers of own validated 7957085
+    [PASS] fixed     up: validator
+  RESULT: PASS
+  (exit 0)
+CHECK ok   status: fixed up on both hosts again, RESULT PASS both
+  2026-11-11T13:31:05Z (203s after the dead-man): PFTPeerFixedLinkDown series left: 0
+CHECK ok   no PFTPeerFixedLinkDown left in Prometheus
+CHECK ok   [RESOLVED] PFTPeerFixedLinkDown 'postfiatd lost its fixed peer link ...' on the throwaway topic
+CHECK ok   [RESOLVED] PFTPeerFixedLinkDown 'postfiatd-sentry lost its fixed peer link ...' on the throwaway topic
+
+== 4. restore, ALERTS query_range, read back
+  DOCKER-USER identical to the pre-run snapshot: yes
+  $ sudo -n pft-maint end
+    window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+  pft-maint target back to its pre-run state: yes
+  pft-keyescrow re-run (it fingerprints /etc/pft-maint/ntfy.env): pft_keyescrow_drift_items{node="validator"} 0
+  drain: no PFTPeer* alert pending/firing/active after 0s; 90 s for RESOLVED delivery
+  drain: done, nothing left that could reach the operator topic: yes
+  sentry pft-alertpath-check.timer stopped: yes
+  2026-11-11T13:32:47Z starting pft-alert-bridge (ntfy: on)
+  2026-11-11T13:32:49Z pft-alert-bridge listening
+  restored bridge: mounts the operator env file again: yes
+  sentry pft-alertpath check rc 0 after 2s; timer started again: yes
+  catch-all silence expired after 0s (nothing else pending/firing/active): HTTP 200
+CHECK ok   window ended, targets back, bridge back, alertpath OK, no abort-path rule delete
+$ curl -s -G http://127.0.0.1:9090/api/v1/query_range --data-urlencode 'query=ALERTS{alertname=~"PFTPeer.*"}' --data-urlencode start=1794402918 --data-urlencode end=1794403971 --data-urlencode step=15 | jq -r '.data.result[] | "\(.metric.alertname) container=\(.metric.container) link=\(.metric.link // "-") check=\(.metric.check // "-") \(.metric.alertstate) first=\(.values[0][0] | todate) last=\(.values[-1][0] | todate) samples=\(.values | length)"' | sort
+  PFTPeerFixedLinkDown container=postfiatd link=sentry check=- firing first=2026-11-11T13:21:48Z last=2026-11-11T13:29:33Z samples=32
+  PFTPeerFixedLinkDown container=postfiatd link=sentry check=- pending first=2026-11-11T13:18:48Z last=2026-11-11T13:21:33Z samples=12
+  PFTPeerFixedLinkDown container=postfiatd-sentry link=validator check=- firing first=2026-11-11T13:22:18Z last=2026-11-11T13:30:03Z samples=32
+  PFTPeerFixedLinkDown container=postfiatd-sentry link=validator check=- pending first=2026-11-11T13:19:18Z last=2026-11-11T13:22:03Z samples=12
+  (exit 0)
+CHECK ok   query_range: PFTPeerFixedLinkDown{container=postfiatd} firing during the run
+CHECK ok   query_range: PFTPeerFixedLinkDown{container=postfiatd-sentry} firing during the run
+CHECK ok   query_range: no PFTPeerQualityDegraded / PFTPeerwatchStale during the run
+$ curl -s -G http://127.0.0.1:9090/api/v1/query_range --data-urlencode 'query=pft_peerwatch_fixed_link_up' --data-urlencode start=1794402918 --data-urlencode end=1794403972 --data-urlencode step=60 | jq -r '.data.result[] | "\(.metric.container) link=\(.metric.link) \([.values[] | .[1]] | join(""))"'
+  postfiatd link=sentry 111100000000000111
+  postfiatd-sentry link=validator 111100000000000111
+  (exit 0)
+  throwaway (Alertmanager) topic: 4 message(s)
+    {"time":"2026-11-11T13:21:51Z","title":"[FIRING] PFTPeerFixedLinkDown","message":"postfiatd lost its fixed peer link sentry"}
+    {"time":"2026-11-11T13:22:51Z","title":"[FIRING] PFTPeerFixedLinkDown","message":"postfiatd-sentry lost its fixed peer link validator"}
+    {"time":"2026-11-11T13:29:51Z","title":"[RESOLVED] PFTPeerFixedLinkDown","message":"postfiatd lost its fixed peer link sentry"}
+    {"time":"2026-11-11T13:30:51Z","title":"[RESOLVED] PFTPeerFixedLinkDown","message":"postfiatd-sentry lost its fixed peer link validator"}
+  throwaway (pft-maint) topic: 2 message(s)
+    {"time":"2026-11-11T13:16:37Z","title":"[MAINT] start validator","message":"task_dd37a539 peerwatch fixed-link drill | until 2026-11-11T14:16:35Z (ttl 3600s) | sentry copy: pushed"}
+    {"time":"2026-11-11T13:31:12Z","title":"[MAINT] end validator","message":"task_dd37a539 peerwatch fixed-link drill | ended by operator after 876s | suppressed here: watchdog=0 monitor=0 integrity=0 | sentry copy: pushed"}
+CHECK ok   pft-maint [MAINT] start + end reached its throwaway topic
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the run (2 topic(s), 0 with messages)
+  pft-integrity validator: RESULT: PASS - 241 unchanged, 0 warn, 0 fail -> exit 0
+CHECK ok   pft-integrity PASS on validator at the end
+  pft-integrity sentry: RESULT: PASS - 145 unchanged, 0 warn, 0 fail -> exit 0
+CHECK ok   pft-integrity PASS on sentry at the end
+$ sudo -n pft-egress check --container postfiatd | tail -n 1
+  RESULT: PASS
+  (exit 0)
+CHECK ok   pft-egress check PASS at the end
+CHECK ok   postfiatd full at the end, container never restarted (StartedAt unchanged) (full, StartedAt 2026-11-08T06:28:08.182353985Z)
+CHECK ok   postfiatd-sentry full at the end, container never restarted (StartedAt unchanged) (full, StartedAt 2026-11-09T18:16:30.378254196Z)
+$ sudo -n pft-maint status --json | jq -r .window; R 'sudo -n pft-maint status --json' | jq -r .window
+  none
+  none
+  (exit 0)
+CHECK ok   no pft-maint window left on either host
+$ systemctl list-units --all --no-legend 'pft-peerwatch-drill-deadman*' 'run-u*.service' 'run-u*.timer' | wc -l
+  0
+  (exit 0)
+CHECK ok   no dead-man or other transient unit left
+
+link-drill done 2026-11-11T13:34:10Z: 0 check(s) failed -> PASS
+drill exit 0

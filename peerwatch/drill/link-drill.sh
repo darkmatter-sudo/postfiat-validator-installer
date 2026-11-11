@@ -244,7 +244,7 @@ R "sudo -n pft-maint active" >/dev/null 2>&1; check "sentry has the window (via 
 echo; echo "== 2. break the validator<->sentry link (dead-man first, then two REJECT rules at DOCKER-USER 2)"
 DMCMD="sleep $DEADMAN_SEC; n=0; while iptables -C DOCKER-USER ${R1[*]} 2>/dev/null; do iptables -D DOCKER-USER ${R1[*]} && n=\$((n+1)); done; while iptables -C DOCKER-USER ${R2[*]} 2>/dev/null; do iptables -D DOCKER-USER ${R2[*]} && n=\$((n+1)); done; echo \"pft-peerwatch-drill dead-man: deleted \$n rule(s)\""
 DMARGS=(--collect --unit="$DM" --description="pft-peerwatch drill dead-man: deletes the drill REJECT rules" -p RuntimeMaxSec=$(( DEADMAN_SEC + 120 )) /bin/bash -c "$DMCMD")
-echo "\$ sudo -n systemd-run ${DMARGS[*]:0:4} /bin/bash -c \"\$DMCMD\"" | red
+echo "\$ sudo -n systemd-run $(printf '%q ' "${DMARGS[@]:0:5}")/bin/bash -c \"\$DMCMD\"" | red   # run 10 printed only ${DMARGS[*]:0:4}
 echo "  DMCMD: $DMCMD" | red
 XOUT="$(sudo -n systemd-run "${DMARGS[@]}" 2>&1)"; XRC=$?; printf '%s\n' "$XOUT" | red | sed 's/^/  /'; echo "  (exit $XRC)"
 t_dm="$(date -u +%s)"

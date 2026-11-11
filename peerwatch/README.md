@@ -114,4 +114,36 @@ ad-hoc command inside the confined node container.
 
 ## Evidence (logs/)
 
-Not published yet: the two-host install, the fixed-link drill and the 24-hour run follow.
+Raw logs, redacted (public addresses `<redacted-ip>`, host names `<host>`, ntfy topics, user name, home path).
+Logs 01-05 were development captures and stay private (they hold unredacted peer addresses).
+
+| Log | What | Result |
+|-----|------|--------|
+| `06-install-run.log` | two-host install through pft-fleet in a pft-maint window (`drill/install-run.sh` at 20c65d1) | 42 ok / 2 FAIL: FOUND pft-aptrust installs a copy of `fleet/manifest.tsv` as its add-on allowlist, so the new rows left aptrust BEHIND and its audit WARNed the new binary; the run-u check also counted login mounts |
+| `07-aptrust-fixup.log` | FIXED: `drill/aptrust-fixup.sh` syncs aptrust's manifest copy in a window (d0d5cf5) | 17 ok / 1 FAIL: the check compared a per-host add-on file count that differs by role (44 vs 36); a25ccb3 asserts the audit verdict instead |
+| `08-verify-installed.log` | VERIFIED (read-only, a25ccb3): aptrust PASS 0 warn both hosts, manifest copy has peerwatch, fleet skew CURRENT=73 BEHIND=0, status PASS both, integrity PASS both | PASS |
+| `09-link-drill-preflight.log` | `PREFLIGHT_ONLY=1 drill/link-drill.sh` (changes nothing) | 0 failed |
+| `10-link-drill.log` | fixed-link drill at 80880d7 (below) | 43 ok / 0 FAIL, PASS |
+| `11-offline-suite-lint-promtool.log` | shellcheck, ruff, 49 unit tests, `promtool test rules peerwatch.tests.yml` | all exit 0 |
+| `12-mutants.log` | `tests/mutate.py --jobs 2` at 80880d7: baseline + timeout + orphan controls | 75 caught, 0 survived, 0 not applied, 0 broken; harness exit 0 |
+
+### Fixed-link drill (`drill/link-drill.sh`, log 10)
+
+Two REJECT rules on the validator's DOCKER-USER chain match only traffic between the validator container and the
+sentry's address; a transient dead-man unit started before them deletes them after 600 s. Neither node is stopped.
+
+| Time (UTC) | Event |
+|------------|-------|
+| 13:17:37 | dead-man started, rules inserted at DOCKER-USER 2-3 (after the pft-egress jump) |
+| 13:18:59 | textfiles: `fixed_link_up` 0 on `postfiatd` (link sentry) and `postfiatd-sentry` (link validator); every other check PASS, both nodes full |
+| 13:21:51 / 13:22:51 | `[FIRING] PFTPeerFixedLinkDown` for each container on the throwaway topic (`for: 3m`) |
+| 13:27:37 | dead-man: "deleted 2 rule(s)"; DOCKER-USER identical to the pre-run snapshot |
+| 13:30:06 | link reconnected by itself, `fixed_link_up` 1 both sides (this time the validator dialled the sentry: validator 3 inbound / 11 outbound) |
+| 13:29:51 / 13:30:51 | `[RESOLVED]` for both on the throwaway topic |
+| 13:34:10 | restore: window ended, bridge and pft-maint target back, keyescrow drift 0, silence expired; operator topics 0 messages; integrity PASS both; pft-egress check PASS; both containers full with unchanged `StartedAt` |
+
+Prometheus `pft_peerwatch_fixed_link_up` per minute over the run: `111100000000000111` on both containers.
+After run 10 the only change to `drill/link-drill.sh` is the echo of the dead-man's `systemd-run` argv (run 10 printed
+the first four words only and so omitted `RuntimeMaxSec=720`; the DMCMD line it ran was printed in full).
+
+The 24-hour two-host run started 2026-11-11T13:35Z under the pft-maint lock `peerwatch-24h`; its summary follows.
