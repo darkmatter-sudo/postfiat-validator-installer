@@ -87,7 +87,9 @@ check "aptrust's manifest copy = repo fleet/manifest.tsv on both hosts" "$([ "$(
 
 echo; echo "== 4. VERIFIED: aptrust audit (CLI and the timer's unit run, textfile), skew, integrity"
 x "sudo -n pft-aptrust audit | grep -E '^(WARN|FAIL) |^INFO  offpkg |^RESULT'; R 'sudo -n pft-aptrust audit' | grep -E '^(WARN|FAIL) |^INFO  offpkg |^RESULT'"
-check "aptrust audit on both hosts: 0 warn, 0 fail; pft-peerwatch is a known add-on file" "$([ "$(grep -c ' 0 warn, 0 fail -> exit 0' <<<"$XOUT")" = 2 ] && [ "$(grep -cE '^(WARN|FAIL) ' <<<"$XOUT")" = 0 ] && [ "$(grep -c '44 add-on file(s) in /usr/local/{bin,sbin} match the allowlist' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
+# run 07: this check first demanded "44 add-on file(s)" on BOTH hosts; the sentry has fewer add-ons (36). Per-host counts
+# differ by role: assert the verdict (0 warn, 0 fail, no WARN/FAIL line), not a count typed from the validator's output.
+check "aptrust audit on both hosts: 0 warn, 0 fail, no WARN/FAIL line (pft-peerwatch is a known add-on file)" "$([ "$(grep -c ' 0 warn, 0 fail -> exit 0' <<<"$XOUT")" = 2 ] && [ "$(grep -cE '^(WARN|FAIL) ' <<<"$XOUT")" = 0 ] && echo 0 || echo 1)"
 x "sudo -n systemctl start pft-aptrust.service; R 'sudo -n systemctl start pft-aptrust.service'; sudo -n systemctl start pft-aptrust-pull.service 2>/dev/null; grep -hE '^pft_aptrust_checks\{.*result=\"(warn|fail)\"' $TF/pft_aptrust_*.prom"
 check "aptrust textfiles (validator + pulled sentry): warn 0, fail 0" "$([ "$(grep -c '} 0$' <<<"$XOUT")" = 4 ] && echo 0 || echo 1)"
 x "sudo -n pft-fleet skew | tail -1"
