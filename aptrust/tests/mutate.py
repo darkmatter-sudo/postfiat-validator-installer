@@ -12,6 +12,7 @@ Usage: TEST_TMPDIR=~/.cache python3 -u aptrust/tests/mutate.py [--timeout SEC] [
 """
 
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -815,10 +816,26 @@ def main():
     sv = sum(1 for s in res.values() if s == "SURVIVED")
     na = sum(1 for s in res.values() if s == "NOT APPLIED")
     br = sum(1 for s in res.values() if s == "BROKEN")
-    orphans = subprocess.run(
-        ["pgrep", "-fc", "[a]tmut\\."], capture_output=True, text=True, check=False
-    ).stdout.strip()
-    print(f"orphan check: {orphans or 0} process(es) still running from mutant copies")
+    # Orphans = processes whose command line names THIS run's scratch dir (unique per run). A generic
+    # "atmut." pattern can also match an unrelated shell that only names an older scratch dir (run 43).
+    # ATMUT_ORPHAN_SELFTEST=1 is the positive control: it leaves one child behind on purpose.
+    if os.environ.get("ATMUT_ORPHAN_SELFTEST") == "1":
+        subprocess.Popen(
+            ["bash", "-c", "sleep 60", os.path.join(work, "orphan-selftest")],
+            start_new_session=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    hits = subprocess.run(
+        ["pgrep", "-af", re.escape(work)], capture_output=True, text=True, check=False
+    ).stdout.splitlines()
+    for h in hits:
+        print(f"orphan: {h[:160]}")
+    orphans = str(len(hits))
+    print(
+        f"orphan check: {orphans} process(es) still running from this run's mutant copies"
+    )
     subset = f" (--only subset of {len(MUTANTS)})" if only is not None else ""
     print(
         f"RESULT: {c} caught, {sv} survived, {na} not applied, {br} broken of {len(selected)}{subset}"
