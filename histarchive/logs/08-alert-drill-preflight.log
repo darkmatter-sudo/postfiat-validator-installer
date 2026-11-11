@@ -1,0 +1,72 @@
+pft-histarchive two-host replica/tamper/alert drill - 2026-11-11T00:29:48Z - Ubuntu 22.04.5 LTS - run 20261111T002948Z
+repo HEAD cf8aaf8bf6d3562d43685662cc5cbb57fe7a818d (clean: yes)
+sha256 8fb916a84b20e61c76f3d825e1003d60fdddc186f92b2953c292989b234b1cfc histarchive/drill/alert-run.sh
+sha256 63c0f60aaa1d1ada3e45e4c0644acdb893e5d3f2cf89c864891c3dda4908c961 histarchive/pft-histarchive.sh
+sha256 089b828e1215e35ce12ddd9a02aa85613ab7ccee2820bd2ca7079f14431efbb3 histarchive/histarchive.py
+sha256 8de625c1dd8634b271f4f80921df8954abb1e02dbea21f19f562cbd92e671e48 alerts/histarchive.rules.yml
+sha256 f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8 peerexpose/drill/redact.py
+installed on validator: 63c0f60aaa1d1ada /usr/local/bin/pft-histarchive  089b828e1215e35c /usr/local/lib/pft-histarchive/histarchive.py  
+installed on sentry: 63c0f60aaa1d1ada /usr/local/bin/pft-histarchive  089b828e1215e35c /usr/local/lib/pft-histarchive/histarchive.py  
+
+== 0. preflight (nothing changed yet)
+  pft-histarchive installed on both hosts, follower + timer active on the validator, no drill dir left over
+$ sudo -n pft-histarchive verify | tail -n 1
+  RESULT: PASS - segments 1 active 1 ledgers 3707 (7937915-7941621) txs 1307 gaps 0 (0 ledgers) fails 0
+  (exit 0)
+$ sudo -n pft-histarchive verify-replica | tail -n 1
+  RESULT: PASS - local files 2, peer files 2, fails 0
+  (exit 0)
+$ R 'sudo -n pft-histarchive replica-check'
+  RESULT: PASS - replica files 2 head_entry bf1c160f2e55b17a fails 0
+  (exit 0)
+  sentry pft-alertpath-check.timer active, check OK
+$ halines
+  verify_ok{host="validator"} 1
+  verify_failures{host="validator"} 0
+  last_ingest_timestamp_seconds{host="validator"} 1794356859
+  lag_ledgers{host="validator"} 0
+  follow_gaps{host="validator"} 0
+  replica_ok{host="validator"} 1
+  (exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=ALERTS{alertname=~"PFTHistarchive.*"}' | jq -r '.data.result | length'
+  0
+  (exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/rules | jq -r '.data.groups[] | select(.name == "pft-histarchive") | .rules[] | [.name, .health] | @tsv'
+  PFTHistarchiveStale	ok
+  PFTHistarchiveIntegrity	ok
+  PFTHistarchiveReplica	ok
+  (exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=count(ALERTS{alertname!="PFTAlertPipelineWatchdog"})' | jq -r '.data.result[0].value[1] // 0'
+  0
+  (exit 0)
+$ curl -s http://127.0.0.1:9093/api/v2/silences | jq -r '.[] | select(.status.state == "active") | select(any(.matchers[]; .isEqual and (.value | test("PFTHistarchive")))) | "\(.createdBy) until \(.endsAt)"'
+  histarchive-install until 2026-11-11T01:12:43.000Z
+  (exit 0)
+  bridge mounts the operator env file: yes
+  operator topics to watch: 2 (not printed)
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+  postfiatd-sentry: server_state=full
+  postfiatd: server_state=full
+  pft-integrity validator: RESULT: PASS - 232 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity sentry: RESULT: PASS - 139 unchanged, 0 warn, 0 fail -> exit 0
+  literals for redaction: 3 ip, 3 topic, 1 user (values not printed)
+$ redact.py control --literals <literals>
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (16/16)
+
+PREFLIGHT_ONLY: stopping before step 1, nothing changed (ready: yes)
