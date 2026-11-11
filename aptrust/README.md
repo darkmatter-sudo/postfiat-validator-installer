@@ -51,7 +51,8 @@ exactly which image is live.
 - `perm`: `chown root:root` and remove group/world write bits on an APT config or keyring path;
 - `sign`: add `signed-by=/etc/apt/keyrings/pft-aptrust-HOST.gpg` to a one-line source that has none, with the key
   that actually signs that source's cached `InRelease` (checked with `gpgv`), exported from the global keyring;
-- `drop`: remove a non-stock global keyring once every key in it has moved to a `signed-by` keyring.
+- `drop`: remove a non-stock global keyring once every usable key in it has moved to a `signed-by` keyring (expired and
+  revoked keys sign nothing APT accepts, so they need no new home; GitHub CLI's vendor keyring carries one, [36](logs/36-drop-dead-key.log)).
 
 Options, pins, packages and images are report-only. Apply refuses (exit 4, nothing written) without `--yes`, outside
 an active `pft-maint` window with at least `MAINT_MIN` (600 s) left or while a data-collection lock is held, when an
@@ -61,13 +62,15 @@ gate: `apt-get update` must exit 0 with no signature/fetch error and list every 
 it restores the backup, checks each sha256 and exits 1 (5 if a restored file does not match). `rollback --yes`
 restores the last apply the same way, inside a window.
 
-## Metrics and alerts
+## Metrics
 
 `audit --textfile` writes `pft_aptrust_HOST.prom` into the pft exporter's textfile directory: `pft_aptrust_up`,
 `pft_aptrust_last_run_timestamp_seconds`, and when the audit completed `pft_aptrust_checks{result=pass|info|warn|fail}`,
 `pft_aptrust_sources`, `pft_aptrust_keys`. The sentry runs no Prometheus: the validator's run copies the sentry's file
 (`pull`, validated: only `pft_aptrust_` samples whose first label is `host="sentry"`, `up` and `last_run` present,
 at most 65536 bytes; a failed pull keeps the old copy, so a broken pull shows up as PFTAptrustStale).
+
+## Alerts
 
 | Alert | Fires when | Severity |
 |---|---|---|

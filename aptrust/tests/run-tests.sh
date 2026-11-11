@@ -319,6 +319,12 @@ areset; mkdir -p "$T/root/etc/apt/keyrings"; echo other > "$T/root$KR"; chmod 64
 check "target keyring already exists: refused, nothing written" '[ "$RC" = 4 ] && has "REFUSED - $KR already exists" && [ "$(tree)" = "$B" ]'
 areset; printf 'pub:-:4096:1:AAAA000011112222:1600000000:::-:::scESC::::::23::0:\nfpr:::::::::%s:\n' AAAA0000111122223333444455556666777788ZZ >> "$RA/trusted.gpg"; run apply --yes
 check "global keyring with an unused extra key: source signed, keyring kept (manual)" '[ "$RC" = 0 ] && [ -e "$RA/trusted.gpg" ] && has "manual /etc/apt/trusted.gpg keeps key\(s\) no source here is signed by" && grep -q "signed-by=$KR" "$RA/sources.list.d/tp.list"'
+# expired (validity e, or expiry <= now) and revoked keys next to the signer need no signed-by home: the keyring is dropped
+# (GitHub CLI's vendor keyring carries an expired old key; counting it kept the migrated global keyring, logs/36)
+for dead in 'e:4096:1:BBBB000011112222:1500000000:::' 'r:4096:1:BBBB000011112222:1500000000:::' '-:4096:1:BBBB000011112222:1500000000:1600000001::'; do
+  areset; printf 'pub:%s-:::scESC::::::23::0:\nfpr:::::::::%s:\n' "$dead" BBBB000011112222333344445555666677778888 >> "$RA/trusted.gpg"; run apply --yes
+  check "global keyring with the signer + a dead key (pub:${dead%%:*}...): source signed, keyring dropped" '[ "$RC" = 0 ] && [ ! -e "$RA/trusted.gpg" ] && has "plan +drop.+/etc/apt/trusted.gpg" && grep -q "signed-by=$KR" "$RA/sources.list.d/tp.list"'
+done
 areset; rm "$T/root/var/lib/apt/lists/"*; run apply --yes
 check "no cached InRelease: manual, keyring kept, nothing to apply" '[ "$RC" = 0 ] && has "manual /etc/apt/sources.list.d/tp.list:1 no cached InRelease" && has "nothing to apply" && [ -e "$RA/trusted.gpg" ]'
 areset; echo 0000000000000000000000000000000000000000 > "$T/signfpr"; run apply --yes

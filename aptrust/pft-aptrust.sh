@@ -500,9 +500,12 @@ global_keyrings() { # non-stock global keyring files (paths without R), one per 
     pkg_stock "$f" >/dev/null || echo "$f"
   done
 }
-fprs() { # KEYRING -> primary fingerprints, one per line
+fprs() { # KEYRING -> primary fingerprints of its USABLE keys, one per line. Expired/revoked keys (same test as
+  # key_check) sign nothing APT accepts, so they need no signed-by home: vendor keyrings such as GitHub CLI's keep an
+  # expired old key next to the current one, and counting it kept the migrated global keyring (logs/36)
   "$GPG" --batch --no-options --homedir "$TMP/gnupg" --show-keys --with-colons "$R$1" 2>/dev/null |
-    awk -F: '$1 == "pub" { want = 1; next } $1 == "fpr" && want { print $10; want = 0 }'
+    awk -F: -v t="$(now)" '$1 == "pub" { want = !($2 == "e" || $2 == "r" || ($7 != "" && $7 <= t)); next }
+      $1 == "fpr" && want { print $10; want = 0 }'
 }
 signer() { # INRELEASE -> primary fingerprint of the key that made a valid signature (from the global keyrings), rc 1 if none
   local a=() g

@@ -1,0 +1,22 @@
+dev reproduction: apply --dry-run on a SEEDED COPY of /etc/apt (PFT_AT_ROOT, the real /etc/apt is not touched) - 2026-11-11T08:46:39Z - Ubuntu 22.04.5 LTS
+$ cat seed.sh
+set -e; D="$1"
+mkdir -p "$D/etc" "$D/var/lib/apt" "$D/usr/local"; cp -a /etc/apt "$D/etc/apt"; cp -a /var/lib/apt/lists "$D/var/lib/apt/"
+cp -p "$D/etc/apt/keyrings/githubcli-archive-keyring.gpg" "$D/etc/apt/trusted.gpg.d/pft-aptrust-drill-githubcli.gpg"
+echo 'deb [arch=amd64] https://cli.github.com/packages stable main' > "$D/etc/apt/sources.list.d/github-cli.list"
+$ sudo env PFT_AT_ROOT=<copy> pft-aptrust audit | grep -E "github|drill"
+WARN  src:/etc/apt/sources.list.d/github-cli.list:1 third-party source with no signed-by: every global key in trusted.gpg.d can sign it (https://cli.github.com/packages)
+WARN  global:/etc/apt/trusted.gpg.d/pft-aptrust-drill-githubcli.gpg not a stock package file: this key is trusted for EVERY source without signed-by; move it to /etc/apt/keyrings + signed-by
+INFO  key:/etc/apt/keyrings/githubcli-archive-keyring.gpg 1 usable key(s), 1 expired/revoked key(s) kept alongside (vendor keyring; harmless)
+INFO  key:/etc/apt/trusted.gpg.d/pft-aptrust-drill-githubcli.gpg 1 usable key(s), 1 expired/revoked key(s) kept alongside (vendor keyring; harmless)
+== HEAD 95bc0dde6b4132a82bc319dd583f39efd6b23b78 (before the fix): apply --dry-run
+  2026-11-11T08:46:51Z apply on validator: 1 planned change(s), 1 manual item(s)
+    plan    sign	/etc/apt/sources.list.d/github-cli.list	1	https://cli.github.com/packages	/etc/apt/keyrings/pft-aptrust-cli.github.com.gpg	7F38BBB59D064DBCB3D84D725612B36462313325
+    manual  /etc/apt/trusted.gpg.d/pft-aptrust-drill-githubcli.gpg keeps key(s) no source here is signed by: left in place (remove by hand if unused)
+  2026-11-11T08:46:51Z dry-run: nothing written
+== working tree (fprs counts usable keys only): apply --dry-run
+  2026-11-11T08:46:57Z apply on validator: 2 planned change(s), 0 manual item(s)
+    plan    sign	/etc/apt/sources.list.d/github-cli.list	1	https://cli.github.com/packages	/etc/apt/keyrings/pft-aptrust-cli.github.com.gpg	7F38BBB59D064DBCB3D84D725612B36462313325
+    plan    drop	/etc/apt/trusted.gpg.d/pft-aptrust-drill-githubcli.gpg
+  2026-11-11T08:46:57Z dry-run: nothing written
+copy removed: yes

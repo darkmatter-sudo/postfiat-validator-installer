@@ -527,6 +527,20 @@ MUTANTS = [
         'while IFS= read -r p; do [ -n "$p" ] && rm -f "$R$p"; done <"$bk/created"',
         "true",
     ),
+    (
+        "P18",
+        S,
+        "drop: dead (expired/revoked) keys must move too",
+        'want = !($2 == "e" || $2 == "r" || ($7 != "" && $7 <= t))',
+        "want = 1",
+    ),
+    (
+        "P19",
+        S,
+        "drop: a key with a past expiry date counts as usable",
+        'want = !($2 == "e" || $2 == "r" || ($7 != "" && $7 <= t))',
+        'want = !($2 == "e" || $2 == "r")',
+    ),
     # rules
     (
         "R01",
