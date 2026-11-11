@@ -821,7 +821,7 @@ def main():
     # ATMUT_ORPHAN_SELFTEST=1 is the positive control: it leaves one child behind on purpose.
     if os.environ.get("ATMUT_ORPHAN_SELFTEST") == "1":
         subprocess.Popen(
-            ["bash", "-c", "sleep 60", os.path.join(work, "orphan-selftest")],
+            ["bash", "-c", "sleep 60; true", os.path.join(work, "orphan-selftest")],
             start_new_session=True,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
