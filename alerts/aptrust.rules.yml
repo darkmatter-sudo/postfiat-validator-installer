@@ -1,0 +1,36 @@
+# Alert rules for pft-aptrust (../aptrust). On each host, pft-aptrust.timer (daily) runs `pft-aptrust audit --textfile`,
+# which writes pft_aptrust_HOST.prom: pft_aptrust_up, pft_aptrust_last_run_timestamp_seconds and, when the audit
+# completed, pft_aptrust_checks{result="pass|info|warn|fail"} plus source/key counts. The sentry runs no Prometheus:
+# its textfile is pulled to the validator and evaluated there like every other host="sentry" series.
+# WARN results (third-party source without signed-by, key expiring soon, unknown off-package file) do not page; they
+# show in the metric and in `sudo pft-aptrust audit`. Only FAIL (a channel that can put unsigned or attacker-chosen
+# code on the host) pages.
+# Tests: aptrust.tests.yml (promtool test rules aptrust.tests.yml), 1m sample interval.
+groups:
+  - name: pft-aptrust
+    rules:
+      - alert: PFTAptrustUntrusted
+        # at least one FAIL: trusted=yes / allow-insecure source, signed-by naming a missing keyring, plain-http
+        # third-party source without signed-by, non-root-writable APT path, legacy trusted.gpg, weak or dead key,
+        # an apt option that turns signature/TLS checks off, or a group/world-writable /usr/local binary
+        expr: pft_aptrust_checks{result="fail"} > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.host }}: {{ $value }} APT/image supply-chain trust check(s) FAIL"
+          description: "pft-aptrust found a package or image channel that can put unsigned or attacker-chosen code on this host. Run `sudo pft-aptrust audit` (each FAIL line names the file and line), then `sudo pft-aptrust apply --dry-run` for the safe fixes (key migration to signed-by, permission repair); anything else needs a manual fix."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/aptrust/README.md#alerts"
+      - alert: PFTAptrustStale
+        # the last audit could not run (no /etc/apt or gpg: up 0) or no audit for 26 h (timer stopped or failing);
+        # an up 0 run drops the checks series, so PFTAptrustUntrusted resolves and this one takes over
+        expr: |
+          pft_aptrust_up == 0
+          or time() - pft_aptrust_last_run_timestamp_seconds > 93600
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.host }}: supply-chain trust audit has not completed for over 26 h"
+          description: "pft-aptrust did not produce a result. Run `systemctl status pft-aptrust.timer pft-aptrust.service` and `sudo pft-aptrust audit` (exit 2 names the missing input)."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/aptrust/README.md#alerts"

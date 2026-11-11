@@ -1,0 +1,10 @@
+# Ubuntu 22.04.5 LTS | 2026-11-11T05:52:35Z | git HEAD c8463f14eaafb71554fe59e4dcfbcd465010bdbf (+ working tree: aptrust.rules.yml sha256 541f0cd0c3e4220d2a9580d3638157138bd1708ecbc2b19604ae026ccf1bd953, aptrust.tests.yml sha256 1f4610c6064c390ffe123778f1b46f263a3b789ee71923b40b9584db6fc8b30e)
+$ sudo docker run --rm --network none --entrypoint promtool -v ./alerts:/w:ro -w /w prom/prometheus:v3.5.0 check rules aptrust.rules.yml 2>&1
+Checking aptrust.rules.yml
+  SUCCESS: 2 rules found
+
+(exit 0)
+$ sudo docker run --rm --network none --entrypoint promtool -v ./alerts:/w:ro -w /w prom/prometheus:v3.5.0 test rules aptrust.tests.yml 2>&1
+  SUCCESS
+
+(exit 0)

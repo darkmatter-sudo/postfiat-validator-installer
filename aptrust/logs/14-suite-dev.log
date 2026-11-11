@@ -1,0 +1,126 @@
+PASS clean: exit 0
+PASS clean: no WARN/FAIL lines
+PASS clean: 4 sources graded (2 ubuntu, 1 list, 1 deb822; disabled stanza skipped)
+PASS clean: ubuntu http is INFO
+PASS clean: comment tail stripped (line 4 graded)
+PASS clean: vendor https+signed-by PASS
+PASS clean: deb822 stanza PASS at its first line
+PASS clean: disabled Trusted: yes stanza not graded
+PASS clean: stock global key INFO
+PASS clean: vendor key PASS
+PASS clean: aptconf PASS
+PASS clean: stock pin INFO
+PASS clean: official rolling image INFO
+PASS clean: version-tag image with RepoDigest PASS
+PASS clean: compose ${NETWORK:-devnet} resolved, official INFO
+PASS clean: compose digest pin PASS (quoted)
+PASS clean: 2 allowlisted add-on files (manifest + default pft-agent), packaged file skipped
+PASS clean: json exit 0, result PASS
+PASS clean: textfile up 1, fail 0, warn 0, 4 sources
+PASS clean: textfile is 0644, no temp left
+PASS neg trusted=yes: exit 1 + finding
+PASS neg allow-insecure: exit 1 + finding
+PASS neg allow-weak (upper case): exit 1 + finding
+PASS neg deb822 Trusted: yes: exit 1 + finding
+PASS neg signed-by missing keyring: exit 1 + finding
+PASS neg third-party http, no signed-by: exit 1 + finding
+PASS neg third-party https, no signed-by: exit 1 + finding
+PASS neg third-party http with signed-by: exit 1 + finding
+PASS neg ubuntu name in the path is not an ubuntu host: exit 1 + finding
+PASS neg ubuntu host as a prefix of another domain: exit 1 + finding
+PASS country mirror *.archive.ubuntu.com is Ubuntu (INFO, exit 0)
+PASS neg no enabled source: exit 1 + finding
+PASS neg legacy trusted.gpg with keys: exit 1 + finding
+PASS neg non-stock global key: exit 1 + finding
+PASS neg stock global key modified (dpkg -V): exit 1 + finding
+PASS neg world-writable keyring: exit 1 + finding
+PASS neg group-writable sources.list.d: exit 1 + finding
+PASS neg world-writable apt.conf.d file: exit 1 + finding
+PASS neg not-root-owned: exit 1 + owner finding
+PASS neg RSA-1024 key: exit 1 + finding
+PASS RSA-2048 is not weak (boundary)
+PASS neg DSA key: exit 1 + finding
+PASS neg only key expired (validity e): exit 1 + finding
+PASS neg only key expired (by date, validity not set): exit 1 + finding
+PASS neg only key revoked: exit 1 + finding
+PASS neg key expires in 10 days: exit 1 + finding
+PASS key expiring in 31 days is not WARN (boundary)
+PASS expired key next to a usable one is INFO (exit 0)
+PASS neg empty keyring: exit 1 + finding
+PASS neg unused keyring in /etc/apt/keyrings is still checked: exit 1 + finding
+PASS neg aptconf Acquire::AllowInsecureRepositories: exit 1 + finding
+PASS neg aptconf Acquire::AllowDowngradeToInsecureRepositories: exit 1 + finding
+PASS neg aptconf Acquire::AllowWeakRepositories: exit 1 + finding
+PASS neg aptconf APT::Get::AllowUnauthenticated: exit 1 + finding
+PASS neg aptconf Acquire::https::Verify-Peer: exit 1 + finding
+PASS neg aptconf Acquire::https::pkg.vendor.example::Verify-Host: exit 1 + finding
+PASS neg aptconf Check-Valid-Until false: exit 1 + finding
+PASS aptconf AllowInsecureRepositories false is fine
+PASS neg apt-config dump fails: exit 1 + finding
+PASS neg pin >= 1000: exit 1 + finding
+PASS neg third-party pin > 500 for every package: exit 1 + finding
+PASS single-package pin 600 is fine
+PASS preferences.d file with a dot-extension other than .pref is ignored (as APT does)
+PASS neg untagged third-party image: exit 1 + finding
+PASS neg :latest third-party image: exit 1 + finding
+PASS neg image without RepoDigest: exit 1 + finding
+PASS known local build (LOCAL_IMAGES) is INFO
+PASS registry with a port: tag parsed as 2.1 (PASS)
+PASS neg registry port is not a tag (untagged): exit 1 + finding
+PASS neg docker ps fails: exit 1 + finding
+PASS neg compose :latest: exit 1 + finding
+PASS compose version tag is INFO
+PASS neg compose file listed but missing: exit 1 + finding
+PASS neg unknown /usr/local/bin file: exit 1 + finding
+PASS neg unknown /usr/local/sbin file: exit 1 + finding
+PASS OFFPKG_ALLOW from the env file allows a path
+PASS neg group-writable add-on file: exit 1 + finding
+PASS neg world-writable /usr/local/bin: exit 1 + finding
+PASS neg allowlist missing: exit 1 + finding
+PASS neg global pip package: exit 1 + finding
+PASS neg global npm package: exit 1 + finding
+PASS neg dpkg -i package (installed,local): exit 1 + finding
+PASS textfile counts 1 fail + 1 warn
+PASS json exit 1, FINDINGS, one FAIL check
+PASS no /etc/apt: exit 2, textfile up 0
+PASS unknown argument: exit 3
+PASS bad HOST_LABEL: exit 3
+PASS bad EXPIRY_WARN_DAYS: exit 3
+PASS HOST_LABEL from env names the textfile
+PASS unknown command: exit 3
+PASS apply fixture: audit sees legacy keyring FAIL + unsigned source WARN
+PASS apply without --yes: exit 4, nothing written
+PASS apply without a maint window: exit 4
+PASS apply with < MAINT_MIN left: exit 4
+PASS apply with a data-collection lock: exit 4
+PASS dry-run: plan sign + drop, nothing written
+PASS pre-gate apt-get update fails: refused, nothing written
+PASS pre-gate signature error: refused, nothing written
+PASS apply: exit 0, verify ok
+PASS apply: source line now has signed-by
+PASS apply: new keyring holds exactly the signer key, 0644
+PASS apply: legacy trusted.gpg dropped
+PASS after apply: audit exit 0 (legacy + unsigned findings gone)
+PASS second apply while the first is in place: exit 4
+PASS rollback without --yes: exit 4
+PASS rollback: exit 0, tree byte-identical to before apply (bytes, modes, removed keyring)
+PASS rollback: apply record archived
+PASS rollback with no apply on record: exit 4
+PASS apply into an existing [options] block
+PASS post-gate NO_PUBKEY: exit 1, auto-restored byte-identical, no apply record
+PASS post-gate lost an index: exit 1, restored
+PASS VERIFY_INJECT: exit 1, restored byte-identical
+PASS target keyring already exists: refused, nothing written
+PASS global keyring with an unused extra key: source signed, keyring kept (manual)
+PASS no cached InRelease: manual, keyring kept, nothing to apply
+PASS InRelease verifies with no global key: manual, nothing written
+PASS deb822 without Signed-By: manual, legacy keyring NOT dropped
+PASS signable list + unsignable deb822 on one legacy key: list signed, legacy keyring kept
+PASS control: the plain one-source apply does plan the drop (the absence check above can match)
+PASS perm fixes: keyring 0644, sources.list.d 0755
+PASS rollback restores the old modes (666 / 775) byte-identical
+PASS rollback whose backup restores wrong bytes: exit 5 RESTORE MISMATCH
+PASS real gpg: expired RSA-2048 + usable Ed25519 -> INFO 1 usable, 1 expired, exit 0
+PASS real gpg: only the expired key -> FAIL no usable key (the only FAIL)
+PASS real gpg: armored Ed25519 keyring -> PASS
+RESULT: 125/125 passed

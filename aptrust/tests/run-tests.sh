@@ -301,7 +301,12 @@ check "no cached InRelease: manual, keyring kept, nothing to apply" '[ "$RC" = 0
 areset; echo 0000000000000000000000000000000000000000 > "$T/signfpr"; run apply --yes
 check "InRelease verifies with no global key: manual, nothing written" '[ "$RC" = 0 ] && has "verifies with no global key" && has "nothing to apply"'
 areset; rm "$RA/sources.list.d/tp.list"; printf 'Types: deb\nURIs: https://pkg.tp.example/apt\nSuites: stable\nComponents: main\n' > "$RA/sources.list.d/tp.sources"; chmod 644 "$RA/sources.list.d/tp.sources"; run apply --yes
-check "deb822 without Signed-By: manual, legacy keyring NOT dropped" '[ "$RC" = 0 ] && has "manual /etc/apt/sources.list.d/tp.sources:1 deb822 stanza without Signed-By" && [ -e "$RA/trusted.gpg" ] && ! has "plan drop"'
+check "deb822 without Signed-By: manual, legacy keyring NOT dropped" '[ "$RC" = 0 ] && has "manual /etc/apt/sources.list.d/tp.sources:1 deb822 stanza without Signed-By" && [ -e "$RA/trusted.gpg" ] && ! has "plan +drop"'
+# the legacy key signs a list source apply CAN move AND a deb822 source it cannot: the list source is signed, but the
+# keyring must stay, or the deb822 source loses its only key (every key "moved" is not enough; mutant P12)
+areset; printf 'Types: deb\nURIs: https://pkg3.tp.example/apt\nSuites: stable\nComponents: main\n' > "$RA/sources.list.d/tp3.sources"; chmod 644 "$RA/sources.list.d/tp3.sources"; run apply --yes
+check "signable list + unsignable deb822 on one legacy key: list signed, legacy keyring kept" '[ "$RC" = 0 ] && grep -q "signed-by=$KR" "$RA/sources.list.d/tp.list" && has "manual /etc/apt/sources.list.d/tp3.sources:1 deb822 stanza without Signed-By" && [ -e "$RA/trusted.gpg" ] && ! has "plan +drop"'
+check "control: the plain one-source apply does plan the drop (the absence check above can match)" 'areset; run apply --dry-run; has "plan +drop.+/etc/apt/trusted.gpg"'
 areset; chmod 666 "$RA/keyrings/vendor.gpg"; chmod 775 "$RA/sources.list.d"; B="$(tree)"; run apply --yes
 check "perm fixes: keyring 0644, sources.list.d 0755" '[ "$RC" = 0 ] && [ "$(stat -c %a "$RA/keyrings/vendor.gpg")" = 644 ] && [ "$(stat -c %a "$RA/sources.list.d")" = 755 ]'
 run rollback --yes

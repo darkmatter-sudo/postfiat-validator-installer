@@ -1,0 +1,113 @@
+# promtool unit tests for aptrust.rules.yml. Run: promtool test rules aptrust.tests.yml
+# NxM in values = N, then M more samples (1x20 covers t 0..20). Timestamps are unix seconds at 1m samples, so a run
+# timestamp that keeps pace with the clock is 0+60xN. Every alert has a fire case at its `for` boundary (one minute
+# before = not yet), a recovery case, and a case that must stay quiet.
+rule_files:
+- aptrust.rules.yml
+evaluation_interval: 1m
+tests:
+- name: clean audit for 3h fires nothing (INFO/WARN results do not page)
+  interval: 1m
+  input_series:
+  - series: pft_aptrust_up{host="validator"}
+    values: 1x180
+  - series: pft_aptrust_last_run_timestamp_seconds{host="validator"}
+    values: 0+60x180
+  - series: pft_aptrust_checks{host="validator",result="pass"}
+    values: 40x180
+  - series: pft_aptrust_checks{host="validator",result="info"}
+    values: 5x180
+  - series: pft_aptrust_checks{host="validator",result="warn"}
+    values: 3x180
+  - series: pft_aptrust_checks{host="validator",result="fail"}
+    values: 0x180
+  alert_rule_test:
+  - {eval_time: 179m, alertname: PFTAptrustUntrusted, exp_alerts: []}
+  - {eval_time: 179m, alertname: PFTAptrustStale, exp_alerts: []}
+
+- name: a FAIL at 10m fires after for 5m (15m) with the count, clears when the next audit is clean
+  interval: 1m
+  input_series:
+  - series: pft_aptrust_up{host="sentry"}
+    values: 1x60
+  - series: pft_aptrust_last_run_timestamp_seconds{host="sentry"}
+    values: 0+60x60
+  - series: pft_aptrust_checks{host="sentry",result="fail"}
+    values: 0x9 2x20 0x30   # 2 FAILs at t 10..30, clean from 31m
+  - series: pft_aptrust_checks{host="sentry",result="warn"}
+    values: 1x60
+  alert_rule_test:
+  - {eval_time: 14m, alertname: PFTAptrustUntrusted, exp_alerts: []}
+  - eval_time: 15m
+    alertname: PFTAptrustUntrusted
+    exp_alerts:
+    - exp_labels: {severity: critical, host: sentry, result: fail}
+      exp_annotations:
+        summary: "sentry: 2 APT/image supply-chain trust check(s) FAIL"
+        description: "pft-aptrust found a package or image channel that can put unsigned or attacker-chosen code on this host. Run `sudo pft-aptrust audit` (each FAIL line names the file and line), then `sudo pft-aptrust apply --dry-run` for the safe fixes (key migration to signed-by, permission repair); anything else needs a manual fix."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/aptrust/README.md#alerts"
+  - {eval_time: 31m, alertname: PFTAptrustUntrusted, exp_alerts: []}
+  - {eval_time: 59m, alertname: PFTAptrustStale, exp_alerts: []}
+
+- name: a FAIL that lasts only 4m never fires
+  interval: 1m
+  input_series:
+  - series: pft_aptrust_checks{host="validator",result="fail"}
+    values: 0x9 1x3 0x20
+  alert_rule_test:
+  - {eval_time: 13m, alertname: PFTAptrustUntrusted, exp_alerts: []}
+  - {eval_time: 20m, alertname: PFTAptrustUntrusted, exp_alerts: []}
+
+- name: audit cannot run (up 0, checks gone) -> Untrusted resolves, Stale fires after 30m, clears on a good run
+  interval: 1m
+  input_series:
+  - series: pft_aptrust_up{host="validator"}
+    values: 1x59 0x60 1x30
+  - series: pft_aptrust_last_run_timestamp_seconds{host="validator"}
+    values: 0+60x150
+  # FAIL present until the audit stops completing at 60m; an up 0 run writes no checks series
+  - series: pft_aptrust_checks{host="validator",result="fail"}
+    values: 1x59 _x60 0x30
+  alert_rule_test:
+  - eval_time: 50m
+    alertname: PFTAptrustUntrusted
+    exp_alerts:
+    - exp_labels: {severity: critical, host: validator, result: fail}
+      exp_annotations:
+        summary: "validator: 1 APT/image supply-chain trust check(s) FAIL"
+        description: "pft-aptrust found a package or image channel that can put unsigned or attacker-chosen code on this host. Run `sudo pft-aptrust audit` (each FAIL line names the file and line), then `sudo pft-aptrust apply --dry-run` for the safe fixes (key migration to signed-by, permission repair); anything else needs a manual fix."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/aptrust/README.md#alerts"
+  - {eval_time: 70m, alertname: PFTAptrustUntrusted, exp_alerts: []}
+  - {eval_time: 89m, alertname: PFTAptrustStale, exp_alerts: []}
+  - eval_time: 90m
+    alertname: PFTAptrustStale
+    exp_alerts:
+    - exp_labels: {severity: warning, host: validator}
+      exp_annotations: &stale
+        summary: "validator: supply-chain trust audit has not completed for over 26 h"
+        description: "pft-aptrust did not produce a result. Run `systemctl status pft-aptrust.timer pft-aptrust.service` and `sudo pft-aptrust audit` (exit 2 names the missing input)."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/aptrust/README.md#alerts"
+  - {eval_time: 125m, alertname: PFTAptrustStale, exp_alerts: []}
+
+- name: no audit for 26h (timestamp frozen) fires after for 30m; a fresh run clears it
+  interval: 1m
+  input_series:
+  # 93600 s = 1560 min: the age passes 93600 at 1561m, so the alert fires at 1591m
+  - series: pft_aptrust_up{host="sentry"}
+    values: 1x1650
+  - series: pft_aptrust_last_run_timestamp_seconds{host="sentry"}
+    values: 0x1600 96060+60x50
+  - series: pft_aptrust_checks{host="sentry",result="fail"}
+    values: 0x1650
+  alert_rule_test:
+  - {eval_time: 1590m, alertname: PFTAptrustStale, exp_alerts: []}
+  - eval_time: 1591m
+    alertname: PFTAptrustStale
+    exp_alerts:
+    - exp_labels: {severity: warning, host: sentry}
+      exp_annotations:
+        summary: "sentry: supply-chain trust audit has not completed for over 26 h"
+        description: "pft-aptrust did not produce a result. Run `systemctl status pft-aptrust.timer pft-aptrust.service` and `sudo pft-aptrust audit` (exit 2 names the missing input)."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/aptrust/README.md#alerts"
+  - {eval_time: 1602m, alertname: PFTAptrustStale, exp_alerts: []}
+  - {eval_time: 1640m, alertname: PFTAptrustUntrusted, exp_alerts: []}
