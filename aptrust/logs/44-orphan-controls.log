@@ -1,0 +1,46 @@
+$ sha256sum aptrust/tests/orphan-controls.sh aptrust/tests/mutate.py
+4dc05761f96af70c277027150eff1ec22391cc22332562ed3d2463827825af2f  aptrust/tests/orphan-controls.sh
+33c88c9037c1d260c39851bfe02c486d70155a2737767851f51230982ff6e612  aptrust/tests/mutate.py
+$ nice -n 15 bash aptrust/tests/orphan-controls.sh
+orphan-check controls at 4487955ca4aa0fbd2e4592dce21f6ab15974eff1 - 2026-11-11T11:18:02Z - Ubuntu 22.04.5 LTS
+== 0. state after recorded run 43: no process names a mutant scratch dir, no scratch dir left
+$ pgrep -af 'atmut[.]' | grep -v orphan-controls || echo none
+none
+(exit 0)
+$ ls -d ~/.cache/atmut.* 2>/dev/null | wc -l
+0
+(exit 0)
+== 1. decoy: an unrelated shell whose command line only NAMES an old scratch dir
+decoy pid 2918658
+$ pgrep -fc '[a]tmut\.'   # the OLD check's exact pattern: counts the decoy
+1
+(exit 0)
+== 2. fixed harness with the decoy alive: orphan check 0, exit 0
+$ TEST_TMPDIR=$HOME/.cache python3 -u aptrust/tests/mutate.py --jobs 2 --only A01,O01
+control suite (unmutated copy): PASS RESULT: 153/153 passed
+control promtool (unmutated copy): PASS SUCCESS
+A01 CAUGHT - src: trusted=yes ignored [2 failing: neg trusted=yes: exit 1 + finding; neg deb822 Trusted: yes: exit 1 + finding]
+O01 CAUGHT - default allowlist drops the installer files [1 failing: default allowlist: the installer's postfiat-health + postfiat-docker-user.sh are known (no]
+orphan check: 0 process(es) still running from this run's mutant copies
+RESULT: 2 caught, 0 survived, 0 not applied, 0 broken of 2 (--only subset of 91)
+(exit 0)
+== 3. positive control: ATMUT_ORPHAN_SELFTEST=1 leaves one child behind -> orphan check 1, exit 1
+$ ATMUT_ORPHAN_SELFTEST=1 TEST_TMPDIR=$HOME/.cache python3 -u aptrust/tests/mutate.py --jobs 2 --only A01
+control suite (unmutated copy): PASS RESULT: 153/153 passed
+control promtool (unmutated copy): PASS SUCCESS
+A01 CAUGHT - src: trusted=yes ignored [2 failing: neg trusted=yes: exit 1 + finding; neg deb822 Trusted: yes: exit 1 + finding]
+orphan: 3041101 bash -c sleep 60; true ~/.cache/atmut.agou5v4o/orphan-selftest
+orphan check: 1 process(es) still running from this run's mutant copies
+RESULT: 1 caught, 0 survived, 0 not applied, 0 broken of 1 (--only subset of 91)
+(exit 1)
+== 4. cleanup by PID
+kill selftest child 3041101
+kill decoy 2918658
+$ pgrep -af 'atmut[.]' | grep -v orphan-controls || echo none
+none
+(exit 0)
+$ ls -d ~/.cache/atmut.* 2>/dev/null | wc -l
+0
+(exit 0)
+END 2026-11-11T11:23:45Z
+(exit 0)
