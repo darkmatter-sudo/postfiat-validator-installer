@@ -1,0 +1,408 @@
+pft-aptrust two-host apply/rollback + alert drill - 2026-11-11T08:56:29Z - Ubuntu 22.04.5 LTS - run 20261111T085629Z
+repo HEAD ba0981e73fbea3a8ae88eccce6648e969e090454 (clean: yes)
+sha256 e5bb1150243c2bd78b2759144ccd61377ad2181f903bec3dd8a548a10ed77617 aptrust/drill/live-run.sh
+sha256 0e7722706169d1af4d5fac63341ade4804e3d5faa406ecf31911535c25fb835b aptrust/pft-aptrust.sh
+sha256 ac7d5a23dd3a75542847004734c63c196c97dbc757947c282aa93e085e0dea25 alerts/aptrust.rules.yml
+
+== 0. preflight (nothing changed yet)
+  installed on both hosts, timer active, no apply on record, no drill file, group root empty on both
+$ on local 'sudo -n pft-aptrust audit' | tail -n 1
+  RESULT: PASS - 11 sources, 4 keys, 4 containers; 8 pass, 18 info, 0 warn, 0 fail -> exit 0
+  (exit 0)
+$ on local 'sudo -n apt-get update -q >/dev/null 2>&1; echo apt-get update rc $?'
+  apt-get update rc 0
+  (exit 0)
+$ on relay 'sudo -n pft-aptrust audit' | tail -n 1
+  RESULT: PASS - 10 sources, 2 keys, 1 containers; 4 pass, 16 info, 0 warn, 0 fail -> exit 0
+  (exit 0)
+$ on relay 'sudo -n apt-get update -q >/dev/null 2>&1; echo apt-get update rc $?'
+  apt-get update rc 0
+  (exit 0)
+  /etc/apt snapshots: validator 53 lines sha 9a0b4790ad6903f3, sentry 49 lines sha 6f1f7a8520622a7a
+$ curl -s http://127.0.0.1:9090/api/v1/alerts | jq -r '.data.alerts[] | "\(.labels.alertname) \(.labels.host // "-") \(.state)"' | sort
+  PFTAlertPipelineWatchdog - firing
+  PFTVulnRebootOwed validator pending
+  (exit 0)
+$ curl -s http://127.0.0.1:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'
+  0
+  (exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/rules | jq -r '.data.groups[] | select(.name == "pft-aptrust") | .rules[] | [.name, .health] | @tsv'
+  PFTAptrustUntrusted	ok
+  PFTAptrustStale	ok
+  (exit 0)
+  bridge mounts the operator env file; sentry alertpath timer active, check OK
+  operator topics to watch: 2 (not printed)
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+  postfiatd-sentry: server_state=full
+  postfiatd: server_state=full
+  pft-integrity validator: RESULT: PASS - 236 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity sentry: RESULT: PASS - 142 unchanged, 0 warn, 0 fail -> exit 0
+$ redact.py control --literals <literals>
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (17/17)
+
+== 0b. refusals outside a pft-maint window (both hosts; nothing may be written)
+$ on local 'sudo -n pft-maint active; echo maint-active rc $?'
+  maint-active rc 1
+  (exit 0)
+$ on local 'sudo -n pft-aptrust apply --yes'
+  2026-11-11T08:57:45Z REFUSED - no active pft-maint window (window=none); run: sudo pft-maint start --ttl 30m --reason ...; nothing written
+  (exit 4)
+CHECK ok   validator: apply --yes without a window: exit 4, REFUSED no active pft-maint window
+$ on local 'sudo -n pft-aptrust apply'
+  2026-11-11T08:57:45Z REFUSED - apply changes APT trust files: add --yes; nothing written
+  (exit 4)
+CHECK ok   validator: apply without --yes: exit 4
+$ on local 'sudo -n pft-aptrust rollback --yes'
+  2026-11-11T08:57:45Z REFUSED - no active pft-maint window (window=none); run: sudo pft-maint start --ttl 30m --reason ...; nothing written
+  (exit 4)
+CHECK ok   validator: rollback without a window: exit 4
+$ on relay 'sudo -n pft-maint active; echo maint-active rc $?'
+  maint-active rc 1
+  (exit 0)
+$ on relay 'sudo -n pft-aptrust apply --yes'
+  2026-11-11T08:57:47Z REFUSED - no active pft-maint window (window=none); run: sudo pft-maint start --ttl 30m --reason ...; nothing written
+  (exit 4)
+CHECK ok   sentry: apply --yes without a window: exit 4, REFUSED no active pft-maint window
+$ on relay 'sudo -n pft-aptrust apply'
+  2026-11-11T08:57:47Z REFUSED - apply changes APT trust files: add --yes; nothing written
+  (exit 4)
+CHECK ok   sentry: apply without --yes: exit 4
+$ on relay 'sudo -n pft-aptrust rollback --yes'
+  2026-11-11T08:57:48Z REFUSED - no active pft-maint window (window=none); run: sudo pft-maint start --ttl 30m --reason ...; nothing written
+  (exit 4)
+CHECK ok   sentry: rollback without a window: exit 4
+CHECK ok   /etc/apt unchanged on both hosts after the refusals
+
+== 1. throwaway targets, catch-all silence, pft-maint window, pft-fleet sync of aptrust ba0981e
+  sentry pft-alertpath-check.timer stopped: yes
+CHECK ok   sentry pft-alertpath-check.timer paused for the bridge re-create
+  2026-11-11T08:57:51Z starting pft-alert-bridge (ntfy: on)
+  2026-11-11T08:57:53Z pft-alert-bridge listening
+CHECK ok   Alertmanager bridge -> throwaway env file (0700 temp dir)
+  sentry pft-alertpath check rc 0 after 1s; timer started again: yes
+CHECK ok   sentry pft-alertpath OK again, check timer running
+CHECK ok   silence alertname=~".+", alertname!~"PFTAlertPipelineWatchdog|PFTAptrust.*" until 2026-11-11T10:57:55Z
+$ { [ 0 = 0 ] || sudo -n cp -p /etc/pft-maint/ntfy.env /etc/pft-maint/ntfy.env.pre-aptrust-live; } && printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' "$MT" | sudo -n tee /etc/pft-maint/ntfy.env >/dev/null && sudo -n chmod 600 /etc/pft-maint/ntfy.env && sudo -n stat -c '%a %U' /etc/pft-maint/ntfy.env
+  600 root
+  (exit 0)
+CHECK ok   pft-maint [MAINT] target -> second throwaway topic (real file present before: 0)
+$ sudo -n pft-maint start --ttl 90m --reason 'task_2fac2360 aptrust live drill'
+  window started: id m1794387475-3105792 until 2026-11-11T10:27:55Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint window open on the validator
+CHECK ok   sentry has the window (via the watchdog channel) after 60s
+$ R 'sudo -n pft-maint status --json' | jq -c '{window, remaining_sec, locks: (.locks | length)}'
+  {"window":"active","remaining_sec":5329,"locks":0}
+  (exit 0)
+$ sudo -n pft-fleet sync --addon aptrust --to ba0981e73fbea3a8ae88eccce6648e969e090454 --apply --reason 'task_2fac2360 aptrust ba0981e (drop counts usable keys only)'
+  [2026-11-11T08:59:34Z] sync aptrust to ba0981e73fbea3a8ae88eccce6648e969e090454 (2026-11-11T08:53:41+00:00) REF main=ba0981e73fbea3a8ae88eccce6648e969e090454
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN sentry sentry /usr/local/bin/pft-aptrust 0755 BEHIND 6ce6c38e2a15 0e7722706169 write
+  PLAN sentry sentry /usr/local/lib/pft-aptrust/manifest.tsv 0644 CURRENT 50e83873849b 50e83873849b keep
+  PLAN sentry sentry /etc/systemd/system/pft-aptrust.service 0644 CURRENT 5eda4d742e76 5eda4d742e76 keep
+  PLAN sentry sentry /etc/systemd/system/pft-aptrust.timer 0644 CURRENT 7b2dabe7abd8 7b2dabe7abd8 keep
+  PLAN validator validator /usr/local/bin/pft-aptrust 0755 BEHIND 6ce6c38e2a15 0e7722706169 write
+  PLAN validator validator /usr/local/lib/pft-aptrust/manifest.tsv 0644 CURRENT 50e83873849b 50e83873849b keep
+  PLAN validator validator /etc/systemd/system/pft-aptrust.service 0644 CURRENT 5eda4d742e76 5eda4d742e76 keep
+  PLAN validator validator /etc/systemd/system/pft-aptrust.timer 0644 CURRENT 7b2dabe7abd8 7b2dabe7abd8 keep
+  [2026-11-11T08:59:34Z] order: sentry validator
+  [2026-11-11T08:59:34Z] sentry: 1 file(s) to write
+  PRE sentry pft-maint window active PASS
+  PRE sentry node server_state=full PASS
+  PRE sentry pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP sentry /usr/local/bin/pft-aptrust sha256 6ce6c38e2a15 -> /var/lib/pft-fleet/backup/20261111T085934Z-aptrust-sentry
+  WRITE sentry /usr/local/bin/pft-aptrust 6ce6c38e2a15 -> 0e7722706169 mode 0755
+  GATE sentry sha256 /usr/local/bin/pft-aptrust = target 0e7722706169 PASS
+  GATE sentry syntax /usr/local/bin/pft-aptrust bash -n PASS
+  GATE sentry addon units failed=none PASS
+  GATE sentry node server_state=full PASS
+  ACCEPT sentry pft-integrity baseline updated: pft-fleet sync aptrust@ba0981e73fbe (pft-aptrust)
+  [2026-11-11T09:00:23Z] SYNCED sentry aptrust -> ba0981e73fbe
+  [2026-11-11T09:00:23Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/bin/pft-aptrust sha256 6ce6c38e2a15 -> /var/lib/pft-fleet/backup/20261111T085934Z-aptrust-validator
+  WRITE validator /usr/local/bin/pft-aptrust 6ce6c38e2a15 -> 0e7722706169 mode 0755
+  GATE validator sha256 /usr/local/bin/pft-aptrust = target 0e7722706169 PASS
+  GATE validator syntax /usr/local/bin/pft-aptrust bash -n PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync aptrust@ba0981e73fbe (pft-aptrust)
+  [2026-11-11T09:01:08Z] SYNCED validator aptrust -> ba0981e73fbe
+  [2026-11-11T09:01:08Z] sync complete
+  (exit 0)
+CHECK ok   pft-fleet sync aptrust exit 0 (files written + accepted in pft-integrity on both hosts)
+$ sha256sum aptrust/pft-aptrust.sh | cut -c1-64; sudo -n sha256sum /usr/local/bin/pft-aptrust | cut -c1-64; R 'sha256sum /usr/local/bin/pft-aptrust | cut -c1-64'
+  0e7722706169d1af4d5fac63341ade4804e3d5faa406ecf31911535c25fb835b
+  0e7722706169d1af4d5fac63341ade4804e3d5faa406ecf31911535c25fb835b
+  0e7722706169d1af4d5fac63341ade4804e3d5faa406ecf31911535c25fb835b
+  (exit 0)
+CHECK ok   installed pft-aptrust = HEAD bytes on both hosts
+$ sudo -n pft-integrity verify | tail -n 1; R 'sudo -n pft-integrity verify | tail -n 1'
+  RESULT: PASS - 236 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 142 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts right after the sync (rebaseline by pft-fleet)
+
+== 2. SEED: perm FAIL on both hosts; validator GitHub CLI source without signed-by + its key in trusted.gpg.d
+$ R "printf '// pft-aptrust drill 20261111T085629Z: comment only, no APT option; removed at the end of the run\n' | sudo -n tee /etc/apt/apt.conf.d/99pft-aptrust-drill >/dev/null && sudo -n chmod 660 /etc/apt/apt.conf.d/99pft-aptrust-drill && stat -c '%n %a %U:%G' /etc/apt/apt.conf.d/99pft-aptrust-drill"
+  /etc/apt/apt.conf.d/99pft-aptrust-drill 660 root:root
+  (exit 0)
+CHECK ok   sentry: /etc/apt/apt.conf.d/99pft-aptrust-drill root:root 0660
+  validator seed script:
+    | set -e
+    | printf '// pft-aptrust drill 20261111T085629Z: comment only, no APT option; removed at the end of the run\n' | sudo -n tee /etc/apt/apt.conf.d/99pft-aptrust-drill >/dev/null; sudo -n chmod 660 /etc/apt/apt.conf.d/99pft-aptrust-drill
+    | sudo -n install -d -m 700 /var/lib/pft-aptrust-drill; sudo -n cp -p /etc/apt/sources.list.d/github-cli.list /var/lib/pft-aptrust-drill/github-cli.list
+    | sudo -n install -m 644 -o root -g root /etc/apt/keyrings/githubcli-archive-keyring.gpg /etc/apt/trusted.gpg.d/pft-aptrust-drill-githubcli.gpg
+    | echo 'deb [arch=amd64] https://cli.github.com/packages stable main' | sudo -n tee /etc/apt/sources.list.d/github-cli.list >/dev/null
+    | stat -c '%n %a %U:%G' /etc/apt/apt.conf.d/99pft-aptrust-drill /etc/apt/trusted.gpg.d/pft-aptrust-drill-githubcli.gpg /etc/apt/sources.list.d/github-cli.list; cat /etc/apt/sources.list.d/github-cli.list
+$ L "$VSEED"
+  /etc/apt/apt.conf.d/99pft-aptrust-drill 660 root:root
+  /etc/apt/trusted.gpg.d/pft-aptrust-drill-githubcli.gpg 644 root:root
+  /etc/apt/sources.list.d/github-cli.list 644 root:root
+  deb [arch=amd64] https://cli.github.com/packages stable main
+  (exit 0)
+CHECK ok   validator seeded
+$ on local 'sudo -n pft-aptrust audit' | grep -E '^(WARN|FAIL)|^RESULT'
+  FAIL  perm:/etc/apt/apt.conf.d/99pft-aptrust-drill mode 660 is group/world-writable: a non-root writer can change what APT trusts
+  WARN  src:/etc/apt/sources.list.d/github-cli.list:1 third-party source with no signed-by: every global key in trusted.gpg.d can sign it (https://cli.github.com/packages)
+  WARN  global:/etc/apt/trusted.gpg.d/pft-aptrust-drill-githubcli.gpg not a stock package file: this key is trusted for EVERY source without signed-by; move it to /etc/apt/keyrings + signed-by
+  RESULT: FINDINGS - 11 sources, 6 keys, 4 containers; 7 pass, 19 info, 2 warn, 1 fail -> exit 1
+  (exit 1)
+CHECK ok   validator audit: exit 1; FAIL perm:/etc/apt/apt.conf.d/99pft-aptrust-drill, WARN src github-cli.list:1, WARN global drill key; 2 warn 1 fail
+$ on relay 'sudo -n pft-aptrust audit' | grep -E '^(WARN|FAIL)|^RESULT'
+  FAIL  perm:/etc/apt/apt.conf.d/99pft-aptrust-drill mode 660 is group/world-writable: a non-root writer can change what APT trusts
+  RESULT: FINDINGS - 10 sources, 2 keys, 1 containers; 4 pass, 16 info, 0 warn, 1 fail -> exit 1
+  (exit 1)
+CHECK ok   sentry audit: FAIL perm:/etc/apt/apt.conf.d/99pft-aptrust-drill; 0 warn 1 fail
+$ sudo -n pft-aptrust pull; grep -h '^pft_aptrust_checks{' /var/lib/pft-exporter/textfile/pft_aptrust_validator.prom /var/lib/pft-exporter/textfile/pft_aptrust_sentry.prom
+  pft_aptrust_checks{host="validator",result="pass"} 7
+  pft_aptrust_checks{host="validator",result="info"} 19
+  pft_aptrust_checks{host="validator",result="warn"} 2
+  pft_aptrust_checks{host="validator",result="fail"} 1
+  pft_aptrust_checks{host="sentry",result="pass"} 4
+  pft_aptrust_checks{host="sentry",result="info"} 16
+  pft_aptrust_checks{host="sentry",result="warn"} 0
+  pft_aptrust_checks{host="sentry",result="fail"} 1
+  (exit 0)
+CHECK ok   textfiles: fail 1 for host=validator and host=sentry
+  2026-11-11T09:08:12Z (322s after the textfiles): PFTAptrustUntrusted firing in Prometheus:
+    __name__=ALERTS,alertname=PFTAptrustUntrusted,alertstate=firing,host=validator,instance=127.0.0.1:9877,job=postfiat,result=fail,severity=critical 1
+    __name__=ALERTS,alertname=PFTAptrustUntrusted,alertstate=firing,host=sentry,instance=127.0.0.1:9877,job=postfiat,result=fail,severity=critical 1
+CHECK ok   PFTAptrustUntrusted{host=validator} firing in Prometheus
+CHECK ok   PFTAptrustUntrusted{host=sentry} firing in Prometheus
+CHECK ok   [FIRING] PFTAptrustUntrusted 'validator: ...' on the throwaway topic
+CHECK ok   [FIRING] PFTAptrustUntrusted 'sentry: ...' on the throwaway topic
+  fired 341s after the seeded textfiles (rule for: 5m)
+
+== 3. plan + VERIFY_INJECT auto-rollback (inside the window)
+$ sudo -n pft-aptrust apply --dry-run
+  2026-11-11T09:08:43Z apply on validator: 3 planned change(s), 0 manual item(s)
+    plan    perm	/etc/apt/apt.conf.d/99pft-aptrust-drill	mode	640
+    plan    sign	/etc/apt/sources.list.d/github-cli.list	1	https://cli.github.com/packages	/etc/apt/keyrings/pft-aptrust-cli.github.com.gpg	7F38BBB59D064DBCB3D84D725612B36462313325
+    plan    drop	/etc/apt/trusted.gpg.d/pft-aptrust-drill-githubcli.gpg
+  2026-11-11T09:08:43Z dry-run: nothing written
+  (exit 0)
+CHECK ok   validator plan: perm /etc/apt/apt.conf.d/99pft-aptrust-drill 640, sign /etc/apt/sources.list.d/github-cli.list:1 -> /etc/apt/keyrings/pft-aptrust-cli.github.com.gpg, drop /etc/apt/trusted.gpg.d/pft-aptrust-drill-githubcli.gpg; 0 manual
+$ R 'sudo -n pft-aptrust apply --dry-run'
+  2026-11-11T09:08:52Z apply on sentry: 1 planned change(s), 0 manual item(s)
+    plan    perm	/etc/apt/apt.conf.d/99pft-aptrust-drill	mode	640
+  2026-11-11T09:08:52Z dry-run: nothing written
+  (exit 0)
+CHECK ok   sentry plan: perm /etc/apt/apt.conf.d/99pft-aptrust-drill 640 only
+$ on local 'sudo -n env VERIFY_INJECT=drill pft-aptrust apply --yes'
+  2026-11-11T09:09:03Z apply on validator: 3 planned change(s), 0 manual item(s)
+    plan    perm	/etc/apt/apt.conf.d/99pft-aptrust-drill	mode	640
+    plan    sign	/etc/apt/sources.list.d/github-cli.list	1	https://cli.github.com/packages	/etc/apt/keyrings/pft-aptrust-cli.github.com.gpg	7F38BBB59D064DBCB3D84D725612B36462313325
+    plan    drop	/etc/apt/trusted.gpg.d/pft-aptrust-drill-githubcli.gpg
+  2026-11-11T09:09:11Z backup /var/lib/pft-aptrust/backup-20261111T090910Z: 3 file(s) saved, 1 to be created
+  2026-11-11T09:09:11Z perm /etc/apt/apt.conf.d/99pft-aptrust-drill -> root-owned mode 640
+  2026-11-11T09:09:11Z sign /etc/apt/sources.list.d/github-cli.list:1 (https://cli.github.com/packages) -> signed-by=/etc/apt/keyrings/pft-aptrust-cli.github.com.gpg (key 5612B36462313325)
+  2026-11-11T09:09:11Z drop global keyring /etc/apt/trusted.gpg.d/pft-aptrust-drill-githubcli.gpg (all its keys now in signed-by keyrings)
+  2026-11-11T09:09:17Z VERIFY FAILED: injected:drill -> restoring
+  2026-11-11T09:09:22Z restored; apt-get update after restore ok
+  (exit 1)
+CHECK ok   validator: injected verify failure: exit 1, VERIFY FAILED injected:drill, restored
+$ on relay 'sudo -n env VERIFY_INJECT=drill pft-aptrust apply --yes'
+  2026-11-11T09:09:32Z apply on sentry: 1 planned change(s), 0 manual item(s)
+    plan    perm	/etc/apt/apt.conf.d/99pft-aptrust-drill	mode	640
+  2026-11-11T09:09:39Z backup /var/lib/pft-aptrust/backup-20261111T090939Z: 1 file(s) saved, 0 to be created
+  2026-11-11T09:09:39Z perm /etc/apt/apt.conf.d/99pft-aptrust-drill -> root-owned mode 640
+  2026-11-11T09:09:45Z VERIFY FAILED: injected:drill -> restoring
+  2026-11-11T09:09:50Z restored; apt-get update after restore ok
+  (exit 1)
+CHECK ok   sentry: injected verify failure: exit 1, VERIFY FAILED injected:drill, restored
+CHECK ok   /etc/apt byte+mode identical to the seeded state on both hosts after the auto-rollback
+$ sudo -n test -e /var/lib/pft-aptrust/apply.json; echo validator apply.json rc $?; R 'sudo -n test -e /var/lib/pft-aptrust/apply.json; echo sentry apply.json rc $?'
+  validator apply.json rc 1
+  sentry apply.json rc 1
+  (exit 0)
+CHECK ok   no apply on record after the auto-rollback (both hosts)
+
+== 4. apply --yes -> FIXED; textfiles -> RESOLVED
+$ on local 'sudo -n pft-aptrust apply --yes'
+  2026-11-11T09:10:02Z apply on validator: 3 planned change(s), 0 manual item(s)
+    plan    perm	/etc/apt/apt.conf.d/99pft-aptrust-drill	mode	640
+    plan    sign	/etc/apt/sources.list.d/github-cli.list	1	https://cli.github.com/packages	/etc/apt/keyrings/pft-aptrust-cli.github.com.gpg	7F38BBB59D064DBCB3D84D725612B36462313325
+    plan    drop	/etc/apt/trusted.gpg.d/pft-aptrust-drill-githubcli.gpg
+  2026-11-11T09:10:14Z backup /var/lib/pft-aptrust/backup-20261111T091014Z: 3 file(s) saved, 1 to be created
+  2026-11-11T09:10:14Z perm /etc/apt/apt.conf.d/99pft-aptrust-drill -> root-owned mode 640
+  2026-11-11T09:10:15Z sign /etc/apt/sources.list.d/github-cli.list:1 (https://cli.github.com/packages) -> signed-by=/etc/apt/keyrings/pft-aptrust-cli.github.com.gpg (key 5612B36462313325)
+  2026-11-11T09:10:15Z drop global keyring /etc/apt/trusted.gpg.d/pft-aptrust-drill-githubcli.gpg (all its keys now in signed-by keyrings)
+  2026-11-11T09:10:21Z verify ok: apt-get update exit 0, no signature error, 5 index(es) before = 5 after; 1 source(s) moved to signed-by
+  (exit 0)
+CHECK ok   validator: apply exit 0, post gate verify ok
+$ on relay 'sudo -n pft-aptrust apply --yes'
+  2026-11-11T09:10:33Z apply on sentry: 1 planned change(s), 0 manual item(s)
+    plan    perm	/etc/apt/apt.conf.d/99pft-aptrust-drill	mode	640
+  2026-11-11T09:10:40Z backup /var/lib/pft-aptrust/backup-20261111T091040Z: 1 file(s) saved, 0 to be created
+  2026-11-11T09:10:40Z perm /etc/apt/apt.conf.d/99pft-aptrust-drill -> root-owned mode 640
+  2026-11-11T09:10:47Z verify ok: apt-get update exit 0, no signature error, 4 index(es) before = 4 after; 0 source(s) moved to signed-by
+  (exit 0)
+CHECK ok   sentry: apply exit 0, post gate verify ok
+$ stat -c '%n %a %U:%G' /etc/apt/apt.conf.d/99pft-aptrust-drill /etc/apt/keyrings/pft-aptrust-cli.github.com.gpg; cat /etc/apt/sources.list.d/github-cli.list; test ! -e /etc/apt/trusted.gpg.d/pft-aptrust-drill-githubcli.gpg && echo 'drill global key removed'; gpg --batch --no-options --homedir $(mktemp -d) --show-keys --with-colons /etc/apt/keyrings/pft-aptrust-cli.github.com.gpg | grep -c '^pub:'
+  /etc/apt/apt.conf.d/99pft-aptrust-drill 640 root:root
+  /etc/apt/keyrings/pft-aptrust-cli.github.com.gpg 644 root:root
+  deb [signed-by=/etc/apt/keyrings/pft-aptrust-cli.github.com.gpg arch=amd64] https://cli.github.com/packages stable main
+  drill global key removed
+  gpg: keybox '/tmp/tmp.3kUbhyjphq/pubring.kbx' created
+  gpg: /tmp/tmp.3kUbhyjphq/trustdb.gpg: trustdb created
+  1
+  (exit 0)
+CHECK ok   validator: /etc/apt/apt.conf.d/99pft-aptrust-drill 0640, source signed-by /etc/apt/keyrings/pft-aptrust-cli.github.com.gpg, global drill key removed, new keyring 0644 with 1 key
+$ R 'stat -c "%n %a %U:%G" /etc/apt/apt.conf.d/99pft-aptrust-drill'
+  /etc/apt/apt.conf.d/99pft-aptrust-drill 640 root:root
+  (exit 0)
+CHECK ok   sentry: /etc/apt/apt.conf.d/99pft-aptrust-drill 0640
+$ on local 'sudo -n pft-aptrust audit' | grep -E '^(WARN|FAIL)|^RESULT|github|drill'
+  PASS  src:/etc/apt/sources.list.d/github-cli.list:1 https + signed-by /etc/apt/keyrings/pft-aptrust-cli.github.com.gpg (https://cli.github.com/packages)
+  INFO  key:/etc/apt/keyrings/githubcli-archive-keyring.gpg 1 usable key(s), 1 expired/revoked key(s) kept alongside (vendor keyring; harmless)
+  PASS  key:/etc/apt/keyrings/pft-aptrust-cli.github.com.gpg 1 usable key(s), none weak, none expiring within 30d
+  RESULT: PASS - 11 sources, 5 keys, 4 containers; 9 pass, 18 info, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   VERIFIED validator: audit exit 0, 0 warn 0 fail
+$ on relay 'sudo -n pft-aptrust audit' | grep -E '^(WARN|FAIL)|^RESULT|github|drill'
+  RESULT: PASS - 10 sources, 2 keys, 1 containers; 4 pass, 16 info, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   VERIFIED sentry: audit exit 0, 0 warn 0 fail
+$ sudo -n pft-aptrust pull; grep -h '^pft_aptrust_checks{' /var/lib/pft-exporter/textfile/pft_aptrust_validator.prom /var/lib/pft-exporter/textfile/pft_aptrust_sentry.prom
+  pft_aptrust_checks{host="validator",result="pass"} 9
+  pft_aptrust_checks{host="validator",result="info"} 18
+  pft_aptrust_checks{host="validator",result="warn"} 0
+  pft_aptrust_checks{host="validator",result="fail"} 0
+  pft_aptrust_checks{host="sentry",result="pass"} 4
+  pft_aptrust_checks{host="sentry",result="info"} 16
+  pft_aptrust_checks{host="sentry",result="warn"} 0
+  pft_aptrust_checks{host="sentry",result="fail"} 0
+  (exit 0)
+CHECK ok   textfiles: fail 0 for both hosts
+  2026-11-11T09:12:31Z (67s after the fix): PFTAptrustUntrusted series left in Prometheus: 0
+CHECK ok   no PFTAptrustUntrusted left in Prometheus
+CHECK ok   [RESOLVED] PFTAptrustUntrusted 'validator: ...' on the throwaway topic
+CHECK ok   [RESOLVED] PFTAptrustUntrusted 'sentry: ...' on the throwaway topic
+
+== 5. rollback --yes -> the seeded state again, byte+mode identical
+$ on local 'sudo -n pft-aptrust rollback --yes'
+  2026-11-11T09:12:40Z rollback on validator: 3 file(s) restored byte-identical, 1 removed; apt-get update ok
+  (exit 0)
+CHECK ok   validator: rollback exit 0, restored byte-identical, apt-get update ok
+$ on relay 'sudo -n pft-aptrust rollback --yes'
+  2026-11-11T09:12:49Z rollback on sentry: 1 file(s) restored byte-identical, 0 removed; apt-get update ok
+  (exit 0)
+CHECK ok   sentry: rollback exit 0, restored byte-identical, apt-get update ok
+CHECK ok   /etc/apt byte+mode identical to the seeded state on both hosts after rollback
+$ sudo -n pft-aptrust audit | tail -n 1; R 'sudo -n pft-aptrust audit | tail -n 1'
+  RESULT: FINDINGS - 11 sources, 6 keys, 4 containers; 7 pass, 19 info, 2 warn, 1 fail -> exit 1
+  RESULT: FINDINGS - 10 sources, 2 keys, 1 containers; 4 pass, 16 info, 0 warn, 1 fail -> exit 1
+  (exit 0)
+CHECK ok   audit sees the seeded findings again (validator 2 warn 1 fail, sentry 0 warn 1 fail)
+
+== 6. unseed -> pre-run state
+CHECK ok   /etc/apt byte+mode identical to the pre-run snapshot on both hosts
+$ on local 'sudo -n pft-aptrust audit | tail -n 1; sudo -n apt-get update -q >/dev/null 2>&1; echo apt-get update rc $?'
+  RESULT: PASS - 11 sources, 4 keys, 4 containers; 8 pass, 18 info, 0 warn, 0 fail -> exit 0
+  apt-get update rc 0
+  (exit 0)
+CHECK ok   validator: audit 0 warn 0 fail, apt-get update rc 0
+$ on relay 'sudo -n pft-aptrust audit | tail -n 1; sudo -n apt-get update -q >/dev/null 2>&1; echo apt-get update rc $?'
+  RESULT: PASS - 10 sources, 2 keys, 1 containers; 4 pass, 16 info, 0 warn, 0 fail -> exit 0
+  apt-get update rc 0
+  (exit 0)
+CHECK ok   sentry: audit 0 warn 0 fail, apt-get update rc 0
+$ sudo -n pft-aptrust pull; grep -h '^pft_aptrust_checks{' /var/lib/pft-exporter/textfile/pft_aptrust_validator.prom /var/lib/pft-exporter/textfile/pft_aptrust_sentry.prom
+  pft_aptrust_checks{host="validator",result="pass"} 8
+  pft_aptrust_checks{host="validator",result="info"} 18
+  pft_aptrust_checks{host="validator",result="warn"} 0
+  pft_aptrust_checks{host="validator",result="fail"} 0
+  pft_aptrust_checks{host="sentry",result="pass"} 4
+  pft_aptrust_checks{host="sentry",result="info"} 16
+  pft_aptrust_checks{host="sentry",result="warn"} 0
+  pft_aptrust_checks{host="sentry",result="fail"} 0
+  (exit 0)
+CHECK ok   textfiles: fail 0, warn 0 for both hosts
+
+== 7. restore, ALERTS query_range, read back
+  $ sudo -n pft-maint end
+    window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+  pft-maint target back to its pre-run state: yes
+  pft-keyescrow re-run (it fingerprints /etc/pft-maint/ntfy.env): pft_keyescrow_drift_items{node="validator"} 0
+  drain: no PFTAptrust* alert pending/firing/active after 0s; 90 s for RESOLVED delivery
+  drain: done, nothing left that could reach the operator topic: yes
+  sentry pft-alertpath-check.timer stopped: yes
+  2026-11-11T09:15:39Z starting pft-alert-bridge (ntfy: on)
+  2026-11-11T09:15:40Z pft-alert-bridge listening
+  restored bridge: mounts the operator env file again: yes
+  sentry pft-alertpath check rc 0 after 1s; timer started again: yes
+  catch-all silence expired after 1s (nothing else pending/firing/active): HTTP 200
+CHECK ok   window ended, targets back, bridge back, alertpath OK
+$ curl -s -G http://127.0.0.1:9090/api/v1/query_range --data-urlencode 'query=ALERTS{alertname=~"PFTAptrust.*"}' --data-urlencode start=1794387389 --data-urlencode end=1794388543 --data-urlencode step=30 | jq -r '.data.result[] | "\(.metric.alertname) host=\(.metric.host) \(.metric.alertstate) first=\(.values[0][0] | todate) last=\(.values[-1][0] | todate) samples=\(.values | length)"' | sort
+  PFTAptrustUntrusted host=sentry firing first=2026-11-11T09:08:29Z last=2026-11-11T09:11:29Z samples=7
+  PFTAptrustUntrusted host=sentry pending first=2026-11-11T09:03:29Z last=2026-11-11T09:07:59Z samples=10
+  PFTAptrustUntrusted host=validator firing first=2026-11-11T09:08:29Z last=2026-11-11T09:11:29Z samples=7
+  PFTAptrustUntrusted host=validator pending first=2026-11-11T09:03:29Z last=2026-11-11T09:07:59Z samples=10
+  (exit 0)
+CHECK ok   query_range: PFTAptrustUntrusted{host=validator} firing during the run
+CHECK ok   query_range: PFTAptrustUntrusted{host=sentry} firing during the run
+CHECK ok   query_range: no PFTAptrustStale during the run
+  throwaway (Alertmanager) topic: 2 message(s)
+    {"time":"2026-11-11T09:08:18Z","title":"[FIRING] PFTAptrustUntrusted x2","message":"sentry: 1 APT/image supply-chain trust check(s) FAIL\nvalidator: 1 APT/image supply-chain trust check(s) FAIL"}
+    {"time":"2026-11-11T09:12:18Z","title":"[RESOLVED] PFTAptrustUntrusted x2","message":"sentry: 1 APT/image supply-chain trust check(s) FAIL\nvalidator: 1 APT/image supply-chain trust check(s) FAIL"}
+  throwaway (pft-maint) topic: 2 message(s)
+    {"time":"2026-11-11T08:57:57Z","title":"[MAINT] start validator","message":"task_2fac2360 aptrust live drill | until 2026-11-11T10:27:55Z (ttl 5400s) | sentry copy: pushed"}
+    {"time":"2026-11-11T09:14:06Z","title":"[MAINT] end validator","message":"task_2fac2360 aptrust live drill | ended by operator after 970s | suppressed here: watchdog=0 monitor=0 integrity=0 | sentry copy: pushed"}
+CHECK ok   pft-maint [MAINT] start + end reached its throwaway topic
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the run (2 topic(s), 0 with messages)
+  pft-integrity validator: RESULT: PASS - 236 unchanged, 0 warn, 0 fail -> exit 0
+CHECK ok   pft-integrity PASS on validator at the end
+  pft-integrity sentry: RESULT: PASS - 142 unchanged, 0 warn, 0 fail -> exit 0
+CHECK ok   pft-integrity PASS on sentry at the end
+CHECK ok   postfiatd-sentry full at the end (full)
+CHECK ok   postfiatd full at the end (full)
+$ sudo -n pft-maint status --json | jq -r .window; R 'sudo -n pft-maint status --json' | jq -r .window
+  none
+  none
+  (exit 0)
+CHECK ok   no pft-maint window left on either host
+
+live-run done 2026-11-11T09:16:56Z: 0 check(s) failed -> PASS
+exit 0

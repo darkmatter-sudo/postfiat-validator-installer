@@ -105,11 +105,43 @@ docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /
 
 ## Results
 
-(In progress: apply/rollback and the alert drill are still to be added.)
-
 | step | log | result |
 |---|---|---|
 | install preflight | [31](logs/31-install-preflight.log), [32](logs/32-install-preflight.log) | 31: the pull-ssh probe FAILed because it read `PULL_SSH` from a file that only has `PEER_SSH`, so it ran an empty command. Fixed in the runner (37db036: read pft-kmod's `PULL_SSH`, refuse an empty command); 32: preflight 10/10 |
 | two-host install | [33](logs/33-install-run.log) | 44 ok / 1 FAIL. The FAIL is the final "no rollout alert pending" check. It ran seconds after pft-keyescrow was re-run, before Prometheus had scraped `drift_items 0`, so PFTKeyEscrowStale (reason=drift, pending since the throwaway ntfy.env swap, silenced) was still listed. [34](logs/34-install-aftercheck.log) shows its last pending sample at 08:06:30Z and drift_items 0 on both hosts. The rollout silence was then expired by hand, and the operator topics got 0 messages (read back after the expiry). The runner now polls that check for up to 150 s |
 | FOUND -> FIXED -> VERIFIED | [33](logs/33-install-run.log) step 9 | FOUND (dev audits): offpkg WARN for `/usr/local/bin/pft-sshcrypto` on both hosts, because the sshcrypto add-on was missing from the fleet manifest (installed bytes = repo bytes on both hosts). FIXED: 7 sshcrypto lines added to `fleet/manifest.tsv`. VERIFIED: audit 0 warn / 0 fail on both hosts, offpkg 43 (validator) / 35 (sentry) add-on files match the allowlist, `pft-fleet skew` shows sshcrypto + aptrust CURRENT on both |
 | compose `.env` resolution | [30](logs/30-mutants-dev-compose.log) | new mutants A50-A54 + A37: 6 caught, 0 survived |
+| drop + dead keys | [35](logs/35-suite-dev.log), [36](logs/36-drop-dead-key.log), [37](logs/37-mutants-p18-p19.log) | FOUND while preparing the live drill: `apply` would sign the GitHub CLI source but keep the migrated global keyring, because GitHub's vendor keyring carries an expired key next to the current one and `drop` wanted every key moved (36: the HEAD script plans sign + manual, the fixed one sign + drop, on a seeded COPY of `/etc/apt`). FIXED: `drop` counts usable keys only (same expired/revoked test as `key:`). Tests 153/153 (3 new dead-key cases), mutants P18/P19 caught |
+| live preflight | [38](logs/38-live-preflight.log) | dry run of steps 0/0b: all checks ok, nothing changed |
+| two-host live drill | [39](logs/39-live-run.log) | **PASS, 61 checks ok / 0 failed.** Weaknesses seeded by the run on both hosts: a comment-only `apt.conf.d` file at root:root 0660 (perm FAIL; group root has no members, checked first) and, on the validator, the GitHub CLI source without `signed-by` with its key copied into `trusted.gpg.d` (WARN src + WARN global). Steps: refusals outside a window (exit 4, `/etc/apt` unchanged); throwaway topics for the bridge and pft-maint; pft-fleet sync of the fixed script with the pft-integrity rebaseline on both hosts (PASS 236/142 right after); `PFTAptrustUntrusted` firing for host=validator and host=sentry 341 s after the seeded textfiles, `[FIRING]` on the throwaway topic; `VERIFY_INJECT` auto-rollback exit 1, `/etc/apt` byte+mode identical to the seeded state; `apply --yes` (perm 0640, signed-by keyring with 1 key, global key dropped, post gate 5/5 and 4/4 indexes); audit 0 WARN / 0 FAIL on both; `[RESOLVED]` 67 s later; `rollback --yes` byte+mode identical to the seeded state; unseed: byte+mode identical to the pre-run snapshot; operator topics 0 messages, integrity PASS, nodes full, no window left |
+
+### Found -> fixed -> verified (generic, both hosts)
+
+| host | found (seeded or real) | fixed by | verified |
+|---|---|---|---|
+| validator, sentry | real: `pft-sshcrypto` files not in the fleet manifest -> offpkg WARN | 7 manifest lines (67edae8), pft-fleet sync | audit 0 WARN / 0 FAIL ([33](logs/33-install-run.log) step 9) |
+| validator, sentry | seeded: group-writable APT config file -> perm FAIL, `PFTAptrustUntrusted` firing | `apply --yes` (`perm`, mode 0640) | audit 0/0, alert RESOLVED ([39](logs/39-live-run.log) step 4) |
+| validator | seeded: third-party source with no `signed-by`, its key global -> WARN src + WARN global | `apply --yes` (`sign` + `drop`) | audit 0/0, `apt-get update` same indexes, no signature error ([39](logs/39-live-run.log) step 4) |
+| tool | real: `drop` kept a keyring whose only other key was expired | `fprs` counts usable keys only (cc3ecf8) | [36](logs/36-drop-dead-key.log), tests + P18/P19, live drop in [39](logs/39-live-run.log) |
+
+### Negative controls and clean fixture
+
+[35](logs/35-suite-dev.log) lines 1-20: the clean fixture (shaped like the hosts) PASSes with exit 0, no WARN/FAIL line and
+a `fail 0 / warn 0` textfile. Lines 21-92: 51 `neg` fixtures, one per named weakness (trusted=yes, allow-insecure/weak,
+deb822 `Trusted: yes`, missing or global-only keyrings, http third-party, legacy `trusted.gpg`, modified stock key,
+group/world-writable or non-root APT paths, RSA-1024/DSA/expired/revoked/expiring/empty keys, each insecure APT option,
+pins >= 1000 or > 500 for all, untagged/`latest`/digest-less images, compose `latest` and missing files, unknown or
+writable `/usr/local` files, global pip/npm, `dpkg -i` packages): each exits 1 with its finding, and the boundary
+cases next to them (RSA-2048, 31-day expiry, single-package pin 600, ...) do not. Every check and guard is also a
+mutant: 91 in `tests/mutate.py`, each must make the suite or promtool fail.
+
+### Deviations
+
+- The hosts had no supply-chain FAIL of their own (dev audits: 0 FAIL on both; the only real finding was the
+  sshcrypto offpkg WARN above). So the apply/rollback and alert proof runs on weaknesses the drill SEEDS and removes
+  itself; the seeded perm FAIL is a comment-only file in a root-only group, so nothing was actually exposed.
+- The official image's rolling tag (`agtipft/postfiatd:testnet-light-latest`, Post Fiat's validator guide) is INFO,
+  not FAIL, as the card asks; the live RepoDigest is printed next to it.
+- The probe and dev-audit logs (host-specific listings of packages, paths and keys) are kept private, per this
+  repo's rule for security add-ons; the published logs carry the generic results.
+

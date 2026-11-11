@@ -1,0 +1,93 @@
+pft-aptrust two-host apply/rollback + alert drill - 2026-11-11T08:53:43Z - Ubuntu 22.04.5 LTS - run 20261111T085343Z
+repo HEAD ba0981e73fbea3a8ae88eccce6648e969e090454 (clean: yes)
+sha256 e5bb1150243c2bd78b2759144ccd61377ad2181f903bec3dd8a548a10ed77617 aptrust/drill/live-run.sh
+sha256 0e7722706169d1af4d5fac63341ade4804e3d5faa406ecf31911535c25fb835b aptrust/pft-aptrust.sh
+sha256 ac7d5a23dd3a75542847004734c63c196c97dbc757947c282aa93e085e0dea25 alerts/aptrust.rules.yml
+
+== 0. preflight (nothing changed yet)
+  installed on both hosts, timer active, no apply on record, no drill file, group root empty on both
+$ on local 'sudo -n pft-aptrust audit' | tail -n 1
+  RESULT: PASS - 11 sources, 4 keys, 4 containers; 8 pass, 18 info, 0 warn, 0 fail -> exit 0
+  (exit 0)
+$ on local 'sudo -n apt-get update -q >/dev/null 2>&1; echo apt-get update rc $?'
+  apt-get update rc 0
+  (exit 0)
+$ on relay 'sudo -n pft-aptrust audit' | tail -n 1
+  RESULT: PASS - 10 sources, 2 keys, 1 containers; 4 pass, 16 info, 0 warn, 0 fail -> exit 0
+  (exit 0)
+$ on relay 'sudo -n apt-get update -q >/dev/null 2>&1; echo apt-get update rc $?'
+  apt-get update rc 0
+  (exit 0)
+  /etc/apt snapshots: validator 53 lines sha 9a0b4790ad6903f3, sentry 49 lines sha 6f1f7a8520622a7a
+$ curl -s http://127.0.0.1:9090/api/v1/alerts | jq -r '.data.alerts[] | "\(.labels.alertname) \(.labels.host // "-") \(.state)"' | sort
+  PFTAlertPipelineWatchdog - firing
+  PFTVulnRebootOwed validator pending
+  (exit 0)
+$ curl -s http://127.0.0.1:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'
+  0
+  (exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/rules | jq -r '.data.groups[] | select(.name == "pft-aptrust") | .rules[] | [.name, .health] | @tsv'
+  PFTAptrustUntrusted	ok
+  PFTAptrustStale	ok
+  (exit 0)
+  bridge mounts the operator env file; sentry alertpath timer active, check OK
+  operator topics to watch: 2 (not printed)
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+  postfiatd-sentry: server_state=full
+  postfiatd: server_state=full
+  pft-integrity validator: RESULT: PASS - 236 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity sentry: RESULT: PASS - 142 unchanged, 0 warn, 0 fail -> exit 0
+$ redact.py control --literals <literals>
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (17/17)
+
+== 0b. refusals outside a pft-maint window (both hosts; nothing may be written)
+$ on local 'sudo -n pft-maint active; echo maint-active rc $?'
+  maint-active rc 1
+  (exit 0)
+$ on local 'sudo -n pft-aptrust apply --yes'
+  2026-11-11T08:56:10Z REFUSED - no active pft-maint window (window=none); run: sudo pft-maint start --ttl 30m --reason ...; nothing written
+  (exit 4)
+CHECK ok   validator: apply --yes without a window: exit 4, REFUSED no active pft-maint window
+$ on local 'sudo -n pft-aptrust apply'
+  2026-11-11T08:56:10Z REFUSED - apply changes APT trust files: add --yes; nothing written
+  (exit 4)
+CHECK ok   validator: apply without --yes: exit 4
+$ on local 'sudo -n pft-aptrust rollback --yes'
+  2026-11-11T08:56:10Z REFUSED - no active pft-maint window (window=none); run: sudo pft-maint start --ttl 30m --reason ...; nothing written
+  (exit 4)
+CHECK ok   validator: rollback without a window: exit 4
+$ on relay 'sudo -n pft-maint active; echo maint-active rc $?'
+  maint-active rc 1
+  (exit 0)
+$ on relay 'sudo -n pft-aptrust apply --yes'
+  2026-11-11T08:56:13Z REFUSED - no active pft-maint window (window=none); run: sudo pft-maint start --ttl 30m --reason ...; nothing written
+  (exit 4)
+CHECK ok   sentry: apply --yes without a window: exit 4, REFUSED no active pft-maint window
+$ on relay 'sudo -n pft-aptrust apply'
+  2026-11-11T08:56:14Z REFUSED - apply changes APT trust files: add --yes; nothing written
+  (exit 4)
+CHECK ok   sentry: apply without --yes: exit 4
+$ on relay 'sudo -n pft-aptrust rollback --yes'
+  2026-11-11T08:56:15Z REFUSED - no active pft-maint window (window=none); run: sudo pft-maint start --ttl 30m --reason ...; nothing written
+  (exit 4)
+CHECK ok   sentry: rollback without a window: exit 4
+CHECK ok   /etc/apt unchanged on both hosts after the refusals
+
+PREFLIGHT_ONLY: stopping before step 1, nothing changed (0 check(s) failed)
