@@ -1,0 +1,10 @@
+[Unit]
+Description=Pull peer container %i's pft-peerwatch textfile every minute
+
+[Timer]
+OnCalendar=*-*-* *:*:55
+AccuracySec=1s
+Persistent=false
+
+[Install]
+WantedBy=timers.target

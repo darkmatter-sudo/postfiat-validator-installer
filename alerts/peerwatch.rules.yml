@@ -1,0 +1,40 @@
+# Alert rules for pft-peerwatch (../peerwatch). pft-peerwatch@<container>.timer samples peers + server_info every
+# minute and writes pft_peerwatch_*{container="..."} (validator: local; sentry: pulled by
+# pft-peerwatch-pull@postfiatd-sentry.timer on the validator, which runs the only Prometheus + Alertmanager).
+# Three rules, no more:
+#  1. PFTPeerFixedLinkDown: a fixed/cluster peer (the validator<->sentry link) is not connected, matched by public key.
+#  2. PFTPeerQualityDegraded: any other peerwatch check (count, churn, latency, versions, direction, diversity,
+#     ledgers) graded FAIL for 15 minutes; one alert per failing check. WARN grades are for `pft-peerwatch status`.
+#  3. PFTPeerwatchStale: the collector failed or stopped, so rules 1 and 2 are blind.
+# Thresholds: /etc/pft-peerwatch.env (README "Configuration and thresholds"). Tests: peerwatch.tests.yml
+# (promtool test rules peerwatch.tests.yml), 1m sample interval = the timer's period.
+groups:
+  - name: pft-peerwatch
+    rules:
+      - alert: PFTPeerFixedLinkDown
+        expr: pft_peerwatch_fixed_link_up == 0
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.container }} lost its fixed peer link {{ $labels.link }}"
+          description: "For 3m the fixed/cluster peer tagged {{ $labels.link }} has not been in {{ $labels.container }}'s peers list (matched by node public key). A validator that loses its sentry link is cut off from the network. Run `sudo pft-peerwatch status --container {{ $labels.container }}` and `sudo pft-cluster audit`."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/peerwatch/README.md#runbook"
+      - alert: PFTPeerQualityDegraded
+        expr: pft_peerwatch_check_status{check!="fixed"} == 2
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.container }} peer check {{ $labels.check }} is FAIL"
+          description: "For 15m pft-peerwatch graded the {{ $labels.check }} check of {{ $labels.container }} FAIL (thresholds in /etc/pft-peerwatch.env). Run `sudo pft-peerwatch status --container {{ $labels.container }}` for the measured values."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/peerwatch/README.md#runbook"
+      - alert: PFTPeerwatchStale
+        expr: pft_peerwatch_up == 0 or (time() - pft_peerwatch_collect_timestamp_seconds > 300)
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pft-peerwatch for {{ $labels.container }} is failing or stale"
+          description: "For 5m the last peers/server_info collection failed (up 0) or is older than 5 min, so the peer link and quality alerts for {{ $labels.container }} are blind. Run `sudo pft-peerwatch collect --container {{ $labels.container }} --stdout`; for the sentry also check pft-peerwatch-pull@{{ $labels.container }}.timer on the validator."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/peerwatch/README.md#runbook"

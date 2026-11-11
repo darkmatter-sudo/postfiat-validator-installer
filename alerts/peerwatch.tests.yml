@@ -1,0 +1,211 @@
+# promtool unit tests for peerwatch.rules.yml (annotations copied from the rules with the labels filled in).
+# Run: promtool test rules peerwatch.tests.yml
+rule_files:
+- peerwatch.rules.yml
+evaluation_interval: 1m
+tests:
+- name: healthy node for 2h (WARN grades included) fires nothing
+  interval: 1m
+  input_series:
+  - series: pft_peerwatch_up{job="postfiat", instance="node:9877", container="postfiatd"}
+    values: 1x120
+  - series: pft_peerwatch_collect_timestamp_seconds{job="postfiat", instance="node:9877", container="postfiatd"}
+    values: 0+60x120
+  - series: pft_peerwatch_fixed_link_up{job="postfiat", instance="node:9877", container="postfiatd", link="sentry"}
+    values: 1x120
+  - series: pft_peerwatch_check_status{job="postfiat", instance="node:9877", container="postfiatd", check="count"}
+    values: '0x120'
+  - series: pft_peerwatch_check_status{job="postfiat", instance="node:9877", container="postfiatd", check="churn"}
+    values: '0x120'
+  - series: pft_peerwatch_check_status{job="postfiat", instance="node:9877", container="postfiatd", check="latency"}
+    values: '0x120'
+  - series: pft_peerwatch_check_status{job="postfiat", instance="node:9877", container="postfiatd", check="versions"}
+    values: '0x120'
+  - series: pft_peerwatch_check_status{job="postfiat", instance="node:9877", container="postfiatd", check="direction"}
+    values: '0x120'
+  - series: pft_peerwatch_check_status{job="postfiat", instance="node:9877", container="postfiatd", check="diversity"}
+    values: '0x120'
+  - series: pft_peerwatch_check_status{job="postfiat", instance="node:9877", container="postfiatd", check="ledgers"}
+    values: '0x120'
+  - series: pft_peerwatch_check_status{job="postfiat", instance="node:9877", container="postfiatd", check="fixed"}
+    values: '0x120'
+  - series: pft_peerwatch_check_status{job="postfiat", instance="node:9877", container="postfiatd", check="diversity2"}
+    values: 1x120
+  alert_rule_test:
+  - eval_time: 60m
+    alertname: PFTPeerFixedLinkDown
+    exp_alerts: []
+  - eval_time: 60m
+    alertname: PFTPeerQualityDegraded
+    exp_alerts: []
+  - eval_time: 60m
+    alertname: PFTPeerwatchStale
+    exp_alerts: []
+  - eval_time: 120m
+    alertname: PFTPeerFixedLinkDown
+    exp_alerts: []
+  - eval_time: 120m
+    alertname: PFTPeerQualityDegraded
+    exp_alerts: []
+  - eval_time: 120m
+    alertname: PFTPeerwatchStale
+    exp_alerts: []
+- name: 'fixed link down: pending 2m, fires at 3m, recovers when the link is back'
+  interval: 1m
+  input_series:
+  - series: pft_peerwatch_fixed_link_up{job="postfiat", instance="node:9877", container="postfiatd-sentry", link="validator"}
+    values: 1x10 0x10 1x20
+  - series: pft_peerwatch_fixed_link_up{job="postfiat", instance="node:9877", container="postfiatd", link="sentry"}
+    values: 1x40
+  alert_rule_test:
+  - eval_time: 13m
+    alertname: PFTPeerFixedLinkDown
+    exp_alerts: []
+  - eval_time: 14m
+    alertname: PFTPeerFixedLinkDown
+    exp_alerts:
+    - exp_labels:
+        job: postfiat
+        instance: node:9877
+        container: postfiatd-sentry
+        link: validator
+        severity: critical
+      exp_annotations:
+        summary: postfiatd-sentry lost its fixed peer link validator
+        description: For 3m the fixed/cluster peer tagged validator has not been in postfiatd-sentry's peers list (matched by node public key). A validator that loses its sentry link is cut off from the
+          network. Run `sudo pft-peerwatch status --container postfiatd-sentry` and `sudo pft-cluster audit`.
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/peerwatch/README.md#runbook
+  - eval_time: 21m
+    alertname: PFTPeerFixedLinkDown
+    exp_alerts:
+    - exp_labels:
+        job: postfiat
+        instance: node:9877
+        container: postfiatd-sentry
+        link: validator
+        severity: critical
+      exp_annotations:
+        summary: postfiatd-sentry lost its fixed peer link validator
+        description: For 3m the fixed/cluster peer tagged validator has not been in postfiatd-sentry's peers list (matched by node public key). A validator that loses its sentry link is cut off from the
+          network. Run `sudo pft-peerwatch status --container postfiatd-sentry` and `sudo pft-cluster audit`.
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/peerwatch/README.md#runbook
+  - eval_time: 22m
+    alertname: PFTPeerFixedLinkDown
+    exp_alerts: []
+  - eval_time: 40m
+    alertname: PFTPeerFixedLinkDown
+    exp_alerts: []
+- name: a check FAIL for 15m fires for that check only; fixed FAIL is left to PFTPeerFixedLinkDown; WARN never fires
+  interval: 1m
+  input_series:
+  - series: pft_peerwatch_check_status{job="postfiat", instance="node:9877", container="postfiatd", check="latency"}
+    values: 0x10 2x20 0x10
+  - series: pft_peerwatch_check_status{job="postfiat", instance="node:9877", container="postfiatd", check="fixed"}
+    values: 2x40
+  - series: pft_peerwatch_check_status{job="postfiat", instance="node:9877", container="postfiatd", check="churn"}
+    values: 1x40
+  - series: pft_peerwatch_check_status{job="postfiat", instance="node:9877", container="postfiatd", check="ledgers"}
+    values: 0x10 2x14 0 2x15
+  alert_rule_test:
+  - eval_time: 25m
+    alertname: PFTPeerQualityDegraded
+    exp_alerts: []
+  - eval_time: 26m
+    alertname: PFTPeerQualityDegraded
+    exp_alerts:
+    - exp_labels:
+        job: postfiat
+        instance: node:9877
+        container: postfiatd
+        check: latency
+        severity: warning
+      exp_annotations:
+        summary: postfiatd peer check latency is FAIL
+        description: For 15m pft-peerwatch graded the latency check of postfiatd FAIL (thresholds in /etc/pft-peerwatch.env). Run `sudo pft-peerwatch status --container postfiatd` for the measured values.
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/peerwatch/README.md#runbook
+  - eval_time: 30m
+    alertname: PFTPeerQualityDegraded
+    exp_alerts:
+    - exp_labels:
+        job: postfiat
+        instance: node:9877
+        container: postfiatd
+        check: latency
+        severity: warning
+      exp_annotations:
+        summary: postfiatd peer check latency is FAIL
+        description: For 15m pft-peerwatch graded the latency check of postfiatd FAIL (thresholds in /etc/pft-peerwatch.env). Run `sudo pft-peerwatch status --container postfiatd` for the measured values.
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/peerwatch/README.md#runbook
+  - eval_time: 32m
+    alertname: PFTPeerQualityDegraded
+    exp_alerts: []
+  - eval_time: 40m
+    alertname: PFTPeerQualityDegraded
+    exp_alerts: []
+- name: 'collector up 0: fires after 5m, recovers on the first good sample'
+  interval: 1m
+  input_series:
+  - series: pft_peerwatch_up{job="postfiat", instance="node:9877", container="postfiatd"}
+    values: 1x10 0x10 1x20
+  - series: pft_peerwatch_collect_timestamp_seconds{job="postfiat", instance="node:9877", container="postfiatd"}
+    values: 0+60x40
+  alert_rule_test:
+  - eval_time: 15m
+    alertname: PFTPeerwatchStale
+    exp_alerts: []
+  - eval_time: 16m
+    alertname: PFTPeerwatchStale
+    exp_alerts:
+    - exp_labels:
+        job: postfiat
+        instance: node:9877
+        container: postfiatd
+        severity: warning
+      exp_annotations:
+        summary: pft-peerwatch for postfiatd is failing or stale
+        description: For 5m the last peers/server_info collection failed (up 0) or is older than 5 min, so the peer link and quality alerts for postfiatd are blind. Run `sudo pft-peerwatch collect --container
+          postfiatd --stdout`; for the sentry also check pft-peerwatch-pull@postfiatd.timer on the validator.
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/peerwatch/README.md#runbook
+  - eval_time: 22m
+    alertname: PFTPeerwatchStale
+    exp_alerts: []
+- name: 'pull stopped (timestamp frozen at 10m, up still 1): stale after 5 min + 5m for, recovers when it moves again'
+  interval: 1m
+  input_series:
+  - series: pft_peerwatch_up{job="postfiat", instance="node:9877", container="postfiatd-sentry"}
+    values: 1x60
+  - series: pft_peerwatch_collect_timestamp_seconds{job="postfiat", instance="node:9877", container="postfiatd-sentry"}
+    values: 0+60x10 600x20 1860+60x29
+  alert_rule_test:
+  - eval_time: 20m
+    alertname: PFTPeerwatchStale
+    exp_alerts: []
+  - eval_time: 21m
+    alertname: PFTPeerwatchStale
+    exp_alerts:
+    - exp_labels:
+        job: postfiat
+        instance: node:9877
+        container: postfiatd-sentry
+        severity: warning
+      exp_annotations:
+        summary: pft-peerwatch for postfiatd-sentry is failing or stale
+        description: For 5m the last peers/server_info collection failed (up 0) or is older than 5 min, so the peer link and quality alerts for postfiatd-sentry are blind. Run `sudo pft-peerwatch collect
+          --container postfiatd-sentry --stdout`; for the sentry also check pft-peerwatch-pull@postfiatd-sentry.timer on the validator.
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/peerwatch/README.md#runbook
+  - eval_time: 30m
+    alertname: PFTPeerwatchStale
+    exp_alerts:
+    - exp_labels:
+        job: postfiat
+        instance: node:9877
+        container: postfiatd-sentry
+        severity: warning
+      exp_annotations:
+        summary: pft-peerwatch for postfiatd-sentry is failing or stale
+        description: For 5m the last peers/server_info collection failed (up 0) or is older than 5 min, so the peer link and quality alerts for postfiatd-sentry are blind. Run `sudo pft-peerwatch collect
+          --container postfiatd-sentry --stdout`; for the sentry also check pft-peerwatch-pull@postfiatd-sentry.timer on the validator.
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/peerwatch/README.md#runbook
+  - eval_time: 32m
+    alertname: PFTPeerwatchStale
+    exp_alerts: []

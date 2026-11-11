@@ -1,0 +1,36 @@
+[Unit]
+Description=pft-peerwatch: peer-quality sampling for container %i
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/peerwatch
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# root: needs the docker socket (docker exec ... curl peers + server_info on the container's loopback). Read-only otherwise.
+# The docker CLI cannot read /root/.docker under ProtectHome and warns on every run; an empty private /tmp silences it.
+Environment=DOCKER_CONFIG=/tmp
+ExecStart=/usr/local/bin/pft-peerwatch collect --container %i
+ProtectSystem=strict
+ReadWritePaths=/var/lib/pft-exporter/textfile /var/lib/pft-peerwatch
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+UMask=0022
+TimeoutStartSec=40
