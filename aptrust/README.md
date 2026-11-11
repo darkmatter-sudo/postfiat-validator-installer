@@ -147,7 +147,6 @@ mutant: 91 in `tests/mutate.py`, each must make the suite or promtool fail ([43]
   not FAIL, as the card asks; the live RepoDigest is printed next to it.
 - The probe and dev-audit logs (host-specific listings of packages, paths and keys) are kept private, per this
   repo's rule for security add-ons; the published logs carry the generic results.
-
 - The recorded full mutant run ([43](logs/43-mutants-full.log)) caught 91 of 91 mutants but exited 1 because of the
   harness's own orphan check (see Results). That check was fixed afterwards in `tests/mutate.py` only (the mutated
   files did not change) and the fix was proven with recorded controls ([44](logs/44-orphan-controls.log)). The
