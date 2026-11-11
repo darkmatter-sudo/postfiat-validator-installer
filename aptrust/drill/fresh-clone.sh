@@ -8,7 +8,7 @@ set -uo pipefail
 SHA="${1:?usage: fresh-clone.sh SHA}"
 export TZ=UTC
 W="$(mktemp -d -p "$HOME/.cache")"; chmod 755 "$W"; trap 'rm -rf "$W"' EXIT
-x() { echo "\$ $*"; ( eval "$*" ) 2>&1 | sed -E "s#$HOME#~#g"; echo "(exit ${PIPESTATUS[0]})"; }
+x() { echo "\$ $*" | sed -E "s#$HOME#~#g"; ( eval "$*" ) 2>&1 | sed -E "s#$HOME#~#g"; echo "(exit ${PIPESTATUS[0]})"; }
 echo "OS: $(lsb_release -ds) | $(date -u +%FT%TZ) | aptrust fresh-clone verification at $SHA | $(shellcheck --version | sed -n 's/^version: /shellcheck /p') | $(python3 --version) | $(jq --version) | $(gpg --version | head -n 1)"
 echo "(work dir: a new mktemp dir under ~/.cache, mode 755; /tmp is noexec on this host)"
 cd "$W" || exit 3
