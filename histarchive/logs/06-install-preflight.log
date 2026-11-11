@@ -1,0 +1,66 @@
+histarchive two-host install - 2026-11-11T00:11:01Z - Ubuntu 22.04.5 LTS - repo HEAD 0a9de8f90fad7b60a2f6d779617013e589b6fc8e (clean: yes)
+
+== 0. preflight (read-only)
+$ sha256sum histarchive/pft-histarchive.sh histarchive/histarchive.py histarchive/lib_hashverify.py histarchive/install.sh histarchive/drill/install-run.sh histarchive/systemd/* alerts/histarchive.rules.yml
+  63c0f60aaa1d1ada3e45e4c0644acdb893e5d3f2cf89c864891c3dda4908c961  histarchive/pft-histarchive.sh
+  089b828e1215e35ce12ddd9a02aa85613ab7ccee2820bd2ca7079f14431efbb3  histarchive/histarchive.py
+  64ec1dacc49fcc955975a6c5f5ee85d657c9c7921dbe0ef15cd9b9411ef4e414  histarchive/lib_hashverify.py
+  67e7f780fe8c62a48581389560ea5a4edc9a084f30bf729dfb79c24bfc616d51  histarchive/install.sh
+  396886608b6e7a3f1c93acec7b27f875679a29682e7f0560c8d11556105b1ac7  histarchive/drill/install-run.sh
+  fb56ee0c134d9bc1da530907f0700fe7a96fd217863d1373f73d8afd71aab028  histarchive/systemd/pft-histarchive-periodic.service
+  5fd21d6abe830331df8fbd5dda244fbcf3034fc6f97d398cd0f8a6561927858d  histarchive/systemd/pft-histarchive-periodic.timer
+  533d9996be4b0595f4feb3e56b09992f5d4aff0c1482a064766a8f3eb5ec6375  histarchive/systemd/pft-histarchive.service
+  8de625c1dd8634b271f4f80921df8954abb1e02dbea21f19f562cbd92e671e48  alerts/histarchive.rules.yml
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 228 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 138 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts before install
+$ sudo -n docker exec postfiatd curl -s -m 10 -d '{"method":"server_info"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state; R "sudo -n docker exec postfiatd-sentry curl -s -m 10 -d '{\"method\":\"server_info\"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state"
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ ls /usr/local/bin/pft-histarchive /etc/pft-histarchive.env 2>&1; R 'ls /usr/local/bin/pft-histarchive /etc/pft-histarchive.env 2>&1'
+  ls: cannot access '/usr/local/bin/pft-histarchive': No such file or directory
+  ls: cannot access '/etc/pft-histarchive.env': No such file or directory
+  ls: cannot access '/usr/local/bin/pft-histarchive': No such file or directory
+  ls: cannot access '/etc/pft-histarchive.env': No such file or directory
+  (exit 2)
+CHECK ok   not installed yet on either host
+$ grep -c '^histarchive ' fleet/manifest.tsv; grep -c histarchive.rules.yml alerts/prometheus.yml; grep -c pft_histarchive rulecheck/pft-rulecheck.conf.example; grep -c pft_histarchive rulecheck/pft-rulecheck.sentry.conf.example
+  6
+  1
+  6
+  0
+  (exit 1)
+CHECK ok   HEAD lists 6 manifest lines, the rule file and 6 + 0 rulecheck lines
+$ sudo -n grep -c '^PEER_SSH=' /etc/pft-keyescrow.env; R 'command -v age age-keygen python3 sha256sum tar | wc -l'; command -v age age-keygen python3 sha256sum tar | wc -l
+  1
+  5
+  5
+  (exit 0)
+CHECK ok   PEER_SSH in the keyescrow conf; age, age-keygen, python3, sha256sum, tar on both hosts
+$ sudo -n env TEXT_BUDGET=999999 pft-jobwatch collect --stdout 2>/dev/null | wc -c; sudo -n sed -n 's/^TEXT_BUDGET=//p' /etc/pft-jobwatch.env
+  63259
+  65000
+  (exit 0)
+CHECK ok   jobwatch textfile has room for one more timer (now 63259 + 1200 <= budget 65000)
+$ python3 histarchive/histarchive.py verify --dir '~/work/scratch/ha-adopt-0010' | tail -n 2
+  RESULT: PASS - segments 1 active 1 ledgers 3328 (7937915-7941242) txs 1181 gaps 0 (0 ledgers) fails 0
+  (exit 0)
+CHECK ok   FOUND: the archive to adopt verifies with the HEAD code
+$ python3 -c 'import json; s=json.load(open("~/work/scratch/ha-adopt-0010/status.json")); print(s["last"])'; curl -s -m 10 -d '{"method":"server_info"}' http://<redacted-ip>:5005 | jq -r .result.info.complete_ledgers
+  7941242
+  7940742-7941262
+  (exit 0)
+CHECK ok   the node still holds the ledger after the adopted archive's last (7941243 >= oldest 7940742): no gap at adoption
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+$ curl -s http://<redacted-ip>:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'; curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '.data.alerts[].labels.alertname' | sort | uniq -c
+  0
+        1 PFTAlertPipelineWatchdog
+  (exit 0)
+CHECK ok   no active silence; only the pipeline watchdog pending/firing in Prometheus
+PREFLIGHT_ONLY: stopping before any change (0 failed)

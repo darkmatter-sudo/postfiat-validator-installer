@@ -1,0 +1,503 @@
+histarchive two-host install - 2026-11-11T00:12:05Z - Ubuntu 22.04.5 LTS - repo HEAD 0a9de8f90fad7b60a2f6d779617013e589b6fc8e (clean: yes)
+
+== 0. preflight (read-only)
+$ sha256sum histarchive/pft-histarchive.sh histarchive/histarchive.py histarchive/lib_hashverify.py histarchive/install.sh histarchive/drill/install-run.sh histarchive/systemd/* alerts/histarchive.rules.yml
+  63c0f60aaa1d1ada3e45e4c0644acdb893e5d3f2cf89c864891c3dda4908c961  histarchive/pft-histarchive.sh
+  089b828e1215e35ce12ddd9a02aa85613ab7ccee2820bd2ca7079f14431efbb3  histarchive/histarchive.py
+  64ec1dacc49fcc955975a6c5f5ee85d657c9c7921dbe0ef15cd9b9411ef4e414  histarchive/lib_hashverify.py
+  67e7f780fe8c62a48581389560ea5a4edc9a084f30bf729dfb79c24bfc616d51  histarchive/install.sh
+  396886608b6e7a3f1c93acec7b27f875679a29682e7f0560c8d11556105b1ac7  histarchive/drill/install-run.sh
+  fb56ee0c134d9bc1da530907f0700fe7a96fd217863d1373f73d8afd71aab028  histarchive/systemd/pft-histarchive-periodic.service
+  5fd21d6abe830331df8fbd5dda244fbcf3034fc6f97d398cd0f8a6561927858d  histarchive/systemd/pft-histarchive-periodic.timer
+  533d9996be4b0595f4feb3e56b09992f5d4aff0c1482a064766a8f3eb5ec6375  histarchive/systemd/pft-histarchive.service
+  8de625c1dd8634b271f4f80921df8954abb1e02dbea21f19f562cbd92e671e48  alerts/histarchive.rules.yml
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 228 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 138 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts before install
+$ sudo -n docker exec postfiatd curl -s -m 10 -d '{"method":"server_info"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state; R "sudo -n docker exec postfiatd-sentry curl -s -m 10 -d '{\"method\":\"server_info\"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state"
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ ls /usr/local/bin/pft-histarchive /etc/pft-histarchive.env 2>&1; R 'ls /usr/local/bin/pft-histarchive /etc/pft-histarchive.env 2>&1'
+  ls: cannot access '/usr/local/bin/pft-histarchive': No such file or directory
+  ls: cannot access '/etc/pft-histarchive.env': No such file or directory
+  ls: cannot access '/usr/local/bin/pft-histarchive': No such file or directory
+  ls: cannot access '/etc/pft-histarchive.env': No such file or directory
+  (exit 2)
+CHECK ok   not installed yet on either host
+$ grep -c '^histarchive ' fleet/manifest.tsv; grep -c histarchive.rules.yml alerts/prometheus.yml; grep -c pft_histarchive rulecheck/pft-rulecheck.conf.example; grep -c pft_histarchive rulecheck/pft-rulecheck.sentry.conf.example
+  6
+  1
+  6
+  0
+  (exit 1)
+CHECK ok   HEAD lists 6 manifest lines, the rule file and 6 + 0 rulecheck lines
+$ sudo -n grep -c '^PEER_SSH=' /etc/pft-keyescrow.env; R 'command -v age age-keygen python3 sha256sum tar | wc -l'; command -v age age-keygen python3 sha256sum tar | wc -l
+  1
+  5
+  5
+  (exit 0)
+CHECK ok   PEER_SSH in the keyescrow conf; age, age-keygen, python3, sha256sum, tar on both hosts
+$ sudo -n env TEXT_BUDGET=999999 pft-jobwatch collect --stdout 2>/dev/null | wc -c; sudo -n sed -n 's/^TEXT_BUDGET=//p' /etc/pft-jobwatch.env
+  63259
+  65000
+  (exit 0)
+CHECK ok   jobwatch textfile has room for one more timer (now 63259 + 1200 <= budget 65000)
+$ python3 histarchive/histarchive.py verify --dir '~/work/scratch/ha-adopt-0010' | tail -n 2
+  RESULT: PASS - segments 1 active 1 ledgers 3328 (7937915-7941242) txs 1181 gaps 0 (0 ledgers) fails 0
+  (exit 0)
+CHECK ok   FOUND: the archive to adopt verifies with the HEAD code
+$ python3 -c 'import json; s=json.load(open("~/work/scratch/ha-adopt-0010/status.json")); print(s["last"])'; curl -s -m 10 -d '{"method":"server_info"}' http://<redacted-ip>:5005 | jq -r .result.info.complete_ledgers
+  7941242
+  7940742-7941279
+  (exit 0)
+CHECK ok   the node still holds the ledger after the adopted archive's last (7941243 >= oldest 7940742): no gap at adoption
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+$ curl -s http://<redacted-ip>:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'; curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '.data.alerts[].labels.alertname' | sort | uniq -c
+  0
+        1 PFTAlertPipelineWatchdog
+  (exit 0)
+CHECK ok   no active silence; only the pipeline watchdog pending/firing in Prometheus
+
+== 1. rollout silence (new rules; rulecheck/fleet/schedaudit/jobwatch/keyescrow see new files and timers; not the watchdog)
+CHECK ok   Alertmanager silence created (histarchive rules, rulecheck, fleet, schedaudit, jobwatch, keyescrow; not the watchdog) until 2026-11-11T01:12:43Z
+
+== 2. pft-maint window, [MAINT] messages to a throwaway topic (real file kept as $BK)
+real /etc/pft-maint/ntfy.env present before: 0
+$ { [ $HAD = 0 ] || sudo -n cp -p $NE $BK; } && printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' "$TT" | sudo -n tee $NE >/dev/null && sudo -n chmod 600 $NE && sudo -n stat -c '%a %U' $NE
+  600 root
+  (exit 0)
+CHECK ok   throwaway target installed
+$ sudo -n pft-maint start --ttl 40m --reason 'task_e9cfe999 histarchive install'
+  window started: id m1794355964-2682134 until 2026-11-11T00:52:44Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint window open
+CHECK ok   sentry has the window (via the watchdog channel) after 40s
+
+== 3. pft-fleet: manifest (fleet add-on), then the histarchive files
+$ sudo -n pft-fleet sync --addon fleet --to 0a9de8f90fad7b60a2f6d779617013e589b6fc8e --apply --reason 'task_e9cfe999 histarchive manifest lines'
+  [2026-11-11T00:14:00Z] sync fleet to 0a9de8f90fad7b60a2f6d779617013e589b6fc8e (2026-11-11T00:10:57+00:00) REF main=0a9de8f90fad7b60a2f6d779617013e589b6fc8e
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN validator validator /usr/local/sbin/pft-fleet 0755 CURRENT 61cafcfcdaa9 61cafcfcdaa9 keep
+  PLAN validator validator /usr/local/lib/pft-fleet/fleet_lib.py 0644 CURRENT dcb37d26f33f dcb37d26f33f keep
+  PLAN validator validator /usr/local/lib/pft-fleet/manifest.tsv 0644 BEHIND 0131af674787 655ae28ad420 write
+  PLAN validator validator /etc/systemd/system/pft-fleet.service 0644 CURRENT 3105a2f0a144 3105a2f0a144 keep
+  PLAN validator validator /etc/systemd/system/pft-fleet.timer 0644 CURRENT 79839ee00a81 79839ee00a81 keep
+  [2026-11-11T00:14:00Z] order: sentry validator
+  [2026-11-11T00:14:00Z] sentry: every fleet file already at 0a9de8f90fad - nothing to do
+  [2026-11-11T00:14:00Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/lib/pft-fleet/manifest.tsv sha256 0131af674787 -> /var/lib/pft-fleet/backup/20261111T001400Z-fleet-validator
+  WRITE validator /usr/local/lib/pft-fleet/manifest.tsv 0131af674787 -> 655ae28ad420 mode 0644
+  GATE validator sha256 /usr/local/lib/pft-fleet/manifest.tsv = target 655ae28ad420 PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync fleet@0a9de8f90fad (manifest.tsv)
+  [2026-11-11T00:14:36Z] SYNCED validator fleet -> 0a9de8f90fad
+  [2026-11-11T00:14:36Z] sync complete
+  (exit 0)
+CHECK ok   fleet manifest sync exit 0
+$ sudo -n pft-fleet sync --addon histarchive --to 0a9de8f90fad7b60a2f6d779617013e589b6fc8e --apply --reason 'task_e9cfe999 histarchive 0a9de8f first install'
+  [2026-11-11T00:15:08Z] sync histarchive to 0a9de8f90fad7b60a2f6d779617013e589b6fc8e (2026-11-11T00:10:57+00:00) REF main=0a9de8f90fad7b60a2f6d779617013e589b6fc8e
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN sentry sentry /usr/local/bin/pft-histarchive 0755 MISSING - 63c0f60aaa1d write
+  PLAN sentry sentry /usr/local/lib/pft-histarchive/histarchive.py 0644 MISSING - 089b828e1215 write
+  PLAN sentry sentry /usr/local/lib/pft-histarchive/lib_hashverify.py 0644 MISSING - 64ec1dacc49f write
+  PLAN validator validator /usr/local/bin/pft-histarchive 0755 MISSING - 63c0f60aaa1d write
+  PLAN validator validator /usr/local/lib/pft-histarchive/histarchive.py 0644 MISSING - 089b828e1215 write
+  PLAN validator validator /usr/local/lib/pft-histarchive/lib_hashverify.py 0644 MISSING - 64ec1dacc49f write
+  PLAN validator validator /etc/systemd/system/pft-histarchive.service 0644 MISSING - 533d9996be4b write
+  PLAN validator validator /etc/systemd/system/pft-histarchive-periodic.service 0644 MISSING - fb56ee0c134d write
+  PLAN validator validator /etc/systemd/system/pft-histarchive-periodic.timer 0644 MISSING - 5fd21d6abe83 write
+  [2026-11-11T00:15:08Z] order: sentry validator
+  [2026-11-11T00:15:08Z] sentry: 3 file(s) to write
+  PRE sentry pft-maint window active PASS
+  PRE sentry node server_state=full PASS
+  PRE sentry pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP sentry /usr/local/bin/pft-histarchive absent before sync (rollback removes it)
+  BACKUP sentry /usr/local/lib/pft-histarchive/histarchive.py absent before sync (rollback removes it)
+  BACKUP sentry /usr/local/lib/pft-histarchive/lib_hashverify.py absent before sync (rollback removes it)
+  WRITE sentry /usr/local/bin/pft-histarchive - -> 63c0f60aaa1d mode 0755
+  WRITE sentry /usr/local/lib/pft-histarchive/histarchive.py - -> 089b828e1215 mode 0644
+  WRITE sentry /usr/local/lib/pft-histarchive/lib_hashverify.py - -> 64ec1dacc49f mode 0644
+  GATE sentry sha256 /usr/local/bin/pft-histarchive = target 63c0f60aaa1d PASS
+  GATE sentry syntax /usr/local/bin/pft-histarchive bash -n PASS
+  GATE sentry sha256 /usr/local/lib/pft-histarchive/histarchive.py = target 089b828e1215 PASS
+  GATE sentry syntax /usr/local/lib/pft-histarchive/histarchive.py python PASS
+  GATE sentry sha256 /usr/local/lib/pft-histarchive/lib_hashverify.py = target 64ec1dacc49f PASS
+  GATE sentry syntax /usr/local/lib/pft-histarchive/lib_hashverify.py python PASS
+  GATE sentry addon units failed=none PASS
+  GATE sentry node server_state=full PASS
+  ACCEPT sentry pft-integrity baseline updated: pft-fleet sync histarchive@0a9de8f90fad (pft-histarchive,histarchive.py,lib_hashverify.py)
+  [2026-11-11T00:15:47Z] SYNCED sentry histarchive -> 0a9de8f90fad
+  [2026-11-11T00:15:47Z] validator: 6 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/bin/pft-histarchive absent before sync (rollback removes it)
+  BACKUP validator /usr/local/lib/pft-histarchive/histarchive.py absent before sync (rollback removes it)
+  BACKUP validator /usr/local/lib/pft-histarchive/lib_hashverify.py absent before sync (rollback removes it)
+  BACKUP validator /etc/systemd/system/pft-histarchive.service absent before sync (rollback removes it)
+  BACKUP validator /etc/systemd/system/pft-histarchive-periodic.service absent before sync (rollback removes it)
+  BACKUP validator /etc/systemd/system/pft-histarchive-periodic.timer absent before sync (rollback removes it)
+  WRITE validator /usr/local/bin/pft-histarchive - -> 63c0f60aaa1d mode 0755
+  WRITE validator /usr/local/lib/pft-histarchive/histarchive.py - -> 089b828e1215 mode 0644
+  WRITE validator /usr/local/lib/pft-histarchive/lib_hashverify.py - -> 64ec1dacc49f mode 0644
+  WRITE validator /etc/systemd/system/pft-histarchive.service - -> 533d9996be4b mode 0644
+  WRITE validator /etc/systemd/system/pft-histarchive-periodic.service - -> fb56ee0c134d mode 0644
+  WRITE validator /etc/systemd/system/pft-histarchive-periodic.timer - -> 5fd21d6abe83 mode 0644
+  RELOAD validator systemctl daemon-reload
+  GATE validator sha256 /usr/local/bin/pft-histarchive = target 63c0f60aaa1d PASS
+  GATE validator syntax /usr/local/bin/pft-histarchive bash -n PASS
+  GATE validator sha256 /usr/local/lib/pft-histarchive/histarchive.py = target 089b828e1215 PASS
+  GATE validator syntax /usr/local/lib/pft-histarchive/histarchive.py python PASS
+  GATE validator sha256 /usr/local/lib/pft-histarchive/lib_hashverify.py = target 64ec1dacc49f PASS
+  GATE validator syntax /usr/local/lib/pft-histarchive/lib_hashverify.py python PASS
+  GATE validator sha256 /etc/systemd/system/pft-histarchive.service = target 533d9996be4b PASS
+  GATE validator unit pft-histarchive.service LoadState=loaded PASS
+  GATE validator sha256 /etc/systemd/system/pft-histarchive-periodic.service = target fb56ee0c134d PASS
+  GATE validator unit pft-histarchive-periodic.service LoadState=loaded PASS
+  GATE validator sha256 /etc/systemd/system/pft-histarchive-periodic.timer = target 5fd21d6abe83 PASS
+  GATE validator unit pft-histarchive-periodic.timer LoadState=loaded PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync histarchive@0a9de8f90fad (pft-histarchive,histarchive.py,lib_hashverify.py,pft-histarchive.service,pft-histarchive-periodic.service,pft-histarchive-periodic.timer)
+  [2026-11-11T00:16:27Z] SYNCED validator histarchive -> 0a9de8f90fad
+  [2026-11-11T00:16:27Z] sync complete
+  (exit 0)
+CHECK ok   histarchive sync exit 0 (files written + integrity accepted by pft-fleet)
+$ sha256sum histarchive/pft-histarchive.sh histarchive/histarchive.py histarchive/lib_hashverify.py | cut -c1-64; sudo -n sha256sum /usr/local/bin/pft-histarchive /usr/local/lib/pft-histarchive/histarchive.py /usr/local/lib/pft-histarchive/lib_hashverify.py | cut -c1-64; R 'sha256sum /usr/local/bin/pft-histarchive /usr/local/lib/pft-histarchive/histarchive.py /usr/local/lib/pft-histarchive/lib_hashverify.py | cut -c1-64'
+  63c0f60aaa1d1ada3e45e4c0644acdb893e5d3f2cf89c864891c3dda4908c961
+  089b828e1215e35ce12ddd9a02aa85613ab7ccee2820bd2ca7079f14431efbb3
+  64ec1dacc49fcc955975a6c5f5ee85d657c9c7921dbe0ef15cd9b9411ef4e414
+  63c0f60aaa1d1ada3e45e4c0644acdb893e5d3f2cf89c864891c3dda4908c961
+  089b828e1215e35ce12ddd9a02aa85613ab7ccee2820bd2ca7079f14431efbb3
+  64ec1dacc49fcc955975a6c5f5ee85d657c9c7921dbe0ef15cd9b9411ef4e414
+  63c0f60aaa1d1ada3e45e4c0644acdb893e5d3f2cf89c864891c3dda4908c961
+  089b828e1215e35ce12ddd9a02aa85613ab7ccee2820bd2ca7079f14431efbb3
+  64ec1dacc49fcc955975a6c5f5ee85d657c9c7921dbe0ef15cd9b9411ef4e414
+  (exit 0)
+CHECK ok   installed script + helper + lib = repo bytes on both hosts
+
+== 4. sentry: install.sh --role replica
+$ git archive 0a9de8f90fad7b60a2f6d779617013e589b6fc8e histarchive | R 'rm -rf ~/pft-histarchive-0a9de8f && mkdir -m 700 ~/pft-histarchive-0a9de8f && tar -x -C ~/pft-histarchive-0a9de8f'
+  
+  (exit 0)
+$ R 'sudo -n bash ~/pft-histarchive-0a9de8f/histarchive/install.sh --role replica --host sentry'
+  2026-11-11T00:16:30Z unchanged /usr/local/bin/pft-histarchive
+  2026-11-11T00:16:30Z unchanged /usr/local/lib/pft-histarchive/histarchive.py
+  2026-11-11T00:16:30Z unchanged /usr/local/lib/pft-histarchive/lib_hashverify.py
+  2026-11-11T00:16:30Z set HOST_LABEL in /etc/pft-histarchive.env
+  2026-11-11T00:16:30Z replica role ready: RESULT: FAIL - no REPLICA.json in the replica dir
+  2026-11-11T00:16:30Z changed=true
+  (exit 0)
+CHECK ok   sentry install exit 0, replica dir ready
+
+== 5. validator: install.sh --role archive --adopt (follower starts; first periodic: verify + replicate)
+$ sudo -n bash histarchive/install.sh --role archive --host validator --adopt '~/work/scratch/ha-adopt-0010'
+  2026-11-11T00:16:30Z unchanged /usr/local/bin/pft-histarchive
+  2026-11-11T00:16:30Z unchanged /usr/local/lib/pft-histarchive/histarchive.py
+  2026-11-11T00:16:30Z unchanged /usr/local/lib/pft-histarchive/lib_hashverify.py
+  2026-11-11T00:16:30Z set HOST_LABEL in /etc/pft-histarchive.env
+  2026-11-11T00:16:31Z created system user pft-histarchive
+  2026-11-11T00:16:31Z adopting the archive in ~/work/scratch/ha-adopt-0010 (must verify first):
+  RESULT: PASS - segments 1 active 1 ledgers 3328 (7937915-7941242) txs 1181 gaps 0 (0 ledgers) fails 0
+  2026-11-11T00:16:32Z adopted: RESULT: PASS - segments 1 active 1 ledgers 3328 (7937915-7941242) txs 1181 gaps 0 (0 ledgers) fails 0
+  2026-11-11T00:16:32Z set PEER_SSH in /etc/pft-histarchive.env
+  age identity: created (0600, never printed)
+  age recipient: <age-recipient>
+  2026-11-11T00:16:32Z unchanged /etc/systemd/system/pft-histarchive.service
+  2026-11-11T00:16:32Z unchanged /etc/systemd/system/pft-histarchive-periodic.service
+  2026-11-11T00:16:32Z unchanged /etc/systemd/system/pft-histarchive-periodic.timer
+    Created symlink /etc/systemd/system/multi-user.target.wants/pft-histarchive.service → /etc/systemd/system/pft-histarchive.service.
+  2026-11-11T00:16:36Z follower: Started pft-histarchive follower: archive every validated ledger (hash-chained, verified at ingest) before online_delete prunes it. 2026-11-11T00:16:34Z histarchive 1.0.0 follow: node build 1.0.9 state full complete_ledgers 7940742-7941356 2026-11-11T00:16:34Z RESUME at ledger 7941243 (archive start 7937915, node validated 7941356) 
+  2026-11-11T00:16:36Z first periodic run (through the sandboxed unit):
+  Starting pft-histarchive periodic: follower metrics; full offline verify when due; encrypted replica to the peer when due...
+  metrics: follower last ledger 7941251
+  RESULT: PASS - segments 1 active 1 ledgers 3338 (7937915-7941252) txs 1185 gaps 0 (0 ledgers) fails 0
+  RESULT: PASS - replicate fails 0
+  pft-histarchive-periodic.service: Deactivated successfully.
+  Finished pft-histarchive periodic: follower metrics; full offline verify when due; encrypted replica to the peer when due.
+  pft-histarchive-periodic.service: Consumed 2.126s CPU time.
+  pft_histarchive_verify_ok{host="validator"} 1
+  pft_histarchive_follow_last_ledger{host="validator"} 7941251
+  pft_histarchive_lag_ledgers{host="validator"} 105
+  pft_histarchive_replica_ok{host="validator"} 1
+    Created symlink /etc/systemd/system/timers.target.wants/pft-histarchive-periodic.timer → /etc/systemd/system/pft-histarchive-periodic.timer.
+  2026-11-11T00:16:42Z units: follower=active timer=active changed=true
+  2026-11-11T00:16:42Z remember: pft-integrity accept, pft-schedaudit accept + collect, pft-jobwatch inventory
+  (exit 0)
+CHECK ok   validator install exit 0, verify_ok 1, replica_ok 1
+$ sudo -n bash -c 'grep -E "^HOST_LABEL=" /etc/pft-histarchive.env; grep -c "^PEER_SSH=" /etc/pft-histarchive.env; stat -c "%a %U" /etc/pft-histarchive.env /var/lib/pft-histarchive/age.key; stat -c "%a %U" /var/lib/pft-histarchive/archive'
+  HOST_LABEL=validator
+  1
+  600 root
+  600 root
+  755 pft-histarchive
+  (exit 0)
+CHECK ok   validator conf: HOST_LABEL validator, one PEER_SSH, conf + key 600 root, archive dir owned by pft-histarchive
+$ sudo -n bash histarchive/install.sh --role archive --host validator --adopt '~/work/scratch/ha-adopt-0010' 2>&1 | grep -E 'installed|set |adopt|changed='
+  2026-11-11T00:16:49Z units: follower=active timer=active changed=false
+  (exit 0)
+CHECK ok   second install run is idempotent (changed=false, nothing installed, set or adopted)
+
+== 6. rulecheck inputs: append the histarchive lines on the validator (idempotent; the sentry writes no textfile)
+$ sudo -n grep -qF 'pft_histarchive' /etc/pft-rulecheck.conf || sed -n '/^# pft-histarchive/,/^require pft_histarchive_replica.prom/p' rulecheck/pft-rulecheck.conf.example | sudo -n tee -a /etc/pft-rulecheck.conf >/dev/null; sudo -n grep -n histarchive /etc/pft-rulecheck.conf
+  87:# pft-histarchive (5-minute periodic: follower metrics every run; verify + replica compare daily and after each seal)
+  88:textfile pft_histarchive_follow.prom    15m   -
+  89:textfile pft_histarchive.prom           27h   pft_histarchive_verify_timestamp_seconds
+  90:textfile pft_histarchive_replica.prom   27h   pft_histarchive_replica_check_timestamp_seconds
+  91:require pft_histarchive_follow.prom
+  92:require pft_histarchive.prom
+  93:require pft_histarchive_replica.prom
+  (exit 0)
+CHECK ok   validator rulecheck.conf has the 7 histarchive lines
+
+== 7. load the alert rules (alerts/ is mounted at /etc/pft-alerts) and check them
+$ sudo -n docker kill -s HUP pft-prometheus >/dev/null && sleep 40 && curl -s http://<redacted-ip>:9090/api/v1/rules | jq -r '.data.groups[] | select(.name | test("histarchive")) | .rules[] | [.name, .health, .state] | @tsv'
+  PFTHistarchiveStale	ok	inactive
+  PFTHistarchiveIntegrity	ok	inactive
+  PFTHistarchiveReplica	ok	inactive
+  (exit 0)
+CHECK ok   3 histarchive rules loaded, health ok, none firing
+
+== 8. new units/timer + conf: pft-schedaudit accept + collect, jobwatch inventory, then pft-integrity accept, both hosts
+$ sudo -n pft-schedaudit audit | grep -E '^(NEW|REMOVED|SUMMARY)' | cut -c1-160
+  NEW	-	timer/pft-histarchive-periodic.timer@a2dcfb2103	-	not in the accepted entry set
+  SUMMARY entries=97 enabled=84 findings=1 allowed=1 unexpected_findings=0 new=1 removed=0 baseline=yes unused_allow=0
+  (exit 1)
+$ sudo -n pft-schedaudit accept --reason 'task_e9cfe999: pft-histarchive-periodic.timer installed' | tail -2; sudo -n pft-schedaudit collect | tail -1
+  accepted 97 entries (+1 -0): task_e9cfe999: pft-histarchive-periodic.timer installed
+  (exit 0)
+$ sudo -n pft-jobwatch inventory 2>&1 | grep -E 'histarchive|SUMMARY' | cut -c1-200
+  pft-histarchive-periodic.timer	calendar	300	0	0	0	0	1	OnCalendar=*-*-* *:02/5:40
+  (exit 0)
+$ sudo -n pft-integrity verify | grep -E '^(WARN|FAIL|RESULT)' | sed -E 's/ +sha256.*//' | cut -c1-140 | head -40
+  RESULT: PASS - 232 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+$ sudo -n pft-integrity accept --reason 'task_e9cfe999: histarchive 0a9de8f installed (env, units, timer, user, state dir, rulecheck.conf, sched items)' | tail -2
+  pft-integrity accept - 2026-11-11T00:18:22Z: re-baselined 232 items by <user>
+  manifest sha256: 68bdd3b9bf338a7d781b2e5939fa09f41b36f8be8e23d2a7056751b794b3545c -> f53da6dac0e6213580dcb43c03bb7027f01129dcf449afdf08fcb0e5d5527045 (logged to accept.log)
+  (exit 0)
+$ R 'sudo -n pft-integrity verify' | grep -E '^(WARN|FAIL|RESULT)' | sed -E 's/ +sha256.*//' | cut -c1-140 | head -40
+  RESULT: PASS - 139 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+$ R "sudo -n pft-integrity accept --reason 'task_e9cfe999: histarchive 0a9de8f installed (env, state + replica dirs)'" | tail -2
+  pft-integrity accept - 2026-11-11T00:19:00Z: re-baselined 139 items by root
+  manifest sha256: 0e25d03a93922678a4e46739b3f3822c83b0c8dd8e21489f4611cc296cef357d -> f85c1883d45616b511df3d653c67b33cb043142074161e0691f480daae9dbf88 (logged to accept.log)
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 232 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 139 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts
+$ sudo -n systemctl start pft-schedaudit.service; sudo -n pft-schedaudit audit | grep -E '^SUMMARY'
+  SUMMARY entries=97 enabled=84 findings=1 allowed=1 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+  (exit 0)
+CHECK ok   validator schedaudit: 0 unexpected, 0 new/removed
+$ R 'sudo -n pft-schedaudit audit' | grep -E '^SUMMARY'
+  SUMMARY entries=68 enabled=55 findings=0 allowed=0 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+  (exit 0)
+CHECK ok   sentry schedaudit: 0 unexpected, 0 new/removed (no unit there)
+
+== 9. VERIFIED: verify, verify-replica, restore-verify, follower advancing, Prometheus
+$ sudo -n pft-histarchive verify | tail -n 3
+  RESULT: PASS - segments 1 active 1 ledgers 3512 (7937915-7941426) txs 1238 gaps 0 (0 ledgers) fails 0
+  (exit 0)
+CHECK ok   local verify PASS
+$ sudo -n pft-histarchive verify-replica
+  pft-histarchive verify-replica - 2026-11-11T00:20:06Z | local REPLICA.json vs the peer's copy
+  RESULT: PASS - local files 2, peer files 2, fails 0
+  (exit 0)
+CHECK ok   verify-replica PASS (sentry index == local, sentry's own check ok)
+$ R 'sudo -n pft-histarchive replica-check'
+  RESULT: PASS - replica files 2 head_entry bf1c160f2e55b17a fails 0
+  (exit 0)
+CHECK ok   sentry replica-check PASS (ciphertext only, no key there)
+$ R 'sudo -n test -e /var/lib/pft-histarchive/age.key && echo KEY PRESENT || echo no key on the sentry'
+  no key on the sentry
+  (exit 0)
+CHECK ok   no histarchive identity on the sentry
+$ sudo -n pft-histarchive restore-verify
+  pft-histarchive restore-verify - 2026-11-11T00:20:16Z | source: peer replica
+  == 1. fetch REPLICA.json and every listed file
+    fetched 2 encrypted files; decrypted 1 segments
+  == 2. offline verification of the restored copy (sealed segments only)
+    RESULT: PASS - segments 1 active 0 ledgers 3112 (7937915-7941026) txs 1122 gaps 0 (0 ledgers) fails 0
+  == 3. restored copy vs the local archive
+    SAME 2026-11-10 ledgers 7937915-7941026 entry bf1c160f2e55b17a
+    restored head_entry bf1c160f2e55b17a is in the local MANIFEST chain
+  RESULT: PASS - restore-verify fails 0
+  (exit 0)
+CHECK ok   restore-verify from the sentry PASS
+$ sudo -n pft-histarchive status | jq -c '.status | {last, lag, gaps}'; sleep 20; sudo -n pft-histarchive status | jq -c '.status | {last, lag, gaps}'
+  {"last":7941433,"lag":0,"gaps":0}
+  {"last":7941440,"lag":0,"gaps":0}
+  (exit 0)
+CHECK ok   follower advancing (last grows in 20 s), gaps 0
+$ sleep 30; curl -s http://<redacted-ip>:9090/api/v1/query --data-urlencode 'query={__name__=~"pft_histarchive_.*"}' | jq -r '.data.result[] | "\(.metric.host) \(.metric.__name__) \(.value[1])"' | sort
+  validator pft_histarchive_follow_gaps 0
+  validator pft_histarchive_follow_last_ledger 7941379
+  validator pft_histarchive_gap_ledgers 0
+  validator pft_histarchive_gaps 0
+  validator pft_histarchive_lag_ledgers 0
+  validator pft_histarchive_last_ingest_timestamp_seconds 1794356261
+  validator pft_histarchive_last_ledger 7941426
+  validator pft_histarchive_ledgers 3512
+  validator pft_histarchive_replica_check_timestamp_seconds 1794356411
+  validator pft_histarchive_replica_ok 1
+  validator pft_histarchive_segments 1
+  validator pft_histarchive_verify_failures 0
+  validator pft_histarchive_verify_ok 1
+  validator pft_histarchive_verify_timestamp_seconds 1794356405
+  (exit 0)
+CHECK ok   Prometheus: verify_ok 1, replica_ok 1, follow_gaps 0 for the validator
+
+== 10. fleet skew, rulecheck, units, jobwatch
+$ sudo -n pft-fleet skew
+  ref main = 0a9de8f90fad7b60a2f6d779617013e589b6fc8e
+  host sentry     role sentry    ok
+  host validator  role validator ok
+  HOST       ADDON       STATE      DETAIL
+  sentry     alertpath   CURRENT    
+  sentry     apparmor    CURRENT    
+  sentry     audittrail  CURRENT    
+  sentry     authwatch   CURRENT    
+  sentry     backfill    CURRENT    
+  sentry     backupwatch CURRENT    
+  sentry     cluster     CURRENT    
+  sentry     divergence  CURRENT    
+  sentry     egress      CURRENT    
+  sentry     feewatch    CURRENT    
+  sentry     histarchive CURRENT    
+  sentry     integrity   CURRENT    
+  sentry     jobwatch    CURRENT    
+  sentry     kernwatch   CURRENT    
+  sentry     keyescrow   CURRENT    
+  sentry     kmod        CURRENT    
+  sentry     logship     CURRENT    
+  sentry     maint       CURRENT    
+  sentry     mounts      CURRENT    
+  sentry     patch       CURRENT    
+  sentry     privesc     CURRENT    
+  sentry     resources   CURRENT    
+  sentry     rulecheck   CURRENT    
+  sentry     schedaudit  CURRENT    
+  sentry     seccomp     CURRENT    
+  sentry     statewatch  CURRENT    
+  sentry     sysctl      CURRENT    
+  sentry     timesync    CURRENT    
+  sentry     upgradewatch CURRENT    
+  sentry     vulnscan    CURRENT    
+  sentry     watchdog    CURRENT    
+  validator  alertpath   CURRENT    
+  validator  apparmor    CURRENT    
+  validator  audittrail  CURRENT    
+  validator  authwatch   CURRENT    
+  validator  backfill    CURRENT    
+  validator  backup      CURRENT    
+  validator  backupwatch CURRENT    
+  validator  cluster     CURRENT    
+  validator  divergence  CURRENT    
+  validator  egress      CURRENT    
+  validator  exporter    CURRENT    
+  validator  feewatch    CURRENT    
+  validator  fleet       CURRENT    
+  validator  histarchive CURRENT    
+  validator  integrity   CURRENT    
+  validator  jobwatch    CURRENT    
+  validator  kernwatch   CURRENT    
+  validator  keyescrow   CURRENT    
+  validator  kmod        CURRENT    
+  validator  logship     CURRENT    
+  validator  maint       CURRENT    
+  validator  monitor     CURRENT    
+  validator  mounts      CURRENT    
+  validator  patch       CURRENT    
+  validator  privesc     CURRENT    
+  validator  resources   CURRENT    
+  validator  retention   CURRENT    
+  validator  rulecheck   CURRENT    
+  validator  schedaudit  CURRENT    
+  validator  seccomp     CURRENT    
+  validator  statewatch  CURRENT    
+  validator  sysctl      CURRENT    
+  validator  timesync    CURRENT    
+  validator  upgradewatch CURRENT    
+  validator  vulnscan    CURRENT    
+  validator  watchdog    CURRENT    
+  SUMMARY CURRENT=67 BEHIND=0 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 0)
+CHECK ok   pft-fleet skew exit 0, histarchive CURRENT on both hosts, nothing BEHIND/MODIFIED/MISSING/UNEXPECTED/DIVERGED
+$ sudo -n systemctl start pft-rulecheck.service; sudo -n journalctl -u pft-rulecheck.service --since -1min --no-pager -o cat | grep -E '^RESULT |histarchive'
+  LIVE     pft-histarchive/PFTHistarchiveStale                            2/2
+  LIVE     pft-histarchive/PFTHistarchiveIntegrity                        3/3
+  LIVE     pft-histarchive/PFTHistarchiveReplica                          2/2
+  FRESH         pft_histarchive.prom                            1m41s    1d03h  pft_histarchive_verify_timestamp_seconds
+  FRESH         pft_histarchive_follow.prom                     4m03s   15m00s  mtime
+  FRESH         pft_histarchive_replica.prom                    1m35s    1d03h  pft_histarchive_replica_check_timestamp_seconds
+  RESULT OK - rules: LIVE 122 PARTIAL 0 DEAD 0 ERROR 0 IGNORED 0 | textfiles: FRESH 50 STALE 0 MISSING 0 LEFTOVER 0 UNCONFIGURED 0 -> exit 0
+  (exit 0)
+CHECK ok   validator pft-rulecheck RESULT OK
+$ systemctl is-active pft-histarchive.service pft-histarchive-periodic.timer
+  active
+  active
+  (exit 0)
+CHECK ok   follower + timer active
+$ sudo -n systemctl start pft-jobwatch.service; grep -E '^pft_jobwatch_job_(failed|missed|disabled)\{.*histarchive' /var/lib/pft-exporter/textfile/pft_jobwatch_validator.prom; wc -c < /var/lib/pft-exporter/textfile/pft_jobwatch_validator.prom
+  pft_jobwatch_job_disabled{host="validator",timer="pft-histarchive-periodic.timer"} 0
+  pft_jobwatch_job_failed{host="validator",timer="pft-histarchive-periodic.timer"} 0
+  pft_jobwatch_job_missed{host="validator",timer="pft-histarchive-periodic.timer"} 0
+  64424
+  (exit 0)
+CHECK ok   jobwatch sees the histarchive timer: not failed, missed or disabled
+
+== 11. end window, restore the real target, compare, keyescrow, read back the throwaway and every operator topic
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+$ sudo -n rm -f $NE   (no ntfy.env before: pft-maint falls back to the real monitor target again)
+CHECK ok   pft-maint target back to its pre-run state (/etc/pft-maint/ntfy.env: absent again)
+$ sudo -n test ! -e $BK && echo backup gone
+  backup gone
+  (exit 0)
+$ sudo -n systemctl start pft-keyescrow.service; grep -h '^pft_keyescrow_drift_items{node="validator"}' /var/lib/pft-exporter/textfile/pft_keyescrow.prom
+  pft_keyescrow_drift_items{node="validator"} 0
+  (exit 0)
+CHECK ok   pft-keyescrow re-run after the ntfy.env restore: validator drift_items 0
+$ sleep 5; curl -s --max-time 15 "https://ntfy.sh/$TT/json?poll=1&since=1794355924" | jq -r '.title'
+  [MAINT] start validator
+  [MAINT] end validator
+  (exit 0)
+CHECK ok   the [MAINT] start and end messages reached the throwaway topic
+$ curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '[.data.alerts[] | select(.labels.alertname | test("Histarchive|RuleDead|TextfileStale|Rulecheck|Fleet|Sched|PFTJob|KeyEscrow|Integrity"))] | length'
+  0
+  (exit 0)
+CHECK ok   no histarchive/rulecheck/fleet/schedaudit/jobwatch/keyescrow alert pending or firing (silence left to run out)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 232 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 139 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts at the end
+$ sudo -n docker exec postfiatd curl -s -m 10 -d '{"method":"server_info"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state; R "sudo -n docker exec postfiatd-sentry curl -s -m 10 -d '{\"method\":\"server_info\"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state"
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing at the end
+$ sudo -n find /var/lib/pft-histarchive -maxdepth 1 -name 'restore.*' | wc -l; systemctl list-units --all --no-legend 'run-u*' | wc -l
+  0
+  0
+  (exit 0)
+CHECK ok   no restore scratch left, no transient run-u units
+operator topic read-back waits 90 s (>= group_interval + 30 s after the last change)
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the run (2 topic(s), 0 with messages)
+
+install-run done 2026-11-11T00:24:18Z: 0 check(s) failed -> PASS
