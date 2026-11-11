@@ -1,0 +1,43 @@
+OS: Ubuntu 22.04.5 LTS | 2026-11-11T03:49:19Z | histarchive verification answer, fresh clone at dc382fdb5c10bb7444085c726dcc124bd04bbf76 | python3 3.10.12
+(work dir: a new mktemp dir under ~/.cache; no node or RPC is used below)
+$ git clone -q https://github.com/darkmatter-sudo/postfiat-validator-installer.git repo
+(exit 0)
+$ git checkout -q dc382fdb5c10bb7444085c726dcc124bd04bbf76 && git rev-parse HEAD && git status --short | wc -l
+dc382fdb5c10bb7444085c726dcc124bd04bbf76
+0
+(exit 0)
+$ sha256sum histarchive/logs/data/live-run-1/segments/2026-11-10.jsonl.gz histarchive/logs/data/live-run-1/active-2026-11-11.jsonl.gz histarchive/logs/data/live-run-1/MANIFEST.jsonl histarchive/logs/data/live-run-1/state.json
+70b4ad7c1d93efa395ad535957c033d363b46ed4a19eb25f3d393935f856342a  histarchive/logs/data/live-run-1/segments/2026-11-10.jsonl.gz
+1690d1fdb607195d689f7c7e13690c209e7b68c97316a7cf558c1cd728be2aa4  histarchive/logs/data/live-run-1/active-2026-11-11.jsonl.gz
+eefd1a869b56eeefc79faef769e86192782d6801027f5d17c570d8f2b122ffc7  histarchive/logs/data/live-run-1/MANIFEST.jsonl
+a80dcbe2ab76a9f4bf87b74e7de8e72a0fcce09648565de5fedd36e864da8d77  histarchive/logs/data/live-run-1/state.json
+(exit 0)
+$ wc -l < histarchive/logs/data/live-run-1/MANIFEST.jsonl
+1
+(exit 0)
+$ cat -n histarchive/logs/data/live-run-1/MANIFEST.jsonl
+     1	{"bytes_gz":792777,"bytes_raw":3407223,"count":3112,"day":"2026-11-10","entry":"bf1c160f2e55b17a215ec71fc8cb1ba694d8dfeb8a255eb3f757ae4b1cb4569f","first":7937915,"first_parent":"C3BA86B2C8C851CEC891AA0D639D11C6C3331066F6BB8E2AA12CFC79F7258E28","last":7941026,"last_hash":"4D5C72642ED485B3B9510E508778FFAA6ADF297B022E83D2AEA439B3467ABAFA","prev_entry":null,"sealed_utc":"2026-11-10T23:59:59Z","segment":"segments/2026-11-10.jsonl.gz","sha256_gz":"70b4ad7c1d93efa395ad535957c033d363b46ed4a19eb25f3d393935f856342a","sha256_raw":"289c1959607c9e03144f2eaae3a9d41d5bbfcad93f7cf4d620053b2ad0b6a8df","txs":1122,"v":1}
+(exit 0)
+$ D=~/.cache/ha-verif.TwCKDm/archive && mkdir -p $D/segments $D/active && cp histarchive/logs/data/live-run-1/MANIFEST.jsonl histarchive/logs/data/live-run-1/state.json $D/ && cp histarchive/logs/data/live-run-1/segments/2026-11-10.jsonl.gz $D/segments/ && gunzip -c histarchive/logs/data/live-run-1/active-2026-11-11.jsonl.gz > $D/active/2026-11-11.jsonl && find $D -type f | sort
+~/.cache/ha-verif.TwCKDm/archive/MANIFEST.jsonl
+~/.cache/ha-verif.TwCKDm/archive/active/2026-11-11.jsonl
+~/.cache/ha-verif.TwCKDm/archive/segments/2026-11-10.jsonl.gz
+~/.cache/ha-verif.TwCKDm/archive/state.json
+(exit 0)
+$ python3 -u histarchive/histarchive.py verify --dir ~/.cache/ha-verif.TwCKDm/archive > ~/.cache/ha-verif.TwCKDm/verify.txt
+(exit 0)
+$ grep -c . ~/.cache/ha-verif.TwCKDm/verify.txt
+1
+(exit 0)
+$ tail -n 3 ~/.cache/ha-verif.TwCKDm/verify.txt
+RESULT: PASS - segments 1 active 1 ledgers 7479 (7937915-7945393) txs 2606 gaps 0 (0 ledgers) fails 0
+(exit 0)
+== chain tip, re-derived with plain python (sha256 of the entry's sorted-key compact JSON without "entry", the rule in histarchive.py entry_hash/canon)
+$ python3 - histarchive/logs/data/live-run-1/MANIFEST.jsonl histarchive/logs/data/live-run-1/segments/2026-11-10.jsonl.gz
+MANIFEST entries: 1
+line 1 day 2026-11-10: entry bf1c160f2e55b17a215ec71fc8cb1ba694d8dfeb8a255eb3f757ae4b1cb4569f | recomputed bf1c160f2e55b17a215ec71fc8cb1ba694d8dfeb8a255eb3f757ae4b1cb4569f | MATCH
+line 1 prev_entry None | expected None (previous line's entry; none before line 1) | MATCH
+tip: line 1 entry bf1c160f2e55b17a215ec71fc8cb1ba694d8dfeb8a255eb3f757ae4b1cb4569f prev_entry None
+tip sha256_gz 70b4ad7c1d93efa395ad535957c033d363b46ed4a19eb25f3d393935f856342a vs segment file sha256 70b4ad7c1d93efa395ad535957c033d363b46ed4a19eb25f3d393935f856342a | MATCH
+(exit 0)
+END 2026-11-11T03:49:22Z (work dir removed)
