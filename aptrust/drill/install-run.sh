@@ -69,12 +69,12 @@ check "gpg, gpgv, jq, apt-config, dpkg and a pft-rulecheck conf on both hosts" "
 x "sudo -n env TEXT_BUDGET=999999 pft-jobwatch collect --stdout 2>/dev/null | wc -c; R 'sudo -n env TEXT_BUDGET=999999 pft-jobwatch collect --stdout 2>/dev/null | wc -c'; sudo -n sed -n 's/^TEXT_BUDGET=//p' /etc/pft-jobwatch.env"
 JW_V="$(sed -n 1p <<<"$XOUT")"; JW_S="$(sed -n 2p <<<"$XOUT")"; JW_BUDGET="$(sed -n 3p <<<"$XOUT")"; JW_BUDGET="${JW_BUDGET:-61440}"
 check "jobwatch textfiles have room for one more timer (validator $JW_V, sentry $JW_S, + 1200 <= $JW_BUDGET)" "$([ $((JW_V + 1200)) -le "$JW_BUDGET" ] && [ $((JW_S + 1200)) -le 61440 ] && echo 0 || echo 1)"
-pull_probe() { # run pft-backupwatch's PULL_SSH (as root, like the unit) with `true`; prints nothing of the command
-  sudo -n grep -c '^PULL_SSH=' /etc/pft-backupwatch.env
-  sudo -n bash -c 'c="$(sed -n "s/^PULL_SSH=//p" /etc/pft-backupwatch.env | tr -d "\"")"; $c true' >/dev/null 2>&1 && echo pull-ssh-ok
+pull_probe() { # run pft-kmod's PULL_SSH (as root, like the unit) with `true`; prints nothing of the command
+  sudo -n grep -c '^PULL_SSH=' /etc/pft-kmod.env
+  sudo -n bash -c 'c="$(sed -n "s/^PULL_SSH=//p" /etc/pft-kmod.env | tr -d "\"")"; [ -n "$c" ] && $c true' >/dev/null 2>&1 && echo pull-ssh-ok
 }
 x "pull_probe"
-check "the pull's ssh command (same as pft-backupwatch's PULL_SSH) reaches the sentry as root's runuser" "$(grep -qx 1 <<<"$XOUT" && grep -qx pull-ssh-ok <<<"$XOUT" && echo 0 || echo 1)"
+check "the pull's ssh command (pft-kmod's PULL_SSH, non-empty) reaches the sentry when run as root" "$(grep -qx 1 <<<"$XOUT" && grep -qx pull-ssh-ok <<<"$XOUT" && echo 0 || echo 1)"
 { for f in /etc/postfiat-monitor.env /etc/pft-integrity.env; do sudo -n sed -n 's/^NTFY_TOPIC=//p' "$f" 2>/dev/null; done
   R 'for f in /etc/pft-watchdog/ntfy.env /etc/pft-integrity.env /etc/pft-alertpath/ntfy.env; do sudo -n sed -n "s/^NTFY_TOPIC=//p" $f 2>/dev/null; done'
   sed -n 's|^NTFY_URL=.*/||p' "$HOME/.config/pft-alerts/ntfy.env" 2>/dev/null
@@ -130,7 +130,7 @@ check "sentry install exit 0, up 1, timer enabled" "$([ "$XRC" = 0 ] && grep -q 
 echo; echo "== 5. validator: install.sh, then PULL_SSH/PEER_LABEL and install.sh --pull"
 x "sudo -n bash aptrust/install.sh --host validator"
 check "validator install exit 0, up 1, timer enabled" "$([ "$XRC" = 0 ] && grep -q 'pft_aptrust_up{host="validator"} 1' <<<"$XOUT" && grep -q 'enabled pft-aptrust.timer' <<<"$XOUT" && echo 0 || echo 1)"
-x "sudo -n bash -c 'grep -q \"^PULL_SSH=\" /etc/pft-aptrust.env || { grep \"^PULL_SSH=\" /etc/pft-backupwatch.env; echo PEER_LABEL=sentry; } >> /etc/pft-aptrust.env; grep -c \"^PULL_SSH=\" /etc/pft-aptrust.env; grep -E \"^(HOST_LABEL|PEER_LABEL)=\" /etc/pft-aptrust.env; stat -c \"%a %U\" /etc/pft-aptrust.env'"
+x "sudo -n bash -c 'grep -q \"^PULL_SSH=\" /etc/pft-aptrust.env || { grep \"^PULL_SSH=\" /etc/pft-kmod.env; echo PEER_LABEL=sentry; } >> /etc/pft-aptrust.env; grep -c \"^PULL_SSH=\" /etc/pft-aptrust.env; grep -E \"^(HOST_LABEL|PEER_LABEL)=\" /etc/pft-aptrust.env; stat -c \"%a %U\" /etc/pft-aptrust.env'"
 check "validator conf: one PULL_SSH (copied, not printed), HOST_LABEL validator, PEER_LABEL sentry, 600 root" "$(grep -qx 1 <<<"$XOUT" && grep -qx HOST_LABEL=validator <<<"$XOUT" && grep -qx PEER_LABEL=sentry <<<"$XOUT" && grep -qx '600 root' <<<"$XOUT" && echo 0 || echo 1)"
 x "sudo -n bash aptrust/install.sh --pull"
 check "validator --pull exit 0, pulled sentry textfile has up 1" "$([ "$XRC" = 0 ] && grep -q 'pft_aptrust_up{host="sentry"} 1' <<<"$XOUT" && echo 0 || echo 1)"
