@@ -84,15 +84,17 @@ run 07, see [Results](#results)).
 | `pft_jobwatch_up` | 1 if the last `systemctl show` inventory succeeded (0: only up/timestamp/version are written, state untouched) |
 | `pft_jobwatch_collect_timestamp_seconds` | Unix time of the last collection attempt |
 | `pft_jobwatch_jobs{state}` | watched timers: total, present, disabled, failed, missed |
-| `pft_jobwatch_job_info{timer,service,kind}` | 1 per watched timer (kind monotonic, calendar, mixed, none) |
-| `pft_jobwatch_job_present` / `_disabled` / `_running` / `_never_run` / `_failed` / `_missed` | per-job 0/1 flags (above) |
+| `pft_jobwatch_version` | helper version (2 since 2026-11-11: textfile trimmed to the series below) |
+| `pft_jobwatch_job_present` / `_disabled` / `_running` / `_failed` / `_missed` | per-job 0/1 flags (above) |
 | `pft_jobwatch_job_consecutive_failures` | failed runs in a row, as observed |
-| `pft_jobwatch_job_interval_seconds` | derived repeat interval (0 = none known) |
-| `pft_jobwatch_job_last_trigger_timestamp_seconds` / `_last_success_timestamp_seconds` | Unix times, whole seconds (0 = never / none) |
 | `pft_jobwatch_job_runs_observed_total` | finished runs counted since the state was created |
 
-Next elapse and the failed-run counter are in `pft-jobwatch inventory --format json` only: the pft exporter skips a
-textfile over 64 KiB whole, and with them 49 timers reached 66 KB (update run 09). `collect` refuses to write a file
+Only the series the alert rules and drills read are exported. Service and schedule kind (the old `job_info`),
+never-run, the derived interval, the last trigger/success times, the next elapse and the failed-run counter are in
+`pft-jobwatch inventory --format json` (and the tab-separated `inventory`) only: the pft exporter skips a textfile
+over 64 KiB whole. With them, 49 timers reached 66 KB (update run 09) and 57 timers reached 64425 bytes on 2026-11-11
+(one more timer would have tripped the budget, lesson from 2026-11-09); without them the same 57 timers take about
+34 KB, about 0.6 KB per timer (update run 22). `collect` refuses to write a file
 over `TEXT_BUDGET` (61440 bytes) and writes `up 0` instead, so PFTJobwatchStale fires rather than every series
 vanishing; `pull` validates against 65536.
 
@@ -125,8 +127,8 @@ alerts of the same name and status in one webhook into one message (`[FIRING] PF
   `systemd-analyze` is unavailable are they learned from observed gaps, with the limits described above (the
   next-elapse check still catches a timer that stops firing).
 - A job that is meant to be removed must be `forget`-ed, or PFTJobDisabled stays active.
-- Size: about 1.1 KB per timer; the validator's 49 timers give 55.6 KB, so roughly 5 more timers fit under
-  `TEXT_BUDGET`. Past that, collect publishes `up 0` (PFTJobwatchStale) until JOB_GLOBS is narrowed or the exporter's
+- Size: about 0.6 KB per timer since helper version 2 (was 1.1 KB); the validator's 57 timers give about 34 KB, so
+  roughly 40 more timers fit under `TEXT_BUDGET`. Past that, collect publishes `up 0` (PFTJobwatchStale) until JOB_GLOBS is narrowed or the exporter's
   64 KiB cap is raised.
 
 ## Results

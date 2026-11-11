@@ -350,8 +350,8 @@ MUTANTS += [
         "M33",
         L,
         "label named job again (the scrape renames it)",
-        'timer="{esc(j["job"])}"}} {fmt(v)}',
-        'job="{esc(j["job"])}"}} {fmt(v)}',
+        'timer="{esc(j["job"])}"}} {fmt(j[key])}',
+        'job="{esc(j["job"])}"}} {fmt(j[key])}',
     ),
     (
         "R08",
@@ -363,13 +363,7 @@ MUTANTS += [
 ]
 MUTANTS += [
     ("S12", S, "size guard removed", '[ "${#text}" -gt "$TEXT_BUDGET" ]', "false"),
-    (
-        "M34",
-        L,
-        "timestamps exported with fractions",
-        'int(j[key]) if key.endswith("_timestamp_seconds") else j[key]',
-        "j[key]",
-    ),
+    # M34 (timestamps exported with fractions) retired 2026-11-11: no timestamp series is exported any more (task_2fac2360)
 ]
 MUTANTS += [
     (
@@ -422,6 +416,23 @@ MUTANTS += [
         "period: failed systemd-analyze not checked",
         "    if p.returncode != 0:\n        return 0.0\n    ts = sorted(",
         "    ts = sorted(",
+    ),
+]
+MUTANTS += [
+    # 2026-11-11 (task_2fac2360): the textfile keeps only the series rules/drills read, so it fits the budget
+    (
+        "M41",
+        L,
+        "render: never_run exported again",
+        '    ("running", "1 while the triggered service is running"),\n',
+        '    ("running", "1 while the triggered service is running"),\n    ("never_run", "x"),\n',
+    ),
+    (
+        "M42",
+        L,
+        "render: last_success timestamp exported again",
+        '        "finished runs counted by jobwatch since its state was created",\n    ),\n)',
+        '        "finished runs counted by jobwatch since its state was created",\n    ),\n    ("last_success_timestamp_seconds", "x"),\n)',
     ),
 ]
 EQUIVALENT = []

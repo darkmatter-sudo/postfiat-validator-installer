@@ -24,7 +24,7 @@ import subprocess
 import sys
 import time
 
-VERSION = 1
+VERSION = 2
 DEFAULT_GLOBS = ("pft-*.timer", "postfiat*.timer")
 TIMER_PROPS = (
     "Id,Unit,LoadState,ActiveState,UnitFileState,Result,LastTriggerUSec,NextElapseUSecRealtime,"
@@ -333,7 +333,6 @@ GAUGES = (
     ),
     ("disabled", "1 if the timer will not fire: inactive, disabled, masked or removed"),
     ("running", "1 while the triggered service is running"),
-    ("never_run", "1 if the timer has never triggered and the service never started"),
     (
         "failed",
         "1 if the service's last run failed (Result != success or non-zero exit)",
@@ -347,24 +346,15 @@ GAUGES = (
         "1 if no trigger for longer than interval + accuracy + 2 x randomized delay + 300 s, or next elapse passed",
     ),
     (
-        "interval_seconds",
-        "repeat interval (monotonic: OnUnitActive/InactiveSec; calendar: smallest next-last gap seen)",
-    ),
-    (
-        "last_trigger_timestamp_seconds",
-        "Unix time the timer last triggered (0 = never)",
-    ),
-    (
-        "last_success_timestamp_seconds",
-        "Unix time the last successful run ended, as observed by jobwatch (0 = none yet)",
-    ),
-    (
         "runs_observed_total",
         "finished runs counted by jobwatch since its state was created",
     ),
 )
-# next_elapse_timestamp_seconds and failed_runs_observed_total stay in `inventory --format json` but are not exported:
-# the pft exporter skips a textfile over 64 KiB whole (49 timers on the validator reached 66 KB, update run 09).
+# Only what the alert rules and drills read is exported. never_run, interval_seconds, the trigger/success timestamps,
+# service/kind (the old job_info series), next_elapse_timestamp_seconds and failed_runs_observed_total stay in
+# `inventory --format json`: the pft exporter skips a textfile over 64 KiB whole (49 timers on the validator reached
+# 66 KB, update run 09; 57 timers reached 64425 B of the 65000 interim budget on 2026-11-11, task_2fac2360). About 0.6 KB
+# per timer now, so the 61440 B default budget holds ~100 timers with typical names.
 
 
 def render(host, jobs, now, ok=True, err=""):
@@ -394,14 +384,6 @@ def render(host, jobs, now, ok=True, err=""):
         ("missed", sum(j["missed"] for j in jobs)),
     ):
         out.append(f'pft_jobwatch_jobs{{host="{h}",state="{state}"}} {n}')
-    out += [
-        "# HELP pft_jobwatch_job_info Watched timer, its service and schedule kind (value 1)",
-        "# TYPE pft_jobwatch_job_info gauge",
-    ]
-    for j in jobs:
-        out.append(
-            f'pft_jobwatch_job_info{{host="{h}",timer="{esc(j["job"])}",service="{esc(j["service"])}",kind="{j["kind"]}"}} 1'
-        )
     for key, help_ in GAUGES:
         typ = "counter" if key.endswith("_total") else "gauge"
         out += [
@@ -409,11 +391,8 @@ def render(host, jobs, now, ok=True, err=""):
             f"# TYPE pft_jobwatch_job_{key} {typ}",
         ]
         for j in jobs:
-            v = (
-                int(j[key]) if key.endswith("_timestamp_seconds") else j[key]
-            )  # whole seconds: smaller file
             out.append(
-                f'pft_jobwatch_job_{key}{{host="{h}",timer="{esc(j["job"])}"}} {fmt(v)}'
+                f'pft_jobwatch_job_{key}{{host="{h}",timer="{esc(j["job"])}"}} {fmt(j[key])}'
             )
     return "\n".join(out) + "\n"
 

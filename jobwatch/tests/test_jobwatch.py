@@ -622,6 +622,58 @@ check(
         for k, _ in jl.GAUGES
     ),
 )
+exported = sorted({ln.split("{", 1)[0] for ln in lines})
+check(
+    "render: per-job series are only the ones rules/drills read (no job_info/never_run/interval/timestamps)",
+    exported
+    == sorted(
+        [
+            "pft_jobwatch_up",
+            "pft_jobwatch_collect_timestamp_seconds",
+            "pft_jobwatch_version",
+            "pft_jobwatch_jobs",
+        ]
+        + [
+            f"pft_jobwatch_job_{k}"
+            for k in (
+                "present",
+                "disabled",
+                "running",
+                "failed",
+                "consecutive_failures",
+                "missed",
+                "runs_observed_total",
+            )
+        ]
+    ),
+    exported,
+)
+check(
+    "render: dropped fields still in the derived job (inventory --format json)",
+    all(
+        k in jobs[0]
+        for k in (
+            "service",
+            "kind",
+            "never_run",
+            "interval_seconds",
+            "last_trigger_timestamp_seconds",
+            "last_success_timestamp_seconds",
+        )
+    ),
+    sorted(jobs[0]),
+)
+# 2026-11-11: 57 real timers made a 64425 B file (~34.3 KB without the dropped series); 85 timers with 36-char
+# names (~0.66 KB each, 1.5x the live count) must now fit the 61440 B default budget
+many = [
+    dict(jobs[1], job=f"pft-backupwatch-replicate-{i:03d}.timer") for i in range(85)
+]
+big = jl.render("validator", many, int(T_HB))
+check(
+    "render: 85 long-named timers fit TEXT_BUDGET 61440",
+    len(big) <= 61440,
+    len(big),
+)
 check(
     "render: first label is host on every sample",
     all(ln.split("{", 1)[1].startswith('host="validator"') for ln in lines),
