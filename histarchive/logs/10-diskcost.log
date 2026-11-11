@@ -1,0 +1,34 @@
+histarchive disk cost - 2026-11-11T00:32:55Z - Ubuntu 22.04.5 LTS - repo HEAD cf8aaf8bf6d3562d43685662cc5cbb57fe7a818d + working-tree diskcost.py sha256 3643dd83ffdf21ac538c6b1c87baf0a9bb6b53a1aeff518f6c887cf94718b54e
+$ sudo -n python3 -I -u histarchive/diskcost.py --dir /var/lib/pft-histarchive/archive --outbox /var/lib/pft-histarchive/outbox
+  | sealed day | ledgers | close-time span | txs | raw | gzip | ratio |
+  |---|---|---|---|---|---|---|
+  | 2026-11-10 | 3112 (7937915-7941026) | 9419 s | 1122 | 3.41 MB | 792.78 KB | 4.3x |
+  
+  | measure | value |
+  |---|---|
+  | gzip bytes per ledger | 254.7 B (raw 1094.9 B) |
+  | observed ledger rate | 0.3303 /s = 28537 ledgers/day |
+  | projected sealed archive | 7.27 MB/day, 218.09 MB/30 days, 2.65 GB/year |
+  | largest active (uncompressed) day | 31.24 MB |
+  | archive dir now | 1.38 MB in 5 files (active 583.58 KB) |
+  | validator outbox (encrypted copies) | 803.99 KB in 3 files |
+  (exit 0)
+$ ssh relay 'sudo -n python3 -I - --replica /var/lib/pft-histarchive/replica' < histarchive/diskcost.py
+  | sentry replica (ciphertext) | 803.99 KB in 3 files |
+  (exit 0)
+$ sudo -n du -sb /var/lib/pft-histarchive/archive /var/lib/pft-histarchive/outbox
+  1389559	/var/lib/pft-histarchive/archive
+  808084	/var/lib/pft-histarchive/outbox
+  (exit 0)
+$ ssh relay 'sudo -n du -sb /var/lib/pft-histarchive/replica'
+  808084	/var/lib/pft-histarchive/replica
+  (exit 0)
+$ df -h --output=target,size,avail /var/lib | tail -1; ssh relay 'df -h --output=target,size,avail /var/lib | tail -1'
+  /            97G   59G
+  /            97G   72G
+  (exit 0)
+$ systemctl show pft-histarchive.service -p MemoryCurrent -p CPUUsageNSec -p ActiveEnterTimestamp | sed 's/Timestamp=.*/Timestamp=(set)/'
+  MemoryCurrent=12705792
+  CPUUsageNSec=12961943000
+  ActiveEnterTimestamp=(set)
+  (exit 0)

@@ -36,6 +36,9 @@ it stays byte-identical.
 | `tests/test_histarchive.py`, `tests/test_wrapper.py` | fixture tests (fake JSON-RPC node with correctly hashed synthetic ledgers; a second state dir as the peer, real `age`) |
 | `tests/mutate.py` | mutation harness (baseline must pass first) |
 | `drill/kill-resume.sh` | kill -9 resume drill against a running follower unit |
+| `drill/install-run.sh` | recorded two-host install through pft-fleet inside a pft-maint window (throwaway topic) |
+| `drill/alert-run.sh` | recorded two-host replica / tamper / alert drill on tmpfs copies (throwaway topic) |
+| `diskcost.py`, `tests/test_diskcost.py` | measured disk cost and projection (stdlib), with hand-computed fixture tests |
 
 ## Archive layout (`/var/lib/pft-histarchive/archive`)
 
@@ -78,6 +81,32 @@ Keep a copy of `/var/lib/pft-histarchive/age.key` (or add an offline `EXTRA_RECI
 replica cannot be decrypted if the validator is lost. The ledger data itself is public; encryption keeps the
 sentry's copy unreadable and authenticated (age is AEAD: an altered file does not decrypt).
 
+## Disk cost (measured)
+
+Measured with `diskcost.py` on the live install (log `logs/10-diskcost.log`): one sealed day so far, the partial
+2026-11-10 (the archive starts at the six-hour live run's first ledger, 21:22:56Z). The projection uses bytes per
+ledger x the observed close-time rate, so it does not depend on the day being complete; re-run it after a few full
+days (`sudo python3 diskcost.py --dir /var/lib/pft-histarchive/archive --outbox /var/lib/pft-histarchive/outbox`).
+
+| sealed day | ledgers | close-time span | txs | raw | gzip | ratio |
+|---|---|---|---|---|---|---|
+| 2026-11-10 | 3112 (7937915-7941026) | 9419 s | 1122 | 3.41 MB | 792.78 KB | 4.3x |
+
+| measure | value |
+|---|---|
+| gzip bytes per ledger | 254.7 B (raw 1094.9 B) |
+| observed ledger rate | 0.3303 /s = 28537 ledgers/day |
+| projected sealed archive | 7.27 MB/day, 218.09 MB/30 days, 2.65 GB/year |
+| largest active (uncompressed) day | 31.24 MB |
+| archive dir now | 1.38 MB in 5 files (active 583.58 KB) |
+| validator outbox (encrypted copies) | 803.99 KB in 3 files |
+| sentry replica (ciphertext) | 803.99 KB in 3 files |
+
+Testnet traffic is light (1122 txs in 3112 ledgers); ledgers with many transactions are larger, so treat the
+per-ledger figure as a floor and watch `pft_histarchive_ledgers` / disk usage. The sentry stores the same size again
+(ciphertext of each sealed day, plus one metadata tar). The follower used 12.7 MB of memory
+(`MemoryMax=256M`) and ~13 s of CPU in its first 16 minutes.
+
 ## Install
 
 ```
@@ -89,6 +118,12 @@ sudo pft-integrity accept --reason "pft-histarchive installed"
 sudo pft-schedaudit accept && sudo pft-schedaudit collect
 sudo pft-jobwatch inventory
 ```
+
+The repo side of an install is one commit: the six `histarchive` lines in `../fleet/manifest.tsv`, the
+`histarchive.rules.yml` line in `../alerts/prometheus.yml` and the histarchive lines in
+`../rulecheck/pft-rulecheck.conf.example` (appended to `/etc/pft-rulecheck.conf` on the validator). Commit them together
+with the install, never earlier: a rule or manifest line without its collector reads as dead/missing and pages.
+`drill/install-run.sh` does the whole two-host install and checks it.
 
 The validator's jobwatch textfile had ~1.7 KB of budget left (one timer is ~1.1 KB), so histarchive uses one timer;
 the follower is a long-running service.
