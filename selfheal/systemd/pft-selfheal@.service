@@ -9,12 +9,14 @@ Type=oneshot
 # root: needs the docker socket (inspect, `docker exec ... curl server_info` on the container's loopback, and the only
 # two actions: compose `up -d --no-recreate` / `docker start`, `docker restart`). pft-egress reapply after an action
 # rewrites the container's iptables chain, hence CAP_NET_ADMIN/NET_RAW, AF_NETLINK and /run (xtables lock).
+# /var/lib/pft-maint: `pft-maint lock list` takes its flock on /var/lib/pft-maint/.lock (opened for writing); read-only,
+# it exits 3 and selfheal fails safe to "lock state unreadable" = every action suppressed (found by sentry drill run 13).
 # AF_INET/AF_INET6: the network-stall reference (one server_info to REF_URL, only when the local node looks stalled).
 # The docker CLI cannot read /root/.docker under ProtectHome and warns on every run; an empty private /tmp silences it.
 Environment=DOCKER_CONFIG=/tmp
 ExecStart=/usr/local/bin/pft-selfheal run --container %i
 ProtectSystem=strict
-ReadWritePaths=/var/lib/pft-exporter/textfile /var/lib/pft-selfheal /var/lib/pft-egress /run
+ReadWritePaths=/var/lib/pft-exporter/textfile /var/lib/pft-selfheal /var/lib/pft-egress /var/lib/pft-maint /run
 ProtectHome=yes
 PrivateTmp=yes
 PrivateDevices=yes

@@ -816,3 +816,19 @@ def test_sh_rpc_error_status_is_a_failure(sh):
     s.set(rpc=server_info())  # control: the same info with status success is healthy
     p = s.run("run", now=T0 + 60)
     assert json.loads(p.stderr.strip().splitlines()[-1])["verdict"] == "healthy"
+
+
+def _unit_rw_paths(name):
+    lines = (HERE.parent / "systemd" / name).read_text().splitlines()
+    rw = [ln.split("=", 1)[1].split() for ln in lines if ln.startswith("ReadWritePaths=")]
+    assert len(rw) == 1
+    return rw[0]
+
+
+def test_unit_can_take_pft_maint_lock():
+    """`pft-maint lock list` flocks /var/lib/pft-maint/.lock (opened for writing): the sandboxed unit must have that
+    dir writable, or every action is suppressed as "lock state unreadable" (found live by sentry drill run 13)."""
+    rw = _unit_rw_paths("pft-selfheal@.service")
+    assert "/var/lib/pft-maint" in rw
+    # control: the pull unit never calls pft-maint and stays limited to the textfile dir
+    assert _unit_rw_paths("pft-selfheal-pull@.service") == ["/var/lib/pft-exporter/textfile"]

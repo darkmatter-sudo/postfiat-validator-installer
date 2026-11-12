@@ -109,6 +109,16 @@ fi
 f="$TEXTDIR/pft_selfheal_$name.prom"
 grep -E "^pft_selfheal_(up|enforce|actions_24h|breaker_open)\{" "$f"
 grep -qx "pft_selfheal_up{container=\"$name\"} 1" "$f" || { log "ERROR: up != 1"; exit 1; }
+# the guards as the SANDBOXED run saw them must match the host: a lock or window the host does not have means the unit
+# cannot read pft-maint's state (sentry drill run 13: read-only /var/lib/pft-maint -> every action suppressed)
+if command -v pft-maint >/dev/null; then
+  host_locks="$(pft-maint lock list 2>&1)"; host_maint=false; pft-maint active >/dev/null 2>&1 && host_maint=true
+  g="$(jq -c '.observation.guards | {maint_active, locks}' "$STATEDIR/last-$name.json" 2>/dev/null)"
+  log "guards seen by the unit: ${g:-unreadable}; host: maint_active=$host_maint, lock list: $host_locks"
+  if [ "$host_locks" = "no data-collection locks" ] && [ "$g" != "{\"maint_active\":$host_maint,\"locks\":[]}" ]; then
+    log "ERROR: the sandboxed run sees maintenance guards the host does not have"; exit 1
+  fi
+fi
 systemctl enable --now "pft-selfheal@$name.timer"
 log "enabled pft-selfheal@$name.timer (every minute at :40)"
 grep -qF 'pft_selfheal_*.prom' "$RC_CONF" 2>/dev/null || rc_add "$RC_LINE"

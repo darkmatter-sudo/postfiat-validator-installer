@@ -221,7 +221,7 @@ for h in local relay; do
   case "$r" in "RESULT: PASS"*) ;; *) echo "  integrity not clean - stopping"; exit 4 ;; esac
 done
 x "R 'sudo -n pft-egress check --container $SC | tail -n 1'"
-check "sentry pft-egress check PASS before the drill" "$XRC"
+check "sentry pft-egress check PASS before the drill" "$(ok_if 'grep -q "RESULT: PASS" <<<"$XOUT"')"   # run 13: `| tail` hid the exit code
 for h in local relay; do x "on $h 'sudo -n pft-maint active; echo maint-active rc \$?; sudo -n pft-maint lock list'"
   grep -qx 'maint-active rc 0' <<<"$XOUT" && { echo "  a pft-maint window is already active - stopping"; exit 4; }
   grep -qx 'no data-collection locks' <<<"$XOUT" || { echo "  a pft-maint lock is held - stopping"; exit 4; }; done
@@ -280,7 +280,7 @@ tA="$(date -u +%s)"
 x "R 'sudo -n docker stop -t 60 $SC'"
 check "docker stop $SC" "$XRC"
 wait_until 300 10 '[ "$(jcount "$tA" result)" -ge 1 ]'
-echo "  $(ts): first action result $WAITED s after the stop"
+echo "  $(ts): action results since the stop: $(jcount "$tA" result) (waited ${WAITED}s)"
 wait_until 600 15 'case "$(sstate)" in full|proposing) true ;; *) false ;; esac'
 echo "  $(ts): $SC server_state $(sstate), peers $(speers) ($(( $(date -u +%s) - tA ))s after the stop)"
 x "jshow $tA"
@@ -289,7 +289,7 @@ s="$(sstate)"; check "A: $SC full again" "$(ok_if '[[ "$s" =~ ^(full|proposing)$
 HC1="$(shcfg)"; echo "  after: $HC1"
 check "A: CpuShares, MemoryReservation, Memory, restart policy and confinement unchanged by the start" "$(ok_if '[ "$HC1" = "$HC0" ]')"
 x "R 'sudo -n pft-egress check --container $SC | tail -n 1'"
-check "A: sentry pft-egress check PASS after the start" "$XRC"
+check "A: sentry pft-egress check PASS after the start" "$(ok_if 'grep -q "RESULT: PASS" <<<"$XOUT"')"   # run 13: `| tail` hid the exit code
 CIP1="$(scip)"; check "A: container address unchanged (the drill B rules match it)" "$(ok_if '[ "$CIP1" = "$CIP" ]')"
 [ "$FAILS" = 0 ] || exit 5
 
@@ -398,7 +398,7 @@ done
 x "sudo -n pft-apparmor audit | grep -E 'denials|RESULT'; sudo -n pft-seccomp audit | grep -E 'RESULT'; R 'sudo -n pft-apparmor audit | grep -E \"denials|RESULT\"; sudo -n pft-seccomp audit | grep -E RESULT'"
 check "AppArmor + seccomp audits PASS on both hosts, 0 denials" "$(ok_if '[ "$(grep -c "RESULT: PASS" <<<"$XOUT")" = 4 ] && [ "$(grep -c " 0 DENIED events" <<<"$XOUT")" = 2 ]')"
 x "R 'sudo -n pft-egress check --container $SC | tail -n 1'"
-check "sentry pft-egress check PASS at the end" "$XRC"
+check "sentry pft-egress check PASS at the end" "$(ok_if 'grep -q "RESULT: PASS" <<<"$XOUT"')"   # run 13: `| tail` hid the exit code
 s="$(sstate)"; HC1="$(shcfg)"
 check "$SC full at the end, HostConfig/confinement as before the run" "$(ok_if '[[ "$s" =~ ^(full|proposing)$ ]] && [ "$HC1" = "$HC0" ]')" "$s"
 x "sudo -n pft-maint status --json | jq -r .window; R 'sudo -n pft-maint status --json' | jq -r .window"
