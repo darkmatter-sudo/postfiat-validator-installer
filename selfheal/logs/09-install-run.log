@@ -1,0 +1,566 @@
+selfheal two-host install - 2026-11-12T16:46:57Z - Ubuntu 22.04.5 LTS - repo HEAD d668bf32f534fbd66ac3b224a985224dd240afd8 (clean: yes)
+
+== 0. preflight (read-only)
+$ sha256sum selfheal/pft-selfheal.sh selfheal/selfheal_decide.py selfheal/install.sh selfheal/drill/install-run.sh selfheal/systemd/* alerts/selfheal.rules.yml fleet/manifest.tsv
+  b5826baa99d8dc801281f2bad54dd79bb9e96047fcc3308443c7ee3684611991  selfheal/pft-selfheal.sh
+  600169dc31dbded55046e649758b5307e68c42adb08eda1395e9d40e551ee3bd  selfheal/selfheal_decide.py
+  5a4ec6c150cc49ed59ae83b20ceb7dca6de90273a6587615b9e64153ad1c04da  selfheal/install.sh
+  a5d5fdfcad333e83892a6b72e3c4733dca501663b92d4548d3914ce92cfc9ffc  selfheal/drill/install-run.sh
+  1ece66d7203c76af22e6162c715f98e1b31c714487fa7aa3d39c4c935a92c450  selfheal/systemd/pft-selfheal-pull@.service
+  ab3a3fe66f0051b62236188eaf18e4d993ed8508f1c78ed17713e5a570c10d98  selfheal/systemd/pft-selfheal-pull@.timer
+  f8667f9f55da9d05a5839134ac78b3ad4473c949ae3dd701256caff33b0ccaed  selfheal/systemd/pft-selfheal@.service
+  343795c20e3a2dfb9edcb2a9ce03f51a4ebbb902f8b37a156be1a748c20c9482  selfheal/systemd/pft-selfheal@.timer
+  4e2bdd58867f209050831ffa268011a840f7cac18c6c7458386ea4006ba2ffc2  alerts/selfheal.rules.yml
+  4be67a87aa7e8ecb3d766f0984262fab1f7ed23a265137e9904379ea50ddfecd  fleet/manifest.tsv
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 241 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 145 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts before install
+$ sudo -n docker exec postfiatd curl -s -m 10 -d '{"method":"server_info"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state; R "sudo -n docker exec postfiatd-sentry curl -s -m 10 -d '{\"method\":\"server_info\"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state"
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ ls /usr/local/bin/pft-selfheal /etc/pft-selfheal.env 2>&1; R 'ls /usr/local/bin/pft-selfheal /etc/pft-selfheal.env 2>&1'
+  ls: cannot access '/usr/local/bin/pft-selfheal': No such file or directory
+  ls: cannot access '/etc/pft-selfheal.env': No such file or directory
+  ls: cannot access '/usr/local/bin/pft-selfheal': No such file or directory
+  ls: cannot access '/etc/pft-selfheal.env': No such file or directory
+  (exit 2)
+CHECK ok   not installed yet on either host
+$ grep -c '^selfheal ' fleet/manifest.tsv; grep -c selfheal.rules.yml alerts/prometheus.yml; grep -c pft_selfheal rulecheck/pft-rulecheck.conf.example; grep -c pft_selfheal rulecheck/pft-rulecheck.sentry.conf.example
+  6
+  1
+  3
+  2
+  (exit 0)
+CHECK ok   HEAD lists 6 selfheal manifest lines, the rule file and 3 + 2 rulecheck lines
+$ command -v python3 jq curl | wc -l; R 'command -v python3 jq curl | wc -l'; sudo -n test -f /etc/pft-rulecheck.conf && echo rc-conf; R 'sudo -n test -f /etc/pft-rulecheck.conf && echo rc-conf'
+  3
+  3
+  rc-conf
+  rc-conf
+  (exit 0)
+CHECK ok   python3, jq, curl and a pft-rulecheck conf on both hosts
+$ sudo -n env TEXT_BUDGET=999999 pft-jobwatch collect --stdout 2>/dev/null | wc -c; R 'sudo -n env TEXT_BUDGET=999999 pft-jobwatch collect --stdout 2>/dev/null | wc -c'; sudo -n sed -n 's/^TEXT_BUDGET=//p' /etc/pft-jobwatch.env
+  36127
+  18613
+  65000
+  (exit 0)
+CHECK ok   jobwatch textfiles have room for the new timers (validator 36127 + 2x1200, sentry 18613 + 1200 <= budget 65000 / 61440)
+$ pull_probe
+  1
+  pull-ssh-ok
+  (exit 0)
+CHECK ok   the pull's ssh command (pft-statewatch's PULL_SSH, non-empty) reaches the sentry when run as root
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+$ curl -s http://<redacted-ip>:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'; curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '.data.alerts[] | "\(.labels.alertname) \(.state)"' | sort | uniq -c
+  0
+        1 PFTAlertPipelineWatchdog firing
+  (exit 0)
+known pending/firing before the run (accepted by the preflight): none
+CHECK ok   no active silence; only the pipeline watchdog (+ KNOWN_PENDING) pending/firing in Prometheus
+
+== 1. rollout silence (new rules; rulecheck/fleet/schedaudit/jobwatch/keyescrow see new files and timers; not the watchdog)
+CHECK ok   Alertmanager silence created (selfheal rules, rulecheck, fleet, schedaudit, jobwatch, keyescrow; not the watchdog) until 2026-11-12T17:47:38Z
+
+== 2. pft-maint window, [MAINT] messages to a throwaway topic (real file kept as $BK)
+real /etc/pft-maint/ntfy.env present before: 0
+$ { [ $HAD = 0 ] || sudo -n cp -p $NE $BK; } && printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' "$TT" | sudo -n tee $NE >/dev/null && sudo -n chmod 600 $NE && sudo -n stat -c '%a %U' $NE
+  600 root
+  (exit 0)
+CHECK ok   throwaway target installed
+$ sudo -n pft-maint start --ttl 40m --reason 'task_29073d4c selfheal install'
+  window started: id m1794502058-103597 until 2026-11-12T17:27:38Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint window open
+CHECK ok   sentry has the window (via the watchdog channel) after 10s
+
+== 3. pft-fleet: manifest (fleet add-on), then selfheal
+$ sudo -n pft-fleet sync --addon fleet --to d668bf32f534fbd66ac3b224a985224dd240afd8 --apply --reason 'task_29073d4c selfheal manifest lines'
+  [2026-11-12T16:48:23Z] sync fleet to d668bf32f534fbd66ac3b224a985224dd240afd8 (2026-11-12T16:43:43+00:00) REF main=d668bf32f534fbd66ac3b224a985224dd240afd8
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN validator validator /usr/local/sbin/pft-fleet 0755 CURRENT 61cafcfcdaa9 61cafcfcdaa9 keep
+  PLAN validator validator /usr/local/lib/pft-fleet/fleet_lib.py 0644 CURRENT dcb37d26f33f dcb37d26f33f keep
+  PLAN validator validator /usr/local/lib/pft-fleet/manifest.tsv 0644 BEHIND 09ed29d3e39a 4be67a87aa7e write
+  PLAN validator validator /etc/systemd/system/pft-fleet.service 0644 CURRENT 3105a2f0a144 3105a2f0a144 keep
+  PLAN validator validator /etc/systemd/system/pft-fleet.timer 0644 CURRENT 79839ee00a81 79839ee00a81 keep
+  [2026-11-12T16:48:23Z] order: sentry validator
+  [2026-11-12T16:48:23Z] sentry: every fleet file already at d668bf32f534 - nothing to do
+  [2026-11-12T16:48:23Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/lib/pft-fleet/manifest.tsv sha256 09ed29d3e39a -> /var/lib/pft-fleet/backup/20261112T164823Z-fleet-validator
+  WRITE validator /usr/local/lib/pft-fleet/manifest.tsv 09ed29d3e39a -> 4be67a87aa7e mode 0644
+  GATE validator sha256 /usr/local/lib/pft-fleet/manifest.tsv = target 4be67a87aa7e PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync fleet@d668bf32f534 (manifest.tsv)
+  [2026-11-12T16:48:50Z] SYNCED validator fleet -> d668bf32f534
+  [2026-11-12T16:48:50Z] sync complete
+  (exit 0)
+CHECK ok   fleet manifest sync exit 0
+$ sudo -n pft-fleet sync --addon selfheal --to d668bf32f534fbd66ac3b224a985224dd240afd8 --apply --reason 'task_29073d4c selfheal d668bf3 first install'
+  [2026-11-12T16:49:18Z] sync selfheal to d668bf32f534fbd66ac3b224a985224dd240afd8 (2026-11-12T16:43:43+00:00) REF main=d668bf32f534fbd66ac3b224a985224dd240afd8
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN sentry sentry /usr/local/bin/pft-selfheal 0755 MISSING - b5826baa99d8 write
+  PLAN sentry sentry /usr/local/lib/pft-selfheal/selfheal_decide.py 0644 MISSING - 600169dc31db write
+  PLAN sentry sentry /etc/systemd/system/pft-selfheal@.service 0644 MISSING - f8667f9f55da write
+  PLAN sentry sentry /etc/systemd/system/pft-selfheal@.timer 0644 MISSING - 343795c20e3a write
+  PLAN validator validator /usr/local/bin/pft-selfheal 0755 MISSING - b5826baa99d8 write
+  PLAN validator validator /usr/local/lib/pft-selfheal/selfheal_decide.py 0644 MISSING - 600169dc31db write
+  PLAN validator validator /etc/systemd/system/pft-selfheal@.service 0644 MISSING - f8667f9f55da write
+  PLAN validator validator /etc/systemd/system/pft-selfheal@.timer 0644 MISSING - 343795c20e3a write
+  PLAN validator validator /etc/systemd/system/pft-selfheal-pull@.service 0644 MISSING - 1ece66d7203c write
+  PLAN validator validator /etc/systemd/system/pft-selfheal-pull@.timer 0644 MISSING - ab3a3fe66f00 write
+  [2026-11-12T16:49:18Z] order: sentry validator
+  [2026-11-12T16:49:18Z] sentry: 4 file(s) to write
+  PRE sentry pft-maint window active PASS
+  PRE sentry node server_state=full PASS
+  PRE sentry pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP sentry /usr/local/bin/pft-selfheal absent before sync (rollback removes it)
+  BACKUP sentry /usr/local/lib/pft-selfheal/selfheal_decide.py absent before sync (rollback removes it)
+  BACKUP sentry /etc/systemd/system/pft-selfheal@.service absent before sync (rollback removes it)
+  BACKUP sentry /etc/systemd/system/pft-selfheal@.timer absent before sync (rollback removes it)
+  WRITE sentry /usr/local/bin/pft-selfheal - -> b5826baa99d8 mode 0755
+  WRITE sentry /usr/local/lib/pft-selfheal/selfheal_decide.py - -> 600169dc31db mode 0644
+  WRITE sentry /etc/systemd/system/pft-selfheal@.service - -> f8667f9f55da mode 0644
+  WRITE sentry /etc/systemd/system/pft-selfheal@.timer - -> 343795c20e3a mode 0644
+  RELOAD sentry systemctl daemon-reload
+  GATE sentry sha256 /usr/local/bin/pft-selfheal = target b5826baa99d8 PASS
+  GATE sentry syntax /usr/local/bin/pft-selfheal bash -n PASS
+  GATE sentry sha256 /usr/local/lib/pft-selfheal/selfheal_decide.py = target 600169dc31db PASS
+  GATE sentry syntax /usr/local/lib/pft-selfheal/selfheal_decide.py python PASS
+  GATE sentry sha256 /etc/systemd/system/pft-selfheal@.service = target f8667f9f55da PASS
+  GATE sentry unit pft-selfheal@.service template (instances checked below) PASS
+  GATE sentry sha256 /etc/systemd/system/pft-selfheal@.timer = target 343795c20e3a PASS
+  GATE sentry unit pft-selfheal@.timer template (instances checked below) PASS
+  GATE sentry addon units failed=none PASS
+  GATE sentry node server_state=full PASS
+  ACCEPT sentry pft-integrity baseline updated: pft-fleet sync selfheal@d668bf32f534 (pft-selfheal,selfheal_decide.py,pft-selfheal@.service,pft-selfheal@.timer)
+  [2026-11-12T16:49:47Z] SYNCED sentry selfheal -> d668bf32f534
+  [2026-11-12T16:49:47Z] validator: 6 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/bin/pft-selfheal absent before sync (rollback removes it)
+  BACKUP validator /usr/local/lib/pft-selfheal/selfheal_decide.py absent before sync (rollback removes it)
+  BACKUP validator /etc/systemd/system/pft-selfheal@.service absent before sync (rollback removes it)
+  BACKUP validator /etc/systemd/system/pft-selfheal@.timer absent before sync (rollback removes it)
+  BACKUP validator /etc/systemd/system/pft-selfheal-pull@.service absent before sync (rollback removes it)
+  BACKUP validator /etc/systemd/system/pft-selfheal-pull@.timer absent before sync (rollback removes it)
+  WRITE validator /usr/local/bin/pft-selfheal - -> b5826baa99d8 mode 0755
+  WRITE validator /usr/local/lib/pft-selfheal/selfheal_decide.py - -> 600169dc31db mode 0644
+  WRITE validator /etc/systemd/system/pft-selfheal@.service - -> f8667f9f55da mode 0644
+  WRITE validator /etc/systemd/system/pft-selfheal@.timer - -> 343795c20e3a mode 0644
+  WRITE validator /etc/systemd/system/pft-selfheal-pull@.service - -> 1ece66d7203c mode 0644
+  WRITE validator /etc/systemd/system/pft-selfheal-pull@.timer - -> ab3a3fe66f00 mode 0644
+  RELOAD validator systemctl daemon-reload
+  GATE validator sha256 /usr/local/bin/pft-selfheal = target b5826baa99d8 PASS
+  GATE validator syntax /usr/local/bin/pft-selfheal bash -n PASS
+  GATE validator sha256 /usr/local/lib/pft-selfheal/selfheal_decide.py = target 600169dc31db PASS
+  GATE validator syntax /usr/local/lib/pft-selfheal/selfheal_decide.py python PASS
+  GATE validator sha256 /etc/systemd/system/pft-selfheal@.service = target f8667f9f55da PASS
+  GATE validator unit pft-selfheal@.service template (instances checked below) PASS
+  GATE validator sha256 /etc/systemd/system/pft-selfheal@.timer = target 343795c20e3a PASS
+  GATE validator unit pft-selfheal@.timer template (instances checked below) PASS
+  GATE validator sha256 /etc/systemd/system/pft-selfheal-pull@.service = target 1ece66d7203c PASS
+  GATE validator unit pft-selfheal-pull@.service template (instances checked below) PASS
+  GATE validator sha256 /etc/systemd/system/pft-selfheal-pull@.timer = target ab3a3fe66f00 PASS
+  GATE validator unit pft-selfheal-pull@.timer template (instances checked below) PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync selfheal@d668bf32f534 (pft-selfheal,selfheal_decide.py,pft-selfheal@.service,pft-selfheal@.timer,pft-selfheal-pull@.service,pft-selfheal-pull@.timer)
+  [2026-11-12T16:50:30Z] SYNCED validator selfheal -> d668bf32f534
+  [2026-11-12T16:50:30Z] sync complete
+  (exit 0)
+CHECK ok   selfheal sync exit 0 (files written + integrity accepted by pft-fleet)
+$ sudo -n pft-fleet sync --addon aptrust --to d668bf32f534fbd66ac3b224a985224dd240afd8 --apply --reason 'task_29073d4c aptrust allowlist copy += selfheal rows'
+  [2026-11-12T16:51:00Z] sync aptrust to d668bf32f534fbd66ac3b224a985224dd240afd8 (2026-11-12T16:43:43+00:00) REF main=d668bf32f534fbd66ac3b224a985224dd240afd8
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN sentry sentry /usr/local/bin/pft-aptrust 0755 CURRENT 0e7722706169 0e7722706169 keep
+  PLAN sentry sentry /usr/local/lib/pft-aptrust/manifest.tsv 0644 BEHIND 09ed29d3e39a 4be67a87aa7e write
+  PLAN sentry sentry /etc/systemd/system/pft-aptrust.service 0644 CURRENT 5eda4d742e76 5eda4d742e76 keep
+  PLAN sentry sentry /etc/systemd/system/pft-aptrust.timer 0644 CURRENT 7b2dabe7abd8 7b2dabe7abd8 keep
+  PLAN validator validator /usr/local/bin/pft-aptrust 0755 CURRENT 0e7722706169 0e7722706169 keep
+  PLAN validator validator /usr/local/lib/pft-aptrust/manifest.tsv 0644 BEHIND 09ed29d3e39a 4be67a87aa7e write
+  PLAN validator validator /etc/systemd/system/pft-aptrust.service 0644 CURRENT 5eda4d742e76 5eda4d742e76 keep
+  PLAN validator validator /etc/systemd/system/pft-aptrust.timer 0644 CURRENT 7b2dabe7abd8 7b2dabe7abd8 keep
+  [2026-11-12T16:51:00Z] order: sentry validator
+  [2026-11-12T16:51:00Z] sentry: 1 file(s) to write
+  PRE sentry pft-maint window active PASS
+  PRE sentry node server_state=full PASS
+  PRE sentry pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP sentry /usr/local/lib/pft-aptrust/manifest.tsv sha256 09ed29d3e39a -> /var/lib/pft-fleet/backup/20261112T165100Z-aptrust-sentry
+  WRITE sentry /usr/local/lib/pft-aptrust/manifest.tsv 09ed29d3e39a -> 4be67a87aa7e mode 0644
+  GATE sentry sha256 /usr/local/lib/pft-aptrust/manifest.tsv = target 4be67a87aa7e PASS
+  GATE sentry addon units failed=none PASS
+  GATE sentry node server_state=full PASS
+  ACCEPT sentry pft-integrity baseline updated: pft-fleet sync aptrust@d668bf32f534 (manifest.tsv)
+  [2026-11-12T16:51:31Z] SYNCED sentry aptrust -> d668bf32f534
+  [2026-11-12T16:51:31Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/lib/pft-aptrust/manifest.tsv sha256 09ed29d3e39a -> /var/lib/pft-fleet/backup/20261112T165100Z-aptrust-validator
+  WRITE validator /usr/local/lib/pft-aptrust/manifest.tsv 09ed29d3e39a -> 4be67a87aa7e mode 0644
+  GATE validator sha256 /usr/local/lib/pft-aptrust/manifest.tsv = target 4be67a87aa7e PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync aptrust@d668bf32f534 (manifest.tsv)
+  [2026-11-12T16:51:57Z] SYNCED validator aptrust -> d668bf32f534
+  [2026-11-12T16:51:57Z] sync complete
+  (exit 0)
+CHECK ok   aptrust sync exit 0 (its manifest copy follows the new rows)
+$ sha256sum selfheal/pft-selfheal.sh selfheal/selfheal_decide.py | cut -c1-64; sudo -n sha256sum /usr/local/bin/pft-selfheal /usr/local/lib/pft-selfheal/selfheal_decide.py | cut -c1-64; R 'sha256sum /usr/local/bin/pft-selfheal /usr/local/lib/pft-selfheal/selfheal_decide.py | cut -c1-64'
+  b5826baa99d8dc801281f2bad54dd79bb9e96047fcc3308443c7ee3684611991
+  600169dc31dbded55046e649758b5307e68c42adb08eda1395e9d40e551ee3bd
+  b5826baa99d8dc801281f2bad54dd79bb9e96047fcc3308443c7ee3684611991
+  600169dc31dbded55046e649758b5307e68c42adb08eda1395e9d40e551ee3bd
+  b5826baa99d8dc801281f2bad54dd79bb9e96047fcc3308443c7ee3684611991
+  600169dc31dbded55046e649758b5307e68c42adb08eda1395e9d40e551ee3bd
+  (exit 0)
+CHECK ok   installed script + parser = repo bytes on both hosts
+
+== 4. sentry: install.sh --container postfiatd-sentry
+$ git archive d668bf32f534fbd66ac3b224a985224dd240afd8 selfheal | R 'rm -rf ~/pft-selfheal-d668bf3 && mkdir -m 700 ~/pft-selfheal-d668bf3 && tar -x -C ~/pft-selfheal-d668bf3'
+  
+  (exit 0)
+$ R 'sudo -n bash ~/pft-selfheal-d668bf3/selfheal/install.sh --container postfiatd-sentry'
+  2026-11-12T16:51:59Z installed /usr/local/bin/pft-selfheal (sha256 b5826baa99d8dc801281f2bad54dd79bb9e96047fcc3308443c7ee3684611991)
+  2026-11-12T16:51:59Z installed /usr/local/lib/pft-selfheal/selfheal_decide.py (sha256 600169dc31dbded55046e649758b5307e68c42adb08eda1395e9d40e551ee3bd)
+  2026-11-12T16:51:59Z created /etc/pft-selfheal.env from pft-selfheal.env.example (CONTAINER=postfiatd-sentry, MODE=dryrun)
+  2026-11-12T16:51:59Z /etc/pft-selfheal.env: MODE=dryrun
+  2026-11-12T16:51:59Z first decision (through the sandboxed unit):
+  pft_selfheal_up{container="postfiatd-sentry"} 1
+  pft_selfheal_enforce{container="postfiatd-sentry"} 0
+  pft_selfheal_actions_24h{container="postfiatd-sentry"} 0
+  pft_selfheal_breaker_open{container="postfiatd-sentry"} 0
+  Created symlink /etc/systemd/system/timers.target.wants/pft-selfheal@postfiatd-sentry.timer → /etc/systemd/system/pft-selfheal@.timer.
+  2026-11-12T16:52:03Z enabled pft-selfheal@postfiatd-sentry.timer (every minute at :40)
+  2026-11-12T16:52:03Z added to /etc/pft-rulecheck.conf: textfile pft_selfheal_*.prom   5m   pft_selfheal_run_timestamp_seconds
+  2026-11-12T16:52:03Z added to /etc/pft-rulecheck.conf: require pft_selfheal_postfiatd-sentry.prom
+  (exit 0)
+CHECK ok   sentry install exit 0, up 1, timer enabled
+
+== 5. validator: install.sh, then PULL_SSH and install.sh --pull postfiatd-sentry
+$ sudo -n bash selfheal/install.sh
+  2026-11-12T16:52:03Z installed /usr/local/bin/pft-selfheal (sha256 b5826baa99d8dc801281f2bad54dd79bb9e96047fcc3308443c7ee3684611991)
+  2026-11-12T16:52:03Z installed /usr/local/lib/pft-selfheal/selfheal_decide.py (sha256 600169dc31dbded55046e649758b5307e68c42adb08eda1395e9d40e551ee3bd)
+  2026-11-12T16:52:03Z created /etc/pft-selfheal.env from pft-selfheal.env.example (CONTAINER=postfiatd, MODE=dryrun)
+  2026-11-12T16:52:03Z /etc/pft-selfheal.env: MODE=dryrun
+  2026-11-12T16:52:04Z first decision (through the sandboxed unit):
+  pft_selfheal_up{container="postfiatd"} 1
+  pft_selfheal_enforce{container="postfiatd"} 0
+  pft_selfheal_actions_24h{container="postfiatd"} 0
+  pft_selfheal_breaker_open{container="postfiatd"} 0
+  Created symlink /etc/systemd/system/timers.target.wants/pft-selfheal@postfiatd.timer → /etc/systemd/system/pft-selfheal@.timer.
+  2026-11-12T16:52:07Z enabled pft-selfheal@postfiatd.timer (every minute at :40)
+  2026-11-12T16:52:07Z added to /etc/pft-rulecheck.conf: textfile pft_selfheal_*.prom   5m   pft_selfheal_run_timestamp_seconds
+  2026-11-12T16:52:07Z added to /etc/pft-rulecheck.conf: require pft_selfheal_postfiatd.prom
+  (exit 0)
+CHECK ok   validator install exit 0, up 1, timer enabled
+$ sudo -n bash -c 'grep -q "^PULL_SSH=" /etc/pft-selfheal.env || grep "^PULL_SSH=" /etc/pft-statewatch.env >> /etc/pft-selfheal.env; grep -c "^PULL_SSH=" /etc/pft-selfheal.env; stat -c "%a %U" /etc/pft-selfheal.env'
+  1
+  644 root
+  (exit 0)
+CHECK ok   validator conf: one PULL_SSH (copied, not printed), root-owned
+$ sudo -n bash selfheal/install.sh --pull postfiatd-sentry
+  2026-11-12T16:52:07Z installed /usr/local/bin/pft-selfheal (sha256 b5826baa99d8dc801281f2bad54dd79bb9e96047fcc3308443c7ee3684611991)
+  2026-11-12T16:52:08Z installed /usr/local/lib/pft-selfheal/selfheal_decide.py (sha256 600169dc31dbded55046e649758b5307e68c42adb08eda1395e9d40e551ee3bd)
+  2026-11-12T16:52:08Z /etc/pft-selfheal.env: MODE=dryrun
+  2026-11-12T16:52:08Z first pull (through the sandboxed unit):
+  pft_selfheal_up{container="postfiatd-sentry"} 1
+  pft_selfheal_run_timestamp_seconds{container="postfiatd-sentry"} 1794502320
+  pft_selfheal_enforce{container="postfiatd-sentry"} 0
+  Created symlink /etc/systemd/system/timers.target.wants/pft-selfheal-pull@postfiatd-sentry.timer → /etc/systemd/system/pft-selfheal-pull@.timer.
+  2026-11-12T16:52:10Z added to /etc/pft-rulecheck.conf: require pft_selfheal_postfiatd-sentry.prom
+  2026-11-12T16:52:10Z enabled pft-selfheal-pull@postfiatd-sentry.timer (every minute at :58)
+  (exit 0)
+CHECK ok   validator --pull exit 0, pulled sentry textfile has up 1
+$ sudo -n bash selfheal/install.sh 2>&1 | grep -E 'added to|enabled|created'
+  2026-11-12T16:52:14Z enabled pft-selfheal@postfiatd.timer (every minute at :40)
+  (exit 0)
+CHECK ok   second install run adds no rulecheck line and creates no conf again
+
+== 6. rulecheck inputs (written by install.sh)
+$ sudo -n grep -n pft_selfheal /etc/pft-rulecheck.conf; R 'sudo -n grep -n pft_selfheal /etc/pft-rulecheck.conf'
+  100:textfile pft_selfheal_*.prom   5m   pft_selfheal_run_timestamp_seconds
+  101:require pft_selfheal_postfiatd.prom
+  102:require pft_selfheal_postfiatd-sentry.prom
+  62:textfile pft_selfheal_*.prom   5m   pft_selfheal_run_timestamp_seconds
+  63:require pft_selfheal_postfiatd-sentry.prom
+  (exit 0)
+CHECK ok   validator 3 + sentry 2 pft_selfheal rulecheck lines
+
+== 7. load the alert rules (alerts/ is mounted at /etc/pft-alerts) and check them
+$ sudo -n docker kill -s HUP pft-prometheus >/dev/null && sleep 40 && curl -s http://<redacted-ip>:9090/api/v1/status/runtimeinfo | jq -r .data.reloadConfigSuccess && curl -s http://<redacted-ip>:9090/api/v1/rules | jq -r '.data.groups[] | select(.name == "pft-selfheal") | .rules[] | [.name, .health, .state] | @tsv'
+  true
+  PFTSelfhealBreakerOpen	ok	inactive
+  PFTSelfhealStale	ok	inactive
+  (exit 0)
+CHECK ok   config reload ok, 2 selfheal rules loaded, health ok, none firing
+
+== 8. new units/timers + conf: pft-schedaudit accept + collect, jobwatch inventory, then pft-integrity accept, both hosts
+$ sudo -n pft-schedaudit audit | grep -E '^(NEW|REMOVED|SUMMARY)' | cut -c1-160; R 'sudo -n pft-schedaudit audit' | grep -E '^(NEW|REMOVED|SUMMARY)' | cut -c1-160
+  NEW	-	timer/pft-selfheal-pull@postfiatd-sentry.timer@101c39d6b9	-	not in the accepted entry set
+  NEW	-	timer/pft-selfheal@postfiatd.timer@30d1f995a5	-	not in the accepted entry set
+  SUMMARY entries=102 enabled=89 findings=1 allowed=1 unexpected_findings=0 new=2 removed=0 baseline=yes unused_allow=0
+  NEW	-	timer/pft-selfheal@postfiatd-sentry.timer@15e356bacb	-	not in the accepted entry set
+  SUMMARY entries=71 enabled=58 findings=0 allowed=0 unexpected_findings=0 new=1 removed=0 baseline=yes unused_allow=0
+  (exit 1)
+$ sudo -n pft-schedaudit accept --reason 'task_29073d4c: pft-selfheal@postfiatd + pull timers installed' | tail -2; sudo -n pft-schedaudit collect | tail -1
+  accepted 102 entries (+2 -0): task_29073d4c: pft-selfheal@postfiatd + pull timers installed
+  (exit 0)
+$ R "sudo -n pft-schedaudit accept --reason 'task_29073d4c: pft-selfheal@postfiatd-sentry timer installed' | tail -2; sudo -n pft-schedaudit collect | tail -1"
+  accepted 71 entries (+1 -0): task_29073d4c: pft-selfheal@postfiatd-sentry timer installed
+  (exit 0)
+$ sudo -n pft-jobwatch inventory 2>&1 | grep -E 'selfheal|SUMMARY' | cut -c1-200; R 'sudo -n pft-jobwatch inventory 2>&1' | grep -E 'selfheal|SUMMARY' | cut -c1-200
+  pft-selfheal-pull@postfiatd-sentry.timer	calendar	60	0	0	0	0	1	OnCalendar=*-*-* *:*:58
+  pft-selfheal@postfiatd.timer	calendar	60	0	0	0	0	1	OnCalendar=*-*-* *:*:40
+  pft-selfheal@postfiatd-sentry.timer	calendar	60	0	0	0	0	1	OnCalendar=*-*-* *:*:40
+  (exit 0)
+CHECK ok   jobwatch learns a 60 s interval for the 3 selfheal timers (validator 2, sentry 1)
+$ sudo -n pft-integrity verify | grep -E '^(WARN|FAIL|RESULT)' | sed -E 's/ +sha256.*//' | cut -c1-140 | head -40
+  RESULT: WARN - 241 unchanged, 5 warn, 0 fail -> exit 1
+  (exit 1)
+$ sudo -n pft-integrity accept --reason 'task_29073d4c: selfheal d668bf3 installed (conf, units, timers, rulecheck.conf, sched items)' | tail -2
+  pft-integrity accept - 2026-11-12T16:53:42Z: re-baselined 246 items by <user>
+  manifest sha256: 1d47c7b032bce745826739976d6d9b05b38c7f2b36405547c9ab7bff29758ba7 -> a2965068b5f959685bd3ca9ce17a0f6fd7fec72a3519204caf7d403bde4de526 (logged to accept.log)
+  (exit 0)
+$ R 'sudo -n pft-integrity verify' | grep -E '^(WARN|FAIL|RESULT)' | sed -E 's/ +sha256.*//' | cut -c1-140 | head -40
+  RESULT: WARN - 145 unchanged, 3 warn, 0 fail -> exit 1
+  (exit 1)
+$ R "sudo -n pft-integrity accept --reason 'task_29073d4c: selfheal d668bf3 installed (conf, units, timer, rulecheck.conf, sched items)'" | tail -2
+  pft-integrity accept - 2026-11-12T16:54:01Z: re-baselined 148 items by root
+  manifest sha256: 5da41a4d3a0453ed3ee4f94123cb1459c2fe93c805e23d3265fb7aee7a49c0e9 -> f4514f4e7ead8c6eaa053cb226b288e60b0252ed6cc9750400c36b1df8196566 (logged to accept.log)
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 246 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 148 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts
+$ sudo -n pft-schedaudit audit | grep -E '^SUMMARY'; R 'sudo -n pft-schedaudit audit' | grep -E '^SUMMARY'
+  SUMMARY entries=102 enabled=89 findings=1 allowed=1 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+  SUMMARY entries=71 enabled=58 findings=0 allowed=0 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+  (exit 0)
+CHECK ok   schedaudit on both hosts: 0 unexpected, 0 new/removed
+$ sudo -n systemctl start pft-schedaudit-pull.service; grep -h '^pft_schedaudit_unexpected' /var/lib/pft-exporter/textfile/pft_schedaudit_*.prom | grep -vc ' 0$'
+  0
+  (exit 1)
+CHECK ok   schedaudit textfiles: every pft_schedaudit_unexpected series 0 (validator + pulled sentry copy)
+
+== 9. VERIFIED: status on both hosts, Prometheus series, confinement unchanged by the new exec path
+$ sudo -n pft-selfheal status
+  pft-selfheal mode dryrun | verdict healthy | actions_24h 0/3 | breaker closed | 56s ago
+  (exit 0)
+CHECK ok   validator status exit 0: mode dryrun, verdict healthy, breaker closed
+$ R 'sudo -n pft-selfheal status --container postfiatd-sentry'
+  pft-selfheal mode dryrun | verdict healthy | actions_24h 0/3 | breaker closed | 57s ago
+  (exit 0)
+CHECK ok   sentry status exit 0: mode dryrun, verdict healthy, breaker closed
+$ sudo -n grep -c '^MODE=dryrun$' /etc/pft-selfheal.env; R 'sudo -n grep -c ^MODE=dryrun$ /etc/pft-selfheal.env'; sudo -n cat /var/lib/pft-selfheal/journal-postfiatd.jsonl 2>/dev/null | grep -c 'event.:.action.,'; R 'sudo -n cat /var/lib/pft-selfheal/journal-postfiatd-sentry.jsonl 2>/dev/null | grep -c event.:.action.,'
+  1
+  1
+  0
+  0
+  (exit 1)
+CHECK ok   both confs MODE=dryrun, no action journalled on either host
+$ sleep 45; curl -s http://<redacted-ip>:9090/api/v1/query --data-urlencode 'query={__name__=~"pft_selfheal_(up|enforce|breaker_open|verdict)"}' | jq -r '.data.result[] | "\(.metric.container) \(.metric.__name__) \(.metric.verdict // "-") \(.value[1])"' | sort
+  postfiatd pft_selfheal_breaker_open - 0
+  postfiatd pft_selfheal_enforce - 0
+  postfiatd pft_selfheal_up - 1
+  postfiatd pft_selfheal_verdict act 0
+  postfiatd pft_selfheal_verdict healthy 1
+  postfiatd pft_selfheal_verdict suppressed 0
+  postfiatd pft_selfheal_verdict would_act 0
+  postfiatd-sentry pft_selfheal_breaker_open - 0
+  postfiatd-sentry pft_selfheal_enforce - 0
+  postfiatd-sentry pft_selfheal_up - 1
+  postfiatd-sentry pft_selfheal_verdict act 0
+  postfiatd-sentry pft_selfheal_verdict healthy 1
+  postfiatd-sentry pft_selfheal_verdict suppressed 0
+  postfiatd-sentry pft_selfheal_verdict would_act 0
+  (exit 0)
+CHECK ok   Prometheus, postfiatd and postfiatd-sentry: up 1, enforce 0, breaker_open 0, verdict healthy 1
+$ sudo -n pft-apparmor audit | grep -E 'denials|RESULT'; sudo -n pft-seccomp audit | grep -E 'RESULT'; R 'sudo -n pft-apparmor audit | grep -E "denials|RESULT"; sudo -n pft-seccomp audit | grep -E RESULT'
+    [PASS] denials            0 DENIED events in the last 86401s
+  RESULT: PASS
+  RESULT: PASS
+    [PASS] denials            0 DENIED events in the last 86402s
+  RESULT: PASS
+  RESULT: PASS
+  (exit 0)
+CHECK ok   AppArmor + seccomp audits PASS on both hosts with 0 denials after the first collections
+
+== 10. fleet skew, rulecheck, timers, jobwatch
+$ sudo -n pft-fleet skew
+  ref main = d668bf32f534fbd66ac3b224a985224dd240afd8
+  host sentry     role sentry    ok
+  host validator  role validator ok
+  HOST       ADDON       STATE      DETAIL
+  sentry     alertpath   CURRENT    
+  sentry     apparmor    CURRENT    
+  sentry     aptrust     CURRENT    
+  sentry     audittrail  CURRENT    
+  sentry     authwatch   CURRENT    
+  sentry     backfill    CURRENT    
+  sentry     backupwatch CURRENT    
+  sentry     cluster     CURRENT    
+  sentry     divergence  CURRENT    
+  sentry     egress      CURRENT    
+  sentry     feewatch    CURRENT    
+  sentry     histarchive CURRENT    
+  sentry     integrity   CURRENT    
+  sentry     jobwatch    CURRENT    
+  sentry     kernwatch   CURRENT    
+  sentry     keyescrow   CURRENT    
+  sentry     kmod        CURRENT    
+  sentry     logship     CURRENT    
+  sentry     maint       CURRENT    
+  sentry     mounts      CURRENT    
+  sentry     patch       CURRENT    
+  sentry     peerwatch   CURRENT    
+  sentry     privesc     CURRENT    
+  sentry     resources   CURRENT    
+  sentry     rulecheck   CURRENT    
+  sentry     schedaudit  CURRENT    
+  sentry     seccomp     CURRENT    
+  sentry     selfheal    CURRENT    
+  sentry     sshcrypto   CURRENT    
+  sentry     statewatch  CURRENT    
+  sentry     sysctl      CURRENT    
+  sentry     timesync    CURRENT    
+  sentry     upgradewatch CURRENT    
+  sentry     vulnscan    CURRENT    
+  sentry     watchdog    CURRENT    
+  validator  alertpath   CURRENT    
+  validator  apparmor    CURRENT    
+  validator  aptrust     CURRENT    
+  validator  audittrail  CURRENT    
+  validator  authwatch   CURRENT    
+  validator  backfill    CURRENT    
+  validator  backup      CURRENT    
+  validator  backupwatch CURRENT    
+  validator  cluster     CURRENT    
+  validator  divergence  CURRENT    
+  validator  egress      CURRENT    
+  validator  exporter    CURRENT    
+  validator  feewatch    CURRENT    
+  validator  fleet       CURRENT    
+  validator  histarchive CURRENT    
+  validator  integrity   CURRENT    
+  validator  jobwatch    CURRENT    
+  validator  kernwatch   CURRENT    
+  validator  keyescrow   CURRENT    
+  validator  kmod        CURRENT    
+  validator  logship     CURRENT    
+  validator  maint       CURRENT    
+  validator  monitor     CURRENT    
+  validator  mounts      CURRENT    
+  validator  patch       CURRENT    
+  validator  peerwatch   CURRENT    
+  validator  privesc     CURRENT    
+  validator  resources   CURRENT    
+  validator  retention   CURRENT    
+  validator  rulecheck   CURRENT    
+  validator  schedaudit  CURRENT    
+  validator  seccomp     CURRENT    
+  validator  selfheal    CURRENT    
+  validator  sshcrypto   CURRENT    
+  validator  statewatch  CURRENT    
+  validator  sysctl      CURRENT    
+  validator  timesync    CURRENT    
+  validator  upgradewatch CURRENT    
+  validator  vulnscan    CURRENT    
+  validator  watchdog    CURRENT    
+  SUMMARY CURRENT=75 BEHIND=0 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 0)
+CHECK ok   pft-fleet skew exit 0, selfheal CURRENT on both hosts, nothing BEHIND/MODIFIED/MISSING/UNEXPECTED/DIVERGED
+$ R 'sudo -n systemctl start pft-jobwatch.service'; sudo -n systemctl start pft-jobwatch-pull.service; echo pulled
+  pulled
+  (exit 0)
+$ s=$(date +%s); sudo -n systemctl start pft-rulecheck.service; sudo -n journalctl -u pft-rulecheck.service --since @$s --no-pager -o cat | grep -E '^RESULT |selfheal'
+  LIVE     pft-selfheal/PFTSelfhealBreakerOpen                            1/1
+  LIVE     pft-selfheal/PFTSelfhealStale                                  2/2
+  FRESH         pft_selfheal_postfiatd-sentry.prom              1m15s    5m00s  pft_selfheal_run_timestamp_seconds
+  FRESH         pft_selfheal_postfiatd.prom                       16s    5m00s  pft_selfheal_run_timestamp_seconds
+  RESULT OK - rules: LIVE 129 PARTIAL 0 DEAD 0 ERROR 0 IGNORED 0 | textfiles: FRESH 56 STALE 0 MISSING 0 LEFTOVER 0 UNCONFIGURED 0 -> exit 0
+  (exit 0)
+CHECK ok   validator pft-rulecheck RESULT OK
+$ R 's=$(date +%s); sudo -n systemctl start pft-rulecheck.service; sudo -n journalctl -u pft-rulecheck.service --since @$s --no-pager -o cat' | grep -E '^RESULT |selfheal'
+  FRESH         pft_selfheal_postfiatd-sentry.prom                17s    5m00s  pft_selfheal_run_timestamp_seconds
+  RESULT OK - rules: skipped | textfiles: FRESH 27 STALE 0 MISSING 0 LEFTOVER 0 UNCONFIGURED 0 -> exit 0
+  (exit 0)
+CHECK ok   sentry pft-rulecheck RESULT OK
+$ sudo -n systemctl start pft-rulecheck-pull.service; echo pulled
+  pulled
+  (exit 0)
+$ systemctl is-active pft-selfheal@postfiatd.timer pft-selfheal-pull@postfiatd-sentry.timer; R 'systemctl is-active pft-selfheal@postfiatd-sentry.timer'; systemctl is-failed pft-selfheal@postfiatd.service pft-selfheal-pull@postfiatd-sentry.service; R 'systemctl is-failed pft-selfheal@postfiatd-sentry.service'
+  active
+  active
+  active
+  inactive
+  inactive
+  inactive
+  (exit 1)
+CHECK ok   timers active and services not failed on both hosts
+$ sudo -n systemctl start pft-jobwatch.service; grep -E '^pft_jobwatch_job_(failed|missed|disabled)\{.*selfheal' /var/lib/pft-exporter/textfile/pft_jobwatch_validator.prom; wc -c < /var/lib/pft-exporter/textfile/pft_jobwatch_validator.prom
+  pft_jobwatch_job_disabled{host="validator",timer="pft-selfheal-pull@postfiatd-sentry.timer"} 0
+  pft_jobwatch_job_disabled{host="validator",timer="pft-selfheal@postfiatd.timer"} 0
+  pft_jobwatch_job_failed{host="validator",timer="pft-selfheal-pull@postfiatd-sentry.timer"} 0
+  pft_jobwatch_job_failed{host="validator",timer="pft-selfheal@postfiatd.timer"} 0
+  pft_jobwatch_job_missed{host="validator",timer="pft-selfheal-pull@postfiatd-sentry.timer"} 0
+  pft_jobwatch_job_missed{host="validator",timer="pft-selfheal@postfiatd.timer"} 0
+  37407
+  (exit 0)
+CHECK ok   jobwatch sees both validator selfheal timers: not failed, missed or disabled
+
+== 11. end window, restore the real target, compare, keyescrow, read back the throwaway and every operator topic
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+$ sudo -n rm -f $NE   (no ntfy.env before: pft-maint falls back to the real monitor target again)
+CHECK ok   pft-maint target back to its pre-run state (/etc/pft-maint/ntfy.env: absent again)
+$ sudo -n test ! -e $BK && echo backup gone
+  backup gone
+  (exit 0)
+$ sudo -n systemctl start pft-keyescrow.service; grep -h '^pft_keyescrow_drift_items{node="validator"}' /var/lib/pft-exporter/textfile/pft_keyescrow.prom
+  pft_keyescrow_drift_items{node="validator"} 0
+  (exit 0)
+CHECK ok   pft-keyescrow re-run after the ntfy.env restore: validator drift_items 0
+$ sleep 5; curl -s --max-time 15 "https://ntfy.sh/$TT/json?poll=1&since=1794502017" | jq -r '.title'
+  [MAINT] start validator
+  [MAINT] end validator
+  (exit 0)
+CHECK ok   the [MAINT] start and end messages reached the throwaway topic
+$ for i in $(seq 0 15 150); do n=$(curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '[.data.alerts[] | select(.labels.alertname | test("Selfheal|RuleDead|TextfileStale|Rulecheck|Fleet|Sched|PFTJob|KeyEscrow|Integrity|AppArmor|Seccomp"))] | length'); echo "+${i}s: $n"; [ "$n" = 0 ] && break; sleep 15; done; echo $n
+  +0s: 0
+  0
+  (exit 0)
+CHECK ok   no selfheal/rulecheck/fleet/schedaudit/jobwatch/keyescrow/confinement alert pending or firing (silence left to run out)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 246 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 148 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts at the end
+$ sudo -n docker exec postfiatd curl -s -m 10 -d '{"method":"server_info"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state; R "sudo -n docker exec postfiatd-sentry curl -s -m 10 -d '{\"method\":\"server_info\"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state"
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing at the end
+$ systemctl list-units --all --no-legend 'run-u*.service' 'run-u*.timer' | wc -l; R 'ls -d ~/pft-selfheal-* 2>/dev/null | wc -l'
+  0
+  0
+  (exit 0)
+CHECK ok   no transient run-u services/timers (run-user-N.mount login mounts are not transient units), no install copy left on the sentry
+operator topic read-back waits 90 s (>= group_interval + 30 s after the last change)
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the run (2 topic(s), 0 with messages)
+
+install-run done 2026-11-12T16:58:14Z: 0 check(s) failed -> PASS
+install-run exit 0
