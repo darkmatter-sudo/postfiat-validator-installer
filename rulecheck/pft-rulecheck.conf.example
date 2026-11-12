@@ -75,3 +75,7 @@ require pft_aptrust_sentry.prom
 textfile pft_peerwatch_*.prom   5m   pft_peerwatch_collect_timestamp_seconds
 require pft_peerwatch_postfiatd.prom
 require pft_peerwatch_postfiatd-sentry.prom
+# pft-selfheal (1-minute decision; sentry copy pulled every minute)
+textfile pft_selfheal_*.prom   5m   pft_selfheal_run_timestamp_seconds
+require pft_selfheal_postfiatd.prom
+require pft_selfheal_postfiatd-sentry.prom
