@@ -177,27 +177,44 @@ echo "Post Fiat health check - $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 state="$(docker inspect postfiatd --format '{{.State.Status}}' 2>/dev/null || echo missing)"
 [ "$state" = "running" ] && pass "container postfiatd running" || fail "container state: $state"
 
-# 2. Port bindings
-listen="$(ss -ltnH 2>/dev/null)"
+# 2. Port bindings. A failed or 2559-less ss read is retried (SS_TRIES reads, SS_RETRY_SEC apart) before it
+# counts: one empty read once reported "peer port 2559 not listening" while the port was up.
+SS_TRIES="${SS_TRIES:-3}"; SS_RETRY_SEC="${SS_RETRY_SEC:-2}"
+ss_try=0
+while :; do
+  ss_try=$(( ss_try + 1 ))
+  listen="$(ss -ltnH 2>/dev/null)"; ss_rc=$?
+  [ "$ss_rc" -eq 0 ] && grep -Eq ":2559\b" <<<"$listen" && break
+  [ "$ss_try" -ge "$SS_TRIES" ] && break
+  sleep "$SS_RETRY_SEC"
+done
+ss_lines="$(grep -c . <<<"$listen")"
+[ "$ss_try" -gt 1 ] && info "ss read $ss_try times (last rc=$ss_rc, $ss_lines lines)"
 for p in 5005 6005 6006 50051; do
-  if echo "$listen" | grep -Eq "(0\.0\.0\.0|\[::\]|\*):${p}\b"; then
+  if grep -Eq "(0\.0\.0\.0|\[::\]|\*):${p}\b" <<<"$listen"; then
     fail "admin port $p exposed on all interfaces"
-  elif echo "$listen" | grep -Eq "127\.0\.0\.1:${p}\b"; then
+  elif grep -Eq "127\.0\.0\.1:${p}\b" <<<"$listen"; then
     pass "admin port $p bound to 127.0.0.1"
   else
     info "admin port $p not listening"
   fi
 done
-echo "$listen" | grep -Eq ":2559\b" && pass "peer port 2559 listening" || fail "peer port 2559 not listening"
+if grep -Eq ":2559\b" <<<"$listen"; then
+  pass "peer port 2559 listening"
+else
+  fail "peer port 2559 not listening (ss rc=$ss_rc, $ss_lines lines, $ss_try reads)"
+fi
 
-# 3. Firewall
-if ufw status | grep -q "Status: active"; then
+# 3. Firewall (outputs captured first: grep -q exiting early must not SIGPIPE the producer under pipefail)
+ufw_out="$(ufw status 2>/dev/null)"
+if grep -q "Status: active" <<<"$ufw_out"; then
   pass "UFW active"
-  ufw status | grep -E "2559/tcp.*LIMIT" >/dev/null && pass "UFW rate limit on 2559" || fail "no UFW LIMIT rule on 2559"
+  grep -Eq "2559/tcp.*LIMIT" <<<"$ufw_out" && pass "UFW rate limit on 2559" || fail "no UFW LIMIT rule on 2559"
 else
   fail "UFW inactive"
 fi
-iptables -S DOCKER-USER 2>/dev/null | grep -q "dport 2559 -m state --state NEW -m limit" \
+du_out="$(iptables -S DOCKER-USER 2>/dev/null)"
+grep -q "dport 2559 -m state --state NEW -m limit" <<<"$du_out" \
   && pass "DOCKER-USER rate limit on 2559" || fail "DOCKER-USER rate limit missing"
 
 # 4. Node RPC

@@ -1,0 +1,38 @@
+$ sudo iptables -S DOCKER-USER | wc -c  # live size
+567
+$ sha256sum /usr/local/bin/postfiat-health  # before
+2c6a37ecb9f5706a6fdd0a1a9af9a37fd849ce4d7f2b8d2a2c92b58f5b1c2059  /usr/local/bin/postfiat-health
+$ sudo install -m 755 -o root -g root <extracted from install.sh> /usr/local/bin/postfiat-health
+rc=0
+24db81e33a644cab6a659223b751f524e51889172ea1d1f217c624ebe23e2dd1  /usr/local/bin/postfiat-health
+$ sudo postfiat-health
+Post Fiat health check - 2026-11-12T20:41:13Z
+  [PASS] container postfiatd running
+  [PASS] admin port 5005 bound to 127.0.0.1
+  [PASS] admin port 6005 bound to 127.0.0.1
+  [PASS] admin port 6006 bound to 127.0.0.1
+  [PASS] admin port 50051 bound to 127.0.0.1
+  [PASS] peer port 2559 listening
+  [PASS] UFW active
+  [PASS] UFW rate limit on 2559
+  [PASS] DOCKER-USER rate limit on 2559
+  [PASS] RPC responding (server_state: full)
+  [INFO] build_version: 1.0.9 | peers: 12 | complete_ledgers: 7993478-7994204
+  [PASS] build matches foundation RPC (1.0.9)
+  [INFO] node full - add validator token (official guide steps 5-8) to start proposing
+
+RESULT: HEALTHY
+exit=0
+$ sudo systemctl start postfiat-monitor.service; tail -n1 /var/log/postfiat-monitor.log
+[2026-11-12T20:41:16Z] OK: server_state=full
+$ sudo pft-integrity verify | tail -4
+pft-integrity verify - 2026-11-12T20:41:34Z
+OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-11-12T17:35:40Z
+  [FAIL] bin:postfiat-health                          changed  mtime, sha256
+RESULT: FAIL - 245 unchanged, 0 warn, 1 fail -> exit 2
+$ sudo pft-integrity accept --reason "followup postfiat-health: retry ss read, capture ufw/iptables before grep"
+pft-integrity accept - 2026-11-12T20:41:50Z: re-baselined 246 items by <user>
+manifest sha256: 073c6825eb75fc3b053f2c65bf0755129a0f32754778116274bc1a0912555a8d -> 305f1e4843ef756405967e1141a0ae9a5724ebc2c8a7c0e3efa6eb152a33066b (logged to accept.log)
+$ sudo pft-integrity verify | tail -2
+OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-11-12T20:41:39Z
+RESULT: PASS - 246 unchanged, 0 warn, 0 fail -> exit 0

@@ -53,6 +53,8 @@ sudo postfiat-health
 
 Checks: container running; admin ports on 127.0.0.1 only; peer port listening; UFW active with a LIMIT rule on 2559; DOCKER-USER rate limit present; RPC responding with `server_state`, build version, peers and ledgers; build compared with the foundation RPC. Exits 0 when healthy, 1 otherwise, so it works in cron or monitoring.
 
+The socket read is retried before the peer port counts as down (`SS_TRIES`, default 3, `SS_RETRY_SEC`, default 2 s), and the FAIL line carries the `ss` exit code, line count and number of reads. Without the retry, one empty read paged the operator through `postfiat-monitor` while 2559 was up. `ufw`/`iptables` output is captured before matching, so an early-exiting `grep -q` cannot SIGPIPE them under `pipefail` and turn a present rule into "missing". Offline test with stubbed `ss`/`docker`/`ufw`/`iptables`, no root needed: `bash health/test-health.sh` ([logs](health/logs/)).
+
 A fresh node reports `full` or `syncing`. It reports `proposing` only after you add a validator token (next section).
 
 ## Monitoring add-on (ntfy alerts)

@@ -1,0 +1,143 @@
+$ git rev-parse HEAD  # working tree = HEAD + uncommitted fix
+50a3a3ca99df1ecadedb5a2ad779f25213fc9193
+$ bash health/test-health.sh  # fixed install.sh (working tree)
+postfiat-health sha256 24db81e33a644cab6a659223b751f524e51889172ea1d1f217c624ebe23e2dd1 (80 lines)
+PASS  healthy ss: exit 0, one ss read, no retry line
+PASS  one empty ss read then ok: retried, HEALTHY (the 2026-11-12 false alarm)
+PASS  one failing ss (rc 1) then ok: retried, HEALTHY
+PASS  two empty reads then ok: HEALTHY on the 3rd read, 2 sleeps of 2 s
+PASS  control: peer port really down -> FAIL after 3 reads with rc and line count
+PASS  control: ss always empty -> FAIL (0 lines, 3 reads)
+PASS  control: ss always failing -> FAIL reports rc=1
+PASS  control: admin port on 0.0.0.0 still FAILs (here-string grep keeps the check)
+PASS  SS_TRIES=1 disables the retry (1 read, FAIL)
+PASS  large DOCKER-USER output with the rule first: PASS (no SIGPIPE false negative)
+RESULT: 10 passed, 0 failed
+exit=0
+
+$ bash health/test-health.sh <HEAD:install.sh>  # control: unfixed script must fail the retry cases
+postfiat-health sha256 2c6a37ecb9f5706a6fdd0a1a9af9a37fd849ce4d7f2b8d2a2c92b58f5b1c2059 (63 lines)
+PASS  healthy ss: exit 0, one ss read, no retry line
+FAIL  one empty ss read then ok: retried, HEALTHY (the 2026-11-12 false alarm)
+      | Post Fiat health check - 2026-11-12T20:40:58Z
+      |   [PASS] container postfiatd running
+      |   [INFO] admin port 5005 not listening
+      |   [INFO] admin port 6005 not listening
+      |   [INFO] admin port 6006 not listening
+      |   [INFO] admin port 50051 not listening
+      |   [FAIL] peer port 2559 not listening
+      |   [PASS] UFW active
+      |   [PASS] UFW rate limit on 2559
+      |   [PASS] DOCKER-USER rate limit on 2559
+      |   [PASS] RPC responding (server_state: full)
+      |   [INFO] build_version: 1.0.9 | peers: 12 | complete_ledgers: 1-2
+      |   [PASS] build matches foundation RPC (1.0.9)
+      |   [INFO] node full - add validator token (official guide steps 5-8) to start proposing
+      | 
+      | RESULT: UNHEALTHY
+FAIL  one failing ss (rc 1) then ok: retried, HEALTHY
+      | Post Fiat health check - 2026-11-12T20:40:58Z
+      |   [PASS] container postfiatd running
+      |   [INFO] admin port 5005 not listening
+      |   [INFO] admin port 6005 not listening
+      |   [INFO] admin port 6006 not listening
+      |   [INFO] admin port 50051 not listening
+      |   [FAIL] peer port 2559 not listening
+      |   [PASS] UFW active
+      |   [PASS] UFW rate limit on 2559
+      |   [PASS] DOCKER-USER rate limit on 2559
+      |   [PASS] RPC responding (server_state: full)
+      |   [INFO] build_version: 1.0.9 | peers: 12 | complete_ledgers: 1-2
+      |   [PASS] build matches foundation RPC (1.0.9)
+      |   [INFO] node full - add validator token (official guide steps 5-8) to start proposing
+      | 
+      | RESULT: UNHEALTHY
+FAIL  two empty reads then ok: HEALTHY on the 3rd read, 2 sleeps of 2 s
+      | Post Fiat health check - 2026-11-12T20:40:59Z
+      |   [PASS] container postfiatd running
+      |   [INFO] admin port 5005 not listening
+      |   [INFO] admin port 6005 not listening
+      |   [INFO] admin port 6006 not listening
+      |   [INFO] admin port 50051 not listening
+      |   [FAIL] peer port 2559 not listening
+      |   [PASS] UFW active
+      |   [PASS] UFW rate limit on 2559
+      |   [PASS] DOCKER-USER rate limit on 2559
+      |   [PASS] RPC responding (server_state: full)
+      |   [INFO] build_version: 1.0.9 | peers: 12 | complete_ledgers: 1-2
+      |   [PASS] build matches foundation RPC (1.0.9)
+      |   [INFO] node full - add validator token (official guide steps 5-8) to start proposing
+      | 
+      | RESULT: UNHEALTHY
+FAIL  control: peer port really down -> FAIL after 3 reads with rc and line count
+      | Post Fiat health check - 2026-11-12T20:40:59Z
+      |   [PASS] container postfiatd running
+      |   [PASS] admin port 5005 bound to 127.0.0.1
+      |   [PASS] admin port 6005 bound to 127.0.0.1
+      |   [INFO] admin port 6006 not listening
+      |   [INFO] admin port 50051 not listening
+      |   [FAIL] peer port 2559 not listening
+      |   [PASS] UFW active
+      |   [PASS] UFW rate limit on 2559
+      |   [PASS] DOCKER-USER rate limit on 2559
+      |   [PASS] RPC responding (server_state: full)
+      |   [INFO] build_version: 1.0.9 | peers: 12 | complete_ledgers: 1-2
+      |   [PASS] build matches foundation RPC (1.0.9)
+      |   [INFO] node full - add validator token (official guide steps 5-8) to start proposing
+      | 
+      | RESULT: UNHEALTHY
+FAIL  control: ss always empty -> FAIL (0 lines, 3 reads)
+      | Post Fiat health check - 2026-11-12T20:40:59Z
+      |   [PASS] container postfiatd running
+      |   [INFO] admin port 5005 not listening
+      |   [INFO] admin port 6005 not listening
+      |   [INFO] admin port 6006 not listening
+      |   [INFO] admin port 50051 not listening
+      |   [FAIL] peer port 2559 not listening
+      |   [PASS] UFW active
+      |   [PASS] UFW rate limit on 2559
+      |   [PASS] DOCKER-USER rate limit on 2559
+      |   [PASS] RPC responding (server_state: full)
+      |   [INFO] build_version: 1.0.9 | peers: 12 | complete_ledgers: 1-2
+      |   [PASS] build matches foundation RPC (1.0.9)
+      |   [INFO] node full - add validator token (official guide steps 5-8) to start proposing
+      | 
+      | RESULT: UNHEALTHY
+FAIL  control: ss always failing -> FAIL reports rc=1
+      | Post Fiat health check - 2026-11-12T20:40:59Z
+      |   [PASS] container postfiatd running
+      |   [INFO] admin port 5005 not listening
+      |   [INFO] admin port 6005 not listening
+      |   [INFO] admin port 6006 not listening
+      |   [INFO] admin port 50051 not listening
+      |   [FAIL] peer port 2559 not listening
+      |   [PASS] UFW active
+      |   [PASS] UFW rate limit on 2559
+      |   [PASS] DOCKER-USER rate limit on 2559
+      |   [PASS] RPC responding (server_state: full)
+      |   [INFO] build_version: 1.0.9 | peers: 12 | complete_ledgers: 1-2
+      |   [PASS] build matches foundation RPC (1.0.9)
+      |   [INFO] node full - add validator token (official guide steps 5-8) to start proposing
+      | 
+      | RESULT: UNHEALTHY
+PASS  control: admin port on 0.0.0.0 still FAILs (here-string grep keeps the check)
+PASS  SS_TRIES=1 disables the retry (1 read, FAIL)
+FAIL  large DOCKER-USER output with the rule first: PASS (no SIGPIPE false negative)
+      | Post Fiat health check - 2026-11-12T20:41:02Z
+      |   [PASS] container postfiatd running
+      |   [PASS] admin port 5005 bound to 127.0.0.1
+      |   [PASS] admin port 6005 bound to 127.0.0.1
+      |   [PASS] admin port 6006 bound to 127.0.0.1
+      |   [PASS] admin port 50051 bound to 127.0.0.1
+      |   [PASS] peer port 2559 listening
+      |   [PASS] UFW active
+      |   [PASS] UFW rate limit on 2559
+      |   [FAIL] DOCKER-USER rate limit missing
+      |   [PASS] RPC responding (server_state: full)
+      |   [INFO] build_version: 1.0.9 | peers: 12 | complete_ledgers: 1-2
+      |   [PASS] build matches foundation RPC (1.0.9)
+      |   [INFO] node full - add validator token (official guide steps 5-8) to start proposing
+      | 
+      | RESULT: UNHEALTHY
+RESULT: 3 passed, 7 failed
+exit=1
