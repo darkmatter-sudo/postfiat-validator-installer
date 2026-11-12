@@ -1,0 +1,106 @@
+peerwatch 24-hour window end - history copy - 2026-11-12T13:39:05Z - repo HEAD 190ad2d799a3fc2bc1ff7fd9ad7f9d15ea4d8fb9
+$ sudo -n cat /var/lib/pft-peerwatch/history-postfiatd.jsonl > final24h/history-postfiatd.jsonl
+  (exit 0)
+$ ssh relay 'sudo -n cat /var/lib/pft-peerwatch/history-postfiatd-sentry.jsonl' > final24h/history-postfiatd-sentry.jsonl
+  (exit 0)
+copied 2026-11-12T13:39:06Z
+history-postfiatd-sentry.jsonl: lines 1440 first 1794404365 last 1794490705 sha256 c001d6db93c18a9ff5997967799764d50d3701db76a0e085418c4b7243fdcf08
+history-postfiatd.jsonl: lines 1440 first 1794404366 last 1794490706 sha256 473357306b524ac6d8d95afc2e189c317cc23fc9632998a7a935fe5751bbea60
+
+$ sha256sum summarize_peerwatch.py peerwatch_parse.py
+311fa606c79e5a10059abe6ad24e0dfeacaff95849c05c4baf5dd0017f91f929  summarize_peerwatch.py
+e5c5f3f208f1f25861c0fa8cab683deeb129e45ed8ecdc87b7c7e16ba669416a  peerwatch_parse.py
+$ python3 -u summarize_peerwatch.py --from 1794404365 --to 1794490706 history-postfiatd.jsonl history-postfiatd-sentry.jsonl
+# pft-peerwatch summary (1794404365 .. 1794490706, epoch seconds)
+
+## postfiatd
+
+| Item | Value |
+|------|-------|
+| samples / expected (1 a minute) | 1440 / 1440 (100.00 %) |
+| gaps > 90 s / longest | 0 / 0 s |
+| re-baselines (first sample or gap) | 0 |
+| unparsed history lines | 0 |
+| overall status samples PASS / WARN / FAIL | 1428 / 4 / 8 |
+| peers min / median / max | 14 / 14.0 / 14 |
+| outbound min / median / max | 11 / 11.0 / 11 |
+| joins / leaves (by public key) | 1 / 1 |
+| max join+leave events in one churn window, in-range events only / max flapping peers | 2 / 0 |
+| max collector churn gauge (rolling window, can include events before the range) | 2 |
+| latency p50 (median of samples) | 277.0 ms |
+| latency p95: median / max / p99 of samples | 474.0 / 5060 / 697 ms |
+| peers on an older build min / max; newer max | 0 / 1; 0 |
+| outbound distinct /16 min; largest /16 share max | 11; 0.0909 |
+| ledger agreement min / median | 0.9286 / 1.0 |
+| peers on another network_id (max) | 0 |
+| fixed link `sentry` down samples / samples | 0 / 1440 |
+
+| Check | PASS | WARN | FAIL |
+|-------|------|------|------|
+| count | 1440 | 0 | 0 |
+| churn | 1440 | 0 | 0 |
+| latency | 1428 | 4 | 8 |
+| versions | 1440 | 0 | 0 |
+| direction | 1440 | 0 | 0 |
+| diversity | 1440 | 0 | 0 |
+| ledgers | 1440 | 0 | 0 |
+| fixed | 1440 | 0 | 0 |
+
+## postfiatd-sentry
+
+| Item | Value |
+|------|-------|
+| samples / expected (1 a minute) | 1440 / 1440 (100.00 %) |
+| gaps > 90 s / longest | 0 / 0 s |
+| re-baselines (first sample or gap) | 0 |
+| unparsed history lines | 0 |
+| overall status samples PASS / WARN / FAIL | 1430 / 10 / 0 |
+| peers min / median / max | 22 / 22.0 / 22 |
+| outbound min / median / max | 10 / 10.0 / 10 |
+| joins / leaves (by public key) | 0 / 0 |
+| max join+leave events in one churn window, in-range events only / max flapping peers | 0 / 0 |
+| max collector churn gauge (rolling window, can include events before the range) | 2 |
+| latency p50 (median of samples) | 276.0 ms |
+| latency p95: median / max / p99 of samples | 422.0 / 2786 / 649 ms |
+| peers on an older build min / max; newer max | 0 / 0; 0 |
+| outbound distinct /16 min; largest /16 share max | 10; 0.1 |
+| ledger agreement min / median | 1.0 / 1.0 |
+| peers on another network_id (max) | 0 |
+| fixed link `validator` down samples / samples | 0 / 1440 |
+
+| Check | PASS | WARN | FAIL |
+|-------|------|------|------|
+| count | 1440 | 0 | 0 |
+| churn | 1440 | 0 | 0 |
+| latency | 1430 | 10 | 0 |
+| versions | 1440 | 0 | 0 |
+| direction | 1440 | 0 | 0 |
+| diversity | 1440 | 0 | 0 |
+| ledgers | 1440 | 0 | 0 |
+| fixed | 1440 | 0 | 0 |
+
+  (exit 0)
+done 2026-11-12T13:39:22Z
+
+$ Prometheus query_range ALERTS{alertname=~"PFTPeer.*"} 2026-11-11T13:39Z..2026-11-12T13:39Z step 60s (state + container + check, sample count, first/last)
+  PFTPeerQualityDegraded pending container=postfiatd check=latency samples=8 first=2026-11-12T12:09:25Z last=2026-11-12T12:16:25Z
+  (end of ALERTS list)
+$ Prometheus query_range max_over_time(pft_peerwatch_check_status{check="latency"}[1m]) values == 2 (FAIL) count per container
+jq: error: syntax error, unexpected LITERAL, expecting $end (Unix shell quoting issues?) at <top-level>, line 1:
+.data.result[]|"  container=\(.metric.container) points=\(.values|length) fail_points=([.values[]|select(.[1]=="2")]|length)"                                                                                                                
+jq: 1 compile error
+done 2026-11-12T13:39:45Z
+  (the step above failed: jq string interpolation syntax; its echo line also named max_over_time, which was not used. Re-run below with the exact query.)
+$ Prometheus query_range pft_peerwatch_check_status{check="latency"} same range step 60s: points and FAIL (==2) points per container
+  container=postfiatd points=1440 fail_points=8
+  container=postfiatd-sentry points=1440 fail_points=0
+$ Alertmanager: alerts ever received for PFTPeer* (v2 alerts, active+inactive not retained) -> current
+  active PFTPeer* alerts in AM now: 0
+done 2026-11-12T13:39:53Z
+
+$ sudo -n pft-maint lock rm peerwatch-24h   (summary taken; window finished)
+  lock peerwatch-24h removed
+  (exit 0)
+$ sudo -n pft-maint lock list
+  no data-collection locks
+done 2026-11-12T13:43:23Z

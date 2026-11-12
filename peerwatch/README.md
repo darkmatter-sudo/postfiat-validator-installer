@@ -80,6 +80,8 @@ textfile is pulled to the validator every minute (`pft-peerwatch-pull@postfiatd-
 - **`PFTPeerQualityDegraded check=churn`**: peers keep dropping. Look at `history-<c>.jsonl` (`joins`/`leaves` per
   minute) and the node's resource alerts; a node that is overloaded or behind drops peers first.
 - **`check=latency`**: compare with the other host; one host high = local network or CPU, both high = network-wide.
+  If p50 is normal and only p95/max is high, it is one or two slow remote peers (with few peers the nearest-rank p95 is
+  the slowest one); it usually clears on its own, as on 2026-11-12 (results below).
 - **`check=versions`**: most peers run an older build: check the official upgrade notes before assuming your build is
   the odd one (`../upgradewatch`).
 - **`check=direction` / `count`**: no outbound peers usually means the node cannot reach out (egress policy, DNS,
@@ -126,6 +128,13 @@ Logs 01-05 were development captures and stay private (they hold unredacted peer
 | `10-link-drill.log` | fixed-link drill at 80880d7 (below) | 43 ok / 0 FAIL, PASS |
 | `11-offline-suite-lint-promtool.log` | shellcheck, ruff, 49 unit tests, `promtool test rules peerwatch.tests.yml` | all exit 0 |
 | `12-mutants.log` | `tests/mutate.py --jobs 2` at 80880d7: baseline + timeout + orphan controls | 75 caught, 0 survived, 0 not applied, 0 broken; harness exit 0 |
+| `13-24h-start.log` | start of the 24-hour two-host run: pft-maint lock `peerwatch-24h`, timers, history line counts | lock held, timers active both hosts |
+| `14-mutants.log` | recorded mutation run at 38be87e (final parser, shell and rules; the summarizer's in-range churn count added) | 78 caught, 0 survived; harness exit 0 |
+| `15-24h-summary.log` | end of the run: both history files copied (sha256), `summarize_peerwatch.py` over them, Prometheus `ALERTS{alertname=~"PFTPeer.*"}` over the range, lock released | summary below; one alert `pending` only (8 points), nothing sent |
+| `16-offline-suite-final.log` | shellcheck, ruff, 50 unit tests, promtool `test rules` + `check rules` at 190ad2d (clean tree) | all exit 0 |
+| `17-verify-installed-final.log` | read-only installed-state check after the run (same script as 08) | aptrust PASS both, skew CURRENT=73 BEHIND=0, status PASS both, integrity PASS both |
+| `18-fresh-clone.log` | anonymous public clone at the pinned commit: static checks, fixture suite, promtool, summary re-computed from `data/` and compared with `cmp`, mutation harness | see the log |
+| `data/` | the two history files of the run (aggregate per-minute samples only: no addresses or keys) and `summary-24h.md` | – |
 
 ### Fixed-link drill (`drill/link-drill.sh`, log 10)
 
@@ -146,4 +155,43 @@ Prometheus `pft_peerwatch_fixed_link_up` per minute over the run: `1111000000000
 After run 10 the only change to `drill/link-drill.sh` is the echo of the dead-man's `systemd-run` argv (run 10 printed
 the first four words only and so omitted `RuntimeMaxSec=720`; the DMCMD line it ran was printed in full).
 
-The 24-hour two-host run started 2026-11-11T13:35Z under the pft-maint lock `peerwatch-24h`; its summary follows.
+### 24-hour two-host run (logs 13, 15; `data/summary-24h.md`)
+
+The run started 2026-11-11T13:35Z under the pft-maint lock `peerwatch-24h` (log 13). Each history file holds the newest
+`HISTORY_MAX` = 1440 samples; they were copied at 2026-11-12T13:39Z, by which time the first four minutes of the run
+had rotated out. The summary therefore covers the 1440 samples held at copy time:
+2026-11-11T13:39:25Z .. 2026-11-12T13:38:26Z (`--from 1794404365 --to 1794490706`), i.e. 24 h of one-minute samples.
+
+| Item | validator (`postfiatd`) | sentry (`postfiatd-sentry`) |
+|------|-------------------------|-----------------------------|
+| samples / expected | 1440 / 1440 (100 %) | 1440 / 1440 (100 %) |
+| gaps > 90 s, re-baselines, unparsed lines | 0, 0, 0 | 0, 0, 0 |
+| overall PASS / WARN / FAIL samples | 1428 / 4 / 8 | 1430 / 10 / 0 |
+| peers min / median / max | 14 / 14 / 14 | 22 / 22 / 22 |
+| joins / leaves by public key (in range) | 1 / 1 | 0 / 0 |
+| latency p50 (median), p95 median / max | 277 ms; 474 / 5060 ms | 276 ms; 422 / 2786 ms |
+| ledger agreement min / median | 0.9286 / 1.0 | 1.0 / 1.0 |
+| fixed link down samples | 0 / 1440 (`sentry`) | 0 / 1440 (`validator`) |
+| checks other than `latency` | 1440 PASS each | 1440 PASS each |
+
+Every non-PASS sample was the `latency` check. On the validator, p95 rose above 1000 ms at 12:07:26Z and above 3000 ms
+from 12:08:26Z to 12:15:26Z (8 FAIL samples, peak 5060 ms), then fell back through WARN to PASS by 12:19Z, while p50
+stayed at 238-279 ms, the peer count stayed at 14 and the sentry stayed PASS. With 14 peers the nearest-rank p95 is
+the slowest peer, so this was one slow remote peer, not the host. `PFTPeerQualityDegraded` (`for: 15m`) was `pending`
+for 8 one-minute points (12:09:25Z-12:16:25Z) and never fired: Prometheus `ALERTS` over the range has no `firing`
+series for any `PFTPeer*` alert and nothing reached Alertmanager (log 15). The sentry's 10 WARN samples (09:49-09:58Z)
+were the same check (p95 1009-2786 ms, falling minute by minute; no FAIL). The fixed validator-sentry link stayed up for all 2880 samples.
+The collector's rolling churn gauge reads 2 at the start of the range on both hosts because it still held the drill's
+leave/rejoin (13:18Z / 13:29Z, before the run); the summary's churn row counts in-range events only (38be87e).
+
+### Deviations
+
+- The summary range starts 4 minutes after the run started (history rotation before the copy, above); it still holds
+  1440 consecutive one-minute samples per host.
+- Development captures (logs 01-05) are not published: they hold unredacted peer addresses. The committed fixtures
+  are redacted copies of those captures (`tests/redact_capture.py`).
+- Logs 06 and 07 contain FAIL checks; they are the found -> fixed history of the install (aptrust manifest copy, a
+  role-dependent file count). 08 and 17 are clean read-only verifications of the installed state.
+- After run 10 the only change to `drill/link-drill.sh` is the full echo of the dead-man argv (above).
+- In log 15 one Prometheus query step failed on a jq syntax error; it is annotated in place and re-run with the
+  exact query on the next lines.

@@ -1,0 +1,30 @@
+peerwatch offline suite + promtool, final code - 2026-11-12T13:40:34Z - repo HEAD 190ad2d799a3fc2bc1ff7fd9ad7f9d15ea4d8fb9 (clean: yes)
+sha256 b2bd7de5c8a8a6ba6f1e6b2c41fc3578aed0a0a62954c35413b262c42ed4c9f8 peerwatch/pft-peerwatch.sh
+sha256 e5c5f3f208f1f25861c0fa8cab683deeb129e45ed8ecdc87b7c7e16ba669416a peerwatch/peerwatch_parse.py
+sha256 311fa606c79e5a10059abe6ad24e0dfeacaff95849c05c4baf5dd0017f91f929 peerwatch/summarize_peerwatch.py
+sha256 02d3db39bb994f5590cf4e97fa146fd219c0c12811d0ad9542859e143faae412 alerts/peerwatch.rules.yml
+sha256 1588de5232a8f7c74d573f4f06b3d102c4425e00b8bcb1adff52283a6ceed118 alerts/peerwatch.tests.yml
+sha256 72872bd8e28fd73e92aa5093dbe13a123a7a19cc0b99b564f66da971c17517e6 peerwatch/tests/test_peerwatch.py
+sha256 258186e6fdef644051997395cd6fd57479ac5def3e676fea3a12b646dc2c6efb peerwatch/tests/mutate.py
+$ shellcheck peerwatch/pft-peerwatch.sh peerwatch/install.sh peerwatch/drill/*.sh
+  
+  (exit 0)
+$ ruff check peerwatch && ruff format --check peerwatch
+  All checks passed!
+  7 files already formatted
+  (exit 0)
+$ TEST_TMPDIR=~/.cache python3 -I peerwatch/tests/test_peerwatch.py
+  ..................................................
+  ----------------------------------------------------------------------
+  Ran 50 tests in 15.696s
+  
+  OK
+  (exit 0)
+$ docker run --rm -v "$PWD/alerts":/w:ro -w /w --entrypoint promtool prom/prometheus:v3.5.0 test rules peerwatch.tests.yml
+    SUCCESS
+  (exit 0)
+$ docker run --rm -v "$PWD/alerts":/w:ro -w /w --entrypoint promtool prom/prometheus:v3.5.0 check rules peerwatch.rules.yml
+  Checking peerwatch.rules.yml
+    SUCCESS: 3 rules found
+  (exit 0)
+done 2026-11-12T13:41:06Z

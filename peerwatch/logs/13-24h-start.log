@@ -1,0 +1,22 @@
+peerwatch 24-hour two-host window start - 2026-11-11T13:35:29Z - repo HEAD 80880d730dd5dd4da1304baea51817d6732fef30
+$ sudo -n pft-maint lock add peerwatch-24h --until 2026-11-12T13:50:29Z --reason 'task_dd37a539 peerwatch 24h two-host run'
+lock peerwatch-24h held until 2026-11-12T13:50:29Z
+  (exit 0)
+$ sudo -n pft-maint lock list
+peerwatch-24h 2026-11-12T13:50:29Z task_dd37a539 peerwatch 24h two-host run
+$ history lines + newest sample, both hosts
+"Cannot index number with string \"ts\""
+{"ts":"2026-11-11T13:35:25Z","status":"PASS","links":{"sentry":1}}
+"Cannot index number with string \"ts\""
+{"ts":"2026-11-11T13:35:25Z","status":"PASS","links":{"validator":1}}
+pft-peerwatch-pull@postfiatd-sentry.timer pft-peerwatch-pull@postfiatd-sentry.service
+pft-peerwatch@postfiatd.timer pft-peerwatch@postfiatd.service
+pft-peerwatch@postfiatd-sentry.timer pft-peerwatch@postfiatd-sentry.service
+$ history line counts (re-run: the jq filter above could not print the bare count line)
+  validator 
+  sentry 78
+  (HISTORY_MAX 1440 = 24 h of 1-minute samples; window end 2026-11-12T13:35Z)
+done 2026-11-11T13:35:37Z
+$ sudo -n wc -l /var/lib/pft-peerwatch/history-postfiatd.jsonl   (the redirect above ran unprivileged)
+  79 /var/lib/pft-peerwatch/history-postfiatd.jsonl
+done 2026-11-11T13:35:40Z

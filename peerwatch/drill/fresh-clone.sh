@@ -31,7 +31,8 @@ x "docker run --rm --network none --entrypoint promtool -v \"\$PWD/alerts\":/w:r
 x "docker run --rm --network none --entrypoint promtool -v \"\$PWD/alerts\":/w:ro -w /w prom/prometheus:v3.5.0 test rules peerwatch.tests.yml"
 if [ -d peerwatch/logs/data ]; then
   echo "== summary re-computed from the published history files (must equal the committed summary)"
-  x "for f in peerwatch/logs/data/summary-*.md; do echo \$f; done"
+  x "sha256sum peerwatch/logs/data/*"
+  x "cd peerwatch/logs/data && python3 -I ../../summarize_peerwatch.py --from 1794404365 --to 1794490706 history-postfiatd.jsonl history-postfiatd-sentry.jsonl | cmp - summary-24h.md && echo summary re-computed: identical to summary-24h.md"
 fi
 if [ "$MUT" = 1 ]; then
   echo "== mutation harness (baseline, timeout and orphan controls first)"
