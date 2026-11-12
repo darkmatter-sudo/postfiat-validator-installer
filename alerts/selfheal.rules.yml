@@ -1,0 +1,31 @@
+# Alert rules for pft-selfheal (../selfheal). pft-selfheal@<container>.timer observes the node every minute, may run one
+# guarded remediation action and writes pft_selfheal_*{container="..."} (validator: local; sentry: pulled to the
+# validator, which runs the only Prometheus + Alertmanager).
+# Two rules, no more (the card's limit):
+#  1. PFTSelfhealBreakerOpen: the K-actions-per-24h budget is spent and the circuit breaker is open, so selfheal will
+#     not act again until `pft-selfheal reset`. This is the one breaker alert.
+#  2. PFTSelfhealStale: the run failed (up 0) or stopped, so nothing is being remediated and rule 1 is blind.
+# Individual actions are not alerted here: a restart already shows up in the container/node alerts, and every action
+# is in the selfheal journal and pft_selfheal_actions_total. Tests: selfheal.tests.yml
+# (promtool test rules selfheal.tests.yml), 1m sample interval = the timer's period.
+groups:
+  - name: pft-selfheal
+    rules:
+      - alert: PFTSelfhealBreakerOpen
+        expr: pft_selfheal_breaker_open == 1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "pft-selfheal circuit breaker is open for {{ $labels.container }}"
+          description: "pft-selfheal used its 24 h action budget on {{ $labels.container }} and the fault is still there, so it stopped acting (no restart loop). Find the cause with `sudo pft-selfheal status --container {{ $labels.container }}` and the selfheal journal, fix it, then close the breaker with `sudo pft-selfheal reset --container {{ $labels.container }} --reason \"...\"`."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/selfheal/README.md#runbook"
+      - alert: PFTSelfhealStale
+        expr: pft_selfheal_up == 0 or (time() - pft_selfheal_run_timestamp_seconds > 300)
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pft-selfheal for {{ $labels.container }} is failing or stale"
+          description: "For 5m the last selfheal run failed (up 0) or is older than 5 min, so {{ $labels.container }} is not being watched or remediated and the breaker alert is blind. Run `sudo pft-selfheal status --container {{ $labels.container }}` and `systemctl status pft-selfheal@{{ $labels.container }}.timer`."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/selfheal/README.md#runbook"

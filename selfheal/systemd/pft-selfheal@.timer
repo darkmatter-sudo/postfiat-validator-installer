@@ -1,0 +1,10 @@
+[Unit]
+Description=Run pft-selfheal for container %i every minute
+
+[Timer]
+OnCalendar=*-*-* *:*:40
+AccuracySec=1s
+Persistent=false
+
+[Install]
+WantedBy=timers.target

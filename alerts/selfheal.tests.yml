@@ -1,0 +1,175 @@
+# promtool unit tests for selfheal.rules.yml (annotations copied from the rules with the labels filled in).
+# Run: promtool test rules selfheal.tests.yml
+rule_files:
+- selfheal.rules.yml
+evaluation_interval: 1m
+tests:
+- name: healthy validator and sentry for 2h fire nothing
+  interval: 1m
+  input_series:
+  - series: pft_selfheal_up{job="postfiat", instance="node:9877", container="postfiatd"}
+    values: 1x120
+  - series: pft_selfheal_run_timestamp_seconds{job="postfiat", instance="node:9877", container="postfiatd"}
+    values: 0+60x120
+  - series: pft_selfheal_breaker_open{job="postfiat", instance="node:9877", container="postfiatd"}
+    values: '0x120'
+  - series: pft_selfheal_up{job="postfiat", instance="node:9877", container="postfiatd-sentry"}
+    values: 1x120
+  - series: pft_selfheal_run_timestamp_seconds{job="postfiat", instance="node:9877", container="postfiatd-sentry"}
+    values: 0+60x120
+  - series: pft_selfheal_breaker_open{job="postfiat", instance="node:9877", container="postfiatd-sentry"}
+    values: '0x120'
+  alert_rule_test:
+  - eval_time: 60m
+    alertname: PFTSelfhealBreakerOpen
+    exp_alerts: []
+  - eval_time: 60m
+    alertname: PFTSelfhealStale
+    exp_alerts: []
+  - eval_time: 120m
+    alertname: PFTSelfhealBreakerOpen
+    exp_alerts: []
+  - eval_time: 120m
+    alertname: PFTSelfhealStale
+    exp_alerts: []
+- name: 'breaker opens at 10m: pending 1m, fires at 11m for the sentry only, recovers after reset (0 from 31m: 1x20 is 21 samples, 10m..30m)'
+  interval: 1m
+  input_series:
+  - series: pft_selfheal_up{job="postfiat", instance="node:9877", container="postfiatd"}
+    values: 1x40
+  - series: pft_selfheal_run_timestamp_seconds{job="postfiat", instance="node:9877", container="postfiatd"}
+    values: 0+60x40
+  - series: pft_selfheal_breaker_open{job="postfiat", instance="node:9877", container="postfiatd"}
+    values: '0x40'
+  - series: pft_selfheal_up{job="postfiat", instance="node:9877", container="postfiatd-sentry"}
+    values: 1x40
+  - series: pft_selfheal_run_timestamp_seconds{job="postfiat", instance="node:9877", container="postfiatd-sentry"}
+    values: 0+60x40
+  - series: pft_selfheal_breaker_open{job="postfiat", instance="node:9877", container="postfiatd-sentry"}
+    values: 0x9 1x20 0x10
+  alert_rule_test:
+  - eval_time: 10m
+    alertname: PFTSelfhealBreakerOpen
+    exp_alerts: []
+  - eval_time: 11m
+    alertname: PFTSelfhealBreakerOpen
+    exp_alerts:
+    - exp_labels:
+        job: postfiat
+        instance: node:9877
+        container: postfiatd-sentry
+        severity: critical
+      exp_annotations:
+        summary: pft-selfheal circuit breaker is open for postfiatd-sentry
+        description: pft-selfheal used its 24 h action budget on postfiatd-sentry and the fault is still there, so it stopped acting (no restart loop). Find the cause with `sudo pft-selfheal status --container
+          postfiatd-sentry` and the selfheal journal, fix it, then close the breaker with `sudo pft-selfheal reset --container postfiatd-sentry --reason "..."`.
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/selfheal/README.md#runbook
+  - eval_time: 30m
+    alertname: PFTSelfhealBreakerOpen
+    exp_alerts:
+    - exp_labels:
+        job: postfiat
+        instance: node:9877
+        container: postfiatd-sentry
+        severity: critical
+      exp_annotations:
+        summary: pft-selfheal circuit breaker is open for postfiatd-sentry
+        description: pft-selfheal used its 24 h action budget on postfiatd-sentry and the fault is still there, so it stopped acting (no restart loop). Find the cause with `sudo pft-selfheal status --container
+          postfiatd-sentry` and the selfheal journal, fix it, then close the breaker with `sudo pft-selfheal reset --container postfiatd-sentry --reason "..."`.
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/selfheal/README.md#runbook
+  - eval_time: 31m
+    alertname: PFTSelfhealBreakerOpen
+    exp_alerts: []
+  - eval_time: 40m
+    alertname: PFTSelfhealBreakerOpen
+    exp_alerts: []
+  - eval_time: 29m
+    alertname: PFTSelfhealStale
+    exp_alerts: []
+- name: 'run fails (up 0 from 11m, no breaker gauge written): stale fires after 5m, breaker stays quiet, recovers on the first good run'
+  interval: 1m
+  input_series:
+  - series: pft_selfheal_up{job="postfiat", instance="node:9877", container="postfiatd"}
+    values: 1x10 0x10 1x20
+  - series: pft_selfheal_run_timestamp_seconds{job="postfiat", instance="node:9877", container="postfiatd"}
+    values: 0+60x40
+  - series: pft_selfheal_breaker_open{job="postfiat", instance="node:9877", container="postfiatd"}
+    values: 0x10 _x10 0x20
+  alert_rule_test:
+  - eval_time: 15m
+    alertname: PFTSelfhealStale
+    exp_alerts: []
+  - eval_time: 16m
+    alertname: PFTSelfhealStale
+    exp_alerts:
+    - exp_labels:
+        job: postfiat
+        instance: node:9877
+        container: postfiatd
+        severity: warning
+      exp_annotations:
+        summary: pft-selfheal for postfiatd is failing or stale
+        description: For 5m the last selfheal run failed (up 0) or is older than 5 min, so postfiatd is not being watched or remediated and the breaker alert is blind. Run `sudo pft-selfheal status --container
+          postfiatd` and `systemctl status pft-selfheal@postfiatd.timer`.
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/selfheal/README.md#runbook
+  - eval_time: 21m
+    alertname: PFTSelfhealStale
+    exp_alerts:
+    - exp_labels:
+        job: postfiat
+        instance: node:9877
+        container: postfiatd
+        severity: warning
+      exp_annotations:
+        summary: pft-selfheal for postfiatd is failing or stale
+        description: For 5m the last selfheal run failed (up 0) or is older than 5 min, so postfiatd is not being watched or remediated and the breaker alert is blind. Run `sudo pft-selfheal status --container
+          postfiatd` and `systemctl status pft-selfheal@postfiatd.timer`.
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/selfheal/README.md#runbook
+  - eval_time: 21m
+    alertname: PFTSelfhealBreakerOpen
+    exp_alerts: []
+  - eval_time: 22m
+    alertname: PFTSelfhealStale
+    exp_alerts: []
+- name: 'timer stopped (timestamp frozen at 600 from 10m, up still 1): stale after 5 min + 5m for, recovers when it moves again at 32m (600x20 is 21 samples, 11m..31m)'
+  interval: 1m
+  input_series:
+  - series: pft_selfheal_up{job="postfiat", instance="node:9877", container="postfiatd-sentry"}
+    values: 1x60
+  - series: pft_selfheal_run_timestamp_seconds{job="postfiat", instance="node:9877", container="postfiatd-sentry"}
+    values: 0+60x10 600x20 1860+60x29
+  - series: pft_selfheal_breaker_open{job="postfiat", instance="node:9877", container="postfiatd-sentry"}
+    values: '0x60'
+  alert_rule_test:
+  - eval_time: 20m
+    alertname: PFTSelfhealStale
+    exp_alerts: []
+  - eval_time: 21m
+    alertname: PFTSelfhealStale
+    exp_alerts:
+    - exp_labels:
+        job: postfiat
+        instance: node:9877
+        container: postfiatd-sentry
+        severity: warning
+      exp_annotations:
+        summary: pft-selfheal for postfiatd-sentry is failing or stale
+        description: For 5m the last selfheal run failed (up 0) or is older than 5 min, so postfiatd-sentry is not being watched or remediated and the breaker alert is blind. Run `sudo pft-selfheal status
+          --container postfiatd-sentry` and `systemctl status pft-selfheal@postfiatd-sentry.timer`.
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/selfheal/README.md#runbook
+  - eval_time: 31m
+    alertname: PFTSelfhealStale
+    exp_alerts:
+    - exp_labels:
+        job: postfiat
+        instance: node:9877
+        container: postfiatd-sentry
+        severity: warning
+      exp_annotations:
+        summary: pft-selfheal for postfiatd-sentry is failing or stale
+        description: For 5m the last selfheal run failed (up 0) or is older than 5 min, so postfiatd-sentry is not being watched or remediated and the breaker alert is blind. Run `sudo pft-selfheal status
+          --container postfiatd-sentry` and `systemctl status pft-selfheal@postfiatd-sentry.timer`.
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/selfheal/README.md#runbook
+  - eval_time: 32m
+    alertname: PFTSelfhealStale
+    exp_alerts: []

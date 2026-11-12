@@ -1,0 +1,39 @@
+[Unit]
+Description=pft-selfheal: guarded auto-remediation for container %i
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/selfheal
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# root: needs the docker socket (inspect, `docker exec ... curl server_info` on the container's loopback, and the only
+# two actions: compose `up -d --no-recreate` / `docker start`, `docker restart`). pft-egress reapply after an action
+# rewrites the container's iptables chain, hence CAP_NET_ADMIN/NET_RAW, AF_NETLINK and /run (xtables lock).
+# AF_INET/AF_INET6: the network-stall reference (one server_info to REF_URL, only when the local node looks stalled).
+# The docker CLI cannot read /root/.docker under ProtectHome and warns on every run; an empty private /tmp silences it.
+Environment=DOCKER_CONFIG=/tmp
+ExecStart=/usr/local/bin/pft-selfheal run --container %i
+ProtectSystem=strict
+ReadWritePaths=/var/lib/pft-exporter/textfile /var/lib/pft-selfheal /var/lib/pft-egress /run
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+UMask=0022
+# worst case: inspect + exec (RPC_TIMEOUT+5) + reference (REF_TIMEOUT+5) + action (RESTART_TIMEOUT+120) + egress 120
+TimeoutStartSec=420
