@@ -57,6 +57,8 @@ def load_conf(path):
                     conf[key] = int(val)
                 elif key == "MODE":
                     conf[key] = val
+    if os.environ.get("SELFHEAL_FORCE_DRYRUN") == "1":  # pft-selfheal run --dry-run
+        conf["MODE"] = "dryrun"
     if conf["MODE"] not in ("dryrun", "enforce"):
         raise ValueError("MODE must be dryrun or enforce")
     if conf["MAX_ACTIONS"] < 1 or conf["RPC_FAILS"] < 1:
