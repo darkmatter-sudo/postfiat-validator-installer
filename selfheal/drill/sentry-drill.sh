@@ -68,7 +68,8 @@ sstate() { si | jq -r '.result.info.server_state // "down"' 2>/dev/null || echo 
 speers() { si | jq -r '.result.info.peers // -1' 2>/dev/null || echo -1; }
 srunning() { R "sudo -n docker inspect -f '{{.State.Running}}' $SC" 2>/dev/null; }
 sstarted() { R "sudo -n docker inspect -f '{{.State.StartedAt}}' $SC" 2>/dev/null; }
-shcfg() { R "sudo -n docker inspect -f 'CpuShares={{.HostConfig.CpuShares}} MemoryReservation={{.HostConfig.MemoryReservation}} Memory={{.HostConfig.Memory}} Restart={{.HostConfig.RestartPolicy.Name}} AppArmor={{.AppArmorProfile}} SecurityOpt={{.HostConfig.SecurityOpt}}' $SC" 2>/dev/null; }
+shcfg() { # resource settings + confinement (SecurityOpt holds the whole seccomp JSON: printed as a sha256 prefix)
+  echo "$(R "sudo -n docker inspect -f 'CpuShares={{.HostConfig.CpuShares}} MemoryReservation={{.HostConfig.MemoryReservation}} Memory={{.HostConfig.Memory}} Restart={{.HostConfig.RestartPolicy.Name}} AppArmor={{.AppArmorProfile}}' $SC" 2>/dev/null) SecurityOpt-sha256=$(R "sudo -n docker inspect -f '{{json .HostConfig.SecurityOpt}}' $SC" 2>/dev/null | sha256sum | cut -c1-16)"; }
 scip() { R "sudo -n docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $SC" 2>/dev/null; }
 jl() { R "sudo -n cat $SJ 2>/dev/null"; }  # the sentry's selfheal journal
 jcount() { # SINCE_TS EVENT -> number of journal lines of that event at/after SINCE_TS
