@@ -767,3 +767,52 @@ def test_env_example_equals_defaults():
         text=True,
     )
     assert p.returncode == 0 and p.stdout.strip() == "https://rpc.testnet.postfiat.org|/var/lib/pft-selfheal"
+
+
+# ---------------------------------------------------------------- mutation-run survivors (dev run 1: D10 D14 D37 S09)
+
+
+def test_stuck_state_clears_when_state_recovers(core, monkeypatch, capsys):
+    """A short bad-state spell that recovers must not be added to a later one (D10)."""
+    c = core(STUCK_SEC=600, STALE_SEC=99999)
+    bad = dict(GOOD, server_state="connected")
+    _, d = c.decide(obs(T0, rpc=dict(bad, validated_seq=1000), ref=5000), monkeypatch, capsys)
+    _, d = c.decide(obs(T0 + 300, rpc=dict(GOOD, validated_seq=1001), ref=5000), monkeypatch, capsys)
+    assert c.st()["bad_state_since"] is None
+    _, d = c.decide(obs(T0 + 600, rpc=dict(bad, validated_seq=1002), ref=5000), monkeypatch, capsys)
+    _, d = c.decide(obs(T0 + 1199, rpc=dict(bad, validated_seq=1003), ref=5000), monkeypatch, capsys)
+    assert d["verdict"] == "healthy" and c.st()["bad_state_since"] == T0 + 600
+    _, d = c.decide(obs(T0 + 1200, rpc=dict(bad, validated_seq=1004), ref=5000), monkeypatch, capsys)
+    assert (d["detector"], d["detail"]) == ("stuck_state", "server_state connected for 600s")
+
+
+def test_one_failed_sample_is_not_judged_stale(core, monkeypatch, capsys):
+    """A single failed RPC sample long after the last ledger change is an rpc failure (streak 1), not stale (D14)."""
+    c = core(RPC_FAILS=3, STALE_SEC=300)
+    c.decide(obs(T0), monkeypatch, capsys)
+    _, d = c.decide(obs(T0 + 400, rpc=FAIL, ref=5000), monkeypatch, capsys)
+    assert (d["verdict"], d["detector"], d["rpc_fail_streak"]) == ("healthy", None, 1)
+    _, d = c.decide(obs(T0 + 460, ref=5000), monkeypatch, capsys)  # control: answered sample, same seq -> stale
+    assert d["detector"] == "stale_ledger"
+
+
+def test_unsaveable_state_refuses_to_act(tmp_path, monkeypatch, capsys):
+    """If the new state cannot be written, no decision is printed and the exit is 5 (D37)."""
+    conf = tmp_path / "selfheal.env"
+    conf.write_text("MODE=enforce\n")
+    monkeypatch.setattr("sys.stdin", __import__("io").StringIO(json.dumps(obs(T0, running=False, rpc=FAIL))))
+    rc = sd.decide(str(tmp_path / "missing-dir" / "state.json"), str(conf))
+    cap = capsys.readouterr()
+    assert rc == 5 and cap.out == "" and "cannot save state, refusing to act" in cap.err
+
+
+def test_sh_rpc_error_status_is_a_failure(sh):
+    """An answer with status error counts as a failed sample even if it carries an info object (S09)."""
+    s = sh(RPC_FAILS=1, GRACE_SEC=0)
+    s.set(rpc=json.dumps({"result": {"status": "error", "info": json.loads(server_info())["result"]["info"]}}))
+    p = s.run("run")
+    d = json.loads(p.stderr.strip().splitlines()[-1])
+    assert p.returncode == 0 and (d["detector"], d["verdict"]) == ("rpc_failures", "act")
+    s.set(rpc=server_info())  # control: the same info with status success is healthy
+    p = s.run("run", now=T0 + 60)
+    assert json.loads(p.stderr.strip().splitlines()[-1])["verdict"] == "healthy"
