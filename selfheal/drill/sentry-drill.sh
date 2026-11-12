@@ -20,11 +20,12 @@
 #   Notifiers: every ntfy env on both hosts -> throwaway ALERT topic; drill-only pft-maint ntfy.env on both hosts ->
 #   throwaway MAINT topic; Alertmanager bridge -> ALERT topic (sentry alertpath paused around the bridge re-create);
 #   catch-all silence except the pipeline watchdog and PFTSelfheal*, kept until the newest container start +
-#   RESTART_TAIL. Every operator topic is read back at the end (must be 0 messages).
+#   RESTART_TAIL and further while any alert but the watchdog is pending/firing; every operator topic is read back
+#   after the silence has expired + group_interval + 30 s (must be 0 messages).
 #   bash selfheal/drill/sentry-drill.sh 2>&1 | tee LOG      (agent user, repo root; sudo -n, `ssh relay`)
 #   PREFLIGHT_ONLY=1 bash selfheal/drill/sentry-drill.sh   (step 0 only; changes nothing)
 # Env: KNOWN_PENDING (regex of alert names pending before the run)  DEADMAN_SEC (1320)  SIL_TTL (150 min)
-#      RESTART_TAIL (25 min)  DRAIN_WAIT (600)  OTHERS_WAIT (300)
+#      RESTART_TAIL (25 min)  DRAIN_WAIT (600)  OTHERS_WAIT (300)  QUIET_WAIT (1800)
 # shellcheck disable=SC2016,SC2015,SC2034  # ok_if conditions are evaluated later; remote commands expand on the sentry
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -37,7 +38,7 @@ REMOTE_ENVS="/etc/pft-watchdog/ntfy.env /etc/pft-integrity.env /etc/pft-alertpat
 BRIDGE_ENV="$HOME/.config/pft-alerts/ntfy.env"; AGENT_ENV=/opt/pft-agent/config.env
 KNOWN_PENDING="${KNOWN_PENDING:-}"; PREFLIGHT_ONLY="${PREFLIGHT_ONLY:-0}"
 DEADMAN_SEC="${DEADMAN_SEC:-1320}"; SIL_TTL="${SIL_TTL:-150}"; RESTART_TAIL="${RESTART_TAIL:-25}"
-DRAIN_WAIT="${DRAIN_WAIT:-600}"; OTHERS_WAIT="${OTHERS_WAIT:-300}"; AP_WAIT=180
+DRAIN_WAIT="${DRAIN_WAIT:-600}"; OTHERS_WAIT="${OTHERS_WAIT:-300}"; QUIET_WAIT="${QUIET_WAIT:-1800}"; AP_WAIT=180
 TASK=task_29073d4c
 SHA="$(git rev-parse HEAD)"
 TF=/var/lib/pft-exporter/textfile; SD=/var/lib/pft-selfheal
@@ -97,7 +98,7 @@ sh_active() {
 
 declare -A FSHA=()
 declare -a MOVED=() CREATED=()
-RESTORED=0; RESTORE_OK=true; SIL=""; SBODY=""; BRIDGE_SWAPPED=0; AP_PAUSED=0; MAINT=0; BROKEN=0
+RESTORED=0; RESTORE_OK=true; SIL=""; SIL_END=0; SBODY=""; BRIDGE_SWAPPED=0; AP_PAUSED=0; MAINT=0; BROKEN=0
 R1=(); R2=(); DU0=""
 rules_present() { R "sudo -n iptables -S DOCKER-USER" | grep -c -- "$TAG"; }
 ap_pause() { R 'sudo -n systemctl stop pft-alertpath-check.timer' && AP_PAUSED=1
@@ -145,10 +146,15 @@ restore() {
   fi
   # run 16: collectors that ran while the drill had envs redirected / the container stopped left stale textfiles
   # (PFTKeyEscrowStale drift both hosts, PFTSeccompDrift filter on the sentry): re-run them + the validator pulls
-  R "sudo -n systemctl start pft-keyescrow.service pft-seccomp.service" && sudo -n systemctl start pft-keyescrow.service \
-    && sudo -n systemctl start pft-keyescrow-pull.service pft-seccomp-pull.service \
-    && echo "  re-ran pft-keyescrow (both) + pft-seccomp (sentry) and the validator pulls: yes" \
-    || { echo "  re-ran pft-keyescrow/pft-seccomp collectors + pulls: NO"; RESTORE_OK=false; }
+  # run 18: the sentry pft-backfill exited 2 without a textfile while the node was down -> PFTTextfileStale; re-run it,
+  # then pft-rulecheck on both hosts (it grades textfile freshness) and the pulls
+  R "sudo -n systemctl start pft-keyescrow.service pft-seccomp.service pft-backfill.service" \
+    && sudo -n systemctl start pft-keyescrow.service \
+    && sudo -n systemctl start pft-keyescrow-pull.service pft-seccomp-pull.service pft-backfill-pull.service \
+    && R "sudo -n systemctl start pft-rulecheck.service" && sudo -n systemctl start pft-rulecheck.service \
+    && sudo -n systemctl start pft-rulecheck-pull.service \
+    && echo "  re-ran pft-keyescrow (both) + pft-seccomp/pft-backfill (sentry) + pft-rulecheck (both) and the validator pulls: yes" \
+    || { echo "  re-ran pft-keyescrow/pft-seccomp/pft-backfill/pft-rulecheck collectors + pulls: NO"; RESTORE_OK=false; }
   if [ "$MAINT" = 1 ]; then echo "  \$ sudo -n pft-maint end"; sudo -n pft-maint end 2>&1 | red | sed 's/^/    /'; MAINT=0; fi
   for k in "${CREATED[@]}"; do
     h="${k%%:*}"; f="${k#*:}"
@@ -166,7 +172,7 @@ restore() {
   if [ "$AP_PAUSED" = 1 ]; then ap_resume || RESTORE_OK=false; fi
   if [ -n "$SIL" ]; then  # restart-related alerts (PFTContainerRestarted 15m, ...) stay true for a while after a start
     newest="$(date -u -d "$(sstarted)" +%s 2>/dev/null || date -u +%s)"
-    e="$(date -u -d "@$(( newest + RESTART_TAIL * 60 ))" +%FT%TZ)"
+    SIL_END=$(( newest + RESTART_TAIL * 60 )); e="$(date -u -d "@$SIL_END" +%FT%TZ)"
     curl -s --max-time 10 -o /dev/null -w "  catch-all silence kept until $e (newest sentry container start + ${RESTART_TAIL} min): HTTP %{http_code}\n" \
       -H 'Content-Type: application/json' -X POST "$AM/api/v2/silences" -d "$(jq -c --arg id "$SIL" --arg e "$e" '. + {id: $id, endsAt: $e}' <<<"$SBODY")"
   fi
@@ -392,7 +398,34 @@ check "query_range: PFTSelfhealBreakerOpen{container=$SC} firing during the run,
 x "curl -s -G $PROM/api/v1/query_range --data-urlencode 'query=pft_selfheal_breaker_open or pft_selfheal_actions_24h' --data-urlencode start=$since --data-urlencode end=$(date -u +%s) --data-urlencode step=60 | jq -r '.data.result[] | \"\(.metric.__name__) \(.metric.container) \([.values[] | .[1]] | join(\"\"))\"'"
 x "sudo -n systemctl start pft-keyescrow.service; grep -h '^pft_keyescrow_drift_items' $TF/pft_keyescrow.prom"
 check "pft-keyescrow re-run after the env restores: drift_items 0" "$(ok_if '! grep -qv "} 0$" <<<"$XOUT" && grep -q "} 0$" <<<"$XOUT"')"
-sleep 30
+# run 18: PFTTextfileStale (pft_backfill_sentry.prom) went firing 11 s before the catch-all tail ran out and reached
+# the operator topic 60 s after the drill had read the topics back. Keep the silence while anything but the watchdog
+# is pending/firing (Prometheus) or active (AM, silenced included), let it expire, then read back.
+others_active() { # -> alert names other than the watchdog/KNOWN_PENDING, or "unreadable"
+  local p a
+  p="$(curl -s --max-time 10 "$PROM/api/v1/alerts" | jq -er '.data.alerts | map(.labels.alertname) | join("\n")' 2>/dev/null)" \
+    || { echo unreadable; return; }
+  a="$(curl -s --max-time 10 "$AM/api/v2/alerts?active=true" \
+    | jq -er 'if type == "array" then map(.labels.alertname) | join("\n") else error end' 2>/dev/null)" || { echo unreadable; return; }
+  printf '%s\n%s\n' "$p" "$a" | grep -vxE "|PFTAlertPipelineWatchdog${KNOWN_PENDING:+|$KNOWN_PENDING}" | sort -u | tr '\n' ' ' | sed 's/ $//'; }
+quiet_gate() {
+  local t0 now o e id; t0="$(date -u +%s)"
+  while :; do
+    o="$(others_active)"; now="$(date -u +%s)"
+    [ -z "$o" ] && [ "$now" -ge "$SIL_END" ] && { QUIET=1; break; }
+    [ $(( now - t0 )) -ge "$QUIET_WAIT" ] && { QUIET=0; break; }
+    if [ -n "$o" ] && [ -n "$SIL" ] && [ "$SIL_END" -lt $(( now + 300 )) ]; then
+      SIL_END=$(( now + 600 )); e="$(date -u -d "@$SIL_END" +%FT%TZ)"
+      id="$(curl -s --max-time 10 -H 'Content-Type: application/json' -X POST "$AM/api/v2/silences" \
+        -d "$(jq -c --arg id "$SIL" --arg e "$e" '. + {id: $id, endsAt: $e}' <<<"$SBODY")" | jq -r '.silenceID // empty')"
+      [ -n "$id" ] && SIL="$id"; echo "  quiet gate: still active: $o -> catch-all silence extended to $e (${id:+ok}${id:-FAILED})"
+    fi
+    sleep 30
+  done
+  echo "  quiet gate: $([ "$QUIET" = 1 ] && echo "only the watchdog left and the silence expired" || echo "still active after ${QUIET_WAIT}s: $o") ($(( $(date -u +%s) - t0 ))s)"; }
+QUIET=0; quiet_gate
+check "nothing but the watchdog pending/firing/active when the catch-all silence expired" "$(ok_if '[ "$QUIET" = 1 ]')"
+sleep 90   # group_interval 1m + 30 s
 readback() { # TOPIC LABEL [quiet]
   local out
   if out="$(curl -s --max-time 20 "$NTFY/$1/json?poll=1&since=$since")"; then
