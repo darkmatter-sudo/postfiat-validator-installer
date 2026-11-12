@@ -1,0 +1,79 @@
+OS: Ubuntu 22.04.5 LTS | 2026-11-12T13:44:55Z | peerwatch fresh-clone verification at 286eca113f14aa4c67416fabbcf36b3b18c525b2 | shellcheck 0.8.0 | Python 3.10.12 | ruff 0.17.1
+(work dir: a new mktemp dir under ~/.cache, mode 755; /tmp is noexec on this host)
+$ env -u GH_TOKEN -u GITHUB_TOKEN GIT_TERMINAL_PROMPT=0 git -c credential.helper= clone -q https://github.com/darkmatter-sudo/postfiat-validator-installer.git repo
+(exit 0)
+$ git checkout -q 286eca113f14aa4c67416fabbcf36b3b18c525b2 && git rev-parse HEAD
+286eca113f14aa4c67416fabbcf36b3b18c525b2
+(exit 0)
+$ git status --short | wc -l
+0
+(exit 0)
+$ sha256sum peerwatch/*.sh peerwatch/*.py peerwatch/systemd/* peerwatch/tests/*.py peerwatch/tests/fixtures/* alerts/peerwatch.rules.yml alerts/peerwatch.tests.yml
+211e0ad4234ebff2e83e1aa8e16d8cf0941a098713f75682d8cec813cf95b342  peerwatch/install.sh
+b2bd7de5c8a8a6ba6f1e6b2c41fc3578aed0a0a62954c35413b262c42ed4c9f8  peerwatch/pft-peerwatch.sh
+e5c5f3f208f1f25861c0fa8cab683deeb129e45ed8ecdc87b7c7e16ba669416a  peerwatch/peerwatch_parse.py
+311fa606c79e5a10059abe6ad24e0dfeacaff95849c05c4baf5dd0017f91f929  peerwatch/summarize_peerwatch.py
+570fadaa6a5119c0ed039f4ff9b2bd2d0ee2b4935ee217af84038388bea88846  peerwatch/systemd/pft-peerwatch-pull@.service
+f4166a032a70941a78c402a3699e2567930086d25c6e62745c946a32abb72664  peerwatch/systemd/pft-peerwatch-pull@.timer
+36438bc70a6c87ed9d3dc2dc092987312d81a819650bad0498947dd028f3ccf6  peerwatch/systemd/pft-peerwatch@.service
+fe2de1038147e0303789b6312e3f043323a0491326839b154a40d4206831a4eb  peerwatch/systemd/pft-peerwatch@.timer
+4af465f43e0a87afecd8a1c10cdd75081ef6ffa02cecec301113e9f99071926d  peerwatch/tests/gen_rule_tests.py
+258186e6fdef644051997395cd6fd57479ac5def3e676fea3a12b646dc2c6efb  peerwatch/tests/mutate.py
+16bf17d786899e80ba4636a14fa115bc199e4f9041086858b0bae86dea50eeb5  peerwatch/tests/redact_capture.py
+72872bd8e28fd73e92aa5093dbe13a123a7a19cc0b99b564f66da971c17517e6  peerwatch/tests/test_peerwatch.py
+1240feefb5a882512cd1aa543feedbbcea1017143edcbdf28d4b42ce5cf0c73d  peerwatch/tests/fixtures/sentry-peers.json
+60e7b8306f2c7a0293b6fb81a06fdd3592cdd7870d24fa6f5fdbdc47c56199c3  peerwatch/tests/fixtures/sentry-server_info.json
+9b78887a44401928d8093629a435eb6a5ec2e94f4f782e5b748f5cd608340257  peerwatch/tests/fixtures/validator-peers.json
+ee89cc123e0458dfa7c881d6ad4c53a3cb37764e211eab8d35d5cc7918c7363c  peerwatch/tests/fixtures/validator-server_info.json
+02d3db39bb994f5590cf4e97fa146fd219c0c12811d0ad9542859e143faae412  alerts/peerwatch.rules.yml
+1588de5232a8f7c74d573f4f06b3d102c4425e00b8bcb1adff52283a6ceed118  alerts/peerwatch.tests.yml
+(exit 0)
+== static checks
+$ shellcheck peerwatch/*.sh peerwatch/drill/*.sh
+(exit 0)
+$ cd peerwatch && ruff check . && ruff format --check .
+All checks passed!
+8 files already formatted
+(exit 0)
+== fixture suite
+$ TEST_TMPDIR=~/.cache/tmp.H8dmIpeHgI python3 -I peerwatch/tests/test_peerwatch.py 2>&1 | tail -n 4
+----------------------------------------------------------------------
+Ran 50 tests in 24.458s
+
+OK
+(exit 0)
+== promtool (generated file up to date, then the tests)
+$ python3 peerwatch/tests/gen_rule_tests.py | cmp - alerts/peerwatch.tests.yml && echo generated file up to date
+generated file up to date
+(exit 0)
+$ docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /w prom/prometheus:v3.5.0 check rules peerwatch.rules.yml
+Checking peerwatch.rules.yml
+  SUCCESS: 3 rules found
+
+(exit 0)
+$ docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /w prom/prometheus:v3.5.0 test rules peerwatch.tests.yml
+  SUCCESS
+
+(exit 0)
+== summary re-computed from the published history files (must equal the committed summary)
+$ sha256sum peerwatch/logs/data/*
+c001d6db93c18a9ff5997967799764d50d3701db76a0e085418c4b7243fdcf08  peerwatch/logs/data/history-postfiatd-sentry.jsonl
+473357306b524ac6d8d95afc2e189c317cc23fc9632998a7a935fe5751bbea60  peerwatch/logs/data/history-postfiatd.jsonl
+9150bbae8de85c29c567f0a5c3024cef3e5b8559bdbfde900b4c8d08af78f77c  peerwatch/logs/data/summary-24h.md
+(exit 0)
+$ cd peerwatch/logs/data && python3 -I ../../summarize_peerwatch.py --from 1794404365 --to 1794490706 history-postfiatd.jsonl history-postfiatd-sentry.jsonl | cmp - summary-24h.md && echo summary re-computed: identical to summary-24h.md
+summary re-computed: identical to summary-24h.md
+(exit 0)
+== mutation harness (baseline, timeout and orphan controls first)
+$ TEST_TMPDIR=~/.cache/tmp.H8dmIpeHgI nice -n 15 python3 -u peerwatch/tests/mutate.py --jobs 2 | tail -n 8
+R04 CAUGHT - quality alert includes the fixed check [promtool FAILED: a check FAIL for 15m fires for that check only; fixed FAIL is left to PFTPeerFixedLinkDown; WARN never fires]
+R05 CAUGHT - quality alert fires on WARN [promtool FAILED: a check FAIL for 15m fires for that check only; fixed FAIL is left to PFTPeerFixedLinkDown; WARN never fires; healthy node for 2h (WARN grades included) fires nothing]
+R06 CAUGHT - quality alert for 10m [promtool FAILED: a check FAIL for 15m fires for that check only; fixed FAIL is left to PFTPeerFixedLinkDown; WARN never fires]
+R07 CAUGHT - stale: up 0 ignored [promtool FAILED: collector up 0: fires after 5m, recovers on the first good sample]
+R08 CAUGHT - stale: 10 min age [promtool FAILED: pull stopped (timestamp frozen at 10m, up still 1): stale after 5 min + 5m for, recovers when it moves again]
+R09 CAUGHT - stale: for 1m [promtool FAILED: collector up 0: fires after 5m, recovers on the first good sample; pull stopped (timestamp frozen at 10m, up still 1): stale after 5 min + 5m for, recovers when it moves again]
+orphan check: 0 process(es) still running that name this run's scratch dir
+RESULT: 78 caught, 0 survived, 0 not applied, 0 broken of 78
+(exit 0)
+fresh-clone done 2026-11-12T13:57:28Z
+exit 0

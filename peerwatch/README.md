@@ -133,7 +133,7 @@ Logs 01-05 were development captures and stay private (they hold unredacted peer
 | `15-24h-summary.log` | end of the run: both history files copied (sha256), `summarize_peerwatch.py` over them, Prometheus `ALERTS{alertname=~"PFTPeer.*"}` over the range, lock released | summary below; one alert `pending` only (8 points), nothing sent |
 | `16-offline-suite-final.log` | shellcheck, ruff, 50 unit tests, promtool `test rules` + `check rules` at 190ad2d (clean tree) | all exit 0 |
 | `17-verify-installed-final.log` | read-only installed-state check after the run (same script as 08) | aptrust PASS both, skew CURRENT=73 BEHIND=0, status PASS both, integrity PASS both |
-| `18-fresh-clone.log` | anonymous public clone at the pinned commit: static checks, fixture suite, promtool, summary re-computed from `data/` and compared with `cmp`, mutation harness | see the log |
+| `18-fresh-clone.log` | anonymous public clone at 286eca1: static checks, 50 fixture tests, promtool, summary re-computed from `data/` and compared with `cmp`, mutation harness | all exit 0; summary identical; 78 caught, 0 survived |
 | `data/` | the two history files of the run (aggregate per-minute samples only: no addresses or keys) and `summary-24h.md` | – |
 
 ### Fixed-link drill (`drill/link-drill.sh`, log 10)
