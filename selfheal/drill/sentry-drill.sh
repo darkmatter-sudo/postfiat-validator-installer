@@ -143,6 +143,12 @@ restore() {
     echo "  ABORT PATH: $SC not running at restore - docker start + pft-egress reapply here"
     R "sudo -n docker start $SC >/dev/null && sudo -n pft-egress reapply --container $SC >/dev/null"; RESTORE_OK=false
   fi
+  # run 16: collectors that ran while the drill had envs redirected / the container stopped left stale textfiles
+  # (PFTKeyEscrowStale drift both hosts, PFTSeccompDrift filter on the sentry): re-run them + the validator pulls
+  R "sudo -n systemctl start pft-keyescrow.service pft-seccomp.service" && sudo -n systemctl start pft-keyescrow.service \
+    && sudo -n systemctl start pft-keyescrow-pull.service pft-seccomp-pull.service \
+    && echo "  re-ran pft-keyescrow (both) + pft-seccomp (sentry) and the validator pulls: yes" \
+    || { echo "  re-ran pft-keyescrow/pft-seccomp collectors + pulls: NO"; RESTORE_OK=false; }
   if [ "$MAINT" = 1 ]; then echo "  \$ sudo -n pft-maint end"; sudo -n pft-maint end 2>&1 | red | sed 's/^/    /'; MAINT=0; fi
   for k in "${CREATED[@]}"; do
     h="${k%%:*}"; f="${k#*:}"
@@ -198,6 +204,12 @@ CIP="$(scip)"
 printf 'ip\t%s\n' "$CIP" >> "$LIT"
 R1=(-d "$CIP/32" -p tcp -m comment --comment "$TAG" -j REJECT --reject-with tcp-reset)
 R2=(-s "$CIP/32" -p tcp -m comment --comment "$TAG" -j REJECT --reject-with tcp-reset)
+DMCMD="sleep $DEADMAN_SEC; n=0; while iptables -C DOCKER-USER ${R1[*]} 2>/dev/null; do iptables -D DOCKER-USER ${R1[*]} && n=\$((n+1)); done; while iptables -C DOCKER-USER ${R2[*]} 2>/dev/null; do iptables -D DOCKER-USER ${R2[*]} && n=\$((n+1)); done; echo \"pft-selfheal-drill dead-man: deleted \$n rule(s)\""
+dm_remote() { printf '%s /bin/bash -c %q' "$1" "$DMCMD"; }  # LAUNCHER -> sentry command line (quoted once for the sentry shell)
+# run 16: the dead-man line was nested in hand-written quotes and broke at eval (`rule(s)`); the same two quoting levels
+# (x's eval + the sentry shell) are proven here with a printf launcher: the sentry must receive DMCMD byte for byte
+x "R $(printf %q "$(dm_remote "printf '%s\\n'")")"
+check "dead-man command reaches the sentry byte-identical through both quoting levels (printf launcher)" "$(ok_if '[ "$XRC" = 0 ] && [ "$(sed -n 3p <<<"$XOUT")" = "$DMCMD" ] && [ "$(wc -l <<<"$XOUT")" = 3 ]')"
 x "curl -s $PROM/api/v1/rules | jq -r '.data.groups[] | select(.name == \"pft-selfheal\") | .rules[] | [.name, .health, .state] | @tsv'"
 check "selfheal rules loaded, healthy, inactive" "$(ok_if '[ "$(grep -cE "^PFTSelfheal(BreakerOpen|Stale)	ok	inactive$" <<<"$XOUT")" = 2 ]')"
 x "curl -s $PROM/api/v1/alerts | jq -r '.data.alerts[] | \"\(.labels.alertname) \(.labels.host // .labels.container // \"-\") \(.state)\"' | sort"
@@ -319,9 +331,8 @@ CIP1="$(scip)"; check "C: container address unchanged" "$(ok_if '[ "$CIP1" = "$C
 [ "$FAILS" = 0 ] || exit 5
 
 echo; echo "== 4. drill B: unfixable peer fault -> at most K actions -> breaker -> dead-man -> reset"
-DMCMD="sleep $DEADMAN_SEC; n=0; while iptables -C DOCKER-USER ${R1[*]} 2>/dev/null; do iptables -D DOCKER-USER ${R1[*]} && n=\$((n+1)); done; while iptables -C DOCKER-USER ${R2[*]} 2>/dev/null; do iptables -D DOCKER-USER ${R2[*]} && n=\$((n+1)); done; echo \"pft-selfheal-drill dead-man: deleted \$n rule(s)\""
 echo "  dead-man command: $DMCMD" | red
-x "R \"sudo -n systemd-run --collect --unit=$DM --description='pft-selfheal drill dead-man: deletes the drill REJECT rules' -p RuntimeMaxSec=$(( DEADMAN_SEC + 120 )) /bin/bash -c '$DMCMD'\""
+x "R $(printf %q "$(dm_remote "sudo -n systemd-run --collect --unit=$DM --description=$(printf %q 'pft-selfheal drill dead-man: deletes the drill REJECT rules') -p RuntimeMaxSec=$(( DEADMAN_SEC + 120 ))")")"
 t_dm="$(date -u +%s)"
 check "dead-man $DM.service started on the sentry (deletes the rules at $(date -u -d "@$(( t_dm + DEADMAN_SEC ))" +%TZ))" "$(ok_if '[ "$XRC" = 0 ] && R "systemctl is-active --quiet $DM.service"')"
 [ "$FAILS" = 0 ] || exit 5
