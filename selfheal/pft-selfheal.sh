@@ -9,6 +9,8 @@
 #        sudo pft-selfheal status [--container NAME] [--json]    exit 0 healthy, 1 suppressed/would act,
 #                                                                2 breaker open, 4 no or stale decision
 #        sudo pft-selfheal reset [--container NAME] --reason "text"   close the circuit breaker (manual reset)
+#        sudo pft-selfheal pull [--container NAME]    (validator: copy the sentry's textfile, default postfiatd-sentry)
+#        pft-selfheal validate FILE NAME              exit 0 if FILE is an acceptable selfheal textfile for NAME
 #        pft-selfheal version
 #
 #  run     observation: `docker inspect` (exists, running, StartedAt), `docker exec NAME curl ... server_info` on the
@@ -17,15 +19,20 @@
 #          (validated seq unchanged since the last sample or server_state not full/proposing/validating) - one
 #          server_info against REF_URL as the network-stall reference. The decision is appended to
 #          STATE_DIR/journal-NAME.jsonl when it is not "healthy", together with every action and its result.
+#  pull    "$PULL_SSH cat -- REMOTE_DIR/pft_selfheal_NAME.prom", validated all-or-nothing, renamed into TEXTFILE_DIR
+#          (the sentry has no Prometheus; its alerts are evaluated on the validator).
 #  Guards (selfheal_decide.py): breaker, maintenance window, data lock, startup grace, network stall, backoff,
 #          K actions per 24 h (the next needed action opens the breaker; only `reset` closes it).
 #
 # Exit codes: run 0 decided (healthy, suppressed or acted ok), 1 action failed, 3 usage/config error,
-#             5 state unreadable/unwritable (refuses to act); status as above; reset 0 ok, 3 usage, 5 state.
+#             5 state unreadable/unwritable (refuses to act); status as above; reset 0 ok, 3 usage, 5 state;
+#             pull 0 ok, 1 fetch/rename failed, 2 validation failed, 3 usage/config; validate 0 ok, 2 rejected.
 # Conf: PFT_SH_CONF (/etc/pft-selfheal.env, root-owned; sourced for the shell keys, read as KEY=VALUE text by
 #       selfheal_decide.py for MODE and the thresholds): CONTAINER (postfiatd), TEXTFILE_DIR
 #       (/var/lib/pft-exporter/textfile), STATE_DIR (/var/lib/pft-selfheal), RPC_TIMEOUT (8),
-#       REF_URL (https://rpc.testnet.postfiat.org), REF_TIMEOUT (10), RESTART_TIMEOUT (60), STALE_DECISION_SEC (300)
+#       REF_URL (https://rpc.testnet.postfiat.org), REF_TIMEOUT (10), RESTART_TIMEOUT (60), STALE_DECISION_SEC (300),
+#       validator only: PULL_SSH (empty), REMOTE_DIR (/var/lib/pft-exporter/textfile), PULL_TIMEOUT (20),
+#       MAX_BYTES (16384)
 # Test hooks: PFT_SH_DOCKER (docker)  PFT_SH_CURL (curl)  PFT_SH_MAINT (pft-maint)  PFT_SH_EGRESS (pft-egress)
 #             PFT_SH_NOW (epoch)  PFT_SH_TEST=1 (conf may be owned by the caller)  PFT_SH_DECIDER (/usr/local/lib/pft-selfheal/selfheal_decide.py)
 
@@ -45,6 +52,10 @@ REF_URL="${REF_URL:-https://rpc.testnet.postfiat.org}"
 REF_TIMEOUT="${REF_TIMEOUT:-10}"
 RESTART_TIMEOUT="${RESTART_TIMEOUT:-60}"
 STALE_DECISION_SEC="${STALE_DECISION_SEC:-300}"
+PULL_SSH="${PULL_SSH:-}"
+REMOTE_DIR="${REMOTE_DIR:-/var/lib/pft-exporter/textfile}"
+PULL_TIMEOUT="${PULL_TIMEOUT:-20}"
+MAX_BYTES="${MAX_BYTES:-16384}"
 DECIDER="${PFT_SH_DECIDER:-/usr/local/lib/pft-selfheal/selfheal_decide.py}"
 read -r -a DOCKER <<< "${PFT_SH_DOCKER:-docker}"
 read -r -a CURL <<< "${PFT_SH_CURL:-curl}"
@@ -293,11 +304,65 @@ reset() {
   printf '%s\n' "$out"
 }
 
+# validate FILE NAME -> rc 0, or rc 1 with the first reason on stdout
+validate() {
+  local f="$1" name="$2" size
+  [ -f "$f" ] || { echo "not a file"; return 1; }
+  size="$(stat -c %s "$f")"
+  [ "$size" -le "$MAX_BYTES" ] || { echo "too big ($size bytes)"; return 1; }
+  awk -v n="$name" '
+    BEGIN { pre = "container=\"" n "\"" }
+    /^# (HELP|TYPE) pft_selfheal_[a-z0-9_]+ / { next }
+    /^$/ { next }
+    {
+      if (match($0, /^pft_selfheal_[a-z0-9_]+\{/) == 0) { printf "line %d: not a pft_selfheal_ sample\n", NR; bad = 1; exit }
+      rest = substr($0, RLENGTH + 1)
+      if (index(rest, pre) != 1) { printf "line %d: first label is not %s\n", NR, pre; bad = 1; exit }
+      if (rest !~ /^[^{}]*\} -?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$/) { printf "line %d: malformed sample\n", NR; bad = 1; exit }
+      if ($0 ~ /^pft_selfheal_up\{/) up = 1
+      if ($0 ~ /^pft_selfheal_run_timestamp_seconds\{/) ts = 1
+    }
+    END {
+      if (bad) exit 1
+      if (!up) { print "no pft_selfheal_up sample"; exit 1 }
+      if (!ts) { print "no pft_selfheal_run_timestamp_seconds sample"; exit 1 }
+    }' "$f"
+}
+
+pull() {
+  local name=postfiatd-sentry tmp why
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --container) name="${2:?}"; shift ;;
+      *) die "unknown argument: $1" ;;
+    esac
+    shift
+  done
+  valid_name "$name" || die "bad container name"
+  [ -n "$PULL_SSH" ] || die "PULL_SSH not set (see /etc/pft-selfheal.env)"
+  [[ "$PULL_TIMEOUT" =~ ^[1-9][0-9]*$ ]] || die "bad PULL_TIMEOUT"
+  [[ "$MAX_BYTES" =~ ^[1-9][0-9]*$ ]] || die "bad MAX_BYTES"
+  tmp="$(mktemp "$TEXTFILE_DIR/.pull-selfheal-$name.XXXXXX")" || die "cannot create a temp file in $TEXTFILE_DIR" 1
+  # shellcheck disable=SC2086 # PULL_SSH is a command line from the root-owned conf
+  if ! timeout "$PULL_TIMEOUT" $PULL_SSH cat -- "$REMOTE_DIR/pft_selfheal_$name.prom" > "$tmp" 2>/dev/null </dev/null; then
+    rm -f "$tmp"; die "fetch of pft_selfheal_$name.prom failed" 1
+  fi
+  if ! why="$(validate "$tmp" "$name")"; then
+    rm -f "$tmp"; die "validation failed: $why" 2
+  fi
+  if ! { chmod 644 "$tmp" && mv -f "$tmp" "$TEXTFILE_DIR/pft_selfheal_$name.prom"; }; then
+    rm -f "$tmp"; die "rename failed" 1
+  fi
+}
+
 cmd="${1:-}"; [ $# -gt 0 ] && shift
 case "$cmd" in
   run) run "$@" ;;
   status) status "$@" ;;
   reset) reset "$@" ;;
+  pull) pull "$@" ;;
+  validate) [ $# -eq 2 ] || die "usage: pft-selfheal validate FILE NAME"; valid_name "$2" || die "bad container name"
+            why="$(validate "$1" "$2")" && exit 0; echo "$why"; exit 2 ;;
   version) echo "pft-selfheal $VERSION" ;;
-  *) sed -n '8,12p' "$0" >&2; exit 3 ;;
+  *) sed -n '8,14p' "$0" >&2; exit 3 ;;
 esac

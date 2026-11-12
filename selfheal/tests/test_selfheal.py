@@ -666,3 +666,104 @@ def test_sh_never_execs_anything_but_server_info(sh):
     s.run("run", now=T0 + 7200)
     execs = [c for c in Path(s.stub / "calls").read_text().splitlines() if c.startswith("docker exec")]
     assert all('"method":"server_info"' in c for c in execs)
+
+
+# ---------------------------------------------------------------- pull / validate (sentry textfile to the validator)
+
+
+def remote(s, body):
+    """A fake 'remote' textfile dir plus an ssh stub that runs its argv locally (`$PULL_SSH cat -- FILE`)."""
+    rdir = s.base / "remote"
+    rdir.mkdir(exist_ok=True)
+    (rdir / "pft_selfheal_postfiatd-sentry.prom").write_text(body)
+    ssh = s.base / "ssh.sh"
+    ssh.write_text('#!/bin/bash\necho "ssh $*" >> "$STUB/calls"\nexec "$@"\n')
+    ssh.chmod(0o755)
+    with s.conf.open("a") as f:
+        f.write(f"PULL_SSH={ssh}\nREMOTE_DIR={rdir}\n")
+    return rdir
+
+
+def real_textfile(sh):
+    """The textfile a real stubbed `run --stdout` produces for the sentry (not hand-written)."""
+    s = sh()
+    p = s.run("run", "--stdout")
+    assert p.returncode == 0, p.stderr
+    return p.stdout
+
+
+def test_sh_pull_copies_a_valid_textfile(sh):
+    body = real_textfile(sh)
+    s = sh()
+    remote(s, body)
+    p = s.run("pull")
+    assert p.returncode == 0, p.stderr
+    assert s.prom() == body
+    assert any(c.startswith("ssh cat -- ") for c in s.calls())
+    assert not [x for x in s.text.iterdir() if x.name.startswith(".pull-")]
+
+
+@pytest.mark.parametrize(
+    "mutate, reason",
+    [
+        (lambda b: b + 'pft_other_metric{container="postfiatd-sentry"} 1\n', "not a pft_selfheal_ sample"),
+        (lambda b: b.replace('container="postfiatd-sentry"', 'container="postfiatd"', 1), "first label is not"),
+        (lambda b: b + 'pft_selfheal_up{container="postfiatd-sentry"} NaN\n', "malformed sample"),
+        (
+            lambda b: "\n".join(x for x in b.splitlines() if not x.startswith("pft_selfheal_up{")) + "\n",
+            "no pft_selfheal_up",
+        ),
+        (
+            lambda b: "\n".join(x for x in b.splitlines() if not x.startswith("pft_selfheal_run_timestamp")) + "\n",
+            "no pft_selfheal_run_timestamp_seconds",
+        ),
+        (lambda b: b + "# " + "x" * 17000 + "\n", "too big"),
+    ],
+)
+def test_sh_pull_rejects_and_keeps_the_old_file(sh, mutate, reason):
+    body = real_textfile(sh)
+    s = sh()
+    remote(s, mutate(body))
+    old = 'pft_selfheal_up{container="postfiatd-sentry"} 1\npft_selfheal_run_timestamp_seconds{container="postfiatd-sentry"} 1\n'
+    (s.text / "pft_selfheal_postfiatd-sentry.prom").write_text(old)
+    p = s.run("pull")
+    assert p.returncode == 2 and reason in p.stderr, p.stderr
+    assert s.prom() == old
+    assert not [x for x in s.text.iterdir() if x.name.startswith(".pull-")]
+
+
+def test_sh_pull_fetch_failure_and_unset_ssh(sh):
+    s = sh()
+    remote(s, "x")
+    (s.base / "remote" / "pft_selfheal_postfiatd-sentry.prom").unlink()
+    p = s.run("pull")
+    assert p.returncode == 1 and "fetch of pft_selfheal_postfiatd-sentry.prom failed" in p.stderr
+    s2 = sh()
+    p = s2.run("pull")
+    assert p.returncode == 3 and "PULL_SSH not set" in p.stderr
+
+
+def test_sh_validate_cli(sh):
+    body = real_textfile(sh)
+    s = sh()
+    f = s.base / "t.prom"
+    f.write_text(body)
+    assert s.run("validate", str(f), "postfiatd-sentry").returncode == 0
+    p = s.run("validate", str(f), "postfiatd")
+    assert p.returncode == 2 and "first label is not" in p.stdout
+    assert s.run("validate", str(f), "../x").returncode == 3
+
+
+def test_env_example_equals_defaults():
+    """The shipped example parses in the decider to exactly DEFAULTS and sources cleanly in bash."""
+    ex = ROOT / "pft-selfheal.env.example"
+    assert sd.load_conf(str(ex)) == sd.DEFAULTS
+    keys = {line.split("=", 1)[0] for line in ex.read_text().splitlines() if line and not line.startswith("#")}
+    assert set(sd.DEFAULTS) <= keys
+    p = subprocess.run(
+        ["bash", "-c", '. "$1" && echo "$REF_URL|$STATE_DIR"', "_", str(ex)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert p.returncode == 0 and p.stdout.strip() == "https://rpc.testnet.postfiat.org|/var/lib/pft-selfheal"
