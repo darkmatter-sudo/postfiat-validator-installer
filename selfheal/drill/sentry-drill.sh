@@ -193,7 +193,11 @@ check "installed pft-selfheal + decider on the sentry = this checkout" "$(ok_if 
 x "R 'systemctl is-active pft-selfheal@$SC.timer'; systemctl is-active pft-selfheal-pull@$SC.timer; R 'sudo -n grep -E \"^(MODE|MAX_ACTIONS)=\" $SH_CONF'"
 check "sentry selfheal timer + validator pull timer active, sentry conf MODE=dryrun MAX_ACTIONS=3" "$(ok_if '[ "$(grep -cx active <<<"$XOUT")" = 2 ] && grep -qx MODE=dryrun <<<"$XOUT" && grep -qx MAX_ACTIONS=3 <<<"$XOUT"')"
 x "sstatus; stext"
-check "sentry selfheal: verdict healthy, breaker closed, 0 actions in 24 h and in the journal" "$(ok_if '[ "$XRC" = 0 ] && grep -q "verdict healthy" <<<"$XOUT" && grep -q "actions_24h 0/3 | breaker closed" <<<"$XOUT" && grep -q "^pft_selfheal_actions_total{container=\"$SC\"} 0$" <<<"$XOUT"')"
+# actions already in the 24 h budget (run 16's drill A started the container once, rc 0, before its harness broke) are
+# allowed if they are all successful and leave room for B: A adds 1, B needs >= 1 restart before the breaker (K=3)
+A_PRE="$(jcount $(( $(date -u +%s) - 86400 )) action)"; A_ALL="$(jcount 0 action)"
+echo "  actions already in the journal: $A_ALL ($A_PRE within 24 h); failed results: $(jl | jq -c 'select(.event == "result" and .rc != 0)' 2>/dev/null | wc -l)"
+check "sentry selfheal: verdict healthy, breaker closed, actions_24h = journal actions in 24 h <= 1, actions_total = journal actions, every result rc 0" "$(ok_if '[ "$XRC" = 0 ] && grep -q "verdict healthy" <<<"$XOUT" && grep -q "actions_24h $A_PRE/3 | breaker closed" <<<"$XOUT" && [ "$A_PRE" -le 1 ] && grep -q "^pft_selfheal_actions_total{container=\"$SC\"} $A_ALL$" <<<"$XOUT" && [ "$(jl | jq -c "select(.event == \"result\" and .rc != 0)" | wc -l)" = 0 ]')"
 x "R 'for f in $SH_CONF $REMOTE_ENVS /etc/pft-maint/ntfy.env; do sudo -n test -e \$f$SUF && echo leftover \$f$SUF; done; sudo -n test -e /etc/pft-maint/ntfy.env && echo maint-env-present; systemctl list-units --all --no-legend \"$DM*\" | wc -l; sudo -n iptables -S DOCKER-USER | grep -c $TAG'; for f in $LOCAL_ENVS; do sudo -n test -e \$f$SUF && echo leftover \$f$SUF; done; sudo -n test -e /etc/pft-maint/ntfy.env && echo maint-env-present; echo end"
 check "no leftovers: no $SUF backups, no pft-maint ntfy.env on either host, no dead-man unit, no drill rule" "$(ok_if '[ "$(tr "\n" " " <<<"$XOUT")" = "0 0 end " ]')"
 DU0="$(R "$DU")"
@@ -341,7 +345,7 @@ x "R 'sudo -n iptables -I DOCKER-USER 2 ${R1[*]} && sudo -n iptables -I DOCKER-U
 check "two drill rules at DOCKER-USER 2-3, after the pft-egress jump and before the established accept" "$(ok_if '[ "$XRC" = 0 ] && sed -n 2p <<<"$XOUT" | grep -q -- "-j PFT-EGRESS" && [ "$(sed -n 3,4p <<<"$XOUT" | grep -c "$TAG")" = 2 ] && sed -n 5p <<<"$XOUT" | grep -q "RELATED,ESTABLISHED -j ACCEPT"')"
 wait_until 240 10 '[ "$(speers)" = 0 ]'; echo "  $(ts): $SC peers $(speers) after ${WAITED}s"
 check "B: sentry peers 0 with the fault in place" "$(ok_if '[ "$(speers)" = 0 ]')"
-A0="$(jcount 0 action)"; echo "  actions in the journal before B: $A0 (all within 24 h)"
+A0="$(jcount $(( tB - 86400 )) action)"; echo "  actions in the 24 h budget before B: $A0 (journal total $(jcount 0 action))"
 wait_until $(( DEADMAN_SEC - 180 )) 15 '[ "$(sval pft_selfheal_breaker_open)" = 1 ]'
 t_open="$(date -u +%s)"; echo "  $(ts): breaker_open $(sval pft_selfheal_breaker_open) $(( t_open - tB ))s after the fault"
 x "jshow $tB"
