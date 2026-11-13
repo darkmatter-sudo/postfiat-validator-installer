@@ -1,0 +1,31 @@
+aptrust pull-timer install - 2026-11-13T22:22:24Z - Ubuntu 22.04.5 LTS - repo HEAD 62fb8daa01480d9944d4109248f64a890fe25bd0 (clean: yes)
+
+== 0. preflight (read-only)
+$ sudo -n pft-fleet skew | grep -vE ' CURRENT *$'
+  ref main = 62fb8daa01480d9944d4109248f64a890fe25bd0
+  host sentry     role sentry    ok
+  host validator  role validator ok
+  HOST       ADDON       STATE      DETAIL
+  sentry     aptrust     BEHIND     /usr/local/lib/pft-aptrust/manifest.tsv BEHIND @d668bf32f534 (-1); /etc/systemd/system/pft-aptrust.service BEHIND @245669306055 (-1); /etc/systemd/system/pft-aptrust.timer BEHIND @245669306055 (-1)
+  validator  aptrust     BEHIND     /usr/local/lib/pft-aptrust/manifest.tsv BEHIND @d668bf32f534 (-1); /etc/systemd/system/pft-aptrust.service BEHIND @245669306055 (-1); /etc/systemd/system/pft-aptrust.timer BEHIND @245669306055 (-1)
+  validator  fleet       BEHIND     /usr/local/lib/pft-fleet/manifest.tsv BEHIND @d668bf32f534 (-1)
+  SUMMARY CURRENT=72 BEHIND=3 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 1)
+CHECK FAIL skew: only aptrust is off (new pull units MISSING on the validator, manifest copy + edited units BEHIND)
+$ systemctl list-unit-files --no-legend 'pft-aptrust-pull*' | wc -l
+  0
+  (exit 1)
+CHECK ok   no pft-aptrust-pull unit installed yet
+$ curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '.data.alerts[] | "\(.labels.alertname) \(.state)"' | sort -u
+  PFTAlertPipelineWatchdog firing
+  PFTVulnRebootOwed pending
+  (exit 0)
+  known pending: PFTVulnRebootOwed
+CHECK ok   no alert pending/firing except the watchdog and KNOWN_PENDING (none)
+$ curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '[.data.alerts[] | select(.state == "firing" and .labels.alertname != "PFTAlertPipelineWatchdog")] | length'
+  0
+  (exit 0)
+CHECK ok   nothing but the watchdog FIRING (the bridge would re-send it)
+operator topics to read back: 2 (not printed)
+preflight failed - stopping before any change
+exit=3

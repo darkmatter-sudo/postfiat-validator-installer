@@ -132,6 +132,7 @@ docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /
 | validator, sentry | seeded: group-writable APT config file -> perm FAIL, `PFTAptrustUntrusted` firing | `apply --yes` (`perm`, mode 0640) | audit 0/0, alert RESOLVED ([39](logs/39-live-run.log) step 4) |
 | validator | seeded: third-party source with no `signed-by`, its key global -> WARN src + WARN global | `apply --yes` (`sign` + `drop`) | audit 0/0, `apt-get update` same indexes, no signature error ([39](logs/39-live-run.log) step 4) |
 | tool | real: `drop` kept a keyring whose only other key was expired | `fprs` counts usable keys only (cc3ecf8) | [36](logs/36-drop-dead-key.log), tests + P18/P19, live drop in [39](logs/39-live-run.log) |
+| validator | real (2026-11-13): the same-run pull copied the sentry file before the sentry audit ran (random timer delay) -> 24 h old copy, `PFTTextfileStale` | hourly `pft-aptrust-pull.timer` (62fb8da), installed via pft-fleet sync in a pft-maint window | pull unit rc 0, copy = sentry file, timer :23, audit 0/0 both, skew rc 0, integrity PASS, operator topics 0 ([47](logs/47-pull-timer-run.log); [46](logs/46-pull-timer-run.log): preflight stopped before any change, fleet's own manifest copy was BEHIND too) |
 
 ### Negative controls and clean fixture
 

@@ -1,0 +1,254 @@
+aptrust pull-timer install - 2026-11-13T22:23:39Z - Ubuntu 22.04.5 LTS - repo HEAD 747da5670d359238cf823d69570ae6f8fb0ccfb4 (clean: yes)
+
+== 0. preflight (read-only)
+$ sudo -n pft-fleet skew | grep -vE ' CURRENT *$'
+  ref main = 747da5670d359238cf823d69570ae6f8fb0ccfb4
+  host sentry     role sentry    ok
+  host validator  role validator ok
+  HOST       ADDON       STATE      DETAIL
+  sentry     aptrust     BEHIND     /usr/local/lib/pft-aptrust/manifest.tsv BEHIND @d668bf32f534 (-1); /etc/systemd/system/pft-aptrust.service BEHIND @245669306055 (-1); /etc/systemd/system/pft-aptrust.timer BEHIND @245669306055 (-1)
+  validator  aptrust     BEHIND     /usr/local/lib/pft-aptrust/manifest.tsv BEHIND @d668bf32f534 (-1); /etc/systemd/system/pft-aptrust.service BEHIND @245669306055 (-1); /etc/systemd/system/pft-aptrust.timer BEHIND @245669306055 (-1)
+  validator  fleet       BEHIND     /usr/local/lib/pft-fleet/manifest.tsv BEHIND @d668bf32f534 (-1)
+  SUMMARY CURRENT=72 BEHIND=3 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 1)
+CHECK ok   skew: only aptrust (both hosts) and fleet (validator) BEHIND
+$ systemctl list-unit-files --no-legend 'pft-aptrust-pull*' | wc -l
+  0
+  (exit 1)
+CHECK ok   no pft-aptrust-pull unit installed yet
+$ curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '.data.alerts[] | "\(.labels.alertname) \(.state)"' | sort -u
+  PFTAlertPipelineWatchdog firing
+  PFTVulnRebootOwed pending
+  (exit 0)
+  known pending: PFTVulnRebootOwed
+CHECK ok   no alert pending/firing except the watchdog and KNOWN_PENDING (none)
+$ curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '[.data.alerts[] | select(.state == "firing" and .labels.alertname != "PFTAlertPipelineWatchdog")] | length'
+  0
+  (exit 0)
+CHECK ok   nothing but the watchdog FIRING (the bridge would re-send it)
+operator topics to read back: 2 (not printed)
+
+== 1. silence (aptrust, fleet, keyescrow, schedaudit, jobwatch, integrity; not the watchdog)
+CHECK ok   Alertmanager silence created until 2026-11-13T23:04:20Z
+
+== 2. pft-maint window, [MAINT] messages to a throwaway topic
+$ { [ $HAD = 0 ] || sudo -n cp -p $NE $BK; } && printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' "$TT" | sudo -n tee $NE >/dev/null && sudo -n chmod 600 $NE && sudo -n stat -c '%a %U' $NE
+  600 root
+  (exit 0)
+CHECK ok   throwaway target installed
+$ sudo -n pft-maint start --ttl 20m --reason 'ops-aptrust-pull aptrust pull timer'
+  window started: id m1794608660-3412284 until 2026-11-13T22:44:20Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint window open
+CHECK ok   sentry has the window after 40s
+
+== 3. FIX: pft-fleet sync --addon fleet, then aptrust (new pull units on the validator, edited units + allowlist copy both hosts)
+$ sudo -n pft-fleet sync --addon fleet --to 747da5670d359238cf823d69570ae6f8fb0ccfb4 --apply --reason 'ops-aptrust-pull manifest += aptrust pull units'
+  [2026-11-13T22:26:14Z] sync fleet to 747da5670d359238cf823d69570ae6f8fb0ccfb4 (2026-11-13T22:23:30+00:00) REF main=747da5670d359238cf823d69570ae6f8fb0ccfb4
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN validator validator /usr/local/sbin/pft-fleet 0755 CURRENT 61cafcfcdaa9 61cafcfcdaa9 keep
+  PLAN validator validator /usr/local/lib/pft-fleet/fleet_lib.py 0644 CURRENT dcb37d26f33f dcb37d26f33f keep
+  PLAN validator validator /usr/local/lib/pft-fleet/manifest.tsv 0644 BEHIND 4be67a87aa7e 929b373b34ed write
+  PLAN validator validator /etc/systemd/system/pft-fleet.service 0644 CURRENT 3105a2f0a144 3105a2f0a144 keep
+  PLAN validator validator /etc/systemd/system/pft-fleet.timer 0644 CURRENT 79839ee00a81 79839ee00a81 keep
+  [2026-11-13T22:26:14Z] order: sentry validator
+  [2026-11-13T22:26:14Z] sentry: every fleet file already at 747da5670d35 - nothing to do
+  [2026-11-13T22:26:14Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/lib/pft-fleet/manifest.tsv sha256 4be67a87aa7e -> /var/lib/pft-fleet/backup/20261113T222614Z-fleet-validator
+  WRITE validator /usr/local/lib/pft-fleet/manifest.tsv 4be67a87aa7e -> 929b373b34ed mode 0644
+  GATE validator sha256 /usr/local/lib/pft-fleet/manifest.tsv = target 929b373b34ed PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync fleet@747da5670d35 (manifest.tsv)
+  [2026-11-13T22:27:04Z] SYNCED validator fleet -> 747da5670d35
+  [2026-11-13T22:27:04Z] sync complete
+  (exit 0)
+CHECK ok   fleet sync exit 0 (its manifest copy)
+$ sudo -n pft-fleet sync --addon aptrust --to 747da5670d359238cf823d69570ae6f8fb0ccfb4 --apply --reason 'ops-aptrust-pull aptrust: hourly validator pull timer'
+  [2026-11-13T22:27:44Z] sync aptrust to 747da5670d359238cf823d69570ae6f8fb0ccfb4 (2026-11-13T22:23:30+00:00) REF main=747da5670d359238cf823d69570ae6f8fb0ccfb4
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN sentry sentry /usr/local/bin/pft-aptrust 0755 CURRENT 0e7722706169 0e7722706169 keep
+  PLAN sentry sentry /usr/local/lib/pft-aptrust/manifest.tsv 0644 BEHIND 4be67a87aa7e 929b373b34ed write
+  PLAN sentry sentry /etc/systemd/system/pft-aptrust.service 0644 BEHIND 5eda4d742e76 4dfc8751acb0 write
+  PLAN sentry sentry /etc/systemd/system/pft-aptrust.timer 0644 BEHIND 7b2dabe7abd8 1f6d67e56237 write
+  PLAN validator validator /usr/local/bin/pft-aptrust 0755 CURRENT 0e7722706169 0e7722706169 keep
+  PLAN validator validator /usr/local/lib/pft-aptrust/manifest.tsv 0644 BEHIND 4be67a87aa7e 929b373b34ed write
+  PLAN validator validator /etc/systemd/system/pft-aptrust.service 0644 BEHIND 5eda4d742e76 4dfc8751acb0 write
+  PLAN validator validator /etc/systemd/system/pft-aptrust.timer 0644 BEHIND 7b2dabe7abd8 1f6d67e56237 write
+  PLAN validator validator /etc/systemd/system/pft-aptrust-pull.service 0644 MISSING - 25f018e00e72 write
+  PLAN validator validator /etc/systemd/system/pft-aptrust-pull.timer 0644 MISSING - edf767945c09 write
+  [2026-11-13T22:27:44Z] order: sentry validator
+  [2026-11-13T22:27:44Z] sentry: 3 file(s) to write
+  PRE sentry pft-maint window active PASS
+  PRE sentry node server_state=full PASS
+  PRE sentry pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP sentry /usr/local/lib/pft-aptrust/manifest.tsv sha256 4be67a87aa7e -> /var/lib/pft-fleet/backup/20261113T222744Z-aptrust-sentry
+  BACKUP sentry /etc/systemd/system/pft-aptrust.service sha256 5eda4d742e76 -> /var/lib/pft-fleet/backup/20261113T222744Z-aptrust-sentry
+  BACKUP sentry /etc/systemd/system/pft-aptrust.timer sha256 7b2dabe7abd8 -> /var/lib/pft-fleet/backup/20261113T222744Z-aptrust-sentry
+  WRITE sentry /usr/local/lib/pft-aptrust/manifest.tsv 4be67a87aa7e -> 929b373b34ed mode 0644
+  WRITE sentry /etc/systemd/system/pft-aptrust.service 5eda4d742e76 -> 4dfc8751acb0 mode 0644
+  WRITE sentry /etc/systemd/system/pft-aptrust.timer 7b2dabe7abd8 -> 1f6d67e56237 mode 0644
+  RELOAD sentry systemctl daemon-reload
+  GATE sentry sha256 /usr/local/lib/pft-aptrust/manifest.tsv = target 929b373b34ed PASS
+  GATE sentry sha256 /etc/systemd/system/pft-aptrust.service = target 4dfc8751acb0 PASS
+  GATE sentry unit pft-aptrust.service LoadState=loaded PASS
+  GATE sentry sha256 /etc/systemd/system/pft-aptrust.timer = target 1f6d67e56237 PASS
+  GATE sentry unit pft-aptrust.timer LoadState=loaded PASS
+  GATE sentry addon units failed=none PASS
+  GATE sentry node server_state=full PASS
+  ACCEPT sentry pft-integrity baseline updated: pft-fleet sync aptrust@747da5670d35 (manifest.tsv,pft-aptrust.service,pft-aptrust.timer)
+  [2026-11-13T22:28:30Z] SYNCED sentry aptrust -> 747da5670d35
+  [2026-11-13T22:28:30Z] validator: 5 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/lib/pft-aptrust/manifest.tsv sha256 4be67a87aa7e -> /var/lib/pft-fleet/backup/20261113T222744Z-aptrust-validator
+  BACKUP validator /etc/systemd/system/pft-aptrust.service sha256 5eda4d742e76 -> /var/lib/pft-fleet/backup/20261113T222744Z-aptrust-validator
+  BACKUP validator /etc/systemd/system/pft-aptrust.timer sha256 7b2dabe7abd8 -> /var/lib/pft-fleet/backup/20261113T222744Z-aptrust-validator
+  BACKUP validator /etc/systemd/system/pft-aptrust-pull.service absent before sync (rollback removes it)
+  BACKUP validator /etc/systemd/system/pft-aptrust-pull.timer absent before sync (rollback removes it)
+  WRITE validator /usr/local/lib/pft-aptrust/manifest.tsv 4be67a87aa7e -> 929b373b34ed mode 0644
+  WRITE validator /etc/systemd/system/pft-aptrust.service 5eda4d742e76 -> 4dfc8751acb0 mode 0644
+  WRITE validator /etc/systemd/system/pft-aptrust.timer 7b2dabe7abd8 -> 1f6d67e56237 mode 0644
+  WRITE validator /etc/systemd/system/pft-aptrust-pull.service - -> 25f018e00e72 mode 0644
+  WRITE validator /etc/systemd/system/pft-aptrust-pull.timer - -> edf767945c09 mode 0644
+  RELOAD validator systemctl daemon-reload
+  GATE validator sha256 /usr/local/lib/pft-aptrust/manifest.tsv = target 929b373b34ed PASS
+  GATE validator sha256 /etc/systemd/system/pft-aptrust.service = target 4dfc8751acb0 PASS
+  GATE validator unit pft-aptrust.service LoadState=loaded PASS
+  GATE validator sha256 /etc/systemd/system/pft-aptrust.timer = target 1f6d67e56237 PASS
+  GATE validator unit pft-aptrust.timer LoadState=loaded PASS
+  GATE validator sha256 /etc/systemd/system/pft-aptrust-pull.service = target 25f018e00e72 PASS
+  GATE validator unit pft-aptrust-pull.service LoadState=loaded PASS
+  GATE validator sha256 /etc/systemd/system/pft-aptrust-pull.timer = target edf767945c09 PASS
+  GATE validator unit pft-aptrust-pull.timer LoadState=loaded PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync aptrust@747da5670d35 (manifest.tsv,pft-aptrust.service,pft-aptrust.timer,pft-aptrust-pull.service,pft-aptrust-pull.timer)
+  [2026-11-13T22:29:13Z] SYNCED validator aptrust -> 747da5670d35
+  [2026-11-13T22:29:13Z] sync complete
+  (exit 0)
+CHECK ok   aptrust sync exit 0
+$ sha256sum fleet/manifest.tsv | cut -c1-64; sudo -n sha256sum /usr/local/lib/pft-aptrust/manifest.tsv | cut -c1-64; R 'sha256sum /usr/local/lib/pft-aptrust/manifest.tsv | cut -c1-64'
+  929b373b34edb2ad7b04991777c717a7de4ff3ce86f9811fb6a88fe0cb06017d
+  929b373b34edb2ad7b04991777c717a7de4ff3ce86f9811fb6a88fe0cb06017d
+  929b373b34edb2ad7b04991777c717a7de4ff3ce86f9811fb6a88fe0cb06017d
+  (exit 0)
+CHECK ok   aptrust's manifest copy = repo fleet/manifest.tsv on both hosts
+$ for f in pft-aptrust-pull.service pft-aptrust-pull.timer; do cmp aptrust/systemd/$f /etc/systemd/system/$f && echo "same $f"; done
+  same pft-aptrust-pull.service
+  same pft-aptrust-pull.timer
+  (exit 0)
+CHECK ok   both pull units installed byte-identical on the validator
+$ R 'ls /etc/systemd/system/pft-aptrust-pull.service /etc/systemd/system/pft-aptrust-pull.timer 2>/dev/null | wc -l'
+  0
+  (exit 0)
+CHECK ok   no pull unit on the sentry (role validator)
+$ sudo -n systemctl start pft-aptrust-pull.service; systemctl show -p Result,ExecMainStatus pft-aptrust-pull.service
+  Result=success
+  ExecMainStatus=0
+  (exit 0)
+CHECK ok   pull unit run: Result=success, ExecMainStatus=0
+$ R 'grep -h ^pft_aptrust_last_run_timestamp_seconds /var/lib/pft-exporter/textfile/pft_aptrust_sentry.prom'; grep -h ^pft_aptrust_last_run_timestamp_seconds /var/lib/pft-exporter/textfile/pft_aptrust_sentry.prom
+  pft_aptrust_last_run_timestamp_seconds{host="sentry"} 1794588587
+  pft_aptrust_last_run_timestamp_seconds{host="sentry"} 1794588587
+  (exit 0)
+CHECK ok   pulled copy = the sentry's current file (same last_run)
+$ sudo -n systemctl enable --now pft-aptrust-pull.timer; TZ=UTC systemctl list-timers --no-legend pft-aptrust-pull.timer
+  Created symlink /etc/systemd/system/timers.target.wants/pft-aptrust-pull.timer → /etc/systemd/system/pft-aptrust-pull.timer.
+  Fri 2026-11-13 23:23:20 UTC 54min left n/a n/a pft-aptrust-pull.timer pft-aptrust-pull.service
+  (exit 0)
+CHECK ok   pft-aptrust-pull.timer enabled and scheduled
+$ systemctl show -p TimersCalendar pft-aptrust-pull.timer
+  TimersCalendar={ OnCalendar=*-*-* *:23:00 UTC ; next_elapse=Fri 2026-11-13 23:23:00 UTC }
+  (exit 0)
+CHECK ok   timer calendar is hourly at :23 UTC
+$ sudo -n pft-integrity verify | grep -E '^ *(WARN|FAIL)|RESULT'
+  RESULT: PASS - 248 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+$ sudo -n pft-integrity accept --reason 'ops-aptrust-pull: pft-aptrust-pull.timer enabled (timers.target.wants link), schedule' | tail -2
+  pft-integrity accept - 2026-11-13T22:29:55Z: re-baselined 248 items by <user>
+  manifest sha256: 964ae849f1934e0dff5c257a40c28181b9e99f12b4381e7d8ec97d9556a9b8b1 -> 6bd16431abd7c17b49f768df63411aec93876b2a2a0e9c796226876ec4003b64 (logged to accept.log)
+  (exit 0)
+CHECK ok   pft-integrity accept exit 0
+$ sudo -n pft-schedaudit accept --reason 'ops-aptrust-pull: pft-aptrust-pull.timer (validator, hourly :23)' && sudo -n pft-schedaudit collect && R 'sudo -n pft-schedaudit accept --reason "ops-aptrust-pull: pft-aptrust units re-synced" && sudo -n pft-schedaudit collect' && sudo -n systemctl start pft-schedaudit-pull.service; grep -hE '^pft_schedaudit_unexpected' /var/lib/pft-exporter/textfile/pft_schedaudit_*.prom
+  accepted 103 entries (+1 -0): ops-aptrust-pull: pft-aptrust-pull.timer (validator, hourly :23)
+  accepted 71 entries (+0 -0): ops-aptrust-pull: pft-aptrust units re-synced
+  pft_schedaudit_unexpected{host="sentry",kind="new"} 0
+  pft_schedaudit_unexpected{host="sentry",kind="removed"} 0
+  pft_schedaudit_unexpected{host="sentry",kind="finding"} 0
+  pft_schedaudit_unexpected{host="sentry",kind="unaccepted"} 0
+  pft_schedaudit_unexpected{host="validator",kind="new"} 0
+  pft_schedaudit_unexpected{host="validator",kind="removed"} 0
+  pft_schedaudit_unexpected{host="validator",kind="finding"} 0
+  pft_schedaudit_unexpected{host="validator",kind="unaccepted"} 0
+  (exit 0)
+CHECK ok   schedaudit accept + collect both hosts, 0 unexpected
+$ sudo -n pft-jobwatch inventory | grep -E 'aptrust'
+  pft-aptrust-pull.timer	calendar	3600	0	0	0	0	1	OnCalendar=*-*-* *:23:00 UTC
+  pft-aptrust.timer	calendar	43200	0	0	0	0	1	OnCalendar=*-*-* 04,16:41:00 UTC
+  (exit 0)
+CHECK ok   jobwatch inventory lists pft-aptrust-pull.timer with interval 3600
+$ sudo -n env TEXT_BUDGET=999999 pft-jobwatch collect --stdout | wc -c
+  37970
+  (exit 0)
+CHECK ok   jobwatch textfile under TEXT_BUDGET 61440
+
+== 4. VERIFIED: aptrust audit (CLI and the timer's unit run, textfile), skew, integrity
+$ sudo -n pft-aptrust audit | grep -E '^(WARN|FAIL) |^INFO  offpkg |^RESULT'; R 'sudo -n pft-aptrust audit' | grep -E '^(WARN|FAIL) |^INFO  offpkg |^RESULT'
+  INFO  offpkg                                       45 add-on file(s) in /usr/local/{bin,sbin} match the allowlist
+  RESULT: PASS - 11 sources, 4 keys, 4 containers; 8 pass, 18 info, 0 warn, 0 fail -> exit 0
+  INFO  offpkg                                       37 add-on file(s) in /usr/local/{bin,sbin} match the allowlist
+  RESULT: PASS - 10 sources, 2 keys, 1 containers; 4 pass, 16 info, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   aptrust audit on both hosts: 0 warn, 0 fail, no WARN/FAIL line
+$ sudo -n systemctl start pft-aptrust.service; R 'sudo -n systemctl start pft-aptrust.service'; sudo -n systemctl start pft-aptrust-pull.service; grep -hE '^pft_aptrust_checks\{.*result="(warn|fail)"' /var/lib/pft-exporter/textfile/pft_aptrust_*.prom
+  pft_aptrust_checks{host="sentry",result="warn"} 0
+  pft_aptrust_checks{host="sentry",result="fail"} 0
+  pft_aptrust_checks{host="validator",result="warn"} 0
+  pft_aptrust_checks{host="validator",result="fail"} 0
+  (exit 0)
+CHECK ok   aptrust textfiles (validator + pulled sentry): warn 0, fail 0
+$ sudo -n pft-fleet skew | tail -1
+  SUMMARY CURRENT=75 BEHIND=0 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 0)
+CHECK ok   pft-fleet skew exit 0, nothing BEHIND/MODIFIED/MISSING/UNEXPECTED/DIVERGED
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 248 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 148 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts
+
+== 5. end window, restore, keyescrow, read back
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+$ sudo -n rm -f $NE   (no ntfy.env before: pft-maint falls back to the real monitor target again)
+CHECK ok   pft-maint target back to its pre-run state
+$ sudo -n systemctl start pft-keyescrow.service; grep -h '^pft_keyescrow_drift_items{node="validator"}' /var/lib/pft-exporter/textfile/pft_keyescrow.prom
+  pft_keyescrow_drift_items{node="validator"} 0
+  (exit 0)
+CHECK ok   pft-keyescrow re-run after the restore: validator drift_items 0
+$ sleep 5; curl -s --max-time 15 "https://ntfy.sh/$TT/json?poll=1&since=1794608619" | jq -r '.title'
+  [MAINT] start validator
+  [MAINT] end validator
+  (exit 0)
+CHECK ok   the [MAINT] start and end messages reached the throwaway topic
+$ for i in $(seq 0 15 150); do n=$(curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '[.data.alerts[] | select(.labels.alertname | test("Aptrust|Fleet|KeyEscrow|Integrity|Sched|Job"))] | length'); echo "+${i}s: $n"; [ "$n" = 0 ] && break; sleep 15; done; echo $n
+  +0s: 0
+  0
+  (exit 0)
+CHECK ok   no aptrust/fleet/keyescrow/integrity/sched/job alert pending or firing
+$ systemctl list-units --all --no-legend 'run-u*.service' 'run-u*.timer' | wc -l
+  0
+  (exit 0)
+CHECK ok   no transient run-u services/timers (login-session run-user-N.mount units are not transient units)
+operator topic read-back waits 90 s
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the run (2 topic(s), 0 with messages)
+
+aptrust pull-timer install done 2026-11-13T22:34:43Z: 0 check(s) failed -> PASS
+exit=0
