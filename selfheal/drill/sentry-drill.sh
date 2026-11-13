@@ -155,6 +155,15 @@ restore() {
     echo "  ABORT PATH: $SC not running at restore - docker start + pft-egress reapply here"
     R "sudo -n docker start $SC >/dev/null && sudo -n pft-egress reapply --container $SC >/dev/null"; RESTORE_OK=false
   fi
+  if [ "$MAINT" = 1 ]; then echo "  \$ sudo -n pft-maint end"; sudo -n pft-maint end 2>&1 | red | sed 's/^/    /'; MAINT=0; fi
+  for k in "${CREATED[@]}"; do
+    h="${k%%:*}"; f="${k#*:}"
+    on "$h" "sudo -n rm -f $f"
+    if on "$h" "sudo -n test -e $f"; then echo "  removed drill-only $k: NO"; RESTORE_OK=false; else echo "  removed drill-only $k: yes"; fi
+  done
+  CREATED=()
+  # run 20: these ran BEFORE the drill-only pft-maint ntfy.env was removed, so the sentry keyescrow inventory still saw
+  # it (drift 1, PFTKeyEscrowStale pending 30 min in the quiet gate): run them after every env is restored/removed.
   # run 16: collectors that ran while the drill had envs redirected / the container stopped left stale textfiles
   # (PFTKeyEscrowStale drift both hosts, PFTSeccompDrift filter on the sentry): re-run them + the validator pulls
   # run 18: the sentry pft-backfill exited 2 without a textfile while the node was down -> PFTTextfileStale; re-run it,
@@ -166,13 +175,6 @@ restore() {
     && sudo -n systemctl start pft-rulecheck-pull.service \
     && echo "  re-ran pft-keyescrow (both) + pft-seccomp/pft-backfill (sentry) + pft-rulecheck (both) and the validator pulls: yes" \
     || { echo "  re-ran pft-keyescrow/pft-seccomp/pft-backfill/pft-rulecheck collectors + pulls: NO"; RESTORE_OK=false; }
-  if [ "$MAINT" = 1 ]; then echo "  \$ sudo -n pft-maint end"; sudo -n pft-maint end 2>&1 | red | sed 's/^/    /'; MAINT=0; fi
-  for k in "${CREATED[@]}"; do
-    h="${k%%:*}"; f="${k#*:}"
-    on "$h" "sudo -n rm -f $f"
-    if on "$h" "sudo -n test -e $f"; then echo "  removed drill-only $k: NO"; RESTORE_OK=false; else echo "  removed drill-only $k: yes"; fi
-  done
-  CREATED=()
   if [ "$BRIDGE_SWAPPED" = 1 ]; then
     drain || RESTORE_OK=false
     [ "$AP_PAUSED" = 1 ] || ap_pause
@@ -413,8 +415,8 @@ check "sentry selfheal back in dryrun" "$(ok_if '[ "$XOUT" = MODE=dryrun ]')"
 x "curl -s -G $PROM/api/v1/query_range --data-urlencode 'query=ALERTS{alertname=~\"PFTSelfheal.*\"}' --data-urlencode start=$since --data-urlencode end=$(date -u +%s) --data-urlencode step=15 | jq -r '.data.result[] | \"\(.metric.alertname) container=\(.metric.container) \(.metric.alertstate) first=\(.values[0][0] | todate) last=\(.values[-1][0] | todate) samples=\(.values | length)\"' | sort"
 check "query_range: PFTSelfhealBreakerOpen{container=$SC} firing during the run, PFTSelfhealStale never" "$(ok_if 'grep -qE "^PFTSelfhealBreakerOpen container=$SC firing " <<<"$XOUT" && ! grep -q "^PFTSelfhealStale" <<<"$XOUT"')"
 x "curl -s -G $PROM/api/v1/query_range --data-urlencode 'query=pft_selfheal_breaker_open or pft_selfheal_actions_24h' --data-urlencode start=$since --data-urlencode end=$(date -u +%s) --data-urlencode step=60 | jq -r '.data.result[] | \"\(.metric.__name__) \(.metric.container) \([.values[] | .[1]] | join(\"\"))\"'"
-x "sudo -n systemctl start pft-keyescrow.service; grep -h '^pft_keyescrow_drift_items' $TF/pft_keyescrow.prom"
-check "pft-keyescrow re-run after the env restores: drift_items 0" "$(ok_if '! grep -qv "} 0$" <<<"$XOUT" && grep -q "} 0$" <<<"$XOUT"')"
+x "sudo -n systemctl start pft-keyescrow.service; grep -h '^pft_keyescrow_drift_items' $TF/pft_keyescrow.prom $TF/pft_keyescrow_sentry.prom"
+check "pft-keyescrow re-run after the env restores: drift_items 0 on the validator and in the pulled sentry copy" "$(ok_if '! grep -qv "} 0$" <<<"$XOUT" && grep -q "} 0$" <<<"$XOUT"')"
 # run 18: PFTTextfileStale (pft_backfill_sentry.prom) went firing 11 s before the catch-all tail ran out and reached
 # the operator topic 60 s after the drill had read the topics back. Keep the silence while anything but the watchdog
 # is pending/firing (Prometheus) or active (AM, silenced included), let it expire, then read back.
