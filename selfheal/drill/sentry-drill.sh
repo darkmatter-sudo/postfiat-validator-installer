@@ -11,12 +11,15 @@
 #   C  maintenance window: window open (validator start, sentry via the watchdog channel), `docker stop` -> every
 #      decision is suppressed_by maintenance and ZERO actions run; the drill starts the container itself, ends the
 #      window.
-#   B  unfixable peer fault: an independent dead-man unit on the sentry (started first) deletes two REJECT rules at
+#   B  unfixable peer fault: an independent dead-man unit on the sentry (started first) deletes three REJECT rules, two at
 #      DOCKER-USER 2 (after the pft-egress jump, before the ESTABLISHED accept) that cut every forwarded TCP packet of
-#      the sentry container after DEADMAN_SEC. Selfheal restarts it (restart cannot fix this) until the K-per-24h
+#      the sentry container, and one at OUTPUT 1 that cuts the host's docker-proxy (cluster link host port) to the
+#      container's peer port, after DEADMAN_SEC. (Run 20: without the OUTPUT rule the validator re-dialled through
+#      docker-proxy, which is host-local traffic that never crosses DOCKER-USER; 1 peer, full, no action.) Selfheal restarts it (restart cannot fix this) until the K-per-24h
 #      budget is spent -> breaker OPEN after at most K actions in 24 h (A's action counts), PFTSelfhealBreakerOpen
 #      FIRING on the throwaway topic, no further action; the dead-man removes the rules, the node recovers by itself,
 #      the breaker stays open until `pft-selfheal reset`, then closes and the alert RESOLVES.
+# Env (B): CPORT (2559, the container peer port docker-proxy forwards to)
 #   Notifiers: every ntfy env on both hosts -> throwaway ALERT topic; drill-only pft-maint ntfy.env on both hosts ->
 #   throwaway MAINT topic; Alertmanager bridge -> ALERT topic (sentry alertpath paused around the bridge re-create);
 #   catch-all silence except the pipeline watchdog and PFTSelfheal*, kept until the newest container start +
@@ -99,8 +102,10 @@ sh_active() {
 declare -A FSHA=()
 declare -a MOVED=() CREATED=()
 RESTORED=0; RESTORE_OK=true; SIL=""; SIL_END=0; SBODY=""; BRIDGE_SWAPPED=0; AP_PAUSED=0; MAINT=0; BROKEN=0
-R1=(); R2=(); DU0=""
-rules_present() { R "sudo -n iptables -S DOCKER-USER" | grep -c -- "$TAG"; }
+R1=(); R2=(); R3=(); DU0=""; OU0=""; PMAX=-1
+OU='sudo -n iptables -S OUTPUT'; CPORT="${CPORT:-2559}"
+peers_track() { local p; p="$(speers)"; [ "$p" -gt "$PMAX" ] 2>/dev/null && PMAX="$p"; return 0; }
+rules_present() { R "sudo -n iptables -S DOCKER-USER; sudo -n iptables -S OUTPUT" | grep -c -- "$TAG"; }
 ap_pause() { R 'sudo -n systemctl stop pft-alertpath-check.timer' && AP_PAUSED=1
   echo "  sentry pft-alertpath-check.timer stopped: $([ "$AP_PAUSED" = 1 ] && echo yes || echo NO)"; }
 ap_resume() {
@@ -128,7 +133,7 @@ restore() {
   local k h f now_sha newest e
   if [ "$BROKEN" = 1 ] && [ "$(rules_present)" != 0 ]; then
     echo "  ABORT PATH: drill rules still present at restore - deleting them here (not the automatic restore)"
-    R "while sudo -n iptables -C DOCKER-USER ${R1[*]} 2>/dev/null; do sudo -n iptables -D DOCKER-USER ${R1[*]}; done; while sudo -n iptables -C DOCKER-USER ${R2[*]} 2>/dev/null; do sudo -n iptables -D DOCKER-USER ${R2[*]}; done"
+    R "while sudo -n iptables -C DOCKER-USER ${R1[*]} 2>/dev/null; do sudo -n iptables -D DOCKER-USER ${R1[*]}; done; while sudo -n iptables -C DOCKER-USER ${R2[*]} 2>/dev/null; do sudo -n iptables -D DOCKER-USER ${R2[*]}; done; while sudo -n iptables -C OUTPUT ${R3[*]} 2>/dev/null; do sudo -n iptables -D OUTPUT ${R3[*]}; done"
     RESTORE_OK=false
   fi
   R "sudo -n systemctl stop $DM.service >/dev/null 2>&1; sudo -n systemctl reset-failed $DM.service >/dev/null 2>&1"
@@ -204,9 +209,9 @@ x "sstatus; stext"
 A_PRE="$(jcount $(( $(date -u +%s) - 86400 )) action)"; A_ALL="$(jcount 0 action)"
 echo "  actions already in the journal: $A_ALL ($A_PRE within 24 h); failed results: $(jl | jq -c 'select(.event == "result" and .rc != 0)' 2>/dev/null | wc -l)"
 check "sentry selfheal: verdict healthy, breaker closed, actions_24h = journal actions in 24 h <= 1, actions_total = journal actions, every result rc 0" "$(ok_if '[ "$XRC" = 0 ] && grep -q "verdict healthy" <<<"$XOUT" && grep -q "actions_24h $A_PRE/3 | breaker closed" <<<"$XOUT" && [ "$A_PRE" -le 1 ] && grep -q "^pft_selfheal_actions_total{container=\"$SC\"} $A_ALL$" <<<"$XOUT" && [ "$(jl | jq -c "select(.event == \"result\" and .rc != 0)" | wc -l)" = 0 ]')"
-x "R 'for f in $SH_CONF $REMOTE_ENVS /etc/pft-maint/ntfy.env; do sudo -n test -e \$f$SUF && echo leftover \$f$SUF; done; sudo -n test -e /etc/pft-maint/ntfy.env && echo maint-env-present; systemctl list-units --all --no-legend \"$DM*\" | wc -l; sudo -n iptables -S DOCKER-USER | grep -c $TAG'; for f in $LOCAL_ENVS; do sudo -n test -e \$f$SUF && echo leftover \$f$SUF; done; sudo -n test -e /etc/pft-maint/ntfy.env && echo maint-env-present; echo end"
+x "R 'for f in $SH_CONF $REMOTE_ENVS /etc/pft-maint/ntfy.env; do sudo -n test -e \$f$SUF && echo leftover \$f$SUF; done; sudo -n test -e /etc/pft-maint/ntfy.env && echo maint-env-present; systemctl list-units --all --no-legend \"$DM*\" | wc -l; sudo -n iptables -S | grep -c $TAG'; for f in $LOCAL_ENVS; do sudo -n test -e \$f$SUF && echo leftover \$f$SUF; done; sudo -n test -e /etc/pft-maint/ntfy.env && echo maint-env-present; echo end"
 check "no leftovers: no $SUF backups, no pft-maint ntfy.env on either host, no dead-man unit, no drill rule" "$(ok_if '[ "$(tr "\n" " " <<<"$XOUT")" = "0 0 end " ]')"
-DU0="$(R "$DU")"
+DU0="$(R "$DU")"; OU0="$(R "$OU")"
 x "R '$DU'"
 check "sentry DOCKER-USER: pft-egress jump at position 1, ESTABLISHED accept next" "$(ok_if 'sed -n 2p <<<"$XOUT" | grep -q -- "-j PFT-EGRESS" && sed -n 3p <<<"$XOUT" | grep -q "RELATED,ESTABLISHED -j ACCEPT"')"
 CIP="$(scip)"
@@ -214,7 +219,10 @@ CIP="$(scip)"
 printf 'ip\t%s\n' "$CIP" >> "$LIT"
 R1=(-d "$CIP/32" -p tcp -m comment --comment "$TAG" -j REJECT --reject-with tcp-reset)
 R2=(-s "$CIP/32" -p tcp -m comment --comment "$TAG" -j REJECT --reject-with tcp-reset)
-DMCMD="sleep $DEADMAN_SEC; n=0; while iptables -C DOCKER-USER ${R1[*]} 2>/dev/null; do iptables -D DOCKER-USER ${R1[*]} && n=\$((n+1)); done; while iptables -C DOCKER-USER ${R2[*]} 2>/dev/null; do iptables -D DOCKER-USER ${R2[*]} && n=\$((n+1)); done; echo \"pft-selfheal-drill dead-man: deleted \$n rule(s)\""
+R3=(-d "$CIP/32" -p tcp -m tcp --dport "$CPORT" -m comment --comment "$TAG" -j REJECT --reject-with tcp-reset)
+x "R 'pgrep -a docker-proxy'"
+check "docker-proxy forwards a host port to $SC:$CPORT (the path the OUTPUT rule cuts)" "$(ok_if 'grep -q -- "-container-ip $CIP -container-port $CPORT" <<<"$XOUT"')"
+DMCMD="sleep $DEADMAN_SEC; n=0; while iptables -C DOCKER-USER ${R1[*]} 2>/dev/null; do iptables -D DOCKER-USER ${R1[*]} && n=\$((n+1)); done; while iptables -C DOCKER-USER ${R2[*]} 2>/dev/null; do iptables -D DOCKER-USER ${R2[*]} && n=\$((n+1)); done; while iptables -C OUTPUT ${R3[*]} 2>/dev/null; do iptables -D OUTPUT ${R3[*]} && n=\$((n+1)); done; echo \"pft-selfheal-drill dead-man: deleted \$n rule(s)\""
 dm_remote() { printf '%s /bin/bash -c %q' "$1" "$DMCMD"; }  # LAUNCHER -> sentry command line (quoted once for the sentry shell)
 # run 16: the dead-man line was nested in hand-written quotes and broke at eval (`rule(s)`); the same two quoting levels
 # (x's eval + the sentry shell) are proven here with a printf launcher: the sentry must receive DMCMD byte for byte
@@ -347,16 +355,19 @@ t_dm="$(date -u +%s)"
 check "dead-man $DM.service started on the sentry (deletes the rules at $(date -u -d "@$(( t_dm + DEADMAN_SEC ))" +%TZ))" "$(ok_if '[ "$XRC" = 0 ] && R "systemctl is-active --quiet $DM.service"')"
 [ "$FAILS" = 0 ] || exit 5
 tB="$(date -u +%s)"; BROKEN=1
-x "R 'sudo -n iptables -I DOCKER-USER 2 ${R1[*]} && sudo -n iptables -I DOCKER-USER 2 ${R2[*]} && $DU'"
+x "R 'sudo -n iptables -I DOCKER-USER 2 ${R1[*]} && sudo -n iptables -I DOCKER-USER 2 ${R2[*]} && sudo -n iptables -I OUTPUT 1 ${R3[*]} && $DU'"
 check "two drill rules at DOCKER-USER 2-3, after the pft-egress jump and before the established accept" "$(ok_if '[ "$XRC" = 0 ] && sed -n 2p <<<"$XOUT" | grep -q -- "-j PFT-EGRESS" && [ "$(sed -n 3,4p <<<"$XOUT" | grep -c "$TAG")" = 2 ] && sed -n 5p <<<"$XOUT" | grep -q "RELATED,ESTABLISHED -j ACCEPT"')"
+x "R '$OU'"
+check "third drill rule at OUTPUT 1 (docker-proxy -> container peer port)" "$(ok_if '[ "$XRC" = 0 ] && sed -n 2p <<<"$XOUT" | grep -q -- "--dport $CPORT .*$TAG"')"
 wait_until 240 10 '[ "$(speers)" = 0 ]'; echo "  $(ts): $SC peers $(speers) after ${WAITED}s"
 check "B: sentry peers 0 with the fault in place" "$(ok_if '[ "$(speers)" = 0 ]')"
 A0="$(jcount $(( tB - 86400 )) action)"; echo "  actions in the 24 h budget before B: $A0 (journal total $(jcount 0 action))"
-wait_until $(( DEADMAN_SEC - 180 )) 15 '[ "$(sval pft_selfheal_breaker_open)" = 1 ]'
+PMAX=-1; wait_until $(( DEADMAN_SEC - 180 )) 15 'peers_track; [ "$(sval pft_selfheal_breaker_open)" = 1 ]'
 t_open="$(date -u +%s)"; echo "  $(ts): breaker_open $(sval pft_selfheal_breaker_open) $(( t_open - tB ))s after the fault"
 x "jshow $tB"
 NB="$(grep -c '"event":"action"' <<<"$XOUT")"
-check "B: breaker OPEN before the dead-man fired" "$(ok_if '[ "$(sval pft_selfheal_breaker_open)" = 1 ] && [ "$(rules_present)" = 2 ]')"
+check "B: sentry peers never above 0 from the fault to the breaker (max $PMAX, sampled every 15 s; -1 = RPC down in a restart)" "$(ok_if '[ "$PMAX" -le 0 ]')"
+check "B: breaker OPEN before the dead-man fired" "$(ok_if '[ "$(sval pft_selfheal_breaker_open)" = 1 ] && [ "$(rules_present)" = 3 ]')"
 check "B: $NB restart(s) during B, $((A0 + NB)) actions in 24 h <= K=3 when the breaker opened, every restart rc 0 + egress rc 0" "$(ok_if '[ "$NB" -ge 1 ] && [ $((A0 + NB)) -le 3 ] && [ "$(grep -c "\"event\":\"result\",\"action\":\"restart\",\"rc\":0,\"egress_rc\":0" <<<"$XOUT")" = "$NB" ]')"
 CIP1="$(scip)"; check "B: container address unchanged by the restarts (fault still applies)" "$(ok_if '[ "$CIP1" = "$CIP" ]')"
 wait_until 300 15 'pq "ALERTS{alertname=\"PFTSelfhealBreakerOpen\",alertstate=\"firing\"}" | grep -q "container=$SC"'
@@ -368,9 +379,9 @@ echo "  waiting for the dead-man ($(( t_dm + DEADMAN_SEC - $(date -u +%s) ))s le
 wait_until $(( DEADMAN_SEC + 180 )) 10 '! R "systemctl is-active --quiet $DM.service"'
 t_rest="$(date -u +%s)"
 x "R 'sudo -n journalctl --utc -o short-iso -u $DM.service --since @$t_dm --no-pager' | grep -E 'dead-man|Started|Deactivated|Finished'"
-check "dead-man deleted exactly 2 rules" "$(ok_if 'grep -q "dead-man: deleted 2 rule(s)" <<<"$XOUT"')"
+check "dead-man deleted exactly 3 rules" "$(ok_if 'grep -q "dead-man: deleted 3 rule(s)" <<<"$XOUT"')"
 BROKEN=0
-check "sentry DOCKER-USER identical to the pre-run snapshot after the dead-man" "$(ok_if '[ "$(R "$DU")" = "$DU0" ]')"
+check "sentry DOCKER-USER and OUTPUT identical to the pre-run snapshots after the dead-man" "$(ok_if '[ "$(R "$DU")" = "$DU0" ] && [ "$(R "$OU")" = "$OU0" ]')"
 check "B: no action between the breaker opening and the dead-man ($(( t_rest - t_open ))s)" "$(ok_if '[ "$(jcount "$t_open" action)" = 0 ]')"
 wait_until 900 15 '[ "$(speers)" -gt 0 ] 2>/dev/null && case "$(sstate)" in full|proposing) true ;; *) false ;; esac'
 echo "  $(ts): $SC server_state $(sstate), peers $(speers), $(( $(date -u +%s) - t_rest ))s after the dead-man"
