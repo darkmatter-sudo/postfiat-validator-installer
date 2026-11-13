@@ -78,6 +78,12 @@ scip() { R "sudo -n docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPA
 jl() { R "sudo -n cat $SJ 2>/dev/null"; }  # the sentry's selfheal journal
 jcount() { # SINCE_TS EVENT -> number of journal lines of that event at/after SINCE_TS
   jl | jq -c --argjson t "$1" --arg e "$2" 'select(.ts >= $t and .event == $e)' 2>/dev/null | wc -l; }
+jbudget() { # NOW -> journal actions in the 24 h budget at NOW: after NOW - 86400 AND after the last reset, which
+  # empties the budget (selfheal_decide.py reset: actions = []). Run 20's reset left 1 old action in the journal's 24 h
+  # while status showed 0/3, and the preflight compared the two.
+  local t r; t=$(( $1 - 86400 ))
+  r="$(jl | jq -s '[.[] | select(.event == "reset") | .ts] | max // 0' 2>/dev/null)"; [ "${r:-0}" -gt "$t" ] && t="$r"
+  jcount "$t" action; }
 jshow() { jl | jq -c --argjson t "$1" 'select(.ts >= $t) | {t: (.ts | todate), event, verdict, detector, action, suppressed_by, actions_24h, breaker_open, rc, egress_rc, cmd}
   | with_entries(select(.value != null))' 2>/dev/null; }
 stext() { R "sudo -n grep -hE '^pft_selfheal_(up|enforce|actions_24h|breaker_open|actions_total)\{' $TF/pft_selfheal_$SC.prom" 2>/dev/null; }
@@ -206,9 +212,9 @@ check "sentry selfheal timer + validator pull timer active, sentry conf MODE=dry
 x "sstatus; stext"
 # actions already in the 24 h budget (run 16's drill A started the container once, rc 0, before its harness broke) are
 # allowed if they are all successful and leave room for B: A adds 1, B needs >= 1 restart before the breaker (K=3)
-A_PRE="$(jcount $(( $(date -u +%s) - 86400 )) action)"; A_ALL="$(jcount 0 action)"
-echo "  actions already in the journal: $A_ALL ($A_PRE within 24 h); failed results: $(jl | jq -c 'select(.event == "result" and .rc != 0)' 2>/dev/null | wc -l)"
-check "sentry selfheal: verdict healthy, breaker closed, actions_24h = journal actions in 24 h <= 1, actions_total = journal actions, every result rc 0" "$(ok_if '[ "$XRC" = 0 ] && grep -q "verdict healthy" <<<"$XOUT" && grep -q "actions_24h $A_PRE/3 | breaker closed" <<<"$XOUT" && [ "$A_PRE" -le 1 ] && grep -q "^pft_selfheal_actions_total{container=\"$SC\"} $A_ALL$" <<<"$XOUT" && [ "$(jl | jq -c "select(.event == \"result\" and .rc != 0)" | wc -l)" = 0 ]')"
+A_PRE="$(jbudget "$(date -u +%s)")"; A_ALL="$(jcount 0 action)"
+echo "  actions already in the journal: $A_ALL ($A_PRE in the 24 h budget after the last reset, $(jcount $(( $(date -u +%s) - 86400 )) action) within 24 h); failed results: $(jl | jq -c 'select(.event == "result" and .rc != 0)' 2>/dev/null | wc -l)"
+check "sentry selfheal: verdict healthy, breaker closed, actions_24h = journal budget actions (24 h, after the last reset) <= 1, actions_total = journal actions, every result rc 0" "$(ok_if '[ "$XRC" = 0 ] && grep -q "verdict healthy" <<<"$XOUT" && grep -q "actions_24h $A_PRE/3 | breaker closed" <<<"$XOUT" && [ "$A_PRE" -le 1 ] && grep -q "^pft_selfheal_actions_total{container=\"$SC\"} $A_ALL$" <<<"$XOUT" && [ "$(jl | jq -c "select(.event == \"result\" and .rc != 0)" | wc -l)" = 0 ]')"
 x "R 'for f in $SH_CONF $REMOTE_ENVS /etc/pft-maint/ntfy.env; do sudo -n test -e \$f$SUF && echo leftover \$f$SUF; done; sudo -n test -e /etc/pft-maint/ntfy.env && echo maint-env-present; systemctl list-units --all --no-legend \"$DM*\" | wc -l; sudo -n iptables -S | grep -c $TAG'; for f in $LOCAL_ENVS; do sudo -n test -e \$f$SUF && echo leftover \$f$SUF; done; sudo -n test -e /etc/pft-maint/ntfy.env && echo maint-env-present; echo end"
 check "no leftovers: no $SUF backups, no pft-maint ntfy.env on either host, no dead-man unit, no drill rule" "$(ok_if '[ "$(tr "\n" " " <<<"$XOUT")" = "0 0 end " ]')"
 DU0="$(R "$DU")"; OU0="$(R "$OU")"
@@ -361,7 +367,7 @@ x "R '$OU'"
 check "third drill rule at OUTPUT 1 (docker-proxy -> container peer port)" "$(ok_if '[ "$XRC" = 0 ] && sed -n 2p <<<"$XOUT" | grep -q -- "--dport $CPORT .*$TAG"')"
 wait_until 240 10 '[ "$(speers)" = 0 ]'; echo "  $(ts): $SC peers $(speers) after ${WAITED}s"
 check "B: sentry peers 0 with the fault in place" "$(ok_if '[ "$(speers)" = 0 ]')"
-A0="$(jcount $(( tB - 86400 )) action)"; echo "  actions in the 24 h budget before B: $A0 (journal total $(jcount 0 action))"
+A0="$(jbudget "$tB")"; echo "  actions in the 24 h budget before B: $A0 (journal total $(jcount 0 action))"
 PMAX=-1; wait_until $(( DEADMAN_SEC - 180 )) 15 'peers_track; [ "$(sval pft_selfheal_breaker_open)" = 1 ]'
 t_open="$(date -u +%s)"; echo "  $(ts): breaker_open $(sval pft_selfheal_breaker_open) $(( t_open - tB ))s after the fault"
 x "jshow $tB"
