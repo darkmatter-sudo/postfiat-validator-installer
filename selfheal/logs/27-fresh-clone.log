@@ -1,0 +1,50 @@
+selfheal fresh public clone - 2026-11-13T23:42:34Z
+$ git clone -q https://github.com/darkmatter-sudo/postfiat-validator-installer.git repo
+  (exit 0)
+$ git checkout -q 64a95837d8484daeb9e474a398e0bb8361233dd7 && git rev-parse HEAD && git status --short | wc -l
+64a95837d8484daeb9e474a398e0bb8361233dd7
+0
+  (exit 0)
+$ sha256sum selfheal/pft-selfheal.sh selfheal/selfheal_decide.py selfheal/systemd/* alerts/selfheal.rules.yml alerts/selfheal.tests.yml selfheal/tests/*.py selfheal/drill/*.sh selfheal/README.md
+b5826baa99d8dc801281f2bad54dd79bb9e96047fcc3308443c7ee3684611991  selfheal/pft-selfheal.sh
+600169dc31dbded55046e649758b5307e68c42adb08eda1395e9d40e551ee3bd  selfheal/selfheal_decide.py
+1ece66d7203c76af22e6162c715f98e1b31c714487fa7aa3d39c4c935a92c450  selfheal/systemd/pft-selfheal-pull@.service
+ab3a3fe66f0051b62236188eaf18e4d993ed8508f1c78ed17713e5a570c10d98  selfheal/systemd/pft-selfheal-pull@.timer
+7ea5bf856fcbe731688776cfacb54c6a0b0b9bef951e2f22c3148c59940c11a1  selfheal/systemd/pft-selfheal@.service
+343795c20e3a2dfb9edcb2a9ce03f51a4ebbb902f8b37a156be1a748c20c9482  selfheal/systemd/pft-selfheal@.timer
+4e2bdd58867f209050831ffa268011a840f7cac18c6c7458386ea4006ba2ffc2  alerts/selfheal.rules.yml
+2640906f3539025456991c0643d1995ed1a54d187cabdc2c3228191da97b49e0  alerts/selfheal.tests.yml
+8cb49d85289d48e1e047f87881615272a6832b724cd8298b9cc29da61194d722  selfheal/tests/gen_rule_tests.py
+b5a0c457c3835dde1e4235296b45614f6a245910d3f853681530937a65acaae8  selfheal/tests/mutate.py
+f11a170973300723615b6c79ca0047686fbda946abd00d7c7a7354a55e71e281  selfheal/tests/test_selfheal.py
+a5d5fdfcad333e83892a6b72e3c4733dca501663b92d4548d3914ce92cfc9ffc  selfheal/drill/install-run.sh
+6975ad6c10c04e5fb00214c85800be9e88d5ebdd511cc44e706334cc50893c3d  selfheal/drill/sentry-drill.sh
+77ae41fec76b5fde5c0e25f90f3eed6c3c05aa1b584ca643868df2cbd4f2551a  selfheal/drill/update-run.sh
+d6c26d34ab62b93f81099eae2e4e6d4ef445f56d8f79b12d0b17161b23fe08dc  selfheal/README.md
+  (exit 0)
+$ shellcheck selfheal/pft-selfheal.sh selfheal/drill/*.sh && echo shellcheck clean
+shellcheck clean
+  (exit 0)
+$ ruff check selfheal && ruff format --check selfheal
+All checks passed!
+5 files already formatted
+  (exit 0)
+$ TEST_TMPDIR=$HOME/.cache python3 -m pytest -q -p no:cacheprovider selfheal/tests 2>&1 | tail -n 3
+........................................................................ [ 96%]
+...                                                                      [100%]
+75 passed in 76.07s (0:01:16)
+  (exit 0)
+$ sudo docker run --rm -v "$PWD/alerts":/w:ro -w /w --entrypoint promtool prom/prometheus:v3.5.0 test rules selfheal.tests.yml
+  SUCCESS
+
+  (exit 0)
+$ git diff --stat cc39f948a7b942c25cf28aa5432fd02073a8d2e0 64a95837d8484daeb9e474a398e0bb8361233dd7 -- selfheal/pft-selfheal.sh selfheal/selfheal_decide.py alerts/selfheal.rules.yml | wc -l
+0
+  (exit 0)
+$ ls selfheal/logs | wc -l; tail -n 1 selfheal/logs/25-sentry-drill.log; command grep -c '^CHECK ok' selfheal/logs/25-sentry-drill.log; command grep -c '^CHECK FAIL' selfheal/logs/25-sentry-drill.log
+12
+# launcher: sentry-drill exit 0 2026-11-13T23:27:18Z
+64
+0
+  (exit 1)
+done 2026-11-13T23:44:09Z
