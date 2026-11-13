@@ -47,7 +47,9 @@ git fetch -q origin
 
 echo; echo "== 0. preflight (read-only)"
 x "sudo -n pft-fleet skew | grep -vE ' CURRENT *\$'"
-check "skew: only aptrust is off (new pull units MISSING on the validator, manifest copy + edited units BEHIND)" "$([ "$(grep -cE '^ *(validator|sentry) +[a-z]+ +(BEHIND|MODIFIED|MISSING|UNEXPECTED|DIVERGED)' <<<"$XOUT")" = "$(grep -cE '^ *(validator|sentry) +aptrust +(BEHIND|MISSING)' <<<"$XOUT")" ] && grep -qE '^ *validator +aptrust +MISSING' <<<"$XOUT" && echo 0 || echo 1)"
+# run 01: pft-fleet keeps its own manifest copy (validator role), so it is BEHIND too; the new pull units are not
+# listed (skew reports files a host already has). Expect exactly: aptrust BEHIND on both hosts, fleet BEHIND on the validator.
+check "skew: only aptrust (both hosts) and fleet (validator) BEHIND" "$([ "$(grep -cE '^ *(validator|sentry) +[a-z]+ +(BEHIND|MODIFIED|MISSING|UNEXPECTED|DIVERGED)' <<<"$XOUT")" = 3 ] && [ "$(grep -cE '^ *(validator|sentry) +aptrust +BEHIND' <<<"$XOUT")" = 2 ] && grep -qE '^ *validator +fleet +BEHIND +/usr/local/lib/pft-fleet/manifest.tsv' <<<"$XOUT" && echo 0 || echo 1)"
 x "systemctl list-unit-files --no-legend 'pft-aptrust-pull*' | wc -l"
 check "no pft-aptrust-pull unit installed yet" "$([ "$(tail -1 <<<"$XOUT")" = 0 ] && echo 0 || echo 1)"
 x "curl -s $PROM/api/v1/alerts | jq -r '.data.alerts[] | \"\\(.labels.alertname) \\(.state)\"' | sort -u"
@@ -83,7 +85,9 @@ check "pft-maint window open" "$XRC"
 w=0; until R "sudo -n pft-maint active" >/dev/null 2>&1; do w=$((w + 10)); [ "$w" -le 420 ] || break; sleep 10; done
 R "sudo -n pft-maint active" >/dev/null 2>&1; check "sentry has the window after ${w}s" "$?"
 
-echo; echo "== 3. FIX: pft-fleet sync --addon aptrust (new pull units on the validator, edited units + allowlist copy both hosts)"
+echo; echo "== 3. FIX: pft-fleet sync --addon fleet, then aptrust (new pull units on the validator, edited units + allowlist copy both hosts)"
+x "sudo -n pft-fleet sync --addon fleet --to $SHA --apply --reason '$TASK manifest += aptrust pull units'"
+check "fleet sync exit 0 (its manifest copy)" "$XRC"
 x "sudo -n pft-fleet sync --addon aptrust --to $SHA --apply --reason '$TASK aptrust: hourly validator pull timer'"
 check "aptrust sync exit 0" "$XRC"
 x "sha256sum fleet/manifest.tsv | cut -c1-64; sudo -n sha256sum /usr/local/lib/pft-aptrust/manifest.tsv | cut -c1-64; R 'sha256sum /usr/local/lib/pft-aptrust/manifest.tsv | cut -c1-64'"
