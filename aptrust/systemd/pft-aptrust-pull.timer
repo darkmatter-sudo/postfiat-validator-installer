@@ -1,0 +1,10 @@
+[Unit]
+Description=Pull the peer's pft-aptrust textfile every hour (validator)
+
+[Timer]
+OnCalendar=*-*-* *:23:00 UTC
+RandomizedDelaySec=60s
+Persistent=false
+
+[Install]
+WantedBy=timers.target

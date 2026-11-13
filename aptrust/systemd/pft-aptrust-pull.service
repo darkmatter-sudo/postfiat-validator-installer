@@ -1,0 +1,33 @@
+[Unit]
+Description=pft-aptrust pull: copy the peer's pft-aptrust textfile to this host's exporter (validated)
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/aptrust
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# validator only (install.sh --pull): its own hourly pull, so a sentry audit that runs after the validator's
+# (RandomizedDelaySec) is copied within the hour instead of at the next audit 12 h later (PFTTextfileStale, 2026-11-13)
+ExecStart=/usr/local/bin/pft-aptrust pull
+ReadWritePaths=/var/lib/pft-exporter/textfile
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+UMask=0022
+# AF_INET/6: the pull's ssh; SETUID/SETGID/AUDIT_WRITE: its runuser + ssh
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_AUDIT_WRITE
+TimeoutStartSec=3min

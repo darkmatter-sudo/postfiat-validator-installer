@@ -2,7 +2,7 @@
 Description=Run the pft-aptrust audit twice a day
 
 [Timer]
-# twice a day so the validator's pull (same run) never holds a sentry copy older than ~12 h + the delay
+# twice a day; the validator's hourly pft-aptrust-pull.timer keeps the sentry copy under 13 h old (rule: 15 h)
 OnCalendar=*-*-* 04,16:41:00 UTC
 RandomizedDelaySec=10min
 Persistent=true

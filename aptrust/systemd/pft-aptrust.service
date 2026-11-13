@@ -8,7 +8,8 @@ Type=oneshot
 SuccessExitStatus=1
 ExecStart=/usr/local/bin/pft-aptrust audit --textfile
 # validator only (install.sh --pull writes the drop-in that sets PFT_AT_PULL=1): copy the sentry's textfile in the
-# same run ($$ = a literal $ for sh, not a systemd expansion), so the pull needs no timer of its own
+# same run ($$ = a literal $ for sh, not a systemd expansion). The sentry's run can start later than this one
+# (RandomizedDelaySec), so pft-aptrust-pull.timer also pulls every hour
 ExecStartPost=/bin/sh -c '[ "$${PFT_AT_PULL:-0}" = 1 ] || exit 0; exec /usr/local/bin/pft-aptrust pull'
 ReadWritePaths=/var/lib/pft-exporter/textfile
 ProtectSystem=strict

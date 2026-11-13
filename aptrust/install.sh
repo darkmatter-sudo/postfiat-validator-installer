@@ -8,13 +8,14 @@
 #       write up 1), then enables the timer.
 #       Re-run it after installing more add-ons so the allowlist copy knows their files (until then: offpkg WARN only).
 #   sudo ./install.sh --pull           on the host that runs ../alerts (after the line above): a drop-in that makes the
-#       same run pull the peer's textfile (no second timer; adds `require pft_aptrust_PEER.prom`). Needs PULL_SSH
-#       (and PEER_LABEL, default sentry) in /etc/pft-aptrust.env. Runs the unit once (the pull must succeed).
-#   sudo ./install.sh --uninstall      refuses while an apply is in place (rollback first); disables the timer,
+#       same run pull the peer's textfile, plus pft-aptrust-pull.timer (hourly :23 UTC: the peer's run may start after
+#       this host's, RandomizedDelaySec) and `require pft_aptrust_PEER.prom`. Needs PULL_SSH (and PEER_LABEL, default
+#       sentry) in /etc/pft-aptrust.env. Runs the unit and the pull unit once (both must succeed).
+#   sudo ./install.sh --uninstall      refuses while an apply is in place (rollback first); disables the timers,
 #       removes the drop-in, this host's textfile(s) and the pft_aptrust lines in /etc/pft-rulecheck.conf.
 # Alert rules: ../alerts/aptrust.rules.yml, listed in ../alerts/prometheus.yml.
 # Afterwards: sudo pft-integrity accept --reason "<why>" (new binary + units), pft-schedaudit accept + collect,
-#   pft-jobwatch inventory (interval 43200).
+#   pft-jobwatch inventory (interval 43200; validator pft-aptrust-pull.timer 3600).
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEXTDIR=/var/lib/pft-exporter/textfile
@@ -54,6 +55,7 @@ run_unit() { # one run through the sandboxed unit; must not fail
 if $uninstall; then
   [ ! -f /var/lib/pft-aptrust/apply.json ] || { echo "an apply is in place: sudo pft-aptrust rollback --yes first" >&2; exit 4; }
   systemctl disable --now pft-aptrust.timer 2>/dev/null || true
+  systemctl disable --now pft-aptrust-pull.timer 2>/dev/null || true
   rm -f "$DROPIN"; rmdir "$(dirname "$DROPIN")" 2>/dev/null || true; systemctl daemon-reload
   rm -f "$TEXTDIR/pft_aptrust_$host.prom"
   [ ! -f "$RC_CONF" ] || sed -i '/pft_aptrust_/d' "$RC_CONF"
@@ -72,11 +74,16 @@ if $pull; then
   install -d -m 755 "$(dirname "$DROPIN")"
   printf '[Service]\nEnvironment=PFT_AT_PULL=1\n' > "$DROPIN"; chmod 644 "$DROPIN"
   systemctl daemon-reload
+  install -m 644 "$HERE/systemd/pft-aptrust-pull.service" "$HERE/systemd/pft-aptrust-pull.timer" /etc/systemd/system/
+  systemctl daemon-reload
   log "audit + pull (through the sandboxed unit):"
   run_unit
+  log "pull (through the sandboxed pull unit):"
+  systemctl start pft-aptrust-pull.service || { log "ERROR: pft-aptrust-pull.service failed"; journalctl -u pft-aptrust-pull.service -n 8 --no-pager --utc; exit 1; }
   grep -E "^pft_aptrust_(up|last_run_timestamp_seconds)\{" "$TEXTDIR/pft_aptrust_$peer.prom"
   rc_add "require pft_aptrust_$peer.prom"
-  log "every pft-aptrust run now also pulls pft_aptrust_$peer.prom"
+  systemctl enable --now pft-aptrust-pull.timer
+  log "every pft-aptrust run now also pulls pft_aptrust_$peer.prom, and pft-aptrust-pull.timer pulls it hourly (:23 UTC)"
   exit 0
 fi
 

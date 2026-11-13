@@ -14,8 +14,9 @@ aptrust looks one step earlier: at the channels new code arrives through.
 | File | Purpose |
 |---|---|
 | `pft-aptrust.sh` | `audit [--json] [--textfile]`, `apply --dry-run\|--yes`, `rollback --yes`, `pull`, `validate`, `version` (bash + gpg/gpgv + jq) |
-| `install.sh` | installs the script, the off-package allowlist (`../fleet/manifest.tsv` copy) and the twice-daily timer; `--pull` makes the validator's run also copy the sentry's textfile |
+| `install.sh` | installs the script, the off-package allowlist (`../fleet/manifest.tsv` copy) and the twice-daily timer; `--pull` makes the validator's run also copy the sentry's textfile and installs the hourly pull timer |
 | `systemd/pft-aptrust.{service,timer}` | sandboxed `pft-aptrust audit --textfile` at 04:41 and 16:41 UTC (+ up to 10 min); validator: plus `pull` in the same run |
+| `systemd/pft-aptrust-pull.{service,timer}` | validator only: sandboxed `pft-aptrust pull` every hour at :23 UTC (+ up to 60 s) |
 | `pft-aptrust.env.example` | `/etc/pft-aptrust.env`: `HOST_LABEL`, `OFFICIAL_IMAGES`, `LOCAL_IMAGES`, `OFFPKG_ALLOW`, `EXPIRY_WARN_DAYS`, `PULL_SSH` |
 | `tests/run-tests.sh` | offline suite: fixture root shaped like the hosts, stub gpg/dpkg/apt/apt-config/docker/pft-maint, fake clock, plus real-gpg keyring cases |
 | `tests/mutate.py` | mutation harness: every mutant disables one check or guard; the suite (or promtool) must fail on each |
@@ -69,6 +70,10 @@ restores the last apply the same way, inside a window.
 `pft_aptrust_sources`, `pft_aptrust_keys`. The sentry runs no Prometheus: the validator's run copies the sentry's file
 (`pull`, validated: only `pft_aptrust_` samples whose first label is `host="sentry"`, `up` and `last_run` present,
 at most 65536 bytes; a failed pull keeps the old copy, so a broken pull shows up as PFTAptrustStale).
+The same-run pull alone was not enough: both hosts' timers add up to 10 min of random delay, so the sentry's audit
+can finish after the validator's pull, which then copied a 12 h old file and the next copy came 12 h later (24 h,
+PFTTextfileStale at 15 h, 2026-11-13). `pft-aptrust-pull.timer` (validator, hourly) bounds the copy's age to about
+12.7 h (sentry audit at 16:41-16:56, copied by 17:24, replaced by the 05:24 pull at the latest).
 
 ## Alerts
 
@@ -88,7 +93,7 @@ sudo ./install.sh --pull                 # validator, after PULL_SSH is set in /
 ```
 
 Then `sudo pft-integrity accept --reason "pft-aptrust installed"`, `sudo pft-schedaudit accept` + `collect`, and
-`sudo pft-jobwatch inventory` (the timer's interval must read 43200). install.sh adds the `textfile` and `require` lines
+`sudo pft-jobwatch inventory` (the audit timer's interval must read 43200, the validator's pull timer 3600). install.sh adds the `textfile` and `require` lines
 to `/etc/pft-rulecheck.conf`. The files are listed in `../fleet/manifest.tsv`, including the allowlist copy
 (`fleet/manifest.tsv` -> `/usr/local/lib/pft-aptrust/manifest.tsv`), so `pft-fleet sync --addon aptrust` keeps the allowlist
 current. Re-sync aptrust whenever the manifest changes (until then `pft-fleet skew` shows aptrust BEHIND).
