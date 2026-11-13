@@ -1,0 +1,84 @@
+validator pft-selfheal enforce observation summary - 2026-11-13T20:09:26Z
+window: 2026-11-12T19:46:22Z (log 21, MODE=enforce) .. 2026-11-13T19:46:22Z (epoch 1794512782 .. 1794599182)
+$ grep -n '^MODE=' /etc/pft-selfheal.env
+7:MODE=enforce
+  (exit 0)
+$ sudo pft-selfheal status
+pft-selfheal mode enforce | verdict healthy | actions_24h 0/3 | breaker closed | 45s ago
+  (exit 0)
+$ sudo pft-selfheal status --json
+{"action":"none","actions_24h":0,"breaker_open":false,"breaker_reason":"","detail":"","detector":null,"max_actions":3,"mode":"enforce","rpc_fail_streak":0,"suppressed_by":null,"ts":1794600521,"verdict":"healthy","age_sec":45}
+  (exit 0)
+$ sudo ls /var/lib/pft-selfheal/ | sort
+compose-postfiatd
+last-postfiatd.json
+state-postfiatd.json
+  (exit 0)
+$ sudo test -e /var/lib/pft-selfheal/journal-postfiatd.jsonl && sudo wc -l /var/lib/pft-selfheal/journal-postfiatd.jsonl || echo 'no journal-postfiatd.jsonl: no non-healthy decision was ever journalled on the validator'
+no journal-postfiatd.jsonl: no non-healthy decision was ever journalled on the validator
+  (exit 0)
+$ sudo journalctl --utc -q -u pft-selfheal@postfiatd.service --since @1794512782 --until @1794599182 -o cat | grep -c 'Finished\|Deactivated successfully' || true
+2882
+  (exit 0)
+$ sudo journalctl --utc -q -u pft-selfheal@postfiatd.service --since @1794512782 --until @1794599182 -o cat | grep -c 'Failed with result' || true
+0
+  (exit 0)
+$ sudo journalctl --utc -q -u pft-selfheal@postfiatd.service --since @1794512782 --until @1794599182 -o cat | grep -v -E 'Starting|Finished|Deactivated|Consumed' | sort | uniq -c | sort -rn | head -20
+      1 {"action":"none","actions_24h":0,"breaker_open":false,"breaker_reason":"","detail":"","detector":null,"max_actions":3,"mode":"enforce","rpc_fail_streak":0,"suppressed_by":null,"ts":1794599141,"verdict":"healthy"}
+      1 {"action":"none","actions_24h":0,"breaker_open":false,"breaker_reason":"","detail":"","detector":null,"max_actions":3,"mode":"enforce","rpc_fail_streak":0,"suppressed_by":null,"ts":1794599081,"verdict":"healthy"}
+      1 {"action":"none","actions_24h":0,"breaker_open":false,"breaker_reason":"","detail":"","detector":null,"max_actions":3,"mode":"enforce","rpc_fail_streak":0,"suppressed_by":null,"ts":1794599021,"verdict":"healthy"}
+      1 {"action":"none","actions_24h":0,"breaker_open":false,"breaker_reason":"","detail":"","detector":null,"max_actions":3,"mode":"enforce","rpc_fail_streak":0,"suppressed_by":null,"ts":1794598961,"verdict":"healthy"}
+      1 {"action":"none","actions_24h":0,"breaker_open":false,"breaker_reason":"","detail":"","detector":null,"max_actions":3,"mode":"enforce","rpc_fail_streak":0,"suppressed_by":null,"ts":1794598901,"verdict":"healthy"}
+      1 {"action":"none","actions_24h":0,"breaker_open":false,"breaker_reason":"","detail":"","detector":null,"max_actions":3,"mode":"enforce","rpc_fail_streak":0,"suppressed_by":null,"ts":1794598841,"verdict":"healthy"}
+      1 {"action":"none","actions_24h":0,"breaker_open":false,"breaker_reason":"","detail":"","detector":null,"max_actions":3,"mode":"enforce","rpc_fail_streak":0,"suppressed_by":null,"ts":1794598781,"verdict":"healthy"}
+      1 {"action":"none","actions_24h":0,"breaker_open":false,"breaker_reason":"","detail":"","detector":null,"max_actions":3,"mode":"enforce","rpc_fail_streak":0,"suppressed_by":null,"ts":1794598721,"verdict":"healthy"}
+      1 {"action":"none","actions_24h":0,"breaker_open":false,"breaker_reason":"","detail":"","detector":null,"max_actions":3,"mode":"enforce","rpc_fail_streak":0,"suppressed_by":null,"ts":1794598662,"verdict":"healthy"}
+      1 {"action":"none","actions_24h":0,"breaker_open":false,"breaker_reason":"","detail":"","detector":null,"max_actions":3,"mode":"enforce","rpc_fail_streak":0,"suppressed_by":null,"ts":1794598601,"verdict":"healthy"}
+      1 {"action":"none","actions_24h":0,"breaker_open":false,"breaker_reason":"","detail":"","detector":null,"max_actions":3,"mode":"enforce","rpc_fail_streak":0,"suppressed_by":null,"ts":1794598542,"verdict":"healthy"}
+      1 {"action":"none","actions_24h":0,"breaker_open":false,"breaker_reason":"","detail":"","detector":null,"max_actions":3,"mode":"enforce","rpc_fail_streak":0,"suppressed_by":null,"ts":1794598481,"verdict":"healthy"}
+      1 {"action":"none","actions_24h":0,"breaker_open":false,"breaker_reason":"","detail":"","detector":null,"max_actions":3,"mode":"enforce","rpc_fail_streak":0,"suppressed_by":null,"ts":1794598422,"verdict":"healthy"}
+      1 {"action":"none","actions_24h":0,"breaker_open":false,"breaker_reason":"","detail":"","detector":null,"max_actions":3,"mode":"enforce","rpc_fail_streak":0,"suppressed_by":null,"ts":1794598362,"verdict":"healthy"}
+      1 {"action":"none","actions_24h":0,"breaker_open":false,"breaker_reason":"","detail":"","detector":null,"max_actions":3,"mode":"enforce","rpc_fail_streak":0,"suppressed_by":null,"ts":1794598304,"verdict":"healthy"}
+      1 {"action":"none","actions_24h":0,"breaker_open":false,"breaker_reason":"","detail":"","detector":null,"max_actions":3,"mode":"enforce","rpc_fail_streak":0,"suppressed_by":null,"ts":1794598242,"verdict":"healthy"}
+      1 {"action":"none","actions_24h":0,"breaker_open":false,"breaker_reason":"","detail":"","detector":null,"max_actions":3,"mode":"enforce","rpc_fail_streak":0,"suppressed_by":null,"ts":1794598181,"verdict":"healthy"}
+      1 {"action":"none","actions_24h":0,"breaker_open":false,"breaker_reason":"","detail":"","detector":null,"max_actions":3,"mode":"enforce","rpc_fail_streak":0,"suppressed_by":null,"ts":1794598122,"verdict":"healthy"}
+      1 {"action":"none","actions_24h":0,"breaker_open":false,"breaker_reason":"","detail":"","detector":null,"max_actions":3,"mode":"enforce","rpc_fail_streak":0,"suppressed_by":null,"ts":1794598063,"verdict":"healthy"}
+      1 {"action":"none","actions_24h":0,"breaker_open":false,"breaker_reason":"","detail":"","detector":null,"max_actions":3,"mode":"enforce","rpc_fail_streak":0,"suppressed_by":null,"ts":1794598001,"verdict":"healthy"}
+  (exit 141)
+$ curl -s 'http://127.0.0.1:9090/api/v1/query' --data-urlencode 'query=max_over_time(pft_selfheal_actions_24h{container="postfiatd"}[24h] @ 1794599182)' | jq -c '.data.result[]|{m:.metric.__name__,v:.value[1]}'
+{"m":null,"v":"0"}
+  (exit 0)
+$ curl -s 'http://127.0.0.1:9090/api/v1/query' --data-urlencode 'query=count_over_time(pft_selfheal_actions_24h{container="postfiatd"}[24h] @ 1794599182)' | jq -c '.data.result[]|{v:.value[1]}'
+{"v":"5760"}
+  (exit 0)
+$ curl -s 'http://127.0.0.1:9090/api/v1/query' --data-urlencode 'query=max_over_time(pft_selfheal_breaker_open{container="postfiatd"}[24h] @ 1794599182)' | jq -c '.data.result[]|{v:.value[1]}'
+{"v":"0"}
+  (exit 0)
+$ sudo docker inspect -f '{{.State.StartedAt}} restarts={{.RestartCount}}' postfiatd
+2026-11-12T16:26:17.791833658Z restarts=0
+  (exit 0)
+$ sudo postfiat-health | tail -4
+  [PASS] build matches foundation RPC (1.0.9)
+  [INFO] node full - add validator token (official guide steps 5-8) to start proposing
+
+RESULT: HEALTHY
+  (exit 0)
+$ curl -s 'http://127.0.0.1:9090/api/v1/query' --data-urlencode 'query=increase(pft_selfheal_actions_total{container="postfiatd"}[24h] @ 1794599182)' | jq -c '.data.result[]|{m:.metric,v:.value[1]}'
+{"m":{"container":"postfiatd","instance":"127.0.0.1:9877","job":"postfiat"},"v":"0"}
+  (exit 0)
+$ curl -s 'http://127.0.0.1:9090/api/v1/query' --data-urlencode 'query=min_over_time(pft_selfheal_enforce{container="postfiatd"}[24h] @ 1794599182)' | jq -c '.data.result[]|{v:.value[1]}'
+{"v":"0"}
+  (exit 0)
+# samples with pft_selfheal_enforce == 0 in the window (expected: only before the first enforce run at ~19:46:34Z, the 19:46:22Z sed was followed by a manual start, log 21)
+$ curl -s 'http://127.0.0.1:9090/api/v1/query' --data-urlencode 'query=pft_selfheal_enforce{container="postfiatd"}[24h] @ 1794599182' | jq -r '.data.result[0].values[]|select(.[1]=="0")|.[0]|tonumber|todate'
+2026-11-12T19:46:33Z
+  (exit 0)
+$ curl -s 'http://127.0.0.1:9090/api/v1/query' --data-urlencode 'query=min_over_time(pft_selfheal_enforce{container="postfiatd"}[86340s] @ 1794599182)' | jq -c '.data.result[]|{v:.value[1]}'
+{"v":"1"}
+  (exit 0)
+# appended 2026-11-13T20:09:43Z: aggregate the per-run decision lines without ts (the uniq above keeps ts, so every line is unique)
+$ sudo journalctl --utc -q -u pft-selfheal@postfiatd.service --since @1794512782 --until @1794599182 -o cat | grep '^{' | jq -c 'del(.ts)' | sort | uniq -c
+   1441 {"action":"none","actions_24h":0,"breaker_open":false,"breaker_reason":"","detail":"","detector":null,"max_actions":3,"mode":"enforce","rpc_fail_streak":0,"suppressed_by":null,"verdict":"healthy"}
+  (exit 0)
+$ ... | grep -c '^Starting'
+1441

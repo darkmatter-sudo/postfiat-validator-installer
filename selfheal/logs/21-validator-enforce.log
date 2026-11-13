@@ -1,0 +1,17 @@
+$ date -u; switch validator selfheal to MODE=enforce (start of the 24 h observation window)
+2026-11-12T19:46:22Z
+$ sudo sed -i "s/^MODE=dryrun$/MODE=enforce/" /etc/pft-selfheal.env
+rc=0
+$ grep -n "^MODE=" /etc/pft-selfheal.env
+7:MODE=enforce
+$ sudo systemctl start pft-selfheal@postfiatd.service; sudo pft-selfheal status
+pft-selfheal-pull@postfiatd-sentry.timer pft-selfheal@postfiatd.timer 
+# note 2026-11-12T19:46:34Z: the '$' line above was NOT run; what ran was 'systemctl list-units pft-selfheal*' (output above). Running it now:
+$ sudo systemctl start pft-selfheal@postfiatd.service; echo rc=$?; sudo pft-selfheal status
+rc=0
+pft-selfheal mode enforce | verdict healthy | actions_24h 0/3 | breaker closed | 1s ago
+rc=0
+$ sudo pft-integrity verify | tail -n 6
+pft-integrity verify - 2026-11-12T19:46:52Z
+OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-11-12T17:35:40Z
+RESULT: PASS - 246 unchanged, 0 warn, 0 fail -> exit 0

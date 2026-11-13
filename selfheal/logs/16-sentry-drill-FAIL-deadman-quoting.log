@@ -1,0 +1,225 @@
+# launcher: waiting for the agent run.lock 2026-11-12T17:50:19Z
+# launcher: run.lock taken, HEAD as armed 2026-11-12T17:55:31Z
+pft-selfheal sentry drills (A stopped container, C maintenance window, B unfixable peer fault -> breaker) - 2026-11-12T17:55:51Z - Ubuntu 22.04.5 LTS - run 20261112T175551Z
+repo HEAD 7c192e6a781d7625f01085e3b11eecca26c073f6 (clean: yes)
+sha256 859b9b478616fd589f8e6181c88906f263357bb10a7bd5726ca94c891464fbb6 selfheal/drill/sentry-drill.sh
+sha256 b5826baa99d8dc801281f2bad54dd79bb9e96047fcc3308443c7ee3684611991 selfheal/pft-selfheal.sh
+sha256 600169dc31dbded55046e649758b5307e68c42adb08eda1395e9d40e551ee3bd selfheal/selfheal_decide.py
+sha256 4e2bdd58867f209050831ffa268011a840f7cac18c6c7458386ea4006ba2ffc2 alerts/selfheal.rules.yml
+sha256 f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8 peerexpose/drill/redact.py
+
+== 0. preflight (nothing changed yet)
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+$ sha256sum selfheal/pft-selfheal.sh selfheal/selfheal_decide.py | cut -c1-64; R 'sha256sum /usr/local/bin/pft-selfheal /usr/local/lib/pft-selfheal/selfheal_decide.py' | cut -c1-64
+  b5826baa99d8dc801281f2bad54dd79bb9e96047fcc3308443c7ee3684611991
+  600169dc31dbded55046e649758b5307e68c42adb08eda1395e9d40e551ee3bd
+  b5826baa99d8dc801281f2bad54dd79bb9e96047fcc3308443c7ee3684611991
+  600169dc31dbded55046e649758b5307e68c42adb08eda1395e9d40e551ee3bd
+  (exit 0)
+CHECK ok   installed pft-selfheal + decider on the sentry = this checkout
+$ R 'systemctl is-active pft-selfheal@postfiatd-sentry.timer'; systemctl is-active pft-selfheal-pull@postfiatd-sentry.timer; R 'sudo -n grep -E "^(MODE|MAX_ACTIONS)=" /etc/pft-selfheal.env'
+  active
+  active
+  MODE=dryrun
+  MAX_ACTIONS=3
+  (exit 0)
+CHECK ok   sentry selfheal timer + validator pull timer active, sentry conf MODE=dryrun MAX_ACTIONS=3
+$ sstatus; stext
+  pft-selfheal mode dryrun | verdict healthy | actions_24h 0/3 | breaker closed | 17s ago
+  pft_selfheal_up{container="postfiatd-sentry"} 1
+  pft_selfheal_enforce{container="postfiatd-sentry"} 0
+  pft_selfheal_actions_24h{container="postfiatd-sentry"} 0
+  pft_selfheal_actions_total{container="postfiatd-sentry"} 0
+  pft_selfheal_breaker_open{container="postfiatd-sentry"} 0
+  (exit 0)
+CHECK ok   sentry selfheal: verdict healthy, breaker closed, 0 actions in 24 h and in the journal
+$ R 'for f in /etc/pft-selfheal.env /etc/pft-watchdog/ntfy.env /etc/pft-integrity.env /etc/pft-alertpath/ntfy.env /etc/pft-maint/ntfy.env; do sudo -n test -e $f.pre-selfheal-drill && echo leftover $f.pre-selfheal-drill; done; sudo -n test -e /etc/pft-maint/ntfy.env && echo maint-env-present; systemctl list-units --all --no-legend "pft-selfheal-drill-deadman*" | wc -l; sudo -n iptables -S DOCKER-USER | grep -c pft-selfheal-drill'; for f in /etc/postfiat-monitor.env /etc/pft-integrity.env; do sudo -n test -e $f.pre-selfheal-drill && echo leftover $f.pre-selfheal-drill; done; sudo -n test -e /etc/pft-maint/ntfy.env && echo maint-env-present; echo end
+  0
+  0
+  end
+  (exit 0)
+CHECK ok   no leftovers: no .pre-selfheal-drill backups, no pft-maint ntfy.env on either host, no dead-man unit, no drill rule
+$ R 'sudo -n iptables -S DOCKER-USER'
+  -N DOCKER-USER
+  -A DOCKER-USER -s <redacted-ip>/32 -i docker0 ! -o docker0 -m comment --comment "pft-egress:postfiatd-sentry" -j PFT-EGRESS
+  -A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state RELATED,ESTABLISHED -j ACCEPT
+  -A DOCKER-USER -p tcp -m tcp --dport 2559 -m connlimit --connlimit-above 50 --connlimit-mask 32 --connlimit-saddr -j DROP
+  -A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -m limit --limit 100/sec --limit-burst 50 -j ACCEPT
+  -A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -j DROP
+  -A DOCKER-USER -j RETURN
+  (exit 0)
+CHECK ok   sentry DOCKER-USER: pft-egress jump at position 1, ESTABLISHED accept next
+$ curl -s http://127.0.0.1:9090/api/v1/rules | jq -r '.data.groups[] | select(.name == "pft-selfheal") | .rules[] | [.name, .health, .state] | @tsv'
+  PFTSelfhealBreakerOpen	ok	inactive
+  PFTSelfhealStale	ok	inactive
+  (exit 0)
+CHECK ok   selfheal rules loaded, healthy, inactive
+$ curl -s http://127.0.0.1:9090/api/v1/alerts | jq -r '.data.alerts[] | "\(.labels.alertname) \(.labels.host // .labels.container // "-") \(.state)"' | sort
+  PFTAlertPipelineWatchdog - firing
+  (exit 0)
+$ curl -s http://127.0.0.1:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'
+  0
+  (exit 0)
+  bridge mounts the operator env file; sentry alertpath timer active, check OK
+  operator topics to watch: 2 (not printed)
+  postfiatd-sentry: server_state=full peers=11 StartedAt=2026-11-12T17:24:14.740986169Z
+  postfiatd-sentry: CpuShares=8192 MemoryReservation=1342177280 Memory=2147483648 Restart=unless-stopped AppArmor=pft-postfiatd SecurityOpt-sha256=c947158e765dd791
+  pft-integrity local: RESULT: PASS - 246 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity relay: RESULT: PASS - 148 unchanged, 0 warn, 0 fail -> exit 0
+$ R 'sudo -n pft-egress check --container postfiatd-sentry | tail -n 1'
+  RESULT: PASS
+  (exit 0)
+CHECK ok   sentry pft-egress check PASS before the drill
+$ on local 'sudo -n pft-maint active; echo maint-active rc $?; sudo -n pft-maint lock list'
+  maint-active rc 1
+  no data-collection locks
+  (exit 0)
+$ on relay 'sudo -n pft-maint active; echo maint-active rc $?; sudo -n pft-maint lock list'
+  maint-active rc 1
+  no data-collection locks
+  (exit 0)
+$ redact.py control --literals <literals>
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (19/19)
+
+== 1. throwaway targets, catch-all silence, drill conf on the sentry
+  local:/etc/postfiat-monitor.env (sha256 6dc3b10fb491) -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/postfiat-monitor.env.pre-selfheal-drill
+  local:/etc/pft-integrity.env (sha256 b3cd1c3da7ff) -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/pft-integrity.env.pre-selfheal-drill
+  relay:/etc/pft-watchdog/ntfy.env (sha256 ddb52721a668) -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/pft-watchdog/ntfy.env.pre-selfheal-drill
+  relay:/etc/pft-integrity.env (sha256 cdd330a974d2) -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/pft-integrity.env.pre-selfheal-drill
+  relay:/etc/pft-alertpath/ntfy.env (sha256 ddb52721a668) -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/pft-alertpath/ntfy.env.pre-selfheal-drill
+  local:/etc/pft-maint/ntfy.env created for the drill only -> https://ntfy.sh/<redacted> (MAINT)
+  relay:/etc/pft-maint/ntfy.env created for the drill only -> https://ntfy.sh/<redacted> (MAINT)
+  sentry pft-alertpath-check.timer stopped: yes
+CHECK ok   sentry pft-alertpath-check.timer paused for the bridge re-create
+  2026-11-12T17:57:18Z starting pft-alert-bridge (ntfy: on)
+  2026-11-12T17:57:21Z pft-alert-bridge listening
+CHECK ok   Alertmanager bridge -> throwaway env file (0700 temp dir)
+  sentry pft-alertpath check rc 0 after 2s; timer started again: yes
+CHECK ok   sentry pft-alertpath OK again, check timer running
+CHECK ok   silence alertname=~".+", alertname!~"PFTAlertPipelineWatchdog|PFTSelfheal.*" until 2026-11-12T20:27:23Z
+$ R "sudo -n stat -c '%a %U' /etc/pft-selfheal.env; sudo -n grep -v '^#' /etc/pft-selfheal.env | grep ."
+  644 root
+  CONTAINER=postfiatd-sentry
+  TEXTFILE_DIR=/var/lib/pft-exporter/textfile
+  STATE_DIR=/var/lib/pft-selfheal
+  RPC_TIMEOUT=8
+  REF_URL=https://rpc.testnet.postfiat.org
+  REF_TIMEOUT=10
+  RESTART_TIMEOUT=60
+  STALE_DECISION_SEC=300
+  RPC_FAILS=3
+  MAX_ACTIONS=3
+  REF_LAG=5
+  MODE=enforce
+  ZERO_PEERS_SEC=120
+  STUCK_SEC=180
+  STALE_SEC=180
+  GRACE_SEC=120
+  BACKOFF_SEC=60
+  BACKOFF_MAX_SEC=240
+  (exit 0)
+CHECK ok   sentry drill conf (root 644): MODE=enforce ZERO_PEERS_SEC=120 STUCK_SEC=180 STALE_SEC=180 GRACE_SEC=120 BACKOFF_SEC=60 BACKOFF_MAX_SEC=240, MAX_ACTIONS=3 unchanged
+$ sstatus
+  pft-selfheal mode enforce | verdict healthy | actions_24h 0/3 | breaker closed | 10s ago
+  (exit 0)
+CHECK ok   next sentry run: mode enforce, verdict healthy (after 22s)
+
+== 2. drill A: stopped container -> one action
+$ R 'sudo -n docker stop -t 60 postfiatd-sentry'
+  postfiatd-sentry
+  (exit 0)
+CHECK ok   docker stop postfiatd-sentry
+  2026-11-12T17:58:48Z: action results since the stop: 1 (waited 54s)
+  2026-11-12T17:59:21Z: postfiatd-sentry server_state full, peers 11 (92s after the stop)
+$ jshow 1794506271
+  {"t":"2026-11-12T17:58:41Z","event":"decision","verdict":"act","detector":"container_down","action":"up","actions_24h":0,"breaker_open":false}
+  {"t":"2026-11-12T17:58:41Z","event":"action","action":"up","cmd":"docker start postfiatd-sentry"}
+  {"t":"2026-11-12T17:58:42Z","event":"result","action":"up","rc":0,"egress_rc":0}
+  (exit 0)
+CHECK ok   A: exactly one action, 'up' = docker start (container_down), rc 0, pft-egress reapply rc 0
+CHECK ok   A: postfiatd-sentry full again (full)
+  after: CpuShares=8192 MemoryReservation=1342177280 Memory=2147483648 Restart=unless-stopped AppArmor=pft-postfiatd SecurityOpt-sha256=c947158e765dd791
+CHECK ok   A: CpuShares, MemoryReservation, Memory, restart policy and confinement unchanged by the start
+$ R 'sudo -n pft-egress check --container postfiatd-sentry | tail -n 1'
+  RESULT: PASS
+  (exit 0)
+CHECK ok   A: sentry pft-egress check PASS after the start
+CHECK ok   A: container address unchanged (the drill B rules match it)
+
+== 3. drill C: maintenance window -> zero actions
+$ sudo -n pft-maint start --ttl 30m --reason 'task_29073d4c selfheal drill C (maintenance suppression)'
+  window started: id m1794506369-527420 until 2026-11-12T18:29:29Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint window open on the validator
+CHECK ok   sentry has the window (via the watchdog channel) after 22s
+$ R 'sudo -n docker stop -t 60 postfiatd-sentry'
+  postfiatd-sentry
+  (exit 0)
+CHECK ok   docker stop postfiatd-sentry inside the window
+  2026-11-12T18:02:49Z: 174 s after the stop
+$ jshow 1794506393
+  {"t":"2026-11-12T18:00:41Z","event":"decision","verdict":"suppressed","detector":"container_down","action":"up","suppressed_by":"maintenance","actions_24h":1,"breaker_open":false}
+  {"t":"2026-11-12T18:01:42Z","event":"decision","verdict":"suppressed","detector":"container_down","action":"up","suppressed_by":"maintenance","actions_24h":1,"breaker_open":false}
+  {"t":"2026-11-12T18:02:42Z","event":"decision","verdict":"suppressed","detector":"container_down","action":"up","suppressed_by":"maintenance","actions_24h":1,"breaker_open":false}
+  (exit 0)
+CHECK ok   C: >= 3 decisions container_down suppressed_by maintenance, 0 actions
+$ R 'sudo -n docker inspect -f {{.State.Running}} postfiatd-sentry'
+  false
+  (exit 0)
+CHECK ok   C: container still stopped (selfheal did not start it)
+$ R 'sudo -n docker start postfiatd-sentry && sudo -n pft-egress reapply --container postfiatd-sentry | tail -n 1'
+  postfiatd-sentry
+  (exit 0)
+CHECK ok   C: the drill (operator) starts the container itself + pft-egress reapply
+  2026-11-12T18:03:45Z: postfiatd-sentry server_state full, peers 11
+$ sudo -n pft-maint end --reason 'task_29073d4c selfheal drill C done'
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+  (exit 0)
+CHECK ok   window ended
+CHECK ok   sentry window gone after 73s
+CHECK ok   C: still 0 actions since the window opened
+CHECK ok   C: container address unchanged
+
+== 4. drill B: unfixable peer fault -> at most K actions -> breaker -> dead-man -> reset
+  dead-man command: sleep 1320; n=0; while iptables -C DOCKER-USER -d <redacted-ip>/32 -p tcp -m comment --comment pft-selfheal-drill -j REJECT --reject-with tcp-reset 2>/dev/null; do iptables -D DOCKER-USER -d <redacted-ip>/32 -p tcp -m comment --comment pft-selfheal-drill -j REJECT --reject-with tcp-reset && n=$((n+1)); done; while iptables -C DOCKER-USER -s <redacted-ip>/32 -p tcp -m comment --comment pft-selfheal-drill -j REJECT --reject-with tcp-reset 2>/dev/null; do iptables -D DOCKER-USER -s <redacted-ip>/32 -p tcp -m comment --comment pft-selfheal-drill -j REJECT --reject-with tcp-reset && n=$((n+1)); done; echo "pft-selfheal-drill dead-man: deleted $n rule(s)"
+$ R "sudo -n systemd-run --collect --unit=pft-selfheal-drill-deadman --description='pft-selfheal drill dead-man: deletes the drill REJECT rules' -p RuntimeMaxSec=1440 /bin/bash -c 'sleep 1320; n=0; while iptables -C DOCKER-USER -d <redacted-ip>/32 -p tcp -m comment --comment pft-selfheal-drill -j REJECT --reject-with tcp-reset 2>/dev/null; do iptables -D DOCKER-USER -d <redacted-ip>/32 -p tcp -m comment --comment pft-selfheal-drill -j REJECT --reject-with tcp-reset && n=$((n+1)); done; while iptables -C DOCKER-USER -s <redacted-ip>/32 -p tcp -m comment --comment pft-selfheal-drill -j REJECT --reject-with tcp-reset 2>/dev/null; do iptables -D DOCKER-USER -s <redacted-ip>/32 -p tcp -m comment --comment pft-selfheal-drill -j REJECT --reject-with tcp-reset && n=$((n+1)); done; echo "pft-selfheal-drill dead-man: deleted $n rule(s)"'"
+  selfheal/drill/sentry-drill.sh: eval: line 65: syntax error near unexpected token `('
+  selfheal/drill/sentry-drill.sh: eval: line 65: `R "sudo -n systemd-run --collect --unit=pft-selfheal-drill-deadman --description='pft-selfheal drill dead-man: deletes the drill REJECT rules' -p RuntimeMaxSec=1440 /bin/bash -c 'sleep 1320; n=0; while iptables -C DOCKER-USER -d <redacted-ip>/32 -p tcp -m comment --comment pft-selfheal-drill -j REJECT --reject-with tcp-reset 2>/dev/null; do iptables -D DOCKER-USER -d <redacted-ip>/32 -p tcp -m comment --comment pft-selfheal-drill -j REJECT --reject-with tcp-reset && n=$((n+1)); done; while iptables -C DOCKER-USER -s <redacted-ip>/32 -p tcp -m comment --comment pft-selfheal-drill -j REJECT --reject-with tcp-reset 2>/dev/null; do iptables -D DOCKER-USER -s <redacted-ip>/32 -p tcp -m comment --comment pft-selfheal-drill -j REJECT --reject-with tcp-reset && n=$((n+1)); done; echo "pft-selfheal-drill dead-man: deleted $n rule(s)"'"'
+  (exit 2)
+CHECK FAIL dead-man pft-selfheal-drill-deadman.service started on the sentry (deletes the rules at 18:27:12Z)
+  restored local:/etc/postfiat-monitor.env: sha256 matches pre-drill copy: yes
+  restored local:/etc/pft-integrity.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-watchdog/ntfy.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-integrity.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-alertpath/ntfy.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-selfheal.env: sha256 matches pre-drill copy: yes
+  removed drill-only local:/etc/pft-maint/ntfy.env: yes
+  removed drill-only relay:/etc/pft-maint/ntfy.env: yes
+  drain: no PFTSelfheal* alert pending/firing/active after 0s; 90 s for RESOLVED delivery
+  drain: done, nothing left that could reach the operator topic: yes
+  sentry pft-alertpath-check.timer stopped: yes
+  2026-11-12T18:07:04Z starting pft-alert-bridge (ntfy: on)
+  2026-11-12T18:07:07Z pft-alert-bridge listening
+  restored bridge: mounts the operator env file again: yes
+  sentry pft-alertpath check rc 0 after 3s; timer started again: yes
+  catch-all silence kept until 2026-11-12T18:27:53Z (newest sentry container start + 25 min): HTTP 200
+# launcher: sentry-drill exit 5 2026-11-12T18:07:11Z

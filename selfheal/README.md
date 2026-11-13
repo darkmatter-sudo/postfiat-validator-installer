@@ -99,3 +99,36 @@ TEST_TMPDIR=~/.cache python3 -m pytest -q selfheal/tests
 docker run --rm -v "$PWD/alerts":/w:ro -w /w --entrypoint promtool prom/prometheus:v3.5.0 test rules selfheal.tests.yml
 TEST_TMPDIR=~/.cache python3 -u selfheal/tests/mutate.py --jobs 3
 ```
+
+## Results (two Ubuntu 22.04 hosts, postfiatd 1.0.9 testnet in Docker)
+
+Every run below is a recorded, redacted log in [`logs/`](logs/). The last run of each kind passed on the code at
+this commit; earlier failures are listed as found -> fixed -> verified.
+
+| what | log | result |
+|---|---|---|
+| mutation run (decider, runner, rules; baseline/timeout/orphan controls) | `07-mutants.log` | 63 caught, 0 survived, 0 not applied, 0 broken of 63 |
+| unit suite (stubbed docker / curl / pft-maint / pft-egress) + promtool | fresh-clone transcript | 75 passed; promtool SUCCESS |
+| two-host install (dryrun both hosts, pft-fleet, pft-integrity, schedaudit, jobwatch, rulecheck) | `09-install-run.log` | 0 failed checks, 0 operator messages |
+| two-host update (unit guards wrong before, right after) | `15-update-run.log` | 0 failed checks |
+| sentry drill A: stopped container | `25-sentry-drill.log` | exactly 1 action (`up`), rc 0, egress reapply rc 0, full again, CPU/memory/confinement unchanged |
+| sentry drill C: pft-maint window | `25-sentry-drill.log` | container stopped inside the window: >= 3 `suppressed_by maintenance` decisions, 0 actions |
+| sentry drill B: unfixable peer fault (3 REJECT rules, independent dead-man) | `25-sentry-drill.log` | peers max 0 for the whole fault; 2 restarts, 3/3 actions in 24 h, breaker opened, PFTSelfhealBreakerOpen fired and resolved after `reset` (throwaway topic); 0 actions while open; dead-man removed exactly 3 rules |
+| integration after the drill | `25-sentry-drill.log` | pft-integrity PASS both hosts, AppArmor + seccomp PASS 0 denials both hosts, pft-egress PASS, no window / transient unit left |
+| operator topics | `25-sentry-drill.log`, `26-operator-readback.log` | 0 messages during the run and 0 from its start to 12 min after it ended |
+| validator enforce mode, 24 h | `21-validator-enforce.log`, `22b-validator-observation.log` | 1441 runs, all `healthy` / action `none`, actions_total increase 0, breaker max 0, container restarts 0 |
+
+Found -> fixed -> verified:
+
+| run | found | fixed in | verified by |
+|---|---|---|---|
+| 13 | the sandboxed unit could not read the pft-maint lock state, so the lock guard failed closed | 64ae0cd | 15, 25 |
+| 16 | the dead-man command broke in a nested quote level (`rule(s)`) | 536b022 (printf %q per level, preflight proves it byte-identical) | 18, 25 |
+| 18 | drill passed, but a collector that failed while the node was down made PFTTextfileStale reach the operator topic 60 s after the read-back | 50a3a3c (silence held while anything but the watchdog is active; read-back after expiry) | 25 + 26 |
+| 20 | drill B fault leaked: the cluster link reaches the sentry through docker-proxy (host-local OUTPUT), which DOCKER-USER rules never see, so the sentry kept 1 peer and selfheal correctly took no action | b4eabb0 (third rule at OUTPUT, peers asserted 0 for the whole fault), 93d0b69, 88f700c | 25 |
+
+Deviations: drill B ran with shortened timers in a drill-only sentry conf (`ZERO_PEERS_SEC=120 STUCK_SEC=180
+STALE_SEC=180 GRACE_SEC=120 BACKOFF_SEC=60`), `MAX_ACTIONS` stayed 3; the conf was restored byte-identical. The
+mutation run is at cc39f94; `git diff cc39f94 HEAD` is empty for every mutated file (`pft-selfheal.sh`,
+`selfheal_decide.py`, `alerts/selfheal.rules.yml`), the suite has one more test since (unit guard regression).
+The sentry stays in `MODE=dryrun` outside drills; the validator runs `MODE=enforce`.
