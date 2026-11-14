@@ -42,3 +42,6 @@ require pft_peerwatch_postfiatd-sentry.prom
 # pft-selfheal (1-minute decision)
 textfile pft_selfheal_*.prom   5m   pft_selfheal_run_timestamp_seconds
 require pft_selfheal_postfiatd-sentry.prom
+# pft-fwaudit (hourly audit :11)
+textfile pft_fwaudit_*.prom   3h   pft_fwaudit_last_run_timestamp_seconds
+require pft_fwaudit_sentry.prom
