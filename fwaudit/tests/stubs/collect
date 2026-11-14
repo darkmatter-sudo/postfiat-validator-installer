@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# collect stand-in: the "before" bundle until the ufw stub has mutated anything, then the "after" bundle
+if [ -s "$FWA_STUB_DIR/mutated" ]; then cat "$FWA_STUB_DIR/bundle_after"; else cat "$FWA_STUB_DIR/bundle_before"; fi

@@ -1,0 +1,49 @@
+#!/usr/bin/env python3
+"""ufw stand-in for test_apply.py: rules live in $FWA_STUB_DIR/rules.json, every call is logged to calls.log and
+every mutation also appends to $UFW_DIR/user.rules (so the rollback sha256 check sees a real change)."""
+import json
+import os
+import sys
+
+D = os.environ["FWA_STUB_DIR"]
+args = sys.argv[1:]
+with open(os.path.join(D, "calls.log"), "a", encoding="utf-8") as fh:
+    fh.write("ufw " + " ".join(args) + "\n")
+rules_path = os.path.join(D, "rules.json")
+with open(rules_path, encoding="utf-8") as fh:
+    rules = json.load(fh)
+
+
+def mutate(what):
+    with open(os.path.join(os.environ["UFW_DIR"], "user.rules"), "a", encoding="utf-8") as fh:
+        fh.write(f"# stub {what}\n")
+    with open(os.path.join(D, "mutated"), "a", encoding="utf-8") as fh:
+        fh.write(what + "\n")
+    with open(rules_path, "w", encoding="utf-8") as fh:
+        json.dump(rules, fh)
+
+
+if args[:2] == ["status", "numbered"]:
+    print("Status: active\n\n     To                         Action      From\n     --                         ------      ----")
+    for i, (to, action, frm) in enumerate(rules, 1):
+        print(f"[{i:2}] {to:26} {action + ' IN':11} {frm}")
+elif args[:2] == ["--force", "delete"]:
+    if os.path.exists(os.path.join(D, "fail-delete")):
+        sys.exit(1)
+    n = int(args[2])
+    del rules[n - 1]
+    mutate(f"delete {n}")
+elif args and args[0] in ("allow", "limit"):
+    # allow|limit proto P from SRC to any port N comment C
+    proto, src, port = args[2], args[4], args[8]
+    v6 = ":" in src
+    to = f"{port}/{proto}" + (" (v6)" if v6 else "")
+    frm = ("Anywhere (v6)" if v6 else "Anywhere") if src in ("0.0.0.0/0", "::/0") else src.removesuffix("/32")
+    rules.append([to, args[0].upper(), frm])
+    mutate(" ".join(args[:1] + [proto, src, port]))
+elif args == ["default", "deny", "incoming"]:
+    mutate("default deny")
+elif args == ["reload"]:
+    pass
+else:
+    sys.exit(2)

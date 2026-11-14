@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# server_info stand-in: rpc.json, or rpc_after.json once the ufw stub has mutated anything (if that file exists)
+if [ -s "$FWA_STUB_DIR/mutated" ] && [ -f "$FWA_STUB_DIR/rpc_after.json" ]; then cat "$FWA_STUB_DIR/rpc_after.json"
+else cat "$FWA_STUB_DIR/rpc.json"; fi

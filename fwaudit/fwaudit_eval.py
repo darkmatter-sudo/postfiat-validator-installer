@@ -14,8 +14,18 @@ How exposure is derived (read-only, nothing is probed over the network here):
   only past a rate/conn limit), sources (only the listed source CIDRs) or closed;
 - nftables tables that iptables-nft does not own are reported (their rules are not modelled).
 
+Remediation (`plan`) only ever narrows UFW: it deletes UFW allows that expose an undeclared or stale port, replaces a
+too-broad UFW allow with per-source allows, turns a declared-limited UFW allow into a LIMIT, and sets default deny
+incoming. Each change is family-scoped (`from 0.0.0.0/0` / `from ::/0`). Anything else (Docker DNAT paths,
+DOCKER-USER, nftables, inactive UFW, a missing listener) is listed as `manual` and never changed.
+
 Usage: fwaudit_eval.py audit BUNDLE POLICY [--peers FILE] [--json]
        exit 0 PASS, 1 WARN, 2 FAIL, 3 usage/policy error, 4 bundle unreadable/incomplete
+       fwaudit_eval.py plan BUNDLE POLICY [--peers FILE] [--json]
+       exit 0 nothing to do, 1 actions planned, 2 manual items left (with or without actions), 3/4 as audit
+       fwaudit_eval.py ufwnum FAMILY PROTO PORT [--from-any] [--keep LIMIT] [--except-from CIDR,..]
+       < `ufw status numbered`
+       (prints the matching ALLOW/LIMIT rule numbers, highest first = safe delete order)
 """
 
 import ipaddress
@@ -647,8 +657,102 @@ def audit(bundle, policy):
             verdict = "FAIL"
         elif f["severity"] == "WARN" and verdict == "PASS":
             verdict = "WARN"
-    table = [{k: v for k, v in rec.items() if k != "trail"} for _, rec in sorted(exp.items())]
+    declared = {(r["family"], r["proto"], r["port"]) for r in policy}
+    table = [
+        {**{k: v for k, v in rec.items() if k != "trail"}, "declared": k in declared} for k, rec in sorted(exp.items())
+    ]
     return {"version": VERSION, "verdict": verdict, "exposure": table, "findings": findings}
+
+
+# ---------------------------------------------------------------- plan
+FROM_ANY = {"v4": "0.0.0.0/0", "v6": "::/0"}
+COMMENT = "pft-fwaudit"
+
+
+def _sel(f):
+    return {"family": f["family"], "proto": f["proto"], "port": f["port"]}
+
+
+def plan(res, policy, bundle):
+    """Audit result -> {"actions": [...], "manual": [...]}; actions run in order, adds before deletes."""
+    exp, tabs, _ = exposures(bundle)
+    ufw_ports = {fam: ufw_user_ports(tabs[fam], fam) for fam in ("v4", "v6")}
+    adds, dels, manual = [], [], []
+
+    def on_ufw_path(f):  # the exposure is decided by a UFW user rule on the INPUT path only
+        rec = exp.get((f["family"], f["proto"], f["port"]))
+        return bool(rec) and rec["paths"] == ["input"] and (f["proto"], f["port"]) in ufw_ports[f["family"]]
+
+    def ufw_add(verb, f, src):
+        return ["ufw", verb, "proto", f["proto"], "from", src, "to", "any", "port", str(f["port"]), "comment", COMMENT]
+
+    for f in res["findings"]:
+        c = f["class"]
+        if c == "default-incoming-allow":
+            adds.append({"op": "default-deny", "why": c, "argv": ["ufw", "default", "deny", "incoming"]})
+        elif c == "stale-allow" or (c == "undeclared-exposure" and on_ufw_path(f)):
+            dels.append({"op": "delete", "why": c, **_sel(f), "from_any_only": False})
+        elif c == "source-too-broad" and on_ufw_path(f):
+            d = next(r for r in policy if (r["family"], r["proto"], r["port"]) == (f["family"], f["proto"], f["port"]))
+            nets = [n for n in d["nets"] if ipaddress.ip_network(n).version == (4 if f["family"] == "v4" else 6)]
+            for n in nets:
+                adds.append({"op": "allow-source", "why": c, **_sel(f), "source": n, "argv": ufw_add("allow", f, n)})
+            dels.append({"op": "delete", "why": c, **_sel(f), "from_any_only": False, "except_from": nets})
+        elif c == "missing-limit" and on_ufw_path(f):
+            adds.append({"op": "limit", "why": c, **_sel(f), "argv": ufw_add("limit", f, FROM_ANY[f["family"]])})
+            dels.append({"op": "delete", "why": c, **_sel(f), "from_any_only": True, "keep": "LIMIT"})
+        elif SEVERITY[c] != "INFO":
+            manual.append({"why": c, "message": f["message"]})
+    return {"version": VERSION, "verdict": res["verdict"], "actions": adds + dels, "manual": manual}
+
+
+UFW_NUM_RE = re.compile(r"^\[\s*(\d+)\]\s+(\S+)( \(v6\))?\s+(ALLOW|LIMIT|DENY|REJECT)( IN)?\s+(.*?)\s*(#.*)?$")
+
+
+def _from_net(frm):
+    if frm.startswith("Anywhere"):
+        return None
+    try:
+        return ipaddress.ip_network(frm.split()[0], strict=False)
+    except ValueError:
+        return False  # an interface/app spec: never matched by --except-from, so it is deleted only without it
+
+
+def ufwnum(text, family, proto, port, from_any_only=False, keep=None, except_from=()):
+    """Rule numbers in `ufw status numbered` that allow PROTO/PORT for FAMILY, highest first (delete order).
+
+    from_any_only: only rules from Anywhere; keep: skip rules with that action (LIMIT); except_from: skip rules whose
+    source is one of these CIDRs (the declared sources of a source-too-broad fix)."""
+    keepnets = {ipaddress.ip_network(n, strict=False) for n in except_from}
+    out = []
+    for line in text.splitlines():
+        m = UFW_NUM_RE.match(line.strip())
+        if not m:
+            continue
+        num, to, v6, action, _, frm, _ = m.groups()
+        if (family == "v6") != bool(v6) or action not in ("ALLOW", "LIMIT") or action == keep:
+            continue
+        if to != f"{port}/{proto}":
+            continue
+        net = _from_net(frm)
+        if from_any_only and net is not None:
+            continue
+        if net and net in keepnets:
+            continue
+        out.append(int(num))
+    return sorted(out, reverse=True)
+
+
+def render_plan(pl):
+    out = []
+    for a in pl["actions"]:
+        sel = f" {a['proto']}/{a['port']} {a['family']}" if "port" in a else ""
+        cmd = " ".join(a["argv"]) if "argv" in a else "ufw --force delete <rule numbers resolved at apply time>"
+        out.append(f"  ACTION {a['op']}{sel} ({a['why']}): {cmd}")
+    for m in pl["manual"]:
+        out.append(f"  MANUAL {m['why']}: {m['message']}")
+    out.append(f"PLAN: {len(pl['actions'])} action(s), {len(pl['manual'])} manual item(s) (audit {pl['verdict']})")
+    return "\n".join(out)
 
 
 def render(res):
@@ -665,8 +769,17 @@ def render(res):
 
 
 def main(argv):
-    if len(argv) < 3 or argv[0] != "audit":
-        print(__doc__.strip().splitlines()[-2], file=sys.stderr)
+    if len(argv) >= 4 and argv[0] == "ufwnum":
+        fam, proto, port, rest = argv[1], argv[2], argv[3], argv[4:]
+        keep = rest[rest.index("--keep") + 1] if "--keep" in rest and rest.index("--keep") + 1 < len(rest) else None
+        if fam not in ("v4", "v6") or proto not in ("tcp", "udp") or not port.isdigit():
+            return 3
+        exc = rest[rest.index("--except-from") + 1].split(",") if "--except-from" in rest[:-1] else ()
+        nums = ufwnum(sys.stdin.read(), fam, proto, int(port), "--from-any" in rest, keep, exc)
+        print(" ".join(str(n) for n in nums))
+        return 0
+    if len(argv) < 3 or argv[0] not in ("audit", "plan"):
+        print(__doc__.strip().split("Usage:", 1)[1].join(["Usage:", ""]), file=sys.stderr)
         return 3
     bundle_path, policy_path = argv[1], argv[2]
     rest = argv[3:]
@@ -686,6 +799,10 @@ def main(argv):
     except (OSError, BundleError, ValueError, KeyError, IndexError) as exc:
         print(f"fwaudit: bundle: {exc}", file=sys.stderr)
         return 4
+    if argv[0] == "plan":
+        pl = plan(res, policy, bundle)
+        print(json.dumps(pl, indent=1, sort_keys=True) if as_json else render_plan(pl))
+        return 2 if pl["manual"] else (1 if pl["actions"] else 0)
     print(json.dumps(res, indent=1, sort_keys=True) if as_json else render(res))
     return EXIT[res["verdict"]]
 
