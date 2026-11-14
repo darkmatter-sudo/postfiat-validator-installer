@@ -73,8 +73,8 @@ sstate() { si "$1" | jq -r '.result.info.server_state // "down"' 2>/dev/null || 
 addrs() { # [remote] -> "V4 V6" (as ./tcp-crosscheck.sh: first global address of each family on the default-route interface)
   local cmd='dev=$(ip -4 route show default | awk "{print \$5; exit}"); a4=$(ip -4 -o addr show dev "$dev" scope global | awk "{print \$4; exit}"); a6=$(ip -6 -o addr show dev "$dev" scope global | awk "{print \$4; exit}"); echo "${a4%/*} ${a6%/*}"'
   if [ "${1:-}" = remote ]; then R "$cmd"; else bash -c "$cmd"; fi; }
-PROBE='timeout 6 bash -c '"'"'exec 3<>"/dev/tcp/$0/$1" && timeout 3 head -c 14 <&3'"'"' "$A" "$P" 2>/dev/null; rc=$?; case $rc in 0) echo "connected $(true)";; 124) echo timeout;; *) echo "refused rc=$rc";; esac'
-probe() { # FROM(local|relay) ADDR PORT -> "connected" (banner fwaudit-drill seen) | "timeout" | "refused rc=N"
+PROBE='b=$(timeout 6 bash -c '"'"'exec 3<>"/dev/tcp/$0/$1" && timeout 3 head -c 14 <&3'"'"' "$A" "$P" 2>/dev/null); rc=$?; case $rc in 0) if [ "$b" = fwaudit-drill ]; then echo connected; else echo open-no-banner; fi ;; 124) echo timeout ;; *) echo "refused rc=$rc" ;; esac'
+probe() { # FROM(local|relay) ADDR PORT -> "connected" (banner fwaudit-drill read) | "open-no-banner" | "timeout" | "refused rc=N"
   local out; out="$(on "$1" "A=$2 P=$3; $PROBE")"; echo "$out"; }
 fwa() { on "$1" "sudo -n pft-fwaudit $2"; }               # HOST ARGS -> the installed pft-fwaudit
 ajson() { fwa "$1" "audit --json"; }
@@ -115,7 +115,7 @@ LISTENER_PY="$(base64 -w0 <<'PY'
 import socket, sys
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-s.bind(("0.0.0.0", int(sys.argv[1])))
+s.bind(("0.0.0.0", int(sys.argv[-1])))
 s.listen(8)
 while True:
     c, _ = s.accept()
@@ -126,7 +126,7 @@ while True:
     c.close()
 PY
 )"
-LCMD() { printf "python3 -I -c 'import base64; exec(base64.b64decode(\"%s\"))' %s" "$LISTENER_PY" "$1"; }  # PORT
+LCMD() { printf "python3 -I -c 'import base64,sys; exec(base64.b64decode(sys.argv[1]))' %s %s" "$LISTENER_PY" "$1"; }  # PORT (program via argv: no nested quotes)
 UFWDEL='n=0; while :; do k=$(ufw status numbered | sed -nE "s/^\[ *([0-9]+)\] .*# fwaudit-drill *$/\1/p" | tail -n 1); [ -n "$k" ] || break; ufw --force delete "$k" >/dev/null || break; n=$((n+1)); done; echo "deleted $n fwaudit-drill ufw rule(s)"'
 DMS="sleep $DM_SEC; systemctl stop $LU.service >/dev/null 2>&1; $UFWDEL; echo 'fwaudit drill dead-man (sentry) done'"
 DMV="sleep $DM_SEC; docker rm -f $CN >/dev/null 2>&1 && echo 'fwaudit drill dead-man: removed $CN' || echo 'fwaudit drill dead-man: no $CN'"
@@ -166,12 +166,12 @@ restore() {
   CREATED=()
   # collectors that read what the drill touched, after every env is restored/removed (selfheal runs 16/18/20):
   # keyescrow (notifier envs), fwaudit (rulesets), rulecheck (textfile freshness), and the validator pulls
-  R "sudo -n systemctl start pft-keyescrow.service pft-fwaudit.service" \
-    && sudo -n systemctl start pft-keyescrow.service pft-fwaudit.service \
+  R "sudo -n systemctl start pft-keyescrow.service pft-fwaudit.service pft-integrity.service" \
+    && sudo -n systemctl start pft-keyescrow.service pft-fwaudit.service pft-integrity.service \
     && sudo -n systemctl start pft-keyescrow-pull.service pft-fwaudit-pull.service \
     && R "sudo -n systemctl start pft-rulecheck.service" && sudo -n systemctl start pft-rulecheck.service \
     && sudo -n systemctl start pft-rulecheck-pull.service \
-    && echo "  re-ran pft-keyescrow + pft-fwaudit + pft-rulecheck (both) and the validator pulls: yes" \
+    && echo "  re-ran pft-keyescrow + pft-fwaudit + pft-integrity + pft-rulecheck (both) and the validator pulls: yes" \
     || { echo "  re-ran pft-keyescrow/pft-fwaudit/pft-rulecheck collectors + pulls: NO"; RESTORE_OK=false; }
   if [ "$BRIDGE_SWAPPED" = 1 ]; then
     local t0 n=1; t0="$(date -u +%s)"
@@ -267,8 +267,8 @@ FWD0="$(sudo -n iptables -S DOCKER | sha256sum | cut -c1-64)"
 echo "  snapshots: sentry 'ufw status numbered', validator 'iptables -t nat -S DOCKER' and 'iptables -S DOCKER' (sha256 kept, compared at the end)"
 x "R $(printf %q "$(dm_remote "printf '%s\\n'")")"
 check "sentry dead-man command reaches the sentry byte-identical through both quoting levels (printf launcher)" "$(ok_if '[ "$XRC" = 0 ] && [ "$(sed -n 3p <<<"$XOUT")" = "$DMS" ] && [ "$(wc -l <<<"$XOUT")" = 3 ]')"
-x "R \"$(LCMD 0 | sed 's/python3 -I -c/python3 -I -c \"import sys; print(sys.argv[1:])\" #/') \" ; R \"python3 -I -c 'import base64; print(base64.b64decode(\\\"$LISTENER_PY\\\").decode().count(chr(10)))'\""
-check "listener program decodes on the sentry (11 lines)" "$(ok_if '[ "$(tail -n 1 <<<"$XOUT")" = 11 ]')"
+x "R \"python3 -I -c 'import base64,sys; c=base64.b64decode(sys.argv[1]); compile(c, sys.argv[2], sys.argv[2]); print(len(c.splitlines()))' $LISTENER_PY exec\""
+check "listener program decodes and compiles on the sentry (12 lines)" "$(ok_if '[ "$XRC" = 0 ] && [ "$(tail -n 1 <<<"$XOUT")" = 12 ]')"
 echo "\$ redact.py control --literals <literals>"
 python3 -u "$REDACT" control --literals "$LIT" | sed 's/^/  /'; [ "${PIPESTATUS[0]}" -eq 0 ] || { echo "  redaction control FAILED - stopping"; exit 3; }
 if [ "$PREFLIGHT_ONLY" = 1 ]; then echo; echo "PREFLIGHT_ONLY: stopping before step 1, nothing changed ($FAILS check(s) failed)"; [ "$FAILS" = 0 ]; exit; fi
@@ -338,10 +338,10 @@ x "fwa local audit"
 x "fkeys <<<\"\$VA\""
 check "V: validator audit FAIL: undeclared-exposure v4/tcp/$PP (only new finding)" "$(ok_if '[ "$(jq -r .verdict <<<"$VA")" = FAIL ] && grep -qx "FAIL undeclared-exposure v4/tcp/$PP" <<<"$XOUT" && [ "$(grep -c "^FAIL" <<<"$XOUT")" = 1 ]')"
 x "jq -c --argjson p $PP '.exposure[] | select(.port == \$p) | {family, state, paths, owners, declared}' <<<\"\$VA\""
-check "V: exposure v4/tcp/$PP open on the Docker DNAT path, not declared" "$(ok_if 'grep -q "\"family\":\"v4\",\"state\":\"open\",\"paths\":\[\"docker-forward->8080\"\]" <<<"$XOUT" && grep -q "\"declared\":false" <<<"$XOUT"')"
+check "V: exposure v4/tcp/$PP open on the Docker DNAT path, not declared" "$(ok_if 'grep -q "\"family\":\"v4\",\"state\":\"open\"" <<<"$XOUT" && grep -q "docker-forward->8080" <<<"$XOUT" && grep -q "\"declared\":false" <<<"$XOUT"')"
 x "fwa relay plan; fwa local plan"
-x "fwa relay 'plan --json' | jq -c '[.actions[] | {op, family, port, why}]'; fwa local 'plan --json' | jq -c '[.manual[] | select(.port == $PP)] | length'"
-check "plans: sentry deletes the v4 + v6 rule for tcp/$LP; validator lists tcp/$PP as MANUAL" "$(ok_if '[ "$(head -n 1 <<<"$XOUT" | jq "[.[] | select(.op == \"delete\" and .port == $LP)] | length")" = 2 ] && [ "$(head -n 1 <<<"$XOUT" | jq length)" = 2 ] && [ "$(tail -n 1 <<<"$XOUT")" -ge 1 ]')"
+x "fwa relay 'plan --json' | jq -c '[.actions[] | {op, family, port, why}]'; fwa local 'plan --json' | jq -c '[.manual[] | select(.why == \"undeclared-exposure\" and (.message | startswith(\"tcp/$PP v4 \")))] | length'"
+check "plans: sentry deletes the v4 + v6 rule for tcp/$LP (2 actions, nothing else); validator lists tcp/$PP as MANUAL" "$(ok_if '[ "$(head -n 1 <<<"$XOUT" | jq "[.[] | select(.op == \"delete\" and .port == $LP)] | length")" = 2 ] && [ "$(head -n 1 <<<"$XOUT" | jq length)" = 2 ] && [ "$(tail -n 1 <<<"$XOUT")" = 1 ]')"
 x "textfiles"
 check "textfiles written by the real units, sentry copy pulled" "$XRC"
 x "grep -h 'pft_fwaudit_findings{.*severity=\"fail\"}' $TF/pft_fwaudit_validator.prom $TF/pft_fwaudit_sentry.prom"
@@ -367,7 +367,7 @@ check "S: pft-fwaudit apply exit 0 (both rules deleted, re-audit clean, dead-man
 x "R 'sudo -n ufw status | grep -c \"# $TAGC\"; systemctl is-active $LU.service'"
 check "S: no '# $TAGC' UFW rule left, listener still running" "$(ok_if '[ "$(tr "\n" " " <<<"$XOUT")" = "0 active " ]')"
 x "probe local $S4 $LP"
-check "S: validator -> sentry v4 tcp/$LP blocked while the listener still runs (UFW default deny drops)" "$(ok_if '! grep -q "^connected" <<<"$XOUT"')"
+check "S: validator -> sentry v4 tcp/$LP blocked while the listener still runs (UFW default deny drops)" "$(ok_if 'grep -qE "^(timeout|refused)" <<<"$XOUT"')"
 x "fwa relay audit"
 check "S: sentry audit PASS with the listener still up (listener alone is not exposure)" "$(ok_if '[ "$XRC" = 0 ] && grep -qx "RESULT: PASS" <<<"$XOUT"')"
 x "R 'sudo -n systemctl stop $LU.service; systemctl is-active $LU.service'"
@@ -375,7 +375,7 @@ x "sudo -n docker rm -f $CN"
 check "V: container removed" "$XRC"
 FAULTS=0
 x "probe relay $V4 $PP"
-check "V: sentry -> validator v4 tcp/$PP blocked after the removal" "$(ok_if '! grep -q "^connected" <<<"$XOUT"')"
+check "V: sentry -> validator v4 tcp/$PP blocked after the removal" "$(ok_if 'grep -qE "^(timeout|refused)" <<<"$XOUT"')"
 x "fwa local audit | tail -n 1; fwa relay audit | tail -n 1"
 check "VERIFIED: both hosts audit PASS after the fixes" "$(ok_if '[ "$(grep -cx "RESULT: PASS" <<<"$XOUT")" = 2 ]')"
 x "textfiles"
@@ -386,8 +386,10 @@ wait_until 300 15 '[ "$(n_msgs RESOLVED validator)" -ge 1 ] && [ "$(n_msgs RESOL
 check "throwaway topic: [RESOLVED] PFTFwauditExposure naming validator and sentry" "$?"
 echo "  waiting for the sentry apply dead-man (fwaudit-deadman, DEADMAN_MIN from the sentry conf)"
 wait_until 900 20 '! R "systemctl is-active --quiet fwaudit-deadman.service"'
-x "R 'sudo -n jq -c \"{result, keep, baseline_peers, applied_at, deadman_passed_at}\" /var/lib/pft-fwaudit/state.json; sudo -n journalctl --utc -o cat -u fwaudit-deadman.service --since @$tX --no-pager | grep -E \"dead-man(:| poll)\" | sed -n \"1p;\\\$p\"; sudo -n journalctl --utc -o cat -u fwaudit-deadman.service --since @$tX --no-pager | grep -c \"dead-man poll:.*declared ok\$\"'"
-check "S: apply dead-man PASS, result kept (no rollback)" "$(ok_if 'grep -q "\"result\":\"kept\"" <<<"$XOUT" && grep -q "dead-man: PASS - changes kept" <<<"$XOUT" && ! grep -q "BAD" <<<"$XOUT"')"
+x "R 'sudo -n jq -c \"{result, keep, baseline_peers, applied_at, deadman_passed_at}\" /var/lib/pft-fwaudit/state.json'"
+check "S: apply state result kept" "$(ok_if 'grep -q "\"result\":\"kept\"" <<<"$XOUT"')"
+x "R 'sudo -n journalctl --utc -o cat -u fwaudit-deadman.service --since @$tX --no-pager' | grep -E 'dead-man'"
+check "S: apply dead-man PASS, every poll ok (none BAD, no rollback)" "$(ok_if 'grep -q "dead-man: PASS - changes kept" <<<"$XOUT" && [ "$(grep -c "dead-man poll: full peers [0-9]* declared ok$" <<<"$XOUT")" -ge 15 ] && ! grep -qE "BAD|TRIPPED|rollback" <<<"$XOUT"')"
 x "sudo -n pft-maint end --reason '$TASK fwaudit exposure drill: fixes verified'"
 MAINT=0; check "window ended" "$XRC"
 wait_until 420 10 '! R "sudo -n pft-maint active" >/dev/null 2>&1'; check "sentry window gone after ${WAITED}s" "$?"
