@@ -1,0 +1,219 @@
+# promtool unit tests for fwaudit.rules.yml. Run: promtool test rules fwaudit.tests.yml
+# NxM in values = N, then M more samples (1x20 covers t 0..20). Every case of the one alert has a fire case at its
+# `for` boundary (one minute before = not yet), a recovery case, and cases that must stay quiet.
+rule_files:
+- fwaudit.rules.yml
+evaluation_interval: 1m
+tests:
+- name: clean audits on both hosts for 3h (WARN 2 + INFO 1 on the sentry) fire nothing
+  interval: 1m
+  input_series:
+  - series: pft_fwaudit_up{host="validator"}
+    values: 1x180
+  - series: pft_fwaudit_last_run_timestamp_seconds{host="validator"}
+    values: 0+60x180
+  - series: pft_fwaudit_findings{host="validator",severity="fail"}
+    values: '0x180'
+  - series: pft_fwaudit_findings{host="validator",severity="warn"}
+    values: '0x180'
+  - series: pft_fwaudit_findings{host="validator",severity="info"}
+    values: 1x180
+  - series: pft_fwaudit_up{host="sentry"}
+    values: 1x180
+  - series: pft_fwaudit_last_run_timestamp_seconds{host="sentry"}
+    values: 0+60x180
+  - series: pft_fwaudit_findings{host="sentry",severity="fail"}
+    values: '0x180'
+  - series: pft_fwaudit_findings{host="sentry",severity="warn"}
+    values: 2x180
+  - series: pft_fwaudit_findings{host="sentry",severity="info"}
+    values: 1x180
+  alert_rule_test:
+  - eval_time: 5m
+    alertname: PFTFwauditExposure
+    exp_alerts: []
+  - eval_time: 179m
+    alertname: PFTFwauditExposure
+    exp_alerts: []
+- name: sentry FAIL x2 from 10m fires at 15m (for 5m) with the count, validator stays quiet, clears at 31m
+  interval: 1m
+  input_series:
+  - series: pft_fwaudit_up{host="sentry"}
+    values: 1x60
+  - series: pft_fwaudit_findings{host="sentry",severity="fail"}
+    values: 0x9 2x20 0x30
+  - series: pft_fwaudit_findings{host="sentry",severity="warn"}
+    values: 1x60
+  - series: pft_fwaudit_up{host="validator"}
+    values: 1x60
+  - series: pft_fwaudit_last_run_timestamp_seconds{host="validator"}
+    values: 0+60x60
+  - series: pft_fwaudit_findings{host="validator",severity="fail"}
+    values: '0x60'
+  - series: pft_fwaudit_findings{host="validator",severity="warn"}
+    values: '0x60'
+  - series: pft_fwaudit_findings{host="validator",severity="info"}
+    values: 1x60
+  alert_rule_test:
+  - eval_time: 14m
+    alertname: PFTFwauditExposure
+    exp_alerts: []
+  - eval_time: 15m
+    alertname: PFTFwauditExposure
+    exp_alerts:
+    - exp_labels:
+        severity: critical
+        host: sentry
+        reason: fail-findings
+      exp_annotations:
+        summary: 'sentry: inbound exposure audit found 2 FAIL finding(s)'
+        description: pft-fwaudit compares the declared inbound policy with what is actually reachable (UFW, iptables/ip6tables, nftables, Docker DNAT and docker-proxy paths, listening sockets, IPv4/IPv6).
+          Run `sudo pft-fwaudit audit` (each FAIL line names the class, port and family; exit 3/4 names a policy or capture error), then `sudo pft-fwaudit plan` for the UFW changes `apply` can make inside
+          a pft-maint window; Docker/nftables items are manual.
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/fwaudit/README.md#alert
+  - eval_time: 30m
+    alertname: PFTFwauditExposure
+    exp_alerts:
+    - exp_labels:
+        severity: critical
+        host: sentry
+        reason: fail-findings
+      exp_annotations:
+        summary: 'sentry: inbound exposure audit found 2 FAIL finding(s)'
+        description: pft-fwaudit compares the declared inbound policy with what is actually reachable (UFW, iptables/ip6tables, nftables, Docker DNAT and docker-proxy paths, listening sockets, IPv4/IPv6).
+          Run `sudo pft-fwaudit audit` (each FAIL line names the class, port and family; exit 3/4 names a policy or capture error), then `sudo pft-fwaudit plan` for the UFW changes `apply` can make inside
+          a pft-maint window; Docker/nftables items are manual.
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/fwaudit/README.md#alert
+  - eval_time: 31m
+    alertname: PFTFwauditExposure
+    exp_alerts: []
+  - eval_time: 59m
+    alertname: PFTFwauditExposure
+    exp_alerts: []
+- name: a FAIL that lasts only 4m never fires
+  interval: 1m
+  input_series:
+  - series: pft_fwaudit_up{host="validator"}
+    values: 1x40
+  - series: pft_fwaudit_findings{host="validator",severity="fail"}
+    values: 0x9 1x3 0x27
+  alert_rule_test:
+  - eval_time: 13m
+    alertname: PFTFwauditExposure
+    exp_alerts: []
+  - eval_time: 14m
+    alertname: PFTFwauditExposure
+    exp_alerts: []
+  - eval_time: 20m
+    alertname: PFTFwauditExposure
+    exp_alerts: []
+- name: audit error (up 0, graded series gone) at 20m fires as audit-error at 25m, clears when a run is graded again at 41m
+  interval: 1m
+  input_series:
+  - series: pft_fwaudit_up{host="validator"}
+    values: 1x19 0x20 1x20
+  - series: pft_fwaudit_findings{host="validator",severity="fail"}
+    values: 0x19 _x20 0x20
+  alert_rule_test:
+  - eval_time: 24m
+    alertname: PFTFwauditExposure
+    exp_alerts: []
+  - eval_time: 25m
+    alertname: PFTFwauditExposure
+    exp_alerts:
+    - exp_labels:
+        severity: critical
+        host: validator
+        reason: audit-error
+      exp_annotations:
+        summary: 'validator: inbound exposure audit could not run'
+        description: pft-fwaudit compares the declared inbound policy with what is actually reachable (UFW, iptables/ip6tables, nftables, Docker DNAT and docker-proxy paths, listening sockets, IPv4/IPv6).
+          Run `sudo pft-fwaudit audit` (each FAIL line names the class, port and family; exit 3/4 names a policy or capture error), then `sudo pft-fwaudit plan` for the UFW changes `apply` can make inside
+          a pft-maint window; Docker/nftables items are manual.
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/fwaudit/README.md#alert
+  - eval_time: 40m
+    alertname: PFTFwauditExposure
+    exp_alerts:
+    - exp_labels:
+        severity: critical
+        host: validator
+        reason: audit-error
+      exp_annotations:
+        summary: 'validator: inbound exposure audit could not run'
+        description: pft-fwaudit compares the declared inbound policy with what is actually reachable (UFW, iptables/ip6tables, nftables, Docker DNAT and docker-proxy paths, listening sockets, IPv4/IPv6).
+          Run `sudo pft-fwaudit audit` (each FAIL line names the class, port and family; exit 3/4 names a policy or capture error), then `sudo pft-fwaudit plan` for the UFW changes `apply` can make inside
+          a pft-maint window; Docker/nftables items are manual.
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/fwaudit/README.md#alert
+  - eval_time: 41m
+    alertname: PFTFwauditExposure
+    exp_alerts: []
+  - eval_time: 60m
+    alertname: PFTFwauditExposure
+    exp_alerts: []
+- name: WARN-only findings (stale-allow, declared-unreachable) never page
+  interval: 1m
+  input_series:
+  - series: pft_fwaudit_up{host="sentry"}
+    values: 1x120
+  - series: pft_fwaudit_last_run_timestamp_seconds{host="sentry"}
+    values: 0+60x120
+  - series: pft_fwaudit_findings{host="sentry",severity="fail"}
+    values: '0x120'
+  - series: pft_fwaudit_findings{host="sentry",severity="warn"}
+    values: 2x120
+  - series: pft_fwaudit_findings{host="sentry",severity="info"}
+    values: '0x120'
+  alert_rule_test:
+  - eval_time: 119m
+    alertname: PFTFwauditExposure
+    exp_alerts: []
+- name: FAIL on both hosts fires one alert per host
+  interval: 1m
+  input_series:
+  - series: pft_fwaudit_up{host="validator"}
+    values: 1x30
+  - series: pft_fwaudit_last_run_timestamp_seconds{host="validator"}
+    values: 0+60x30
+  - series: pft_fwaudit_findings{host="validator",severity="fail"}
+    values: 1x30
+  - series: pft_fwaudit_findings{host="validator",severity="warn"}
+    values: '0x30'
+  - series: pft_fwaudit_findings{host="validator",severity="info"}
+    values: 1x30
+  - series: pft_fwaudit_up{host="sentry"}
+    values: 1x30
+  - series: pft_fwaudit_last_run_timestamp_seconds{host="sentry"}
+    values: 0+60x30
+  - series: pft_fwaudit_findings{host="sentry",severity="fail"}
+    values: 3x30
+  - series: pft_fwaudit_findings{host="sentry",severity="warn"}
+    values: '0x30'
+  - series: pft_fwaudit_findings{host="sentry",severity="info"}
+    values: 1x30
+  alert_rule_test:
+  - eval_time: 4m
+    alertname: PFTFwauditExposure
+    exp_alerts: []
+  - eval_time: 5m
+    alertname: PFTFwauditExposure
+    exp_alerts:
+    - exp_labels:
+        severity: critical
+        host: sentry
+        reason: fail-findings
+      exp_annotations:
+        summary: 'sentry: inbound exposure audit found 3 FAIL finding(s)'
+        description: pft-fwaudit compares the declared inbound policy with what is actually reachable (UFW, iptables/ip6tables, nftables, Docker DNAT and docker-proxy paths, listening sockets, IPv4/IPv6).
+          Run `sudo pft-fwaudit audit` (each FAIL line names the class, port and family; exit 3/4 names a policy or capture error), then `sudo pft-fwaudit plan` for the UFW changes `apply` can make inside
+          a pft-maint window; Docker/nftables items are manual.
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/fwaudit/README.md#alert
+    - exp_labels:
+        severity: critical
+        host: validator
+        reason: fail-findings
+      exp_annotations:
+        summary: 'validator: inbound exposure audit found 1 FAIL finding(s)'
+        description: pft-fwaudit compares the declared inbound policy with what is actually reachable (UFW, iptables/ip6tables, nftables, Docker DNAT and docker-proxy paths, listening sockets, IPv4/IPv6).
+          Run `sudo pft-fwaudit audit` (each FAIL line names the class, port and family; exit 3/4 names a policy or capture error), then `sudo pft-fwaudit plan` for the UFW changes `apply` can make inside
+          a pft-maint window; Docker/nftables items are manual.
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/fwaudit/README.md#alert

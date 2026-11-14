@@ -1,0 +1,10 @@
+[Unit]
+Description=Pull the peer's pft-fwaudit textfile every hour (validator)
+
+[Timer]
+OnCalendar=*-*-* *:16:00 UTC
+RandomizedDelaySec=30s
+Persistent=false
+
+[Install]
+WantedBy=timers.target

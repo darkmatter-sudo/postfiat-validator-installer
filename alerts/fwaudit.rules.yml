@@ -1,0 +1,26 @@
+# Alert rule for pft-fwaudit (../fwaudit). On each host, pft-fwaudit.timer (hourly, :11 UTC) runs
+# `pft-fwaudit audit --textfile`, which writes pft_fwaudit_HOST.prom: pft_fwaudit_up, pft_fwaudit_last_run_timestamp_seconds
+# and, when the audit graded the capture, pft_fwaudit_verdict, pft_fwaudit_findings{severity}, pft_fwaudit_finding_class
+# and pft_fwaudit_exposed. The sentry runs no Prometheus: the validator's pft-fwaudit-pull.timer (:16) copies its
+# textfile here and it is evaluated like every other host="sentry" series.
+# Exactly one alert: a FAIL finding (something reachable that the policy does not declare, reachable from more
+# sources than declared, a declared limit missing on the actual path, UFW off / default allow) or an audit that could
+# not run (up 0). WARN/INFO findings do not page; they show in the metrics and `sudo pft-fwaudit audit`. A stopped
+# timer or a failing pull leaves the textfile old: pft-rulecheck grades it (textfile pft_fwaudit_*.prom 3h ->
+# PFTTextfileStale), so staleness is not a second fwaudit alert.
+# Tests: fwaudit.tests.yml (promtool test rules fwaudit.tests.yml), 1m sample interval.
+groups:
+  - name: pft-fwaudit
+    rules:
+      - alert: PFTFwauditExposure
+        expr: |
+          label_replace(max by (host) (pft_fwaudit_findings{severity="fail"}) > 0, "reason", "fail-findings", "", "")
+          or
+          label_replace(max by (host) (pft_fwaudit_up) == 0, "reason", "audit-error", "", "")
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.host }}: inbound exposure audit {{ if eq $labels.reason \"audit-error\" }}could not run{{ else }}found {{ $value }} FAIL finding(s){{ end }}"
+          description: "pft-fwaudit compares the declared inbound policy with what is actually reachable (UFW, iptables/ip6tables, nftables, Docker DNAT and docker-proxy paths, listening sockets, IPv4/IPv6). Run `sudo pft-fwaudit audit` (each FAIL line names the class, port and family; exit 3/4 names a policy or capture error), then `sudo pft-fwaudit plan` for the UFW changes `apply` can make inside a pft-maint window; Docker/nftables items are manual."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/fwaudit/README.md#alert"

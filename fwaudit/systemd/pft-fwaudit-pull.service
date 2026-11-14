@@ -1,0 +1,33 @@
+[Unit]
+Description=pft-fwaudit pull: copy the peer's pft-fwaudit textfile to this host's exporter (validated)
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/fwaudit
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# validator only (install.sh --pull). Its own timer, independent of this host's audit run: the sentry's audit
+# (:11 + up to 60 s, a few seconds long) is copied at :16; one missed pull still stays under the 3 h rulecheck limit
+ExecStart=/usr/local/bin/pft-fwaudit pull
+ReadWritePaths=/var/lib/pft-exporter/textfile
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+UMask=0022
+# AF_INET/6: the pull's ssh; SETUID/SETGID/AUDIT_WRITE: its runuser + ssh
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_AUDIT_WRITE
+TimeoutStartSec=3min

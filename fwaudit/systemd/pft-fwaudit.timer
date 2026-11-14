@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the pft-fwaudit inbound exposure audit every hour
+
+[Timer]
+# hourly; the validator's pft-fwaudit-pull.timer (:16) copies the sentry's result 5 min later
+OnCalendar=*-*-* *:11:00 UTC
+RandomizedDelaySec=60s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

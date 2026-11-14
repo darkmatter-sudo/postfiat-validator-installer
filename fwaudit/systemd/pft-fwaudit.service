@@ -1,0 +1,34 @@
+[Unit]
+Description=pft-fwaudit: declared inbound policy vs effective exposure (writes textfile metrics, read-only)
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/fwaudit
+
+[Service]
+Type=oneshot
+# exit 1 (WARN) and 2 (FAIL) are findings, reported in the metrics; 3 (policy) and 4 (capture) fail the unit and
+# leave pft_fwaudit_up 0
+SuccessExitStatus=1 2
+ExecStart=/usr/local/bin/pft-fwaudit audit --textfile
+ReadWritePaths=/var/lib/pft-exporter/textfile
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+# AF_NETLINK: ss and nft; AF_INET/6: iptables-save/ip6tables-save sockets; AF_UNIX: the docker socket (docker ps)
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
+# NET_ADMIN: read netfilter rulesets; NET_RAW: legacy iptables; SYS_PTRACE + DAC_READ_SEARCH: ss -p socket owners
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_PTRACE CAP_DAC_READ_SEARCH
+Nice=10
+UMask=0022
+TimeoutStartSec=180

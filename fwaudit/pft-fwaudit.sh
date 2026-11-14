@@ -6,17 +6,27 @@
 # rulesets and sockets once into a bundle and fwaudit_eval.py walks the real chains for each listener.
 #
 # Usage: sudo pft-fwaudit collect [--out FILE]                         write a capture bundle (default: stdout)
-#        sudo pft-fwaudit audit [--role R] [--json] [--bundle FILE]    exit 0 PASS, 1 WARN, 2 FAIL, 3 usage, 4 capture
+#        sudo pft-fwaudit audit [--role R] [--json] [--bundle FILE] [--textfile]
+#                                                     exit 0 PASS, 1 WARN, 2 FAIL, 3 usage/policy, 4 capture
 #        sudo pft-fwaudit plan [--role R] [--json] [--bundle FILE]     exit 0 nothing to do, 1 actions, 2 manual items
 #        sudo pft-fwaudit apply --yes [--role R] [--dry-run] [--deadman MIN] [--foreground]
 #        sudo pft-fwaudit rollback --yes
 #        sudo pft-fwaudit watch                                        (the dead-man; apply starts it as a unit)
+#        sudo pft-fwaudit pull                         validator: copy the peer's textfile (PULL_SSH in the env file)
+#        pft-fwaudit validate FILE HOST                the check pull applies to a fetched textfile
 #        pft-fwaudit version
 #
 #  collect  runs, each into its own `### $ CMD` / `### rc=N` section: ufw status verbose, iptables-save,
 #           ip6tables-save, nft list ruleset, ss -H -tulpn, docker ps (names/ports), ip -br addr. Nothing is changed
 #           and nothing is sent anywhere; no docker exec into any container.
 #  audit    collects (or reads --bundle) and grades it against POLICY_DIR/ROLE.policy with peer sources from PEERS.
+#           --textfile also writes TEXTFILE_DIR/pft_fwaudit_HOST.prom (atomic rename): pft_fwaudit_up (0 = capture or
+#           policy error, then only up + timestamp), pft_fwaudit_last_run_timestamp_seconds and, when graded,
+#           pft_fwaudit_verdict (0/1/2), pft_fwaudit_findings{severity}, pft_fwaudit_finding_class{class,severity}
+#           (every class, 0 when absent) and pft_fwaudit_exposed{family,state} (reachable family/proto/port count).
+#  pull     runs "$PULL_SSH cat -- REMOTE_DIR/pft_fwaudit_PEER.prom" (timeout PULL_TIMEOUT), validates it (only
+#           pft_fwaudit_ samples whose first label is host="PEER", up + timestamp present, <= MAX_BYTES) and renames
+#           it into TEXTFILE_DIR; a failed fetch or validation leaves the previous copy (it then goes stale).
 #  plan     read-only: the UFW changes apply would make (fwaudit_eval.py plan). Only narrowing changes are planned:
 #           delete UFW allows behind undeclared/stale exposure, per-source allows instead of a too-broad one, LIMIT
 #           for a declared-limited port, default deny incoming. Docker/DOCKER-USER/nftables items are MANUAL.
@@ -36,14 +46,17 @@
 #       PEERS (/etc/pft-fwaudit.peers: NAME=CIDR[,CIDR] lines, kept off the public repo), CMD_TIMEOUT (20),
 #       CONTAINER (postfiatd), RPC_URL ("" = `docker exec CONTAINER curl` on its loopback, as pft-selfheal does),
 #       DEADMAN_MIN (10), POLL_SEC (30), BAD_POLLS (3), PEER_SLACK (1), MIN_PEERS (3), MAINT_MARGIN (300),
-#       STATE_DIR (/var/lib/pft-fwaudit), UFW_DIR (/etc/ufw), UFW_DEFAULT (/etc/default/ufw)
+#       STATE_DIR (/var/lib/pft-fwaudit), UFW_DIR (/etc/ufw), UFW_DEFAULT (/etc/default/ufw),
+#       HOST_LABEL (= ROLE), TEXTFILE_DIR (/var/lib/pft-exporter/textfile); pull: PEER_LABEL (sentry), PULL_SSH
+#       (command line that runs `cat` on the peer), PULL_TIMEOUT (30), REMOTE_DIR (/var/lib/pft-exporter/textfile),
+#       MAX_BYTES (65536)
 # Test hooks: PFT_FWA_EVAL (/usr/local/lib/pft-fwaudit/fwaudit_eval.py), PFT_FWA_TEST=1 (no root check),
 #       PFT_FWA_COLLECT (command printing a bundle), PFT_FWA_UFW / _MAINT / _SYSTEMCTL / _SYSTEMD_RUN (commands),
 #       PFT_FWA_RPC_CMD (prints server_info JSON), PFT_FWA_NOW_FILE (fake clock)
 
 set -uo pipefail
 umask 077
-VERSION=2
+VERSION=3
 
 CONF="${PFT_FWA_CONF:-/etc/pft-fwaudit.env}"
 # shellcheck disable=SC1090
@@ -63,6 +76,13 @@ MAINT_MARGIN="${MAINT_MARGIN:-300}"
 STATE_DIR="${STATE_DIR:-/var/lib/pft-fwaudit}"
 UFW_DIR="${UFW_DIR:-/etc/ufw}"
 UFW_DEFAULT="${UFW_DEFAULT:-/etc/default/ufw}"
+HOST_LABEL="${HOST_LABEL:-}" # defaults to ROLE after option parsing
+TEXTFILE_DIR="${TEXTFILE_DIR:-/var/lib/pft-exporter/textfile}"
+PEER_LABEL="${PEER_LABEL:-sentry}"
+PULL_SSH="${PULL_SSH:-}"
+PULL_TIMEOUT="${PULL_TIMEOUT:-30}"
+REMOTE_DIR="${REMOTE_DIR:-/var/lib/pft-exporter/textfile}"
+MAX_BYTES="${MAX_BYTES:-65536}"
 EVAL="${PFT_FWA_EVAL:-/usr/local/lib/pft-fwaudit/fwaudit_eval.py}"
 TEST="${PFT_FWA_TEST:-}"
 UFW="${PFT_FWA_UFW:-ufw}"
@@ -275,13 +295,114 @@ do_apply() { # DRY FG
   log "dead-man started as transient unit $UNIT (journalctl -u $UNIT); apply RESULT: PASS (pending dead-man)"
 }
 
+# ---------- textfile metrics / pull ----------
+valid_label() { [[ "$1" =~ ^[a-z][a-z0-9_-]{0,31}$ ]]; }
+
+metrics() { # UP TS [AUDIT_JSON] -> textfile body
+  local L="host=\"$HOST_LABEL\"" c sev
+  printf '# HELP pft_fwaudit_up 1 = the last audit captured the host and graded it against its policy.\n'
+  printf '# TYPE pft_fwaudit_up gauge\npft_fwaudit_up{%s} %s\n' "$L" "$1"
+  printf '# HELP pft_fwaudit_last_run_timestamp_seconds Unix time of the last audit run.\n'
+  printf '# TYPE pft_fwaudit_last_run_timestamp_seconds gauge\npft_fwaudit_last_run_timestamp_seconds{%s} %s\n' "$L" "$2"
+  [ "$1" = 1 ] || return 0
+  printf '# HELP pft_fwaudit_verdict Audit verdict: 0 PASS, 1 WARN, 2 FAIL.\n# TYPE pft_fwaudit_verdict gauge\n'
+  jq -r --arg L "$L" '"pft_fwaudit_verdict{\($L)} \({"PASS": 0, "WARN": 1, "FAIL": 2}[.verdict])"' <<<"$3"
+  printf '# HELP pft_fwaudit_findings Findings of the last audit by severity.\n# TYPE pft_fwaudit_findings gauge\n'
+  for sev in fail warn info; do
+    jq -r --arg L "$L" --arg s "$sev" \
+      '"pft_fwaudit_findings{\($L),severity=\"\($s)\"} \([.findings[] | select(.severity == ($s | ascii_upcase))] | length)"' <<<"$3"
+  done
+  printf '# HELP pft_fwaudit_finding_class Findings of the last audit by class (every class, 0 when absent).\n'
+  printf '# TYPE pft_fwaudit_finding_class gauge\n'
+  while read -r c sev; do
+    jq -r --arg L "$L" --arg c "$c" --arg s "$sev" \
+      '"pft_fwaudit_finding_class{\($L),class=\"\($c)\",severity=\"\($s | ascii_downcase)\"} \([.findings[] | select(.class == $c)] | length)"' <<<"$3"
+  done < <(python3 -I "$EVAL" classes)
+  printf '# HELP pft_fwaudit_exposed Reachable (family, proto, port) entries by family and state.\n'
+  printf '# TYPE pft_fwaudit_exposed gauge\n'
+  jq -r --arg L "$L" '.exposure as $e | ["v4", "v6"][] as $f | ["open", "limited", "sources"][] as $s |
+    "pft_fwaudit_exposed{\($L),family=\"\($f)\",state=\"\($s)\"} \([$e[] | select(.family == $f and .state == $s)] | length)"' <<<"$3"
+}
+
+write_textfile() { # CONTENT
+  local t
+  t="$(mktemp "$TEXTFILE_DIR/.pft_fwaudit_$HOST_LABEL.XXXXXX" 2>/dev/null)" || { echo "pft-fwaudit: cannot write $TEXTFILE_DIR" >&2; return 1; }
+  if ! { printf '%s\n' "$1" >"$t" && chmod 644 "$t" && mv -f "$t" "$TEXTFILE_DIR/pft_fwaudit_$HOST_LABEL.prom"; }; then
+    rm -f "$t"; echo "pft-fwaudit: cannot write $TEXTFILE_DIR" >&2; return 1
+  fi
+}
+
+audit_textfile() { # BUNDLE|"" -> prints the audit (human or --json), writes the textfile, returns the audit's rc
+  local b="$1" t0 aj rc body
+  t0="$(now)"
+  if [ -z "$b" ]; then
+    b="$(mktemp -p "$TMP" bundle.XXXXXX)" || die "mktemp failed" 4
+    if ! collect > "$b"; then write_textfile "$(metrics 0 "$t0")"; die "capture failed" 4; fi
+  fi
+  aj="$(eval_cmd audit "$b" --json)"; rc=$?
+  if [ "$rc" -gt 2 ] || ! jq -e '.verdict and .exposure and .findings' >/dev/null 2>&1 <<<"$aj"; then
+    write_textfile "$(metrics 0 "$t0")"
+    [ "$rc" -gt 2 ] || rc=4
+    echo "pft-fwaudit: audit error (rc=$rc), wrote up 0" >&2
+    return "$rc"
+  fi
+  body="$(metrics 1 "$t0" "$aj")" || { write_textfile "$(metrics 0 "$t0")"; return 4; }
+  write_textfile "$body" || return 4
+  if [ "${#json[@]}" -gt 0 ]; then printf '%s\n' "$aj"; else eval_cmd audit "$b"; fi
+  return "$rc"
+}
+
+validate() { # FILE HOST -> rc 0, or rc 1 with the first reason on stdout
+  local f="$1" h="$2" size
+  [ -f "$f" ] || { echo "not a file"; return 1; }
+  size="$(stat -c %s "$f")"; [ "$size" -le "$MAX_BYTES" ] || { echo "too big ($size bytes)"; return 1; }
+  awk -v h="$h" '
+    BEGIN { pre = "host=\"" h "\"" }
+    /^# (HELP|TYPE) pft_fwaudit_[a-z_]+ / || /^$/ { next }
+    {
+      if (match($0, /^pft_fwaudit_[a-z_]+\{/) == 0) { printf "line %d: not a pft_fwaudit_ sample\n", NR; bad = 1; exit }
+      rest = substr($0, RLENGTH + 1)
+      if (index(rest, pre) != 1) { printf "line %d: first label is not %s\n", NR, pre; bad = 1; exit }
+      if (rest !~ /^[^{}]*\} -?[0-9]+(\.[0-9]+)?$/) { printf "line %d: malformed sample\n", NR; bad = 1; exit }
+      if ($0 ~ /^pft_fwaudit_up\{/) up = 1
+      if ($0 ~ /^pft_fwaudit_last_run_timestamp_seconds\{/) ts = 1
+    }
+    END {
+      if (bad) exit 1
+      if (!up) { print "no pft_fwaudit_up sample"; exit 1 }
+      if (!ts) { print "no pft_fwaudit_last_run_timestamp_seconds sample"; exit 1 }
+    }' "$f"
+}
+
+pull() {
+  local tmp why
+  valid_label "$PEER_LABEL" || die "bad PEER_LABEL"
+  [ "$PEER_LABEL" != "$HOST_LABEL" ] || die "refusing to pull over this host's own textfile ($PEER_LABEL)"
+  [ -n "$PULL_SSH" ] || die "PULL_SSH not set (see $CONF)"
+  [[ "$PULL_TIMEOUT" =~ ^[1-9][0-9]*$ ]] || die "bad PULL_TIMEOUT"
+  tmp="$(mktemp "$TEXTFILE_DIR/.pull-fwaudit-$PEER_LABEL.XXXXXX")" || die "cannot create a temp file in $TEXTFILE_DIR" 1
+  # shellcheck disable=SC2086 # PULL_SSH is a command line from the root-owned env file
+  if ! timeout "$PULL_TIMEOUT" $PULL_SSH cat -- "$REMOTE_DIR/pft_fwaudit_$PEER_LABEL.prom" >"$tmp" 2>/dev/null </dev/null; then
+    rm -f "$tmp"; die "fetch of pft_fwaudit_$PEER_LABEL.prom failed" 1
+  fi
+  if ! why="$(validate "$tmp" "$PEER_LABEL")"; then rm -f "$tmp"; die "validation failed: $why" 2; fi
+  if ! { chmod 644 "$tmp" && mv -f "$tmp" "$TEXTFILE_DIR/pft_fwaudit_$PEER_LABEL.prom"; }; then rm -f "$tmp"; die "rename failed" 1; fi
+}
+
 # ---------- main ----------
 cmd="${1:-}"; shift || true
-json=() bundle="" out="" YES=0 DRY=0 FG=0
+if [ "$cmd" = validate ]; then # FILE HOST: positional, before option parsing
+  [ $# -eq 2 ] || die "usage: pft-fwaudit validate FILE HOST"
+  valid_label "$2" || die "bad host label $2"
+  why="$(validate "$1" "$2")" || { echo "INVALID: $why"; exit 1; }
+  echo "OK"; exit 0
+fi
+json=() bundle="" out="" YES=0 DRY=0 FG=0 TF=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --role) ROLE="${2:?}"; shift 2 ;;
     --json) json=(--json); shift ;;
+    --textfile) TF=1; shift ;;
     --bundle) bundle="${2:?}"; shift 2 ;;
     --out) out="${2:?}"; shift 2 ;;
     --yes) YES=1; shift ;;
@@ -292,6 +413,8 @@ while [ $# -gt 0 ]; do
   esac
 done
 [[ "$ROLE" =~ ^[a-z][a-z0-9-]*$ ]] || die "bad role $ROLE"
+HOST_LABEL="${HOST_LABEL:-$ROLE}"
+valid_label "$HOST_LABEL" || die "bad HOST_LABEL $HOST_LABEL"
 for v in DEADMAN_MIN POLL_SEC BAD_POLLS PEER_SLACK MIN_PEERS MAINT_MARGIN; do
   [[ "${!v}" =~ ^[0-9]+$ ]] || die "$v must be an integer"
 done
@@ -303,6 +426,11 @@ case "$cmd" in
     ;;
   audit|plan)
     tmpdir
+    if [ "$TF" = 1 ]; then
+      [ "$cmd" = audit ] || die "--textfile is an audit option"
+      [ -n "$bundle" ] || need_root
+      audit_textfile "$bundle"; exit $?
+    fi
     if [ -z "$bundle" ]; then need_root; bundle="$(fresh_bundle)"; fi
     eval_cmd "$cmd" "$bundle" "${json[@]}"
     exit $?
@@ -314,6 +442,7 @@ case "$cmd" in
     [ "$YES" = 1 ] || die "rollback changes the firewall; re-run with --yes" 4
     do_rollback; exit $?
     ;;
+  pull) need_root; pull ;;
   version) echo "pft-fwaudit $VERSION" ;;
-  *) sed -n '8,14p' "$0" >&2; exit 3 ;;
+  *) sed -n '8,17p' "$0" >&2; exit 3 ;;
 esac

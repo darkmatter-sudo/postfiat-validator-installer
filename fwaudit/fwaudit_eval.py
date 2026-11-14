@@ -26,6 +26,7 @@ Usage: fwaudit_eval.py audit BUNDLE POLICY [--peers FILE] [--json]
        fwaudit_eval.py ufwnum FAMILY PROTO PORT [--from-any] [--keep LIMIT] [--except-from CIDR,..]
        < `ufw status numbered`
        (prints the matching ALLOW/LIMIT rule numbers, highest first = safe delete order)
+       fwaudit_eval.py classes      (prints `CLASS SEVERITY` per finding class, for the textfile metrics)
 """
 
 import ipaddress
@@ -769,6 +770,9 @@ def render(res):
 
 
 def main(argv):
+    if argv == ["classes"]:  # for the textfile: every class gets a sample, 0 when absent
+        print("\n".join(f"{c} {s}" for c, s in sorted(SEVERITY.items())))
+        return 0
     if len(argv) >= 4 and argv[0] == "ufwnum":
         fam, proto, port, rest = argv[1], argv[2], argv[3], argv[4:]
         keep = rest[rest.index("--keep") + 1] if "--keep" in rest and rest.index("--keep") + 1 < len(rest) else None

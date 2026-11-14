@@ -1,9 +1,10 @@
 # fwaudit: declared inbound policy vs effective exposure
 
-**Status: in progress (task_32d07e3a).** The read-only audit (`audit [--json]`), per-role policies, redacted
-captures of both hosts, remediation (`plan/apply/rollback` with the dead-man) and their tests are in. The timer,
-textfile metrics, the alert, fleet/integrity/schedaudit/jobwatch/rulecheck integration, mutation and promtool tests,
-the drills and the results table follow.
+**Status: in progress (task_32d07e3a).** In: the read-only audit (`audit [--json] [--textfile]`), per-role
+policies, redacted captures of both hosts, remediation (`plan/apply/rollback` with the dead-man), the hourly timer,
+textfile metrics, the validator's pull of the sentry textfile, the one alert (`PFTFwauditExposure`) with promtool
+tests, `install.sh`, and their tests. Still to come: the live install with the fleet/integrity/schedaudit/jobwatch/
+rulecheck integration, the mutation run, the drills and the results table.
 
 ## Why
 
@@ -66,6 +67,47 @@ below baseline minus `PEER_SLACK`, or a declared exposure (SSH included) gone. `
 runs `ufw reload` and checks the sha256 of every restored file. A UFW change moves the `pft-integrity` fw items: accept
 the baseline with a reason after an intended apply.
 
+## Install, timer and metrics
+
+```
+sudo ./install.sh --role validator     # or --role sentry on the sentry; needs /etc/pft-fwaudit.peers for @peers
+sudo ./install.sh --pull               # validator: hourly copy of the sentry's textfile (PULL_SSH in the env file)
+sudo ./install.sh --uninstall          # refuses while an apply is pending its dead-man
+```
+
+`pft-fwaudit.timer` runs `pft-fwaudit audit --textfile` hourly at :11 UTC (+ up to 60 s) through a sandboxed unit
+(read-only file system except the textfile dir, no home, capabilities NET_ADMIN/NET_RAW for the rulesets and
+SYS_PTRACE/DAC_READ_SEARCH for `ss -p` socket owners). It writes `pft_fwaudit_HOST.prom` atomically:
+
+| Metric | Labels | Meaning |
+|---|---|---|
+| `pft_fwaudit_up` | host | 1 = captured and graded; 0 = capture or policy error (then only up + timestamp) |
+| `pft_fwaudit_last_run_timestamp_seconds` | host | time of the run |
+| `pft_fwaudit_verdict` | host | 0 PASS, 1 WARN, 2 FAIL |
+| `pft_fwaudit_findings` | host, severity | findings by severity (fail/warn/info) |
+| `pft_fwaudit_finding_class` | host, class, severity | every class, 0 when absent |
+| `pft_fwaudit_exposed` | host, family, state | reachable (family, proto, port) entries, state open/limited/sources |
+
+On the validator, `pft-fwaudit-pull.timer` (:16 UTC, 5 min after the sentry's run, independent of this host's own
+run) copies the sentry's textfile over ssh, validates it (`pft-fwaudit validate FILE HOST`: only `pft_fwaudit_`
+samples whose first label is the peer's host, up + timestamp present, at most 64 KiB) and renames it in; a failed
+fetch or validation leaves the previous copy, which then ages. `pft-rulecheck` grades the age
+(`textfile pft_fwaudit_*.prom 3h pft_fwaudit_last_run_timestamp_seconds` and a `require` line per host), so a
+stopped timer or failing pull shows up as `PFTTextfileStale`.
+
+## Alert
+
+One rule, `PFTFwauditExposure` (`../alerts/fwaudit.rules.yml`, critical, `for: 5m`), with a `reason` label:
+
+- `fail-findings`: at least one FAIL finding (undeclared exposure, source too broad, missing limit, UFW inactive or
+  default allow). The summary carries the count.
+- `audit-error`: `pft_fwaudit_up == 0` (the capture or the policy failed; the graded series are absent then).
+
+WARN and INFO findings do not page. Runbook: `sudo pft-fwaudit audit` names class, port and family for each finding;
+`sudo pft-fwaudit plan` lists the UFW changes `apply` can make in a pft-maint window; Docker/nftables items are
+manual. Tests: `promtool test rules alerts/fwaudit.tests.yml` (fire at the `for` boundary and one minute before,
+recovery at the hand-computed sample, a 4-minute FAIL that never fires, WARN-only and clean cases, both hosts).
+
 ## Found -> fixed -> verified
 
 | Host | Found (capture 00:14Z) | Fix | Verified |
@@ -81,3 +123,7 @@ Every finding class has an injected-fault test and a control that must not raise
 against stubs (`tests/stubs`: ufw, capture, RPC, pft-maint, systemd) and, for every guard, asserts no mutating ufw
 call was made and user.rules is unchanged; dead-man trips (node down, peer drop, lost SSH exposure, re-audit still
 finding, failed ufw command) assert the restored sha256.
+`tests/test_textfile.py` checks every metric against the evaluator's `--json` for the same real capture, the up-0
+paths (incomplete bundle, missing policy, failed capture: only up + timestamp written), an unwritable textfile dir
+(no file), and `validate`/`pull` (spoofed host, foreign metric, malformed, missing up/timestamp, oversize, failed
+fetch: previous copy byte-identical; config refusals).
