@@ -44,7 +44,8 @@
 #            4 refused, 5 rollback failed, 6 interrupted (rolled back).
 # Conf: PFT_FWA_CONF (/etc/pft-fwaudit.env, root-owned): ROLE (validator), POLICY_DIR (/usr/local/lib/pft-fwaudit/policy),
 #       PEERS (/etc/pft-fwaudit.peers: NAME=CIDR[,CIDR] lines, kept off the public repo), CMD_TIMEOUT (20),
-#       CONTAINER (postfiatd), RPC_URL ("" = `docker exec CONTAINER curl` on its loopback, as pft-selfheal does),
+#       CONTAINER (role default: validator postfiatd, sentry postfiatd-sentry; any other role postfiatd),
+#       RPC_URL ("" = `docker exec CONTAINER curl` on its loopback, as pft-selfheal does),
 #       DEADMAN_MIN (10), POLL_SEC (30), BAD_POLLS (3), PEER_SLACK (1), MIN_PEERS (3), MAINT_MARGIN (300),
 #       STATE_DIR (/var/lib/pft-fwaudit), UFW_DIR (/etc/ufw), UFW_DEFAULT (/etc/default/ufw),
 #       HOST_LABEL (= ROLE), TEXTFILE_DIR (/var/lib/pft-exporter/textfile); pull: PEER_LABEL (sentry), PULL_SSH
@@ -52,7 +53,7 @@
 #       MAX_BYTES (65536)
 # Test hooks: PFT_FWA_EVAL (/usr/local/lib/pft-fwaudit/fwaudit_eval.py), PFT_FWA_TEST=1 (no root check),
 #       PFT_FWA_COLLECT (command printing a bundle), PFT_FWA_UFW / _MAINT / _SYSTEMCTL / _SYSTEMD_RUN (commands),
-#       PFT_FWA_RPC_CMD (prints server_info JSON), PFT_FWA_NOW_FILE (fake clock)
+#       PFT_FWA_RPC_CMD (prints server_info JSON), PFT_FWA_DOCKER (docker command), PFT_FWA_NOW_FILE (fake clock)
 
 set -uo pipefail
 umask 077
@@ -65,7 +66,7 @@ ROLE="${ROLE:-validator}"
 POLICY_DIR="${POLICY_DIR:-/usr/local/lib/pft-fwaudit/policy}"
 PEERS="${PEERS:-/etc/pft-fwaudit.peers}"
 CMD_TIMEOUT="${CMD_TIMEOUT:-20}"
-CONTAINER="${CONTAINER:-postfiatd}"
+CONTAINER="${CONTAINER:-}" # defaults by ROLE after option parsing
 RPC_URL="${RPC_URL:-}"
 DEADMAN_MIN="${DEADMAN_MIN:-10}"
 POLL_SEC="${POLL_SEC:-30}"
@@ -89,6 +90,7 @@ UFW="${PFT_FWA_UFW:-ufw}"
 MAINT="${PFT_FWA_MAINT:-pft-maint}"
 SYSTEMCTL="${PFT_FWA_SYSTEMCTL:-systemctl}"
 SYSTEMD_RUN="${PFT_FWA_SYSTEMD_RUN:-systemd-run}"
+DOCKER="${PFT_FWA_DOCKER:-docker}"
 UNIT=fwaudit-deadman # outside the pft-* namespace: a transient pft-* unit would show up as NEW in pft-schedaudit
 SNAP_FILES=("$UFW_DIR/user.rules" "$UFW_DIR/user6.rules" "$UFW_DEFAULT")
 
@@ -149,13 +151,21 @@ server_obs() { # -> "STATE PEERS" ("down 0" when the RPC does not answer)
     ans="$(curl -s --max-time 8 -H 'Content-Type: application/json' -d '{"method":"server_info","params":[{}]}' \
       "$RPC_URL" 2>/dev/null)"
   else
-    ans="$(timeout 13 docker exec "$CONTAINER" curl -s --max-time 8 \
+    ans="$(timeout 13 "$DOCKER" exec "$CONTAINER" curl -s --max-time 8 \
       -H 'Content-Type: application/json' -d '{"method":"server_info","params":[{}]}' http://127.0.0.1:5005/ 2>/dev/null)"
   fi
   jq -r '.result.info | "\(.server_state // "down") \(.peers // 0)"' <<<"$ans" 2>/dev/null | grep -E '^[a-z_]+ [0-9]+$' \
     || echo "down 0"
 }
 is_full() { case "$1" in full|validating|proposing) return 0 ;; esac; return 1; }
+node_source() { # -> "ok <how>" or "refuse <reason>": can server_obs reach a node at all (before reading its state)?
+  # a wrong CONTAINER made every apply refuse as "node is down" and every dead-man poll BAD (exposure drill, 2026-11-14)
+  if [ -n "${PFT_FWA_RPC_CMD:-}" ]; then echo "ok test rpc command"; return; fi
+  if [ -n "$RPC_URL" ]; then echo "ok RPC_URL $RPC_URL"; return; fi
+  if [ "$(timeout 13 "$DOCKER" inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null)" = true ]; then
+    echo "ok docker exec $CONTAINER"
+  else echo "refuse container '$CONTAINER' is not running on this host (set CONTAINER or RPC_URL in $CONF)"; fi
+}
 
 maint_gate() { # NEED_SEC -> "ok <remaining>" or "refuse <reason>"
   local j w rem nl
@@ -254,12 +264,31 @@ watch_deadman() {
   log "dead-man: PASS - changes kept (snapshot stays in $STATE_DIR/snapshot for a manual rollback)"
 }
 
+prechecks() { # AUDIT_JSON -> one line per apply guard, as a real apply would see it now (a dry run never refuses)
+  local g src st pe k
+  g="$(maint_gate $(( DEADMAN_MIN * 60 + MAINT_MARGIN )))"; echo "pre-check maintenance window: $g"
+  src="$(node_source)"; echo "pre-check node source: $src"
+  case "$src" in
+    ok*) read -r st pe <<<"$(server_obs)"
+      if is_full "$st" && [ "$pe" -ge "$MIN_PEERS" ]; then echo "pre-check node: ok $st, peers $pe (MIN_PEERS $MIN_PEERS)"
+      else echo "pre-check node: refuse $st, peers $pe (MIN_PEERS $MIN_PEERS)"; fi ;;
+    *) echo "pre-check node: refuse no node source" ;;
+  esac
+  case "$( [ -f "$(state_file)" ] && jq -r '.result // ""' "$(state_file)")" in
+    pending) echo "pre-check earlier apply: refuse still pending its dead-man ($(state_file))" ;;
+    *) echo "pre-check earlier apply: ok none pending" ;;
+  esac
+  k=" $(declared_keys "$1") "
+  if [[ "$k" == *" v4/tcp/22 "* ]]; then echo "pre-check ssh v4/tcp/22: ok reachable declared exposure"
+  else echo "pre-check ssh v4/tcp/22: refuse not a reachable declared exposure"; fi
+}
+
 do_apply() { # DRY FG
-  local dry="$1" fg="$2" b pj aj gate st pe keep a post left
+  local dry="$1" fg="$2" b pj aj gate st pe keep a post left src
   b="$(fresh_bundle)"
   pj="$(eval_cmd plan "$b" --json)"; [ -n "$pj" ] || die "plan failed" 3
   aj="$(eval_cmd audit "$b" --json)"
-  if [ "$dry" = 1 ]; then eval_cmd plan "$b"; echo "dry run - nothing changed"; return 0; fi
+  if [ "$dry" = 1 ]; then eval_cmd plan "$b"; prechecks "$aj"; echo "dry run - nothing changed"; return 0; fi
   [ "$(jq '.actions | length' <<<"$pj")" -gt 0 ] || { log "apply: no change (plan has no actions; $(jq '.manual | length' <<<"$pj") manual item(s))"; return 0; }
   [ "$YES" = 1 ] || die "apply changes the firewall; re-run with --yes (or --dry-run)" 4
   if [ -f "$(state_file)" ] && [ "$(jq -r '.result // ""' "$(state_file)")" = pending ]; then
@@ -267,6 +296,7 @@ do_apply() { # DRY FG
   fi
   gate="$(maint_gate $(( DEADMAN_MIN * 60 + MAINT_MARGIN )))"
   case "$gate" in ok*) ;; *) die "REFUSED: ${gate#refuse }" 4 ;; esac
+  src="$(node_source)"; case "$src" in ok*) ;; *) die "REFUSED: ${src#refuse }" 4 ;; esac
   read -r st pe <<<"$(server_obs)"
   is_full "$st" || die "REFUSED: node is $st, not full" 4
   [ "$pe" -ge "$MIN_PEERS" ] || die "REFUSED: peers $pe < MIN_PEERS $MIN_PEERS" 4
@@ -414,6 +444,7 @@ while [ $# -gt 0 ]; do
 done
 [[ "$ROLE" =~ ^[a-z][a-z0-9-]*$ ]] || die "bad role $ROLE"
 HOST_LABEL="${HOST_LABEL:-$ROLE}"
+if [ -z "$CONTAINER" ]; then case "$ROLE" in sentry) CONTAINER=postfiatd-sentry ;; *) CONTAINER=postfiatd ;; esac; fi
 valid_label "$HOST_LABEL" || die "bad HOST_LABEL $HOST_LABEL"
 for v in DEADMAN_MIN POLL_SEC BAD_POLLS PEER_SLACK MIN_PEERS MAINT_MARGIN; do
   [[ "${!v}" =~ ^[0-9]+$ ]] || die "$v must be an integer"

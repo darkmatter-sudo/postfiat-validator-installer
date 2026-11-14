@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# docker stand-in for the node-source path (no PFT_FWA_RPC_CMD): docker_running names the one running container;
+# `inspect -f ... NAME` prints true for it, `exec NAME curl ...` prints rpc.json from it; anything else fails like a
+# missing container
+echo "docker $*" >> "$FWA_STUB_DIR/calls.log"
+running="$(cat "$FWA_STUB_DIR/docker_running" 2>/dev/null)"
+case "$1" in
+  inspect) name="${*: -1}"
+    if [ -n "$running" ] && [ "$name" = "$running" ]; then echo true; else echo "Error: No such object: $name" >&2; exit 1; fi ;;
+  exec) if [ -n "$running" ] && [ "$2" = "$running" ]; then cat "$FWA_STUB_DIR/rpc.json"; else echo "Error: No such container: $2" >&2; exit 1; fi ;;
+  *) exit 2 ;;
+esac

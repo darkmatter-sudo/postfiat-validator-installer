@@ -438,3 +438,103 @@ def test_rollback_detects_a_corrupted_snapshot(env):
     rc, out = env.run("rollback", "--yes")
     assert rc == 5 and "rollback RESULT: FAIL - restored files differ from the snapshot" in out, out
     assert "rollback RESULT: PASS" not in out
+
+
+# ------------------------------------------------------------- node source (docker exec path, no rpc stub)
+# Exposure drill 2026-11-14: the sentry conf had no CONTAINER, the default was the validator's name, so every apply
+# refused as "node is down" and every dead-man poll would have been BAD. These run the real `docker exec` shape.
+def docker_env(e, running, **extra):
+    e.write("docker_running", running)
+    return {"PFT_FWA_RPC_CMD": "", "PFT_FWA_DOCKER": os.path.join(STUBS, "docker"), **extra}
+
+
+def docker_calls(e):
+    return [c for c in e.read("calls.log").splitlines() if c.startswith("docker ")]
+
+
+def test_sentry_role_reads_the_sentry_container(env):
+    before = env.sha()
+    rc, out = env.run("apply", "--yes", "--foreground", **docker_env(env, "postfiatd-sentry"))
+    assert rc == 0, out
+    assert env.mutations() == ["ufw --force delete 5"]
+    assert "dead-man: PASS" in out and out.count("dead-man poll: full peers 10 declared ok") == 4
+    calls = docker_calls(env)
+    assert calls[0] == "docker inspect -f {{.State.Running}} postfiatd-sentry"
+    assert all(c.startswith("docker exec postfiatd-sentry curl ") for c in calls[1:]) and len(calls) == 6
+    assert env.sha() != before
+
+
+def test_missing_container_refuses_before_any_change(env):
+    before = env.sha()
+    rc, out = env.run("apply", "--yes", "--foreground", **docker_env(env, "postfiatd"))  # validator name, sentry role
+    assert rc == 4, out
+    assert "REFUSED: container 'postfiatd-sentry' is not running on this host (set CONTAINER or RPC_URL in" in out
+    assert "node is down" not in out
+    assert_untouched(env, before)
+    assert docker_calls(env) == ["docker inspect -f {{.State.Running}} postfiatd-sentry"]  # no exec into anything
+    assert not os.path.exists(os.path.join(env.state, "snapshot"))
+
+
+def test_configured_container_overrides_the_role_default(env):
+    rc, out = env.run("apply", "--dry-run", **docker_env(env, "node-a", CONTAINER="node-a"))
+    assert rc == 0, out
+    assert "pre-check node source: ok docker exec node-a" in out
+    assert "pre-check node: ok full, peers 10 (MIN_PEERS 3)" in out
+
+
+def test_rpc_url_needs_no_container(env):
+    rc, out = env.run("apply", "--dry-run", **docker_env(env, "", RPC_URL="http://127.0.0.1:9"))
+    assert rc == 0, out
+    assert "pre-check node source: ok RPC_URL http://127.0.0.1:9" in out
+    assert docker_calls(env) == []
+
+
+# ------------------------------------------------------------- dry run reports every guard, never refuses
+def test_dry_run_reports_every_guard_ok(env):
+    before = env.sha()
+    rc, out = env.run("apply", "--dry-run")
+    assert rc == 0, out
+    lines = [ln for ln in out.splitlines() if ln.startswith("pre-check ")]
+    assert lines == [
+        "pre-check maintenance window: ok 1800",
+        "pre-check node source: ok test rpc command",
+        "pre-check node: ok full, peers 10 (MIN_PEERS 3)",
+        "pre-check earlier apply: ok none pending",
+        "pre-check ssh v4/tcp/22: ok reachable declared exposure",
+    ]
+    assert_untouched(env, before)
+
+
+def test_dry_run_reports_refusals_without_refusing(env):
+    env.write("maint.json", json.dumps({"window": "none", "remaining_sec": None, "locks": []}))
+    os.makedirs(env.state)
+    with open(os.path.join(env.state, "state.json"), "w", encoding="utf-8") as fh:
+        json.dump({"result": "pending"}, fh)
+    t = fixture_text("sentry.bundle")
+    env.write(
+        "bundle_before",
+        "\n".join(ln for ln in t.splitlines() if not (ln.startswith("tcp") and ":22 " in ln and "sshd" in ln)) + "\n",
+    )
+    before = env.sha()
+    rc, out = env.run("apply", "--dry-run", **docker_env(env, "postfiatd"))
+    assert rc == 0 and "dry run - nothing changed" in out, out
+    lines = [ln for ln in out.splitlines() if ln.startswith("pre-check ")]
+    assert lines[0].startswith("pre-check maintenance window: refuse no active pft-maint window")
+    assert lines[1].startswith("pre-check node source: refuse container 'postfiatd-sentry' is not running")
+    assert lines[2] == "pre-check node: refuse no node source"
+    assert lines[3].startswith("pre-check earlier apply: refuse still pending its dead-man")
+    assert lines[4] == "pre-check ssh v4/tcp/22: refuse not a reachable declared exposure"
+    assert_untouched(env, before)
+
+
+@pytest.mark.parametrize(
+    "info, want",
+    [
+        ({"server_state": "syncing", "peers": 10}, "refuse syncing, peers 10"),
+        ({"server_state": "full", "peers": 2}, "refuse full, peers 2"),
+    ],
+)
+def test_dry_run_reports_node_refusal(env, info, want):
+    env.write("rpc.json", json.dumps({"result": {"status": "success", "info": info}}))
+    rc, out = env.run("apply", "--dry-run")
+    assert rc == 0 and f"pre-check node: {want} (MIN_PEERS 3)" in out, out
