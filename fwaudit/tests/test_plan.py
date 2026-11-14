@@ -142,3 +142,23 @@ def test_plan_cli_exit_codes(capsys):
     assert cli("sentry.bundle", "sentry") == 1
     assert cli("sentry-postfix.bundle", "sentry") == 0
     capsys.readouterr()
+
+
+def test_ufwnum_never_selects_deny_or_reject():
+    text = (
+        "[ 1] 2559/tcp                   DENY IN     Anywhere\n[ 2] 2559/tcp                   ALLOW IN    Anywhere\n"
+    )
+    text += "[ 3] 2559/tcp                   REJECT IN   Anywhere\n"
+    assert fe.ufwnum(text, "v4", "tcp", 2559) == [2]
+
+
+def test_plan_cli_manual_items_exit_2(tmp_path, capsys):
+    import os
+
+    from test_fwaudit import FIX, POL, load
+
+    b = tmp_path / "inactive.bundle"
+    b.write_text(load("validator").replace("Status: active", "Status: inactive", 1), encoding="utf-8")
+    pol = os.path.join(POL, "validator.policy")
+    assert fe.main(["plan", str(b), pol, "--peers", os.path.join(FIX, "validator.peers")]) == 2
+    assert "MANUAL ufw-inactive" in capsys.readouterr().out

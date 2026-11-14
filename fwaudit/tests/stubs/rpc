@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
-# server_info stand-in: rpc.json, or rpc_after.json once the ufw stub has mutated anything (if that file exists)
+# server_info stand-in: with rpc_timeline ("EPOCH FILE" lines, fake clock from $FWA_STUB_DIR/now) the last line whose
+# EPOCH <= now names the answer; otherwise rpc.json, or rpc_after.json once the ufw stub has mutated anything
+if [ -f "$FWA_STUB_DIR/rpc_timeline" ]; then
+  now="$(cat "$FWA_STUB_DIR/now")" f=""
+  while read -r t name; do [ "$now" -ge "$t" ] && f="$name"; done < "$FWA_STUB_DIR/rpc_timeline"
+  if [ -n "$f" ]; then cat "$FWA_STUB_DIR/$f"; exit 0; fi
+fi
 if [ -s "$FWA_STUB_DIR/mutated" ] && [ -f "$FWA_STUB_DIR/rpc_after.json" ]; then cat "$FWA_STUB_DIR/rpc_after.json"
 else cat "$FWA_STUB_DIR/rpc.json"; fi

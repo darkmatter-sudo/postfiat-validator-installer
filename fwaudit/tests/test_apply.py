@@ -375,3 +375,66 @@ def test_source_too_broad_adds_source_then_deletes_the_broad_rule(env):
         "ufw --force delete 2",
     ]
     assert ["19532/tcp", "ALLOW", "203.0.113.7"] in json.loads(env.read("rules.json"))
+
+
+# ------------------------------------------------------------- dead-man poll sequences (fake clock timelines)
+T0 = 1800000000  # Env's clock; DEADMAN_MIN 2, POLL_SEC 30: polls at T0+30, +60, +90, +120
+
+
+def timeline(env, answers):
+    """answers: [(offset_sec, server_info dict)] -> rpc_timeline served by the rpc stub on the fake clock."""
+    lines = []
+    for i, (off, ans) in enumerate(answers):
+        env.write(f"rpc_{i}.json", json.dumps(ans))
+        lines.append(f"{T0 + off} rpc_{i}.json")
+    env.write("rpc_timeline", "\n".join(lines) + "\n")
+
+
+def info(state, peers):
+    return {"result": {"status": "success", "info": {"server_state": state, "peers": peers}}}
+
+
+def test_dead_man_trips_at_exactly_bad_polls(env):
+    timeline(env, [(0, FULL), (30, info("connected", 0))])
+    rc, out = env.run("apply", "--yes", "--foreground")
+    assert rc == 1, out
+    assert out.count("dead-man poll:") == 3 and "BAD (3/3)" in out and "BAD (4/3)" not in out
+    assert out.index("BAD (3/3)") < out.index("dead-man: TRIPPED")
+
+
+def test_dead_man_needs_consecutive_bad_polls(env):
+    # bad, good, bad, bad: never 3 in a row -> kept
+    timeline(env, [(0, FULL), (30, info("connected", 0)), (60, FULL), (90, info("connected", 0))])
+    rc, out = env.run("apply", "--yes", "--foreground")
+    assert rc == 0, out
+    assert "BAD (1/3)" in out and "BAD (2/3)" in out and "BAD (3/3)" not in out and "TRIPPED" not in out
+    assert env.state_json()["result"] == "kept"
+
+
+def test_dead_man_trips_on_not_full_with_peers_intact(env):
+    env.write("rpc_after.json", json.dumps(info("syncing", 10)))
+    before = env.sha()
+    rc, out = env.run("apply", "--yes", "--foreground")
+    assert rc == 1 and "syncing peers 10" in out and "TRIPPED" in out, out
+    assert env.sha() == before
+
+
+def test_dead_man_trips_when_ssh_exposure_disappears_during_watch(env):
+    # the re-audit right after apply still sees SSH; from T0+60 the capture lacks it -> polls 2, 3, 4 BAD -> rollback
+    t = fixture_text("sentry-postfix.bundle")
+    env.write("bundle_late", "\n".join(ln for ln in t.splitlines() if not (":22 " in ln and "sshd" in ln)) + "\n")
+    env.write("bundle_late_at", str(T0 + 60))
+    before = env.sha()
+    rc, out = env.run("apply", "--yes", "--foreground")
+    assert rc == 1, out
+    assert "re-audit: verdict" in out and "missing: v4/tcp/22" in out and "TRIPPED" in out
+    assert env.sha() == before
+
+
+def test_rollback_detects_a_corrupted_snapshot(env):
+    assert env.run("apply", "--yes", "--foreground")[0] == 0
+    with open(os.path.join(env.state, "snapshot", "0"), "a", encoding="utf-8") as fh:
+        fh.write("# tampered after the snapshot sums were taken\n")
+    rc, out = env.run("rollback", "--yes")
+    assert rc == 5 and "rollback RESULT: FAIL - restored files differ from the snapshot" in out, out
+    assert "rollback RESULT: PASS" not in out

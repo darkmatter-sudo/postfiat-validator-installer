@@ -1,3 +1,8 @@
 #!/usr/bin/env bash
-# collect stand-in: the "before" bundle until the ufw stub has mutated anything, then the "after" bundle
-if [ -s "$FWA_STUB_DIR/mutated" ]; then cat "$FWA_STUB_DIR/bundle_after"; else cat "$FWA_STUB_DIR/bundle_before"; fi
+# collect stand-in: the "before" bundle until the ufw stub has mutated anything, then the "after" bundle; with
+# bundle_late + bundle_late_at (epoch, fake clock) the late bundle from that time on (a change during the dead-man)
+if [ -s "$FWA_STUB_DIR/mutated" ]; then
+  if [ -f "$FWA_STUB_DIR/bundle_late" ] && [ "$(cat "$FWA_STUB_DIR/now")" -ge "$(cat "$FWA_STUB_DIR/bundle_late_at")" ]; then
+    cat "$FWA_STUB_DIR/bundle_late"
+  else cat "$FWA_STUB_DIR/bundle_after"; fi
+else cat "$FWA_STUB_DIR/bundle_before"; fi

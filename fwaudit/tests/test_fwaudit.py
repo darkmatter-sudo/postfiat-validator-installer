@@ -356,3 +356,102 @@ def test_policy_errors_exit_3(tmp_path, capsys, line, reason):
     p = write(tmp_path, "p", line + "\n")
     assert fe.main(["audit", os.path.join(FIX, "validator.bundle"), p]) == 3
     assert reason in capsys.readouterr().err
+
+
+# ------------------------------------------------------------- walk semantics (each kills a mutant of the 11 run)
+def udp_listen(port, addr="0.0.0.0", proc="python3"):
+    return f'udp UNCONN 0      0      {addr}:{port}  0.0.0.0:* users:(("{proc}",pid=4243,fd=4))'
+
+
+def v4_state(res):
+    return {e["port"]: e["state"] for e in res["exposure"] if e["family"] == "v4"}
+
+
+def with_listener(port, line=None):
+    return in_section(load("validator"), "ss -H", lambda s: s + (line or listen(port)) + "\n")
+
+
+def test_unknown_match_makes_accept_conditional_and_control():
+    # --tcp-flags is not modelled: the ACCEPT may or may not take a NEW SYN, so the port is limited, not open
+    t = with_listener(8083)
+    cond = "-A INPUT -p tcp -m tcp --dport 8083 --tcp-flags SYN,ACK SYN -j ACCEPT"
+    plain = "-A INPUT -p tcp -m tcp --dport 8083 -j ACCEPT"
+    assert v4_state(run("validator", insert_before(t, "-A INPUT -j ufw-before-logging-input", cond)))[8083] == "limited"
+    assert v4_state(run("validator", insert_before(t, "-A INPUT -j ufw-before-logging-input", plain)))[8083] == "open"
+
+
+def test_input_policy_accept_exposes_unallowed_listener_and_control():
+    t = with_listener(8084)
+    assert 8084 not in v4_state(run("validator", t))  # policy DROP: closed (control)
+    t = in_section(t, "iptables-save", lambda s: s.replace(":INPUT DROP", ":INPUT ACCEPT", 1))
+    res = run("validator", t)
+    assert v4_state(res)[8084] == "open"
+    assert ("undeclared-exposure", "v4", 8084) in classes(res)
+
+
+def test_drop_in_jumped_chain_wins_over_later_accept_and_control():
+    t = with_listener(8085)
+    t = insert_after(t, ":INPUT DROP", ":fwtest - [0:0]")
+    t = insert_before(t, "-A INPUT -j ufw-before-logging-input", "-A INPUT -j fwtest")
+    t = insert_before(t, "-A INPUT -j ufw-before-logging-input", "-A INPUT -p tcp -m tcp --dport 8085 -j ACCEPT")
+    ctl = insert_before(t, "-A INPUT -j fwtest", "-A fwtest -p tcp -m tcp --dport 8086 -j DROP")
+    assert v4_state(run("validator", ctl))[8085] == "open"  # the sub-chain drops another port: 8085 still open
+    t = insert_before(t, "-A INPUT -j fwtest", "-A fwtest -p tcp -m tcp --dport 8085 -j DROP")
+    assert 8085 not in v4_state(run("validator", t))
+
+
+def test_udp_listener_allowed_by_ufw_fails_and_control():
+    t = with_listener(8086, udp_listen(8086))
+    assert 8086 not in v4_state(run("validator", t))  # no allow: closed
+    t = insert_after(
+        t,
+        "-A ufw-user-input -p tcp -m tcp --dport 22 -j ACCEPT",
+        "-A ufw-user-input -p udp -m udp --dport 8086 -j ACCEPT",
+    )
+    res = run("validator", t)
+    hit = [f for f in res["findings"] if f["class"] == "undeclared-exposure"]
+    assert [(f["proto"], f["port"]) for f in hit] == [("udp", 8086)]
+
+
+def test_loopback_listener_is_never_exposed_even_with_accept():
+    t = with_listener(8087, listen(8087, addr="127.0.0.1"))
+    t = insert_before(t, "-A INPUT -j ufw-before-logging-input", "-A INPUT -p tcp -m tcp --dport 8087 -j ACCEPT")
+    res = run("validator", t)
+    assert 8087 not in v4_state(res)
+    assert not [f for f in res["findings"] if f.get("port") == 8087]
+    ctl = with_listener(8087, listen(8087, addr="0.0.0.0"))
+    ctl = insert_before(ctl, "-A INPUT -j ufw-before-logging-input", "-A INPUT -p tcp -m tcp --dport 8087 -j ACCEPT")
+    assert v4_state(run("validator", ctl))[8087] == "open"  # control: the same rule exposes a wildcard listener
+
+
+def test_published_port_without_proxy_listener_is_not_stale():
+    # userland-proxy off: no docker-proxy socket for v4 2559, but the UFW allow still fronts a DNAT-published port
+    t = in_section(load("validator"), "ss -H", lambda s: "\n".join(x for x in s.split("\n") if "0.0.0.0:2559" not in x))
+    res = run("validator", t)
+    assert not [f for f in res["findings"] if f["class"] == "stale-allow"]
+    assert v4_state(res)[2559] == "limited"  # still reached via DNAT on the FORWARD path
+
+
+def test_inet_filter_table_is_foreign():
+    # firewalld/nft-native `inet filter` shares a name with iptables-nft's tables but is not one of them
+    extra = "table inet filter {\n\tchain input {\n\t\ttype filter hook input priority 0; policy accept;\n\t}\n}"
+    t = in_section(load("validator"), "nft list ruleset", lambda s: s + extra + "\n")
+    f = [x for x in run("validator", t)["findings"] if x["class"] == "nft-foreign-table"]
+    assert [(x["table"], x["hook"]) for x in f] == [("inet filter", "input")]
+
+
+def test_fail_finding_before_warn_keeps_verdict_fail():
+    t = in_section(load("sentry"), "ss -H", lambda s: s + listen(8088) + "\n")
+    t = insert_before(t, "-A INPUT -j ufw-before-logging-input", "-A INPUT -p tcp -m tcp --dport 8088 -j ACCEPT")
+    res = run("sentry", t)
+    sev = [f["severity"] for f in res["findings"]]
+    assert "FAIL" in sev and "WARN" in sev and sev.index("FAIL") < max(i for i, s in enumerate(sev) if s == "WARN")
+    assert res["verdict"] == "FAIL"
+
+
+def test_multicast_destination_rule_does_not_open_unicast_and_control():
+    # ufw-before-input accepts udp/5353 only for -d 224.0.0.251 (mDNS): a unicast probe to a 5353 listener is closed
+    t = with_listener(5353, udp_listen(5353))
+    assert 5353 not in v4_state(run("validator", t))
+    t = t.replace("-A ufw-before-input -d 224.0.0.251/32 -p udp", "-A ufw-before-input -p udp", 1)
+    assert v4_state(run("validator", t))[5353] == "open"  # control: the same rule without -d opens it

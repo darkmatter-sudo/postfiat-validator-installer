@@ -1,0 +1,90 @@
+$ TEST_TMPDIR=$HOME/.cache nice -n 15 python3 -u fwaudit/tests/mutate.py --jobs 3   (dev pass, uncommitted harness sha256 b98d5d884823378f16f087d2b46e37d92e89254ee1e5ed0312db64a5a64f30d3)
+control baseline suite (unmutated copy): PASS 100 passed in 60.36s (0:01:00)
+control baseline promtool (unmutated copy): PASS SUCCESS
+control timeout (evaluator never returns, --hang-timeout 60): HANG after 60 s, 0 process(es) left
+E01 CAUGHT - ss section not required [1 failing: test_failed_section_exit_4]
+E02 CAUGHT - failed section accepted [1 failing: test_failed_section_exit_4]
+E03 CAUGHT - -i lo matches the uplink probe [41 failing: test_plan_lists_the_v6_delete, test_plan_nothing_to_do_after_fix, test_no_actions_is_no_change, test_apply_deletes_only_the_v6_rule_and_dead_man_keeps_it ...]
+E04 CAUGHT - ctstate ignores NEW [41 failing: test_plan_lists_the_v6_delete, test_plan_nothing_to_do_after_fix, test_no_actions_is_no_change, test_apply_deletes_only_the_v6_rule_and_dead_man_keeps_it ...]
+E05 SURVIVED - unknown match treated as a full match
+E06 CAUGHT - limit modules not conditional [21 failing: test_plan_lists_the_v6_delete, test_plan_nothing_to_do_after_fix, test_apply_deletes_only_the_v6_rule_and_dead_man_keeps_it, test_validator_capture_passes_with_exact_table ...]
+E07 CAUGHT - source-restricted rule is a full match [37 failing: test_plan_nothing_to_do_after_fix, test_no_actions_is_no_change, test_apply_deletes_only_the_v6_rule_and_dead_man_keeps_it, test_apply_starts_the_dead_man_as_a_transient_unit ...]
+E08 SURVIVED - conditional ACCEPT is open
+E09 CAUGHT - rate-limited DROP closes the port [9 failing: test_validator_capture_passes_with_exact_table, test_control_listener_without_allow_is_closed, test_cli_exit_codes[validator-validator-0], test_controls_plan_nothing ...]
+E10 SURVIVED - ACCEPT chain policy is closed
+E11 SURVIVED - closed sub-chain falls through
+E12 CAUGHT - sub-chain RETURN treated as closed [42 failing: test_plan_lists_the_v6_delete, test_plan_nothing_to_do_after_fix, test_apply_deletes_only_the_v6_rule_and_dead_man_keeps_it, test_apply_starts_the_dead_man_as_a_transient_unit ...]
+E13 SURVIVED - udp sockets ignored
+E14 CAUGHT - dual-stack * listener only v4 [1 failing: test_v6_allow_for_v4_only_port_fails_parity]
+E15 SURVIVED - loopback listener counted
+E16 CAUGHT - docker-proxy with DNAT walked on INPUT [1 failing: test_validator_capture_passes_with_exact_table]
+E17 CAUGHT - loopback DNAT walked as exposure [26 failing: test_plan_lists_the_v6_delete, test_plan_nothing_to_do_after_fix, test_validator_capture_passes_with_exact_table, test_sentry_capture_before_fix_reports_stale_v6_allow ...]
+E18 CAUGHT - ufw inactive not reported [3 failing: test_ufw_inactive_fails, test_cli_fail_exit_2, test_ufw_inactive_and_foreign_nft_are_manual_never_actions]
+E19 CAUGHT - default allow accepted [2 failing: test_default_incoming_allow_fails, test_default_incoming_allow_plans_default_deny]
+E20 CAUGHT - undeclared exposure not reported [7 failing: test_undeclared_input_listener_allowed_by_ufw_fails, test_accept_inserted_before_ufw_chains_fails, test_docker_published_port_bypasses_ufw_and_fails, test_v6_allow_for_v4_only_port_fails_parity ...]
+E21 CAUGHT - source-too-broad ignores any-source reach [2 failing: test_source_too_broad_adds_source_then_deletes_the_broad_rule, test_source_restriction_removed_fails]
+E22 CAUGHT - extra sources never computed [2 failing: test_wrong_source_fails_and_names_it, test_source_too_broad_plans_source_allow_then_delete_except_source]
+E23 CAUGHT - missing-limit off [4 failing: test_missing_docker_user_limit_fails, test_missing_ufw_limit_on_input_path_fails, test_docker_user_missing_limit_is_manual, test_ufw_missing_limit_plans_limit_then_delete_of_the_allow]
+E24 CAUGHT - limited counts as missing limit [37 failing: test_plan_nothing_to_do_after_fix, test_no_actions_is_no_change, test_apply_deletes_only_the_v6_rule_and_dead_man_keeps_it, test_apply_starts_the_dead_man_as_a_transient_unit ...]
+E25 CAUGHT - declared-unreachable off [1 failing: test_declared_family_without_listener_warns]
+E26 SURVIVED - stale-allow ignores Docker-published ports
+E27 CAUGHT - stale-allow off [25 failing: test_plan_lists_the_v6_delete, test_apply_needs_yes, test_maint_gate_refuses[maint0-no, test_maint_gate_refuses[maint1-window ...]
+E28 CAUGHT - loopback DNAT guard accepts any target [21 failing: test_plan_lists_the_v6_delete, test_plan_nothing_to_do_after_fix, test_validator_capture_passes_with_exact_table, test_sentry_capture_before_fix_reports_stale_v6_allow ...]
+E29 SURVIVED - nft inet tables treated as iptables-nft
+E30 SURVIVED - WARN overrides FAIL
+E31 CAUGHT - INFO findings raise WARN [6 failing: test_validator_capture_passes_with_exact_table, test_control_listener_without_allow_is_closed, test_cli_exit_codes[validator-validator-0], test_textfile_matches_evaluator_json[validator-validator.bundle-0-0] ...]
+E32 SURVIVED - -d multicast/loopback matches
+P01 CAUGHT - plan deletes ufw rules on a Docker path [1 failing: test_docker_user_missing_limit_is_manual]
+P02 CAUGHT - plan acts without a ufw rule [1 failing: test_undeclared_accept_outside_ufw_is_manual]
+P03 CAUGHT - deletes before adds [3 failing: test_source_too_broad_adds_source_then_deletes_the_broad_rule, test_ufw_missing_limit_plans_limit_then_delete_of_the_allow, test_source_too_broad_plans_source_allow_then_delete_except_source]
+P04 CAUGHT - ufwnum not family-scoped [2 failing: test_apply_deletes_only_the_v6_rule_and_dead_man_keeps_it, test_ufwnum_family_action_and_source_selection]
+P05 CAUGHT - ufwnum ignores --keep [1 failing: test_ufwnum_family_action_and_source_selection]
+P06 SURVIVED - ufwnum selects DENY rules
+P07 CAUGHT - ufwnum ignores --from-any [1 failing: test_ufwnum_family_action_and_source_selection]
+P08 CAUGHT - ufwnum ignores --except-from [3 failing: test_source_too_broad_adds_source_then_deletes_the_broad_rule, test_ufwnum_family_action_and_source_selection, test_ufwnum_cli]
+P09 CAUGHT - ufwnum lowest first [1 failing: test_ufwnum_family_action_and_source_selection]
+P10 CAUGHT - missing-limit delete also removes the LIMIT [1 failing: test_ufw_missing_limit_plans_limit_then_delete_of_the_allow]
+P11 CAUGHT - source-too-broad delete removes the declared sources [2 failing: test_source_too_broad_adds_source_then_deletes_the_broad_rule, test_source_too_broad_plans_source_allow_then_delete_except_source]
+P12 CAUGHT - INFO findings listed as manual [4 failing: test_controls_plan_nothing, test_undeclared_accept_outside_ufw_is_manual, test_docker_user_missing_limit_is_manual, test_info_findings_are_neither_action_nor_manual]
+P13 SURVIVED - plan exit ignores manual items
+P14 CAUGHT - default deny never planned [1 failing: test_default_incoming_allow_plans_default_deny]
+S01 CAUGHT - apply without --yes [1 failing: test_apply_needs_yes]
+S02 CAUGHT - pending apply ignored [1 failing: test_pending_apply_refuses]
+S03 CAUGHT - maintenance gate ignored [3 failing: test_maint_gate_refuses[maint0-no, test_maint_gate_refuses[maint1-window, test_maint_gate_refuses[maint2-1]
+S04 CAUGHT - window time left not checked [1 failing: test_maint_gate_refuses[maint1-window]
+S05 CAUGHT - data-collection locks ignored [1 failing: test_maint_gate_refuses[maint2-1]
+S06 CAUGHT - node not full accepted [2 failing: test_node_health_refuses[info0-node, test_rpc_unanswered_refuses]
+S07 CAUGHT - MIN_PEERS ignored [1 failing: test_node_health_refuses[info1-peers]
+S08 CAUGHT - SSH guard off [1 failing: test_no_ssh_exposure_refuses]
+S09 CAUGHT - no snapshot before change [7 failing: test_apply_deletes_only_the_v6_rule_and_dead_man_keeps_it, test_dead_man_trips_on_node_down_and_restores, test_dead_man_trips_on_peer_drop, test_dead_man_trips_when_ssh_exposure_disappears ...]
+S10 CAUGHT - re-audit leftovers ignored [1 failing: test_reaudit_still_finding_rolls_back]
+S11 CAUGHT - lost declared exposure after apply ignored [1 failing: test_dead_man_trips_when_ssh_exposure_disappears]
+S12 CAUGHT - failed ufw action ignored [1 failing: test_failed_ufw_command_rolls_back]
+S13 SURVIVED - dead-man trips one poll late
+S14 SURVIVED - bad poll count never reset
+S15 CAUGHT - PEER_SLACK ignored [1 failing: test_dead_man_control_peer_slack_tolerates_one]
+S16 SURVIVED - dead-man ignores lost declared exposure
+S17 SURVIVED - dead-man ignores node state
+S18 SURVIVED - rollback sha256 check skipped
+S19 CAUGHT - rollback without ufw reload [1 failing: test_dead_man_trips_on_node_down_and_restores]
+S20 CAUGHT - dead-man unit never started [1 failing: test_apply_starts_the_dead_man_as_a_transient_unit]
+S21 CAUGHT - --dry-run not honoured [1 failing: test_dry_run_changes_nothing]
+S22 CAUGHT - audit error still writes up 1 [2 failing: test_incomplete_bundle_writes_up_0_exit_4, test_missing_policy_writes_up_0_exit_3]
+S23 CAUGHT - findings by severity never match [4 failing: test_textfile_matches_evaluator_json[validator-validator.bundle-0-0], test_textfile_matches_evaluator_json[sentry-sentry.bundle-1-1], test_sentry_prefix_capture_counts_its_stale_allow, test_fail_finding_is_counted_and_exits_2]
+S24 CAUGHT - exposed state limited dropped [3 failing: test_textfile_matches_evaluator_json[validator-validator.bundle-0-0], test_textfile_matches_evaluator_json[sentry-sentry.bundle-1-1], test_textfile_matches_evaluator_json[sentry-sentry-postfix.bundle-0-0]]
+S25 CAUGHT - validate: foreign host label accepted [1 failing: test_validate_rejects_with_reason[<lambda>-first]
+S26 CAUGHT - validate: size not checked [1 failing: test_validate_rejects_with_reason[<lambda>-too]
+S27 CAUGHT - validate: missing up accepted [1 failing: test_validate_rejects_with_reason[<lambda>-no]
+S28 CAUGHT - pull over own textfile allowed [1 failing: test_pull_config_refusals_exit_3[extra1-refusing]
+S29 CAUGHT - pull: rejected file still installed [1 failing: test_pull_invalid_content_keeps_previous_copy_exit_2]
+S30 CAUGHT - root check off [1 failing: test_non_root_refused_without_test_hook]
+S31 CAUGHT - failed capture still writes up 1 [1 failing: test_failed_capture_writes_up_0_exit_4]
+R01 CAUGHT - for 1m [promtool FAILED: FAIL on both hosts fires one alert per host; a FAIL that lasts only 4m never fires; audit error (up 0, graded series gone) at 20m fires as audit-error at 25m, clears when a run is graded again at 41m; sentry FAIL x2 from]
+R02 CAUGHT - audit error never matches [promtool FAILED: audit error (up 0, graded series gone) at 20m fires as audit-error at 25m, clears when a run is graded again at 41m]
+R03 CAUGHT - WARN findings page [promtool FAILED: WARN-only findings (stale-allow, declared-unreachable) never page; clean audits on both hosts for 3h (WARN 2 + INFO 1 on the sentry) fire nothing; sentry FAIL x2 from 10m fires at 15m (for 5m) with the count, validator s]
+R04 CAUGHT - zero FAIL findings page [promtool FAILED: WARN-only findings (stale-allow, declared-unreachable) never page; a FAIL that lasts only 4m never fires; audit error (up 0, graded series gone) at 20m fires as audit-error at 25m, clears when a run is graded again at 41]
+R05 CAUGHT - severity warning [promtool FAILED: FAIL on both hosts fires one alert per host; audit error (up 0, graded series gone) at 20m fires as audit-error at 25m, clears when a run is graded again at 41m; sentry FAIL x2 from 10m fires at 15m (for 5m) with the cou]
+R06 CAUGHT - not per host [promtool FAILED: FAIL on both hosts fires one alert per host; sentry FAIL x2 from 10m fires at 15m (for 5m) with the count, validator stays quiet, clears at 31m]
+orphan check: 0 process(es) still running that name this run's scratch dir
+RESULT: 66 caught, 17 survived, 0 not applied, 0 broken of 83
+exit=1
