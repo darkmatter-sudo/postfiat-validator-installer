@@ -233,8 +233,10 @@ MUTANTS = [
 HANG = (E, "def main(argv):\n", "def main(argv):\n    import time\n\n    while True:\n        time.sleep(1)\n")
 
 
-def run(cmd, timeout, env=None, cwd=None):
-    """-> (PASS|FAIL|HANG, output). Own session; the whole process group is SIGKILLed on timeout."""
+def run(cmd, timeout, env=None, cwd=None, scope=None):
+    """-> (PASS|FAIL|HANG, output). Own session; the whole process group is SIGKILLed on timeout, and so is every
+    process that names `scope` (the copy's dir): the s_server fixtures run in their own sessions (their teardown
+    killpg's them), so a hung suite would otherwise leave them behind."""
     p = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
@@ -250,6 +252,15 @@ def run(cmd, timeout, env=None, cwd=None):
     except subprocess.TimeoutExpired:
         os.killpg(p.pid, signal.SIGKILL)
         p.communicate()
+        if scope:
+            left = subprocess.run(["pgrep", "-f", re.escape(scope)], capture_output=True, text=True, check=False)
+            for pid in (int(x) for x in left.stdout.split()):
+                if pid != os.getpid():
+                    try:
+                        os.kill(pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+            time.sleep(1)
         return "HANG", ""
     return ("PASS" if p.returncode == 0 else "FAIL"), out
 
@@ -282,6 +293,7 @@ def suite(d, timeout):
         timeout,
         dict(os.environ, TMPDIR=tmp, TEST_TMPDIR=tmp),
         cwd=d,
+        scope=d,
     )
 
 
