@@ -101,3 +101,27 @@ tests:
   - eval_time: 51m
     alertname: PFTPeerTLSPosture
     exp_alerts: []
+- name: sentry drift 1 (single change, PASS verdict) from 10m fires at 15m with the count, clears at 26m
+  interval: 1m
+  input_series:
+  - series: pft_peertls_up{host="sentry"}
+    values: 1x40
+  - series: pft_peertls_verdict{host="sentry"}
+    values: 0x40
+  - series: pft_peertls_drift{host="sentry",target="sentry"}
+    values: 0x9 1x15 0x15
+  alert_rule_test:
+  - eval_time: 14m
+    alertname: PFTPeerTLSPosture
+    exp_alerts: []
+  - eval_time: 15m
+    alertname: PFTPeerTLSPosture
+    exp_alerts:
+    - exp_labels: {host: sentry, reason: drift, severity: warning}
+      exp_annotations:
+        summary: "sentry: peer-port TLS audit saw 1 posture change(s) since the last run"
+        description: "pft-peertls probes this host's own peer port (2559) with at most 40 TLS handshakes and grades protocols, suites, certificate, DH group, renegotiation, FALLBACK_SCSV, EMS and ticket lifetime against /usr/local/lib/pft-peertls/policy. Run `sudo pft-peertls audit` (each FAIL/WARN line names the check and the server's answer). For drift: compare with the previous report; once the change is understood (e.g. a postfiatd upgrade), `sudo pft-peertls audit --textfile` makes the current posture the new baseline and clears the alert."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/peertls/README.md#alert"
+  - eval_time: 26m
+    alertname: PFTPeerTLSPosture
+    exp_alerts: []

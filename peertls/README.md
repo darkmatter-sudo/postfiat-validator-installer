@@ -97,7 +97,7 @@ graded by pft-rulecheck (`textfile pft_peertls_*.prom 8d`). Tests: `promtool tes
 The audit stays read-only. When it reports `cipher.kx_rsa` or `cipher.cbc_sha2`, `pft-peertls-fix` sets the TLS 1.2
 suite list of the inbound peer port. postfiatd builds the peer port's server context from `[port_peer]`
 (`ServerHandler::makeContexts()`, key `ssl_ciphers` parsed in `Port.cpp`); without the key it uses its built-in list,
-which on an OpenSSL 1.1.1 build still admits static-RSA and CBC-SHA2 suites. TLS 1.3 suites are not affected, and the
+which with the OpenSSL build in the official image still admits static-RSA and CBC-SHA2 suites. TLS 1.3 suites are not affected, and the
 outbound (client) side of peer links is unchanged, so peers with default configs still connect.
 
 ```

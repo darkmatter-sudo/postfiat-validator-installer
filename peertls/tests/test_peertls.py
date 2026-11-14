@@ -330,6 +330,68 @@ def test_synthetic_fails_for_reason(work, good_bundle, cid, pid, old, new, resul
     assert c["result"] == result and c["reason"].startswith(reason), c
 
 
+def replace_body(t, pid, body):
+    a, z = section(t, pid)
+    head = t.index("\n", a) + 1
+    return t[:head] + body + t[z:]
+
+
+def test_one_failed_probe_fails_reachable(work, good_bundle):
+    # the certificate is still captured: only the failed probe can turn probe.reachable into FAIL
+    assert check(grade(work, good_bundle), "probe.reachable")["result"] == "PASS"
+    b = work.dir / "one-error.bundle"
+    b.write_text(replace_body(good_bundle.read_text(), "cipher.ecdhe_aead", "connect:errno=111\n"))
+    c = check(grade(work, b), "probe.reachable")
+    assert c["result"] == "FAIL" and c["reason"] == "probes failed to connect: cipher.ecdhe_aead", c
+
+
+def test_tls13_without_any_suite_fails(work, good_bundle):
+    # TLS 1.3 itself accepted, every single-suite TLS 1.3 probe refused: policy `cipher tls13_suites require`
+    base = grade(work, good_bundle)
+    assert check(base, "cipher.tls13_suites")["result"] == "PASS"
+    t = good_bundle.read_text()
+    pids = re.findall(r"^### probe (tls13\.\S+) offer=", t, re.MULTILINE)
+    assert len(pids) >= 2, pids
+    for pid in pids:
+        t = replace_body(t, pid, "SSL alert number 40\nNew, (NONE), Cipher is (NONE)\n")
+    b = work.dir / "no-tls13-suite.bundle"
+    b.write_text(t)
+    rep = grade(work, b)
+    assert check(rep, "proto.tls1_3")["result"] == "PASS"
+    c = check(rep, "cipher.tls13_suites")
+    assert c["result"] == "FAIL" and c["reason"] == "TLS 1.3 suites accepted: none", c
+
+
+def test_alert_only_answer_is_refused(work, good_bundle):
+    # a client that prints only the server's alert (no `New, (NONE)` line) still reads as refused, not as an error
+    t = replace_body(good_bundle.read_text(), "proto.tls1", "SSL alert number 70\n")
+    b = work.dir / "alert-only.bundle"
+    b.write_text(t)
+    rep = grade(work, b)
+    c = check(rep, "proto.tls1")
+    assert c["result"] == "PASS" and c["reason"] == "tls1 refused (protocol_version); policy forbid", c
+    assert check(rep, "probe.reachable")["result"] == "PASS"
+
+
+def test_waiver_for_another_target_does_not_apply(work, good_bundle):
+    b = edited(
+        work,
+        good_bundle,
+        "proto.tls1_2",
+        r"^Secure Renegotiation IS supported",
+        "Secure Renegotiation IS NOT supported",
+        "noreneg.bundle",
+    )
+    (work.dir / "waivers").write_text("hs.secure_reneg other until=2099-01-01 for a different target\n")
+    c = check(grade(work, b), "hs.secure_reneg")
+    assert c["result"] == "WARN", c
+    # control: the same waiver naming this target (and `*`) applies
+    for tgt in ("fx", "*"):
+        (work.dir / "waivers").write_text(f"hs.secure_reneg {tgt} until=2099-01-01 this target\n")
+        c = check(grade(work, b), "hs.secure_reneg")
+        assert c["result"] == "WAIVED" and c["waived_from"] == "WARN", (tgt, c)
+
+
 # ---------- drift ----------
 def test_drift_posture_and_cert(work):
     k1, c1 = make_cert(work.dir, name="a")
@@ -564,6 +626,50 @@ def test_truncated_bundle(work, good_bundle):
     cut.write_text(t[: t.index("### probe hs.reneg")])
     r = sh(str(SH), "audit", "--bundle", str(cut), env=work.env([]))
     assert r.returncode == 4 and "no end line" in r.stderr
+
+
+def test_bundle_over_handshake_cap(work, good_bundle):
+    t = good_bundle.read_text()
+    m = re.search(r"^### end handshakes=([0-9]+)$", t, re.MULTILINE)
+    assert m and int(m.group(1)) <= 40, m
+    over = work.dir / "over"
+    over.write_text(t[: m.start()] + "### end handshakes=41" + t[m.end() :])
+    r = sh(str(SH), "audit", "--bundle", str(over), env=work.env([]))
+    assert r.returncode == 4 and "bundle used 41 handshakes (> 40)" in r.stderr, r.stderr
+    at = work.dir / "at-cap"
+    at.write_text(t[: m.start()] + "### end handshakes=40" + t[m.end() :])
+    assert sh(str(SH), "audit", "--bundle", str(at), env=work.env([])).returncode in (0, 1, 2)
+
+
+def test_bundle_missing_probe(work, good_bundle):
+    t = good_bundle.read_text()
+    a, z = section(t, "cipher.kx_rsa")
+    z = t.index("\n", z) + 1  # through the probe's rc line
+    gone = work.dir / "gone"
+    gone.write_text(t[:a] + t[z:])
+    assert "### probe cipher.kx_rsa " not in gone.read_text()
+    r = sh(str(SH), "audit", "--bundle", str(gone), env=work.env([]))
+    assert r.returncode == 4 and "target fx: probe cipher.kx_rsa missing" in r.stderr, r.stderr
+
+
+def test_root_check_refuses_non_root(work):
+    if os.geteuid() == 0:
+        pytest.skip("runs as root")
+    e = work.env([("a", 2559)])
+    e.pop("PFT_PTLS_TEST")
+    r = sh(str(SH), "plan", env=e)
+    assert r.returncode == 3 and "must run as root" in r.stderr, r.stderr
+
+
+def test_validate_size_cap(work):
+    s = work.server(GOOD)
+    assert sh(str(SH), "audit", "--textfile", env=work.env([("fx", s.port)])).returncode == 0
+    tf = work.dir / "pft_peertls_validator.prom"
+    n = tf.stat().st_size
+    v = sh(str(SH), "validate", str(tf), "validator", env=dict(os.environ, MAX_BYTES=str(n - 1)))
+    assert v.returncode == 1 and v.stdout.strip() == f"INVALID: too big ({n} bytes)", v.stdout
+    v = sh(str(SH), "validate", str(tf), "validator", env=dict(os.environ, MAX_BYTES=str(n)))
+    assert v.returncode == 0 and v.stdout.strip() == "OK", v.stdout
 
 
 def test_shipped_policies_parse_and_match():
