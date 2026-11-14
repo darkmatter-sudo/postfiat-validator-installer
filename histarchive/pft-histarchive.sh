@@ -14,6 +14,12 @@
 #                                                sha256, decrypt into a scratch dir, verify it offline, and compare
 #                                                its MANIFEST head and segments with the local archive
 #        pft-histarchive crosscheck [ARGS]       seeded sample vs the public RPC (histarchive.py crosscheck)
+#        pft-histarchive gaps [--json]           recorded gaps: open/filled, anchors, fillable from FILL_RPC (+ textfile)
+#        sudo pft-histarchive fill-gap FROM-TO (--staged FILE | --rpc URL) [--dry-run]
+#                                                repair one recorded gap: every ledger is checked (header, hash, tx
+#                                                root, parent chain into BOTH archived neighbours) before anything is
+#                                                written; then one sealed fill segment + MANIFEST entry + gapfills.jsonl
+#                                                line under the archive lock, followed by a full verify (+ textfiles)
 #        sudo pft-histarchive periodic           timer entry point: metrics; verify if due; replicate if due
 #        pft-histarchive serve VERB ...          what PEER_SSH runs on the peer: receive NAME | index | check | export NAME
 #        pft-histarchive replica-check           (peer) check the local replica dir against its REPLICA.json
@@ -22,7 +28,8 @@
 #       PFT_HISTARCHIVE_REMOTE (how the peer's copy is invoked through PEER_SSH; default "sudo -n pft-histarchive")
 # Conf: HOST_LABEL (validator|sentry), RPC_URL, PEER_SSH (validator only), EXTRA_RECIPIENTS (space-separated age
 #       recipients that may also decrypt the replica, e.g. an offline operator key), VERIFY_EVERY_H (24),
-#       REPLICATE_EVERY_H (24)
+#       REPLICATE_EVERY_H (24), FILL_RPC (read-only RPC that `gaps` asks whether it still holds an open gap,
+#       e.g. https://rpc.testnet.postfiat.org/; empty = fillable is always 0)
 # "A && B || die" is intended throughout (die exits / the handler returns).
 # shellcheck disable=SC2015
 set -uo pipefail
@@ -52,8 +59,9 @@ PEER_SSH="$(conf_get PEER_SSH)"
 EXTRA_RECIPIENTS="$(conf_get EXTRA_RECIPIENTS)"
 VERIFY_EVERY_H="$(conf_get VERIFY_EVERY_H)"; VERIFY_EVERY_H="${VERIFY_EVERY_H:-24}"
 REPLICATE_EVERY_H="$(conf_get REPLICATE_EVERY_H)"; REPLICATE_EVERY_H="${REPLICATE_EVERY_H:-24}"
+FILL_RPC="$(conf_get FILL_RPC)"
 AGE_RE='^age1[02-9ac-hj-np-z]{58}$'
-NAME_RE='^([0-9]{4}-[0-9]{2}-[0-9]{2}\.jsonl\.gz|meta-[0-9a-f]{16}\.tar)\.age$'
+NAME_RE='^([0-9]{4}-[0-9]{2}-[0-9]{2}\.jsonl\.gz|fill-[0-9]{1,10}-[0-9]{1,10}\.jsonl\.gz|meta-[0-9a-f]{16}\.tar)\.age$'
 
 ts() { date -u +%FT%TZ; }
 die() { echo "pft-histarchive: $1" >&2; exit "${2:-3}"; }
@@ -106,6 +114,28 @@ cmd_verify() {
 
 cmd_status() { helper status --dir "$ARCHIVE"; }
 
+cmd_gaps() { # list gaps; always refresh pft_histarchive_gaps.prom
+  local tf="$STATE_DIR/.gaps.prom" rc
+  helper gaps --dir "$ARCHIVE" ${FILL_RPC:+--rpc "$FILL_RPC"} --textfile "$tf" --host "$HOST_LABEL" "$@"; rc=$?
+  if [ -f "$tf" ]; then prom_write pft_histarchive_gaps < "$tf"; rm -f "$tf"; fi
+  return "$rc"
+}
+
+cmd_fill_gap() { # FROM-TO (--staged FILE | --rpc URL) [--dry-run]: verified fill, then verify + gaps textfiles
+  local gap="${1:-}" rc
+  [[ "$gap" =~ ^[0-9]{1,10}-[0-9]{1,10}$ ]] || die "fill-gap FROM-TO (--staged FILE | --rpc URL) [--dry-run]"
+  shift
+  echo "pft-histarchive fill-gap - $(ts) | $HOST_LABEL gap $gap"
+  helper fill-gap --dir "$ARCHIVE" --gap "$gap" --log "$STATE_DIR/fill.log" "$@"; rc=$?
+  [ "$rc" = 0 ] || { echo "RESULT: $([ "$rc" = 1 ] && echo REFUSED || echo ERROR) - fill-gap rc $rc (nothing written)"; return "$rc"; }
+  case " $* " in *" --dry-run "*) echo "RESULT: DRY RUN PASS - fill-gap rc 0"; return 0 ;; esac
+  echo "== verify after the fill"
+  cmd_verify | tail -n 3 | sed 's/^/  /'; rc="${PIPESTATUS[0]}"
+  cmd_gaps | tail -n 1 | sed 's/^/  /'
+  echo "RESULT: $([ "$rc" = 0 ] && echo PASS || echo FAIL) - fill-gap $gap, verify rc $rc"
+  return "$rc"
+}
+
 cmd_keygen() {
   [ -e "$IDF" ] && die "age identity already exists ($IDF); keygen never replaces it" 4
   mkdir -p "$STATE_DIR"
@@ -144,10 +174,11 @@ build_outbox() { # encrypt new sealed segments and the current metadata; write R
 for x in open(sys.argv[1]):
     if x.strip():
         e = json.loads(x); print(e["day"], e["segment"])' "$ARCHIVE/MANIFEST.jsonl")
-  meta="meta-$(cat "$ARCHIVE/MANIFEST.jsonl" "$ARCHIVE/gaps.jsonl" "$ARCHIVE/state.json" 2>/dev/null | sha256sum | cut -c1-16).tar.age"
+  meta="meta-$(cat "$ARCHIVE/MANIFEST.jsonl" "$ARCHIVE/gaps.jsonl" "$ARCHIVE/gapfills.jsonl" "$ARCHIVE/state.json" 2>/dev/null | sha256sum | cut -c1-16).tar.age"
   if [ ! -f "$OUTBOX/$meta" ]; then
     tmpd="$(mktemp -d -p "$STATE_DIR" .meta.XXXXXX)"
     local -a mf=(MANIFEST.jsonl state.json); [ -f "$ARCHIVE/gaps.jsonl" ] && mf+=(gaps.jsonl)
+    [ -f "$ARCHIVE/gapfills.jsonl" ] && mf+=(gapfills.jsonl)
     tar -C "$ARCHIVE" --format=ustar --owner=0 --group=0 --mtime=@0 -cf "$tmpd/meta.tar" "${mf[@]}" \
       && encrypt "$tmpd/meta.tar" "$OUTBOX/$meta" || { rm -rf "$tmpd"; echo "FAIL encrypt metadata"; return 2; }
     rm -rf "$tmpd"
@@ -278,6 +309,7 @@ cmd_periodic() {
   local now rc=0 due
   now="$(date +%s)"
   cmd_metrics || rc=2
+  cmd_gaps > /dev/null || rc=2
   due=$(( now - $(stamp_get last-verify) >= VERIFY_EVERY_H * 3600 ))
   if [ "$due" = 1 ] || [ "$(head_entry)" != "$(cat "$STATE_DIR/verified-head" 2>/dev/null)" ]; then
     cmd_verify | tail -n 1 || rc=1
@@ -351,6 +383,8 @@ case "$cmd" in
   verify-replica) cmd_verify_replica ;;
   restore-verify) cmd_restore_verify "$@" ;;
   crosscheck) helper crosscheck --dir "$ARCHIVE" "$@" ;;
+  gaps) cmd_gaps "$@" ;;
+  fill-gap) cmd_fill_gap "$@" ;;
   periodic) cmd_periodic ;;
   serve) cmd_serve "$@" ;;
   replica-check) cmd_replica_check ;;

@@ -14,6 +14,11 @@ Layout of --dir:
                                 prev_entry (the previous entry's hash) and entry =
                                 sha256(canonical JSON of the entry without "entry")
   gaps.jsonl                    ledger ranges that could not be archived, with the reason
+  gapfills.jsonl                append-only log of verified gap fills (one line per filled gap; the
+                                MANIFEST fill entry is the authority, this file mirrors it)
+  segments/fill-A-B.jsonl.gz    a sealed fill segment: the ledgers A..B of a recorded gap, verified
+                                against both archived neighbours before it was written (fill-gap)
+  .lock                         flock: seal and fill-gap hold it exclusively, verify shared
   state.json                    start ledger / start time / window of this archive
   status.json                   follower progress (rewritten atomically every ledger)
 
@@ -29,6 +34,8 @@ pft-ledger-stats/hashverify/lib_hashverify.py, see README):
             unless a gaps.jsonl range sits between them
   order     ledger indexes strictly increase by one; any missing index not covered by gaps.jsonl
             is a FAIL ("missing")
+  fill      a MANIFEST fill entry covers exactly one recorded gap, at most once; its ledgers are
+            spliced into the stream at the gap, so header/hash/txroot/chain run across both ends
 
 Crash safety: lines are appended with one write + fsync, so a SIGKILL can leave at most one
 torn last line, which resume cuts (and logs). Sealing writes segments/X.gz.tmp, fsyncs, renames,
@@ -43,6 +50,7 @@ Exit codes: 0 ok | 1 verification FAIL / mismatch | 2 runtime error (RPC, I/O, b
 import argparse
 import calendar
 import contextlib
+import fcntl
 import gzip
 import hashlib
 import json
@@ -53,6 +61,7 @@ import struct
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -60,7 +69,7 @@ import lib_hashverify as hv
 
 RIPPLE_EPOCH = 946684800
 READ_ONLY_METHODS = {"server_info", "ledger"}
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 RATE_CAP = 8.0  # req/s; the tests raise it for their fake node
 
 _stop = False
@@ -235,6 +244,7 @@ class Archive:
         self.segments = os.path.join(root, "segments")
         self.manifest = os.path.join(root, "MANIFEST.jsonl")
         self.gaps = os.path.join(root, "gaps.jsonl")
+        self.gapfills = os.path.join(root, "gapfills.jsonl")
         self.state = os.path.join(root, "state.json")
         self.status = os.path.join(root, "status.json")
 
@@ -313,8 +323,50 @@ def entry_hash(entry):
     ).hexdigest()
 
 
+@contextlib.contextmanager
+def archive_lock(root, exclusive=True, timeout=None):
+    """flock on <root>/.lock. Writers of MANIFEST (seal, fill-gap) hold it exclusively; verify
+    holds it shared so it never reads a half-committed fill. The follower's appends to active/
+    need no lock (nothing else writes there). timeout None = wait forever."""
+    path = os.path.join(root, ".lock")
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_CREAT, 0o644)
+    except PermissionError:
+        if exclusive:
+            raise
+        try:  # a reader without write access to the dir: use the lock if it exists
+            fd = os.open(path, os.O_RDONLY)
+        except FileNotFoundError:
+            yield
+            return
+    try:
+        mode = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
+        if timeout is None:
+            fcntl.flock(fd, mode)
+        else:
+            end = time.monotonic() + timeout
+            while True:
+                try:
+                    fcntl.flock(fd, mode | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    if time.monotonic() >= end:
+                        raise RuntimeError(
+                            f"archive busy: {path} held by another writer for {timeout:g} s"
+                        ) from None
+                    time.sleep(0.2)
+        yield
+    finally:
+        os.close(fd)
+
+
 def seal_day(ar, day, lf=None):
     """Seal active/<day>.jsonl into segments/<day>.jsonl.gz + a MANIFEST entry (crash-safe)."""
+    with archive_lock(ar.root):
+        return _seal_day(ar, day, lf)
+
+
+def _seal_day(ar, day, lf=None):
     src = ar.active_path(day)
     entries = ar.manifest_entries()
     done = {e["day"]: e for e in entries}
@@ -425,6 +477,7 @@ def follow(a, lf):
     signal.signal(signal.SIGTERM, _handle)
     signal.signal(signal.SIGINT, _handle)
 
+    os.close(os.open(os.path.join(ar.root, ".lock"), os.O_RDONLY | os.O_CREAT, 0o644))
     info = rpc.call("server_info")["info"]
     validated = int(info["validated_ledger"]["seq"])
     log(
@@ -694,9 +747,11 @@ def verify_archive(root, include_active=True):
             with open(ar.active_path(day), "rb") as fh:
                 stream.append((f"active/{day}.jsonl", fh.read(), None))
 
-    prev = None  # (index, hash)
-    count = txs = 0
-    first = None
+    # pass 1: parse each source and check it against its MANIFEST entry
+    main, fills = (
+        [],
+        [],
+    )  # main: [(src, rec)] in stream order; fills: [(entry, [(src, rec)])]
     for src, raw, e in stream:
         if raw and not raw.endswith(b"\n"):
             fails.append(f"{src}: last line is torn (no newline)")
@@ -717,13 +772,82 @@ def verify_archive(root, include_active=True):
                 fails.append(f"{src}: first/last/count differ from MANIFEST")
             if recs[-1].get("h") != e["last_hash"]:
                 fails.append(f"{src}: last ledger hash differs from MANIFEST")
-        for r in recs:
+            hdr, _p = check_record(recs[0])
+            if hdr is not None and hdr["parent_hash"] != e["first_parent"]:
+                fails.append(f"{src}: first_parent differs from MANIFEST")
+        if e is not None and e.get("kind") == "fill":
+            fills.append((e, [(src, r) for r in recs]))
+        else:
+            main += [(src, r) for r in recs]
+
+    # fills: each covers exactly one recorded gap, once; splice its ledgers in at the gap
+    filled, standalone = set(), []
+    have = {r.get("i"): r.get("h") for _s, r in main}
+    for e, frecs in fills:
+        rng = (e.get("first"), e.get("last"))
+        g = e.get("gap") or {}
+        if rng not in gaps or (g.get("from"), g.get("to")) != rng:
+            fails.append(
+                f"{e['segment']}: fill {rng[0]}-{rng[1]} does not match a recorded gap in gaps.jsonl"
+            )
+        if rng in filled:
+            fails.append(f"{e['segment']}: gap {rng[0]}-{rng[1]} filled twice")
+        filled.add(rng)
+        if e.get("count") != (rng[1] - rng[0] + 1 if None not in rng else None):
+            fails.append(f"{e['segment']}: fill count does not cover the whole gap")
+        if None in rng or (rng[0] - 1 in have and rng[1] + 1 in have):
+            for side, i in (("anchor_below", rng[0] - 1), ("anchor_above", rng[1] + 1)):
+                if None not in rng and (e.get(side) or {}).get("h") != have[i]:
+                    fails.append(
+                        f"{e['segment']}: {side} in MANIFEST differs from archived ledger {i}"
+                    )
+            at = next(
+                (k for k, (_s, r) in enumerate(main) if r.get("i", 0) > rng[0]),
+                len(main),
+            )
+            main[at:at] = frecs
+            continue
+        # a neighbour is not in this stream: check the fill as its own chain from its recorded anchor
+        standalone.append((e, frecs))
+        if include_active:
+            fails.append(
+                f"{e['segment']}: fill {rng[0]}-{rng[1]}: neighbour ledger(s) "
+                f"{', '.join(str(i) for i in (rng[0] - 1, rng[1] + 1) if i not in have)} not in the archive"
+            )
+        else:
+            notes.append(
+                f"fill {rng[0]}-{rng[1]} checked on its own chain: its neighbours are in active/, "
+                "which a sealed-only verify skips"
+            )
+    log_fills = read_jsonl(os.path.join(root, "gapfills.jsonl"))
+    by_entry = {e["entry"]: e for e, _r in fills}
+    for n, lf_ in enumerate(log_fills, 1):
+        fe = by_entry.get(lf_.get("entry"))
+        if fe is None or (fe["first"], fe["last"]) != (lf_.get("from"), lf_.get("to")):
+            fails.append(
+                f"gapfills.jsonl line {n}: fill {lf_.get('from')}-{lf_.get('to')} has no matching MANIFEST fill entry"
+            )
+    logged = {x.get("entry") for x in log_fills}
+    for e, _r in fills:
+        if e["entry"] not in logged:
+            notes.append(
+                f"fill {e['first']}-{e['last']} is in MANIFEST but not yet in gapfills.jsonl (fill-gap repairs it)"
+            )
+    open_gaps = [g for g in gaps if g not in filled]
+
+    # pass 2: per-ledger checks, order and chain over the merged stream (+ fills checked on their own)
+    count = txs = 0
+    first = None
+    streams = [(None, main)] + [
+        ((e.get("anchor_below") or {}).get("h"), fr) for e, fr in standalone
+    ]
+    for anchor, stream in streams:
+        prev = (stream[0][1].get("i", 0) - 1, anchor) if stream and anchor else None
+        for src, r in stream:
             hdr, probs = check_record(r)
             for p in probs:
                 fails.append(f"{src} ledger {r.get('i')}: {p}")
             i = r.get("i")
-            if first is None:
-                first = i
             if prev is not None:
                 if i <= prev[0]:
                     fails.append(
@@ -732,7 +856,7 @@ def verify_archive(root, include_active=True):
                     continue
                 if i > prev[0] + 1:
                     gap = (prev[0] + 1, i - 1)
-                    if not any(a <= gap[0] and gap[1] <= b for a, b in gaps):
+                    if not any(a <= gap[0] and gap[1] <= b for a, b in open_gaps):
                         fails.append(
                             f"{src}: missing ledgers {gap[0]}-{gap[1]} (no gaps.jsonl entry)"
                         )
@@ -744,15 +868,16 @@ def verify_archive(root, include_active=True):
                     fails.append(
                         f"{src} ledger {i}: chain: parent_hash does not equal ledger {prev[0]}'s hash"
                     )
-            elif (
-                e is not None
-                and hdr is not None
-                and hdr["parent_hash"] != e["first_parent"]
-            ):
-                fails.append(f"{src}: first_parent differs from MANIFEST")
             prev = (i, r.get("h"))
             count += 1
             txs += len(r.get("t", []))
+    first = main[0][1].get("i") if main else None
+    prev = (main[-1][1].get("i"), main[-1][1].get("h")) if main else None
+    for a, b in sorted(filled):
+        if (a, b) not in {(e["first"], e["last"]) for e, _f in standalone}:
+            notes.append(
+                f"filled gap {a}-{b} ({b - a + 1} ledgers, verified in the chain)"
+            )
     return {
         "ok": not fails,
         "segments": len(entries),
@@ -762,8 +887,9 @@ def verify_archive(root, include_active=True):
         "first": first,
         "last": prev[0] if prev else None,
         "last_hash": prev[1] if prev else None,
-        "gaps": len(gaps),
-        "gap_ledgers": sum(b - a + 1 for a, b in gaps),
+        "gaps": len(open_gaps),
+        "gap_ledgers": sum(b - a + 1 for a, b in open_gaps),
+        "gaps_filled": len(filled),
         "fail": fails,
         "notes": notes,
         "head_entry": entries[-1]["entry"] if entries else None,
@@ -771,7 +897,8 @@ def verify_archive(root, include_active=True):
 
 
 def cmd_verify(a):
-    res = verify_archive(a.dir, include_active=not a.sealed_only)
+    with archive_lock(a.dir, exclusive=False):
+        res = verify_archive(a.dir, include_active=not a.sealed_only)
     if a.json:
         print(json.dumps(res, indent=1, sort_keys=True))
     else:
@@ -784,7 +911,7 @@ def cmd_verify(a):
         print(
             f"RESULT: {'PASS' if res['ok'] else 'FAIL'} - segments {res['segments']} active {res['active']} "
             f"ledgers {res['ledgers']} ({res['first']}-{res['last']}) txs {res['txs']} gaps {res['gaps']} "
-            f"({res['gap_ledgers']} ledgers) fails {len(res['fail'])}"
+            f"({res['gap_ledgers']} ledgers) filled {res['gaps_filled']} fails {len(res['fail'])}"
         )
     if a.textfile:
         write_prom(a.textfile, verify_metrics(res), a.host)
@@ -815,7 +942,12 @@ def verify_metrics(res):
             res["ledgers"],
         ),
         ("pft_histarchive_segments", "sealed daily segments", res["segments"]),
-        ("pft_histarchive_gaps", "recorded gap ranges", res["gaps"]),
+        ("pft_histarchive_gaps", "recorded gap ranges not filled yet", res["gaps"]),
+        (
+            "pft_histarchive_gaps_filled",
+            "recorded gap ranges repaired by a verified fill",
+            res["gaps_filled"],
+        ),
         (
             "pft_histarchive_gap_ledgers",
             "ledgers inside recorded gaps",
@@ -841,6 +973,502 @@ def write_prom(path, metrics, host="validator"):
             f'{name}{{host="{host}"}} {val}',
         ]
     atomic_write(path, "\n".join(lines) + "\n")
+
+
+# ---------------------------------------------------------------- gap repair (fill-gap, gaps)
+
+
+def fill_entries(ar):
+    return [e for e in ar.manifest_entries() if e.get("kind") == "fill"]
+
+
+def open_gaps(ar):
+    """Recorded gap ranges without a MANIFEST fill entry (the MANIFEST is the authority)."""
+    done = {(e["first"], e["last"]) for e in fill_entries(ar)}
+    return [g for g in ar.gap_ranges() if g not in done]
+
+
+def find_records(ar, wanted):
+    """{index: record} for the wanted indexes, reading only the sources whose range can hold them."""
+    wanted, got = set(wanted), {}
+    srcs = []
+    for e in ar.manifest_entries():
+        if any(e["first"] <= i <= e["last"] for i in wanted):
+            srcs.append(("gz", os.path.join(ar.root, e["segment"])))
+    for day in ar.active_days():
+        srcs.append(("raw", ar.active_path(day)))
+    for kind, path in srcs:
+        if kind == "gz":
+            _gz, raw = read_segment(path)
+            lines = raw.split(b"\n")
+        else:
+            with open(path, "rb") as fh:
+                lines = fh.read().split(b"\n")
+        for x in lines:
+            if not x.strip():
+                continue
+            try:
+                r = json.loads(x)
+            except ValueError:
+                continue  # a torn active tail; verify reports it
+            if r.get("i") in wanted:
+                got[r["i"]] = r
+        if len(got) == len(wanted):
+            break
+    return got
+
+
+def anchors(ar, a, b):
+    """(record a-1, record b+1) from the archive; None where missing."""
+    got = find_records(ar, {a - 1, b + 1})
+    return got.get(a - 1), got.get(b + 1)
+
+
+def staged_records(path):
+    """Staged capture -> ({index: record}, [problems]). Lines are raw `ledger` answers
+    ({"result": {...}}), bare answers, or archive records ({"i","h","d","t"})."""
+    out, probs = {}, []
+    with open(path, "rb") as fh:
+        for ln, x in enumerate(fh, 1):
+            if not x.strip():
+                continue
+            try:
+                d = json.loads(x)
+                if "result" in d:
+                    d = d["result"]
+                rec = d if "d" in d and "i" in d else record_from_rpc(d)
+                rec = {
+                    "i": int(rec["i"]),
+                    "h": str(rec["h"]).upper(),
+                    "d": str(rec["d"]).upper(),
+                    "t": [[str(b), str(m)] for b, m in rec.get("t", [])],
+                }
+            except (ValueError, KeyError, TypeError, LookupError) as e:
+                probs.append(f"staged line {ln}: unreadable ({type(e).__name__}: {e})")
+                continue
+            old = out.get(rec["i"])
+            if old is not None and old != rec:
+                probs.append(
+                    f"staged line {ln}: ledger {rec['i']} appears twice with different content"
+                )
+            out[rec["i"]] = rec
+    return out, probs
+
+
+def rpc_records(url, a, b, rate, retries, lf=None):
+    """Fetch a..b (validated, binary, expanded) from a read-only RPC -> ({index: record}, [problems], info)."""
+    rpc = Rpc(url, rate)
+    info = rpc.call("server_info")["info"]
+    spans = hv.parse_ranges(info.get("complete_ledgers"))
+    if not any(x <= a and b <= y for x, y in spans):
+        return (
+            {},
+            [
+                f"source does not hold {a}-{b} (complete_ledgers {info.get('complete_ledgers')})"
+            ],
+            info,
+        )
+    out, probs = {}, []
+    for i in range(a, b + 1):
+        for attempt in range(1, retries + 1):
+            try:
+                out[i] = record_from_rpc(
+                    rpc.call(
+                        "ledger",
+                        {
+                            "ledger_index": i,
+                            "transactions": True,
+                            "expand": True,
+                            "binary": True,
+                        },
+                    )
+                )
+                break
+            except (
+                urllib.error.URLError,
+                LookupError,
+                KeyError,
+                ValueError,
+                OSError,
+            ) as e:
+                log(
+                    lf,
+                    f"RETRY ledger {i} attempt {attempt}/{retries}: {type(e).__name__}: {e}",
+                )
+                time.sleep(min(30, 2**attempt) if attempt < retries else 0)
+        else:
+            probs.append(
+                f"ledger {i}: no answer from the source after {retries} attempts"
+            )
+    log(lf, f"source answered {len(out)}/{b - a + 1} ledgers in {rpc.count} requests")
+    return out, probs, info
+
+
+def check_fill(recs, a, b, below, above):
+    """All checks a fill must pass before anything is written. Returns [problem strings]."""
+    probs = []
+    if below is None:
+        probs.append(f"anchor: ledger {a - 1} (below the gap) is not in the archive")
+    if above is None:
+        probs.append(f"anchor: ledger {b + 1} (above the gap) is not in the archive")
+    missing = [i for i in range(a, b + 1) if i not in recs]
+    if missing:
+        probs.append(
+            f"source lacks {len(missing)} ledger(s) of the gap, first {missing[0]}"
+        )
+    extra = sorted(i for i in recs if not a <= i <= b)
+    prev_h = below["h"] if below else None
+    for i in range(a, b + 1):
+        r = recs.get(i)
+        if r is None:
+            prev_h = None
+            continue
+        hdr, p = check_record(r)
+        probs += [f"ledger {i}: {x}" for x in p]
+        if r.get("i") != i:
+            probs.append(f"ledger {i}: record says {r.get('i')}")
+        if hdr is not None and prev_h is not None and hdr["parent_hash"] != prev_h:
+            probs.append(
+                f"ledger {i}: chain: parent {hdr['parent_hash'][:16]} != "
+                f"{'anchor ' if i == a else ''}ledger {i - 1} {prev_h[:16]}"
+            )
+        prev_h = r.get("h")
+    if above is not None and b in recs:
+        up = parse_header(bytes.fromhex(above["d"]))
+        if up["parent_hash"] != recs[b].get("h"):
+            probs.append(
+                f"anchor: archived ledger {b + 1} parent {up['parent_hash'][:16]} != filled ledger {b} "
+                f"{str(recs[b].get('h'))[:16]}"
+            )
+    return probs, extra
+
+
+def _own_like(path, ref):
+    """Files fill-gap creates belong to the archive's owner (the follower), also when run as root."""
+    if os.geteuid() == 0:
+        st = os.stat(ref)
+        os.chown(path, st.st_uid, st.st_gid)
+
+
+def commit_fill(ar, a, b, gap, recs, below, above, source, lf=None, lock_timeout=60):
+    """Write segments/fill-A-B.jsonl.gz + MANIFEST fill entry + gapfills.jsonl line, all-or-nothing."""
+    name = f"fill-{a}-{b}"
+    seg = os.path.join(ar.segments, f"{name}.jsonl.gz")
+    raw = b"".join(canon(recs[i]).encode() + b"\n" for i in range(a, b + 1))
+    gz = gzip.compress(raw, compresslevel=9, mtime=0)
+    with archive_lock(ar.root, timeout=lock_timeout):
+        entries = ar.manifest_entries()
+        if any(
+            e.get("kind") == "fill" and (e["first"], e["last"]) == (a, b)
+            for e in entries
+        ):
+            raise FillRefused(
+                f"gap {a}-{b} is already filled (MANIFEST has a fill entry)"
+            )
+        # leftovers of an interrupted run that never reached MANIFEST
+        for p in (seg + ".tmp", seg):
+            if os.path.exists(p):
+                os.unlink(p)
+                log(
+                    lf,
+                    f"RESUME removed {os.path.relpath(p, ar.root)} (no MANIFEST entry; fill is redone)",
+                )
+        with open(seg + ".tmp", "wb") as fh:
+            fh.write(gz)
+            fh.flush()
+            os.fsync(fh.fileno())
+        _own_like(seg + ".tmp", ar.root)
+        os.replace(seg + ".tmp", seg)
+        fsync_dir(ar.segments)
+        prev = entries[-1] if entries else None
+        entry = {
+            "v": 1,
+            "kind": "fill",
+            "day": name,
+            "segment": f"segments/{name}.jsonl.gz",
+            "first": a,
+            "last": b,
+            "count": b - a + 1,
+            "first_parent": parse_header(bytes.fromhex(recs[a]["d"]))["parent_hash"],
+            "last_hash": recs[b]["h"],
+            "txs": sum(len(recs[i].get("t", [])) for i in range(a, b + 1)),
+            "bytes_raw": len(raw),
+            "bytes_gz": len(gz),
+            "sha256_raw": hashlib.sha256(raw).hexdigest(),
+            "sha256_gz": hashlib.sha256(gz).hexdigest(),
+            "sealed_utc": utcnow(),
+            "gap": gap,
+            "anchor_below": {"i": a - 1, "h": below["h"]},
+            "anchor_above": {"i": b + 1, "h": above["h"]},
+            "source": source,
+            "tool": f"histarchive {VERSION}",
+            "prev_entry": prev["entry"] if prev else None,
+        }
+        entry["entry"] = entry_hash(entry)
+        append_line(ar.manifest, canon(entry))
+        new_log = not os.path.exists(ar.gapfills)
+        append_line(
+            ar.gapfills,
+            canon(
+                {
+                    "from": a,
+                    "to": b,
+                    "entry": entry["entry"],
+                    "segment": entry["segment"],
+                    "source": source.get("type"),
+                    "at": entry["sealed_utc"],
+                }
+            ),
+        )
+        if new_log:
+            _own_like(ar.gapfills, ar.root)
+    log(
+        lf,
+        f"FILL {a}-{b} count={entry['count']} txs={entry['txs']} sha256_gz={entry['sha256_gz'][:16]} "
+        f"entry={entry['entry'][:16]} source={source.get('type')}",
+    )
+    return entry
+
+
+class FillRefused(Exception):
+    pass
+
+
+def repair_gapfills(ar, lf=None, lock_timeout=60):
+    """Add gapfills.jsonl lines for fill entries a crash left without one (append-only)."""
+    logged = {x.get("entry") for x in read_jsonl(ar.gapfills)}
+    if all(e["entry"] in logged for e in fill_entries(ar)):
+        return
+    with archive_lock(ar.root, timeout=lock_timeout):
+        logged = {x.get("entry") for x in read_jsonl(ar.gapfills)}
+        for e in fill_entries(ar):
+            if e["entry"] not in logged:
+                append_line(
+                    ar.gapfills,
+                    canon(
+                        {
+                            "from": e["first"],
+                            "to": e["last"],
+                            "entry": e["entry"],
+                            "segment": e["segment"],
+                            "source": e["source"].get("type"),
+                            "at": e["sealed_utc"],
+                            "repaired": utcnow(),
+                        }
+                    ),
+                )
+                log(
+                    lf,
+                    f"RESUME gapfills.jsonl: added the missing line for fill {e['first']}-{e['last']}",
+                )
+
+
+def redact_url(url):
+    """Provenance keeps scheme + host name only; IP literals and paths/credentials are dropped."""
+    try:
+        u = urllib.parse.urlsplit(url)
+        host = u.hostname or ""
+    except ValueError:
+        return "<unparsable>"
+    if host.replace(".", "").isdigit() or ":" in host or host in ("localhost",):
+        host = (
+            "<local>" if host in ("127.0.0.1", "localhost", "::1") else "<redacted-ip>"
+        )
+    return f"{u.scheme}://{host}"
+
+
+def cmd_fill_gap(a):
+    ar = Archive(a.dir)
+    with open_log(a.log) as lf:
+        try:
+            lo, hi = (int(x) for x in a.gap.split("-", 1))
+        except ValueError:
+            print(f"ERROR: --gap wants FROM-TO, got {a.gap!r}", file=sys.stderr)
+            return 3
+        log(
+            lf,
+            f"histarchive {VERSION} fill-gap {lo}-{hi} source {'rpc ' + redact_url(a.rpc) if a.rpc else 'staged ' + os.path.basename(a.staged)}",
+        )
+        repair_gapfills(ar, lf, a.lock_timeout)
+        gaps = ar.gap_ranges()
+        if (lo, hi) not in gaps:
+            log(
+                lf,
+                f"REFUSED: {lo}-{hi} is not a recorded gap (gaps.jsonl: {', '.join(f'{x}-{y}' for x, y in gaps) or 'none'}); nothing written",
+            )
+            return 1
+        if (lo, hi) not in open_gaps(ar):
+            log(
+                lf,
+                f"REFUSED: gap {lo}-{hi} is already filled (MANIFEST has a fill entry); nothing written",
+            )
+            return 1
+        gap = next(
+            g for g in read_jsonl(ar.gaps) if (int(g["from"]), int(g["to"])) == (lo, hi)
+        )
+        below, above = anchors(ar, lo, hi)
+        log(
+            lf,
+            f"anchors: below {lo - 1} {'present ' + below['h'][:16] if below else 'MISSING'}; "
+            f"above {hi + 1} {'present ' + above['h'][:16] if above else 'MISSING'}",
+        )
+        if a.rpc:
+            recs, probs, info = rpc_records(a.rpc, lo, hi, a.rate, a.retries, lf)
+            source = {
+                "type": "rpc",
+                "rpc": redact_url(a.rpc),
+                "build_version": info.get("build_version"),
+                "fetched_utc": utcnow(),
+            }
+        else:
+            recs, probs = staged_records(a.staged)
+            source = {
+                "type": "staged",
+                "file": os.path.basename(a.staged),
+                "sha256": sha256_file(a.staged),
+                "records": len(recs),
+            }
+        more, extra = check_fill(recs, lo, hi, below, above)
+        probs += more
+        if extra:
+            log(
+                lf,
+                f"source also held {len(extra)} ledger(s) outside the gap ({extra[0]}..{extra[-1]}): used only as context, not written",
+            )
+            for i in (
+                lo - 1,
+                hi + 1,
+            ):  # a staged copy of an anchor must equal the archived one
+                anc = below if i == lo - 1 else above
+                if i in recs and anc is not None and recs[i] != anc:
+                    probs.append(
+                        f"anchor: source copy of ledger {i} differs from the archived one"
+                    )
+        if probs:
+            for p in probs[: a.max_lines]:
+                log(lf, f"FAIL {p}")
+            if len(probs) > a.max_lines:
+                log(lf, f"FAIL ... {len(probs) - a.max_lines} more")
+            log(lf, f"REFUSED: {len(probs)} check(s) failed; nothing written")
+            return 1
+        log(
+            lf,
+            f"checks: {hi - lo + 1} ledgers header+hash+txroot OK, chain {lo - 1}->{hi + 1} unbroken "
+            f"({hi - lo + 2} links incl. both anchors)",
+        )
+        if a.dry_run:
+            log(lf, "DRY RUN: every check passed; nothing written")
+            return 0
+        try:
+            commit_fill(ar, lo, hi, gap, recs, below, above, source, lf, a.lock_timeout)
+        except FillRefused as e:
+            log(lf, f"REFUSED: {e}; nothing written")
+            return 1
+        return 0
+
+
+def cmd_gaps(a):
+    """List recorded gaps: open/filled, anchors, and (with --rpc) whether the source still holds them."""
+    ar = Archive(a.dir)
+    rows, info, src_ok = [], None, 1
+    fills = {(e["first"], e["last"]): e for e in fill_entries(ar)}
+    if a.rpc and any(
+        g not in fills for g in ar.gap_ranges()
+    ):  # ask only while a gap is open
+        src_ok = 0
+        try:
+            info = Rpc(a.rpc, 1.0, timeout=15).call("server_info")["info"]
+            src_ok = 1
+        except (urllib.error.URLError, LookupError, KeyError, ValueError, OSError) as e:
+            print(f"WARN source {redact_url(a.rpc)}: {type(e).__name__}: {e}")
+    spans = hv.parse_ranges(info.get("complete_ledgers")) if info else []
+    for g in read_jsonl(ar.gaps):
+        lo, hi = int(g["from"]), int(g["to"])
+        row = {
+            "from": lo,
+            "to": hi,
+            "ledgers": hi - lo + 1,
+            "reason": g.get("reason"),
+            "at": g.get("at"),
+        }
+        fe = fills.get((lo, hi))
+        if fe:
+            row.update(
+                state="filled",
+                entry=fe["entry"],
+                source=fe["source"].get("type"),
+                filled_utc=fe["sealed_utc"],
+            )
+        else:
+            below, above = anchors(ar, lo, hi)
+            held = any(x <= lo and hi <= y for x, y in spans)
+            row.update(
+                state="open",
+                anchor_below=below is not None,
+                anchor_above=above is not None,
+                source_holds=held if info else None,
+                fillable=bool(below and above and held),
+            )
+        rows.append(row)
+    if a.json:
+        print(
+            json.dumps(
+                {
+                    "gaps": rows,
+                    "source": redact_url(a.rpc) if a.rpc else None,
+                    "source_complete_ledgers": info.get("complete_ledgers")
+                    if info
+                    else None,
+                },
+                indent=1,
+                sort_keys=True,
+            )
+        )
+    else:
+        for r in rows:
+            if r["state"] == "filled":
+                print(
+                    f"FILLED {r['from']}-{r['to']} ({r['ledgers']}) by {r['source']} at {r['filled_utc']} entry {r['entry'][:16]}"
+                )
+            else:
+                print(
+                    f"OPEN   {r['from']}-{r['to']} ({r['ledgers']}) anchors {'ok' if r['anchor_below'] and r['anchor_above'] else 'MISSING'} "
+                    f"source {'holds it' if r['source_holds'] else ('lacks it' if info else 'not asked')} "
+                    f"-> {'FILLABLE' if r['fillable'] else 'not fillable'} | {r['reason']}"
+                )
+        n_open = sum(r["state"] == "open" for r in rows)
+        print(
+            f"RESULT: gaps {len(rows)} open {n_open} filled {len(rows) - n_open} "
+            f"fillable {sum(bool(r.get('fillable')) for r in rows)}"
+        )
+    if a.textfile:
+        write_prom(
+            a.textfile,
+            [
+                (
+                    "pft_histarchive_gap_open",
+                    "recorded gaps not filled yet",
+                    sum(r["state"] == "open" for r in rows),
+                ),
+                (
+                    "pft_histarchive_gap_fillable",
+                    "open gaps a fill-gap run could repair now (both anchors archived, source holds the range)",
+                    sum(bool(r.get("fillable")) for r in rows),
+                ),
+                (
+                    "pft_histarchive_gap_source_up",
+                    "1 if the fill source answered server_info (or was not needed: no open gap)",
+                    src_ok,
+                ),
+                (
+                    "pft_histarchive_gap_check_timestamp_seconds",
+                    "unix time of the last gaps check",
+                    int(time.time()),
+                ),
+            ],
+            a.host,
+        )
+    return 0
 
 
 # ---------------------------------------------------------------- seal / status
@@ -871,6 +1499,7 @@ def cmd_status(a):
         "head_entry": entries[-1]["entry"] if entries else None,
         "active_days": ar.active_days(),
         "gaps": len(ar.gap_ranges()),
+        "gaps_open": len(open_gaps(ar)),
     }
     print(json.dumps(out, indent=1, sort_keys=True))
     return 0
@@ -1166,6 +1795,41 @@ def main(argv=None):
         help="alter every public answer: must all MISMATCH",
     )
 
+    fg = sub.add_parser(
+        "fill-gap",
+        help="repair one recorded gap from a read-only RPC or a staged capture (verified, all-or-nothing)",
+    )
+    fg.add_argument("--dir", required=True)
+    fg.add_argument(
+        "--gap", required=True, help="FROM-TO exactly as recorded in gaps.jsonl"
+    )
+    src = fg.add_mutually_exclusive_group(required=True)
+    src.add_argument(
+        "--rpc", default=None, help="read-only JSON-RPC that still holds the range"
+    )
+    src.add_argument(
+        "--staged",
+        default=None,
+        help="JSONL capture (ledger answers or archive records)",
+    )
+    fg.add_argument("--rate", type=float, default=2.0)
+    fg.add_argument("--retries", type=int, default=4)
+    fg.add_argument("--lock-timeout", type=float, default=60.0)
+    fg.add_argument(
+        "--dry-run", action="store_true", help="run every check, write nothing"
+    )
+    fg.add_argument("--log", default=None)
+    fg.add_argument("--max-lines", type=int, default=50)
+
+    gp = sub.add_parser(
+        "gaps", help="list recorded gaps: open/filled, anchors, fillable from --rpc"
+    )
+    gp.add_argument("--dir", required=True)
+    gp.add_argument("--rpc", default=None)
+    gp.add_argument("--json", action="store_true")
+    gp.add_argument("--textfile", default=None)
+    gp.add_argument("--host", default="validator")
+
     a = p.parse_args(argv)
     if getattr(a, "rate", 1.0) > RATE_CAP:
         p.error(f"--rate above {RATE_CAP:g} req/s is not allowed")
@@ -1179,6 +1843,8 @@ def main(argv=None):
             "replica-check": cmd_replica_check,
             "replica-compare": cmd_replica_compare,
             "crosscheck": cmd_crosscheck,
+            "fill-gap": cmd_fill_gap,
+            "gaps": cmd_gaps,
         }[a.cmd](a)
     except (OSError, ValueError, KeyError, RuntimeError, urllib.error.URLError) as e:
         print(f"ERROR: {type(e).__name__}: {e}", file=sys.stderr)

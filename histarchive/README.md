@@ -15,6 +15,7 @@ Nothing is trusted that is not recomputed: every ledger is checked before it is 
 | `order` / `missing` | indexes strictly increase by one; a missing index must be inside a recorded `gaps.jsonl` range |
 | segment | whole-file gzip decode (CRC + length), sha256 of the file and of the content against `MANIFEST.jsonl`, first/last/count/first_parent/last_hash |
 | MANIFEST | every entry carries `entry` = sha256 of its own canonical JSON and `prev_entry` = the previous entry's hash (a hash chain over the sealed days) |
+| `fill` | a MANIFEST fill entry covers exactly one recorded gap, at most once, with every ledger of it; its ledgers are spliced into the stream at the gap, so `chain` runs into both archived neighbours; every `gapfills.jsonl` line must match a fill entry |
 
 The hash rules come from [`pft-ledger-stats/hashverify`](https://github.com/darkmatter-sudo/pft-ledger-stats/tree/main/hashverify):
 `lib_hashverify.py` here is a byte-identical copy of `hashverify/lib_hashverify.py` at commit
@@ -26,17 +27,21 @@ it stays byte-identical.
 
 | file | role |
 |---|---|
-| `histarchive.py` | follower (`follow`), offline `verify`, `seal`, `status`, `crosscheck` (seeded sample vs the public RPC, `--record` / `--offline` / `--negative`), `cipher-index`, `replica-check`, `replica-compare` (stdlib only) |
+| `histarchive.py` | follower (`follow`), offline `verify`, `seal`, `status`, `gaps`, `fill-gap` (see [Gap repair](#gap-repair)), `crosscheck` (seeded sample vs the public RPC, `--record` / `--offline` / `--negative`), `cipher-index`, `replica-check`, `replica-compare` (stdlib only) |
 | `lib_hashverify.py` | ledger-hash / tx-ID / SHAMap rules (vendored, see above) |
-| `pft-histarchive.sh` | host CLI: `follow`, `metrics`, `verify`, `status`, `keygen`, `replicate`, `verify-replica`, `restore-verify`, `crosscheck`, `periodic`, `serve` (peer side), `replica-check` |
+| `pft-histarchive.sh` | host CLI: `follow`, `metrics`, `verify`, `status`, `keygen`, `replicate`, `verify-replica`, `restore-verify`, `crosscheck`, `gaps`, `fill-gap`, `periodic`, `serve` (peer side), `replica-check` |
 | `install.sh` | idempotent install: `--role archive` (validator) / `--role replica` (sentry), `--adopt DIR`, `--uninstall` |
 | `systemd/pft-histarchive.service` | the follower: unprivileged system user, localhost-only network, `MemoryMax=256M`, `CPUQuota=50%`, idle I/O |
 | `systemd/pft-histarchive-periodic.{service,timer}` | every 5 min: metrics; full verify daily and after each new sealed day; replicate daily and after each new sealed day |
-| `../alerts/histarchive.rules.yml` + `.tests.yml` | 3 alert rules and their promtool tests |
+| `../alerts/histarchive.rules.yml` + `.tests.yml` | 4 alert rules and their promtool tests |
+| `tests/test_fillgap.py` | gap repair: staged / RPC fills, every refusal with a no-partial-write snapshot, crash points, verify over fills, locking, `gaps` metrics, wrapper + replica |
+| `tests/seqcheck.py` | independent sequence check of an archive dir (imports nothing from the tool) |
 | `tests/test_histarchive.py`, `tests/test_wrapper.py` | fixture tests (fake JSON-RPC node with correctly hashed synthetic ledgers; a second state dir as the peer, real `age`) |
 | `tests/mutate.py` | mutation harness (baseline must pass first) |
 | `drill/kill-resume.sh` | kill -9 resume drill against a running follower unit |
 | `drill/install-run.sh` | recorded two-host install through pft-fleet inside a pft-maint window (throwaway topic) |
+| `drill/fill-run.sh` | recorded live gap repair: upgrade both hosts through pft-fleet, fill the real reboot gap from the committed capture, replicate + restore-verify, scratch peer-RPC fill (throwaway topic) |
+| `logs/data/gap-8042619-8042680/` | the staged capture of the reboot gap (64 read-only `ledger` answers 8042618-8042681 taken from the sentry's node before it pruned them) + SHA256SUMS |
 | `drill/alert-run.sh` | recorded two-host replica / tamper / alert drill on tmpfs copies (throwaway topic) |
 | `diskcost.py`, `tests/test_diskcost.py` | measured disk cost and projection (stdlib), with hand-computed fixture tests |
 
@@ -46,7 +51,10 @@ it stays byte-identical.
 active/YYYY-MM-DD.jsonl       today's ledgers (UTC day of the ledger's close time); one fsynced line per ledger
 segments/YYYY-MM-DD.jsonl.gz  sealed days (gzip of the exact active bytes)
 MANIFEST.jsonl                one hash-chained entry per sealed day
-gaps.jsonl                    ledger ranges that could not be archived, with the reason
+gaps.jsonl                    ledger ranges that could not be archived, with the reason (append-only)
+segments/fill-A-B.jsonl.gz    a verified fill of the recorded gap A..B (fill-gap)
+gapfills.jsonl                append-only log of fills (mirrors the MANIFEST fill entries)
+.lock                         flock: seal and fill-gap exclusive, verify shared
 state.json, status.json       start ledger; follower progress
 ```
 
@@ -176,10 +184,53 @@ sudo rm /etc/systemd/system/pft-histarchive*.service /etc/systemd/system/pft-his
 Then remove the `histarchive.rules.yml` line from `../alerts/prometheus.yml`, reload Prometheus, and accept the
 change in pft-integrity / pft-schedaudit.
 
+## Gap repair
+
+A recorded gap is history the node pruned before the follower got to it (e.g. a reboot for a security patch longer
+than the node's ~30-60 min of history). Another node often still holds it: a peer, the public testnet RPC, or a
+capture taken in time. `fill-gap` puts it back **without trusting the source**:
+
+```
+sudo pft-histarchive gaps                                   # OPEN/FILLED, anchors, FILLABLE from FILL_RPC
+sudo pft-histarchive fill-gap 8042619-8042680 --staged capture.jsonl --dry-run
+sudo pft-histarchive fill-gap 8042619-8042680 --staged capture.jsonl   # or --rpc https://rpc.testnet.postfiat.org/
+```
+
+1. The range must be a recorded gap, exactly (`FROM-TO` as in `gaps.jsonl`), and not filled yet.
+2. Both neighbours must be in the archive: ledger FROM-1 (anchor below) and TO+1 (anchor above).
+3. The source's ledgers are read: `--rpc` asks `server_info` + `ledger` (binary, expanded, validated only, rate-limited,
+   read-only methods only); `--staged` reads a JSONL file of `ledger` answers or archive records. Ledgers outside
+   the gap are context only; a staged copy of an anchor must equal the archived one byte for byte.
+4. Every ledger of the gap is checked: `header`, `hash`, `txroot` (as at ingest), and `chain` from the anchor below
+   through every ledger to the anchor above (`TO+1`'s parent hash must be the filled `TO`'s hash). A missing,
+   duplicated-with-different-content, torn or swapped ledger, a foreign history or a broken anchor is a FAIL line
+   naming the ledger and check; **any FAIL refuses the fill and nothing is written** (exit 1).
+5. Commit, under the archive's exclusive lock, after re-checking that no other run filled the gap meanwhile:
+   `segments/fill-A-B.jsonl.gz` (tmp, fsync, rename, fsync dir), then one MANIFEST entry
+   `{"kind": "fill", "gap": <the gaps.jsonl line>, "anchor_below", "anchor_above", "source": {type, rpc host or
+   staged file name + sha256}, "tool", ...}` chained like every other entry, then a `gapfills.jsonl` line.
+   `gaps.jsonl` is never rewritten. A crash before the MANIFEST append leaves an unlisted segment (verify FAILs it) that
+   the next run removes and redoes; a crash before the `gapfills.jsonl` line is repaired by the next `fill-gap`.
+6. The wrapper then runs a full `verify` (textfile: `pft_histarchive_gaps` drops, `pft_histarchive_gaps_filled` rises)
+   and `gaps` (textfile `pft_histarchive_gaps.prom`).
+
+The follower keeps running: it only appends to `active/`, and its seals take the same lock. The fill segment
+replicates like a day segment (`fill-A-B.jsonl.gz.age`; the sentry's `receive` accepts that name) and
+`restore-verify` checks it (`SAME fill-A-B`). A restored copy holds sealed segments only, so while the gap's day is
+still active the fill's neighbours are not in it: `verify --sealed-only` then checks the fill as its own chain from
+the `anchor_below` hash recorded in its MANIFEST entry (NOTE line); a full `verify` requires both neighbours and
+compares them with the entry's `anchor_below` / `anchor_above`. Set `FILL_RPC=` in `/etc/pft-histarchive.env` to let the 5-minute
+periodic run ask the source (one `server_info`, only while a gap is open) whether an open gap is fillable;
+`PFTHistarchiveGapFillable` then says so while it still can be done.
+
+`tests/seqcheck.py ARCHIVE_DIR` re-checks indexes, header hashes and parent links of the whole archive (fills
+included) with its own code, and that the missing ledgers are exactly the open gaps.
+
 ## Alerts
 
 | alert | fires when | for |
 |---|---|---|
 | `PFTHistarchiveStale` | no ledger archived for 15 min, or more than 300 ledgers behind validated (a frozen textfile ages too) | 10m |
 | `PFTHistarchiveIntegrity` | last full verify failed, no verify for 26 h, or a new gap within the last hour | 0m |
+| `PFTHistarchiveGapFillable` | an open gap has both anchors archived and `FILL_RPC` still holds it: run `fill-gap` (resolves once filled, or once the source pruned it) | 15m |
 | `PFTHistarchiveReplica` | the sentry's replica differs from the local copy (missing/extra/altered file, stale index, its own check failed, unreachable) or was not compared for 26 h | 30m |

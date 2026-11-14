@@ -161,3 +161,32 @@ tests:
     exp_alerts:
     - exp_labels: {severity: warning, host: validator}
       exp_annotations: *replica
+
+- name: gap fillable from t=10m -> fires at 25m (for 15m), resolves when the fill lands at 60m
+  interval: 1m
+  input_series:
+  - series: pft_histarchive_gap_fillable{host="validator"}
+    values: 0x9 1x49 0x30
+  alert_rule_test:
+  - {eval_time: 9m, alertname: PFTHistarchiveGapFillable, exp_alerts: []}
+  - {eval_time: 24m, alertname: PFTHistarchiveGapFillable, exp_alerts: []}
+  - eval_time: 25m
+    alertname: PFTHistarchiveGapFillable
+    exp_alerts:
+    - exp_labels: {severity: warning, host: validator}
+      exp_annotations:
+        summary: "validator: 1 recorded archive gap(s) can be filled from the peer RPC now"
+        description: "Run `sudo pft-histarchive gaps` to see the range, then `sudo pft-histarchive fill-gap FROM-TO --rpc <FILL_RPC> --dry-run` and without --dry-run. Every ledger is verified against both archived neighbours before anything is written. Public RPC history is finite: fill before the source prunes the range."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/histarchive/README.md#gap-repair"
+  - {eval_time: 59m, alertname: PFTHistarchiveGapFillable, exp_alerts: [{exp_labels: {severity: warning, host: validator}, exp_annotations: {summary: "validator: 1 recorded archive gap(s) can be filled from the peer RPC now", description: "Run `sudo pft-histarchive gaps` to see the range, then `sudo pft-histarchive fill-gap FROM-TO --rpc <FILL_RPC> --dry-run` and without --dry-run. Every ledger is verified against both archived neighbours before anything is written. Public RPC history is finite: fill before the source prunes the range.", runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/histarchive/README.md#gap-repair"}}]}
+  - {eval_time: 60m, alertname: PFTHistarchiveGapFillable, exp_alerts: []}
+
+- name: open gap the source no longer holds (fillable 0) never fires
+  interval: 1m
+  input_series:
+  - series: pft_histarchive_gap_open{host="validator"}
+    values: 1x120
+  - series: pft_histarchive_gap_fillable{host="validator"}
+    values: 0x120
+  alert_rule_test:
+  - {eval_time: 119m, alertname: PFTHistarchiveGapFillable, exp_alerts: []}
