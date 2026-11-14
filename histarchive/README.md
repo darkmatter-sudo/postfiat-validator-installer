@@ -151,6 +151,29 @@ verified copy of that archive and its own follower resumed without a gap. (2) `h
 (3) Log 01 records a first launch with `Restart=always`, stopped after 32 s and relaunched with `Restart=on-failure`
 (so the `--until` exit is final); the archive resumed at the next ledger.
 
+### Gap repair proof (task_290beaeb, logs 16-22)
+
+The real gap: a planned validator reboot for glibc USN-9065-1 (2026-11-14) kept the follower down longer than the
+node keeps ledgers, so `gaps.jsonl` recorded 8042619-8042680 (62 ledgers, `pruned on the node before archiving`).
+The 64 ledgers 8042618-8042681 had been captured read-only from the sentry's node before it pruned them
+(`logs/data/gap-8042619-8042680/`, sha256 `3de3e996...` checked by the runner's preflight).
+
+| log | what | result |
+|---|---|---|
+| 16 | `drill/fill-run.sh` preflight (read-only) | 10/10 ok |
+| 17 | live run: stopped at the step-4 gate because the follower-restart check read a log file the unit does not write (the follower had resumed on 1.1.0 with no gap, per its journal); fixed in `06f24f7` | stopped, restore ran, integrity PASS |
+| 18 | first mutation run, stopped after 6 mutants to move it to a detached unit (superseded by 21) | 6/6 caught so far |
+| 19 | resumed run: stopped at the step-5 gate because the PromQL `a or b or c` check returned one of three same-label series (values were right); fixed in `9bce569` | stopped, restore ran |
+| 20 | resumed run: preflight stop (the previous run's own silence was active); resume mode now keeps the drill's silences until the clean end (`cc0849a`) | stopped before any change |
+| 21 | mutation harness, 69 mutants (31 new for gap repair) | see log |
+| 22 | resumed live run, all steps | **PASS, 0 failed**: verify gaps 1 -> 0 (filled 1), seqcheck missing 62 -> 0, duplicate fill refused with MANIFEST/gapfills/segments unchanged, Prometheus `gap_fillable` 1 -> 0 and `PFTHistarchiveGapFillable` pending -> inactive, replicate sent `fill-8042619-8042680.jsonl.gz.age`, verify-replica + sentry replica-check + restore-verify PASS (`SAME fill-8042619-8042680`), scratch copy with a deliberate 30-ledger gap filled from the public testnet RPC (30/30, verify filled 2, seqcheck PASS), integrity/skew/rulecheck/aptrust/jobwatch ok, operator topics 0 messages since the start of run 17 |
+
+Runs 17-22 changed nothing beyond the intended steps: each stopped run's restore ended the pft-maint window and
+removed the throwaway target; steps 1-4 are idempotent and ran again in 22. `tests/test_fillgap.py` holds every
+adversarial case (tamper, truncation/torn line, swapped ledgers, foreign history, broken lower/upper anchor, staged
+anchor copy differs, conflicting duplicate, missing anchors, duplicate fill, double commit under the lock, unvalidated
+RPC answers, busy archive) with a byte-for-byte snapshot of the archive before and after each refusal.
+
 ## Install
 
 ```

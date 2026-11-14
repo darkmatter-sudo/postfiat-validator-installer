@@ -1,0 +1,541 @@
+histarchive gap repair - 2026-11-14T15:04:42Z - Ubuntu 22.04.5 LTS - repo HEAD cc0849a3869fd11c3382f0ec680f2f440fa03003 (clean: yes)
+
+== 0. preflight (read-only)
+$ sha256sum histarchive/pft-histarchive.sh histarchive/histarchive.py histarchive/lib_hashverify.py histarchive/tests/seqcheck.py histarchive/drill/fill-run.sh alerts/histarchive.rules.yml histarchive/logs/data/gap-8042619-8042680/capture-8042618-8042681.jsonl
+  279bc5fe4547f36c224b85132bb44e83db3124332335d6328312a13ffae9e344  histarchive/pft-histarchive.sh
+  8fab6fcfe81b6b5810bf355820be1c2ff2647d23cc6932955a9297ef9a79ffea  histarchive/histarchive.py
+  64ec1dacc49fcc955975a6c5f5ee85d657c9c7921dbe0ef15cd9b9411ef4e414  histarchive/lib_hashverify.py
+  aee556348ed7a1b192d7a4d2f2a8b3e683a832b20a5a8fb89973d1de000cbcfa  histarchive/tests/seqcheck.py
+  41477ef064021182ab232c4c4312febdfbf347ec514b974706516cbea10efcb8  histarchive/drill/fill-run.sh
+  6ce909e108718be9275db3ce836ae6e985b2bb3a99f431478729c665ba5c2ae5  alerts/histarchive.rules.yml
+  3de3e996f83db302ca62b95eac33e0ac2ccb8f1a63463c5ebaf05bab38b96c0f  histarchive/logs/data/gap-8042619-8042680/capture-8042618-8042681.jsonl
+  (exit 0)
+CHECK ok   the committed capture is the one recorded when it was taken (sha256 3de3e996f83db302ca62b95eac33e0ac2ccb8f1a63463c5ebaf05bab38b96c0f)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 256 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 151 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts before
+$ sudo -n docker exec postfiatd curl -s -m 10 -d '{"method":"server_info"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state; R "sudo -n docker exec postfiatd-sentry curl -s -m 10 -d '{\"method\":\"server_info\"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state"
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ sha256sum histarchive/pft-histarchive.sh histarchive/histarchive.py | cut -c1-64; sudo -n sha256sum /usr/local/bin/pft-histarchive /usr/local/lib/pft-histarchive/histarchive.py | cut -c1-64; R 'sha256sum /usr/local/bin/pft-histarchive /usr/local/lib/pft-histarchive/histarchive.py | cut -c1-64'
+  279bc5fe4547f36c224b85132bb44e83db3124332335d6328312a13ffae9e344
+  8fab6fcfe81b6b5810bf355820be1c2ff2647d23cc6932955a9297ef9a79ffea
+  279bc5fe4547f36c224b85132bb44e83db3124332335d6328312a13ffae9e344
+  8fab6fcfe81b6b5810bf355820be1c2ff2647d23cc6932955a9297ef9a79ffea
+  279bc5fe4547f36c224b85132bb44e83db3124332335d6328312a13ffae9e344
+  8fab6fcfe81b6b5810bf355820be1c2ff2647d23cc6932955a9297ef9a79ffea
+  (exit 0)
+CHECK ok   RESUMED: installed script + helper already equal HEAD on both hosts (synced by the stopped run)
+$ sudo -n pft-histarchive verify | tail -n 3
+  NOTE recorded gap 8042619-8042680 (chain restarts at 8042681)
+  RESULT: PASS - segments 4 active 1 ledgers 106690 (7937915-8044666) txs 36701 gaps 1 (62 ledgers) filled 0 fails 0
+  (exit 0)
+CHECK ok   FOUND: live archive verifies with the recorded gap 8042619-8042680 open
+$ sudo -n cat /var/lib/pft-histarchive/archive/gaps.jsonl; sudo -n test -e /var/lib/pft-histarchive/archive/gapfills.jsonl && echo gapfills present || echo no gapfills.jsonl
+  {"at":"2026-11-14T13:26:39Z","from":8042619,"reason":"pruned on the node before archiving (oldest 8042681)","to":8042680}
+  no gapfills.jsonl
+  (exit 0)
+CHECK ok   gaps.jsonl holds exactly the reboot gap; no fill yet
+$ curl -s -m 15 -d '{"method":"server_info"}' https://rpc.testnet.postfiat.org/ | jq -r .result.info.complete_ledgers
+  7950054-8044669
+  (exit 0)
+CHECK ok   public RPC answers server_info (range 7950054-8044669)
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+$ curl -s http://<redacted-ip>:9093/api/v2/silences | jq -r '.[] | select(.status.state == "active") | "\(.id) \(.createdBy) until \(.endsAt)"'; curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '.data.alerts[] | "ALERT \(.labels.alertname) \(.state)"' | sort
+  dcf7b975-b1a0-4267-ad5e-a2cef1777c87 histarchive-fill-guard until 2026-11-14T16:04:07.000Z
+  ALERT PFTAlertPipelineWatchdog firing
+  ALERT PFTHistarchiveGapFillable pending
+  (exit 0)
+CHECK ok   RESUMED: active silences are all this drill's own (kept: dcf7b975-b1a0-4267-ad5e-a2cef1777c87 ); only the watchdog + PFTHistarchiveGapFillable pending
+$ systemctl list-units --all --no-legend 'run-u*' | wc -l
+  0
+  (exit 0)
+CHECK ok   no transient run-u units
+
+== 1. rollout silence (histarchive rules incl. the new GapFillable, rulecheck, fleet, jobwatch, keyescrow; not the watchdog)
+CHECK ok   Alertmanager silence created until 2026-11-14T16:06:49Z
+
+== 2. pft-maint window, [MAINT] messages to a throwaway topic (real file kept as $BK)
+real /etc/pft-maint/ntfy.env present before: 0
+$ { [ $HAD = 0 ] || sudo -n cp -p $NE $BK; } && sudo -n install -o root -g root -m 600 /dev/null $NE && printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' "$TT" | sudo -n tee $NE >/dev/null && sudo -n stat -c '%a %U' $NE
+  600 root
+  (exit 0)
+CHECK ok   throwaway target installed (600 root)
+$ sudo -n pft-maint start --ttl 40m --reason 'task_290beaeb histarchive gap repair'
+  window started: id m1794668810-303333 until 2026-11-14T15:46:50Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint window open
+CHECK ok   sentry has the window (via the watchdog channel) after 10s
+
+== 3. pft-fleet: histarchive files at HEAD on both hosts (manifest rows unchanged)
+$ sudo -n pft-fleet sync --addon histarchive --to cc0849a3869fd11c3382f0ec680f2f440fa03003 --apply --reason 'task_290beaeb histarchive cc0849a gap repair (fill-gap, gaps)'
+  [2026-11-14T15:07:35Z] sync histarchive to cc0849a3869fd11c3382f0ec680f2f440fa03003 (2026-11-14T15:04:38+00:00) REF main=cc0849a3869fd11c3382f0ec680f2f440fa03003
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN sentry sentry /usr/local/bin/pft-histarchive 0755 CURRENT 279bc5fe4547 279bc5fe4547 keep
+  PLAN sentry sentry /usr/local/lib/pft-histarchive/histarchive.py 0644 CURRENT 8fab6fcfe81b 8fab6fcfe81b keep
+  PLAN sentry sentry /usr/local/lib/pft-histarchive/lib_hashverify.py 0644 CURRENT 64ec1dacc49f 64ec1dacc49f keep
+  PLAN validator validator /usr/local/bin/pft-histarchive 0755 CURRENT 279bc5fe4547 279bc5fe4547 keep
+  PLAN validator validator /usr/local/lib/pft-histarchive/histarchive.py 0644 CURRENT 8fab6fcfe81b 8fab6fcfe81b keep
+  PLAN validator validator /usr/local/lib/pft-histarchive/lib_hashverify.py 0644 CURRENT 64ec1dacc49f 64ec1dacc49f keep
+  PLAN validator validator /etc/systemd/system/pft-histarchive.service 0644 CURRENT 533d9996be4b 533d9996be4b keep
+  PLAN validator validator /etc/systemd/system/pft-histarchive-periodic.service 0644 CURRENT fb56ee0c134d fb56ee0c134d keep
+  PLAN validator validator /etc/systemd/system/pft-histarchive-periodic.timer 0644 CURRENT 5fd21d6abe83 5fd21d6abe83 keep
+  [2026-11-14T15:07:35Z] order: sentry validator
+  [2026-11-14T15:07:35Z] sentry: every histarchive file already at cc0849a3869f - nothing to do
+  [2026-11-14T15:07:35Z] validator: every histarchive file already at cc0849a3869f - nothing to do
+  [2026-11-14T15:07:35Z] sync complete
+  (exit 0)
+CHECK ok   histarchive sync exit 0 (files written + integrity accepted by pft-fleet)
+$ sha256sum histarchive/pft-histarchive.sh histarchive/histarchive.py histarchive/lib_hashverify.py | cut -c1-64; sudo -n sha256sum /usr/local/bin/pft-histarchive /usr/local/lib/pft-histarchive/histarchive.py /usr/local/lib/pft-histarchive/lib_hashverify.py | cut -c1-64; R 'sha256sum /usr/local/bin/pft-histarchive /usr/local/lib/pft-histarchive/histarchive.py /usr/local/lib/pft-histarchive/lib_hashverify.py | cut -c1-64'
+  279bc5fe4547f36c224b85132bb44e83db3124332335d6328312a13ffae9e344
+  8fab6fcfe81b6b5810bf355820be1c2ff2647d23cc6932955a9297ef9a79ffea
+  64ec1dacc49fcc955975a6c5f5ee85d657c9c7921dbe0ef15cd9b9411ef4e414
+  279bc5fe4547f36c224b85132bb44e83db3124332335d6328312a13ffae9e344
+  8fab6fcfe81b6b5810bf355820be1c2ff2647d23cc6932955a9297ef9a79ffea
+  64ec1dacc49fcc955975a6c5f5ee85d657c9c7921dbe0ef15cd9b9411ef4e414
+  279bc5fe4547f36c224b85132bb44e83db3124332335d6328312a13ffae9e344
+  8fab6fcfe81b6b5810bf355820be1c2ff2647d23cc6932955a9297ef9a79ffea
+  64ec1dacc49fcc955975a6c5f5ee85d657c9c7921dbe0ef15cd9b9411ef4e414
+  (exit 0)
+CHECK ok   installed script + helper + lib = repo bytes on both hosts
+$ R 'd=$(mktemp -d -p ~ histrecv.XXXXXX); printf x | sudo -n env STATE_DIR=$d pft-histarchive serve receive fill-8042619-8042680.jsonl.gz.age; echo rc=$?; sudo -n rm -rf $d'
+  stored fill-8042619-8042680.jsonl.gz.age
+  rc=0
+  (exit 0)
+CHECK ok   sentry's receive accepts a fill segment name (scratch STATE_DIR)
+
+== 4. validator: FILL_RPC, rulecheck lines, follower restart (loads 1.1.0), rules reload
+$ sudo -n grep -q '^FILL_RPC=' /etc/pft-histarchive.env || echo 'FILL_RPC=https://rpc.testnet.postfiat.org/' | sudo -n tee -a /etc/pft-histarchive.env >/dev/null; sudo -n grep -c '^FILL_RPC=' /etc/pft-histarchive.env; sudo -n stat -c '%a %U' /etc/pft-histarchive.env
+  1
+  600 root
+  (exit 0)
+CHECK ok   conf has one FILL_RPC line, still 600 root
+$ sudo -n grep -q '^textfile pft_histarchive_gaps.prom' /etc/pft-rulecheck.conf || sudo -n sed -i '/^textfile pft_histarchive_replica.prom/a textfile pft_histarchive_gaps.prom      15m   pft_histarchive_gap_check_timestamp_seconds' /etc/pft-rulecheck.conf; sudo -n grep -q '^require pft_histarchive_gaps.prom' /etc/pft-rulecheck.conf || sudo -n sed -i '/^require pft_histarchive_replica.prom/a require pft_histarchive_gaps.prom' /etc/pft-rulecheck.conf; sudo -n grep -n histarchive /etc/pft-rulecheck.conf
+  87:# pft-histarchive (5-minute periodic: follower metrics every run; verify + replica compare daily and after each seal)
+  88:textfile pft_histarchive_follow.prom    15m   -
+  89:textfile pft_histarchive.prom           27h   pft_histarchive_verify_timestamp_seconds
+  90:textfile pft_histarchive_replica.prom   27h   pft_histarchive_replica_check_timestamp_seconds
+  91:textfile pft_histarchive_gaps.prom      15m   pft_histarchive_gap_check_timestamp_seconds
+  92:require pft_histarchive_follow.prom
+  93:require pft_histarchive.prom
+  94:require pft_histarchive_replica.prom
+  95:require pft_histarchive_gaps.prom
+  (exit 0)
+CHECK ok   validator rulecheck.conf has the 9 histarchive lines (2 new)
+$ sudo -n pft-histarchive status | jq -c '.status | {last, gaps}'; t0=$(date +%s); sudo -n systemctl restart pft-histarchive.service; sleep 15; systemctl is-active pft-histarchive.service; sudo -n journalctl -u pft-histarchive.service --since @$t0 --no-pager -o cat | grep -E 'follow:|RESUME|GAP|START' | cut -c1-200
+  {"last":8044685,"gaps":1}
+  active
+  2026-11-14T15:07:39Z histarchive 1.1.0 follow: node build 1.0.9 state full complete_ledgers 8043704-8044686
+  2026-11-14T15:07:39Z RESUME at ledger 8044686 (archive start 7937915, node validated 8044686)
+  (exit 0)
+CHECK ok   follower restarted on 1.1.0 and resumed with no new gap
+$ sudo -n stat -c '%a %U %n' /var/lib/pft-histarchive/archive/.lock
+  644 pft-histarchive /var/lib/pft-histarchive/archive/.lock
+  (exit 0)
+CHECK ok   follower created the archive lock file (owned by pft-histarchive)
+$ sudo -n docker kill -s HUP pft-prometheus >/dev/null && sleep 40 && curl -s http://<redacted-ip>:9090/api/v1/rules | jq -r '.data.groups[] | select(.name | test("histarchive")) | .rules[] | [.name, .health, .state] | @tsv'
+  PFTHistarchiveStale	ok	inactive
+  PFTHistarchiveIntegrity	ok	inactive
+  PFTHistarchiveReplica	ok	inactive
+  PFTHistarchiveGapFillable	ok	pending
+  (exit 0)
+CHECK ok   4 histarchive rules loaded (incl. PFTHistarchiveGapFillable), health ok
+
+== 5. FOUND: the open gap, its fillability (metric + alert), independent sequence check
+$ sudo -n pft-histarchive verify | tail -n 3
+  NOTE recorded gap 8042619-8042680 (chain restarts at 8042681)
+  RESULT: PASS - segments 4 active 1 ledgers 106728 (7937915-8044704) txs 36710 gaps 1 (62 ledgers) filled 0 fails 0
+  (exit 0)
+CHECK ok   FOUND: verify PASS with gaps 1 (62 ledgers) filled 0 (new code)
+$ sudo -n pft-histarchive gaps; grep -v '^#' /var/lib/pft-exporter/textfile/pft_histarchive_gaps.prom
+  OPEN   8042619-8042680 (62) anchors ok source holds it -> FILLABLE | pruned on the node before archiving (oldest 8042681)
+  RESULT: gaps 1 open 1 filled 0 fillable 1
+  pft_histarchive_gap_open{host="validator"} 1
+  pft_histarchive_gap_fillable{host="validator"} 1
+  pft_histarchive_gap_source_up{host="validator"} 1
+  pft_histarchive_gap_check_timestamp_seconds{host="validator"} 1794668921
+  (exit 0)
+CHECK ok   FOUND: gaps lists 8042619-8042680 OPEN, anchors ok, public RPC holds it -> FILLABLE; textfile open 1 fillable 1 source_up 1
+$ sleep 75; prom_q '{__name__=~"pft_histarchive_(gap_fillable|gap_open|gaps)"}'; rule_state PFTHistarchiveGapFillable
+  validator pft_histarchive_gaps 1
+  validator pft_histarchive_gap_open 1
+  validator pft_histarchive_gap_fillable 1
+  PFTHistarchiveGapFillable ok pending
+  (exit 0)
+CHECK ok   FOUND: Prometheus gap_fillable 1, gap_open 1, gaps 1; PFTHistarchiveGapFillable pending (for 15m; silenced)
+$ sudo -n python3 -I histarchive/tests/seqcheck.py /var/lib/pft-histarchive/archive
+  seqcheck: ledgers 106756 (7937915-8044732) sources 5 parent links 106754 missing 62 open-gap ledgers 62 filled gaps 0
+  RESULT: PASS - fails 0
+  (exit 0)
+CHECK ok   FOUND: independent seqcheck PASS, missing 62 = open-gap ledgers 62
+
+== 6. FIX: fill-gap from the committed capture (dry run, then for real), then a duplicate fill
+$ sudo -n pft-histarchive fill-gap 8042619-8042680 --staged histarchive/logs/data/gap-8042619-8042680/capture-8042618-8042681.jsonl --dry-run
+  pft-histarchive fill-gap - 2026-11-14T15:10:00Z | validator gap 8042619-8042680
+  2026-11-14T15:10:01Z histarchive 1.1.0 fill-gap 8042619-8042680 source staged capture-8042618-8042681.jsonl
+  2026-11-14T15:10:01Z anchors: below 8042618 present 8278888DEFBCB472; above 8042681 present F35D4801640E85FB
+  2026-11-14T15:10:01Z source also held 2 ledger(s) outside the gap (8042618..8042681): used only as context, not written
+  2026-11-14T15:10:01Z checks: 62 ledgers header+hash+txroot OK, chain 8042618->8042681 unbroken (63 links incl. both anchors)
+  2026-11-14T15:10:01Z DRY RUN: every check passed; nothing written
+  RESULT: DRY RUN PASS - fill-gap rc 0
+  (exit 0)
+CHECK ok   dry run: every check passed, nothing written
+$ sudo -n sha256sum /var/lib/pft-histarchive/archive/MANIFEST.jsonl /var/lib/pft-histarchive/archive/gaps.jsonl | cut -c1-64; sudo -n ls /var/lib/pft-histarchive/archive/segments
+  000e04c9b6b220a2508fc65fd9985a1fc3c21792edca60e08dd85ff1ad35baec
+  cf61470955d5580bf7bbb9bffc85b795e75cec46af2c2604490549b0b3e975bd
+  2026-11-10.jsonl.gz
+  2026-11-11.jsonl.gz
+  2026-11-12.jsonl.gz
+  2026-11-13.jsonl.gz
+  (exit 0)
+$ sudo -n pft-histarchive fill-gap 8042619-8042680 --staged histarchive/logs/data/gap-8042619-8042680/capture-8042618-8042681.jsonl
+  pft-histarchive fill-gap - 2026-11-14T15:10:05Z | validator gap 8042619-8042680
+  2026-11-14T15:10:05Z histarchive 1.1.0 fill-gap 8042619-8042680 source staged capture-8042618-8042681.jsonl
+  2026-11-14T15:10:06Z anchors: below 8042618 present 8278888DEFBCB472; above 8042681 present F35D4801640E85FB
+  2026-11-14T15:10:06Z source also held 2 ledger(s) outside the gap (8042618..8042681): used only as context, not written
+  2026-11-14T15:10:06Z checks: 62 ledgers header+hash+txroot OK, chain 8042618->8042681 unbroken (63 links incl. both anchors)
+  2026-11-14T15:10:06Z FILL 8042619-8042680 count=62 txs=22 sha256_gz=e2c5dcfdd6ae1595 entry=7f587f56d0f5f47d source=staged
+  == verify after the fill
+    NOTE filled gap 8042619-8042680 (62 ledgers, verified in the chain)
+    RESULT: PASS - segments 5 active 1 ledgers 106821 (7937915-8044735) txs 36742 gaps 0 (0 ledgers) filled 1 fails 0
+    RESULT: gaps 1 open 0 filled 1 fillable 0
+  RESULT: PASS - fill-gap 8042619-8042680, verify rc 0
+  (exit 0)
+CHECK ok   fill: 62 ledgers checked, chain 8042618->8042681 unbroken, FILL written, verify after PASS gaps 0 filled 1
+$ sudo -n tail -n 1 /var/lib/pft-histarchive/archive/MANIFEST.jsonl | jq -c '{kind, day, first, last, count, txs, anchor_below, anchor_above, source, tool, gap: .gap.reason, sha256_gz, entry, prev_entry}'; sudo -n cat /var/lib/pft-histarchive/archive/gapfills.jsonl; sudo -n cat /var/lib/pft-histarchive/archive/gaps.jsonl; sudo -n stat -c '%a %U %n' /var/lib/pft-histarchive/archive/segments/fill-8042619-8042680.jsonl.gz /var/lib/pft-histarchive/archive/gapfills.jsonl
+  {"kind":"fill","day":"fill-8042619-8042680","first":8042619,"last":8042680,"count":62,"txs":22,"anchor_below":{"h":"8278888DEFBCB472CBAEC4AF3B0B3BAD3B358BB1C9F199095CF9322E2922673D","i":8042618},"anchor_above":{"h":"F35D4801640E85FB2C36A794953891AD7E2ED4C55E7DBC707438EDE8B2719DB1","i":8042681},"source":{"file":"capture-8042618-8042681.jsonl","records":64,"sha256":"3de3e996f83db302ca62b95eac33e0ac2ccb8f1a63463c5ebaf05bab38b96c0f","type":"staged"},"tool":"histarchive 1.1.0","gap":"pruned on the node before archiving (oldest 8042681)","sha256_gz":"e2c5dcfdd6ae159566b84e472d0b683ce46dadcec7234ad44d17a5eb60da6ea6","entry":"7f587f56d0f5f47d68027d2cd4ffea1a1ee43c1dfd9547bc28918f20ba864a3c","prev_entry":"413545809ec3666003ad6058ded7c0d3ff1ab379a62c5a7e0932cf031ac4c035"}
+  {"at":"2026-11-14T15:10:06Z","entry":"7f587f56d0f5f47d68027d2cd4ffea1a1ee43c1dfd9547bc28918f20ba864a3c","from":8042619,"segment":"segments/fill-8042619-8042680.jsonl.gz","source":"staged","to":8042680}
+  {"at":"2026-11-14T13:26:39Z","from":8042619,"reason":"pruned on the node before archiving (oldest 8042681)","to":8042680}
+  644 pft-histarchive /var/lib/pft-histarchive/archive/segments/fill-8042619-8042680.jsonl.gz
+  644 pft-histarchive /var/lib/pft-histarchive/archive/gapfills.jsonl
+  (exit 0)
+CHECK ok   MANIFEST fill entry (staged, capture sha256, both anchors), one gapfills line, gaps.jsonl unchanged, files owned by pft-histarchive
+$ sudo -n sha256sum /var/lib/pft-histarchive/archive/gaps.jsonl | cut -c1-64
+  cf61470955d5580bf7bbb9bffc85b795e75cec46af2c2604490549b0b3e975bd
+  (exit 0)
+CHECK ok   gaps.jsonl byte-identical to before the fill (append-only, never rewritten)
+$ sudo -n sha256sum /var/lib/pft-histarchive/archive/MANIFEST.jsonl /var/lib/pft-histarchive/archive/gapfills.jsonl | cut -c1-64; sudo -n ls /var/lib/pft-histarchive/archive/segments
+  c8a6acc1cc7946ba49267be86c360148b3e77d498ec07fd75412534528b12584
+  96075a4c49506b52ad84d40b269c007f5b942ab485da958ae3aa581d08ddc786
+  2026-11-10.jsonl.gz
+  2026-11-11.jsonl.gz
+  2026-11-12.jsonl.gz
+  2026-11-13.jsonl.gz
+  fill-8042619-8042680.jsonl.gz
+  (exit 0)
+$ sudo -n pft-histarchive fill-gap 8042619-8042680 --staged histarchive/logs/data/gap-8042619-8042680/capture-8042618-8042681.jsonl; sudo -n sha256sum /var/lib/pft-histarchive/archive/MANIFEST.jsonl /var/lib/pft-histarchive/archive/gapfills.jsonl | cut -c1-64; sudo -n ls /var/lib/pft-histarchive/archive/segments
+  pft-histarchive fill-gap - 2026-11-14T15:10:13Z | validator gap 8042619-8042680
+  2026-11-14T15:10:14Z histarchive 1.1.0 fill-gap 8042619-8042680 source staged capture-8042618-8042681.jsonl
+  2026-11-14T15:10:14Z REFUSED: gap 8042619-8042680 is already filled (MANIFEST has a fill entry); nothing written
+  RESULT: REFUSED - fill-gap rc 1 (nothing written)
+  c8a6acc1cc7946ba49267be86c360148b3e77d498ec07fd75412534528b12584
+  96075a4c49506b52ad84d40b269c007f5b942ab485da958ae3aa581d08ddc786
+  2026-11-10.jsonl.gz
+  2026-11-11.jsonl.gz
+  2026-11-12.jsonl.gz
+  2026-11-13.jsonl.gz
+  fill-8042619-8042680.jsonl.gz
+  (exit 0)
+CHECK ok   duplicate fill REFUSED (rc 1), MANIFEST/gapfills/segments unchanged
+
+== 7. VERIFIED: verify, seqcheck, metrics + alert, replica, restore, follower
+$ sudo -n pft-histarchive verify | tail -n 3
+  NOTE filled gap 8042619-8042680 (62 ledgers, verified in the chain)
+  RESULT: PASS - segments 5 active 1 ledgers 106824 (7937915-8044738) txs 36743 gaps 0 (0 ledgers) filled 1 fails 0
+  (exit 0)
+CHECK ok   verify PASS: gaps 0 (0 ledgers) filled 1, NOTE filled gap 8042619-8042680
+$ sudo -n python3 -I histarchive/tests/seqcheck.py /var/lib/pft-histarchive/archive
+  seqcheck: ledgers 106826 (7937915-8044740) sources 6 parent links 106825 missing 0 open-gap ledgers 0 filled gaps 1
+  RESULT: PASS - fails 0
+  (exit 0)
+CHECK ok   independent seqcheck PASS: missing 0, filled gaps 1
+$ sudo -n pft-histarchive gaps; grep -v '^#' /var/lib/pft-exporter/textfile/pft_histarchive_gaps.prom; grep -E '^pft_histarchive_(gaps|gaps_filled|verify_ok)\{' /var/lib/pft-exporter/textfile/pft_histarchive.prom
+  FILLED 8042619-8042680 (62) by staged at 2026-11-14T15:10:06Z entry 7f587f56d0f5f47d
+  RESULT: gaps 1 open 0 filled 1 fillable 0
+  pft_histarchive_gap_open{host="validator"} 0
+  pft_histarchive_gap_fillable{host="validator"} 0
+  pft_histarchive_gap_source_up{host="validator"} 1
+  pft_histarchive_gap_check_timestamp_seconds{host="validator"} 1794669024
+  pft_histarchive_verify_ok{host="validator"} 1
+  pft_histarchive_gaps{host="validator"} 0
+  pft_histarchive_gaps_filled{host="validator"} 1
+  (exit 0)
+CHECK ok   gaps: FILLED by staged; textfiles open 0 fillable 0, verify_ok 1 gaps 0 gaps_filled 1
+$ sudo -n pft-histarchive replicate
+  pft-histarchive replicate - 2026-11-14T15:10:24Z | validator -> peer
+  == 1. encrypt (age) sealed segments + metadata into the outbox
+    outbox: 1 new segment(s) encrypted; metadata meta-262de1e8e8c884b7.tar.age; files 6; head_entry 7f587f56d0f5f47d
+  == 2. push files the peer does not hold yet
+    sent fill-8042619-8042680.jsonl.gz.age (16044 bytes) rc 0
+    sent meta-262de1e8e8c884b7.tar.age (10440 bytes) rc 0
+    sent REPLICA.json (head_entry 7f587f56d0f5f47d)
+  == 3. the peer checks its copy; compare with ours
+    RESULT: PASS - local files 6, peer files 6, fails 0
+  RESULT: PASS - replicate fails 0
+  (exit 0)
+CHECK ok   replicate PASS: the fill segment encrypted and sent
+$ sudo -n pft-histarchive verify-replica
+  pft-histarchive verify-replica - 2026-11-14T15:10:33Z | local REPLICA.json vs the peer's copy
+  RESULT: PASS - local files 6, peer files 6, fails 0
+  (exit 0)
+CHECK ok   verify-replica PASS
+$ R 'sudo -n pft-histarchive replica-check; sudo -n ls /var/lib/pft-histarchive/replica | grep -c fill-'
+  RESULT: PASS - replica files 6 head_entry 7f587f56d0f5f47d fails 0
+  1
+  (exit 0)
+CHECK ok   sentry replica-check PASS and holds the fill ciphertext
+$ sudo -n pft-histarchive restore-verify
+  pft-histarchive restore-verify - 2026-11-14T15:10:36Z | source: peer replica
+  == 1. fetch REPLICA.json and every listed file
+    fetched 6 encrypted files; decrypted 5 segments
+  == 2. offline verification of the restored copy (sealed segments only)
+    NOTE fill 8042619-8042680 checked on its own chain: its neighbours are in active/, which a sealed-only verify skips
+    RESULT: PASS - segments 5 active 0 ledgers 88841 (7937915-8026693) txs 30541 gaps 0 (0 ledgers) filled 1 fails 0
+  == 3. restored copy vs the local archive
+    SAME 2026-11-10 ledgers 7937915-7941026 entry bf1c160f2e55b17a
+    SAME 2026-11-11 ledgers 7941027-7969592 entry 04cb02a0617d2b53
+    SAME 2026-11-12 ledgers 7969593-7998145 entry 2c0e6e51a1d783a1
+    SAME 2026-11-13 ledgers 7998146-8026693 entry 413545809ec36660
+    SAME fill-8042619-8042680 ledgers 8042619-8042680 entry 7f587f56d0f5f47d
+    restored head_entry 7f587f56d0f5f47d is in the local MANIFEST chain
+  RESULT: PASS - restore-verify fails 0
+  (exit 0)
+CHECK ok   restore-verify from the sentry PASS: SAME fill-8042619-8042680, restored copy gaps 0 filled 1
+$ sleep 75; prom_q '{__name__=~"pft_histarchive_(gap_fillable|gap_open|gaps|gaps_filled|replica_ok)"}'; rule_state PFTHistarchiveGapFillable; rule_state PFTHistarchiveIntegrity
+  validator pft_histarchive_gaps 0
+  validator pft_histarchive_replica_ok 1
+  validator pft_histarchive_gaps_filled 1
+  validator pft_histarchive_gap_open 0
+  validator pft_histarchive_gap_fillable 0
+  PFTHistarchiveGapFillable ok inactive
+  PFTHistarchiveIntegrity ok inactive
+  (exit 0)
+CHECK ok   Prometheus: gap_fillable 0, gap_open 0, gaps 0, gaps_filled 1, replica_ok 1; GapFillable + Integrity inactive
+$ sudo -n pft-histarchive status | jq -c '.status | {last, lag, gaps}'; sleep 20; sudo -n pft-histarchive status | jq -c '.status | {last, lag, gaps}'
+  {"last":8044775,"lag":0,"gaps":1}
+  {"last":8044782,"lag":0,"gaps":1}
+  (exit 0)
+CHECK ok   follower advancing (last grows in 20 s), recorded gaps still 1 (no new gap)
+
+== 8. scratch peer-RPC fill: deliberate 30-ledger gap in a copy, filled from the public testnet RPC
+$ sudo -n cp -a /var/lib/pft-histarchive/archive $SCR/arch && sudo -n chown -R $(id -u):$(id -g) $SCR/arch && du -sh $SCR/arch | cut -f1
+  42M
+  (exit 0)
+scratch gap: 8044482-8044511 (follower last 8044782)
+$ python3 - $SCR/arch 8044482 8044511 <<'PYEOF'
+import json, os, sys, time
+d, a, b = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+act = os.path.join(d, 'active'); cut = 0
+for f in sorted(os.listdir(act)):
+    p = os.path.join(act, f); keep = []
+    for x in open(p, 'rb'):
+        if x.strip() and a <= json.loads(x)['i'] <= b: cut += 1
+        else: keep.append(x)
+    open(p, 'wb').write(b''.join(keep))
+with open(os.path.join(d, 'gaps.jsonl'), 'a') as fh:
+    fh.write(json.dumps({'from': a, 'to': b, 'reason': 'scratch: deliberate gap for the peer-RPC fill drill', 'at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}, sort_keys=True, separators=(',', ':')) + '\n')
+print(f'cut {cut} ledgers {a}-{b} from active/, gap recorded')
+PYEOF
+  cut 30 ledgers 8044482-8044511 from active/, gap recorded
+  (exit 0)
+CHECK ok   scratch copy: 30 ledgers cut, gap recorded
+$ python3 histarchive/histarchive.py verify --dir $SCR/arch | tail -n 1; python3 histarchive/histarchive.py gaps --dir $SCR/arch --rpc https://rpc.testnet.postfiat.org/
+  RESULT: PASS - segments 5 active 1 ledgers 106838 (7937915-8044782) txs 36744 gaps 1 (30 ledgers) filled 1 fails 0
+  FILLED 8042619-8042680 (62) by staged at 2026-11-14T15:10:06Z entry 7f587f56d0f5f47d
+  OPEN   8044482-8044511 (30) anchors ok source holds it -> FILLABLE | scratch: deliberate gap for the peer-RPC fill drill
+  RESULT: gaps 2 open 1 filled 1 fillable 1
+  (exit 0)
+CHECK ok   scratch: verify PASS gaps 1 (30 ledgers) filled 1; gaps: the new gap FILLABLE from the public RPC
+$ nice -n 15 python3 -u histarchive/histarchive.py fill-gap --dir $SCR/arch --gap 8044482-8044511 --rpc https://rpc.testnet.postfiat.org/ --rate 2
+  2026-11-14T15:12:37Z histarchive 1.1.0 fill-gap 8044482-8044511 source rpc https://rpc.testnet.postfiat.org
+  2026-11-14T15:12:37Z anchors: below 8044481 present 6EB0E9196B520FE6; above 8044512 present 2BF2BE8F7B25739B
+  2026-11-14T15:13:07Z source answered 30/30 ledgers in 31 requests
+  2026-11-14T15:13:07Z checks: 30 ledgers header+hash+txroot OK, chain 8044481->8044512 unbroken (31 links incl. both anchors)
+  2026-11-14T15:13:07Z FILL 8044482-8044511 count=30 txs=10 sha256_gz=33657fed93260250 entry=6f30b2c4ed37d240 source=rpc
+  (exit 0)
+CHECK ok   scratch peer-RPC fill: 30/30 answered, chain unbroken, FILL written
+$ python3 histarchive/histarchive.py verify --dir $SCR/arch | tail -n 3; python3 -I histarchive/tests/seqcheck.py $SCR/arch; tail -n 1 $SCR/arch/MANIFEST.jsonl | jq -c '{kind, first, last, count, source}'
+  NOTE filled gap 8042619-8042680 (62 ledgers, verified in the chain)
+  NOTE filled gap 8044482-8044511 (30 ledgers, verified in the chain)
+  RESULT: PASS - segments 6 active 1 ledgers 106868 (7937915-8044782) txs 36754 gaps 0 (0 ledgers) filled 2 fails 0
+  seqcheck: ledgers 106868 (7937915-8044782) sources 7 parent links 106867 missing 0 open-gap ledgers 0 filled gaps 2
+  RESULT: PASS - fails 0
+  {"kind":"fill","first":8044482,"last":8044511,"count":30,"source":{"build_version":"1.0.9","fetched_utc":"2026-11-14T15:13:07Z","rpc":"https://rpc.testnet.postfiat.org","type":"rpc"}}
+  (exit 0)
+CHECK ok   scratch: verify PASS gaps 0 filled 2; seqcheck PASS missing 0 filled 2; provenance rpc host only
+$ rm -rf $SCR; test -e $SCR && echo LEFT || echo scratch removed
+  scratch removed
+  (exit 0)
+
+== 9. integrity (conf, rulecheck.conf), skew, rulecheck, aptrust, jobwatch
+$ sudo -n pft-integrity verify | grep -E '^(WARN|FAIL|RESULT)' | sed -E 's/ +sha256.*//' | cut -c1-140 | head -20
+  RESULT: PASS - 256 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+$ sudo -n pft-integrity accept --reason 'task_290beaeb: histarchive cc0849a gap repair (FILL_RPC in pft-histarchive.env, rulecheck.conf gaps lines)' | tail -2
+  pft-integrity accept - 2026-11-14T15:14:07Z: re-baselined 256 items by <user>
+  manifest sha256: cd29ffda89b09e9f42476cc3f366b2211165bae1d2a4c3260f45a562b37e918f -> b0f62df0346e7970cf901c3b31e631cf72577aaebd3617352a3a1f568d1643ab (logged to accept.log)
+  (exit 0)
+$ R 'sudo -n pft-integrity verify' | grep -E '^(WARN|FAIL|RESULT)' | sed -E 's/ +sha256.*//' | cut -c1-140 | head -20
+  RESULT: PASS - 151 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 256 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 151 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts
+$ sudo -n pft-fleet skew
+  ref main = cc0849a3869fd11c3382f0ec680f2f440fa03003
+  host sentry     role sentry    ok
+  host validator  role validator ok
+  HOST       ADDON       STATE      DETAIL
+  sentry     alertpath   CURRENT    
+  sentry     apparmor    CURRENT    
+  sentry     aptrust     CURRENT    
+  sentry     audittrail  CURRENT    
+  sentry     authwatch   CURRENT    
+  sentry     backfill    CURRENT    
+  sentry     backupwatch CURRENT    
+  sentry     cluster     CURRENT    
+  sentry     divergence  CURRENT    
+  sentry     egress      CURRENT    
+  sentry     feewatch    CURRENT    
+  sentry     fwaudit     CURRENT    
+  sentry     histarchive CURRENT    
+  sentry     integrity   CURRENT    
+  sentry     jobwatch    CURRENT    
+  sentry     kernwatch   CURRENT    
+  sentry     keyescrow   CURRENT    
+  sentry     kmod        CURRENT    
+  sentry     logship     CURRENT    
+  sentry     maint       CURRENT    
+  sentry     mounts      CURRENT    
+  sentry     patch       CURRENT    
+  sentry     peerwatch   CURRENT    
+  sentry     privesc     CURRENT    
+  sentry     resources   CURRENT    
+  sentry     rulecheck   CURRENT    
+  sentry     schedaudit  CURRENT    
+  sentry     seccomp     CURRENT    
+  sentry     selfheal    CURRENT    
+  sentry     sshcrypto   CURRENT    
+  sentry     statewatch  CURRENT    
+  sentry     sysctl      CURRENT    
+  sentry     timesync    CURRENT    
+  sentry     upgradewatch CURRENT    
+  sentry     vulnscan    CURRENT    
+  sentry     watchdog    CURRENT    
+  validator  alertpath   CURRENT    
+  validator  alertstats  CURRENT    
+  validator  apparmor    CURRENT    
+  validator  aptrust     CURRENT    
+  validator  audittrail  CURRENT    
+  validator  authwatch   CURRENT    
+  validator  backfill    CURRENT    
+  validator  backup      CURRENT    
+  validator  backupwatch CURRENT    
+  validator  cluster     CURRENT    
+  validator  divergence  CURRENT    
+  validator  egress      CURRENT    
+  validator  exporter    CURRENT    
+  validator  feewatch    CURRENT    
+  validator  fleet       CURRENT    
+  validator  fwaudit     CURRENT    
+  validator  histarchive CURRENT    
+  validator  integrity   CURRENT    
+  validator  jobwatch    CURRENT    
+  validator  kernwatch   CURRENT    
+  validator  keyescrow   CURRENT    
+  validator  kmod        CURRENT    
+  validator  logship     CURRENT    
+  validator  maint       CURRENT    
+  validator  monitor     CURRENT    
+  validator  mounts      CURRENT    
+  validator  patch       CURRENT    
+  validator  peerwatch   CURRENT    
+  validator  privesc     CURRENT    
+  validator  resources   CURRENT    
+  validator  retention   CURRENT    
+  validator  rulecheck   CURRENT    
+  validator  schedaudit  CURRENT    
+  validator  seccomp     CURRENT    
+  validator  selfheal    CURRENT    
+  validator  sshcrypto   CURRENT    
+  validator  statewatch  CURRENT    
+  validator  sysctl      CURRENT    
+  validator  timesync    CURRENT    
+  validator  upgradewatch CURRENT    
+  validator  vulnscan    CURRENT    
+  validator  watchdog    CURRENT    
+  SUMMARY CURRENT=78 BEHIND=0 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 0)
+CHECK ok   pft-fleet skew exit 0, histarchive CURRENT on both hosts, nothing BEHIND/MODIFIED/MISSING/UNEXPECTED/DIVERGED
+$ sudo -n systemctl start pft-histarchive-periodic.service; sudo -n systemctl start pft-rulecheck.service; sudo -n journalctl -u pft-rulecheck.service --since -1min --no-pager -o cat | grep -E '^RESULT |histarchive'
+  LIVE     pft-histarchive/PFTHistarchiveStale                            2/2
+  LIVE     pft-histarchive/PFTHistarchiveIntegrity                        3/3
+  LIVE     pft-histarchive/PFTHistarchiveReplica                          2/2
+  LIVE     pft-histarchive/PFTHistarchiveGapFillable                      1/1
+  FRESH         pft_histarchive.prom                            3m21s    1d03h  pft_histarchive_verify_timestamp_seconds
+  FRESH         pft_histarchive_follow.prom                        3s   15m00s  mtime
+  FRESH         pft_histarchive_gaps.prom                          4s   15m00s  pft_histarchive_gap_check_timestamp_seconds
+  FRESH         pft_histarchive_replica.prom                    3m17s    1d03h  pft_histarchive_replica_check_timestamp_seconds
+  RESULT OK - rules: LIVE 132 PARTIAL 0 DEAD 0 ERROR 0 IGNORED 0 | textfiles: FRESH 60 STALE 0 MISSING 0 LEFTOVER 0 UNCONFIGURED 0 -> exit 0
+  (exit 0)
+CHECK ok   pft-rulecheck RESULT OK (pft_histarchive_gaps.prom fresh and required)
+$ sudo -n pft-aptrust audit 2>&1 | grep -E 'histarchive|^RESULT' | cut -c1-200
+  RESULT: PASS - 11 sources, 4 keys, 4 containers; 8 pass, 18 info, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-aptrust PASS after the file change
+$ sudo -n systemctl start pft-jobwatch.service; grep -E '^pft_jobwatch_job_(failed|missed|disabled)\{.*histarchive' /var/lib/pft-exporter/textfile/pft_jobwatch_validator.prom
+  pft_jobwatch_job_disabled{host="validator",timer="pft-histarchive-periodic.timer"} 0
+  pft_jobwatch_job_failed{host="validator",timer="pft-histarchive-periodic.timer"} 0
+  pft_jobwatch_job_missed{host="validator",timer="pft-histarchive-periodic.timer"} 0
+  (exit 0)
+CHECK ok   jobwatch: histarchive timer not failed, missed or disabled (periodic ran with the new code)
+
+== 10. end window, restore the real target, compare, keyescrow, read back the throwaway and every operator topic
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+$ sudo -n rm -f $NE   (no ntfy.env before: pft-maint falls back to the real monitor target again)
+CHECK ok   pft-maint target back to its pre-run state (/etc/pft-maint/ntfy.env: absent again)
+$ sudo -n test ! -e $BK && echo backup gone
+  backup gone
+  (exit 0)
+$ sudo -n systemctl start pft-keyescrow.service; grep -h '^pft_keyescrow_drift_items{node="validator"}' /var/lib/pft-exporter/textfile/pft_keyescrow.prom
+  pft_keyescrow_drift_items{node="validator"} 0
+  (exit 0)
+CHECK ok   pft-keyescrow re-run after the restore: validator drift_items 0
+$ sleep 5; curl -s --max-time 15 "https://ntfy.sh/$TT/json?poll=1&since=1794667853" | jq -r '.title'
+  [MAINT] start validator
+  [MAINT] end validator
+  (exit 0)
+CHECK ok   the [MAINT] start and end messages reached the throwaway topic
+$ curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '.data.alerts[] | "\(.labels.alertname) \(.state)"'
+  PFTAlertPipelineWatchdog firing
+  (exit 0)
+CHECK ok   nothing but the pipeline watchdog pending or firing
+$ sudo -n docker exec postfiatd curl -s -m 10 -d '{"method":"server_info"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state; R "sudo -n docker exec postfiatd-sentry curl -s -m 10 -d '{\"method\":\"server_info\"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state"
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing at the end
+$ sudo -n find /var/lib/pft-histarchive -maxdepth 1 -name 'restore.*' | wc -l; systemctl list-units --all --no-legend 'run-u*' | wc -l
+  0
+  0
+  (exit 0)
+CHECK ok   no restore scratch left, no transient run-u units
+$ for id in 4bd1941a-203c-46d1-8511-ed28532c6372 dcf7b975-b1a0-4267-ad5e-a2cef1777c87 ; do curl -s -o /dev/null -w '%{http_code}\n' -X DELETE http://<redacted-ip>:9093/api/v2/silence/$id; done
+  200
+  200
+  (exit 0)
+CHECK ok   rollout silence(s) expired (nothing but the watchdog active)
+operator topic read-back waits 90 s (>= group_interval + 30 s after the last change)
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the run (2 topic(s), 0 with messages)
+
+fill-run done 2026-11-14T15:18:22Z: 0 check(s) failed -> PASS

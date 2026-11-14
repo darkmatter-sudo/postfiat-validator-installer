@@ -1,0 +1,63 @@
+histarchive gap repair - 2026-11-14T15:02:39Z - Ubuntu 22.04.5 LTS - repo HEAD 9bce569370848635f6c6e7e5466dd205b15a4564 (clean: yes)
+
+== 0. preflight (read-only)
+$ sha256sum histarchive/pft-histarchive.sh histarchive/histarchive.py histarchive/lib_hashverify.py histarchive/tests/seqcheck.py histarchive/drill/fill-run.sh alerts/histarchive.rules.yml histarchive/logs/data/gap-8042619-8042680/capture-8042618-8042681.jsonl
+  279bc5fe4547f36c224b85132bb44e83db3124332335d6328312a13ffae9e344  histarchive/pft-histarchive.sh
+  8fab6fcfe81b6b5810bf355820be1c2ff2647d23cc6932955a9297ef9a79ffea  histarchive/histarchive.py
+  64ec1dacc49fcc955975a6c5f5ee85d657c9c7921dbe0ef15cd9b9411ef4e414  histarchive/lib_hashverify.py
+  aee556348ed7a1b192d7a4d2f2a8b3e683a832b20a5a8fb89973d1de000cbcfa  histarchive/tests/seqcheck.py
+  04218d0e207afa7a8a72222d80c6712bee35a36b8b3b98b9503db4a797824235  histarchive/drill/fill-run.sh
+  6ce909e108718be9275db3ce836ae6e985b2bb3a99f431478729c665ba5c2ae5  alerts/histarchive.rules.yml
+  3de3e996f83db302ca62b95eac33e0ac2ccb8f1a63463c5ebaf05bab38b96c0f  histarchive/logs/data/gap-8042619-8042680/capture-8042618-8042681.jsonl
+  (exit 0)
+CHECK ok   the committed capture is the one recorded when it was taken (sha256 3de3e996f83db302ca62b95eac33e0ac2ccb8f1a63463c5ebaf05bab38b96c0f)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 256 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 151 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts before
+$ sudo -n docker exec postfiatd curl -s -m 10 -d '{"method":"server_info"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state; R "sudo -n docker exec postfiatd-sentry curl -s -m 10 -d '{\"method\":\"server_info\"}' http://<redacted-ip>:5005 | jq -r .result.info.server_state"
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ sha256sum histarchive/pft-histarchive.sh histarchive/histarchive.py | cut -c1-64; sudo -n sha256sum /usr/local/bin/pft-histarchive /usr/local/lib/pft-histarchive/histarchive.py | cut -c1-64; R 'sha256sum /usr/local/bin/pft-histarchive /usr/local/lib/pft-histarchive/histarchive.py | cut -c1-64'
+  279bc5fe4547f36c224b85132bb44e83db3124332335d6328312a13ffae9e344
+  8fab6fcfe81b6b5810bf355820be1c2ff2647d23cc6932955a9297ef9a79ffea
+  279bc5fe4547f36c224b85132bb44e83db3124332335d6328312a13ffae9e344
+  8fab6fcfe81b6b5810bf355820be1c2ff2647d23cc6932955a9297ef9a79ffea
+  279bc5fe4547f36c224b85132bb44e83db3124332335d6328312a13ffae9e344
+  8fab6fcfe81b6b5810bf355820be1c2ff2647d23cc6932955a9297ef9a79ffea
+  (exit 0)
+CHECK ok   RESUMED: installed script + helper already equal HEAD on both hosts (synced by the stopped run)
+$ sudo -n pft-histarchive verify | tail -n 3
+  NOTE recorded gap 8042619-8042680 (chain restarts at 8042681)
+  RESULT: PASS - segments 4 active 1 ledgers 106630 (7937915-8044606) txs 36675 gaps 1 (62 ledgers) filled 0 fails 0
+  (exit 0)
+CHECK ok   FOUND: live archive verifies with the recorded gap 8042619-8042680 open
+$ sudo -n cat /var/lib/pft-histarchive/archive/gaps.jsonl; sudo -n test -e /var/lib/pft-histarchive/archive/gapfills.jsonl && echo gapfills present || echo no gapfills.jsonl
+  {"at":"2026-11-14T13:26:39Z","from":8042619,"reason":"pruned on the node before archiving (oldest 8042681)","to":8042680}
+  no gapfills.jsonl
+  (exit 0)
+CHECK ok   gaps.jsonl holds exactly the reboot gap; no fill yet
+$ curl -s -m 15 -d '{"method":"server_info"}' https://rpc.testnet.postfiat.org/ | jq -r .result.info.complete_ledgers
+  7950054-8044608
+  (exit 0)
+CHECK ok   public RPC answers server_info (range 7950054-8044608)
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+$ for id in $(curl -s http://<redacted-ip>:9093/api/v2/silences | jq -r '.[] | select(.status.state == "active" and .createdBy == "histarchive-fill") | .id'); do echo "expire $id"; curl -s -o /dev/null -w '%{http_code}\n' -X DELETE http://<redacted-ip>:9093/api/v2/silence/$id; done
+  expire e88977f4-e34c-4d54-85bc-e3688ee608cd
+  200
+  (exit 0)
+$ curl -s http://<redacted-ip>:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'; curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '.data.alerts[].labels.alertname' | sort | uniq -c
+  0
+        1 PFTAlertPipelineWatchdog
+        1 PFTHistarchiveGapFillable
+  (exit 0)
+CHECK FAIL no active silence; only the pipeline watchdog pending/firing in Prometheus
+$ systemctl list-units --all --no-legend 'run-u*' | wc -l
+  0
+  (exit 0)
+CHECK ok   no transient run-u units
+preflight failed - stopping before any change
