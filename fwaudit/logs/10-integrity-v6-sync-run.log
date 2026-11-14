@@ -1,0 +1,180 @@
+pft-integrity v6 sync - 2026-11-14T03:34:44Z - Ubuntu 22.04.5 LTS - repo HEAD a1a8545033709dee273e39cac32819b6379b05b4 (clean: yes)
+
+== 0. preflight (read-only)
+$ sha256sum integrity/pft-integrity.sh integrity/tests/test-fw.sh fwaudit/drill/integrity-sync-run.sh; sha256sum /usr/local/bin/pft-integrity; R 'sha256sum /usr/local/bin/pft-integrity'
+  2a6ef28f4d84fa049652df10cf0e29ac9a8dbecc339d2888e2ca435d34ef484a  integrity/pft-integrity.sh
+  fa8eaa097f063d08d1d07b7a9469165defb0bc8951fc5a831347a0a4a997e2e8  integrity/tests/test-fw.sh
+  be47cca5d471e8ff5d4a4b48debddf10db8b55d69cbce8854d96d95d37e92ef8  fwaudit/drill/integrity-sync-run.sh
+  c7d45dea830d519c8bb1c730ce81951f4c8d89263affbe21579c746d404f1755  /usr/local/bin/pft-integrity
+  c7d45dea830d519c8bb1c730ce81951f4c8d89263affbe21579c746d404f1755  /usr/local/bin/pft-integrity
+  (exit 0)
+$ TEST_TMPDIR=$HOME/.cache bash integrity/tests/test-fw.sh | tail -1
+  RESULT: 14 passed, 0 failed
+  (exit 0)
+CHECK ok   integrity fw unit tests pass at HEAD
+$ shellcheck integrity/pft-integrity.sh integrity/tests/test-fw.sh fwaudit/drill/integrity-sync-run.sh && echo clean
+  clean
+  (exit 0)
+CHECK ok   shellcheck clean
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 253 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 151 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts before the sync
+$ srv_state
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ sudo -n pft-fleet skew | grep -vE ' CURRENT( |$)'
+  ref main = a1a8545033709dee273e39cac32819b6379b05b4
+  host sentry     role sentry    ok
+  host validator  role validator ok
+  HOST       ADDON       STATE      DETAIL
+  sentry     integrity   BEHIND     /usr/local/bin/pft-integrity BEHIND @d44e5d4e39e5 (-1)
+  validator  integrity   BEHIND     /usr/local/bin/pft-integrity BEHIND @d44e5d4e39e5 (-1)
+  SUMMARY CURRENT=75 BEHIND=2 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 1)
+CHECK ok   skew: only integrity BEHIND, on both hosts
+$ v6f | tr '\n' ' '; echo
+  
+  (exit 0)
+CHECK ok   old baselines have no fw:ufw v6_rules field yet
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+$ curl -s http://<redacted-ip>:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'; curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '.data.alerts[] | "\(.labels.alertname) \(.state)"' | sort | uniq -c
+  0
+        1 PFTAlertPipelineWatchdog firing
+        1 PFTVulnRebootOwed pending
+  (exit 0)
+known pending before the run (accepted by the preflight): PFTVulnRebootOwed
+CHECK ok   no active silence; only the pipeline watchdog (+ KNOWN_PENDING) pending/firing in Prometheus
+$ curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '[.data.alerts[] | select(.state == "firing" and .labels.alertname != "PFTAlertPipelineWatchdog")] | length'
+  0
+  (exit 0)
+CHECK ok   nothing but the watchdog FIRING (KNOWN_PENDING may only be pending)
+
+== 1. rollout silence (fleet/integrity/keyescrow; not the watchdog)
+CHECK ok   Alertmanager silence created (fleet, integrity, keyescrow; not the watchdog) until 2026-11-14T04:16:28Z
+
+== 2. pft-maint window, [MAINT] messages to a throwaway topic (real file kept as $BK)
+real /etc/pft-maint/ntfy.env present before: 0
+$ { [ $HAD = 0 ] || sudo -n cp -p $NE $BK; } && printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' "$TT" | sudo -n tee $NE >/dev/null && sudo -n chmod 600 $NE && sudo -n stat -c '%a %U' $NE
+  600 root
+  (exit 0)
+CHECK ok   throwaway target installed
+$ sudo -n pft-maint start --ttl 30m --reason 'task_32d07e3a integrity v6 sync'
+  window started: id m1794627389-4137047 until 2026-11-14T04:06:29Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint window open
+CHECK ok   sentry has the window (via the watchdog channel) after 40s
+
+== 3. pft-fleet sync --addon integrity (gated per host, sentry first, accept with reason)
+$ sudo -n pft-fleet sync --addon integrity --to a1a8545033709dee273e39cac32819b6379b05b4 --apply --reason 'task_32d07e3a integrity v6 per-family fw:ufw'
+  [2026-11-14T03:37:51Z] sync integrity to a1a8545033709dee273e39cac32819b6379b05b4 (2026-11-14T04:12:50+01:00) REF main=a1a8545033709dee273e39cac32819b6379b05b4
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN sentry sentry /usr/local/bin/pft-integrity 0755 BEHIND c7d45dea830d 2a6ef28f4d84 write
+  PLAN sentry sentry /etc/systemd/system/pft-integrity.service 0644 CURRENT 9fce37f605f4 9fce37f605f4 keep
+  PLAN sentry sentry /etc/systemd/system/pft-integrity.timer 0644 CURRENT 1979df22afcb 1979df22afcb keep
+  PLAN validator validator /usr/local/bin/pft-integrity 0755 BEHIND c7d45dea830d 2a6ef28f4d84 write
+  PLAN validator validator /etc/systemd/system/pft-integrity.service 0644 CURRENT 9fce37f605f4 9fce37f605f4 keep
+  PLAN validator validator /etc/systemd/system/pft-integrity.timer 0644 CURRENT 1979df22afcb 1979df22afcb keep
+  [2026-11-14T03:37:51Z] order: sentry validator
+  [2026-11-14T03:37:51Z] sentry: 1 file(s) to write
+  PRE sentry pft-maint window active PASS
+  PRE sentry node server_state=full PASS
+  PRE sentry pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP sentry /usr/local/bin/pft-integrity sha256 c7d45dea830d -> /var/lib/pft-fleet/backup/20261114T033751Z-integrity-sentry
+  WRITE sentry /usr/local/bin/pft-integrity c7d45dea830d -> 2a6ef28f4d84 mode 0755
+  GATE sentry sha256 /usr/local/bin/pft-integrity = target 2a6ef28f4d84 PASS
+  GATE sentry syntax /usr/local/bin/pft-integrity bash -n PASS
+  GATE sentry addon units failed=none PASS
+  GATE sentry node server_state=full PASS
+  ACCEPT sentry pft-integrity baseline updated: pft-fleet sync integrity@a1a854503370 (pft-integrity)
+  [2026-11-14T03:38:26Z] SYNCED sentry integrity -> a1a854503370
+  [2026-11-14T03:38:26Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/bin/pft-integrity sha256 c7d45dea830d -> /var/lib/pft-fleet/backup/20261114T033751Z-integrity-validator
+  WRITE validator /usr/local/bin/pft-integrity c7d45dea830d -> 2a6ef28f4d84 mode 0755
+  GATE validator sha256 /usr/local/bin/pft-integrity = target 2a6ef28f4d84 PASS
+  GATE validator syntax /usr/local/bin/pft-integrity bash -n PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync integrity@a1a854503370 (pft-integrity)
+  [2026-11-14T03:38:59Z] SYNCED validator integrity -> a1a854503370
+  [2026-11-14T03:38:59Z] sync complete
+  (exit 0)
+CHECK ok   integrity sync exit 0 (files written + integrity accepted by pft-fleet)
+
+== 4. VERIFIED: new collector live on both hosts
+$ sha256sum /usr/local/bin/pft-integrity; R 'sha256sum /usr/local/bin/pft-integrity'
+  2a6ef28f4d84fa049652df10cf0e29ac9a8dbecc339d2888e2ca435d34ef484a  /usr/local/bin/pft-integrity
+  2a6ef28f4d84fa049652df10cf0e29ac9a8dbecc339d2888e2ca435d34ef484a  /usr/local/bin/pft-integrity
+  (exit 0)
+CHECK ok   installed pft-integrity == HEAD integrity/pft-integrity.sh on both hosts
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 253 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 151 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts after the sync
+$ v6f | tr '\n' ' '; echo
+  2 1 
+  (exit 0)
+CHECK ok   baselines carry fw:ufw v6_rules: validator 2, sentry 1
+$ sudo -n tail -n 1 /var/lib/pft-integrity/accept.log | cut -f1,5; R 'sudo -n tail -n 1 /var/lib/pft-integrity/accept.log | cut -f1,5'
+  2026-11-14T03:38:59Z	reason=pft-fleet sync integrity@a1a854503370 on validator: pft-integrity (task_32d07e3a integrity v6 per-family fw:ufw) 
+  2026-11-14T03:38:26Z	reason=pft-fleet sync integrity@a1a854503370 on sentry: pft-integrity (task_32d07e3a integrity v6 per-family fw:ufw) 
+  (exit 0)
+
+== 5. fleet skew
+$ sudo -n pft-fleet skew | tail -3
+  validator  vulnscan    CURRENT    
+  validator  watchdog    CURRENT    
+  SUMMARY CURRENT=77 BEHIND=0 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 0)
+CHECK ok   pft-fleet skew exit 0, nothing BEHIND/MODIFIED/MISSING/UNEXPECTED/DIVERGED
+
+== 6. end window, restore the real target, compare, keyescrow, read back the throwaway and every operator topic
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+$ sudo -n rm -f $NE   (no ntfy.env before: pft-maint falls back to the real monitor target again)
+CHECK ok   pft-maint target back to its pre-run state (/etc/pft-maint/ntfy.env: absent again)
+$ sudo -n test ! -e $BK && echo backup gone
+  backup gone
+  (exit 0)
+$ sudo -n systemctl start pft-keyescrow.service; grep -h '^pft_keyescrow_drift_items{node="validator"}' /var/lib/pft-exporter/textfile/pft_keyescrow.prom
+  pft_keyescrow_drift_items{node="validator"} 0
+  (exit 0)
+CHECK ok   pft-keyescrow re-run after the ntfy.env restore: validator drift_items 0
+$ sleep 5; curl -s --max-time 15 "https://ntfy.sh/$TT/json?poll=1&since=1794627284" | jq -r '.title'
+  [MAINT] start validator
+  [MAINT] end validator
+  (exit 0)
+CHECK ok   the [MAINT] start and end messages reached the throwaway topic
+$ for i in $(seq 0 15 150); do n=$(curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '[.data.alerts[] | select(.labels.alertname | test("Fleet|Integrity|KeyEscrow|AppArmor|Seccomp"))] | length'); echo "+${i}s: $n"; [ "$n" = 0 ] && break; sleep 15; done; echo $n
+  +0s: 0
+  0
+  (exit 0)
+CHECK ok   no fleet/integrity/keyescrow/confinement alert pending or firing (silence left to run out)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 253 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 151 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts at the end
+$ srv_state
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing at the end
+$ systemctl list-units --all --no-legend 'run-u*.service' 'run-u*.timer' | wc -l
+  0
+  (exit 0)
+CHECK ok   no transient run-u services/timers
+operator topic read-back waits 90 s (>= group_interval + 30 s after the last change)
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the run (2 topic(s), 0 with messages)
+
+integrity-sync-run done 2026-11-14T03:42:29Z: 0 check(s) failed -> PASS

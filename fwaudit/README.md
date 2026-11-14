@@ -111,6 +111,8 @@ timers, and reads back every operator topic (must be 0 messages). `PREFLIGHT_ONL
 | 06 install | FAIL 1 check: the sentry peers file came out 0644 (`umask` in the remote shell did not reach the file `sudo tee` created); `install.sh` then set it to 0600, but the runner had no stop gate after step 4 and went on to install on the sentry | [`logs/06-install-run-FAIL-sentry-peers-mode.log`](logs/06-install-run-FAIL-sentry-peers-mode.log) |
 | 07 revert | run 06's partial install removed from both hosts (files, timer, rulecheck lines, jobwatch entry), integrity accepted, silence expired once only the watchdog was active | [`logs/07-revert-run06.log`](logs/07-revert-run06.log) |
 | 08 install | **PASS, 51 checks ok, 0 failed**: audit PASS on both hosts, up 1 / verdict 0 / 0 fail / 0 warn in Prometheus, skew all CURRENT, rulecheck OK on both hosts, integrity PASS, operator topics 0 messages | [`logs/08-install-run.log`](logs/08-install-run.log) |
+| 09 integrity v6 gap tests | **14 passed, 0 failed** (`integrity/tests/test-fw.sh`, stubbed ufw/iptables/ip6tables); the pre-fix collector is the failing control (misses a v6-only deletion and addition); mutation "drop the per-family table" killed (2 failed) | [`logs/09-integrity-v6-gap-tests.log`](logs/09-integrity-v6-gap-tests.log) |
+| 10 integrity v6 sync | **PASS, 26 checks ok, 0 failed** ([`drill/integrity-sync-run.sh`](drill/integrity-sync-run.sh)): `pft-fleet sync --addon integrity` in a `pft-maint` window (throwaway topic), installed sha256 = HEAD on both hosts, verify PASS, new baselines carry `fw:ufw v6_rules` (validator 2, sentry 1), skew all CURRENT, operator topics 0 messages | [`logs/10-integrity-v6-sync-run.log`](logs/10-integrity-v6-sync-run.log) |
 
 Fix for run 06 (in run 08's runner): the sentry file is created `install -m 600 /dev/null` before `tee` writes it, and
 the runner stops after step 4 if any check failed. Logs 01-04 are the read-only live audit, the sentry IPv6 fix and
@@ -135,6 +137,11 @@ recovery at the hand-computed sample, a 4-minute FAIL that never fires, WARN-onl
 | Host | Found (capture 00:14Z) | Fix | Verified |
 |---|---|---|---|
 | sentry | stale-allow tcp/2559 IPv6: UFW allowed it, nginx listens on IPv4 only | removed the v6 rule (2026-11-14T00:45Z); `sentry/relay-setup.sh` now adds an IPv4-only rule | re-audit 00:46Z PASS, fixture `sentry-postfix.bundle`; installed audit PASS on both hosts in install run 08 |
+
+Follow-up found by the same fix: `pft-integrity` did not notice the v6-only deletion above (its `fw:ufw` item hashed
+`ufw show added`, which lists a dual-family rule once). Fixed in [`../integrity`](../integrity/README.md) (per-family
+rule table + `v6_rules`), tested in log 09 with the old collector as the failing control, deployed to both hosts in
+log 10.
 
 Logs: [`logs/01-live-audit.log`](logs/01-live-audit.log) (found), [`logs/02-sentry-v6-fix.log`](logs/02-sentry-v6-fix.log) (fixed), [`logs/03-sentry-reaudit.log`](logs/03-sentry-reaudit.log) (verified), [`logs/08-install-run.log`](logs/08-install-run.log) (installed, PASS both hosts).
 
