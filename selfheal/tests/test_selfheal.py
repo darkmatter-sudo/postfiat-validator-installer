@@ -575,6 +575,36 @@ def test_sh_lock_and_unreadable_lock_state(sh):
     assert json.loads(p.stderr.strip().splitlines()[-1])["suppressed_by"] == "lock"
 
 
+def _acts(s):
+    return [c for c in s.calls() if c.split()[1] in ("restart", "start", "compose")]
+
+
+def test_sh_lock_guard_never_invokes_docker_action(sh):
+    s = sh(RPC_FAILS=1, GRACE_SEC=0)
+    s.set(rpc_fail="1", locks="histarchive until 2026-11-12T13:50:29Z")
+    p = s.run("run")
+    assert json.loads(p.stderr.strip().splitlines()[-1])["suppressed_by"] == "lock"
+    assert p.returncode == 0 and _acts(s) == []
+    # control: same fault, lock released -> exactly one restart
+    s.set(locks=None)
+    s.run("run", now=T0 + 60)
+    assert _acts(s) == ["docker restart -t 60 postfiatd-sentry"]
+
+
+def test_sh_grace_guard_never_invokes_docker_action(sh):
+    from datetime import datetime, timezone
+
+    s = sh(RPC_FAILS=1, GRACE_SEC=900)
+    started = datetime.fromtimestamp(T0 - 899, timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    s.set(rpc_fail="1", started=started)
+    p = s.run("run")
+    assert json.loads(p.stderr.strip().splitlines()[-1])["suppressed_by"] == "grace"
+    assert p.returncode == 0 and _acts(s) == []
+    # control: one second later the grace window (900 s) has ended -> exactly one restart
+    s.run("run", now=T0 + 1)
+    assert _acts(s) == ["docker restart -t 60 postfiatd-sentry"]
+
+
 def test_sh_dry_run_flag_never_acts(sh):
     s = sh()
     s.set(running="false")

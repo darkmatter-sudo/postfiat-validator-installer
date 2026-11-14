@@ -1,0 +1,29 @@
+$ git clone https://github.com/darkmatter-sudo/postfiat-validator-installer.git && cd postfiat-validator-installer && git checkout b02b5cd
+b02b5cd4f9891785358bb1bd3190a83b9f0ada39
+$ sha256sum selfheal/tests/test_selfheal.py selfheal/pft-selfheal.sh
+f11a170973300723615b6c79ca0047686fbda946abd00d7c7a7354a55e71e281  selfheal/tests/test_selfheal.py
+b5826baa99d8dc801281f2bad54dd79bb9e96047fcc3308443c7ee3684611991  selfheal/pft-selfheal.sh
+$ python3 -m pytest -q selfheal/tests/test_selfheal.py -k 'lock or grace' -v
+============================= test session starts ==============================
+platform linux -- Python 3.10.12, pytest-9.1.1, pluggy-1.7.0
+rootdir: /home/<user>/.cache/tmp.KPNtXFvf4k/repo
+collected 75 items / 70 deselected / 5 selected
+
+selfheal/tests/test_selfheal.py .....                                    [100%]
+
+======================= 5 passed, 70 deselected in 4.39s =======================
+exit=0
+$ python3 -m pytest selfheal/tests/test_selfheal.py -k 'lock or grace' -v
+============================= test session starts ==============================
+platform linux -- Python 3.10.12, pytest-9.1.1, pluggy-1.7.0 -- /usr/bin/python3
+rootdir: /home/<user>/.cache/tmp.KPNtXFvf4k/repo
+collecting ... collected 75 items / 70 deselected / 5 selected
+
+selfheal/tests/test_selfheal.py::test_container_down_ignores_grace PASSED [ 20%]
+selfheal/tests/test_selfheal.py::test_lock_guard PASSED                  [ 40%]
+selfheal/tests/test_selfheal.py::test_grace_guard_and_its_end PASSED     [ 60%]
+selfheal/tests/test_selfheal.py::test_sh_lock_and_unreadable_lock_state PASSED [ 80%]
+selfheal/tests/test_selfheal.py::test_unit_can_take_pft_maint_lock PASSED [100%]
+
+======================= 5 passed, 70 deselected in 3.68s =======================
+exit=0

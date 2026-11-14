@@ -1,0 +1,14 @@
+== mutant lock: occurrences=1
+$ python3 -m pytest -q tests/test_selfheal.py -k 'lock_guard_never'
+E       AssertionError: assert None == 'lock'
+FAILED tests/test_selfheal.py::test_sh_lock_guard_never_invokes_docker_action
+1 failed, 76 deselected in 3.37s
+rc=1
+== mutant grace: occurrences=1
+$ python3 -m pytest -q tests/test_selfheal.py -k 'grace_guard_never'
+E       AssertionError: assert None == 'grace'
+FAILED tests/test_selfheal.py::test_sh_grace_guard_never_invokes_docker_action
+1 failed, 76 deselected in 2.12s
+rc=1
+== baseline (unmutated, same scratch copy)
+2 passed, 75 deselected in 11.17s
