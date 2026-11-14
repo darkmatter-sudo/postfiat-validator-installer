@@ -63,12 +63,18 @@ started() { on "$1" "sudo -n docker inspect -f '{{.State.StartedAt}}' $(cof "$1"
 FAILS=0
 check() { if [ "$2" = 0 ]; then echo "CHECK ok   $1${3:+ ($3)}"; else echo "CHECK FAIL $1${3:+ ($3)}"; FAILS=$((FAILS + 1)); fi; }
 gate() { [ "$FAILS" = 0 ] || { echo "STOP: $FAILS check(s) failed before '$1' ($(ts))"; exit 1; }; }
-alerts_other() { # Prometheus pending+firing except the watchdog and KNOWN_PENDING pending ones -> "name host state" lines
-  curl -s -m 10 "$PROM/api/v1/alerts" | jq -r --arg w "$WD" --arg k " $KNOWN_PENDING " \
-    '.data.alerts[] | select(.labels.alertname != $w) | select(.state == "firing" or ($k | contains(" " + .labels.alertname + " ") | not))
-     | "\(.labels.alertname) \(.labels.host // "-") \(.state)"'
+alerts_other() { # Prometheus pending+firing except the watchdog and KNOWN_PENDING pending ones -> "name host state" lines;
+  # a failed query prints "query-error" (fail closed: never read as "nothing active")
+  local j; j="$(curl -s -m 10 "$PROM/api/v1/alerts")"
+  [ -n "$j" ] && jq -e '.data.alerts | type == "array"' <<<"$j" >/dev/null 2>&1 || { echo query-error; return; }
+  jq -r --arg w "$WD" --arg k " $KNOWN_PENDING " '.data.alerts[] | .labels.alertname as $n | select($n != $w)
+     | select(.state == "firing" or (($k | contains(" " + $n + " ")) | not)) | "\($n) \(.labels.host // "-") \(.state)"' <<<"$j"
 }
-am_other() { curl -s -m 10 "$AM/api/v2/alerts" | jq -r --arg w "$WD" '.[] | select(.labels.alertname != $w) | "\(.labels.alertname) \(.status.state)"'; }
+am_other() {
+  local j; j="$(curl -s -m 10 "$AM/api/v2/alerts")"
+  [ -n "$j" ] && jq -e 'type == "array"' <<<"$j" >/dev/null 2>&1 || { echo query-error; return; }
+  jq -r --arg w "$WD" '.[] | select(.labels.alertname != $w) | "\(.labels.alertname) \(.status.state)"' <<<"$j"
+}
 
 declare -A SHAS=(); declare -a MOVED=() CREATED=()
 RESTORED=0; RESTORE_OK=true; SIL=""; MAINTW=0
