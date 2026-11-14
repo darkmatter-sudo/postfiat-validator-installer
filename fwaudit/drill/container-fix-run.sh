@@ -61,8 +61,8 @@ git fetch -q origin
 
 echo; echo "== 0. preflight (read-only)"
 x "sha256sum fwaudit/pft-fwaudit.sh fwaudit/tests/test_apply.py fwaudit/drill/container-fix-run.sh; sudo -n sha256sum /usr/local/bin/pft-fwaudit; R 'sudo -n sha256sum /usr/local/bin/pft-fwaudit'"
-x "R 'sudo -n grep -c ^CONTAINER= /etc/pft-fwaudit.env; sudo -n grep -c \"CONTAINER:-postfiatd}\" /usr/local/bin/pft-fwaudit; sudo -n docker inspect -f {{.State.Running}} postfiatd 2>&1 | head -n 1; sudo -n docker inspect -f {{.State.Running}} postfiatd-sentry'"
-check "FOUND (old sentry binary): no CONTAINER in the conf, default postfiatd, no such container there, the node is postfiatd-sentry" "$( { [ "$(sed -n 1p <<<"$XOUT")" = 0 ] && [ "$(sed -n 2p <<<"$XOUT")" = 1 ] && grep -q 'No such object' <<<"$(sed -n 3p <<<"$XOUT")" && [ "$(sed -n 4p <<<"$XOUT")" = true ]; } && echo 0 || echo 1)"
+x "R 'sudo -n grep -c ^CONTAINER= /etc/pft-fwaudit.env; sudo -n grep -c \"CONTAINER:-postfiatd}\" /usr/local/bin/pft-fwaudit; sudo -n docker inspect -f {{.State.Running}} postfiatd >/dev/null 2>&1; echo inspect-postfiatd-rc=\$?; sudo -n docker inspect -f {{.State.Running}} postfiatd-sentry'"
+check "FOUND (old sentry binary): no CONTAINER in the conf, default postfiatd, no such container there, the node is postfiatd-sentry" "$( { [ "$(sed -n 1p <<<"$XOUT")" = 0 ] && [ "$(sed -n 2p <<<"$XOUT")" = 1 ] && [ "$(sed -n 3p <<<"$XOUT")" != inspect-postfiatd-rc=0 ] && grep -q '^inspect-postfiatd-rc=[1-9]' <<<"$(sed -n 3p <<<"$XOUT")" && [ "$(sed -n 4p <<<"$XOUT")" = true ]; } && echo 0 || echo 1)"
 x "(cd fwaudit && TMPDIR=\$HOME/.cache python3 -m pytest -q tests 2>&1 | tail -n 1)"
 check "fwaudit suite passes at HEAD" "$([ "$XRC" = 0 ] && grep -q ' passed' <<<"$XOUT" && ! grep -q failed <<<"$XOUT" && echo 0 || echo 1)"
 x "shellcheck fwaudit/pft-fwaudit.sh fwaudit/tests/stubs/docker fwaudit/drill/container-fix-run.sh && echo clean"
