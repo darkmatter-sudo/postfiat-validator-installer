@@ -1,0 +1,54 @@
+alertstats checks - 2026-11-14T11:02:52Z - repo HEAD e7c84c1489d1d6ef08d3fa3a9fa26dfae35fa413 (clean: yes) - fail-before vs e52cfd1d976f86e5335128a8c507b8771584c8e7
+$ sha256sum alertstats/*.sh alertstats/*.py alertstats/systemd/* alertstats/drill/*.sh alertstats/tests/*.py alerts/alertstats.rules.yml alerts/alertstats.tests.yml
+115acfa60056e6ed3af1c7a72dda397d2e3e2c44e99964b357d84fc38625cebd  alertstats/install.sh
+ce12334c9536cdba94dea24f24a0cd5d6f8f090508455cb69bbe2fc3bc32b600  alertstats/pft-alertstats.sh
+be1750c5ea900b0d6e9a2db1ee4cce08e0bd295ced8d50e986b83ee9f2243171  alertstats/alertstats_build.py
+036a0e576b44032569cab7ee7941ac5f6930ed4368f8d5311e2976d3f733b60e  alertstats/systemd/pft-alertstats.service
+96121c2e9ccdf4b12b77443e1fee55442f87e0fb8bc23dcd9fe83e30125e02d0  alertstats/systemd/pft-alertstats.timer
+9e30ce91835b19a4e645d4df058b7c7054d37eb07554936b4ddc33cb15917ea1  alertstats/drill/checks.sh
+66ecebbb3e133bf9872680db9c0bbe992f8716affbfda68725a7290c97c5475e  alertstats/drill/fresh-clone.sh
+e0fba68c3c0263b17a73559e7f9e12392d67e62365682f32f367a69cd48da3d3  alertstats/drill/install-run.sh
+f1cb42876c63369fcbdedd4ec24123c23d6b962c5923914bdad2f3c3ea9751a8  alertstats/tests/mutate.py
+178d42c4cf981704c3719c8a4acc45f0d29ae27e1431eb492f94bc309acb8a71  alertstats/tests/redaction_gate.py
+2201b8c540b12888577c7bce1c786d810674dd81fa1a4d9848e63a609b357874  alertstats/tests/test_build.py
+80b14395010499536678a239499183d1cdcf66fd2678458cc9dba4a302b74e97  alertstats/tests/test_cli.py
+7f0100d520c51f055968bab8a7bc1a93316970cd0cf038d30c829ffad9fa32bd  alertstats/tests/test_redaction_gate.py
+483b02b7362ca30f47deb259fcb3c6dba2ad3e2412837864e03087fd5f725f7b  alerts/alertstats.rules.yml
+0fde76d746fab68e78b282af881a3421ab75a2fd01ddbd5b9f11dc1588f8dac7  alerts/alertstats.tests.yml
+(exit 0)
+$ shellcheck alertstats/*.sh alertstats/drill/*.sh alertstats/tests/stubs/docker
+(exit 0)
+$ (cd alertstats && ruff check . && ruff format --check .)
+All checks passed!
+10 files already formatted
+(exit 0)
+$ (cd alertstats && TMPDIR=$HOME/.cache python3 -m pytest -q -p no:cacheprovider tests)
+........................................................................ [ 85%]
+............                                                             [100%]
+84 passed in 18.06s
+(exit 0)
+$ sudo -n docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /w prom/prometheus:v3.5.0 check rules alertstats.rules.yml
+Checking alertstats.rules.yml
+  SUCCESS: 1 rules found
+
+(exit 0)
+$ sudo -n docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /w prom/prometheus:v3.5.0 test rules alertstats.tests.yml
+  SUCCESS
+
+(exit 0)
+== fail-before control: HEAD tests, helper from e52cfd1d976f86e5335128a8c507b8771584c8e7
+$ sha256sum alertstats/alertstats_build.py; (cd $W/alertstats && sha256sum alertstats_build.py)
+be1750c5ea900b0d6e9a2db1ee4cce08e0bd295ced8d50e986b83ee9f2243171  alertstats/alertstats_build.py
+9a7459980f0d04f5d764c4e46052d4c50758e24e11175addf187ccbd61c80791  alertstats_build.py
+(exit 0)
+$ (cd $W/alertstats && TMPDIR=$HOME/.cache python3 -m pytest -q -p no:cacheprovider tests -k 'delivery_log or idle_bridge or log_start' 2>&1 | grep -E '^(FAILED|E +assert|[0-9]+ (passed|failed))' | sed 's/ in [0-9.]*s//')
+FAILED tests/test_cli.py::test_collect_delivery_log_starts_at_the_bridge_start_line
+FAILED tests/test_cli.py::test_collect_idle_bridge_log_is_a_log_with_zero_deliveries
+FAILED tests/test_cli.py::test_log_start_is_the_first_timestamped_line - Attr...
+3 failed, 81 deselected
+(exit 1)
+CONTROL ok: the new tests fail on the old helper
+$ (cd $W/alertstats && cp ~/work/postfiat-validator-installer/alertstats/alertstats_build.py . && TMPDIR=$HOME/.cache python3 -m pytest -q -p no:cacheprovider tests -k 'delivery_log or idle_bridge or log_start' 2>&1 | tail -n 1 | sed 's/ in [0-9.]*s//')
+3 passed, 81 deselected
+(exit 0)
+checks done 2026-11-14T11:03:18Z: 0 failed -> PASS
