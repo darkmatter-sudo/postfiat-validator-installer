@@ -1,0 +1,44 @@
+# task_32d07e3a fwaudit run 04: live read-only plan + apply --dry-run, 2026-11-14T01:17:20Z
+# dev tree 09fb2e538b06ebdbea67c829fab96285d7a9f753 + uncommitted fwaudit/ (sha256 below); nothing is changed by plan or --dry-run
+$ sha256sum pft-fwaudit.sh fwaudit_eval.py policy/*.policy
+b817b9e55fe678a6efb4eb8a916fda1cd143e296b914c52c55c766a5058b9006  pft-fwaudit.sh
+52f7457a275f46dc02e569db9a93a5c7e72d26b7a8a8ef616de9b5cb16302727  fwaudit_eval.py
+f0eeb6a97d1c3b1ce8cb931cc5e65e6ed7665bd51e1680efca41bb21f3d55af9  policy/sentry.policy
+46011035060a0db8fb33adaf0758ec02b1fc221f2786bdd58b29fe6b202c247e  policy/validator.policy
+exit=0
+$ sudo pft-integrity verify | tail -1
+RESULT: PASS - 248 unchanged, 0 warn, 0 fail -> exit 0
+exit=0
+$ sudo PFT_FWA_EVAL=$PWD/fwaudit_eval.py POLICY_DIR=$PWD/policy PEERS=~/.cache/fwaudit-peers-validator.env ./pft-fwaudit.sh plan --role validator
+PLAN: 0 action(s), 0 manual item(s) (audit PASS)
+exit=0
+$ sudo PFT_FWA_EVAL=$PWD/fwaudit_eval.py POLICY_DIR=$PWD/policy PEERS=~/.cache/fwaudit-peers-validator.env ./pft-fwaudit.sh apply --dry-run --role validator
+PLAN: 0 action(s), 0 manual item(s) (audit PASS)
+dry run - nothing changed
+exit=0
+$ sudo pft-integrity verify | tail -1
+RESULT: PASS - 248 unchanged, 0 warn, 0 fail -> exit 0
+exit=0
+$ scp -q pft-fwaudit.sh fwaudit_eval.py relay:.cache/fwaudit-dev/ && scp -q policy/*.policy relay:.cache/fwaudit-dev/policy/
+exit=0
+$ ssh relay 'cd ~/.cache/fwaudit-dev && sha256sum pft-fwaudit.sh fwaudit_eval.py policy/*.policy' </dev/null
+b817b9e55fe678a6efb4eb8a916fda1cd143e296b914c52c55c766a5058b9006  pft-fwaudit.sh
+52f7457a275f46dc02e569db9a93a5c7e72d26b7a8a8ef616de9b5cb16302727  fwaudit_eval.py
+f0eeb6a97d1c3b1ce8cb931cc5e65e6ed7665bd51e1680efca41bb21f3d55af9  policy/sentry.policy
+46011035060a0db8fb33adaf0758ec02b1fc221f2786bdd58b29fe6b202c247e  policy/validator.policy
+exit=0
+$ ssh relay 'pft-integrity verify | tail -1' </dev/null
+RESULT: PASS - 148 unchanged, 0 warn, 0 fail -> exit 0
+exit=0
+$ ssh relay 'cd ~/.cache/fwaudit-dev && PFT_FWA_EVAL=$PWD/fwaudit_eval.py POLICY_DIR=$PWD/policy PEERS=$PWD/peers ./pft-fwaudit.sh plan --role sentry; echo remote_exit=$?' </dev/null
+PLAN: 0 action(s), 0 manual item(s) (audit PASS)
+remote_exit=0
+exit=0
+$ ssh relay 'cd ~/.cache/fwaudit-dev && PFT_FWA_EVAL=$PWD/fwaudit_eval.py POLICY_DIR=$PWD/policy PEERS=$PWD/peers ./pft-fwaudit.sh apply --dry-run --role sentry; echo remote_exit=$?' </dev/null
+PLAN: 0 action(s), 0 manual item(s) (audit PASS)
+dry run - nothing changed
+remote_exit=0
+exit=0
+$ ssh relay 'pft-integrity verify | tail -1' </dev/null
+RESULT: PASS - 148 unchanged, 0 warn, 0 fail -> exit 0
+exit=0

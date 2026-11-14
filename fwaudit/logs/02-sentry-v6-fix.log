@@ -1,0 +1,38 @@
+# sentry v6 2559 stale-allow fix, 2026-11-14T00:45:42Z
+$ sudo ufw status numbered (before)
+Status: active
+
+     To                         Action      From
+     --                         ------      ----
+[ 1] 22/tcp                     ALLOW IN    Anywhere                   # SSH
+[ 2] 2559/tcp                   LIMIT IN    Anywhere                   # Post Fiat sentry relay (rate-limited)
+[ 3] 19532/tcp                  ALLOW IN    <redacted-ip>             # pft-logship
+[ 4] 22/tcp (v6)                ALLOW IN    Anywhere (v6)              # SSH
+[ 5] 2559/tcp (v6)              LIMIT IN    Anywhere (v6)              # Post Fiat sentry relay (rate-limited)
+
+v6 rule number: 5
+$ sudo ufw --force delete 5
+Rule deleted (v6)
+exit=0
+$ sudo ufw status numbered (after)
+Status: active
+
+     To                         Action      From
+     --                         ------      ----
+[ 1] 22/tcp                     ALLOW IN    Anywhere                   # SSH
+[ 2] 2559/tcp                   LIMIT IN    Anywhere                   # Post Fiat sentry relay (rate-limited)
+[ 3] 19532/tcp                  ALLOW IN    <redacted-ip>             # pft-logship
+[ 4] 22/tcp (v6)                ALLOW IN    Anywhere (v6)              # SSH
+
+$ sudo ip6tables-save | grep -c "dport 2559"
+0
+$ sudo pft-integrity verify
+pft-integrity verify - 2026-11-14T00:45:55Z
+OS: Ubuntu 22.04.5 LTS | container: postfiatd-sentry | baseline: 2026-11-13T22:28:19Z
+RESULT: PASS - 148 unchanged, 0 warn, 0 fail -> exit 0
+exit=0
+$ sudo pft-integrity accept --reason "task_32d07e3a: fwaudit found->fixed: removed unused ufw v6 2559 LIMIT rule (nginx listens v4 only)"
+pft-integrity accept - 2026-11-14T00:46:07Z: re-baselined 148 items by root
+manifest sha256: b90afb394e00c2fc206af7ecd2d3d357e5307e1a2ee7392457215936efffa9e8 -> 633f2e74ab559091865a1a2b4abb18b31f7642460e5be3007079da2228931658 (logged to accept.log)
+exit=0
+RESULT: PASS - 148 unchanged, 0 warn, 0 fail -> exit 0

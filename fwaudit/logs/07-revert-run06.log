@@ -1,0 +1,71 @@
+fwaudit revert of install run 06 - 2026-11-14T02:29:38Z
+== what run 06 left (both hosts)
+$ ls -d /usr/local/bin/pft-fwaudit /usr/local/lib/pft-fwaudit /etc/systemd/system/pft-fwaudit.service /etc/systemd/system/pft-fwaudit.timer /etc/systemd/system/pft-fwaudit-pull.service /etc/systemd/system/pft-fwaudit-pull.timer /etc/pft-fwaudit.env /etc/pft-fwaudit.peers /var/lib/pft-exporter/textfile/pft_fwaudit_sentry.prom /var/lib/pft-exporter/textfile/pft_fwaudit_validator.prom /var/lib/pft-fwaudit 2>/dev/null; sudo -n grep -c pft_fwaudit /etc/pft-rulecheck.conf; systemctl is-enabled pft-fwaudit.timer pft-fwaudit-pull.timer 2>&1
+  /etc/pft-fwaudit.peers
+  /etc/systemd/system/pft-fwaudit-pull.service
+  /etc/systemd/system/pft-fwaudit-pull.timer
+  /etc/systemd/system/pft-fwaudit.service
+  /etc/systemd/system/pft-fwaudit.timer
+  /usr/local/bin/pft-fwaudit
+  /usr/local/lib/pft-fwaudit
+  0
+  disabled
+  disabled
+  (exit 1)
+$ R 'ls -d /usr/local/bin/pft-fwaudit /usr/local/lib/pft-fwaudit /etc/systemd/system/pft-fwaudit.service /etc/systemd/system/pft-fwaudit.timer /etc/systemd/system/pft-fwaudit-pull.service /etc/systemd/system/pft-fwaudit-pull.timer /etc/pft-fwaudit.env /etc/pft-fwaudit.peers /var/lib/pft-exporter/textfile/pft_fwaudit_sentry.prom /var/lib/pft-exporter/textfile/pft_fwaudit_validator.prom /var/lib/pft-fwaudit 2>/dev/null; sudo -n grep -c pft_fwaudit /etc/pft-rulecheck.conf; systemctl is-enabled pft-fwaudit.timer 2>&1'
+  /etc/pft-fwaudit.env
+  /etc/pft-fwaudit.peers
+  /etc/systemd/system/pft-fwaudit.service
+  /etc/systemd/system/pft-fwaudit.timer
+  /usr/local/bin/pft-fwaudit
+  /usr/local/lib/pft-fwaudit
+  /var/lib/pft-exporter/textfile/pft_fwaudit_sentry.prom
+  2
+  enabled
+  (exit 0)
+== remove (no firewall rule was changed by run 06; nothing to restore there)
+$ R 'sudo -n systemctl disable --now pft-fwaudit.timer; sudo -n sed -i /pft_fwaudit_/d /etc/pft-rulecheck.conf; sudo -n rm -rf /usr/local/bin/pft-fwaudit /usr/local/lib/pft-fwaudit /etc/systemd/system/pft-fwaudit.service /etc/systemd/system/pft-fwaudit.timer /etc/systemd/system/pft-fwaudit-pull.service /etc/systemd/system/pft-fwaudit-pull.timer /etc/pft-fwaudit.env /etc/pft-fwaudit.peers /var/lib/pft-exporter/textfile/pft_fwaudit_sentry.prom /var/lib/pft-exporter/textfile/pft_fwaudit_validator.prom /var/lib/pft-fwaudit; sudo -n systemctl daemon-reload; sudo -n systemctl reset-failed pft-fwaudit.service 2>/dev/null; echo done'
+  Removed /etc/systemd/system/timers.target.wants/pft-fwaudit.timer.
+  done
+  (exit 0)
+$ sudo -n systemctl disable --now pft-fwaudit.timer pft-fwaudit-pull.timer 2>/dev/null; sudo -n sed -i /pft_fwaudit_/d /etc/pft-rulecheck.conf; sudo -n rm -rf /usr/local/bin/pft-fwaudit /usr/local/lib/pft-fwaudit /etc/systemd/system/pft-fwaudit.service /etc/systemd/system/pft-fwaudit.timer /etc/systemd/system/pft-fwaudit-pull.service /etc/systemd/system/pft-fwaudit-pull.timer /etc/pft-fwaudit.env /etc/pft-fwaudit.peers /var/lib/pft-exporter/textfile/pft_fwaudit_sentry.prom /var/lib/pft-exporter/textfile/pft_fwaudit_validator.prom /var/lib/pft-fwaudit; sudo -n systemctl daemon-reload; echo done
+  done
+  (exit 0)
+== after
+$ ls -d /usr/local/bin/pft-fwaudit /usr/local/lib/pft-fwaudit /etc/systemd/system/pft-fwaudit.service /etc/systemd/system/pft-fwaudit.timer /etc/systemd/system/pft-fwaudit-pull.service /etc/systemd/system/pft-fwaudit-pull.timer /etc/pft-fwaudit.env /etc/pft-fwaudit.peers /var/lib/pft-exporter/textfile/pft_fwaudit_sentry.prom /var/lib/pft-exporter/textfile/pft_fwaudit_validator.prom /var/lib/pft-fwaudit 2>/dev/null | wc -l; sudo -n grep -c pft_fwaudit /etc/pft-rulecheck.conf; R 'ls -d /usr/local/bin/pft-fwaudit /usr/local/lib/pft-fwaudit /etc/systemd/system/pft-fwaudit.service /etc/systemd/system/pft-fwaudit.timer /etc/systemd/system/pft-fwaudit-pull.service /etc/systemd/system/pft-fwaudit-pull.timer /etc/pft-fwaudit.env /etc/pft-fwaudit.peers /var/lib/pft-exporter/textfile/pft_fwaudit_sentry.prom /var/lib/pft-exporter/textfile/pft_fwaudit_validator.prom /var/lib/pft-fwaudit 2>/dev/null | wc -l; sudo -n grep -c pft_fwaudit /etc/pft-rulecheck.conf'
+  0
+  0
+  0
+  0
+  (exit 1)
+$ sudo -n pft-schedaudit audit | grep -E '^(NEW|REMOVED|SUMMARY)' | cut -c1-160; sudo -n pft-schedaudit collect | tail -1; R 'sudo -n pft-schedaudit audit | grep -E "^(NEW|REMOVED|SUMMARY)" | cut -c1-160; sudo -n pft-schedaudit collect | tail -1'; sudo -n systemctl start pft-schedaudit-pull.service
+  SUMMARY entries=103 enabled=90 findings=1 allowed=1 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+  SUMMARY entries=71 enabled=58 findings=0 allowed=0 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+  (exit 0)
+$ sudo -n pft-integrity verify | grep -E '^ *\[(WARN|FAIL)\]|RESULT' | sed -E 's/ +sha256.*//' | cut -c1-140; R 'sudo -n pft-integrity verify' | grep -E '^ *\[(WARN|FAIL)\]|RESULT' | sed -E 's/ +sha256.*//' | cut -c1-140
+    [FAIL] bin:pft-fwaudit                              removed  missing since baseline
+    [FAIL] unit:pft-fwaudit-pull.service                removed  missing since baseline
+    [FAIL] unit:pft-fwaudit-pull.timer                  removed  missing since baseline
+    [FAIL] unit:pft-fwaudit.service                     removed  missing since baseline
+    [FAIL] unit:pft-fwaudit.timer                       removed  missing since baseline
+  RESULT: FAIL - 248 unchanged, 0 warn, 5 fail -> exit 2
+    [FAIL] bin:pft-fwaudit                              removed  missing since baseline
+    [FAIL] unit:pft-fwaudit.service                     removed  missing since baseline
+    [FAIL] unit:pft-fwaudit.timer                       removed  missing since baseline
+  RESULT: FAIL - 148 unchanged, 0 warn, 3 fail -> exit 2
+  (exit 2)
+$ sudo -n pft-integrity accept --reason 'task_32d07e3a: revert partial fwaudit install of run 06' (both hosts)
+manifest sha256: 3f06ef42d24b868924e49792a5a78d672074d6932a75425db67e1f931f2cdabe -> b2238f5fb462789ca63ccbf1d515317e48ba6a9010c722f01e0574a3b444bcc6 (logged to accept.log)
+manifest sha256: 950f59e89d475bac4dfb8a62453ed877c9dfbb74d743a163fcda19e9d8667927 -> 84bec0cd7ff047385b82a9b63dd948c406d252d81a0dc7f96c1da9f86303525e (logged to accept.log)
+RESULT: PASS - 248 unchanged, 0 warn, 0 fail -> exit 0
+RESULT: PASS - 148 unchanged, 0 warn, 0 fail -> exit 0
+== jobwatch: sentry learnt pft-fwaudit.timer before the revert (PFTJobDisabled pending, silenced); forget it
+$ R sudo -n pft-jobwatch forget pft-fwaudit.timer; R sudo -n systemctl start pft-jobwatch.service; sudo -n systemctl start pft-jobwatch-pull.service
+forgot pft-fwaudit.timer
+rc=0
+pull rc=0
+fwaudit series in jobwatch textfiles: 0
+$ expire the run-06 rollout silence (only the watchdog active in Prometheus/AM besides pending PFTVulnRebootOwed)
+DELETE silence http 200
+active silences: 0
+revert done 2026-11-14T02:33:42Z

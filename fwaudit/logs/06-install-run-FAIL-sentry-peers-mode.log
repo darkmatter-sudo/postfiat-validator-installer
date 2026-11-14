@@ -1,0 +1,297 @@
+fwaudit two-host install - 2026-11-14T02:20:44Z - Ubuntu 22.04.5 LTS - repo HEAD 4b47d8f5b2623a38375bf4c1676ad403e8830e26 (clean: yes)
+
+== 0. preflight (read-only)
+$ sha256sum fwaudit/pft-fwaudit.sh fwaudit/fwaudit_eval.py fwaudit/install.sh fwaudit/drill/install-run.sh fwaudit/policy/* fwaudit/systemd/* alerts/fwaudit.rules.yml fleet/manifest.tsv
+  d0a7c3208deb2fbf04c8d866e31d03843d461c689dc9a6995312a5f813725513  fwaudit/pft-fwaudit.sh
+  e3fc7544a34d69d3df9fd6e0edbf3a1870bae72677d97606b29f3a176259a6cc  fwaudit/fwaudit_eval.py
+  33c079896f178b79c3e7d11998822a64a1dd3349c4f79ebc40e13fda0511f2df  fwaudit/install.sh
+  8b28ebd894869e7463d9b72da63b2e88c102d61b1af875d238fcd08881a334e7  fwaudit/drill/install-run.sh
+  f0eeb6a97d1c3b1ce8cb931cc5e65e6ed7665bd51e1680efca41bb21f3d55af9  fwaudit/policy/sentry.policy
+  46011035060a0db8fb33adaf0758ec02b1fc221f2786bdd58b29fe6b202c247e  fwaudit/policy/validator.policy
+  7f8cb8e1215b2ab1ca33dd451983184f7f7ecc0c50f39f5b464545258541dc4b  fwaudit/systemd/pft-fwaudit-pull.service
+  c36a117466b6671595f79dd36062610257094a97979cd76055dd61be42bea9c9  fwaudit/systemd/pft-fwaudit-pull.timer
+  fd873243aef1b52fadb61c409077436754b6b0470d782b4f3f2deda82b47d173  fwaudit/systemd/pft-fwaudit.service
+  83a79b48c561b9d33790a208ee535176122b517df9546e085a6e1dd8b4560c56  fwaudit/systemd/pft-fwaudit.timer
+  a48452762350659be17cac6c1f383aa2b5985dfbe57dcd9dfd144d8179b8f146  alerts/fwaudit.rules.yml
+  2f44f5dbad5e8e59427ec0ca49d8b8b8bce9e197bbf0b799e151fec115ef3e5a  fleet/manifest.tsv
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 248 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 148 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts before install
+$ srv_state
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ ls /usr/local/bin/pft-fwaudit /etc/pft-fwaudit.env 2>&1; R 'ls /usr/local/bin/pft-fwaudit /etc/pft-fwaudit.env 2>&1'
+  ls: cannot access '/usr/local/bin/pft-fwaudit': No such file or directory
+  ls: cannot access '/etc/pft-fwaudit.env': No such file or directory
+  ls: cannot access '/usr/local/bin/pft-fwaudit': No such file or directory
+  ls: cannot access '/etc/pft-fwaudit.env': No such file or directory
+  (exit 2)
+CHECK ok   not installed yet on either host
+$ grep -c '^fwaudit ' fleet/manifest.tsv; grep -c fwaudit.rules.yml alerts/prometheus.yml; grep -c pft_fwaudit rulecheck/pft-rulecheck.conf.example; grep -c pft_fwaudit rulecheck/pft-rulecheck.sentry.conf.example
+  8
+  1
+  3
+  2
+  (exit 0)
+CHECK ok   HEAD lists 8 fwaudit manifest lines, the rule file and 3 + 2 rulecheck lines
+$ for h in L R; do if [ $h = L ]; then bash -c 'for c in python3 jq ss iptables-save ip6tables-save nft ufw; do command -v $c; done | wc -l; sudo -n test -f /etc/pft-rulecheck.conf && echo rc-conf'; else R 'for c in python3 jq ss iptables-save ip6tables-save nft ufw; do command -v $c; done | wc -l; sudo -n test -f /etc/pft-rulecheck.conf && echo rc-conf'; fi; done
+  7
+  rc-conf
+  7
+  rc-conf
+  (exit 0)
+CHECK ok   python3 jq ss iptables-save ip6tables-save nft ufw and a pft-rulecheck conf on both hosts
+$ for f in $PEERS_V $PEERS_S; do sed -n 's/=.*//p' $f | tr '\n' ' '; grep -cE '^[a-z][a-z0-9-]*=[0-9a-f.:/,]+$' $f; done
+  sentry 1
+  validator 1
+  (exit 0)
+CHECK ok   peers sources: validator names sentry, sentry names validator, one NAME=CIDR line each (values not printed)
+$ sudo -n env TEXT_BUDGET=999999 pft-jobwatch collect --stdout 2>/dev/null | wc -c; R 'sudo -n env TEXT_BUDGET=999999 pft-jobwatch collect --stdout 2>/dev/null | wc -c'; sudo -n sed -n 's/^TEXT_BUDGET=//p' /etc/pft-jobwatch.env
+  37971
+  19241
+  65000
+  (exit 0)
+CHECK ok   jobwatch textfiles have room for the new timers (validator 37971 + 2x1200, sentry 19241 + 1200 <= budget 65000 / 61440)
+$ pull_probe
+  1
+  pull-ssh-ok
+  (exit 0)
+CHECK ok   the pull's ssh command (pft-statewatch's PULL_SSH, non-empty) reaches the sentry when run as root
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+$ curl -s http://<redacted-ip>:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'; curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '.data.alerts[] | "\(.labels.alertname) \(.state)"' | sort | uniq -c
+  0
+        1 PFTAlertPipelineWatchdog firing
+        1 PFTVulnRebootOwed pending
+  (exit 0)
+known pending before the run (accepted by the preflight): PFTVulnRebootOwed
+CHECK ok   no active silence; only the pipeline watchdog (+ KNOWN_PENDING) pending/firing in Prometheus
+$ curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '[.data.alerts[] | select(.state == "firing" and .labels.alertname != "PFTAlertPipelineWatchdog")] | length'
+  0
+  (exit 0)
+CHECK ok   nothing but the watchdog FIRING (KNOWN_PENDING may only be pending)
+
+== 1. rollout silence (new rule; rulecheck/fleet/aptrust/schedaudit/jobwatch/keyescrow see new files and timers; not the watchdog)
+CHECK ok   Alertmanager silence created (fwaudit rule, rulecheck, fleet, aptrust, schedaudit, jobwatch, keyescrow; not the watchdog) until 2026-11-14T03:21:27Z
+
+== 2. pft-maint window, [MAINT] messages to a throwaway topic (real file kept as $BK)
+real /etc/pft-maint/ntfy.env present before: 0
+$ { [ $HAD = 0 ] || sudo -n cp -p $NE $BK; } && printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' "$TT" | sudo -n tee $NE >/dev/null && sudo -n chmod 600 $NE && sudo -n stat -c '%a %U' $NE
+  600 root
+  (exit 0)
+CHECK ok   throwaway target installed
+$ sudo -n pft-maint start --ttl 40m --reason 'task_32d07e3a fwaudit install'
+  window started: id m1794622887-3937915 until 2026-11-14T03:01:27Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint window open
+CHECK ok   sentry has the window (via the watchdog channel) after 40s
+
+== 3. pft-fleet: manifest (fleet add-on), fwaudit, then aptrust's allowlist copy
+$ sudo -n pft-fleet sync --addon fleet --to 4b47d8f5b2623a38375bf4c1676ad403e8830e26 --apply --reason 'task_32d07e3a fwaudit manifest lines'
+  [2026-11-14T02:22:38Z] sync fleet to 4b47d8f5b2623a38375bf4c1676ad403e8830e26 (2026-11-14T02:19:17+00:00) REF main=4b47d8f5b2623a38375bf4c1676ad403e8830e26
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN validator validator /usr/local/sbin/pft-fleet 0755 CURRENT 61cafcfcdaa9 61cafcfcdaa9 keep
+  PLAN validator validator /usr/local/lib/pft-fleet/fleet_lib.py 0644 CURRENT dcb37d26f33f dcb37d26f33f keep
+  PLAN validator validator /usr/local/lib/pft-fleet/manifest.tsv 0644 BEHIND 929b373b34ed 2f44f5dbad5e write
+  PLAN validator validator /etc/systemd/system/pft-fleet.service 0644 CURRENT 3105a2f0a144 3105a2f0a144 keep
+  PLAN validator validator /etc/systemd/system/pft-fleet.timer 0644 CURRENT 79839ee00a81 79839ee00a81 keep
+  [2026-11-14T02:22:38Z] order: sentry validator
+  [2026-11-14T02:22:38Z] sentry: every fleet file already at 4b47d8f5b262 - nothing to do
+  [2026-11-14T02:22:38Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/lib/pft-fleet/manifest.tsv sha256 929b373b34ed -> /var/lib/pft-fleet/backup/20261114T022238Z-fleet-validator
+  WRITE validator /usr/local/lib/pft-fleet/manifest.tsv 929b373b34ed -> 2f44f5dbad5e mode 0644
+  GATE validator sha256 /usr/local/lib/pft-fleet/manifest.tsv = target 2f44f5dbad5e PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync fleet@4b47d8f5b262 (manifest.tsv)
+  [2026-11-14T02:23:12Z] SYNCED validator fleet -> 4b47d8f5b262
+  [2026-11-14T02:23:12Z] sync complete
+  (exit 0)
+CHECK ok   fleet manifest sync exit 0
+$ sudo -n pft-fleet sync --addon fwaudit --to 4b47d8f5b2623a38375bf4c1676ad403e8830e26 --apply --reason 'task_32d07e3a fwaudit 4b47d8f first install'
+  [2026-11-14T02:23:47Z] sync fwaudit to 4b47d8f5b2623a38375bf4c1676ad403e8830e26 (2026-11-14T02:19:17+00:00) REF main=4b47d8f5b2623a38375bf4c1676ad403e8830e26
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN sentry sentry /usr/local/bin/pft-fwaudit 0755 MISSING - d0a7c3208deb write
+  PLAN sentry sentry /usr/local/lib/pft-fwaudit/fwaudit_eval.py 0644 MISSING - e3fc7544a34d write
+  PLAN sentry sentry /usr/local/lib/pft-fwaudit/policy/validator.policy 0644 MISSING - 46011035060a write
+  PLAN sentry sentry /usr/local/lib/pft-fwaudit/policy/sentry.policy 0644 MISSING - f0eeb6a97d1c write
+  PLAN sentry sentry /etc/systemd/system/pft-fwaudit.service 0644 MISSING - fd873243aef1 write
+  PLAN sentry sentry /etc/systemd/system/pft-fwaudit.timer 0644 MISSING - 83a79b48c561 write
+  PLAN validator validator /usr/local/bin/pft-fwaudit 0755 MISSING - d0a7c3208deb write
+  PLAN validator validator /usr/local/lib/pft-fwaudit/fwaudit_eval.py 0644 MISSING - e3fc7544a34d write
+  PLAN validator validator /usr/local/lib/pft-fwaudit/policy/validator.policy 0644 MISSING - 46011035060a write
+  PLAN validator validator /usr/local/lib/pft-fwaudit/policy/sentry.policy 0644 MISSING - f0eeb6a97d1c write
+  PLAN validator validator /etc/systemd/system/pft-fwaudit.service 0644 MISSING - fd873243aef1 write
+  PLAN validator validator /etc/systemd/system/pft-fwaudit.timer 0644 MISSING - 83a79b48c561 write
+  PLAN validator validator /etc/systemd/system/pft-fwaudit-pull.service 0644 MISSING - 7f8cb8e1215b write
+  PLAN validator validator /etc/systemd/system/pft-fwaudit-pull.timer 0644 MISSING - c36a117466b6 write
+  [2026-11-14T02:23:47Z] order: sentry validator
+  [2026-11-14T02:23:47Z] sentry: 6 file(s) to write
+  PRE sentry pft-maint window active PASS
+  PRE sentry node server_state=full PASS
+  PRE sentry pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP sentry /usr/local/bin/pft-fwaudit absent before sync (rollback removes it)
+  BACKUP sentry /usr/local/lib/pft-fwaudit/fwaudit_eval.py absent before sync (rollback removes it)
+  BACKUP sentry /usr/local/lib/pft-fwaudit/policy/validator.policy absent before sync (rollback removes it)
+  BACKUP sentry /usr/local/lib/pft-fwaudit/policy/sentry.policy absent before sync (rollback removes it)
+  BACKUP sentry /etc/systemd/system/pft-fwaudit.service absent before sync (rollback removes it)
+  BACKUP sentry /etc/systemd/system/pft-fwaudit.timer absent before sync (rollback removes it)
+  WRITE sentry /usr/local/bin/pft-fwaudit - -> d0a7c3208deb mode 0755
+  WRITE sentry /usr/local/lib/pft-fwaudit/fwaudit_eval.py - -> e3fc7544a34d mode 0644
+  WRITE sentry /usr/local/lib/pft-fwaudit/policy/validator.policy - -> 46011035060a mode 0644
+  WRITE sentry /usr/local/lib/pft-fwaudit/policy/sentry.policy - -> f0eeb6a97d1c mode 0644
+  WRITE sentry /etc/systemd/system/pft-fwaudit.service - -> fd873243aef1 mode 0644
+  WRITE sentry /etc/systemd/system/pft-fwaudit.timer - -> 83a79b48c561 mode 0644
+  RELOAD sentry systemctl daemon-reload
+  GATE sentry sha256 /usr/local/bin/pft-fwaudit = target d0a7c3208deb PASS
+  GATE sentry syntax /usr/local/bin/pft-fwaudit bash -n PASS
+  GATE sentry sha256 /usr/local/lib/pft-fwaudit/fwaudit_eval.py = target e3fc7544a34d PASS
+  GATE sentry syntax /usr/local/lib/pft-fwaudit/fwaudit_eval.py python PASS
+  GATE sentry sha256 /usr/local/lib/pft-fwaudit/policy/validator.policy = target 46011035060a PASS
+  GATE sentry sha256 /usr/local/lib/pft-fwaudit/policy/sentry.policy = target f0eeb6a97d1c PASS
+  GATE sentry sha256 /etc/systemd/system/pft-fwaudit.service = target fd873243aef1 PASS
+  GATE sentry unit pft-fwaudit.service LoadState=loaded PASS
+  GATE sentry sha256 /etc/systemd/system/pft-fwaudit.timer = target 83a79b48c561 PASS
+  GATE sentry unit pft-fwaudit.timer LoadState=loaded PASS
+  GATE sentry addon units failed=none PASS
+  GATE sentry node server_state=full PASS
+  ACCEPT sentry pft-integrity baseline updated: pft-fleet sync fwaudit@4b47d8f5b262 (pft-fwaudit,fwaudit_eval.py,validator.policy,sentry.policy,pft-fwaudit.service,pft-fwaudit.timer)
+  [2026-11-14T02:24:35Z] SYNCED sentry fwaudit -> 4b47d8f5b262
+  [2026-11-14T02:24:35Z] validator: 8 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/bin/pft-fwaudit absent before sync (rollback removes it)
+  BACKUP validator /usr/local/lib/pft-fwaudit/fwaudit_eval.py absent before sync (rollback removes it)
+  BACKUP validator /usr/local/lib/pft-fwaudit/policy/validator.policy absent before sync (rollback removes it)
+  BACKUP validator /usr/local/lib/pft-fwaudit/policy/sentry.policy absent before sync (rollback removes it)
+  BACKUP validator /etc/systemd/system/pft-fwaudit.service absent before sync (rollback removes it)
+  BACKUP validator /etc/systemd/system/pft-fwaudit.timer absent before sync (rollback removes it)
+  BACKUP validator /etc/systemd/system/pft-fwaudit-pull.service absent before sync (rollback removes it)
+  BACKUP validator /etc/systemd/system/pft-fwaudit-pull.timer absent before sync (rollback removes it)
+  WRITE validator /usr/local/bin/pft-fwaudit - -> d0a7c3208deb mode 0755
+  WRITE validator /usr/local/lib/pft-fwaudit/fwaudit_eval.py - -> e3fc7544a34d mode 0644
+  WRITE validator /usr/local/lib/pft-fwaudit/policy/validator.policy - -> 46011035060a mode 0644
+  WRITE validator /usr/local/lib/pft-fwaudit/policy/sentry.policy - -> f0eeb6a97d1c mode 0644
+  WRITE validator /etc/systemd/system/pft-fwaudit.service - -> fd873243aef1 mode 0644
+  WRITE validator /etc/systemd/system/pft-fwaudit.timer - -> 83a79b48c561 mode 0644
+  WRITE validator /etc/systemd/system/pft-fwaudit-pull.service - -> 7f8cb8e1215b mode 0644
+  WRITE validator /etc/systemd/system/pft-fwaudit-pull.timer - -> c36a117466b6 mode 0644
+  RELOAD validator systemctl daemon-reload
+  GATE validator sha256 /usr/local/bin/pft-fwaudit = target d0a7c3208deb PASS
+  GATE validator syntax /usr/local/bin/pft-fwaudit bash -n PASS
+  GATE validator sha256 /usr/local/lib/pft-fwaudit/fwaudit_eval.py = target e3fc7544a34d PASS
+  GATE validator syntax /usr/local/lib/pft-fwaudit/fwaudit_eval.py python PASS
+  GATE validator sha256 /usr/local/lib/pft-fwaudit/policy/validator.policy = target 46011035060a PASS
+  GATE validator sha256 /usr/local/lib/pft-fwaudit/policy/sentry.policy = target f0eeb6a97d1c PASS
+  GATE validator sha256 /etc/systemd/system/pft-fwaudit.service = target fd873243aef1 PASS
+  GATE validator unit pft-fwaudit.service LoadState=loaded PASS
+  GATE validator sha256 /etc/systemd/system/pft-fwaudit.timer = target 83a79b48c561 PASS
+  GATE validator unit pft-fwaudit.timer LoadState=loaded PASS
+  GATE validator sha256 /etc/systemd/system/pft-fwaudit-pull.service = target 7f8cb8e1215b PASS
+  GATE validator unit pft-fwaudit-pull.service LoadState=loaded PASS
+  GATE validator sha256 /etc/systemd/system/pft-fwaudit-pull.timer = target c36a117466b6 PASS
+  GATE validator unit pft-fwaudit-pull.timer LoadState=loaded PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync fwaudit@4b47d8f5b262 (pft-fwaudit,fwaudit_eval.py,validator.policy,sentry.policy,pft-fwaudit.service,pft-fwaudit.timer,pft-fwaudit-pull.service,pft-fwaudit-pull.timer)
+  [2026-11-14T02:25:35Z] SYNCED validator fwaudit -> 4b47d8f5b262
+  [2026-11-14T02:25:35Z] sync complete
+  (exit 0)
+CHECK ok   fwaudit sync exit 0 (files written + integrity accepted by pft-fleet)
+$ sudo -n pft-fleet sync --addon aptrust --to 4b47d8f5b2623a38375bf4c1676ad403e8830e26 --apply --reason 'task_32d07e3a aptrust allowlist copy += fwaudit rows'
+  [2026-11-14T02:26:22Z] sync aptrust to 4b47d8f5b2623a38375bf4c1676ad403e8830e26 (2026-11-14T02:19:17+00:00) REF main=4b47d8f5b2623a38375bf4c1676ad403e8830e26
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN sentry sentry /usr/local/bin/pft-aptrust 0755 CURRENT 0e7722706169 0e7722706169 keep
+  PLAN sentry sentry /usr/local/lib/pft-aptrust/manifest.tsv 0644 BEHIND 929b373b34ed 2f44f5dbad5e write
+  PLAN sentry sentry /etc/systemd/system/pft-aptrust.service 0644 CURRENT 4dfc8751acb0 4dfc8751acb0 keep
+  PLAN sentry sentry /etc/systemd/system/pft-aptrust.timer 0644 CURRENT 1f6d67e56237 1f6d67e56237 keep
+  PLAN validator validator /usr/local/bin/pft-aptrust 0755 CURRENT 0e7722706169 0e7722706169 keep
+  PLAN validator validator /usr/local/lib/pft-aptrust/manifest.tsv 0644 BEHIND 929b373b34ed 2f44f5dbad5e write
+  PLAN validator validator /etc/systemd/system/pft-aptrust.service 0644 CURRENT 4dfc8751acb0 4dfc8751acb0 keep
+  PLAN validator validator /etc/systemd/system/pft-aptrust.timer 0644 CURRENT 1f6d67e56237 1f6d67e56237 keep
+  PLAN validator validator /etc/systemd/system/pft-aptrust-pull.service 0644 CURRENT 25f018e00e72 25f018e00e72 keep
+  PLAN validator validator /etc/systemd/system/pft-aptrust-pull.timer 0644 CURRENT edf767945c09 edf767945c09 keep
+  [2026-11-14T02:26:22Z] order: sentry validator
+  [2026-11-14T02:26:22Z] sentry: 1 file(s) to write
+  PRE sentry pft-maint window active PASS
+  PRE sentry node server_state=full PASS
+  PRE sentry pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP sentry /usr/local/lib/pft-aptrust/manifest.tsv sha256 929b373b34ed -> /var/lib/pft-fleet/backup/20261114T022622Z-aptrust-sentry
+  WRITE sentry /usr/local/lib/pft-aptrust/manifest.tsv 929b373b34ed -> 2f44f5dbad5e mode 0644
+  GATE sentry sha256 /usr/local/lib/pft-aptrust/manifest.tsv = target 2f44f5dbad5e PASS
+  GATE sentry addon units failed=none PASS
+  GATE sentry node server_state=full PASS
+  ACCEPT sentry pft-integrity baseline updated: pft-fleet sync aptrust@4b47d8f5b262 (manifest.tsv)
+  [2026-11-14T02:26:50Z] SYNCED sentry aptrust -> 4b47d8f5b262
+  [2026-11-14T02:26:50Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/lib/pft-aptrust/manifest.tsv sha256 929b373b34ed -> /var/lib/pft-fleet/backup/20261114T022622Z-aptrust-validator
+  WRITE validator /usr/local/lib/pft-aptrust/manifest.tsv 929b373b34ed -> 2f44f5dbad5e mode 0644
+  GATE validator sha256 /usr/local/lib/pft-aptrust/manifest.tsv = target 2f44f5dbad5e PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync aptrust@4b47d8f5b262 (manifest.tsv)
+  [2026-11-14T02:27:29Z] SYNCED validator aptrust -> 4b47d8f5b262
+  [2026-11-14T02:27:29Z] sync complete
+  (exit 0)
+CHECK ok   aptrust sync exit 0 (its manifest copy follows the new rows)
+$ sha256sum fwaudit/pft-fwaudit.sh fwaudit/fwaudit_eval.py | cut -c1-64; sudo -n sha256sum /usr/local/bin/pft-fwaudit /usr/local/lib/pft-fwaudit/fwaudit_eval.py | cut -c1-64; R 'sha256sum /usr/local/bin/pft-fwaudit /usr/local/lib/pft-fwaudit/fwaudit_eval.py | cut -c1-64'
+  d0a7c3208deb2fbf04c8d866e31d03843d461c689dc9a6995312a5f813725513
+  e3fc7544a34d69d3df9fd6e0edbf3a1870bae72677d97606b29f3a176259a6cc
+  d0a7c3208deb2fbf04c8d866e31d03843d461c689dc9a6995312a5f813725513
+  e3fc7544a34d69d3df9fd6e0edbf3a1870bae72677d97606b29f3a176259a6cc
+  d0a7c3208deb2fbf04c8d866e31d03843d461c689dc9a6995312a5f813725513
+  e3fc7544a34d69d3df9fd6e0edbf3a1870bae72677d97606b29f3a176259a6cc
+  (exit 0)
+CHECK ok   installed script + evaluator = repo bytes on both hosts
+
+== 4. /etc/pft-fwaudit.peers on both hosts (root:root 0600, values not printed)
+$ sudo -n install -o root -g root -m 600 $PEERS_V /etc/pft-fwaudit.peers && sudo -n stat -c '%a %U' /etc/pft-fwaudit.peers && sudo -n sed -n 's/=.*//p' /etc/pft-fwaudit.peers
+  600 root
+  sentry
+  (exit 0)
+CHECK ok   validator peers file: 600 root, names sentry
+$ R 'umask 077 && sudo -n tee /etc/pft-fwaudit.peers >/dev/null && sudo -n chown root:root /etc/pft-fwaudit.peers && sudo -n stat -c "%a %U" /etc/pft-fwaudit.peers && sudo -n sed -n "s/=.*//p" /etc/pft-fwaudit.peers' < $PEERS_S
+  644 root
+  validator
+  (exit 0)
+CHECK FAIL sentry peers file: 600 root, names validator
+
+== 5. sentry: install.sh --role sentry
+$ git archive 4b47d8f5b2623a38375bf4c1676ad403e8830e26 fwaudit | R 'rm -rf ~/pft-fwaudit-4b47d8f && mkdir -m 700 ~/pft-fwaudit-4b47d8f && tar -x -C ~/pft-fwaudit-4b47d8f'
+  
+  (exit 0)
+$ R 'sudo -n bash ~/pft-fwaudit-4b47d8f/fwaudit/install.sh --role sentry'
+  2026-11-14T02:27:32Z installed pft-fwaudit.sh (sha256 d0a7c3208deb2fbf04c8d866e31d03843d461c689dc9a6995312a5f813725513)
+  2026-11-14T02:27:32Z installed fwaudit_eval.py (sha256 e3fc7544a34d69d3df9fd6e0edbf3a1870bae72677d97606b29f3a176259a6cc)
+  2026-11-14T02:27:32Z installed policy/validator.policy (sha256 46011035060a0db8fb33adaf0758ec02b1fc221f2786bdd58b29fe6b202c247e)
+  2026-11-14T02:27:32Z installed policy/sentry.policy (sha256 f0eeb6a97d1c3b1ce8cb931cc5e65e6ed7665bd51e1680efca41bb21f3d55af9)
+  2026-11-14T02:27:33Z added to /etc/pft-rulecheck.conf: textfile pft_fwaudit_*.prom   3h   pft_fwaudit_last_run_timestamp_seconds
+  2026-11-14T02:27:33Z added to /etc/pft-rulecheck.conf: require pft_fwaudit_sentry.prom
+  2026-11-14T02:27:33Z first audit (through the sandboxed unit, ROLE=sentry HOST_LABEL=sentry):
+  pft_fwaudit_up{host="sentry"} 1
+  pft_fwaudit_verdict{host="sentry"} 0
+  pft_fwaudit_findings{host="sentry",severity="fail"} 0
+  pft_fwaudit_findings{host="sentry",severity="warn"} 0
+  pft_fwaudit_findings{host="sentry",severity="info"} 0
+  Created symlink /etc/systemd/system/timers.target.wants/pft-fwaudit.timer → /etc/systemd/system/pft-fwaudit.timer.
+  2026-11-14T02:27:35Z enabled pft-fwaudit.timer (hourly :11 UTC + up to 60 s)
+  2026-11-14T02:27:35Z remember: sudo pft-integrity accept --reason 'pft-fwaudit installed'; pft-schedaudit accept + collect; pft-jobwatch inventory
+  (exit 0)
+CHECK ok   sentry install exit 0, up 1, verdict 0 (PASS), timer enabled
+a step failed - stopping before the next host change (restore runs)
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+$ sudo -n rm -f $NE   (no ntfy.env before: pft-maint falls back to the real monitor target again)
+exit=1

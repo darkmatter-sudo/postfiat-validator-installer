@@ -1,0 +1,21 @@
+# task_32d07e3a fwaudit live read-only audit, dev tree 9edd66f7a771a5c411c9e3bed58ce52ae92e4e97 + uncommitted fwaudit/, 2026-11-14T00:44:30Z
+$ [validator] sudo PFT_FWA_EVAL=$PWD/fwaudit_eval.py POLICY_DIR=$PWD/policy PEERS=~/.cache/fwaudit-peers-validator.env ./pft-fwaudit.sh audit --role validator
+FAMILY PROTO  PORT  STATE    PATH                   OWNERS
+v4     tcp      22  open     input                  sshd
+v4     tcp    2559  limited  docker-forward->2559   docker-dnat
+v4     tcp   19532  sources (1) input                  systemd,systemd-journal
+v6     tcp      22  open     input                  sshd
+v6     tcp    2559  limited  input                  docker-proxy
+  [INFO] ufw-rule-bypassed: tcp/2559 v4 is published via Docker DNAT: the ufw rule for it is not on the path; DOCKER-USER decides
+RESULT: PASS
+exit=0
+$ [sentry] sudo ... ./pft-fwaudit.sh audit --role sentry
+FAMILY PROTO  PORT  STATE    PATH                   OWNERS
+v4     tcp      22  open     input                  sshd
+v4     tcp    2559  limited  input                  nginx
+v4     tcp   19532  sources (1) input                  systemd,systemd-journal
+v6     tcp      22  open     input                  sshd
+  [WARN] declared-unreachable: tcp/2559 v6 declared (policy line 4) but not reachable from outside (no listener on that family, or filtered)
+  [WARN] stale-allow: ufw allows tcp/2559 v6 but nothing listens there
+RESULT: WARN
+exit=1

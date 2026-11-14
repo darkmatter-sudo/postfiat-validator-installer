@@ -1,0 +1,78 @@
+fwaudit two-host install - 2026-11-14T02:19:47Z - Ubuntu 22.04.5 LTS - repo HEAD 4b47d8f5b2623a38375bf4c1676ad403e8830e26 (clean: yes)
+
+== 0. preflight (read-only)
+$ sha256sum fwaudit/pft-fwaudit.sh fwaudit/fwaudit_eval.py fwaudit/install.sh fwaudit/drill/install-run.sh fwaudit/policy/* fwaudit/systemd/* alerts/fwaudit.rules.yml fleet/manifest.tsv
+  d0a7c3208deb2fbf04c8d866e31d03843d461c689dc9a6995312a5f813725513  fwaudit/pft-fwaudit.sh
+  e3fc7544a34d69d3df9fd6e0edbf3a1870bae72677d97606b29f3a176259a6cc  fwaudit/fwaudit_eval.py
+  33c079896f178b79c3e7d11998822a64a1dd3349c4f79ebc40e13fda0511f2df  fwaudit/install.sh
+  8b28ebd894869e7463d9b72da63b2e88c102d61b1af875d238fcd08881a334e7  fwaudit/drill/install-run.sh
+  f0eeb6a97d1c3b1ce8cb931cc5e65e6ed7665bd51e1680efca41bb21f3d55af9  fwaudit/policy/sentry.policy
+  46011035060a0db8fb33adaf0758ec02b1fc221f2786bdd58b29fe6b202c247e  fwaudit/policy/validator.policy
+  7f8cb8e1215b2ab1ca33dd451983184f7f7ecc0c50f39f5b464545258541dc4b  fwaudit/systemd/pft-fwaudit-pull.service
+  c36a117466b6671595f79dd36062610257094a97979cd76055dd61be42bea9c9  fwaudit/systemd/pft-fwaudit-pull.timer
+  fd873243aef1b52fadb61c409077436754b6b0470d782b4f3f2deda82b47d173  fwaudit/systemd/pft-fwaudit.service
+  83a79b48c561b9d33790a208ee535176122b517df9546e085a6e1dd8b4560c56  fwaudit/systemd/pft-fwaudit.timer
+  a48452762350659be17cac6c1f383aa2b5985dfbe57dcd9dfd144d8179b8f146  alerts/fwaudit.rules.yml
+  2f44f5dbad5e8e59427ec0ca49d8b8b8bce9e197bbf0b799e151fec115ef3e5a  fleet/manifest.tsv
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 248 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 148 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts before install
+$ srv_state
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ ls /usr/local/bin/pft-fwaudit /etc/pft-fwaudit.env 2>&1; R 'ls /usr/local/bin/pft-fwaudit /etc/pft-fwaudit.env 2>&1'
+  ls: cannot access '/usr/local/bin/pft-fwaudit': No such file or directory
+  ls: cannot access '/etc/pft-fwaudit.env': No such file or directory
+  ls: cannot access '/usr/local/bin/pft-fwaudit': No such file or directory
+  ls: cannot access '/etc/pft-fwaudit.env': No such file or directory
+  (exit 2)
+CHECK ok   not installed yet on either host
+$ grep -c '^fwaudit ' fleet/manifest.tsv; grep -c fwaudit.rules.yml alerts/prometheus.yml; grep -c pft_fwaudit rulecheck/pft-rulecheck.conf.example; grep -c pft_fwaudit rulecheck/pft-rulecheck.sentry.conf.example
+  8
+  1
+  3
+  2
+  (exit 0)
+CHECK ok   HEAD lists 8 fwaudit manifest lines, the rule file and 3 + 2 rulecheck lines
+$ for h in L R; do if [ $h = L ]; then bash -c 'for c in python3 jq ss iptables-save ip6tables-save nft ufw; do command -v $c; done | wc -l; sudo -n test -f /etc/pft-rulecheck.conf && echo rc-conf'; else R 'for c in python3 jq ss iptables-save ip6tables-save nft ufw; do command -v $c; done | wc -l; sudo -n test -f /etc/pft-rulecheck.conf && echo rc-conf'; fi; done
+  7
+  rc-conf
+  7
+  rc-conf
+  (exit 0)
+CHECK ok   python3 jq ss iptables-save ip6tables-save nft ufw and a pft-rulecheck conf on both hosts
+$ for f in $PEERS_V $PEERS_S; do sed -n 's/=.*//p' $f | tr '\n' ' '; grep -cE '^[a-z][a-z0-9-]*=[0-9a-f.:/,]+$' $f; done
+  sentry 1
+  validator 1
+  (exit 0)
+CHECK ok   peers sources: validator names sentry, sentry names validator, one NAME=CIDR line each (values not printed)
+$ sudo -n env TEXT_BUDGET=999999 pft-jobwatch collect --stdout 2>/dev/null | wc -c; R 'sudo -n env TEXT_BUDGET=999999 pft-jobwatch collect --stdout 2>/dev/null | wc -c'; sudo -n sed -n 's/^TEXT_BUDGET=//p' /etc/pft-jobwatch.env
+  37971
+  19241
+  65000
+  (exit 0)
+CHECK ok   jobwatch textfiles have room for the new timers (validator 37971 + 2x1200, sentry 19241 + 1200 <= budget 65000 / 61440)
+$ pull_probe
+  1
+  pull-ssh-ok
+  (exit 0)
+CHECK ok   the pull's ssh command (pft-statewatch's PULL_SSH, non-empty) reaches the sentry when run as root
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+$ curl -s http://<redacted-ip>:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'; curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '.data.alerts[] | "\(.labels.alertname) \(.state)"' | sort | uniq -c
+  0
+        1 PFTAlertPipelineWatchdog firing
+        1 PFTVulnRebootOwed pending
+  (exit 0)
+known pending before the run (accepted by the preflight): PFTVulnRebootOwed
+CHECK ok   no active silence; only the pipeline watchdog (+ KNOWN_PENDING) pending/firing in Prometheus
+$ curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '[.data.alerts[] | select(.state == "firing" and .labels.alertname != "PFTAlertPipelineWatchdog")] | length'
+  0
+  (exit 0)
+CHECK ok   nothing but the watchdog FIRING (KNOWN_PENDING may only be pending)
+PREFLIGHT_ONLY: stopping before any change (0 failed)

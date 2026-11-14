@@ -95,6 +95,28 @@ fetch or validation leaves the previous copy, which then ages. `pft-rulecheck` g
 (`textfile pft_fwaudit_*.prom 3h pft_fwaudit_last_run_timestamp_seconds` and a `require` line per host), so a
 stopped timer or failing pull shows up as `PFTTextfileStale`.
 
+### Two-host install (recorded)
+
+[`drill/install-run.sh`](drill/install-run.sh) installs fwaudit at the current pushed HEAD on both hosts inside a
+`pft-maint` window whose `[MAINT]` messages go to a throwaway ntfy topic: `pft-fleet sync` of the fleet manifest copy,
+fwaudit and aptrust's allowlist copy; `/etc/pft-fwaudit.peers` (root 0600, values never printed); `install.sh --role`
+on the sentry, then on the validator, `PULL_SSH` + `install.sh --pull`; Prometheus reload; `pft-schedaudit`
+accept + collect, `pft-jobwatch inventory`, `pft-integrity accept` on both hosts. It then checks the installed audit
+(PASS on both hosts), the Prometheus series, aptrust, AppArmor/seccomp, `pft-fleet skew`, `pft-rulecheck`, the
+timers, and reads back every operator topic (must be 0 messages). `PREFLIGHT_ONLY=1` runs step 0 only.
+
+| Run | Result | Log |
+|---|---|---|
+| 05 preflight | 11 checks ok, 0 failed, nothing changed | [`logs/05-install-preflight.log`](logs/05-install-preflight.log) |
+| 06 install | FAIL 1 check: the sentry peers file came out 0644 (`umask` in the remote shell did not reach the file `sudo tee` created); `install.sh` then set it to 0600, but the runner had no stop gate after step 4 and went on to install on the sentry | [`logs/06-install-run-FAIL-sentry-peers-mode.log`](logs/06-install-run-FAIL-sentry-peers-mode.log) |
+| 07 revert | run 06's partial install removed from both hosts (files, timer, rulecheck lines, jobwatch entry), integrity accepted, silence expired once only the watchdog was active | [`logs/07-revert-run06.log`](logs/07-revert-run06.log) |
+| 08 install | **PASS, 51 checks ok, 0 failed**: audit PASS on both hosts, up 1 / verdict 0 / 0 fail / 0 warn in Prometheus, skew all CURRENT, rulecheck OK on both hosts, integrity PASS, operator topics 0 messages | [`logs/08-install-run.log`](logs/08-install-run.log) |
+
+Fix for run 06 (in run 08's runner): the sentry file is created `install -m 600 /dev/null` before `tee` writes it, and
+the runner stops after step 4 if any check failed. Logs 01-04 are the read-only live audit, the sentry IPv6 fix and
+re-audit, and the live plan / apply dry-run (see [Found -> fixed -> verified](#found---fixed---verified)). Log 02 is
+the raw output with public IPv4 addresses replaced by `<redacted-ip>`; nothing else in the logs is changed.
+
 ## Alert
 
 One rule, `PFTFwauditExposure` (`../alerts/fwaudit.rules.yml`, critical, `for: 5m`), with a `reason` label:
@@ -112,7 +134,9 @@ recovery at the hand-computed sample, a 4-minute FAIL that never fires, WARN-onl
 
 | Host | Found (capture 00:14Z) | Fix | Verified |
 |---|---|---|---|
-| sentry | stale-allow tcp/2559 IPv6: UFW allowed it, nginx listens on IPv4 only | removed the v6 rule (2026-11-14T00:45Z); `sentry/relay-setup.sh` now adds an IPv4-only rule | re-audit 00:46Z PASS, fixture `sentry-postfix.bundle` |
+| sentry | stale-allow tcp/2559 IPv6: UFW allowed it, nginx listens on IPv4 only | removed the v6 rule (2026-11-14T00:45Z); `sentry/relay-setup.sh` now adds an IPv4-only rule | re-audit 00:46Z PASS, fixture `sentry-postfix.bundle`; installed audit PASS on both hosts in install run 08 |
+
+Logs: [`logs/01-live-audit.log`](logs/01-live-audit.log) (found), [`logs/02-sentry-v6-fix.log`](logs/02-sentry-v6-fix.log) (fixed), [`logs/03-sentry-reaudit.log`](logs/03-sentry-reaudit.log) (verified), [`logs/08-install-run.log`](logs/08-install-run.log) (installed, PASS both hosts).
 
 ## Tests
 
