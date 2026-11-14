@@ -1,0 +1,86 @@
+OS: Ubuntu 22.04.5 LTS | 2026-11-14T07:44:09Z | fwaudit fresh-clone verification at 3ab03ada0a4d8c0d6190c8423822d43c66d0af1b | shellcheck 0.8.0 | Python 3.10.12 | ruff 0.17.1 | pytest 9.1.1
+(work dir: a new mktemp dir under ~/.cache, mode 755; /tmp is noexec on this host)
+$ env -u GH_TOKEN -u GITHUB_TOKEN GIT_TERMINAL_PROMPT=0 git -c credential.helper= clone -q https://github.com/darkmatter-sudo/postfiat-validator-installer.git repo
+(exit 0)
+$ git checkout -q 3ab03ada0a4d8c0d6190c8423822d43c66d0af1b && git rev-parse HEAD
+3ab03ada0a4d8c0d6190c8423822d43c66d0af1b
+(exit 0)
+$ git status --short | wc -l
+0
+(exit 0)
+$ sha256sum fwaudit/*.sh fwaudit/*.py fwaudit/policy/* fwaudit/systemd/* fwaudit/drill/*.sh alerts/fwaudit.rules.yml alerts/fwaudit.tests.yml integrity/pft-integrity.sh
+33c079896f178b79c3e7d11998822a64a1dd3349c4f79ebc40e13fda0511f2df  fwaudit/install.sh
+41df661e1e7dbb219b328991218b91587173509942c64ad65bd03ec34bd551d4  fwaudit/pft-fwaudit.sh
+e3fc7544a34d69d3df9fd6e0edbf3a1870bae72677d97606b29f3a176259a6cc  fwaudit/fwaudit_eval.py
+f0eeb6a97d1c3b1ce8cb931cc5e65e6ed7665bd51e1680efca41bb21f3d55af9  fwaudit/policy/sentry.policy
+46011035060a0db8fb33adaf0758ec02b1fc221f2786bdd58b29fe6b202c247e  fwaudit/policy/validator.policy
+7f8cb8e1215b2ab1ca33dd451983184f7f7ecc0c50f39f5b464545258541dc4b  fwaudit/systemd/pft-fwaudit-pull.service
+c36a117466b6671595f79dd36062610257094a97979cd76055dd61be42bea9c9  fwaudit/systemd/pft-fwaudit-pull.timer
+fd873243aef1b52fadb61c409077436754b6b0470d782b4f3f2deda82b47d173  fwaudit/systemd/pft-fwaudit.service
+83a79b48c561b9d33790a208ee535176122b517df9546e085a6e1dd8b4560c56  fwaudit/systemd/pft-fwaudit.timer
+6017c879315f1737ffbc7d80327130142419512ae4d5a2537823f820d9f133c3  fwaudit/drill/container-fix-run.sh
+e4a1db73b2df839e0f6362081fbd62fd37312790aeaf6ba473f4abcc15500b1a  fwaudit/drill/exposure-drill.sh
+bdde4d9586bf1390b7397f8bd6accd0d78a9bfbde33d95174d8e207da3d9a8b5  fwaudit/drill/fresh-clone.sh
+0e7cef12e14f3af874458928e8b592a1e54925a1426fadf0d0799db5bafa6872  fwaudit/drill/install-run.sh
+be47cca5d471e8ff5d4a4b48debddf10db8b55d69cbce8854d96d95d37e92ef8  fwaudit/drill/integrity-sync-run.sh
+a4936478fc2abc185f0dcb1d824e6a11f0e4da07014fc2096ec4771551e6d91a  fwaudit/drill/tcp-crosscheck.sh
+a48452762350659be17cac6c1f383aa2b5985dfbe57dcd9dfd144d8179b8f146  alerts/fwaudit.rules.yml
+ebd7bf8d51156f25f267d2bad9222e01174f85fe974c2ba5997c614489451db9  alerts/fwaudit.tests.yml
+2a6ef28f4d84fa049652df10cf0e29ac9a8dbecc339d2888e2ca435d34ef484a  integrity/pft-integrity.sh
+(exit 0)
+$ sha256sum fwaudit/logs/*.log
+c7f89afd0353d949ac8196794d230344521b0dc30480c6dc1f4f5b4ff5ba41e8  fwaudit/logs/01-live-audit.log
+2832891b2ba1a5bd55330a0bdd424fe2d2bfd9806d37621b74b43ecbf11bbfb8  fwaudit/logs/02-sentry-v6-fix.log
+2fff13a9d2cbe82b10e4baed1af8e5e3aa89cf4ec09c35cf9804ced160454f29  fwaudit/logs/03-sentry-reaudit.log
+713dda7785ccca7069132250b2f965468fc3ee749f808b49af773742a008e105  fwaudit/logs/04-live-plan-dryrun.log
+87c44f382fe14c9b54179387c0437b9c8e03a857e277bc4548a6e9336e85eacd  fwaudit/logs/05-install-preflight.log
+a1fbf42e467bc9c954dbf51808c5d6ed15147f80b5bac3692c3823c31f18b68f  fwaudit/logs/06-install-run-FAIL-sentry-peers-mode.log
+28e3cc860e16d759f86a6a46595e4ce302a2cdb7ad8a80d78f993354cc8b3ef3  fwaudit/logs/07-revert-run06.log
+9e592945e627a812c38d7a69519a0cbb5cf473f179f775ee8b42281d0a6dbaaf  fwaudit/logs/08-install-run.log
+2dee6122c6304940001a61e5bde7c80f2c6695e6535eaed32dbec4f952490f18  fwaudit/logs/09-integrity-v6-gap-tests.log
+11d0683c62aaeb1ec9222d95dd41da09bac60e67db4a473c0a9bdc8c6f8442c4  fwaudit/logs/10-integrity-v6-sync-run.log
+bd5a49db4cf96984c65df342721c59328b2ea4c4ef86320bd753241d618d34ad  fwaudit/logs/11-mutants-dev-17-survivors.log
+5f4030d0e8b881661d1f458f291226e6709ce1c7f147466d26ceff8234de9487  fwaudit/logs/12-crosscheck.log
+f51c54b49c2d59f8bb7d6048871f313d5d840e1b05aedf18e86a86bf04fe0928  fwaudit/logs/13-crosscheck-flip-control.log
+f8044d7964b792ff5e43d8093110ba959f3fb3e01f03edab990f3414d32c070e  fwaudit/logs/14-mutants.log
+580e005dcba274e8668c3aa46c055b16dd0ecfd73f7d256f0fa98347d0f4a768  fwaudit/logs/15-mutants-dev-new-guards.log
+ac8167c7df6d7d758f9d2280a37184d78bdb58e477d6633fb0cab471eeef609f  fwaudit/logs/16-container-fix-run.log
+2b1e3bf77d55a0238be5ce0a192639bca1b05570e5dc5c56280a54b40c001bf7  fwaudit/logs/16a-container-fix-preflight-STOP-check-bug.log
+b4d1bb79f77d35bd06bc68e59fdd2ec49bb51a9442b65bb1f651e8827337fc0c  fwaudit/logs/16b-container-fix-preflight.log
+7ea46bbc97c0d3f679ec3da897b811587dbc65cd6964c906d5f0f76a321d9d5e  fwaudit/logs/17-exposure-drill-FAIL-2-harness-checks.log
+3270c0f0a566c10d8540eec0b35e198f308c65c61ef0d7ce77318409edab8076  fwaudit/logs/17a-exposure-drill-preflight-STOP-quoting.log
+3401f53aee4748972f553288546a04813b9ec926eba3f8f6195041817cc0da38  fwaudit/logs/17b-exposure-drill-preflight.log
+5f06cdaf38f9358b80416a345c2fa467037bd6921eaa4166b1d78ee7332c1303  fwaudit/logs/18-mutants.log
+0384eff07e0abbf1cc15375d765a739704ed2fdaef790de65c283c4ba2e7859c  fwaudit/logs/19-exposure-drill.log
+74337c63e2cb49850c5f816b628d906539a41feb452e34160daa5b35ac00eecd  fwaudit/logs/19a-exposure-drill-preflight.log
+(exit 0)
+== static checks
+$ shellcheck fwaudit/*.sh fwaudit/drill/*.sh fwaudit/tests/stubs/collect fwaudit/tests/stubs/docker fwaudit/tests/stubs/logcall fwaudit/tests/stubs/maint fwaudit/tests/stubs/rpc
+(exit 0)
+$ cd fwaudit && ruff check . && ruff format --check .
+All checks passed!
+8 files already formatted
+(exit 0)
+== fixture + stub suite
+$ cd fwaudit && TMPDIR=~/.cache/tmp.hpY3ZzuWyF TEST_TMPDIR=~/.cache/tmp.hpY3ZzuWyF python3 -m pytest -q -p no:cacheprovider tests 2>&1 | tail -n 3
+........................................................................ [ 58%]
+....................................................                     [100%]
+124 passed in 119.29s (0:01:59)
+(exit 0)
+== promtool
+$ docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /w prom/prometheus:v3.5.0 check rules fwaudit.rules.yml
+Checking fwaudit.rules.yml
+  SUCCESS: 1 rules found
+
+(exit 0)
+$ docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /w prom/prometheus:v3.5.0 test rules fwaudit.tests.yml
+  SUCCESS
+
+(exit 0)
+== integrity fw:ufw v6 collector tests
+$ TEST_TMPDIR=~/.cache/tmp.hpY3ZzuWyF bash integrity/tests/test-fw.sh 2>&1 | tail -n 3
+ok   ip6tables DOCKER-USER change: docker-user sha256 + rules change
+ok   no ufw on PATH: no fw:ufw items, fw:docker-user present
+RESULT: 14 passed, 0 failed
+(exit 0)
+fresh-clone done 2026-11-14T07:46:26Z: 0 step(s) failed -> PASS

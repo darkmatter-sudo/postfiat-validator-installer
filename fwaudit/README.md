@@ -172,7 +172,7 @@ group_interval + 30 s.
 | tests + mutation controls | 124 tests; 91/91 mutants caught, baseline/timeout/orphan controls PASS | log 18 |
 | own-host cross-host TCP check | 16/16 match, flip control fails as required | logs 12, 13 |
 | throwaway-ntfy drill, 0 operator messages | PASS 63/63 | log 19 |
-| fresh public clone | see below | log 20 |
+| fresh public clone | PASS: shellcheck, ruff, 124 passed, promtool check + test SUCCESS, integrity fw tests 14 passed | log 20 |
 
 ## Deviations and scope
 
@@ -184,6 +184,15 @@ group_interval + 30 s.
   trip `pft-schedaudit` NEW / `PFTJobDisabled` after it ends.
 - The recorded mutation run (log 18) is at 88e9a91cc5b54e9c41d6bc04481529b935e553ad; the later commits change only
   `drill/exposure-drill.sh`, logs and this README (`git diff --stat 88e9a91 HEAD -- fwaudit ':!fwaudit/logs'`).
+
+## Fresh public clone
+
+[`drill/fresh-clone.sh`](drill/fresh-clone.sh) `SHA` clones the public repo anonymously (no token, no credential
+helper) into a new dir, checks out `SHA`, prints the sha256 of every fwaudit source, policy, unit, drill and log file,
+and runs shellcheck, ruff, the full suite, promtool `check rules` + `test rules` and `integrity/tests/test-fw.sh`
+(`--mutants` also runs the mutation harness). Log 20, at 3ab03ada0a4d8c0d6190c8423822d43c66d0af1b: **0 steps failed,
+PASS**; 124 passed; promtool SUCCESS; 14 passed. The sha256 of `pft-fwaudit.sh` (41df661e...) and `fwaudit_eval.py`
+(e3fc7544...) equal the header of drill log 19. [`logs/20-fresh-clone.log`](logs/20-fresh-clone.log)
 
 ## Alert
 
