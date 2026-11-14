@@ -174,3 +174,18 @@ finding, failed ufw command) assert the restored sha256.
 paths (incomplete bundle, missing policy, failed capture: only up + timestamp written), an unwritable textfile dir
 (no file), and `validate`/`pull` (spoofed host, foreign metric, malformed, missing up/timestamp, oversize, failed
 fetch: previous copy byte-identical; config refusals).
+
+### Mutation testing
+
+[`tests/mutate.py`](tests/mutate.py) applies 83 single-text mutants (evaluator E01-E32, plan/ufwnum P01-P14, shell
+S01-S31, alert rule R01-R06), each exactly once to a private copy of the folder, and runs that copy's full pytest
+suite (rule mutants: `promtool test rules`). CAUGHT needs a pytest failure summary plus at least one FAILED test (the
+log names them) or a hang killed at the timeout; NOT APPLIED and BROKEN count as failures. Controls before any mutant:
+the unmutated copy passes the suite and promtool (baseline), a copy whose evaluator never returns is reported HANG and
+leaves no process (timeout), and after the run no process names the scratch dir (orphan).
+
+| Run | Result | Log |
+|---|---|---|
+| 11 dev pass (100 tests) | 66 caught, **17 survived** (found): unmodelled match options, conditional ACCEPT, INPUT policy ACCEPT, DROP in a jumped chain, udp listeners, loopback listeners behind an ACCEPT, published port without docker-proxy, `inet filter` nft table, FAIL-then-WARN verdict, multicast `-d`, ufwnum DENY, plan exit 2, and five dead-man/rollback paths that only the post-apply re-audit had covered | [`logs/11-mutants-dev-17-survivors.log`](logs/11-mutants-dev-17-survivors.log) |
+| fix | 16 new tests (116 total); the collect/rpc stubs gained fake-clock timelines so dead-man polls can change mid-watch (bad/good/bad/bad, SSH lost at +60 s, not-full with peers intact) | commit 892d7a8b7f622f6cc2633e1119bf5863af55d503 |
+| 14 recorded (116 tests) | **83 caught, 0 survived, 0 not applied, 0 broken of 83**; controls: baseline 116 passed + promtool SUCCESS, timeout HANG after 60 s with 0 processes left, orphan check 0 | [`logs/14-mutants.log`](logs/14-mutants.log) |
