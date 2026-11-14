@@ -134,9 +134,11 @@ check "installed script + evaluator = repo bytes on both hosts" "$([ "$(sort <<<
 echo; echo "== 4. /etc/pft-fwaudit.peers on both hosts (root:root 0600, values not printed)"
 x "sudo -n install -o root -g root -m 600 \$PEERS_V /etc/pft-fwaudit.peers && sudo -n stat -c '%a %U' /etc/pft-fwaudit.peers && sudo -n sed -n 's/=.*//p' /etc/pft-fwaudit.peers"
 check "validator peers file: 600 root, names sentry" "$([ "$(tr '\n' ' ' <<<"$XOUT")" = "600 root sentry " ] && echo 0 || echo 1)"
-x "R 'umask 077 && sudo -n tee /etc/pft-fwaudit.peers >/dev/null && sudo -n chown root:root /etc/pft-fwaudit.peers && sudo -n stat -c \"%a %U\" /etc/pft-fwaudit.peers && sudo -n sed -n \"s/=.*//p\" /etc/pft-fwaudit.peers' < \$PEERS_S"
+# run 06 FOUND: `umask 077` in the remote shell did not reach the file sudo tee created (644): create it 600 first
+x "R 'sudo -n install -o root -g root -m 600 /dev/null /etc/pft-fwaudit.peers && sudo -n tee /etc/pft-fwaudit.peers >/dev/null && sudo -n stat -c \"%a %U\" /etc/pft-fwaudit.peers && sudo -n sed -n \"s/=.*//p\" /etc/pft-fwaudit.peers' < \$PEERS_S"
 check "sentry peers file: 600 root, names validator" "$([ "$(tr '\n' ' ' <<<"$XOUT")" = "600 root validator " ] && echo 0 || echo 1)"
 
+[ "$FAILS" = 0 ] || { echo "a step failed - stopping before the next host change (restore runs)"; exit 1; }
 echo; echo "== 5. sentry: install.sh --role sentry"
 x "git archive $SHA fwaudit | R 'rm -rf ~/pft-fwaudit-$SHORT && mkdir -m 700 ~/pft-fwaudit-$SHORT && tar -x -C ~/pft-fwaudit-$SHORT'"
 x "R 'sudo -n bash ~/pft-fwaudit-$SHORT/fwaudit/install.sh --role sentry'"
