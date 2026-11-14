@@ -40,7 +40,7 @@ since="$(date -u +%s)"
 ts() { date -u +%FT%TZ; }
 SEC="$(mktemp -d -p "$HOME/.cache")"; chmod 700 "$SEC"; LIT="$SEC/literals.tsv"; : > "$LIT"; OPS="$SEC/ops"; : > "$OPS"
 printf 'topic\t%s\ntopic\t%s\nuser\t%s\n' "$ALERT" "$MTOP" "$(id -un)" >> "$LIT"
-red() { python3 -u "$REDACT" filter --literals "$LIT"; }
+red() { sed -u "s#$REPO#.#g; s#$HOME#~#g" | python3 -u "$REDACT" filter --literals "$LIT"; }
 R() { ssh -o LogLevel=ERROR -o ConnectTimeout=10 -o BatchMode=yes relay "$@" </dev/null; }
 Rin() { ssh -o LogLevel=ERROR -o ConnectTimeout=10 -o BatchMode=yes relay "$@"; }   # stdin passed through
 on() { if [ "$1" = sentry ]; then R "$2"; else bash -c "$2" </dev/null; fi; }
