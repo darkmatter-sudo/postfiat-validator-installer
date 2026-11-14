@@ -1,0 +1,406 @@
+pft-fwaudit exposure drill (S sentry temporary listener + UFW allow -> apply; V validator published port -> remove) - 2026-11-14T07:11:59Z - Ubuntu 22.04.5 LTS - run 20261114T071159Z
+repo HEAD 74772118170ad31da63d494585080f8c153a3ec2 (clean: yes)
+sha256 e4a1db73b2df839e0f6362081fbd62fd37312790aeaf6ba473f4abcc15500b1a fwaudit/drill/exposure-drill.sh
+sha256 41df661e1e7dbb219b328991218b91587173509942c64ad65bd03ec34bd551d4 fwaudit/pft-fwaudit.sh
+sha256 e3fc7544a34d69d3df9fd6e0edbf3a1870bae72677d97606b29f3a176259a6cc fwaudit/fwaudit_eval.py
+sha256 a48452762350659be17cac6c1f383aa2b5985dfbe57dcd9dfd144d8179b8f146 alerts/fwaudit.rules.yml
+sha256 f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8 peerexpose/drill/redact.py
+
+== 0. preflight (nothing changed yet)
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+$ sha256sum fwaudit/pft-fwaudit.sh fwaudit/fwaudit_eval.py | cut -c1-64; sudo -n sha256sum /usr/local/bin/pft-fwaudit /usr/local/lib/pft-fwaudit/fwaudit_eval.py | cut -c1-64; R 'sudo -n sha256sum /usr/local/bin/pft-fwaudit /usr/local/lib/pft-fwaudit/fwaudit_eval.py' | cut -c1-64
+  41df661e1e7dbb219b328991218b91587173509942c64ad65bd03ec34bd551d4
+  e3fc7544a34d69d3df9fd6e0edbf3a1870bae72677d97606b29f3a176259a6cc
+  41df661e1e7dbb219b328991218b91587173509942c64ad65bd03ec34bd551d4
+  e3fc7544a34d69d3df9fd6e0edbf3a1870bae72677d97606b29f3a176259a6cc
+  41df661e1e7dbb219b328991218b91587173509942c64ad65bd03ec34bd551d4
+  e3fc7544a34d69d3df9fd6e0edbf3a1870bae72677d97606b29f3a176259a6cc
+  (exit 0)
+CHECK ok   installed pft-fwaudit + evaluator on both hosts = this checkout
+$ systemctl is-active pft-fwaudit.timer pft-fwaudit-pull.timer; R 'systemctl is-active pft-fwaudit.timer'
+  active
+  active
+  active
+  (exit 0)
+CHECK ok   fwaudit timers active (validator audit + pull, sentry audit)
+$ fwa local audit | tail -n 1; fwa relay audit | tail -n 1
+  RESULT: PASS
+  RESULT: PASS
+  (exit 0)
+CHECK ok   both hosts audit PASS before the drill
+$ R 'sudo -n test -e /var/lib/pft-fwaudit/state.json && sudo -n jq -r .result /var/lib/pft-fwaudit/state.json || echo no-apply-state'; R 'systemctl is-active fwaudit-deadman.service'
+  kept
+  inactive
+  (exit 3)
+CHECK ok   sentry: no apply pending (no state or not pending), no fwaudit-deadman running
+$ s_leftovers; v_leftovers
+  0
+  0
+  0
+  0
+  (exit 0)
+CHECK ok   no leftovers: no drill units, no '# fwaudit-drill' ufw rule, no fwaudit-drill-pub container
+$ R 'for f in /etc/pft-watchdog/ntfy.env /etc/pft-integrity.env /etc/pft-alertpath/ntfy.env /etc/pft-maint/ntfy.env; do sudo -n test -e $f.pre-fwaudit-drill && echo leftover $f.pre-fwaudit-drill; done; sudo -n test -e /etc/pft-maint/ntfy.env && echo maint-env-present; echo r-end'; for f in /etc/postfiat-monitor.env /etc/pft-integrity.env; do sudo -n test -e $f.pre-fwaudit-drill && echo leftover $f.pre-fwaudit-drill; done; sudo -n test -e /etc/pft-maint/ntfy.env && echo maint-env-present; echo end
+  r-end
+  end
+  (exit 0)
+CHECK ok   no .pre-fwaudit-drill backups, no pft-maint ntfy.env on either host
+$ sudo -n docker image inspect -f '{{.RepoTags}} {{.Id}}' python:3.12-alpine | cut -c1-60
+  [python:3.12-alpine] sha256:1b668429b3511ab407d8e00648891631
+  (exit 0)
+CHECK ok   image python:3.12-alpine already on the validator (the drill never pulls)
+CHECK ok   drill ports chosen: sentry listener LP=18353, validator published PP=18393 (free on both hosts, not declared)
+$ curl -s http://127.0.0.1:9090/api/v1/rules | jq -r '.data.groups[] | select(.name == "pft-fwaudit") | .rules[] | [.name, .health, .state] | @tsv'
+  PFTFwauditExposure	ok	inactive
+  (exit 0)
+CHECK ok   PFTFwauditExposure loaded, healthy, inactive
+$ pq 'pft_fwaudit_findings{severity="fail"} or pft_fwaudit_up' | sort
+  __name__=pft_fwaudit_findings,host=sentry,instance=127.0.0.1:9877,job=postfiat,severity=fail 0
+  __name__=pft_fwaudit_findings,host=validator,instance=127.0.0.1:9877,job=postfiat,severity=fail 0
+  __name__=pft_fwaudit_up,host=sentry,instance=127.0.0.1:9877,job=postfiat 1
+  __name__=pft_fwaudit_up,host=validator,instance=127.0.0.1:9877,job=postfiat 1
+  (exit 0)
+CHECK ok   Prometheus: pft_fwaudit_up 1 and 0 fail findings for host=validator and host=sentry
+$ curl -s http://127.0.0.1:9090/api/v1/alerts | jq -r '.data.alerts[] | "\(.labels.alertname) \(.labels.host // .labels.instance // "-") \(.state)"' | sort
+  PFTAlertPipelineWatchdog - firing
+  PFTVulnRebootOwed sentry pending
+  (exit 0)
+CHECK ok   nothing but the watchdog FIRING (KNOWN_PENDING may only be pending: a firing alert would be re-sent after the bridge re-create)
+$ curl -s http://127.0.0.1:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'
+  0
+  (exit 0)
+  bridge mounts the operator env file; sentry alertpath timer active, check OK
+  operator topics to watch: 2 (not printed)
+  node local: server_state=full
+  pft-integrity local: RESULT: PASS - 253 unchanged, 0 warn, 0 fail -> exit 0
+$ on local 'sudo -n pft-maint active; echo maint-active rc $?; sudo -n pft-maint lock list'
+  maint-active rc 1
+  no data-collection locks
+  (exit 0)
+  node relay: server_state=full
+  pft-integrity relay: RESULT: PASS - 151 unchanged, 0 warn, 0 fail -> exit 0
+$ on relay 'sudo -n pft-maint active; echo maint-active rc $?; sudo -n pft-maint lock list'
+  maint-active rc 1
+  no data-collection locks
+  (exit 0)
+  snapshots: sentry 'ufw status numbered', validator 'iptables -t nat -S DOCKER' and 'iptables -S DOCKER' (sha256 kept, compared at the end)
+$ R printf\ \'%s\\n\'\ /bin/bash\ -c\ sleep\\\ 2700\\\;\\\ systemctl\\\ stop\\\ fwaudit-drill-listen.service\\\ \\\>/dev/null\\\ 2\\\>\\\&1\\\;\\\ n=0\\\;\\\ while\\\ :\\\;\\\ do\\\ k=\\\$\\\(ufw\\\ status\\\ numbered\\\ \\\|\\\ sed\\\ -nE\\\ \\\"s/\\\^\\\\\\\[\\\ \\\*\\\(\\\[0-9\\\]+\\\)\\\\\\\]\\\ .\\\*#\\\ fwaudit-drill\\\ \\\*\\\$/\\\\1/p\\\"\\\ \\\|\\\ tail\\\ -n\\\ 1\\\)\\\;\\\ \\\[\\\ -n\\\ \\\"\\\$k\\\"\\\ \\\]\\\ \\\|\\\|\\\ break\\\;\\\ ufw\\\ --force\\\ delete\\\ \\\"\\\$k\\\"\\\ \\\>/dev/null\\\ \\\|\\\|\\\ break\\\;\\\ n=\\\$\\\(\\\(n+1\\\)\\\)\\\;\\\ done\\\;\\\ echo\\\ \\\"deleted\\\ \\\$n\\\ fwaudit-drill\\\ ufw\\\ rule\\\(s\\\)\\\"\\\;\\\ echo\\\ \\\'fwaudit\\\ drill\\\ dead-man\\\ \\\(sentry\\\)\\\ done\\\'
+  /bin/bash
+  -c
+  sleep 2700; systemctl stop fwaudit-drill-listen.service >/dev/null 2>&1; n=0; while :; do k=$(ufw status numbered | sed -nE "s/^\[ *([0-9]+)\] .*# fwaudit-drill *$/\1/p" | tail -n 1); [ -n "$k" ] || break; ufw --force delete "$k" >/dev/null || break; n=$((n+1)); done; echo "deleted $n fwaudit-drill ufw rule(s)"; echo 'fwaudit drill dead-man (sentry) done'
+  (exit 0)
+CHECK ok   sentry dead-man command reaches the sentry byte-identical through both quoting levels (printf launcher)
+$ R "python3 -I -c 'import base64,sys; c=base64.b64decode(sys.argv[1]); compile(c, sys.argv[2], sys.argv[2]); print(len(c.splitlines()))' aW1wb3J0IHNvY2tldCwgc3lzCnMgPSBzb2NrZXQuc29ja2V0KHNvY2tldC5BRl9JTkVULCBzb2NrZXQuU09DS19TVFJFQU0pCnMuc2V0c29ja29wdChzb2NrZXQuU09MX1NPQ0tFVCwgc29ja2V0LlNPX1JFVVNFQUREUiwgMSkKcy5iaW5kKCgiMC4wLjAuMCIsIGludChzeXMuYXJndlstMV0pKSkKcy5saXN0ZW4oOCkKd2hpbGUgVHJ1ZToKICAgIGMsIF8gPSBzLmFjY2VwdCgpCiAgICB0cnk6CiAgICAgICAgYy5zZW5kYWxsKGIiZndhdWRpdC1kcmlsbFxuIikKICAgIGV4Y2VwdCBPU0Vycm9yOgogICAgICAgIHBhc3MKICAgIGMuY2xvc2UoKQo= exec"
+  12
+  (exit 0)
+CHECK ok   listener program decodes and compiles on the sentry (12 lines)
+$ redact.py control --literals <literals>
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (22/22)
+
+== 1. throwaway targets, catch-all silence
+  local:/etc/postfiat-monitor.env (sha256 6dc3b10fb491) -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/postfiat-monitor.env.pre-fwaudit-drill
+  local:/etc/pft-integrity.env (sha256 b3cd1c3da7ff) -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/pft-integrity.env.pre-fwaudit-drill
+  relay:/etc/pft-watchdog/ntfy.env (sha256 ddb52721a668) -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/pft-watchdog/ntfy.env.pre-fwaudit-drill
+  relay:/etc/pft-integrity.env (sha256 cdd330a974d2) -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/pft-integrity.env.pre-fwaudit-drill
+  relay:/etc/pft-alertpath/ntfy.env (sha256 ddb52721a668) -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/pft-alertpath/ntfy.env.pre-fwaudit-drill
+  local:/etc/pft-maint/ntfy.env created for the drill only (600) -> https://ntfy.sh/<redacted> (MAINT)
+  relay:/etc/pft-maint/ntfy.env created for the drill only (600) -> https://ntfy.sh/<redacted> (MAINT)
+  sentry pft-alertpath-check.timer stopped: yes
+CHECK ok   sentry pft-alertpath-check.timer paused for the bridge re-create
+  2026-11-14T07:13:23Z starting pft-alert-bridge (ntfy: on)
+  2026-11-14T07:13:26Z pft-alert-bridge listening
+CHECK ok   Alertmanager bridge -> throwaway env file (0700 temp dir)
+  sentry pft-alertpath check rc 0 after 1s; timer started again: yes
+CHECK ok   sentry pft-alertpath OK again, check timer running
+CHECK ok   silence alertname=~".+", alertname!~"PFTAlertPipelineWatchdog|PFTFwaudit.*" until 2026-11-14T09:13:27Z
+
+== 2. dead-men first (remove every fault after 2700s whatever happens to this script)
+$ R sudo\ -n\ systemd-run\ --collect\ --unit=fwaudit-drill-deadman\ --description=fwaudit-drill-dead-man\ -p\ RuntimeMaxSec=2820\ /bin/bash\ -c\ sleep\\\ 2700\\\;\\\ systemctl\\\ stop\\\ fwaudit-drill-listen.service\\\ \\\>/dev/null\\\ 2\\\>\\\&1\\\;\\\ n=0\\\;\\\ while\\\ :\\\;\\\ do\\\ k=\\\$\\\(ufw\\\ status\\\ numbered\\\ \\\|\\\ sed\\\ -nE\\\ \\\"s/\\\^\\\\\\\[\\\ \\\*\\\(\\\[0-9\\\]+\\\)\\\\\\\]\\\ .\\\*#\\\ fwaudit-drill\\\ \\\*\\\$/\\\\1/p\\\"\\\ \\\|\\\ tail\\\ -n\\\ 1\\\)\\\;\\\ \\\[\\\ -n\\\ \\\"\\\$k\\\"\\\ \\\]\\\ \\\|\\\|\\\ break\\\;\\\ ufw\\\ --force\\\ delete\\\ \\\"\\\$k\\\"\\\ \\\>/dev/null\\\ \\\|\\\|\\\ break\\\;\\\ n=\\\$\\\(\\\(n+1\\\)\\\)\\\;\\\ done\\\;\\\ echo\\\ \\\"deleted\\\ \\\$n\\\ fwaudit-drill\\\ ufw\\\ rule\\\(s\\\)\\\"\\\;\\\ echo\\\ \\\'fwaudit\\\ drill\\\ dead-man\\\ \\\(sentry\\\)\\\ done\\\'
+  Running as unit: fwaudit-drill-deadman.service
+  (exit 0)
+CHECK ok   sentry fwaudit-drill-deadman.service started
+$ sudo -n systemd-run --collect --unit=fwaudit-drill-deadman --description=fwaudit-drill-dead-man -p RuntimeMaxSec=2820 /bin/bash -c "$DMV"
+  Running as unit: fwaudit-drill-deadman.service
+  (exit 0)
+CHECK ok   validator fwaudit-drill-deadman.service started
+  dead-men delete the faults at 07:58:29Z
+
+== 3. faults: S sentry listener + UFW allow, V validator published port
+$ R "sudo -n systemd-run --collect --unit=fwaudit-drill-listen --description=fwaudit-drill-listener -p User=nobody -p NoNewPrivileges=yes -p RuntimeMaxSec=2700 python3 -I -c 'import base64,sys; exec(base64.b64decode(sys.argv[1]))' aW1wb3J0IHNvY2tldCwgc3lzCnMgPSBzb2NrZXQuc29ja2V0KHNvY2tldC5BRl9JTkVULCBzb2NrZXQuU09DS19TVFJFQU0pCnMuc2V0c29ja29wdChzb2NrZXQuU09MX1NPQ0tFVCwgc29ja2V0LlNPX1JFVVNFQUREUiwgMSkKcy5iaW5kKCgiMC4wLjAuMCIsIGludChzeXMuYXJndlstMV0pKSkKcy5saXN0ZW4oOCkKd2hpbGUgVHJ1ZToKICAgIGMsIF8gPSBzLmFjY2VwdCgpCiAgICB0cnk6CiAgICAgICAgYy5zZW5kYWxsKGIiZndhdWRpdC1kcmlsbFxuIikKICAgIGV4Y2VwdCBPU0Vycm9yOgogICAgICAgIHBhc3MKICAgIGMuY2xvc2UoKQo= 18353"
+  Running as unit: fwaudit-drill-listen.service
+  (exit 0)
+CHECK ok   S: listener unit started on the sentry
+$ R 'sudo -n ufw allow proto tcp to any port 18353 comment fwaudit-drill && sudo -n ufw status | grep "# fwaudit-drill"'
+  Rule added
+  Rule added (v6)
+  18353/tcp                  ALLOW       Anywhere                   # fwaudit-drill
+  18353/tcp (v6)             ALLOW       Anywhere (v6)              # fwaudit-drill
+  (exit 0)
+CHECK ok   S: UFW allow tcp/18353 added (v4 + v6 rule, comment fwaudit-drill)
+$ sudo -n docker run -d --pull never --name fwaudit-drill-pub --label pft.drill=fwaudit --read-only --cap-drop ALL --security-opt no-new-privileges --user 65534:65534 --memory 64m --pids-limit 16 -p 0.0.0.0:18393:8080 python:3.12-alpine python3 -I -c 'import base64,sys; exec(base64.b64decode(sys.argv[1]))' aW1wb3J0IHNvY2tldCwgc3lzCnMgPSBzb2NrZXQuc29ja2V0KHNvY2tldC5BRl9JTkVULCBzb2NrZXQuU09DS19TVFJFQU0pCnMuc2V0c29ja29wdChzb2NrZXQuU09MX1NPQ0tFVCwgc29ja2V0LlNPX1JFVVNFQUREUiwgMSkKcy5iaW5kKCgiMC4wLjAuMCIsIGludChzeXMuYXJndlstMV0pKSkKcy5saXN0ZW4oOCkKd2hpbGUgVHJ1ZToKICAgIGMsIF8gPSBzLmFjY2VwdCgpCiAgICB0cnk6CiAgICAgICAgYy5zZW5kYWxsKGIiZndhdWRpdC1kcmlsbFxuIikKICAgIGV4Y2VwdCBPU0Vycm9yOgogICAgICAgIHBhc3MKICAgIGMuY2xvc2UoKQo= 8080 | cut -c1-12
+  8ab9237350ad
+  (exit 0)
+CHECK ok   V: container fwaudit-drill-pub publishes 0.0.0.0:18393 -> 8080
+$ R "ss -Htln '( sport = :18353 )'"; ss -Htln '( sport = :18393 )'
+  LISTEN 0      8      0.0.0.0:18353 0.0.0.0:*
+  LISTEN 0      4096   0.0.0.0:18393 0.0.0.0:*
+  (exit 0)
+CHECK ok   listeners up: sentry 0.0.0.0:18353, validator docker-proxy 0.0.0.0:18393
+$ probe local <redacted-ip> 18353; probe relay <redacted-ip> 18393
+  connected
+  connected
+  (exit 0)
+CHECK ok   own-host connects during the fault: validator -> sentry v4 tcp/18353 and sentry -> validator v4 tcp/18393 both connected
+$ fwa relay audit
+  FAMILY PROTO  PORT  STATE    PATH                   OWNERS
+  v4     tcp      22  open     input                  sshd
+  v4     tcp    2559  limited  input                  nginx
+  v4     tcp   18353  open     input                  python3
+  v4     tcp   19532  sources (1) input                  systemd,systemd-journal
+  v6     tcp      22  open     input                  sshd
+    [FAIL] undeclared-exposure: tcp/18353 v4 reachable (open) but not declared
+    [WARN] stale-allow: ufw allows tcp/18353 v6 but nothing listens there
+  RESULT: FAIL
+  (exit 2)
+$ fkeys <<<"$SA"
+  FAIL undeclared-exposure v4/tcp/18353
+  WARN stale-allow v6/tcp/18353
+  (exit 0)
+CHECK ok   S: sentry audit FAIL: undeclared-exposure v4/tcp/18353 + stale-allow v6/tcp/18353
+$ jq -c --argjson p 18353 '.exposure[] | select(.port == $p) | {family, state, paths, owners, declared}' <<<"$SA"
+  {"family":"v4","state":"open","paths":["input"],"owners":["python3"],"declared":false}
+  (exit 0)
+CHECK ok   S: exposure v4/tcp/18353 open via input, owner python3, not declared
+$ fwa local audit
+  FAMILY PROTO  PORT  STATE    PATH                   OWNERS
+  v4     tcp      22  open     input                  sshd
+  v4     tcp    2559  limited  docker-forward->2559   docker-dnat
+  v4     tcp   18393  open     docker-forward->8080   docker-dnat
+  v4     tcp   19532  sources (1) input                  systemd,systemd-journal
+  v6     tcp      22  open     input                  sshd
+  v6     tcp    2559  limited  input                  docker-proxy
+    [INFO] ufw-rule-bypassed: tcp/2559 v4 is published via Docker DNAT: the ufw rule for it is not on the path; DOCKER-USER decides
+    [FAIL] undeclared-exposure: tcp/18393 v4 reachable (open) but not declared
+  RESULT: FAIL
+  (exit 2)
+$ fkeys <<<"$VA"
+  FAIL undeclared-exposure v4/tcp/18393
+  INFO ufw-rule-bypassed v4/tcp/2559
+  (exit 0)
+CHECK ok   V: validator audit FAIL: undeclared-exposure v4/tcp/18393 (only new finding)
+$ jq -c --argjson p 18393 '.exposure[] | select(.port == $p) | {family, state, paths, owners, declared}' <<<"$VA"
+  {"family":"v4","state":"open","paths":["docker-forward->8080"],"owners":["docker-dnat"],"declared":false}
+  (exit 0)
+CHECK ok   V: exposure v4/tcp/18393 open on the Docker DNAT path, not declared
+$ fwa relay plan; fwa local plan
+    ACTION delete tcp/18353 v4 (undeclared-exposure): ufw --force delete <rule numbers resolved at apply time>
+    ACTION delete tcp/18353 v6 (stale-allow): ufw --force delete <rule numbers resolved at apply time>
+  PLAN: 2 action(s), 0 manual item(s) (audit FAIL)
+    MANUAL undeclared-exposure: tcp/18393 v4 reachable (open) but not declared
+  PLAN: 0 action(s), 1 manual item(s) (audit FAIL)
+  (exit 2)
+$ fwa relay 'plan --json' | jq -c '[.actions[] | {op, family, port, why}]'; fwa local 'plan --json' | jq -c '[.manual[] | select(.why == "undeclared-exposure" and (.message | startswith("tcp/18393 v4 ")))] | length'
+  [{"op":"delete","family":"v4","port":18353,"why":"undeclared-exposure"},{"op":"delete","family":"v6","port":18353,"why":"stale-allow"}]
+  1
+  (exit 2)
+CHECK ok   plans: sentry deletes the v4 + v6 rule for tcp/18353 (2 actions, nothing else); validator lists tcp/18393 as MANUAL
+$ textfiles
+  pft-fwaudit.service (both) + pft-fwaudit-pull.service: done
+  (exit 0)
+CHECK ok   textfiles written by the real units, sentry copy pulled
+$ grep -h 'pft_fwaudit_findings{.*severity="fail"}' /var/lib/pft-exporter/textfile/pft_fwaudit_validator.prom /var/lib/pft-exporter/textfile/pft_fwaudit_sentry.prom
+  pft_fwaudit_findings{host="validator",severity="fail"} 1
+  pft_fwaudit_findings{host="sentry",severity="fail"} 1
+  (exit 0)
+CHECK ok   textfiles: fail findings 1 for host=validator and host=sentry
+
+== 4. PFTFwauditExposure fires for both hosts (for: 5m) and reaches the throwaway topic
+CHECK ok   Prometheus: PFTFwauditExposure{reason=fail-findings} firing for host=validator and host=sentry (341s after the faults)
+CHECK ok   throwaway topic: [FIRING] PFTFwauditExposure naming validator and sentry (after 18s)
+$ topic_msgs $ALERT | jq -r '"\(.time | todate) \(.title) | \(.message | gsub("\n"; " / "))"'
+  2026-11-14T07:19:16Z [FIRING] PFTFwauditExposure x2 | sentry: inbound exposure audit found 1 FAIL finding(s) / validator: inbound exposure audit found 1 FAIL finding(s)
+  (exit 0)
+
+== 5. fix: S via pft-fwaudit apply in a pft-maint window; V by removing the container
+$ sudo -n pft-maint start --ttl 45m --reason 'task_32d07e3a fwaudit exposure drill: apply on the sentry'
+  window started: id m1794640769-1371761 until 2026-11-14T08:04:29Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint window open on the validator
+CHECK ok   sentry has the window (via the watchdog channel) after 49s
+$ fwa relay 'apply --yes'
+  [2026-11-14T07:20:26Z] apply (sentry); maintenance gate: ok 2644; pre: server_state=full peers=16; declared exposure kept: v4/tcp/19532 v4/tcp/22 v4/tcp/2559 v6/tcp/22
+  [2026-11-14T07:20:27Z] + ufw --force delete 4   (tcp/18353 v4, undeclared-exposure)
+  [2026-11-14T07:20:28Z] + ufw --force delete 5   (tcp/18353 v6, stale-allow)
+  [2026-11-14T07:20:30Z] re-audit: verdict PASS, every planned finding gone, declared exposure intact
+  [2026-11-14T07:20:30Z] dead-man started as transient unit fwaudit-deadman (journalctl -u fwaudit-deadman); apply RESULT: PASS (pending dead-man)
+  Running as unit: fwaudit-deadman.service
+  (exit 0)
+CHECK ok   S: pft-fwaudit apply exit 0 (both rules deleted, re-audit clean, dead-man started)
+$ R 'sudo -n ufw status | grep -c "# fwaudit-drill"; systemctl is-active fwaudit-drill-listen.service'
+  0
+  active
+  (exit 0)
+CHECK ok   S: no '# fwaudit-drill' UFW rule left, listener still running
+$ probe local <redacted-ip> 18353
+  timeout
+  (exit 0)
+CHECK ok   S: validator -> sentry v4 tcp/18353 blocked while the listener still runs (UFW default deny drops)
+$ fwa relay audit
+  FAMILY PROTO  PORT  STATE    PATH                   OWNERS
+  v4     tcp      22  open     input                  sshd
+  v4     tcp    2559  limited  input                  nginx
+  v4     tcp   19532  sources (1) input                  systemd,systemd-journal
+  v6     tcp      22  open     input                  sshd
+  RESULT: PASS
+  (exit 0)
+CHECK ok   S: sentry audit PASS with the listener still up (listener alone is not exposure)
+$ R 'sudo -n systemctl stop fwaudit-drill-listen.service; systemctl is-active fwaudit-drill-listen.service'
+  inactive
+  (exit 3)
+$ sudo -n docker rm -f fwaudit-drill-pub
+  fwaudit-drill-pub
+  (exit 0)
+CHECK ok   V: container removed
+$ probe relay <redacted-ip> 18393
+  timeout
+  (exit 0)
+CHECK ok   V: sentry -> validator v4 tcp/18393 blocked after the removal
+$ fwa local audit | tail -n 1; fwa relay audit | tail -n 1
+  RESULT: PASS
+  RESULT: PASS
+  (exit 0)
+CHECK ok   VERIFIED: both hosts audit PASS after the fixes
+$ textfiles
+  pft-fwaudit.service (both) + pft-fwaudit-pull.service: done
+  (exit 0)
+CHECK ok   textfiles re-written, sentry copy pulled
+CHECK ok   textfiles: fail findings 0 for both hosts
+CHECK ok   Prometheus: PFTFwauditExposure gone (73s after the fixes)
+CHECK ok   throwaway topic: [RESOLVED] PFTFwauditExposure naming validator and sentry
+  waiting for the sentry apply dead-man (fwaudit-deadman, DEADMAN_MIN from the sentry conf)
+$ R 'sudo -n jq -c "{result, keep, baseline_peers, applied_at, deadman_passed_at}" /var/lib/pft-fwaudit/state.json'
+  {"result":"kept","keep":["v4/tcp/19532","v4/tcp/22","v4/tcp/2559","v6/tcp/22"],"baseline_peers":16,"applied_at":"2026-11-14T07:20:26Z","deadman_passed_at":"2026-11-14T07:30:54Z"}
+  (exit 0)
+CHECK ok   S: apply state result kept
+$ R 'sudo -n journalctl --utc -o cat -u fwaudit-deadman.service --since @1794640821 --no-pager' | grep -E 'dead-man'
+  [2026-11-14T07:20:31Z] dead-man: until 2026-11-14T07:30:25Z, rollback after 3 consecutive polls with state != full, peers < 15 (baseline 16 - slack 1) or a declared exposure gone (v4/tcp/19532 v4/tcp/22 v4/tcp/2559 v6/tcp/22)
+  [2026-11-14T07:21:02Z] dead-man poll: full peers 16 declared ok
+  [2026-11-14T07:21:33Z] dead-man poll: full peers 16 declared ok
+  [2026-11-14T07:22:04Z] dead-man poll: full peers 16 declared ok
+  [2026-11-14T07:22:35Z] dead-man poll: full peers 16 declared ok
+  [2026-11-14T07:23:07Z] dead-man poll: full peers 16 declared ok
+  [2026-11-14T07:23:38Z] dead-man poll: full peers 16 declared ok
+  [2026-11-14T07:24:09Z] dead-man poll: full peers 16 declared ok
+  [2026-11-14T07:24:41Z] dead-man poll: full peers 16 declared ok
+  [2026-11-14T07:25:13Z] dead-man poll: full peers 16 declared ok
+  [2026-11-14T07:25:44Z] dead-man poll: full peers 16 declared ok
+  [2026-11-14T07:26:15Z] dead-man poll: full peers 16 declared ok
+  [2026-11-14T07:26:45Z] dead-man poll: full peers 16 declared ok
+  [2026-11-14T07:27:16Z] dead-man poll: full peers 16 declared ok
+  [2026-11-14T07:27:47Z] dead-man poll: full peers 16 declared ok
+  [2026-11-14T07:28:18Z] dead-man poll: full peers 16 declared ok
+  [2026-11-14T07:28:49Z] dead-man poll: full peers 16 declared ok
+  [2026-11-14T07:29:20Z] dead-man poll: full peers 16 declared ok
+  [2026-11-14T07:29:51Z] dead-man poll: full peers 16 declared ok
+  [2026-11-14T07:30:23Z] dead-man poll: full peers 16 declared ok
+  [2026-11-14T07:30:54Z] dead-man poll: full peers 16 declared ok
+  [2026-11-14T07:30:54Z] dead-man: PASS - changes kept (snapshot stays in /var/lib/pft-fwaudit/snapshot for a manual rollback)
+  (exit 0)
+CHECK ok   S: apply dead-man PASS, every poll ok (none BAD, no rollback)
+$ sudo -n pft-maint end --reason 'task_32d07e3a fwaudit exposure drill: fixes verified'
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+  (exit 0)
+CHECK ok   window ended
+CHECK ok   sentry window gone after 13s
+
+== 6. restore, query_range, final state, read back
+  restored local:/etc/postfiat-monitor.env: sha256 matches pre-drill copy: yes
+  restored local:/etc/pft-integrity.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-watchdog/ntfy.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-integrity.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-alertpath/ntfy.env: sha256 matches pre-drill copy: yes
+  removed drill-only local:/etc/pft-maint/ntfy.env: yes
+  removed drill-only relay:/etc/pft-maint/ntfy.env: yes
+  re-ran pft-keyescrow + pft-fwaudit + pft-integrity + pft-rulecheck (both) and the validator pulls: yes
+  drain: no PFTFwaudit* alert pending/firing/active after 0s; 90 s for RESOLVED delivery
+  sentry pft-alertpath-check.timer stopped: yes
+  2026-11-14T07:34:20Z starting pft-alert-bridge (ntfy: on)
+  2026-11-14T07:34:24Z pft-alert-bridge listening
+  restored bridge: mounts the operator env file again: yes
+  sentry pft-alertpath check rc 0 after 3s; timer started again: yes
+CHECK ok   notifier envs restored byte-identical, drill-only files removed, dead-men stopped, bridge back, alertpath OK, no abort path
+$ s_leftovers; v_leftovers
+  0
+  0
+  0
+  0
+  (exit 0)
+CHECK ok   no drill unit, no '# fwaudit-drill' ufw rule, no fwaudit-drill-pub container left
+CHECK ok   sentry 'ufw status numbered' identical to the pre-drill snapshot
+CHECK ok   validator Docker nat/filter DOCKER chains identical to the pre-drill snapshots
+$ curl -s -G http://127.0.0.1:9090/api/v1/query_range --data-urlencode 'query=ALERTS{alertname="PFTFwauditExposure"}' --data-urlencode start=1794640319 --data-urlencode end=1794641670 --data-urlencode step=15 | jq -r '.data.result[] | "\(.metric.alertname) host=\(.metric.host) reason=\(.metric.reason) \(.metric.alertstate) first=\(.values[0][0] | todate) last=\(.values[-1][0] | todate) samples=\(.values | length)"' | sort
+  PFTFwauditExposure host=sentry reason=fail-findings firing first=2026-11-14T07:19:14Z last=2026-11-14T07:21:14Z samples=9
+  PFTFwauditExposure host=sentry reason=fail-findings pending first=2026-11-14T07:14:14Z last=2026-11-14T07:18:59Z samples=20
+  PFTFwauditExposure host=validator reason=fail-findings firing first=2026-11-14T07:19:14Z last=2026-11-14T07:20:59Z samples=8
+  PFTFwauditExposure host=validator reason=fail-findings pending first=2026-11-14T07:14:14Z last=2026-11-14T07:18:59Z samples=20
+  (exit 0)
+CHECK ok   query_range: PFTFwauditExposure fail-findings pending then firing for both hosts, never audit-error
+$ sudo -n grep -h '^pft_keyescrow_drift_items' /var/lib/pft-exporter/textfile/pft_keyescrow.prom /var/lib/pft-exporter/textfile/pft_keyescrow_sentry.prom
+  pft_keyescrow_drift_items{node="validator"} 0
+  pft_keyescrow_drift_items{node="sentry"} 0
+  (exit 0)
+CHECK ok   pft-keyescrow after the env restores: drift_items 0 on the validator and in the pulled sentry copy
+$ for q in pft_fwaudit_up pft_fwaudit_verdict 'pft_fwaudit_findings{severity="fail"}'; do pq "$q"; done | sort
+  __name__=pft_fwaudit_findings,host=sentry,instance=127.0.0.1:9877,job=postfiat,severity=fail 0
+  __name__=pft_fwaudit_findings,host=validator,instance=127.0.0.1:9877,job=postfiat,severity=fail 0
+  __name__=pft_fwaudit_up,host=sentry,instance=127.0.0.1:9877,job=postfiat 1
+  __name__=pft_fwaudit_up,host=validator,instance=127.0.0.1:9877,job=postfiat 1
+  __name__=pft_fwaudit_verdict,host=sentry,instance=127.0.0.1:9877,job=postfiat 0
+  __name__=pft_fwaudit_verdict,host=validator,instance=127.0.0.1:9877,job=postfiat 0
+  (exit 0)
+CHECK ok   Prometheus: both hosts up 1, verdict 0, fail findings 0
+CHECK ok   node local full; pft-integrity RESULT: PASS - 253 unchanged, 0 warn, 0 fail -> exit 0
+CHECK ok   node relay full; pft-integrity RESULT: PASS - 151 unchanged, 0 warn, 0 fail -> exit 0
+$ systemctl list-units --all --no-legend 'run-u*.service' 'run-u*.timer' | wc -l; R "systemctl list-units --all --no-legend 'run-u*.service' 'run-u*.timer' | wc -l"
+  0
+  0
+  (exit 0)
+CHECK ok   no transient run-u services/timers on either host
+CHECK ok   quiet gate: nothing but the watchdog + KNOWN_PENDING pending/firing in Prometheus or active in AM (after 0s)
+$ curl -s -o /dev/null -w '%{http_code}' -X DELETE http://127.0.0.1:9093/api/v2/silence/3583ad1f-e5b7-4662-b984-caefc16a2c25
+  200
+  (exit 0)
+CHECK ok   catch-all silence expired (only the watchdog left)
+  operator topic read-back waits 90 s (group_interval + 30 s after expiry)
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the run (2 topic(s), 0 with messages)
+  throwaway topics: ALERT 3 message(s), MAINT 2 message(s)
+$ topic_msgs $MT | jq -r '"\(.time | todate) \(.title)"'
+  2026-11-14T07:19:32Z [MAINT] start validator
+  2026-11-14T07:31:19Z [MAINT] end validator
+  (exit 0)
+
+exposure-drill done 2026-11-14T07:37:19Z: 0 check(s) failed -> PASS
