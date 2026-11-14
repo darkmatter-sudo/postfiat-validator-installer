@@ -119,6 +119,22 @@ the runner stops after step 4 if any check failed. Logs 01-04 are the read-only 
 re-audit, and the live plan / apply dry-run (see [Found -> fixed -> verified](#found---fixed---verified)). Log 02 is
 the raw output with public IPv4 addresses replaced by `<redacted-ip>`; nothing else in the logs is changed.
 
+### Cross-host TCP check (own hosts only)
+
+[`drill/tcp-crosscheck.sh`](drill/tcp-crosscheck.sh) runs on the validator and tests the audit against real
+connections between the two hosts this repo operates (nothing else is contacted, nothing is changed). For each
+direction it reads the target's installed `pft-fwaudit audit --json`, derives what the prober should reach (open /
+limited entries, or a `sources` entry that lists the prober's address; everything else blocked), and makes one TCP
+connect per family to every reachable tcp entry, every non-loopback tcp listener of the target and control port 9.
+Controls: v4 tcp/22 must be expected and observed reachable (the probe sees an open port), tcp/9 must be expected and
+observed blocked on both families (it sees a closed one), and `FWXC_FLIP=PORT` inverts one port's expectation, which
+must end `RESULT: FAIL` (mismatches are reported, not just computed). Addresses are never printed.
+
+| Run | Result | Log |
+|---|---|---|
+| 12 crosscheck | **PASS, 16 checks, 0 mismatches**, controls PASS; includes the source-restricted tcp/19532 (reachable from the listed peer on IPv4, blocked on IPv6) and the sentry's IPv4-only tcp/2559 (IPv6 blocked, the stale v6 allow fixed above) | [`logs/12-crosscheck.log`](logs/12-crosscheck.log) |
+| 13 comparator control | `FWXC_FLIP=2559`: **RESULT: FAIL, 4 failures in 16 checks, exit 1** as required (both mismatch directions: expected blocked/observed connected and expected reach/observed timeout); open/closed controls still PASS | [`logs/13-crosscheck-flip-control.log`](logs/13-crosscheck-flip-control.log) |
+
 ## Alert
 
 One rule, `PFTFwauditExposure` (`../alerts/fwaudit.rules.yml`, critical, `for: 5m`), with a `reason` label:

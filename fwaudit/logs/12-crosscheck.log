@@ -1,0 +1,30 @@
+$ fwaudit/drill/tcp-crosscheck.sh   (commit e800295e7d68a293802161a6e681f9c1890d6674)
+fwaudit tcp-crosscheck 2026-11-14T04:15:14Z script sha256 a4936478fc2abc185f0dcb1d824e6a11f0e4da07014fc2096ec4771551e6d91a
+pft-fwaudit: validator pft-fwaudit 3 / sentry pft-fwaudit 3
+addresses: validator v4 <redacted-ip> v6 <redacted-ip>, sentry v4 <redacted-ip> v6 <redacted-ip> (redacted); CONTROL_PORT 9, connect timeout 3s
+== direction sentry-to-validator
+target audit: rc=0 verdict=PASS exposure entries=5
+CHECK sentry-to-validator  v4 tcp/9     expect blocked (no-exposure-entry) observed timeout   PASS
+CHECK sentry-to-validator  v4 tcp/22    expect reach   (open) observed connected PASS
+CHECK sentry-to-validator  v4 tcp/2559  expect reach   (limited) observed connected PASS
+CHECK sentry-to-validator  v4 tcp/19532 expect reach   (sources(prober-listed)) observed connected PASS
+CHECK sentry-to-validator  v6 tcp/9     expect blocked (no-exposure-entry) observed timeout   PASS
+CHECK sentry-to-validator  v6 tcp/22    expect reach   (open) observed connected PASS
+CHECK sentry-to-validator  v6 tcp/2559  expect reach   (limited) observed connected PASS
+CHECK sentry-to-validator  v6 tcp/19532 expect blocked (no-exposure-entry) observed timeout   PASS
+CONTROL sentry-to-validator open-port (v4 tcp/22 expected and observed reachable): PASS
+CONTROL sentry-to-validator closed-port (tcp/9 v4+v6 expected and observed blocked): PASS
+== direction validator-to-sentry
+target audit: rc=0 verdict=PASS exposure entries=4
+CHECK validator-to-sentry  v4 tcp/9     expect blocked (no-exposure-entry) observed timeout   PASS
+CHECK validator-to-sentry  v4 tcp/22    expect reach   (open) observed connected PASS
+CHECK validator-to-sentry  v4 tcp/2559  expect reach   (limited) observed connected PASS
+CHECK validator-to-sentry  v4 tcp/19532 expect reach   (sources(prober-listed)) observed connected PASS
+CHECK validator-to-sentry  v6 tcp/9     expect blocked (no-exposure-entry) observed timeout   PASS
+CHECK validator-to-sentry  v6 tcp/22    expect reach   (open) observed connected PASS
+CHECK validator-to-sentry  v6 tcp/2559  expect blocked (no-exposure-entry) observed timeout   PASS
+CHECK validator-to-sentry  v6 tcp/19532 expect blocked (no-exposure-entry) observed timeout   PASS
+CONTROL validator-to-sentry open-port (v4 tcp/22 expected and observed reachable): PASS
+CONTROL validator-to-sentry closed-port (tcp/9 v4+v6 expected and observed blocked): PASS
+RESULT: PASS - 16 checks, 0 mismatches, controls PASS
+exit=0
