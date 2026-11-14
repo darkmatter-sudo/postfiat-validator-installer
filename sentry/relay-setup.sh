@@ -39,7 +39,9 @@ systemctl enable nginx >/dev/null 2>&1
 systemctl restart nginx
 
 ufw allow 22/tcp comment SSH >/dev/null
-ufw allow "${LISTEN_PORT}/tcp" comment 'Post Fiat sentry relay' >/dev/null
+# IPv4 only: nginx above listens on IPv4 only, a plain "PORT/tcp" rule would also open an unused IPv6 port
+# (found by ../fwaudit as stale-allow, 2026-11-14)
+ufw allow proto tcp from 0.0.0.0/0 to any port "${LISTEN_PORT}" comment 'Post Fiat sentry relay' >/dev/null
 ufw --force enable >/dev/null
 ufw status verbose
 ss -ltnp | grep ":${LISTEN_PORT} " || { echo "nginx not listening on ${LISTEN_PORT}"; exit 1; }

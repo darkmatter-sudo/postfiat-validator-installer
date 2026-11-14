@@ -1,0 +1,5 @@
+# pft-fwaudit declared inbound policy: role sentry
+# allow PROTO PORT FAMILY SOURCE [limit]   # purpose
+allow tcp 22    both any          # SSH (fail2ban in front, sshban/)
+allow tcp 2559  v4   any   limit  # Post Fiat sentry relay (nginx stream listens IPv4 only -> container, UFW LIMIT)
+allow tcp 19532 v4   @validator   # pft-logship receiver, validator only

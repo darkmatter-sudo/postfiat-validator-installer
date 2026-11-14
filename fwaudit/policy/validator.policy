@@ -1,0 +1,5 @@
+# pft-fwaudit declared inbound policy: role validator
+# allow PROTO PORT FAMILY SOURCE [limit]   # purpose
+allow tcp 22    both any          # SSH (fail2ban in front, sshban/)
+allow tcp 2559  both any   limit  # Post Fiat peer protocol (UFW LIMIT / DOCKER-USER rate limit)
+allow tcp 19532 v4   @sentry      # pft-logship receiver, sentry only
