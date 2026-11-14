@@ -1,0 +1,131 @@
+OS: Ubuntu 22.04.5 LTS | 2026-11-14T16:11:23Z | histarchive gap-repair fresh-clone verification at f05e10eb8e5671c3c7ca207b617c6419fa802fa0 | shellcheck 0.8.0 | Python 3.10.12 | ruff 0.17.1 | age 1.0.0
+(work dir: a new mktemp dir under ~/.cache, mode 755; /tmp is noexec on this host)
+$ env -u GH_TOKEN -u GITHUB_TOKEN GIT_TERMINAL_PROMPT=0 git -c credential.helper= clone -q https://github.com/darkmatter-sudo/postfiat-validator-installer.git repo
+(exit 0)
+$ git checkout -q f05e10eb8e5671c3c7ca207b617c6419fa802fa0 && git rev-parse HEAD
+f05e10eb8e5671c3c7ca207b617c6419fa802fa0
+(exit 0)
+$ git status --short | wc -l
+0
+(exit 0)
+== key files vs the live gap-repair run (logs/22 preflight lines 5-11: the code that was installed on both hosts and filled the gap)
+$ sha256sum histarchive/pft-histarchive.sh histarchive/histarchive.py histarchive/lib_hashverify.py histarchive/tests/seqcheck.py histarchive/drill/fill-run.sh alerts/histarchive.rules.yml histarchive/logs/data/gap-8042619-8042680/capture-8042618-8042681.jsonl > ~/.cache/tmp.YYfJbijw8q/now.txt && cat ~/.cache/tmp.YYfJbijw8q/now.txt
+279bc5fe4547f36c224b85132bb44e83db3124332335d6328312a13ffae9e344  histarchive/pft-histarchive.sh
+8fab6fcfe81b6b5810bf355820be1c2ff2647d23cc6932955a9297ef9a79ffea  histarchive/histarchive.py
+64ec1dacc49fcc955975a6c5f5ee85d657c9c7921dbe0ef15cd9b9411ef4e414  histarchive/lib_hashverify.py
+aee556348ed7a1b192d7a4d2f2a8b3e683a832b20a5a8fb89973d1de000cbcfa  histarchive/tests/seqcheck.py
+41477ef064021182ab232c4c4312febdfbf347ec514b974706516cbea10efcb8  histarchive/drill/fill-run.sh
+6ce909e108718be9275db3ce836ae6e985b2bb3a99f431478729c665ba5c2ae5  alerts/histarchive.rules.yml
+3de3e996f83db302ca62b95eac33e0ac2ccb8f1a63463c5ebaf05bab38b96c0f  histarchive/logs/data/gap-8042619-8042680/capture-8042618-8042681.jsonl
+(exit 0)
+$ sed -n '5,11p' histarchive/logs/22-fill-live-resumed.log | sed 's/^ *//' > ~/.cache/tmp.YYfJbijw8q/live.txt && diff ~/.cache/tmp.YYfJbijw8q/live.txt ~/.cache/tmp.YYfJbijw8q/now.txt && echo 'identical: 7/7 sha256 equal the live run'
+identical: 7/7 sha256 equal the live run
+(exit 0)
+$ cd histarchive/logs/data/gap-8042619-8042680 && sha256sum -c SHA256SUMS
+capture-8042618-8042681.jsonl: OK
+chaincheck.txt: OK
+(exit 0)
+$ sha256sum histarchive/tests/*.py histarchive/drill/*.sh histarchive/drill/*.py histarchive/install.sh alerts/histarchive.tests.yml
+028fb5b0b8c6ef205bb7edd0968505c877cfe9dba7aae82e9288d86b9e193747  histarchive/tests/mutate.py
+aee556348ed7a1b192d7a4d2f2a8b3e683a832b20a5a8fb89973d1de000cbcfa  histarchive/tests/seqcheck.py
+6b2dc1f27987c9547e347fe2ec69f9db873ab9426528cc48406fe201db9d9442  histarchive/tests/test_diskcost.py
+00468e9ff02a2f0d00a0123b853f2be7acc047b10f424b9cdfcd3a71ff96a2f6  histarchive/tests/test_fillgap.py
+db47f5dc2c6a00343a71cec6f41393eb45f023f51e7dbe3a8681a9d2fe8ecd4b  histarchive/tests/test_histarchive.py
+bbfddc4c667fbb816c310148b8b7a3a239b23f4519ea5999c00aff5999a5c1ee  histarchive/tests/test_wrapper.py
+8fb916a84b20e61c76f3d825e1003d60fdddc186f92b2953c292989b234b1cfc  histarchive/drill/alert-run.sh
+41477ef064021182ab232c4c4312febdfbf347ec514b974706516cbea10efcb8  histarchive/drill/fill-run.sh
+4555c76ef61a3e1f311a158992c78551751d964286a0e2bd3f56f5f58cf1865f  histarchive/drill/fresh-clone.sh
+396886608b6e7a3f1c93acec7b27f875679a29682e7f0560c8d11556105b1ac7  histarchive/drill/install-run.sh
+a620072c6a7b46a4495b0c4d8313302cf85a491fde0cd9febaf368616f5cfa26  histarchive/drill/kill-resume.sh
+8b224490cd3842c260cd2ca4e5f8f21955b685fcbda86e6120146bfce7c79f26  histarchive/drill/repro-real-gap.py
+67e7f780fe8c62a48581389560ea5a4edc9a084f30bf729dfb79c24bfc616d51  histarchive/install.sh
+a2f50ae8c47d7bc96049da90e6128f1e07ba2916814701495e57eb7d52cad3fa  alerts/histarchive.tests.yml
+(exit 0)
+== static checks
+$ shellcheck histarchive/pft-histarchive.sh histarchive/install.sh histarchive/drill/*.sh
+(exit 0)
+$ cd histarchive && ruff check . && ruff format --check .
+All checks passed!
+10 files already formatted
+(exit 0)
+== all test suites (fake JSON-RPC node, real age; tests/test_fillgap.py holds every adversarial fill case)
+$ cd histarchive && TMPDIR=~/.cache/tmp.YYfJbijw8q TEST_TMPDIR=~/.cache/tmp.YYfJbijw8q timeout 1500 python3 -m unittest tests/test_histarchive.py tests/test_wrapper.py tests/test_diskcost.py tests/test_fillgap.py </dev/null > ~/.cache/tmp.YYfJbijw8q/unit.txt 2>&1; rc=$?; tail -n 4 ~/.cache/tmp.YYfJbijw8q/unit.txt; exit $rc
+----------------------------------------------------------------------
+Ran 115 tests in 193.456s
+
+OK
+(exit 0)
+$ grep -c '^FAIL:\|^ERROR:' ~/.cache/tmp.YYfJbijw8q/unit.txt || true
+0
+(exit 0)
+== promtool (pinned image already on the host)
+$ docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /w prom/prometheus:v3.5.0 check rules histarchive.rules.yml
+Checking histarchive.rules.yml
+  SUCCESS: 4 rules found
+
+(exit 0)
+$ docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /w prom/prometheus:v3.5.0 test rules histarchive.tests.yml
+  SUCCESS
+
+(exit 0)
+== offline re-derivation of the real gap repair from the committed capture
+$ TMPDIR=~/.cache/tmp.YYfJbijw8q python3 -u histarchive/drill/repro-real-gap.py
+CHECK ok   capture sha256 3de3e996f83db302ca62b95eac33e0ac2ccb8f1a63463c5ebaf05bab38b96c0f
+CHECK ok   capture holds 8042618-8042681 (64 ledgers)
+$ histarchive.py follow --start 8042618 --stop-at 8042618
+2026-11-14T16:14:48Z histarchive 1.1.0 follow: node build fake state full complete_ledgers 8042618-8042618
+2026-11-14T16:14:48Z START archive at ledger 8042618
+2026-11-14T16:14:48Z STOP (stop_at reached) last=8042618 archived_this_run=1 requests=2
+(exit 0)
+$ histarchive.py follow --stop-at 8042681 (stub pruned to 8042681)
+2026-11-14T16:14:48Z histarchive 1.1.0 follow: node build fake state full complete_ledgers 8042681-8042681
+2026-11-14T16:14:48Z RESUME at ledger 8042619 (archive start 8042618, node validated 8042681)
+2026-11-14T16:14:48Z WARN ledger 8042619 attempt 1/2: LookupError: ledger: lgrNotFound
+2026-11-14T16:14:48Z WARN ledger 8042619 attempt 2/2: LookupError: ledger: lgrNotFound
+2026-11-14T16:14:48Z GAP ledgers 8042619-8042680 (62): pruned on the node before archiving (oldest 8042681)
+2026-11-14T16:14:48Z STOP (stop_at reached) last=8042681 archived_this_run=1 requests=5
+(exit 0)
+CHECK ok   follower recorded the gap 8042619-8042680 (62)
+$ histarchive.py verify
+NOTE recorded gap 8042619-8042680 (chain restarts at 8042681)
+RESULT: PASS - segments 0 active 1 ledgers 2 (8042618-8042681) txs 0 gaps 1 (62 ledgers) filled 0 fails 0
+(exit 0)
+CHECK ok   verify before: gaps 1 (62 ledgers) filled 0
+$ histarchive.py fill-gap --gap 8042619-8042680 --staged capture --dry-run
+2026-11-14T16:14:48Z histarchive 1.1.0 fill-gap 8042619-8042680 source staged capture-8042618-8042681.jsonl
+2026-11-14T16:14:48Z anchors: below 8042618 present 8278888DEFBCB472; above 8042681 present F35D4801640E85FB
+2026-11-14T16:14:48Z source also held 2 ledger(s) outside the gap (8042618..8042681): used only as context, not written
+2026-11-14T16:14:48Z checks: 62 ledgers header+hash+txroot OK, chain 8042618->8042681 unbroken (63 links incl. both anchors)
+2026-11-14T16:14:48Z DRY RUN: every check passed; nothing written
+(exit 0)
+CHECK ok   dry run exit 0, nothing written
+$ histarchive.py fill-gap --gap 8042619-8042680 --staged capture
+2026-11-14T16:14:48Z histarchive 1.1.0 fill-gap 8042619-8042680 source staged capture-8042618-8042681.jsonl
+2026-11-14T16:14:48Z anchors: below 8042618 present 8278888DEFBCB472; above 8042681 present F35D4801640E85FB
+2026-11-14T16:14:48Z source also held 2 ledger(s) outside the gap (8042618..8042681): used only as context, not written
+2026-11-14T16:14:48Z checks: 62 ledgers header+hash+txroot OK, chain 8042618->8042681 unbroken (63 links incl. both anchors)
+2026-11-14T16:14:48Z FILL 8042619-8042680 count=62 txs=22 sha256_gz=e2c5dcfdd6ae1595 entry=0e43875b673fb7fd source=staged
+(exit 0)
+CHECK ok   fill-gap exit 0
+$ histarchive.py verify
+NOTE filled gap 8042619-8042680 (62 ledgers, verified in the chain)
+RESULT: PASS - segments 1 active 1 ledgers 64 (8042618-8042681) txs 22 gaps 0 (0 ledgers) filled 1 fails 0
+(exit 0)
+CHECK ok   verify after: gaps 0, filled 1
+fill segment sha256 e2c5dcfdd6ae159566b84e472d0b683ce46dadcec7234ad44d17a5eb60da6ea6
+CHECK ok   fill segment byte-identical to the live fill (sha256 e2c5dcfdd6ae159566b84e472d0b683ce46dadcec7234ad44d17a5eb60da6ea6)
+MANIFEST fill entry {"anchor_above": {"h": "F35D4801640E85FB2C36A794953891AD7E2ED4C55E7DBC707438EDE8B2719DB1", "i": 8042681}, "anchor_below": {"h": "8278888DEFBCB472CBAEC4AF3B0B3BAD3B358BB1C9F199095CF9322E2922673D", "i": 8042618}, "count": 62, "first": 8042619, "kind": "fill", "last": 8042680, "sha256_gz": "e2c5dcfdd6ae159566b84e472d0b683ce46dadcec7234ad44d17a5eb60da6ea6", "txs": 22}
+CHECK ok   MANIFEST fill fields (range, count, txs, both anchors, sha256_gz) equal the live entry
+$ histarchive.py fill-gap --gap 8042619-8042680 --staged capture (again)
+2026-11-14T16:14:48Z histarchive 1.1.0 fill-gap 8042619-8042680 source staged capture-8042618-8042681.jsonl
+2026-11-14T16:14:48Z REFUSED: gap 8042619-8042680 is already filled (MANIFEST has a fill entry); nothing written
+(exit 1)
+CHECK ok   duplicate fill refused
+$ python3 -I tests/seqcheck.py ARCHIVE
+seqcheck: ledgers 64 (8042618-8042681) sources 2 parent links 63 missing 0 open-gap ledgers 0 filled gaps 1
+RESULT: PASS - fails 0
+(exit 0)
+CHECK ok   independent seqcheck PASS over the filled copy
+RESULT PASS 0 failed
+(exit 0)
+fresh-clone done 2026-11-14T16:14:49Z: 0 step(s) failed -> PASS
