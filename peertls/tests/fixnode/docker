@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Stub `docker` for tests/test_peertls_fix.py: one fake postfiatd container whose peer port is a REAL openssl s_server
+# on 127.0.0.1:$FX_PORT. `restart` re-reads ssl_ciphers from [port_peer] of the config in the fake volume (absent =
+# the weak built-in list), so the fix's TLS gate talks to a server that behaves like the config it installed.
+# State in $FX_STATE: name, vol, started, pubkey, peers, pgid, key/cert; flags: fail_restart, ignore_cfg,
+# pubkey_after_restart. Every call is appended to $FX_STATE/calls.log.
+set -uo pipefail
+S="${FX_STATE:?}"
+echo "$*" >> "$S/calls.log"
+name="$(cat "$S/name")"
+start_node() {
+  local list="ALL@SECLEVEL=0" v
+  if [ ! -e "$S/ignore_cfg" ]; then
+    v="$(awk '/^[ \t]*\[/{ s = ($0 ~ /^\[port_peer\]/); next } s && /^[ \t]*ssl_ciphers[ \t]*=/ { sub(/^[^=]*=[ \t]*/, ""); print; exit }' "$(cat "$S/vol")/postfiatd.cfg")"
+    [ -n "$v" ] && list="$v"
+  fi
+  # shellcheck disable=SC2016  # $1..$4 are the inner shell's arguments
+  setsid bash -c 'sleep 100000 | exec openssl s_server -accept "127.0.0.1:$1" -key "$2" -cert "$3" -cipher "$4" >/dev/null 2>&1' \
+    _ "$FX_PORT" "$S/key.pem" "$S/cert.pem" "$list" </dev/null >/dev/null 2>&1 &
+  echo $! > "$S/pgid"
+  for _ in $(seq 1 100); do (exec 3<>"/dev/tcp/127.0.0.1/$FX_PORT") 2>/dev/null && break; sleep 0.05; done
+  date -u +%Y-%m-%dT%H:%M:%S.%NZ > "$S/started"
+}
+case "${1:-}" in
+  inspect)
+    shift; fmt=""; [ "${1:-}" = -f ] && { fmt="$2"; shift 2; }
+    [ "${1:-}" = "$name" ] || exit 1
+    case "$fmt" in
+      *Mounts*) cat "$S/vol"; echo ;;
+      *StartedAt*) cat "$S/started" ;;
+    esac ;;
+  restart)
+    [ "${2:-}" = -t ] && [ "${4:-}" = "$name" ] || exit 1
+    [ -e "$S/fail_restart" ] && exit 1
+    kill -- "-$(cat "$S/pgid")" 2>/dev/null; sleep 0.2
+    [ -e "$S/pubkey_after_restart" ] && cp "$S/pubkey_after_restart" "$S/pubkey"
+    start_node ;;
+  start-fixture) start_node ;;
+  exec)
+    # only the RPC shape pft-peertls-fix uses: exec C sh -c 'curl -s -m 5 -d {"method":"M"} http://127.0.0.1:${RPC_PORT:-5005}/'
+    [ "${2:-}" = "$name" ] && [ "${3:-}" = sh ] && [ "${4:-}" = -c ] || exit 1
+    # shellcheck disable=SC2016  # the literal string the fix passes, ${RPC_PORT...} unexpanded
+    [[ "${5:-}" == 'curl -s -m 5 -d "{\"method\":\"'*'\"}" http://127.0.0.1:${RPC_PORT:-5005}/' ]] || exit 1
+    m="$(sed -E 's/.*method\\":\\"([a-z_]+).*/\1/' <<<"$5")"
+    [ "$m" = server_info ] || exit 1
+    printf '{"result":{"info":{"server_state":"full","pubkey_node":"%s","peers":%s}}}\n' "$(cat "$S/pubkey")" "$(cat "$S/peers")" ;;
+  *) exit 1 ;;
+esac

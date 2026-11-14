@@ -92,9 +92,45 @@ page. To acknowledge a drift: read `sudo pft-peertls audit`, and once the change
 postfiatd upgrade) run `sudo pft-peertls audit --textfile`; the current posture becomes the baseline. Staleness is
 graded by pft-rulecheck (`textfile pft_peertls_*.prom 8d`). Tests: `promtool test rules alerts/peertls.tests.yml`.
 
+## Fix: `pft-peertls-fix.sh`
+
+The audit stays read-only. When it reports `cipher.kx_rsa` or `cipher.cbc_sha2`, `pft-peertls-fix` sets the TLS 1.2
+suite list of the inbound peer port. postfiatd builds the peer port's server context from `[port_peer]`
+(`ServerHandler::makeContexts()`, key `ssl_ciphers` parsed in `Port.cpp`); without the key it uses its built-in list,
+which on an OpenSSL 1.1.1 build still admits static-RSA and CBC-SHA2 suites. TLS 1.3 suites are not affected, and the
+outbound (client) side of peer links is unchanged, so peers with default configs still connect.
+
+```
+sudo pft-peertls-fix plan                 # read-only: current [port_peer], the two-line diff, refusals
+sudo pft-peertls-fix apply --dry-run      # plus the live TLS view now (3 loopback handshakes); writes nothing
+sudo pft-maint start --ttl 30m --reason "peertls fix"
+sudo pft-peertls-fix apply --yes          # backup (0600) -> managed line -> docker restart -> gate
+sudo pft-peertls-fix rollback --yes       # newest backup back, restart, gate against the recorded pre-apply TLS view
+```
+
+Managed lines, written right after the `[port_peer]` header (default `CIPHERS=ECDHE+AESGCM:ECDHE+CHACHA20`):
+
+```
+# pft-peertls-fix: managed line (inbound peer TLS 1.2 suites; see peertls/README.md)
+ssl_ciphers = ECDHE+AESGCM:ECDHE+CHACHA20
+```
+
+Refused with nothing changed (exit 4): no pft-maint window, an unmanaged `ssl_ciphers` already in `[port_peer]`, not
+exactly one `[port_peer]`, `[server]` not listing `port_peer`, a cipher string that selects no TLS 1.2 suite; a
+`CIPHERS` value with characters outside an OpenSSL cipher string is a usage error (exit 3). The gate passes only when
+the container restarted, `server_state` is `full`, `pubkey_node` is unchanged, peers >= `MIN_PEERS`, the peer port
+listens, and three loopback handshakes give ECDHE-RSA-AES256-GCM-SHA384 accepted and AES256-GCM-SHA384 /
+DHE-RSA-AES256-SHA256 refused. A failed restart or gate restores the backup byte-identical, restarts and re-gates
+(exit 1; exit 5 if that also fails). pft-integrity accepts the new baseline only if the config file is the sole
+changed item. `--dry-run` creates no files or directories on the host.
+
+Before any live use the key was proven on throwaway containers of the running image (internal docker network, no
+live volumes): with the line, static-RSA and CBC suites are refused, ECDHE AES-GCM/CHACHA20 and TLS 1.3 accepted,
+TLS 1.1 refused, and a default-config node dialled the restricted one and stayed connected.
+
 ## Install
 
-Files: `pft-peertls.sh` -> `/usr/local/bin/pft-peertls`, `peertls_eval.py` and `policy/` ->
+Files: `pft-peertls.sh` -> `/usr/local/bin/pft-peertls`, `pft-peertls-fix.sh` -> `/usr/local/bin/pft-peertls-fix`, `peertls_eval.py` and `policy/` ->
 `/usr/local/lib/pft-peertls/`, `systemd/pft-peertls.{service,timer}` (both hosts),
 `systemd/pft-peertls-pull.{service,timer}` (validator). Config: `/etc/pft-peertls.env`, `/etc/pft-peertls.targets`
 (and, only if needed, `/etc/pft-peertls.waivers`), all root-owned 0600.
@@ -103,8 +139,14 @@ Files: `pft-peertls.sh` -> `/usr/local/bin/pft-peertls`, `peertls_eval.py` and `
 
 ```
 cd peertls && TMPDIR=$HOME/.cache python3 -m pytest -q tests     # needs openssl; starts s_server on 127.0.0.1 only
-shellcheck pft-peertls.sh && ruff check . && ruff format --check .
+shellcheck pft-peertls.sh pft-peertls-fix.sh tests/fixnode/docker && ruff check . && ruff format --check .
 ```
+
+`tests/test_peertls_fix.py` runs the real fix script against `tests/fixnode/docker`, a stub container whose peer port
+is a real `openssl s_server` that restarts with the `ssl_ciphers` of the config the fix installed (the stub answers
+only the fix's exact `docker exec ... sh -c 'curl ...'` RPC shape). Every refusal asserts unchanged config bytes and no
+`restart` call; every gate failure (node ignores the line, changed node key, too few peers, failed restart) asserts
+the byte-identical rollback.
 
 `tests/test_peertls.py` runs every check against a real weak `openssl s_server` on loopback (TLS 1.0/1.1 on,
 TLS 1.2 off, TLS 1.3 off, static RSA, CBC-SHA2, CBC-SHA1, NULL, anonymous, no ECDHE AEAD, 1024-bit DH, 1024-bit key,
