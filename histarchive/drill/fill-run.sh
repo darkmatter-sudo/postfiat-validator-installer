@@ -17,9 +17,10 @@
 #   bash histarchive/drill/fill-run.sh 2>&1 | tee LOG          (from the repo root, as the agent user)
 #   PREFLIGHT_ONLY=1 bash histarchive/drill/fill-run.sh        (step 0 only; changes nothing)
 #   RESUMED=1 SINCE=<unix> bash histarchive/drill/fill-run.sh  after a run that stopped at a gate once its steps 1-4 had
-#      run: the preflight then expects the installed files to equal HEAD (instead of differing), expires that run's own
-#      leftover rollout silence (createdBy histarchive-fill), and the operator read-back starts at SINCE (that run's start).
-#      Steps 1-4 are idempotent and run again.
+#      run: the preflight then expects the installed files to equal HEAD (instead of differing); active silences must all
+#      be this drill's own (createdBy histarchive-fill*) and are kept until the clean end; PFTHistarchiveGapFillable may be
+#      pending (FILL_RPC is configured and the gap is open: the expected FOUND state); the operator read-back starts at
+#      SINCE (the first run's start). Steps 1-4 are idempotent and run again.
 set -uo pipefail
 REPO="$(git rev-parse --show-toplevel)"; cd "$REPO" || exit 3
 export TZ=UTC
@@ -91,11 +92,15 @@ check "public RPC answers server_info (range $PUBR)" "$(grep -qE '^[0-9]+-[0-9]+
 } | tr -d "\"'\r" | grep -E '^[A-Za-z0-9_-]{8,}$' | sort -u > "$OPS"
 echo "operator topics to read back: $(wc -l < "$OPS") (not printed)"
 check "operator topics found" "$([ -s "$OPS" ] && echo 0 || echo 1)"
+OLD_SIL=""
 if [ "$RESUMED" = 1 ]; then
-  x "for id in \$(curl -s $AM/api/v2/silences | jq -r '.[] | select(.status.state == \"active\" and .createdBy == \"histarchive-fill\") | .id'); do echo \"expire \$id\"; curl -s -o /dev/null -w '%{http_code}\n' -X DELETE $AM/api/v2/silence/\$id; done"
+  x "curl -s $AM/api/v2/silences | jq -r '.[] | select(.status.state == \"active\") | \"\(.id) \(.createdBy) until \(.endsAt)\"'; curl -s $PROM/api/v1/alerts | jq -r '.data.alerts[] | \"ALERT \(.labels.alertname) \(.state)\"' | sort"
+  OLD_SIL="$(grep -v '^ALERT ' <<<"$XOUT" | grep ' histarchive-fill' | cut -d' ' -f1 | tr '\n' ' ')"
+  check "RESUMED: active silences are all this drill's own (kept: ${OLD_SIL:-none}); only the watchdog + PFTHistarchiveGapFillable pending" "$([ "$(grep -v '^ALERT ' <<<"$XOUT" | grep -vc ' histarchive-fill')" = 0 ] && [ "$(grep '^ALERT ' <<<"$XOUT" | grep -v 'PFTAlertPipelineWatchdog' | grep -vc '^ALERT PFTHistarchiveGapFillable pending$')" = 0 ] && echo 0 || echo 1)"
+else
+  x "curl -s $AM/api/v2/silences | jq -r '[.[] | select(.status.state == \"active\")] | length'; curl -s $PROM/api/v1/alerts | jq -r '.data.alerts[].labels.alertname' | sort | uniq -c"
+  check "no active silence; only the pipeline watchdog pending/firing in Prometheus" "$([ "$(head -1 <<<"$XOUT")" = 0 ] && [ "$(sed 1d <<<"$XOUT" | grep -vc PFTAlertPipelineWatchdog)" = 0 ] && echo 0 || echo 1)"
 fi
-x "curl -s $AM/api/v2/silences | jq -r '[.[] | select(.status.state == \"active\")] | length'; curl -s $PROM/api/v1/alerts | jq -r '.data.alerts[].labels.alertname' | sort | uniq -c"
-check "no active silence; only the pipeline watchdog pending/firing in Prometheus" "$([ "$(head -1 <<<"$XOUT")" = 0 ] && [ "$(sed 1d <<<"$XOUT" | grep -vc PFTAlertPipelineWatchdog)" = 0 ] && echo 0 || echo 1)"
 x "systemctl list-units --all --no-legend 'run-u*' | wc -l"
 check "no transient run-u units" "$([ "$XOUT" = 0 ] && echo 0 || echo 1)"
 [ "$FAILS" = 0 ] || { echo "preflight failed - stopping before any change"; exit 3; }
@@ -253,8 +258,8 @@ check "both nodes full or proposing at the end" "$([ "$(grep -cE '^(full|proposi
 x "sudo -n find /var/lib/pft-histarchive -maxdepth 1 -name 'restore.*' | wc -l; systemctl list-units --all --no-legend 'run-u*' | wc -l"
 check "no restore scratch left, no transient run-u units" "$([ "$(tr '\n' ' ' <<<"$XOUT")" = "0 0 " ] && echo 0 || echo 1)"
 if [ -n "$SIL" ] && [ "$FAILS" = 0 ]; then
-  x "curl -s -o /dev/null -w '%{http_code}' -X DELETE $AM/api/v2/silence/$SIL"
-  check "rollout silence expired (nothing but the watchdog active)" "$([ "$XOUT" = 200 ] && echo 0 || echo 1)"
+  x "for id in $SIL $OLD_SIL; do curl -s -o /dev/null -w '%{http_code}\n' -X DELETE $AM/api/v2/silence/\$id; done"
+  check "rollout silence(s) expired (nothing but the watchdog active)" "$([ "$(grep -vcx 200 <<<"$XOUT")" = 0 ] && echo 0 || echo 1)"
 fi
 echo "operator topic read-back waits 90 s (>= group_interval + 30 s after the last change)"; sleep 90
 i=0; OPN=0
