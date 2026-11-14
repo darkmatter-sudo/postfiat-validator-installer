@@ -16,6 +16,10 @@
 #   9. integrity accept (conf, rulecheck.conf), skew, rulecheck, aptrust.  10. restore + read back every operator topic.
 #   bash histarchive/drill/fill-run.sh 2>&1 | tee LOG          (from the repo root, as the agent user)
 #   PREFLIGHT_ONLY=1 bash histarchive/drill/fill-run.sh        (step 0 only; changes nothing)
+#   RESUMED=1 SINCE=<unix> bash histarchive/drill/fill-run.sh  after a run that stopped at a gate once its steps 1-4 had
+#      run: the preflight then expects the installed files to equal HEAD (instead of differing), expires that run's own
+#      leftover rollout silence (createdBy histarchive-fill), and the operator read-back starts at SINCE (that run's start).
+#      Steps 1-4 are idempotent and run again.
 set -uo pipefail
 REPO="$(git rev-parse --show-toplevel)"; cd "$REPO" || exit 3
 export TZ=UTC
@@ -40,7 +44,8 @@ check() { if [ "$2" = 0 ]; then echo "CHECK ok   $1${3:+ ($3)}"; else echo "CHEC
 gate() { [ "$FAILS" = 0 ] || { echo "a step failed - stopping before the next host change (restore runs)"; exit 1; }; }
 NE=/etc/pft-maint/ntfy.env; BK=/etc/pft-maint/ntfy.env.pre-histfill
 SWAPPED=0; MAINT=0; HAD=0; SCR=""
-since="$(date -u +%s)"
+since="${SINCE:-$(date -u +%s)}"
+RESUMED="${RESUMED:-0}"
 OPS="$(mktemp -p "$HOME/.cache")"; chmod 600 "$OPS"
 restore() {
   if [ "$MAINT" = 1 ]; then echo "\$ sudo -n pft-maint end"; sudo -n pft-maint end 2>&1 | red | sed 's/^/  /'; MAINT=0; fi
@@ -67,9 +72,13 @@ check "pft-integrity PASS on both hosts before" "$([ "$(grep -c 'RESULT: PASS' <
 x "sudo -n docker exec postfiatd curl -s -m 10 -d '{\"method\":\"server_info\"}' http://127.0.0.1:5005 | jq -r .result.info.server_state; R \"sudo -n docker exec postfiatd-sentry curl -s -m 10 -d '{\\\"method\\\":\\\"server_info\\\"}' http://127.0.0.1:5005 | jq -r .result.info.server_state\""
 check "both nodes full or proposing" "$([ "$(grep -cE '^(full|proposing)$' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
 x "sha256sum histarchive/pft-histarchive.sh histarchive/histarchive.py | cut -c1-64; sudo -n sha256sum /usr/local/bin/pft-histarchive /usr/local/lib/pft-histarchive/histarchive.py | cut -c1-64; R 'sha256sum /usr/local/bin/pft-histarchive /usr/local/lib/pft-histarchive/histarchive.py | cut -c1-64'"
-check "installed on both hosts, script + helper differ from HEAD (the sync has something to do)" "$([ "$(wc -l <<<"$XOUT")" = 6 ] && [ "$(sort <<<"$XOUT" | uniq -c | awk '$1 == 3' | wc -l)" = 0 ] && echo 0 || echo 1)"
+if [ "$RESUMED" = 1 ]; then
+  check "RESUMED: installed script + helper already equal HEAD on both hosts (synced by the stopped run)" "$([ "$(wc -l <<<"$XOUT")" = 6 ] && [ "$(sort <<<"$XOUT" | uniq -c | awk '$1 == 3' | wc -l)" = 2 ] && echo 0 || echo 1)"
+else
+  check "installed on both hosts, script + helper differ from HEAD (the sync has something to do)" "$([ "$(wc -l <<<"$XOUT")" = 6 ] && [ "$(sort <<<"$XOUT" | uniq -c | awk '$1 == 3' | wc -l)" = 0 ] && echo 0 || echo 1)"
+fi
 x "sudo -n pft-histarchive verify | tail -n 3"
-check "FOUND: live archive verifies (installed code) with the recorded gap $GAP open" "$([ "$XRC" = 0 ] && grep -q "NOTE recorded gap $GAP" <<<"$XOUT" && grep -q 'gaps 1 (62 ledgers)' <<<"$XOUT" && echo 0 || echo 1)"
+check "FOUND: live archive verifies with the recorded gap $GAP open" "$([ "$XRC" = 0 ] && grep -q "NOTE recorded gap $GAP" <<<"$XOUT" && grep -q 'gaps 1 (62 ledgers)' <<<"$XOUT" && echo 0 || echo 1)"
 x "sudo -n cat $LIVE/gaps.jsonl; sudo -n test -e $LIVE/gapfills.jsonl && echo gapfills present || echo no gapfills.jsonl"
 check "gaps.jsonl holds exactly the reboot gap; no fill yet" "$([ "$(grep -c '"from"' <<<"$XOUT")" = 1 ] && grep -q '"from":8042619,.*"to":8042680' <<<"$XOUT" && grep -qx 'no gapfills.jsonl' <<<"$XOUT" && echo 0 || echo 1)"
 x "curl -s -m 15 -d '{\"method\":\"server_info\"}' $PUB | jq -r .result.info.complete_ledgers"
@@ -82,6 +91,9 @@ check "public RPC answers server_info (range $PUBR)" "$(grep -qE '^[0-9]+-[0-9]+
 } | tr -d "\"'\r" | grep -E '^[A-Za-z0-9_-]{8,}$' | sort -u > "$OPS"
 echo "operator topics to read back: $(wc -l < "$OPS") (not printed)"
 check "operator topics found" "$([ -s "$OPS" ] && echo 0 || echo 1)"
+if [ "$RESUMED" = 1 ]; then
+  x "for id in \$(curl -s $AM/api/v2/silences | jq -r '.[] | select(.status.state == \"active\" and .createdBy == \"histarchive-fill\") | .id'); do echo \"expire \$id\"; curl -s -o /dev/null -w '%{http_code}\n' -X DELETE $AM/api/v2/silence/\$id; done"
+fi
 x "curl -s $AM/api/v2/silences | jq -r '[.[] | select(.status.state == \"active\")] | length'; curl -s $PROM/api/v1/alerts | jq -r '.data.alerts[].labels.alertname' | sort | uniq -c"
 check "no active silence; only the pipeline watchdog pending/firing in Prometheus" "$([ "$(head -1 <<<"$XOUT")" = 0 ] && [ "$(sed 1d <<<"$XOUT" | grep -vc PFTAlertPipelineWatchdog)" = 0 ] && echo 0 || echo 1)"
 x "systemctl list-units --all --no-legend 'run-u*' | wc -l"
@@ -125,7 +137,7 @@ x "sudo -n grep -q '^FILL_RPC=' /etc/pft-histarchive.env || echo 'FILL_RPC=$PUB'
 check "conf has one FILL_RPC line, still 600 root" "$([ "$(head -1 <<<"$XOUT")" = 1 ] && grep -qx '600 root' <<<"$XOUT" && echo 0 || echo 1)"
 x "sudo -n grep -q '^textfile pft_histarchive_gaps.prom' /etc/pft-rulecheck.conf || sudo -n sed -i '/^textfile pft_histarchive_replica.prom/a textfile pft_histarchive_gaps.prom      15m   pft_histarchive_gap_check_timestamp_seconds' /etc/pft-rulecheck.conf; sudo -n grep -q '^require pft_histarchive_gaps.prom' /etc/pft-rulecheck.conf || sudo -n sed -i '/^require pft_histarchive_replica.prom/a require pft_histarchive_gaps.prom' /etc/pft-rulecheck.conf; sudo -n grep -n histarchive /etc/pft-rulecheck.conf"
 check "validator rulecheck.conf has the 9 histarchive lines (2 new)" "$([ "$(grep -c histarchive <<<"$XOUT")" = 9 ] && grep -q 'textfile pft_histarchive_gaps.prom' <<<"$XOUT" && grep -q 'require pft_histarchive_gaps.prom' <<<"$XOUT" && echo 0 || echo 1)"
-x "sudo -n pft-histarchive status | jq -c '.status | {last, gaps}'; t0=\$(date +%s); sudo -n systemctl restart pft-histarchive.service; sleep 15; systemctl is-active pft-histarchive.service; sudo -n awk -v t=\"\$(date -u -d @\$t0 +%FT%TZ)\" '\$1 >= t' /var/lib/pft-histarchive/follow.log | grep -E 'follow:|RESUME|GAP|START' | cut -c1-200"
+x "sudo -n pft-histarchive status | jq -c '.status | {last, gaps}'; t0=\$(date +%s); sudo -n systemctl restart pft-histarchive.service; sleep 15; systemctl is-active pft-histarchive.service; sudo -n journalctl -u pft-histarchive.service --since @\$t0 --no-pager -o cat | grep -E 'follow:|RESUME|GAP|START' | cut -c1-200"
 check "follower restarted on 1.1.0 and resumed with no new gap" "$(grep -qx active <<<"$XOUT" && grep -q 'histarchive 1.1.0 follow' <<<"$XOUT" && grep -q 'RESUME at ledger' <<<"$XOUT" && ! grep -q ' GAP ' <<<"$XOUT" && echo 0 || echo 1)"
 x "sudo -n stat -c '%a %U %n' $LIVE/.lock"
 check "follower created the archive lock file (owned by pft-histarchive)" "$(grep -q '^644 pft-histarchive ' <<<"$XOUT" && echo 0 || echo 1)"
