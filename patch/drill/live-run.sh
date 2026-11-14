@@ -19,11 +19,14 @@
 # 3  restore notifiers; outer silence expired if no node container restarted, else kept until the newest start +
 #    RESTART_TAIL (PFTContainerRestarted stays true 15 min after a start); read back both throwaway topics; count
 #    messages on every operator topic since the start (topics never printed); pft-integrity verify on both hosts.
+#    With HOLD_ON_LOCAL_REBOOT=1 and pft-patch exit 10 (this host reboots), step 3 is skipped: nothing is restored
+#    and the outer silence stays, so pft-patch-resume's window end at boot still goes to the throwaway topic.
 #    Exit 0 = every CHECK ok.
 # Env: INJECT ("")  WANT (0)  RELAY (relay)  NTFY (https://ntfy.sh)  AM (http://127.0.0.1:9093)
 #      SENTRY_C (postfiatd-sentry)  VALIDATOR_C (postfiatd)  LOCAL_ENVS  REMOTE_ENVS  BRIDGE_ENV  AGENT_ENV
 #      MAINT_DIR_L / MAINT_DIR_R (/etc/pft-maint)  OUTER_TTL (90, min)  RESTART_TAIL (25, min)  NTFY_WAIT (20)
-#      WATCHDOG_ALERT (PFTAlertPipelineWatchdog)  REDACT (../peerexpose/drill/redact.py)  PFT_PATCH (../pft-patch.sh)
+#      WATCHDOG_ALERT (PFTAlertPipelineWatchdog)  HOLD_ON_LOCAL_REBOOT (0; 1 = on exit 10 skip step 3, see below)
+#      REDACT (../peerexpose/drill/redact.py)  PFT_PATCH (../pft-patch.sh)
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 PP="${PFT_PATCH:-$HERE/../pft-patch.sh}"
@@ -37,6 +40,7 @@ BRIDGE_ENV="${BRIDGE_ENV:-$HOME/.config/pft-alerts/ntfy.env}"; AGENT_ENV="${AGEN
 MAINT_DIR_L="${MAINT_DIR_L:-/etc/pft-maint}"; MAINT_DIR_R="${MAINT_DIR_R:-/etc/pft-maint}"
 OUTER_TTL="${OUTER_TTL:-90}"; RESTART_TAIL="${RESTART_TAIL:-25}"; NTFY_WAIT="${NTFY_WAIT:-20}"
 WATCHDOG_ALERT="${WATCHDOG_ALERT:-PFTAlertPipelineWatchdog}"
+HOLD_ON_LOCAL_REBOOT="${HOLD_ON_LOCAL_REBOOT:-0}"
 SUF=.pre-patch-drill
 
 rnd() { head -c 12 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
@@ -191,6 +195,14 @@ sudo -n env ${INJECT:+PFT_PATCH_INJECT="$INJECT"} pft-patch run --yes "$@" > "$S
 red < "$SEC/run.out"
 echo "exit $rc ($(ts))"
 check "pft-patch run exit $WANT" "$([ "$rc" = "$WANT" ] && echo 0 || echo 1)" "got $rc"
+if [ "$rc" = 10 ] && [ "$HOLD_ON_LOCAL_REBOOT" = 1 ]; then
+  # this host reboots in 15 s and pft-patch-resume closes its window at boot: keep every notifier on the throwaway
+  # topics and keep the outer silence until the post-boot restore, or the window-end message reaches the operator
+  RESTORED=1
+  echo "HOLD local reboot scheduled: notifiers stay redirected (originals kept as *$SUF), outer silence ${SIL:0:8} kept;"
+  echo "     restore after boot, once pft-patch-resume has finished ($(ts))"
+  exit 10
+fi
 echo
 restarted=0
 for hn in sentry validator; do

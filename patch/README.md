@@ -210,6 +210,12 @@ INJECT=sentry-postgate WANT=1 bash patch/drill/live-run.sh --all 2>&1 | tee LOG 
 bash patch/drill/live-run.sh --all 2>&1 | tee LOG                                  # full run, both hosts
 ```
 
+When the validator (the local host) reboots, `pft-patch run` exits 10 and `pft-patch-resume.service` closes the
+maintenance window at boot. A plain run restores the notifiers and expires the outer silence in the 15 s before
+the reboot, so the window-end message goes to the real pft-maint topic. `HOLD_ON_LOCAL_REBOOT=1 WANT=10` skips
+step 3 on exit 10: notifiers stay on the throwaway topics (originals kept as `*.pre-patch-drill`) and the outer
+silence stays, to be restored after boot once the resume has finished.
+
 
 ## Results
 
