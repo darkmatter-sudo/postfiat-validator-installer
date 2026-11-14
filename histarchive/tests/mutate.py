@@ -29,7 +29,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PY, SH = "histarchive.py", "pft-histarchive.sh"
 UNIT, WRAP = "tests/test_histarchive.py", "tests/test_wrapper.py"
 FILL = "tests/test_fillgap.py"
-TIMEOUT = 300
+TIMEOUT = 600  # the baseline runs all three suites in one process (~285 s unloaded)
 
 MUTANTS = [
     (
