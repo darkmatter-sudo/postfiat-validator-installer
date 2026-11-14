@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# docker stub for test_cli.py: records argv, answers only `logs --timestamps <container>` from $STUB_BRIDGE_LOG.
+printf '%s\n' "$*" >>"${STUB_CALLS:?}"
+if [ "${1:-}" = logs ] && [ "${2:-}" = --timestamps ] && [ "${3:-}" = "${STUB_CONTAINER:-pft-alert-bridge}" ]; then
+  cat "${STUB_BRIDGE_LOG:?}"
+  exit 0
+fi
+echo "Error: No such container: ${3:-}" >&2
+exit 1

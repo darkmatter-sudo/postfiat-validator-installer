@@ -1,0 +1,38 @@
+[Unit]
+Description=pft-alertstats: alert behaviour report from Prometheus ALERTS history (read-only, writes textfile metrics)
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/alertstats
+After=docker.service
+
+[Service]
+Type=oneshot
+# exit 4 = Prometheus capture failed: the unit fails and pft_alertstats_up is 0 (PFTAlertFlapping reason report-error)
+ExecStart=/usr/local/bin/pft-alertstats run
+StateDirectory=pft-alertstats
+StateDirectoryMode=0750
+ReadWritePaths=/var/lib/pft-exporter/textfile
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+NoNewPrivileges=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+# AF_INET/6: Prometheus/Alertmanager on loopback; AF_UNIX: the docker socket (`docker logs` of the ntfy bridge only)
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
+CapabilityBoundingSet=
+Nice=10
+UMask=0022
+TimeoutStartSec=600
