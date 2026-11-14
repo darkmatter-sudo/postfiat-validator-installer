@@ -1,0 +1,7 @@
+# isort classification independent of the working directory (ruff otherwise guesses first-party from cwd)
+[lint.isort]
+known-first-party = ["histarchive", "lib_hashverify", "diskcost", "test_histarchive"]
+
+# vendored byte-identical from pft-ledger-stats/hashverify (pinned sha256 in tests): never reformatted here
+[format]
+exclude = ["lib_hashverify.py"]

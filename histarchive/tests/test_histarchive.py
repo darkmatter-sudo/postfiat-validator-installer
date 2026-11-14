@@ -21,9 +21,8 @@ import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
-import lib_hashverify as hv
-
 import histarchive as ha
+import lib_hashverify as hv
 
 PINNED_LIB_SHA256 = "64ec1dacc49fcc955975a6c5f5ee85d657c9c7921dbe0ef15cd9b9411ef4e414"
 DAY = 86400

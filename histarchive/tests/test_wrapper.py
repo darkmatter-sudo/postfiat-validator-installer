@@ -18,9 +18,8 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.dirname(HERE))
-from test_histarchive import FakeNode, make_chain, rb, run, wb
-
 import histarchive as ha
+from test_histarchive import FakeNode, make_chain, rb, run, wb
 
 SH = os.path.join(os.path.dirname(HERE), "pft-histarchive.sh")
 

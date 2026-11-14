@@ -41,6 +41,8 @@ it stays byte-identical.
 | `drill/kill-resume.sh` | kill -9 resume drill against a running follower unit |
 | `drill/install-run.sh` | recorded two-host install through pft-fleet inside a pft-maint window (throwaway topic) |
 | `drill/fill-run.sh` | recorded live gap repair: upgrade both hosts through pft-fleet, fill the real reboot gap from the committed capture, replicate + restore-verify, scratch peer-RPC fill (throwaway topic) |
+| `drill/repro-real-gap.py` | offline re-derivation of the real fill from the committed capture (stub node, no network): gap recorded, filled, fill segment byte-identical to the live one, duplicate refused, seqcheck |
+| `drill/fresh-clone.sh` | anonymous public clone at a commit: sha256 vs the live run, all suites, promtool, `repro-real-gap.py` |
 | `logs/data/gap-8042619-8042680/` | the staged capture of the reboot gap (64 read-only `ledger` answers 8042618-8042681 taken from the sentry's node before it pruned them) + SHA256SUMS |
 | `drill/alert-run.sh` | recorded two-host replica / tamper / alert drill on tmpfs copies (throwaway topic) |
 | `diskcost.py`, `tests/test_diskcost.py` | measured disk cost and projection (stdlib), with hand-computed fixture tests |
@@ -165,8 +167,14 @@ The 64 ledgers 8042618-8042681 had been captured read-only from the sentry's nod
 | 18 | first mutation run, stopped after 6 mutants to move it to a detached unit (superseded by 21) | 6/6 caught so far |
 | 19 | resumed run: stopped at the step-5 gate because the PromQL `a or b or c` check returned one of three same-label series (values were right); fixed in `9bce569` | stopped, restore ran |
 | 20 | resumed run: preflight stop (the previous run's own silence was active); resume mode now keeps the drill's silences until the clean end (`cc0849a`) | stopped before any change |
-| 21 | mutation harness, 69 mutants (31 new for gap repair) | see log |
+| 21 | mutation harness at `70288e8` (code and tests identical to the live-run code), 69 mutants (31 new for gap repair); a first launch timed out the baseline at the old 300 s per-suite limit, `70288e8` raised it to 600 s | **69/69 caught**, baseline 110 tests PASS (386 s) |
 | 22 | resumed live run, all steps | **PASS, 0 failed**: verify gaps 1 -> 0 (filled 1), seqcheck missing 62 -> 0, duplicate fill refused with MANIFEST/gapfills/segments unchanged, Prometheus `gap_fillable` 1 -> 0 and `PFTHistarchiveGapFillable` pending -> inactive, replicate sent `fill-8042619-8042680.jsonl.gz.age`, verify-replica + sentry replica-check + restore-verify PASS (`SAME fill-8042619-8042680`), scratch copy with a deliberate 30-ledger gap filled from the public testnet RPC (30/30, verify filled 2, seqcheck PASS), integrity/skew/rulecheck/aptrust/jobwatch ok, operator topics 0 messages since the start of run 17 |
+| 23 | fresh anonymous public clone at the pinned commit (`drill/fresh-clone.sh`): sha256 of the 7 key files vs log 22's preflight, capture SHA256SUMS, shellcheck, ruff, all four suites, promtool, offline re-derivation of the real fill (`drill/repro-real-gap.py`) | see log |
+
+After log 21 the only change to code or tests is the order of import lines in three test files: `ruff.toml` now pins
+the first-party modules, because without it ruff's import check depended on the working directory (each of
+`ruff check histarchive` and `cd histarchive && ruff check .` flagged a different file). Log 23 runs all suites on the
+result; the 7 key files of the live run are unchanged (sha256 in log 23).
 
 Runs 17-22 changed nothing beyond the intended steps: each stopped run's restore ended the pft-maint window and
 removed the throwaway target; steps 1-4 are idempotent and ran again in 22. `tests/test_fillgap.py` holds every
