@@ -1,0 +1,95 @@
+OS: Ubuntu 22.04.5 LTS | 2026-11-14T11:14:30Z | alertstats fresh-clone verification at 55198688fc5b037619292618cd34ebb6910ad89e | shellcheck 0.8.0 | Python 3.10.12 | ruff 0.17.1 | pytest 9.1.1
+(work dir: a new mktemp dir under ~/.cache, mode 755; /tmp is noexec on this host)
+$ env -u GH_TOKEN -u GITHUB_TOKEN GIT_TERMINAL_PROMPT=0 git -c credential.helper= clone -q https://github.com/darkmatter-sudo/postfiat-validator-installer.git repo
+(exit 0)
+$ git checkout -q 55198688fc5b037619292618cd34ebb6910ad89e && git rev-parse HEAD
+55198688fc5b037619292618cd34ebb6910ad89e
+(exit 0)
+$ git status --short | wc -l
+0
+(exit 0)
+$ sha256sum alertstats/*.sh alertstats/*.py alertstats/systemd/* alertstats/drill/*.sh alertstats/tests/*.py alerts/alertstats.rules.yml alerts/alertstats.tests.yml
+115acfa60056e6ed3af1c7a72dda397d2e3e2c44e99964b357d84fc38625cebd  alertstats/install.sh
+ce12334c9536cdba94dea24f24a0cd5d6f8f090508455cb69bbe2fc3bc32b600  alertstats/pft-alertstats.sh
+be1750c5ea900b0d6e9a2db1ee4cce08e0bd295ced8d50e986b83ee9f2243171  alertstats/alertstats_build.py
+036a0e576b44032569cab7ee7941ac5f6930ed4368f8d5311e2976d3f733b60e  alertstats/systemd/pft-alertstats.service
+96121c2e9ccdf4b12b77443e1fee55442f87e0fb8bc23dcd9fe83e30125e02d0  alertstats/systemd/pft-alertstats.timer
+9e30ce91835b19a4e645d4df058b7c7054d37eb07554936b4ddc33cb15917ea1  alertstats/drill/checks.sh
+66ecebbb3e133bf9872680db9c0bbe992f8716affbfda68725a7290c97c5475e  alertstats/drill/fresh-clone.sh
+e0fba68c3c0263b17a73559e7f9e12392d67e62365682f32f367a69cd48da3d3  alertstats/drill/install-run.sh
+f1cb42876c63369fcbdedd4ec24123c23d6b962c5923914bdad2f3c3ea9751a8  alertstats/tests/mutate.py
+178d42c4cf981704c3719c8a4acc45f0d29ae27e1431eb492f94bc309acb8a71  alertstats/tests/redaction_gate.py
+2201b8c540b12888577c7bce1c786d810674dd81fa1a4d9848e63a609b357874  alertstats/tests/test_build.py
+80b14395010499536678a239499183d1cdcf66fd2678458cc9dba4a302b74e97  alertstats/tests/test_cli.py
+7f0100d520c51f055968bab8a7bc1a93316970cd0cf038d30c829ffad9fa32bd  alertstats/tests/test_redaction_gate.py
+483b02b7362ca30f47deb259fcb3c6dba2ad3e2412837864e03087fd5f725f7b  alerts/alertstats.rules.yml
+0fde76d746fab68e78b282af881a3421ab75a2fd01ddbd5b9f11dc1588f8dac7  alerts/alertstats.tests.yml
+(exit 0)
+$ sha256sum alertstats/logs/*.log alertstats/logs/report-7d*/*
+6da52c1be1f2b3d853d6eab1d8861efd7fe1b96ae032cb92edc6e384edce6edb  alertstats/logs/01-mutants-dev-5-survivors.log
+d0787d83344dcdde40dc3e5531af177f772272a2212979f9f743ec57a3b300c5  alertstats/logs/02-mutants.log
+f80645147f22bb9602bc9a52ebb714f2250e055777cb1a8771546a06546171c3  alertstats/logs/03-checks.log
+5eeb537a3366530618ce03610d2037db5dfaeb27aad0c9e659fe172c3092f14d  alertstats/logs/04-preflight.log
+e9d0316a83d15ea8ff6e5869f17dd43fa471b0bff679e62875ec7cd3352b734b  alertstats/logs/05-install.log
+11d397fa833fc5557ccb72d2e34afa6e0238d727c1a32cf559c8e540da7c6e97  alertstats/logs/06-checks.log
+bc353e94447d0d79ef96c7fe5135264d69fe9222bab0e66cc4a9404f09bbe16e  alertstats/logs/07-mutants.log
+ed554577d4dfda674f59fe43fe6a8a88c3bd8fcf6b4c9dca0dfa17cea3ef2d37  alertstats/logs/08-upgrade.log
+443df6839cbf16a8d9ac0055fb520e700041134109d96f9528809cd376a5e097  alertstats/logs/report-7d-upgrade/alertstats-20261114T110650Z.csv
+3831a0f24675c6f745ae694f7f0e75eb700cfd8d7ff8d4dbc2c52b482831342f  alertstats/logs/report-7d-upgrade/alertstats-20261114T110650Z.json
+654fef398a36fca56ed237d966b56f3d4fc9bf095719e395625b4bca21f9d109  alertstats/logs/report-7d-upgrade/alertstats-20261114T110650Z.json.gz
+a329b28c749039efe43607e0425ed450ca96bc584205d1114fd0179bbadd51ce  alertstats/logs/report-7d-upgrade/alertstats-20261114T110650Z.md
+75685e79fef7d10f5b9b9f1cb4413670681f700833a1025ed59306146c442120  alertstats/logs/report-7d/alertstats-20261114T104642Z.csv
+eeef55b849afb45fcbc8a7801d890badfd3ec245738c065e41dd223c94dd2dfe  alertstats/logs/report-7d/alertstats-20261114T104642Z.json
+3da95e6e390bad0b777d95e0d7b4cbdf6b816568ef1dea97d5d845fb06df6133  alertstats/logs/report-7d/alertstats-20261114T104642Z.json.gz
+d4f7900bdc94640f4f00d4b9bb1a5b7c48b706602cc048c0770122b0d9ca5f93  alertstats/logs/report-7d/alertstats-20261114T104642Z.md
+(exit 0)
+== static checks
+$ shellcheck alertstats/*.sh alertstats/drill/*.sh alertstats/tests/stubs/docker
+(exit 0)
+$ cd alertstats && ruff check . && ruff format --check .
+All checks passed!
+11 files already formatted
+(exit 0)
+== pytest (synthetic + real captures, stub API, redaction gate)
+$ cd alertstats && TMPDIR=~/.cache/tmp.7fR6uLtMPi TEST_TMPDIR=~/.cache/tmp.7fR6uLtMPi python3 -m pytest -q -p no:cacheprovider tests 2>&1 | tail -n 3
+........................................................................ [ 85%]
+............                                                             [100%]
+84 passed in 15.83s
+(exit 0)
+== promtool
+$ docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /w prom/prometheus:v3.5.0 check rules alertstats.rules.yml
+Checking alertstats.rules.yml
+  SUCCESS: 1 rules found
+
+(exit 0)
+$ docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /w prom/prometheus:v3.5.0 test rules alertstats.tests.yml
+  SUCCESS
+
+(exit 0)
+== byte-identical --offline rebuild of the published 7-day report
+$ python3 -I alertstats/alertstats_build.py report --offline alertstats/logs/report-7d-upgrade/alertstats-20261114T110650Z.json.gz --format md | cmp - alertstats/logs/report-7d-upgrade/alertstats-20261114T110650Z.md && echo identical md
+identical md
+(exit 0)
+$ python3 -I alertstats/alertstats_build.py report --offline alertstats/logs/report-7d-upgrade/alertstats-20261114T110650Z.json.gz --format json | cmp - alertstats/logs/report-7d-upgrade/alertstats-20261114T110650Z.json && echo identical json
+identical json
+(exit 0)
+$ python3 -I alertstats/alertstats_build.py report --offline alertstats/logs/report-7d-upgrade/alertstats-20261114T110650Z.json.gz --format csv | cmp - alertstats/logs/report-7d-upgrade/alertstats-20261114T110650Z.csv && echo identical csv
+identical csv
+(exit 0)
+$ python3 -I alertstats/tests/redaction_gate.py alertstats/logs/report-7d-upgrade/
+redaction gate: 4 file(s), 0 refused, 0 name(s) checked
+(exit 0)
+$ python3 -I alertstats/alertstats_build.py report --offline alertstats/logs/report-7d/alertstats-20261114T104642Z.json.gz --format md | cmp - alertstats/logs/report-7d/alertstats-20261114T104642Z.md && echo identical md
+identical md
+(exit 0)
+$ python3 -I alertstats/alertstats_build.py report --offline alertstats/logs/report-7d/alertstats-20261114T104642Z.json.gz --format json | cmp - alertstats/logs/report-7d/alertstats-20261114T104642Z.json && echo identical json
+identical json
+(exit 0)
+$ python3 -I alertstats/alertstats_build.py report --offline alertstats/logs/report-7d/alertstats-20261114T104642Z.json.gz --format csv | cmp - alertstats/logs/report-7d/alertstats-20261114T104642Z.csv && echo identical csv
+identical csv
+(exit 0)
+$ python3 -I alertstats/tests/redaction_gate.py alertstats/logs/report-7d/
+redaction gate: 4 file(s), 0 refused, 0 name(s) checked
+(exit 0)
+published bundles rebuilt: 2
+fresh-clone done 2026-11-14T11:14:56Z: 0 step(s) failed -> PASS

@@ -134,6 +134,7 @@ for `ALLOW_NO_FOR` or a short `for:`) and 74 info findings.
 | `logs/06-checks.log` | checks at e7c84c1 (the fix): sha256, shellcheck, ruff, pytest 84 passed, promtool SUCCESS; fail-before control: the 3 new tests FAIL with the helper from e52cfd1 and pass with the fix |
 | `logs/07-mutants.log` | mutation run at e7c84c1: 64 caught, 0 survived, 0 not applied, 0 broken; baseline 84 passed + promtool SUCCESS, hang control, 0 orphans |
 | `logs/08-upgrade.log` + `logs/report-7d-upgrade/` | `UPGRADE=1` install of e7c84c1: 49 checks ok, 0 failed -> PASS; the current 7-day report |
+| `logs/09-fresh-clone.log` | `drill/fresh-clone.sh 55198688fc5b037619292618cd34ebb6910ad89e`: anonymous clone, sha256, shellcheck, ruff, pytest 84 passed, promtool SUCCESS, both published reports rebuilt `--offline` byte-identical (md/json/csv), redaction gate 0 refused -> PASS |
 
 Reproduce without host access: `bash alertstats/drill/fresh-clone.sh SHA` (anonymous clone, sha256, shellcheck,
 ruff, pytest, promtool, byte-identical `--offline` rebuild of every published report, redaction gate).
