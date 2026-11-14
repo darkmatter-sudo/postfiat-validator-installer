@@ -223,6 +223,17 @@ def test_second_apply_is_a_no_op(node):
     assert node.cfg.read_bytes() == once and len(node.restarts()) == 1
 
 
+def test_plan_after_apply_reports_nothing_to_change(node):
+    """an applied host: plan prints no diff and no restart line (fix-run 07 printed an empty diff + 'then: docker restart')"""
+    assert node.run("apply", "--yes").returncode == 0
+    once = node.cfg.read_bytes()
+    r = node.run("plan")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "already applied (managed line present): nothing to change, no restart" in r.stdout
+    assert "diff:" not in r.stdout and "then: docker restart" not in r.stdout
+    assert node.cfg.read_bytes() == once and len(node.restarts()) == 1
+
+
 def test_gate_fails_when_node_ignores_the_line_and_rolls_back(node):
     node.flag("ignore_cfg")  # the build would not honour ssl_ciphers: weak suites still answered after restart
     before = node.cfg.read_bytes()

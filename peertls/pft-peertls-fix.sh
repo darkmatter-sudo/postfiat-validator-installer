@@ -182,9 +182,9 @@ do_plan() {
   locate
   echo "pft-peertls-fix plan - $(ts) (container $C, CIPHERS $CIPHERS)"
   echo "[port_peer] now:"; peer_section "$CFG" | grep -vE '^[ \t]*(#|$)' | sed 's/^/  /'
-  if managed_ok "$CFG"; then echo "already applied (managed line present)"; fi
   rf="$(refusals "$CFG")"
   [ -n "$rf" ] && { echo "REFUSE:"; indent <<<"$rf"; return 4; }
+  if managed_ok "$CFG"; then echo "already applied (managed line present): nothing to change, no restart"; return 0; fi
   cand="$(mktemp -p "${TMPDIR:-/tmp}" .ptlsf.XXXXXX)" || die "mktemp failed"
   candidate "$CFG" > "$cand"; echo "diff:"; show_diff "$CFG" "$cand" | sed 's/^/  /'; rm -f "$cand"
   echo "then: docker restart $C, gate (budget $HEALTH_BUDGET s, TLS want $(want_view applied))"
