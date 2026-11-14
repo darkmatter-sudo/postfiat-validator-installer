@@ -1,0 +1,103 @@
+# promtool unit tests for peertls.rules.yml. Run: promtool test rules peertls.tests.yml
+# NxM in values = N, then M more samples (1x20 covers t 0..20). Each reason has a fire case at its `for` boundary
+# (one minute before = not yet), a recovery case, and the quiet cases (PASS, WARN, restart-explained change) stay quiet.
+rule_files:
+- peertls.rules.yml
+evaluation_interval: 1m
+tests:
+- name: PASS on the validator and WARN on the sentry for 3h fire nothing
+  interval: 1m
+  input_series:
+  - series: pft_peertls_up{host="validator"}
+    values: 1x180
+  - series: pft_peertls_verdict{host="validator"}
+    values: '0x180'
+  - series: pft_peertls_drift{host="validator",target="validator"}
+    values: '0x180'
+  - series: pft_peertls_up{host="sentry"}
+    values: 1x180
+  - series: pft_peertls_verdict{host="sentry"}
+    values: 1x180
+  - series: pft_peertls_drift{host="sentry",target="sentry"}
+    values: '0x180'
+  alert_rule_test:
+  - eval_time: 5m
+    alertname: PFTPeerTLSPosture
+    exp_alerts: []
+  - eval_time: 179m
+    alertname: PFTPeerTLSPosture
+    exp_alerts: []
+- name: sentry FAIL from 10m fires at 15m (for 5m), validator quiet, clears at 31m when the verdict is back to 0
+  interval: 1m
+  input_series:
+  - series: pft_peertls_up{host="sentry"}
+    values: 1x60
+  - series: pft_peertls_verdict{host="sentry"}
+    values: 0x9 2x20 0x30
+  - series: pft_peertls_drift{host="sentry",target="sentry"}
+    values: '0x60'
+  - series: pft_peertls_up{host="validator"}
+    values: 1x60
+  - series: pft_peertls_verdict{host="validator"}
+    values: 1x60
+  alert_rule_test:
+  - eval_time: 14m
+    alertname: PFTPeerTLSPosture
+    exp_alerts: []
+  - eval_time: 15m
+    alertname: PFTPeerTLSPosture
+    exp_alerts:
+    - exp_labels: {host: sentry, reason: fail-checks, severity: warning}
+      exp_annotations:
+        summary: "sentry: peer-port TLS audit has FAIL checks"
+        description: "pft-peertls probes this host's own peer port (2559) with at most 40 TLS handshakes and grades protocols, suites, certificate, DH group, renegotiation, FALLBACK_SCSV, EMS and ticket lifetime against /usr/local/lib/pft-peertls/policy. Run `sudo pft-peertls audit` (each FAIL/WARN line names the check and the server's answer). For drift: compare with the previous report; once the change is understood (e.g. a postfiatd upgrade), `sudo pft-peertls audit --textfile` makes the current posture the new baseline and clears the alert."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/peertls/README.md#alert"
+  - eval_time: 31m
+    alertname: PFTPeerTLSPosture
+    exp_alerts: []
+- name: validator up 0 from 20m fires at 25m with reason audit-error (no verdict series), clears at 41m
+  interval: 1m
+  input_series:
+  - series: pft_peertls_up{host="validator"}
+    values: 1x19 0x20 1x20
+  - series: pft_peertls_verdict{host="validator"}
+    values: 0x19 _x20 0x20
+  alert_rule_test:
+  - eval_time: 24m
+    alertname: PFTPeerTLSPosture
+    exp_alerts: []
+  - eval_time: 25m
+    alertname: PFTPeerTLSPosture
+    exp_alerts:
+    - exp_labels: {host: validator, reason: audit-error, severity: warning}
+      exp_annotations:
+        summary: "validator: peer-port TLS audit could not grade"
+        description: "pft-peertls probes this host's own peer port (2559) with at most 40 TLS handshakes and grades protocols, suites, certificate, DH group, renegotiation, FALLBACK_SCSV, EMS and ticket lifetime against /usr/local/lib/pft-peertls/policy. Run `sudo pft-peertls audit` (each FAIL/WARN line names the check and the server's answer). For drift: compare with the previous report; once the change is understood (e.g. a postfiatd upgrade), `sudo pft-peertls audit --textfile` makes the current posture the new baseline and clears the alert."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/peertls/README.md#alert"
+  - eval_time: 41m
+    alertname: PFTPeerTLSPosture
+    exp_alerts: []
+- name: validator drift 2 (WARN verdict) from 30m fires at 35m with the count, clears at 51m after the re-run
+  interval: 1m
+  input_series:
+  - series: pft_peertls_up{host="validator"}
+    values: 1x60
+  - series: pft_peertls_verdict{host="validator"}
+    values: 0x29 1x20 0x10
+  - series: pft_peertls_drift{host="validator",target="validator"}
+    values: 0x29 2x20 0x10
+  alert_rule_test:
+  - eval_time: 34m
+    alertname: PFTPeerTLSPosture
+    exp_alerts: []
+  - eval_time: 35m
+    alertname: PFTPeerTLSPosture
+    exp_alerts:
+    - exp_labels: {host: validator, reason: drift, severity: warning}
+      exp_annotations:
+        summary: "validator: peer-port TLS audit saw 2 posture change(s) since the last run"
+        description: "pft-peertls probes this host's own peer port (2559) with at most 40 TLS handshakes and grades protocols, suites, certificate, DH group, renegotiation, FALLBACK_SCSV, EMS and ticket lifetime against /usr/local/lib/pft-peertls/policy. Run `sudo pft-peertls audit` (each FAIL/WARN line names the check and the server's answer). For drift: compare with the previous report; once the change is understood (e.g. a postfiatd upgrade), `sudo pft-peertls audit --textfile` makes the current posture the new baseline and clears the alert."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/peertls/README.md#alert"
+  - eval_time: 51m
+    alertname: PFTPeerTLSPosture
+    exp_alerts: []

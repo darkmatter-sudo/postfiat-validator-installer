@@ -1,0 +1,10 @@
+[Unit]
+Description=pft-peertls: copy the sentry's peertls textfile to this host (validator)
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/peertls
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/pft-peertls pull
+Nice=10
+UMask=0022
+TimeoutStartSec=90

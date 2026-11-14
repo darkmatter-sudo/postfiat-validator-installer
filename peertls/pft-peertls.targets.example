@@ -1,0 +1,5 @@
+# /etc/pft-peertls.targets (root-owned, kept off any public repo): NAME ADDR PORT local|remote [CONTAINER]
+# local targets must be loopback; remote targets must be your own hosts on the peer port (2559).
+# Without --target only local targets are audited (the weekly timer); remote ones are for cross-host runs.
+validator 127.0.0.1 2559 local postfiatd
+# sentry 192.0.2.10 2559 remote

@@ -1,0 +1,28 @@
+# Alert rule for pft-peertls (../peertls). On each host, pft-peertls.timer (weekly, Mon 05:23 UTC) runs
+# `pft-peertls audit --textfile` against the host's own peer port on loopback, which writes pft_peertls_HOST.prom:
+# pft_peertls_up, pft_peertls_last_run_timestamp_seconds and, when graded, pft_peertls_verdict, pft_peertls_checks,
+# pft_peertls_check{target,check}, pft_peertls_drift{target}, pft_peertls_handshakes, pft_peertls_cert_not_after_seconds.
+# The sentry runs no Prometheus: the validator's pft-peertls-pull.timer (Mon 05:33) copies its textfile here.
+# Exactly one alert, three reasons: a FAIL check (a forbidden protocol/suite accepted, a required one refused, weak
+# certificate or DH group, client renegotiation, no FALLBACK_SCSV, port unreachable), posture or certificate drift
+# since the previous run that a node restart does not explain, or a run that could not grade (up 0). WARN checks do
+# not page. A stopped timer or a failing pull leaves the textfile old: pft-rulecheck grades it (textfile
+# pft_peertls_*.prom 8d -> PFTTextfileStale), so staleness is not a second peertls alert.
+# Tests: peertls.tests.yml (promtool test rules peertls.tests.yml), 1m sample interval.
+groups:
+  - name: pft-peertls
+    rules:
+      - alert: PFTPeerTLSPosture
+        expr: |
+          label_replace(max by (host) (pft_peertls_verdict) == 2, "reason", "fail-checks", "", "")
+          or
+          label_replace(max by (host) (pft_peertls_up) == 0, "reason", "audit-error", "", "")
+          or
+          label_replace(max by (host) (pft_peertls_drift) > 0, "reason", "drift", "", "")
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.host }}: peer-port TLS audit {{ if eq $labels.reason \"audit-error\" }}could not grade{{ else if eq $labels.reason \"drift\" }}saw {{ $value }} posture change(s) since the last run{{ else }}has FAIL checks{{ end }}"
+          description: "pft-peertls probes this host's own peer port (2559) with at most 40 TLS handshakes and grades protocols, suites, certificate, DH group, renegotiation, FALLBACK_SCSV, EMS and ticket lifetime against /usr/local/lib/pft-peertls/policy. Run `sudo pft-peertls audit` (each FAIL/WARN line names the check and the server's answer). For drift: compare with the previous report; once the change is understood (e.g. a postfiatd upgrade), `sudo pft-peertls audit --textfile` makes the current posture the new baseline and clears the alert."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/peertls/README.md#alert"

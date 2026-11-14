@@ -1,0 +1,36 @@
+[Unit]
+Description=pft-peertls: TLS posture audit of this host's own peer port (read-only; writes textfile metrics)
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/peertls
+
+[Service]
+Type=oneshot
+# exit 1 (WARN) and 2 (FAIL) are findings, reported in the metrics; 3 (usage/policy) and 4 (capture) fail the unit
+SuccessExitStatus=1 2
+ExecStart=/usr/local/bin/pft-peertls audit --textfile
+StateDirectory=pft-peertls
+StateDirectoryMode=0700
+ReadWritePaths=/var/lib/pft-exporter/textfile
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+NoNewPrivileges=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+# AF_INET/6: the handshakes (loopback targets); AF_UNIX: the docker socket (docker inspect for the start time)
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+Nice=10
+UMask=0022
+TimeoutStartSec=300

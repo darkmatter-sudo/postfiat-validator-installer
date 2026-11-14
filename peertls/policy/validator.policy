@@ -1,0 +1,34 @@
+# pft-peertls policy: validator peer port (postfiatd overlay TLS). One rule per line; see ../README.md.
+# Severity of a violation is FAIL unless a `severity` line lowers it to WARN.
+protocol tls1 forbid
+protocol tls1_1 forbid
+protocol tls1_2 require
+protocol tls1_3 require
+severity proto.tls1_3 WARN
+
+cipher null forbid
+cipher anull forbid
+cipher export forbid
+cipher rc4 forbid
+cipher 3des forbid
+cipher cbc_sha1 forbid
+# CBC with SHA-2 MACs and static-RSA key exchange (no forward secrecy): weak, not broken
+cipher cbc_sha2 forbid
+severity cipher.cbc_sha2 WARN
+cipher kx_rsa forbid
+severity cipher.kx_rsa WARN
+cipher kx_dhe allow
+cipher ecdhe_aead require
+cipher tls13_suites require
+
+min_rsa_bits 2048
+min_ec_bits 256
+min_dh_bits 2048
+forbid_sig_hash md5 sha1
+# postfiatd makes a new certificate at every start, valid for about two years
+min_cert_days_left 14
+max_ticket_lifetime 86400
+
+severity hs.secure_reneg WARN
+severity hs.ems WARN
+severity hs.ticket_lifetime WARN

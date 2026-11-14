@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the pft-peertls peer-port TLS audit weekly
+
+[Timer]
+# weekly; the validator's pft-peertls-pull.timer (Mon 05:33) copies the sentry's result 10 min later
+OnCalendar=Mon *-*-* 05:23:00 UTC
+RandomizedDelaySec=60s
+Persistent=true
+
+[Install]
+WantedBy=timers.target
