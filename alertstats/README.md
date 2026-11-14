@@ -103,3 +103,5 @@ TEST_TMPDIR=$HOME/.cache python3 -u tests/mutate.py                 # mutation h
 | log | what |
 |---|---|
 | `logs/01-mutants-dev-5-survivors.log` | first (dev) mutation run: 57/62 caught; the 5 survivors (same-timestamp pending/firing, one-point Prometheus gap, split boundary inside a wide flap window, a 19.x public address, gzip mtime) each got a test that kills it |
+| `logs/02-mutants.log` | mutation run on the committed code: 62 caught, 0 survived, 0 not applied, 0 broken; controls: unmutated baseline 73 passed + promtool SUCCESS, hang control killed at 60 s, 0 orphans |
+| `logs/03-checks.log` | sha256 of every file, shellcheck, ruff, pytest (73 passed), promtool check + test (SUCCESS). `systemd-analyze verify` exits 1 here only because `/usr/local/bin/pft-alertstats` is not installed yet (plus unrelated host units); the install run re-verifies the installed units |

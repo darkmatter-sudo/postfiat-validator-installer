@@ -1,0 +1,35 @@
+alertstats static checks + suite - 2026-11-14T10:13:12Z - repo HEAD ab210a77a8bb45db260f59d5964be5d75cb79ebd (clean: yes)
+$ sha256sum alertstats/alertstats_build.py alertstats/pft-alertstats.sh alertstats/install.sh alertstats/systemd/* alerts/alertstats.rules.yml alerts/alertstats.tests.yml
+9a7459980f0d04f5d764c4e46052d4c50758e24e11175addf187ccbd61c80791  alertstats/alertstats_build.py
+ce12334c9536cdba94dea24f24a0cd5d6f8f090508455cb69bbe2fc3bc32b600  alertstats/pft-alertstats.sh
+115acfa60056e6ed3af1c7a72dda397d2e3e2c44e99964b357d84fc38625cebd  alertstats/install.sh
+036a0e576b44032569cab7ee7941ac5f6930ed4368f8d5311e2976d3f733b60e  alertstats/systemd/pft-alertstats.service
+96121c2e9ccdf4b12b77443e1fee55442f87e0fb8bc23dcd9fe83e30125e02d0  alertstats/systemd/pft-alertstats.timer
+483b02b7362ca30f47deb259fcb3c6dba2ad3e2412837864e03087fd5f725f7b  alerts/alertstats.rules.yml
+0fde76d746fab68e78b282af881a3421ab75a2fd01ddbd5b9f11dc1588f8dac7  alerts/alertstats.tests.yml
+(exit 0)
+$ shellcheck alertstats/pft-alertstats.sh alertstats/install.sh alertstats/tests/stubs/docker
+(exit 0)
+$ (cd alertstats && ruff check . && ruff format --check .)
+All checks passed!
+7 files already formatted
+(exit 0)
+$ (cd alertstats && TMPDIR=$HOME/.cache python3 -m pytest -q -p no:cacheprovider tests)
+........................................................................ [ 98%]
+.                                                                        [100%]
+73 passed in 14.08s
+(exit 0)
+$ sudo docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /w prom/prometheus:v3.5.0 check rules alertstats.rules.yml
+Checking alertstats.rules.yml
+  SUCCESS: 1 rules found
+
+(exit 0)
+$ sudo docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /w prom/prometheus:v3.5.0 test rules alertstats.tests.yml
+  SUCCESS
+
+(exit 0)
+$ systemd-analyze verify alertstats/systemd/pft-alertstats.timer alertstats/systemd/pft-alertstats.service
+netplan-ovs-cleanup.service: Failed to open /run/systemd/system/netplan-ovs-cleanup.service: Permission denied
+/lib/systemd/system/snapd.service:23: Unknown key name 'RestartMode' in section 'Service', ignoring.
+pft-alertstats.service: Command /usr/local/bin/pft-alertstats is not executable: No such file or directory
+(exit 1)
