@@ -1,0 +1,37 @@
+ok   collect_fw extracted from pft-integrity.sh
+ok   pre-fix collect_fw extracted from 46ce9bbf53dd8c1375e3bd8b05b858f8a0b29a6f
+ok   baseline: fw:ufw rules 2, v6_rules 2
+ok   baseline: deterministic (same input -> same sha256)
+ok   v6-only deletion: new collector changes fw:ufw sha256
+ok   v6-only deletion: new collector v6_rules 2 -> 1
+ok   CONTROL: pre-fix collector misses the v6-only deletion (identical items)
+ok   v6-only addition: sha256 changes, v6_rules 2 -> 3
+ok   CONTROL: pre-fix collector misses the v6-only addition
+ok   v4 rule removal: rules 2 -> 1 and sha256 changes
+ok   default policy change: sha256 changes
+ok   logging level / new-profiles / blank lines do not change any item
+ok   ip6tables DOCKER-USER change: docker-user sha256 + rules change
+ok   no ufw on PATH: no fw:ufw items, fw:docker-user present
+RESULT: 14 passed, 0 failed
+
+== mutation control 2026-11-14T03:10:21Z: drop the per-family table from the fw:ufw hash input (pre-fix behaviour)
+143c143
+<     r="$( { ufw show added 2>/dev/null | tail -n +2; ufw status verbose 2>/dev/null | grep -E '^(Status|Default):'; printf '%s\n' "$tbl"; } )"
+---
+>     r="$( { ufw show added 2>/dev/null | tail -n +2; ufw status verbose 2>/dev/null | grep -E '^(Status|Default):'; } )"
+ok   collect_fw extracted from tmp.r32hG8YeRA
+ok   pre-fix collect_fw extracted from 46ce9bbf53dd8c1375e3bd8b05b858f8a0b29a6f
+ok   baseline: fw:ufw rules 2, v6_rules 2
+ok   baseline: deterministic (same input -> same sha256)
+FAIL v6-only deletion: new collector changes fw:ufw sha256
+ok   v6-only deletion: new collector v6_rules 2 -> 1
+ok   CONTROL: pre-fix collector misses the v6-only deletion (identical items)
+FAIL v6-only addition: sha256 changes, v6_rules 2 -> 3
+ok   CONTROL: pre-fix collector misses the v6-only addition
+ok   v4 rule removal: rules 2 -> 1 and sha256 changes
+ok   default policy change: sha256 changes
+ok   logging level / new-profiles / blank lines do not change any item
+ok   ip6tables DOCKER-USER change: docker-user sha256 + rules change
+ok   no ufw on PATH: no fw:ufw items, fw:docker-user present
+RESULT: 12 passed, 2 failed
+mutant suite exit 1 (expected non-zero: mutant killed)

@@ -4,7 +4,7 @@
 # Closes the tamper/drift gap left by ../audit (one-off hardening checks) and ../secrets (exposure checks):
 # `baseline` records a root-only 0600 manifest, `verify` compares the host against it item by item.
 # Covered: compose files (+ .env), config-volume files (sha256 only, never contents), add-on systemd units and their drop-ins,
-# /usr/local/bin scripts, sshd_config(.d) + effective `sshd -T`, normalized UFW and DOCKER-USER rules,
+# /usr/local/bin scripts, sshd_config(.d) + effective `sshd -T`, normalized UFW (per family) and DOCKER-USER rules,
 # running image id/digest vs the registry manifest, local image tags, the container's effective config, and (if
 # ../schedaudit is installed) every scheduled-execution file and dir from `pft-schedaudit scope` as sched:* items.
 # The manifest stores hashes, modes, owners and mtimes only. Output names changed items and fields only.
@@ -134,11 +134,15 @@ collect_sched() {
   done <<<"$list"
 }
 collect_fw() {
-  local r
+  local r tbl
   if command -v ufw >/dev/null; then
-    # user rules + default policies; no packet counters, so the hash only moves when rules move
-    r="$( { ufw show added 2>/dev/null | tail -n +2; ufw status verbose 2>/dev/null | grep -E '^(Status|Default):'; } )"
+    # user rules + default policies; no packet counters, so the hash only moves when rules move.
+    # `ufw show added` lists a dual-family rule once, so deleting only its IPv6 half left it unchanged; the
+    # `ufw status verbose` rule table lists each family separately ("(v6)" rows) and closes that gap.
+    tbl="$(ufw status verbose 2>/dev/null | sed -n '/^--/,$p' | tail -n +2 | sed '/^[[:space:]]*$/d')"
+    r="$( { ufw show added 2>/dev/null | tail -n +2; ufw status verbose 2>/dev/null | grep -E '^(Status|Default):'; printf '%s\n' "$tbl"; } )"
     emit fw:ufw rules "$(grep -c '^ufw ' <<<"$r")"
+    emit fw:ufw v6_rules "$(grep -c '(v6)' <<<"$tbl")"
     emit fw:ufw sha256 "$(sha256sum <<<"$r" | cut -d' ' -f1)"
   fi
   r="$( { iptables -S DOCKER-USER 2>/dev/null; command -v ip6tables >/dev/null && ip6tables -S DOCKER-USER 2>/dev/null; } )"

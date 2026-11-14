@@ -30,7 +30,7 @@ Exit codes: `0` all PASS, `1` at least one WARN, `2` at least one FAIL, `3` usag
 | `dropin:<unit>.d/<file>` | `*.conf` drop-ins of those units (e.g. the unitguard sandboxes, `../unitguard/`): a changed or removed drop-in can undo a sandbox | sha256, mode, owner, mtime |
 | `bin:<name>` | every regular file in `/usr/local/bin` (`postfiat-health`, `postfiat-monitor`, this script, ...) | sha256, mode, owner, mtime |
 | `sshd:...` | `/etc/ssh/sshd_config`, `/etc/ssh/sshd_config.d/*`, plus `sshd:effective` = hash of `sshd -T` | sha256, mode, owner, mtime |
-| `fw:ufw` | `ufw show added` + `Status:`/`Default:` lines of `ufw status verbose` (no counters) | rule count, sha256 |
+| `fw:ufw` | `ufw show added` + `Status:`/`Default:` lines + the per-family rule table of `ufw status verbose` (no counters; `(v6)` rows are listed separately, so a change to only the IPv6 half of a rule is seen) | rule count, `v6_rules`, sha256 |
 | `fw:docker-user` | `iptables -S DOCKER-USER` + `ip6tables -S DOCKER-USER` | rule count, sha256 |
 | `image:running` | running postfiatd container: configured ref, image id, local repo digest | values |
 | `image:registry` | Docker Hub manifest digest of the running tag (anonymous `HEAD`, not rate-limited) vs the local digest | `matches_local` yes/no/unknown |
@@ -107,6 +107,12 @@ After every intended change, run `accept --reason "..."`. It rewrites the manife
   the tag's current digest. It does not check signatures.
 - **Docker-managed rules.** Docker rewrites its own `DOCKER*` chains on restart. Only `DOCKER-USER` (operator-owned)
   is tracked.
+
+- **UFW per family (fixed 2026-11-14).** Before this change `fw:ufw` hashed `ufw show added`, which lists a
+  dual-family rule once, so deleting only its IPv6 half (found by [`../fwaudit`](../fwaudit/README.md) on the sentry)
+  left `verify` PASS. The hash now includes the per-family rule table and `v6_rules` counts the `(v6)` rows.
+  `bash integrity/tests/test-fw.sh` covers it on stubs, with the pre-fix collector as the failing control. The first
+  `verify` after upgrading reports `fw:ufw` changed (sha256 + new `v6_rules` field): accept it with a reason.
 
 ## Tamper drill (proof)
 
