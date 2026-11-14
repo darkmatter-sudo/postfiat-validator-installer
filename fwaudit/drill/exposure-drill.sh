@@ -389,7 +389,7 @@ wait_until 900 20 '! R "systemctl is-active --quiet fwaudit-deadman.service"'
 x "R 'sudo -n jq -c \"{result, keep, baseline_peers, applied_at, deadman_passed_at}\" /var/lib/pft-fwaudit/state.json'"
 check "S: apply state result kept" "$(ok_if 'grep -q "\"result\":\"kept\"" <<<"$XOUT"')"
 x "R 'sudo -n journalctl --utc -o cat -u fwaudit-deadman.service --since @$tX --no-pager' | grep -E 'dead-man'"
-check "S: apply dead-man PASS, every poll ok (none BAD, no rollback)" "$(ok_if 'grep -q "dead-man: PASS - changes kept" <<<"$XOUT" && [ "$(grep -c "dead-man poll: full peers [0-9]* declared ok$" <<<"$XOUT")" -ge 15 ] && ! grep -qE "BAD|TRIPPED|rollback" <<<"$XOUT"')"
+check "S: apply dead-man PASS, every poll ok (none BAD, no rollback)" "$(ok_if 'grep -q "dead-man: PASS - changes kept" <<<"$XOUT" && [ "$(grep -c "dead-man poll: full peers [0-9]* declared ok$" <<<"$XOUT")" -ge 15 ] && ! grep -qE "BAD|TRIPPED|rollback:|rolling back" <<<"$XOUT"')"
 x "sudo -n pft-maint end --reason '$TASK fwaudit exposure drill: fixes verified'"
 MAINT=0; check "window ended" "$XRC"
 wait_until 420 10 '! R "sudo -n pft-maint active" >/dev/null 2>&1'; check "sentry window gone after ${WAITED}s" "$?"
@@ -405,7 +405,8 @@ x "curl -s -G $PROM/api/v1/query_range --data-urlencode 'query=ALERTS{alertname=
 check "query_range: PFTFwauditExposure fail-findings pending then firing for both hosts, never audit-error" "$(ok_if '[ "$(grep -cE "^PFTFwauditExposure host=(validator|sentry) reason=fail-findings firing " <<<"$XOUT")" = 2 ] && [ "$(grep -cE "reason=fail-findings pending " <<<"$XOUT")" = 2 ] && ! grep -q "reason=audit-error" <<<"$XOUT"')"
 x "sudo -n grep -h '^pft_keyescrow_drift_items' $TF/pft_keyescrow.prom $TF/pft_keyescrow_sentry.prom"
 check "pft-keyescrow after the env restores: drift_items 0 on the validator and in the pulled sentry copy" "$(ok_if '! grep -qv "} 0$" <<<"$XOUT" && grep -q "} 0$" <<<"$XOUT"')"
-x "pq 'pft_fwaudit_findings{severity=\"fail\"} or pft_fwaudit_up or pft_fwaudit_verdict' | sort"
+# run 17: `A or B or C` dropped pft_fwaudit_verdict (same {host} labels as pft_fwaudit_up; set operators ignore the name)
+x "for q in pft_fwaudit_up pft_fwaudit_verdict 'pft_fwaudit_findings{severity=\"fail\"}'; do pq \"\$q\"; done | sort"
 check "Prometheus: both hosts up 1, verdict 0, fail findings 0" "$(ok_if '[ "$(grep -cE "host=(validator|sentry).* 1$" <<<"$(grep pft_fwaudit_up <<<"$XOUT")")" = 2 ] && [ "$(grep pft_fwaudit_verdict <<<"$XOUT" | grep -c " 0$")" = 2 ] && [ "$(grep pft_fwaudit_findings <<<"$XOUT" | grep -c " 0$")" = 2 ]')"
 for h in local relay; do
   s="$(sstate "$h")"; r="$(on "$h" "sudo -n pft-integrity verify" 2>&1 | grep '^RESULT')"

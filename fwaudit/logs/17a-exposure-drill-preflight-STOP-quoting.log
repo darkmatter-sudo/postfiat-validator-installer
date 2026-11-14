@@ -1,0 +1,124 @@
+pft-fwaudit exposure drill (S sentry temporary listener + UFW allow -> apply; V validator published port -> remove) - 2026-11-14T06:17:49Z - Ubuntu 22.04.5 LTS - run 20261114T061749Z
+repo HEAD 88e9a91cc5b54e9c41d6bc04481529b935e553ad (clean: yes)
+sha256 251749c8d94b627b02756d78c469dc1c482411b85813da39b52cb57451c30cc3 fwaudit/drill/exposure-drill.sh
+sha256 41df661e1e7dbb219b328991218b91587173509942c64ad65bd03ec34bd551d4 fwaudit/pft-fwaudit.sh
+sha256 e3fc7544a34d69d3df9fd6e0edbf3a1870bae72677d97606b29f3a176259a6cc fwaudit/fwaudit_eval.py
+sha256 a48452762350659be17cac6c1f383aa2b5985dfbe57dcd9dfd144d8179b8f146 alerts/fwaudit.rules.yml
+sha256 f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8 peerexpose/drill/redact.py
+
+== 0. preflight (nothing changed yet)
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+$ sha256sum fwaudit/pft-fwaudit.sh fwaudit/fwaudit_eval.py | cut -c1-64; sudo -n sha256sum /usr/local/bin/pft-fwaudit /usr/local/lib/pft-fwaudit/fwaudit_eval.py | cut -c1-64; R 'sudo -n sha256sum /usr/local/bin/pft-fwaudit /usr/local/lib/pft-fwaudit/fwaudit_eval.py' | cut -c1-64
+  41df661e1e7dbb219b328991218b91587173509942c64ad65bd03ec34bd551d4
+  e3fc7544a34d69d3df9fd6e0edbf3a1870bae72677d97606b29f3a176259a6cc
+  41df661e1e7dbb219b328991218b91587173509942c64ad65bd03ec34bd551d4
+  e3fc7544a34d69d3df9fd6e0edbf3a1870bae72677d97606b29f3a176259a6cc
+  41df661e1e7dbb219b328991218b91587173509942c64ad65bd03ec34bd551d4
+  e3fc7544a34d69d3df9fd6e0edbf3a1870bae72677d97606b29f3a176259a6cc
+  (exit 0)
+CHECK ok   installed pft-fwaudit + evaluator on both hosts = this checkout
+$ systemctl is-active pft-fwaudit.timer pft-fwaudit-pull.timer; R 'systemctl is-active pft-fwaudit.timer'
+  active
+  active
+  active
+  (exit 0)
+CHECK ok   fwaudit timers active (validator audit + pull, sentry audit)
+$ fwa local audit | tail -n 1; fwa relay audit | tail -n 1
+  RESULT: PASS
+  RESULT: PASS
+  (exit 0)
+CHECK ok   both hosts audit PASS before the drill
+$ R 'sudo -n test -e /var/lib/pft-fwaudit/state.json && sudo -n jq -r .result /var/lib/pft-fwaudit/state.json || echo no-apply-state'; R 'systemctl is-active fwaudit-deadman.service'
+  no-apply-state
+  inactive
+  (exit 3)
+CHECK ok   sentry: no apply pending (no state or not pending), no fwaudit-deadman running
+$ s_leftovers; v_leftovers
+  0
+  0
+  0
+  0
+  (exit 0)
+CHECK ok   no leftovers: no drill units, no '# fwaudit-drill' ufw rule, no fwaudit-drill-pub container
+$ R 'for f in /etc/pft-watchdog/ntfy.env /etc/pft-integrity.env /etc/pft-alertpath/ntfy.env /etc/pft-maint/ntfy.env; do sudo -n test -e $f.pre-fwaudit-drill && echo leftover $f.pre-fwaudit-drill; done; sudo -n test -e /etc/pft-maint/ntfy.env && echo maint-env-present; echo r-end'; for f in /etc/postfiat-monitor.env /etc/pft-integrity.env; do sudo -n test -e $f.pre-fwaudit-drill && echo leftover $f.pre-fwaudit-drill; done; sudo -n test -e /etc/pft-maint/ntfy.env && echo maint-env-present; echo end
+  r-end
+  end
+  (exit 0)
+CHECK ok   no .pre-fwaudit-drill backups, no pft-maint ntfy.env on either host
+$ sudo -n docker image inspect -f '{{.RepoTags}} {{.Id}}' python:3.12-alpine | cut -c1-60
+  [python:3.12-alpine] sha256:1b668429b3511ab407d8e00648891631
+  (exit 0)
+CHECK ok   image python:3.12-alpine already on the validator (the drill never pulls)
+CHECK ok   drill ports chosen: sentry listener LP=18284, validator published PP=18715 (free on both hosts, not declared)
+$ curl -s http://127.0.0.1:9090/api/v1/rules | jq -r '.data.groups[] | select(.name == "pft-fwaudit") | .rules[] | [.name, .health, .state] | @tsv'
+  PFTFwauditExposure	ok	inactive
+  (exit 0)
+CHECK ok   PFTFwauditExposure loaded, healthy, inactive
+$ pq 'pft_fwaudit_findings{severity="fail"} or pft_fwaudit_up' | sort
+  __name__=pft_fwaudit_findings,host=sentry,instance=127.0.0.1:9877,job=postfiat,severity=fail 0
+  __name__=pft_fwaudit_findings,host=validator,instance=127.0.0.1:9877,job=postfiat,severity=fail 0
+  __name__=pft_fwaudit_up,host=sentry,instance=127.0.0.1:9877,job=postfiat 1
+  __name__=pft_fwaudit_up,host=validator,instance=127.0.0.1:9877,job=postfiat 1
+  (exit 0)
+CHECK ok   Prometheus: pft_fwaudit_up 1 and 0 fail findings for host=validator and host=sentry
+$ curl -s http://127.0.0.1:9090/api/v1/alerts | jq -r '.data.alerts[] | "\(.labels.alertname) \(.labels.host // .labels.instance // "-") \(.state)"' | sort
+  PFTAlertPipelineWatchdog - firing
+  PFTVulnRebootOwed sentry pending
+  (exit 0)
+CHECK ok   nothing but the watchdog FIRING (KNOWN_PENDING may only be pending: a firing alert would be re-sent after the bridge re-create)
+$ curl -s http://127.0.0.1:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'
+  0
+  (exit 0)
+  bridge mounts the operator env file; sentry alertpath timer active, check OK
+  operator topics to watch: 2 (not printed)
+  node local: server_state=full
+  pft-integrity local: RESULT: PASS - 253 unchanged, 0 warn, 0 fail -> exit 0
+$ on local 'sudo -n pft-maint active; echo maint-active rc $?; sudo -n pft-maint lock list'
+  maint-active rc 1
+  no data-collection locks
+  (exit 0)
+  node relay: server_state=full
+  pft-integrity relay: RESULT: PASS - 151 unchanged, 0 warn, 0 fail -> exit 0
+$ on relay 'sudo -n pft-maint active; echo maint-active rc $?; sudo -n pft-maint lock list'
+  maint-active rc 1
+  no data-collection locks
+  (exit 0)
+  snapshots: sentry 'ufw status numbered', validator 'iptables -t nat -S DOCKER' and 'iptables -S DOCKER' (sha256 kept, compared at the end)
+$ R printf\ \'%s\\n\'\ /bin/bash\ -c\ sleep\\\ 2700\\\;\\\ systemctl\\\ stop\\\ fwaudit-drill-listen.service\\\ \\\>/dev/null\\\ 2\\\>\\\&1\\\;\\\ n=0\\\;\\\ while\\\ :\\\;\\\ do\\\ k=\\\$\\\(ufw\\\ status\\\ numbered\\\ \\\|\\\ sed\\\ -nE\\\ \\\"s/\\\^\\\\\\\[\\\ \\\*\\\(\\\[0-9\\\]+\\\)\\\\\\\]\\\ .\\\*#\\\ fwaudit-drill\\\ \\\*\\\$/\\\\1/p\\\"\\\ \\\|\\\ tail\\\ -n\\\ 1\\\)\\\;\\\ \\\[\\\ -n\\\ \\\"\\\$k\\\"\\\ \\\]\\\ \\\|\\\|\\\ break\\\;\\\ ufw\\\ --force\\\ delete\\\ \\\"\\\$k\\\"\\\ \\\>/dev/null\\\ \\\|\\\|\\\ break\\\;\\\ n=\\\$\\\(\\\(n+1\\\)\\\)\\\;\\\ done\\\;\\\ echo\\\ \\\"deleted\\\ \\\$n\\\ fwaudit-drill\\\ ufw\\\ rule\\\(s\\\)\\\"\\\;\\\ echo\\\ \\\'fwaudit\\\ drill\\\ dead-man\\\ \\\(sentry\\\)\\\ done\\\'
+  /bin/bash
+  -c
+  sleep 2700; systemctl stop fwaudit-drill-listen.service >/dev/null 2>&1; n=0; while :; do k=$(ufw status numbered | sed -nE "s/^\[ *([0-9]+)\] .*# fwaudit-drill *$/\1/p" | tail -n 1); [ -n "$k" ] || break; ufw --force delete "$k" >/dev/null || break; n=$((n+1)); done; echo "deleted $n fwaudit-drill ufw rule(s)"; echo 'fwaudit drill dead-man (sentry) done'
+  (exit 0)
+CHECK ok   sentry dead-man command reaches the sentry byte-identical through both quoting levels (printf launcher)
+$ R "python3 -I -c "import sys; print(sys.argv[1:])" # 'import base64; exec(base64.b64decode("aW1wb3J0IHNvY2tldCwgc3lzCnMgPSBzb2NrZXQuc29ja2V0KHNvY2tldC5BRl9JTkVULCBzb2NrZXQuU09DS19TVFJFQU0pCnMuc2V0c29ja29wdChzb2NrZXQuU09MX1NPQ0tFVCwgc29ja2V0LlNPX1JFVVNFQUREUiwgMSkKcy5iaW5kKCgiMC4wLjAuMCIsIGludChzeXMuYXJndlsxXSkpKQpzLmxpc3Rlbig4KQp3aGlsZSBUcnVlOgogICAgYywgXyA9IHMuYWNjZXB0KCkKICAgIHRyeToKICAgICAgICBjLnNlbmRhbGwoYiJmd2F1ZGl0LWRyaWxsXG4iKQogICAgZXhjZXB0IE9TRXJyb3I6CiAgICAgICAgcGFzcwogICAgYy5jbG9zZSgpCg=="))' 0 " ; R "python3 -I -c 'import base64; print(base64.b64decode(\"aW1wb3J0IHNvY2tldCwgc3lzCnMgPSBzb2NrZXQuc29ja2V0KHNvY2tldC5BRl9JTkVULCBzb2NrZXQuU09DS19TVFJFQU0pCnMuc2V0c29ja29wdChzb2NrZXQuU09MX1NPQ0tFVCwgc29ja2V0LlNPX1JFVVNFQUREUiwgMSkKcy5iaW5kKCgiMC4wLjAuMCIsIGludChzeXMuYXJndlsxXSkpKQpzLmxpc3Rlbig4KQp3aGlsZSBUcnVlOgogICAgYywgXyA9IHMuYWNjZXB0KCkKICAgIHRyeToKICAgICAgICBjLnNlbmRhbGwoYiJmd2F1ZGl0LWRyaWxsXG4iKQogICAgZXhjZXB0IE9TRXJyb3I6CiAgICAgICAgcGFzcwogICAgYy5jbG9zZSgpCg==\").decode().count(chr(10)))'"
+  fwaudit/drill/exposure-drill.sh: eval: line 65: syntax error near unexpected token `sys.argv[1:]'
+  fwaudit/drill/exposure-drill.sh: eval: line 65: `R "python3 -I -c "import sys; print(sys.argv[1:])" # 'import base64; exec(base64.b64decode("aW1wb3J0IHNvY2tldCwgc3lzCnMgPSBzb2NrZXQuc29ja2V0KHNvY2tldC5BRl9JTkVULCBzb2NrZXQuU09DS19TVFJFQU0pCnMuc2V0c29ja29wdChzb2NrZXQuU09MX1NPQ0tFVCwgc29ja2V0LlNPX1JFVVNFQUREUiwgMSkKcy5iaW5kKCgiMC4wLjAuMCIsIGludChzeXMuYXJndlsxXSkpKQpzLmxpc3Rlbig4KQp3aGlsZSBUcnVlOgogICAgYywgXyA9IHMuYWNjZXB0KCkKICAgIHRyeToKICAgICAgICBjLnNlbmRhbGwoYiJmd2F1ZGl0LWRyaWxsXG4iKQogICAgZXhjZXB0IE9TRXJyb3I6CiAgICAgICAgcGFzcwogICAgYy5jbG9zZSgpCg=="))' 0 " ; R "python3 -I -c 'import base64; print(base64.b64decode(\"aW1wb3J0IHNvY2tldCwgc3lzCnMgPSBzb2NrZXQuc29ja2V0KHNvY2tldC5BRl9JTkVULCBzb2NrZXQuU09DS19TVFJFQU0pCnMuc2V0c29ja29wdChzb2NrZXQuU09MX1NPQ0tFVCwgc29ja2V0LlNPX1JFVVNFQUREUiwgMSkKcy5iaW5kKCgiMC4wLjAuMCIsIGludChzeXMuYXJndlsxXSkpKQpzLmxpc3Rlbig4KQp3aGlsZSBUcnVlOgogICAgYywgXyA9IHMuYWNjZXB0KCkKICAgIHRyeToKICAgICAgICBjLnNlbmRhbGwoYiJmd2F1ZGl0LWRyaWxsXG4iKQogICAgZXhjZXB0IE9TRXJyb3I6CiAgICAgICAgcGFzcwogICAgYy5jbG9zZSgpCg==\").decode().count(chr(10)))'"'
+  (exit 2)
+CHECK FAIL listener program decodes on the sentry (11 lines)
+$ redact.py control --literals <literals>
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (22/22)
+
+PREFLIGHT_ONLY: stopping before step 1, nothing changed (1 check(s) failed)
+  re-ran pft-keyescrow + pft-fwaudit + pft-rulecheck (both) and the validator pulls: yes

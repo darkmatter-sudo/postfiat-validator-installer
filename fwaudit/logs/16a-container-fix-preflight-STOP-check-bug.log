@@ -1,0 +1,59 @@
+pft-fwaudit node-source fix rollout - 2026-11-14T06:02:16Z - Ubuntu 22.04.5 LTS - repo HEAD c24ca633c913ba06ec580e73303addd325a3f64d (clean: yes)
+
+== 0. preflight (read-only)
+$ sha256sum fwaudit/pft-fwaudit.sh fwaudit/tests/test_apply.py fwaudit/drill/container-fix-run.sh; sudo -n sha256sum /usr/local/bin/pft-fwaudit; R 'sudo -n sha256sum /usr/local/bin/pft-fwaudit'
+  41df661e1e7dbb219b328991218b91587173509942c64ad65bd03ec34bd551d4  fwaudit/pft-fwaudit.sh
+  3e2a9b89875fccbe6c3ba52926eb572d75494c93a0fdf8e3156c7c317e69d27d  fwaudit/tests/test_apply.py
+  a65a08d64bf12396cb582643bcac0153c716d8b8d32c3680219cb5d74d459297  fwaudit/drill/container-fix-run.sh
+  d0a7c3208deb2fbf04c8d866e31d03843d461c689dc9a6995312a5f813725513  /usr/local/bin/pft-fwaudit
+  d0a7c3208deb2fbf04c8d866e31d03843d461c689dc9a6995312a5f813725513  /usr/local/bin/pft-fwaudit
+  (exit 0)
+$ R 'sudo -n grep -c ^CONTAINER= /etc/pft-fwaudit.env; sudo -n grep -c "CONTAINER:-postfiatd}" /usr/local/bin/pft-fwaudit; sudo -n docker inspect -f {{.State.Running}} postfiatd 2>&1 | head -n 1; sudo -n docker inspect -f {{.State.Running}} postfiatd-sentry'
+  0
+  1
+  
+  true
+  (exit 0)
+CHECK FAIL FOUND (old sentry binary): no CONTAINER in the conf, default postfiatd, no such container there, the node is postfiatd-sentry
+$ (cd fwaudit && TMPDIR=$HOME/.cache python3 -m pytest -q tests 2>&1 | tail -n 1)
+  124 passed in 74.72s (0:01:14)
+  (exit 0)
+CHECK ok   fwaudit suite passes at HEAD
+$ shellcheck fwaudit/pft-fwaudit.sh fwaudit/tests/stubs/docker fwaudit/drill/container-fix-run.sh && echo clean
+  clean
+  (exit 0)
+CHECK ok   shellcheck clean
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 253 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 151 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts before the sync
+$ srv_state
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ sudo -n pft-fleet skew | grep -vE ' CURRENT( |$)'
+  ref main = c24ca633c913ba06ec580e73303addd325a3f64d
+  host sentry     role sentry    ok
+  host validator  role validator ok
+  HOST       ADDON       STATE      DETAIL
+  sentry     fwaudit     BEHIND     /usr/local/bin/pft-fwaudit BEHIND @f187538a8688 (-1)
+  validator  fwaudit     BEHIND     /usr/local/bin/pft-fwaudit BEHIND @f187538a8688 (-1)
+  SUMMARY CURRENT=75 BEHIND=2 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 1)
+CHECK ok   skew: only fwaudit BEHIND, on both hosts
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+$ curl -s http://<redacted-ip>:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'; curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '.data.alerts[] | "\(.labels.alertname) \(.state)"' | sort | uniq -c
+  0
+        1 PFTAlertPipelineWatchdog firing
+        1 PFTVulnRebootOwed pending
+  (exit 0)
+known pending before the run (accepted by the preflight): PFTVulnRebootOwed
+CHECK ok   no active silence; only the pipeline watchdog (+ KNOWN_PENDING) pending/firing in Prometheus
+$ curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '[.data.alerts[] | select(.state == "firing" and .labels.alertname != "PFTAlertPipelineWatchdog")] | length'
+  0
+  (exit 0)
+CHECK ok   nothing but the watchdog FIRING (KNOWN_PENDING may only be pending)
+preflight failed - stopping before any change

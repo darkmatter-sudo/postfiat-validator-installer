@@ -1,0 +1,14 @@
+control baseline suite (unmutated copy): PASS 124 passed in 95.47s (0:01:35)
+control baseline promtool (unmutated copy): PASS SUCCESS
+control timeout (evaluator never returns, --hang-timeout 60): HANG after 60 s, 0 process(es) left
+S21 CAUGHT - --dry-run not honoured [7 failing: test_dry_run_changes_nothing, test_configured_container_overrides_the_role_default, test_rpc_url_needs_no_container, test_dry_run_reports_every_guard_ok ...]
+S32 CAUGHT - node source not checked before apply [1 failing: test_missing_container_refuses_before_any_change]
+S33 CAUGHT - sentry role reads the validator container [3 failing: test_sentry_role_reads_the_sentry_container, test_missing_container_refuses_before_any_change, test_dry_run_reports_refusals_without_refusing]
+S34 CAUGHT - configured CONTAINER ignored [1 failing: test_configured_container_overrides_the_role_default]
+S35 CAUGHT - missing container reported running [2 failing: test_missing_container_refuses_before_any_change, test_dry_run_reports_refusals_without_refusing]
+S36 CAUGHT - RPC_URL source not honoured [1 failing: test_rpc_url_needs_no_container]
+S37 CAUGHT - dry run: node state not graded [2 failing: test_dry_run_reports_node_refusal[info0-refuse, test_dry_run_reports_node_refusal[info1-refuse]
+S38 CAUGHT - dry run: pending apply not reported [1 failing: test_dry_run_reports_refusals_without_refusing]
+S39 CAUGHT - dry run: ssh guard not reported [1 failing: test_dry_run_reports_refusals_without_refusing]
+orphan check: 0 process(es) still running that name this run's scratch dir
+RESULT: 9 caught, 0 survived, 0 not applied, 0 broken of 9 (--only subset of 91)

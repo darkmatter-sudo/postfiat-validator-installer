@@ -1,0 +1,208 @@
+pft-fwaudit node-source fix rollout - 2026-11-14T06:08:03Z - Ubuntu 22.04.5 LTS - repo HEAD 88e9a91cc5b54e9c41d6bc04481529b935e553ad (clean: yes)
+
+== 0. preflight (read-only)
+$ sha256sum fwaudit/pft-fwaudit.sh fwaudit/tests/test_apply.py fwaudit/drill/container-fix-run.sh; sudo -n sha256sum /usr/local/bin/pft-fwaudit; R 'sudo -n sha256sum /usr/local/bin/pft-fwaudit'
+  41df661e1e7dbb219b328991218b91587173509942c64ad65bd03ec34bd551d4  fwaudit/pft-fwaudit.sh
+  3e2a9b89875fccbe6c3ba52926eb572d75494c93a0fdf8e3156c7c317e69d27d  fwaudit/tests/test_apply.py
+  6017c879315f1737ffbc7d80327130142419512ae4d5a2537823f820d9f133c3  fwaudit/drill/container-fix-run.sh
+  d0a7c3208deb2fbf04c8d866e31d03843d461c689dc9a6995312a5f813725513  /usr/local/bin/pft-fwaudit
+  d0a7c3208deb2fbf04c8d866e31d03843d461c689dc9a6995312a5f813725513  /usr/local/bin/pft-fwaudit
+  (exit 0)
+$ R 'sudo -n grep -c ^CONTAINER= /etc/pft-fwaudit.env; sudo -n grep -c "CONTAINER:-postfiatd}" /usr/local/bin/pft-fwaudit; sudo -n docker inspect -f {{.State.Running}} postfiatd >/dev/null 2>&1; echo inspect-postfiatd-rc=$?; sudo -n docker inspect -f {{.State.Running}} postfiatd-sentry'
+  0
+  1
+  inspect-postfiatd-rc=1
+  true
+  (exit 0)
+CHECK ok   FOUND (old sentry binary): no CONTAINER in the conf, default postfiatd, no such container there, the node is postfiatd-sentry
+$ (cd fwaudit && TMPDIR=$HOME/.cache python3 -m pytest -q tests 2>&1 | tail -n 1)
+  124 passed in 79.30s (0:01:19)
+  (exit 0)
+CHECK ok   fwaudit suite passes at HEAD
+$ shellcheck fwaudit/pft-fwaudit.sh fwaudit/tests/stubs/docker fwaudit/drill/container-fix-run.sh && echo clean
+  clean
+  (exit 0)
+CHECK ok   shellcheck clean
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 253 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 151 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts before the sync
+$ srv_state
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ sudo -n pft-fleet skew | grep -vE ' CURRENT( |$)'
+  ref main = 88e9a91cc5b54e9c41d6bc04481529b935e553ad
+  host sentry     role sentry    ok
+  host validator  role validator ok
+  HOST       ADDON       STATE      DETAIL
+  sentry     fwaudit     BEHIND     /usr/local/bin/pft-fwaudit BEHIND @f187538a8688 (-1)
+  validator  fwaudit     BEHIND     /usr/local/bin/pft-fwaudit BEHIND @f187538a8688 (-1)
+  SUMMARY CURRENT=75 BEHIND=2 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 1)
+CHECK ok   skew: only fwaudit BEHIND, on both hosts
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+$ curl -s http://<redacted-ip>:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'; curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '.data.alerts[] | "\(.labels.alertname) \(.state)"' | sort | uniq -c
+  0
+        1 PFTAlertPipelineWatchdog firing
+        1 PFTVulnRebootOwed pending
+  (exit 0)
+known pending before the run (accepted by the preflight): PFTVulnRebootOwed
+CHECK ok   no active silence; only the pipeline watchdog (+ KNOWN_PENDING) pending/firing in Prometheus
+$ curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '[.data.alerts[] | select(.state == "firing" and .labels.alertname != "PFTAlertPipelineWatchdog")] | length'
+  0
+  (exit 0)
+CHECK ok   nothing but the watchdog FIRING (KNOWN_PENDING may only be pending)
+
+== 1. rollout silence (fleet/integrity/keyescrow/fwaudit; not the watchdog)
+CHECK ok   Alertmanager silence created (fleet, integrity, keyescrow, fwaudit; not the watchdog) until 2026-11-14T06:50:43Z
+
+== 2. pft-maint window, [MAINT] messages to a throwaway topic (real file kept as $BK)
+real /etc/pft-maint/ntfy.env present before: 0
+$ { [ $HAD = 0 ] || sudo -n cp -p $NE $BK; } && printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' "$TT" | sudo -n tee $NE >/dev/null && sudo -n chmod 600 $NE && sudo -n stat -c '%a %U' $NE
+  600 root
+  (exit 0)
+CHECK ok   throwaway target installed
+$ sudo -n pft-maint start --ttl 30m --reason 'task_32d07e3a fwaudit node-source fix'
+  window started: id m1794636644-837987 until 2026-11-14T06:40:44Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint window open
+CHECK ok   sentry has the window (via the watchdog channel) after 40s
+
+== 3. pft-fleet sync --addon fwaudit (gated per host, sentry first, accept with reason)
+$ sudo -n pft-fleet sync --addon fwaudit --to 88e9a91cc5b54e9c41d6bc04481529b935e553ad --apply --reason 'task_32d07e3a fwaudit node source by role'
+  [2026-11-14T06:12:13Z] sync fwaudit to 88e9a91cc5b54e9c41d6bc04481529b935e553ad (2026-11-14T06:05:04+00:00) REF main=88e9a91cc5b54e9c41d6bc04481529b935e553ad
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN sentry sentry /usr/local/bin/pft-fwaudit 0755 BEHIND d0a7c3208deb 41df661e1e7d write
+  PLAN sentry sentry /usr/local/lib/pft-fwaudit/fwaudit_eval.py 0644 CURRENT e3fc7544a34d e3fc7544a34d keep
+  PLAN sentry sentry /usr/local/lib/pft-fwaudit/policy/validator.policy 0644 CURRENT 46011035060a 46011035060a keep
+  PLAN sentry sentry /usr/local/lib/pft-fwaudit/policy/sentry.policy 0644 CURRENT f0eeb6a97d1c f0eeb6a97d1c keep
+  PLAN sentry sentry /etc/systemd/system/pft-fwaudit.service 0644 CURRENT fd873243aef1 fd873243aef1 keep
+  PLAN sentry sentry /etc/systemd/system/pft-fwaudit.timer 0644 CURRENT 83a79b48c561 83a79b48c561 keep
+  PLAN validator validator /usr/local/bin/pft-fwaudit 0755 BEHIND d0a7c3208deb 41df661e1e7d write
+  PLAN validator validator /usr/local/lib/pft-fwaudit/fwaudit_eval.py 0644 CURRENT e3fc7544a34d e3fc7544a34d keep
+  PLAN validator validator /usr/local/lib/pft-fwaudit/policy/validator.policy 0644 CURRENT 46011035060a 46011035060a keep
+  PLAN validator validator /usr/local/lib/pft-fwaudit/policy/sentry.policy 0644 CURRENT f0eeb6a97d1c f0eeb6a97d1c keep
+  PLAN validator validator /etc/systemd/system/pft-fwaudit.service 0644 CURRENT fd873243aef1 fd873243aef1 keep
+  PLAN validator validator /etc/systemd/system/pft-fwaudit.timer 0644 CURRENT 83a79b48c561 83a79b48c561 keep
+  PLAN validator validator /etc/systemd/system/pft-fwaudit-pull.service 0644 CURRENT 7f8cb8e1215b 7f8cb8e1215b keep
+  PLAN validator validator /etc/systemd/system/pft-fwaudit-pull.timer 0644 CURRENT c36a117466b6 c36a117466b6 keep
+  [2026-11-14T06:12:13Z] order: sentry validator
+  [2026-11-14T06:12:13Z] sentry: 1 file(s) to write
+  PRE sentry pft-maint window active PASS
+  PRE sentry node server_state=full PASS
+  PRE sentry pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP sentry /usr/local/bin/pft-fwaudit sha256 d0a7c3208deb -> /var/lib/pft-fleet/backup/20261114T061213Z-fwaudit-sentry
+  WRITE sentry /usr/local/bin/pft-fwaudit d0a7c3208deb -> 41df661e1e7d mode 0755
+  GATE sentry sha256 /usr/local/bin/pft-fwaudit = target 41df661e1e7d PASS
+  GATE sentry syntax /usr/local/bin/pft-fwaudit bash -n PASS
+  GATE sentry addon units failed=none PASS
+  GATE sentry node server_state=full PASS
+  ACCEPT sentry pft-integrity baseline updated: pft-fleet sync fwaudit@88e9a91cc5b5 (pft-fwaudit)
+  [2026-11-14T06:12:51Z] SYNCED sentry fwaudit -> 88e9a91cc5b5
+  [2026-11-14T06:12:51Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/bin/pft-fwaudit sha256 d0a7c3208deb -> /var/lib/pft-fleet/backup/20261114T061213Z-fwaudit-validator
+  WRITE validator /usr/local/bin/pft-fwaudit d0a7c3208deb -> 41df661e1e7d mode 0755
+  GATE validator sha256 /usr/local/bin/pft-fwaudit = target 41df661e1e7d PASS
+  GATE validator syntax /usr/local/bin/pft-fwaudit bash -n PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync fwaudit@88e9a91cc5b5 (pft-fwaudit)
+  [2026-11-14T06:13:31Z] SYNCED validator fwaudit -> 88e9a91cc5b5
+  [2026-11-14T06:13:31Z] sync complete
+  (exit 0)
+CHECK ok   fwaudit sync exit 0 (files written + integrity accepted by pft-fleet)
+
+== 4. VERIFIED: fixed binary live on both hosts; dry run shows every apply guard ok inside the window
+$ sha256sum /usr/local/bin/pft-fwaudit; R 'sha256sum /usr/local/bin/pft-fwaudit'
+  41df661e1e7dbb219b328991218b91587173509942c64ad65bd03ec34bd551d4  /usr/local/bin/pft-fwaudit
+  41df661e1e7dbb219b328991218b91587173509942c64ad65bd03ec34bd551d4  /usr/local/bin/pft-fwaudit
+  (exit 0)
+CHECK ok   installed pft-fwaudit == HEAD fwaudit/pft-fwaudit.sh on both hosts
+$ dryrun
+  pre-check maintenance window: ok 1631
+  pre-check node source: ok docker exec postfiatd
+  pre-check node: ok full, peers 14 (MIN_PEERS 3)
+  pre-check earlier apply: ok none pending
+  pre-check ssh v4/tcp/22: ok reachable declared exposure
+  dry run - nothing changed
+  pre-check maintenance window: ok 1629
+  pre-check node source: ok docker exec postfiatd-sentry
+  pre-check node: ok full, peers 16 (MIN_PEERS 3)
+  pre-check earlier apply: ok none pending
+  pre-check ssh v4/tcp/22: ok reachable declared exposure
+  dry run - nothing changed
+  (exit 0)
+CHECK ok   dry run node source: validator docker exec postfiatd, sentry docker exec postfiatd-sentry
+CHECK ok   dry run on both hosts: maintenance, node, earlier apply, ssh all ok (10 ok lines, 0 refuse), nothing changed
+$ sudo -n pft-fwaudit audit | tail -n 1; R 'sudo -n pft-fwaudit audit | tail -n 1'
+  RESULT: PASS
+  RESULT: PASS
+  (exit 0)
+CHECK ok   audit PASS on both hosts
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 253 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 151 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts after the sync
+$ sudo -n tail -n 1 /var/lib/pft-integrity/accept.log | cut -f1,5; R 'sudo -n tail -n 1 /var/lib/pft-integrity/accept.log | cut -f1,5'
+  2026-11-14T06:13:31Z	reason=pft-fleet sync fwaudit@88e9a91cc5b5 on validator: pft-fwaudit (task_32d07e3a fwaudit node source by role) 
+  2026-11-14T06:12:51Z	reason=pft-fleet sync fwaudit@88e9a91cc5b5 on sentry: pft-fwaudit (task_32d07e3a fwaudit node source by role) 
+  (exit 0)
+
+== 5. fleet skew
+$ sudo -n pft-fleet skew | tail -3
+  validator  vulnscan    CURRENT    
+  validator  watchdog    CURRENT    
+  SUMMARY CURRENT=77 BEHIND=0 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 0)
+CHECK ok   pft-fleet skew exit 0, nothing BEHIND/MODIFIED/MISSING/UNEXPECTED/DIVERGED
+
+== 6. end window, restore the real target, compare, keyescrow, read back the throwaway and every operator topic
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+$ sudo -n rm -f $NE   (no ntfy.env before: pft-maint falls back to the real monitor target again)
+CHECK ok   pft-maint target back to its pre-run state (/etc/pft-maint/ntfy.env: absent again)
+$ sudo -n test ! -e $BK && echo backup gone
+  backup gone
+  (exit 0)
+$ sudo -n systemctl start pft-keyescrow.service; grep -h '^pft_keyescrow_drift_items{node="validator"}' /var/lib/pft-exporter/textfile/pft_keyescrow.prom
+  pft_keyescrow_drift_items{node="validator"} 0
+  (exit 0)
+CHECK ok   pft-keyescrow re-run after the ntfy.env restore: validator drift_items 0
+$ sleep 5; curl -s --max-time 15 "https://ntfy.sh/$TT/json?poll=1&since=1794636483" | jq -r '.title'
+  [MAINT] start validator
+  [MAINT] end validator
+  (exit 0)
+CHECK ok   the [MAINT] start and end messages reached the throwaway topic
+$ for i in $(seq 0 15 150); do n=$(curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '[.data.alerts[] | select(.labels.alertname | test("Fleet|Integrity|KeyEscrow|Fwaudit|AppArmor|Seccomp"))] | length'); echo "+${i}s: $n"; [ "$n" = 0 ] && break; sleep 15; done; echo $n
+  +0s: 0
+  0
+  (exit 0)
+CHECK ok   no fleet/integrity/keyescrow/fwaudit/confinement alert pending or firing (silence left to run out)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 253 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 151 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts at the end
+$ srv_state
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing at the end
+$ systemctl list-units --all --no-legend 'run-u*.service' 'run-u*.timer' | wc -l
+  0
+  (exit 0)
+CHECK ok   no transient run-u services/timers
+operator topic read-back waits 90 s (>= group_interval + 30 s after the last change)
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the run (2 topic(s), 0 with messages)
+
+container-fix-run done 2026-11-14T06:17:14Z: 0 check(s) failed -> PASS
