@@ -34,6 +34,7 @@ rule_files:
   - /etc/pft-alerts/kmod.rules.yml        # ../kmod (deny-list module loaded or loadable, required module blocked, autoload guard off; stale collector)
   - /etc/pft-alerts/histarchive.rules.yml # ../histarchive (ledger history archive follower stale/behind, verification failed or new gap, off-host replica missing/stale/altered)
   - /etc/pft-alerts/aptrust.rules.yml     # ../aptrust (APT source/key/option/permission or /usr/local binary trust FAIL; stale audit)
+  - /etc/pft-alerts/alertstats.rules.yml  # ../alertstats (an alertname flapping in the observed ALERTS history; report could not capture Prometheus)
   - /etc/pft-slo/*.rules.yml    # ../slo (availability SLO + burn-rate alerts); run-stack.sh mounts it
 alerting:
   alertmanagers:
