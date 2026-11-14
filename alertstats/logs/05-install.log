@@ -1,0 +1,514 @@
+alertstats install + 7-day report - 2026-11-14T10:41:52Z - Ubuntu 22.04.5 LTS - repo HEAD e52cfd1d976f86e5335128a8c507b8771584c8e7 (clean: yes)
+
+== 0. preflight (read-only)
+$ sha256sum alertstats/pft-alertstats.sh alertstats/alertstats_build.py alertstats/install.sh alertstats/drill/install-run.sh alertstats/systemd/* alerts/alertstats.rules.yml fleet/manifest.tsv
+  ce12334c9536cdba94dea24f24a0cd5d6f8f090508455cb69bbe2fc3bc32b600  alertstats/pft-alertstats.sh
+  9a7459980f0d04f5d764c4e46052d4c50758e24e11175addf187ccbd61c80791  alertstats/alertstats_build.py
+  115acfa60056e6ed3af1c7a72dda397d2e3e2c44e99964b357d84fc38625cebd  alertstats/install.sh
+  bacea15255845e2276cb3dcbe9e68b5c261afabc81e3287020361896a64e8570  alertstats/drill/install-run.sh
+  036a0e576b44032569cab7ee7941ac5f6930ed4368f8d5311e2976d3f733b60e  alertstats/systemd/pft-alertstats.service
+  96121c2e9ccdf4b12b77443e1fee55442f87e0fb8bc23dcd9fe83e30125e02d0  alertstats/systemd/pft-alertstats.timer
+  483b02b7362ca30f47deb259fcb3c6dba2ad3e2412837864e03087fd5f725f7b  alerts/alertstats.rules.yml
+  1f2e6ec221a45c9a076e4946e3dae180e39cdc3fb1a8625b4a6f054eb3f95857  fleet/manifest.tsv
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 253 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 151 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts before install
+$ srv_state
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ ls /usr/local/bin/pft-alertstats /usr/local/lib/pft-alertstats /etc/systemd/system/pft-alertstats.timer 2>&1
+  ls: cannot access '/usr/local/bin/pft-alertstats': No such file or directory
+  ls: cannot access '/usr/local/lib/pft-alertstats': No such file or directory
+  ls: cannot access '/etc/systemd/system/pft-alertstats.timer': No such file or directory
+  (exit 2)
+CHECK ok   not installed yet
+$ grep -c '^alertstats ' fleet/manifest.tsv; grep -c alertstats.rules.yml alerts/prometheus.yml; grep -c pft_alertstats rulecheck/pft-rulecheck.conf.example
+  4
+  1
+  2
+  (exit 0)
+CHECK ok   HEAD lists 4 alertstats manifest lines, the rule file and 2 rulecheck lines
+$ for c in python3 docker jq; do command -v $c; done | wc -l; sudo -n test -f /etc/pft-rulecheck.conf && echo rc-conf
+  3
+  rc-conf
+  (exit 0)
+CHECK ok   python3 docker jq and a pft-rulecheck conf on the validator
+$ sudo -n env TEXT_BUDGET=999999 pft-jobwatch collect --stdout 2>/dev/null | wc -c; sudo -n sed -n 's/^TEXT_BUDGET=//p' /etc/pft-jobwatch.env
+  39052
+  65000
+  (exit 0)
+CHECK ok   jobwatch textfile has room for the new timer (validator 39052 + 1200 <= budget 65000)
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+$ curl -s http://127.0.0.1:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'; curl -s http://127.0.0.1:9090/api/v1/alerts | jq -r '.data.alerts[] | "\(.labels.alertname) \(.state)"' | sort | uniq -c
+  0
+        1 PFTAlertPipelineWatchdog firing
+        1 PFTVulnRebootOwed pending
+  (exit 0)
+known pending before the run (accepted by the preflight): PFTVulnRebootOwed
+CHECK ok   no active silence; only the pipeline watchdog (+ KNOWN_PENDING) pending/firing in Prometheus
+$ curl -s http://127.0.0.1:9090/api/v1/alerts | jq -r '[.data.alerts[] | select(.state == "firing" and .labels.alertname != "PFTAlertPipelineWatchdog")] | length'
+  0
+  (exit 0)
+CHECK ok   nothing but the watchdog FIRING (KNOWN_PENDING may only be pending)
+
+== 1. rollout silence (new rule; rulecheck/fleet/aptrust/schedaudit/jobwatch/keyescrow see new files and timers; not the watchdog)
+CHECK ok   Alertmanager silence created (alertstats rule, rulecheck, fleet, aptrust, schedaudit, jobwatch, keyescrow; not the watchdog) until 2026-11-14T11:32:32Z
+
+== 2. pft-maint window, [MAINT] messages to a throwaway topic (real file kept as $BK)
+real /etc/pft-maint/ntfy.env present before: 0
+$ { [ $HAD = 0 ] || sudo -n cp -p $NE $BK; } && sudo -n install -o root -g root -m 600 /dev/null $NE && printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' "$TT" | sudo -n tee $NE >/dev/null && sudo -n stat -c '%a %U' $NE
+  600 root
+  (exit 0)
+CHECK ok   throwaway target installed (600 root)
+$ sudo -n pft-maint start --ttl 40m --reason 'task_61903325 alertstats install'
+  window started: id m1794652952-1917817 until 2026-11-14T11:22:32Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint window open
+CHECK ok   sentry has the window (via the watchdog channel) after 20s
+
+== 3. pft-fleet: manifest (fleet add-on), alertstats, then aptrust's allowlist copy
+$ sudo -n pft-fleet sync --addon fleet --to e52cfd1d976f86e5335128a8c507b8771584c8e7 --apply --reason 'task_61903325 alertstats manifest lines'
+  [2026-11-14T10:43:20Z] sync fleet to e52cfd1d976f86e5335128a8c507b8771584c8e7 (2026-11-14T10:40:53+00:00) REF main=e52cfd1d976f86e5335128a8c507b8771584c8e7
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN validator validator /usr/local/sbin/pft-fleet 0755 CURRENT 61cafcfcdaa9 61cafcfcdaa9 keep
+  PLAN validator validator /usr/local/lib/pft-fleet/fleet_lib.py 0644 CURRENT dcb37d26f33f dcb37d26f33f keep
+  PLAN validator validator /usr/local/lib/pft-fleet/manifest.tsv 0644 BEHIND 2f44f5dbad5e 1f2e6ec221a4 write
+  PLAN validator validator /etc/systemd/system/pft-fleet.service 0644 CURRENT 3105a2f0a144 3105a2f0a144 keep
+  PLAN validator validator /etc/systemd/system/pft-fleet.timer 0644 CURRENT 79839ee00a81 79839ee00a81 keep
+  [2026-11-14T10:43:20Z] order: sentry validator
+  [2026-11-14T10:43:20Z] sentry: every fleet file already at e52cfd1d976f - nothing to do
+  [2026-11-14T10:43:20Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/lib/pft-fleet/manifest.tsv sha256 2f44f5dbad5e -> /var/lib/pft-fleet/backup/20261114T104320Z-fleet-validator
+  WRITE validator /usr/local/lib/pft-fleet/manifest.tsv 2f44f5dbad5e -> 1f2e6ec221a4 mode 0644
+  GATE validator sha256 /usr/local/lib/pft-fleet/manifest.tsv = target 1f2e6ec221a4 PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync fleet@e52cfd1d976f (manifest.tsv)
+  [2026-11-14T10:43:50Z] SYNCED validator fleet -> e52cfd1d976f
+  [2026-11-14T10:43:50Z] sync complete
+  (exit 0)
+CHECK ok   fleet manifest sync exit 0
+$ sudo -n pft-fleet sync --addon alertstats --to e52cfd1d976f86e5335128a8c507b8771584c8e7 --apply --reason 'task_61903325 alertstats e52cfd1 first install'
+  [2026-11-14T10:44:08Z] sync alertstats to e52cfd1d976f86e5335128a8c507b8771584c8e7 (2026-11-14T10:40:53+00:00) REF main=e52cfd1d976f86e5335128a8c507b8771584c8e7
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN validator validator /usr/local/bin/pft-alertstats 0755 MISSING - ce12334c9536 write
+  PLAN validator validator /usr/local/lib/pft-alertstats/alertstats_build.py 0644 MISSING - 9a7459980f0d write
+  PLAN validator validator /etc/systemd/system/pft-alertstats.service 0644 MISSING - 036a0e576b44 write
+  PLAN validator validator /etc/systemd/system/pft-alertstats.timer 0644 MISSING - 96121c2e9ccd write
+  [2026-11-14T10:44:08Z] order: sentry validator
+  [2026-11-14T10:44:08Z] sentry: every alertstats file already at e52cfd1d976f - nothing to do
+  [2026-11-14T10:44:08Z] validator: 4 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/bin/pft-alertstats absent before sync (rollback removes it)
+  BACKUP validator /usr/local/lib/pft-alertstats/alertstats_build.py absent before sync (rollback removes it)
+  BACKUP validator /etc/systemd/system/pft-alertstats.service absent before sync (rollback removes it)
+  BACKUP validator /etc/systemd/system/pft-alertstats.timer absent before sync (rollback removes it)
+  WRITE validator /usr/local/bin/pft-alertstats - -> ce12334c9536 mode 0755
+  WRITE validator /usr/local/lib/pft-alertstats/alertstats_build.py - -> 9a7459980f0d mode 0644
+  WRITE validator /etc/systemd/system/pft-alertstats.service - -> 036a0e576b44 mode 0644
+  WRITE validator /etc/systemd/system/pft-alertstats.timer - -> 96121c2e9ccd mode 0644
+  RELOAD validator systemctl daemon-reload
+  GATE validator sha256 /usr/local/bin/pft-alertstats = target ce12334c9536 PASS
+  GATE validator syntax /usr/local/bin/pft-alertstats bash -n PASS
+  GATE validator sha256 /usr/local/lib/pft-alertstats/alertstats_build.py = target 9a7459980f0d PASS
+  GATE validator syntax /usr/local/lib/pft-alertstats/alertstats_build.py python PASS
+  GATE validator sha256 /etc/systemd/system/pft-alertstats.service = target 036a0e576b44 PASS
+  GATE validator unit pft-alertstats.service LoadState=loaded PASS
+  GATE validator sha256 /etc/systemd/system/pft-alertstats.timer = target 96121c2e9ccd PASS
+  GATE validator unit pft-alertstats.timer LoadState=loaded PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync alertstats@e52cfd1d976f (pft-alertstats,alertstats_build.py,pft-alertstats.service,pft-alertstats.timer)
+  [2026-11-14T10:44:41Z] SYNCED validator alertstats -> e52cfd1d976f
+  [2026-11-14T10:44:41Z] sync complete
+  (exit 0)
+CHECK ok   alertstats sync exit 0 (files written + integrity accepted by pft-fleet)
+$ sudo -n pft-fleet sync --addon aptrust --to e52cfd1d976f86e5335128a8c507b8771584c8e7 --apply --reason 'task_61903325 aptrust allowlist copy += alertstats rows'
+  [2026-11-14T10:44:57Z] sync aptrust to e52cfd1d976f86e5335128a8c507b8771584c8e7 (2026-11-14T10:40:53+00:00) REF main=e52cfd1d976f86e5335128a8c507b8771584c8e7
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN sentry sentry /usr/local/bin/pft-aptrust 0755 CURRENT 0e7722706169 0e7722706169 keep
+  PLAN sentry sentry /usr/local/lib/pft-aptrust/manifest.tsv 0644 BEHIND 2f44f5dbad5e 1f2e6ec221a4 write
+  PLAN sentry sentry /etc/systemd/system/pft-aptrust.service 0644 CURRENT 4dfc8751acb0 4dfc8751acb0 keep
+  PLAN sentry sentry /etc/systemd/system/pft-aptrust.timer 0644 CURRENT 1f6d67e56237 1f6d67e56237 keep
+  PLAN validator validator /usr/local/bin/pft-aptrust 0755 CURRENT 0e7722706169 0e7722706169 keep
+  PLAN validator validator /usr/local/lib/pft-aptrust/manifest.tsv 0644 BEHIND 2f44f5dbad5e 1f2e6ec221a4 write
+  PLAN validator validator /etc/systemd/system/pft-aptrust.service 0644 CURRENT 4dfc8751acb0 4dfc8751acb0 keep
+  PLAN validator validator /etc/systemd/system/pft-aptrust.timer 0644 CURRENT 1f6d67e56237 1f6d67e56237 keep
+  PLAN validator validator /etc/systemd/system/pft-aptrust-pull.service 0644 CURRENT 25f018e00e72 25f018e00e72 keep
+  PLAN validator validator /etc/systemd/system/pft-aptrust-pull.timer 0644 CURRENT edf767945c09 edf767945c09 keep
+  [2026-11-14T10:44:57Z] order: sentry validator
+  [2026-11-14T10:44:57Z] sentry: 1 file(s) to write
+  PRE sentry pft-maint window active PASS
+  PRE sentry node server_state=full PASS
+  PRE sentry pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP sentry /usr/local/lib/pft-aptrust/manifest.tsv sha256 2f44f5dbad5e -> /var/lib/pft-fleet/backup/20261114T104457Z-aptrust-sentry
+  WRITE sentry /usr/local/lib/pft-aptrust/manifest.tsv 2f44f5dbad5e -> 1f2e6ec221a4 mode 0644
+  GATE sentry sha256 /usr/local/lib/pft-aptrust/manifest.tsv = target 1f2e6ec221a4 PASS
+  GATE sentry addon units failed=none PASS
+  GATE sentry node server_state=full PASS
+  ACCEPT sentry pft-integrity baseline updated: pft-fleet sync aptrust@e52cfd1d976f (manifest.tsv)
+  [2026-11-14T10:45:37Z] SYNCED sentry aptrust -> e52cfd1d976f
+  [2026-11-14T10:45:37Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/lib/pft-aptrust/manifest.tsv sha256 2f44f5dbad5e -> /var/lib/pft-fleet/backup/20261114T104457Z-aptrust-validator
+  WRITE validator /usr/local/lib/pft-aptrust/manifest.tsv 2f44f5dbad5e -> 1f2e6ec221a4 mode 0644
+  GATE validator sha256 /usr/local/lib/pft-aptrust/manifest.tsv = target 1f2e6ec221a4 PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync aptrust@e52cfd1d976f (manifest.tsv)
+  [2026-11-14T10:46:32Z] SYNCED validator aptrust -> e52cfd1d976f
+  [2026-11-14T10:46:32Z] sync complete
+  (exit 0)
+CHECK ok   aptrust sync exit 0 (its manifest copy follows the new rows, both hosts)
+$ sha256sum alertstats/pft-alertstats.sh alertstats/alertstats_build.py | cut -c1-64; sudo -n sha256sum /usr/local/bin/pft-alertstats /usr/local/lib/pft-alertstats/alertstats_build.py | cut -c1-64
+  ce12334c9536cdba94dea24f24a0cd5d6f8f090508455cb69bbe2fc3bc32b600
+  9a7459980f0d04f5d764c4e46052d4c50758e24e11175addf187ccbd61c80791
+  ce12334c9536cdba94dea24f24a0cd5d6f8f090508455cb69bbe2fc3bc32b600
+  9a7459980f0d04f5d764c4e46052d4c50758e24e11175addf187ccbd61c80791
+  (exit 0)
+CHECK ok   installed script + helper = repo bytes
+
+== 4. install.sh (first 7-day report through the sandboxed unit, then the timer)
+$ sudo -n bash alertstats/install.sh
+  2026-11-14T10:46:32Z installed pft-alertstats.sh (sha256 ce12334c9536cdba94dea24f24a0cd5d6f8f090508455cb69bbe2fc3bc32b600)
+  2026-11-14T10:46:32Z installed alertstats_build.py (sha256 9a7459980f0d04f5d764c4e46052d4c50758e24e11175addf187ccbd61c80791)
+  2026-11-14T10:46:34Z added to /etc/pft-rulecheck.conf: textfile pft_alertstats.prom    30h  pft_alertstats_last_run_timestamp_seconds
+  2026-11-14T10:46:34Z added to /etc/pft-rulecheck.conf: require pft_alertstats.prom
+  2026-11-14T10:46:34Z first report (through the sandboxed unit):
+  pft_alertstats_up{host="validator"} 1
+  pft_alertstats_rules{host="validator"} 115
+  pft_alertstats_prometheus_gap_seconds{host="validator"} 225
+  Created symlink /etc/systemd/system/timers.target.wants/pft-alertstats.timer → /etc/systemd/system/pft-alertstats.timer.
+  2026-11-14T10:46:41Z enabled pft-alertstats.timer (daily 05:23 UTC + up to 120 s)
+  2026-11-14T10:46:41Z remember: sudo pft-integrity accept --reason 'pft-alertstats installed'; pft-schedaudit accept + collect; pft-jobwatch inventory
+  (exit 0)
+CHECK ok   install exit 0, up 1, timer enabled
+$ sudo -n bash alertstats/install.sh 2>&1 | grep -E 'added to|ERROR'
+  
+  (exit 1)
+CHECK ok   second install run adds no rulecheck line and reports no error
+
+== 5. rulecheck inputs (written by install.sh)
+$ sudo -n grep -n pft_alertstats /etc/pft-rulecheck.conf
+  106:textfile pft_alertstats.prom    30h  pft_alertstats_last_run_timestamp_seconds
+  107:require pft_alertstats.prom
+  (exit 0)
+CHECK ok   2 pft_alertstats rulecheck lines
+
+== 6. load the alert rule (alerts/ is mounted at /etc/pft-alerts) and check it
+$ sudo -n docker kill -s HUP pft-prometheus >/dev/null && sleep 40 && curl -s http://127.0.0.1:9090/api/v1/status/runtimeinfo | jq -r .data.reloadConfigSuccess && curl -s http://127.0.0.1:9090/api/v1/rules | jq -r '.data.groups[] | select(.name == "pft-alertstats") | .rules[] | [.name, .health, .state] | @tsv'
+  true
+  PFTAlertFlapping	ok	inactive
+  (exit 0)
+CHECK ok   config reload ok, 1 alertstats rule loaded, health ok, inactive
+
+== 7. new unit/timer: pft-schedaudit accept + collect, jobwatch inventory, then pft-integrity accept, both hosts
+$ sudo -n pft-schedaudit audit | grep -E '^(NEW|REMOVED|SUMMARY)' | cut -c1-160
+  NEW	-	timer/pft-alertstats.timer@87a011952e	-	not in the accepted entry set
+  SUMMARY entries=106 enabled=93 findings=1 allowed=1 unexpected_findings=0 new=1 removed=0 baseline=yes unused_allow=0
+  (exit 1)
+$ sudo -n pft-schedaudit accept --reason 'task_61903325: pft-alertstats timer installed' | tail -2; sudo -n pft-schedaudit collect | tail -1
+  accepted 106 entries (+1 -0): task_61903325: pft-alertstats timer installed
+  (exit 0)
+$ sudo -n pft-jobwatch inventory 2>&1 | grep -E 'alertstats|SUMMARY' | cut -c1-200
+  pft-alertstats.timer	calendar	86400	0	0	0	0	1	OnCalendar=*-*-* 05:23:00 UTC
+  (exit 0)
+CHECK ok   jobwatch learns an 86400 s interval for pft-alertstats.timer
+$ sudo -n pft-integrity verify | grep -E '^(WARN|FAIL|RESULT)' | sed -E 's/ +sha256.*//' | cut -c1-140 | head -40
+  RESULT: WARN - 253 unchanged, 3 warn, 0 fail -> exit 1
+  (exit 1)
+$ sudo -n pft-integrity accept --reason 'task_61903325: alertstats e52cfd1 installed (bin, lib, units, timer, rulecheck.conf, sched items)' | tail -2
+  pft-integrity accept - 2026-11-14T10:48:21Z: re-baselined 256 items by <user>
+  manifest sha256: 986f5a996bd6f93939c98c9d70beec0513c7640e3a0fe8c1a3df4cd84945776b -> 35a3617cb2ede86523856a06e713e6131dfaa6538aa042b6a0470aa40e88af14 (logged to accept.log)
+  (exit 0)
+$ R 'sudo -n pft-integrity verify' | grep -E '^(WARN|FAIL|RESULT)' | sed -E 's/ +sha256.*//' | cut -c1-140 | head -40
+  RESULT: PASS - 151 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+$ R "sudo -n pft-integrity accept --reason 'task_61903325: aptrust allowlist copy += alertstats rows (e52cfd1)'" | tail -2
+  pft-integrity accept - 2026-11-14T10:48:40Z: re-baselined 151 items by root
+  manifest sha256: 896063ac791fe7f40d8e5f02533ac3b05d16e9e3c935c3975a0ebb93d3a4b92a -> ed8115a38508d328d0a4e1dfcc03220daf1fb0c196ff596e72003b6a181eacfe (logged to accept.log)
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 256 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 151 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts
+$ sudo -n pft-schedaudit audit | grep -E '^SUMMARY'; R 'sudo -n pft-schedaudit audit' | grep -E '^SUMMARY'
+  SUMMARY entries=106 enabled=93 findings=1 allowed=1 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+  SUMMARY entries=72 enabled=59 findings=0 allowed=0 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+  (exit 0)
+CHECK ok   schedaudit on both hosts: 0 unexpected, 0 new/removed
+
+== 8. VERIFIED: textfile + Prometheus series, aptrust, confinement, skew, rulecheck, timer
+$ sleep 45; curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query={__name__=~"pft_alertstats_(up|rules|window_seconds)"} or sum by (host) (pft_alertstats_flapping)' | jq -r '.data.result[] | "\(.metric.__name__ // "sum_flapping") \(.value[1])"' | sort
+  pft_alertstats_rules 115
+  pft_alertstats_up 1
+  pft_alertstats_window_seconds 604800
+  sum_flapping 0
+  (exit 0)
+CHECK ok   Prometheus: up 1, window 604800 s, rules > 100, flapping sum present
+$ sudo -n pft-aptrust audit | grep -E '^(WARN|FAIL) |^RESULT'; R 'sudo -n pft-aptrust audit' | grep -E '^(WARN|FAIL) |^RESULT'
+  RESULT: PASS - 11 sources, 4 keys, 4 containers; 8 pass, 18 info, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 10 sources, 2 keys, 1 containers; 4 pass, 16 info, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   aptrust audit on both hosts: 0 warn, 0 fail (new files are in its allowlist copy)
+$ sudo -n systemctl start pft-aptrust.service; R 'sudo -n systemctl start pft-aptrust.service'; sudo -n systemctl start pft-aptrust-pull.service; grep -hE '^pft_aptrust_checks\{.*result="(warn|fail)"' /var/lib/pft-exporter/textfile/pft_aptrust_*.prom
+  pft_aptrust_checks{host="sentry",result="warn"} 0
+  pft_aptrust_checks{host="sentry",result="fail"} 0
+  pft_aptrust_checks{host="validator",result="warn"} 0
+  pft_aptrust_checks{host="validator",result="fail"} 0
+  (exit 0)
+CHECK ok   aptrust textfiles (validator + pulled sentry): warn 0, fail 0
+$ sudo -n pft-apparmor audit | grep -E 'denials|RESULT'; sudo -n pft-seccomp audit | grep -E 'RESULT'
+    [PASS] denials            0 DENIED events in the last 86404s
+  RESULT: PASS
+  RESULT: PASS
+  (exit 0)
+CHECK ok   AppArmor + seccomp audits PASS on the validator with 0 denials (alertstats only reads the bridge's docker logs)
+$ sudo -n pft-fleet skew
+  ref main = e52cfd1d976f86e5335128a8c507b8771584c8e7
+  host sentry     role sentry    ok
+  host validator  role validator ok
+  HOST       ADDON       STATE      DETAIL
+  sentry     alertpath   CURRENT    
+  sentry     apparmor    CURRENT    
+  sentry     aptrust     CURRENT    
+  sentry     audittrail  CURRENT    
+  sentry     authwatch   CURRENT    
+  sentry     backfill    CURRENT    
+  sentry     backupwatch CURRENT    
+  sentry     cluster     CURRENT    
+  sentry     divergence  CURRENT    
+  sentry     egress      CURRENT    
+  sentry     feewatch    CURRENT    
+  sentry     fwaudit     CURRENT    
+  sentry     histarchive CURRENT    
+  sentry     integrity   CURRENT    
+  sentry     jobwatch    CURRENT    
+  sentry     kernwatch   CURRENT    
+  sentry     keyescrow   CURRENT    
+  sentry     kmod        CURRENT    
+  sentry     logship     CURRENT    
+  sentry     maint       CURRENT    
+  sentry     mounts      CURRENT    
+  sentry     patch       CURRENT    
+  sentry     peerwatch   CURRENT    
+  sentry     privesc     CURRENT    
+  sentry     resources   CURRENT    
+  sentry     rulecheck   CURRENT    
+  sentry     schedaudit  CURRENT    
+  sentry     seccomp     CURRENT    
+  sentry     selfheal    CURRENT    
+  sentry     sshcrypto   CURRENT    
+  sentry     statewatch  CURRENT    
+  sentry     sysctl      CURRENT    
+  sentry     timesync    CURRENT    
+  sentry     upgradewatch CURRENT    
+  sentry     vulnscan    CURRENT    
+  sentry     watchdog    CURRENT    
+  validator  alertpath   CURRENT    
+  validator  alertstats  CURRENT    
+  validator  apparmor    CURRENT    
+  validator  aptrust     CURRENT    
+  validator  audittrail  CURRENT    
+  validator  authwatch   CURRENT    
+  validator  backfill    CURRENT    
+  validator  backup      CURRENT    
+  validator  backupwatch CURRENT    
+  validator  cluster     CURRENT    
+  validator  divergence  CURRENT    
+  validator  egress      CURRENT    
+  validator  exporter    CURRENT    
+  validator  feewatch    CURRENT    
+  validator  fleet       CURRENT    
+  validator  fwaudit     CURRENT    
+  validator  histarchive CURRENT    
+  validator  integrity   CURRENT    
+  validator  jobwatch    CURRENT    
+  validator  kernwatch   CURRENT    
+  validator  keyescrow   CURRENT    
+  validator  kmod        CURRENT    
+  validator  logship     CURRENT    
+  validator  maint       CURRENT    
+  validator  monitor     CURRENT    
+  validator  mounts      CURRENT    
+  validator  patch       CURRENT    
+  validator  peerwatch   CURRENT    
+  validator  privesc     CURRENT    
+  validator  resources   CURRENT    
+  validator  retention   CURRENT    
+  validator  rulecheck   CURRENT    
+  validator  schedaudit  CURRENT    
+  validator  seccomp     CURRENT    
+  validator  selfheal    CURRENT    
+  validator  sshcrypto   CURRENT    
+  validator  statewatch  CURRENT    
+  validator  sysctl      CURRENT    
+  validator  timesync    CURRENT    
+  validator  upgradewatch CURRENT    
+  validator  vulnscan    CURRENT    
+  validator  watchdog    CURRENT    
+  SUMMARY CURRENT=78 BEHIND=0 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 0)
+CHECK ok   pft-fleet skew exit 0, alertstats CURRENT, nothing BEHIND/MODIFIED/MISSING/UNEXPECTED/DIVERGED
+$ s=$(date +%s); sudo -n systemctl start pft-rulecheck.service; sudo -n journalctl -u pft-rulecheck.service --since @$s --no-pager -o cat | grep -E '^RESULT |alertstats'
+  LIVE     pft-alertstats/PFTAlertFlapping                                2/2
+  FRESH         pft_alertstats.prom                             4m43s    1d06h  pft_alertstats_last_run_timestamp_seconds
+  RESULT OK - rules: LIVE 131 PARTIAL 0 DEAD 0 ERROR 0 IGNORED 0 | textfiles: FRESH 59 STALE 0 MISSING 0 LEFTOVER 0 UNCONFIGURED 0 -> exit 0
+  (exit 0)
+CHECK ok   validator pft-rulecheck RESULT OK
+$ systemctl is-active pft-alertstats.timer; systemctl is-failed pft-alertstats.service; TZ=UTC systemctl show -p TimersCalendar pft-alertstats.timer; systemd-analyze verify /etc/systemd/system/pft-alertstats.service /etc/systemd/system/pft-alertstats.timer 2>&1 | grep pft-alertstats
+  active
+  inactive
+  TimersCalendar={ OnCalendar=*-*-* 05:23:00 UTC ; next_elapse=Sun 2026-11-15 05:23:00 UTC }
+  (exit 1)
+CHECK ok   timer active (daily 05:23 UTC), service not failed, installed units verify clean
+$ sudo -n systemctl start pft-jobwatch.service; grep -E '^pft_jobwatch_job_(failed|missed|disabled)\{.*alertstats' /var/lib/pft-exporter/textfile/pft_jobwatch_validator.prom; wc -c < /var/lib/pft-exporter/textfile/pft_jobwatch_validator.prom
+  pft_jobwatch_job_disabled{host="validator",timer="pft-alertstats.timer"} 0
+  pft_jobwatch_job_failed{host="validator",timer="pft-alertstats.timer"} 0
+  pft_jobwatch_job_missed{host="validator",timer="pft-alertstats.timer"} 0
+  39595
+  (exit 0)
+CHECK ok   jobwatch sees pft-alertstats.timer: not failed, missed or disabled
+
+== 9. the real 7-day report (the unit's first run): headline numbers re-derived, offline rebuild byte-identical
+$ sudo -n ls /var/lib/pft-alertstats/bundles /var/lib/pft-alertstats/reports
+  /var/lib/pft-alertstats/bundles:
+  alertstats-20261114T104634Z.json.gz
+  alertstats-20261114T104642Z.json.gz
+  
+  /var/lib/pft-alertstats/reports:
+  alertstats-20261114T104634Z.csv
+  alertstats-20261114T104634Z.json
+  alertstats-20261114T104634Z.md
+  alertstats-20261114T104642Z.csv
+  alertstats-20261114T104642Z.json
+  alertstats-20261114T104642Z.md
+  (exit 0)
+CHECK ok   one bundle + md/json/csv report from the install run
+$ for f in bundles/alertstats-20261114T104642Z.json.gz reports/alertstats-20261114T104642Z.md reports/alertstats-20261114T104642Z.json reports/alertstats-20261114T104642Z.csv; do sudo -n cat /var/lib/pft-alertstats/$f > ~/work/postfiat-validator-installer/alertstats/logs/report-7d/$(basename $f); done; sha256sum ~/work/postfiat-validator-installer/alertstats/logs/report-7d/*
+  75685e79fef7d10f5b9b9f1cb4413670681f700833a1025ed59306146c442120  ~/work/postfiat-validator-installer/alertstats/logs/report-7d/alertstats-20261114T104642Z.csv
+  eeef55b849afb45fcbc8a7801d890badfd3ec245738c065e41dd223c94dd2dfe  ~/work/postfiat-validator-installer/alertstats/logs/report-7d/alertstats-20261114T104642Z.json
+  3da95e6e390bad0b777d95e0d7b4cbdf6b816568ef1dea97d5d845fb06df6133  ~/work/postfiat-validator-installer/alertstats/logs/report-7d/alertstats-20261114T104642Z.json.gz
+  d4f7900bdc94640f4f00d4b9bb1a5b7c48b706602cc048c0770122b0d9ca5f93  ~/work/postfiat-validator-installer/alertstats/logs/report-7d/alertstats-20261114T104642Z.md
+  (exit 0)
+$ PFT_RED_NAMES="<user>,<host>,<host>" python3 -I alertstats/tests/redaction_gate.py ~/work/postfiat-validator-installer/alertstats/logs/report-7d
+  redaction gate: 4 file(s), 0 refused, 3 name(s) checked
+  (exit 0)
+CHECK ok   published bundle + reports pass the redaction gate (no public IP, no topic, no home path, no user/host name)
+$ jq -c '.headline' ~/work/postfiat-validator-installer/alertstats/logs/report-7d/alertstats-20261114T104642Z.json
+  {"active_alertnames":44,"episodes":256,"fired":118,"flapping_alertnames":0,"flaps":9,"gap_split":4,"hygiene_info":73,"hygiene_warn":14,"notifications":0,"open":3,"pending_only":138,"prometheus_gap_s":225}
+  (exit 0)
+$ jq '[.episodes[]] | length' ~/work/postfiat-validator-installer/alertstats/logs/report-7d/alertstats-20261114T104642Z.json; jq '[.episodes[] | select(.kind == "fired")] | length' ~/work/postfiat-validator-installer/alertstats/logs/report-7d/alertstats-20261114T104642Z.json; jq '[.episodes[] | select(.kind == "pending_only")] | length' ~/work/postfiat-validator-installer/alertstats/logs/report-7d/alertstats-20261114T104642Z.json; jq '[.episodes[] | select(.open)] | length' ~/work/postfiat-validator-installer/alertstats/logs/report-7d/alertstats-20261114T104642Z.json; jq '[.episodes[] | select(.gap_split_before or .gap_split_after)] | length' ~/work/postfiat-validator-installer/alertstats/logs/report-7d/alertstats-20261114T104642Z.json; jq '[.alerts[].flaps] | add' ~/work/postfiat-validator-installer/alertstats/logs/report-7d/alertstats-20261114T104642Z.json; jq '[.alerts[] | select(.flapping)] | length' ~/work/postfiat-validator-installer/alertstats/logs/report-7d/alertstats-20261114T104642Z.json; jq '.alerts | length' ~/work/postfiat-validator-installer/alertstats/logs/report-7d/alertstats-20261114T104642Z.json; jq '[.hygiene[] | select(.severity == "warn")] | length' ~/work/postfiat-validator-installer/alertstats/logs/report-7d/alertstats-20261114T104642Z.json; jq '[.hygiene[] | select(.severity == "info")] | length' ~/work/postfiat-validator-installer/alertstats/logs/report-7d/alertstats-20261114T104642Z.json; jq '[.prometheus_gaps[].seconds] | add // 0' ~/work/postfiat-validator-installer/alertstats/logs/report-7d/alertstats-20261114T104642Z.json
+  256
+  118
+  138
+  3
+  4
+  9
+  0
+  44
+  14
+  73
+  225
+  (exit 0)
+CHECK ok   every headline number equals its jq re-derivation from the episode/alert/hygiene/gap lists (256 118 138 3 4 9 0 44 14 73 225)
+$ csvc=$(tail -n +2 ~/work/postfiat-validator-installer/alertstats/logs/report-7d/alertstats-20261114T104642Z.csv | wc -l); echo "csv rows $csvc"; jq '[.episodes[]] | length' ~/work/postfiat-validator-installer/alertstats/logs/report-7d/alertstats-20261114T104642Z.json
+  csv rows 256
+  256
+  (exit 0)
+CHECK ok   CSV has one row per episode
+$ python3 -I alertstats/alertstats_build.py report --offline ~/work/postfiat-validator-installer/alertstats/logs/report-7d/alertstats-20261114T104642Z.json.gz --format md | cmp - ~/work/postfiat-validator-installer/alertstats/logs/report-7d/alertstats-20261114T104642Z.md && echo identical
+  identical
+  (exit 0)
+CHECK ok   offline rebuild (md) from the published bundle is byte-identical to the unit's report
+$ python3 -I alertstats/alertstats_build.py report --offline ~/work/postfiat-validator-installer/alertstats/logs/report-7d/alertstats-20261114T104642Z.json.gz --format json | cmp - ~/work/postfiat-validator-installer/alertstats/logs/report-7d/alertstats-20261114T104642Z.json && echo identical
+  identical
+  (exit 0)
+CHECK ok   offline rebuild (json) from the published bundle is byte-identical to the unit's report
+$ python3 -I alertstats/alertstats_build.py report --offline ~/work/postfiat-validator-installer/alertstats/logs/report-7d/alertstats-20261114T104642Z.json.gz --format csv | cmp - ~/work/postfiat-validator-installer/alertstats/logs/report-7d/alertstats-20261114T104642Z.csv && echo identical
+  identical
+  (exit 0)
+CHECK ok   offline rebuild (csv) from the published bundle is byte-identical to the unit's report
+$ python3 -I alertstats/alertstats_build.py report --offline ~/work/postfiat-validator-installer/alertstats/logs/report-7d/alertstats-20261114T104642Z.json.gz --format textfile --now $(sudo -n stat -c %Y /var/lib/pft-exporter/textfile/pft_alertstats.prom) | grep -v '^pft_alertstats_last_run' | sha256sum; grep -v '^pft_alertstats_last_run' /var/lib/pft-exporter/textfile/pft_alertstats.prom | sha256sum
+  a0b1add6691ab772587e29f47cf8bd9a1bd7d450571b13025a3651b96d908c4b  -
+  a0b1add6691ab772587e29f47cf8bd9a1bd7d450571b13025a3651b96d908c4b  -
+  (exit 0)
+CHECK ok   offline textfile rebuild = live textfile (timestamp line excluded)
+$ sed -n '/^## Headline/,/^## Per alert/p' ~/work/postfiat-validator-installer/alertstats/logs/report-7d/alertstats-20261114T104642Z.md
+  ## Headline
+  
+  | metric | value |
+  |---|---|
+  | episodes | 256 |
+  | fired | 118 |
+  | pending_only | 138 |
+  | open | 3 |
+  | gap_split | 4 |
+  | flaps | 9 |
+  | flapping_alertnames | 0 |
+  | active_alertnames | 44 |
+  | hygiene_warn | 14 |
+  | hygiene_info | 73 |
+  | notifications | 0 |
+  | prometheus_gap_s | 225 |
+  | alerting rules / alertnames | 115 / 114 |
+  
+  ## Per alert
+  (exit 0)
+
+== 10. end window, restore the real target, compare, keyescrow, read back the throwaway and every operator topic
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+$ sudo -n rm -f $NE   (no ntfy.env before: pft-maint falls back to the real monitor target again)
+CHECK ok   pft-maint target back to its pre-run state (/etc/pft-maint/ntfy.env: absent again)
+$ sudo -n test ! -e $BK && echo backup gone
+  backup gone
+  (exit 0)
+$ sudo -n systemctl start pft-keyescrow.service; grep -h '^pft_keyescrow_drift_items{node="validator"}' /var/lib/pft-exporter/textfile/pft_keyescrow.prom
+  pft_keyescrow_drift_items{node="validator"} 0
+  (exit 0)
+CHECK ok   pft-keyescrow re-run after the ntfy.env restore: validator drift_items 0
+$ sleep 5; curl -s --max-time 15 "https://ntfy.sh/$TT/json?poll=1&since=1794652912" | jq -r '.title'
+  [MAINT] start validator
+  [MAINT] end validator
+  (exit 0)
+CHECK ok   the [MAINT] start and end messages reached the throwaway topic
+$ for i in $(seq 0 15 150); do n=$(curl -s http://127.0.0.1:9090/api/v1/alerts | jq -r '[.data.alerts[] | select(.labels.alertname | test("AlertFlapping|RuleDead|TextfileStale|Rulecheck|Fleet|Aptrust|Sched|PFTJob|KeyEscrow|Integrity|AppArmor|Seccomp"))] | length'); echo "+${i}s: $n"; [ "$n" = 0 ] && break; sleep 15; done; echo $n
+  +0s: 0
+  0
+  (exit 0)
+CHECK ok   no alertstats/rulecheck/fleet/aptrust/schedaudit/jobwatch/keyescrow/confinement alert pending or firing (silence left to run out)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 256 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 151 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts at the end
+$ srv_state
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing at the end
+$ systemctl list-units --all --no-legend 'run-u*.service' 'run-u*.timer' | wc -l
+  0
+  (exit 0)
+CHECK ok   no transient run-u services/timers
+operator topic read-back waits 90 s (>= group_interval + 30 s after the last change)
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the run (2 topic(s), 0 with messages)
+
+install-run done 2026-11-14T10:53:53Z: 0 check(s) failed -> PASS

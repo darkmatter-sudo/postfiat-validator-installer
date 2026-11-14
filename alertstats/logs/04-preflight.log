@@ -1,0 +1,59 @@
+alertstats install + 7-day report - 2026-11-14T10:41:04Z - Ubuntu 22.04.5 LTS - repo HEAD e52cfd1d976f86e5335128a8c507b8771584c8e7 (clean: yes)
+
+== 0. preflight (read-only)
+$ sha256sum alertstats/pft-alertstats.sh alertstats/alertstats_build.py alertstats/install.sh alertstats/drill/install-run.sh alertstats/systemd/* alerts/alertstats.rules.yml fleet/manifest.tsv
+  ce12334c9536cdba94dea24f24a0cd5d6f8f090508455cb69bbe2fc3bc32b600  alertstats/pft-alertstats.sh
+  9a7459980f0d04f5d764c4e46052d4c50758e24e11175addf187ccbd61c80791  alertstats/alertstats_build.py
+  115acfa60056e6ed3af1c7a72dda397d2e3e2c44e99964b357d84fc38625cebd  alertstats/install.sh
+  bacea15255845e2276cb3dcbe9e68b5c261afabc81e3287020361896a64e8570  alertstats/drill/install-run.sh
+  036a0e576b44032569cab7ee7941ac5f6930ed4368f8d5311e2976d3f733b60e  alertstats/systemd/pft-alertstats.service
+  96121c2e9ccdf4b12b77443e1fee55442f87e0fb8bc23dcd9fe83e30125e02d0  alertstats/systemd/pft-alertstats.timer
+  483b02b7362ca30f47deb259fcb3c6dba2ad3e2412837864e03087fd5f725f7b  alerts/alertstats.rules.yml
+  1f2e6ec221a45c9a076e4946e3dae180e39cdc3fb1a8625b4a6f054eb3f95857  fleet/manifest.tsv
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 253 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 151 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts before install
+$ srv_state
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ ls /usr/local/bin/pft-alertstats /usr/local/lib/pft-alertstats /etc/systemd/system/pft-alertstats.timer 2>&1
+  ls: cannot access '/usr/local/bin/pft-alertstats': No such file or directory
+  ls: cannot access '/usr/local/lib/pft-alertstats': No such file or directory
+  ls: cannot access '/etc/systemd/system/pft-alertstats.timer': No such file or directory
+  (exit 2)
+CHECK ok   not installed yet
+$ grep -c '^alertstats ' fleet/manifest.tsv; grep -c alertstats.rules.yml alerts/prometheus.yml; grep -c pft_alertstats rulecheck/pft-rulecheck.conf.example
+  4
+  1
+  2
+  (exit 0)
+CHECK ok   HEAD lists 4 alertstats manifest lines, the rule file and 2 rulecheck lines
+$ for c in python3 docker jq; do command -v $c; done | wc -l; sudo -n test -f /etc/pft-rulecheck.conf && echo rc-conf
+  3
+  rc-conf
+  (exit 0)
+CHECK ok   python3 docker jq and a pft-rulecheck conf on the validator
+$ sudo -n env TEXT_BUDGET=999999 pft-jobwatch collect --stdout 2>/dev/null | wc -c; sudo -n sed -n 's/^TEXT_BUDGET=//p' /etc/pft-jobwatch.env
+  39052
+  65000
+  (exit 0)
+CHECK ok   jobwatch textfile has room for the new timer (validator 39052 + 1200 <= budget 65000)
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+$ curl -s http://127.0.0.1:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'; curl -s http://127.0.0.1:9090/api/v1/alerts | jq -r '.data.alerts[] | "\(.labels.alertname) \(.state)"' | sort | uniq -c
+  0
+        1 PFTAlertPipelineWatchdog firing
+        1 PFTVulnRebootOwed pending
+  (exit 0)
+known pending before the run (accepted by the preflight): PFTVulnRebootOwed
+CHECK ok   no active silence; only the pipeline watchdog (+ KNOWN_PENDING) pending/firing in Prometheus
+$ curl -s http://127.0.0.1:9090/api/v1/alerts | jq -r '[.data.alerts[] | select(.state == "firing" and .labels.alertname != "PFTAlertPipelineWatchdog")] | length'
+  0
+  (exit 0)
+CHECK ok   nothing but the watchdog FIRING (KNOWN_PENDING may only be pending)
+PREFLIGHT_ONLY: stopping before any change (0 failed)

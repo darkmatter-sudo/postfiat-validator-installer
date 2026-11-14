@@ -170,6 +170,42 @@ def test_collect_gz_is_byte_identical(stub, tmp_path):
     assert a[4:8] == b"\x00\x00\x00\x00" and a[3] & 0x08 == 0  # gzip MTIME 0 and no FNAME: same bytes any day
 
 
+def test_collect_delivery_log_starts_at_the_bridge_start_line(stub, tmp_path):
+    # bridge-sample.log: `listening` at 16:00:00, first delivery (webhook) at 16:31:00.1
+    ab.main(collect_args(stub.url, tmp_path / "b.json", "--deliveries", str(FIX / "bridge-sample.log")))
+    b = json.loads((tmp_path / "b.json").read_text())
+    assert b["delivery_log_from"] == ab.parse_iso("2026-11-12T16:00:00Z") and len(b["deliveries"]) == 4
+
+
+def test_collect_idle_bridge_log_is_a_log_with_zero_deliveries(stub, tmp_path):
+    # real capture: the bridge ran since 07:34:24Z and delivered nothing; that is 0 notifications, not "no log"
+    ab.main(collect_args(stub.url, tmp_path / "b.json", "--deliveries", str(FIX / "bridge-real-idle.log")))
+    b = json.loads((tmp_path / "b.json").read_text())
+    assert b["deliveries"] == [] and b["delivery_log_from"] == ab.parse_iso("2026-11-14T07:34:24Z")
+    md = subprocess.run(
+        [sys.executable, "-I", str(ROOT / "alertstats_build.py"), "report", "--offline", str(tmp_path / "b.json")],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert "Delivery log available from 2026-11-14T07:34:24Z (bridge container start)." in md
+    assert "No delivery log in the bundle." not in md
+
+
+def test_log_start_is_the_first_timestamped_line():
+    a, b = "2026-11-12T16:00:00.5Z bridge listening", "2026-11-12T16:05:00Z webhook status=firing alertname=X"
+    assert ab.log_start([a, b]) == ab.parse_iso("2026-11-12T16:00:00Z")  # docker logs: line 1 is timestamped
+    assert ab.log_start(["", "no timestamp", b, a]) == ab.parse_iso("2026-11-12T16:05:00Z")
+    assert ab.log_start([]) is None
+
+
+def test_collect_bridge_log_without_timestamps_has_no_start(stub, tmp_path):
+    log = tmp_path / "plain.log"
+    log.write_text("bridge listening on 127.0.0.1:9095 ntfy=on\n")
+    ab.main(collect_args(stub.url, tmp_path / "b.json", "--deliveries", str(log)))
+    assert json.loads((tmp_path / "b.json").read_text())["delivery_log_from"] is None
+
+
 def test_collect_redacts_silence_comment_and_drops_created_by(tmp_path):
     s = Stub(
         SRC,

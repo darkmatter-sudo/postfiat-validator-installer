@@ -277,6 +277,20 @@ MUTANTS = [
         '"up_query": f"count(present_over_time({a.up_selector}[{2 * step}s]))",',
         '"up_query": f"count({a.up_selector})",',
     ),
+    (
+        "C07",
+        E,
+        "delivery log start = first delivery (an idle bridge reads as no log)",
+        '        bundle["delivery_log_from"] = log_start(lines)\n',
+        '        bundle["delivery_log_from"] = parsed[0]["ts"] if parsed else None\n',
+    ),
+    (
+        "C08",
+        E,
+        "delivery log start skips the first timestamped line",
+        "        if m:\n            return parse_iso(m.group(1))\n",
+        "        if m and line is not lines[0]:\n            return parse_iso(m.group(1))\n",
+    ),
     # ---- shell
     ("S01", S, "STEP not validated", '[[ "$STEP" =~ ^[1-9][0-9]*$ ]] || die', "true || die"),
     ("S02", S, "root check skipped", '[ "${PFT_AS_TEST:-0}" = 1 ] || [ "$(id -u)" = 0 ] || die', "true || die"),

@@ -62,6 +62,7 @@ _DELIVERY = re.compile(
     r"(?:ntfy \[(?P<status>[A-Z]+)\] (?P<name>\S+)(?: x(?P<count>\d+))? -> (?P<result>HTTP \d+|ERROR \S+)"
     r"|webhook status=(?P<wstatus>\S+) alertname=(?P<wname>\S+))"
 )
+_LOG_TS = re.compile(r"^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.\d+)?Z?\s")
 
 
 def die(msg, rc=3):
@@ -205,6 +206,16 @@ def parse_deliveries(lines):
     return out
 
 
+def log_start(lines):
+    """Timestamp of the first timestamped line (the bridge's `listening` line after a container start), else None.
+    The delivery log covers [log_start, end] even when it holds no delivery at all."""
+    for line in lines:
+        m = _LOG_TS.match(line.strip())
+        if m:
+            return parse_iso(m.group(1))
+    return None
+
+
 def cmd_collect(a):
     since = parse_duration(a.since)
     if since > MAX_SINCE:
@@ -252,7 +263,7 @@ def cmd_collect(a):
             lines = f.read().splitlines()
         parsed = parse_deliveries(lines)
         bundle["deliveries"] = [d for d in parsed if start <= d["ts"] <= end]
-        bundle["delivery_log_from"] = parsed[0]["ts"] if parsed else None
+        bundle["delivery_log_from"] = log_start(lines)
         sources["bridge"] = "ok"
     else:
         bundle["deliveries"] = []

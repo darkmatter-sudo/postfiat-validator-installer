@@ -15,6 +15,8 @@
 #  10. restore + read-back of every operator topic (must be 0 messages).
 #   bash alertstats/drill/install-run.sh 2>&1 | tee LOG    (from the repo root, as the agent user)
 #   PREFLIGHT_ONLY=1 bash alertstats/drill/install-run.sh  (step 0 only; changes nothing)
+#   UPGRADE=1 OUT=alertstats/logs/report-7d-NAME bash alertstats/drill/install-run.sh   same steps for an installed
+#       alertstats whose helper or script differs from HEAD (preflight requires that instead of "not installed").
 # KNOWN_PENDING: alert names already pending (long `for:`) before the run that the preflight accepts (each is printed).
 set -uo pipefail
 REPO="$(git rev-parse --show-toplevel)"; cd "$REPO" || exit 3
@@ -27,7 +29,9 @@ KNOWN_PENDING="${KNOWN_PENDING:-}"
 TT="pft-drill-alertstats-$(head -c 6 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 TF=/var/lib/pft-exporter/textfile
 SD=/var/lib/pft-alertstats
-OUT="${OUT:-$REPO/alertstats/logs/report-7d}"
+OUT="${OUT:-$REPO/alertstats/logs/report-7d}"; case "$OUT" in /*) ;; *) OUT="$REPO/$OUT" ;; esac
+UPGRADE="${UPGRADE:-0}"
+MODE="first install"; [ "$UPGRADE" = 1 ] && MODE=upgrade
 R() { ssh -o LogLevel=ERROR -o BatchMode=yes relay "$@"; }
 RHN="$(R hostname 2>/dev/null)"; RHN="${RHN:-$HN}"
 red() { sed -E "s#$HOME#~#g; s#\b$ME\b#<user>#g; s#$HN#<host>#g; s#$RHN#<host>#g; s#\b([0-9]{1,3}\.){3}[0-9]{1,3}\b#<redacted-ip>#g; s#<redacted-ip>(:9[0-9]{3})#127.0.0.1\1#g; s#$TT#<throwaway-topic>#g; s#/opt/pft-agent/[^[:space:]]*#<operator-agent-path>#g"; }
@@ -53,7 +57,7 @@ srv_state() { # both nodes' server_state, validator first (same exec shape as fw
   sudo -n docker exec postfiatd curl -s -m 10 -d '{"method":"server_info"}' http://127.0.0.1:5005 | jq -r .result.info.server_state
   R "sudo -n docker exec postfiatd-sentry curl -s -m 10 -d '{\"method\":\"server_info\"}' http://127.0.0.1:5005 | jq -r .result.info.server_state"
 }
-echo "alertstats install + 7-day report - $(date -u +%FT%TZ) - $(. /etc/os-release; echo "$PRETTY_NAME") - repo HEAD $SHA (clean: $([ -z "$(git status --short)" ] && echo yes || echo NO))"
+echo "alertstats $MODE + 7-day report - $(date -u +%FT%TZ) - $(. /etc/os-release; echo "$PRETTY_NAME") - repo HEAD $SHA (clean: $([ -z "$(git status --short)" ] && echo yes || echo NO))"
 [ -z "$(git status --short)" ] || { echo "dirty tree - stopping"; exit 3; }
 git fetch -q origin
 [ "$(git rev-parse origin/main)" = "$SHA" ] || { echo "HEAD is not pushed - stopping"; exit 3; }
@@ -65,7 +69,13 @@ check "pft-integrity PASS on both hosts before install" "$([ "$(grep -c 'RESULT:
 x "srv_state"
 check "both nodes full or proposing" "$([ "$(grep -cE '^(full|proposing)$' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
 x "ls /usr/local/bin/pft-alertstats /usr/local/lib/pft-alertstats /etc/systemd/system/pft-alertstats.timer 2>&1"
-check "not installed yet" "$([ "$(grep -c 'No such file' <<<"$XOUT")" = 3 ] && echo 0 || echo 1)"
+if [ "$UPGRADE" = 1 ]; then
+  check "UPGRADE: installed (bin, lib, timer present)" "$([ "$(grep -c 'No such file' <<<"$XOUT")" = 0 ] && echo 0 || echo 1)"
+  x "sha256sum alertstats/pft-alertstats.sh alertstats/alertstats_build.py | cut -c1-64; sudo -n sha256sum /usr/local/bin/pft-alertstats /usr/local/lib/pft-alertstats/alertstats_build.py | cut -c1-64"
+  check "UPGRADE: installed script/helper differ from HEAD (the sync has something to do)" "$([ "$(sort <<<"$XOUT" | uniq -c | awk '$1 == 2' | wc -l)" -lt 2 ] && echo 0 || echo 1)"
+else
+  check "not installed yet" "$([ "$(grep -c 'No such file' <<<"$XOUT")" = 3 ] && echo 0 || echo 1)"
+fi
 x "grep -c '^alertstats ' fleet/manifest.tsv; grep -c alertstats.rules.yml alerts/prometheus.yml; grep -c pft_alertstats rulecheck/pft-rulecheck.conf.example"
 check "HEAD lists 4 alertstats manifest lines, the rule file and 2 rulecheck lines" "$([ "$(tr '\n' ' ' <<<"$XOUT")" = "4 1 2 " ] && echo 0 || echo 1)"
 x "for c in python3 docker jq; do command -v \$c; done | wc -l; sudo -n test -f /etc/pft-rulecheck.conf && echo rc-conf"
@@ -117,7 +127,7 @@ echo; echo "== 3. pft-fleet: manifest (fleet add-on), alertstats, then aptrust's
 x "sudo -n pft-fleet sync --addon fleet --to $SHA --apply --reason '$TASK alertstats manifest lines'"
 check "fleet manifest sync exit 0" "$XRC"
 gate
-x "sudo -n pft-fleet sync --addon alertstats --to $SHA --apply --reason '$TASK alertstats $SHORT first install'"
+x "sudo -n pft-fleet sync --addon alertstats --to $SHA --apply --reason '$TASK alertstats $SHORT $MODE'"
 check "alertstats sync exit 0 (files written + integrity accepted by pft-fleet)" "$XRC"
 gate
 x "sudo -n pft-fleet sync --addon aptrust --to $SHA --apply --reason '$TASK aptrust allowlist copy += alertstats rows'"
