@@ -135,6 +135,20 @@ Files: `pft-peertls.sh` -> `/usr/local/bin/pft-peertls`, `pft-peertls-fix.sh` ->
 `systemd/pft-peertls-pull.{service,timer}` (validator). Config: `/etc/pft-peertls.env`, `/etc/pft-peertls.targets`
 (and, only if needed, `/etc/pft-peertls.waivers`), all root-owned 0600.
 
+```
+sudo ./install.sh --role sentry                 # on the sentry (container postfiatd-sentry)
+sudo ./install.sh --role validator              # on the validator (container postfiatd)
+echo 'PULL_SSH=...' | sudo tee -a /etc/pft-peertls.env && sudo ./install.sh --pull   # validator: weekly copy of the sentry result
+sudo ./install.sh --uninstall                   # timers off, textfiles + rulecheck lines removed
+```
+
+`install.sh` writes ROLE/HOST_LABEL, creates the targets file with the host's own loopback target only, adds the
+rulecheck lines (`textfile pft_peertls_*.prom 8d`, `require pft_peertls_ROLE.prom`), runs one audit through the
+sandboxed unit (must write `pft_peertls_up 1`) and enables the weekly timer. On a fleet the same files go out through
+`pft-fleet sync --addon peertls` (rows in `../fleet/manifest.tsv`), then `pft-integrity accept`,
+`pft-schedaudit accept` + `collect` and `pft-jobwatch inventory` (weekly interval). The recorded two-host install is
+`drill/install-run.sh`; `drill/crosshost-run.sh` adds one `remote` line per host and runs the cross-host audits.
+
 ## Tests
 
 ```
@@ -155,6 +169,14 @@ closed port), each asserting the exact reason, with a clean server as control. W
 server (compression, missing RFC 5746, no EMS, long ticket lifetime, ignored FALLBACK_SCSV) the test edits one line
 of a real capture and checks that the unedited capture passes. Guards (target rules, handshake cap, pace floor) are
 tested with a logging `openssl` stub that must never be called.
+
+Mutation run (every grader check, parsers, waivers, public view, crosscheck, collector scope guards and handshake
+cap, remediation refusals/window/gate/rollback, the alert rule), with an unmutated baseline, a hang control and an
+orphan check:
+
+```
+TEST_TMPDIR=$HOME/.cache python3 -u peertls/tests/mutate.py --jobs 6 --timeout 900    # from the repo root
+```
 
 ## Results
 
