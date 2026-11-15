@@ -194,7 +194,7 @@ Raw logs in `logs/` (redacted: public IPs, user, hostnames, notifier topics). Fo
 | Cross-host | `logs/14-crosshost-run.log`, `logs/cross/` | 4 audits `RESULT: PASS - 22 pass, 0 warn, 0 fail` (21/40 handshakes each); both crosschecks PASS; flip control FAILs on `cert sha256` |
 | Upgrade | `logs/17-upgrade-run.log` | final code (981e824) on both hosts: 27 `CHECK ok`, 0 `CHECK FAIL`, `-> PASS` |
 | Mutants | `logs/18-mutants.log` (clone at 981e824) | baseline 75 passed + promtool SUCCESS, hang control ok, `RESULT: 56 caught, 0 survived, 0 not applied, 0 broken of 56`, 0 orphans |
-| Fresh clone | `logs/19-fresh-clone.log` | public clone at the pinned commit: key-file sha256 = install, full suite, promtool, offline `render | cmp` exit 0 |
+| Fresh clone | `logs/19-fresh-clone.log` | public clone at 79eddeb: 7/7 key-file sha256 = upgrade log 17, shellcheck/ruff clean, 75 passed, promtool SUCCESS, 4 offline `render \| cmp` exit 0, both crosschecks = committed, flip control rc 2 |
 
 Defects found in the tooling along the way and fixed before the final runs: the fix run's alert-query helper
 failed open (log 07 step 6, jq rebinding `.`; drained by `logs/09-drain-after.log`, fixed in the runners); the install

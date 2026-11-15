@@ -1,0 +1,118 @@
+OS: Ubuntu 22.04.5 LTS | 2026-11-15T01:51:55Z | peertls fresh-clone verification at 79eddebb15da1a7672b76be61897de4c9bb71588 | shellcheck 0.8.0 | Python 3.10.12 | ruff 0.17.1 | pytest 9.1.1 | OpenSSL <redacted-version>
+(work dir: a new mktemp dir under ~/.cache, mode 755; /tmp is noexec on this host)
+$ env -u GH_TOKEN -u GITHUB_TOKEN GIT_TERMINAL_PROMPT=0 git -c credential.helper= clone -q https://github.com/darkmatter-sudo/postfiat-validator-installer.git repo
+(exit 0)
+$ git checkout -q 79eddebb15da1a7672b76be61897de4c9bb71588 && git rev-parse HEAD
+79eddebb15da1a7672b76be61897de4c9bb71588
+(exit 0)
+$ git status --short | wc -l
+0
+(exit 0)
+== key files vs the recorded install (peertls/logs/17-upgrade-run.log: the bytes pft-fleet installed on both hosts)
+$ sha256sum peertls/pft-peertls.sh peertls/pft-peertls-fix.sh peertls/peertls_eval.py peertls/install.sh peertls/policy/sentry.policy peertls/policy/validator.policy alerts/peertls.rules.yml > ~/.cache/tmp.RjUL0mAYho/now.txt && cat ~/.cache/tmp.RjUL0mAYho/now.txt
+d583b200e5f81eb7e2609b560889b50f6376d27ea46c297d3c43efada6877cc3  peertls/pft-peertls.sh
+8ceb58b949f4fa18fcb0cfd89cd576aafa2b6deb96686916380f887296a76834  peertls/pft-peertls-fix.sh
+7f03f207f712324c618e26918ced98b930c4c9951392453f6a22b393443f2b68  peertls/peertls_eval.py
+c9b9eb4026bb8a8dab6f261fad09c30f7dfa36215278c226de05890763dbcbe2  peertls/install.sh
+0c6f1b3d92f72a43c0865814926ee5d2da503fb8a08b556065399d1904ff0be0  peertls/policy/sentry.policy
+808ac30c79ffaa05badd2f0eb9cf0fa822254e0d4c864b6f5daec6aad63ba428  peertls/policy/validator.policy
+e43b1e4d7170ca7c42c1a2095446c60257c9b0fc36499b6866a5e5f9689927df  alerts/peertls.rules.yml
+(exit 0)
+$ for f in peertls/pft-peertls.sh peertls/pft-peertls-fix.sh peertls/peertls_eval.py peertls/install.sh peertls/policy/sentry.policy peertls/policy/validator.policy alerts/peertls.rules.yml; do grep -E "^  [0-9a-f]{64}  $f\$" peertls/logs/17-upgrade-run.log | head -1 | sed 's/^  //'; done > ~/.cache/tmp.RjUL0mAYho/inst.txt && diff ~/.cache/tmp.RjUL0mAYho/inst.txt ~/.cache/tmp.RjUL0mAYho/now.txt && echo "identical: $(wc -l < ~/.cache/tmp.RjUL0mAYho/now.txt)/7 sha256 equal the install log"
+identical: 7/7 sha256 equal the install log
+(exit 0)
+$ sha256sum peertls/tests/*.py peertls/tests/fixnode/docker peertls/drill/*.sh peertls/systemd/* alerts/peertls.tests.yml peertls/logs/*.log peertls/logs/cross/*
+2d446e1720e5e52cdc299ce43abb5dee1cf240ca5ad52377095eed9b8711e8ab  peertls/tests/mutate.py
+1ead5fd46acb46d45bf29fe4687d88b0cf3ba0ff819567c22fd4e537d0f09cd0  peertls/tests/test_peertls.py
+7c9127ff4f2f23acb3c23b1380bef82d49675e75ee8c6c8864a0c1eaf809716a  peertls/tests/test_peertls_fix.py
+d50853c82fcf56bc509105b8603163c625ab20100073ce8a84f6e040c86ca99d  peertls/tests/fixnode/docker
+e689db2212777fe373f50d86b6f14c932b74b1af872d32e513b8e7b2f7a2d6b7  peertls/drill/crosshost-run.sh
+54d8ca9cd32e377ebca6bf9e061e5c077421caa6828fd26714decbcf6b9e66ab  peertls/drill/drain-after.sh
+6ead5c9df374dfbe0bd44b1efe9711c6a697c2d2ffdf8eeceb5d4897207d9124  peertls/drill/fix-run.sh
+c5bf643054bde0a140c8ca59f0ad856d47f6eb1b5f85ddf1532d04d1232051f4  peertls/drill/fresh-clone.sh
+f80d8543f256c8bff420fcae1841e44b5bd6c11bc4cb9f23f761b45359e986df  peertls/drill/install-run.sh
+abfc5011503c30acc071380bce2454f2204599c976cfe01a7511378db40b64ec  peertls/drill/upgrade-run.sh
+b3f8c1a252b4207c4bc2d895fd4ed95ec37c076ab40990998fceef5c257993a6  peertls/systemd/pft-peertls-pull.service
+b10f484a2ffab490da077c1630fa6e5d84d8893a4d92b7b24cbac7d6f30a0225  peertls/systemd/pft-peertls-pull.timer
+89a8dd912cdf3ca92ea93e052288b004560f2baa67ed129fcf137333bf822abd  peertls/systemd/pft-peertls.service
+36ff2c67f3ab5faff3858100b65ec2c0c19fbb2fb396d29e7b787e68d48cd6de  peertls/systemd/pft-peertls.timer
+e80af4e873dd94bf7b29ada734599cff89045638b38086fa6d457bd1e5a60a2e  alerts/peertls.tests.yml
+136e9606c6e637367058634d5ccb802f3bcd5cb8300a0ce51e0cde5283859163  peertls/logs/04-throwaway-ciphers.log
+eff30c7d0a629f36fd8b205c990c349401ee22d074e99f94fe3cfcdc53547b98  peertls/logs/05-fix-dryrun.log
+c92686beeb8fbf388e8b0058606fcff480b2444975e84e0534b60ace12e5535f  peertls/logs/06-fixrun-preflight.log
+f423d587d9a8075ff69d994c857f9a689b8e7892ffebc7ac524cb9bbfddf66d1  peertls/logs/07-fixrun-stopped-step6-jq-bug.log
+157e91a537218275071193400f00b34547a31397af154028e96e9f5c357e1a3c  peertls/logs/08-histgap-fill.log
+819cb1223c3a5076333a28075629bd5058208ca3d652dd65d6208e2e72020f50  peertls/logs/09-drain-after.log
+fe8cefbf7509afd734a9bca5ebfb3aaae6e08e3eb686a79d654f3aaec2a0eab5  peertls/logs/10-mutants-dev.log
+c1d420beefbc3c62759615ecda03db500fec7249b5fd7ea9566c4a4e1bc0117c  peertls/logs/10a-mutants-control-stop.log
+a51eb3e240077abc5664d39517569f5e406a3d378efeba257c67801d9c922877  peertls/logs/11-install-preflight.log
+8dfc221d3c4352880e8ceadd80e88661675d5905d46bc3621000a288a36df54e  peertls/logs/11a-install-preflight-stop-am-check.log
+ef0d7ac8c6a8ff054ed0f49194f7eca4268df24326fde94729cd129574e641d5  peertls/logs/11m-mutants-survivors-dev.log
+3c49f8f0cc07ac964d40034ac2005a138199200983a422ddd0179426cb36d15f  peertls/logs/12-install-run.log
+7ccb072c484a34e984814798fa6c5bea03b6fc9b242d33fbc2b93be92bc1fc5c  peertls/logs/12m-mutants.log
+437b06b95cb864e6822505110b41c30e775a3f35f84e670493c9bbd357504aeb  peertls/logs/13-crosshost-preflight.log
+8b517a527a59f1a516e8fcb956c0144475ae159113ae5b447761a9df37080468  peertls/logs/14-crosshost-run.log
+b812573b60763ee11ffaffd13348994da4be695a8de524e9a2e88e1c26eea9de  peertls/logs/15-testclock-fix.log
+5d9c91aef14654f311c55099e7f316f0dd336ccf79fea35076ccd994961dbb7c  peertls/logs/16-upgrade-preflight.log
+3f64989581223d1052ed49cbf1af828e2548fc72da902ea1228a757af02d0751  peertls/logs/17-upgrade-run.log
+def077b0dd094368bf6d93721e6b2cb1d08cf55d71cbddc442f1954e8d11d42e  peertls/logs/18-mutants.log
+7cd0ea67031694b1e1c58a6736585d9acb38397885c4394030b5f6cfd014e016  peertls/logs/cross/crosscheck-flip-control.txt
+e863a986605962b429bb5cae07839eb310d0754edb6852f902d30a7f063726f3  peertls/logs/cross/crosscheck-sentry-to-validator.txt
+5f8b223e410ca2756ed9eed9c79ede6ceadfde7e6ff0ad328f1d6e89219ae0ad  peertls/logs/cross/crosscheck-validator-to-sentry.txt
+fbe55c7c1826e687e3eb3ff93146391d4765e2e107bf524b23976d4a73badd0a  peertls/logs/cross/sentry-local.json
+e75d6e8cf5d91d4bf92739924cf15e786f83baecd7d7cf9ab03db0763c5a02bd  peertls/logs/cross/sentry-local.txt
+2e3f6e5b8ea0dbb945452b45dcce0c744c0f10f78183378e3c619ee640fbdfb4  peertls/logs/cross/sentry-remote.json
+0093d99d3b4851b98ae0202d4d1753c29455937bc65ccf736586cb763a2ef81f  peertls/logs/cross/sentry-remote.txt
+571c57501efd52615137f203dafb5cfeaac0cd5aea50221a30e2e2912ea49922  peertls/logs/cross/validator-local.json
+0ecab1edd6c168a82593149f9d8c6018bcedf9675295908b04106e2ae77f40d0  peertls/logs/cross/validator-local.txt
+ff9972af30f03ab6440c88b8bf2631dfd1de1783aeb0643326c803993b4f6156  peertls/logs/cross/validator-remote.json
+78047d55f64443afcba37cfc5bed251c58e87873101fe81c933ac6d3274022eb  peertls/logs/cross/validator-remote.txt
+(exit 0)
+== static checks
+$ shellcheck peertls/*.sh peertls/drill/*.sh peertls/tests/fixnode/docker
+(exit 0)
+$ ruff check peertls && cd peertls && ruff check . && ruff format --check .
+All checks passed!
+All checks passed!
+5 files already formatted
+(exit 0)
+== full test suite (weak s_server fixtures on 127.0.0.1, fix script against the stub node)
+$ cd peertls && TMPDIR=~/.cache/tmp.RjUL0mAYho TEST_TMPDIR=~/.cache/tmp.RjUL0mAYho timeout 1500 python3 -m pytest -q -p no:cacheprovider tests </dev/null 2>&1 | tail -n 3
+........................................................................ [ 96%]
+...                                                                      [100%]
+75 passed in 421.16s (0:07:01)
+(exit 0)
+== promtool (pinned image already on the host)
+$ docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /w prom/prometheus:v3.5.0 check rules peertls.rules.yml
+Checking peertls.rules.yml
+  SUCCESS: 1 rules found
+
+(exit 0)
+$ docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /w prom/prometheus:v3.5.0 test rules peertls.tests.yml
+  SUCCESS
+
+(exit 0)
+== offline rebuild of the committed cross-host reports
+$ python3 peertls/peertls_eval.py render peertls/logs/cross/validator-local.json | cmp - peertls/logs/cross/validator-local.txt && echo 'validator-local: render(JSON) == committed report (cmp exit 0)'
+validator-local: render(JSON) == committed report (cmp exit 0)
+(exit 0)
+$ python3 peertls/peertls_eval.py render peertls/logs/cross/sentry-local.json | cmp - peertls/logs/cross/sentry-local.txt && echo 'sentry-local: render(JSON) == committed report (cmp exit 0)'
+sentry-local: render(JSON) == committed report (cmp exit 0)
+(exit 0)
+$ python3 peertls/peertls_eval.py render peertls/logs/cross/validator-remote.json | cmp - peertls/logs/cross/validator-remote.txt && echo 'validator-remote: render(JSON) == committed report (cmp exit 0)'
+validator-remote: render(JSON) == committed report (cmp exit 0)
+(exit 0)
+$ python3 peertls/peertls_eval.py render peertls/logs/cross/sentry-remote.json | cmp - peertls/logs/cross/sentry-remote.txt && echo 'sentry-remote: render(JSON) == committed report (cmp exit 0)'
+sentry-remote: render(JSON) == committed report (cmp exit 0)
+(exit 0)
+$ python3 peertls/peertls_eval.py crosscheck peertls/logs/cross/validator-remote.json peertls/logs/cross/sentry-local.json | cmp - peertls/logs/cross/crosscheck-validator-to-sentry.txt && echo 'validator -> sentry crosscheck PASS, output == committed'
+validator -> sentry crosscheck PASS, output == committed
+(exit 0)
+$ python3 peertls/peertls_eval.py crosscheck peertls/logs/cross/sentry-remote.json peertls/logs/cross/validator-local.json | cmp - peertls/logs/cross/crosscheck-sentry-to-validator.txt && echo 'sentry -> validator crosscheck PASS, output == committed'
+sentry -> validator crosscheck PASS, output == committed
+(exit 0)
+$ out=$(python3 peertls/peertls_eval.py crosscheck peertls/logs/cross/validator-remote.json peertls/logs/cross/validator-local.json); rc=$?; grep 'cert sha256' <<<"$out"; echo "flip control rc=$rc (want 2)"; [ $rc = 2 ] && grep -q '^FAIL .* cert sha256: ' <<<"$out" && cmp <(printf '%s\n' "$out") peertls/logs/cross/crosscheck-flip-control.txt
+FAIL validator->sentry cert sha256: remote 0d6ad8fdd71bb8ed local 979c4425cdeffcaa
+flip control rc=2 (want 2)
+(exit 0)
+fresh-clone done 2026-11-15T01:59:11Z: 0 step(s) failed -> PASS
