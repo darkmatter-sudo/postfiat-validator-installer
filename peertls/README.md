@@ -182,4 +182,22 @@ TEST_TMPDIR=$HOME/.cache python3 -u peertls/tests/mutate.py --jobs 6 --timeout 9
 
 ## Results
 
-Pending: live install, two-host and cross-host runs, mutation run and fresh-clone transcript.
+Raw logs in `logs/` (redacted: public IPs, user, hostnames, notifier topics). Found -> fixed -> verified:
+
+| Step | Log | Outcome |
+|---|---|---|
+| Found | `logs/07-fixrun-stopped-step6-jq-bug.log` lines 87-89, 146-148 | both hosts WARN: port 2559 accepted static-RSA key exchange (`cipher.kx_rsa`) and CBC-SHA2 suites (`cipher.cbc_sha2`) (the upstream default cipher string keeps them with the linked TLS library) |
+| Proven on a throwaway | `logs/04-throwaway-ciphers.log` | `ssl_ciphers = ECDHE+AESGCM:ECDHE+CHACHA20` in `[port_peer]` peers in an internal-net pair, weak suites refused |
+| Fixed | `logs/07-...log` step 3 | `pft-peertls-fix.sh` applied sentry first, then validator, in a pft-maint window (one restart each) |
+| Verified | `logs/07-...log` lines 245-248, 306-309 | both hosts audit PASS, `kx_rsa`/`cbc_sha2` now PASS, `server_state` full, integrity PASS |
+| Installed | `logs/12-install-run.log` | 49 `CHECK ok`, 0 `CHECK FAIL`, `install-run done ... -> PASS` |
+| Cross-host | `logs/14-crosshost-run.log`, `logs/cross/` | 4 audits `RESULT: PASS - 22 pass, 0 warn, 0 fail` (21/40 handshakes each); both crosschecks PASS; flip control FAILs on `cert sha256` |
+| Upgrade | `logs/17-upgrade-run.log` | final code (981e824) on both hosts: 27 `CHECK ok`, 0 `CHECK FAIL`, `-> PASS` |
+| Mutants | `logs/18-mutants.log` (clone at 981e824) | baseline 75 passed + promtool SUCCESS, hang control ok, `RESULT: 56 caught, 0 survived, 0 not applied, 0 broken of 56`, 0 orphans |
+| Fresh clone | `logs/19-fresh-clone.log` | public clone at the pinned commit: key-file sha256 = install, full suite, promtool, offline `render | cmp` exit 0 |
+
+Defects found in the tooling along the way and fixed before the final runs: the fix run's alert-query helper
+failed open (log 07 step 6, jq rebinding `.`; drained by `logs/09-drain-after.log`, fixed in the runners); the install
+preflight's Alertmanager check (11a, single node reports cluster `disabled`, now `.uptime`); 9 mutants survived the
+first mutation run (`logs/10-mutants-dev.log`, tests added in ff53dcc, re-run `logs/12m-mutants.log` 56/56); a test pinned
+to a fixed clock failed once wall time passed it (`logs/15-testclock-fix.log`: fail-before, then 75 passed).
