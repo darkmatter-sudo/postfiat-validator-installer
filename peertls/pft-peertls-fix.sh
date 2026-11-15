@@ -2,7 +2,7 @@
 # pft-peertls-fix: remediation for the pft-peertls findings cipher.kx_rsa / cipher.cbc_sha2 on a Dockerized postfiatd.
 # The inbound peer TLS context comes from the [port_peer] port section: ServerHandler::makeContexts() builds it with
 # that port's `ssl_ciphers` (Port.cpp parses the key). Without the key postfiatd uses its built-in TLS 1.2 list, and
-# with the OpenSSL 1.1.1 the image links that list still admits static-RSA and CBC-SHA2 suites. This tool writes one
+# with the OpenSSL build the image links, that list still admits static-RSA and CBC-SHA2 suites. This tool writes one
 # managed `ssl_ciphers` line into [port_peer] (TLS 1.2 only; TLS 1.3 suites are not affected), restarts the node once
 # and gates on health AND on the port's live TLS answer. pft-peertls.sh itself stays read-only.
 #

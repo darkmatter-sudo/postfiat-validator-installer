@@ -148,6 +148,8 @@ sandboxed unit (must write `pft_peertls_up 1`) and enables the weekly timer. On 
 `pft-fleet sync --addon peertls` (rows in `../fleet/manifest.tsv`), then `pft-integrity accept`,
 `pft-schedaudit accept` + `collect` and `pft-jobwatch inventory` (weekly interval). The recorded two-host install is
 `drill/install-run.sh`; `drill/crosshost-run.sh` adds one `remote` line per host and runs the cross-host audits.
+Later code changes go out with `drill/upgrade-run.sh` (same gates and throwaway [MAINT] target; only
+`pft-fleet sync --addon peertls`, then bytes, skew, integrity, schedaudit, aptrust and audit PASS on both hosts).
 
 ## Tests
 

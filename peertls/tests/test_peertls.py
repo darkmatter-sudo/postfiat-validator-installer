@@ -536,7 +536,8 @@ def test_waiver_hides_finding_in_public_view(work):
 # ---------- offline reconstruction, crosscheck, textfile ----------
 def test_render_rebuilds_report_byte_identical(work):
     s = work.server(GOOD)
-    e = work.env([("fx", s.port)], PFT_PTLS_NOW="1794700000")
+    nb, _ = not_after(s.cert)  # clock 1 day into the fresh fixture cert (a fixed epoch expires as wall time passes)
+    e = work.env([("fx", s.port)], PFT_PTLS_NOW=str(nb + 86400))
     b = work.dir / "b"
     assert sh(str(SH), "collect", "--out", str(b), env=e).returncode == 0
     human = sh(str(SH), "audit", "--bundle", str(b), env=e)
