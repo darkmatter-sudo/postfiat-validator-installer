@@ -1,0 +1,65 @@
+== task_2b00 throwaway ssl_ciphers proof 2026-11-14T18:10:23Z
+$ sudo docker image inspect agtipft/postfiatd:testnet-light-latest --format '{{.Id}}'
+sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+[rc=0]
+$ sha256sum ~/.cache/peertls-throwaway/a/postfiatd.cfg ~/.cache/peertls-throwaway/b/postfiatd.cfg
+b9829229b6ed3f781608fe28405e7d9e8f69267e26a3561cb7109b98bd22b067  ~/.cache/peertls-throwaway/a/postfiatd.cfg
+9744e0e68e4a9fe6aecbf3fa6946dc1408df4fdb7d12e1357c0078fb6e0705a9  ~/.cache/peertls-throwaway/b/postfiatd.cfg
+[rc=0]
+$ diff ~/.cache/peertls-throwaway/a/postfiatd.cfg ~/.cache/peertls-throwaway/b/postfiatd.cfg
+14c14
+< ssl_ciphers = ECDHE+AESGCM:ECDHE+CHACHA20
+---
+> 
+40c40
+< 
+---
+> pft-tlsprobe-a 2559
+[rc=1]
+$ sudo docker run -d --name pft-tlsprobe-a --network pft-tlsprobe --tmpfs /var/lib/postfiatd/db:exec,size=512m -v ~/.cache/peertls-throwaway/a:/etc/postfiatd:ro agtipft/postfiatd:testnet-light-latest --conf /etc/postfiatd/postfiatd.cfg
+afe85d6e2b869f8e546eceb07db2e16685b583c6d57b18c5a763e49784f414bb
+[rc=0]
+$ sudo docker run -d --name pft-tlsprobe-b --network pft-tlsprobe --tmpfs /var/lib/postfiatd/db:exec,size=512m -v ~/.cache/peertls-throwaway/b:/etc/postfiatd:ro agtipft/postfiatd:testnet-light-latest --conf /etc/postfiatd/postfiatd.cfg
+ed287cebd4afdd5d6dc4a2cde14b47785b9f96362c5c55899a9dfa55eaf70cdf
+[rc=0]
+A=<redacted-ip> B=<redacted-ip> (private docker bridge addresses)
+t+5s peers A=0 B=-
+t+10s peers A=1 B=1
+CHECK ok   peer link B->A (A restricted, inbound): 1/1
+$ curl -s -m 3 -d '{"method":"server_info"}' http://<redacted-ip>:5005/ | jq -c '.result.info|{build_version,peers,server_state}'
+{"build_version":"1.0.9","peers":1,"server_state":"connected"}
+[rc=0]
+probe A tls1_2 ECDHE-RSA-AES256-GCM-SHA384 -> ECDHE-RSA-AES256-GCM-SHA384
+CHECK ok   A tls1_2 ECDHE-AESGCM: ECDHE-RSA-AES256-GCM-SHA384
+probe A tls1_2 ECDHE-RSA-CHACHA20-POLY1305 -> ECDHE-RSA-CHACHA20-POLY1305
+CHECK ok   A tls1_2 ECDHE-CHACHA20: ECDHE-RSA-CHACHA20-POLY1305
+probe A tls1_2 AES256-GCM-SHA384 -> NONE
+CHECK ok   A tls1_2 static-RSA AES256-GCM: NONE
+probe A tls1_2 DHE-RSA-AES256-SHA256 -> NONE
+CHECK ok   A tls1_2 DHE CBC-SHA256: NONE
+probe A tls1_2 ECDHE-RSA-AES256-SHA384 -> NONE
+CHECK ok   A tls1_2 ECDHE CBC-SHA384: NONE
+probe A tls1_3 default -> TLS_AES_256_GCM_SHA384
+CHECK ok   A tls1_3 default: TLS_AES_256_GCM_SHA384
+probe A tls1_1 ALL -> NONE
+CHECK ok   A tls1_1 any: NONE
+probe B tls1_2 ECDHE-RSA-AES256-GCM-SHA384 -> ECDHE-RSA-AES256-GCM-SHA384
+CHECK ok   B tls1_2 ECDHE-AESGCM: ECDHE-RSA-AES256-GCM-SHA384
+probe B tls1_2 ECDHE-RSA-CHACHA20-POLY1305 -> ECDHE-RSA-CHACHA20-POLY1305
+CHECK ok   B tls1_2 ECDHE-CHACHA20: ECDHE-RSA-CHACHA20-POLY1305
+probe B tls1_2 AES256-GCM-SHA384 -> AES256-GCM-SHA384
+CHECK ok   B tls1_2 static-RSA AES256-GCM: AES256-GCM-SHA384
+probe B tls1_2 DHE-RSA-AES256-SHA256 -> DHE-RSA-AES256-SHA256
+CHECK ok   B tls1_2 DHE CBC-SHA256: DHE-RSA-AES256-SHA256
+probe B tls1_2 ECDHE-RSA-AES256-SHA384 -> ECDHE-RSA-AES256-SHA384
+CHECK ok   B tls1_2 ECDHE CBC-SHA384: ECDHE-RSA-AES256-SHA384
+probe B tls1_3 default -> TLS_AES_256_GCM_SHA384
+CHECK ok   B tls1_3 default: TLS_AES_256_GCM_SHA384
+probe B tls1_1 ALL -> NONE
+CHECK ok   B tls1_1 any: NONE
+CHECK ok   A peers after probes: 1
+$ sudo docker logs pft-tlsprobe-a 2>&1 | grep -ci 'cipher\|ssl' || true
+0
+[rc=0]
+RESULT: PASS
+cleanup: containers+network removed

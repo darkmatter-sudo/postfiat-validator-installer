@@ -1,0 +1,367 @@
+peertls cross-host audit - 2026-11-14T21:15:43Z - Ubuntu 22.04.5 LTS - repo HEAD 17ad49ae63b5aa07726dc124de338acd45345d8d (clean: yes)
+
+== 0. preflight (read-only)
+$ sha256sum peertls/pft-peertls.sh peertls/peertls_eval.py peertls/policy/* peertls/drill/crosshost-run.sh | cut -c1-64
+  d583b200e5f81eb7e2609b560889b50f6376d27ea46c297d3c43efada6877cc3
+  7f03f207f712324c618e26918ced98b930c4c9951392453f6a22b393443f2b68
+  0c6f1b3d92f72a43c0865814926ee5d2da503fb8a08b556065399d1904ff0be0
+  808ac30c79ffaa05badd2f0eb9cf0fa822254e0d4c864b6f5daec6aad63ba428
+  e689db2212777fe373f50d86b6f14c932b74b1af872d32e513b8e7b2f7a2d6b7
+  (exit 0)
+$ sudo -n sha256sum /usr/local/bin/pft-peertls /usr/local/lib/pft-peertls/peertls_eval.py /usr/local/lib/pft-peertls/policy/* | cut -c1-64; R 'sha256sum /usr/local/bin/pft-peertls /usr/local/lib/pft-peertls/peertls_eval.py /usr/local/lib/pft-peertls/policy/* | cut -c1-64'
+  d583b200e5f81eb7e2609b560889b50f6376d27ea46c297d3c43efada6877cc3
+  7f03f207f712324c618e26918ced98b930c4c9951392453f6a22b393443f2b68
+  0c6f1b3d92f72a43c0865814926ee5d2da503fb8a08b556065399d1904ff0be0
+  808ac30c79ffaa05badd2f0eb9cf0fa822254e0d4c864b6f5daec6aad63ba428
+  d583b200e5f81eb7e2609b560889b50f6376d27ea46c297d3c43efada6877cc3
+  7f03f207f712324c618e26918ced98b930c4c9951392453f6a22b393443f2b68
+  0c6f1b3d92f72a43c0865814926ee5d2da503fb8a08b556065399d1904ff0be0
+  808ac30c79ffaa05badd2f0eb9cf0fa822254e0d4c864b6f5daec6aad63ba428
+  (exit 0)
+CHECK ok   installed audit, grader and policies = HEAD bytes on both hosts
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 262 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 155 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts before
+$ srv_state
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ link_up
+  peers 11, sentry link 1
+  (exit 0)
+CHECK ok   cluster link up before (sentry key among the validator's peers)
+$ sudo -n grep -cvE '^[[:space:]]*(#|$)' /etc/pft-peertls.targets; sudo -n grep -vE '^[[:space:]]*(#|$)' /etc/pft-peertls.targets; R 'sudo -n grep -cvE "^[[:space:]]*(#|\$)" /etc/pft-peertls.targets; sudo -n grep -vE "^[[:space:]]*(#|\$)" /etc/pft-peertls.targets'
+  1
+  validator <redacted-ip> 2559 local postfiatd
+  1
+  sentry <redacted-ip> 2559 local postfiatd-sentry
+  (exit 0)
+CHECK ok   targets: exactly the local loopback line on each host
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+CHECK ok   sentry address: [ips_fixed] entry = ssh alias address (not printed)
+CHECK ok   validator address: the sentry's view of our ssh source is configured on this host (not printed)
+$ sudo -n pft-peertls plan; R 'sudo -n pft-peertls plan'
+  targets: validator
+  probes per target: 21 handshakes
+  total: 21 (max 40)
+  targets: sentry
+  probes per target: 21 handshakes
+  total: 21 (max 40)
+  (exit 0)
+CHECK ok   plans (local only): 21 handshakes per target, max 40, on both hosts
+$ curl -s --max-time 10 http://<redacted-ip>:9090/api/v1/alerts | jq -r '.status, ([.data.alerts[] | select(.labels.alertname != "PFTAlertPipelineWatchdog")] | length)'
+  success
+  0
+  (exit 0)
+CHECK ok   Prometheus answers; nothing but the watchdog pending/firing
+
+== 1. one remote line per host (/etc/pft-peertls.targets stays root 0600)
+$ printf 'sentry %s 2559 remote\n' "$S_FIX" | sudo -n tee -a /etc/pft-peertls.targets >/dev/null && sudo -n stat -c '%a %U' /etc/pft-peertls.targets && sudo -n awk '$4 == "remote" {print $1, $3, $4}' /etc/pft-peertls.targets
+  600 root
+  sentry 2559 remote
+  (exit 0)
+CHECK ok   validator: remote line 'sentry 2559 remote', 600 root
+$ printf 'validator %s 2559 remote\n' "$V_SEEN" | R 'sudo -n tee -a /etc/pft-peertls.targets >/dev/null && sudo -n stat -c "%a %U" /etc/pft-peertls.targets && sudo -n awk "\$4 == \"remote\" {print \$1, \$3, \$4}" /etc/pft-peertls.targets'
+  600 root
+  validator 2559 remote
+  (exit 0)
+CHECK ok   sentry: remote line 'validator 2559 remote', 600 root
+$ sudo -n pft-peertls plan --target sentry; R 'sudo -n pft-peertls plan --target validator'
+  targets: sentry
+  probes per target: 21 handshakes
+  total: 21 (max 40)
+  targets: validator
+  probes per target: 21 handshakes
+  total: 21 (max 40)
+  (exit 0)
+CHECK ok   remote plans: 21 handshakes, max 40, on both hosts
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 262 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 155 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity still PASS on both hosts (the targets file is config, not an integrity item)
+
+== 2. reports: local + remote on each host (--no-state, --public), remote pace 6 s
+$ run_report L validator-local
+  rc=0 bytes=8983 verdict=PASS handshakes=21
+  (exit 0)
+CHECK ok   validator local: verdict PASS, 21 handshakes
+$ sleep 30; run_report R sentry-local
+  rc=0 bytes=8893 verdict=PASS handshakes=21
+  (exit 0)
+CHECK ok   sentry local: verdict PASS, 21 handshakes
+$ sleep 30; s=$(date +%s); run_report L validator-remote --target sentry; echo "took $(($(date +%s) - s)) s"
+  rc=0 bytes=8897 verdict=PASS handshakes=21
+  took 129 s
+  (exit 0)
+CHECK ok   validator -> sentry remote: verdict PASS, 21 handshakes, >= 120 s (6 s pace)
+$ sleep 30; s=$(date +%s); run_report R sentry-remote --target validator; echo "took $(($(date +%s) - s)) s"
+  rc=0 bytes=8981 verdict=PASS handshakes=21
+  took 127 s
+  (exit 0)
+CHECK ok   sentry -> validator remote: verdict PASS, 21 handshakes, >= 120 s (6 s pace)
+$ grep -lE '([0-9]{1,3}\.){3}[0-9]{1,3}' $TMPD/*.json | grep -v <redacted-ip>; grep -ohE '\b([0-9]{1,3}\.){3}[0-9]{1,3}\b' $TMPD/*.json | sort -u | grep -vc '^127\.0\.0\.1$'
+  0
+  (exit 1)
+CHECK ok   no address other than @@<redacted-ip>@@ in any report (publishable as is)
+$ for n in validator-local sentry-local validator-remote sentry-remote; do echo "-- $n"; sed -n '/^target /,/^RESULT/p' ~/.cache/ptls-cross-out/$n.txt; done
+  -- validator-local
+  target validator (local)
+    protocols accepted: tls1_2 tls1_3
+    TLS 1.2 classes accepted: ecdhe_aead
+    TLS 1.3 suites accepted: aes128gcm aes256gcm chacha20
+    certificate: rsa 2048 bit, sha256WithRSAEncryption, valid 2026-11-13T00:00:00Z .. 2028-11-13T19:18:26Z, sha256 979c4425cdeffcaa..., self-signed
+    [PASS] probe.reachable: 19 probes answered
+    [PASS] proto.tls1: tls1 refused (protocol_version); policy forbid
+    [PASS] proto.tls1_1: tls1_1 refused (protocol_version); policy forbid
+    [PASS] proto.tls1_2: tls1_2 accepted; policy require
+    [PASS] proto.tls1_3: tls1_3 accepted; policy require
+    [PASS] cipher.null: null refused; policy forbid
+    [PASS] cipher.anull: anull refused; policy forbid
+    [INFO] cipher.export: untestable: this client cannot offer export suites
+    [INFO] cipher.rc4: untestable: this client cannot offer rc4 suites
+    [INFO] cipher.3des: untestable: this client cannot offer 3des suites
+    [PASS] cipher.cbc_sha1: cbc_sha1 refused; policy forbid
+    [PASS] cipher.cbc_sha2: cbc_sha2 refused; policy forbid
+    [PASS] cipher.kx_rsa: kx_rsa refused; policy forbid
+    [PASS] cipher.kx_dhe: kx_dhe refused; policy allow
+    [PASS] cipher.ecdhe_aead: ecdhe_aead accepted as ECDHE-RSA-AES256-GCM-SHA384; policy require
+    [PASS] cipher.tls13_suites: TLS 1.3 suites accepted: aes128gcm,aes256gcm,chacha20
+    [INFO] kx.dh_bits: no DHE handshake to measure
+    [PASS] cert.key: rsa 2048 bits (min 2048)
+    [PASS] cert.sig_hash: signature sha256WithRSAEncryption (hash sha256; forbidden md5,sha1)
+    [PASS] cert.validity: 729 days left (min 14)
+    [PASS] hs.compression: compression NONE
+    [PASS] hs.secure_reneg: RFC 5746 renegotiation_info present
+    [PASS] hs.ems: extended master secret yes
+    [PASS] hs.ticket_lifetime: ticket lifetime hint 7200 s (max 86400)
+    [PASS] hs.client_reneg: client-initiated renegotiation refused
+    [PASS] hs.fallback_scsv: TLS 1.2 + FALLBACK_SCSV refused (inappropriate_fallback)
+    [INFO] drift.posture: first run (no state)
+    [INFO] drift.cert: first run (no state)
+  
+  RESULT: PASS - 22 pass, 0 warn, 0 fail, 0 waived, 6 info
+  -- sentry-local
+  target sentry (local)
+    protocols accepted: tls1_2 tls1_3
+    TLS 1.2 classes accepted: ecdhe_aead
+    TLS 1.3 suites accepted: aes128gcm aes256gcm chacha20
+    certificate: rsa 2048 bit, sha256WithRSAEncryption, valid 2026-11-13T00:00:00Z .. 2028-11-13T19:16:37Z, sha256 0d6ad8fdd71bb8ed..., self-signed
+    [PASS] probe.reachable: 19 probes answered
+    [PASS] proto.tls1: tls1 refused (protocol_version); policy forbid
+    [PASS] proto.tls1_1: tls1_1 refused (protocol_version); policy forbid
+    [PASS] proto.tls1_2: tls1_2 accepted; policy require
+    [PASS] proto.tls1_3: tls1_3 accepted; policy require
+    [PASS] cipher.null: null refused; policy forbid
+    [PASS] cipher.anull: anull refused; policy forbid
+    [INFO] cipher.export: untestable: this client cannot offer export suites
+    [INFO] cipher.rc4: untestable: this client cannot offer rc4 suites
+    [INFO] cipher.3des: untestable: this client cannot offer 3des suites
+    [PASS] cipher.cbc_sha1: cbc_sha1 refused; policy forbid
+    [PASS] cipher.cbc_sha2: cbc_sha2 refused; policy forbid
+    [PASS] cipher.kx_rsa: kx_rsa refused; policy forbid
+    [PASS] cipher.kx_dhe: kx_dhe refused; policy allow
+    [PASS] cipher.ecdhe_aead: ecdhe_aead accepted as ECDHE-RSA-AES256-GCM-SHA384; policy require
+    [PASS] cipher.tls13_suites: TLS 1.3 suites accepted: aes128gcm,aes256gcm,chacha20
+    [INFO] kx.dh_bits: no DHE handshake to measure
+    [PASS] cert.key: rsa 2048 bits (min 2048)
+    [PASS] cert.sig_hash: signature sha256WithRSAEncryption (hash sha256; forbidden md5,sha1)
+    [PASS] cert.validity: 729 days left (min 14)
+    [PASS] hs.compression: compression NONE
+    [PASS] hs.secure_reneg: RFC 5746 renegotiation_info present
+    [PASS] hs.ems: extended master secret yes
+    [PASS] hs.ticket_lifetime: ticket lifetime hint 7200 s (max 86400)
+    [PASS] hs.client_reneg: client-initiated renegotiation refused
+    [PASS] hs.fallback_scsv: TLS 1.2 + FALLBACK_SCSV refused (inappropriate_fallback)
+    [INFO] drift.posture: first run (no state)
+    [INFO] drift.cert: first run (no state)
+  
+  RESULT: PASS - 22 pass, 0 warn, 0 fail, 0 waived, 6 info
+  -- validator-remote
+  target sentry (remote)
+    protocols accepted: tls1_2 tls1_3
+    TLS 1.2 classes accepted: ecdhe_aead
+    TLS 1.3 suites accepted: aes128gcm aes256gcm chacha20
+    certificate: rsa 2048 bit, sha256WithRSAEncryption, valid 2026-11-13T00:00:00Z .. 2028-11-13T19:16:37Z, sha256 0d6ad8fdd71bb8ed..., self-signed
+    [PASS] probe.reachable: 19 probes answered
+    [PASS] proto.tls1: tls1 refused (protocol_version); policy forbid
+    [PASS] proto.tls1_1: tls1_1 refused (protocol_version); policy forbid
+    [PASS] proto.tls1_2: tls1_2 accepted; policy require
+    [PASS] proto.tls1_3: tls1_3 accepted; policy require
+    [PASS] cipher.null: null refused; policy forbid
+    [PASS] cipher.anull: anull refused; policy forbid
+    [INFO] cipher.export: untestable: this client cannot offer export suites
+    [INFO] cipher.rc4: untestable: this client cannot offer rc4 suites
+    [INFO] cipher.3des: untestable: this client cannot offer 3des suites
+    [PASS] cipher.cbc_sha1: cbc_sha1 refused; policy forbid
+    [PASS] cipher.cbc_sha2: cbc_sha2 refused; policy forbid
+    [PASS] cipher.kx_rsa: kx_rsa refused; policy forbid
+    [PASS] cipher.kx_dhe: kx_dhe refused; policy allow
+    [PASS] cipher.ecdhe_aead: ecdhe_aead accepted as ECDHE-RSA-AES256-GCM-SHA384; policy require
+    [PASS] cipher.tls13_suites: TLS 1.3 suites accepted: aes128gcm,aes256gcm,chacha20
+    [INFO] kx.dh_bits: no DHE handshake to measure
+    [PASS] cert.key: rsa 2048 bits (min 2048)
+    [PASS] cert.sig_hash: signature sha256WithRSAEncryption (hash sha256; forbidden md5,sha1)
+    [PASS] cert.validity: 729 days left (min 14)
+    [PASS] hs.compression: compression NONE
+    [PASS] hs.secure_reneg: RFC 5746 renegotiation_info present
+    [PASS] hs.ems: extended master secret yes
+    [PASS] hs.ticket_lifetime: ticket lifetime hint 7200 s (max 86400)
+    [PASS] hs.client_reneg: client-initiated renegotiation refused
+    [PASS] hs.fallback_scsv: TLS 1.2 + FALLBACK_SCSV refused (inappropriate_fallback)
+    [INFO] drift.posture: first run (no state)
+    [INFO] drift.cert: first run (no state)
+  
+  RESULT: PASS - 22 pass, 0 warn, 0 fail, 0 waived, 6 info
+  -- sentry-remote
+  target validator (remote)
+    protocols accepted: tls1_2 tls1_3
+    TLS 1.2 classes accepted: ecdhe_aead
+    TLS 1.3 suites accepted: aes128gcm aes256gcm chacha20
+    certificate: rsa 2048 bit, sha256WithRSAEncryption, valid 2026-11-13T00:00:00Z .. 2028-11-13T19:18:26Z, sha256 979c4425cdeffcaa..., self-signed
+    [PASS] probe.reachable: 19 probes answered
+    [PASS] proto.tls1: tls1 refused (protocol_version); policy forbid
+    [PASS] proto.tls1_1: tls1_1 refused (protocol_version); policy forbid
+    [PASS] proto.tls1_2: tls1_2 accepted; policy require
+    [PASS] proto.tls1_3: tls1_3 accepted; policy require
+    [PASS] cipher.null: null refused; policy forbid
+    [PASS] cipher.anull: anull refused; policy forbid
+    [INFO] cipher.export: untestable: this client cannot offer export suites
+    [INFO] cipher.rc4: untestable: this client cannot offer rc4 suites
+    [INFO] cipher.3des: untestable: this client cannot offer 3des suites
+    [PASS] cipher.cbc_sha1: cbc_sha1 refused; policy forbid
+    [PASS] cipher.cbc_sha2: cbc_sha2 refused; policy forbid
+    [PASS] cipher.kx_rsa: kx_rsa refused; policy forbid
+    [PASS] cipher.kx_dhe: kx_dhe refused; policy allow
+    [PASS] cipher.ecdhe_aead: ecdhe_aead accepted as ECDHE-RSA-AES256-GCM-SHA384; policy require
+    [PASS] cipher.tls13_suites: TLS 1.3 suites accepted: aes128gcm,aes256gcm,chacha20
+    [INFO] kx.dh_bits: no DHE handshake to measure
+    [PASS] cert.key: rsa 2048 bits (min 2048)
+    [PASS] cert.sig_hash: signature sha256WithRSAEncryption (hash sha256; forbidden md5,sha1)
+    [PASS] cert.validity: 729 days left (min 14)
+    [PASS] hs.compression: compression NONE
+    [PASS] hs.secure_reneg: RFC 5746 renegotiation_info present
+    [PASS] hs.ems: extended master secret yes
+    [PASS] hs.ticket_lifetime: ticket lifetime hint 7200 s (max 86400)
+    [PASS] hs.client_reneg: client-initiated renegotiation refused
+    [PASS] hs.fallback_scsv: TLS 1.2 + FALLBACK_SCSV refused (inappropriate_fallback)
+    [INFO] drift.posture: first run (no state)
+    [INFO] drift.cert: first run (no state)
+  
+  RESULT: PASS - 22 pass, 0 warn, 0 fail, 0 waived, 6 info
+  (exit 0)
+CHECK ok   all four reports: RESULT PASS, no WARN/FAIL line
+
+== 3. crosscheck both directions + flip control
+$ python3 peertls/peertls_eval.py crosscheck ~/.cache/ptls-cross-out/validator-remote.json ~/.cache/ptls-cross-out/sentry-local.json | tee ~/.cache/ptls-cross-out/crosscheck-validator-to-sentry.txt
+  PASS validator->sentry protocols: remote ['tls1_2', 'tls1_3'] local ['tls1_2', 'tls1_3']
+  PASS validator->sentry ciphers: remote ['ecdhe_aead'] local ['ecdhe_aead']
+  PASS validator->sentry tls13: remote ['aes128gcm', 'aes256gcm', 'chacha20'] local ['aes128gcm', 'aes256gcm', 'chacha20']
+  PASS validator->sentry reneg: remote refused local refused
+  PASS validator->sentry cert_key: remote rsa-2048-sha256 local rsa-2048-sha256
+  PASS validator->sentry cert sha256: remote 0d6ad8fdd71bb8ed local 0d6ad8fdd71bb8ed
+  RESULT: PASS
+  (exit 0)
+CHECK ok   validator's remote view of the sentry = the sentry's own view (posture + cert sha256)
+$ python3 peertls/peertls_eval.py crosscheck ~/.cache/ptls-cross-out/sentry-remote.json ~/.cache/ptls-cross-out/validator-local.json | tee ~/.cache/ptls-cross-out/crosscheck-sentry-to-validator.txt
+  PASS sentry->validator protocols: remote ['tls1_2', 'tls1_3'] local ['tls1_2', 'tls1_3']
+  PASS sentry->validator ciphers: remote ['ecdhe_aead'] local ['ecdhe_aead']
+  PASS sentry->validator tls13: remote ['aes128gcm', 'aes256gcm', 'chacha20'] local ['aes128gcm', 'aes256gcm', 'chacha20']
+  PASS sentry->validator reneg: remote refused local refused
+  PASS sentry->validator cert_key: remote rsa-2048-sha256 local rsa-2048-sha256
+  PASS sentry->validator cert sha256: remote 979c4425cdeffcaa local 979c4425cdeffcaa
+  RESULT: PASS
+  (exit 0)
+CHECK ok   sentry's remote view of the validator = the validator's own view (posture + cert sha256)
+$ python3 peertls/peertls_eval.py crosscheck ~/.cache/ptls-cross-out/validator-remote.json ~/.cache/ptls-cross-out/validator-local.json | tee ~/.cache/ptls-cross-out/crosscheck-flip-control.txt
+  PASS validator->sentry protocols: remote ['tls1_2', 'tls1_3'] local ['tls1_2', 'tls1_3']
+  PASS validator->sentry ciphers: remote ['ecdhe_aead'] local ['ecdhe_aead']
+  PASS validator->sentry tls13: remote ['aes128gcm', 'aes256gcm', 'chacha20'] local ['aes128gcm', 'aes256gcm', 'chacha20']
+  PASS validator->sentry reneg: remote refused local refused
+  PASS validator->sentry cert_key: remote rsa-2048-sha256 local rsa-2048-sha256
+  FAIL validator->sentry cert sha256: remote 0d6ad8fdd71bb8ed local 979c4425cdeffcaa
+  RESULT: FAIL
+  (exit 2)
+CHECK ok   flip control: the sentry's certificate seen remotely != the validator's own -> crosscheck exit != 0 with a 'cert sha256' FAIL
+
+== 4. offline rebuild: render each committed JSON and cmp with the live human report
+$ python3 peertls/peertls_eval.py render ~/.cache/ptls-cross-out/validator-local.json > $TMPD/validator-local.re.txt && cmp $TMPD/validator-local.re.txt ~/.cache/ptls-cross-out/validator-local.txt && sha256sum ~/.cache/ptls-cross-out/validator-local.json ~/.cache/ptls-cross-out/validator-local.txt | cut -c1-64
+  571c57501efd52615137f203dafb5cfeaac0cd5aea50221a30e2e2912ea49922
+  0ecab1edd6c168a82593149f9d8c6018bcedf9675295908b04106e2ae77f40d0
+  (exit 0)
+CHECK ok   validator-local: rebuild from JSON is byte-identical (cmp exit 0)
+$ python3 peertls/peertls_eval.py render ~/.cache/ptls-cross-out/sentry-local.json > $TMPD/sentry-local.re.txt && cmp $TMPD/sentry-local.re.txt ~/.cache/ptls-cross-out/sentry-local.txt && sha256sum ~/.cache/ptls-cross-out/sentry-local.json ~/.cache/ptls-cross-out/sentry-local.txt | cut -c1-64
+  fbe55c7c1826e687e3eb3ff93146391d4765e2e107bf524b23976d4a73badd0a
+  e75d6e8cf5d91d4bf92739924cf15e786f83baecd7d7cf9ab03db0763c5a02bd
+  (exit 0)
+CHECK ok   sentry-local: rebuild from JSON is byte-identical (cmp exit 0)
+$ python3 peertls/peertls_eval.py render ~/.cache/ptls-cross-out/validator-remote.json > $TMPD/validator-remote.re.txt && cmp $TMPD/validator-remote.re.txt ~/.cache/ptls-cross-out/validator-remote.txt && sha256sum ~/.cache/ptls-cross-out/validator-remote.json ~/.cache/ptls-cross-out/validator-remote.txt | cut -c1-64
+  ff9972af30f03ab6440c88b8bf2631dfd1de1783aeb0643326c803993b4f6156
+  78047d55f64443afcba37cfc5bed251c58e87873101fe81c933ac6d3274022eb
+  (exit 0)
+CHECK ok   validator-remote: rebuild from JSON is byte-identical (cmp exit 0)
+$ python3 peertls/peertls_eval.py render ~/.cache/ptls-cross-out/sentry-remote.json > $TMPD/sentry-remote.re.txt && cmp $TMPD/sentry-remote.re.txt ~/.cache/ptls-cross-out/sentry-remote.txt && sha256sum ~/.cache/ptls-cross-out/sentry-remote.json ~/.cache/ptls-cross-out/sentry-remote.txt | cut -c1-64
+  2e3f6e5b8ea0dbb945452b45dcce0c744c0f10f78183378e3c619ee640fbdfb4
+  0093d99d3b4851b98ae0202d4d1753c29455937bc65ccf736586cb763a2ef81f
+  (exit 0)
+CHECK ok   sentry-remote: rebuild from JSON is byte-identical (cmp exit 0)
+
+== 5. end gates
+$ link_up
+  peers 11, sentry link 1
+  (exit 0)
+CHECK ok   cluster link still up; validator peers 11 (before 11, >= before - 2)
+$ srv_state
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing at the end
+$ sudo -n pft-apparmor audit | grep -E 'denials|RESULT'; sudo -n pft-seccomp audit | grep -E 'RESULT'; R 'sudo -n pft-apparmor audit | grep -E "denials|RESULT"; sudo -n pft-seccomp audit | grep -E RESULT'
+    [PASS] denials            0 DENIED events in the last 86402s
+  RESULT: PASS
+  RESULT: PASS
+    [PASS] denials            0 DENIED events in the last 86401s
+  RESULT: PASS
+  RESULT: PASS
+  (exit 0)
+CHECK ok   AppArmor + seccomp audits PASS on both hosts with 0 denials
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 262 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 155 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts at the end
+$ curl -s --max-time 10 http://<redacted-ip>:9090/api/v1/alerts | jq -r '.status, ([.data.alerts[] | select(.labels.alertname != "PFTAlertPipelineWatchdog")] | length)'
+  success
+  0
+  (exit 0)
+CHECK ok   Prometheus answers; nothing but the watchdog pending/firing at the end
+$ ls ~/.cache/ptls-cross-out; sha256sum ~/.cache/ptls-cross-out/* | cut -c1-64
+  crosscheck-flip-control.txt
+  crosscheck-sentry-to-validator.txt
+  crosscheck-validator-to-sentry.txt
+  sentry-local.json
+  sentry-local.txt
+  sentry-remote.json
+  sentry-remote.txt
+  validator-local.json
+  validator-local.txt
+  validator-remote.json
+  validator-remote.txt
+  7cd0ea67031694b1e1c58a6736585d9acb38397885c4394030b5f6cfd014e016
+  e863a986605962b429bb5cae07839eb310d0754edb6852f902d30a7f063726f3
+  5f8b223e410ca2756ed9eed9c79ede6ceadfde7e6ff0ad328f1d6e89219ae0ad
+  fbe55c7c1826e687e3eb3ff93146391d4765e2e107bf524b23976d4a73badd0a
+  e75d6e8cf5d91d4bf92739924cf15e786f83baecd7d7cf9ab03db0763c5a02bd
+  2e3f6e5b8ea0dbb945452b45dcce0c744c0f10f78183378e3c619ee640fbdfb4
+  0093d99d3b4851b98ae0202d4d1753c29455937bc65ccf736586cb763a2ef81f
+  571c57501efd52615137f203dafb5cfeaac0cd5aea50221a30e2e2912ea49922
+  0ecab1edd6c168a82593149f9d8c6018bcedf9675295908b04106e2ae77f40d0
+  ff9972af30f03ab6440c88b8bf2631dfd1de1783aeb0643326c803993b4f6156
+  78047d55f64443afcba37cfc5bed251c58e87873101fe81c933ac6d3274022eb
+  (exit 0)
+
+crosshost-run done 2026-11-14T21:24:19Z: 0 check(s) failed -> PASS
+exit=0

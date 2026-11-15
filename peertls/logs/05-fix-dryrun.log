@@ -1,0 +1,42 @@
+== task_2b00 pft-peertls-fix read-only plan + dry run, both hosts 2026-11-14T18:29:10Z
+script sha256 c81d08f3459edf19245566dcd5b59c70fb0bc05b6d70db8baca79dd72c9ca7f6 (uncommitted working tree)
+$ sudo bash peertls/pft-peertls-fix.sh plan
+pft-peertls-fix plan - 2026-11-14T18:29:10Z (container postfiatd, CIPHERS ECDHE+AESGCM:ECDHE+CHACHA20)
+[port_peer] now:
+  port = 2559
+  ip = @@<redacted-ip>@@
+  protocol = peer
+diff:
+  --- postfiatd.cfg
+  +++ postfiatd.cfg.candidate
+  +# pft-peertls-fix: managed line (inbound peer TLS 1.2 suites; see peertls/README.md)
+  +ssl_ciphers = ECDHE+AESGCM:ECDHE+CHACHA20
+then: docker restart postfiatd, gate (budget 600 s, TLS want GOOD=ECDHE-RSA-AES256-GCM-SHA384 AES256-GCM-SHA384=NONE DHE-RSA-AES256-SHA256=NONE)
+[rc=0]
+$ sudo bash peertls/pft-peertls-fix.sh apply --dry-run
+--- postfiatd.cfg
++++ postfiatd.cfg.candidate
++# pft-peertls-fix: managed line (inbound peer TLS 1.2 suites; see peertls/README.md)
++ssl_ciphers = ECDHE+AESGCM:ECDHE+CHACHA20
+2026-11-14T18:29:10Z apply: dry run - container postfiatd, pre-apply TLS GOOD=ECDHE-RSA-AES256-GCM-SHA384 AES256-GCM-SHA384=AES256-GCM-SHA384 DHE-RSA-AES256-SHA256=DHE-RSA-AES256-SHA256; would: backup, install, restart, gate (TLS want GOOD=ECDHE-RSA-AES256-GCM-SHA384 AES256-GCM-SHA384=NONE DHE-RSA-AES256-SHA256=NONE); nothing changed
+[rc=0]
+$ ssh relay 'sudo bash -s -- plan' < peertls/pft-peertls-fix.sh
+pft-peertls-fix plan - 2026-11-14T18:29:12Z (container postfiatd-sentry, CIPHERS ECDHE+AESGCM:ECDHE+CHACHA20)
+[port_peer] now:
+  port = 2559
+  ip = @@<redacted-ip>@@
+  protocol = peer
+diff:
+  --- postfiatd.cfg
+  +++ postfiatd.cfg.candidate
+  +# pft-peertls-fix: managed line (inbound peer TLS 1.2 suites; see peertls/README.md)
+  +ssl_ciphers = ECDHE+AESGCM:ECDHE+CHACHA20
+then: docker restart postfiatd-sentry, gate (budget 600 s, TLS want GOOD=ECDHE-RSA-AES256-GCM-SHA384 AES256-GCM-SHA384=NONE DHE-RSA-AES256-SHA256=NONE)
+[rc=0]
+$ ssh relay 'sudo bash -s -- apply --dry-run' < peertls/pft-peertls-fix.sh
+--- postfiatd.cfg
++++ postfiatd.cfg.candidate
++# pft-peertls-fix: managed line (inbound peer TLS 1.2 suites; see peertls/README.md)
++ssl_ciphers = ECDHE+AESGCM:ECDHE+CHACHA20
+2026-11-14T18:29:13Z apply: dry run - container postfiatd-sentry, pre-apply TLS GOOD=ECDHE-RSA-AES256-GCM-SHA384 AES256-GCM-SHA384=AES256-GCM-SHA384 DHE-RSA-AES256-SHA256=DHE-RSA-AES256-SHA256; would: backup, install, restart, gate (TLS want GOOD=ECDHE-RSA-AES256-GCM-SHA384 AES256-GCM-SHA384=NONE DHE-RSA-AES256-SHA256=NONE); nothing changed
+[rc=0]

@@ -1,0 +1,38 @@
+pft-peertls audit - validator - 2026-11-14T21:20:53Z
+policy sha256 808ac30c79ffaa05 | handshakes 21/40 | public view
+
+target sentry (remote)
+  protocols accepted: tls1_2 tls1_3
+  TLS 1.2 classes accepted: ecdhe_aead
+  TLS 1.3 suites accepted: aes128gcm aes256gcm chacha20
+  certificate: rsa 2048 bit, sha256WithRSAEncryption, valid 2026-11-13T00:00:00Z .. 2028-11-13T19:16:37Z, sha256 0d6ad8fdd71bb8ed..., self-signed
+  [PASS] probe.reachable: 19 probes answered
+  [PASS] proto.tls1: tls1 refused (protocol_version); policy forbid
+  [PASS] proto.tls1_1: tls1_1 refused (protocol_version); policy forbid
+  [PASS] proto.tls1_2: tls1_2 accepted; policy require
+  [PASS] proto.tls1_3: tls1_3 accepted; policy require
+  [PASS] cipher.null: null refused; policy forbid
+  [PASS] cipher.anull: anull refused; policy forbid
+  [INFO] cipher.export: untestable: this client cannot offer export suites
+  [INFO] cipher.rc4: untestable: this client cannot offer rc4 suites
+  [INFO] cipher.3des: untestable: this client cannot offer 3des suites
+  [PASS] cipher.cbc_sha1: cbc_sha1 refused; policy forbid
+  [PASS] cipher.cbc_sha2: cbc_sha2 refused; policy forbid
+  [PASS] cipher.kx_rsa: kx_rsa refused; policy forbid
+  [PASS] cipher.kx_dhe: kx_dhe refused; policy allow
+  [PASS] cipher.ecdhe_aead: ecdhe_aead accepted as ECDHE-RSA-AES256-GCM-SHA384; policy require
+  [PASS] cipher.tls13_suites: TLS 1.3 suites accepted: aes128gcm,aes256gcm,chacha20
+  [INFO] kx.dh_bits: no DHE handshake to measure
+  [PASS] cert.key: rsa 2048 bits (min 2048)
+  [PASS] cert.sig_hash: signature sha256WithRSAEncryption (hash sha256; forbidden md5,sha1)
+  [PASS] cert.validity: 729 days left (min 14)
+  [PASS] hs.compression: compression NONE
+  [PASS] hs.secure_reneg: RFC 5746 renegotiation_info present
+  [PASS] hs.ems: extended master secret yes
+  [PASS] hs.ticket_lifetime: ticket lifetime hint 7200 s (max 86400)
+  [PASS] hs.client_reneg: client-initiated renegotiation refused
+  [PASS] hs.fallback_scsv: TLS 1.2 + FALLBACK_SCSV refused (inappropriate_fallback)
+  [INFO] drift.posture: first run (no state)
+  [INFO] drift.cert: first run (no state)
+
+RESULT: PASS - 22 pass, 0 warn, 0 fail, 0 waived, 6 info

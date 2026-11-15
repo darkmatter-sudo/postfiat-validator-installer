@@ -1,0 +1,442 @@
+{
+ "checks": [
+  {
+   "evidence": [
+    "cert"
+   ],
+   "id": "probe.reachable",
+   "reason": "19 probes answered",
+   "result": "PASS",
+   "target": "sentry"
+  },
+  {
+   "evidence": [
+    "proto.tls1"
+   ],
+   "id": "proto.tls1",
+   "reason": "tls1 refused (protocol_version); policy forbid",
+   "result": "PASS",
+   "target": "sentry"
+  },
+  {
+   "evidence": [
+    "proto.tls1_1"
+   ],
+   "id": "proto.tls1_1",
+   "reason": "tls1_1 refused (protocol_version); policy forbid",
+   "result": "PASS",
+   "target": "sentry"
+  },
+  {
+   "evidence": [
+    "proto.tls1_2"
+   ],
+   "id": "proto.tls1_2",
+   "reason": "tls1_2 accepted; policy require",
+   "result": "PASS",
+   "target": "sentry"
+  },
+  {
+   "evidence": [
+    "proto.tls1_3"
+   ],
+   "id": "proto.tls1_3",
+   "reason": "tls1_3 accepted; policy require",
+   "result": "PASS",
+   "target": "sentry"
+  },
+  {
+   "evidence": [
+    "cipher.null"
+   ],
+   "id": "cipher.null",
+   "reason": "null refused; policy forbid",
+   "result": "PASS",
+   "target": "sentry"
+  },
+  {
+   "evidence": [
+    "cipher.anull"
+   ],
+   "id": "cipher.anull",
+   "reason": "anull refused; policy forbid",
+   "result": "PASS",
+   "target": "sentry"
+  },
+  {
+   "evidence": [
+    "cipher.export"
+   ],
+   "id": "cipher.export",
+   "reason": "untestable: this client cannot offer export suites",
+   "result": "INFO",
+   "target": "sentry"
+  },
+  {
+   "evidence": [
+    "cipher.rc4"
+   ],
+   "id": "cipher.rc4",
+   "reason": "untestable: this client cannot offer rc4 suites",
+   "result": "INFO",
+   "target": "sentry"
+  },
+  {
+   "evidence": [
+    "cipher.3des"
+   ],
+   "id": "cipher.3des",
+   "reason": "untestable: this client cannot offer 3des suites",
+   "result": "INFO",
+   "target": "sentry"
+  },
+  {
+   "evidence": [
+    "cipher.cbc_sha1"
+   ],
+   "id": "cipher.cbc_sha1",
+   "reason": "cbc_sha1 refused; policy forbid",
+   "result": "PASS",
+   "target": "sentry"
+  },
+  {
+   "evidence": [
+    "cipher.cbc_sha2"
+   ],
+   "id": "cipher.cbc_sha2",
+   "reason": "cbc_sha2 refused; policy forbid",
+   "result": "PASS",
+   "target": "sentry"
+  },
+  {
+   "evidence": [
+    "cipher.kx_rsa"
+   ],
+   "id": "cipher.kx_rsa",
+   "reason": "kx_rsa refused; policy forbid",
+   "result": "PASS",
+   "target": "sentry"
+  },
+  {
+   "evidence": [
+    "cipher.kx_dhe"
+   ],
+   "id": "cipher.kx_dhe",
+   "reason": "kx_dhe refused; policy allow",
+   "result": "PASS",
+   "target": "sentry"
+  },
+  {
+   "evidence": [
+    "cipher.ecdhe_aead"
+   ],
+   "id": "cipher.ecdhe_aead",
+   "reason": "ecdhe_aead accepted as ECDHE-RSA-AES256-GCM-SHA384; policy require",
+   "result": "PASS",
+   "target": "sentry"
+  },
+  {
+   "evidence": [
+    "tls13.aes128gcm",
+    "tls13.aes256gcm",
+    "tls13.chacha20"
+   ],
+   "id": "cipher.tls13_suites",
+   "reason": "TLS 1.3 suites accepted: aes128gcm,aes256gcm,chacha20",
+   "result": "PASS",
+   "target": "sentry"
+  },
+  {
+   "evidence": [
+    "cipher.kx_dhe"
+   ],
+   "id": "kx.dh_bits",
+   "reason": "no DHE handshake to measure",
+   "result": "INFO",
+   "target": "sentry"
+  },
+  {
+   "evidence": [
+    "cert"
+   ],
+   "id": "cert.key",
+   "reason": "rsa 2048 bits (min 2048)",
+   "result": "PASS",
+   "target": "sentry"
+  },
+  {
+   "evidence": [
+    "cert"
+   ],
+   "id": "cert.sig_hash",
+   "reason": "signature sha256WithRSAEncryption (hash sha256; forbidden md5,sha1)",
+   "result": "PASS",
+   "target": "sentry"
+  },
+  {
+   "evidence": [
+    "cert"
+   ],
+   "id": "cert.validity",
+   "reason": "729 days left (min 14)",
+   "result": "PASS",
+   "target": "sentry"
+  },
+  {
+   "evidence": [
+    "proto.tls1_2"
+   ],
+   "id": "hs.compression",
+   "reason": "compression NONE",
+   "result": "PASS",
+   "target": "sentry"
+  },
+  {
+   "evidence": [
+    "proto.tls1_2"
+   ],
+   "id": "hs.secure_reneg",
+   "reason": "RFC 5746 renegotiation_info present",
+   "result": "PASS",
+   "target": "sentry"
+  },
+  {
+   "evidence": [
+    "proto.tls1_2"
+   ],
+   "id": "hs.ems",
+   "reason": "extended master secret yes",
+   "result": "PASS",
+   "target": "sentry"
+  },
+  {
+   "evidence": [
+    "proto.tls1_2"
+   ],
+   "id": "hs.ticket_lifetime",
+   "reason": "ticket lifetime hint 7200 s (max 86400)",
+   "result": "PASS",
+   "target": "sentry"
+  },
+  {
+   "evidence": [
+    "hs.reneg"
+   ],
+   "id": "hs.client_reneg",
+   "reason": "client-initiated renegotiation refused",
+   "result": "PASS",
+   "target": "sentry"
+  },
+  {
+   "evidence": [
+    "hs.fallback"
+   ],
+   "id": "hs.fallback_scsv",
+   "reason": "TLS 1.2 + FALLBACK_SCSV refused (inappropriate_fallback)",
+   "result": "PASS",
+   "target": "sentry"
+  },
+  {
+   "evidence": [
+    "state"
+   ],
+   "id": "drift.posture",
+   "reason": "first run (no state)",
+   "result": "INFO",
+   "target": "sentry"
+  },
+  {
+   "evidence": [
+    "state"
+   ],
+   "id": "drift.cert",
+   "reason": "first run (no state)",
+   "result": "INFO",
+   "target": "sentry"
+  }
+ ],
+ "counts": {
+  "FAIL": 0,
+  "INFO": 6,
+  "PASS": 22,
+  "WAIVED": 0,
+  "WARN": 0
+ },
+ "drift": [],
+ "expired_waivers": 0,
+ "generated": 1794691095,
+ "handshakes": 21,
+ "host": "sentry",
+ "policy_sha256": "0c6f1b3d92f72a43c0865814926ee5d2da503fb8a08b556065399d1904ff0be0",
+ "public": true,
+ "targets": [
+  {
+   "cert": {
+    "fp_sha256": "0d6ad8fdd71bb8ed",
+    "key_bits": 2048,
+    "key_type": "rsa",
+    "not_after": 1857755797,
+    "not_before": 1794528000,
+    "self_signed": true,
+    "sig_alg": "sha256WithRSAEncryption",
+    "sig_hash": "sha256"
+   },
+   "name": "sentry",
+   "posture": {
+    "cert_key": "rsa-2048-sha256",
+    "ciphers": [
+     "ecdhe_aead"
+    ],
+    "dh": null,
+    "protocols": [
+     "tls1_2",
+     "tls1_3"
+    ],
+    "reneg": "refused",
+    "tls13": [
+     "aes128gcm",
+     "aes256gcm",
+     "chacha20"
+    ]
+   },
+   "probes": {
+    "cipher.3des": {
+     "alert": null,
+     "cipher": null,
+     "protocol": null,
+     "result": "untestable"
+    },
+    "cipher.anull": {
+     "alert": "handshake_failure",
+     "cipher": null,
+     "protocol": null,
+     "result": "refused",
+     "temp_key": null
+    },
+    "cipher.cbc_sha1": {
+     "alert": "handshake_failure",
+     "cipher": null,
+     "protocol": null,
+     "result": "refused",
+     "temp_key": null
+    },
+    "cipher.cbc_sha2": {
+     "alert": "handshake_failure",
+     "cipher": null,
+     "protocol": null,
+     "result": "refused",
+     "temp_key": null
+    },
+    "cipher.ecdhe_aead": {
+     "alert": null,
+     "cipher": "ECDHE-RSA-AES256-GCM-SHA384",
+     "protocol": "TLSv1.2",
+     "result": "accepted",
+     "temp_key": "X25519-253"
+    },
+    "cipher.export": {
+     "alert": null,
+     "cipher": null,
+     "protocol": null,
+     "result": "untestable"
+    },
+    "cipher.kx_dhe": {
+     "alert": "handshake_failure",
+     "cipher": null,
+     "protocol": null,
+     "result": "refused",
+     "temp_key": null
+    },
+    "cipher.kx_rsa": {
+     "alert": "handshake_failure",
+     "cipher": null,
+     "protocol": null,
+     "result": "refused",
+     "temp_key": null
+    },
+    "cipher.null": {
+     "alert": "handshake_failure",
+     "cipher": null,
+     "protocol": null,
+     "result": "refused",
+     "temp_key": null
+    },
+    "cipher.rc4": {
+     "alert": null,
+     "cipher": null,
+     "protocol": null,
+     "result": "untestable"
+    },
+    "hs.fallback": {
+     "alert": "inappropriate_fallback",
+     "cipher": null,
+     "fallback": "refused",
+     "protocol": null,
+     "result": "refused",
+     "temp_key": null
+    },
+    "hs.reneg": {
+     "alert": null,
+     "cipher": "ECDHE-RSA-AES256-GCM-SHA384",
+     "protocol": "TLSv1.2",
+     "reneg": "refused",
+     "result": "accepted",
+     "temp_key": "X25519-253"
+    },
+    "proto.tls1": {
+     "alert": "protocol_version",
+     "cipher": null,
+     "protocol": null,
+     "result": "refused",
+     "temp_key": null
+    },
+    "proto.tls1_1": {
+     "alert": "protocol_version",
+     "cipher": null,
+     "protocol": null,
+     "result": "refused",
+     "temp_key": null
+    },
+    "proto.tls1_2": {
+     "alert": null,
+     "cipher": "ECDHE-RSA-AES256-GCM-SHA384",
+     "protocol": "TLSv1.2",
+     "result": "accepted",
+     "temp_key": "X25519-253"
+    },
+    "proto.tls1_3": {
+     "alert": null,
+     "cipher": "TLS_AES_256_GCM_SHA384",
+     "protocol": "TLSv1.3",
+     "result": "accepted",
+     "temp_key": "X25519-253"
+    },
+    "tls13.aes128gcm": {
+     "alert": null,
+     "cipher": "TLS_AES_128_GCM_SHA256",
+     "protocol": "TLSv1.3",
+     "result": "accepted",
+     "temp_key": "X25519-253"
+    },
+    "tls13.aes256gcm": {
+     "alert": null,
+     "cipher": "TLS_AES_256_GCM_SHA384",
+     "protocol": "TLSv1.3",
+     "result": "accepted",
+     "temp_key": "X25519-253"
+    },
+    "tls13.chacha20": {
+     "alert": null,
+     "cipher": "TLS_CHACHA20_POLY1305_SHA256",
+     "protocol": "TLSv1.3",
+     "result": "accepted",
+     "temp_key": "X25519-253"
+    }
+   },
+   "scope": "local"
+  }
+ ],
+ "tool": "pft-peertls",
+ "verdict": "PASS",
+ "version": 1
+}

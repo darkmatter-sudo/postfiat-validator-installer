@@ -1,0 +1,14 @@
+control baseline suite (unmutated copy): PASS 75 passed in 415.33s (0:06:55)
+control baseline promtool (unmutated copy): PASS SUCCESS
+control timeout (evaluator never returns, --hang-timeout 60): HANG after 61 s, 0 process(es) left
+E01 CAUGHT - probe.reachable ignores failed probes [1 failing: test_one_failed_probe_fails_reachable]
+E06 CAUGHT - cipher.tls13_suites: no TLS 1.3 suite passes [1 failing: test_tls13_without_any_suite_fails]
+E21 CAUGHT - alert-only answer not read as refused [1 failing: test_alert_only_answer_is_refused]
+E25 CAUGHT - waiver ignores its target [1 failing: test_waiver_for_another_target_does_not_apply]
+E29 CAUGHT - bundle over the handshake cap accepted [1 failing: test_bundle_over_handshake_cap]
+E31 CAUGHT - bundle with a missing probe accepted [1 failing: test_bundle_missing_probe]
+S07 CAUGHT - non-root run allowed [1 failing: test_root_check_refuses_non_root]
+S08 CAUGHT - textfile size cap not enforced [1 failing: test_validate_size_cap]
+R03 CAUGHT - drift does not alert [promtool FAILED: sentry drift 1 (single change, PASS verdict) from 10m fires at 15m with the count, clears at 26m]
+orphan check: 0 process(es) still running that name this run's scratch dir
+RESULT: 9 caught, 0 survived, 0 not applied, 0 broken of 9 (--only subset of 56)

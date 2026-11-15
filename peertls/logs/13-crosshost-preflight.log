@@ -1,0 +1,60 @@
+peertls cross-host audit - 2026-11-14T21:14:48Z - Ubuntu 22.04.5 LTS - repo HEAD 17ad49ae63b5aa07726dc124de338acd45345d8d (clean: yes)
+
+== 0. preflight (read-only)
+$ sha256sum peertls/pft-peertls.sh peertls/peertls_eval.py peertls/policy/* peertls/drill/crosshost-run.sh | cut -c1-64
+  d583b200e5f81eb7e2609b560889b50f6376d27ea46c297d3c43efada6877cc3
+  7f03f207f712324c618e26918ced98b930c4c9951392453f6a22b393443f2b68
+  0c6f1b3d92f72a43c0865814926ee5d2da503fb8a08b556065399d1904ff0be0
+  808ac30c79ffaa05badd2f0eb9cf0fa822254e0d4c864b6f5daec6aad63ba428
+  e689db2212777fe373f50d86b6f14c932b74b1af872d32e513b8e7b2f7a2d6b7
+  (exit 0)
+$ sudo -n sha256sum /usr/local/bin/pft-peertls /usr/local/lib/pft-peertls/peertls_eval.py /usr/local/lib/pft-peertls/policy/* | cut -c1-64; R 'sha256sum /usr/local/bin/pft-peertls /usr/local/lib/pft-peertls/peertls_eval.py /usr/local/lib/pft-peertls/policy/* | cut -c1-64'
+  d583b200e5f81eb7e2609b560889b50f6376d27ea46c297d3c43efada6877cc3
+  7f03f207f712324c618e26918ced98b930c4c9951392453f6a22b393443f2b68
+  0c6f1b3d92f72a43c0865814926ee5d2da503fb8a08b556065399d1904ff0be0
+  808ac30c79ffaa05badd2f0eb9cf0fa822254e0d4c864b6f5daec6aad63ba428
+  d583b200e5f81eb7e2609b560889b50f6376d27ea46c297d3c43efada6877cc3
+  7f03f207f712324c618e26918ced98b930c4c9951392453f6a22b393443f2b68
+  0c6f1b3d92f72a43c0865814926ee5d2da503fb8a08b556065399d1904ff0be0
+  808ac30c79ffaa05badd2f0eb9cf0fa822254e0d4c864b6f5daec6aad63ba428
+  (exit 0)
+CHECK ok   installed audit, grader and policies = HEAD bytes on both hosts
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 262 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 155 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts before
+$ srv_state
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ link_up
+  peers 11, sentry link 1
+  (exit 0)
+CHECK ok   cluster link up before (sentry key among the validator's peers)
+$ sudo -n grep -cvE '^[[:space:]]*(#|$)' /etc/pft-peertls.targets; sudo -n grep -vE '^[[:space:]]*(#|$)' /etc/pft-peertls.targets; R 'sudo -n grep -cvE "^[[:space:]]*(#|\$)" /etc/pft-peertls.targets; sudo -n grep -vE "^[[:space:]]*(#|\$)" /etc/pft-peertls.targets'
+  1
+  validator <redacted-ip> 2559 local postfiatd
+  1
+  sentry <redacted-ip> 2559 local postfiatd-sentry
+  (exit 0)
+CHECK ok   targets: exactly the local loopback line on each host
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+CHECK ok   sentry address: [ips_fixed] entry = ssh alias address (not printed)
+CHECK ok   validator address: the sentry's view of our ssh source is configured on this host (not printed)
+$ sudo -n pft-peertls plan; R 'sudo -n pft-peertls plan'
+  targets: validator
+  probes per target: 21 handshakes
+  total: 21 (max 40)
+  targets: sentry
+  probes per target: 21 handshakes
+  total: 21 (max 40)
+  (exit 0)
+CHECK ok   plans (local only): 21 handshakes per target, max 40, on both hosts
+$ curl -s --max-time 10 http://<redacted-ip>:9090/api/v1/alerts | jq -r '.status, ([.data.alerts[] | select(.labels.alertname != "PFTAlertPipelineWatchdog")] | length)'
+  success
+  0
+  (exit 0)
+CHECK ok   Prometheus answers; nothing but the watchdog pending/firing
+PREFLIGHT_ONLY: stopping before any change (0 failed)

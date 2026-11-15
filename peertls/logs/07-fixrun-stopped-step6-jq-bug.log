@@ -1,0 +1,365 @@
+pft-peertls fix-run - 2026-11-14T19:14:35Z - Ubuntu 22.04.5 LTS - repo HEAD b175a16b29bf8dfb46111d4103b0800a034da54b (clean: yes)
+sha256: pft-peertls-fix.sh c81d08f3459edf19245566dcd5b59c70fb0bc05b6d70db8baca79dd72c9ca7f6 | pft-peertls.sh d583b200e5f81eb7e2609b560889b50f6376d27ea46c297d3c43efada6877cc3
+        peertls_eval.py 7f03f207f712324c618e26918ced98b930c4c9951392453f6a22b393443f2b68 | fix-run.sh 3e34366c50e60c03a1e68d8a813be24322dc591cae9049b35739d78a7dc10717
+
+== 0. preflight (nothing changed yet)
+  pft-maint: no data-collection locks, no window open
+  operator topics to watch: 2 (not printed)
+  sentry (postfiatd-sentry): server_state=full
+  validator (postfiatd): server_state=full
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin @@<redacted-ip>@@:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (18/18)
+  Prometheus besides the watchdog: none | Alertmanager besides the watchdog: none
+  relay scratch: fix, audit, eval, sentry.policy copied (sha256 = checkout); scratch audit confs (loopback targets only, no waivers)
+
+-- FOUND sentry
+$ [sentry] sudo -n bash $HOME/.cache/ptls-fixrun/pft-peertls-fix.sh plan
+  pft-peertls-fix plan - 2026-11-14T19:14:51Z (container postfiatd-sentry, CIPHERS ECDHE+AESGCM:ECDHE+CHACHA20)
+  [port_peer] now:
+    port = 2559
+    ip = @@<redacted-ip>@@
+    protocol = peer
+  diff:
+    --- postfiatd.cfg
+    +++ postfiatd.cfg.candidate
+    +# pft-peertls-fix: managed line (inbound peer TLS 1.2 suites; see peertls/README.md)
+    +ssl_ciphers = ECDHE+AESGCM:ECDHE+CHACHA20
+  then: docker restart postfiatd-sentry, gate (budget 600 s, TLS want GOOD=ECDHE-RSA-AES256-GCM-SHA384 AES256-GCM-SHA384=NONE DHE-RSA-AES256-SHA256=NONE)
+  (exit 0)
+CHECK ok   sentry plan rc 0 (not applied, no refusal)
+$ [sentry] sudo -n env PFT_PTLS_CONF=$HOME/.cache/ptls-fixrun/conf/env PFT_PTLS_EVAL=$HOME/.cache/ptls-fixrun/peertls_eval.py bash $HOME/.cache/ptls-fixrun/pft-peertls.sh audit --no-state
+  pft-peertls audit - sentry - 2026-11-14T19:15:00Z
+  policy sha256 0c6f1b3d92f72a43 | handshakes 21/40
+  
+  target sentry (local)
+    protocols accepted: tls1_2 tls1_3
+    TLS 1.2 classes accepted: cbc_sha2 ecdhe_aead kx_dhe kx_rsa
+    TLS 1.3 suites accepted: aes128gcm aes256gcm chacha20
+    certificate: rsa 2048 bit, sha256WithRSAEncryption, valid 2026-11-13T00:00:00Z .. 2028-11-13T13:13:17Z, sha256 a17f165312635129..., self-signed
+    [PASS] probe.reachable: 19 probes answered
+    [PASS] proto.tls1: tls1 refused (protocol_version); policy forbid
+    [PASS] proto.tls1_1: tls1_1 refused (protocol_version); policy forbid
+    [PASS] proto.tls1_2: tls1_2 accepted; policy require
+    [PASS] proto.tls1_3: tls1_3 accepted; policy require
+    [PASS] cipher.null: null refused; policy forbid
+    [PASS] cipher.anull: anull refused; policy forbid
+    [INFO] cipher.export: untestable: this client cannot offer export suites
+    [INFO] cipher.rc4: untestable: this client cannot offer rc4 suites
+    [INFO] cipher.3des: untestable: this client cannot offer 3des suites
+    [PASS] cipher.cbc_sha1: cbc_sha1 refused; policy forbid
+    [WARN] cipher.cbc_sha2: cbc_sha2 accepted as DHE-RSA-AES256-SHA256; policy forbid
+    [WARN] cipher.kx_rsa: kx_rsa accepted as AES256-GCM-SHA384; policy forbid
+    [PASS] cipher.kx_dhe: kx_dhe accepted as DHE-RSA-AES256-GCM-SHA384; policy allow
+    [PASS] cipher.ecdhe_aead: ecdhe_aead accepted as ECDHE-RSA-AES256-GCM-SHA384; policy require
+    [PASS] cipher.tls13_suites: TLS 1.3 suites accepted: aes128gcm,aes256gcm,chacha20
+    [PASS] kx.dh_bits: DHE group 2048 bits (min 2048)
+    [PASS] cert.key: rsa 2048 bits (min 2048)
+    [PASS] cert.sig_hash: signature sha256WithRSAEncryption (hash sha256; forbidden md5,sha1)
+    [PASS] cert.validity: 729 days left (min 14)
+    [PASS] hs.compression: compression NONE
+    [PASS] hs.secure_reneg: RFC 5746 renegotiation_info present
+    [PASS] hs.ems: extended master secret yes
+    [PASS] hs.ticket_lifetime: ticket lifetime hint 7200 s (max 86400)
+    [PASS] hs.client_reneg: client-initiated renegotiation refused
+    [PASS] hs.fallback_scsv: TLS 1.2 + FALLBACK_SCSV refused (inappropriate_fallback)
+    [INFO] drift.posture: first run (no state)
+    [INFO] drift.cert: first run (no state)
+  
+  RESULT: WARN - 21 pass, 2 warn, 0 fail, 0 waived, 5 info
+  (exit 1)
+CHECK ok   sentry pre-fix audit WARN (exit 1) as found (exit 1)
+CHECK ok   sentry pre-fix finding cipher.kx_rsa present
+CHECK ok   sentry pre-fix finding cipher.cbc_sha2 present
+
+-- FOUND validator
+$ [validator] sudo -n bash ./peertls/pft-peertls-fix.sh plan
+  pft-peertls-fix plan - 2026-11-14T19:15:01Z (container postfiatd, CIPHERS ECDHE+AESGCM:ECDHE+CHACHA20)
+  [port_peer] now:
+    port = 2559
+    ip = @@<redacted-ip>@@
+    protocol = peer
+  diff:
+    --- postfiatd.cfg
+    +++ postfiatd.cfg.candidate
+    +# pft-peertls-fix: managed line (inbound peer TLS 1.2 suites; see peertls/README.md)
+    +ssl_ciphers = ECDHE+AESGCM:ECDHE+CHACHA20
+  then: docker restart postfiatd, gate (budget 600 s, TLS want GOOD=ECDHE-RSA-AES256-GCM-SHA384 AES256-GCM-SHA384=NONE DHE-RSA-AES256-SHA256=NONE)
+  (exit 0)
+CHECK ok   validator plan rc 0 (not applied, no refusal)
+$ [validator] sudo -n env PFT_PTLS_CONF=~/.cache/tmp.90r9NMaPdx/conf/env PFT_PTLS_EVAL=./peertls/peertls_eval.py bash ./peertls/pft-peertls.sh audit --no-state
+  pft-peertls audit - validator - 2026-11-14T19:15:14Z
+  policy sha256 808ac30c79ffaa05 | handshakes 21/40
+  
+  target validator (local)
+    protocols accepted: tls1_2 tls1_3
+    TLS 1.2 classes accepted: cbc_sha2 ecdhe_aead kx_dhe kx_rsa
+    TLS 1.3 suites accepted: aes128gcm aes256gcm chacha20
+    certificate: rsa 2048 bit, sha256WithRSAEncryption, valid 2026-11-13T00:00:00Z .. 2028-11-13T13:25:50Z, sha256 b282d2819768020c..., self-signed
+    [PASS] probe.reachable: 19 probes answered
+    [PASS] proto.tls1: tls1 refused (protocol_version); policy forbid
+    [PASS] proto.tls1_1: tls1_1 refused (protocol_version); policy forbid
+    [PASS] proto.tls1_2: tls1_2 accepted; policy require
+    [PASS] proto.tls1_3: tls1_3 accepted; policy require
+    [PASS] cipher.null: null refused; policy forbid
+    [PASS] cipher.anull: anull refused; policy forbid
+    [INFO] cipher.export: untestable: this client cannot offer export suites
+    [INFO] cipher.rc4: untestable: this client cannot offer rc4 suites
+    [INFO] cipher.3des: untestable: this client cannot offer 3des suites
+    [PASS] cipher.cbc_sha1: cbc_sha1 refused; policy forbid
+    [WARN] cipher.cbc_sha2: cbc_sha2 accepted as DHE-RSA-AES256-SHA256; policy forbid
+    [WARN] cipher.kx_rsa: kx_rsa accepted as AES256-GCM-SHA384; policy forbid
+    [PASS] cipher.kx_dhe: kx_dhe accepted as DHE-RSA-AES256-GCM-SHA384; policy allow
+    [PASS] cipher.ecdhe_aead: ecdhe_aead accepted as ECDHE-RSA-AES256-GCM-SHA384; policy require
+    [PASS] cipher.tls13_suites: TLS 1.3 suites accepted: aes128gcm,aes256gcm,chacha20
+    [PASS] kx.dh_bits: DHE group 2048 bits (min 2048)
+    [PASS] cert.key: rsa 2048 bits (min 2048)
+    [PASS] cert.sig_hash: signature sha256WithRSAEncryption (hash sha256; forbidden md5,sha1)
+    [PASS] cert.validity: 729 days left (min 14)
+    [PASS] hs.compression: compression NONE
+    [PASS] hs.secure_reneg: RFC 5746 renegotiation_info present
+    [PASS] hs.ems: extended master secret yes
+    [PASS] hs.ticket_lifetime: ticket lifetime hint 7200 s (max 86400)
+    [PASS] hs.client_reneg: client-initiated renegotiation refused
+    [PASS] hs.fallback_scsv: TLS 1.2 + FALLBACK_SCSV refused (inappropriate_fallback)
+    [INFO] drift.posture: first run (no state)
+    [INFO] drift.cert: first run (no state)
+  
+  RESULT: WARN - 21 pass, 2 warn, 0 fail, 0 waived, 5 info
+  (exit 1)
+CHECK ok   validator pre-fix audit WARN (exit 1) as found (exit 1)
+CHECK ok   validator pre-fix finding cipher.kx_rsa present
+CHECK ok   validator pre-fix finding cipher.cbc_sha2 present
+
+== 1. redirect notifiers, outer Alertmanager silence
+  validator:/etc/postfiat-monitor.env sha256 6dc3b10fb491 -> throwaway ALERT topic (original kept as /etc/postfiat-monitor.env.pre-peertls-fix)
+  validator:/etc/pft-integrity.env sha256 b3cd1c3da7ff -> throwaway ALERT topic (original kept as /etc/pft-integrity.env.pre-peertls-fix)
+  sentry:/etc/pft-watchdog/ntfy.env sha256 ddb52721a668 -> throwaway ALERT topic (original kept as /etc/pft-watchdog/ntfy.env.pre-peertls-fix)
+  sentry:/etc/pft-integrity.env sha256 cdd330a974d2 -> throwaway ALERT topic (original kept as /etc/pft-integrity.env.pre-peertls-fix)
+  sentry:/etc/pft-alertpath/ntfy.env sha256 ddb52721a668 -> throwaway ALERT topic (original kept as /etc/pft-alertpath/ntfy.env.pre-peertls-fix)
+  validator:/etc/pft-maint/ntfy.env created for the run only -> throwaway MAINT topic
+  sentry:/etc/pft-maint/ntfy.env created for the run only -> throwaway MAINT topic
+  outer silence alertname=~".+", alertname!="PFTAlertPipelineWatchdog" until 2026-11-14T20:30:26Z (id d54b6bcb)
+
+== 2. pft-maint window
+$ [validator] sudo -n pft-maint start --ttl 45m --reason 'task_2b00 peertls cipher fix (planned node restarts)'
+  window started: id m1794683727-1090392 until 2026-11-14T20:00:27Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint start
+CHECK ok   sentry sees the window (after 45 s)
+
+== 3. apply (sentry first)
+$ [sentry] sudo -n bash $HOME/.cache/ptls-fixrun/pft-peertls-fix.sh apply --yes
+  2026-11-14T19:16:24Z apply: pft-maint window active
+  2026-11-14T19:16:25Z apply: backup postfiatd.cfg.20261114T191625Z (sha256 c776ff0442a3); pre-apply TLS GOOD=ECDHE-RSA-AES256-GCM-SHA384 AES256-GCM-SHA384=AES256-GCM-SHA384 DHE-RSA-AES256-SHA256=DHE-RSA-AES256-SHA256
+  2026-11-14T19:16:25Z apply: config installed (sha256 c776ff0442a3 -> 86d9f591e0ca, mode 600)
+  2026-11-14T19:16:30Z restart: postfiatd-sentry restarted
+  2026-11-14T19:17:28Z health: PASS after 55 s (postfiatd-sentry restarted, server_state full, pubkey_node unchanged, peers 11, :2559 listening, TLS GOOD=ECDHE-RSA-AES256-GCM-SHA384 AES256-GCM-SHA384=NONE DHE-RSA-AES256-SHA256=NONE)
+  2026-11-14T19:18:12Z integrity: accepted (cfgvol:postfiatd.cfg only): pft-peertls-fix apply: [port_peer] ssl_ciphers (backup postfiatd.cfg.20261114T191625Z)
+  2026-11-14T19:18:12Z apply: done
+  (exit 0)
+CHECK ok   sentry apply exit 0 (exit 0)
+CHECK ok   sentry container restarted once by apply (2026-11-14T13:13:13.677322328Z -> 2026-11-14T19:16:29.642897733Z)
+$ [validator] sudo -n bash ./peertls/pft-peertls-fix.sh apply --yes
+  2026-11-14T19:18:14Z apply: pft-maint window active
+  2026-11-14T19:18:16Z apply: backup postfiatd.cfg.20261114T191816Z (sha256 75237ae12a41); pre-apply TLS GOOD=ECDHE-RSA-AES256-GCM-SHA384 AES256-GCM-SHA384=AES256-GCM-SHA384 DHE-RSA-AES256-SHA256=DHE-RSA-AES256-SHA256
+  2026-11-14T19:18:16Z apply: config installed (sha256 75237ae12a41 -> 8b619b05204c, mode 600)
+  2026-11-14T19:18:22Z restart: postfiatd restarted
+  2026-11-14T19:19:19Z health: PASS after 56 s (postfiatd restarted, server_state full, pubkey_node unchanged, peers 11, :2559 listening, TLS GOOD=ECDHE-RSA-AES256-GCM-SHA384 AES256-GCM-SHA384=NONE DHE-RSA-AES256-SHA256=NONE)
+  2026-11-14T19:19:56Z integrity: accepted (cfgvol:postfiatd.cfg only): pft-peertls-fix apply: [port_peer] ssl_ciphers (backup postfiatd.cfg.20261114T191816Z)
+  2026-11-14T19:19:56Z apply: done
+  (exit 0)
+CHECK ok   validator apply exit 0 (exit 0)
+CHECK ok   validator container restarted once by apply (2026-11-14T13:25:46.739024536Z -> 2026-11-14T19:18:20.509963184Z)
+
+== 4. VERIFIED
+-- sentry
+$ [sentry] sudo -n bash $HOME/.cache/ptls-fixrun/pft-peertls-fix.sh plan
+  pft-peertls-fix plan - 2026-11-14T19:19:57Z (container postfiatd-sentry, CIPHERS ECDHE+AESGCM:ECDHE+CHACHA20)
+  [port_peer] now:
+    ssl_ciphers = ECDHE+AESGCM:ECDHE+CHACHA20
+    port = 2559
+    ip = @@<redacted-ip>@@
+    protocol = peer
+  already applied (managed line present)
+  diff:
+  then: docker restart postfiatd-sentry, gate (budget 600 s, TLS want GOOD=ECDHE-RSA-AES256-GCM-SHA384 AES256-GCM-SHA384=NONE DHE-RSA-AES256-SHA256=NONE)
+  (exit 0)
+CHECK ok   sentry plan: already applied
+$ [sentry] sudo -n env PFT_PTLS_CONF=$HOME/.cache/ptls-fixrun/conf/env PFT_PTLS_EVAL=$HOME/.cache/ptls-fixrun/peertls_eval.py bash $HOME/.cache/ptls-fixrun/pft-peertls.sh audit --no-state
+  pft-peertls audit - sentry - 2026-11-14T19:20:38Z
+  policy sha256 0c6f1b3d92f72a43 | handshakes 21/40
+  
+  target sentry (local)
+    protocols accepted: tls1_2 tls1_3
+    TLS 1.2 classes accepted: ecdhe_aead
+    TLS 1.3 suites accepted: aes128gcm aes256gcm chacha20
+    certificate: rsa 2048 bit, sha256WithRSAEncryption, valid 2026-11-13T00:00:00Z .. 2028-11-13T19:16:37Z, sha256 0d6ad8fdd71bb8ed..., self-signed
+    [PASS] probe.reachable: 19 probes answered
+    [PASS] proto.tls1: tls1 refused (protocol_version); policy forbid
+    [PASS] proto.tls1_1: tls1_1 refused (protocol_version); policy forbid
+    [PASS] proto.tls1_2: tls1_2 accepted; policy require
+    [PASS] proto.tls1_3: tls1_3 accepted; policy require
+    [PASS] cipher.null: null refused; policy forbid
+    [PASS] cipher.anull: anull refused; policy forbid
+    [INFO] cipher.export: untestable: this client cannot offer export suites
+    [INFO] cipher.rc4: untestable: this client cannot offer rc4 suites
+    [INFO] cipher.3des: untestable: this client cannot offer 3des suites
+    [PASS] cipher.cbc_sha1: cbc_sha1 refused; policy forbid
+    [PASS] cipher.cbc_sha2: cbc_sha2 refused; policy forbid
+    [PASS] cipher.kx_rsa: kx_rsa refused; policy forbid
+    [PASS] cipher.kx_dhe: kx_dhe refused; policy allow
+    [PASS] cipher.ecdhe_aead: ecdhe_aead accepted as ECDHE-RSA-AES256-GCM-SHA384; policy require
+    [PASS] cipher.tls13_suites: TLS 1.3 suites accepted: aes128gcm,aes256gcm,chacha20
+    [INFO] kx.dh_bits: no DHE handshake to measure
+    [PASS] cert.key: rsa 2048 bits (min 2048)
+    [PASS] cert.sig_hash: signature sha256WithRSAEncryption (hash sha256; forbidden md5,sha1)
+    [PASS] cert.validity: 729 days left (min 14)
+    [PASS] hs.compression: compression NONE
+    [PASS] hs.secure_reneg: RFC 5746 renegotiation_info present
+    [PASS] hs.ems: extended master secret yes
+    [PASS] hs.ticket_lifetime: ticket lifetime hint 7200 s (max 86400)
+    [PASS] hs.client_reneg: client-initiated renegotiation refused
+    [PASS] hs.fallback_scsv: TLS 1.2 + FALLBACK_SCSV refused (inappropriate_fallback)
+    [INFO] drift.posture: first run (no state)
+    [INFO] drift.cert: first run (no state)
+  
+  RESULT: PASS - 22 pass, 0 warn, 0 fail, 0 waived, 6 info
+  (exit 0)
+CHECK ok   sentry post-fix audit PASS (exit 0) (exit 0)
+CHECK ok   sentry cipher.kx_rsa now PASS
+CHECK ok   sentry cipher.cbc_sha2 now PASS
+CHECK ok   sentry server_state full (full)
+$ [sentry] sudo -n pft-integrity verify | tail -1
+  RESULT: PASS - 151 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   sentry integrity PASS
+-- validator
+$ [validator] sudo -n bash ./peertls/pft-peertls-fix.sh plan
+  pft-peertls-fix plan - 2026-11-14T19:20:53Z (container postfiatd, CIPHERS ECDHE+AESGCM:ECDHE+CHACHA20)
+  [port_peer] now:
+    ssl_ciphers = ECDHE+AESGCM:ECDHE+CHACHA20
+    port = 2559
+    ip = @@<redacted-ip>@@
+    protocol = peer
+  already applied (managed line present)
+  diff:
+  then: docker restart postfiatd, gate (budget 600 s, TLS want GOOD=ECDHE-RSA-AES256-GCM-SHA384 AES256-GCM-SHA384=NONE DHE-RSA-AES256-SHA256=NONE)
+  (exit 0)
+CHECK ok   validator plan: already applied
+$ [validator] sudo -n env PFT_PTLS_CONF=~/.cache/tmp.90r9NMaPdx/conf/env PFT_PTLS_EVAL=./peertls/peertls_eval.py bash ./peertls/pft-peertls.sh audit --no-state
+  pft-peertls audit - validator - 2026-11-14T19:21:32Z
+  policy sha256 808ac30c79ffaa05 | handshakes 21/40
+  
+  target validator (local)
+    protocols accepted: tls1_2 tls1_3
+    TLS 1.2 classes accepted: ecdhe_aead
+    TLS 1.3 suites accepted: aes128gcm aes256gcm chacha20
+    certificate: rsa 2048 bit, sha256WithRSAEncryption, valid 2026-11-13T00:00:00Z .. 2028-11-13T19:18:26Z, sha256 979c4425cdeffcaa..., self-signed
+    [PASS] probe.reachable: 19 probes answered
+    [PASS] proto.tls1: tls1 refused (protocol_version); policy forbid
+    [PASS] proto.tls1_1: tls1_1 refused (protocol_version); policy forbid
+    [PASS] proto.tls1_2: tls1_2 accepted; policy require
+    [PASS] proto.tls1_3: tls1_3 accepted; policy require
+    [PASS] cipher.null: null refused; policy forbid
+    [PASS] cipher.anull: anull refused; policy forbid
+    [INFO] cipher.export: untestable: this client cannot offer export suites
+    [INFO] cipher.rc4: untestable: this client cannot offer rc4 suites
+    [INFO] cipher.3des: untestable: this client cannot offer 3des suites
+    [PASS] cipher.cbc_sha1: cbc_sha1 refused; policy forbid
+    [PASS] cipher.cbc_sha2: cbc_sha2 refused; policy forbid
+    [PASS] cipher.kx_rsa: kx_rsa refused; policy forbid
+    [PASS] cipher.kx_dhe: kx_dhe refused; policy allow
+    [PASS] cipher.ecdhe_aead: ecdhe_aead accepted as ECDHE-RSA-AES256-GCM-SHA384; policy require
+    [PASS] cipher.tls13_suites: TLS 1.3 suites accepted: aes128gcm,aes256gcm,chacha20
+    [INFO] kx.dh_bits: no DHE handshake to measure
+    [PASS] cert.key: rsa 2048 bits (min 2048)
+    [PASS] cert.sig_hash: signature sha256WithRSAEncryption (hash sha256; forbidden md5,sha1)
+    [PASS] cert.validity: 729 days left (min 14)
+    [PASS] hs.compression: compression NONE
+    [PASS] hs.secure_reneg: RFC 5746 renegotiation_info present
+    [PASS] hs.ems: extended master secret yes
+    [PASS] hs.ticket_lifetime: ticket lifetime hint 7200 s (max 86400)
+    [PASS] hs.client_reneg: client-initiated renegotiation refused
+    [PASS] hs.fallback_scsv: TLS 1.2 + FALLBACK_SCSV refused (inappropriate_fallback)
+    [INFO] drift.posture: first run (no state)
+    [INFO] drift.cert: first run (no state)
+  
+  RESULT: PASS - 22 pass, 0 warn, 0 fail, 0 waived, 6 info
+  (exit 0)
+CHECK ok   validator post-fix audit PASS (exit 0) (exit 0)
+CHECK ok   validator cipher.kx_rsa now PASS
+CHECK ok   validator cipher.cbc_sha2 now PASS
+CHECK ok   validator server_state full (full)
+$ [validator] sudo -n pft-integrity verify | tail -1
+  RESULT: PASS - 256 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   validator integrity PASS
+CHECK ok   sentry DOCKER-USER -> PFT-EGRESS jump present once (1)
+
+== 5. window end, restore notifiers, re-run collectors
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+  restored validator:/etc/postfiat-monitor.env: sha256 matches pre-run copy: yes
+  restored validator:/etc/pft-integrity.env: sha256 matches pre-run copy: yes
+  restored sentry:/etc/pft-watchdog/ntfy.env: sha256 matches pre-run copy: yes
+  restored sentry:/etc/pft-integrity.env: sha256 matches pre-run copy: yes
+  restored sentry:/etc/pft-alertpath/ntfy.env: sha256 matches pre-run copy: yes
+  removed run-only validator:/etc/pft-maint/ntfy.env: yes
+  removed run-only sentry:/etc/pft-maint/ntfy.env: yes
+CHECK ok   notifier envs restored byte-identical, run-only files removed
+$ [validator] sudo -n pft-keyescrow inventory --textfile | tail -1
+  RESULT: ok 11, perm 0, missing 0, unreadable 0, absent(optional) 2; escrow drift 0, new 0, evolving 1 -> exit 0
+  (exit 0)
+CHECK ok   validator keyescrow inventory rc 0
+$ [sentry] sudo -n pft-keyescrow inventory --textfile | tail -1
+  RESULT: ok 10, perm 0, missing 0, unreadable 0, absent(optional) 1; escrow drift 0, new 0, evolving 1 -> exit 0
+  (exit 0)
+CHECK ok   sentry keyescrow inventory rc 0
+$ [validator] sudo -n pft-keyescrow pull 2>&1 | tail -2
+  pft_keyescrow: pulled from sentry
+  pft_keyescrow_held: pulled from sentry
+  (exit 0)
+CHECK ok   validator keyescrow pull rc 0
+
+== 6. drain, expire silence, read back
+jq: error (at <stdin>:0): Cannot index string with string "labels"
+jq: error (at <stdin>:0): Cannot index string with string "labels"
+jq: error (at <stdin>:0): Cannot index string with string "labels"
+jq: error (at <stdin>:0): Cannot index string with string "labels"
+jq: error (at <stdin>:0): Cannot index string with string "labels"
+jq: error (at <stdin>:0): Cannot index string with string "labels"
+jq: error (at <stdin>:0): Cannot index string with string "labels"
+jq: error (at <stdin>:0): Cannot index string with string "labels"
+jq: error (at <stdin>:0): Cannot index string with string "labels"
+jq: error (at <stdin>:0): Cannot index string with string "labels"
+jq: error (at <stdin>:0): Cannot index string with string "labels"
+jq: error (at <stdin>:0): Cannot index string with string "labels"
+jq: error (at <stdin>:0): Cannot index string with string "labels"
+jq: error (at <stdin>:0): Cannot index string with string "labels"
+jq: error (at <stdin>:0): Cannot index string with string "labels"
+jq: error (at <stdin>:0): Cannot index string with string "labels"
+jq: error (at <stdin>:0): Cannot index string with string "labels"
+jq: error (at <stdin>:0): Cannot index string with string "labels"
+jq: error (at <stdin>:0): Cannot index string with string "labels"
+jq: error (at <stdin>:0): Cannot index string with string "labels"
+jq: error (at <stdin>:0): Cannot index string with string "labels"
+jq: error (at <stdin>:0): Cannot index string with string "labels"
+interrupted
+exit 6

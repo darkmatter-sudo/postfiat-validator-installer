@@ -1,0 +1,29 @@
+== histarchive gap left by the task_2b00 validator restart (19:18:20Z) - 2026-11-14T19:32:55Z
+$ sudo pft-histarchive fill-gap 8049663-8049680 --rpc https://rpc.testnet.postfiat.org/ --dry-run
+pft-histarchive fill-gap - 2026-11-14T19:32:55Z | validator gap 8049663-8049680
+2026-11-14T19:32:55Z histarchive 1.1.0 fill-gap 8049663-8049680 source rpc https://rpc.testnet.postfiat.org
+2026-11-14T19:32:56Z anchors: below 8049662 present 6E252F653B659BC6; above 8049681 present 1E2FFE59C87B8816
+2026-11-14T19:33:12Z source answered 18/18 ledgers in 19 requests
+2026-11-14T19:33:12Z checks: 18 ledgers header+hash+txroot OK, chain 8049662->8049681 unbroken (19 links incl. both anchors)
+2026-11-14T19:33:12Z DRY RUN: every check passed; nothing written
+RESULT: DRY RUN PASS - fill-gap rc 0
+(exit 0)
+$ sudo pft-histarchive fill-gap 8049663-8049680 --rpc https://rpc.testnet.postfiat.org/
+pft-histarchive fill-gap - 2026-11-14T19:33:17Z | validator gap 8049663-8049680
+2026-11-14T19:33:17Z histarchive 1.1.0 fill-gap 8049663-8049680 source rpc https://rpc.testnet.postfiat.org
+2026-11-14T19:33:17Z anchors: below 8049662 present 6E252F653B659BC6; above 8049681 present 1E2FFE59C87B8816
+2026-11-14T19:33:34Z source answered 18/18 ledgers in 19 requests
+2026-11-14T19:33:34Z checks: 18 ledgers header+hash+txroot OK, chain 8049662->8049681 unbroken (19 links incl. both anchors)
+2026-11-14T19:33:34Z FILL 8049663-8049680 count=18 txs=7 sha256_gz=2d63aeab0448015e entry=c2aafce3b4c6b9ad source=rpc
+== verify after the fill
+  NOTE filled gap 8042619-8042680 (62 ledgers, verified in the chain)
+  NOTE filled gap 8049663-8049680 (18 ledgers, verified in the chain)
+  RESULT: PASS - segments 6 active 1 ledgers 112053 (7937915-8049967) txs 38580 gaps 0 (0 ledgers) filled 2 fails 0
+  RESULT: gaps 2 open 0 filled 2 fillable 0
+RESULT: PASS - fill-gap 8049663-8049680, verify rc 0
+(exit 0)
+$ sudo pft-histarchive gaps
+FILLED 8042619-8042680 (62) by staged at 2026-11-14T15:10:06Z entry 7f587f56d0f5f47d
+FILLED 8049663-8049680 (18) by rpc at 2026-11-14T19:33:34Z entry c2aafce3b4c6b9ad
+RESULT: gaps 2 open 0 filled 2 fillable 0
+(exit 0)

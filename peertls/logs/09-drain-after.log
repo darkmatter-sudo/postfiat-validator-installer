@@ -1,0 +1,19 @@
+drain-after - 2026-11-14T19:35:56Z - fix-run start 2026-11-14T19:14:35Z - sha256 54d8ca9cd32e377ebca6bf9e061e5c077421caa6828fd26714decbcf6b9e66ab
+== silences of the run
+  d54b6bcb by pft-peertls-fix-run until 2026-11-14T20:30:26.000Z
+  3ca73018 by pft-peertls-fix-guard until 2026-11-14T20:45:00.000Z
+== wait: nothing but the watchdog in Prometheus (max 70 min)
+  2026-11-14T19:35:56Z active: PFTHistarchiveIntegrity validator firing since 2026-11-14T19:22:55Z
+  2026-11-14T20:22:44Z active: none
+CHECK ok   drained (only the watchdog in Prometheus) (none)
+  silence d54b6bcb expired: HTTP 200
+  silence 3ca73018 expired: HTTP 200
+CHECK ok   no active silence left (0)
+== operator topics since the fix-run start (not printed)
+  operator #1: 0 message(s)
+  operator #2: 0 message(s)
+CHECK ok   operator topics received nothing since the fix-run start (2 topic(s), 0 with messages)
+== Alertmanager
+  PFTAlertPipelineWatchdog active
+drain-after done 2026-11-14T20:24:17Z: 0 check(s) failed -> PASS
+exit 0

@@ -1,0 +1,143 @@
+peertls two-host upgrade - 2026-11-15T00:26:51Z - Ubuntu 22.04.5 LTS - repo HEAD 981e8246765e2fbe3845372d36f38b7e128e2528 (clean: yes)
+
+== 0. preflight (read-only)
+$ sha256sum peertls/pft-peertls.sh peertls/pft-peertls-fix.sh peertls/peertls_eval.py peertls/install.sh peertls/drill/upgrade-run.sh peertls/policy/* peertls/systemd/* alerts/peertls.rules.yml fleet/manifest.tsv
+  d583b200e5f81eb7e2609b560889b50f6376d27ea46c297d3c43efada6877cc3  peertls/pft-peertls.sh
+  8ceb58b949f4fa18fcb0cfd89cd576aafa2b6deb96686916380f887296a76834  peertls/pft-peertls-fix.sh
+  7f03f207f712324c618e26918ced98b930c4c9951392453f6a22b393443f2b68  peertls/peertls_eval.py
+  c9b9eb4026bb8a8dab6f261fad09c30f7dfa36215278c226de05890763dbcbe2  peertls/install.sh
+  abfc5011503c30acc071380bce2454f2204599c976cfe01a7511378db40b64ec  peertls/drill/upgrade-run.sh
+  0c6f1b3d92f72a43c0865814926ee5d2da503fb8a08b556065399d1904ff0be0  peertls/policy/sentry.policy
+  808ac30c79ffaa05badd2f0eb9cf0fa822254e0d4c864b6f5daec6aad63ba428  peertls/policy/validator.policy
+  b3f8c1a252b4207c4bc2d895fd4ed95ec37c076ab40990998fceef5c257993a6  peertls/systemd/pft-peertls-pull.service
+  b10f484a2ffab490da077c1630fa6e5d84d8893a4d92b7b24cbac7d6f30a0225  peertls/systemd/pft-peertls-pull.timer
+  89a8dd912cdf3ca92ea93e052288b004560f2baa67ed129fcf137333bf822abd  peertls/systemd/pft-peertls.service
+  36ff2c67f3ab5faff3858100b65ec2c0c19fbb2fb396d29e7b787e68d48cd6de  peertls/systemd/pft-peertls.timer
+  e43b1e4d7170ca7c42c1a2095446c60257c9b0fc36499b6866a5e5f9689927df  alerts/peertls.rules.yml
+  f48effb2c02df3d5b3b1a761c56a709232b18cda38b24cc4324c217e2e69605f  fleet/manifest.tsv
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 262 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 155 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts before the upgrade
+$ srv_state
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ ls /usr/local/bin/pft-peertls /usr/local/bin/pft-peertls-fix /etc/pft-peertls.env; R 'ls /usr/local/bin/pft-peertls /usr/local/bin/pft-peertls-fix /etc/pft-peertls.env'
+  /etc/pft-peertls.env
+  /usr/local/bin/pft-peertls
+  /usr/local/bin/pft-peertls-fix
+  /etc/pft-peertls.env
+  /usr/local/bin/pft-peertls
+  /usr/local/bin/pft-peertls-fix
+  (exit 0)
+CHECK ok   peertls installed on both hosts
+$ sudo -n pft-fleet skew
+  ref main = 981e8246765e2fbe3845372d36f38b7e128e2528
+  host sentry     role sentry    ok
+  host validator  role validator ok
+  HOST       ADDON       STATE      DETAIL
+  sentry     alertpath   CURRENT    
+  sentry     apparmor    CURRENT    
+  sentry     aptrust     CURRENT    
+  sentry     audittrail  CURRENT    
+  sentry     authwatch   CURRENT    
+  sentry     backfill    CURRENT    
+  sentry     backupwatch CURRENT    
+  sentry     cluster     CURRENT    
+  sentry     divergence  CURRENT    
+  sentry     egress      CURRENT    
+  sentry     feewatch    CURRENT    
+  sentry     fwaudit     CURRENT    
+  sentry     histarchive CURRENT    
+  sentry     integrity   CURRENT    
+  sentry     jobwatch    CURRENT    
+  sentry     kernwatch   CURRENT    
+  sentry     keyescrow   CURRENT    
+  sentry     kmod        CURRENT    
+  sentry     logship     CURRENT    
+  sentry     maint       CURRENT    
+  sentry     mounts      CURRENT    
+  sentry     patch       CURRENT    
+  sentry     peertls     BEHIND     /usr/local/bin/pft-peertls-fix BEHIND @897397857e4d (-1)
+  sentry     peerwatch   CURRENT    
+  sentry     privesc     CURRENT    
+  sentry     resources   CURRENT    
+  sentry     rulecheck   CURRENT    
+  sentry     schedaudit  CURRENT    
+  sentry     seccomp     CURRENT    
+  sentry     selfheal    CURRENT    
+  sentry     sshcrypto   CURRENT    
+  sentry     statewatch  CURRENT    
+  sentry     sysctl      CURRENT    
+  sentry     timesync    CURRENT    
+  sentry     upgradewatch CURRENT    
+  sentry     vulnscan    CURRENT    
+  sentry     watchdog    CURRENT    
+  validator  alertpath   CURRENT    
+  validator  alertstats  CURRENT    
+  validator  apparmor    CURRENT    
+  validator  aptrust     CURRENT    
+  validator  audittrail  CURRENT    
+  validator  authwatch   CURRENT    
+  validator  backfill    CURRENT    
+  validator  backup      CURRENT    
+  validator  backupwatch CURRENT    
+  validator  cluster     CURRENT    
+  validator  divergence  CURRENT    
+  validator  egress      CURRENT    
+  validator  exporter    CURRENT    
+  validator  feewatch    CURRENT    
+  validator  fleet       CURRENT    
+  validator  fwaudit     CURRENT    
+  validator  histarchive CURRENT    
+  validator  integrity   CURRENT    
+  validator  jobwatch    CURRENT    
+  validator  kernwatch   CURRENT    
+  validator  keyescrow   CURRENT    
+  validator  kmod        CURRENT    
+  validator  logship     CURRENT    
+  validator  maint       CURRENT    
+  validator  monitor     CURRENT    
+  validator  mounts      CURRENT    
+  validator  patch       CURRENT    
+  validator  peertls     BEHIND     /usr/local/bin/pft-peertls-fix BEHIND @897397857e4d (-1)
+  validator  peerwatch   CURRENT    
+  validator  privesc     CURRENT    
+  validator  resources   CURRENT    
+  validator  retention   CURRENT    
+  validator  rulecheck   CURRENT    
+  validator  schedaudit  CURRENT    
+  validator  seccomp     CURRENT    
+  validator  selfheal    CURRENT    
+  validator  sshcrypto   CURRENT    
+  validator  statewatch  CURRENT    
+  validator  sysctl      CURRENT    
+  validator  timesync    CURRENT    
+  validator  upgradewatch CURRENT    
+  validator  vulnscan    CURRENT    
+  validator  watchdog    CURRENT    
+  SUMMARY CURRENT=78 BEHIND=2 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 1)
+CHECK ok   skew at HEAD: peertls BEHIND on both hosts and nothing else off CURRENT
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+$ curl -s --max-time 10 http://<redacted-ip>:9090/api/v1/alerts | jq -r .status; curl -s --max-time 10 http://<redacted-ip>:9093/api/v2/status | jq -r 'if (.uptime // "") != "" then "up" else "down" end'
+  success
+  up
+  (exit 0)
+CHECK ok   Prometheus and Alertmanager answer (alert gates below fail closed)
+$ curl -s http://<redacted-ip>:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'; curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '.data.alerts[] | "\(.labels.alertname) \(.state)"' | sort | uniq -c
+  0
+        1 PFTAlertPipelineWatchdog firing
+  (exit 0)
+known pending before the run (accepted by the preflight): none
+CHECK ok   no active silence; only the pipeline watchdog (+ KNOWN_PENDING) pending/firing in Prometheus
+$ curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '[.data.alerts[] | select(.state == "firing" and .labels.alertname != "PFTAlertPipelineWatchdog")] | length'
+  0
+  (exit 0)
+CHECK ok   nothing but the watchdog FIRING (KNOWN_PENDING may only be pending)
+PREFLIGHT_ONLY: stopping before any change (0 failed)
