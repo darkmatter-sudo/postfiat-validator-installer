@@ -1,0 +1,147 @@
+# pft-peertls verification follow-up (task_2b00): what a short or over-cap run reports. Scratch pytest (shown below) run against
+# a fresh clone pinned at eaadafffd4ff9c02141dda4553114c3cedeff4a7, using that commit's fixtures. Home path redacted as ~.
+# The scratch test source:
+#   """Scratch (not committed): what a run that stops short of / exceeds the handshake budget reports."""
+#   import re, sys
+#   sys.path.insert(0, sys.argv[0] if False else __import__("os").environ["PT_TESTS"])
+#   from test_peertls import SH, sh, work, good_bundle  # noqa: F401  (pytest fixtures)
+#   
+#   
+#   def show(work, name, text):
+#       b = work.dir / name
+#       b.write_text(text)
+#       prom = work.dir / "pft_peertls_validator.prom"
+#       prom.unlink(missing_ok=True)
+#       r = sh(str(SH), "audit", "--bundle", str(b), "--textfile", env=work.env([("fx", 1)]))
+#       print(f"\n=== case {name}: rc={r.returncode}")
+#       print("--- stdout (report):", repr(r.stdout))
+#       print("--- stderr:", r.stderr.strip())
+#       print("--- textfile:"); print(prom.read_text().strip() if prom.exists() else "(none)")
+#       print("--- state files:", sorted(p.name for p in (work.dir / "state").glob("*")) if (work.dir / "state").exists() else [])
+#       return r, prom
+#   
+#   
+#   def test_midrun(work, good_bundle):
+#       t = good_bundle.read_text()
+#       m = re.search(r"^### end handshakes=([0-9]+)$", t, re.MULTILINE)
+#       print("\ngood bundle end line:", m.group(0))
+#       # 1) cap reached mid-run -> capture stops before later probes (no end line)
+#       r, p = show(work, "stopped-midrun", t[: t.index("### probe hs.reneg")])
+#       assert r.returncode == 4 and r.stdout == "" and "pft_peertls_up{host=\"validator\"} 0" in p.read_text()
+#       assert "pft_peertls_verdict" not in p.read_text()
+#       # 2) mid-run stop that still wrote an end line: later probes missing
+#       a = t.index("### probe hs.reneg"); r, p = show(work, "end-but-probes-missing", t[:a] + m.group(0) + "\n")
+#       assert r.returncode == 4 and "pft_peertls_verdict" not in p.read_text()
+#       # 3) run that went past the cap
+#       r, p = show(work, "over-cap", t[: m.start()] + "### end handshakes=41" + t[m.end():])
+#       assert r.returncode == 4 and "pft_peertls_verdict" not in p.read_text()
+#       # control: unmodified bundle grades
+#       r, p = show(work, "control-good", t)
+#       assert r.returncode in (0, 1, 2) and "pft_peertls_verdict" in p.read_text()
+$ git -C ~/.cache/ptls-vr log -1 --format=%H
+eaadafffd4ff9c02141dda4553114c3cedeff4a7
+$ TMPDIR=~/.cache python3 -m pytest -q -s test_vr_midrun.py  (scratch test, not committed)
+
+good bundle end line: ### end handshakes=21
+
+=== case stopped-midrun: rc=4
+--- stdout (report): ''
+--- stderr: peertls_eval: bundle has no end line (capture cut short)
+pft-peertls: grading error (rc=4)
+--- textfile:
+# HELP pft_peertls_up 1 = the last run captured every probe and graded it against the policy.
+# TYPE pft_peertls_up gauge
+pft_peertls_up{host="validator"} 0
+# HELP pft_peertls_last_run_timestamp_seconds Unix time of the last run.
+# TYPE pft_peertls_last_run_timestamp_seconds gauge
+pft_peertls_last_run_timestamp_seconds{host="validator"} 1794708578
+--- state files: []
+
+=== case end-but-probes-missing: rc=4
+--- stdout (report): ''
+--- stderr: peertls_eval: target fx: probe hs.reneg missing
+pft-peertls: grading error (rc=4)
+--- textfile:
+# HELP pft_peertls_up 1 = the last run captured every probe and graded it against the policy.
+# TYPE pft_peertls_up gauge
+pft_peertls_up{host="validator"} 0
+# HELP pft_peertls_last_run_timestamp_seconds Unix time of the last run.
+# TYPE pft_peertls_last_run_timestamp_seconds gauge
+pft_peertls_last_run_timestamp_seconds{host="validator"} 1794708578
+--- state files: []
+
+=== case over-cap: rc=4
+--- stdout (report): ''
+--- stderr: peertls_eval: bundle used 41 handshakes (> 40)
+pft-peertls: grading error (rc=4)
+--- textfile:
+# HELP pft_peertls_up 1 = the last run captured every probe and graded it against the policy.
+# TYPE pft_peertls_up gauge
+pft_peertls_up{host="validator"} 0
+# HELP pft_peertls_last_run_timestamp_seconds Unix time of the last run.
+# TYPE pft_peertls_last_run_timestamp_seconds gauge
+pft_peertls_last_run_timestamp_seconds{host="validator"} 1794708578
+--- state files: []
+
+=== case control-good: rc=0
+--- stdout (report): 'pft-peertls audit - validator - 2026-11-15T02:09:38Z\npolicy sha256 808ac30c79ffaa05 | handshakes 21/40\n\ntarget fx (local)\n  protocols accepted: tls1_2 tls1_3\n  TLS 1.2 classes accepted: ecdhe_aead\n  TLS 1.3 suites accepted: aes128gcm aes256gcm chacha20\n  certificate: rsa 2048 bit, sha256WithRSAEncryption, valid 2026-11-15T02:09:34Z .. 2026-12-15T02:09:34Z, sha256 2459044b8f316e13..., self-signed\n  [PASS] probe.reachable: 19 probes answered\n  [PASS] proto.tls1: tls1 refused (protocol_version); policy forbid\n  [PASS] proto.tls1_1: tls1_1 refused (protocol_version); policy forbid\n  [PASS] proto.tls1_2: tls1_2 accepted; policy require\n  [PASS] proto.tls1_3: tls1_3 accepted; policy require\n  [PASS] cipher.null: null refused; policy forbid\n  [PASS] cipher.anull: anull refused; policy forbid\n  [INFO] cipher.export: untestable: this client cannot offer export suites\n  [INFO] cipher.rc4: untestable: this client cannot offer rc4 suites\n  [INFO] cipher.3des: untestable: this client cannot offer 3des suites\n  [PASS] cipher.cbc_sha1: cbc_sha1 refused; policy forbid\n  [PASS] cipher.cbc_sha2: cbc_sha2 refused; policy forbid\n  [PASS] cipher.kx_rsa: kx_rsa refused; policy forbid\n  [PASS] cipher.kx_dhe: kx_dhe refused; policy allow\n  [PASS] cipher.ecdhe_aead: ecdhe_aead accepted as ECDHE-RSA-AES256-GCM-SHA384; policy require\n  [PASS] cipher.tls13_suites: TLS 1.3 suites accepted: aes128gcm,aes256gcm,chacha20\n  [INFO] kx.dh_bits: no DHE handshake to measure\n  [PASS] cert.key: rsa 2048 bits (min 2048)\n  [PASS] cert.sig_hash: signature sha256WithRSAEncryption (hash sha256; forbidden md5,sha1)\n  [PASS] cert.validity: 29 days left (min 14)\n  [PASS] hs.compression: compression NONE\n  [PASS] hs.secure_reneg: RFC 5746 renegotiation_info present\n  [PASS] hs.ems: extended master secret yes\n  [PASS] hs.ticket_lifetime: ticket lifetime hint 7200 s (max 86400)\n  [PASS] hs.client_reneg: client-initiated renegotiation refused\n  [PASS] hs.fallback_scsv: TLS 1.2 + FALLBACK_SCSV refused (inappropriate_fallback)\n  [INFO] drift.posture: first run (no state)\n  [INFO] drift.cert: first run (no state)\n\nRESULT: PASS - 22 pass, 0 warn, 0 fail, 0 waived, 6 info\n'
+--- stderr: 
+--- textfile:
+# HELP pft_peertls_up 1 = the last run captured every probe and graded it against the policy.
+# TYPE pft_peertls_up gauge
+pft_peertls_up{host="validator"} 1
+# HELP pft_peertls_last_run_timestamp_seconds Unix time of the last run.
+# TYPE pft_peertls_last_run_timestamp_seconds gauge
+pft_peertls_last_run_timestamp_seconds{host="validator"} 1794708578
+# HELP pft_peertls_verdict Verdict of the last run: 0 PASS, 1 WARN, 2 FAIL.
+# TYPE pft_peertls_verdict gauge
+pft_peertls_verdict{host="validator"} 0
+# HELP pft_peertls_handshakes TLS handshakes the last run made.
+# TYPE pft_peertls_handshakes gauge
+pft_peertls_handshakes{host="validator"} 21
+# HELP pft_peertls_checks Checks of the last run by result.
+# TYPE pft_peertls_checks gauge
+pft_peertls_checks{host="validator",result="fail"} 0
+pft_peertls_checks{host="validator",result="info"} 6
+pft_peertls_checks{host="validator",result="pass"} 22
+pft_peertls_checks{host="validator",result="waived"} 0
+pft_peertls_checks{host="validator",result="warn"} 0
+# HELP pft_peertls_check Result per check: 0 pass, 1 warn, 2 fail, 3 waived, -1 info.
+# TYPE pft_peertls_check gauge
+pft_peertls_check{host="validator",target="fx",check="probe.reachable"} 0
+pft_peertls_check{host="validator",target="fx",check="proto.tls1"} 0
+pft_peertls_check{host="validator",target="fx",check="proto.tls1_1"} 0
+pft_peertls_check{host="validator",target="fx",check="proto.tls1_2"} 0
+pft_peertls_check{host="validator",target="fx",check="proto.tls1_3"} 0
+pft_peertls_check{host="validator",target="fx",check="cipher.null"} 0
+pft_peertls_check{host="validator",target="fx",check="cipher.anull"} 0
+pft_peertls_check{host="validator",target="fx",check="cipher.export"} -1
+pft_peertls_check{host="validator",target="fx",check="cipher.rc4"} -1
+pft_peertls_check{host="validator",target="fx",check="cipher.3des"} -1
+pft_peertls_check{host="validator",target="fx",check="cipher.cbc_sha1"} 0
+pft_peertls_check{host="validator",target="fx",check="cipher.cbc_sha2"} 0
+pft_peertls_check{host="validator",target="fx",check="cipher.kx_rsa"} 0
+pft_peertls_check{host="validator",target="fx",check="cipher.kx_dhe"} 0
+pft_peertls_check{host="validator",target="fx",check="cipher.ecdhe_aead"} 0
+pft_peertls_check{host="validator",target="fx",check="cipher.tls13_suites"} 0
+pft_peertls_check{host="validator",target="fx",check="kx.dh_bits"} -1
+pft_peertls_check{host="validator",target="fx",check="cert.key"} 0
+pft_peertls_check{host="validator",target="fx",check="cert.sig_hash"} 0
+pft_peertls_check{host="validator",target="fx",check="cert.validity"} 0
+pft_peertls_check{host="validator",target="fx",check="hs.compression"} 0
+pft_peertls_check{host="validator",target="fx",check="hs.secure_reneg"} 0
+pft_peertls_check{host="validator",target="fx",check="hs.ems"} 0
+pft_peertls_check{host="validator",target="fx",check="hs.ticket_lifetime"} 0
+pft_peertls_check{host="validator",target="fx",check="hs.client_reneg"} 0
+pft_peertls_check{host="validator",target="fx",check="hs.fallback_scsv"} 0
+pft_peertls_check{host="validator",target="fx",check="drift.posture"} -1
+pft_peertls_check{host="validator",target="fx",check="drift.cert"} -1
+# HELP pft_peertls_drift Posture or certificate items that changed since the previous run (restart-explained certificate changes excluded).
+# TYPE pft_peertls_drift gauge
+pft_peertls_drift{host="validator",target="fx"} 0
+# HELP pft_peertls_cert_not_after_seconds Expiry of the certificate the target presented.
+# TYPE pft_peertls_cert_not_after_seconds gauge
+pft_peertls_cert_not_after_seconds{host="validator",target="fx"} 1797300574
+--- state files: []
+.
+1 passed in 4.41s
