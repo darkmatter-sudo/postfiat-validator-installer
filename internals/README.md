@@ -133,3 +133,17 @@ the collector reads, so host ids, node keys and the port list never reach the re
 `report_internals.py capture` stores the raw `query_range` answers of a fixed query list for a window;
 `report_internals.py build CAPTURE --md --json` turns a capture into min / p50 / p95 / max per query and container,
 offline and byte-identically (no clock, no environment), so a fresh clone can rebuild the committed report and `cmp` it.
+
+## Evidence (logs/)
+
+| Log | What |
+|-----|------|
+| 01 | threshold calibration (40 samples, 30 s) from `data/calibration-validator.jsonl` |
+| 02 | mutation run at the first install commit 68d4da2: 87/87 caught (superseded by 06) |
+| 03a, 03, 03b | first two-host install at 68d4da2: preflight, install (stopped by the agent's tool time limit in step 12, after its restore), read-only tail of the unrun step-12 checks (PASS, operator topics 0 messages). Step 10 found the defect below |
+| 04, 05 | found: `queued_duration_us` decreases in the calibration data (7 of 39 intervals) and in the live collectors' journals (10 names, both hosts) |
+| 06 | mutation run at the fix 6c6425e: 89/89 caught |
+| 07a, 07 | two-host upgrade to the fix at 19ccf0c: every install/verify check ok, operator topics 0 messages; its one FAIL is the drain check counting the two still-suppressed PFTInternalsCounterAnomaly alerts (pre-fix increments inside the rule's 30m window), which the next check shows suppressed |
+
+The 24-hour two-host window starts after the upgrade's state re-baseline (2026-11-16T06:05Z); the report, the
+throwaway-topic alert drill and the fresh-clone proof follow at its end.
