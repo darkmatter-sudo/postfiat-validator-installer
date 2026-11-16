@@ -1,0 +1,96 @@
+internals window check - 2026-11-16T06:40:55Z - repo HEAD 99699fd0fea51a1668752053183a12076d5e6f63 - reading back from 2026-11-16T06:05:00Z
+operator topics to read back: 2 (not printed)
+$ pft-internals version; sudo -n pft-internals status; R 'sudo -n pft-internals status --container postfiatd-sentry'
+  pft-internals 1
+  pft-internals postfiatd sample age 18 s
+    uptime        127335
+    restarts      0
+    anomalies     0
+    last_restart  null
+    last_anomaly  null
+    bytes         28527
+    series        286
+  RESULT: OK
+  pft-internals postfiatd-sentry sample age 22 s
+    uptime        127444
+    restarts      0
+    anomalies     0
+    last_restart  null
+    last_anomaly  null
+    bytes         29604
+    series        276
+  RESULT: OK
+  (exit 0)
+CHECK ok   pft-internals status OK on both hosts, 0 restarts, 0 anomalies
+$ tf_check
+  postfiatd 29169 289 valid
+  postfiatd-sentry 30267 279 valid
+  (exit 0)
+CHECK ok   both textfiles valid on the validator
+$ prom_check
+  postfiatd 289
+  postfiatd-sentry 279
+  postfiatd pft_internals_counter_anomalies_total 0
+  postfiatd pft_internals_node_restarts_total 0
+  postfiatd pft_internals_up 1
+  postfiatd-sentry pft_internals_counter_anomalies_total 0
+  postfiatd-sentry pft_internals_node_restarts_total 0
+  postfiatd-sentry pft_internals_up 1
+  (exit 0)
+CHECK ok   Prometheus: pft_internals_up 1 for both containers
+$ curl -s http://<redacted-ip>:9090/api/v1/query --data-urlencode 'query=increase(pft_internals_counter_anomalies_total[30m])' | jq -r '.data.result[] | "\(.metric.container) \(.value[1])"' | sort
+  postfiatd 0
+  postfiatd-sentry 0
+  (exit 0)
+CHECK ok   increase(counter_anomalies_total[30m]) is 0 on both containers
+$ curl -s http://<redacted-ip>:9090/api/v1/rules | jq -r '.data.groups[].rules[] | select(.name == "PFTInternalsCounterAnomaly") | "\(.health) \(.state) alerts=\(.alerts | length)"'
+  ok inactive alerts=0
+  (exit 0)
+CHECK ok   PFTInternalsCounterAnomaly rule ok and inactive
+$ curl -s http://<redacted-ip>:9093/api/v2/alerts | jq -r '[.[] | select(.labels.alertname == "PFTInternalsCounterAnomaly")] | length'
+  0
+  (exit 0)
+CHECK ok   Alertmanager holds no PFTInternalsCounterAnomaly alert (silenced included)
+$ curl -s http://<redacted-ip>:9093/api/v2/silences | jq -r '.[] | select(.status.state == "active") | "\(.id) \(.createdBy) \(.matchers | map(.name + "=" + .value) | join(",")) ends \(.endsAt)"'
+  bf62ce34-ccb9-4d5e-8f9f-24f4d292c2c4 internals-upgrade alertname=PFTInternals.*|PFTRuleDead|PFTTextfileStale|PFTRulecheck.*|PFTFleet.*|PFTAptrust.*|PFTSchedEntryUnexpected|PFTSchedFinding.*|PFTJob.*|PFTKeyEscrow.* ends 2026-11-16T06:51:06.000Z
+  ffc08539-52b1-4ae8-a0d0-6f681c3a00b5 internals-defect alertname=PFTInternalsCounterAnomaly ends 2026-11-16T11:38:05.000Z
+  (exit 0)
+CHECK ok   exactly one active internals-defect silence, scoped to alertname=PFTInternalsCounterAnomaly
+$ curl -s -o /dev/null -w '%{http_code}\n' -X DELETE http://<redacted-ip>:9093/api/v2/silence/ffc08539-52b1-4ae8-a0d0-6f681c3a00b5
+  200
+  (exit 0)
+CHECK ok   defect silence expired (HTTP 200)
+$ curl -s http://<redacted-ip>:9093/api/v2/silences | jq -r '.[] | select(.status.state == "active") | "\(.createdBy) \(.matchers | map(.name + "=" + .value) | join(","))"'
+  internals-upgrade alertname=PFTInternals.*|PFTRuleDead|PFTTextfileStale|PFTRulecheck.*|PFTFleet.*|PFTAptrust.*|PFTSchedEntryUnexpected|PFTSchedFinding.*|PFTJob.*|PFTKeyEscrow.*
+  (exit 0)
+$ for i in $(seq 0 15 90); do n=$(curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '[.data.alerts[] | .labels.alertname | select(. != "PFTAlertPipelineWatchdog")] | length'); echo "+${i}s: $n"; [ "$n" = 0 ] || break; sleep 15; done; echo $n
+  +0s: 0
+  +15s: 0
+  +30s: 0
+  +45s: 0
+  +60s: 0
+  +75s: 0
+  +90s: 0
+  0
+  (exit 0)
+CHECK ok   for 90 s after expiry nothing but the watchdog is pending or firing in Prometheus
+$ curl -s http://<redacted-ip>:9093/api/v2/alerts | jq -r '.[] | .labels.alertname' | sort | uniq -c
+        1 PFTAlertPipelineWatchdog
+  (exit 0)
+CHECK ok   Alertmanager holds only the watchdog
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 267 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 158 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts
+$ srv_state
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+operator topic read-back waits 60 s (group_interval + 30 s after expiry)
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing since the window start (2 topic(s), 0 with messages)
+
+window-check done 2026-11-16T06:44:44Z: 0 check(s) failed -> PASS

@@ -144,6 +144,7 @@ offline and byte-identically (no clock, no environment), so a fresh clone can re
 | 04, 05 | found: `queued_duration_us` decreases in the calibration data (7 of 39 intervals) and in the live collectors' journals (10 names, both hosts) |
 | 06 | mutation run at the fix 6c6425e: 89/89 caught |
 | 07a, 07 | two-host upgrade to the fix at 19ccf0c: every install/verify check ok, operator topics 0 messages; its one FAIL is the drain check counting the two still-suppressed PFTInternalsCounterAnomaly alerts (pre-fix increments inside the rule's 30m window), which the next check shows suppressed |
+| 08 | in-window check at 99699fd (`drill/window-check.sh`): both collectors OK, 0 restarts / 0 anomalies, PFTInternalsCounterAnomaly inactive; the defect silence is expired only after these gates, then 90 s with nothing but the watchdog active, integrity PASS both hosts, operator topics 0 messages since the window start |
 
 The 24-hour two-host window starts after the upgrade's state re-baseline (2026-11-16T06:05Z); the report, the
 throwaway-topic alert drill and the fresh-clone proof follow at its end.
