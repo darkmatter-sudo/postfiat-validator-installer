@@ -1,0 +1,79 @@
+# Alert rules for pft-internals (../internals). pft-internals@<container>.timer samples the admin get_counts and
+# server_info {"counters": true} answers every minute and writes pft_internals_*{container="..."} (validator: local;
+# sentry: pulled by pft-internals-pull@postfiatd-sentry.timer on the validator, which runs the only Prometheus +
+# Alertmanager). Node counters are cumulative since the node started: every rate() below handles the reset at a
+# node restart, and the cache rule waits out the cold-cache first 30 min after one.
+#  1. PFTInternalsNodeStoreSlow: mean NodeStore read time > 5 ms over 10 min (calibration 2026-11-16, 10-min
+#     windows: 0.034-0.302 ms; ../internals/logs/01-calibration.log).
+#  2. PFTInternalsCacheCollapse: under 40 % of CachedView (ledger state) lookups hit the cache over 15 min
+#     (calibration: 0.805-0.807). The node-reported *_hit_rate gauges are cumulative since start and barely move, and
+#     the NodeStore hit ratio swings with the read mix (0.14-0.92 over 5 min), so neither is used.
+#  3. PFTInternalsJobBacklog: more than 100 jobs queued and not started, summed over job types.
+#  4. PFTInternalsJobPeak: a job type's peak time (load.job_types peak_time) above 5 s.
+#  5. PFTInternalsStale: the collector failed or stopped, so rules 1-4 and 6 are blind.
+#  6. PFTInternalsCounterAnomaly: a node counter went DOWN while uptime went up (not a restart): broken counters
+#     or a different node answering on the admin port.
+# Tests: internals.tests.yml (promtool test rules internals.tests.yml), 1m sample interval = the timer's period.
+groups:
+  - name: pft-internals
+    rules:
+      - alert: PFTInternalsNodeStoreSlow
+        expr: >-
+          (rate(pft_internals_nodestore_read_duration_seconds_total[10m])
+            / rate(pft_internals_nodestore_reads_total[10m])) > 0.005
+          and rate(pft_internals_nodestore_reads_total[10m]) > 0.5
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.container }} NodeStore reads are slow"
+          description: "For 15m the mean NodeStore read on {{ $labels.container }} took more than 5 ms (rate of node_reads_duration_us / rate of node_reads_total over 10m). Slow reads delay ledger acquisition and validation. Check disk latency (`iostat -x 5`), `sudo pft-resources audit` and `sudo pft-internals status --container {{ $labels.container }}`."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/internals/README.md#runbook"
+      - alert: PFTInternalsCacheCollapse
+        expr: >-
+          (sum without (result) (rate(pft_internals_cached_view_total{result="hit"}[15m]))
+            / sum without (result) (rate(pft_internals_cached_view_total[15m]))) < 0.4
+          and sum without (result) (rate(pft_internals_cached_view_total[15m])) > 0.2
+          and pft_internals_node_uptime_seconds > 1800
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.container }} ledger cache hit ratio collapsed"
+          description: "For 30m fewer than 40% of {{ $labels.container }}'s CachedView ledger-state lookups hit the cache (CachedView::hit / (hit + miss) over 15m, normally about 80%, node up for more than 30 min). Misses go to the NodeStore and disk: look for memory pressure (`sudo pft-resources audit`), a changed node_size/cache config, or a node fetching history."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/internals/README.md#runbook"
+      - alert: PFTInternalsJobBacklog
+        expr: sum by (job, instance, container) (pft_internals_job_waiting) > 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.container }} job queue backlog"
+          description: "For 10m more than 100 jobs were queued and not started on {{ $labels.container }} (sum over job types of queued - started). The node is not keeping up; `sudo pft-internals collect --container {{ $labels.container }} --stdout | grep job_waiting` shows which job types."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/internals/README.md#runbook"
+      - alert: PFTInternalsJobPeak
+        expr: pft_internals_load_job_peak_ms > 5000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.container }} {{ $labels.job_type }} jobs peak above 5 s"
+          description: "For 10m the node reported a peak time above 5000 ms for {{ $labels.job_type }} jobs on {{ $labels.container }} (server_info load.job_types peak_time). Long jobs stall consensus work; check CPU and disk (`sudo pft-resources audit`)."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/internals/README.md#runbook"
+      - alert: PFTInternalsStale
+        expr: pft_internals_up == 0 or (time() - pft_internals_collect_timestamp_seconds > 300)
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pft-internals for {{ $labels.container }} is failing or stale"
+          description: "For 5m the last get_counts/server_info collection failed (up 0) or is older than 5 min, so the internals alerts for {{ $labels.container }} are blind. Run `sudo pft-internals collect --container {{ $labels.container }} --stdout`; for the sentry also check pft-internals-pull@{{ $labels.container }}.timer on the validator."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/internals/README.md#runbook"
+      - alert: PFTInternalsCounterAnomaly
+        expr: increase(pft_internals_counter_anomalies_total[30m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.container }} node counters went down without a restart"
+          description: "In the last 30m pft-internals saw a cumulative node counter decrease on {{ $labels.container }} while its uptime kept growing. That is not a restart: the counters are broken or a different node answers on the admin port. `sudo pft-internals status --container {{ $labels.container }}` lists the counters."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/internals/README.md#runbook"

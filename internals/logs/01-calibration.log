@@ -1,0 +1,10 @@
+internals calibration stats - 2026-11-16T05:06:47Z - raw samples: 30 s get_counts + server_info {counters:true} via the collector's docker exec shape, 2026-11-16 04:45-05:05Z (40 samples), reduced by tests/calib_stats.py reduce
+$ python3 -I internals/tests/calib_stats.py stats internals/data/calibration-validator.jsonl
+samples 40, 1794804337 .. 1794805552 (20.2 min)
+window  5 min: nodestore read ms 0.022..0.366  reads/s 7.77..88.41  nodestore hit 0.138..0.923  cachedview hit 0.803..0.811  cachedview lookups/s 1.81..3.30
+window 10 min: nodestore read ms 0.034..0.302  reads/s 7.80..48.99  nodestore hit 0.148..0.861  cachedview hit 0.804..0.808  cachedview lookups/s 1.94..3.05
+window 15 min: nodestore read ms 0.059..0.268  reads/s 8.51..35.38  nodestore hit 0.219..0.808  cachedview hit 0.805..0.807  cachedview lookups/s 2.33..2.72
+job_waiting max 5, job peak max 634 ms
+(exit 0)
+$ sha256sum internals/data/calibration-validator.jsonl
+fa357310f1265c6da69ee996c1be5daa71a6ae14e94d669db03e927b2a5c796d  internals/data/calibration-validator.jsonl
