@@ -71,11 +71,11 @@ QUERIES = {
     ),
     "job_queue_wait_ms": (
         (
-            "1000 * sum by (container) (rate(pft_internals_job_queue_wait_seconds_total[10m]))"
+            "1000 * sum by (container) (clamp_min(delta(pft_internals_job_queue_wait_seconds[10m]), 0))"
             " / sum by (container) (rate(pft_internals_job_started_total[10m]))"
         ),
         "ms",
-        "mean time a job waited in the queue",
+        "mean time a job waited in the queue (delta of the non-monotonic gauge, floored at 0)",
     ),
     "rpc_calls_per_s": (
         "sum by (container) (rate(pft_internals_rpc_started_total[10m]))",

@@ -7,8 +7,13 @@ reduce RAW.jsonl > data/calibration-validator.jsonl
 stats data/calibration-validator.jsonl
     windowed values the rules evaluate (5, 10, 15 min): mean NodeStore read ms, NodeStore hit ratio, CachedView hit
     ratio and lookups/s, plus max job backlog and max job peak.
+reduce-jobq RAW.jsonl > data/calibration-validator-jobq.jsonl
+    keeps only server_info uptime and the job_queue / rpc counters (all numeric).
+monotonic data/calibration-validator-jobq.jsonl
+    every job_queue / rpc counter that went DOWN between consecutive samples while uptime went up.
 """
 
+import itertools
 import json
 import sys
 
@@ -44,6 +49,44 @@ def reduce(path):
         print(json.dumps(out, sort_keys=True))
 
 
+def reduce_jobq(path):
+    for r in raw_rows(path):
+        if not r.get("si"):
+            continue
+        info = r["si"]["result"]["info"]
+        c = info["counters"]
+        out = {
+            "ts": r["ts"],
+            "uptime": int(info["uptime"]),
+            "job_queue": {k: {f: int(x) for f, x in v.items()} for k, v in c["job_queue"].items()},
+            "rpc": {k: {f: int(x) for f, x in v.items()} for k, v in c["rpc"].items()},
+        }
+        print(json.dumps(out, sort_keys=True))
+
+
+def monotonic(path):
+    with open(path, encoding="utf-8") as f:
+        rows = [json.loads(ln) for ln in f if ln.strip()]
+    hits, intervals = [], set()
+    for a, b in itertools.pairwise(rows):
+        if b["uptime"] < a["uptime"]:
+            continue  # restart
+        for grp in ("job_queue", "rpc"):
+            for name, v in b[grp].items():
+                for fld, x in v.items():
+                    old = a[grp].get(name, {}).get(fld)
+                    if old is not None and x < old:
+                        hits.append((b["ts"], grp, name, fld, old, x))
+                        intervals.add(b["ts"])
+    for ts, grp, name, fld, old, x in hits:
+        print(f"{ts} {grp}.{name}.{fld} {old} -> {x} (-{old - x})")
+    fields = sorted({f"{g}.*.{fl}" for _, g, _, fl, _, _ in hits})
+    names = sorted({n for _, _, n, _, _, _ in hits})
+    print(
+        f"decreases {len(hits)} in {len(intervals)} of {len(rows) - 1} intervals; fields {fields}; {len(names)} names"
+    )
+
+
 def stats(path):
     with open(path, encoding="utf-8") as f:
         rows = [json.loads(ln) for ln in f if ln.strip()]
@@ -73,4 +116,4 @@ def stats(path):
 
 
 if __name__ == "__main__":
-    {"reduce": reduce, "stats": stats}[sys.argv[1]](sys.argv[2])
+    {"reduce": reduce, "stats": stats, "reduce-jobq": reduce_jobq, "monotonic": monotonic}[sys.argv[1]](sys.argv[2])

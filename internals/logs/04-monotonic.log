@@ -1,0 +1,13 @@
+internals counter monotonicity in the calibration samples - 2026-11-16T05:43:50Z - same 40 raw samples as logs/01 (2026-11-16 04:45-05:05Z), job_queue/rpc counters reduced by tests/calib_stats.py reduce-jobq
+$ python3 -I internals/tests/calib_stats.py monotonic internals/data/calibration-validator-jobq.jsonl
+1794804523 job_queue.clientFeeChange.queued_duration_us 157051082 -> 157047592 (-3490)
+1794804678 job_queue.clientConsensus.queued_duration_us 325039013 -> 324907667 (-131346)
+1794804740 job_queue.clusterReport.queued_duration_us 28177119 -> 28159462 (-17657)
+1794804985 job_queue.sweep.queued_duration_us 16783324 -> 16470062 (-313262)
+1794805047 job_queue.acceptLedger.queued_duration_us 55548503 -> 55543016 (-5487)
+1794805141 job_queue.trustedProposal.queued_duration_us 2872269904 -> 2872245520 (-24384)
+1794805334 job_queue.clientConsensus.queued_duration_us 327026370 -> 326949779 (-76591)
+decreases 7 in 7 of 39 intervals; fields ['job_queue.*.queued_duration_us']; 6 names
+(exit 0)
+$ sha256sum internals/data/calibration-validator-jobq.jsonl
+94988edb93623af97aa069ee9fe06e2deb6ce9567ec77a14b79294bb0a8b0fe6  internals/data/calibration-validator-jobq.jsonl

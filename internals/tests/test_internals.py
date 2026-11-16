@@ -134,7 +134,7 @@ class TestFixtures(Base):
         self.assertEqual(s[f'pft_internals_cache_size{{{C},cache="treenode"}}'], "577")
         self.assertEqual(s[f'pft_internals_objects{{{C},type="STInteger<unsigned int>"}}'], "40591")
         self.assertEqual(s[f'pft_internals_job_queued_total{{{C},job_type="acceptLedger"}}'], "39657")
-        self.assertEqual(s[f'pft_internals_job_queue_wait_seconds_total{{{C},job_type="acceptLedger"}}'], "55.401446")
+        self.assertEqual(s[f'pft_internals_job_queue_wait_seconds{{{C},job_type="acceptLedger"}}'], "55.401446")
         self.assertEqual(s[f'pft_internals_rpc_started_total{{{C},method="fee"}}'], "2001")
         self.assertEqual(s[f'pft_internals_load_job_peak_ms{{{C},job_type="peerCommand"}}'], "182")
         self.assertEqual(s[f"pft_internals_load_threads{{{C}}}"], "6")
@@ -470,6 +470,25 @@ class TestRestarts(Base):
         s, p = self.ok(si=si, now=NOW + 60)
         self.assertEqual(s[f"pft_internals_counter_anomalies_total{{{C}}}"], "1")
         self.assertIn("rpc.fee.started", p.stderr)
+
+    def test_queued_duration_decrease_is_not_an_anomaly(self):
+        """Real 2026-11-16 validator pair: acceptLedger queued_duration_us 55548503 -> 55543016 with uptime up."""
+        si = copy.deepcopy(self.si)
+        si["result"]["info"]["counters"]["job_queue"]["acceptLedger"]["queued_duration_us"] = "55548503"
+        self.ok(si=si)
+        si["result"]["info"]["uptime"] = 120107
+        si["result"]["info"]["counters"]["job_queue"]["acceptLedger"]["queued_duration_us"] = "55543016"
+        s, p = self.ok(si=si, now=NOW + 30)
+        self.assertEqual(s[f"pft_internals_counter_anomalies_total{{{C}}}"], "0")
+        self.assertEqual(p.stderr, "")
+        self.assertNotIn("job.acceptLedger.queued_duration_us", json.loads(read(self.state))["counters"])
+        self.assertEqual(s[f'pft_internals_job_queue_wait_seconds{{{C},job_type="acceptLedger"}}'], "55.543016")
+        self.assertIn("# TYPE pft_internals_job_queue_wait_seconds gauge", p.stdout)
+        si["result"]["info"]["uptime"] = 120137  # running_duration_us is still a checked counter
+        si["result"]["info"]["counters"]["job_queue"]["acceptLedger"]["running_duration_us"] = "1"
+        s, p = self.ok(si=si, now=NOW + 60)
+        self.assertEqual(s[f"pft_internals_counter_anomalies_total{{{C}}}"], "1")
+        self.assertIn("job.acceptLedger.running_duration_us", p.stderr)
 
     def test_equal_uptime_same_counters_ok(self):
         self.ok()

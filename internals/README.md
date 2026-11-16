@@ -14,7 +14,7 @@ writes bounded `pft_internals_*` textfile metrics for Prometheus.
 | caches | `cache_hit_ratio{cache=accepted_ledger\|ledger\|SLE}` (0..1), `cache_size{cache=accepted_ledger\|treenode\|treenode_track\|fullbelow}`, `cached_view_total{result=hit\|miss}` | `AL_hit_rate`, `ledger_hit_rate` (percent), `SLE_hit_rate` (fraction), `AL_size`, `treenode_*`, `fullbelow_size`, `CachedView::hit/miss` |
 | database | `db_bytes{db=total\|ledger\|transaction}` | `dbKBTotal`, `dbKBLedger`, `dbKBTransaction` (x 1024) |
 | objects | `objects{type=...}` | every `ripple::<Type>` count (prefix dropped) |
-| job queue | `job_queued_total`, `job_started_total`, `job_finished_total`, `job_queue_wait_seconds_total`, `job_run_seconds_total`, `job_waiting` (queued - started) `{job_type}` | `server_info.counters.job_queue` (the `total` entry is left out: `sum()` it) |
+| job queue | `job_queued_total`, `job_started_total`, `job_finished_total`, `job_run_seconds_total`, `job_waiting` (queued - started); `job_queue_wait_seconds` is a **gauge** (see below) `{job_type}` | `server_info.counters.job_queue` (the `total` entry is left out: `sum()` it) |
 | load | `load_threads`; `load_job_per_second`, `load_job_peak_ms`, `load_job_avg_ms`, `load_job_in_progress`, `load_job_over_target` `{job_type}` | `server_info.load` (the node omits zero fields: they are exported as 0) |
 | RPC | `rpc_started_total`, `rpc_finished_total`, `rpc_errored_total`, `rpc_duration_seconds_total` `{method}` | `server_info.counters.rpc` (`total` left out) |
 | collector | `up`, `collect_timestamp_seconds`, `last_success_timestamp_seconds`, `label_overflow{kind}` | |
@@ -29,6 +29,12 @@ answer): both are normalised to a 0..1 ratio, and each is range-checked in its o
   `/var/lib/pft-internals/state-<container>.json` and compares: uptime went down -> `node_restarts_total` + 1; any
   counter went *down while uptime went up* -> `counter_anomalies_total` + 1 (broken counters, or another node answering
   on the admin port) and the names are kept in the state file (`pft-internals status`).
+- **Found on the first install (logs/03): `job_queue.*.queued_duration_us` is not monotonic in postfiatd 1.0.9.**
+  Within 25 minutes of the install the two collectors logged 10 "counter went down" names, all on that field
+  (logs/05; the alert stayed silenced, the operator was not paged); the calibration data
+  shows it going down in 7 of 39 30-second intervals (3.5 ms to 313 ms, six job types; logs/04). It is now exported as the
+  gauge `job_queue_wait_seconds` (report: `delta()` floored at 0, not `rate()`) and left out of the comparison; every
+  other counter stays checked (`test_queued_duration_decrease_is_not_an_anomaly`).
 - **Fail closed.** Every exported field must be present with the right type: counts are JSON integers or decimal
   strings of at most 20 digits (the node sends 64-bit counters as strings), never booleans or negatives; hit rates
   are finite numbers in 0..100 (percent) or 0..1 (SLE); job counters must satisfy finished <= started <= queued;

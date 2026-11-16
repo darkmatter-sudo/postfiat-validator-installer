@@ -1,0 +1,50 @@
+internals install tail - 2026-11-16T05:38:46Z - repo HEAD 68d4da291d7cb8d5070e44876d3703619cf64510 - reading back from 2026-11-16T05:17:16Z
+operator topics to read back: 2 (not printed)
+operator topics to read back: 2 (not printed)
+$ curl -s http://<redacted-ip>:9093/api/v2/silences | jq -r '.[] | select(.status.state == "active") | "\(.createdBy) \(.matchers | map(.value) | join(","))"'
+  internals-install PFTInternals.*|PFTRuleDead|PFTTextfileStale|PFTRulecheck.*|PFTFleet.*|PFTAptrust.*|PFTSchedEntryUnexpected|PFTSchedFinding.*|PFTJob.*|PFTKeyEscrow.*
+  internals-defect PFTInternalsCounterAnomaly
+  (exit 0)
+$ for i in $(seq 0 15 150); do n=$(curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '[.data.alerts[] | select(.labels.alertname | test("InternalsNodeStore|InternalsCache|InternalsJob|InternalsStale|RuleDead|TextfileStale|Rulecheck|Fleet|Aptrust|Sched|PFTJob|KeyEscrow|Integrity|AppArmor|Seccomp"))] | length'); echo "+${i}s: $n"; [ "$n" = 0 ] && break; sleep 15; done; echo $n
+  +0s: 0
+  0
+  (exit 0)
+CHECK ok   no internals/rulecheck/fleet/aptrust/schedaudit/jobwatch/keyescrow/confinement alert pending or firing (PFTInternalsCounterAnomaly excluded: known defect, own silence)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 267 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 158 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts at the end
+$ srv_state
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing at the end
+$ systemctl list-units --all --no-legend 'run-u*.service' 'run-u*.timer' | wc -l; R 'ls -d ~/pft-internals-* 2>/dev/null | wc -l'
+  0
+  0
+  (exit 0)
+CHECK ok   no transient run-u services/timers, no install copy left on the sentry
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 267 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 158 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts at the end
+$ srv_state
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing at the end
+$ systemctl list-units --all --no-legend 'run-u*.service' 'run-u*.timer' | wc -l; R 'ls -d ~/pft-internals-* 2>/dev/null | wc -l'; sudo -n pft-maint active; echo maint=$?; sudo -n test -e /etc/pft-maint/ntfy.env.pre-internals; echo backup=$?
+  0
+  0
+  maint=1
+  backup=1
+  (exit 0)
+CHECK ok   no transient units, no install copy on the sentry, no maint window, no ntfy.env backup left
+operator topic read-back waits 90 s (>= group_interval + 30 s after the last change)
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the run (2 topic(s), 0 with messages)
+
+install-tail done 2026-11-16T05:42:17Z: 0 check(s) failed -> PASS

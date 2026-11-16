@@ -1,0 +1,79 @@
+internals two-host install - 2026-11-16T05:15:42Z - Ubuntu 22.04.5 LTS - repo HEAD 68d4da291d7cb8d5070e44876d3703619cf64510 (clean: yes)
+
+== 0. preflight (read-only)
+$ sha256sum internals/pft-internals.sh internals/internals_parse.py internals/report_internals.py internals/install.sh internals/drill/install-run.sh internals/systemd/* alerts/internals.rules.yml alerts/internals.tests.yml fleet/manifest.tsv
+  12a4f22f5a1bfb8a2206a83d9378da9731073dd234b96919ec652f9954350faa  internals/pft-internals.sh
+  9bf37a694eeb74ec571098136a56bbe3d9db8d2671bee8ba5bdc1e28fc816f5f  internals/internals_parse.py
+  6a203913abfe3a808d53ae931b015acf0b83b9de3b9eb7cacfb02e177031abdf  internals/report_internals.py
+  de3a01add79b5c3cc21adfb30587072723bb19ff315e11c16309cc1364993cf5  internals/install.sh
+  f362eccc406601abe7246ad28ef02bff795a55be507c59a9f0f28438810044b1  internals/drill/install-run.sh
+  810f7bd50f505208a2810dec6467fe25d9e7a208a5957d3dc677b82acc503bde  internals/systemd/pft-internals-pull@.service
+  aefd87c69aa05b06682cb3b2eb6f280ecb47749e257f25c4db6c698f09483b5f  internals/systemd/pft-internals-pull@.timer
+  5b436550824e8a3029c6e0853dbef5c81cb6fc77bb4e92ac260052074f33b605  internals/systemd/pft-internals@.service
+  8e0aa6859704ec5de315360d7d29a2d80453e557d9cd77c9ca02d7c31f8a6280  internals/systemd/pft-internals@.timer
+  cdd5c02c543b45d54d0651384056109f44dd0b34071a6eca573428bddac7fe3e  alerts/internals.rules.yml
+  3001d0ce707bbb0b131b693768c0bf28399257b8c70b587d5cbbae5518f4a951  alerts/internals.tests.yml
+  e6f192dc4635f938ae6654bd04c1ea8694d5f912ba98116324ac6ff085437ae7  fleet/manifest.tsv
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 262 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 155 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts before install
+$ srv_state
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ ls /usr/local/bin/pft-internals /etc/pft-internals.env /var/lib/pft-internals 2>&1; R 'ls /usr/local/bin/pft-internals /etc/pft-internals.env /var/lib/pft-internals 2>&1'
+  ls: cannot access '/usr/local/bin/pft-internals': No such file or directory
+  ls: cannot access '/etc/pft-internals.env': No such file or directory
+  ls: cannot access '/var/lib/pft-internals': No such file or directory
+  ls: cannot access '/usr/local/bin/pft-internals': No such file or directory
+  ls: cannot access '/etc/pft-internals.env': No such file or directory
+  ls: cannot access '/var/lib/pft-internals': No such file or directory
+  (exit 2)
+CHECK ok   not installed yet on either host
+$ grep -c '^internals ' fleet/manifest.tsv; grep -c internals.rules.yml alerts/prometheus.yml; grep -c pft_internals rulecheck/pft-rulecheck.conf.example; grep -c pft_internals rulecheck/pft-rulecheck.sentry.conf.example
+  6
+  1
+  3
+  2
+  (exit 0)
+CHECK ok   HEAD lists 6 internals manifest lines, the rule file and 3 + 2 rulecheck lines
+$ for h in L R; do if [ $h = L ]; then bash -c 'for c in python3 jq awk timeout docker; do command -v $c; done | wc -l; sudo -n test -f /etc/pft-rulecheck.conf && echo rc-conf'; else R 'for c in python3 jq awk timeout docker; do command -v $c; done | wc -l; sudo -n test -f /etc/pft-rulecheck.conf && echo rc-conf'; fi; done
+  5
+  rc-conf
+  5
+  rc-conf
+  (exit 0)
+CHECK ok   python3 jq awk timeout docker and a pft-rulecheck conf on both hosts
+$ sudo -n env TEXT_BUDGET=999999 pft-jobwatch collect --stdout 2>/dev/null | wc -c; R 'sudo -n env TEXT_BUDGET=999999 pft-jobwatch collect --stdout 2>/dev/null | wc -c'; sudo -n sed -n 's/^TEXT_BUDGET=//p' /etc/pft-jobwatch.env
+  40674
+  20245
+  65000
+  (exit 0)
+CHECK ok   jobwatch textfiles have room for the new timers (validator 40674 + 2x1200, sentry 20245 + 1200 <= budget 65000 / 61440)
+$ pull_probe
+  1
+  pull-ssh-ok
+  (exit 0)
+CHECK ok   the pull's ssh command (pft-statewatch's PULL_SSH, non-empty) reaches the sentry when run as root
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+$ curl -s --max-time 10 http://<redacted-ip>:9090/api/v1/alerts | jq -r .status; curl -s --max-time 10 http://<redacted-ip>:9093/api/v2/status | jq -r 'if (.uptime // "") != "" then "up" else "down" end'
+  success
+  up
+  (exit 0)
+CHECK ok   Prometheus and Alertmanager answer (alert gates below fail closed)
+$ curl -s http://<redacted-ip>:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'; curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '.data.alerts[] | "\(.labels.alertname) \(.state)"' | sort | uniq -c
+  0
+        1 PFTAlertPipelineWatchdog firing
+  (exit 0)
+known pending before the run (accepted by the preflight): none
+CHECK ok   no active silence; only the pipeline watchdog (+ KNOWN_PENDING) pending/firing in Prometheus
+$ curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '[.data.alerts[] | select(.state == "firing" and .labels.alertname != "PFTAlertPipelineWatchdog")] | length'
+  0
+  (exit 0)
+CHECK ok   nothing but the watchdog FIRING (KNOWN_PENDING may only be pending)
+PREFLIGHT_ONLY: stopping before any change (0 failed)

@@ -71,6 +71,10 @@ GC_GAUGES = {
 }
 JOB_FIELDS = ("queued", "started", "finished", "queued_duration_us", "running_duration_us")
 RPC_FIELDS = ("started", "finished", "errored", "duration_us")
+# postfiatd 1.0.9's job_queue queued_duration_us is NOT monotonic: on the validator it went down in 7 of 39
+# 30-second intervals (by 3.5 ms to 313 ms, six job types; logs/03, logs/04). It is exported as a gauge
+# and left out of the restart / anomaly comparison; every other job, RPC and NodeStore counter stays checked.
+NON_MONOTONIC = {"queued_duration_us"}
 LOAD_FIELDS = ("per_second", "peak_time", "avg_time", "in_progress")
 
 
@@ -255,7 +259,8 @@ def flat_counters(c, i):
     flat["cv.hit"], flat["cv.miss"] = c["cv"]["hit"], c["cv"]["miss"]
     for name, v in i["jobs"].items():
         for f in JOB_FIELDS:
-            flat[f"job.{name}.{f}"] = v[f]
+            if f not in NON_MONOTONIC:
+                flat[f"job.{name}.{f}"] = v[f]
     for name, v in i["methods"].items():
         for f in RPC_FIELDS:
             flat[f"rpc.{name}.{f}"] = v[f]
@@ -357,11 +362,18 @@ def metrics_text(name, c, i, jobs, methods, ljobs, over, st):
             help_ + " by job type",
             [(f',job_type="{k}"', v[f]) for k, v in sorted(jobs.items())],
         )
-    for f, help_ in (("queued_duration_us", "time jobs waited in the queue"), ("running_duration_us", "time jobs ran")):
-        metric = {"queued_duration_us": "job_queue_wait_seconds_total", "running_duration_us": "job_run_seconds_total"}[
-            f
-        ]
-        m(metric, "counter", help_ + " (s)", [(f',job_type="{k}"', num(v[f] / 1e6)) for k, v in sorted(jobs.items())])
+    m(
+        "job_queue_wait_seconds",
+        "gauge",
+        "time jobs waited in the queue (s); not monotonic in postfiatd 1.0.9, use delta() not rate()",
+        [(f',job_type="{k}"', num(v["queued_duration_us"] / 1e6)) for k, v in sorted(jobs.items())],
+    )
+    m(
+        "job_run_seconds_total",
+        "counter",
+        "time jobs ran by job type (s)",
+        [(f',job_type="{k}"', num(v["running_duration_us"] / 1e6)) for k, v in sorted(jobs.items())],
+    )
     m(
         "job_waiting",
         "gauge",

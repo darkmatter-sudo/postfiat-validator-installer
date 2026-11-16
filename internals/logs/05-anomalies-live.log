@@ -1,0 +1,14 @@
+internals: every counter anomaly the installed collectors logged since the first install (68d4da2) - 2026-11-16T05:44:14Z
+$ sudo journalctl --utc -u pft-internals@postfiatd.service -o short-iso --no-pager | grep "went down"
+2026-11-16T05:28:42+0000 internals_parse: counters went down without a restart: job.acceptLedger.queued_duration_us
+2026-11-16T05:30:41+0000 internals_parse: counters went down without a restart: job.acceptLedger.queued_duration_us
+2026-11-16T05:35:42+0000 internals_parse: counters went down without a restart: job.transaction.queued_duration_us
+2026-11-16T05:36:41+0000 internals_parse: counters went down without a restart: job.clientFeeChange.queued_duration_us
+2026-11-16T05:38:43+0000 internals_parse: counters went down without a restart: job.acceptLedger.queued_duration_us
+2026-11-16T05:40:42+0000 internals_parse: counters went down without a restart: job.heartbeat.queued_duration_us
+$ R 'sudo journalctl --utc -u pft-internals@postfiatd-sentry.service -o short-iso --no-pager' | grep 'went down'
+2026-11-16T05:33:41+0000 internals_parse: counters went down without a restart: job.acceptLedger.queued_duration_us
+2026-11-16T05:39:41+0000 internals_parse: counters went down without a restart: job.clientFeeChange.queued_duration_us
+2026-11-16T05:43:42+0000 internals_parse: counters went down without a restart: job.acceptLedger.queued_duration_us, job.clientConsensus.queued_duration_us
+$ grep -c / field names
+     10 job.*.queued_duration_us
