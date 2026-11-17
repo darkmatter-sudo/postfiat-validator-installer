@@ -89,13 +89,19 @@ others_active() { # anything but the watchdog and PFTInternals* pending/firing i
 RESTORED=0; RESTORE_OK=true; SIL=""; BRIDGE_SWAPPED=0; AP_PAUSED=0
 ap_pause() { R 'sudo -n systemctl stop pft-alertpath-check.timer' && AP_PAUSED=1
   echo "  sentry pft-alertpath-check.timer stopped: $([ "$AP_PAUSED" = 1 ] && echo yes || echo NO)"; }
-ap_resume() { # wait (<= AP_WAIT s) for a read-only check to be OK again, then start the timer whatever the result
-  local t0 rc=9; t0="$(date -u +%s)"
+ap_resume() { # wait (<= AP_WAIT s) until a read-only check is OK on a snapshot taken AFTER the bridge re-create, then
+  # start the timer whatever the result. The sentry judges the validator's pushed snapshots (every 30 s): a check that
+  # still reads a pre-restart snapshot says OK, and the timer's next run then reads the one taken while the bridge was
+  # down and pages "ntfy bridge not listening" to the operator (alert-drill log 10, 2026-11-17).
+  local t0 v st age rc=9; t0="$(date -u +%s)"
   while [ $(( $(date -u +%s) - t0 )) -lt "$AP_WAIT" ]; do
-    R 'sudo -n pft-alertpath check >/dev/null 2>&1'; rc=$?; [ "$rc" = 0 ] && break; sleep 10
+    v="$(R 'sudo -n pft-alertpath check --json' 2>/dev/null)"
+    st="$(jq -r '.state // "?"' <<<"$v" 2>/dev/null)"; age="$(jq -r '.snapshot_age // 999999' <<<"$v" 2>/dev/null)"
+    if [ "$st" = OK ] && [[ "$age" =~ ^[0-9]+$ ]] && [ "$age" -lt $(( $(date -u +%s) - t0 )) ]; then rc=0; break; fi
+    sleep 5
   done
   R 'sudo -n systemctl start pft-alertpath-check.timer' && AP_PAUSED=0
-  echo "  sentry pft-alertpath check rc $rc after $(( $(date -u +%s) - t0 ))s; timer started again: $([ "$AP_PAUSED" = 0 ] && echo yes || echo NO)"
+  echo "  sentry pft-alertpath check ${st:-?} on a snapshot ${age:-?}s old, $(( $(date -u +%s) - t0 ))s after the bridge re-create (must be newer): $([ "$rc" = 0 ] && echo yes || echo NO); timer started again: $([ "$AP_PAUSED" = 0 ] && echo yes || echo NO)"
   [ "$rc" = 0 ] && [ "$AP_PAUSED" = 0 ]; }
 bridge_src() { sudo -n docker inspect pft-alert-bridge --format '{{range .Mounts}}{{if eq .Destination "/run/secrets/ntfy.env"}}{{.Source}}{{end}}{{end}}'; }
 drain() { # every PFTInternals* alert resolved and its RESOLVED delivered to the THROWAWAY bridge before it goes back
@@ -251,7 +257,7 @@ check "drill textfile gone, bridge back on the operator env, alertpath OK, silen
 x "curl -s -G $PROM/api/v1/query_range --data-urlencode 'query=ALERTS{alertname=~\"PFTInternals.*\"}' --data-urlencode start=$since --data-urlencode end=$(date -u +%s) --data-urlencode step=15 | jq -r '.data.result[] | \"\(.metric.alertname) container=\(.metric.container) \(.metric.alertstate) first=\(.values[0][0] | todate) last=\(.values[-1][0] | todate) samples=\(.values | length)\"' | sort"
 check "query_range: $AN{container=$DC} pending then firing during the run" "$(ok_if 'grep -qE "^$AN container=$DC pending " <<<"$XOUT" && grep -qE "^$AN container=$DC firing " <<<"$XOUT"')"
 check "query_range: no PFTInternals* alert for a real container during the run" "$(ok_if '! grep -qE " container=postfiatd(-sentry)? " <<<"$XOUT"')"
-sleep 30
+sleep 90  # >= one more alertpath check run (timer) + ntfy delivery after the restore
 readback() { # TOPIC LABEL [quiet]
   local out
   if out="$(curl -s --max-time 20 "$NTFY/$1/json?poll=1&since=$since")"; then

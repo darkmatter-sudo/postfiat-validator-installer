@@ -1,0 +1,63 @@
+pft-internals PFTInternalsStale alert drill (throwaway topic) - 2026-11-17T06:13:52Z - Ubuntu 22.04.5 LTS - run 20261117T061352Z
+repo HEAD ce7fa5674071113ad5df267479b7d7c7c7c6863b (clean: yes) | drill container name pft-drill-fb957cc8 (does not exist)
+sha256 3c795bbc3591ebab3c76163f26998ba70d7b2acf312562755276c471af5ef528 internals/drill/alert-drill.sh
+sha256 12a4f22f5a1bfb8a2206a83d9378da9731073dd234b96919ec652f9954350faa internals/pft-internals.sh
+sha256 84e79292c2f2e38f015c349dff31e7344942307a93b8345fe2b9e33a5481761e internals/internals_parse.py
+sha256 cdd5c02c543b45d54d0651384056109f44dd0b34071a6eca573428bddac7fe3e alerts/internals.rules.yml
+sha256 f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8 peerexpose/drill/redact.py
+installed on validator: 12a4f22f5a1bfb8a /usr/local/bin/pft-internals  84e79292c2f2e38f /usr/local/lib/pft-internals/internals_parse.py  
+internals/drill/alert-drill.sh: line 144: /etc/pft-alerts/internals.rules.yml: No such file or directory
+loaded rules file:  /etc/pft-alerts/internals.rules.yml
+
+== 0. preflight (nothing changed yet)
+$ real_files
+  postfiatd up=1 valid
+  postfiatd-sentry up=1 valid
+  (exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/rules | jq -r '.data.groups[] | select(.name == "pft-internals") | .rules[] | [.name, .health] | @tsv'
+  PFTInternalsNodeStoreSlow	ok
+  PFTInternalsCacheCollapse	ok
+  PFTInternalsJobBacklog	ok
+  PFTInternalsJobPeak	ok
+  PFTInternalsStale	ok
+  PFTInternalsCounterAnomaly	ok
+  (exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=count(ALERTS{alertname!="PFTAlertPipelineWatchdog"})' | jq -r '.data.result[0].value[1] // 0'
+  0
+  (exit 0)
+$ curl -s 'http://127.0.0.1:9093/api/v2/alerts?active=true' | jq -r '[.[] | select(.labels.alertname != "PFTAlertPipelineWatchdog")] | length'
+  0
+  (exit 0)
+$ curl -s http://127.0.0.1:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'
+  0
+  (exit 0)
+  bridge mounts the operator env file: yes
+  sentry pft-alertpath-check.timer active, check OK
+  operator topics to watch: 2 (not printed)
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+  postfiatd-sentry: server_state=full
+  postfiatd: server_state=full
+  pft-integrity validator: RESULT: PASS - 267 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity sentry: RESULT: PASS - 158 unchanged, 0 warn, 0 fail -> exit 0
+  literals for redaction: 3 ip, 3 topic, 1 user (values not printed)
+$ redact.py control --literals <literals>
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (16/16)
+
+PREFLIGHT_ONLY: stopping before step 1, nothing changed (ready: yes)
+  drill textfile removed: yes
