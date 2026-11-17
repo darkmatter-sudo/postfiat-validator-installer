@@ -1,0 +1,28 @@
+internals 24h report capture - 2026-11-17T06:09:34Z - repo HEAD 6f88684df0f941c0d1ff6e21dfad0d5ab6e61f4d - window 1794809100..1794895500
+$ python3 -I internals/report_internals.py capture --prom http://127.0.0.1:9090 --start 1794809100 --end 1794895500 --step 60 --out internals/logs/report-24h/capture.json
+up_min: 2 series, 2882 samples
+nodestore_read_ms: 2 series, 2882 samples
+nodestore_reads_per_s: 2 series, 2882 samples
+nodestore_hit_ratio: 2 series, 2882 samples
+cached_view_hit_ratio: 2 series, 2882 samples
+nodestore_written_bytes_per_s: 2 series, 2882 samples
+sle_hit_ratio: 2 series, 2882 samples
+treenode_cache_size: 2 series, 2882 samples
+db_total_bytes: 2 series, 2882 samples
+objects_total: 2 series, 2882 samples
+job_waiting_sum: 2 series, 2882 samples
+job_peak_ms_max: 2 series, 2882 samples
+jobs_per_s: 2 series, 2882 samples
+job_queue_wait_ms: 2 series, 2882 samples
+rpc_calls_per_s: 2 series, 2882 samples
+rpc_errors_per_s: 2 series, 2882 samples
+restarts_window: 2 series, 2882 samples
+anomalies_window: 2 series, 2882 samples
+wrote internals/logs/report-24h/capture.json
+(exit 0)
+$ python3 -I internals/report_internals.py build internals/logs/report-24h/capture.json --md internals/logs/report-24h/report.md --json internals/logs/report-24h/report.json
+wrote internals/logs/report-24h/report.md and internals/logs/report-24h/report.json (36 rows)
+(exit 0)
+df2231ae8526e8cfac246dddfc8f8bd1f751398f76457a0cfabe250324f39e55  internals/logs/report-24h/capture.json
+fe2ee314a48cead25de1c396ddbe5cb5dc37de1f39b61189eaea3718e8ae70c4  internals/logs/report-24h/report.json
+ccb273d9b9d4e7edeb43c0cacc3803993f9c8c4a4fbf9ab37df9c652a941011c  internals/logs/report-24h/report.md
