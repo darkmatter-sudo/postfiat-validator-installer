@@ -1,0 +1,153 @@
+pft-internals PFTInternalsStale alert drill (throwaway topic) - 2026-11-17T06:29:28Z - Ubuntu 22.04.5 LTS - run 20261117T062928Z
+repo HEAD 2f064a66d03eb852ddda3f5ec64464681797ce1c (clean: yes) | drill container name pft-drill-96d5a6ff (does not exist)
+sha256 adf3916607cbbfaa59e844dd6feb791298d5b9cfe6df23167a52451a1a425a04 internals/drill/alert-drill.sh
+sha256 12a4f22f5a1bfb8a2206a83d9378da9731073dd234b96919ec652f9954350faa internals/pft-internals.sh
+sha256 84e79292c2f2e38f015c349dff31e7344942307a93b8345fe2b9e33a5481761e internals/internals_parse.py
+sha256 cdd5c02c543b45d54d0651384056109f44dd0b34071a6eca573428bddac7fe3e alerts/internals.rules.yml
+sha256 f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8 peerexpose/drill/redact.py
+installed on validator: 12a4f22f5a1bfb8a /usr/local/bin/pft-internals  84e79292c2f2e38f /usr/local/lib/pft-internals/internals_parse.py  
+rules file as loaded by Prometheus: cdd5c02c543b45d5 /etc/pft-alerts/internals.rules.yml (pft-prometheus mounts this repo's alerts/)
+
+== 0. preflight (nothing changed yet)
+$ real_files
+  postfiatd up=1 valid
+  postfiatd-sentry up=1 valid
+  (exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/rules | jq -r '.data.groups[] | select(.name == "pft-internals") | .rules[] | [.name, .health] | @tsv'
+  PFTInternalsNodeStoreSlow	ok
+  PFTInternalsCacheCollapse	ok
+  PFTInternalsJobBacklog	ok
+  PFTInternalsJobPeak	ok
+  PFTInternalsStale	ok
+  PFTInternalsCounterAnomaly	ok
+  (exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=count(ALERTS{alertname!="PFTAlertPipelineWatchdog"})' | jq -r '.data.result[0].value[1] // 0'
+  0
+  (exit 0)
+$ curl -s 'http://127.0.0.1:9093/api/v2/alerts?active=true' | jq -r '[.[] | select(.labels.alertname != "PFTAlertPipelineWatchdog")] | length'
+  0
+  (exit 0)
+$ curl -s http://127.0.0.1:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'
+  0
+  (exit 0)
+  bridge mounts the operator env file: yes
+  sentry pft-alertpath-check.timer active, check OK
+  operator topics to watch: 2 (not printed)
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+  postfiatd-sentry: server_state=full
+  postfiatd: server_state=full
+  pft-integrity validator: RESULT: PASS - 267 unchanged, 0 warn, 0 fail -> exit 0
+  pft-integrity sentry: RESULT: PASS - 158 unchanged, 0 warn, 0 fail -> exit 0
+  literals for redaction: 3 ip, 3 topic, 1 user (values not printed)
+$ redact.py control --literals <literals>
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (16/16)
+
+== 1. bridge -> throwaway topic; silence everything except PFTInternalsStale and the watchdog
+  sentry pft-alertpath-check.timer stopped: yes
+CHECK ok   sentry pft-alertpath-check.timer paused for the bridge re-create
+  2026-11-17T06:30:48Z starting pft-alert-bridge (ntfy: on)
+  2026-11-17T06:30:52Z pft-alert-bridge listening
+CHECK ok   Alertmanager bridge -> throwaway env file (0700 temp dir)
+  sentry pft-alertpath check OK on a snapshot 6s old, 15s after the bridge re-create (must be newer): yes; timer started again: yes
+CHECK ok   sentry pft-alertpath OK again, check timer running
+CHECK ok   silence alertname=~".+", alertname!~"PFTAlertPipelineWatchdog|PFTInternalsStale" until 2026-11-17T07:31:07Z
+
+== 2. BREAK: the installed collector on a container name that does not exist, every 60 s
+$ drill_collect; echo collect_exit=$?; sudo -n cat /var/lib/pft-exporter/textfile/pft_internals_pft-drill-96d5a6ff.prom; sudo -n ls /var/lib/pft-internals
+  pft-internals: get_counts via docker exec pft-drill-96d5a6ff failed: Error response from daemon: No such container: pft-drill-96d5a6ff: up 0
+  collect_exit=1
+  # HELP pft_internals_up 1 if the last get_counts + server_info collection succeeded and every field was valid
+  # TYPE pft_internals_up gauge
+  pft_internals_up{container="pft-drill-96d5a6ff"} 0
+  # HELP pft_internals_collect_timestamp_seconds Unix time of the last collection attempt
+  # TYPE pft_internals_collect_timestamp_seconds gauge
+  pft_internals_collect_timestamp_seconds{container="pft-drill-96d5a6ff"} 1794897068
+  # HELP pft_internals_last_success_timestamp_seconds Unix time of the last successful collection (0 = never)
+  # TYPE pft_internals_last_success_timestamp_seconds gauge
+  pft_internals_last_success_timestamp_seconds{container="pft-drill-96d5a6ff"} 0
+  state-postfiatd.json
+  (exit 0)
+CHECK ok   collector failed closed: exit 1, 'up 0', last success 0, no state file for the drill name
+$ real_files
+  postfiatd up=1 valid
+  postfiatd-sentry up=1 valid
+  (exit 0)
+CHECK ok   real internals textfiles untouched: both up 1 and valid
+  2026-11-17T06:36:35Z (325s after the first drill collection): PFTInternalsStale firing in Prometheus:
+    __name__=ALERTS,alertname=PFTInternalsStale,alertstate=firing,container=pft-drill-96d5a6ff,instance=127.0.0.1:9877,job=postfiat,severity=warning 1
+CHECK ok   PFTInternalsStale{container=pft-drill-96d5a6ff} firing in Prometheus
+CHECK ok   no real container in a firing PFTInternalsStale
+CHECK ok   [FIRING] PFTInternalsStale for pft-drill-96d5a6ff on the throwaway topic (after 0s)
+$ pq 'pft_rulecheck_textfile_stale{file="pft_internals_pft-drill-96d5a6ff.prom"}'
+  
+  (exit 0)
+CHECK ok   rulecheck grades the drill textfile FRESH (0) or has not run yet (no series)
+
+== 3. FIX: drill textfile removed (the series end)
+$ sudo -n rm -f /var/lib/pft-exporter/textfile/pft_internals_pft-drill-96d5a6ff.prom; sudo -n test ! -e /var/lib/pft-exporter/textfile/pft_internals_pft-drill-96d5a6ff.prom && echo removed
+  removed
+  (exit 0)
+  2026-11-17T06:37:26Z (48s after the fix): PFTInternalsStale series left in Prometheus: 0
+CHECK ok   no PFTInternalsStale left in Prometheus
+CHECK ok   [RESOLVED] PFTInternalsStale for pft-drill-96d5a6ff on the throwaway topic
+
+== 4. restore, ALERTS query_range, read back
+  drill textfile removed: yes
+  drain: no PFTInternals* alert pending/firing/active after 0s; waiting 90s for RESOLVED delivery to the throwaway bridge
+  drain: done, nothing left that could reach the operator topic: yes
+  sentry pft-alertpath-check.timer stopped: yes
+  2026-11-17T06:39:01Z starting pft-alert-bridge (ntfy: on)
+  2026-11-17T06:39:14Z pft-alert-bridge listening
+  restored bridge: mounts the operator env file again: yes
+  sentry pft-alertpath check OK on a snapshot 6s old, 28s after the bridge re-create (must be newer): yes; timer started again: yes
+  catch-all silence expired after 0s (nothing else pending/firing/active): HTTP 200
+CHECK ok   drill textfile gone, bridge back on the operator env, alertpath OK, silence expired
+$ curl -s -G http://127.0.0.1:9090/api/v1/query_range --data-urlencode 'query=ALERTS{alertname=~"PFTInternals.*"}' --data-urlencode start=1794896968 --data-urlencode end=1794897582 --data-urlencode step=15 | jq -r '.data.result[] | "\(.metric.alertname) container=\(.metric.container) \(.metric.alertstate) first=\(.values[0][0] | todate) last=\(.values[-1][0] | todate) samples=\(.values | length)"' | sort
+  PFTInternalsStale container=pft-drill-96d5a6ff firing first=2026-11-17T06:36:28Z last=2026-11-17T06:36:43Z samples=2
+  PFTInternalsStale container=pft-drill-96d5a6ff pending first=2026-11-17T06:31:28Z last=2026-11-17T06:36:13Z samples=20
+  (exit 0)
+CHECK ok   query_range: PFTInternalsStale{container=pft-drill-96d5a6ff} pending then firing during the run
+CHECK ok   query_range: no PFTInternals* alert for a real container during the run
+  throwaway topic: 3 message(s)
+    {"time":"2026-11-17T06:36:21Z","title":"[RESOLVED] PFTInternalsStale","message":"pft-internals for pft-drill-2a912503 is failing or stale"}
+    {"time":"2026-11-17T06:36:21Z","title":"[FIRING] PFTInternalsStale","message":"pft-internals for pft-drill-96d5a6ff is failing or stale"}
+    {"time":"2026-11-17T06:37:21Z","title":"[RESOLVED] PFTInternalsStale","message":"pft-internals for pft-drill-96d5a6ff is failing or stale"}
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the run (2 topic(s), 0 with messages)
+$ real_files; sudo -n ls /var/lib/pft-internals; sudo -n pft-internals status --container postfiatd | tail -n 1
+  postfiatd up=1 valid
+  postfiatd-sentry up=1 valid
+  state-postfiatd.json
+  RESULT: OK
+  (exit 0)
+CHECK ok   real internals textfiles up 1 + valid, no drill state left
+$ curl -s http://127.0.0.1:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'
+  0
+  (exit 0)
+CHECK ok   no active Alertmanager silence left
+  pft-integrity validator: RESULT: PASS - 267 unchanged, 0 warn, 0 fail -> exit 0
+CHECK ok   pft-integrity PASS on validator at the end
+  pft-integrity sentry: RESULT: PASS - 158 unchanged, 0 warn, 0 fail -> exit 0
+CHECK ok   pft-integrity PASS on sentry at the end
+CHECK ok   postfiatd-sentry full at the end (full)
+CHECK ok   postfiatd full at the end (full)
+
+alert-drill done 2026-11-17T06:42:07Z: 0 check(s) failed -> PASS
+runner exit 0

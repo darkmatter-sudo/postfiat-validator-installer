@@ -134,6 +134,21 @@ the collector reads, so host ids, node keys and the port list never reach the re
 `report_internals.py build CAPTURE --md --json` turns a capture into min / p50 / p95 / max per query and container,
 offline and byte-identically (no clock, no environment), so a fresh clone can rebuild the committed report and `cmp` it.
 
+The 24-hour two-host report is `logs/report-24h/report.md` (window 2026-11-16T06:05Z .. 2026-11-17T06:05Z, 1441
+samples per series, 100 % coverage on both containers, built from `logs/report-24h/capture.json`). Every alert signal
+stayed far from its threshold: NodeStore read max 0.49 ms (rule 5 ms), CachedView hit ratio min 0.80 (rule 0.4),
+`job_waiting` max 3 (rule 100), job peak max 879 ms (rule 5000), `up` min 1, 0 node restarts, 0 counter anomalies.
+
+## Alert drill
+
+`drill/alert-drill.sh` proves FIRING and RESOLVED end to end on a throwaway ntfy topic without touching either node,
+either real internals textfile or any timer: the installed `pft-internals collect` runs once a minute for a container
+name that does not exist (`pft-drill-<random>`), which is the collector's own fail-closed path (`up 0`, last success 0,
+no state file). The file is fresh for rulecheck (`pft_internals_*.prom 5m`), so only `PFTInternalsStale` fires; the
+fix removes the file. The bridge points at the throwaway topic for the run, everything except the watchdog and
+`PFTInternalsStale` is silenced, the sentry's alertpath check is paused around each bridge re-create, and the run
+fails unless every operator topic holds 0 messages at the end.
+
 ## Evidence (logs/)
 
 | Log | What |
@@ -146,5 +161,10 @@ offline and byte-identically (no clock, no environment), so a fresh clone can re
 | 07a, 07 | two-host upgrade to the fix at 19ccf0c: every install/verify check ok, operator topics 0 messages; its one FAIL is the drain check counting the two still-suppressed PFTInternalsCounterAnomaly alerts (pre-fix increments inside the rule's 30m window), which the next check shows suppressed |
 | 08 | in-window check at 99699fd (`drill/window-check.sh`): both collectors OK, 0 restarts / 0 anomalies, PFTInternalsCounterAnomaly inactive; the defect silence is expired only after these gates, then 90 s with nothing but the watchdog active, integrity PASS both hosts, operator topics 0 messages since the window start |
 
-The 24-hour two-host window starts after the upgrade's state re-baseline (2026-11-16T06:05Z); the report, the
-throwaway-topic alert drill and the fresh-clone proof follow at its end.
+| 09 | 24-hour report: `report_internals.py capture` (18 queries, 2 series x 1441 samples each) + offline build -> `report-24h/` |
+| 10a, 10 | first alert drill: preflight; FIRING after 5 min pending and RESOLVED 49 s after the fix, both on the throwaway topic. Found: the restore resumed the sentry's alertpath check on a snapshot taken before the bridge re-create, so its next run read the snapshot from the 6 s restart and sent `[alertpath] DEGRADED` (bridge not listening) and `RECOVERED` to the operator's alertpath topic (the check's one FAIL) |
+| 11 | alert drill after the fix (2f064a6: resume only on an OK check of a snapshot taken after the re-create, read-back 90 s later): every check ok, FIRING + RESOLVED on the throwaway topic, operator topics 0 messages, integrity PASS both hosts, both nodes full. Its throwaway topic also shows a `[RESOLVED]` for run 10's drill name: that alert was still in Prometheus's 15-min resolved resend window, so Alertmanager folded it into run 11's group notification |
+| 12 | fresh clone at the pinned commit (`drill/fresh-clone.sh SHA internals/logs/07-upgrade.log --mutants`) |
+
+The 24-hour two-host window started after the upgrade's state re-baseline (2026-11-16T06:05Z) and ended
+2026-11-17T06:05Z; no internals code changed in it (key-file hashes = the ones the upgrade, log 07, installed).
