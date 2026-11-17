@@ -141,7 +141,7 @@ trap 'echo "interrupted"; exit 6' INT TERM
   for f in internals/drill/alert-drill.sh internals/pft-internals.sh internals/internals_parse.py alerts/internals.rules.yml "${REDACT#"$REPO"/}"; do
     echo "sha256 $(sha256sum < "$f" | cut -c1-64) $f"; done
   echo "installed on validator: $(sha256sum /usr/local/bin/pft-internals /usr/local/lib/pft-internals/internals_parse.py 2>&1 | awk '{printf "%s %s  ", substr($1,1,16), $2}')"
-  echo "loaded rules file: $(sha256sum < /etc/pft-alerts/internals.rules.yml 2>&1 | cut -c1-16) /etc/pft-alerts/internals.rules.yml"; }
+  echo "rules file as loaded by Prometheus: $(sudo -n docker exec pft-prometheus sha256sum /etc/pft-alerts/internals.rules.yml 2>&1 | awk '{print substr($1,1,16), $2}') (pft-prometheus mounts this repo's alerts/)"; }
 
 echo; echo "== 0. preflight (nothing changed yet)"
 [ -z "$(git status --short)" ] || { echo "  dirty tree - stopping"; exit 3; }
