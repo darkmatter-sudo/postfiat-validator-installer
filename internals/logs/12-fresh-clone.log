@@ -1,0 +1,109 @@
+OS: Ubuntu 22.04.5 LTS | 2026-11-17T06:43:19Z | internals fresh-clone verification at 21b14e685ddff9797ef51065fab1e4e51c96507b | shellcheck 0.8.0 | Python 3.10.12 | ruff 0.17.1
+(work dir: a new mktemp dir under ~/.cache, mode 755; /tmp is noexec on this host)
+$ env -u GH_TOKEN -u GITHUB_TOKEN GIT_TERMINAL_PROMPT=0 git -c credential.helper= clone -q https://github.com/darkmatter-sudo/postfiat-validator-installer.git repo
+(exit 0)
+$ git checkout -q 21b14e685ddff9797ef51065fab1e4e51c96507b && git rev-parse HEAD
+21b14e685ddff9797ef51065fab1e4e51c96507b
+(exit 0)
+$ test "$(git status --short | wc -l)" = 0 && echo clean
+clean
+(exit 0)
+== key files: sha256 here vs. the hashes the recorded install printed (internals/logs/07-upgrade.log)
+$ sha256sum internals/pft-internals.sh internals/internals_parse.py internals/systemd/pft-internals@.service internals/systemd/pft-internals@.timer internals/systemd/pft-internals-pull@.service internals/systemd/pft-internals-pull@.timer alerts/internals.rules.yml
+12a4f22f5a1bfb8a2206a83d9378da9731073dd234b96919ec652f9954350faa  internals/pft-internals.sh
+84e79292c2f2e38f015c349dff31e7344942307a93b8345fe2b9e33a5481761e  internals/internals_parse.py
+5b436550824e8a3029c6e0853dbef5c81cb6fc77bb4e92ac260052074f33b605  internals/systemd/pft-internals@.service
+8e0aa6859704ec5de315360d7d29a2d80453e557d9cd77c9ca02d7c31f8a6280  internals/systemd/pft-internals@.timer
+810f7bd50f505208a2810dec6467fe25d9e7a208a5957d3dc677b82acc503bde  internals/systemd/pft-internals-pull@.service
+aefd87c69aa05b06682cb3b2eb6f280ecb47749e257f25c4db6c698f09483b5f  internals/systemd/pft-internals-pull@.timer
+cdd5c02c543b45d54d0651384056109f44dd0b34071a6eca573428bddac7fe3e  alerts/internals.rules.yml
+(exit 0)
+$ test -f internals/logs/07-upgrade.log && grep -cE '^  [0-9a-f]{64}  (internals|alerts)/' internals/logs/07-upgrade.log
+11
+(exit 0)
+$ for f in internals/pft-internals.sh internals/internals_parse.py internals/systemd/pft-internals@.service internals/systemd/pft-internals@.timer internals/systemd/pft-internals-pull@.service internals/systemd/pft-internals-pull@.timer alerts/internals.rules.yml; do want=$(grep -E "^  [0-9a-f]{64}  $f\$" internals/logs/07-upgrade.log | head -1 | awk '{print $1}'); got=$(sha256sum $f | cut -c1-64); [ -n "$want" ] && [ "$want" = "$got" ] && echo "MATCH $f" || { echo "MISMATCH $f install=${want:-none} clone=$got"; exit 1; }; done
+MATCH internals/pft-internals.sh
+MATCH internals/internals_parse.py
+MATCH internals/systemd/pft-internals@.service
+MATCH internals/systemd/pft-internals@.timer
+MATCH internals/systemd/pft-internals-pull@.service
+MATCH internals/systemd/pft-internals-pull@.timer
+MATCH alerts/internals.rules.yml
+(exit 0)
+$ sha256sum internals/logs/*.log internals/data/* internals/logs/report-24h/*
+7e9e9a939fd610f128e04b8227762e27803594b61193259d8640314b6c89458d  internals/logs/01-calibration.log
+1685fbb66dced0589d0e95178e2a744363dfa1e3b8751bc1131b1839cde720bd  internals/logs/02-mutants-68d4da2.log
+01acdf28da3fbdef67547b2f2e33c0279372c04541ea4b526ea8280633bda9ff  internals/logs/03-install.log
+a7a856be580f9b37897e8f02d4202992acecc60e4dd60483db42a139f16f5056  internals/logs/03a-install-preflight.log
+aa91080af0ef1b328d8a63a3df49d742f4185840664d61adace15f1b973f2a2b  internals/logs/03b-install-tail.log
+40db0dc95a4a6e32334546f01381cb1a17326f2fbe199b14321a540d7963f358  internals/logs/04-monotonic.log
+3552ad82e4640fe0d753ee1ace779d9a82b8cbb2bcb88c48a8127b6affaa5be5  internals/logs/05-anomalies-live.log
+07e3a420a935f24f8e9688d5580f76d88ff94f5a8fc7cbb07b41133896be5f42  internals/logs/06-mutants.log
+dacbe3aefeec4a7b367d3bba39d92b9923593703e5854bec7c06b61d58f96339  internals/logs/07-upgrade.log
+c67259ab3447d1c20e1498a84a97891e7a075416726f60c691c732f9fc06dfdb  internals/logs/07a-upgrade-preflight.log
+f4b62e44e380e9764c19e485c156647e027295614f6af9a60159d0e08d54fd89  internals/logs/08-window-check.log
+ec039e94819e2262e3564c5f65c9c52a0bd43ea416261739d09f8c33562a317c  internals/logs/09-report-capture.log
+030a9b17bf1b68d098a3305b5104a27dc95ce7cc115b80c643ad9ee5553192ad  internals/logs/10-alert-drill.log
+c73ebe10be9a2eb7095e80b1d9d3b09b006daaefe06290dd439f28c2939aee15  internals/logs/10a-alert-drill-preflight.log
+e07c42ed53b9e40cc05d51db265e7c7532e537b453122d6ea9e8786a192bcb06  internals/logs/11-alert-drill.log
+94988edb93623af97aa069ee9fe06e2deb6ce9567ec77a14b79294bb0a8b0fe6  internals/data/calibration-validator-jobq.jsonl
+fa357310f1265c6da69ee996c1be5daa71a6ae14e94d669db03e927b2a5c796d  internals/data/calibration-validator.jsonl
+df2231ae8526e8cfac246dddfc8f8bd1f751398f76457a0cfabe250324f39e55  internals/logs/report-24h/capture.json
+fe2ee314a48cead25de1c396ddbe5cb5dc37de1f39b61189eaea3718e8ae70c4  internals/logs/report-24h/report.json
+ccb273d9b9d4e7edeb43c0cacc3803993f9c8c4a4fbf9ab37df9c652a941011c  internals/logs/report-24h/report.md
+(exit 0)
+== static checks
+$ shellcheck internals/*.sh internals/drill/*.sh
+(exit 0)
+$ ruff check internals && ruff format --check internals
+All checks passed!
+9 files already formatted
+(exit 0)
+$ cd internals && ruff check . && ruff format --check .
+All checks passed!
+9 files already formatted
+(exit 0)
+== unit suite (parser, shell with docker/ssh stubs, report)
+$ TMPDIR=~/.cache/tmp.jJDYS6UE7p TEST_TMPDIR=~/.cache/tmp.jJDYS6UE7p python3 -I internals/tests/test_internals.py 2>&1 | tail -n 3
+Ran 52 tests in 20.560s
+
+OK
+(exit 0)
+== promtool
+$ python3 internals/tests/gen_rule_tests.py | cmp - alerts/internals.tests.yml && echo identical internals.tests.yml
+identical internals.tests.yml
+(exit 0)
+$ docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /w prom/prometheus:v3.5.0 check rules internals.rules.yml
+Checking internals.rules.yml
+  SUCCESS: 6 rules found
+
+(exit 0)
+$ docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /w prom/prometheus:v3.5.0 test rules internals.tests.yml
+  SUCCESS
+
+(exit 0)
+== calibration stats re-derived from the committed data
+$ python3 -I internals/tests/calib_stats.py stats internals/data/calibration-validator.jsonl | cmp - <(sed -n '3,7p' internals/logs/01-calibration.log) && echo identical calibration stats
+identical calibration stats
+(exit 0)
+== byte-identical rebuild of the published 24-hour report from its committed query capture
+$ python3 -I internals/report_internals.py build internals/logs/report-24h/capture.json --md ~/.cache/tmp.jJDYS6UE7p/report.md --json ~/.cache/tmp.jJDYS6UE7p/report.json
+wrote ~/.cache/tmp.jJDYS6UE7p/report.md and ~/.cache/tmp.jJDYS6UE7p/report.json (36 rows)
+(exit 0)
+$ cmp ~/.cache/tmp.jJDYS6UE7p/report.md internals/logs/report-24h/report.md && echo identical report.md
+identical report.md
+(exit 0)
+$ cmp ~/.cache/tmp.jJDYS6UE7p/report.json internals/logs/report-24h/report.json && echo identical report.json
+identical report.json
+(exit 0)
+== mutation harness
+$ TEST_TMPDIR=~/.cache/tmp.jJDYS6UE7p nice -n 15 python3 -u internals/tests/mutate.py </dev/null | tail -n 6
+R15 CAUGHT - stale: 600 s [promtool FAILED: pull stopped (timestamp frozen at 10m, up still 1): stale after 5 min + 5m for, recovers when it moves again]
+R16 CAUGHT - stale: for 1m [promtool FAILED: collector up 0: fires after 5m, recovers on the first good sample; pull stopped (timestamp frozen at 10m, up still 1): stale after 5 min + 5m for, recovers when it moves again]
+R17 CAUGHT - anomaly: changes() counts a state reset [promtool FAILED: counter anomaly at 11m fires at once and clears when it leaves the 30m window; a collector state reset (3 -> 0) and node restarts do not fire]
+R18 CAUGHT - anomaly: 10m window [promtool FAILED: counter anomaly at 11m fires at once and clears when it leaves the 30m window; a collector state reset (3 -> 0) and node restarts do not fire]
+orphan check: 0 process(es) still running that name this run's scratch dir
+RESULT: 89 caught, 0 survived, 0 not applied, 0 broken of 89
+(exit 0)
+fresh-clone done 2026-11-17T07:02:08Z: 0 step(s) failed -> PASS
+runner exit 0
