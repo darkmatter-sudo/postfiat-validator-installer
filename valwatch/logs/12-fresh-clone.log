@@ -1,0 +1,158 @@
+valwatch fresh public clone - 2026-11-18T22:46:27Z - SHA 161f14c235887cec2d2a0b3260f9fddebda83d08
+
+== 0. anonymous clone
+$ env -u GH_TOKEN -u GITHUB_TOKEN GIT_TERMINAL_PROMPT=0 git -c credential.helper= clone -q https://github.com/darkmatter-sudo/postfiat-validator-installer ~/.cache/tmp.hyNqu8y979/repo && cd ~/.cache/tmp.hyNqu8y979/repo && git checkout -q 161f14c235887cec2d2a0b3260f9fddebda83d08 && git rev-parse HEAD && git log -1 --format='%H %ad %an'
+  161f14c235887cec2d2a0b3260f9fddebda83d08
+  161f14c235887cec2d2a0b3260f9fddebda83d08 Wed Nov 18 22:46:17 2026 +0000 darkmatter-sudo
+  (exit 0)
+CHECK ok   clone + checkout 161f14c235887cec2d2a0b3260f9fddebda83d08
+
+== 1. key files vs installed (both hosts)
+$ sha256sum valwatch/pft-valwatch.sh valwatch/valwatch.py valwatch/install.sh valwatch/systemd/* alerts/valwatch.rules.yml alerts/valwatch.tests.yml valwatch/drill/*.sh valwatch/tests/mutate.py valwatch/tests/test_valwatch.py
+  ebe7cc657d635327a82cf867aa6bd1c811bb8d1352d04f68a56118d6e5cd1e3b  valwatch/pft-valwatch.sh
+  8a11e34a6b1559bbb4d8864416c8680a7836a9e0ddeb488c037a8582fd208849  valwatch/valwatch.py
+  2d446c11411426e9a147fe2d64d569d57f7a4c626dd91ddd6aeff872c04022a3  valwatch/install.sh
+  5c927ae6e66fb7e67a861d42b6b7b24e901d6e03396344ac0fec4a946e59ca02  valwatch/systemd/pft-valwatch-pull@.service
+  8c76c1a0c8451a7d839f76a618acf09f64e0596712781333cae61aba19218294  valwatch/systemd/pft-valwatch-pull@.timer
+  71d352d9bbe1f5100c65301de786340d881022cfd9e4a30b7e3edce386575650  valwatch/systemd/pft-valwatch-textfile@.service
+  91fded11a827de9b20c6de044996b5e1555650b0cfe6c7db0b430eb747962069  valwatch/systemd/pft-valwatch-textfile@.timer
+  846af5f7a6855780d9b36e942c7d8a979bd9f994811397f788366c28b54f866e  valwatch/systemd/pft-valwatch@.service
+  ae06fddfa08c33e0a83040e4844197d70c6eb069e9ea1e9827c71d18d7397a31  alerts/valwatch.rules.yml
+  90c13f4f0ab996be833b0b88a25b02979bdd8b02c69a782866afc2bf142320c3  alerts/valwatch.tests.yml
+  5df599a740fcb12964af1f5be500d9d89e2eccee82fd791af412849433719e58  valwatch/drill/collect-run.sh
+  fbfd4e0d7592498f785b144b245937940d93c7d83519303bd21ee225c5738f42  valwatch/drill/fresh-clone.sh
+  a2581330954bb03a2cc88ce47dff589d953827b01f857251f50b126eb311f84c  valwatch/drill/install-run.sh
+  9a4dd877fc4e3fab3ffb917a1046724b6b4916c0cbd8bac50a023689435f0aae  valwatch/drill/offline-rebuild.sh
+  950c6175fe016f3259918fc265d57d2f924c56dc421399390091cb765eda800c  valwatch/tests/mutate.py
+  e40a0bca8a89b73ae4c99300f811a4dd0b26cdb9045333763148c1717369c25b  valwatch/tests/test_valwatch.py
+  (exit 0)
+$ sha256sum /usr/local/bin/pft-valwatch /usr/local/lib/pft-valwatch/valwatch.py /etc/systemd/system/pft-valwatch@.service /etc/systemd/system/pft-valwatch-textfile@.service /etc/systemd/system/pft-valwatch-textfile@.timer; R 'sha256sum /usr/local/bin/pft-valwatch /usr/local/lib/pft-valwatch/valwatch.py /etc/systemd/system/pft-valwatch@.service /etc/systemd/system/pft-valwatch-textfile@.service /etc/systemd/system/pft-valwatch-textfile@.timer'
+  ebe7cc657d635327a82cf867aa6bd1c811bb8d1352d04f68a56118d6e5cd1e3b  /usr/local/bin/pft-valwatch
+  8a11e34a6b1559bbb4d8864416c8680a7836a9e0ddeb488c037a8582fd208849  /usr/local/lib/pft-valwatch/valwatch.py
+  846af5f7a6855780d9b36e942c7d8a979bd9f994811397f788366c28b54f866e  /etc/systemd/system/pft-valwatch@.service
+  71d352d9bbe1f5100c65301de786340d881022cfd9e4a30b7e3edce386575650  /etc/systemd/system/pft-valwatch-textfile@.service
+  91fded11a827de9b20c6de044996b5e1555650b0cfe6c7db0b430eb747962069  /etc/systemd/system/pft-valwatch-textfile@.timer
+  ebe7cc657d635327a82cf867aa6bd1c811bb8d1352d04f68a56118d6e5cd1e3b  /usr/local/bin/pft-valwatch
+  8a11e34a6b1559bbb4d8864416c8680a7836a9e0ddeb488c037a8582fd208849  /usr/local/lib/pft-valwatch/valwatch.py
+  846af5f7a6855780d9b36e942c7d8a979bd9f994811397f788366c28b54f866e  /etc/systemd/system/pft-valwatch@.service
+  71d352d9bbe1f5100c65301de786340d881022cfd9e4a30b7e3edce386575650  /etc/systemd/system/pft-valwatch-textfile@.service
+  91fded11a827de9b20c6de044996b5e1555650b0cfe6c7db0b430eb747962069  /etc/systemd/system/pft-valwatch-textfile@.timer
+  (exit 0)
+CHECK ok   clone sha256 = installed on validator and sentry (script, helper, 3 units) (10/10)
+
+== 2. lint
+$ shellcheck valwatch/pft-valwatch.sh valwatch/install.sh valwatch/drill/*.sh
+  
+  (exit 0)
+CHECK ok   shellcheck clean
+$ ruff check valwatch && ruff format --check valwatch
+  All checks passed!
+  6 files already formatted
+  (exit 0)
+CHECK ok   ruff from repo root
+$ cd valwatch && ruff check . && ruff format --check .
+  All checks passed!
+  6 files already formatted
+  (exit 0)
+CHECK ok   ruff from valwatch/
+
+== 3. full test suite
+$ cd valwatch && python3 -m pytest -q -p no:cacheprovider tests </dev/null | tail -3
+  ........................................................................ [ 82%]
+  ...............                                                          [100%]
+  87 passed in 27.47s
+  (exit 0)
+CHECK ok   pytest 0 failed
+
+== 4. promtool
+$ sudo -n docker run --rm --network none --entrypoint promtool -v ~/.cache/tmp.hyNqu8y979/repo/alerts:/w:ro -w /w prom/prometheus:v3.5.0 test rules valwatch.tests.yml
+    SUCCESS
+  (exit 0)
+CHECK ok   promtool SUCCESS
+
+== 5. offline rebuild of the committed collection
+$ sha256sum valwatch/data/window.env valwatch/data/*/*.gz valwatch/reports/*
+  3e00a5704d4e02e6f03d79df4e1350f9a1bc3dacbdff342767454a37e5482e5e  valwatch/data/window.env
+  3f7d8b0087f10996ac7359f307c5fc39c22912858962ed6e359b5ea8ef23880a  valwatch/data/sentry/valwatch-20261118T20.jsonl.gz
+  06b9722f5274b6ca1461379e5574f2e1b41cb8c3a13a9137fb09d631b09f4fb3  valwatch/data/sentry/valwatch-20261118T21.jsonl.gz
+  78e36694314476d4a5652d39c83e1b7712dffcdfc19366481fc5bd62f6d602c1  valwatch/data/sentry/valwatch-20261118T22.jsonl.gz
+  bd1d54bf8d90d6256770d54cdbf5507778f6c034071bc521b553c763e544eeba  valwatch/data/validator/valwatch-20261118T20.jsonl.gz
+  8e3dfdcc4363f9784fb8aff52a81ba5e2109a9aa23515d3bb9547971f209e6c6  valwatch/data/validator/valwatch-20261118T21.jsonl.gz
+  81665716020cfd221692659899ab89aa856d857d7b811a211bd65d2b04afb152  valwatch/data/validator/valwatch-20261118T22.jsonl.gz
+  d797214807b5e138c0a5644b670c6ce13d2c0f1c7d3b190c06068a3c925f499a  valwatch/reports/compare.json
+  a692ab585604978458879c4032b40407354045d6ea2bb4d9755414ba60f57325  valwatch/reports/compare.txt
+  6676ce87268ded90c9cd2101a525fe65ceb1b685ac5e4f6cb3247f5d4cd53c81  valwatch/reports/sentry.detail.json
+  2824af89a8ad6e63815a0a5ac77ca3b100dc08d0e6a60715ac814b1b77174ee6  valwatch/reports/sentry.json
+  9c4c9d6bc6de27d8f17211a22fd8b66a00ad7bd0da029f8e4d1d80c3068e67b2  valwatch/reports/sentry.txt
+  4b03a8e1da371d1b546371369d47d32dd63b4ef2ae3432fa44bdc93ddf225ed1  valwatch/reports/validator.detail.json
+  f7726df7596b4b19447ef97a2b56038793d76be8f22f4ef435f061a50bd492b5  valwatch/reports/validator.json
+  ff49ab84a58ca11d874e5a51ff627840a0f44b829daf3db50175708e9061920a  valwatch/reports/validator.txt
+  (exit 0)
+$ bash valwatch/drill/offline-rebuild.sh
+  ok   validator.txt byte-identical (2805 bytes, sha256 ff49ab84a58ca11d874e5a51ff627840a0f44b829daf3db50175708e9061920a)
+  ok   validator.json byte-identical (5408 bytes, sha256 f7726df7596b4b19447ef97a2b56038793d76be8f22f4ef435f061a50bd492b5)
+  ok   validator.detail.json byte-identical (4348299 bytes, sha256 4b03a8e1da371d1b546371369d47d32dd63b4ef2ae3432fa44bdc93ddf225ed1)
+  ok   sentry.txt byte-identical (2805 bytes, sha256 9c4c9d6bc6de27d8f17211a22fd8b66a00ad7bd0da029f8e4d1d80c3068e67b2)
+  ok   sentry.json byte-identical (5413 bytes, sha256 2824af89a8ad6e63815a0a5ac77ca3b100dc08d0e6a60715ac814b1b77174ee6)
+  ok   sentry.detail.json byte-identical (4348658 bytes, sha256 6676ce87268ded90c9cd2101a525fe65ceb1b685ac5e4f6cb3247f5d4cd53c81)
+  RESULT: 0 difference(s)
+  (exit 0)
+CHECK ok   offline rebuild byte-identical (6 outputs)
+
+== 6. compare re-run
+$ cmp ~/.cache/tmp.hyNqu8y979/c.txt valwatch/reports/compare.txt && cmp ~/.cache/tmp.hyNqu8y979/c.json valwatch/reports/compare.json && head -2 ~/.cache/tmp.hyNqu8y979/c.txt && tail -1 ~/.cache/tmp.hyNqu8y979/c.txt
+  common ledgers: 2453 (8165157..8167609), hash mismatches 0
+  quorum margin: max |A-B| 0 (tolerance 1), equal on 2453/2453
+  RESULT: AGREE - 0 validator(s) outside tolerance
+  (exit 0)
+CHECK ok   compare exit 0/0 and byte-identical to committed (exit 0/0)
+
+== 7. mutation-run code identity (logs/07-mutants.log, HEAD c40a8db023bcb1fc9e60823cc7c05a16086272e2)
+$ git cat-file -t c40a8db023bcb1fc9e60823cc7c05a16086272e2 && git merge-base --is-ancestor c40a8db023bcb1fc9e60823cc7c05a16086272e2 161f14c235887cec2d2a0b3260f9fddebda83d08 && echo ancestor
+  commit
+  ancestor
+  (exit 0)
+$ git diff --stat c40a8db023bcb1fc9e60823cc7c05a16086272e2 161f14c235887cec2d2a0b3260f9fddebda83d08 -- valwatch/valwatch.py valwatch/pft-valwatch.sh valwatch/tests alerts/valwatch.rules.yml alerts/valwatch.tests.yml | wc -l
+  0
+  (exit 0)
+CHECK ok   no mutated/tested file changed since the mutation run
+$ sed -n 1,2p valwatch/logs/07-mutants.log; grep -E '^(control|RESULT|exit=)' valwatch/logs/07-mutants.log
+  # 2026-11-18T19:36:26Z recorded mutation run, HEAD c40a8db023bcb1fc9e60823cc7c05a16086272e2, status ''
+  # mutate.py sha256 950c6175fe016f3259918fc265d57d2f924c56dc421399390091cb765eda800c  valwatch.py sha256 8a11e34a6b1559bbb4d8864416c8680a7836a9e0ddeb488c037a8582fd208849  test_valwatch.py sha256 e40a0bca8a89b73ae4c99300f811a4dd0b26cdb9045333763148c1717369c25b
+  control baseline suite (unmutated copy): PASS 87 passed in 22.02s
+  control baseline promtool (unmutated copy): PASS SUCCESS
+  control timeout (helper never returns, --hang-timeout 60): HANG after 61 s, 0 process(es) left
+  RESULT: 64 caught, 0 survived, 0 not applied, 0 broken of 64
+  exit=0
+  (exit 0)
+CHECK ok   mutation run 64/64 caught
+
+== 8. evidence URLs (unauthenticated, pinned to 161f14c235887cec2d2a0b3260f9fddebda83d08)
+  200 same https://raw.githubusercontent.com/darkmatter-sudo/postfiat-validator-installer/161f14c235887cec2d2a0b3260f9fddebda83d08/valwatch/README.md
+CHECK ok   URL valwatch/README.md
+  200 same https://raw.githubusercontent.com/darkmatter-sudo/postfiat-validator-installer/161f14c235887cec2d2a0b3260f9fddebda83d08/valwatch/logs/09-install.log
+CHECK ok   URL valwatch/logs/09-install.log
+  200 same https://raw.githubusercontent.com/darkmatter-sudo/postfiat-validator-installer/161f14c235887cec2d2a0b3260f9fddebda83d08/valwatch/logs/11-collect.log
+CHECK ok   URL valwatch/logs/11-collect.log
+  200 same https://raw.githubusercontent.com/darkmatter-sudo/postfiat-validator-installer/161f14c235887cec2d2a0b3260f9fddebda83d08/valwatch/logs/07-mutants.log
+CHECK ok   URL valwatch/logs/07-mutants.log
+  200 same https://raw.githubusercontent.com/darkmatter-sudo/postfiat-validator-installer/161f14c235887cec2d2a0b3260f9fddebda83d08/valwatch/reports/validator.txt
+CHECK ok   URL valwatch/reports/validator.txt
+  200 same https://raw.githubusercontent.com/darkmatter-sudo/postfiat-validator-installer/161f14c235887cec2d2a0b3260f9fddebda83d08/valwatch/reports/sentry.txt
+CHECK ok   URL valwatch/reports/sentry.txt
+  200 same https://raw.githubusercontent.com/darkmatter-sudo/postfiat-validator-installer/161f14c235887cec2d2a0b3260f9fddebda83d08/valwatch/reports/compare.txt
+CHECK ok   URL valwatch/reports/compare.txt
+  200 same https://raw.githubusercontent.com/darkmatter-sudo/postfiat-validator-installer/161f14c235887cec2d2a0b3260f9fddebda83d08/valwatch/reports/compare.json
+CHECK ok   URL valwatch/reports/compare.json
+  200 same https://raw.githubusercontent.com/darkmatter-sudo/postfiat-validator-installer/161f14c235887cec2d2a0b3260f9fddebda83d08/alerts/valwatch.rules.yml
+CHECK ok   URL alerts/valwatch.rules.yml
+  200 same https://raw.githubusercontent.com/darkmatter-sudo/postfiat-validator-installer/161f14c235887cec2d2a0b3260f9fddebda83d08/alerts/valwatch.tests.yml
+CHECK ok   URL alerts/valwatch.tests.yml
+  200 same https://raw.githubusercontent.com/darkmatter-sudo/postfiat-validator-installer/161f14c235887cec2d2a0b3260f9fddebda83d08/valwatch/drill/collect-run.sh
+CHECK ok   URL valwatch/drill/collect-run.sh
+  200 same https://raw.githubusercontent.com/darkmatter-sudo/postfiat-validator-installer/161f14c235887cec2d2a0b3260f9fddebda83d08/valwatch/drill/fresh-clone.sh
+CHECK ok   URL valwatch/drill/fresh-clone.sh
+  200 https://github.com/darkmatter-sudo/postfiat-validator-installer/commit/161f14c235887cec2d2a0b3260f9fddebda83d08
+CHECK ok   commit URL
+
+RESULT: PASS - 0 check(s) failed

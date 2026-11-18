@@ -183,3 +183,7 @@ public ledger data: validator keys, ledger hashes and indexes, and receive times
   one local-timezone token in it is redacted as `<redacted-tz>`.
 - `logs/11-collect.log`: `bash valwatch/drill/collect-run.sh` at 12bcb60: 0 checks failed. Live reports on both hosts,
   6 hour-file copies equal to the host files, offline rebuild 0 differences, compare AGREE, promtool SUCCESS.
+- `logs/12-fresh-clone.log`: `bash valwatch/drill/fresh-clone.sh 161f14c` on an anonymous public clone: 0 checks
+  failed. sha256 of script, helper and 3 units = installed on both hosts (10/10), shellcheck, ruff (both cwds),
+  87 tests passed, promtool SUCCESS, offline rebuild 0 differences, compare byte-identical, files under mutation test
+  unchanged since the 64/64 run (log 07), 12 pinned raw URLs + commit URL HTTP 200 with content = clone.
