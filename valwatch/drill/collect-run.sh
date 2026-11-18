@@ -41,7 +41,7 @@ x "sha256sum /usr/local/bin/pft-valwatch /usr/local/lib/pft-valwatch/valwatch.py
 n="$(grep -c -e "${want% *}  /usr/local/bin/pft-valwatch" -e "${want#* }  /usr/local/lib/pft-valwatch/valwatch.py" <<<"$XOUT")"
 check "installed script + helper = HEAD on both hosts" "$([ "$n" = 4 ] && echo 0 || echo 1)" "$n/4 matching"
 prop='-p ActiveState -p ActiveEnterTimestampMonotonic -p ActiveEnterTimestamp -p NRestarts'
-x "systemctl show pft-valwatch@$VC.service $prop; R 'systemctl show pft-valwatch@$SC.service $prop'"
+x "systemctl show pft-valwatch@$VC.service $prop; R 'TZ=UTC systemctl show pft-valwatch@$SC.service $prop'"
 nact="$(grep -c '^ActiveState=active$' <<<"$XOUT")"
 check "collector active on both hosts" "$([ "$nact" = 2 ] && echo 0 || echo 1)" "$nact/2"
 nr="$(grep -c '^NRestarts=0$' <<<"$XOUT")"
@@ -87,13 +87,19 @@ for role in validator sentry; do
   for f in "${hours[@]}"; do
     if [ "$role" = validator ]; then
       sudo -n test -f "$DD/$c/$f" || { echo "  $role: $f absent (collector not running yet)"; continue; }
-      sudo -n cat "$DD/$c/$f" | gzip -n -9 > "$D/$role/$f.gz"; src="$(sudo -n sha256sum < "$DD/$c/$f" | cut -c1-64)"
+      sudo -n cat "$DD/$c/$f" | gzip -n -9 > "$D/$role/$f.gz"
+      len="$(gzip -dc "$D/$role/$f.gz" | wc -c)"
+      src="$(sudo -n head -c "$len" "$DD/$c/$f" | sha256sum | cut -c1-64)"; now="$(sudo -n stat -c %s "$DD/$c/$f")"
     else
       R "sudo -n test -f $DD/$c/$f" || { echo "  $role: $f absent (collector not running yet)"; continue; }
-      R "sudo -n cat $DD/$c/$f" | gzip -n -9 > "$D/$role/$f.gz"; src="$(R "sudo -n sha256sum < $DD/$c/$f" | cut -c1-64)"
+      R "sudo -n cat $DD/$c/$f" | gzip -n -9 > "$D/$role/$f.gz"
+      len="$(gzip -dc "$D/$role/$f.gz" | wc -c)"
+      src="$(R "sudo -n head -c $len $DD/$c/$f | sha256sum" | cut -c1-64)"; now="$(R "sudo -n stat -c %s $DD/$c/$f")"
     fi
     cpy="$(gzip -dc "$D/$role/$f.gz" | sha256sum | cut -c1-64)"
-    check "$role $f copy = host file" "$([ "$src" = "$cpy" ] && echo 0 || echo 1)" "sha256 $cpy, gz $(wc -c < "$D/$role/$f.gz") bytes"
+    # the newest hour file is still being appended to: the copy must equal the host file's first $len bytes
+    check "$role $f copy = host file (first $len bytes; host now $now)" "$([ "$src" = "$cpy" ] && echo 0 || echo 1)" \
+      "sha256 $cpy, gz $(wc -c < "$D/$role/$f.gz") bytes"
   done
 done
 x "sha256sum $D/*/*.gz $RP/*"
