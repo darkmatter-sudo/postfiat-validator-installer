@@ -135,7 +135,8 @@ check "pft-integrity PASS on both hosts" "$([ "$(grep -c 'RESULT: PASS' <<<"$XOU
 x "sudo -n pft-fleet skew"
 check "pft-fleet skew exit 0, budget CURRENT on both hosts" "$([ "$XRC" = 0 ] && [ "$(grep -cE '^ *(validator|sentry) +budget +CURRENT' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
 x "systemctl is-active pft-budget-collect.timer pft-budget-pull@sentry.timer; R 'systemctl is-active pft-budget-collect.timer'; systemctl is-failed pft-budget-sampler.service pft-budget-collect.service; R 'systemctl is-failed pft-budget-sampler.service pft-budget-collect.service'"
-check "timers active, nothing failed" "$([ "$(grep -cx active <<<"$XOUT")" = 3 ] && [ "$(grep -cx failed <<<"$XOUT")" = 0 ] && echo 0 || echo 1)"
+# is-failed prints each unit's state (the sampler's "active" too): read the first 3 lines for the timers, then no "failed"
+check "timers active, nothing failed" "$([ "$(head -3 <<<"$XOUT" | grep -cx active)" = 3 ] && [ "$(grep -cx failed <<<"$XOUT")" = 0 ] && echo 0 || echo 1)"
 
 echo; echo "== 12. end window, restore, read back"
 restore
