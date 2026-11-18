@@ -82,7 +82,7 @@ check "HEAD lists 1 acctpolicy manifest line" "$([ "$XOUT" = 1 ] && echo 0 || ec
 x "for c in sshd ssh-keygen jq diff sha256sum; do command -v \$c || ls /usr/sbin/\$c; done | wc -l; R 'for c in sshd ssh-keygen jq diff sha256sum; do command -v \$c || ls /usr/sbin/\$c; done | wc -l'"
 check "sshd ssh-keygen jq diff sha256sum on both hosts" "$([ "$(tr '\n' ' ' <<<"$XOUT")" = "5 5 " ] && echo 0 || echo 1)"
 x "sudo -n true && echo v-sudo-ok; R \"sudo -u $SU_S sudo -n true && echo s-sudo-ok\"; R 'true' && echo s-ssh-ok"
-check "self-test users have sudo -n (validator agent user, sentry $SU_S), real ssh to the sentry works" "$([ "$(grep -cE '^(v-sudo|s-sudo|s-ssh)-ok$' <<<"$XOUT")" = 3 ] && echo 0 || echo 1)"
+check "self-test users have sudo -n (validator agent user, sentry self-test user), real ssh to the sentry works" "$([ "$(grep -cE '^(v-sudo|s-sudo|s-ssh)-ok$' <<<"$XOUT")" = 3 ] && echo 0 || echo 1)"
 { for f in /etc/postfiat-monitor.env /etc/pft-integrity.env; do sudo -n sed -n 's/^NTFY_TOPIC=//p' "$f" 2>/dev/null; done
   R 'for f in /etc/pft-watchdog/ntfy.env /etc/pft-integrity.env /etc/pft-alertpath/ntfy.env; do sudo -n sed -n "s/^NTFY_TOPIC=//p" $f 2>/dev/null; done'
   sed -n 's|^NTFY_URL=.*/||p' "$HOME/.config/pft-alerts/ntfy.env" 2>/dev/null
