@@ -51,3 +51,6 @@ require pft_fwaudit_sentry.prom
 # pft-peertls (weekly audit Mon 05:23 UTC)
 textfile pft_peertls_*.prom   8d   pft_peertls_last_run_timestamp_seconds
 require pft_peertls_sentry.prom
+# pft-budget (report every 5 minutes)
+textfile pft_budget_*.prom   15m   pft_budget_report_timestamp_seconds
+require pft_budget_sentry.prom
