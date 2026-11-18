@@ -1,0 +1,112 @@
+# budget/logs/08-mutants.log - recorded single-mutant run at a97de5d5746bc0dfa0b0f0a3cc8418524b6ad1f7 (2026-11-18T13:22:26Z)
+$ git rev-parse HEAD; git status --short | wc -l
+a97de5d5746bc0dfa0b0f0a3cc8418524b6ad1f7
+0
+$ sha256sum budget/budget.py budget/pft-budget.sh budget/tests/test_budget.py budget/tests/mutate.py alerts/budget.rules.yml alerts/budget.tests.yml
+f39dff2c0a8fc8636a38bd66e2f3ef9c354cf543c237cef85de5824f31350b85  budget/budget.py
+33c74cc450d392b2912ddbaf4683dd8b4563ee41fe406d57742f7f34b7ec9583  budget/pft-budget.sh
+f72b243e5f983527e4948714a462766f3e9b386d4af2e3c7f0a45f797dc439cf  budget/tests/test_budget.py
+51ab135adf17cf34965519fbbe3c0cda313c6c18e4fc3fed3c71c92c0eb405d4  budget/tests/mutate.py
+3908099251a7082298c97307651b4764790b64bc1be92f284c6aadda3c0f8ce4  alerts/budget.rules.yml
+6dcc56c20e2a49911004c8ddf4c9c1b54add1aa960fdf718e4d3b5b381af7bd7  alerts/budget.tests.yml
+$ TMPDIR=$HOME/.cache python3 -m pytest -q budget/tests
+............................................................             [100%]
+60 passed in 5.53s
+(exit 0)
+$ shellcheck budget/pft-budget.sh budget/install.sh budget/drill/install-run.sh budget/drill/upgrade-run.sh budget/drill/histarchive-run.sh
+(exit 0)
+$ (cd budget && ruff check . && ruff format --check .)
+All checks passed!
+4 files already formatted
+(exit 0)
+$ TEST_TMPDIR=$HOME/.cache nice -n 15 python3 -u budget/tests/mutate.py --jobs 2
+control baseline suite (unmutated copy): PASS Ran 60 tests in 4.439s / OK
+control baseline promtool (unmutated copy): PASS SUCCESS
+control timeout (report never returns, --hang-timeout 30): HANG after 30 s, 0 process(es) left
+B01 CAUGHT - page cache counted as unreclaimable [2 failing: test_read_cgroup_fields, test_lifecycle_peak_and_result]
+B02 CAUGHT - anon not counted [2 failing: test_read_cgroup_fields, test_lifecycle_peak_and_result]
+B03 CAUGHT - io read bytes ignored [1 failing: test_read_cgroup_fields]
+B04 CAUGHT - io write bytes from rbytes [1 failing: test_read_cgroup_fields]
+B05 CAUGHT - memory.max 'max' read as 0 [1 failing: test_read_cgroup_fields]
+B06 CAUGHT - scan ignores the unit glob [1 failing: test_scan_only_pft_services]
+B07 CAUGHT - scan accepts non-directories [1 failing: test_scan_only_pft_services]
+B08 CAUGHT - vanished cgroup raises [1 failing: test_read_vanished_cgroup_is_none]
+B82 CAUGHT - dead (ENODEV) cgroup raises [2 failing: test_read_cgroup_dead_files_is_none, test_tick_skips_a_dead_cgroup]
+B83 CAUGHT - any read error swallowed as vanished [1 failing: test_read_cgroup_dead_files_is_none]
+B09 CAUGHT - pre-existing invocations marked complete [1 failing: test_lifecycle_peak_and_result]
+B10 CAUGHT - peak is last sample [1 failing: test_lifecycle_peak_and_result]
+B11 CAUGHT - unreclaimable peak is last sample [1 failing: test_lifecycle_peak_and_result]
+B12 CAUGHT - no running checkpoints [1 failing: test_running_checkpoint]
+B13 CAUGHT - checkpoint one interval late [1 failing: test_running_checkpoint]
+B14 CAUGHT - result of a later run attributed [1 failing: test_result_of_other_invocation_is_ignored]
+B15 CAUGHT - oom-kill result not counted [1 failing: test_oom_kill_result_counts_as_oom]
+B16 CAUGHT - vanished units never finalized [3 failing: test_oom_kill_result_counts_as_oom, test_result_of_other_invocation_is_ignored, test_lifecycle_peak_and_result]
+B17 CAUGHT - invocation change not detected [1 failing: test_new_invocation_while_present_finalizes_old]
+B18 CAUGHT - invocation id never re-checked [1 failing: test_new_invocation_while_present_finalizes_old]
+B19 CAUGHT - systemd runtime ignored [1 failing: test_lifecycle_peak_and_result]
+B20 CAUGHT - no rotation [1 failing: test_rotation_is_bounded]
+B21 CAUGHT - rotation keeps one file too many [1 failing: test_rotation_is_bounded]
+B22 CAUGHT - running checkpoint beats final [1 failing: test_final_beats_running_and_torn_line]
+B23 CAUGHT - older checkpoint wins [1 failing: test_final_beats_running_and_torn_line]
+B24 CAUGHT - torn line not counted [1 failing: test_final_beats_running_and_torn_line]
+B25 CAUGHT - window lower bound dropped [1 failing: test_window_and_p50]
+B26 CAUGHT - OOM runs not counted from oom_kills [2 failing: test_never_lower_on_few_runs_or_oom, test_uncapped_with_oom_is_fail]
+B27 CAUGHT - OOM does not fail [3 failing: test_never_lower_on_few_runs_or_oom, test_oom_fails_even_with_headroom, test_uncapped_with_oom_is_fail]
+B28 CAUGHT - fail fraction strict [1 failing: test_exactly_fail_fraction_fails]
+B29 CAUGHT - WARN at exactly 2x [2 failing: test_ok_unit_never_raised_by_rounding, test_exactly_2x_headroom_is_ok]
+B30 CAUGHT - no headroom WARN [7 failing: test_cli_rc, test_metrics_labels_and_codes, test_apply_then_rollback, test_plan_actions_and_exclusions ...]
+B31 CAUGHT - 30-day projection ignored [1 failing: test_projection_30d_over_cap_fails]
+B32 CAUGHT - 90-day projection ignored [1 failing: test_projection_90d_over_cap_warns]
+B33 CAUGHT - uncapped OOM stays UNCAPPED [1 failing: test_uncapped_with_oom_is_fail]
+B34 CAUGHT - projection on too few runs [1 failing: test_too_few_runs_no_projection]
+B63 CAUGHT - projection over a short span [1 failing: test_short_span_no_projection]
+B64 CAUGHT - span bound strict [2 failing: test_ok_with_flat_peaks, test_short_span_no_projection]
+B35 CAUGHT - negative growth lowers projection [1 failing: test_shrinking_peaks_do_not_project_down]
+B36 CAUGHT - projection from the mean time, not now [2 failing: test_linear_projection_hand_computed, test_projection_30d_over_cap_fails]
+B37 CAUGHT - projection ignores slope [2 failing: test_linear_projection_hand_computed, test_projection_30d_over_cap_fails]
+B38 CAUGHT - target ignores projection [1 failing: test_linear_projection_hand_computed]
+B39 CAUGHT - target not rounded up [6 failing: test_apply_detects_cap_not_in_force, test_apply_dry_run_writes_nothing, test_apply_then_rollback, test_plan_actions_and_exclusions ...]
+B40 CAUGHT - report rc ignores FAIL [2 failing: test_cli_rc, test_report_passthrough_rc]
+B41 CAUGHT - p50 is the lower middle [1 failing: test_window_and_p50]
+B42 CAUGHT - host label missing on up [2 failing: test_metrics_labels_and_codes, test_collect_writes_validated_textfile]
+B43 CAUGHT - None values exported [2 failing: test_metrics_labels_and_codes, test_collect_writes_validated_textfile]
+B44 CAUGHT - plan ignores exclusions [2 failing: test_apply_then_rollback, test_plan_actions_and_exclusions]
+B45 CAUGHT - plan covers other hosts [1 failing: test_plan_actions_and_exclusions]
+B46 CAUGHT - uncapped set on few runs [1 failing: test_never_set_on_few_runs]
+B47 CAUGHT - raise also for OK units [1 failing: test_ok_unit_never_raised_by_rounding]
+B48 CAUGHT - lower without --allow-lower [2 failing: test_apply_then_rollback, test_plan_actions_and_exclusions]
+B50 CAUGHT - lower on few runs [1 failing: test_never_lower_on_few_runs_or_oom]
+B51 CAUGHT - apply without a window [1 failing: test_apply_refused_without_window_writes_nothing]
+B52 CAUGHT - apply writes excluded units [1 failing: test_apply_refuses_excluded_unit_even_if_planned]
+B53 CAUGHT - dry run writes [1 failing: test_apply_dry_run_writes_nothing]
+B54 CAUGHT - drop-in mode 0600 [1 failing: test_apply_then_rollback]
+B55 CAUGHT - apply check always OK [1 failing: test_apply_detects_cap_not_in_force]
+B56 CAUGHT - daemon-reload failure ignored [1 failing: test_apply_reports_unapplied_cap]
+B57 CAUGHT - rollback without a window [1 failing: test_rollback_refused_without_window]
+B58 CAUGHT - rollback keeps new drop-ins [1 failing: test_apply_then_rollback]
+B59 CAUGHT - rollback record reused [1 failing: test_apply_then_rollback]
+B60 CAUGHT - unknown conf keys accepted [1 failing: test_shell_keys_ignored_unknown_rejected]
+B61 CAUGHT - FAIL_FRACTION > 1 accepted [5 failing: test_bad_values, test_cli_rc, test_exactly_fail_fraction_fails, test_peak_near_cap_fails ...]
+B62 CAUGHT - free-form HOST accepted [1 failing: test_bad_values]
+S01 CAUGHT - stale heartbeat reported ok [1 failing: test_status]
+S02 CAUGHT - oversized textfile written [1 failing: test_collect_over_budget_is_up0]
+S03 CAUGHT - validate skips host label [2 failing: test_collect_writes_validated_textfile, test_pull]
+S04 CAUGHT - validate needs no up sample [1 failing: test_validate_rejects_foreign_and_malformed]
+S05 CAUGHT - validate accepts malformed values [1 failing: test_validate_rejects_foreign_and_malformed]
+S06 CAUGHT - helper failure keeps the report [1 failing: test_collect_helper_failure_is_up0]
+S07 CAUGHT - collect rc 0 on failure [2 failing: test_collect_helper_failure_is_up0, test_collect_over_budget_is_up0]
+S08 CAUGHT - pull without --host [1 failing: test_pull]
+U01 CAUGHT - sampler uncapped [1 failing: test_sampler_unit_caps_itself]
+U02 CAUGHT - sampler writable / [1 failing: test_sampler_unit_caps_itself]
+R01 CAUGHT - cap rule at 0.95 [promtool FAILED: peak at 0.9 x cap fires after 30m; raising the cap resolves the alert]
+R02 CAUGHT - projection rule dropped [promtool FAILED: 30-day projection at the cap fires]
+R03 CAUGHT - cap rule for 10m [promtool FAILED: peak at 0.9 x cap fires after 30m]
+R04 CAUGHT - stale ignores up 0 [promtool FAILED: up 0 fires Stale after 15m]
+R05 CAUGHT - heartbeat age 1200 [promtool FAILED: frozen sampler heartbeat fires Stale (age > 900 s for 15m)]
+R06 CAUGHT - report age ignored [promtool FAILED: frozen report fires Stale (age > 1800 s for 15m)]
+R07 CAUGHT - stale for 5m [promtool FAILED: frozen report fires Stale (age > 1800 s for 15m); frozen sampler heartbeat fires Stale (age > 900 s for 15m); up 0 fires Stale after 15m]
+R08 CAUGHT - projection strict [promtool FAILED: 30-day projection at the cap fires]
+orphan check: 0 process(es) still running that name this run's scratch dir
+RESULT: 83 caught, 0 survived, 0 not applied, 0 broken of 83
+mutate rc=0
+# end 2026-11-18T13:26:48Z

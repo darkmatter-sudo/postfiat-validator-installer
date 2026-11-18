@@ -1,0 +1,137 @@
+histarchive bounded-verify deploy - 2026-11-18T13:48:10Z - repo HEAD 94cbac8b4f6e63bcb87daa5264afd671375529a7 (clean: yes)
+
+== 0. preflight (read-only)
+$ sha256sum histarchive/histarchive.py | cut -c1-64; sudo -n sha256sum /usr/local/lib/pft-histarchive/histarchive.py | cut -c1-64; R 'sha256sum /usr/local/lib/pft-histarchive/histarchive.py | cut -c1-64'; git show babb974524b8:histarchive/histarchive.py | sha256sum | cut -c1-64
+  4db728a63c0db7a264bde69db22952d5e679da1d5030429264de4e1f77b20bb6
+  4db728a63c0db7a264bde69db22952d5e679da1d5030429264de4e1f77b20bb6
+  4db728a63c0db7a264bde69db22952d5e679da1d5030429264de4e1f77b20bb6
+  8fab6fcfe81b6b5810bf355820be1c2ff2647d23cc6932955a9297ef9a79ffea
+  (exit 0)
+CHECK ok   RECHECK: installed helper on both hosts = HEAD bytes (deployed)
+$ git diff --name-only babb974524b8 94cbac8b4f6e63bcb87daa5264afd671375529a7 -- histarchive | grep -vE '^histarchive/(logs|tests|drill)/'; git diff babb974524b8 94cbac8b4f6e63bcb87daa5264afd671375529a7 -- fleet/manifest.tsv | grep -cE '^[-+]histarchive'
+  histarchive/README.md
+  histarchive/histarchive.py
+  histarchive/ruff.toml
+  0
+  (exit 1)
+CHECK ok   since babb974524b8 only histarchive.py, README and ruff.toml (not installed) changed; 0 histarchive manifest rows changed
+$ cat /etc/systemd/system/pft-histarchive-periodic.service.d/50-memory.conf 2>&1; systemctl show -p MemoryMax --value pft-histarchive-periodic.service; grep -n '^MemoryMax=' histarchive/systemd/pft-histarchive-periodic.service; sudo -n sha256sum /etc/systemd/system/pft-histarchive-periodic.service | cut -c1-64; sha256sum histarchive/systemd/pft-histarchive-periodic.service | cut -c1-64
+  cat: /etc/systemd/system/pft-histarchive-periodic.service.d/50-memory.conf: No such file or directory
+  536870912
+  34:MemoryMax=512M
+  fb56ee0c134d9bc1da530907f0700fe7a96fd217863d1373f73d8afd71aab028
+  fb56ee0c134d9bc1da530907f0700fe7a96fd217863d1373f73d8afd71aab028
+  (exit 0)
+CHECK ok   RECHECK: no stop-gap drop-in, effective 536870912; installed unit = repo bytes (MemoryMax=512M)
+$ sudo -n pft-schedaudit audit | grep SUMMARY
+  SUMMARY entries=112 enabled=99 findings=1 allowed=1 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+  (exit 0)
+CHECK ok   pft-schedaudit: new=0 removed=0 unexpected_findings=0
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 273 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 162 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts
+$ srv_state
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ systemctl is-active pft-budget-sampler.service pft-histarchive.service; R 'systemctl is-active pft-budget-sampler.service'
+  active
+  active
+  active
+  (exit 0)
+CHECK ok   samplers active on both hosts, follower active
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+$ other_alerts; curl -s http://<redacted-ip>:9093/api/v2/silences | jq -r '.[] | select(.status.state == "active") | "\(.createdBy) \(.endsAt)"'
+  
+  (exit 0)
+CHECK ok   alert queries answered
+CHECK ok   nothing but the watchdog active, no active silence
+
+== 6. the REAL unit at MemoryMax=512M: next periodic run verifies
+$ sudo -n rm -f /var/lib/pft-histarchive/verified-head && sudo -n systemctl start pft-histarchive-periodic.service; echo rc=$?; systemctl show -p Result -p ExecMainStatus -p MemoryMax pft-histarchive-periodic.service
+  rc=0
+  Result=success
+  ExecMainStatus=0
+  MemoryMax=536870912
+  (exit 0)
+CHECK ok   pft-histarchive-periodic.service run exit 0, Result success
+$ rec pft-histarchive-periodic.service 1795009755; grep -hE '^pft_histarchive_verify_(ok|failures|timestamp_seconds)' /var/lib/pft-exporter/textfile/pft_histarchive.prom
+  pft-histarchive-periodic.service peak_unrecl_mib 96.6 peak_mib 97 oom_kills 0 mem_max 536870912 result success samples 19 runtime_s 18.901
+  pft_histarchive_verify_ok{host="validator"} 1
+  pft_histarchive_verify_failures{host="validator"} 0
+  pft_histarchive_verify_timestamp_seconds{host="validator"} 1795009774
+  (exit 0)
+CHECK ok   real run: sampler record at mem_max 536870912, oom 0, peak_unrecl <= 256 MiB, verify_ok 1
+
+== 7. sentry: the replica check runs the shipped helper there
+$ sudo -n pft-histarchive verify-replica | tail -3
+  pft-histarchive verify-replica - 2026-11-18T13:49:36Z | local REPLICA.json vs the peer's copy
+  RESULT: PASS - local files 11, peer files 11, fails 0
+  (exit 0)
+CHECK ok   verify-replica exit 0
+
+== 10. VERIFIED: pft-budget report rows
+$ sudo -n systemctl start pft-budget-collect.service && R 'sudo -n systemctl start pft-budget-collect.service' && sudo -n systemctl start pft-budget-pull@sentry.service && echo collected
+  collected
+  (exit 0)
+CHECK ok   budget collect on both hosts + pull exit 0
+$ sudo -n pft-budget report | grep -E -A2 '^validator +pft-histarchive'; sudo -n pft-budget report | grep '^RESULT'; R 'sudo -n pft-budget report' | grep '^RESULT'
+  validator  pft-histarchive-periodic.service                25      3MiB     97MiB     97MiB    512MiB    5.30x         -         -      19s    0 OK
+                                                            - runs span 0.08 d < PROJ_MIN_SPAN_DAYS 3: no projection
+  validator  pft-histarchive-verify-after-sealed.service      1     95MiB     95MiB     95MiB    512MiB    5.37x         -         -      15s    0 OK
+                                                            - only 1 run(s) < MIN_RUNS 3: no projection
+  validator  pft-histarchive-verify-after.service             1     95MiB     95MiB     95MiB    512MiB    5.37x         -         -      14s    0 OK
+                                                            - only 1 run(s) < MIN_RUNS 3: no projection
+  validator  pft-histarchive-verify-before-sealed.service     1    518MiB    518MiB    518MiB   1024MiB    1.98x         -         -      14s    0 WARN
+                                                            - headroom 1.98x < 2x (peak 518MiB)
+                                                            - only 1 run(s) < MIN_RUNS 3: no projection
+  validator  pft-histarchive-verify-before.service            1    603MiB    603MiB    605MiB   1024MiB    1.70x         -         -      33s    0 WARN
+                                                            - headroom 1.70x < 2x (peak 603MiB)
+                                                            - only 1 run(s) < MIN_RUNS 3: no projection
+  validator  pft-histarchive.service                          1    109MiB    109MiB    122MiB    256MiB    2.34x         -         -     901s    0 OK
+                                                            - only 1 run(s) < MIN_RUNS 3: no projection
+  validator  pft-integrity.service                            2     51MiB     51MiB     51MiB         -        -         -         -      34s    0 UNCAPPED
+  RESULT: 6 OK, 2 WARN, 0 FAIL, 53 UNCAPPED
+  RESULT: 2 OK, 0 WARN, 0 FAIL, 25 UNCAPPED
+  (exit 0)
+CHECK ok   report: no FAIL verdict on either host
+CHECK ok   report: pft-histarchive-periodic.service cap 512MiB, verdict OK
+
+== 11. integrity, skew
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 273 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 162 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts
+$ sudo -n pft-fleet skew | grep -E 'histarchive|SUMMARY'
+  sentry     histarchive CURRENT    
+  validator  histarchive CURRENT    
+  SUMMARY CURRENT=84 BEHIND=0 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 0)
+CHECK ok   pft-fleet skew: histarchive CURRENT on both hosts, nothing BEHIND
+
+== 12. end window, restore, read back
+CHECK ok   pft-maint target back to its pre-run state
+$ sudo -n systemctl start pft-keyescrow.service; grep -h '^pft_keyescrow_drift_items{node="validator"}' /var/lib/pft-exporter/textfile/pft_keyescrow.prom
+  pft_keyescrow_drift_items{node="validator"} 0
+  (exit 0)
+CHECK ok   pft-keyescrow re-run: validator drift_items 0
+$ for i in $(seq 0 15 300); do n=$(other_alerts | grep -c .); echo "+${i}s: $n"; [ "$n" = 0 ] && break; sleep 15; done; other_alerts
+  +0s: 0
+  (exit 0)
+CHECK ok   nothing but the watchdog pending/firing
+$ srv_state
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing at the end
+operator topic read-back waits 90 s
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the run (2 topic(s), 0 with messages)
+
+histarchive-run done 2026-11-18T13:53:19Z: 0 check(s) failed -> PASS
