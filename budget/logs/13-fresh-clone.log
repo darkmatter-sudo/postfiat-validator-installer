@@ -1,0 +1,86 @@
+OS: Ubuntu 22.04.5 LTS | 2026-11-18T14:13:04Z | budget fresh-clone verification at 4a3c294a3604a1844332c69828c450f5d54fc111 | shellcheck 0.8.0 | Python 3.10.12 | ruff 0.17.1
+(work dir: a new mktemp dir under ~/.cache, mode 755; /tmp is noexec on this host)
+$ env -u GH_TOKEN -u GITHUB_TOKEN GIT_TERMINAL_PROMPT=0 git -c credential.helper= clone -q https://github.com/darkmatter-sudo/postfiat-validator-installer.git repo
+(exit 0)
+$ git checkout -q 4a3c294a3604a1844332c69828c450f5d54fc111 && git rev-parse HEAD
+4a3c294a3604a1844332c69828c450f5d54fc111
+(exit 0)
+$ git status --short | wc -l
+0
+(exit 0)
+== key files vs the files installed on both hosts (logs/12: the code running when the JSONL was taken)
+$ sha256sum budget/pft-budget.sh budget/budget.py budget/systemd/pft-budget-sampler.service budget/systemd/pft-budget-collect.service histarchive/histarchive.py histarchive/pft-histarchive.sh | cut -c1-64 > ~/.cache/tmp.MKymlA75MN/now.txt && cat ~/.cache/tmp.MKymlA75MN/now.txt
+33c74cc450d392b2912ddbaf4683dd8b4563ee41fe406d57742f7f34b7ec9583
+f39dff2c0a8fc8636a38bd66e2f3ef9c354cf543c237cef85de5824f31350b85
+9855cf3c392e92e6cb7073b58848e74bd2cd101abc8a35e79ccba8b34591f304
+2ed7a90f1e2fb3ccf5b70b1cacfd8aeccf19e5ad9d2618c486782a3cae5e60a7
+4db728a63c0db7a264bde69db22952d5e679da1d5030429264de4e1f77b20bb6
+279bc5fe4547f36c224b85132bb44e83db3124332335d6328312a13ffae9e344
+(exit 0)
+$ sed -n '/^== installed key files, validator/,/^==/p' budget/logs/12-snapshot.log | grep -E '^[0-9a-f]{64} ' | cut -c1-64 > ~/.cache/tmp.MKymlA75MN/validator.txt && diff ~/.cache/tmp.MKymlA75MN/validator.txt ~/.cache/tmp.MKymlA75MN/now.txt && echo 'identical: 6/6 sha256 equal the validator install'
+identical: 6/6 sha256 equal the validator install
+(exit 0)
+$ sed -n '/^== installed key files, sentry/,/^==/p' budget/logs/12-snapshot.log | grep -E '^[0-9a-f]{64} ' | cut -c1-64 > ~/.cache/tmp.MKymlA75MN/sentry.txt && diff ~/.cache/tmp.MKymlA75MN/sentry.txt ~/.cache/tmp.MKymlA75MN/now.txt && echo 'identical: 6/6 sha256 equal the sentry install'
+identical: 6/6 sha256 equal the sentry install
+(exit 0)
+== committed sampler JSONL vs the sha256 taken at the snapshot (logs/12)
+$ grep -E '^[0-9a-f]{64}  logs/data/' budget/logs/12-snapshot.log | (cd budget && sha256sum -c)
+logs/data/sentry-samples.jsonl: OK
+logs/data/validator-samples.jsonl: OK
+(exit 0)
+== static checks
+$ shellcheck budget/*.sh budget/drill/*.sh histarchive/pft-histarchive.sh
+(exit 0)
+$ cd budget && ruff check . && ruff format --check .
+All checks passed!
+4 files already formatted
+(exit 0)
+$ cd histarchive && ruff check . && ruff format --check .
+All checks passed!
+10 files already formatted
+(exit 0)
+== test suites
+$ cd budget && TMPDIR=~/.cache/tmp.MKymlA75MN timeout 900 python3 -m pytest -q -p no:cacheprovider tests </dev/null 2>&1 | tail -n 3
+............................................................             [100%]
+60 passed in 4.65s
+(exit 0)
+$ cd histarchive && TMPDIR=~/.cache/tmp.MKymlA75MN TEST_TMPDIR=~/.cache/tmp.MKymlA75MN timeout 1500 python3 -m unittest tests/test_histarchive.py tests/test_wrapper.py tests/test_diskcost.py tests/test_fillgap.py </dev/null > ~/.cache/tmp.MKymlA75MN/unit.txt 2>&1; rc=$?; tail -n 4 ~/.cache/tmp.MKymlA75MN/unit.txt; exit $rc
+----------------------------------------------------------------------
+Ran 121 tests in 358.145s
+
+OK
+(exit 0)
+== promtool (pinned image already on the host)
+$ docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /w prom/prometheus:v3.5.0 check rules budget.rules.yml histarchive.rules.yml
+Checking budget.rules.yml
+  SUCCESS: 2 rules found
+
+Checking histarchive.rules.yml
+  SUCCESS: 4 rules found
+
+(exit 0)
+$ docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /w prom/prometheus:v3.5.0 test rules budget.tests.yml histarchive.tests.yml
+  SUCCESS
+
+  SUCCESS
+
+(exit 0)
+== offline report rebuild from the committed JSONL (example conf = live conf values, --now from logs/data/NOW)
+$ python3 -I budget/budget.py --conf budget/pft-budget.env.example report  --now $(cat budget/logs/data/NOW) --data budget/logs/data/validator-samples.jsonl budget/logs/data/sentry-samples.jsonl > ~/.cache/tmp.MKymlA75MN/report.txt; echo "report rc $?"; cmp ~/.cache/tmp.MKymlA75MN/report.txt budget/logs/data/report-offline.txt && echo 'cmp exit 0: txt report byte-identical'
+report rc 2
+cmp exit 0: txt report byte-identical
+(exit 0)
+$ python3 -I budget/budget.py --conf budget/pft-budget.env.example report --json --now $(cat budget/logs/data/NOW) --data budget/logs/data/validator-samples.jsonl budget/logs/data/sentry-samples.jsonl > ~/.cache/tmp.MKymlA75MN/report.json; echo "report rc $?"; cmp ~/.cache/tmp.MKymlA75MN/report.json budget/logs/data/report-offline.json && echo 'cmp exit 0: json report byte-identical'
+report rc 2
+cmp exit 0: json report byte-identical
+(exit 0)
+$ grep -E 'histarchive-(periodic|verify)|^RESULT' budget/logs/data/report-offline.txt
+validator  pft-histarchive-periodic.service                29      4MiB     97MiB     97MiB    512MiB    5.30x         -         -      19s    0 OK
+validator  pft-histarchive-verify-after-sealed.service      1     95MiB     95MiB     95MiB    512MiB    5.37x         -         -      15s    0 OK
+validator  pft-histarchive-verify-after.service             1     95MiB     95MiB     95MiB    512MiB    5.37x         -         -      14s    0 OK
+validator  pft-histarchive-verify-before-sealed.service     1    518MiB    518MiB    518MiB   1024MiB    1.98x         -         -      14s    0 WARN
+validator  pft-histarchive-verify-before.service            1    603MiB    603MiB    605MiB   1024MiB    1.70x         -         -      33s    0 WARN
+RESULT: 8 OK, 2 WARN, 0 FAIL, 79 UNCAPPED
+(exit 0)
+
+fresh-clone done 2026-11-18T14:19:27Z: 0 check(s) failed -> PASS

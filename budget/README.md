@@ -173,4 +173,4 @@ The stop-gap was removed only after the after-run showed more than 2x headroom u
 | 10 | recheck preflight stop: run 09's rollout silence still active | stopped before any change; `upgrade-run.sh` now expires its own silence |
 | 11 | histarchive RECHECK (`RECHECK=1`): real periodic unit at 512M without the drop-in | **PASS, 0 failed**: 96.6 MiB, oom 0, integrity/skew/schedaudit clean, operator topics 0 |
 | 12 | snapshot: both hosts' sampler JSONL (`logs/data/`), offline report, installed key-file sha256 on both hosts | installed = repo bytes on both hosts |
-| 13 | fresh anonymous public clone (`drill/fresh-clone.sh`) | see log |
+| 13 | fresh anonymous public clone at `4a3c294` (`drill/fresh-clone.sh`): sha256 of 6 key files vs both installs (log 12), JSONL sha256, shellcheck, ruff, both suites, promtool, offline report rebuild | **PASS, 0 failed**: 6/6 equal on both hosts, JSONL 2/2 OK, budget 60 passed, histarchive 121 OK, promtool SUCCESS, txt and `--json` report `cmp` exit 0 |
