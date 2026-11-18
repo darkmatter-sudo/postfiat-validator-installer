@@ -38,6 +38,7 @@ rule_files:
   - /etc/pft-alerts/aptrust.rules.yml     # ../aptrust (APT source/key/option/permission or /usr/local binary trust FAIL; stale audit)
   - /etc/pft-alerts/alertstats.rules.yml  # ../alertstats (an alertname flapping in the observed ALERTS history; report could not capture Prometheus)
   - /etc/pft-alerts/budget.rules.yml      # ../budget (a pft-* unit's measured memory peak or 30-day projection at its MemoryMax; stale sampler/report)
+  - /etc/pft-alerts/valwatch.rules.yml    # ../valwatch (a UNL validator silent/late at a node, quorum margin thin or zero, stale collector, stream reconnecting)
   - /etc/pft-slo/*.rules.yml    # ../slo (availability SLO + burn-rate alerts); run-stack.sh mounts it
 alerting:
   alertmanagers:

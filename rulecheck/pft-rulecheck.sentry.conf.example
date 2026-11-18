@@ -54,3 +54,6 @@ require pft_peertls_sentry.prom
 # pft-budget (report every 5 minutes)
 textfile pft_budget_*.prom   15m   pft_budget_report_timestamp_seconds
 require pft_budget_sentry.prom
+# pft-valwatch (textfile every minute)
+textfile pft_valwatch_*.prom   5m   pft_valwatch_collect_timestamp_seconds
+require pft_valwatch_postfiatd-sentry.prom
