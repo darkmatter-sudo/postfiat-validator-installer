@@ -149,3 +149,8 @@ public ledger data: validator keys, ledger hashes and indexes, and receive times
 - `logs/06-mutants.log`: 63/64; P18 (a `q=0` server_info sample replacing the known quorum) survived because its
   test compared only summary margins; the test now compares every ledger's quorum.
 - `logs/07-mutants.log`: 64/64 caught, 0 survived/not applied/broken; baseline, hang and orphan controls PASS.
+- `logs/08-install-preflight.log`: `PREFLIGHT_ONLY=1 bash valwatch/drill/install-run.sh` at ad849f2: all 11 preflight checks ok,
+  nothing changed.
+- `logs/09-install.log`: recorded two-host install through pft-fleet in a pft-maint window (throwaway [MAINT] topic):
+  0 of 52 checks failed; collectors active from 20:24Z on both hosts, integrity/schedaudit/aptrust/rulecheck clean,
+  0 AppArmor/seccomp denials, operator topics 0 messages.

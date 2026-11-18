@@ -1,0 +1,81 @@
+valwatch two-host install - 2026-11-18T20:15:24Z - Ubuntu 22.04.5 LTS - repo HEAD ad849f277861db849aa928da7322f38561140fb0 (clean: yes)
+
+== 0. preflight (read-only)
+$ sha256sum valwatch/pft-valwatch.sh valwatch/valwatch.py valwatch/install.sh valwatch/drill/install-run.sh valwatch/systemd/* alerts/valwatch.rules.yml alerts/valwatch.tests.yml fleet/manifest.tsv
+  ebe7cc657d635327a82cf867aa6bd1c811bb8d1352d04f68a56118d6e5cd1e3b  valwatch/pft-valwatch.sh
+  8a11e34a6b1559bbb4d8864416c8680a7836a9e0ddeb488c037a8582fd208849  valwatch/valwatch.py
+  2d446c11411426e9a147fe2d64d569d57f7a4c626dd91ddd6aeff872c04022a3  valwatch/install.sh
+  a2581330954bb03a2cc88ce47dff589d953827b01f857251f50b126eb311f84c  valwatch/drill/install-run.sh
+  5c927ae6e66fb7e67a861d42b6b7b24e901d6e03396344ac0fec4a946e59ca02  valwatch/systemd/pft-valwatch-pull@.service
+  8c76c1a0c8451a7d839f76a618acf09f64e0596712781333cae61aba19218294  valwatch/systemd/pft-valwatch-pull@.timer
+  71d352d9bbe1f5100c65301de786340d881022cfd9e4a30b7e3edce386575650  valwatch/systemd/pft-valwatch-textfile@.service
+  91fded11a827de9b20c6de044996b5e1555650b0cfe6c7db0b430eb747962069  valwatch/systemd/pft-valwatch-textfile@.timer
+  846af5f7a6855780d9b36e942c7d8a979bd9f994811397f788366c28b54f866e  valwatch/systemd/pft-valwatch@.service
+  ae06fddfa08c33e0a83040e4844197d70c6eb069e9ea1e9827c71d18d7397a31  alerts/valwatch.rules.yml
+  90c13f4f0ab996be833b0b88a25b02979bdd8b02c69a782866afc2bf142320c3  alerts/valwatch.tests.yml
+  fef76d04b245d58ee958d06cc371e03e40e1bf8cab9036a9f65fc4cef7623518  fleet/manifest.tsv
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 274 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 163 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts before install
+$ srv_state
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ ls /usr/local/bin/pft-valwatch /etc/pft-valwatch.env /var/lib/pft-valwatch 2>&1; R 'ls /usr/local/bin/pft-valwatch /etc/pft-valwatch.env /var/lib/pft-valwatch 2>&1'
+  ls: cannot access '/usr/local/bin/pft-valwatch': No such file or directory
+  ls: cannot access '/etc/pft-valwatch.env': No such file or directory
+  ls: cannot access '/var/lib/pft-valwatch': No such file or directory
+  ls: cannot access '/usr/local/bin/pft-valwatch': No such file or directory
+  ls: cannot access '/etc/pft-valwatch.env': No such file or directory
+  ls: cannot access '/var/lib/pft-valwatch': No such file or directory
+  (exit 2)
+CHECK ok   not installed yet on either host (no script, conf or data dir)
+$ grep -c '^valwatch ' fleet/manifest.tsv; grep -c valwatch.rules.yml alerts/prometheus.yml; grep -c pft_valwatch rulecheck/pft-rulecheck.conf.example; grep -c pft_valwatch rulecheck/pft-rulecheck.sentry.conf.example
+  7
+  1
+  3
+  2
+  (exit 0)
+CHECK ok   HEAD lists 7 valwatch manifest lines, the rule file and 3 + 2 rulecheck lines
+$ for h in L R; do if [ $h = L ]; then bash -c 'for c in python3 jq awk timeout docker; do command -v $c; done | wc -l; df --output=avail -B1M /var/lib | tail -1; sudo -n test -f /etc/pft-rulecheck.conf && echo rc-conf'; else R 'for c in python3 jq awk timeout docker; do command -v $c; done | wc -l; df --output=avail -B1M /var/lib | tail -1; sudo -n test -f /etc/pft-rulecheck.conf && echo rc-conf'; fi; done
+  5
+  58565
+  rc-conf
+  5
+  72847
+  rc-conf
+  (exit 0)
+CHECK ok   python3 jq awk timeout docker, >= 2048 MiB free under /var/lib (MAX_DIR_BYTES 512 MiB) and a pft-rulecheck conf on both hosts
+$ sudo -n env TEXT_BUDGET=999999 pft-jobwatch collect --stdout 2>/dev/null | wc -c; R 'sudo -n env TEXT_BUDGET=999999 pft-jobwatch collect --stdout 2>/dev/null | wc -c'; sudo -n sed -n 's/^TEXT_BUDGET=//p' /etc/pft-jobwatch.env
+  43158
+  21431
+  65000
+  (exit 0)
+CHECK ok   jobwatch textfiles have room for the new timers (validator 43158 + 2x1200, sentry 21431 + 1200 <= budget 65000 / 61440)
+$ pull_probe
+  1
+  pull-ssh-ok
+  (exit 0)
+CHECK ok   the pull's ssh command (pft-statewatch's PULL_SSH, non-empty) reaches the sentry when run as root
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+$ curl -s --max-time 10 http://<redacted-ip>:9090/api/v1/alerts | jq -r .status; curl -s --max-time 10 http://<redacted-ip>:9093/api/v2/status | jq -r 'if (.uptime // "") != "" then "up" else "down" end'
+  success
+  up
+  (exit 0)
+CHECK ok   Prometheus and Alertmanager answer (alert gates below fail closed)
+$ curl -s http://<redacted-ip>:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'; curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '.data.alerts[] | "\(.labels.alertname) \(.state)"' | sort | uniq -c
+  0
+        1 PFTAlertPipelineWatchdog firing
+  (exit 0)
+known pending before the run (accepted by the preflight): none
+CHECK ok   no active silence; only the pipeline watchdog (+ KNOWN_PENDING) pending/firing in Prometheus
+$ curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '[.data.alerts[] | select(.state == "firing" and .labels.alertname != "PFTAlertPipelineWatchdog")] | length'
+  0
+  (exit 0)
+CHECK ok   nothing but the watchdog FIRING (KNOWN_PENDING may only be pending)
+PREFLIGHT_ONLY: stopping before any change (0 failed)
