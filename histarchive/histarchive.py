@@ -698,13 +698,61 @@ def read_segment(path):
     return gz, gzip.decompress(gz)
 
 
+def slim_record(rec):
+    """check_record once, keep only what verify_archive needs (drops the header/tx hex)."""
+    hdr, probs = check_record(rec)
+    return {
+        "i": rec.get("i"),
+        "h": rec.get("h"),
+        "hdr": hdr is not None,
+        "parent": hdr["parent_hash"] if hdr is not None else None,
+        "probs": probs,
+        "ntx": len(rec.get("t", [])),
+    }
+
+
 def verify_archive(root, include_active=True):
     """Full offline verification. Returns a result dict; result["fail"] lists every FAIL."""
     ar = Archive(root)
     fails, notes = [], []
     entries = ar.manifest_entries() if os.path.exists(ar.manifest) else []
     gaps = ar.gap_ranges()
-    stream = []  # (source, raw bytes)
+    # Each source is parsed and every record self-checked as soon as it is read, and only a slim
+    # record is kept, so peak memory is one decoded segment plus ~0.3 kB per ledger (the old
+    # whole-archive buffer was OOM-killed at 512M on a 10-day archive). Fail order is unchanged:
+    # manifest/file checks, then unlisted segments, then the per-source checks (p1fails).
+    p1fails = []
+    main, fills = (
+        [],
+        [],
+    )  # main: [(src, slim)] in stream order; fills: [(entry, [(src, slim)])]
+
+    def parse_source(src, raw, e):
+        if raw and not raw.endswith(b"\n"):
+            p1fails.append(f"{src}: last line is torn (no newline)")
+        recs = []
+        for ln, x in enumerate(raw.split(b"\n"), 1):
+            if not x.strip():
+                continue
+            try:
+                recs.append(slim_record(json.loads(x)))
+            except ValueError:
+                p1fails.append(f"{src} line {ln}: not JSON")
+        if e is not None and recs:
+            if (recs[0]["i"], recs[-1]["i"], len(recs)) != (
+                e["first"],
+                e["last"],
+                e["count"],
+            ):
+                p1fails.append(f"{src}: first/last/count differ from MANIFEST")
+            if recs[-1].get("h") != e["last_hash"]:
+                p1fails.append(f"{src}: last ledger hash differs from MANIFEST")
+            if recs[0]["hdr"] is not None and recs[0]["parent"] != e["first_parent"]:
+                p1fails.append(f"{src}: first_parent differs from MANIFEST")
+        if e is not None and e.get("kind") == "fill":
+            fills.append((e, [(src, r) for r in recs]))
+        else:
+            main.extend((src, r) for r in recs)
 
     prev_entry = None
     for n, e in enumerate(entries, 1):
@@ -736,7 +784,8 @@ def verify_archive(root, include_active=True):
             fails.append(
                 f"segment {e['segment']}: sha256 of the content differs from MANIFEST"
             )
-        stream.append((e["segment"], raw, e))
+        parse_source(e["segment"], raw, e)
+        del gz, raw
     listed = {e.get("segment") for e in entries}
     if os.path.isdir(ar.segments):
         for f in sorted(os.listdir(ar.segments)):
@@ -745,40 +794,8 @@ def verify_archive(root, include_active=True):
     if include_active:
         for day in ar.active_days():
             with open(ar.active_path(day), "rb") as fh:
-                stream.append((f"active/{day}.jsonl", fh.read(), None))
-
-    # pass 1: parse each source and check it against its MANIFEST entry
-    main, fills = (
-        [],
-        [],
-    )  # main: [(src, rec)] in stream order; fills: [(entry, [(src, rec)])]
-    for src, raw, e in stream:
-        if raw and not raw.endswith(b"\n"):
-            fails.append(f"{src}: last line is torn (no newline)")
-        recs = []
-        for ln, x in enumerate(raw.split(b"\n"), 1):
-            if not x.strip():
-                continue
-            try:
-                recs.append(json.loads(x))
-            except ValueError:
-                fails.append(f"{src} line {ln}: not JSON")
-        if e is not None and recs:
-            if (recs[0]["i"], recs[-1]["i"], len(recs)) != (
-                e["first"],
-                e["last"],
-                e["count"],
-            ):
-                fails.append(f"{src}: first/last/count differ from MANIFEST")
-            if recs[-1].get("h") != e["last_hash"]:
-                fails.append(f"{src}: last ledger hash differs from MANIFEST")
-            hdr, _p = check_record(recs[0])
-            if hdr is not None and hdr["parent_hash"] != e["first_parent"]:
-                fails.append(f"{src}: first_parent differs from MANIFEST")
-        if e is not None and e.get("kind") == "fill":
-            fills.append((e, [(src, r) for r in recs]))
-        else:
-            main += [(src, r) for r in recs]
+                parse_source(f"active/{day}.jsonl", fh.read(), None)
+    fails += p1fails
 
     # fills: each covers exactly one recorded gap, once; splice its ledgers in at the gap
     filled, standalone = set(), []
@@ -844,8 +861,8 @@ def verify_archive(root, include_active=True):
     for anchor, stream in streams:
         prev = (stream[0][1].get("i", 0) - 1, anchor) if stream and anchor else None
         for src, r in stream:
-            hdr, probs = check_record(r)
-            for p in probs:
+            hdr = r["hdr"]
+            for p in r["probs"]:
                 fails.append(f"{src} ledger {r.get('i')}: {p}")
             i = r.get("i")
             if prev is not None:
@@ -864,13 +881,13 @@ def verify_archive(root, include_active=True):
                         notes.append(
                             f"recorded gap {gap[0]}-{gap[1]} (chain restarts at {i})"
                         )
-                elif hdr is not None and hdr["parent_hash"] != prev[1]:
+                elif hdr is not None and r["parent"] != prev[1]:
                     fails.append(
                         f"{src} ledger {i}: chain: parent_hash does not equal ledger {prev[0]}'s hash"
                     )
             prev = (i, r.get("h"))
             count += 1
-            txs += len(r.get("t", []))
+            txs += r["ntx"]
     first = main[0][1].get("i") if main else None
     prev = (main[-1][1].get("i"), main[-1][1].get("h")) if main else None
     for a, b in sorted(filled):
