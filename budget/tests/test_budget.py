@@ -419,7 +419,8 @@ class TestReport(Base):
         self.assertIsNotNone(self.one(recs, t_now=T0 + 3 * DAY)["proj30"])  # exactly 3 days: projected
 
     def test_too_few_runs_no_projection(self):
-        u = self.one([rec("pft-a.service", T0, 100 * MIB), rec("pft-a.service", T0 + DAY, 100 * MIB)])
+        # 4 days apart: only MIN_RUNS (not the span) stops the projection
+        u = self.one([rec("pft-a.service", T0, 100 * MIB), rec("pft-a.service", T0 + 4 * DAY, 100 * MIB)], T0 + 4 * DAY)
         self.assertIsNone(u["proj30"])
         self.assertIn("only 2 run(s) < MIN_RUNS 3", u["reasons"][-1])
 

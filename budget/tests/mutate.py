@@ -155,7 +155,7 @@ MUTANTS = [
         'if cap is None and fail:\n        verdict = "FAIL"',
         'if False:\n        verdict = "FAIL"',
     ),
-    ("B34", B, "projection on too few runs", 'if len(recs) >= conf["MIN_RUNS"]:', "if True:"),
+    ("B34", B, "projection on too few runs", 'if len(recs) >= conf["MIN_RUNS"] and span_days', "if span_days"),
     ("B63", B, "projection over a short span", 'and span_days >= conf["PROJ_MIN_SPAN_DAYS"]:', ":"),
     (
         "B64",

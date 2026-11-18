@@ -1,0 +1,658 @@
+budget two-host install - 2026-11-18T11:35:46Z - Ubuntu 22.04.5 LTS - repo HEAD 835ae15805e5f2e443749622bf5c1eb54fad5a1a (clean: yes)
+
+== 0. preflight (read-only)
+$ sha256sum budget/pft-budget.sh budget/budget.py budget/install.sh budget/drill/install-run.sh budget/systemd/* alerts/budget.rules.yml alerts/budget.tests.yml fleet/manifest.tsv
+  33c74cc450d392b2912ddbaf4683dd8b4563ee41fe406d57742f7f34b7ec9583  budget/pft-budget.sh
+  62c4b01a6bef3d342f37c669b5035926ecf78d7a912f30a139fc6ce4b8a3b69a  budget/budget.py
+  c5820b5b2f9fd0b852b5efc42bf84c654c123c2bc146e9218bf63739c81924b9  budget/install.sh
+  5440eb9a7915a8fd6fa91c017fd7a7ce607ecc9f7e78ef4369e37e0d6b11ceda  budget/drill/install-run.sh
+  2ed7a90f1e2fb3ccf5b70b1cacfd8aeccf19e5ad9d2618c486782a3cae5e60a7  budget/systemd/pft-budget-collect.service
+  57789b0c8451031989d43e0f39cb3f22eb4d48d5eb33043816fa9f5527a2f65c  budget/systemd/pft-budget-collect.timer
+  6f6d05a8cc626372271fa9882eebedb9baf49b0a891cc0204d2683adc998c6e7  budget/systemd/pft-budget-pull@.service
+  9819c65d3861d18eb531a495c221b7b37bb471a634c1768f44b45197e93042bc  budget/systemd/pft-budget-pull@.timer
+  9855cf3c392e92e6cb7073b58848e74bd2cd101abc8a35e79ccba8b34591f304  budget/systemd/pft-budget-sampler.service
+  3908099251a7082298c97307651b4764790b64bc1be92f284c6aadda3c0f8ce4  alerts/budget.rules.yml
+  6dcc56c20e2a49911004c8ddf4c9c1b54add1aa960fdf718e4d3b5b381af7bd7  alerts/budget.tests.yml
+  a49b4e7d02aa4104fd90b61a4e514cc6774040637def1844de0df5bd133fdbea  fleet/manifest.tsv
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 268 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 158 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts before install
+$ srv_state
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ ls /usr/local/bin/pft-budget /etc/pft-budget.env /var/lib/pft-budget 2>&1; R 'ls /usr/local/bin/pft-budget /etc/pft-budget.env /var/lib/pft-budget 2>&1'; getent passwd pft-budget | wc -l; R 'getent passwd pft-budget | wc -l'
+  ls: cannot access '/usr/local/bin/pft-budget': No such file or directory
+  ls: cannot access '/etc/pft-budget.env': No such file or directory
+  ls: cannot access '/var/lib/pft-budget': No such file or directory
+  ls: cannot access '/usr/local/bin/pft-budget': No such file or directory
+  ls: cannot access '/etc/pft-budget.env': No such file or directory
+  ls: cannot access '/var/lib/pft-budget': No such file or directory
+  0
+  0
+  (exit 0)
+CHECK ok   not installed yet on either host (no files, no pft-budget user)
+$ grep -c '^budget ' fleet/manifest.tsv; grep -c budget.rules.yml alerts/prometheus.yml; grep -c pft_budget rulecheck/pft-rulecheck.conf.example; grep -c pft_budget rulecheck/pft-rulecheck.sentry.conf.example
+  7
+  1
+  3
+  2
+  (exit 0)
+CHECK ok   HEAD lists 7 budget manifest lines, the rule file and 3 + 2 rulecheck lines
+$ for h in L R; do if [ $h = L ]; then bash -c 'for c in python3 jq awk timeout useradd; do command -v $c; done | wc -l; test -f /sys/fs/cgroup/cgroup.controllers && echo cgroup2; sudo -n test -f /etc/pft-rulecheck.conf && echo rc-conf'; else R 'for c in python3 jq awk timeout useradd; do command -v $c; done | wc -l; test -f /sys/fs/cgroup/cgroup.controllers && echo cgroup2; sudo -n test -f /etc/pft-rulecheck.conf && echo rc-conf'; fi; done
+  5
+  cgroup2
+  rc-conf
+  5
+  cgroup2
+  rc-conf
+  (exit 0)
+CHECK ok   python3 jq awk timeout useradd, cgroup v2 and a pft-rulecheck conf on both hosts
+$ sudo -n env TEXT_BUDGET=999999 pft-jobwatch collect --stdout 2>/dev/null | wc -c; R 'sudo -n env TEXT_BUDGET=999999 pft-jobwatch collect --stdout 2>/dev/null | wc -c'; sudo -n sed -n 's/^TEXT_BUDGET=//p' /etc/pft-jobwatch.env
+  41984
+  20879
+  65000
+  (exit 0)
+CHECK ok   jobwatch textfiles have room for the new timers (validator 41984 + 2x1200, sentry 20879 + 1200 <= budget 65000 / 61440)
+$ pull_probe
+  1
+  pull-ssh-ok
+  (exit 0)
+CHECK ok   the pull's ssh command (pft-statewatch's PULL_SSH, non-empty) reaches the sentry when run as root
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+$ curl -s --max-time 10 http://<redacted-ip>:9090/api/v1/alerts | jq -r .status; curl -s --max-time 10 http://<redacted-ip>:9093/api/v2/status | jq -r 'if (.uptime // "") != "" then "up" else "down" end'
+  success
+  up
+  (exit 0)
+CHECK ok   Prometheus and Alertmanager answer (alert gates below fail closed)
+$ curl -s http://<redacted-ip>:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'; curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '.data.alerts[] | "\(.labels.alertname) \(.state)"' | sort | uniq -c
+  0
+        1 PFTAlertPipelineWatchdog firing
+  (exit 0)
+known pending before the run (accepted by the preflight): none
+CHECK ok   no active silence; only the pipeline watchdog (+ KNOWN_PENDING) pending/firing in Prometheus
+$ curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '[.data.alerts[] | select(.state == "firing" and .labels.alertname != "PFTAlertPipelineWatchdog")] | length'
+  0
+  (exit 0)
+CHECK ok   nothing but the watchdog FIRING (KNOWN_PENDING may only be pending)
+
+== 1. rollout silence (new rules; rulecheck/fleet/aptrust/schedaudit/jobwatch/keyescrow see new files and timers; not the watchdog)
+CHECK ok   Alertmanager silence created (budget rules, rulecheck, fleet, aptrust, schedaudit, jobwatch, keyescrow; not the watchdog) until 2026-11-18T12:36:45Z
+
+== 2. pft-maint window, [MAINT] messages to a throwaway topic (real file kept as $BK)
+real /etc/pft-maint/ntfy.env present before: 0
+$ { [ $HAD = 0 ] || sudo -n cp -p $NE $BK; } && printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' "$TT" | sudo -n tee $NE >/dev/null && sudo -n chmod 600 $NE && sudo -n stat -c '%a %U' $NE
+  600 root
+  (exit 0)
+CHECK ok   throwaway target installed
+$ sudo -n pft-maint start --ttl 40m --reason 'task_9fb56f10 budget install'
+  window started: id m1795001805-1171075 until 2026-11-18T12:16:45Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint window open
+CHECK ok   sentry has the window (via the watchdog channel) after 30s
+
+== 3. pft-fleet: manifest (fleet add-on), budget, then aptrust's allowlist copy
+$ sudo -n pft-fleet sync --addon fleet --to 835ae15805e5f2e443749622bf5c1eb54fad5a1a --apply --reason 'task_9fb56f10 budget manifest lines'
+  [2026-11-18T11:37:45Z] sync fleet to 835ae15805e5f2e443749622bf5c1eb54fad5a1a (2026-11-18T11:34:24+00:00) REF main=835ae15805e5f2e443749622bf5c1eb54fad5a1a
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN validator validator /usr/local/sbin/pft-fleet 0755 CURRENT 61cafcfcdaa9 61cafcfcdaa9 keep
+  PLAN validator validator /usr/local/lib/pft-fleet/fleet_lib.py 0644 CURRENT dcb37d26f33f dcb37d26f33f keep
+  PLAN validator validator /usr/local/lib/pft-fleet/manifest.tsv 0644 BEHIND e6f192dc4635 a49b4e7d02aa write
+  PLAN validator validator /etc/systemd/system/pft-fleet.service 0644 CURRENT 3105a2f0a144 3105a2f0a144 keep
+  PLAN validator validator /etc/systemd/system/pft-fleet.timer 0644 CURRENT 79839ee00a81 79839ee00a81 keep
+  [2026-11-18T11:37:45Z] order: sentry validator
+  [2026-11-18T11:37:45Z] sentry: every fleet file already at 835ae15805e5 - nothing to do
+  [2026-11-18T11:37:45Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/lib/pft-fleet/manifest.tsv sha256 e6f192dc4635 -> /var/lib/pft-fleet/backup/20261118T113745Z-fleet-validator
+  WRITE validator /usr/local/lib/pft-fleet/manifest.tsv e6f192dc4635 -> a49b4e7d02aa mode 0644
+  GATE validator sha256 /usr/local/lib/pft-fleet/manifest.tsv = target a49b4e7d02aa PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync fleet@835ae15805e5 (manifest.tsv)
+  [2026-11-18T11:38:29Z] SYNCED validator fleet -> 835ae15805e5
+  [2026-11-18T11:38:29Z] sync complete
+  (exit 0)
+CHECK ok   fleet manifest sync exit 0
+$ sudo -n pft-fleet sync --addon budget --to 835ae15805e5f2e443749622bf5c1eb54fad5a1a --apply --reason 'task_9fb56f10 budget 835ae15 first install'
+  [2026-11-18T11:38:56Z] sync budget to 835ae15805e5f2e443749622bf5c1eb54fad5a1a (2026-11-18T11:34:24+00:00) REF main=835ae15805e5f2e443749622bf5c1eb54fad5a1a
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN sentry sentry /usr/local/bin/pft-budget 0755 MISSING - 33c74cc450d3 write
+  PLAN sentry sentry /usr/local/lib/pft-budget/budget.py 0644 MISSING - 62c4b01a6bef write
+  PLAN sentry sentry /etc/systemd/system/pft-budget-sampler.service 0644 MISSING - 9855cf3c392e write
+  PLAN sentry sentry /etc/systemd/system/pft-budget-collect.service 0644 MISSING - 2ed7a90f1e2f write
+  PLAN sentry sentry /etc/systemd/system/pft-budget-collect.timer 0644 MISSING - 57789b0c8451 write
+  PLAN validator validator /usr/local/bin/pft-budget 0755 MISSING - 33c74cc450d3 write
+  PLAN validator validator /usr/local/lib/pft-budget/budget.py 0644 MISSING - 62c4b01a6bef write
+  PLAN validator validator /etc/systemd/system/pft-budget-sampler.service 0644 MISSING - 9855cf3c392e write
+  PLAN validator validator /etc/systemd/system/pft-budget-collect.service 0644 MISSING - 2ed7a90f1e2f write
+  PLAN validator validator /etc/systemd/system/pft-budget-collect.timer 0644 MISSING - 57789b0c8451 write
+  PLAN validator validator /etc/systemd/system/pft-budget-pull@.service 0644 MISSING - 6f6d05a8cc62 write
+  PLAN validator validator /etc/systemd/system/pft-budget-pull@.timer 0644 MISSING - 9819c65d3861 write
+  [2026-11-18T11:38:56Z] order: sentry validator
+  [2026-11-18T11:38:56Z] sentry: 5 file(s) to write
+  PRE sentry pft-maint window active PASS
+  PRE sentry node server_state=full PASS
+  PRE sentry pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP sentry /usr/local/bin/pft-budget absent before sync (rollback removes it)
+  BACKUP sentry /usr/local/lib/pft-budget/budget.py absent before sync (rollback removes it)
+  BACKUP sentry /etc/systemd/system/pft-budget-sampler.service absent before sync (rollback removes it)
+  BACKUP sentry /etc/systemd/system/pft-budget-collect.service absent before sync (rollback removes it)
+  BACKUP sentry /etc/systemd/system/pft-budget-collect.timer absent before sync (rollback removes it)
+  WRITE sentry /usr/local/bin/pft-budget - -> 33c74cc450d3 mode 0755
+  WRITE sentry /usr/local/lib/pft-budget/budget.py - -> 62c4b01a6bef mode 0644
+  WRITE sentry /etc/systemd/system/pft-budget-sampler.service - -> 9855cf3c392e mode 0644
+  WRITE sentry /etc/systemd/system/pft-budget-collect.service - -> 2ed7a90f1e2f mode 0644
+  WRITE sentry /etc/systemd/system/pft-budget-collect.timer - -> 57789b0c8451 mode 0644
+  RELOAD sentry systemctl daemon-reload
+  GATE sentry sha256 /usr/local/bin/pft-budget = target 33c74cc450d3 PASS
+  GATE sentry syntax /usr/local/bin/pft-budget bash -n PASS
+  GATE sentry sha256 /usr/local/lib/pft-budget/budget.py = target 62c4b01a6bef PASS
+  GATE sentry syntax /usr/local/lib/pft-budget/budget.py python PASS
+  GATE sentry sha256 /etc/systemd/system/pft-budget-sampler.service = target 9855cf3c392e PASS
+  GATE sentry unit pft-budget-sampler.service LoadState=loaded PASS
+  GATE sentry sha256 /etc/systemd/system/pft-budget-collect.service = target 2ed7a90f1e2f PASS
+  GATE sentry unit pft-budget-collect.service LoadState=loaded PASS
+  GATE sentry sha256 /etc/systemd/system/pft-budget-collect.timer = target 57789b0c8451 PASS
+  GATE sentry unit pft-budget-collect.timer LoadState=loaded PASS
+  GATE sentry addon units failed=none PASS
+  GATE sentry node server_state=full PASS
+  ACCEPT sentry pft-integrity baseline updated: pft-fleet sync budget@835ae15805e5 (pft-budget,budget.py,pft-budget-sampler.service,pft-budget-collect.service,pft-budget-collect.timer)
+  [2026-11-18T11:40:00Z] SYNCED sentry budget -> 835ae15805e5
+  [2026-11-18T11:40:00Z] validator: 7 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/bin/pft-budget absent before sync (rollback removes it)
+  BACKUP validator /usr/local/lib/pft-budget/budget.py absent before sync (rollback removes it)
+  BACKUP validator /etc/systemd/system/pft-budget-sampler.service absent before sync (rollback removes it)
+  BACKUP validator /etc/systemd/system/pft-budget-collect.service absent before sync (rollback removes it)
+  BACKUP validator /etc/systemd/system/pft-budget-collect.timer absent before sync (rollback removes it)
+  BACKUP validator /etc/systemd/system/pft-budget-pull@.service absent before sync (rollback removes it)
+  BACKUP validator /etc/systemd/system/pft-budget-pull@.timer absent before sync (rollback removes it)
+  WRITE validator /usr/local/bin/pft-budget - -> 33c74cc450d3 mode 0755
+  WRITE validator /usr/local/lib/pft-budget/budget.py - -> 62c4b01a6bef mode 0644
+  WRITE validator /etc/systemd/system/pft-budget-sampler.service - -> 9855cf3c392e mode 0644
+  WRITE validator /etc/systemd/system/pft-budget-collect.service - -> 2ed7a90f1e2f mode 0644
+  WRITE validator /etc/systemd/system/pft-budget-collect.timer - -> 57789b0c8451 mode 0644
+  WRITE validator /etc/systemd/system/pft-budget-pull@.service - -> 6f6d05a8cc62 mode 0644
+  WRITE validator /etc/systemd/system/pft-budget-pull@.timer - -> 9819c65d3861 mode 0644
+  RELOAD validator systemctl daemon-reload
+  GATE validator sha256 /usr/local/bin/pft-budget = target 33c74cc450d3 PASS
+  GATE validator syntax /usr/local/bin/pft-budget bash -n PASS
+  GATE validator sha256 /usr/local/lib/pft-budget/budget.py = target 62c4b01a6bef PASS
+  GATE validator syntax /usr/local/lib/pft-budget/budget.py python PASS
+  GATE validator sha256 /etc/systemd/system/pft-budget-sampler.service = target 9855cf3c392e PASS
+  GATE validator unit pft-budget-sampler.service LoadState=loaded PASS
+  GATE validator sha256 /etc/systemd/system/pft-budget-collect.service = target 2ed7a90f1e2f PASS
+  GATE validator unit pft-budget-collect.service LoadState=loaded PASS
+  GATE validator sha256 /etc/systemd/system/pft-budget-collect.timer = target 57789b0c8451 PASS
+  GATE validator unit pft-budget-collect.timer LoadState=loaded PASS
+  GATE validator sha256 /etc/systemd/system/pft-budget-pull@.service = target 6f6d05a8cc62 PASS
+  GATE validator unit pft-budget-pull@.service template (instances checked below) PASS
+  GATE validator sha256 /etc/systemd/system/pft-budget-pull@.timer = target 9819c65d3861 PASS
+  GATE validator unit pft-budget-pull@.timer template (instances checked below) PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync budget@835ae15805e5 (pft-budget,budget.py,pft-budget-sampler.service,pft-budget-collect.service,pft-budget-collect.timer,pft-budget-pull@.service,pft-budget-pull@.timer)
+  [2026-11-18T11:40:57Z] SYNCED validator budget -> 835ae15805e5
+  [2026-11-18T11:40:58Z] sync complete
+  (exit 0)
+CHECK ok   budget sync exit 0 (files written + integrity accepted by pft-fleet)
+$ sudo -n pft-fleet sync --addon aptrust --to 835ae15805e5f2e443749622bf5c1eb54fad5a1a --apply --reason 'task_9fb56f10 aptrust allowlist copy += budget rows'
+  [2026-11-18T11:41:25Z] sync aptrust to 835ae15805e5f2e443749622bf5c1eb54fad5a1a (2026-11-18T11:34:24+00:00) REF main=835ae15805e5f2e443749622bf5c1eb54fad5a1a
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN sentry sentry /usr/local/bin/pft-aptrust 0755 CURRENT 0e7722706169 0e7722706169 keep
+  PLAN sentry sentry /usr/local/lib/pft-aptrust/manifest.tsv 0644 BEHIND e6f192dc4635 a49b4e7d02aa write
+  PLAN sentry sentry /etc/systemd/system/pft-aptrust.service 0644 CURRENT 4dfc8751acb0 4dfc8751acb0 keep
+  PLAN sentry sentry /etc/systemd/system/pft-aptrust.timer 0644 CURRENT 1f6d67e56237 1f6d67e56237 keep
+  PLAN validator validator /usr/local/bin/pft-aptrust 0755 CURRENT 0e7722706169 0e7722706169 keep
+  PLAN validator validator /usr/local/lib/pft-aptrust/manifest.tsv 0644 BEHIND e6f192dc4635 a49b4e7d02aa write
+  PLAN validator validator /etc/systemd/system/pft-aptrust.service 0644 CURRENT 4dfc8751acb0 4dfc8751acb0 keep
+  PLAN validator validator /etc/systemd/system/pft-aptrust.timer 0644 CURRENT 1f6d67e56237 1f6d67e56237 keep
+  PLAN validator validator /etc/systemd/system/pft-aptrust-pull.service 0644 CURRENT 25f018e00e72 25f018e00e72 keep
+  PLAN validator validator /etc/systemd/system/pft-aptrust-pull.timer 0644 CURRENT edf767945c09 edf767945c09 keep
+  [2026-11-18T11:41:25Z] order: sentry validator
+  [2026-11-18T11:41:25Z] sentry: 1 file(s) to write
+  PRE sentry pft-maint window active PASS
+  PRE sentry node server_state=full PASS
+  PRE sentry pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP sentry /usr/local/lib/pft-aptrust/manifest.tsv sha256 e6f192dc4635 -> /var/lib/pft-fleet/backup/20261118T114125Z-aptrust-sentry
+  WRITE sentry /usr/local/lib/pft-aptrust/manifest.tsv e6f192dc4635 -> a49b4e7d02aa mode 0644
+  GATE sentry sha256 /usr/local/lib/pft-aptrust/manifest.tsv = target a49b4e7d02aa PASS
+  GATE sentry addon units failed=none PASS
+  GATE sentry node server_state=full PASS
+  ACCEPT sentry pft-integrity baseline updated: pft-fleet sync aptrust@835ae15805e5 (manifest.tsv)
+  [2026-11-18T11:42:22Z] SYNCED sentry aptrust -> 835ae15805e5
+  [2026-11-18T11:42:22Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/lib/pft-aptrust/manifest.tsv sha256 e6f192dc4635 -> /var/lib/pft-fleet/backup/20261118T114125Z-aptrust-validator
+  WRITE validator /usr/local/lib/pft-aptrust/manifest.tsv e6f192dc4635 -> a49b4e7d02aa mode 0644
+  GATE validator sha256 /usr/local/lib/pft-aptrust/manifest.tsv = target a49b4e7d02aa PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync aptrust@835ae15805e5 (manifest.tsv)
+  [2026-11-18T11:43:04Z] SYNCED validator aptrust -> 835ae15805e5
+  [2026-11-18T11:43:04Z] sync complete
+  (exit 0)
+CHECK ok   aptrust sync exit 0 (its manifest copy follows the new rows)
+$ sha256sum budget/pft-budget.sh budget/budget.py budget/systemd/pft-budget-sampler.service budget/systemd/pft-budget-collect.service budget/systemd/pft-budget-collect.timer | cut -c1-64; sudo -n sha256sum /usr/local/bin/pft-budget /usr/local/lib/pft-budget/budget.py /etc/systemd/system/pft-budget-sampler.service /etc/systemd/system/pft-budget-collect.service /etc/systemd/system/pft-budget-collect.timer | cut -c1-64; R 'sha256sum /usr/local/bin/pft-budget /usr/local/lib/pft-budget/budget.py /etc/systemd/system/pft-budget-sampler.service /etc/systemd/system/pft-budget-collect.service /etc/systemd/system/pft-budget-collect.timer | cut -c1-64'
+  33c74cc450d392b2912ddbaf4683dd8b4563ee41fe406d57742f7f34b7ec9583
+  62c4b01a6bef3d342f37c669b5035926ecf78d7a912f30a139fc6ce4b8a3b69a
+  9855cf3c392e92e6cb7073b58848e74bd2cd101abc8a35e79ccba8b34591f304
+  2ed7a90f1e2fb3ccf5b70b1cacfd8aeccf19e5ad9d2618c486782a3cae5e60a7
+  57789b0c8451031989d43e0f39cb3f22eb4d48d5eb33043816fa9f5527a2f65c
+  33c74cc450d392b2912ddbaf4683dd8b4563ee41fe406d57742f7f34b7ec9583
+  62c4b01a6bef3d342f37c669b5035926ecf78d7a912f30a139fc6ce4b8a3b69a
+  9855cf3c392e92e6cb7073b58848e74bd2cd101abc8a35e79ccba8b34591f304
+  2ed7a90f1e2fb3ccf5b70b1cacfd8aeccf19e5ad9d2618c486782a3cae5e60a7
+  57789b0c8451031989d43e0f39cb3f22eb4d48d5eb33043816fa9f5527a2f65c
+  33c74cc450d392b2912ddbaf4683dd8b4563ee41fe406d57742f7f34b7ec9583
+  62c4b01a6bef3d342f37c669b5035926ecf78d7a912f30a139fc6ce4b8a3b69a
+  9855cf3c392e92e6cb7073b58848e74bd2cd101abc8a35e79ccba8b34591f304
+  2ed7a90f1e2fb3ccf5b70b1cacfd8aeccf19e5ad9d2618c486782a3cae5e60a7
+  57789b0c8451031989d43e0f39cb3f22eb4d48d5eb33043816fa9f5527a2f65c
+  (exit 0)
+CHECK ok   installed script + helper + units = repo bytes on both hosts
+$ sha256sum budget/systemd/pft-budget-pull@.service budget/systemd/pft-budget-pull@.timer | cut -c1-64; sudo -n sha256sum /etc/systemd/system/pft-budget-pull@.service /etc/systemd/system/pft-budget-pull@.timer | cut -c1-64; R 'ls /etc/systemd/system/pft-budget-pull@.service 2>&1'
+  6f6d05a8cc626372271fa9882eebedb9baf49b0a891cc0204d2683adc998c6e7
+  9819c65d3861d18eb531a495c221b7b37bb471a634c1768f44b45197e93042bc
+  6f6d05a8cc626372271fa9882eebedb9baf49b0a891cc0204d2683adc998c6e7
+  9819c65d3861d18eb531a495c221b7b37bb471a634c1768f44b45197e93042bc
+  ls: cannot access '/etc/systemd/system/pft-budget-pull@.service': No such file or directory
+  (exit 2)
+CHECK ok   pull units = repo bytes on the validator, absent on the sentry (role validator)
+
+== 5. sentry: install.sh --host sentry
+$ git archive 835ae15805e5f2e443749622bf5c1eb54fad5a1a budget | R 'rm -rf ~/pft-budget-835ae15 && mkdir -m 700 ~/pft-budget-835ae15 && tar -x -C ~/pft-budget-835ae15'
+  
+  (exit 0)
+$ R 'sudo -n bash ~/pft-budget-835ae15/budget/install.sh --host sentry'
+  2026-11-18T11:43:10Z installed /usr/local/bin/pft-budget (sha256 33c74cc450d392b2912ddbaf4683dd8b4563ee41fe406d57742f7f34b7ec9583)
+  2026-11-18T11:43:10Z installed /usr/local/lib/pft-budget/budget.py (sha256 62c4b01a6bef3d342f37c669b5035926ecf78d7a912f30a139fc6ce4b8a3b69a)
+  2026-11-18T11:43:10Z created /etc/pft-budget.env from pft-budget.env.example (HOST=sentry)
+  2026-11-18T11:43:10Z created system user pft-budget
+  Created symlink /etc/systemd/system/multi-user.target.wants/pft-budget-sampler.service → /etc/systemd/system/pft-budget-sampler.service.
+  2026-11-18T11:43:12Z sampler started; waiting for its first heartbeat
+  sampler: ok, last scan 1s ago; data 8.0K in /var/lib/pft-budget
+  2026-11-18T11:43:16Z first collection (through the sandboxed unit):
+  pft_budget_up{host="sentry"} 1
+  pft_budget_sampler_heartbeat_timestamp_seconds{host="sentry"} 1795002196
+  pft_budget_report_timestamp_seconds{host="sentry"} 1795002197
+  Created symlink /etc/systemd/system/timers.target.wants/pft-budget-collect.timer → /etc/systemd/system/pft-budget-collect.timer.
+  2026-11-18T11:43:17Z enabled pft-budget-collect.timer (every 5 minutes at :20)
+  2026-11-18T11:43:17Z added to /etc/pft-rulecheck.conf: textfile pft_budget_*.prom   15m   pft_budget_report_timestamp_seconds
+  2026-11-18T11:43:17Z added to /etc/pft-rulecheck.conf: require pft_budget_sentry.prom
+  (exit 0)
+CHECK ok   sentry install exit 0, sampler heartbeat, first collection up 1, timer enabled
+
+== 6. validator: install.sh --host validator, then PULL_SSH and install.sh --pull sentry
+$ sudo -n bash budget/install.sh --host validator
+  2026-11-18T11:43:17Z installed /usr/local/bin/pft-budget (sha256 33c74cc450d392b2912ddbaf4683dd8b4563ee41fe406d57742f7f34b7ec9583)
+  2026-11-18T11:43:17Z installed /usr/local/lib/pft-budget/budget.py (sha256 62c4b01a6bef3d342f37c669b5035926ecf78d7a912f30a139fc6ce4b8a3b69a)
+  2026-11-18T11:43:17Z created /etc/pft-budget.env from pft-budget.env.example (HOST=validator)
+  2026-11-18T11:43:18Z created system user pft-budget
+  Created symlink /etc/systemd/system/multi-user.target.wants/pft-budget-sampler.service → /etc/systemd/system/pft-budget-sampler.service.
+  2026-11-18T11:43:21Z sampler started; waiting for its first heartbeat
+  sampler: ok, last scan 1s ago; data 12K in /var/lib/pft-budget
+  2026-11-18T11:43:29Z first collection (through the sandboxed unit):
+  pft_budget_up{host="validator"} 1
+  pft_budget_sampler_heartbeat_timestamp_seconds{host="validator"} 1795002209
+  pft_budget_report_timestamp_seconds{host="validator"} 1795002209
+  Created symlink /etc/systemd/system/timers.target.wants/pft-budget-collect.timer → /etc/systemd/system/pft-budget-collect.timer.
+  2026-11-18T11:43:31Z enabled pft-budget-collect.timer (every 5 minutes at :20)
+  2026-11-18T11:43:31Z added to /etc/pft-rulecheck.conf: textfile pft_budget_*.prom   15m   pft_budget_report_timestamp_seconds
+  2026-11-18T11:43:31Z added to /etc/pft-rulecheck.conf: require pft_budget_validator.prom
+  (exit 0)
+CHECK ok   validator install exit 0, sampler heartbeat, first collection up 1, timer enabled
+$ sudo -n bash -c 'grep -q "^PULL_SSH=" /etc/pft-budget.env || grep "^PULL_SSH=" /etc/pft-statewatch.env >> /etc/pft-budget.env; grep -c "^PULL_SSH=" /etc/pft-budget.env; stat -c "%a %U" /etc/pft-budget.env'
+  1
+  644 root
+  (exit 0)
+CHECK ok   validator conf: one PULL_SSH (copied, not printed), root-owned 644 (no secret in it)
+$ sudo -n bash budget/install.sh --pull sentry
+  2026-11-18T11:43:31Z installed /usr/local/bin/pft-budget (sha256 33c74cc450d392b2912ddbaf4683dd8b4563ee41fe406d57742f7f34b7ec9583)
+  2026-11-18T11:43:31Z installed /usr/local/lib/pft-budget/budget.py (sha256 62c4b01a6bef3d342f37c669b5035926ecf78d7a912f30a139fc6ce4b8a3b69a)
+  2026-11-18T11:43:32Z first pull (through the sandboxed unit):
+  pft_budget_up{host="sentry"} 1
+  pft_budget_sampler_heartbeat_timestamp_seconds{host="sentry"} 1795002196
+  pft_budget_report_timestamp_seconds{host="sentry"} 1795002197
+  Created symlink /etc/systemd/system/timers.target.wants/pft-budget-pull@sentry.timer → /etc/systemd/system/pft-budget-pull@.timer.
+  2026-11-18T11:43:34Z added to /etc/pft-rulecheck.conf: require pft_budget_sentry.prom
+  2026-11-18T11:43:34Z enabled pft-budget-pull@sentry.timer (every 5 minutes at :50)
+  (exit 0)
+CHECK ok   validator --pull exit 0, pulled sentry textfile has up 1, timer enabled
+$ sudo -n bash budget/install.sh --host validator 2>&1 | grep -E 'added to|ERROR|created'
+  
+  (exit 1)
+CHECK ok   second install run adds no rulecheck line, creates nothing and reports no error
+
+== 7. rulecheck inputs (written by install.sh)
+$ sudo -n grep -n pft_budget /etc/pft-rulecheck.conf; R 'sudo -n grep -n pft_budget /etc/pft-rulecheck.conf'
+  116:textfile pft_budget_*.prom   15m   pft_budget_report_timestamp_seconds
+  117:require pft_budget_validator.prom
+  118:require pft_budget_sentry.prom
+  70:textfile pft_budget_*.prom   15m   pft_budget_report_timestamp_seconds
+  71:require pft_budget_sentry.prom
+  (exit 0)
+CHECK ok   validator 3 + sentry 2 pft_budget rulecheck lines
+
+== 8. load the alert rules (alerts/ is mounted at /etc/pft-alerts) and check them
+$ sudo -n docker kill -s HUP pft-prometheus >/dev/null && sleep 40 && curl -s http://<redacted-ip>:9090/api/v1/status/runtimeinfo | jq -r .data.reloadConfigSuccess && curl -s http://<redacted-ip>:9090/api/v1/rules | jq -r '.data.groups[] | select(.name == "pft-budget") | .rules[] | [.name, .health, .state] | @tsv'
+  true
+  PFTBudgetCapReached	ok	inactive
+  PFTBudgetStale	ok	inactive
+  (exit 0)
+CHECK ok   config reload ok, 2 budget rules loaded, health ok, inactive
+
+== 9. new units/timers/user + conf: pft-schedaudit accept + collect, jobwatch inventory, then pft-integrity accept, both hosts
+$ sudo -n pft-schedaudit audit | grep -E '^(NEW|REMOVED|SUMMARY)' | cut -c1-160; R 'sudo -n pft-schedaudit audit' | grep -E '^(NEW|REMOVED|SUMMARY)' | cut -c1-160
+  NEW	-	timer/pft-budget-collect.timer@b22d4a598a	-	not in the accepted entry set
+  NEW	-	timer/pft-budget-pull@sentry.timer@7b9585bb7d	-	not in the accepted entry set
+  SUMMARY entries=112 enabled=99 findings=1 allowed=1 unexpected_findings=0 new=2 removed=0 baseline=yes unused_allow=0
+  NEW	-	timer/pft-budget-collect.timer@b22d4a598a	-	not in the accepted entry set
+  SUMMARY entries=75 enabled=62 findings=0 allowed=0 unexpected_findings=0 new=1 removed=0 baseline=yes unused_allow=0
+  (exit 1)
+$ sudo -n pft-schedaudit accept --reason 'task_9fb56f10: pft-budget-sampler + pft-budget-collect + pft-budget-pull@sentry installed' | tail -2; sudo -n pft-schedaudit collect | tail -1
+  accepted 112 entries (+2 -0): task_9fb56f10: pft-budget-sampler + pft-budget-collect + pft-budget-pull@sentry installed
+  (exit 0)
+$ R "sudo -n pft-schedaudit accept --reason 'task_9fb56f10: pft-budget-sampler + pft-budget-collect installed' | tail -2; sudo -n pft-schedaudit collect | tail -1"
+  accepted 75 entries (+1 -0): task_9fb56f10: pft-budget-sampler + pft-budget-collect installed
+  (exit 0)
+$ sudo -n pft-jobwatch inventory 2>&1 | grep -E 'budget|SUMMARY' | cut -c1-200; R 'sudo -n pft-jobwatch inventory 2>&1' | grep -E 'budget|SUMMARY' | cut -c1-200
+  pft-budget-collect.timer	calendar	300	0	0	0	0	1	OnCalendar=*-*-* *:00/5:20
+  pft-budget-pull@sentry.timer	calendar	300	0	0	0	0	1	OnCalendar=*-*-* *:00/5:50
+  pft-budget-collect.timer	calendar	300	0	0	0	0	1	OnCalendar=*-*-* *:00/5:20
+  (exit 0)
+CHECK ok   jobwatch learns a 300 s interval for the 3 budget timers (validator 2, sentry 1)
+$ sudo -n pft-integrity verify | grep -E '^(WARN|FAIL|RESULT)' | sed -E 's/ +sha256.*//' | cut -c1-140 | head -40
+  RESULT: WARN - 268 unchanged, 6 warn, 0 fail -> exit 1
+  (exit 1)
+$ sudo -n pft-integrity accept --reason 'task_9fb56f10: budget 835ae15 installed (pft-budget user, conf, data dir, units, timers, rulecheck.conf, sched items)' | tail -2
+  pft-integrity accept - 2026-11-18T11:45:40Z: re-baselined 274 items by <user>
+  manifest sha256: e9ff3bea399f8ab231379e2582b34874c037a6a0abe589faf10bc154b5bc091c -> 7de68a1bb37be15e42206338d456137e5d80fd2e830aa1f1431db77385852032 (logged to accept.log)
+  (exit 0)
+$ R 'sudo -n pft-integrity verify' | grep -E '^(WARN|FAIL|RESULT)' | sed -E 's/ +sha256.*//' | cut -c1-140 | head -40
+  RESULT: WARN - 158 unchanged, 4 warn, 0 fail -> exit 1
+  (exit 1)
+$ R "sudo -n pft-integrity accept --reason 'task_9fb56f10: budget 835ae15 installed (pft-budget user, conf, data dir, units, timer, rulecheck.conf, sched items)'" | tail -2
+  pft-integrity accept - 2026-11-18T11:46:29Z: re-baselined 162 items by root
+  manifest sha256: 6147be3c7c786a7a6e3dcbd3b3ad5bc9e3d8064dc364e50e2845d63d5f9201da -> 87b52ad1f6fda9197e8e28772c4d8861c58e60a0bb79ab67bb8a0b58a747c141 (logged to accept.log)
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 274 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 162 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts
+$ sudo -n pft-schedaudit audit | grep -E '^SUMMARY'; R 'sudo -n pft-schedaudit audit' | grep -E '^SUMMARY'
+  SUMMARY entries=112 enabled=99 findings=1 allowed=1 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+  SUMMARY entries=75 enabled=62 findings=0 allowed=0 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+  (exit 0)
+CHECK ok   schedaudit on both hosts: 0 unexpected, 0 new/removed
+$ sudo -n systemctl start pft-schedaudit-pull.service; grep -h '^pft_schedaudit_unexpected' /var/lib/pft-exporter/textfile/pft_schedaudit_*.prom | grep -vc ' 0$'
+  0
+  (exit 1)
+CHECK ok   schedaudit textfiles: every pft_schedaudit_unexpected series 0 (validator + pulled sentry copy)
+
+== 10. VERIFIED: sampler under its caps, records, textfiles on both hosts, Prometheus series, aptrust, confinement
+$ TZ=UTC systemctl show -p ActiveState -p User -p MemoryMax -p CPUQuotaPerSecUSec -p CapabilityBoundingSet -p NRestarts pft-budget-sampler.service; R 'TZ=UTC systemctl show -p ActiveState -p User -p MemoryMax -p CPUQuotaPerSecUSec -p CapabilityBoundingSet -p NRestarts pft-budget-sampler.service'
+  NRestarts=0
+  CPUQuotaPerSecUSec=100ms
+  MemoryMax=67108864
+  CapabilityBoundingSet=
+  User=pft-budget
+  ActiveState=active
+  NRestarts=0
+  CPUQuotaPerSecUSec=100ms
+  MemoryMax=67108864
+  CapabilityBoundingSet=
+  User=pft-budget
+  ActiveState=active
+  (exit 0)
+CHECK ok   sampler active as pft-budget, MemoryMax 64M, CPU 10%, no capabilities, 0 restarts, both hosts
+$ sleep 60; sudo -n pft-budget status; sudo -n wc -l /var/lib/pft-budget/samples.jsonl; R 'sudo -n pft-budget status; sudo -n wc -l /var/lib/pft-budget/samples.jsonl'
+  sampler: ok, last scan 1s ago; data 40K in /var/lib/pft-budget
+  62 /var/lib/pft-budget/samples.jsonl
+  sampler: ok, last scan 1s ago; data 32K in /var/lib/pft-budget
+  45 /var/lib/pft-budget/samples.jsonl
+  (exit 0)
+CHECK ok   both samplers fresh and have written records
+$ sudo -n systemctl start pft-budget-collect.service; R 'sudo -n systemctl start pft-budget-collect.service'; sudo -n systemctl start pft-budget-pull@sentry.service; tf_check
+  validator 18903 214 valid
+  sentry 11291 126 valid
+  (exit 0)
+CHECK ok   both textfiles valid and under 61440 bytes
+$ sleep 45; prom_check
+  sentry 126
+  validator 214
+  sentry pft_budget_up 1
+  validator pft_budget_up 1
+  (exit 0)
+CHECK ok   Prometheus has pft_budget series for validator and sentry, up 1 each
+$ sudo -n pft-aptrust audit | grep -E '^(WARN|FAIL) |^RESULT'; R 'sudo -n pft-aptrust audit' | grep -E '^(WARN|FAIL) |^RESULT'
+  RESULT: PASS - 11 sources, 4 keys, 4 containers; 8 pass, 18 info, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 10 sources, 2 keys, 1 containers; 4 pass, 16 info, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   aptrust audit on both hosts: 0 warn, 0 fail (new binaries are in its allowlist copy)
+$ sudo -n systemctl start pft-aptrust.service; R 'sudo -n systemctl start pft-aptrust.service'; sudo -n systemctl start pft-aptrust-pull.service; grep -hE '^pft_aptrust_checks\{.*result="(warn|fail)"' /var/lib/pft-exporter/textfile/pft_aptrust_*.prom
+  pft_aptrust_checks{host="sentry",result="warn"} 0
+  pft_aptrust_checks{host="sentry",result="fail"} 0
+  pft_aptrust_checks{host="validator",result="warn"} 0
+  pft_aptrust_checks{host="validator",result="fail"} 0
+  (exit 0)
+CHECK ok   aptrust textfiles (validator + pulled sentry): warn 0, fail 0
+$ sudo -n pft-apparmor audit | grep -E 'denials|RESULT'; sudo -n pft-seccomp audit | grep -E 'RESULT'; R 'sudo -n pft-apparmor audit | grep -E "denials|RESULT"; sudo -n pft-seccomp audit | grep -E RESULT'
+    [PASS] denials            0 DENIED events in the last 86402s
+  RESULT: PASS
+  RESULT: PASS
+    [PASS] denials            0 DENIED events in the last 86404s
+  RESULT: PASS
+  RESULT: PASS
+  (exit 0)
+CHECK ok   AppArmor + seccomp audits PASS on both hosts with 0 denials (budget never enters the containers)
+
+== 11. fleet skew, rulecheck, timers, jobwatch
+$ sudo -n pft-fleet skew
+  ref main = 835ae15805e5f2e443749622bf5c1eb54fad5a1a
+  host sentry     role sentry    ok
+  host validator  role validator ok
+  HOST       ADDON       STATE      DETAIL
+  sentry     alertpath   CURRENT    
+  sentry     apparmor    CURRENT    
+  sentry     aptrust     CURRENT    
+  sentry     audittrail  CURRENT    
+  sentry     authwatch   CURRENT    
+  sentry     backfill    CURRENT    
+  sentry     backupwatch CURRENT    
+  sentry     budget      CURRENT    
+  sentry     cluster     CURRENT    
+  sentry     divergence  CURRENT    
+  sentry     egress      CURRENT    
+  sentry     feewatch    CURRENT    
+  sentry     fwaudit     CURRENT    
+  sentry     histarchive CURRENT    
+  sentry     integrity   CURRENT    
+  sentry     internals   CURRENT    
+  sentry     jobwatch    CURRENT    
+  sentry     kernwatch   CURRENT    
+  sentry     keyescrow   CURRENT    
+  sentry     kmod        CURRENT    
+  sentry     logship     CURRENT    
+  sentry     maint       CURRENT    
+  sentry     mounts      CURRENT    
+  sentry     patch       CURRENT    
+  sentry     peertls     CURRENT    
+  sentry     peerwatch   CURRENT    
+  sentry     privesc     CURRENT    
+  sentry     resources   CURRENT    
+  sentry     rulecheck   CURRENT    
+  sentry     schedaudit  CURRENT    
+  sentry     seccomp     CURRENT    
+  sentry     selfheal    CURRENT    
+  sentry     sshcrypto   CURRENT    
+  sentry     statewatch  CURRENT    
+  sentry     sysctl      CURRENT    
+  sentry     timesync    CURRENT    
+  sentry     upgradewatch CURRENT    
+  sentry     vulnscan    CURRENT    
+  sentry     watchdog    CURRENT    
+  validator  alertpath   CURRENT    
+  validator  alertstats  CURRENT    
+  validator  apparmor    CURRENT    
+  validator  aptrust     CURRENT    
+  validator  audittrail  CURRENT    
+  validator  authwatch   CURRENT    
+  validator  backfill    CURRENT    
+  validator  backup      CURRENT    
+  validator  backupwatch CURRENT    
+  validator  budget      CURRENT    
+  validator  cluster     CURRENT    
+  validator  divergence  CURRENT    
+  validator  egress      CURRENT    
+  validator  exporter    CURRENT    
+  validator  feewatch    CURRENT    
+  validator  fleet       CURRENT    
+  validator  fwaudit     CURRENT    
+  validator  histarchive CURRENT    
+  validator  integrity   CURRENT    
+  validator  internals   CURRENT    
+  validator  jobwatch    CURRENT    
+  validator  kernwatch   CURRENT    
+  validator  keyescrow   CURRENT    
+  validator  kmod        CURRENT    
+  validator  logship     CURRENT    
+  validator  maint       CURRENT    
+  validator  monitor     CURRENT    
+  validator  mounts      CURRENT    
+  validator  patch       CURRENT    
+  validator  peertls     CURRENT    
+  validator  peerwatch   CURRENT    
+  validator  privesc     CURRENT    
+  validator  resources   CURRENT    
+  validator  retention   CURRENT    
+  validator  rulecheck   CURRENT    
+  validator  schedaudit  CURRENT    
+  validator  seccomp     CURRENT    
+  validator  selfheal    CURRENT    
+  validator  sshcrypto   CURRENT    
+  validator  statewatch  CURRENT    
+  validator  sysctl      CURRENT    
+  validator  timesync    CURRENT    
+  validator  upgradewatch CURRENT    
+  validator  vulnscan    CURRENT    
+  validator  watchdog    CURRENT    
+  SUMMARY CURRENT=84 BEHIND=0 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 0)
+CHECK ok   pft-fleet skew exit 0, budget CURRENT on both hosts, nothing BEHIND/MODIFIED/MISSING/UNEXPECTED/DIVERGED
+$ R 'sudo -n systemctl start pft-jobwatch.service'; sudo -n systemctl start pft-jobwatch-pull.service; echo pulled
+  pulled
+  (exit 0)
+$ s=$(date +%s); sudo -n systemctl start pft-rulecheck.service; sudo -n journalctl -u pft-rulecheck.service --since @$s --no-pager -o cat | grep -E '^RESULT |budget'
+  LIVE     pft-budget/PFTBudgetCapReached                                 3/3
+  LIVE     pft-budget/PFTBudgetStale                                      3/3
+  LIVE     pft-slo-budget/pft:sli_error:ratio_rate30d                     2/2
+  LIVE     pft-slo-budget/pft:slo_budget_remaining:ratio                  2/2
+  FRESH         pft_budget_sentry.prom                            37s   15m00s  pft_budget_report_timestamp_seconds
+  FRESH         pft_budget_validator.prom                         37s   15m00s  pft_budget_report_timestamp_seconds
+  RESULT OK - rules: LIVE 141 PARTIAL 0 DEAD 0 ERROR 0 IGNORED 0 | textfiles: FRESH 66 STALE 0 MISSING 0 LEFTOVER 0 UNCONFIGURED 0 -> exit 0
+  (exit 0)
+CHECK ok   validator pft-rulecheck RESULT OK
+$ R 's=$(date +%s); sudo -n systemctl start pft-rulecheck.service; sudo -n journalctl -u pft-rulecheck.service --since @$s --no-pager -o cat' | grep -E '^RESULT |budget'
+  FRESH         pft_budget_sentry.prom                            40s   15m00s  pft_budget_report_timestamp_seconds
+  RESULT OK - rules: skipped | textfiles: FRESH 31 STALE 0 MISSING 0 LEFTOVER 0 UNCONFIGURED 0 -> exit 0
+  (exit 0)
+CHECK ok   sentry pft-rulecheck RESULT OK
+$ sudo -n systemctl start pft-rulecheck-pull.service; echo pulled
+  pulled
+  (exit 0)
+$ systemctl is-active pft-budget-sampler.service pft-budget-collect.timer pft-budget-pull@sentry.timer; R 'systemctl is-active pft-budget-sampler.service pft-budget-collect.timer'; systemctl is-failed pft-budget-collect.service pft-budget-pull@sentry.service; R 'systemctl is-failed pft-budget-collect.service'
+  active
+  active
+  active
+  active
+  active
+  inactive
+  inactive
+  inactive
+  (exit 1)
+CHECK ok   sampler + timers active and services not failed on both hosts
+$ TZ=UTC systemctl show -p TimersCalendar pft-budget-collect.timer pft-budget-pull@sentry.timer
+  TimersCalendar={ OnCalendar=*-*-* *:00/5:20 ; next_elapse=Wed 2026-11-18 11:55:20 UTC }
+  
+  TimersCalendar={ OnCalendar=*-*-* *:00/5:50 ; next_elapse=Wed 2026-11-18 11:55:50 UTC }
+  (exit 0)
+CHECK ok   timer calendars: collect every 5 minutes at :20, pull at :50
+$ sudo -n systemctl start pft-jobwatch.service; grep -E '^pft_jobwatch_job_(failed|missed|disabled)\{.*budget' /var/lib/pft-exporter/textfile/pft_jobwatch_validator.prom; wc -c < /var/lib/pft-exporter/textfile/pft_jobwatch_validator.prom
+  pft_jobwatch_job_disabled{host="validator",timer="pft-budget-collect.timer"} 0
+  pft_jobwatch_job_disabled{host="validator",timer="pft-budget-pull@sentry.timer"} 0
+  pft_jobwatch_job_failed{host="validator",timer="pft-budget-collect.timer"} 0
+  pft_jobwatch_job_failed{host="validator",timer="pft-budget-pull@sentry.timer"} 0
+  pft_jobwatch_job_missed{host="validator",timer="pft-budget-collect.timer"} 0
+  pft_jobwatch_job_missed{host="validator",timer="pft-budget-pull@sentry.timer"} 0
+  43152
+  (exit 0)
+CHECK ok   jobwatch sees both validator budget timers: not failed, missed or disabled
+
+== 12. end window, restore the real target, compare, keyescrow, read back the throwaway and every operator topic
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+$ sudo -n rm -f $NE   (no ntfy.env before: pft-maint falls back to the real monitor target again)
+CHECK ok   pft-maint target back to its pre-run state (/etc/pft-maint/ntfy.env: absent again)
+$ sudo -n test ! -e $BK && echo backup gone
+  backup gone
+  (exit 0)
+$ sudo -n systemctl start pft-keyescrow.service; grep -h '^pft_keyescrow_drift_items{node="validator"}' /var/lib/pft-exporter/textfile/pft_keyescrow.prom
+  pft_keyescrow_drift_items{node="validator"} 0
+  (exit 0)
+CHECK ok   pft-keyescrow re-run after the ntfy.env restore: validator drift_items 0
+$ sleep 5; curl -s --max-time 15 "https://ntfy.sh/$TT/json?poll=1&since=1795001746" | jq -r '.title'
+  [MAINT] start validator
+  [MAINT] end validator
+  (exit 0)
+CHECK ok   the [MAINT] start and end messages reached the throwaway topic
+$ for i in $(seq 0 15 150); do n=$(curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '[.data.alerts[] | select(.labels.alertname | test("Budget|RuleDead|TextfileStale|Rulecheck|Fleet|Aptrust|Sched|PFTJob|KeyEscrow|Integrity|AppArmor|Seccomp"))] | length'); echo "+${i}s: $n"; [ "$n" = 0 ] && break; sleep 15; done; echo $n
+  +0s: 1
+  +15s: 1
+  +30s: 1
+  +45s: 1
+  +60s: 1
+  +75s: 1
+  +90s: 1
+  +105s: 1
+  +120s: 1
+  +135s: 1
+  +150s: 1
+  1
+  (exit 0)
+CHECK FAIL no budget/rulecheck/fleet/aptrust/schedaudit/jobwatch/keyescrow/confinement alert pending or firing (silence left to run out)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 274 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 162 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts at the end
+$ srv_state
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing at the end
+$ systemctl list-units --all --no-legend 'run-u*.service' 'run-u*.timer' | wc -l; R 'ls -d ~/pft-budget-* 2>/dev/null | wc -l'
+  0
+  0
+  (exit 0)
+CHECK ok   no transient run-u services/timers, no install copy left on the sentry
+operator topic read-back waits 90 s (>= group_interval + 30 s after the last change)
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the run (2 topic(s), 0 with messages)
+
+install-run done 2026-11-18T11:56:30Z: 1 check(s) failed -> FAIL
+runner exit 1
