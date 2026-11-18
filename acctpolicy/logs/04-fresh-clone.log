@@ -1,0 +1,109 @@
+OS: Ubuntu 22.04.5 LTS | 2026-11-18T16:39:49Z | acctpolicy fresh-clone verification at a340e5a6d036e2bbec3a83d970a7d9a85fa6dfa1 | shellcheck 0.8.0 | Python 3.10.12 | ruff 0.17.1
+$ env -u GH_TOKEN -u GITHUB_TOKEN GIT_TERMINAL_PROMPT=0 git -c credential.helper= clone -q https://github.com/darkmatter-sudo/postfiat-validator-installer.git repo
+(exit 0)
+$ git checkout -q a340e5a6d036e2bbec3a83d970a7d9a85fa6dfa1 && git rev-parse HEAD
+a340e5a6d036e2bbec3a83d970a7d9a85fa6dfa1
+(exit 0)
+$ git status --short | wc -l
+0
+(exit 0)
+== pft-acctpolicy.sh vs logs/03 (repo file at the installed commit, and the binary installed on both hosts)
+$ sha256sum acctpolicy/pft-acctpolicy.sh | cut -c1-64 > ~/.cache/tmp.LKQGzrrm9R/now.txt && cat ~/.cache/tmp.LKQGzrrm9R/now.txt
+ce6d81830b71c05f1a779387f6fca4833e13350aedc34c490cfd14760ac24a92
+(exit 0)
+$ sed -n '/^== 3/,/^== 4/p' acctpolicy/logs/03-live-run-02.log | grep -oE '^  [0-9a-f]{64}' | tr -d ' ' > ~/.cache/tmp.LKQGzrrm9R/live.txt && cat ~/.cache/tmp.LKQGzrrm9R/live.txt && [ $(wc -l < ~/.cache/tmp.LKQGzrrm9R/live.txt) = 3 ] && [ $(sort -u ~/.cache/tmp.LKQGzrrm9R/live.txt | wc -l) = 1 ] && diff <(head -1 ~/.cache/tmp.LKQGzrrm9R/live.txt) ~/.cache/tmp.LKQGzrrm9R/now.txt && echo 'identical: repo file = installed on validator and sentry (3/3 sha256 equal)'
+ce6d81830b71c05f1a779387f6fca4833e13350aedc34c490cfd14760ac24a92
+ce6d81830b71c05f1a779387f6fca4833e13350aedc34c490cfd14760ac24a92
+ce6d81830b71c05f1a779387f6fca4833e13350aedc34c490cfd14760ac24a92
+identical: repo file = installed on validator and sentry (3/3 sha256 equal)
+(exit 0)
+== static checks
+$ shellcheck acctpolicy/*.sh acctpolicy/tests/*.sh acctpolicy/drill/*.sh
+(exit 0)
+$ ruff check acctpolicy && ruff format --check acctpolicy
+All checks passed!
+2 files already formatted
+(exit 0)
+$ cd acctpolicy && ruff check . && ruff format --check .
+All checks passed!
+2 files already formatted
+(exit 0)
+== offline suite (umask 022, then 002)
+$ umask 022; TMPDIR=~/.cache/tmp.LKQGzrrm9R bash acctpolicy/tests/run-tests.sh > ~/.cache/tmp.LKQGzrrm9R/s1.txt 2>&1; rc=$?; grep -E '^(FAIL|RESULT)' ~/.cache/tmp.LKQGzrrm9R/s1.txt; exit $rc
+RESULT: 93/93 passed
+(exit 0)
+$ umask 002; TMPDIR=~/.cache/tmp.LKQGzrrm9R bash acctpolicy/tests/run-tests.sh > ~/.cache/tmp.LKQGzrrm9R/s2.txt 2>&1; rc=$?; grep -E '^(FAIL|RESULT)' ~/.cache/tmp.LKQGzrrm9R/s2.txt; exit $rc
+RESULT: 93/93 passed
+(exit 0)
+$ grep -c '^PASS ' ~/.cache/tmp.LKQGzrrm9R/s1.txt
+93
+(exit 0)
+== mutation harness (baseline must pass, then every mutant must be caught)
+$ TMPDIR=~/.cache/tmp.LKQGzrrm9R TEST_TMPDIR=~/.cache/tmp.LKQGzrrm9R python3 -I acctpolicy/tests/mutants.py -j 4
+BASELINE ok  M00 unmutated (baseline)                   (suite rc 0)
+CAUGHT   M01 acct.uid0                              by: acct.uid0 FAIL: second UID 0
+CAUGHT   M02 acct.dup-uid                           by: acct.dup-uid FAIL: shared UID
+CAUGHT   M03 acct.dup-name                          by: acct.dup-name FAIL: duplicate group name
+CAUGHT   M04 acct.shadowed: hash in passwd          by: acct.shadowed FAIL: hash in passwd
+CAUGHT   M05 acct.shadowed: missing shadow entry    by: acct.shadowed FAIL: no shadow entry
+CAUGHT   M06 acct.empty-password                    by: acct.empty-password FAIL: empty field
+CAUGHT   M07 acct.hash-scheme                       by: acct.hash-scheme WARN: md5, scheme named, hash not printed
+CAUGHT   M08 hash_kind md5                          by: acct.hash-scheme WARN: md5, scheme named, hash not printed
+CAUGHT   M09 acct.root-password: sshd password      by: acct.root-password FAIL: usable root password + sshd password yes
+CAUGHT   M10 acct.root-password: permitrootlogin    by: acct.root-password FAIL: permitrootlogin yes
+CAUGHT   M11 acct.system-shell: locked              by: acct.system-shell WARN: system account with a usable password
+CAUGHT   M12 acct.system-shell: restrict            by: acct.system-shell WARN: command= without restrict
+CAUGHT   M13 acct.file-modes: shadow                by: acct.file-modes FAIL: shadow 0644
+CAUGHT   M14 acct.file-modes: owner                 by: acct.file-modes FAIL: owner is not the expected owner
+CAUGHT   M15 acct.home-modes                        by: acct.home-modes WARN: world-readable home
+CAUGHT   M16 pam.nullok: nullok_secure              by: pam.nullok WARN: nullok_secure
+CAUGHT   M17 pam.nullok: comments                   by: pam.nullok PASS: commented-out line ignored
+CAUGHT   M18 pam.permit: sufficient                 by: pam.permit FAIL: auth sufficient pam_permit
+CAUGHT   M19 pam.permit: jump                       by: pam.permit FAIL: pam_permit jump
+CAUGHT   M20 pam.faillock: N/A conditions           by: pam.faillock WARN: a non-root account has a usable password
+CAUGHT   M21 pam.su-wheel: deny form                by: pam.su-wheel WARN: deny form only
+CAUGHT   M22 login.encrypt: weak equal              by: login.encrypt WARN: equal but md5
+CAUGHT   M23 login.pass-max: min                    by: login.pass-max WARN: max ok, min 0
+CAUGHT   M24 login.pass-max: max                    by: login.pass-max WARN: 366 > 365
+CAUGHT   M25 login.umask                            by: login.umask WARN: 020 (other-write open)
+CAUGHT   M26 useradd.inactive: upper                by: useradd.inactive WARN: 31 > 30
+CAUGHT   M27 useradd.inactive: lower                by: useradd.inactive WARN: 0
+CAUGHT   M28 ctr.uid0                               by: ctr.uid0 FAIL: second UID 0 in the container
+CAUGHT   M29 ctr.empty-password: shadow             by: ctr.empty-password FAIL: empty field in the container
+CAUGHT   M30 ctr.empty-password: passwd             by: ctr.empty-password FAIL: empty passwd field in the container
+CAUGHT   M31 ctr.runtime: privileged                by: ctr.runtime FAIL: privileged
+CAUGHT   M32 ctr.runtime: no-new-privileges         by: ctr.runtime FAIL: no no-new-privileges
+CAUGHT   M33 ctr.runtime: capdrop                   by: ctr.runtime FAIL: capdrop not ALL
+CAUGHT   M34 ctr: missing container                 by: ctr: no running container -> 3 FAIL
+CAUGHT   M35 audit exit code                        by: stock: exit 1 (findings)
+CAUGHT   M36 plan: nullok precondition              by: plan: nullok fix withheld while an empty password exists
+CAUGHT   M37 plan: su group precondition            by: plan: su-wheel withheld when SU_GROUP does not exist
+CAUGHT   M38 plan: pam_rootok precondition          by: plan: su-wheel withheld without a pam_rootok line, other fixes still planned
+CAUGHT   M39 fix: nullok removal                    by: plan: diff removes nullok, adds pam_wheel on its own line
+CAUGHT   M40 fix: su-wheel marker on the PAM line   by: plan: diff removes nullok, adds pam_wheel on its own line
+CAUGHT   M41 fix: passage min                       by: apply: audit afterwards PASS, exit 0
+CAUGHT   M42 apply: --yes                           by: apply without --yes: exit 4, nothing written, no self-test
+CAUGHT   M43 apply: last apply in place             by: apply with a previous apply in place: exit 4, files untouched
+CAUGHT   M44 apply: node healthy before             by: apply with node not full: exit 4, nothing written
+CAUGHT   M45 node_full: peers                       by: apply with 0 peers (< MIN_PEERS): exit 4, nothing written
+CAUGHT   M46 node_full: state                       by: apply with node not full: exit 4, nothing written
+CAUGHT   M47 apply: self-test before change         by: apply when the self-test fails BEFORE any change: exit 4, nothing written
+CAUGHT   M48 selftest: sshd -t                      by: apply when sshd -t fails before: exit 4, nothing written
+CAUGHT   M49 selftest: root su                      by: apply when root su fails before: exit 4, nothing written
+CAUGHT   M50 selftest: ssh                          by: apply when the self-test fails BEFORE any change: exit 4, nothing written
+CAUGHT   M51 selftest: inject                       by: apply VERIFY_INJECT=selftest: exit 1, restored byte-identical, no apply.json
+CAUGHT   M52 apply: self-test after change          by: apply: self-test ran before AND after the change
+CAUGHT   M53 apply: restore on failure              by: apply VERIFY_INJECT=selftest: exit 1, restored byte-identical, no apply.json
+CAUGHT   M54 apply: keeps mode                      by: apply: modes preserved
+CAUGHT   M55 restore: mode                          by: rollback: exit 0, files byte-identical (sha + mode) to before apply
+CAUGHT   M56 restore: sha check                     by: rollback with a tampered backup: exit 5, apply.json kept
+CAUGHT   M57 rollback: --yes                        by: rollback without --yes: exit 4
+CAUGHT   M58 rollback: nothing applied              by: rollback with nothing applied: exit 4
+CAUGHT   M59 rollback: mismatch exit                by: rollback with a tampered backup: exit 5, apply.json kept
+CAUGHT   M60 rollback: clears apply.json            by: rollback: exit 0, files byte-identical (sha + mode) to before apply
+CAUGHT   M61 backup dir mode                        by: apply: backup dir 0700
+MUTANTS: caught 61/61
+(exit 0)
+
+fresh-clone done 2026-11-18T16:50:43Z: 0 check(s) failed -> PASS
+runner exit 0

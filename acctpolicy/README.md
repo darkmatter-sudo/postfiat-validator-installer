@@ -105,3 +105,31 @@ shellcheck acctpolicy/*.sh acctpolicy/tests/*.sh
 `run-tests.sh` gives every check ID a PASS fixture and a non-PASS fixture, and every apply/rollback guard a test
 whose input passes every other guard and asserts that no file was written (sha256 + mode of all four targets, no
 state, no backup). `mutants.py` breaks one check or guard per mutant (one or more per check ID).
+
+## Live results (validator + sentry, 2026-11-18)
+
+Recorded with [`drill/live-run.sh`](drill/live-run.sh) at `5f42949` ([logs/03](logs/03-live-run-02.log), 0 checks
+failed). Both hosts had the same five WARN findings and 0 FAIL before the run; all five are fixed and verified:
+
+| Check | Found (both hosts) | Fixed | Verified |
+|---|---|---|---|
+| `pam.nullok` | `pam_unix ... nullok` in common-auth | `nullok` removed | PASS |
+| `pam.su-wheel` | no `pam_wheel` in `/etc/pam.d/su` | `pam_wheel use_uid group=sudo` after `pam_rootok` | PASS |
+| `login.encrypt` | `ENCRYPT_METHOD SHA512` vs pam_unix yescrypt | `ENCRYPT_METHOD YESCRYPT` | PASS |
+| `login.pass-max` | `PASS_MAX_DAYS 99999`, `PASS_MIN_DAYS 0` | 365 / 1 (new accounts only) | PASS |
+| `useradd.inactive` | `INACTIVE=-1` | `INACTIVE=30` | PASS |
+
+The run also proves, on both hosts: the self-test before and after each apply (sshd -t, SSH-key login + `sudo -n`
+through the throwaway sshd, root su, node full); the real access paths after the fixes (`sudo -n` on both hosts, the
+sentry's real sshd taking the agent's key, `sshd -t`); `rollback` and a `VERIFY_INJECT=selftest` apply each leave the
+four files byte-identical (sha256, mode, owner) to the pre-apply state; the final apply; `pft-integrity` PASS
+(baseline accepted), schedaudit 0 new/removed, aptrust 0 warn/0 fail, `pft-fleet skew` CURRENT, no new
+non-allowlisted login in authwatch and 0 `Accepted ... from 127.0.0.1` journal lines, 0 AppArmor/seccomp denials,
+nodes full, and 0 messages on every operator topic (pft-maint's `[MAINT]` messages went to a throwaway topic).
+
+| Log | What |
+|---|---|
+| [01](logs/01-mutants-c7edb98-baseline-fail.log) | mutation run at `c7edb98`: the unmutated suite failed one test under umask 022 (it compared with the fixture's own mode), so the run is not evidence; test fixed, and `mutants.py` now refuses to run mutants when the baseline fails |
+| [02](logs/02-live-run-01-fleet-refused.log) | live run 01: pft-fleet refused a commit not yet in `main`; nothing was written on either host |
+| [03](logs/03-live-run-02.log) | live run 02: found -> fixed -> verified, rollback + inject drills, baselines, operator topics 0 |
+| [04](logs/04-fresh-clone.log) | anonymous public clone: script sha256 = installed on both hosts, shellcheck, ruff, suite (umask 022 + 002), mutants |
