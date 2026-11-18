@@ -20,6 +20,11 @@
 #  11. integrity, skew.  12. restore, read back every operator topic (0 messages).
 #   bash budget/drill/histarchive-run.sh 2>&1 | tee LOG    (repo root, agent user; run detached)
 #   PREFLIGHT_ONLY=1 bash budget/drill/histarchive-run.sh
+#   RECHECK=1 bash budget/drill/histarchive-run.sh   post-deploy proof: preflight expects the deployed state (helper =
+#      HEAD, no stop-gap, MemoryMax 512M), then only steps 6, 7, 10, 11, 12 (no host change, no window)
+# Run 07 (logs/07) deployed and passed every measurement but failed 3 checks: rec() read the PREVIOUS timer run's
+# record (now filtered on t_first >= the step start), and the drop-in removal changed schedaudit's hash of the timer
+# entry, so PFTSchedEntryUnexpected paged the operator once (step 5 now runs pft-schedaudit accept + collect).
 set -uo pipefail
 REPO="$(git rev-parse --show-toplevel)"; cd "$REPO" || exit 3
 export TZ=UTC
@@ -44,7 +49,7 @@ FAILS=0
 check() { if [ "$2" = 0 ]; then echo "CHECK ok   $1${3:+ ($3)}"; else echo "CHECK FAIL $1${3:+ ($3)}"; FAILS=$((FAILS + 1)); fi; }
 gate() { [ "$FAILS" = 0 ] || { echo "a step failed - stopping (restore runs)"; exit 1; }; }
 NE=/etc/pft-maint/ntfy.env; BK=/etc/pft-maint/ntfy.env.pre-budget
-SWAPPED=0; MAINT=0; HAD=0
+SWAPPED=0; MAINT=0; HAD=0; ORIG_SHA=absent; SIL=""
 since="$(date -u +%s)"
 OPS="$(mktemp -p "$HOME/.cache")"; chmod 600 "$OPS"
 OUT="$(mktemp -d -p "$HOME/.cache")"; chmod 755 "$OUT"
@@ -82,17 +87,18 @@ vrun() {
   local rc=$?; echo "unit $n cap $cap rc $rc out_sha256 $(sha256sum <"$OUT/$n.out" | cut -c1-64) $(tail -c 300 "$OUT/$n.out" | grep -o 'RESULT: [A-Z]*' | tail -1)"
   return $rc
 }
-# final sampler record of unit U (newest): "peak_unrecl_mib peak_mib oom_kills mem_max result"
+# rec U [SINCE]: newest final sampler record of unit U whose run started at/after SINCE (epoch, default 0)
 rec() {
   local r i
-  for i in $(seq 1 20); do
-    r="$(sudo -n grep -F "\"unit\":\"$1\"" "$SAMPLES" | jq -c 'select(.kind == "final")' | tail -1)"
+  for i in $(seq 1 30); do
+    r="$(sudo -n grep -F "\"unit\":\"$1\"" "$SAMPLES" | jq -c --argjson t "${2:-0}" 'select(.kind == "final" and .t_first >= $t)' | tail -1)"
     [ -n "$r" ] && break; sleep 1
   done
   [ -n "$r" ] || { echo "no final record for $1"; return 1; }
   jq -r --argjson m "$MIB" '"\(.unit) peak_unrecl_mib \(.peak_unrecl_bytes / $m | . * 10 | floor / 10) peak_mib \(.peak_bytes / $m | . * 10 | floor / 10) oom_kills \(.oom_kills) mem_max \(.mem_max) result \(.result) samples \(.samples) runtime_s \(.runtime_sec)"' <<<"$r"
 }
-unrecl_bytes() { sudo -n grep -F "\"unit\":\"$1\"" "$SAMPLES" | jq -r 'select(.kind == "final") | .peak_unrecl_bytes' | tail -1; }
+unrecl_bytes() { sudo -n grep -F "\"unit\":\"$1\"" "$SAMPLES" | jq -r --argjson t "${2:-0}" 'select(.kind == "final" and .t_first >= $t) | .peak_unrecl_bytes' | tail -1; }
+RECHECK="${RECHECK:-0}"
 echo "histarchive bounded-verify deploy - $(date -u +%FT%TZ) - repo HEAD $SHA (clean: $([ -z "$(git status --short)" ] && echo yes || echo NO))"
 [ -z "$(git status --short)" ] || { echo "dirty tree - stopping"; exit 3; }
 git fetch -q origin
@@ -100,11 +106,21 @@ git fetch -q origin
 
 echo; echo "== 0. preflight (read-only)"
 x "sha256sum histarchive/histarchive.py | cut -c1-64; sudo -n sha256sum $HLIB | cut -c1-64; R 'sha256sum $HLIB | cut -c1-64'; git show $INSTALLED_COMMIT:histarchive/histarchive.py | sha256sum | cut -c1-64"
-check "installed helper on both hosts = $INSTALLED_COMMIT bytes, != HEAD (deploy pending)" "$([ "$(sed -n 2p <<<"$XOUT")" = "$(sed -n 4p <<<"$XOUT")" ] && [ "$(sed -n 3p <<<"$XOUT")" = "$(sed -n 4p <<<"$XOUT")" ] && [ "$(sed -n 1p <<<"$XOUT")" != "$(sed -n 2p <<<"$XOUT")" ] && echo 0 || echo 1)"
+if [ "$RECHECK" = 1 ]; then
+  check "RECHECK: installed helper on both hosts = HEAD bytes (deployed)" "$([ "$(head -3 <<<"$XOUT" | sort -u | wc -l)" = 1 ] && echo 0 || echo 1)"
+else
+  check "installed helper on both hosts = $INSTALLED_COMMIT bytes, != HEAD (deploy pending)" "$([ "$(sed -n 2p <<<"$XOUT")" = "$(sed -n 4p <<<"$XOUT")" ] && [ "$(sed -n 3p <<<"$XOUT")" = "$(sed -n 4p <<<"$XOUT")" ] && [ "$(sed -n 1p <<<"$XOUT")" != "$(sed -n 2p <<<"$XOUT")" ] && echo 0 || echo 1)"
+fi
 x "git diff --name-only $INSTALLED_COMMIT $SHA -- histarchive | grep -vE '^histarchive/(logs|tests|drill)/'; git diff $INSTALLED_COMMIT $SHA -- fleet/manifest.tsv | grep -cE '^[-+]histarchive'"
 check "since $INSTALLED_COMMIT only histarchive.py, README and ruff.toml (not installed) changed; 0 histarchive manifest rows changed" "$([ "$(grep -v '^$' <<<"$XOUT" | sort | tr '\n' ' ')" = "0 histarchive/README.md histarchive/histarchive.py histarchive/ruff.toml " ] && echo 0 || echo 1)"
-x "cat $DROPIN; systemctl show -p MemoryMax --value pft-histarchive-periodic.service; grep -n '^MemoryMax=' histarchive/systemd/pft-histarchive-periodic.service; sudo -n sha256sum /etc/systemd/system/pft-histarchive-periodic.service | cut -c1-64; sha256sum histarchive/systemd/pft-histarchive-periodic.service | cut -c1-64"
-check "stop-gap in force: drop-in MemoryMax=1G, effective 1073741824; installed unit = repo bytes (MemoryMax=512M)" "$(grep -qx 'MemoryMax=1G' <<<"$XOUT" && grep -qx 1073741824 <<<"$XOUT" && grep -q ':MemoryMax=512M$' <<<"$XOUT" && [ "$(tail -2 <<<"$XOUT" | sort -u | wc -l)" = 1 ] && echo 0 || echo 1)"
+x "cat $DROPIN 2>&1; systemctl show -p MemoryMax --value pft-histarchive-periodic.service; grep -n '^MemoryMax=' histarchive/systemd/pft-histarchive-periodic.service; sudo -n sha256sum /etc/systemd/system/pft-histarchive-periodic.service | cut -c1-64; sha256sum histarchive/systemd/pft-histarchive-periodic.service | cut -c1-64"
+if [ "$RECHECK" = 1 ]; then
+  check "RECHECK: no stop-gap drop-in, effective 536870912; installed unit = repo bytes (MemoryMax=512M)" "$(grep -q 'No such file' <<<"$XOUT" && grep -qx 536870912 <<<"$XOUT" && grep -q ':MemoryMax=512M$' <<<"$XOUT" && [ "$(tail -2 <<<"$XOUT" | sort -u | wc -l)" = 1 ] && echo 0 || echo 1)"
+else
+  check "stop-gap in force: drop-in MemoryMax=1G, effective 1073741824; installed unit = repo bytes (MemoryMax=512M)" "$(grep -qx 'MemoryMax=1G' <<<"$XOUT" && grep -qx 1073741824 <<<"$XOUT" && grep -q ':MemoryMax=512M$' <<<"$XOUT" && [ "$(tail -2 <<<"$XOUT" | sort -u | wc -l)" = 1 ] && echo 0 || echo 1)"
+fi
+x "sudo -n pft-schedaudit audit | grep SUMMARY"
+check "pft-schedaudit: new=0 removed=0 unexpected_findings=0" "$(grep -q 'unexpected_findings=0 new=0 removed=0 ' <<<"$XOUT" && echo 0 || echo 1)"
 x "sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'"
 check "pft-integrity PASS on both hosts" "$([ "$(grep -c 'RESULT: PASS' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
 x "srv_state"
@@ -124,6 +140,7 @@ check "nothing but the watchdog active, no active silence" "$(grep -q . <<<"$XOU
 [ "$FAILS" = 0 ] || { echo "preflight failed - stopping before any change"; exit 3; }
 [ "${PREFLIGHT_ONLY:-0}" = 1 ] && { echo "PREFLIGHT_ONLY: stopping before any change ($FAILS failed)"; exit 0; }
 
+if [ "$RECHECK" = 0 ]; then
 echo; echo "== 1. BEFORE: installed helper ($INSTALLED_COMMIT), MemoryMax=1G (the stop-gap cap)"
 x "vrun pft-histarchive-verify-before.service 1G --json"
 check "before: full verify exit 0" "$XRC"
@@ -138,7 +155,7 @@ gate
 echo; echo "== 2. rollout silence + pft-maint window ([MAINT] to a throwaway topic)"
 ends="$(date -u -d '+45 min' +%FT%TZ)"
 SBODY="$(jq -nc --arg s "$(date -u +%FT%TZ)" --arg e "$ends" --arg c "$TASK histarchive bounded-verify deploy $SHORT" \
-  '{matchers: [{name: "alertname", value: "PFTHistarchive.*|PFTBudget.*|PFTRuleDead|PFTTextfileStale|PFTRulecheck.*|PFTFleet.*|PFTAptrust.*|PFTJob.*|PFTKeyEscrow.*", isRegex: true, isEqual: true}],
+  '{matchers: [{name: "alertname", value: "PFTHistarchive.*|PFTSchedEntryUnexpected|PFTBudget.*|PFTRuleDead|PFTTextfileStale|PFTRulecheck.*|PFTFleet.*|PFTAptrust.*|PFTJob.*|PFTKeyEscrow.*", isRegex: true, isEqual: true}],
     startsAt: $s, endsAt: $e, createdBy: "histarchive-deploy", comment: $c}')"
 SIL="$(curl -s --max-time 10 -H 'Content-Type: application/json' -X POST "$AM/api/v2/silences" -d "$SBODY" | jq -r '.silenceID // empty')"
 check "Alertmanager silence created until $ends (not the watchdog)" "$([ -n "$SIL" ] && echo 0 || echo 1)"
@@ -185,13 +202,18 @@ check "stop-gap removed: effective MemoryMax 536870912 (512M)" "$(grep -qx 53687
 x "sudo -n pft-integrity verify | grep -E 'WARN|FAIL|RESULT' | head -5"
 x "sudo -n pft-integrity accept --reason '$TASK: removed 1G stop-gap drop-in for pft-histarchive-periodic (bounded verify $SHORT, after peak <= 256 MiB)' | tail -1; sudo -n pft-integrity verify | tail -1"
 check "integrity accepted the drop-in removal, PASS" "$(grep -q 'RESULT: PASS' <<<"$XOUT" && echo 0 || echo 1)"
+# the drop-in is part of schedaudit's hash of the timer entry: accept it now, before the next collect sees it (run 07)
+x "sudo -n pft-schedaudit accept --reason '$TASK: removed 1G stop-gap drop-in of pft-histarchive-periodic (bounded verify $SHORT)' | tail -1; sudo -n pft-schedaudit collect | tail -1; R 'sudo -n pft-schedaudit collect | tail -1'; sudo -n pft-schedaudit audit | grep SUMMARY"
+check "pft-schedaudit accepted the changed timer entry: new=0 removed=0" "$(grep -q 'unexpected_findings=0 new=0 removed=0 ' <<<"$XOUT" && echo 0 || echo 1)"
 gate
+fi
 
 echo; echo "== 6. the REAL unit at MemoryMax=512M: next periodic run verifies"
+T6="$(date +%s)"
 x "sudo -n rm -f /var/lib/pft-histarchive/verified-head && sudo -n systemctl start pft-histarchive-periodic.service; echo rc=\$?; systemctl show -p Result -p ExecMainStatus -p MemoryMax pft-histarchive-periodic.service"
 check "pft-histarchive-periodic.service run exit 0, Result success" "$(grep -qx rc=0 <<<"$XOUT" && grep -qx Result=success <<<"$XOUT" && echo 0 || echo 1)"
-x "rec pft-histarchive-periodic.service; grep -hE '^pft_histarchive_verify_(ok|failures|timestamp_seconds)' $TF/pft_histarchive.prom"
-P="$(unrecl_bytes pft-histarchive-periodic.service)"
+x "rec pft-histarchive-periodic.service $T6; grep -hE '^pft_histarchive_verify_(ok|failures|timestamp_seconds)' $TF/pft_histarchive.prom"
+P="$(unrecl_bytes pft-histarchive-periodic.service "$T6")"
 check "real run: sampler record at mem_max 536870912, oom 0, peak_unrecl <= 256 MiB, verify_ok 1" "$(grep -q 'oom_kills 0 mem_max 536870912 result success' <<<"$XOUT" && [ -n "$P" ] && [ "$P" -le 268435456 ] && grep -qE 'pft_histarchive_verify_ok\{.*\} 1$' <<<"$XOUT" && echo 0 || echo 1)"
 
 echo; echo "== 7. sentry: the replica check runs the shipped helper there"
@@ -219,10 +241,12 @@ x "sudo -n systemctl start pft-keyescrow.service; grep -h '^pft_keyescrow_drift_
 check "pft-keyescrow re-run: validator drift_items 0" "$(grep -q '} 0$' <<<"$XOUT" && echo 0 || echo 1)"
 x "for i in \$(seq 0 15 300); do n=\$(other_alerts | grep -c .); echo \"+\${i}s: \$n\"; [ \"\$n\" = 0 ] && break; sleep 15; done; other_alerts"
 check "nothing but the watchdog pending/firing" "$(grep -qE '^[A-Z]' <<<"$XOUT" && echo 1 || echo 0)"
-x "curl -s --max-time 10 -X DELETE $AM/api/v2/silence/$SIL -o /dev/null -w '%{http_code}\n'"
-check "rollout silence expired" "$(grep -qx 200 <<<"$XOUT" && echo 0 || echo 1)"
-x "sleep 5; curl -s --max-time 15 \"https://ntfy.sh/\$TT/json?poll=1&since=$since\" | jq -r '.title'"
-check "the [MAINT] start and end messages reached the throwaway topic" "$([ "$(grep -c '^\[MAINT\]' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
+if [ "$RECHECK" = 0 ]; then
+  x "curl -s --max-time 10 -X DELETE $AM/api/v2/silence/$SIL -o /dev/null -w '%{http_code}\n'"
+  check "rollout silence expired" "$(grep -qx 200 <<<"$XOUT" && echo 0 || echo 1)"
+  x "sleep 5; curl -s --max-time 15 \"https://ntfy.sh/\$TT/json?poll=1&since=$since\" | jq -r '.title'"
+  check "the [MAINT] start and end messages reached the throwaway topic" "$([ "$(grep -c '^\[MAINT\]' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
+fi
 x "srv_state"
 check "both nodes full or proposing at the end" "$([ "$(grep -cE '^(full|proposing)$' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
 echo "operator topic read-back waits 90 s"; sleep 90
