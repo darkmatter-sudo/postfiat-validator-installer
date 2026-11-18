@@ -189,6 +189,43 @@ class TestCgroup(Base):
         os.remove(os.path.join(d, "memory.events"))
         self.assertIsNone(budget.read_cgroup(d))
 
+    def test_read_cgroup_dead_files_is_none(self):
+        # ENODEV: the cgroup dir is still listed but its files are dead (teardown race, sentry 2026-11-18)
+        d = mkcg(self.cg, "pft-a.service")
+        real = budget._read
+
+        def dead(path, errno_=19):
+            if path.endswith("cpu.stat"):
+                raise OSError(errno_, "No such device")
+            return real(path)
+
+        budget._read = dead
+        try:
+            self.assertIsNone(budget.read_cgroup(d))
+            budget._read = lambda path: dead(path, 13)  # any other error still surfaces
+            with self.assertRaises(PermissionError):
+                budget.read_cgroup(d)
+        finally:
+            budget._read = real
+
+    def test_tick_skips_a_dead_cgroup(self):
+        mkcg(self.cg, "pft-a.service")
+        mkcg(self.cg, "pft-b.service")
+        real = budget._read
+
+        def dead_a(path):
+            if "pft-a" in path and path.endswith("cpu.stat"):
+                raise OSError(19, "No such device")
+            return real(path)
+
+        budget._read = dead_a
+        try:
+            tr = budget.Tracker(self.conf, clock=lambda: 1000.0)
+            tr.tick()
+        finally:
+            budget._read = real
+        self.assertEqual(sorted(tr.open), ["pft-b.service"])
+
     def test_missing_root_is_conf_error(self):
         os.environ["PFT_BUD_CGROUP_ROOT"] = os.path.join(self.tmp, "nope")
         with self.assertRaises(budget.ConfError):

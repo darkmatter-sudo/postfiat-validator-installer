@@ -21,6 +21,7 @@ Exit codes: 0 ok, 1 report has a FAIL verdict / apply or rollback check failed, 
 """
 
 import argparse
+import errno
 import fnmatch
 import json
 import math
@@ -204,8 +205,12 @@ def read_cgroup(path):
             "mem_max": _limit(_read(os.path.join(path, "memory.max"))),
             "mem_high": _limit(_read(os.path.join(path, "memory.high"))),
         }
-    except FileNotFoundError:
-        return None
+    except OSError as e:
+        # removed while being read: the files are gone (ENOENT) or still listed but dead (ENODEV, seen live on
+        # the sentry 2026-11-18: an uncaught ENODEV from cpu.stat crash-looped the sampler)
+        if isinstance(e, FileNotFoundError) or e.errno == errno.ENODEV:
+            return None
+        raise
 
 
 def scan(conf):
