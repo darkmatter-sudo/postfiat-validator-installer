@@ -47,7 +47,8 @@ sudo pft-budget report [--json]        # exit 0 all OK/UNCAPPED, 2 some WARN, 1 
 
 Per unit over the last `WINDOW_DAYS` (30): runs, p50/max unreclaimable peak, max total peak, cap, headroom
 (cap / max peak), 30/90-day projection (least-squares slope of the per-run peaks, clamped at >= 0, never below the
-measured max; only with >= `MIN_RUNS` runs), longest runtime, OOM-killed runs.
+measured max; only with >= `MIN_RUNS` runs spanning >= `PROJ_MIN_SPAN_DAYS` (3) days: the first live
+install fitted 5 runs over 12 minutes and projected a 7 MiB unit to 23 GiB), longest runtime, OOM-killed runs.
 
 | verdict | when |
 |---|---|

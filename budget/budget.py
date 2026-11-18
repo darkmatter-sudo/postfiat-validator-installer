@@ -45,6 +45,7 @@ DEFAULTS = {
     "KEEP": "5",
     "WINDOW_DAYS": "30",
     "MIN_RUNS": "3",
+    "PROJ_MIN_SPAN_DAYS": "3",
     "WARN_HEADROOM": "2.0",
     "FAIL_FRACTION": "0.9",
     "TARGET_HEADROOM": "2.0",
@@ -85,7 +86,7 @@ def load_conf(path):
         if os.environ.get("PFT_BUD_" + k) is not None:
             conf[k] = os.environ["PFT_BUD_" + k]
     num = {}
-    for k in ("INTERVAL", "WARN_HEADROOM", "FAIL_FRACTION", "TARGET_HEADROOM", "PROJ_MARGIN"):
+    for k in ("INTERVAL", "WARN_HEADROOM", "FAIL_FRACTION", "TARGET_HEADROOM", "PROJ_MARGIN", "PROJ_MIN_SPAN_DAYS"):
         num[k] = _pos_float(conf, k)
     for k in (
         "CHECKPOINT_SEC",
@@ -483,7 +484,10 @@ def unit_report(unit, recs, conf, t_now):
         "slope_per_day": None,
         "reasons": [],
     }
-    if len(recs) >= conf["MIN_RUNS"]:
+    span_days = (max(r["t_last"] for r in recs) - min(r["t_last"] for r in recs)) / 86400
+    u["span_days"] = round(span_days, 3)
+    # a slope fitted over minutes says nothing about 30 days: project only from runs that span PROJ_MIN_SPAN_DAYS
+    if len(recs) >= conf["MIN_RUNS"] and span_days >= conf["PROJ_MIN_SPAN_DAYS"]:
         slope, my, mt = fit([(r["t_last"], r["peak_unrecl_bytes"]) for r in recs])
         slope = max(0.0, slope)  # shrinking peaks never lower the projection below what was measured
         base = my + slope * (t_now - mt) / 86400
@@ -509,6 +513,10 @@ def unit_report(unit, recs, conf, t_now):
         verdict = "FAIL"
     if len(recs) < conf["MIN_RUNS"]:
         u["reasons"].append(f"only {len(recs)} run(s) < MIN_RUNS {conf['MIN_RUNS']}: no projection")
+    elif span_days < conf["PROJ_MIN_SPAN_DAYS"]:
+        u["reasons"].append(
+            f"runs span {span_days:.2f} d < PROJ_MIN_SPAN_DAYS {conf['PROJ_MIN_SPAN_DAYS']:g}: no projection"
+        )
     u["reasons"] = fail + warn + u["reasons"]
     u["verdict"] = verdict
     u["target"] = target_cap(u, conf)

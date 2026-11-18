@@ -380,32 +380,43 @@ class TestReport(Base):
         self.assertEqual(u["verdict"], "FAIL")
 
     def test_linear_projection_hand_computed(self):
-        # 100, 110, 120 MiB on days 0..2, report on day 2: slope 10 MiB/day, 30 d -> 420, 90 d -> 1020 MiB
-        recs = [rec("pft-a.service", T0 + i * DAY, (100 + 10 * i) * MIB, cap=2048 * MIB) for i in range(3)]
-        u = self.one(recs, t_now=T0 + 2 * DAY)
+        # 100, 130, 160 MiB on days 0, 3, 6, report on day 6: slope 10 MiB/day, 30 d -> 460, 90 d -> 1060 MiB
+        recs = [rec("pft-a.service", T0 + 3 * i * DAY, (100 + 30 * i) * MIB, cap=2048 * MIB) for i in range(3)]
+        u = self.one(recs, t_now=T0 + 6 * DAY)
         self.assertEqual(u["slope_per_day"], 10 * MIB)
-        self.assertEqual(u["proj30"], 420 * MIB)
-        self.assertEqual(u["proj90"], 1020 * MIB)
+        self.assertEqual(u["proj30"], 460 * MIB)
+        self.assertEqual(u["proj90"], 1060 * MIB)
         self.assertEqual(u["verdict"], "OK")
-        self.assertEqual(u["target"], 1280 * MIB)  # 1.25 x 1020 = 1275 MiB beats 2 x 120 MiB; 64 MiB steps
+        self.assertEqual(u["target"], 1344 * MIB)  # 1.25 x 1060 = 1325 MiB beats 2 x 160 MiB; 64 MiB steps
 
     def test_projection_30d_over_cap_fails(self):
-        recs = [rec("pft-a.service", T0 + i * DAY, (100 + 10 * i) * MIB, cap=400 * MIB) for i in range(3)]
-        u = self.one(recs, t_now=T0 + 2 * DAY)
+        recs = [rec("pft-a.service", T0 + 3 * i * DAY, (100 + 30 * i) * MIB, cap=400 * MIB) for i in range(3)]
+        u = self.one(recs, t_now=T0 + 6 * DAY)
         self.assertEqual(u["verdict"], "FAIL")
-        self.assertTrue(any("30-day projection 420MiB >= cap 400MiB" in r for r in u["reasons"]))
+        self.assertTrue(any("30-day projection 460MiB >= cap 400MiB" in r for r in u["reasons"]))
 
     def test_projection_90d_over_cap_warns(self):
-        recs = [rec("pft-a.service", T0 + i * DAY, (100 + 10 * i) * MIB, cap=1000 * MIB) for i in range(3)]
-        u = self.one(recs, t_now=T0 + 2 * DAY)
+        recs = [rec("pft-a.service", T0 + 3 * i * DAY, (100 + 30 * i) * MIB, cap=1000 * MIB) for i in range(3)]
+        u = self.one(recs, t_now=T0 + 6 * DAY)
         self.assertEqual(u["verdict"], "WARN")
         self.assertTrue(any("90-day projection" in r for r in u["reasons"]))
 
     def test_shrinking_peaks_do_not_project_down(self):
-        recs = [rec("pft-a.service", T0 + i * DAY, (300 - 50 * i) * MIB) for i in range(3)]
-        u = self.one(recs, t_now=T0 + 2 * DAY)
+        recs = [rec("pft-a.service", T0 + 3 * i * DAY, (300 - 50 * i) * MIB) for i in range(3)]
+        u = self.one(recs, t_now=T0 + 6 * DAY)
         self.assertEqual(u["slope_per_day"], 0)
         self.assertEqual(u["proj30"], 300 * MIB)
+
+    def test_short_span_no_projection(self):
+        # the live install case: 5 runs within 12 minutes, 0.2 -> 7 MiB; a fitted slope would project ~23 GiB
+        recs = [
+            rec("pft-a.service", T0 + i * 180, p * MIB // 10, cap=128 * MIB) for i, p in enumerate((2, 2, 16, 10, 70))
+        ]
+        u = self.one(recs, t_now=T0 + 720)
+        self.assertEqual((u["proj30"], u["proj90"], u["verdict"]), (None, None, "OK"))
+        self.assertIn("runs span 0.01 d < PROJ_MIN_SPAN_DAYS 3: no projection", u["reasons"][-1])
+        recs = [rec("pft-a.service", T0 + i * DAY * 1.5, (100 + 10 * i) * MIB, cap=2048 * MIB) for i in range(3)]
+        self.assertIsNotNone(self.one(recs, t_now=T0 + 3 * DAY)["proj30"])  # exactly 3 days: projected
 
     def test_too_few_runs_no_projection(self):
         u = self.one([rec("pft-a.service", T0, 100 * MIB), rec("pft-a.service", T0 + DAY, 100 * MIB)])

@@ -156,6 +156,14 @@ MUTANTS = [
         'if False:\n        verdict = "FAIL"',
     ),
     ("B34", B, "projection on too few runs", 'if len(recs) >= conf["MIN_RUNS"]:', "if True:"),
+    ("B63", B, "projection over a short span", 'and span_days >= conf["PROJ_MIN_SPAN_DAYS"]:', ":"),
+    (
+        "B64",
+        B,
+        "span bound strict",
+        'and span_days >= conf["PROJ_MIN_SPAN_DAYS"]:',
+        'and span_days > conf["PROJ_MIN_SPAN_DAYS"]:',
+    ),
     ("B35", B, "negative growth lowers projection", "slope = max(0.0, slope)", "slope = slope"),
     ("B36", B, "projection from the mean time, not now", "base = my + slope * (t_now - mt) / 86400", "base = my"),
     (
