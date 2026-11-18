@@ -334,13 +334,20 @@ def file_hour(name):
 CARRY_HOURS = 2  # U is rewritten every UNL_EVERY_S (and at every collector start), Q every QUORUM_EVERY ledgers
 
 
-def load(directory, t_from=None, t_to=None):
-    """Records with t_from <= r < t_to, plus the newest U and Q record from before t_from (carried in, so a
-    window shorter than the hourly UNL record still knows the UNL and quorum).
-    Memory is bounded by the window, not the retention: only hour files overlapping [t_from - CARRY_HOURS h, t_to)
-    are opened, and validations from keys that are in no UNL seen so far are dropped while reading (they cannot
-    be graded; about 60 % of all validation records on the testnet)."""
-    recs, bad, carry, unl_union = [], 0, {}, set()
+def iter_load(directory, t_from=None, t_to=None, st=None):
+    """Yield records with t_from <= r < t_to in (r, t, i, k) order, one hour file at a time, and fill `st` with
+    "bad" (unparsable lines) and "carry" (the newest U and Q record from before t_from, carried in so a window
+    shorter than the hourly UNL record still knows the UNL and quorum).
+    Hour files partition `r` (the collector names each file after its records' receive hour), so sorting each
+    file on its own gives the same order as sorting everything, and only one file's records are held at a time.
+    Only hour files overlapping [t_from - CARRY_HOURS h, t_to) are opened, and validations from keys that are in
+    no UNL seen so far are dropped while reading (they cannot be graded; about 60 % of all validation records on
+    the testnet). `carry` is final once the first record is yielded: carry records have r < t_from, so they all
+    sit in files before, or in the same file as, the first record of the window."""
+    st = {} if st is None else st
+    st.setdefault("bad", 0)
+    carry = st.setdefault("carry", {})
+    unl_union = set()
     for f in sorted(os.listdir(directory)):
         hour = file_hour(f)
         if hour is None:
@@ -349,10 +356,11 @@ def load(directory, t_from=None, t_to=None):
             continue
         if t_to is not None and hour >= t_to:
             continue
+        recs = []
         with open(os.path.join(directory, f), encoding="utf-8") as fh:
             for line in fh:
                 if len(line) > MAX_LINE:
-                    bad += 1
+                    st["bad"] += 1
                     continue
                 try:
                     rec = json.loads(line)
@@ -361,7 +369,7 @@ def load(directory, t_from=None, t_to=None):
                     if t == "U":
                         unl_union.update(rec["keys"])
                 except (ValueError, KeyError, TypeError):
-                    bad += 1  # e.g. a torn last line after a crash
+                    st["bad"] += 1  # e.g. a torn last line after a crash
                     continue
                 if t == "V" and rec.get("k") not in unl_union:
                     continue
@@ -372,8 +380,23 @@ def load(directory, t_from=None, t_to=None):
                     if t == "V":
                         rec["h"], rec["k"] = sys.intern(rec["h"]), sys.intern(rec["k"])
                     recs.append(rec)
-    recs.sort(key=lambda x: (x["r"], x.get("t", ""), x.get("i", 0), x.get("k", "")))
-    return [carry[t] for t in ("U", "Q") if t in carry], recs, bad
+        recs.sort(key=rec_order)
+        yield from recs
+
+
+def rec_order(x):
+    return (x["r"], x.get("t", ""), x.get("i", 0), x.get("k", ""))
+
+
+def load(directory, t_from=None, t_to=None):
+    """iter_load as lists: (carried U/Q records, records, bad line count). Used by tests and small windows."""
+    st = {}
+    recs = list(iter_load(directory, t_from, t_to, st))
+    return [st["carry"][t] for t in ("U", "Q") if t in st["carry"]], recs, st["bad"]
+
+
+def carried_of(st):
+    return lambda: [st["carry"][t] for t in ("U", "Q") if t in st["carry"]]
 
 
 def pct(values, p):
@@ -386,30 +409,52 @@ def pct(values, p):
 
 
 def analyze(recs, bad=0, warn_delay_ms=3000, min_participation=0.9, min_margin=2, detail=False, carried=()):
+    """Grade records in (r, t, i, k) order. `recs` may be any iterable (one pass, nothing but per-ledger state is
+    kept); `carried` is a list of U/Q records or a callable returning it, called before the first record (or at
+    the end if there is none), and `bad` a count or a callable returning it after the pass."""
     unl, quorum = None, None
-    ledgers = {}  # index -> {"h":hash, "r":ms, "q":quorum, "keys":set(UNL)}
+    cand = []  # (index, hash, r, quorum, UNL keys) of every L record that had a UNL and a quorum before it
     vals = {}  # (index, hash) -> {key: r}
-    reconnects = 0
-    conn = []
-    lo = recs[0]["r"] + EDGE_MS if recs else 0
-    hi = recs[-1]["r"] - EDGE_MS if recs else 0
-    for rec in [*carried, *recs]:
+    reconnects, n, first_ms, last_ms, pre = 0, 0, None, None, None
+    keysets = {}  # one frozenset per distinct UNL, shared by all its ledgers
+
+    def take(rec):
+        nonlocal unl, quorum, reconnects
         t = rec.get("t")
         if t == "U":
             unl = rec
         elif t == "Q":
             quorum = int(rec["q"]) or quorum
         elif t == "C":
-            conn.append(rec)
             if rec.get("ev") == "disconnect":
                 reconnects += 1
         elif t == "L":
-            if unl is not None and quorum is not None and lo <= rec["r"] <= hi:
-                ledgers.setdefault(
-                    int(rec["i"]), {"h": rec["h"], "r": rec["r"], "q": quorum, "keys": frozenset(unl["keys"])}
-                )
+            if unl is not None and quorum is not None:
+                ks = tuple(unl["keys"])
+                cand.append((int(rec["i"]), rec["h"], rec["r"], quorum, keysets.setdefault(ks, frozenset(ks))))
         elif t == "V" and rec.get("f"):
             vals.setdefault((int(rec["i"]), rec["h"]), {}).setdefault(rec["k"], rec["r"])
+
+    for rec in recs:
+        if pre is None:
+            pre = carried() if callable(carried) else carried
+            for c in pre:
+                take(c)
+        n += 1
+        first_ms = rec["r"] if first_ms is None else first_ms
+        last_ms = rec["r"]
+        take(rec)
+    if pre is None:
+        for c in carried() if callable(carried) else carried:
+            take(c)
+    bad = bad() if callable(bad) else bad
+    lo = first_ms + EDGE_MS if n else 0
+    hi = last_ms - EDGE_MS if n else 0
+    ledgers = {}  # index -> {"h":hash, "r":ms, "q":quorum, "keys":set(UNL)}
+    for idx, h, r, q, keys in cand:
+        if lo <= r <= hi:
+            ledgers.setdefault(idx, {"h": h, "r": r, "q": q, "keys": keys})
+    cand.clear()
     all_keys = sorted(set().union(*(lg["keys"] for lg in ledgers.values()))) if ledgers else []
     per = {k: {"expected": 0, "agreed": 0, "delays": []} for k in all_keys}
     margins, per_ledger = {}, {}
@@ -456,10 +501,10 @@ def analyze(recs, bad=0, warn_delay_ms=3000, min_participation=0.9, min_margin=2
     m = list(margins.values())
     below = sorted(i for i, v in margins.items() if v < min_margin)
     return {
-        "records": len(recs),
+        "records": n,
         "bad_lines": bad,
-        "first_ms": recs[0]["r"] if recs else None,
-        "last_ms": recs[-1]["r"] if recs else None,
+        "first_ms": first_ms,
+        "last_ms": last_ms,
         "ledgers": len(ledgers),
         "first_ledger": min(ledgers) if ledgers else None,
         "last_ledger": max(ledgers) if ledgers else None,
@@ -529,10 +574,20 @@ def add_thresholds(p):
 
 
 def cmd_report(a):
-    carried, recs, bad = load(a.dir, a.from_, a.to)
-    rep = analyze(recs, bad, a.warn_delay_ms, a.min_participation, a.min_margin, detail=a.detail, carried=carried)
+    st = {}
+    recs = iter_load(a.dir, a.from_, a.to, st)
+    rep = analyze(
+        recs,
+        lambda: st["bad"],
+        a.warn_delay_ms,
+        a.min_participation,
+        a.min_margin,
+        detail=a.detail,
+        carried=carried_of(st),
+    )
     if a.json or a.detail:
-        sys.stdout.write(json.dumps(rep, sort_keys=True, indent=1) + "\n")
+        json.dump(rep, sys.stdout, sort_keys=True, indent=1)  # streamed: --detail over 24 h is ~50 MB of JSON
+        sys.stdout.write("\n")
     else:
         sys.stdout.write(render_text(rep))
     return 0 if rep["ledgers"] else 4
@@ -544,8 +599,9 @@ def esc(v):
 
 def cmd_textfile(a):
     now = a.now if a.now is not None else int(time.time())
-    carried, recs, bad = load(a.dir, now - a.window, now + 1)
-    rep = analyze(recs, bad, a.warn_delay_ms, a.min_participation, a.min_margin, carried=carried)
+    st = {}
+    recs = iter_load(a.dir, now - a.window, now + 1, st)
+    rep = analyze(recs, lambda: st["bad"], a.warn_delay_ms, a.min_participation, a.min_margin, carried=carried_of(st))
     n = esc(a.name)
     lines = []
 

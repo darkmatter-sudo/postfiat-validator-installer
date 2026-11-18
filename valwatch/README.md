@@ -22,7 +22,7 @@ from a peering problem of one host (only that host sees it). `pft-valwatch compa
 | UNL | the node's own publisher-list cache `cache.<publisher>` in the volume mounted at `/var/lib/postfiatd/db` (path from `docker inspect`, read on the host). The list's 33-byte keys are converted to base58 `nH...` master keys, the same form the stream reports as `master_key`. No admin RPC, no `docker exec`, no third-party site. |
 | Docker | `docker port` and `docker inspect` only (to resolve the endpoint and the volume). The node container is AppArmor/seccomp-confined; valwatch never enters it. |
 | Writes | `DATA_DIR/<container>/valwatch-YYYYMMDDTHH.jsonl` (one compact record per line; validation `data`/`signature` blobs are not stored) and `pft_valwatch_<container>.prom` in the exporter's textfile dir. |
-| Bounds | hourly files older than `RETAIN_HOURS` (24) are deleted, and the oldest beyond `MAX_DIR_BYTES` (512 MiB). Measured: ~14 MiB/h per host (25 UNL + 41 other validators on the testnet), so 24 h ~ 340 MiB. Readers open only the hour files that overlap their window (+2 h for the UNL/quorum carry-in) and drop validations of keys in no UNL while reading, so memory follows the window, not the retention (`logs/` memory log). Lines over 64 KiB and torn lines are counted as `bad_lines`, never fatal. |
+| Bounds | hourly files older than `RETAIN_HOURS` (24) are deleted, and the oldest beyond `MAX_DIR_BYTES` (512 MiB). Measured: ~14 MiB/h per host (25 UNL + 41 other validators on the testnet), so 24 h ~ 340 MiB. Readers open only the hour files that overlap their window (+2 h for the UNL/quorum carry-in) and drop validations of keys in no UNL while reading, so memory follows the window, not the retention. `report` and `textfile` read and sort one hour file at a time and keep only per-ledger state (hour files partition the receive time, so the order equals a global sort); measured on a synthetic 24 h directory (336 MB, `tests/gen_synthetic.py`): `report` 118 MiB peak RSS, `--detail` 176 MiB, 15-min `textfile` 23 MiB, with output byte-identical to the earlier load-everything version (`tests/memcmp.sh`, `logs/04-stream-equivalence.log`). Lines over 64 KiB and torn lines are counted as `bad_lines`, never fatal. |
 
 Record types (`r` = receive time on this host, epoch ms):
 
@@ -135,3 +135,12 @@ shellcheck pft-valwatch.sh install.sh && ruff check . && ruff format --check .
 Fixtures (`tests/fixtures/`) are real 240 s captures taken on the validator and the sentry at the same time
 (2026-11-18T18:24:57Z) and the validator's publisher-list cache (the public, signed list). They contain only
 public ledger data: validator keys, ledger hashes and indexes, and receive times.
+
+## Logs
+
+- `logs/02-memory.log`: peak RSS of the first (load-everything) reader on the synthetic 24 h directory.
+- `logs/03-stream-equivalence.log`: first old-vs-new run. All 12 outputs identical, but the generator then wrote a
+  UNL record only in its first copy, so the two `--from` windows and the textfile graded no ledger on either
+  version (rc 4 / 1). That was a harness defect: the generator now repeats the UNL record hourly, as the collector does.
+- `logs/04-stream-equivalence.log`: re-run with the fixed generator: all 12 outputs byte-identical, windowed
+  cases graded (rc 0), PASS.

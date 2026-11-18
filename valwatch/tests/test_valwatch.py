@@ -282,6 +282,67 @@ def test_load_drops_non_unl_validations_and_skips_far_files(tmp_path, vrecs):
     assert "valwatch-notanhour.jsonl" in os.listdir(d) and "valwatch-20261101T00.jsonl" not in os.listdir(d)
 
 
+def _spread_over_hours(recs, step_ms=1_200_000):
+    """Same records, every 20th ledger's records pushed one more 20-minute step later (several hour files)."""
+    out, shift, n = [], 0, 0
+    for r in sorted(recs, key=valwatch.rec_order):
+        if r["t"] == "L":
+            n += 1
+            if n % 20 == 0:
+                shift += step_ms
+        out.append({**r, "r": r["r"] + shift})
+    return out
+
+
+@pytest.mark.parametrize("window", ["all", "from_mid", "from_to"])
+def test_streaming_report_equals_list_report(tmp_path, vrecs, window):
+    """iter_load + a generator into analyze (what report/textfile run) == load + sorted lists, over several hour
+    files, with and without carry-in; carried is read lazily, after the reader has seen the carry records."""
+    recs = _spread_over_hours(vrecs)
+    d = write_dir(tmp_path / "d", recs)
+    assert len(os.listdir(d)) >= 2  # control: the records really span several hour files
+    rs = sorted(r["r"] for r in recs)
+    mid = rs[len(rs) // 2] // 1000
+    t_from, t_to = {"all": (None, None), "from_mid": (mid, None), "from_to": (mid, rs[len(rs) * 7 // 8] // 1000)}[
+        window
+    ]
+    carried, lst, bad = valwatch.load(d, t_from, t_to)
+    want = valwatch.analyze(lst, bad, detail=True, carried=carried)
+    st, calls = {}, []
+
+    def lazy():
+        calls.append(dict(st["carry"]))
+        return valwatch.carried_of(st)()
+
+    gen = valwatch.iter_load(d, t_from, t_to, st)
+    got = valwatch.analyze(gen, lambda: st["bad"], detail=True, carried=lazy)
+    assert json.dumps(got, sort_keys=True) == json.dumps(want, sort_keys=True)
+    assert want["ledgers"] > 0 and len(calls) == 1
+    if t_from is not None:
+        assert set(calls[0]) == {"U", "Q"}  # the carry was complete when it was read
+
+
+def test_streaming_load_keeps_one_hour_file(tmp_path, vrecs):
+    """The reader yields file by file: after the first record, later hour files have not been opened yet."""
+    recs = _spread_over_hours(vrecs)
+    d = write_dir(tmp_path / "d", recs)
+    last = max(d.iterdir())
+    gen = valwatch.iter_load(d)
+    next(gen)
+    last.write_text("not json\n")  # replaced before the reader reaches it
+    st = {}
+    gen = valwatch.iter_load(d, st=st)
+    n = sum(1 for _ in gen)
+    assert st["bad"] == 1 and n < len(recs)  # the replaced file was read after the first one was yielded
+
+
+def test_analyze_without_records_still_reads_carry():
+    u = {"t": "U", "seq": 3, "exp": 1, "pub": "AB", "keys": ["nHa"], "r": 1}
+    rep = valwatch.analyze(iter(()), carried=lambda: [u])
+    assert rep["unl"]["seq"] == 3 and rep["records"] == 0 and rep["ledgers"] == 0
+    assert valwatch.analyze(iter(()))["unl"] is None  # control
+
+
 # ------------------------------------------------------------------ report CLI: deterministic, offline
 def run_helper(*args, timeout=60):
     return subprocess.run(
