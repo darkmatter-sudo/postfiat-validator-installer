@@ -245,10 +245,10 @@ reset; before="$(FILES)"; touch "$T/su_fail"; OUT="$(bash "$S" apply --yes 2>&1)
 check "apply when root su fails before: exit 4, nothing written" '[ "$RC" = 4 ] && nochange'
 
 # ---------- apply: success, automatic restore, rollback ----------
-reset; before="$(FILES)"; OUT="$(bash "$S" apply --yes 2>&1)"; RC=$?
+reset; before="$(FILES)"; m_su="$(stat -c %a "$E/pam.d/su")"; OUT="$(bash "$S" apply --yes 2>&1)"; RC=$?
 check "apply: exit 0, self-test PASS" '[ "$RC" = 0 ] && grep -q "self-test PASS" <<<"$OUT"'
 check "apply: self-test ran before AND after the change" '[ "$(wc -l < "$T/selftest.calls")" = 2 ]'
-check "apply: modes preserved" '[ "$(stat -c %a "$E/default/useradd")" = 640 ] && [ "$(stat -c %a "$E/pam.d/su")" = "$(stat -c %a "$FX/pam.d-su")" ]'
+check "apply: modes preserved" '[ "$(stat -c %a "$E/default/useradd")" = 640 ] && [ "$(stat -c %a "$E/pam.d/su")" = "$m_su" ]'
 check "apply: apply.json records 4 files with their before sha256" '[ "$(jq ".files|length" "$T/state/apply.json")" = 4 ]'
 check "apply: backup dir 0700" '[ "$(stat -c %a "$T/state/backup")" = 700 ]'
 check "apply: only the planned lines changed in common-auth" '[ "$(diff "$FX/pam.d-common-auth" "$E/pam.d/common-auth" | grep -c "^[<>]")" = 2 ]'

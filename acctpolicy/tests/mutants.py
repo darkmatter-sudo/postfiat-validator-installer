@@ -186,6 +186,12 @@ if __name__ == "__main__":
     src = read(SRC)
     for m in MUTANTS:
         mutate(src, m[2], m[3], m[4])  # every anchor must exist before anything runs
+    # baseline: the unmutated suite must pass, or every "catch" below would be the same pre-existing FAIL
+    base = run(("M00", "unmutated (baseline)", "", "", 1))
+    print(base[0].replace("CAUGHT  ", "BASELINE FAIL").replace("SURVIVED", "BASELINE ok "), flush=True)
+    if base[1]:
+        print("MUTANTS: baseline suite fails - no mutant run")
+        sys.exit(2)
     with cf.ThreadPoolExecutor(jobs) as ex:
         res = list(ex.map(run, [m for m in MUTANTS if only is None or m[0] in only]))
     for line, _ in res:

@@ -1,0 +1,956 @@
+acctpolicy two-host run - 2026-11-18T16:17:21Z - Ubuntu 22.04.5 LTS - repo main 5f42949073167fc9aa13d788bc475cabd8ecf06d (clean: yes)
+
+== 0. preflight (read-only)
+$ sha256sum acctpolicy/pft-acctpolicy.sh acctpolicy/install.sh acctpolicy/drill/live-run.sh fleet/manifest.tsv
+  ce6d81830b71c05f1a779387f6fca4833e13350aedc34c490cfd14760ac24a92  acctpolicy/pft-acctpolicy.sh
+  68d495ce17ea5f6e17656c891ff57a6f2d9f59ef33f956832f163657b570bf31  acctpolicy/install.sh
+  6a17bfc119b512599e64b0b7130ee4f805bf8de1a01181e8965e93db1b30b9be  acctpolicy/drill/live-run.sh
+  61f0f0641432a441915a6771cef7e694a8c8c9d93ebaf88123cb4e6ed731b80e  fleet/manifest.tsv
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 273 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 162 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts before the run
+$ srv_state
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ ls /usr/local/bin/pft-acctpolicy 2>&1; sudo -n ls /var/lib/pft-acctpolicy 2>&1; R 'ls /usr/local/bin/pft-acctpolicy /var/lib/pft-acctpolicy 2>&1'
+  ls: cannot access '/usr/local/bin/pft-acctpolicy': No such file or directory
+  ls: cannot access '/var/lib/pft-acctpolicy': No such file or directory
+  ls: cannot access '/usr/local/bin/pft-acctpolicy': No such file or directory
+  ls: cannot access '/var/lib/pft-acctpolicy': No such file or directory
+  (exit 2)
+CHECK ok   not installed yet on either host
+$ grep -c '^acctpolicy ' fleet/manifest.tsv
+  1
+  (exit 0)
+CHECK ok   HEAD lists 1 acctpolicy manifest line
+$ for c in sshd ssh-keygen jq diff sha256sum; do command -v $c || ls /usr/sbin/$c; done | wc -l; R 'for c in sshd ssh-keygen jq diff sha256sum; do command -v $c || ls /usr/sbin/$c; done | wc -l'
+  5
+  5
+  (exit 0)
+CHECK ok   sshd ssh-keygen jq diff sha256sum on both hosts
+$ sudo -n true && echo v-sudo-ok; R "sudo -u <user2> sudo -n true && echo s-sudo-ok"; R 'true' && echo s-ssh-ok
+  v-sudo-ok
+  s-sudo-ok
+  s-ssh-ok
+  (exit 0)
+CHECK ok   self-test users have sudo -n (validator agent user, sentry self-test user), real ssh to the sentry works
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+$ curl -s --max-time 10 http://<redacted-ip>:9090/api/v1/alerts | jq -r .status; curl -s --max-time 10 http://<redacted-ip>:9093/api/v2/status | jq -r 'if (.uptime // "") != "" then "up" else "down" end'
+  success
+  up
+  (exit 0)
+CHECK ok   Prometheus and Alertmanager answer (alert gates below fail closed)
+$ curl -s http://<redacted-ip>:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'; curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '.data.alerts[] | "\(.labels.alertname) \(.state)"' | sort | uniq -c
+  0
+        1 PFTAlertPipelineWatchdog firing
+  (exit 0)
+CHECK ok   no active silence; only the pipeline watchdog pending/firing in Prometheus
+$ aw_unknown
+  2
+  (exit 0)
+CHECK ok   authwatch baseline read (non-allowlisted accepted logins so far: 2)
+
+== 1. rollout silence (fleet/aptrust see a new binary, integrity sees policy files, authwatch a new allowlist line; not the watchdog)
+CHECK ok   Alertmanager silence created (fleet, aptrust, integrity, authwatch, keyescrow; not the watchdog) until 2026-11-18T17:08:45Z
+
+== 2. pft-maint window, [MAINT] messages to a throwaway topic (real file kept as $BK)
+real /etc/pft-maint/ntfy.env present before: 0
+$ { [ $HAD = 0 ] || sudo -n cp -p $NE $BK; } && printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' "$TT" | sudo -n tee $NE >/dev/null && sudo -n chmod 600 $NE && sudo -n stat -c '%a %U' $NE
+  600 root
+  (exit 0)
+CHECK ok   throwaway target installed
+$ sudo -n pft-maint start --ttl 40m --reason 'task_6a2e044a acctpolicy install + fixes'
+  window started: id m1795018725-3016872 until 2026-11-18T16:58:45Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint window open
+CHECK ok   sentry has the window (via the watchdog channel) after 50s
+
+== 3. pft-fleet: manifest (fleet add-on), acctpolicy, then aptrust's allowlist copy
+$ sudo -n pft-fleet sync --addon fleet --to 5f42949073167fc9aa13d788bc475cabd8ecf06d --apply --reason 'task_6a2e044a acctpolicy manifest line'
+  [2026-11-18T16:20:21Z] sync fleet to 5f42949073167fc9aa13d788bc475cabd8ecf06d (2026-11-18T16:14:12+00:00) REF main=5f42949073167fc9aa13d788bc475cabd8ecf06d
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN validator validator /usr/local/sbin/pft-fleet 0755 CURRENT 61cafcfcdaa9 61cafcfcdaa9 keep
+  PLAN validator validator /usr/local/lib/pft-fleet/fleet_lib.py 0644 CURRENT dcb37d26f33f dcb37d26f33f keep
+  PLAN validator validator /usr/local/lib/pft-fleet/manifest.tsv 0644 BEHIND a49b4e7d02aa 61f0f0641432 write
+  PLAN validator validator /etc/systemd/system/pft-fleet.service 0644 CURRENT 3105a2f0a144 3105a2f0a144 keep
+  PLAN validator validator /etc/systemd/system/pft-fleet.timer 0644 CURRENT 79839ee00a81 79839ee00a81 keep
+  [2026-11-18T16:20:21Z] order: sentry validator
+  [2026-11-18T16:20:21Z] sentry: every fleet file already at 5f4294907316 - nothing to do
+  [2026-11-18T16:20:21Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/lib/pft-fleet/manifest.tsv sha256 a49b4e7d02aa -> /var/lib/pft-fleet/backup/20261118T162021Z-fleet-validator
+  WRITE validator /usr/local/lib/pft-fleet/manifest.tsv a49b4e7d02aa -> 61f0f0641432 mode 0644
+  GATE validator sha256 /usr/local/lib/pft-fleet/manifest.tsv = target 61f0f0641432 PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync fleet@5f4294907316 (manifest.tsv)
+  [2026-11-18T16:21:12Z] SYNCED validator fleet -> 5f4294907316
+  [2026-11-18T16:21:12Z] sync complete
+  (exit 0)
+CHECK ok   fleet manifest sync exit 0
+$ sudo -n pft-fleet sync --addon acctpolicy --to 5f42949073167fc9aa13d788bc475cabd8ecf06d --apply --reason 'task_6a2e044a acctpolicy 5f42949 first install'
+  [2026-11-18T16:21:46Z] sync acctpolicy to 5f42949073167fc9aa13d788bc475cabd8ecf06d (2026-11-18T16:14:12+00:00) REF main=5f42949073167fc9aa13d788bc475cabd8ecf06d
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN sentry sentry /usr/local/bin/pft-acctpolicy 0755 MISSING - ce6d81830b71 write
+  PLAN validator validator /usr/local/bin/pft-acctpolicy 0755 MISSING - ce6d81830b71 write
+  [2026-11-18T16:21:46Z] order: sentry validator
+  [2026-11-18T16:21:46Z] sentry: 1 file(s) to write
+  PRE sentry pft-maint window active PASS
+  PRE sentry node server_state=full PASS
+  PRE sentry pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP sentry /usr/local/bin/pft-acctpolicy absent before sync (rollback removes it)
+  WRITE sentry /usr/local/bin/pft-acctpolicy - -> ce6d81830b71 mode 0755
+  GATE sentry sha256 /usr/local/bin/pft-acctpolicy = target ce6d81830b71 PASS
+  GATE sentry syntax /usr/local/bin/pft-acctpolicy bash -n PASS
+  GATE sentry addon units failed=none PASS
+  GATE sentry node server_state=full PASS
+  ACCEPT sentry pft-integrity baseline updated: pft-fleet sync acctpolicy@5f4294907316 (pft-acctpolicy)
+  [2026-11-18T16:22:35Z] SYNCED sentry acctpolicy -> 5f4294907316
+  [2026-11-18T16:22:35Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/bin/pft-acctpolicy absent before sync (rollback removes it)
+  WRITE validator /usr/local/bin/pft-acctpolicy - -> ce6d81830b71 mode 0755
+  GATE validator sha256 /usr/local/bin/pft-acctpolicy = target ce6d81830b71 PASS
+  GATE validator syntax /usr/local/bin/pft-acctpolicy bash -n PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync acctpolicy@5f4294907316 (pft-acctpolicy)
+  [2026-11-18T16:23:27Z] SYNCED validator acctpolicy -> 5f4294907316
+  [2026-11-18T16:23:27Z] sync complete
+  (exit 0)
+CHECK ok   acctpolicy sync exit 0
+$ sudo -n pft-fleet sync --addon aptrust --to 5f42949073167fc9aa13d788bc475cabd8ecf06d --apply --reason 'task_6a2e044a aptrust allowlist copy += acctpolicy row'
+  [2026-11-18T16:23:55Z] sync aptrust to 5f42949073167fc9aa13d788bc475cabd8ecf06d (2026-11-18T16:14:12+00:00) REF main=5f42949073167fc9aa13d788bc475cabd8ecf06d
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN sentry sentry /usr/local/bin/pft-aptrust 0755 CURRENT 0e7722706169 0e7722706169 keep
+  PLAN sentry sentry /usr/local/lib/pft-aptrust/manifest.tsv 0644 BEHIND a49b4e7d02aa 61f0f0641432 write
+  PLAN sentry sentry /etc/systemd/system/pft-aptrust.service 0644 CURRENT 4dfc8751acb0 4dfc8751acb0 keep
+  PLAN sentry sentry /etc/systemd/system/pft-aptrust.timer 0644 CURRENT 1f6d67e56237 1f6d67e56237 keep
+  PLAN validator validator /usr/local/bin/pft-aptrust 0755 CURRENT 0e7722706169 0e7722706169 keep
+  PLAN validator validator /usr/local/lib/pft-aptrust/manifest.tsv 0644 BEHIND a49b4e7d02aa 61f0f0641432 write
+  PLAN validator validator /etc/systemd/system/pft-aptrust.service 0644 CURRENT 4dfc8751acb0 4dfc8751acb0 keep
+  PLAN validator validator /etc/systemd/system/pft-aptrust.timer 0644 CURRENT 1f6d67e56237 1f6d67e56237 keep
+  PLAN validator validator /etc/systemd/system/pft-aptrust-pull.service 0644 CURRENT 25f018e00e72 25f018e00e72 keep
+  PLAN validator validator /etc/systemd/system/pft-aptrust-pull.timer 0644 CURRENT edf767945c09 edf767945c09 keep
+  [2026-11-18T16:23:55Z] order: sentry validator
+  [2026-11-18T16:23:55Z] sentry: 1 file(s) to write
+  PRE sentry pft-maint window active PASS
+  PRE sentry node server_state=full PASS
+  PRE sentry pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP sentry /usr/local/lib/pft-aptrust/manifest.tsv sha256 a49b4e7d02aa -> /var/lib/pft-fleet/backup/20261118T162355Z-aptrust-sentry
+  WRITE sentry /usr/local/lib/pft-aptrust/manifest.tsv a49b4e7d02aa -> 61f0f0641432 mode 0644
+  GATE sentry sha256 /usr/local/lib/pft-aptrust/manifest.tsv = target 61f0f0641432 PASS
+  GATE sentry addon units failed=none PASS
+  GATE sentry node server_state=full PASS
+  ACCEPT sentry pft-integrity baseline updated: pft-fleet sync aptrust@5f4294907316 (manifest.tsv)
+  [2026-11-18T16:24:45Z] SYNCED sentry aptrust -> 5f4294907316
+  [2026-11-18T16:24:45Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/lib/pft-aptrust/manifest.tsv sha256 a49b4e7d02aa -> /var/lib/pft-fleet/backup/20261118T162355Z-aptrust-validator
+  WRITE validator /usr/local/lib/pft-aptrust/manifest.tsv a49b4e7d02aa -> 61f0f0641432 mode 0644
+  GATE validator sha256 /usr/local/lib/pft-aptrust/manifest.tsv = target 61f0f0641432 PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync aptrust@5f4294907316 (manifest.tsv)
+  [2026-11-18T16:25:35Z] SYNCED validator aptrust -> 5f4294907316
+  [2026-11-18T16:25:35Z] sync complete
+  (exit 0)
+CHECK ok   aptrust sync exit 0
+$ sha256sum acctpolicy/pft-acctpolicy.sh | cut -c1-64; sha256sum /usr/local/bin/pft-acctpolicy | cut -c1-64; R 'sha256sum /usr/local/bin/pft-acctpolicy | cut -c1-64'
+  ce6d81830b71c05f1a779387f6fca4833e13350aedc34c490cfd14760ac24a92
+  ce6d81830b71c05f1a779387f6fca4833e13350aedc34c490cfd14760ac24a92
+  ce6d81830b71c05f1a779387f6fca4833e13350aedc34c490cfd14760ac24a92
+  (exit 0)
+CHECK ok   installed script = repo bytes on both hosts
+
+== 4. install.sh on both hosts (state dir, self-test key, authwatch allowlist entry, first audit)
+$ git archive 5f42949073167fc9aa13d788bc475cabd8ecf06d acctpolicy | R 'rm -rf ~/pft-acctpolicy-5f42949 && mkdir -m 700 ~/pft-acctpolicy-5f42949 && tar -x -C ~/pft-acctpolicy-5f42949'
+  
+  (exit 0)
+$ R 'sudo -n bash ~/pft-acctpolicy-5f42949/acctpolicy/install.sh'
+  2026-11-18T16:25:37Z /usr/local/bin/pft-acctpolicy already current
+  2026-11-18T16:25:37Z created the self-test key
+  2026-11-18T16:25:37Z authwatch allowlist: self-test key added
+  2026-11-18T16:25:37Z audit:
+  pft-acctpolicy 1.0.0 audit - 2026-11-18T16:25:39Z
+  acct.uid0            PASS root is the only UID 0 account
+  acct.dup-uid         PASS all UIDs unique
+  acct.dup-name        PASS user and group names unique
+  acct.shadowed        PASS every account has x in passwd and a shadow entry
+  acct.empty-password  PASS no empty password field
+  acct.hash-scheme     PASS 1 usable hash(es), all yescrypt/sha512
+  acct.root-password   PASS root has a usable password (console recovery); sshd: password no, kbd-interactive no, permitrootlogin without-password
+  acct.system-shell    PASS 2 system account(s) with a shell, all locked + forced-command keys only
+  acct.file-modes      PASS account files 0644/0640 or stricter, root-owned
+  acct.home-modes      PASS 1 human home(s), none group-writable or world-accessible
+  pam.nullok           WARN common-auth pam_unix has nullok
+  pam.permit           PASS pam_permit.so is never sufficient in an auth stack
+  pam.faillock         PASS not configured; no password path to lock out: sshd password/kbd-interactive no, 0 non-root accounts with a usable password
+  pam.su-wheel         WARN su is open to every account that knows the target password (no active pam_wheel use_uid)
+  login.encrypt        WARN ENCRYPT_METHOD SHA512 vs pam_unix yescrypt (chpasswd/newusers would hash differently from passwd)
+  login.pass-max       WARN PASS_MAX_DAYS 99999 (> 365) or PASS_MIN_DAYS 0 (< 1)
+  login.umask          PASS UMASK 022
+  useradd.inactive     WARN INACTIVE=-1 (default) (accounts never lock after password expiry)
+  ctr.uid0             PASS root is the only UID 0 account
+  ctr.empty-password   PASS postfiatd-sentry: no empty password field, no hash in passwd
+  ctr.runtime          PASS postfiatd-sentry: not privileged, no-new-privileges, cap-drop ALL
+  RESULT: FINDINGS - 0 FAIL, 5 WARN, 16 PASS
+  (exit 0)
+CHECK ok   sentry install: binary current, key created, allowlisted
+$ sudo -n bash acctpolicy/install.sh
+  2026-11-18T16:25:39Z /usr/local/bin/pft-acctpolicy already current
+  2026-11-18T16:25:39Z created the self-test key
+  2026-11-18T16:25:40Z authwatch allowlist: self-test key added
+  2026-11-18T16:25:40Z audit:
+  pft-acctpolicy 1.0.0 audit - 2026-11-18T16:25:42Z
+  acct.uid0            PASS root is the only UID 0 account
+  acct.dup-uid         PASS all UIDs unique
+  acct.dup-name        PASS user and group names unique
+  acct.shadowed        PASS every account has x in passwd and a shadow entry
+  acct.empty-password  PASS no empty password field
+  acct.hash-scheme     PASS 1 usable hash(es), all yescrypt/sha512
+  acct.root-password   PASS root has a usable password (console recovery); sshd: password no, kbd-interactive no, permitrootlogin without-password
+  acct.system-shell    PASS 0 system account(s) with a shell, all locked + forced-command keys only
+  acct.file-modes      PASS account files 0644/0640 or stricter, root-owned
+  acct.home-modes      PASS 2 human home(s), none group-writable or world-accessible
+  pam.nullok           WARN common-auth pam_unix has nullok
+  pam.permit           PASS pam_permit.so is never sufficient in an auth stack
+  pam.faillock         PASS not configured; no password path to lock out: sshd password/kbd-interactive no, 0 non-root accounts with a usable password
+  pam.su-wheel         WARN su is open to every account that knows the target password (no active pam_wheel use_uid)
+  login.encrypt        WARN ENCRYPT_METHOD SHA512 vs pam_unix yescrypt (chpasswd/newusers would hash differently from passwd)
+  login.pass-max       WARN PASS_MAX_DAYS 99999 (> 365) or PASS_MIN_DAYS 0 (< 1)
+  login.umask          PASS UMASK 022
+  useradd.inactive     WARN INACTIVE=-1 (default) (accounts never lock after password expiry)
+  ctr.uid0             PASS root is the only UID 0 account
+  ctr.empty-password   PASS postfiatd: no empty password field, no hash in passwd
+  ctr.runtime          PASS postfiatd: not privileged, no-new-privileges, cap-drop ALL
+  RESULT: FINDINGS - 0 FAIL, 5 WARN, 16 PASS
+  (exit 0)
+CHECK ok   validator install: binary current, key created, allowlisted
+
+== 5. FOUND: audit + plan on both hosts (before any fix)
+$ sudo -n pft-acctpolicy audit
+  pft-acctpolicy 1.0.0 audit - 2026-11-18T16:25:43Z
+  acct.uid0            PASS root is the only UID 0 account
+  acct.dup-uid         PASS all UIDs unique
+  acct.dup-name        PASS user and group names unique
+  acct.shadowed        PASS every account has x in passwd and a shadow entry
+  acct.empty-password  PASS no empty password field
+  acct.hash-scheme     PASS 1 usable hash(es), all yescrypt/sha512
+  acct.root-password   PASS root has a usable password (console recovery); sshd: password no, kbd-interactive no, permitrootlogin without-password
+  acct.system-shell    PASS 0 system account(s) with a shell, all locked + forced-command keys only
+  acct.file-modes      PASS account files 0644/0640 or stricter, root-owned
+  acct.home-modes      PASS 2 human home(s), none group-writable or world-accessible
+  pam.nullok           WARN common-auth pam_unix has nullok
+  pam.permit           PASS pam_permit.so is never sufficient in an auth stack
+  pam.faillock         PASS not configured; no password path to lock out: sshd password/kbd-interactive no, 0 non-root accounts with a usable password
+  pam.su-wheel         WARN su is open to every account that knows the target password (no active pam_wheel use_uid)
+  login.encrypt        WARN ENCRYPT_METHOD SHA512 vs pam_unix yescrypt (chpasswd/newusers would hash differently from passwd)
+  login.pass-max       WARN PASS_MAX_DAYS 99999 (> 365) or PASS_MIN_DAYS 0 (< 1)
+  login.umask          PASS UMASK 022
+  useradd.inactive     WARN INACTIVE=-1 (default) (accounts never lock after password expiry)
+  ctr.uid0             PASS root is the only UID 0 account
+  ctr.empty-password   PASS postfiatd: no empty password field, no hash in passwd
+  ctr.runtime          PASS postfiatd: not privileged, no-new-privileges, cap-drop ALL
+  RESULT: FINDINGS - 0 FAIL, 5 WARN, 16 PASS
+  (exit 1)
+CHECK ok   validator audit before: exit 1, 0 FAIL
+$ R 'sudo -n pft-acctpolicy audit'
+  pft-acctpolicy 1.0.0 audit - 2026-11-18T16:25:48Z
+  acct.uid0            PASS root is the only UID 0 account
+  acct.dup-uid         PASS all UIDs unique
+  acct.dup-name        PASS user and group names unique
+  acct.shadowed        PASS every account has x in passwd and a shadow entry
+  acct.empty-password  PASS no empty password field
+  acct.hash-scheme     PASS 1 usable hash(es), all yescrypt/sha512
+  acct.root-password   PASS root has a usable password (console recovery); sshd: password no, kbd-interactive no, permitrootlogin without-password
+  acct.system-shell    PASS 2 system account(s) with a shell, all locked + forced-command keys only
+  acct.file-modes      PASS account files 0644/0640 or stricter, root-owned
+  acct.home-modes      PASS 1 human home(s), none group-writable or world-accessible
+  pam.nullok           WARN common-auth pam_unix has nullok
+  pam.permit           PASS pam_permit.so is never sufficient in an auth stack
+  pam.faillock         PASS not configured; no password path to lock out: sshd password/kbd-interactive no, 0 non-root accounts with a usable password
+  pam.su-wheel         WARN su is open to every account that knows the target password (no active pam_wheel use_uid)
+  login.encrypt        WARN ENCRYPT_METHOD SHA512 vs pam_unix yescrypt (chpasswd/newusers would hash differently from passwd)
+  login.pass-max       WARN PASS_MAX_DAYS 99999 (> 365) or PASS_MIN_DAYS 0 (< 1)
+  login.umask          PASS UMASK 022
+  useradd.inactive     WARN INACTIVE=-1 (default) (accounts never lock after password expiry)
+  ctr.uid0             PASS root is the only UID 0 account
+  ctr.empty-password   PASS postfiatd-sentry: no empty password field, no hash in passwd
+  ctr.runtime          PASS postfiatd-sentry: not privileged, no-new-privileges, cap-drop ALL
+  RESULT: FINDINGS - 0 FAIL, 5 WARN, 16 PASS
+  (exit 1)
+CHECK ok   sentry audit before: exit 1, 0 FAIL
+$ sudo -n pft-acctpolicy plan
+  plan: nullok su-wheel encrypt passage inactive 
+  --- /etc/default/useradd
+  +++ /etc/default/useradd (planned)
+  @@ -35,3 +35,4 @@
+   # creating the account
+   # CREATE_MAIL_SPOOL=yes
+   
+  +INACTIVE=30
+  --- /etc/login.defs
+  +++ /etc/login.defs (planned)
+  @@ -162,8 +162,8 @@
+   #	PASS_MIN_DAYS	Minimum number of days allowed between password changes.
+   #	PASS_WARN_AGE	Number of days warning given before a password expires.
+   #
+  -PASS_MAX_DAYS	99999
+  -PASS_MIN_DAYS	0
+  +PASS_MAX_DAYS	365
+  +PASS_MIN_DAYS	1
+   PASS_WARN_AGE	7
+   
+   #
+  @@ -281,7 +281,7 @@
+   # Note: It is recommended to use a value consistent with
+   # the PAM modules configuration.
+   #
+  -ENCRYPT_METHOD SHA512
+  +ENCRYPT_METHOD	YESCRYPT
+   
+   #
+   # Only used if ENCRYPT_METHOD is set to SHA256 or SHA512.
+  --- /etc/pam.d/common-auth
+  +++ /etc/pam.d/common-auth (planned)
+  @@ -14,7 +14,7 @@
+   # pam-auth-update(8) for details.
+   
+   # here are the per-package modules (the "Primary" block)
+  -auth	[success=1 default=ignore]	pam_unix.so nullok
+  +auth	[success=1 default=ignore]	pam_unix.so
+   # here's the fallback if no module succeeds
+   auth	requisite			pam_deny.so
+   # prime the stack with a positive return value if there isn't one already;
+  --- /etc/pam.d/su
+  +++ /etc/pam.d/su (planned)
+  @@ -4,6 +4,8 @@
+   
+   # This allows root to su without passwords (normal operation)
+   auth       sufficient pam_rootok.so
+  +# pft-acctpolicy su-wheel (PAM has no trailing comments)
+  +auth       required   pam_wheel.so use_uid group=sudo
+   
+   # Uncomment this to force users to be a member of group wheel
+   # before they can use `su'. You can also add "group=foo"
+  (exit 0)
+CHECK ok   validator plan exit 0
+$ R 'sudo -n pft-acctpolicy plan'
+  plan: nullok su-wheel encrypt passage inactive 
+  --- /etc/default/useradd
+  +++ /etc/default/useradd (planned)
+  @@ -35,3 +35,4 @@
+   # creating the account
+   # CREATE_MAIL_SPOOL=yes
+   
+  +INACTIVE=30
+  --- /etc/login.defs
+  +++ /etc/login.defs (planned)
+  @@ -162,8 +162,8 @@
+   #	PASS_MIN_DAYS	Minimum number of days allowed between password changes.
+   #	PASS_WARN_AGE	Number of days warning given before a password expires.
+   #
+  -PASS_MAX_DAYS	99999
+  -PASS_MIN_DAYS	0
+  +PASS_MAX_DAYS	365
+  +PASS_MIN_DAYS	1
+   PASS_WARN_AGE	7
+   
+   #
+  @@ -281,7 +281,7 @@
+   # Note: It is recommended to use a value consistent with
+   # the PAM modules configuration.
+   #
+  -ENCRYPT_METHOD SHA512
+  +ENCRYPT_METHOD	YESCRYPT
+   
+   #
+   # Only used if ENCRYPT_METHOD is set to SHA256 or SHA512.
+  --- /etc/pam.d/common-auth
+  +++ /etc/pam.d/common-auth (planned)
+  @@ -14,7 +14,7 @@
+   # pam-auth-update(8) for details.
+   
+   # here are the per-package modules (the "Primary" block)
+  -auth	[success=1 default=ignore]	pam_unix.so nullok
+  +auth	[success=1 default=ignore]	pam_unix.so
+   # here's the fallback if no module succeeds
+   auth	requisite			pam_deny.so
+   # prime the stack with a positive return value if there isn't one already;
+  --- /etc/pam.d/su
+  +++ /etc/pam.d/su (planned)
+  @@ -4,6 +4,8 @@
+   
+   # This allows root to su without passwords (normal operation)
+   auth       sufficient pam_rootok.so
+  +# pft-acctpolicy su-wheel (PAM has no trailing comments)
+  +auth       required   pam_wheel.so use_uid group=sudo
+   
+   # Uncomment this to force users to be a member of group wheel
+   # before they can use `su'. You can also add "group=foo"
+  (exit 0)
+CHECK ok   sentry plan exit 0
+$ tsha
+  628197de9e50b6be37421b04a67f07924f515e0b0f4c06aed9fea953d20ed6e6
+  fda16622dc6198eae5d6ae522bb820b7b68dbf2e73899295c4cac9744f7c7904
+  49e7981a83637ede2b1a9e86e950715cc1eba7526c6b9a186ca86e7e3b068e2e
+  e84619e45f3b4bdc79ecdcb48d4727718035b2e266e8fbdf38f4529b87c9c2cb
+  644 root:root
+  644 root:root
+  644 root:root
+  644 root:root
+  (exit 0)
+$ rsha
+  628197de9e50b6be37421b04a67f07924f515e0b0f4c06aed9fea953d20ed6e6
+  fda16622dc6198eae5d6ae522bb820b7b68dbf2e73899295c4cac9744f7c7904
+  49e7981a83637ede2b1a9e86e950715cc1eba7526c6b9a186ca86e7e3b068e2e
+  e84619e45f3b4bdc79ecdcb48d4727718035b2e266e8fbdf38f4529b87c9c2cb
+  644 root:root
+  644 root:root
+  644 root:root
+  644 root:root
+  (exit 0)
+
+== 6. FIXED: apply --yes on both hosts (sentry first)
+$ R "sudo -n SELFTEST_USER=<user2> pft-acctpolicy apply --yes"
+  apply 20261118T162603Z: nullok su-wheel encrypt passage inactive 
+  --- /etc/default/useradd
+  +++ /etc/default/useradd (new)
+  @@ -35,3 +35,4 @@
+   # creating the account
+   # CREATE_MAIL_SPOOL=yes
+   
+  +INACTIVE=30
+  --- /etc/login.defs
+  +++ /etc/login.defs (new)
+  @@ -162,8 +162,8 @@
+   #	PASS_MIN_DAYS	Minimum number of days allowed between password changes.
+   #	PASS_WARN_AGE	Number of days warning given before a password expires.
+   #
+  -PASS_MAX_DAYS	99999
+  -PASS_MIN_DAYS	0
+  +PASS_MAX_DAYS	365
+  +PASS_MIN_DAYS	1
+   PASS_WARN_AGE	7
+   
+   #
+  @@ -281,7 +281,7 @@
+   # Note: It is recommended to use a value consistent with
+   # the PAM modules configuration.
+   #
+  -ENCRYPT_METHOD SHA512
+  +ENCRYPT_METHOD	YESCRYPT
+   
+   #
+   # Only used if ENCRYPT_METHOD is set to SHA256 or SHA512.
+  --- /etc/pam.d/common-auth
+  +++ /etc/pam.d/common-auth (new)
+  @@ -14,7 +14,7 @@
+   # pam-auth-update(8) for details.
+   
+   # here are the per-package modules (the "Primary" block)
+  -auth	[success=1 default=ignore]	pam_unix.so nullok
+  +auth	[success=1 default=ignore]	pam_unix.so
+   # here's the fallback if no module succeeds
+   auth	requisite			pam_deny.so
+   # prime the stack with a positive return value if there isn't one already;
+  --- /etc/pam.d/su
+  +++ /etc/pam.d/su (new)
+  @@ -4,6 +4,8 @@
+   
+   # This allows root to su without passwords (normal operation)
+   auth       sufficient pam_rootok.so
+  +# pft-acctpolicy su-wheel (PAM has no trailing comments)
+  +auth       required   pam_wheel.so use_uid group=sudo
+   
+   # Uncomment this to force users to be a member of group wheel
+   # before they can use `su'. You can also add "group=foo"
+  selftest sshd -t: ok
+  selftest ssh key login + sudo -n via throwaway sshd <redacted-ip>: rc=0 selftest-ssh-sudo-ok 
+  selftest root su to a system account: ok
+  selftest node: server_state=full peers=22
+  apply 20261118T162603Z: self-test PASS; rollback with: pft-acctpolicy rollback --yes
+  (exit 0)
+CHECK ok   sentry apply exit 0, self-test PASS
+$ R 'true' && echo s-ssh-ok
+  s-ssh-ok
+  (exit 0)
+CHECK ok   real sshd on the sentry still takes the agent key after the sentry apply
+$ sudo -n SELFTEST_USER=<user> pft-acctpolicy apply --yes
+  apply 20261118T162613Z: nullok su-wheel encrypt passage inactive 
+  --- /etc/default/useradd
+  +++ /etc/default/useradd (new)
+  @@ -35,3 +35,4 @@
+   # creating the account
+   # CREATE_MAIL_SPOOL=yes
+   
+  +INACTIVE=30
+  --- /etc/login.defs
+  +++ /etc/login.defs (new)
+  @@ -162,8 +162,8 @@
+   #	PASS_MIN_DAYS	Minimum number of days allowed between password changes.
+   #	PASS_WARN_AGE	Number of days warning given before a password expires.
+   #
+  -PASS_MAX_DAYS	99999
+  -PASS_MIN_DAYS	0
+  +PASS_MAX_DAYS	365
+  +PASS_MIN_DAYS	1
+   PASS_WARN_AGE	7
+   
+   #
+  @@ -281,7 +281,7 @@
+   # Note: It is recommended to use a value consistent with
+   # the PAM modules configuration.
+   #
+  -ENCRYPT_METHOD SHA512
+  +ENCRYPT_METHOD	YESCRYPT
+   
+   #
+   # Only used if ENCRYPT_METHOD is set to SHA256 or SHA512.
+  --- /etc/pam.d/common-auth
+  +++ /etc/pam.d/common-auth (new)
+  @@ -14,7 +14,7 @@
+   # pam-auth-update(8) for details.
+   
+   # here are the per-package modules (the "Primary" block)
+  -auth	[success=1 default=ignore]	pam_unix.so nullok
+  +auth	[success=1 default=ignore]	pam_unix.so
+   # here's the fallback if no module succeeds
+   auth	requisite			pam_deny.so
+   # prime the stack with a positive return value if there isn't one already;
+  --- /etc/pam.d/su
+  +++ /etc/pam.d/su (new)
+  @@ -4,6 +4,8 @@
+   
+   # This allows root to su without passwords (normal operation)
+   auth       sufficient pam_rootok.so
+  +# pft-acctpolicy su-wheel (PAM has no trailing comments)
+  +auth       required   pam_wheel.so use_uid group=sudo
+   
+   # Uncomment this to force users to be a member of group wheel
+   # before they can use `su'. You can also add "group=foo"
+  selftest sshd -t: ok
+  selftest ssh key login + sudo -n via throwaway sshd <redacted-ip>: rc=0 selftest-ssh-sudo-ok 
+  selftest root su to a system account: ok
+  selftest node: server_state=full peers=21
+  apply 20261118T162613Z: self-test PASS; rollback with: pft-acctpolicy rollback --yes
+  (exit 0)
+CHECK ok   validator apply exit 0, self-test PASS
+
+== 7. VERIFIED: audit PASS on both hosts + real access paths
+$ sudo -n pft-acctpolicy audit
+  pft-acctpolicy 1.0.0 audit - 2026-11-18T16:26:17Z
+  acct.uid0            PASS root is the only UID 0 account
+  acct.dup-uid         PASS all UIDs unique
+  acct.dup-name        PASS user and group names unique
+  acct.shadowed        PASS every account has x in passwd and a shadow entry
+  acct.empty-password  PASS no empty password field
+  acct.hash-scheme     PASS 1 usable hash(es), all yescrypt/sha512
+  acct.root-password   PASS root has a usable password (console recovery); sshd: password no, kbd-interactive no, permitrootlogin without-password
+  acct.system-shell    PASS 0 system account(s) with a shell, all locked + forced-command keys only
+  acct.file-modes      PASS account files 0644/0640 or stricter, root-owned
+  acct.home-modes      PASS 2 human home(s), none group-writable or world-accessible
+  pam.nullok           PASS common-auth pam_unix without nullok
+  pam.permit           PASS pam_permit.so is never sufficient in an auth stack
+  pam.faillock         PASS not configured; no password path to lock out: sshd password/kbd-interactive no, 0 non-root accounts with a usable password
+  pam.su-wheel         PASS su restricted by pam_wheel (group=sudo)
+  login.encrypt        PASS ENCRYPT_METHOD YESCRYPT = pam_unix yescrypt
+  login.pass-max       PASS PASS_MAX_DAYS 365, PASS_MIN_DAYS 1
+  login.umask          PASS UMASK 022
+  useradd.inactive     PASS INACTIVE=30
+  ctr.uid0             PASS root is the only UID 0 account
+  ctr.empty-password   PASS postfiatd: no empty password field, no hash in passwd
+  ctr.runtime          PASS postfiatd: not privileged, no-new-privileges, cap-drop ALL
+  RESULT: PASS - 21 checks
+  (exit 0)
+CHECK ok   validator audit after: exit 0, PASS 21 checks
+$ R 'sudo -n pft-acctpolicy audit'
+  pft-acctpolicy 1.0.0 audit - 2026-11-18T16:26:20Z
+  acct.uid0            PASS root is the only UID 0 account
+  acct.dup-uid         PASS all UIDs unique
+  acct.dup-name        PASS user and group names unique
+  acct.shadowed        PASS every account has x in passwd and a shadow entry
+  acct.empty-password  PASS no empty password field
+  acct.hash-scheme     PASS 1 usable hash(es), all yescrypt/sha512
+  acct.root-password   PASS root has a usable password (console recovery); sshd: password no, kbd-interactive no, permitrootlogin without-password
+  acct.system-shell    PASS 2 system account(s) with a shell, all locked + forced-command keys only
+  acct.file-modes      PASS account files 0644/0640 or stricter, root-owned
+  acct.home-modes      PASS 1 human home(s), none group-writable or world-accessible
+  pam.nullok           PASS common-auth pam_unix without nullok
+  pam.permit           PASS pam_permit.so is never sufficient in an auth stack
+  pam.faillock         PASS not configured; no password path to lock out: sshd password/kbd-interactive no, 0 non-root accounts with a usable password
+  pam.su-wheel         PASS su restricted by pam_wheel (group=sudo)
+  login.encrypt        PASS ENCRYPT_METHOD YESCRYPT = pam_unix yescrypt
+  login.pass-max       PASS PASS_MAX_DAYS 365, PASS_MIN_DAYS 1
+  login.umask          PASS UMASK 022
+  useradd.inactive     PASS INACTIVE=30
+  ctr.uid0             PASS root is the only UID 0 account
+  ctr.empty-password   PASS postfiatd-sentry: no empty password field, no hash in passwd
+  ctr.runtime          PASS postfiatd-sentry: not privileged, no-new-privileges, cap-drop ALL
+  RESULT: PASS - 21 checks
+  (exit 0)
+CHECK ok   sentry audit after: exit 0, PASS 21 checks
+$ sudo -n true && echo v-sudo-ok; R "sudo -u <user2> sudo -n true && echo s-sudo-ok"; R 'true' && echo s-ssh-ok; R 'sudo -n sshd -t && echo s-sshd-t-ok'; sudo -n sshd -t && echo v-sshd-t-ok
+  v-sudo-ok
+  s-sudo-ok
+  s-ssh-ok
+  s-sshd-t-ok
+  v-sshd-t-ok
+  (exit 0)
+CHECK ok   after the fixes: sudo -n (both), real sentry sshd key login, sshd -t (both)
+$ srv_state
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing after the fixes
+
+== 8. rollback drill: byte-identical restore, then an injected self-test failure, then the final apply
+$ R "sudo -n SELFTEST_USER=<user2> pft-acctpolicy rollback --yes"
+  rollback 20261118T162603Z
+  restored /etc/default/useradd sha256 e84619e45f3b4bdc79ecdcb48d4727718035b2e266e8fbdf38f4529b87c9c2cb
+  restored /etc/login.defs sha256 49e7981a83637ede2b1a9e86e950715cc1eba7526c6b9a186ca86e7e3b068e2e
+  restored /etc/pam.d/common-auth sha256 628197de9e50b6be37421b04a67f07924f515e0b0f4c06aed9fea953d20ed6e6
+  restored /etc/pam.d/su sha256 fda16622dc6198eae5d6ae522bb820b7b68dbf2e73899295c4cac9744f7c7904
+  selftest sshd -t: ok
+  selftest ssh key login + sudo -n via throwaway sshd <redacted-ip>: rc=0 selftest-ssh-sudo-ok 
+  selftest root su to a system account: ok
+  selftest node: server_state=full peers=22
+  rollback: restored byte-identical
+  (exit 0)
+CHECK ok   sentry rollback exit 0
+$ rsha
+  628197de9e50b6be37421b04a67f07924f515e0b0f4c06aed9fea953d20ed6e6
+  fda16622dc6198eae5d6ae522bb820b7b68dbf2e73899295c4cac9744f7c7904
+  49e7981a83637ede2b1a9e86e950715cc1eba7526c6b9a186ca86e7e3b068e2e
+  e84619e45f3b4bdc79ecdcb48d4727718035b2e266e8fbdf38f4529b87c9c2cb
+  644 root:root
+  644 root:root
+  644 root:root
+  644 root:root
+  (exit 0)
+CHECK ok   sentry: the four files byte-identical to step 5 (sha256, mode, owner)
+$ sudo -n SELFTEST_USER=<user> pft-acctpolicy rollback --yes
+  rollback 20261118T162613Z
+  restored /etc/default/useradd sha256 e84619e45f3b4bdc79ecdcb48d4727718035b2e266e8fbdf38f4529b87c9c2cb
+  restored /etc/login.defs sha256 49e7981a83637ede2b1a9e86e950715cc1eba7526c6b9a186ca86e7e3b068e2e
+  restored /etc/pam.d/common-auth sha256 628197de9e50b6be37421b04a67f07924f515e0b0f4c06aed9fea953d20ed6e6
+  restored /etc/pam.d/su sha256 fda16622dc6198eae5d6ae522bb820b7b68dbf2e73899295c4cac9744f7c7904
+  selftest sshd -t: ok
+  selftest ssh key login + sudo -n via throwaway sshd <redacted-ip>: rc=0 selftest-ssh-sudo-ok 
+  selftest root su to a system account: ok
+  selftest node: server_state=full peers=21
+  rollback: restored byte-identical
+  (exit 0)
+CHECK ok   validator rollback exit 0
+$ tsha
+  628197de9e50b6be37421b04a67f07924f515e0b0f4c06aed9fea953d20ed6e6
+  fda16622dc6198eae5d6ae522bb820b7b68dbf2e73899295c4cac9744f7c7904
+  49e7981a83637ede2b1a9e86e950715cc1eba7526c6b9a186ca86e7e3b068e2e
+  e84619e45f3b4bdc79ecdcb48d4727718035b2e266e8fbdf38f4529b87c9c2cb
+  644 root:root
+  644 root:root
+  644 root:root
+  644 root:root
+  (exit 0)
+CHECK ok   validator: the four files byte-identical to step 5 (sha256, mode, owner)
+$ R "sudo -n SELFTEST_USER=<user2> VERIFY_INJECT=selftest pft-acctpolicy apply --yes"
+  apply 20261118T162645Z: nullok su-wheel encrypt passage inactive 
+  --- /etc/default/useradd
+  +++ /etc/default/useradd (new)
+  @@ -35,3 +35,4 @@
+   # creating the account
+   # CREATE_MAIL_SPOOL=yes
+   
+  +INACTIVE=30
+  --- /etc/login.defs
+  +++ /etc/login.defs (new)
+  @@ -162,8 +162,8 @@
+   #	PASS_MIN_DAYS	Minimum number of days allowed between password changes.
+   #	PASS_WARN_AGE	Number of days warning given before a password expires.
+   #
+  -PASS_MAX_DAYS	99999
+  -PASS_MIN_DAYS	0
+  +PASS_MAX_DAYS	365
+  +PASS_MIN_DAYS	1
+   PASS_WARN_AGE	7
+   
+   #
+  @@ -281,7 +281,7 @@
+   # Note: It is recommended to use a value consistent with
+   # the PAM modules configuration.
+   #
+  -ENCRYPT_METHOD SHA512
+  +ENCRYPT_METHOD	YESCRYPT
+   
+   #
+   # Only used if ENCRYPT_METHOD is set to SHA256 or SHA512.
+  --- /etc/pam.d/common-auth
+  +++ /etc/pam.d/common-auth (new)
+  @@ -14,7 +14,7 @@
+   # pam-auth-update(8) for details.
+   
+   # here are the per-package modules (the "Primary" block)
+  -auth	[success=1 default=ignore]	pam_unix.so nullok
+  +auth	[success=1 default=ignore]	pam_unix.so
+   # here's the fallback if no module succeeds
+   auth	requisite			pam_deny.so
+   # prime the stack with a positive return value if there isn't one already;
+  --- /etc/pam.d/su
+  +++ /etc/pam.d/su (new)
+  @@ -4,6 +4,8 @@
+   
+   # This allows root to su without passwords (normal operation)
+   auth       sufficient pam_rootok.so
+  +# pft-acctpolicy su-wheel (PAM has no trailing comments)
+  +auth       required   pam_wheel.so use_uid group=sudo
+   
+   # Uncomment this to force users to be a member of group wheel
+   # before they can use `su'. You can also add "group=foo"
+  selftest sshd -t: ok
+  selftest ssh key login + sudo -n via throwaway sshd <redacted-ip>: rc=0 selftest-ssh-sudo-ok 
+  selftest root su to a system account: ok
+  selftest node: server_state=full peers=22
+  selftest: VERIFY_INJECT=selftest -> forced FAIL (restore drill)
+  apply 20261118T162645Z: self-test FAILED -> restoring
+  restored /etc/default/useradd sha256 e84619e45f3b4bdc79ecdcb48d4727718035b2e266e8fbdf38f4529b87c9c2cb
+  restored /etc/login.defs sha256 49e7981a83637ede2b1a9e86e950715cc1eba7526c6b9a186ca86e7e3b068e2e
+  restored /etc/pam.d/common-auth sha256 628197de9e50b6be37421b04a67f07924f515e0b0f4c06aed9fea953d20ed6e6
+  restored /etc/pam.d/su sha256 fda16622dc6198eae5d6ae522bb820b7b68dbf2e73899295c4cac9744f7c7904
+  apply 20261118T162645Z: restored byte-identical
+  (exit 1)
+CHECK ok   sentry injected apply: exit 1, restored byte-identical
+$ rsha
+  628197de9e50b6be37421b04a67f07924f515e0b0f4c06aed9fea953d20ed6e6
+  fda16622dc6198eae5d6ae522bb820b7b68dbf2e73899295c4cac9744f7c7904
+  49e7981a83637ede2b1a9e86e950715cc1eba7526c6b9a186ca86e7e3b068e2e
+  e84619e45f3b4bdc79ecdcb48d4727718035b2e266e8fbdf38f4529b87c9c2cb
+  644 root:root
+  644 root:root
+  644 root:root
+  644 root:root
+  (exit 0)
+CHECK ok   sentry: byte-identical to step 5 after the automatic restore
+$ sudo -n SELFTEST_USER=<user> VERIFY_INJECT=selftest pft-acctpolicy apply --yes
+  apply 20261118T162653Z: nullok su-wheel encrypt passage inactive 
+  --- /etc/default/useradd
+  +++ /etc/default/useradd (new)
+  @@ -35,3 +35,4 @@
+   # creating the account
+   # CREATE_MAIL_SPOOL=yes
+   
+  +INACTIVE=30
+  --- /etc/login.defs
+  +++ /etc/login.defs (new)
+  @@ -162,8 +162,8 @@
+   #	PASS_MIN_DAYS	Minimum number of days allowed between password changes.
+   #	PASS_WARN_AGE	Number of days warning given before a password expires.
+   #
+  -PASS_MAX_DAYS	99999
+  -PASS_MIN_DAYS	0
+  +PASS_MAX_DAYS	365
+  +PASS_MIN_DAYS	1
+   PASS_WARN_AGE	7
+   
+   #
+  @@ -281,7 +281,7 @@
+   # Note: It is recommended to use a value consistent with
+   # the PAM modules configuration.
+   #
+  -ENCRYPT_METHOD SHA512
+  +ENCRYPT_METHOD	YESCRYPT
+   
+   #
+   # Only used if ENCRYPT_METHOD is set to SHA256 or SHA512.
+  --- /etc/pam.d/common-auth
+  +++ /etc/pam.d/common-auth (new)
+  @@ -14,7 +14,7 @@
+   # pam-auth-update(8) for details.
+   
+   # here are the per-package modules (the "Primary" block)
+  -auth	[success=1 default=ignore]	pam_unix.so nullok
+  +auth	[success=1 default=ignore]	pam_unix.so
+   # here's the fallback if no module succeeds
+   auth	requisite			pam_deny.so
+   # prime the stack with a positive return value if there isn't one already;
+  --- /etc/pam.d/su
+  +++ /etc/pam.d/su (new)
+  @@ -4,6 +4,8 @@
+   
+   # This allows root to su without passwords (normal operation)
+   auth       sufficient pam_rootok.so
+  +# pft-acctpolicy su-wheel (PAM has no trailing comments)
+  +auth       required   pam_wheel.so use_uid group=sudo
+   
+   # Uncomment this to force users to be a member of group wheel
+   # before they can use `su'. You can also add "group=foo"
+  selftest sshd -t: ok
+  selftest ssh key login + sudo -n via throwaway sshd <redacted-ip>: rc=0 selftest-ssh-sudo-ok 
+  selftest root su to a system account: ok
+  selftest node: server_state=full peers=21
+  selftest: VERIFY_INJECT=selftest -> forced FAIL (restore drill)
+  apply 20261118T162653Z: self-test FAILED -> restoring
+  restored /etc/default/useradd sha256 e84619e45f3b4bdc79ecdcb48d4727718035b2e266e8fbdf38f4529b87c9c2cb
+  restored /etc/login.defs sha256 49e7981a83637ede2b1a9e86e950715cc1eba7526c6b9a186ca86e7e3b068e2e
+  restored /etc/pam.d/common-auth sha256 628197de9e50b6be37421b04a67f07924f515e0b0f4c06aed9fea953d20ed6e6
+  restored /etc/pam.d/su sha256 fda16622dc6198eae5d6ae522bb820b7b68dbf2e73899295c4cac9744f7c7904
+  apply 20261118T162653Z: restored byte-identical
+  (exit 1)
+CHECK ok   validator injected apply: exit 1, restored byte-identical
+$ tsha
+  628197de9e50b6be37421b04a67f07924f515e0b0f4c06aed9fea953d20ed6e6
+  fda16622dc6198eae5d6ae522bb820b7b68dbf2e73899295c4cac9744f7c7904
+  49e7981a83637ede2b1a9e86e950715cc1eba7526c6b9a186ca86e7e3b068e2e
+  e84619e45f3b4bdc79ecdcb48d4727718035b2e266e8fbdf38f4529b87c9c2cb
+  644 root:root
+  644 root:root
+  644 root:root
+  644 root:root
+  (exit 0)
+CHECK ok   validator: byte-identical to step 5 after the automatic restore
+$ R "sudo -n SELFTEST_USER=<user2> pft-acctpolicy apply --yes" | grep -E '^apply|selftest'
+  apply 20261118T162705Z: nullok su-wheel encrypt passage inactive 
+  selftest sshd -t: ok
+  selftest ssh key login + sudo -n via throwaway sshd <redacted-ip>: rc=0 selftest-ssh-sudo-ok 
+  selftest root su to a system account: ok
+  selftest node: server_state=full peers=22
+  apply 20261118T162705Z: self-test PASS; rollback with: pft-acctpolicy rollback --yes
+  (exit 0)
+CHECK ok   sentry final apply exit 0
+$ sudo -n SELFTEST_USER=<user> pft-acctpolicy apply --yes | grep -E '^apply|selftest'
+  apply 20261118T162713Z: nullok su-wheel encrypt passage inactive 
+  selftest sshd -t: ok
+  selftest ssh key login + sudo -n via throwaway sshd <redacted-ip>: rc=0 selftest-ssh-sudo-ok 
+  selftest root su to a system account: ok
+  selftest node: server_state=full peers=21
+  apply 20261118T162713Z: self-test PASS; rollback with: pft-acctpolicy rollback --yes
+  (exit 0)
+CHECK ok   validator final apply exit 0
+$ sudo -n pft-acctpolicy audit | tail -1; R 'sudo -n pft-acctpolicy audit' | tail -1
+  RESULT: PASS - 21 checks
+  RESULT: PASS - 21 checks
+  (exit 0)
+CHECK ok   final audit PASS 21 on both hosts
+
+== 9. baselines and side effects
+$ sudo -n pft-integrity verify | grep -E '^(WARN|FAIL|RESULT)' | sed -E 's/ +sha256.*//' | cut -c1-140 | head -30
+  RESULT: PASS - 274 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+$ sudo -n pft-integrity accept --reason 'task_6a2e044a: acctpolicy 5f42949 installed + applied (pam.d common-auth/su, login.defs, default/useradd, binary, authwatch allowlist)' | tail -2
+  pft-integrity accept - 2026-11-18T16:28:03Z: re-baselined 274 items by <user>
+  manifest sha256: 567e1a050dcbf7857dd2f5de5705341f559a1947438fc50f97d23baa1d206930 -> 40484e98dd98014ff7226819c069c0735e91a91b3aa6d7ebdda1ec040d212787 (logged to accept.log)
+  (exit 0)
+$ R 'sudo -n pft-integrity verify' | grep -E '^(WARN|FAIL|RESULT)' | sed -E 's/ +sha256.*//' | cut -c1-140 | head -30
+  RESULT: PASS - 163 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+$ R "sudo -n pft-integrity accept --reason 'task_6a2e044a: acctpolicy 5f42949 installed + applied (pam.d common-auth/su, login.defs, default/useradd, binary, authwatch allowlist)'" | tail -2
+  pft-integrity accept - 2026-11-18T16:28:44Z: re-baselined 163 items by root
+  manifest sha256: f054c0572738891dc48e43bca79912a57d76d26720c9d6f76b48573c90ec9ffa -> 92da1bf89c68eb9dc5ee429ce80e9171c1709375eee023acd4c41751555505f1 (logged to accept.log)
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 274 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 163 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts (baseline accepted)
+$ sudo -n pft-schedaudit audit | grep -E '^SUMMARY'; R 'sudo -n pft-schedaudit audit' | grep -E '^SUMMARY'
+  SUMMARY entries=112 enabled=99 findings=1 allowed=1 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+  SUMMARY entries=75 enabled=62 findings=0 allowed=0 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+  (exit 0)
+CHECK ok   schedaudit on both hosts: 0 unexpected, 0 new/removed (no timer or unit changed)
+$ sudo -n pft-aptrust audit | grep -E '^(WARN|FAIL) |^RESULT'; R 'sudo -n pft-aptrust audit' | grep -E '^(WARN|FAIL) |^RESULT'
+  RESULT: PASS - 11 sources, 4 keys, 4 containers; 8 pass, 18 info, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 10 sources, 2 keys, 1 containers; 4 pass, 16 info, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   aptrust audit on both hosts: 0 warn, 0 fail
+$ sudo -n systemctl start pft-aptrust.service; R 'sudo -n systemctl start pft-aptrust.service'; sudo -n systemctl start pft-aptrust-pull.service; grep -hE '^pft_aptrust_checks\{.*result="(warn|fail)"' /var/lib/pft-exporter/textfile/pft_aptrust_*.prom
+  pft_aptrust_checks{host="sentry",result="warn"} 0
+  pft_aptrust_checks{host="sentry",result="fail"} 0
+  pft_aptrust_checks{host="validator",result="warn"} 0
+  pft_aptrust_checks{host="validator",result="fail"} 0
+  (exit 0)
+CHECK ok   aptrust textfiles (validator + pulled sentry): warn 0, fail 0
+$ sudo -n pft-fleet skew | grep -E 'acctpolicy|SUMMARY'
+  sentry     acctpolicy  CURRENT    
+  validator  acctpolicy  CURRENT    
+  SUMMARY CURRENT=86 BEHIND=0 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 0)
+CHECK ok   pft-fleet skew: acctpolicy CURRENT on both hosts, nothing BEHIND/MODIFIED/MISSING/UNEXPECTED/DIVERGED
+$ aw_unknown
+  2
+  (exit 0)
+CHECK ok   authwatch: no new non-allowlisted accepted login (self-test logins never reached the journal; 2 before)
+$ sudo -n journalctl --since @1795018641 -o cat SYSLOG_IDENTIFIER=sshd | grep -c '^Accepted .* from <redacted-ip> '; R "journalctl --since @1795018641 -o cat SYSLOG_IDENTIFIER=sshd | grep -c '^Accepted .* from <redacted-ip> '"
+  0
+  0
+  (exit 1)
+CHECK ok   0 'Accepted ... from 127.0.0.1' sshd journal lines on both hosts
+$ sudo -n pft-apparmor audit | grep -E 'denials|RESULT'; sudo -n pft-seccomp audit | grep -E 'RESULT'; R 'sudo -n pft-apparmor audit | grep -E "denials|RESULT"; sudo -n pft-seccomp audit | grep -E RESULT'
+    [PASS] denials            0 DENIED events in the last 86402s; up to 2026-11-18T15:39:47Z acknowledged: 'task_6a2e044a1006072ef343c005ba3765ff: own read-only recon docker exec at ~15:39Z ran sh/id/awk/ls in the container (de
+  RESULT: PASS
+  RESULT: PASS
+    [PASS] denials            0 DENIED events in the last 86403s; up to 2026-11-18T15:39:47Z acknowledged: task_6a2e044a1006072ef343c005ba3765ff: own read-only recon docker exec at ~15:39Z ran sh/id/awk/ls in the container (den
+  RESULT: PASS
+  RESULT: PASS
+  (exit 0)
+CHECK ok   AppArmor + seccomp audits PASS on both hosts with 0 denials (nothing ran in the containers)
+$ ls /run | grep -c pft-acctpolicy; R 'ls /run | grep -c pft-acctpolicy'; pgrep -fc 'pft-acctpolicy\.' ; R 'pgrep -fc "pft-acctpolicy\."'
+  0
+  0
+  0
+  0
+  (exit 1)
+CHECK ok   no throwaway sshd or temp dir left on either host
+
+== 10. end window, restore the real target, compare, keyescrow, read back the throwaway and every operator topic
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+$ sudo -n rm -f $NE   (no ntfy.env before: pft-maint falls back to the real monitor target again)
+CHECK ok   pft-maint target back to its pre-run state (/etc/pft-maint/ntfy.env: absent again)
+$ sudo -n systemctl start pft-keyescrow.service; grep -h '^pft_keyescrow_drift_items{node="validator"}' /var/lib/pft-exporter/textfile/pft_keyescrow.prom
+  pft_keyescrow_drift_items{node="validator"} 0
+  (exit 0)
+CHECK ok   pft-keyescrow re-run after the ntfy.env restore: validator drift_items 0
+$ sleep 5; curl -s --max-time 15 "https://ntfy.sh/$TT/json?poll=1&since=1795018641" | jq -r '.title'
+  [MAINT] start validator
+  [MAINT] end validator
+  (exit 0)
+CHECK ok   the [MAINT] start and end messages reached the throwaway topic
+$ for i in $(seq 0 15 150); do n=$(curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '[.data.alerts[] | select(.labels.alertname != "PFTAlertPipelineWatchdog")] | length'); echo "+${i}s: $n"; [ "$n" = 0 ] && break; sleep 15; done; echo $n
+  +0s: 0
+  0
+  (exit 0)
+CHECK ok   no alert but the pipeline watchdog pending or firing (silence left to run out)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 274 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 163 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts at the end
+$ srv_state
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing at the end
+$ systemctl list-units --all --no-legend 'run-u*.service' 'run-u*.timer' | wc -l; R 'ls -d ~/pft-acctpolicy-* 2>/dev/null | wc -l'
+  0
+  0
+  (exit 0)
+CHECK ok   no transient run-u services/timers, no install copy left on the sentry
+operator topic read-back waits 90 s (>= group_interval + 30 s after the last change)
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the run (2 topic(s), 0 with messages)
+
+live-run done 2026-11-18T16:34:43Z: 0 check(s) failed -> PASS
+runner exit 0

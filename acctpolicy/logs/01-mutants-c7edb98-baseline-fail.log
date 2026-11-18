@@ -1,0 +1,163 @@
+# acctpolicy mutation run 02 at c7edb985caaa722af1de77a50ed28c0fd1cfc9a1 (git archive copy), 2026-11-18T16:09:52Z
+$ shellcheck acctpolicy/*.sh acctpolicy/tests/*.sh
+  (exit 0)
+$ bash acctpolicy/tests/run-tests.sh
+PASS stock: exit 1 (findings)
+PASS stock: 5 WARN = the fixable set
+PASS stock: every other check PASS
+PASS stock: 21 check lines (= checks table)
+PASS stock: root usable password PASS only with sshd password/kbd no
+PASS stock: locked system account with forced-command key PASS
+PASS stock: faillock N/A (no password path) is PASS with its reason
+PASS stock: no hash value or salt in output
+PASS json: valid, 21 checks, warn 5 fail 0, exit 1
+PASS json: no hash value
+PASS acct.uid0 FAIL: second UID 0
+PASS acct.dup-uid FAIL: shared UID
+PASS acct.dup-name FAIL: duplicate group name
+PASS acct.shadowed FAIL: hash in passwd
+PASS acct.shadowed FAIL: no shadow entry
+PASS acct.empty-password FAIL: empty field
+PASS acct.hash-scheme WARN: md5, scheme named, hash not printed
+PASS pam.faillock WARN: a non-root account has a usable password
+PASS acct.root-password FAIL: usable root password + sshd password yes
+PASS pam.faillock WARN: sshd password yes
+PASS acct.root-password FAIL: kbd-interactive yes
+PASS acct.root-password FAIL: permitrootlogin yes
+PASS acct.root-password PASS: locked root, whatever sshd says
+PASS acct.system-shell WARN: key without restrict,command=
+PASS acct.system-shell WARN: system account with a usable password
+PASS acct.system-shell WARN: command= without restrict
+PASS acct.file-modes FAIL: shadow 0644
+PASS acct.file-modes FAIL: passwd- backup world-writable
+PASS acct.file-modes PASS: stricter modes
+PASS acct.file-modes FAIL: owner is not the expected owner
+PASS acct.home-modes WARN: world-readable home
+PASS acct.home-modes WARN: group-writable home
+PASS pam.nullok PASS without nullok
+PASS pam.nullok WARN: nullok_secure
+PASS pam.nullok PASS: commented-out line ignored
+PASS pam.permit FAIL: auth sufficient pam_permit
+PASS pam.permit FAIL: pam_permit jump
+PASS pam.permit PASS: account stack, not auth
+PASS pam.faillock PASS: configured
+PASS pam.su-wheel PASS: pam_wheel use_uid
+PASS pam.su-wheel WARN: deny form only
+PASS login.encrypt PASS: matches pam_unix yescrypt
+PASS login.encrypt WARN: equal but md5
+PASS login.pass-max PASS: 365/1
+PASS login.pass-max WARN: max ok, min 0
+PASS login.pass-max WARN: 366 > 365
+PASS login.umask WARN: 002
+PASS login.umask WARN: 020 (other-write open)
+PASS login.umask PASS: 027
+PASS useradd.inactive PASS: 30
+PASS useradd.inactive WARN: 31 > 30
+PASS useradd.inactive WARN: 0
+PASS ctr.uid0 FAIL: second UID 0 in the container
+PASS ctr.empty-password FAIL: empty field in the container
+PASS ctr.empty-password FAIL: empty passwd field in the container
+PASS ctr.runtime FAIL: privileged
+PASS ctr.runtime FAIL: no no-new-privileges
+PASS ctr.runtime FAIL: capdrop not ALL
+PASS ctr: sentry container auto-detected
+PASS ctr: no running container -> 3 FAIL
+PASS audit never execs into the container
+PASS plan: exit 0, names the 5 fixes
+PASS plan: read-only (files unchanged, no state dir)
+PASS plan: diff removes nullok, adds pam_wheel on its own line
+PASS plan: nullok fix withheld while an empty password exists
+PASS plan: su-wheel withheld when SU_GROUP does not exist
+PASS plan: su-wheel withheld without a pam_rootok line, other fixes still planned
+PASS apply without --yes: exit 4, nothing written, no self-test
+PASS apply with a previous apply in place: exit 4, files untouched
+PASS apply with node not full: exit 4, nothing written
+PASS apply with 0 peers (< MIN_PEERS): exit 4, nothing written
+PASS apply when the self-test fails BEFORE any change: exit 4, nothing written
+PASS apply when sshd -t fails before: exit 4, nothing written
+PASS apply when root su fails before: exit 4, nothing written
+PASS apply: exit 0, self-test PASS
+PASS apply: self-test ran before AND after the change
+FAIL apply: modes preserved
+PASS apply: apply.json records 4 files with their before sha256
+PASS apply: backup dir 0700
+PASS apply: only the planned lines changed in common-auth
+PASS apply: audit afterwards PASS, exit 0
+PASS apply: second apply refused while the first is in place
+PASS rollback without --yes: exit 4
+PASS rollback: exit 0, files byte-identical (sha + mode) to before apply
+PASS rollback: prints a restored sha line per file
+PASS rollback with nothing applied: exit 4
+PASS apply again after rollback: exit 0
+PASS rollback with a tampered backup: exit 5, apply.json kept
+PASS apply VERIFY_INJECT=selftest: exit 1, restored byte-identical, no apply.json
+PASS apply whose change breaks the SSH self-test: exit 1, restored byte-identical
+PASS apply on a hardened host: nothing to fix, exit 0, nothing written
+PASS plan/apply/rollback output never contains a hash
+PASS unknown command: exit 3
+RESULT: 92/93 passed
+  (exit 1)
+$ python3 -I acctpolicy/tests/mutants.py -j 4
+CAUGHT   M01 acct.uid0                              by: acct.uid0 FAIL: second UID 0
+CAUGHT   M02 acct.dup-uid                           by: acct.dup-uid FAIL: shared UID
+CAUGHT   M03 acct.dup-name                          by: acct.dup-name FAIL: duplicate group name
+CAUGHT   M04 acct.shadowed: hash in passwd          by: acct.shadowed FAIL: hash in passwd
+CAUGHT   M05 acct.shadowed: missing shadow entry    by: acct.shadowed FAIL: no shadow entry
+CAUGHT   M06 acct.empty-password                    by: acct.empty-password FAIL: empty field
+CAUGHT   M07 acct.hash-scheme                       by: acct.hash-scheme WARN: md5, scheme named, hash not printed
+CAUGHT   M08 hash_kind md5                          by: acct.hash-scheme WARN: md5, scheme named, hash not printed
+CAUGHT   M09 acct.root-password: sshd password      by: acct.root-password FAIL: usable root password + sshd password yes
+CAUGHT   M10 acct.root-password: permitrootlogin    by: acct.root-password FAIL: permitrootlogin yes
+CAUGHT   M11 acct.system-shell: locked              by: acct.system-shell WARN: system account with a usable password
+CAUGHT   M12 acct.system-shell: restrict            by: acct.system-shell WARN: command= without restrict
+CAUGHT   M13 acct.file-modes: shadow                by: acct.file-modes FAIL: shadow 0644
+CAUGHT   M14 acct.file-modes: owner                 by: acct.file-modes FAIL: owner is not the expected owner
+CAUGHT   M15 acct.home-modes                        by: acct.home-modes WARN: world-readable home
+CAUGHT   M16 pam.nullok: nullok_secure              by: pam.nullok WARN: nullok_secure
+CAUGHT   M17 pam.nullok: comments                   by: pam.nullok PASS: commented-out line ignored
+CAUGHT   M18 pam.permit: sufficient                 by: pam.permit FAIL: auth sufficient pam_permit
+CAUGHT   M19 pam.permit: jump                       by: pam.permit FAIL: pam_permit jump
+CAUGHT   M20 pam.faillock: N/A conditions           by: pam.faillock WARN: a non-root account has a usable password
+CAUGHT   M21 pam.su-wheel: deny form                by: pam.su-wheel WARN: deny form only
+CAUGHT   M22 login.encrypt: weak equal              by: login.encrypt WARN: equal but md5
+CAUGHT   M23 login.pass-max: min                    by: login.pass-max WARN: max ok, min 0
+CAUGHT   M24 login.pass-max: max                    by: login.pass-max WARN: 366 > 365
+CAUGHT   M25 login.umask                            by: login.umask WARN: 020 (other-write open)
+CAUGHT   M26 useradd.inactive: upper                by: useradd.inactive WARN: 31 > 30
+CAUGHT   M27 useradd.inactive: lower                by: useradd.inactive WARN: 0
+CAUGHT   M28 ctr.uid0                               by: ctr.uid0 FAIL: second UID 0 in the container
+CAUGHT   M29 ctr.empty-password: shadow             by: ctr.empty-password FAIL: empty field in the container
+CAUGHT   M30 ctr.empty-password: passwd             by: ctr.empty-password FAIL: empty passwd field in the container
+CAUGHT   M31 ctr.runtime: privileged                by: ctr.runtime FAIL: privileged
+CAUGHT   M32 ctr.runtime: no-new-privileges         by: ctr.runtime FAIL: no no-new-privileges
+CAUGHT   M33 ctr.runtime: capdrop                   by: ctr.runtime FAIL: capdrop not ALL
+CAUGHT   M34 ctr: missing container                 by: ctr: no running container -> 3 FAIL
+CAUGHT   M35 audit exit code                        by: stock: exit 1 (findings)
+CAUGHT   M36 plan: nullok precondition              by: plan: nullok fix withheld while an empty password exists
+CAUGHT   M37 plan: su group precondition            by: plan: su-wheel withheld when SU_GROUP does not exist
+CAUGHT   M38 plan: pam_rootok precondition          by: plan: su-wheel withheld without a pam_rootok line, other fixes still planned
+CAUGHT   M39 fix: nullok removal                    by: plan: diff removes nullok, adds pam_wheel on its own line
+CAUGHT   M40 fix: su-wheel marker on the PAM line   by: plan: diff removes nullok, adds pam_wheel on its own line
+CAUGHT   M41 fix: passage min                       by: apply: modes preserved
+CAUGHT   M42 apply: --yes                           by: apply without --yes: exit 4, nothing written, no self-test
+CAUGHT   M43 apply: last apply in place             by: apply with a previous apply in place: exit 4, files untouched
+CAUGHT   M44 apply: node healthy before             by: apply with node not full: exit 4, nothing written
+CAUGHT   M45 node_full: peers                       by: apply with 0 peers (< MIN_PEERS): exit 4, nothing written
+CAUGHT   M46 node_full: state                       by: apply with node not full: exit 4, nothing written
+CAUGHT   M47 apply: self-test before change         by: apply when the self-test fails BEFORE any change: exit 4, nothing written
+CAUGHT   M48 selftest: sshd -t                      by: apply when sshd -t fails before: exit 4, nothing written
+CAUGHT   M49 selftest: root su                      by: apply when root su fails before: exit 4, nothing written
+CAUGHT   M50 selftest: ssh                          by: apply when the self-test fails BEFORE any change: exit 4, nothing written
+CAUGHT   M51 selftest: inject                       by: apply: modes preserved
+CAUGHT   M52 apply: self-test after change          by: apply: self-test ran before AND after the change
+CAUGHT   M53 apply: restore on failure              by: apply: modes preserved
+CAUGHT   M54 apply: keeps mode                      by: apply: modes preserved
+CAUGHT   M55 restore: mode                          by: apply: modes preserved
+CAUGHT   M56 restore: sha check                     by: apply: modes preserved
+CAUGHT   M57 rollback: --yes                        by: apply: modes preserved
+CAUGHT   M58 rollback: nothing applied              by: apply: modes preserved
+CAUGHT   M59 rollback: mismatch exit                by: apply: modes preserved
+CAUGHT   M60 rollback: clears apply.json            by: apply: modes preserved
+CAUGHT   M61 backup dir mode                        by: apply: modes preserved
+MUTANTS: caught 61/61
+  (exit 0)
