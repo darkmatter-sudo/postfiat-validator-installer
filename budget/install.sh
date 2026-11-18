@@ -22,6 +22,9 @@ LIBDIR=/usr/local/lib/pft-budget
 CONF=/etc/pft-budget.env
 RC_CONF=/etc/pft-rulecheck.conf
 RC_LINE="textfile pft_budget_*.prom   15m   pft_budget_report_timestamp_seconds"
+# PFTBudgetCapReached reads the projection series, which exists only once a unit has PROJ_MIN_SPAN_DAYS of runs
+# (8aef64d); without this pft-rulecheck reports the rule PARTIAL and PFTRuleDead fires (2026-11-18)
+RC_IGNORE="ignore-metric pft_budget_projected_30d_bytes no series until a unit has MIN_RUNS runs spanning PROJ_MIN_SPAN_DAYS (3 d)"
 host=""; uninstall=false; pull=""
 log() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*"; }
 [ "$(id -u)" -eq 0 ] || { echo "run as root" >&2; exit 3; }
@@ -128,3 +131,4 @@ systemctl enable --now pft-budget-collect.timer
 log "enabled pft-budget-collect.timer (every 5 minutes at :20)"
 grep -qF 'pft_budget_*.prom' "$RC_CONF" 2>/dev/null || rc_add "$RC_LINE"
 rc_add "require pft_budget_$host.prom"
+[ "$host" != validator ] || rc_add "$RC_IGNORE"  # the rules are evaluated on the validator only
