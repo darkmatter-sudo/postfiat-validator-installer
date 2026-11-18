@@ -48,11 +48,13 @@ Exit codes: 0 ok | 1 verification FAIL / mismatch | 2 runtime error (RPC, I/O, b
 """
 
 import argparse
+import array
 import calendar
 import contextlib
 import fcntl
 import gzip
 import hashlib
+import io
 import json
 import os
 import random
@@ -711,6 +713,119 @@ def slim_record(rec):
     }
 
 
+_HEX_UPPER = frozenset("0123456789ABCDEF")
+_ZERO32 = bytes(32)
+
+
+def _hash32(s):
+    """32 raw bytes of an uppercase 64-hex hash, None for anything else (kept as-is instead)."""
+    if type(s) is str and len(s) == 64 and _HEX_UPPER.issuperset(s):
+        return bytes.fromhex(s)
+    return None
+
+
+class SlimBlock:
+    """The slim records of one source, in columns: ~81 bytes per ledger instead of a ~1 kB dict.
+
+    Records that do not fit the columns (any problem, a non-int index, a hash that is not 64
+    uppercase hex) are kept whole in `odd`, so get(k) returns exactly what slim_record returned.
+    """
+
+    __slots__ = ("h", "hdr", "idx", "ntx", "odd", "parent", "src")
+
+    def __init__(self, src):
+        self.src = src
+        self.idx = array.array("q")
+        self.ntx = array.array("q")
+        self.h = bytearray()
+        self.parent = bytearray()
+        self.hdr = bytearray()
+        self.odd = {}
+
+    def __len__(self):
+        return len(self.idx)
+
+    def add(self, r):
+        i, hb = r["i"], _hash32(r["h"])
+        pb = _hash32(r["parent"]) if r["hdr"] else _ZERO32
+        fits = (
+            not r["probs"]
+            and hb is not None
+            and pb is not None
+            and type(i) is int
+            and 0 <= i < 1 << 63
+            and 0 <= r["ntx"] < 1 << 63
+        )
+        if not fits:
+            self.odd[len(self.idx)] = r
+            i, hb, pb = 0, _ZERO32, _ZERO32
+        self.idx.append(i)
+        self.ntx.append(r["ntx"] if fits else 0)
+        self.h += hb
+        self.parent += pb
+        self.hdr.append(1 if r["hdr"] else 0)
+
+    def index(self, k):
+        r = self.odd.get(k)
+        return self.idx[k] if r is None else r["i"]
+
+    def get(self, k):
+        r = self.odd.get(k)
+        if r is not None:
+            return r
+        hdr = bool(self.hdr[k])
+        return {
+            "i": self.idx[k],
+            "h": self.h[32 * k : 32 * k + 32].hex().upper(),
+            "hdr": hdr,
+            "parent": self.parent[32 * k : 32 * k + 32].hex().upper() if hdr else None,
+            "probs": [],
+            "ntx": self.ntx[k],
+        }
+
+
+def _view_len(views):
+    return sum(hi - lo for _b, lo, hi in views)
+
+
+def _view_records(views):
+    """(src, slim) in stream order over [(block, lo, hi)] views."""
+    for b, lo, hi in views:
+        for k in range(lo, hi):
+            yield b.src, b.get(k)
+
+
+def _view_end(views, last):
+    """The first (last=False) or last (last=True) slim record of the views, None if empty."""
+    for b, lo, hi in reversed(views) if last else views:
+        if hi > lo:
+            return b.get(hi - 1 if last else lo)
+    return None
+
+
+def _view_lookup(views, i):
+    """(True, hash) of the LAST record with index i (as a dict built over the stream would), else (False, None)."""
+    for b, lo, hi in reversed(views):
+        for k in range(hi - 1, lo - 1, -1):
+            if b.index(k) == i:
+                return True, b.get(k)["h"]
+    return False, None
+
+
+def _view_splice(views, after, block):
+    """Insert all of block before the first record whose index is > after (at the end if none)."""
+    for n, (b, lo, hi) in enumerate(views):
+        for k in range(lo, hi):
+            if b.index(k) > after:
+                views[n : n + 1] = [
+                    v
+                    for v in ((b, lo, k), (block, 0, len(block)), (b, k, hi))
+                    if v[2] > v[1]
+                ]
+                return
+    views.append((block, 0, len(block)))
+
+
 def verify_archive(root, include_active=True):
     """Full offline verification. Returns a result dict; result["fail"] lists every FAIL."""
     ar = Archive(root)
@@ -718,41 +833,43 @@ def verify_archive(root, include_active=True):
     entries = ar.manifest_entries() if os.path.exists(ar.manifest) else []
     gaps = ar.gap_ranges()
     # Each source is parsed and every record self-checked as soon as it is read, and only a slim
-    # record is kept, so peak memory is one decoded segment plus ~0.3 kB per ledger (the old
-    # whole-archive buffer was OOM-killed at 512M on a 10-day archive). Fail order is unchanged:
+    # record is kept, in a column block per source (SlimBlock, ~81 bytes per ledger), so peak memory
+    # is one decoded segment plus the columns (the old whole-archive buffer was OOM-killed at 512M on
+    # a 10-day archive; per-ledger dicts still grew ~1.2 kB per ledger). Fail order is unchanged:
     # manifest/file checks, then unlisted segments, then the per-source checks (p1fails).
     p1fails = []
     main, fills = (
         [],
         [],
-    )  # main: [(src, slim)] in stream order; fills: [(entry, [(src, slim)])]
+    )  # main: [(block, lo, hi)] views in stream order; fills: [(entry, block)]
 
     def parse_source(src, raw, e):
         if raw and not raw.endswith(b"\n"):
             p1fails.append(f"{src}: last line is torn (no newline)")
-        recs = []
-        for ln, x in enumerate(raw.split(b"\n"), 1):
+        blk = SlimBlock(src)
+        for ln, x in enumerate(io.BytesIO(raw), 1):
             if not x.strip():
                 continue
             try:
-                recs.append(slim_record(json.loads(x)))
+                blk.add(slim_record(json.loads(x)))
             except ValueError:
                 p1fails.append(f"{src} line {ln}: not JSON")
-        if e is not None and recs:
-            if (recs[0]["i"], recs[-1]["i"], len(recs)) != (
+        if e is not None and len(blk):
+            r0, r1 = blk.get(0), blk.get(len(blk) - 1)
+            if (r0["i"], r1["i"], len(blk)) != (
                 e["first"],
                 e["last"],
                 e["count"],
             ):
                 p1fails.append(f"{src}: first/last/count differ from MANIFEST")
-            if recs[-1].get("h") != e["last_hash"]:
+            if r1.get("h") != e["last_hash"]:
                 p1fails.append(f"{src}: last ledger hash differs from MANIFEST")
-            if recs[0]["hdr"] is not None and recs[0]["parent"] != e["first_parent"]:
+            if r0["hdr"] and r0["parent"] != e["first_parent"]:
                 p1fails.append(f"{src}: first_parent differs from MANIFEST")
         if e is not None and e.get("kind") == "fill":
-            fills.append((e, [(src, r) for r in recs]))
+            fills.append((e, blk))
         else:
-            main.extend((src, r) for r in recs)
+            main.append((blk, 0, len(blk)))
 
     prev_entry = None
     for n, e in enumerate(entries, 1):
@@ -799,8 +916,13 @@ def verify_archive(root, include_active=True):
 
     # fills: each covers exactly one recorded gap, once; splice its ledgers in at the gap
     filled, standalone = set(), []
-    have = {r.get("i"): r.get("h") for _s, r in main}
-    for e, frecs in fills:
+    # the neighbour lookups see the stream before any fill is spliced in
+    base = list(main)
+
+    def have(i):
+        return _view_lookup(base, i)[0]
+
+    for e, fblk in fills:
         rng = (e.get("first"), e.get("last"))
         g = e.get("gap") or {}
         if rng not in gaps or (g.get("from"), g.get("to")) != rng:
@@ -812,24 +934,23 @@ def verify_archive(root, include_active=True):
         filled.add(rng)
         if e.get("count") != (rng[1] - rng[0] + 1 if None not in rng else None):
             fails.append(f"{e['segment']}: fill count does not cover the whole gap")
-        if None in rng or (rng[0] - 1 in have and rng[1] + 1 in have):
+        if None in rng or (have(rng[0] - 1) and have(rng[1] + 1)):
             for side, i in (("anchor_below", rng[0] - 1), ("anchor_above", rng[1] + 1)):
-                if None not in rng and (e.get(side) or {}).get("h") != have[i]:
+                if (
+                    None not in rng
+                    and (e.get(side) or {}).get("h") != _view_lookup(base, i)[1]
+                ):
                     fails.append(
                         f"{e['segment']}: {side} in MANIFEST differs from archived ledger {i}"
                     )
-            at = next(
-                (k for k, (_s, r) in enumerate(main) if r.get("i", 0) > rng[0]),
-                len(main),
-            )
-            main[at:at] = frecs
+            _view_splice(main, rng[0], fblk)
             continue
         # a neighbour is not in this stream: check the fill as its own chain from its recorded anchor
-        standalone.append((e, frecs))
+        standalone.append((e, [(fblk, 0, len(fblk))]))
         if include_active:
             fails.append(
                 f"{e['segment']}: fill {rng[0]}-{rng[1]}: neighbour ledger(s) "
-                f"{', '.join(str(i) for i in (rng[0] - 1, rng[1] + 1) if i not in have)} not in the archive"
+                f"{', '.join(str(i) for i in (rng[0] - 1, rng[1] + 1) if not have(i))} not in the archive"
             )
         else:
             notes.append(
@@ -859,8 +980,9 @@ def verify_archive(root, include_active=True):
         ((e.get("anchor_below") or {}).get("h"), fr) for e, fr in standalone
     ]
     for anchor, stream in streams:
-        prev = (stream[0][1].get("i", 0) - 1, anchor) if stream and anchor else None
-        for src, r in stream:
+        r0 = _view_end(stream, last=False)
+        prev = (r0.get("i", 0) - 1, anchor) if r0 is not None and anchor else None
+        for src, r in _view_records(stream):
             hdr = r["hdr"]
             for p in r["probs"]:
                 fails.append(f"{src} ledger {r.get('i')}: {p}")
@@ -881,15 +1003,16 @@ def verify_archive(root, include_active=True):
                         notes.append(
                             f"recorded gap {gap[0]}-{gap[1]} (chain restarts at {i})"
                         )
-                elif hdr is not None and r["parent"] != prev[1]:
+                elif hdr and r["parent"] != prev[1]:
                     fails.append(
                         f"{src} ledger {i}: chain: parent_hash does not equal ledger {prev[0]}'s hash"
                     )
             prev = (i, r.get("h"))
             count += 1
             txs += r["ntx"]
-    first = main[0][1].get("i") if main else None
-    prev = (main[-1][1].get("i"), main[-1][1].get("h")) if main else None
+    r0, r1 = _view_end(main, last=False), _view_end(main, last=True)
+    first = r0.get("i") if r0 is not None else None
+    prev = (r1.get("i"), r1.get("h")) if r1 is not None else None
     for a, b in sorted(filled):
         if (a, b) not in {(e["first"], e["last"]) for e, _f in standalone}:
             notes.append(

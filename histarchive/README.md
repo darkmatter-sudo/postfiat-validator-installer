@@ -127,10 +127,15 @@ per-ledger figure as a floor and watch `pft_histarchive_ledgers` / disk usage. T
 
 `verify` memory grows with the archive. Until 2026-11-18 it held every decoded segment and every parsed record at
 once: on 10 sealed days (203,144 ledgers) its peak RSS was 593 MiB, so the daily verify was OOM-killed under the
-periodic unit's old `MemoryMax=512M`. It now checks each ledger as it reads it and keeps only a slim record
-(index, hash, parent hash, problems, tx count) for the chain pass. On the same archive that peaks at 251 MiB, with
-byte-identical `verify --json` output (`TestVerify.test_verify_keeps_only_slim_records` guards this). The periodic
-unit allows 1G. Watch `MemoryPeak`/OOM records (kernwatch `oom_cgroup`) as history grows.
+periodic unit's `MemoryMax=512M` (a 1G drop-in was the stop-gap). It now checks each ledger as it reads it and keeps
+only a slim record (index, hash, parent hash, problems, tx count) for the chain pass, in one column block per source
+(`SlimBlock`: 8 + 8 + 32 + 32 + 1 = 81 bytes per ledger; records with problems or odd values are kept whole). A first
+version kept those slim records as dicts (~1.2 kB per ledger). Measured on a copy of the live archive (10 sealed
+days + 1 active, 218,084 ledgers), with `/usr/bin/time -v`: old code 625 MiB, slim dicts 259 MiB, columns 105 MiB;
+all three `verify --json` outputs are byte-identical. Peak is one decoded segment plus the columns, so 90 days of
+history (~1.8M ledgers) needs about 150 MiB more. `TestVerify.test_verify_keeps_only_slim_records` and
+`test_slim_block_*` guard this. The unit's cap stays `MemoryMax=512M`; `budget/` measures it on every run.
+Watch `MemoryPeak`/OOM records (kernwatch `oom_cgroup`) as history grows.
 
 ## Proof (logs in `logs/`)
 

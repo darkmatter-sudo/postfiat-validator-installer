@@ -511,6 +511,145 @@ class TestVerify(Base):
             self.assertEqual(set(r), {"i", "h", "hdr", "parent", "probs", "ntx"})
         self.assertEqual(sum(r["ntx"] for r in kept), res["txs"])
 
+    def _corrupt_header(self, k):
+        """Make record k of the sealed segment's header unreadable; MANIFEST stays consistent."""
+        ar = ha.Archive(self.dir)
+        old = {e["day"]: e for e in ar.manifest_entries()}["2026-11-10"]
+
+        def bad(recs):
+            recs[k]["d"] = "ZZ"
+            return recs
+
+        self.rewrite_segment("2026-11-10", bad, fix_manifest=False)
+        gz, raw = ha.read_segment(ar.seg_path("2026-11-10"))
+        es, prev = ar.manifest_entries(), None
+        for e in es:
+            if e["day"] == "2026-11-10":
+                e.update(
+                    sha256_gz=hashlib.sha256(gz).hexdigest(),
+                    sha256_raw=hashlib.sha256(raw).hexdigest(),
+                    bytes_gz=len(gz),
+                    bytes_raw=len(raw),
+                    first_parent=old["first_parent"],
+                )
+            e["prev_entry"] = prev
+            e["entry"] = ha.entry_hash(e)
+            prev = e["entry"]
+        with open(ar.manifest, "w") as fh:
+            fh.write("".join(ha.canon(e) + "\n" for e in es))
+
+    def test_unreadable_first_header_fails_once(self):
+        # no header -> no first_parent check (a bool `hdr` is never None: that check added a 2nd FAIL)
+        self.build(20)
+        self._corrupt_header(0)
+        rc, out = self.verify()
+        self.assertEqual(rc, 1)
+        fails = [x for x in out.splitlines() if x.startswith("FAIL")]
+        self.assertEqual(len(fails), 1, out)
+        self.assertIn("ledger 1000: header unreadable", fails[0])
+
+    def test_unreadable_mid_header_has_no_chain_fail(self):
+        # no header -> no parent link to check; the next ledger still links to its recorded hash
+        self.build(20)
+        self._corrupt_header(5)
+        rc, out = self.verify()
+        self.assertEqual(rc, 1)
+        fails = [x for x in out.splitlines() if x.startswith("FAIL")]
+        self.assertEqual(len(fails), 1, out)
+        self.assertIn("ledger 1005: header unreadable", fails[0])
+
+    def test_slim_block_round_trips_and_stays_compact(self):
+        self.build(40, tx_every=1)
+        _gz, raw = ha.read_segment(ha.Archive(self.dir).seg_path("2026-11-10"))
+        recs = [json.loads(x) for x in raw.split(b"\n") if x.strip()]
+        blk = ha.SlimBlock("s")
+        want = [ha.slim_record(r) for r in recs]
+        for r in want:
+            blk.add(r)
+        self.assertEqual(len(blk), len(want))
+        self.assertEqual(blk.odd, {})  # real-shaped records all fit the columns
+        self.assertEqual([blk.get(k) for k in range(len(blk))], want)
+        self.assertEqual(
+            [blk.index(k) for k in range(len(blk))], [r["i"] for r in want]
+        )
+        size = sum(
+            len(c) * getattr(c, "itemsize", 1)
+            for c in (blk.idx, blk.ntx, blk.h, blk.parent, blk.hdr)
+        )
+        self.assertLessEqual(size, 81 * len(blk))
+
+    def test_slim_block_keeps_odd_records_whole(self):
+        good = {
+            "i": 7,
+            "h": "AB" * 32,
+            "hdr": True,
+            "parent": "CD" * 32,
+            "probs": [],
+            "ntx": 2,
+        }
+        odd = [
+            dict(good, probs=["hash: x"]),
+            dict(good, h="ab" * 32),
+            dict(good, h=None),
+            dict(good, parent="cd" * 32),
+            dict(good, i="7"),
+            dict(good, i=True),
+            dict(good, i=-1),
+            dict(good, i=1 << 63),
+            dict(good, ntx=1 << 63),
+        ]
+        blk = ha.SlimBlock("s")
+        for r in [good] + odd + [dict(good, hdr=False, parent=None)]:
+            blk.add(r)
+        self.assertEqual(sorted(blk.odd), list(range(1, len(odd) + 1)))
+        self.assertEqual(blk.get(0), good)
+        for k, r in enumerate(odd, 1):
+            self.assertIs(blk.get(k), r)
+            self.assertEqual(blk.index(k), r["i"])
+        self.assertEqual(blk.get(len(odd) + 1), dict(good, hdr=False, parent=None))
+
+    def test_view_helpers(self):
+        def block(src, idxs):
+            b = ha.SlimBlock(src)
+            for i in idxs:
+                b.add(
+                    {
+                        "i": i,
+                        "h": f"{i:064X}",
+                        "hdr": False,
+                        "parent": None,
+                        "probs": [],
+                        "ntx": 0,
+                    }
+                )
+            return b
+
+        def order(views):
+            return [(s, r["i"]) for s, r in ha._view_records(views)]
+
+        a = block("a", [1, 2, 5, 6])
+        views = [(a, 0, len(a))]
+        ha._view_splice(views, 3, block("f", [3, 4]))
+        self.assertEqual([i for _s, i in order(views)], [1, 2, 3, 4, 5, 6])
+        self.assertEqual(len(views), 3)
+        ha._view_splice(views, 0, block("g", [0]))  # before everything
+        ha._view_splice(views, 99, block("z", [100]))  # nothing is > 99: at the end
+        self.assertEqual(order(views)[0], ("g", 0))
+        self.assertEqual(order(views)[-1], ("z", 100))
+        self.assertEqual(ha._view_len(views), 8)
+        self.assertEqual(ha._view_end(views, last=False)["i"], 0)
+        self.assertEqual(ha._view_end(views, last=True)["i"], 100)
+        self.assertIsNone(ha._view_end([], last=True))
+        self.assertIsNone(ha._view_end([(a, 2, 2)], last=False))
+        d = block("d", [8, 9])
+        d.h[0:32] = bytes.fromhex("11" * 32)  # first 8 differs from the second 8 below
+        dup = [(d, 0, 1), (block("e", [8]), 0, 1)]
+        self.assertEqual(
+            ha._view_lookup(dup, 8), (True, f"{8:064X}")
+        )  # last wins, like a dict
+        self.assertEqual(ha._view_lookup(dup, 7), (False, None))
+        self.assertEqual(ha._view_lookup([(d, 0, 1)], 8), (True, "11" * 32))
+
     def test_broken_parent_link_in_segment(self):
         self.build(30)
 
