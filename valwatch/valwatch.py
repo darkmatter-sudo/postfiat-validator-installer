@@ -304,7 +304,8 @@ def cmd_collect(a):
     while deadline is None or time.time() < deadline:
         ws = None
         try:
-            ws = WS(a.host, a.port, tls=not a.plain)
+            left = deadline - time.time() if deadline else 60.0
+            ws = WS(a.host, a.port, timeout=max(1.0, min(60.0, left)), tls=not a.plain)  # bounded runs end on time
             sink.write({"t": "C", "ev": "connect", "why": "", "r": now_ms()})
             state["healthy_since"] = None
             session(ws, sink, a.unl_cache, deadline, state)

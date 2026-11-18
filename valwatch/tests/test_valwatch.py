@@ -445,9 +445,9 @@ def test_textfile_stale_window_is_down(tmp_path, vrecs):
 class StubNode(threading.Thread):
     """Plain-ws server that replays fixture messages; drops the first connection after N messages."""
 
-    def __init__(self, msgs, drop_after):
+    def __init__(self, msgs, drop_after, sub_status="success"):
         super().__init__(daemon=True)
-        self.msgs, self.drop_after = msgs, drop_after
+        self.msgs, self.drop_after, self.sub_status = msgs, drop_after, sub_status
         self.srv = socket.socket()
         self.srv.bind(("127.0.0.1", 0))
         self.srv.listen(4)
@@ -507,8 +507,10 @@ class StubNode(threading.Thread):
                     "type": "response",
                 }
             else:
-                res = {"id": cmd["id"], "result": {}, "status": "success", "type": "response"}
+                res = {"id": cmd["id"], "result": {}, "status": self.sub_status, "type": "response"}
             c.sendall(self.frame(json.dumps(res).encode()))
+        if self.sub_status != "success":
+            return  # the client is expected to drop a refused subscription
         for m in self.msgs[:limit]:
             c.sendall(self.frame(json.dumps(m).encode()))
         if limit < len(self.msgs):
@@ -758,8 +760,14 @@ def test_textfile_wrapper_over_max_bytes_is_up0(tmp_path, vrecs):
         ('pft_valwatch_up{node="postfiatd"} 1\n', "no pft_valwatch_collect_timestamp_seconds"),
         ('pft_other{node="postfiatd"} 1\n', "not a pft_valwatch_ sample"),
         ('pft_valwatch_up{node="postfiatd"} one\n', "malformed sample"),
+        ('pft_valwatch_collect_timestamp_seconds{node="postfiatd"} 5\n', "no pft_valwatch_up sample"),
+        (
+            'pft_valwatch_up{node="postfiatd"} 1\npft_valwatch_collect_timestamp_seconds{node="postfiatd"} 5\n'
+            + "# HELP pft_valwatch_pad padding\n" * 2000,
+            "too big",
+        ),
     ],
-    ids=["no-ts", "foreign-metric", "malformed"],
+    ids=["no-ts", "foreign-metric", "malformed", "no-up", "over-max-bytes"],
 )
 def test_validate_rejects(tmp_path, body, why):
     f = tmp_path / "x.prom"
@@ -781,3 +789,185 @@ def test_pull_validates_before_rename(tmp_path):
     )
     assert sh(["pull"], {"PULL_SSH": "env", "REMOTE_DIR": str(remote), "TEXTFILE_DIR": str(text)}).returncode == 0
     assert os.listdir(text) == ["pft_valwatch_postfiatd-sentry.prom"]
+
+
+# ------------------------------------------------------------------ guards found by the mutation harness (dev pass)
+def _cache_with(tmp_path, validators):
+    d = json.loads((FX / "unl-cache.json").read_text())
+    blob = json.loads(base64.b64decode(d["blobs_v2"][0]["blob"]))
+    d["blobs_v2"] = [{"blob": base64.b64encode(json.dumps(dict(blob, validators=validators)).encode()).decode()}]
+    p = tmp_path / "cache.X"
+    p.write_text(json.dumps(d))
+    return p, blob
+
+
+def test_read_unl_refuses_non_master_key_format(tmp_path):
+    p, blob = _cache_with(tmp_path, [{"validation_public_key": "02" + "11" * 32}])
+    with pytest.raises(ValueError, match="unexpected validator key format"):
+        valwatch.read_unl(p)
+    p, _ = _cache_with(tmp_path, blob["validators"][:1])  # control: a real ED25519 key passes
+    assert len(valwatch.read_unl(p)["keys"]) == 1
+
+
+def test_read_unl_refuses_empty_validator_list(tmp_path):
+    p, _ = _cache_with(tmp_path, [])
+    with pytest.raises(ValueError, match="unexpected validator key format"):
+        valwatch.read_unl(p)
+
+
+def test_compact_keeps_partial_flag():
+    base = {"type": "validationReceived", "ledger_index": "5", "ledger_hash": "AB", "master_key": "nHx"}
+    assert valwatch.compact(dict(base, full=False), 1)["f"] is False
+    assert valwatch.compact(dict(base, full=True), 1)["f"] is True
+    assert valwatch.compact(base, 1)["f"] is False  # no "full" field: not counted as full
+
+
+def test_collect_refused_subscribe_is_a_disconnect(tmp_path, vrecs):
+    stub = StubNode(stub_msgs(vrecs), drop_after=600, sub_status="error")
+    stub.start()
+    out = tmp_path / "out"
+    p = run_helper(
+        "collect",
+        "--plain",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        str(stub.port),
+        "--out",
+        str(out),
+        "--unl-cache",
+        str(FX / "unl-cache.json"),
+        "--duration",
+        "3",
+        timeout=30,
+    )
+    stub.srv.close()
+    assert p.returncode == 0, p.stderr
+    _, recs, _ = valwatch.load(out)
+    whys = [r["why"] for r in recs if r["t"] == "C" and r["ev"] == "disconnect"]
+    assert whys and all("subscribe refused" in w for w in whys)
+    assert not any(r["t"] in ("L", "V") for r in recs)  # nothing recorded from a refused subscription
+
+
+def test_load_skips_oversized_valid_json_line(tmp_path, vrecs):
+    d = write_dir(tmp_path / "d", vrecs)
+    f = max(d.iterdir())
+    big = {"t": "C", "ev": "disconnect", "why": "x" * valwatch.MAX_LINE, "r": max(r["r"] for r in vrecs)}
+    with open(f, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(big) + "\n")
+    _, recs, bad = valwatch.load(d)
+    assert bad == 1 and not any(len(r.get("why", "")) > 1000 for r in recs)
+
+
+def test_load_carries_newest_quorum(tmp_path, vrecs):
+    t0 = min(r["r"] for r in vrecs)
+    recs = [r for r in vrecs if r["t"] != "Q"] + [
+        {"t": "Q", "q": 17, "s": "full", "r": t0 + 1000},
+        {"t": "Q", "q": 15, "s": "full", "r": t0 + 2000},
+    ]
+    d = write_dir(tmp_path / "d", recs)
+    carried, _, _ = valwatch.load(d, t_from=(t0 + 3000) // 1000 + 1)
+    assert [c["q"] for c in carried if c["t"] == "Q"] == [15]
+
+
+def test_load_respects_to(tmp_path, vrecs):
+    d = write_dir(tmp_path / "d", vrecs)
+    rs = sorted(r["r"] for r in vrecs)
+    t_to = rs[len(rs) // 2] // 1000
+    _, recs, _ = valwatch.load(d, t_to=t_to)
+    assert recs and max(r["r"] for r in recs) < t_to * 1000
+    assert len(recs) < len(valwatch.load(d)[1])  # control: the later half exists
+
+
+def test_load_sorts_each_hour_file(tmp_path, vrecs):
+    import random
+
+    shuffled = list(vrecs)
+    random.Random(7).shuffle(shuffled)
+    d = write_dir(tmp_path / "d", shuffled)
+    _, recs, _ = valwatch.load(d)
+    assert recs == sorted(recs, key=valwatch.rec_order)
+    assert [r["r"] for r in shuffled] != sorted(r["r"] for r in shuffled)  # control: input really was unsorted
+
+
+def test_pct_nearest_rank():
+    v = list(range(1, 11))
+    assert valwatch.pct(v, 95) == 10 and valwatch.pct(v, 50) == 5 and valwatch.pct(v, 5) == 1
+    assert valwatch.pct([3, 1, 2], 50) == 2 and valwatch.pct([], 50) is None
+
+
+def test_quorum_zero_sample_keeps_known_quorum(vrecs):
+    mid = sorted(r["r"] for r in vrecs)[len(vrecs) // 3]
+    base = analyze(vrecs)
+    rep = analyze([*vrecs, {"t": "Q", "q": 0, "s": "connected", "r": mid}])
+    assert rep["quorum_margin"] == base["quorum_margin"] and rep["quorum_last"] == base["quorum_last"] == 17
+
+
+def test_only_disconnects_count_as_reconnects(vrecs):
+    mid = sorted(r["r"] for r in vrecs)[len(vrecs) // 2]
+    conn = {"t": "C", "ev": "connect", "why": "", "r": mid}
+    assert analyze([*vrecs, conn])["reconnects"] == 0
+    assert analyze([*vrecs, conn, dict(conn, ev="disconnect", r=mid + 1)])["reconnects"] == 1
+
+
+def test_duplicate_validation_first_one_counts(vrecs):
+    k = unl_keys(vrecs)[3]
+    v = next(r for r in sorted(vrecs, key=lambda x: x["r"])[len(vrecs) // 2 :] if r["t"] == "V" and r["k"] == k)
+    base = analyze(vrecs, detail=True)
+    rep = analyze([*vrecs, dict(v, r=v["r"] + 20000)], detail=True)
+    assert rep["ledger_detail"] == base["ledger_detail"] and rep["validators"][k] == base["validators"][k]
+
+
+def test_duplicate_ledger_record_first_one_counts(vrecs):
+    ls = sorted((r for r in vrecs if r["t"] == "L"), key=lambda x: x["r"])
+    lg = ls[len(ls) // 2]
+    base = analyze(vrecs)
+    rep = analyze([*vrecs, dict(lg, h="FF" * 32, r=lg["r"] + 1)])
+    assert rep["quorum_margin"] == base["quorum_margin"] and rep["validators"] == base["validators"]
+
+
+def test_participation_equal_to_threshold_not_flagged(vrecs):
+    k = unl_keys(vrecs)[5]
+    ls = sorted({r["i"] for r in vrecs if r["t"] == "L"})
+    drop = set(ls[20:25])
+    recs = [r for r in vrecs if not (r["t"] == "V" and r["k"] == k and r["i"] in drop)]
+    part = analyze(recs)["validators"][k]["participation"]
+    assert part < 1
+    assert "low_participation" not in analyze(recs, min_participation=part)["validators"][k]["flags"]
+    assert "low_participation" in analyze(recs, min_participation=part + 0.0001)["validators"][k]["flags"]
+
+
+def test_compare_delay_outside_tolerance(vrecs):
+    a = detail(vrecs)
+    b = json.loads(json.dumps(a))
+    k = unl_keys(vrecs)[6]
+    for lg in b["ledger_detail"].values():
+        if k in lg["d"]:
+            lg["d"][k] += 2000
+    res = valwatch.compare(a, b, 0.02, 1000, 1)
+    assert res["result"] == "DISAGREE" and res["validators_outside"] == [k]
+    assert valwatch.compare(a, b, 0.02, 3000, 1)["result"] == "AGREE"  # control: inside a wider tolerance
+
+
+def test_compare_margin_outside_tolerance(vrecs):
+    a = detail(vrecs)
+    b = json.loads(json.dumps(a))
+    i = sorted(b["ledger_detail"], key=int)[7]
+    b["ledger_detail"][i]["m"] += 2
+    res = valwatch.compare(a, b, 0.02, 1000, 1)
+    assert res["result"] == "DISAGREE" and res["margin_absdiff_max"] == 2 and res["validators_outside"] == []
+    assert valwatch.compare(a, b, 0.02, 1000, 2)["result"] == "AGREE"  # control
+
+
+def test_textfile_wrapper_helper_failure_is_up0(tmp_path, vrecs):
+    write_dir(tmp_path / "data" / "postfiatd", vrecs)
+    text = tmp_path / "text"
+    text.mkdir()
+    late = str(max(r["r"] for r in vrecs) // 1000 + 7200)  # window after the data: helper exits 1 (up 0)
+    p = sh(
+        ["textfile", "--container", "postfiatd"],
+        {"DATA_DIR": str(tmp_path / "data"), "TEXTFILE_DIR": str(text), "PFT_VW_NOW": late},
+    )
+    assert p.returncode == 1 and "helper rc 1" in p.stderr
+    body = (text / "pft_valwatch_postfiatd.prom").read_text()
+    assert 'pft_valwatch_up{node="postfiatd"} 0' in body and "pft_valwatch_ledgers" not in body
