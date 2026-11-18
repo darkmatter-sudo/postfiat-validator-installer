@@ -1,0 +1,34 @@
+[Unit]
+Description=pft-valwatch: build the pft_valwatch textfile for container %i
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/valwatch
+
+[Service]
+Type=oneshot
+# Reads /var/lib/pft-valwatch/%i (no network, no docker), writes one .prom file.
+ExecStart=/usr/local/bin/pft-valwatch textfile --container %i
+ProtectSystem=strict
+ReadWritePaths=/var/lib/pft-exporter/textfile
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateNetwork=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+UMask=0022
+MemoryMax=256M
+TimeoutStartSec=50

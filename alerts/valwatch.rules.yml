@@ -1,0 +1,75 @@
+# Alert rules for pft-valwatch (../valwatch). pft-valwatch@<container>.service records the node's validations +
+# ledger streams; pft-valwatch-textfile@<container>.timer grades the last 15 min every minute and writes
+# pft_valwatch_*{node="..."} (validator: local; sentry: pulled by pft-valwatch-pull@postfiatd-sentry.timer on the
+# validator, which runs the only Prometheus + Alertmanager). Every rule is per node, so a fault seen by only one
+# host (its own peering) is told apart from one seen by both (the validator itself).
+#  1. PFTValwatchValidatorLow: a UNL validator agreed on under 80 % of the window's validated ledgers for 15m
+#     (calibration 2026-11-18, both hosts: 0.975-1.0 in 2-4 min windows; ../valwatch/logs).
+#  2. PFTValwatchValidatorLate: a UNL validator's p95 validation delay (vs the first UNL validation of the same
+#     ledger on this host) above 3 s for 15m (calibration: p95 9-1586 ms).
+#  3. PFTValwatchQuorumMarginLow: some ledger in the window was validated by fewer than quorum + 2 UNL validators
+#     (calibration: margin 8 = 25 - 17 on every ledger). Two more silent validators would stall validation.
+#  4. PFTValwatchQuorumMarginCritical: the MEDIAN ledger has margin < 1 for 5m: one more silent validator stalls.
+#  5. PFTValwatchStale: no fresh graded data (collector down, stream silent, UNL cache unreadable): 1-4 are blind.
+#  6. PFTValwatchReconnecting: more than 3 stream reconnects inside the 15-min window for 15m.
+# Tests: valwatch.tests.yml (promtool test rules valwatch.tests.yml), 1m sample interval = the timer's period.
+groups:
+  - name: pft-valwatch
+    rules:
+      - alert: PFTValwatchValidatorLow
+        expr: pft_valwatch_validator_participation_ratio < 0.8 and on (job, instance, node) pft_valwatch_up == 1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "UNL validator {{ $labels.validator }} is missing validations (seen by {{ $labels.node }})"
+          description: "For 15m UNL validator {{ $labels.validator }} sent a full validation for the agreed ledger hash on only {{ $value | humanizePercentage }} of the validated ledgers {{ $labels.node }} saw in the last 15 min (alert below 80%). If the other host sees the same, the validator is down or forked; if only this host, check this node's peers. `sudo pft-valwatch report --container {{ $labels.node }}`."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/valwatch/README.md#runbook"
+      - alert: PFTValwatchValidatorLate
+        expr: pft_valwatch_validator_delay_p95_ms > 3000 and on (job, instance, node) pft_valwatch_up == 1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "UNL validator {{ $labels.validator }} validations arrive late at {{ $labels.node }}"
+          description: "For 15m the p95 delay of {{ $labels.validator }}'s validations behind the first UNL validation of the same ledger was {{ $value }} ms at {{ $labels.node }} (alert above 3000 ms). Late validations count for less and can miss the ledger. `sudo pft-valwatch report --container {{ $labels.node }}`."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/valwatch/README.md#runbook"
+      - alert: PFTValwatchQuorumMarginLow
+        expr: pft_valwatch_quorum_margin_min < 2 and on (job, instance, node) pft_valwatch_up == 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.node }} quorum margin is thin"
+          description: "For 10m at least one validated ledger in each 15-min window at {{ $labels.node }} had fewer than quorum + 2 agreeing UNL validations (worst margin {{ $value }}). Two more silent UNL validators and the network stops validating. `sudo pft-valwatch report --container {{ $labels.node }}` lists the silent ones."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/valwatch/README.md#runbook"
+      - alert: PFTValwatchQuorumMarginCritical
+        expr: pft_valwatch_quorum_margin_p50 < 1 and on (job, instance, node) pft_valwatch_up == 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.node }} validates at quorum with no margin"
+          description: "For 5m the median validated ledger at {{ $labels.node }} had {{ $value }} UNL validations above quorum. One more silent UNL validator stalls validation for everyone using this UNL. `sudo pft-valwatch report --container {{ $labels.node }}`."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/valwatch/README.md#runbook"
+      - alert: PFTValwatchStale
+        expr: >-
+          pft_valwatch_up == 0
+          or (time() - pft_valwatch_collect_timestamp_seconds) > 300
+          or pft_valwatch_last_record_age_seconds > 300
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pft-valwatch for {{ $labels.node }} is blind"
+          description: "For 10m the pft-valwatch textfile for {{ $labels.node }} was down (no graded ledger with UNL and quorum known), older than 5 min, or its newest stream record was older than 5 min. The validator/quorum rules cannot fire. `systemctl status pft-valwatch@{{ $labels.node }}`, `sudo pft-valwatch endpoint --container {{ $labels.node }}`."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/valwatch/README.md#runbook"
+      - alert: PFTValwatchReconnecting
+        expr: pft_valwatch_reconnects > 3
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pft-valwatch stream for {{ $labels.node }} keeps reconnecting"
+          description: "For 15m every 15-min window held more than 3 stream disconnects ({{ $value }}) for {{ $labels.node }}. Records between them are lost. `journalctl -u pft-valwatch@{{ $labels.node }}`."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/valwatch/README.md#runbook"

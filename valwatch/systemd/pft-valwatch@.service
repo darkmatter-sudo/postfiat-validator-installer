@@ -1,0 +1,44 @@
+[Unit]
+Description=pft-valwatch: validations + ledger stream collector for container %i (read-only)
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/valwatch
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+# root: `docker port`/`docker inspect` (docker socket) to resolve the endpoint and the root-only volume path of the
+# node's validator-list cache. No docker exec. The only network peer is the node's own wss port on loopback/bridge.
+Environment=DOCKER_CONFIG=/tmp
+ExecStart=/usr/local/bin/pft-valwatch run --container %i
+Restart=on-failure
+RestartSec=30
+ProtectSystem=strict
+ReadWritePaths=/var/lib/pft-valwatch
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX AF_INET
+IPAddressDeny=any
+IPAddressAllow=localhost 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+UMask=0027
+MemoryMax=192M
+CPUQuota=25%
+Nice=10
+
+[Install]
+WantedBy=multi-user.target
