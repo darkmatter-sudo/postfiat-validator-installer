@@ -1,0 +1,44 @@
+[Unit]
+Description=pft-budget sampler: per-invocation memory/CPU/IO peaks of every pft-* unit cgroup (cgroup v2 polling)
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/budget
+
+[Service]
+Type=simple
+# Unprivileged system user created by install.sh, no capabilities: it reads the world-readable cgroup v2 files under
+# /sys/fs/cgroup/system.slice, asks systemd (D-Bus, read-only `systemctl show`) for invocation ids and results, and
+# writes only /var/lib/pft-budget. It samples its own cgroup too, so `pft-budget report` checks this MemoryMax.
+User=pft-budget
+Group=pft-budget
+ExecStart=/usr/bin/python3 -I /usr/local/lib/pft-budget/budget.py --conf /etc/pft-budget.env sample
+Restart=on-failure
+RestartSec=10
+UMask=0022
+ProtectSystem=strict
+ReadWritePaths=/var/lib/pft-budget
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+Nice=10
+MemoryMax=64M
+CPUQuota=10%
+
+[Install]
+WantedBy=multi-user.target

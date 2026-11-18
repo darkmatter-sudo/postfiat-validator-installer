@@ -1,0 +1,10 @@
+[Unit]
+Description=Copy peer host %i's pft-budget textfile every 5 minutes (the peer writes at :20 of each 5-minute slot)
+
+[Timer]
+OnCalendar=*-*-* *:00/5:50
+AccuracySec=5s
+Persistent=false
+
+[Install]
+WantedBy=timers.target

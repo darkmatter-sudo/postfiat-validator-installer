@@ -1,0 +1,213 @@
+# promtool unit tests for budget.rules.yml (hand-computed; 5m interval = pft-budget-collect.timer).
+# Run: promtool test rules budget.tests.yml
+rule_files:
+- budget.rules.yml
+evaluation_interval: 1m
+tests:
+- name: healthy hosts and near-miss units fire nothing
+  interval: 5m
+  input_series:
+  - series: pft_budget_up{job="postfiat", instance="node:9877", host="validator"}
+    values: '1x24'
+  - series: pft_budget_sampler_heartbeat_timestamp_seconds{job="postfiat", instance="node:9877", host="validator"}
+    values: '0+300x24'
+  - series: pft_budget_report_timestamp_seconds{job="postfiat", instance="node:9877", host="validator"}
+    values: '0+300x24'
+  - series: pft_budget_up{job="postfiat", instance="node:9877", host="sentry"}
+    values: '1x24'
+  - series: pft_budget_sampler_heartbeat_timestamp_seconds{job="postfiat", instance="node:9877", host="sentry"}
+    values: '0+300x24'
+  - series: pft_budget_report_timestamp_seconds{job="postfiat", instance="node:9877", host="sentry"}
+    values: '0+300x24'
+  - series: pft_budget_peak_unrecl_bytes{job="postfiat", instance="node:9877", host="validator", unit="pft-histarchive-periodic.service"}
+    values: '481296384x24'
+  - series: pft_budget_cap_bytes{job="postfiat", instance="node:9877", host="validator", unit="pft-histarchive-periodic.service"}
+    values: '536870912x24'
+  - series: pft_budget_projected_30d_bytes{job="postfiat", instance="node:9877", host="validator", unit="pft-histarchive-periodic.service"}
+    values: '535822336x24'
+  - series: pft_budget_peak_unrecl_bytes{job="postfiat", instance="node:9877", host="sentry", unit="pft-x.service"}
+    values: '10485760x24'
+  - series: pft_budget_cap_bytes{job="postfiat", instance="node:9877", host="sentry", unit="pft-x.service"}
+    values: '67108864x24'
+  - series: pft_budget_projected_30d_bytes{job="postfiat", instance="node:9877", host="sentry", unit="pft-x.service"}
+    values: '10485760x24'
+  alert_rule_test:
+  - alertname: PFTBudgetCapReached
+    eval_time: 115m
+    exp_alerts: []
+  - alertname: PFTBudgetStale
+    eval_time: 115m
+    exp_alerts: []
+- name: peak at 0.9 x cap fires after 30m
+  interval: 5m
+  input_series:
+  - series: pft_budget_up{job="postfiat", instance="node:9877", host="validator"}
+    values: '1x24'
+  - series: pft_budget_sampler_heartbeat_timestamp_seconds{job="postfiat", instance="node:9877", host="validator"}
+    values: '0+300x24'
+  - series: pft_budget_report_timestamp_seconds{job="postfiat", instance="node:9877", host="validator"}
+    values: '0+300x24'
+  - series: pft_budget_peak_unrecl_bytes{job="postfiat", instance="node:9877", host="validator", unit="pft-a.service"}
+    values: '483393536x24'
+  - series: pft_budget_cap_bytes{job="postfiat", instance="node:9877", host="validator", unit="pft-a.service"}
+    values: '536870912x24'
+  - series: pft_budget_projected_30d_bytes{job="postfiat", instance="node:9877", host="validator", unit="pft-a.service"}
+    values: '483393536x24'
+  alert_rule_test:
+  - alertname: PFTBudgetCapReached
+    eval_time: 25m
+    exp_alerts: []
+  - alertname: PFTBudgetCapReached
+    eval_time: 30m
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        host: validator
+        unit: pft-a.service
+      exp_annotations:
+        summary: "validator: pft-a.service is at or projected over its MemoryMax"
+        description: "pft-budget measured an unreclaimable memory peak of at least 90% of the unit's MemoryMax, or projects its peak to reach the cap within 30 days. The unit will be OOM-killed. Run `sudo pft-budget report` on validator; `sudo pft-budget plan` shows the proposed cap and `sudo pft-budget apply --yes` (inside a pft-maint window) writes it, or fix the unit's memory use."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/budget/README.md#alerts"
+- name: 30-day projection at the cap fires
+  interval: 5m
+  input_series:
+  - series: pft_budget_up{job="postfiat", instance="node:9877", host="sentry"}
+    values: '1x24'
+  - series: pft_budget_sampler_heartbeat_timestamp_seconds{job="postfiat", instance="node:9877", host="sentry"}
+    values: '0+300x24'
+  - series: pft_budget_report_timestamp_seconds{job="postfiat", instance="node:9877", host="sentry"}
+    values: '0+300x24'
+  - series: pft_budget_peak_unrecl_bytes{job="postfiat", instance="node:9877", host="sentry", unit="pft-b.service"}
+    values: '104857600x24'
+  - series: pft_budget_cap_bytes{job="postfiat", instance="node:9877", host="sentry", unit="pft-b.service"}
+    values: '536870912x24'
+  - series: pft_budget_projected_30d_bytes{job="postfiat", instance="node:9877", host="sentry", unit="pft-b.service"}
+    values: '536870912x24'
+  alert_rule_test:
+  - alertname: PFTBudgetCapReached
+    eval_time: 40m
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        host: sentry
+        unit: pft-b.service
+      exp_annotations:
+        summary: "sentry: pft-b.service is at or projected over its MemoryMax"
+        description: "pft-budget measured an unreclaimable memory peak of at least 90% of the unit's MemoryMax, or projects its peak to reach the cap within 30 days. The unit will be OOM-killed. Run `sudo pft-budget report` on sentry; `sudo pft-budget plan` shows the proposed cap and `sudo pft-budget apply --yes` (inside a pft-maint window) writes it, or fix the unit's memory use."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/budget/README.md#alerts"
+- name: uncapped unit (no cap series) does not fire
+  interval: 5m
+  input_series:
+  - series: pft_budget_up{job="postfiat", instance="node:9877", host="validator"}
+    values: '1x24'
+  - series: pft_budget_sampler_heartbeat_timestamp_seconds{job="postfiat", instance="node:9877", host="validator"}
+    values: '0+300x24'
+  - series: pft_budget_report_timestamp_seconds{job="postfiat", instance="node:9877", host="validator"}
+    values: '0+300x24'
+  - series: pft_budget_peak_unrecl_bytes{job="postfiat", instance="node:9877", host="validator", unit="pft-free.service"}
+    values: '943718400x24'
+  - series: pft_budget_projected_30d_bytes{job="postfiat", instance="node:9877", host="validator", unit="pft-free.service"}
+    values: '2097152000x24'
+  alert_rule_test:
+  - alertname: PFTBudgetCapReached
+    eval_time: 115m
+    exp_alerts: []
+- name: raising the cap resolves the alert
+  interval: 5m
+  input_series:
+  - series: pft_budget_up{job="postfiat", instance="node:9877", host="validator"}
+    values: '1x24'
+  - series: pft_budget_sampler_heartbeat_timestamp_seconds{job="postfiat", instance="node:9877", host="validator"}
+    values: '0+300x24'
+  - series: pft_budget_report_timestamp_seconds{job="postfiat", instance="node:9877", host="validator"}
+    values: '0+300x24'
+  - series: pft_budget_peak_unrecl_bytes{job="postfiat", instance="node:9877", host="validator", unit="pft-a.service"}
+    values: '483393536x24'
+  - series: pft_budget_cap_bytes{job="postfiat", instance="node:9877", host="validator", unit="pft-a.service"}
+    values: '536870912x12 1073741824x12'
+  - series: pft_budget_projected_30d_bytes{job="postfiat", instance="node:9877", host="validator", unit="pft-a.service"}
+    values: '483393536x24'
+  alert_rule_test:
+  - alertname: PFTBudgetCapReached
+    eval_time: 55m
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        host: validator
+        unit: pft-a.service
+      exp_annotations:
+        summary: "validator: pft-a.service is at or projected over its MemoryMax"
+        description: "pft-budget measured an unreclaimable memory peak of at least 90% of the unit's MemoryMax, or projects its peak to reach the cap within 30 days. The unit will be OOM-killed. Run `sudo pft-budget report` on validator; `sudo pft-budget plan` shows the proposed cap and `sudo pft-budget apply --yes` (inside a pft-maint window) writes it, or fix the unit's memory use."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/budget/README.md#alerts"
+  - alertname: PFTBudgetCapReached
+    eval_time: 65m
+    exp_alerts: []
+- name: up 0 fires Stale after 15m
+  interval: 5m
+  input_series:
+  - series: pft_budget_up{job="postfiat", instance="node:9877", host="sentry"}
+    values: '0x24'
+  - series: pft_budget_sampler_heartbeat_timestamp_seconds{job="postfiat", instance="node:9877", host="sentry"}
+    values: '0+300x24'
+  - series: pft_budget_report_timestamp_seconds{job="postfiat", instance="node:9877", host="sentry"}
+    values: '0+300x24'
+  alert_rule_test:
+  - alertname: PFTBudgetStale
+    eval_time: 10m
+    exp_alerts: []
+  - alertname: PFTBudgetStale
+    eval_time: 15m
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        host: sentry
+      exp_annotations:
+        summary: "sentry: pft-budget sampler or report is stale"
+        description: "pft-budget on sentry wrote up 0, its sampler heartbeat is older than 15 min, or the report is older than 30 min, so unit memory peaks are not being measured. Check `systemctl status pft-budget-sampler pft-budget-collect.timer` and `sudo pft-budget status` on sentry (sentry: also pft-budget-pull.timer on the validator)."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/budget/README.md#alerts"
+- name: frozen sampler heartbeat fires Stale (age > 900 s for 15m)
+  interval: 5m
+  input_series:
+  - series: pft_budget_up{job="postfiat", instance="node:9877", host="validator"}
+    values: '1x24'
+  - series: pft_budget_sampler_heartbeat_timestamp_seconds{job="postfiat", instance="node:9877", host="validator"}
+    values: '0x24'
+  - series: pft_budget_report_timestamp_seconds{job="postfiat", instance="node:9877", host="validator"}
+    values: '0+300x24'
+  alert_rule_test:
+  - alertname: PFTBudgetStale
+    eval_time: 30m
+    exp_alerts: []
+  - alertname: PFTBudgetStale
+    eval_time: 35m
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        host: validator
+      exp_annotations:
+        summary: "validator: pft-budget sampler or report is stale"
+        description: "pft-budget on validator wrote up 0, its sampler heartbeat is older than 15 min, or the report is older than 30 min, so unit memory peaks are not being measured. Check `systemctl status pft-budget-sampler pft-budget-collect.timer` and `sudo pft-budget status` on validator (sentry: also pft-budget-pull.timer on the validator)."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/budget/README.md#alerts"
+- name: frozen report fires Stale (age > 1800 s for 15m)
+  interval: 5m
+  input_series:
+  - series: pft_budget_up{job="postfiat", instance="node:9877", host="validator"}
+    values: '1x24'
+  - series: pft_budget_sampler_heartbeat_timestamp_seconds{job="postfiat", instance="node:9877", host="validator"}
+    values: '0+300x24'
+  - series: pft_budget_report_timestamp_seconds{job="postfiat", instance="node:9877", host="validator"}
+    values: '0x24'
+  alert_rule_test:
+  - alertname: PFTBudgetStale
+    eval_time: 45m
+    exp_alerts: []
+  - alertname: PFTBudgetStale
+    eval_time: 50m
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        host: validator
+      exp_annotations:
+        summary: "validator: pft-budget sampler or report is stale"
+        description: "pft-budget on validator wrote up 0, its sampler heartbeat is older than 15 min, or the report is older than 30 min, so unit memory peaks are not being measured. Check `systemctl status pft-budget-sampler pft-budget-collect.timer` and `sudo pft-budget status` on validator (sentry: also pft-budget-pull.timer on the validator)."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/budget/README.md#alerts"

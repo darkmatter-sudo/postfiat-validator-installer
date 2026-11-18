@@ -1,0 +1,34 @@
+[Unit]
+Description=pft-budget collect: write the 30-day budget report as pft_budget_* textfile metrics
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/budget
+
+[Service]
+Type=oneshot
+# root: writes into the root-owned textfile dir; reads /var/lib/pft-budget and the root-owned /etc/pft-budget.env.
+ExecStart=/usr/local/bin/pft-budget collect
+ProtectSystem=strict
+ReadWritePaths=/var/lib/pft-exporter/textfile
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+UMask=0022
+Nice=10
+MemoryMax=128M
+TimeoutStartSec=120

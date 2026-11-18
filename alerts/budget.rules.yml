@@ -1,0 +1,37 @@
+# Alert rules for pft-budget (../budget). pft-budget-sampler.service polls every pft-*.service cgroup each second;
+# pft-budget-collect.timer writes the 30-day report every 5 minutes as pft_budget_*{host="...",unit="..."} to the
+# textfile dir (validator: local; pft-budget-pull.timer copies the sentry's file over PULL_SSH); the pft exporter
+# serves it. The sentry runs no Prometheus: every host="sentry" alert is evaluated here.
+# Only conditions an operator must act on page: a unit whose measured peak or 30-day projection reaches its cap
+# (it will be OOM-killed), and a dead sampler/report. Headroom under 2x (WARN) stays in `pft-budget report`.
+# OOM kills themselves already page through PFTKernelCritical (kernwatch); an OOM run keeps the report verdict FAIL
+# for the whole 30-day window, so no rule here keys on oom_runs (it would not resolve after the fix).
+# Tests: budget.tests.yml (promtool test rules budget.tests.yml), 5m sample interval = the collect timer.
+groups:
+  - name: pft-budget
+    rules:
+      - alert: PFTBudgetCapReached
+        expr: >-
+          max by (host, unit) (pft_budget_peak_unrecl_bytes)
+          >= 0.9 * max by (host, unit) (pft_budget_cap_bytes)
+          or max by (host, unit) (pft_budget_projected_30d_bytes)
+          >= max by (host, unit) (pft_budget_cap_bytes)
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.host }}: {{ $labels.unit }} is at or projected over its MemoryMax"
+          description: "pft-budget measured an unreclaimable memory peak of at least 90% of the unit's MemoryMax, or projects its peak to reach the cap within 30 days. The unit will be OOM-killed. Run `sudo pft-budget report` on {{ $labels.host }}; `sudo pft-budget plan` shows the proposed cap and `sudo pft-budget apply --yes` (inside a pft-maint window) writes it, or fix the unit's memory use."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/budget/README.md#alerts"
+      - alert: PFTBudgetStale
+        expr: >-
+          max by (host) (pft_budget_up) == 0
+          or max by (host) (time() - pft_budget_sampler_heartbeat_timestamp_seconds) > 900
+          or max by (host) (time() - pft_budget_report_timestamp_seconds) > 1800
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.host }}: pft-budget sampler or report is stale"
+          description: "pft-budget on {{ $labels.host }} wrote up 0, its sampler heartbeat is older than 15 min, or the report is older than 30 min, so unit memory peaks are not being measured. Check `systemctl status pft-budget-sampler pft-budget-collect.timer` and `sudo pft-budget status` on {{ $labels.host }} (sentry: also pft-budget-pull.timer on the validator)."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/budget/README.md#alerts"
