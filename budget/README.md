@@ -115,4 +115,62 @@ TMPDIR=$HOME/.cache python3 -m pytest -q budget/tests        # or python3 budget
 TEST_TMPDIR=$HOME/.cache python3 -u budget/tests/mutate.py   # single-mutant run, helper + shell + units + rules
 promtool test rules alerts/budget.tests.yml                  # (cd alerts; prom/prometheus:v3.5.0)
 shellcheck budget/*.sh && (cd budget && ruff check . && ruff format --check .)
+promtool check rules alerts/budget.rules.yml
+bash budget/drill/fresh-clone.sh SHA                         # anonymous clone + every offline check (log 13)
 ```
+
+## Sample report
+
+From the committed two-host snapshot (`logs/data/`, 3013 records taken 2026-11-18T14:10:05Z, about 2.5 h after
+install), rebuilt offline with `python3 budget/budget.py --conf budget/pft-budget.env.example report --now $(cat
+budget/logs/data/NOW) --data budget/logs/data/*-samples.jsonl` (full output: `logs/data/report-offline.txt`):
+
+```
+pft-budget report - 2026-11-18T14:10:05Z - window 30d, 2985 invocation(s), 0 unreadable line(s)
+host       unit                                          runs       p50       max   max_tot       cap headroom    proj30    proj90   rt_max  oom verdict
+sentry     pft-budget-collect.service                      27      1MiB      8MiB      8MiB    128MiB   16.30x         -         -       3s    0 OK
+validator  pft-histarchive-periodic.service                29      4MiB     97MiB     97MiB    512MiB    5.30x         -         -      19s    0 OK
+validator  pft-histarchive-verify-before-sealed.service     1    518MiB    518MiB    518MiB   1024MiB    1.98x         -         -      14s    0 WARN
+                                                          - headroom 1.98x < 2x (peak 518MiB)
+validator  pft-histarchive-verify-before.service            1    603MiB    603MiB    605MiB   1024MiB    1.70x         -         -      33s    0 WARN
+                                                          - headroom 1.70x < 2x (peak 603MiB)
+RESULT: 8 OK, 2 WARN, 0 FAIL, 79 UNCAPPED
+```
+
+(excerpt). The two WARN rows are the deliberate old-code runs of log 07 under the 1G stop-gap. 79 units are still
+uncapped and get a recommended cap; nothing is applied until each has `MIN_RUNS` runs over `PROJ_MIN_SPAN_DAYS`.
+No unit has 3 days of data yet, so no 30/90-day projection is printed.
+
+## Histarchive OOM: before / after
+
+The daily `pft-histarchive-periodic` full verify was OOM-killed at `MemoryMax=512M` on 2026-11-18 (593 MiB peak); a
+`MemoryMax=1G` drop-in was the stop-gap. The column-store verify (`histarchive` `60dc70c`, see `histarchive/README.md`)
+was shipped with `pft-fleet` in a `pft-maint` window by `drill/histarchive-run.sh` (log 07), measured by the sampler
+on the live archive (same host, same data):
+
+| run | code | cap | peak unreclaimable | headroom | result |
+|---|---|---|---|---|---|
+| full verify, before | old | 1G (stop-gap) | 602.5 MiB | 1.70x | ok, would FAIL at 512M |
+| sealed-only verify, before | old | 1G | 517.6 MiB | 1.98x | ok |
+| full verify, after | 60dc70c | 512M | 95.3 MiB | 5.37x | ok |
+| sealed-only verify, after | 60dc70c | 512M | 95.4 MiB | 5.37x | `--json` byte-identical to before (cmp) |
+| real periodic unit (log 11) | 60dc70c | 512M, no drop-in | 96.6 MiB | 5.30x | Result success, oom 0 |
+
+The stop-gap was removed only after the after-run showed more than 2x headroom under 512M (the card's condition).
+
+## Proof (logs in `logs/`)
+
+| log | what | result |
+|---|---|---|
+| 01 | first single-mutant run (helper, shell, units, rules) | 79/79 caught |
+| 02 | two-host install through pft-fleet (`drill/install-run.sh`) | 51/52: the live run found the short-span projection bug (PFTBudgetCapReached pending, silenced, not paged); fixed `8aef64d` |
+| 03, 04 | mutants after the fix (03: one mutant no longer applied, retargeted) | 80/81, then 81/81 caught |
+| 05 | two-host upgrade to the fix (`drill/upgrade-run.sh`) | 29/30: the runner's is-failed check misread the sampler's state; runner fixed `26904b4`; alerts inactive, operator topics 0 |
+| 06 | histarchive single-mutant run at `60dc70c` | 77/77 caught |
+| 07 | histarchive bounded-verify deploy (`drill/histarchive-run.sh`) | before/after table above; 3 FAIL, all runner: a record lookup race, and schedaudit not re-accepted after the drop-in removal, which paged the operator once (explained); fixed `5e6d079` |
+| 08 | mutants incl. the sampler ENODEV fix `a97de5d` (live crash-loop on the sentry during cgroup teardown) | 83/83 caught |
+| 09 | two-host upgrade to `a97de5d` | 2 FAIL: PFTRuleDead from the absent projection series, fixed `94cbac8` (rulecheck ignore-metric); silenced, not paged |
+| 10 | recheck preflight stop: run 09's rollout silence still active | stopped before any change; `upgrade-run.sh` now expires its own silence |
+| 11 | histarchive RECHECK (`RECHECK=1`): real periodic unit at 512M without the drop-in | **PASS, 0 failed**: 96.6 MiB, oom 0, integrity/skew/schedaudit clean, operator topics 0 |
+| 12 | snapshot: both hosts' sampler JSONL (`logs/data/`), offline report, installed key-file sha256 on both hosts | installed = repo bytes on both hosts |
+| 13 | fresh anonymous public clone (`drill/fresh-clone.sh`) | see log |

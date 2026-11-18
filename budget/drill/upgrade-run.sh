@@ -157,8 +157,11 @@ x "sudo -n systemctl start pft-keyescrow.service; grep -h '^pft_keyescrow_drift_
 check "pft-keyescrow re-run: validator drift_items 0" "$(grep -q '} 0$' <<<"$XOUT" && echo 0 || echo 1)"
 x "sleep 5; curl -s --max-time 15 \"https://ntfy.sh/\$TT/json?poll=1&since=$since\" | jq -r '.title'"
 check "the [MAINT] start and end messages reached the throwaway topic" "$([ "$(grep -c '^\[MAINT\]' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
-x "other_alerts"
-check "nothing but the watchdog pending/firing at the end" "$(grep -q . <<<"$XOUT" && echo 1 || echo 0)"
+x "for i in \$(seq 0 15 300); do n=\$(other_alerts | grep -c .); echo \"+\${i}s: \$n\"; [ \"\$n\" = 0 ] && break; sleep 15; done; other_alerts"
+check "nothing but the watchdog pending/firing at the end" "$(grep -qE '^[A-Z]' <<<"$XOUT" && echo 1 || echo 0)"
+# run 10: run 09 left this silence active for 40 min and the next run's preflight stopped on it; expire it here
+x "curl -s --max-time 10 -X DELETE $AM/api/v2/silence/$SIL -o /dev/null -w '%{http_code}\n'"
+check "rollout silence expired" "$(grep -qx 200 <<<"$XOUT" && echo 0 || echo 1)"
 x "srv_state"
 check "both nodes full or proposing at the end" "$([ "$(grep -cE '^(full|proposing)$' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
 echo "operator topic read-back waits 90 s"; sleep 90

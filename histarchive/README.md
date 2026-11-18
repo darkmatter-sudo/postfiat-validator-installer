@@ -136,6 +136,8 @@ all three `verify --json` outputs are byte-identical. Peak is one decoded segmen
 history (~1.8M ledgers) needs about 150 MiB more. `TestVerify.test_verify_keeps_only_slim_records` and
 `test_slim_block_*` guard this. The unit's cap stays `MemoryMax=512M`; `budget/` measures it on every run.
 Watch `MemoryPeak`/OOM records (kernwatch `oom_cgroup`) as history grows.
+Deployed 2026-11-18 on the validator through `pft-fleet` (`budget/logs/07`): full verify 602.5 MiB under the 1G
+stop-gap -> 95.3 MiB at 512M, the stop-gap drop-in removed, and the real periodic run at 96.6 MiB (`budget/logs/11`).
 
 ## Proof (logs in `logs/`)
 

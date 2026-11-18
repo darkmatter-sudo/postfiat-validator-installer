@@ -1,0 +1,45 @@
+# budget/logs/12-snapshot.log - sampler JSONL snapshot of both hosts + offline report + installed key-file sha256 (task_9fb56f105f2b404c135135b0e6ff456e)
+== snapshot 2026-11-18T14:10:05Z
+NOW=1795011005
+   1095 logs/data/sentry-samples.jsonl
+   1918 logs/data/validator-samples.jsonl
+   3013 total
+0f6ff599c6b4a57baa1f63d9ee2c440f7afabb226e10e75c0e5787b1b21b52be  logs/data/sentry-samples.jsonl
+ca74a87778394dd08da7490c7338898f23d3415be2e7ccdad671053a247a7bca  logs/data/validator-samples.jsonl
+== records have only these keys/hosts:
+   3013 ["cpu_sec","exit_status","from_start","host","inv","io_read_bytes","io_write_bytes","kind","mem_high","mem_max","oom_kills","peak_bytes","peak_unrecl_bytes","result","runtime_sec","samples","t_first","t_last","unit","v"]
+   1095 sentry
+   1918 validator
+== offline report (example conf, --now 1795011005)
+rc=2
+rc=2
+sentry     pft-budget-collect.service                      27      1MiB      8MiB      8MiB    128MiB   16.30x         -         -       3s    0 OK
+sentry     pft-budget-sampler.service                       5      8MiB      8MiB      9MiB     64MiB    8.42x         -         -    1801s    0 OK
+validator  pft-budget-collect.service                      29      1MiB     10MiB     10MiB    128MiB   12.84x         -         -       6s    0 OK
+validator  pft-budget-sampler.service                       5      8MiB      8MiB      8MiB     64MiB    8.24x         -         -    1801s    0 OK
+validator  pft-histarchive-periodic.service                29      4MiB     97MiB     97MiB    512MiB    5.30x         -         -      19s    0 OK
+RESULT: 8 OK, 2 WARN, 0 FAIL, 79 UNCAPPED
+== installed key files, validator (sha256)
+33c74cc450d392b2912ddbaf4683dd8b4563ee41fe406d57742f7f34b7ec9583  /usr/local/bin/pft-budget
+f39dff2c0a8fc8636a38bd66e2f3ef9c354cf543c237cef85de5824f31350b85  /usr/local/lib/pft-budget/budget.py
+9855cf3c392e92e6cb7073b58848e74bd2cd101abc8a35e79ccba8b34591f304  /etc/systemd/system/pft-budget-sampler.service
+2ed7a90f1e2fb3ccf5b70b1cacfd8aeccf19e5ad9d2618c486782a3cae5e60a7  /etc/systemd/system/pft-budget-collect.service
+4db728a63c0db7a264bde69db22952d5e679da1d5030429264de4e1f77b20bb6  /usr/local/lib/pft-histarchive/histarchive.py
+279bc5fe4547f36c224b85132bb44e83db3124332335d6328312a13ffae9e344  /usr/local/bin/pft-histarchive
+== installed key files, sentry (sha256)
+33c74cc450d392b2912ddbaf4683dd8b4563ee41fe406d57742f7f34b7ec9583  /usr/local/bin/pft-budget
+f39dff2c0a8fc8636a38bd66e2f3ef9c354cf543c237cef85de5824f31350b85  /usr/local/lib/pft-budget/budget.py
+9855cf3c392e92e6cb7073b58848e74bd2cd101abc8a35e79ccba8b34591f304  /etc/systemd/system/pft-budget-sampler.service
+2ed7a90f1e2fb3ccf5b70b1cacfd8aeccf19e5ad9d2618c486782a3cae5e60a7  /etc/systemd/system/pft-budget-collect.service
+4db728a63c0db7a264bde69db22952d5e679da1d5030429264de4e1f77b20bb6  /usr/local/lib/pft-histarchive/histarchive.py
+279bc5fe4547f36c224b85132bb44e83db3124332335d6328312a13ffae9e344  /usr/local/bin/pft-histarchive
+== repo HEAD 5a07356a2023f61e4688db4ed3d494d1e4cd9986
+33c74cc450d392b2912ddbaf4683dd8b4563ee41fe406d57742f7f34b7ec9583  budget/pft-budget.sh
+f39dff2c0a8fc8636a38bd66e2f3ef9c354cf543c237cef85de5824f31350b85  budget/budget.py
+9855cf3c392e92e6cb7073b58848e74bd2cd101abc8a35e79ccba8b34591f304  budget/systemd/pft-budget-sampler.service
+2ed7a90f1e2fb3ccf5b70b1cacfd8aeccf19e5ad9d2618c486782a3cae5e60a7  budget/systemd/pft-budget-collect.service
+4db728a63c0db7a264bde69db22952d5e679da1d5030429264de4e1f77b20bb6  histarchive/histarchive.py
+279bc5fe4547f36c224b85132bb44e83db3124332335d6328312a13ffae9e344  histarchive/pft-histarchive.sh
+== periodic unit cap now
+MemoryMax=536870912
+DropInPaths=
