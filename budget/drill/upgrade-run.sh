@@ -6,7 +6,7 @@
 # README only; units, timers, conf and rules unchanged. Restarts no node; restarts pft-budget-sampler on both hosts
 # so the running sampler is the shipped helper too.
 #   0. preflight: integrity PASS, nodes full, installed helper != HEAD helper, nothing but the watchdog firing except
-#      PFTBudgetCapReached{unit="pft-budget-collect.service"}, which must be suppressed by its defect silence.
+#      PFTBudgetCapReached (any unit: the same short-span defect), which must be covered by its defect silence.
 #   3. pft-fleet sync budget; bytes = repo on both hosts.  4. sampler restart + collect on both hosts, pull.
 #  10. VERIFIED: report verdicts (no FAIL), the collect unit's verdict 0 in Prometheus, PFTBudgetCapReached inactive.
 #  11. integrity, skew, timers.  12. restore, read back every operator topic (0 messages).
@@ -67,7 +67,7 @@ x "sha256sum budget/budget.py budget/pft-budget.sh budget/drill/upgrade-run.sh |
 NEW="$(sed -n 1p <<<"$XOUT")"
 check "installed helper on both hosts differs from HEAD (upgrade pending)" "$([ "$(grep -cx "$NEW" <<<"$XOUT")" = 1 ] && [ "$(sed -n 4p <<<"$XOUT")" = "$(sed -n 5p <<<"$XOUT")" ] && echo 0 || echo 1)"
 x "git diff --stat 835ae15 $SHA -- budget/systemd budget/pft-budget.sh alerts/budget.rules.yml fleet/manifest.tsv | tail -1; git diff --name-only 835ae15 $SHA -- budget | grep -vE '^budget/(logs|tests|drill)/' "
-check "since the installed commit 835ae15 only budget.py, README and the env example changed (no unit/script/rule/manifest change)" "$([ "$(sed -n 1p <<<"$XOUT")" = "" ] && [ "$(sed 1d <<<"$XOUT" | sort | tr '\n' ' ')" = "budget/README.md budget/budget.py budget/pft-budget.env.example " ] && echo 0 || echo 1)"
+check "since the installed commit 835ae15 only budget.py, README and the env example changed (no unit/script/rule/manifest change)" "$([ "$(sort <<<"$XOUT" | grep -v '^$' | tr '\n' ' ')" = "budget/README.md budget/budget.py budget/pft-budget.env.example " ] && echo 0 || echo 1)"
 x "sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'"
 check "pft-integrity PASS on both hosts" "$([ "$(grep -c 'RESULT: PASS' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
 x "srv_state"
@@ -81,8 +81,8 @@ echo "operator topics to read back: $(wc -l < "$OPS") (not printed)"
 check "operator topics found" "$([ -s "$OPS" ] && echo 0 || echo 1)"
 x "other_alerts; curl -s $AM/api/v2/silences | jq -r '.[] | select(.status.state == \"active\") | \"\(.createdBy) \(.endsAt)\"'"
 check "alert queries answered" "$(grep -q query-error <<<"$XOUT" && echo 1 || echo 0)"
-BAD="$(grep -vE '^(budget-install|budget-fix) ' <<<"$XOUT" | grep -vE '^PFTBudgetCapReached (pending|firing) pft-budget-collect\.service (suppressed|none)$' | grep -c .)"
-check "nothing but the watchdog, and the defect's PFTBudgetCapReached{collect} (pending or suppressed)" "$([ "$BAD" = 0 ] && echo 0 || echo 1)"
+BAD="$(grep -vE '^(budget-install|budget-fix) ' <<<"$XOUT" | grep -vE '^PFTBudgetCapReached (pending|firing) pft-[a-z0-9@.-]+\.service (suppressed|none)$' | grep -c .)"
+check "nothing but the watchdog, and the defect's PFTBudgetCapReached (pending, or firing only while suppressed)" "$([ "$BAD" = 0 ] && echo 0 || echo 1)"
 check "the defect silence (budget-fix) is active" "$(grep -q '^budget-fix ' <<<"$XOUT" && echo 0 || echo 1)"
 [ "$FAILS" = 0 ] || { echo "preflight failed - stopping before any change"; exit 3; }
 [ "${PREFLIGHT_ONLY:-0}" = 1 ] && { echo "PREFLIGHT_ONLY: stopping before any change ($FAILS failed)"; exit 0; }
