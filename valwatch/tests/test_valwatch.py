@@ -898,9 +898,10 @@ def test_pct_nearest_rank():
 
 def test_quorum_zero_sample_keeps_known_quorum(vrecs):
     mid = sorted(r["r"] for r in vrecs)[len(vrecs) // 3]
-    base = analyze(vrecs)
-    rep = analyze([*vrecs, {"t": "Q", "q": 0, "s": "connected", "r": mid}])
-    assert rep["quorum_margin"] == base["quorum_margin"] and rep["quorum_last"] == base["quorum_last"] == 17
+    base = analyze(vrecs, detail=True)
+    rep = analyze([*vrecs, {"t": "Q", "q": 0, "s": "connected", "r": mid}], detail=True)
+    assert rep["ledger_detail"] == base["ledger_detail"]  # every ledger after the q=0 sample still uses q 17
+    assert {lg["q"] for lg in rep["ledger_detail"].values()} == {17} and rep["quorum_last"] == 17
 
 
 def test_only_disconnects_count_as_reconnects(vrecs):
