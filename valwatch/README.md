@@ -144,3 +144,8 @@ public ledger data: validator keys, ledger hashes and indexes, and receive times
   version (rc 4 / 1). That was a harness defect: the generator now repeats the UNL record hourly, as the collector does.
 - `logs/04-stream-equivalence.log`: re-run with the fixed generator: all 12 outputs byte-identical, windowed
   cases graded (rc 0), PASS.
+- `logs/05-mutants-dev.log`: first pass of `tests/mutate.py` (64 mutants): 45 caught, 19 survived; each survivor
+  got a named test (commit message of be8e0f6).
+- `logs/06-mutants.log`: 63/64; P18 (a `q=0` server_info sample replacing the known quorum) survived because its
+  test compared only summary margins; the test now compares every ledger's quorum.
+- `logs/07-mutants.log`: 64/64 caught, 0 survived/not applied/broken; baseline, hang and orphan controls PASS.
