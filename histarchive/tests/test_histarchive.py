@@ -482,6 +482,35 @@ class TestFollow(Base):
 
 
 class TestVerify(Base):
+    def test_verify_keeps_only_slim_records(self):
+        # bounded memory (2026-11-18 OOM at 512M): each ledger is checked once, as it is read,
+        # and verify keeps no header/tx hex for the chain pass
+        self.serve(make_chain(1000, 40, step=3600, tx_every=1))
+        self.assertEqual(self.follow(1000, 1039)[0], 0)
+        calls, kept = [], []
+        real_check, real_slim = ha.check_record, ha.slim_record
+
+        def check(rec):
+            calls.append(rec.get("i"))
+            return real_check(rec)
+
+        def slim(rec):
+            kept.append(real_slim(rec))
+            return kept[-1]
+
+        ha.check_record, ha.slim_record = check, slim
+        try:
+            res = ha.verify_archive(self.dir)
+        finally:
+            ha.check_record, ha.slim_record = real_check, real_slim
+        self.assertTrue(res["ok"], res["fail"])
+        self.assertEqual((res["segments"], res["active"], res["ledgers"]), (2, 1, 40))
+        self.assertEqual(sorted(calls), list(range(1000, 1040)))
+        self.assertEqual(len(kept), 40)
+        for r in kept:
+            self.assertEqual(set(r), {"i", "h", "hdr", "parent", "probs", "ntx"})
+        self.assertEqual(sum(r["ntx"] for r in kept), res["txs"])
+
     def test_broken_parent_link_in_segment(self):
         self.build(30)
 

@@ -125,6 +125,13 @@ per-ledger figure as a floor and watch `pft_histarchive_ledgers` / disk usage. T
 (ciphertext of each sealed day, plus one metadata tar). The follower used 12.7 MB of memory
 (`MemoryMax=256M`) and ~13 s of CPU in its first 16 minutes.
 
+`verify` memory grows with the archive. Until 2026-11-18 it held every decoded segment and every parsed record at
+once: on 10 sealed days (203,144 ledgers) its peak RSS was 593 MiB, so the daily verify was OOM-killed under the
+periodic unit's old `MemoryMax=512M`. It now checks each ledger as it reads it and keeps only a slim record
+(index, hash, parent hash, problems, tx count) for the chain pass. On the same archive that peaks at 251 MiB, with
+byte-identical `verify --json` output (`TestVerify.test_verify_keeps_only_slim_records` guards this). The periodic
+unit allows 1G. Watch `MemoryPeak`/OOM records (kernwatch `oom_cgroup`) as history grows.
+
 ## Proof (logs in `logs/`)
 
 | log | what | result |
