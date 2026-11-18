@@ -12,6 +12,10 @@
 #  11. integrity, skew, timers.  12. restore, read back every operator topic (0 messages).
 #   bash budget/drill/upgrade-run.sh 2>&1 | tee LOG    (repo root, agent user; run detached)
 #   PREFLIGHT_ONLY=1 bash budget/drill/upgrade-run.sh
+# Parameters (defaults = run 05): FROM (installed commit), EXPECT (non-test budget files changed since FROM, sorted,
+# space-terminated), DEFECT (createdBy of the defect silence that must be active), ALLOW_RE (the defect's alert line
+# that may be pending/firing while suppressed). Run 09 ships a97de5d (sampler ENODEV crash, sentry):
+#   FROM=8aef64d EXPECT='budget/budget.py ' DEFECT=budget-sampler-enodev ALLOW_RE='^PFTRuleDead (pending|firing) - (suppressed|none)$'
 set -uo pipefail
 REPO="$(git rev-parse --show-toplevel)"; cd "$REPO" || exit 3
 export TZ=UTC
@@ -19,6 +23,8 @@ SHA="$(git rev-parse HEAD)"; SHORT="$(git rev-parse --short HEAD)"
 AM=http://127.0.0.1:9093; PROM=http://127.0.0.1:9090
 ME="$(id -un)"; HN="$(hostname)"
 TASK=task_9fb56f10
+FROM="${FROM:-835ae15}"; EXPECT="${EXPECT:-budget/README.md budget/budget.py budget/pft-budget.env.example }"
+DEFECT="${DEFECT:-budget-fix}"; ALLOW_RE="${ALLOW_RE:-^PFTBudgetCapReached (pending|firing) pft-[a-z0-9@.-]+\.service (suppressed|none)\$}"
 TT="pft-drill-budget-$(head -c 6 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 TF=/var/lib/pft-exporter/textfile
 R() { ssh -o LogLevel=ERROR -o BatchMode=yes relay "$@"; }
@@ -66,8 +72,9 @@ echo; echo "== 0. preflight (read-only)"
 x "sha256sum budget/budget.py budget/pft-budget.sh budget/drill/upgrade-run.sh | cut -c1-64; sudo -n sha256sum /usr/local/lib/pft-budget/budget.py | cut -c1-64; R 'sha256sum /usr/local/lib/pft-budget/budget.py | cut -c1-64'"
 NEW="$(sed -n 1p <<<"$XOUT")"
 check "installed helper on both hosts differs from HEAD (upgrade pending)" "$([ "$(grep -cx "$NEW" <<<"$XOUT")" = 1 ] && [ "$(sed -n 4p <<<"$XOUT")" = "$(sed -n 5p <<<"$XOUT")" ] && echo 0 || echo 1)"
-x "git diff --stat 835ae15 $SHA -- budget/systemd budget/pft-budget.sh alerts/budget.rules.yml fleet/manifest.tsv | tail -1; git diff --name-only 835ae15 $SHA -- budget | grep -vE '^budget/(logs|tests|drill)/' "
-check "since the installed commit 835ae15 only budget.py, README and the env example changed (no unit/script/rule/manifest change)" "$([ "$(sort <<<"$XOUT" | grep -v '^$' | tr '\n' ' ')" = "budget/README.md budget/budget.py budget/pft-budget.env.example " ] && echo 0 || echo 1)"
+x "git diff --stat $FROM $SHA -- budget/systemd budget/pft-budget.sh alerts/budget.rules.yml fleet/manifest.tsv | tail -1; git diff --name-only $FROM $SHA -- budget | grep -vE '^budget/(logs|tests|drill)/' "
+check "installed helper = $FROM bytes on both hosts" "$([ "$(git show "$FROM":budget/budget.py | sha256sum | cut -c1-64)" = "$(sudo -n sha256sum /usr/local/lib/pft-budget/budget.py | cut -c1-64)" ] && [ "$(git show "$FROM":budget/budget.py | sha256sum | cut -c1-64)" = "$(R 'sha256sum /usr/local/lib/pft-budget/budget.py' | cut -c1-64)" ] && echo 0 || echo 1)"
+check "since the installed commit $FROM only: $EXPECT(no unit/script/rule/manifest change)" "$([ "$(sort <<<"$XOUT" | grep -v '^$' | tr '\n' ' ')" = "$EXPECT" ] && echo 0 || echo 1)"
 x "sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'"
 check "pft-integrity PASS on both hosts" "$([ "$(grep -c 'RESULT: PASS' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
 x "srv_state"
@@ -81,9 +88,9 @@ echo "operator topics to read back: $(wc -l < "$OPS") (not printed)"
 check "operator topics found" "$([ -s "$OPS" ] && echo 0 || echo 1)"
 x "other_alerts; curl -s $AM/api/v2/silences | jq -r '.[] | select(.status.state == \"active\") | \"\(.createdBy) \(.endsAt)\"'"
 check "alert queries answered" "$(grep -q query-error <<<"$XOUT" && echo 1 || echo 0)"
-BAD="$(grep -vE '^(budget-install|budget-fix) ' <<<"$XOUT" | grep -vE '^PFTBudgetCapReached (pending|firing) pft-[a-z0-9@.-]+\.service (suppressed|none)$' | grep -c .)"
-check "nothing but the watchdog, and the defect's PFTBudgetCapReached (pending, or firing only while suppressed)" "$([ "$BAD" = 0 ] && echo 0 || echo 1)"
-check "the defect silence (budget-fix) is active" "$(grep -q '^budget-fix ' <<<"$XOUT" && echo 0 || echo 1)"
+BAD="$(grep -vE "^(budget-install|$DEFECT) " <<<"$XOUT" | grep -vE "$ALLOW_RE" | grep -c .)"
+check "nothing but the watchdog, and the defect's alert ($ALLOW_RE: pending, or firing only while suppressed)" "$([ "$BAD" = 0 ] && echo 0 || echo 1)"
+check "the defect silence ($DEFECT) is active" "$(grep -q "^$DEFECT " <<<"$XOUT" && echo 0 || echo 1)"
 [ "$FAILS" = 0 ] || { echo "preflight failed - stopping before any change"; exit 3; }
 [ "${PREFLIGHT_ONLY:-0}" = 1 ] && { echo "PREFLIGHT_ONLY: stopping before any change ($FAILS failed)"; exit 0; }
 
@@ -128,6 +135,10 @@ x "grep -h '^pft_budget_verdict' $TF/pft_budget_validator.prom $TF/pft_budget_se
 check "textfiles: 0 FAIL verdicts, no 30-day projection series yet (all units < 3 days of data)" "$([ "$(tr '\n' ' ' <<<"$XOUT")" = "0 0 " ] && echo 0 || echo 1)"
 x "for i in \$(seq 0 15 240); do n=\$(other_alerts | grep -c '^PFTBudget'); echo \"+\${i}s: \$n\"; [ \"\$n\" = 0 ] && break; sleep 15; done; echo \$n"
 check "PFTBudgetCapReached (and every PFTBudget alert) inactive in Prometheus" "$([ "$(tail -1 <<<"$XOUT")" = 0 ] && echo 0 || echo 1)"
+x "sleep 60; systemctl show -p NRestarts -p ActiveState pft-budget-sampler.service; R 'systemctl show -p NRestarts -p ActiveState pft-budget-sampler.service'"
+check "both samplers still active 60 s after the restart, NRestarts=0" "$([ "$(grep -cx 'NRestarts=0' <<<"$XOUT")" = 2 ] && [ "$(grep -cx 'ActiveState=active' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
+x "sudo -n systemctl start pft-budget-collect.service && R 'sudo -n systemctl start pft-budget-collect.service' && sudo -n systemctl start pft-budget-pull@sentry.service && R 'sudo -n systemctl start pft-rulecheck.service' && sudo -n systemctl start pft-rulecheck.service pft-rulecheck-pull.service && for i in \$(seq 0 15 300); do n=\$(curl -s $PROM/api/v1/query --data-urlencode 'query=pft_rulecheck_rule_dead{rule=~\"PFTBudget.*\"} == 1' | jq '.data.result | length'); a=\$(other_alerts | grep -c '^PFTRuleDead'); echo \"+\${i}s: dead \$n alert \$a\"; [ \"\$n\$a\" = 00 ] && break; sleep 15; done"
+check "rulecheck: no PFTBudget rule dead/partial, PFTRuleDead inactive" "$(tail -1 <<<"$XOUT" | grep -q 'dead 0 alert 0$' && echo 0 || echo 1)"
 
 echo; echo "== 11. integrity, skew, timers"
 x "sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'"
