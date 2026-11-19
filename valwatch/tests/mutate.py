@@ -248,22 +248,22 @@ MUTANTS = [
         "R01",
         R,
         "ValidatorLow threshold 0.8 -> 0.7",
-        "pft_valwatch_validator_participation_ratio < 0.8",
-        "pft_valwatch_validator_participation_ratio < 0.7",
+        "expr: pft_valwatch_validator_participation_ratio < 0.8",
+        "expr: pft_valwatch_validator_participation_ratio < 0.7",
     ),
     (
         "R02",
         R,
         "ValidatorLow fires while the node is not graded",
-        "pft_valwatch_validator_participation_ratio < 0.8 and on (job, instance, node) pft_valwatch_up == 1",
-        "pft_valwatch_validator_participation_ratio < 0.8",
+        "expr: pft_valwatch_validator_participation_ratio < 0.8 and on (job, instance, node) pft_valwatch_up == 1",
+        "expr: pft_valwatch_validator_participation_ratio < 0.8",
     ),
     (
         "R03",
         R,
         "ValidatorLate threshold 3000 -> 3500",
-        "pft_valwatch_validator_delay_p95_ms > 3000",
-        "pft_valwatch_validator_delay_p95_ms > 3500",
+        "expr: pft_valwatch_validator_delay_p95_ms > 3000",
+        "expr: pft_valwatch_validator_delay_p95_ms > 3500",
     ),
     (
         "R04",
@@ -310,6 +310,44 @@ MUTANTS = [
         "pft_valwatch_quorum_margin_min < 2 and on (job, instance, node) pft_valwatch_up == 1\n        for: 5m",
     ),
     ("R12", R, "QuorumMarginCritical severity critical -> warning", "severity: critical", "severity: warning"),
+    # 2026-11-19 paging rule: other validators digest-only, our two nodes disagreeing pages
+    (
+        "R13",
+        R,
+        "ValidatorLow paged again (digest label dropped)",
+        '          notify: digest\n        annotations:\n          summary: "UNL validator {{ $labels.validator }} is missing',
+        '        annotations:\n          summary: "UNL validator {{ $labels.validator }} is missing',
+    ),
+    (
+        "R14",
+        R,
+        "ValidatorLate paged again (digest label dropped)",
+        '          notify: digest\n        annotations:\n          summary: "UNL validator {{ $labels.validator }} validations arrive',
+        '        annotations:\n          summary: "UNL validator {{ $labels.validator }} validations arrive',
+    ),
+    ("R15", R, "HostsDisagree other-node floor 0.95 -> 0.9", ">= 0.95", ">= 0.9"),
+    (
+        "R16",
+        R,
+        "HostsDisagree without the other-node clause (pages on external outages)",
+        "          and on (validator)\n          (pft_valwatch_validator_participation_ratio >= 0.95",
+        "          or on (validator)\n          (pft_valwatch_validator_participation_ratio >= 0.95",
+    ),
+    (
+        "R17",
+        R,
+        "HostsDisagree grades a blind other node",
+        "(pft_valwatch_validator_participation_ratio >= 0.95 and on (job, instance, node) pft_valwatch_up == 1)",
+        "(pft_valwatch_validator_participation_ratio >= 0.95)",
+    ),
+    ("R18", R, "HostsDisagreeLate other-node ceiling 2000 -> 2001", "<= 2000", "<= 2001"),
+    (
+        "R19",
+        R,
+        "HostsDisagreeLate threshold 3000 -> 3500",
+        "(pft_valwatch_validator_delay_p95_ms > 3000 and on",
+        "(pft_valwatch_validator_delay_p95_ms > 3500 and on",
+    ),
 ]
 
 HANG = (

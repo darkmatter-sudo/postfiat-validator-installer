@@ -212,4 +212,7 @@ public ledger data: validator keys, ledger hashes and indexes, and receive times
   while the digest-only ValidatorLow/Late conditions held 62-83 min for the two external validators of 2026-11-19.
 - `logs/16-live-reload.log`: live Prometheus reload (`docker kill -s HUP`): reloadConfigSuccess true, 149 rules ok,
   ValidatorLow/Late labelled `notify=digest`, HostsDisagree* inactive.
-
+- `logs/17-rule-mutants.log`: `tests/mutate.py --only R01..R19` after the paging change: R01-R03 re-anchored to
+  their own `expr:` lines (the new HostsDisagree* expressions repeat the old text) and R13-R19 added (digest label
+  dropped on Low / Late, other-node floor/ceiling, other-node clause, blind other node, late threshold): 19 caught,
+  0 survived / not applied / broken; baseline, hang and orphan controls PASS.
