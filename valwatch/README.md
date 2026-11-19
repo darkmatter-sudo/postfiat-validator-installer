@@ -103,6 +103,8 @@ the alerts stay visible in Prometheus and Alertmanager, nothing reaches the ntfy
 seeing different results for the same validator (HostsDisagree*, a local peering fault), quorum at risk
 (QuorumMargin*) and a blind or flapping collector. Our own validator is covered by PFTValidatorNotProposing
 (`../alerts/postfiat.rules.yml`) once a validator token is configured; until then it is not on the UNL.
+`sudo pft-valwatch digest [--dry-run]` sends at most one low ntfy summary a UTC day of the minutes each
+digest-only alert fired per validator and node (nothing if none fired; its timer ships with the next install).
 `drill/route-drill.sh` proves the routing end to end on a throwaway Prometheus + Alertmanager + bridge with a random
 throwaway ntfy topic (`logs/13-route-drill.log`).
 
@@ -211,8 +213,12 @@ public ledger data: validator keys, ledger hashes and indexes, and receive times
 - `logs/15-live-backtest.log`: the new HostsDisagree expressions over the live 24 h (1 m steps): 0 minutes on both,
   while the digest-only ValidatorLow/Late conditions held 62-83 min for the two external validators of 2026-11-19.
 - `logs/16-live-reload.log`: live Prometheus reload (`docker kill -s HUP`): reloadConfigSuccess true, 149 rules ok,
-  ValidatorLow/Late labelled `notify=digest`, HostsDisagree* inactive.
+  ValidatorLow/Late labelled `notify=digest`, HostsDisagree* inactive; 15 min later the live external-validator
+  alerts fired into the `digest` receiver and the live bridge logged nothing.
 - `logs/17-rule-mutants.log`: `tests/mutate.py --only R01..R19` after the paging change: R01-R03 re-anchored to
   their own `expr:` lines (the new HostsDisagree* expressions repeat the old text) and R13-R19 added (digest label
   dropped on Low / Late, other-node floor/ceiling, other-node clause, blind other node, late threshold): 19 caught,
   0 survived / not applied / broken; baseline, hang and orphan controls PASS.
+- `logs/18-digest-mutants.log`: `tests/mutate.py --only D01..D08` on `pft-valwatch digest` (stamp, nothing fired,
+  dry run, priority, stamp write, Prometheus failure, empty topic, query scope): 8 caught, controls PASS.
+

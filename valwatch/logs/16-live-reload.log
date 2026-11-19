@@ -38,3 +38,10 @@ PFTValwatchHostsDisagreeLate	ok	inactive	-
 PFTAlertPipelineWatchdog	-	-	firing
 PFTValwatchValidatorLow	postfiatd-sentry	digest	pending
 PFTValwatchValidatorLow	postfiatd	digest	pending
+-- 2026-11-19T10:49:21Z live: digest-labelled alerts after their 15m for
+PFTValwatchValidatorLow	postfiatd-sentry	digest	firing
+PFTValwatchValidatorLow	postfiatd	digest	firing
+PFTAlertPipelineWatchdog	-	-	firing
+alertpath PFTAlertPipelineWatchdog alerts=1 states=active
+digest PFTValwatchValidatorLow alerts=2 states=suppressed
+-- live bridge log since the reload (10:34Z):

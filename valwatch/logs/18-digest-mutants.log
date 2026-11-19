@@ -1,0 +1,13 @@
+control baseline suite (unmutated copy): PASS 94 passed in 29.77s
+control baseline promtool (unmutated copy): PASS SUCCESS
+control timeout (helper never returns, --hang-timeout 60): HANG after 61 s, 0 process(es) left
+D01 CAUGHT - digest: daily stamp ignored [1 failing: test_digest_at_most_once_per_utc_day]
+D02 CAUGHT - digest: sent although nothing fired [1 failing: test_digest_nothing_fired_sends_nothing]
+D03 CAUGHT - digest: --dry-run sends [1 failing: test_digest_dry_run_prints_and_sends_nothing]
+D04 CAUGHT - digest: not low priority [1 failing: test_digest_sends_one_low_message_and_stamps_today]
+D05 CAUGHT - digest: no stamp written [2 failing: test_digest_sends_one_low_message_and_stamps_today, test_digest_at_most_once_per_utc_day]
+D06 CAUGHT - digest: Prometheus failure ignored [1 failing: test_digest_prometheus_down_exits_1_and_sends_nothing]
+D07 CAUGHT - digest: empty topic accepted [1 failing: test_digest_without_topic_exits_3_and_sends_nothing]
+D08 CAUGHT - digest: also counts paged alerts [1 failing: test_digest_queries_only_the_digest_alerts]
+orphan check: 0 process(es) still running that name this run's scratch dir
+RESULT: 8 caught, 0 survived, 0 not applied, 0 broken of 8 (--only subset of 79)
