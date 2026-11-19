@@ -972,3 +972,113 @@ def test_textfile_wrapper_helper_failure_is_up0(tmp_path, vrecs):
     assert p.returncode == 1 and "helper rc 1" in p.stderr
     body = (text / "pft_valwatch_postfiatd.prom").read_text()
     assert 'pft_valwatch_up{node="postfiatd"} 0' in body and "pft_valwatch_ledgers" not in body
+
+
+# ------------------------------------------------------------------ digest (other validators, never paged)
+K_DIGEST = "nHBxQ3srN8ErMvfMgsJ3jycSSaMFyHMk5WbrJVUTXPZgNh1VdbHH"
+PROM_2 = {
+    "status": "success",
+    "data": {
+        "resultType": "vector",
+        "result": [
+            {
+                "metric": {"alertname": "PFTValwatchValidatorLow", "validator": K_DIGEST, "node": "postfiatd"},
+                "value": [1795080000, "82"],
+            },
+            {
+                "metric": {"alertname": "PFTValwatchValidatorLate", "validator": K_DIGEST, "node": "postfiatd-sentry"},
+                "value": [1795080000, "41"],
+            },
+        ],
+    },
+}
+PROM_0 = {"status": "success", "data": {"resultType": "vector", "result": []}}
+
+
+def digest_env(tmp_path, answer, topic="drill-topic", prom_rc=0):
+    """PATH curl stub: Prometheus queries get `answer` (rc prom_rc), anything else is an ntfy send -> sent.N."""
+    bindir = tmp_path / "bin"
+    bindir.mkdir(exist_ok=True)
+    (tmp_path / "answer.json").write_text(json.dumps(answer))
+    stub = bindir / "curl"
+    stub.write_text(f"""#!/bin/bash
+case "$*" in
+  */api/v1/query*) printf '%s\\n' "$*" >> {tmp_path}/queries; [ {prom_rc} = 0 ] || exit {prom_rc}; cat {tmp_path}/answer.json ;;
+  *) n=$(ls {tmp_path} | grep -c '^sent\\.'); printf '%s\\n' "$@" > {tmp_path}/sent.$n ;;
+esac
+""")
+    stub.chmod(0o755)
+    ntfy = tmp_path / "ntfy.env"
+    ntfy.write_text(
+        f"NTFY_SERVER=https://ntfy.invalid\nNTFY_TOPIC={topic}\n" if topic else "NTFY_SERVER=https://ntfy.invalid\n"
+    )
+    return {
+        "PATH": f"{bindir}:{os.environ['PATH']}",
+        "PROM_URL": "http://prom.invalid",
+        "NTFY_ENV": str(ntfy),
+        "DIGEST_STAMP": str(tmp_path / "st" / "digest-last"),
+    }
+
+
+def sent(tmp_path):
+    return sorted(p.name for p in tmp_path.iterdir() if p.name.startswith("sent."))
+
+
+def today():
+    return time.strftime("%Y-%m-%d", time.gmtime())
+
+
+def test_digest_nothing_fired_sends_nothing(tmp_path):
+    p = sh(["digest"], digest_env(tmp_path, PROM_0))
+    assert p.returncode == 0 and p.stdout.strip() == (
+        "digest: no PFTValwatchValidatorLow/Late in the last 24 h, nothing to send"
+    )
+    assert sent(tmp_path) == [] and not (tmp_path / "st" / "digest-last").exists()
+
+
+def test_digest_queries_only_the_digest_alerts(tmp_path):
+    sh(["digest", "--dry-run"], digest_env(tmp_path, PROM_2))
+    q = (tmp_path / "queries").read_text()
+    assert 'alertname=~"PFTValwatchValidator(Low|Late)"' in q and 'alertstate="firing"' in q and "[24h:1m]" in q
+    assert "HostsDisagree" not in q and "QuorumMargin" not in q
+
+
+def test_digest_dry_run_prints_and_sends_nothing(tmp_path):
+    p = sh(["digest", "--dry-run"], digest_env(tmp_path, PROM_2))
+    out = p.stdout.splitlines()
+    assert p.returncode == 0 and out[0] == f"Other validators digest {today()}"
+    assert "Low nHBxQ3sr...VdbHH at postfiatd: 82 min" in out
+    assert "Late nHBxQ3sr...VdbHH at postfiatd-sentry: 41 min" in out
+    assert sent(tmp_path) == [] and not (tmp_path / "st" / "digest-last").exists()
+
+
+def test_digest_sends_one_low_message_and_stamps_today(tmp_path):
+    env = digest_env(tmp_path, PROM_2)
+    p = sh(["digest"], env)
+    assert p.returncode == 0 and p.stdout.startswith(f"digest: sent for {today()}")
+    assert sent(tmp_path) == ["sent.0"]
+    args = (tmp_path / "sent.0").read_text().splitlines()
+    assert "Priority: low" in args and f"Title: Other validators digest {today()}" in args
+    assert args[-1] == "https://ntfy.invalid/drill-topic"
+    assert (tmp_path / "st" / "digest-last").read_text().strip() == today()
+
+
+def test_digest_at_most_once_per_utc_day(tmp_path):
+    env = digest_env(tmp_path, PROM_2)
+    sh(["digest"], env)
+    p = sh(["digest"], env)
+    assert p.returncode == 0 and p.stdout.strip() == f"digest: already sent for {today()}"
+    assert sent(tmp_path) == ["sent.0"]
+    assert sh(["digest", "--force"], env).returncode == 0 and sent(tmp_path) == ["sent.0", "sent.1"]
+
+
+def test_digest_without_topic_exits_3_and_sends_nothing(tmp_path):
+    p = sh(["digest"], digest_env(tmp_path, PROM_2, topic=""))
+    assert p.returncode == 3 and "NTFY_SERVER/NTFY_TOPIC not set" in p.stderr
+    assert sent(tmp_path) == [] and not (tmp_path / "st" / "digest-last").exists()
+
+
+def test_digest_prometheus_down_exits_1_and_sends_nothing(tmp_path):
+    p = sh(["digest"], digest_env(tmp_path, PROM_2, prom_rc=7))
+    assert p.returncode == 1 and "Prometheus query failed" in p.stderr
+    assert sent(tmp_path) == [] and not (tmp_path / "st" / "digest-last").exists()

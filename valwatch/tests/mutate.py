@@ -310,6 +310,15 @@ MUTANTS = [
         "pft_valwatch_quorum_margin_min < 2 and on (job, instance, node) pft_valwatch_up == 1\n        for: 5m",
     ),
     ("R12", R, "QuorumMarginCritical severity critical -> warning", "severity: critical", "severity: warning"),
+    # digest (2026-11-19): at most one low message a day, only when a digest-only alert fired
+    ("D01", S, "digest: daily stamp ignored", '[ "$(cat "$DIGEST_STAMP" 2>/dev/null)" = "$day" ]', "false"),
+    ("D02", S, "digest: sent although nothing fired", 'if [ -z "$lines" ] && ! $force; then', "if false; then"),
+    ("D03", S, "digest: --dry-run sends", "if $dry; then printf", "if false; then printf"),
+    ("D04", S, "digest: not low priority", '-H "Priority: low"', '-H "Priority: default"'),
+    ("D05", S, "digest: no stamp written", 'echo "$day" > "$DIGEST_STAMP"', "true"),
+    ("D06", S, "digest: Prometheus failure ignored", '|| die "Prometheus query failed ($PROM_URL)" 1', "|| true"),
+    ("D07", S, "digest: empty topic accepted", '[ -z "$NTFY_TOPIC" ]', "false"),
+    ("D08", S, "digest: also counts paged alerts", "PFTValwatchValidator(Low|Late)", "PFTValwatch.*"),
     # 2026-11-19 paging rule: other validators digest-only, our two nodes disagreeing pages
     (
         "R13",

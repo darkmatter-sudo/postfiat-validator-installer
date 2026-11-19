@@ -11,6 +11,7 @@
 #        pft-valwatch compare A.json B.json [--json] [--tolerance-part F] [--tolerance-delay-ms N] [--tolerance-margin N]
 #        sudo pft-valwatch pull --container NAME         (validator: copy the sentry's textfile)
 #        pft-valwatch validate FILE NAME                 exit 0 if FILE is an acceptable textfile for NAME
+#        sudo pft-valwatch digest [--dry-run] [--force]  (host running ../alerts) at most one low ntfy summary a day
 #        pft-valwatch version
 #
 #  run       resolves the node's PUBLIC WebSocket port without entering the container: `docker port NAME 6005/tcp`
@@ -25,6 +26,9 @@
 #            most 64 validators get per-validator series. On any failure the file holds pft_valwatch_up 0.
 #  report    deterministic text/JSON report over everything retained (or --from/--to): same input, same bytes.
 #  compare   cross-host agreement of two `report --detail` files on the ledger indexes both hosts graded.
+#  digest    other validators missing or late (PFTValwatchValidatorLow/Late, notify="digest": never paged) are summed
+#            up once per UTC day from Prometheus ALERTS over the last 24 h: minutes firing per alert, validator and
+#            node. Nothing is sent when neither fired; a stamp (DIGEST_STAMP) keeps it to one message a day.
 #
 # Exit codes: 0 ok; 1 failed (textfile up 0, fetch failed, compare DISAGREE); 2 validation failed;
 #             3 usage/config error; 4 report: no graded ledgers.
@@ -32,7 +36,8 @@
 #       (/var/lib/pft-exporter/textfile), WS_PORT (6005), WS_HOST (empty = resolve), RETAIN_HOURS (24),
 #       MAX_DIR_BYTES (536870912), WINDOW_SEC (900), WARN_DELAY_MS (3000), MIN_PARTICIPATION (0.9),
 #       MIN_MARGIN (2), MAX_BYTES (61440), PULL_SSH, REMOTE_DIR (/var/lib/pft-exporter/textfile), PULL_TIMEOUT (20),
-#       RUN_DURATION (0 = run until stopped; seconds, for bounded captures)
+#       RUN_DURATION (0 = run until stopped; seconds, for bounded captures), PROM_URL (http://127.0.0.1:9090),
+#       NTFY_ENV (/etc/postfiat-monitor.env: NTFY_SERVER, NTFY_TOPIC, NTFY_TOKEN), DIGEST_STAMP (DATA_DIR/digest-last)
 # Test hooks: PFT_VW_DOCKER (docker)  PFT_VW_NOW (epoch)  PFT_VW_HELPER (/usr/local/lib/pft-valwatch/valwatch.py)
 #             PFT_VW_EXEC (exec; tests set it to a stub that prints the collect argv)
 
@@ -58,6 +63,9 @@ PULL_SSH="${PULL_SSH:-}"
 REMOTE_DIR="${REMOTE_DIR:-/var/lib/pft-exporter/textfile}"
 PULL_TIMEOUT="${PULL_TIMEOUT:-20}"
 RUN_DURATION="${RUN_DURATION:-0}"
+PROM_URL="${PROM_URL:-http://127.0.0.1:9090}"
+NTFY_ENV="${NTFY_ENV:-/etc/postfiat-monitor.env}"
+DIGEST_STAMP="${DIGEST_STAMP:-$DATA_DIR/digest-last}"
 HELPER="${PFT_VW_HELPER:-/usr/local/lib/pft-valwatch/valwatch.py}"
 read -r -a DOCKER <<< "${PFT_VW_DOCKER:-docker}"
 read -r -a EXEC <<< "${PFT_VW_EXEC:-exec}"
@@ -245,6 +253,47 @@ pull() {
   fi
 }
 
+# digest [--dry-run] [--force]: one low-priority ntfy summary per UTC day of the digest-only valwatch alerts
+digest() {
+  local dry=false force=false day out lines title
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --dry-run) dry=true ;;
+      --force) force=true ;;
+      *) die "unknown argument: $1" ;;
+    esac
+    shift
+  done
+  day="$(date -u +%F)"
+  if ! $force && [ "$(cat "$DIGEST_STAMP" 2>/dev/null)" = "$day" ]; then echo "digest: already sent for $day"; return 0; fi
+  # minutes firing in the last 24 h per alert, validator and node (1 m subquery steps)
+  out="$(curl -fsS --max-time 15 "$PROM_URL/api/v1/query" --data-urlencode \
+    'query=sum by (alertname, validator, node) (count_over_time(ALERTS{alertname=~"PFTValwatchValidator(Low|Late)",alertstate="firing"}[24h:1m]))')" \
+    || die "Prometheus query failed ($PROM_URL)" 1
+  lines="$(jq -r '.data.result | sort_by(.metric.alertname, .metric.validator, .metric.node) | .[]
+    | "\(.metric.alertname | sub("^PFTValwatchValidator"; "")) \(.metric.validator // "?" | .[0:8])...\(.metric.validator // "?" | .[-5:]) at \(.metric.node // "?"): \(.value[1]) min"' <<< "$out")" \
+    || die "unexpected Prometheus answer" 1
+  if [ -z "$lines" ] && ! $force; then echo "digest: no PFTValwatchValidatorLow/Late in the last 24 h, nothing to send"; return 0; fi
+  title="Other validators digest $day"
+  local body
+  body="$(printf '%s\n%s\n%s\n' "Other UNL validators missing (Low) or late (Late) in the last 24 h, minutes firing per node (summarised, not paged):" \
+    "${lines:-none}" "Pages only if our nodes disagree (PFTValwatchHostsDisagree*) or quorum is at risk (PFTValwatchQuorumMargin*).")"
+  if $dry; then printf '%s\n%s\n' "$title" "$body"; return 0; fi
+  local NTFY_SERVER="" NTFY_TOPIC="" NTFY_TOKEN=""
+  if [ -f "$NTFY_ENV" ]; then
+    [ "$(stat -c %u "$NTFY_ENV")" = "$(id -u)" ] || die "$NTFY_ENV is not owned by uid $(id -u)"
+    # shellcheck disable=SC1090
+    . "$NTFY_ENV"
+  fi
+  if [ -z "$NTFY_SERVER" ] || [ -z "$NTFY_TOPIC" ]; then die "NTFY_SERVER/NTFY_TOPIC not set in $NTFY_ENV"; fi
+  local -a auth=()
+  [ -n "$NTFY_TOKEN" ] && auth=(-H "Authorization: Bearer $NTFY_TOKEN")
+  curl -fsS --max-time 20 -o /dev/null "${auth[@]}" -H "Title: $title" -H "Priority: low" -H "Tags: satellite" \
+    --data-binary "$body" "${NTFY_SERVER%/}/$NTFY_TOPIC" || die "ntfy send failed" 1
+  mkdir -p "$(dirname "$DIGEST_STAMP")" && echo "$day" > "$DIGEST_STAMP"
+  echo "digest: sent for $day ($(wc -l <<< "$body") lines)"
+}
+
 cmd="${1:-}"; [ $# -gt 0 ] && shift
 case "$cmd" in
   run) run "$@" ;;
@@ -255,6 +304,7 @@ case "$cmd" in
   pull) pull "$@" ;;
   validate) [ $# -eq 2 ] || die "usage: pft-valwatch validate FILE NAME"; valid_name "$2" || die "bad container name"
             why="$(validate "$1" "$2")" && exit 0; echo "$why"; exit 2 ;;
+  digest) digest "$@" ;;
   version) echo "pft-valwatch $VERSION" ;;
-  *) die "usage: pft-valwatch run|endpoint|textfile|report|compare|pull|validate|version (see the header)" ;;
+  *) die "usage: pft-valwatch run|endpoint|textfile|report|compare|pull|validate|digest|version (see the header)" ;;
 esac
