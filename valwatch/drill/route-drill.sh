@@ -93,15 +93,16 @@ gate 2
 echo "== 3. start throwaway stack $(date -u +%FT%TZ)"
 x "docker run -d --name pft-vwdrill-metrics --network host -v $SCR/m:/m python:3.12-alpine sh /m/serve.sh"
 x "docker run -d --name pft-vwdrill-bridge --network host --user 65534 -e BRIDGE_PORT=19095 -e NTFY_URL_FILE=/e/ntfy.env -v $SCR/ntfy.env:/e/ntfy.env:ro -v $REPO/alerts/ntfy_bridge.py:/b/ntfy_bridge.py:ro python:3.12-alpine python3 -u /b/ntfy_bridge.py"
-x "docker run -d --name pft-vwdrill-am --network host --user 65534 --tmpfs /data -v $SCR/a:/c:ro prom/alertmanager:v0.28.1 --config.file=/c/alertmanager.yml --storage.path=/data --web.listen-address=127.0.0.1:19093 --cluster.listen-address="
-x "docker run -d --name pft-vwdrill-prom --network host --user 65534 --tmpfs /prometheus -v $SCR/p:/etc/prometheus:ro -v $REPO/alerts/valwatch.rules.yml:/rules/valwatch.rules.yml:ro prom/prometheus:v3.5.0 --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.listen-address=127.0.0.1:19090"
-sleep 20
+x "docker run -d --name pft-vwdrill-am --network host --user 65534 --tmpfs /data:mode=1777 -v $SCR/a:/c:ro prom/alertmanager:v0.28.1 --config.file=/c/alertmanager.yml --storage.path=/data --web.listen-address=127.0.0.1:19093 --cluster.listen-address="
+x "docker run -d --name pft-vwdrill-prom --network host --user 65534 --tmpfs /prometheus:mode=1777 -v $SCR/p:/etc/prometheus:ro -v $REPO/alerts/valwatch.rules.yml:/rules/valwatch.rules.yml:ro prom/prometheus:v3.5.0 --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.listen-address=127.0.0.1:19090"
+for _ in $(seq 1 30); do curl -fsS -o /dev/null "$PROM/-/ready" 2>/dev/null && break; sleep 2; done; sleep 20
 x "curl -fsS $PROM/api/v1/rules | jq -r '.data.groups[].rules[] | \"\(.name) \(.health)\"'"
 check "prometheus loaded the repo's 8 valwatch rules" "$([ "$(grep -c ' ok$' <<< "$XOUT")" = 8 ] && echo 0 || echo 1)"
 x "curl -fsS $PROM/api/v1/targets | jq -r '.data.activeTargets[] | \"\(.labels.job) \(.health)\"'"
 x "curl -fsS -o /dev/null -w '%{http_code}' $AM/-/ready"
 check "alertmanager ready" "$([ "$XOUT" = 200 ] && echo 0 || echo 1)"
 x "docker logs pft-vwdrill-bridge 2>&1 | tail -3"
+[ "$FAILS" = 0 ] || x "docker logs pft-vwdrill-prom 2>&1 | tail -5; docker logs pft-vwdrill-am 2>&1 | tail -5"
 gate 3
 
 echo "== 4. wait for the 15m 'for' (poll every 60 s, up to 20 min)"
