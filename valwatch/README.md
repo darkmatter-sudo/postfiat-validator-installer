@@ -104,7 +104,11 @@ seeing different results for the same validator (HostsDisagree*, a local peering
 (QuorumMargin*) and a blind or flapping collector. Our own validator is covered by PFTValidatorNotProposing
 (`../alerts/postfiat.rules.yml`) once a validator token is configured; until then it is not on the UNL.
 `sudo pft-valwatch digest [--dry-run]` sends at most one low ntfy summary a UTC day of the minutes each
-digest-only alert fired per validator and node (nothing if none fired; its timer ships with the next install).
+digest-only alert fired per validator and node (nothing if none fired). `sudo valwatch/install.sh --digest` (validator
+only) installs `systemd/pft-valwatch-digest.service/.timer`: daily at 07:05 UTC, `Persistent=false` so installing or
+rebooting sends nothing, sandboxed (no capabilities, read-only system, writes only the day stamp in
+`/var/lib/pft-valwatch`). `drill/digest-install-run.sh` is the recorded install with a send drill through the real
+unit to a throwaway topic (`logs/19-digest-install.log`).
 `drill/route-drill.sh` proves the routing end to end on a throwaway Prometheus + Alertmanager + bridge with a random
 throwaway ntfy topic (`logs/13-route-drill.log`).
 
@@ -154,6 +158,7 @@ re-runs `report` with `data/window.env` and `cmp`s the six outputs with `reports
 sudo valwatch/install.sh                                   # validator (container postfiatd)
 sudo valwatch/install.sh --container postfiatd-sentry      # on the sentry
 sudo valwatch/install.sh --pull postfiatd-sentry           # on the validator, with PULL_SSH in /etc/pft-valwatch.env
+sudo valwatch/install.sh --digest                          # on the validator: daily other-validators digest timer
 ```
 
 Fleet installs use `pft-fleet sync --addon valwatch` (rows in `../fleet/manifest.tsv`). Afterwards accept the new

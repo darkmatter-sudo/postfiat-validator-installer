@@ -11,6 +11,9 @@
 #       PULL_SSH in /etc/pft-valwatch.env. Runs one pull (must exit 0), then enables pft-valwatch-pull@NAME.timer
 #       (every minute at :45; the peer builds at :30).
 #   sudo ./install.sh --pull NAME --uninstall   disables that timer and removes the pulled textfile
+#   sudo ./install.sh --digest   on the host that runs ../alerts: pft-valwatch-digest.service/.timer (07:05 UTC daily,
+#       Persistent=false: installing sends nothing). Runs `pft-valwatch digest --dry-run` (must exit 0), then enables
+#       the timer only.   sudo ./install.sh --digest --uninstall   disables the timer (keeps the stamp)
 # Conf: /etc/pft-valwatch.env (root-owned) from pft-valwatch.env.example if absent; never overwritten.
 # Alert rules: ../alerts/valwatch.rules.yml, listed in ../alerts/prometheus.yml in the same commit as the install.
 # pft-rulecheck: if /etc/pft-rulecheck.conf exists, the textfile age line (5m) and `require pft_valwatch_NAME.prom`
@@ -24,7 +27,7 @@ LIBDIR=/usr/local/lib/pft-valwatch
 CONF=/etc/pft-valwatch.env
 RC_CONF=/etc/pft-rulecheck.conf
 RC_LINE="textfile pft_valwatch_*.prom   5m   pft_valwatch_collect_timestamp_seconds"
-name=postfiatd; uninstall=false; pull=""
+name=postfiatd; uninstall=false; pull=""; digest=false
 log() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*"; }
 [ "$(id -u)" -eq 0 ] || { echo "run as root" >&2; exit 3; }
 while [ $# -gt 0 ]; do
@@ -32,6 +35,7 @@ while [ $# -gt 0 ]; do
     --container) name="${2:?}"; shift ;;
     --uninstall) uninstall=true ;;
     --pull) pull="${2:?}"; shift ;;
+    --digest) digest=true ;;
     *) echo "unknown argument: $1" >&2; exit 3 ;;
   esac
   shift
@@ -61,6 +65,22 @@ install_bin() {
   [ "$(stat -c %u "$CONF")" = 0 ] || { echo "$CONF is not root-owned" >&2; exit 3; }
 }
 
+if $digest; then
+  if $uninstall; then
+    systemctl disable --now pft-valwatch-digest.timer 2>/dev/null || true
+    log "disabled pft-valwatch-digest.timer"
+    exit 0
+  fi
+  install_bin
+  install -m 644 "$HERE/systemd/pft-valwatch-digest.service" "$HERE/systemd/pft-valwatch-digest.timer" /etc/systemd/system/
+  systemctl daemon-reload
+  mkdir -p "$DATADIR"; chmod 750 "$DATADIR"
+  log "digest dry run (Prometheus query, nothing sent):"
+  pft-valwatch digest --dry-run --force
+  systemctl enable --now pft-valwatch-digest.timer
+  log "enabled pft-valwatch-digest.timer (daily 07:05 UTC; next $(systemctl show pft-valwatch-digest.timer -p NextElapseUSecRealtime --value))"
+  exit 0
+fi
 if [ -n "$pull" ]; then
   valid "$pull"
   if $uninstall; then

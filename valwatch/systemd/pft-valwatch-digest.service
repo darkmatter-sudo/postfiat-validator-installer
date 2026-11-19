@@ -1,0 +1,33 @@
+[Unit]
+Description=pft-valwatch digest: one low ntfy summary a day of other validators missing/late (never paged)
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/valwatch
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# root: reads the root-owned monitor ntfy env (owner check in `digest`) and writes the day stamp in the data dir
+ExecStart=/usr/local/bin/pft-valwatch digest
+ProtectSystem=strict
+ReadWritePaths=/var/lib/pft-valwatch
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+NoNewPrivileges=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+UMask=0022
+TimeoutStartSec=60
