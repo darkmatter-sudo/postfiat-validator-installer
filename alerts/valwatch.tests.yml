@@ -84,6 +84,18 @@ tests:
   - eval_time: 59m
     alertname: PFTValwatchReconnecting
     exp_alerts: []
+  - eval_time: 16m
+    alertname: PFTValwatchHostsDisagree
+    exp_alerts: []
+  - eval_time: 59m
+    alertname: PFTValwatchHostsDisagree
+    exp_alerts: []
+  - eval_time: 16m
+    alertname: PFTValwatchHostsDisagreeLate
+    exp_alerts: []
+  - eval_time: 59m
+    alertname: PFTValwatchHostsDisagreeLate
+    exp_alerts: []
 - name: 'validator K1 at 70% on the sentry only: fires after 15m there, not on the validator'
   interval: 1m
   input_series:
@@ -140,10 +152,206 @@ tests:
         node: postfiatd-sentry
         validator: nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7
         severity: warning
+        notify: digest
       exp_annotations:
         summary: UNL validator nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7 is missing validations (seen by postfiatd-sentry)
         description: For 15m UNL validator nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7 sent a full validation for the agreed ledger hash on only 70% of the validated ledgers postfiatd-sentry saw in the last 15 min (alert below 80%). If the other host sees the same, the validator is down or forked; if only this host, check this node's peers. `sudo pft-valwatch report --container postfiatd-sentry`.
         runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/valwatch/README.md#runbook
+  - eval_time: 14m
+    alertname: PFTValwatchHostsDisagree
+    exp_alerts: []
+  - eval_time: 16m
+    alertname: PFTValwatchHostsDisagree
+    exp_alerts:
+    - exp_labels:
+        job: postfiat
+        instance: node:9877
+        node: postfiatd-sentry
+        validator: nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7
+        severity: warning
+      exp_annotations:
+        summary: postfiatd-sentry misses UNL validator nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7 that the other node sees
+        description: 'For 15m postfiatd-sentry saw UNL validator nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7 on only 70% of its validated ledgers while the other node saw it on at least 95%. The validator is up; this node is not receiving its validations: check this node''s peers and the cluster link. `sudo pft-valwatch report --container postfiatd-sentry`.'
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/valwatch/README.md#runbook
+- name: 'validator K1 silent on BOTH hosts (2026-11-19 external outage): digest-only ValidatorLow, no HostsDisagree'
+  interval: 1m
+  input_series:
+  - series: pft_valwatch_up{job="postfiat", instance="node:9877", node="postfiatd"}
+    values: 1x60
+  - series: pft_valwatch_collect_timestamp_seconds{job="postfiat", instance="node:9877", node="postfiatd"}
+    values: 0+60x60
+  - series: pft_valwatch_last_record_age_seconds{job="postfiat", instance="node:9877", node="postfiatd"}
+    values: 2x60
+  - series: pft_valwatch_quorum_margin_min{job="postfiat", instance="node:9877", node="postfiatd"}
+    values: 8x60
+  - series: pft_valwatch_quorum_margin_p50{job="postfiat", instance="node:9877", node="postfiatd"}
+    values: 8x60
+  - series: pft_valwatch_reconnects{job="postfiat", instance="node:9877", node="postfiatd"}
+    values: '0x60'
+  - series: pft_valwatch_validator_participation_ratio{job="postfiat", instance="node:9877", node="postfiatd", validator="nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7"}
+    values: '0x60'
+  - series: pft_valwatch_validator_participation_ratio{job="postfiat", instance="node:9877", node="postfiatd", validator="nHUCEXpC5LhFAm1Mmf8TqrzVGt3QCuwWoW2V8PYynDpjZe8m8mHj"}
+    values: 0.975x60
+  - series: pft_valwatch_validator_delay_p95_ms{job="postfiat", instance="node:9877", node="postfiatd", validator="nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7"}
+    values: 9x60
+  - series: pft_valwatch_validator_delay_p95_ms{job="postfiat", instance="node:9877", node="postfiatd", validator="nHUCEXpC5LhFAm1Mmf8TqrzVGt3QCuwWoW2V8PYynDpjZe8m8mHj"}
+    values: 1586x60
+  - series: pft_valwatch_up{job="postfiat", instance="node:9877", node="postfiatd-sentry"}
+    values: 1x60
+  - series: pft_valwatch_collect_timestamp_seconds{job="postfiat", instance="node:9877", node="postfiatd-sentry"}
+    values: 0+60x60
+  - series: pft_valwatch_last_record_age_seconds{job="postfiat", instance="node:9877", node="postfiatd-sentry"}
+    values: 2x60
+  - series: pft_valwatch_quorum_margin_min{job="postfiat", instance="node:9877", node="postfiatd-sentry"}
+    values: 8x60
+  - series: pft_valwatch_quorum_margin_p50{job="postfiat", instance="node:9877", node="postfiatd-sentry"}
+    values: 8x60
+  - series: pft_valwatch_reconnects{job="postfiat", instance="node:9877", node="postfiatd-sentry"}
+    values: '0x60'
+  - series: pft_valwatch_validator_participation_ratio{job="postfiat", instance="node:9877", node="postfiatd-sentry", validator="nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7"}
+    values: '0x60'
+  - series: pft_valwatch_validator_participation_ratio{job="postfiat", instance="node:9877", node="postfiatd-sentry", validator="nHUCEXpC5LhFAm1Mmf8TqrzVGt3QCuwWoW2V8PYynDpjZe8m8mHj"}
+    values: 0.975x60
+  - series: pft_valwatch_validator_delay_p95_ms{job="postfiat", instance="node:9877", node="postfiatd-sentry", validator="nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7"}
+    values: 9x60
+  - series: pft_valwatch_validator_delay_p95_ms{job="postfiat", instance="node:9877", node="postfiatd-sentry", validator="nHUCEXpC5LhFAm1Mmf8TqrzVGt3QCuwWoW2V8PYynDpjZe8m8mHj"}
+    values: 1586x60
+  alert_rule_test:
+  - eval_time: 16m
+    alertname: PFTValwatchValidatorLow
+    exp_alerts:
+    - exp_labels:
+        job: postfiat
+        instance: node:9877
+        node: postfiatd
+        validator: nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7
+        severity: warning
+        notify: digest
+      exp_annotations:
+        summary: UNL validator nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7 is missing validations (seen by postfiatd)
+        description: For 15m UNL validator nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7 sent a full validation for the agreed ledger hash on only 0% of the validated ledgers postfiatd saw in the last 15 min (alert below 80%). If the other host sees the same, the validator is down or forked; if only this host, check this node's peers. `sudo pft-valwatch report --container postfiatd`.
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/valwatch/README.md#runbook
+    - exp_labels:
+        job: postfiat
+        instance: node:9877
+        node: postfiatd-sentry
+        validator: nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7
+        severity: warning
+        notify: digest
+      exp_annotations:
+        summary: UNL validator nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7 is missing validations (seen by postfiatd-sentry)
+        description: For 15m UNL validator nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7 sent a full validation for the agreed ledger hash on only 0% of the validated ledgers postfiatd-sentry saw in the last 15 min (alert below 80%). If the other host sees the same, the validator is down or forked; if only this host, check this node's peers. `sudo pft-valwatch report --container postfiatd-sentry`.
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/valwatch/README.md#runbook
+  - eval_time: 16m
+    alertname: PFTValwatchHostsDisagree
+    exp_alerts: []
+  - eval_time: 59m
+    alertname: PFTValwatchHostsDisagree
+    exp_alerts: []
+- name: 'HostsDisagree needs >= 95% on the other node: 0.95 fires, 0.9499 does not'
+  interval: 1m
+  input_series:
+  - series: pft_valwatch_up{job="postfiat", instance="node:9877", node="postfiatd"}
+    values: 1x60
+  - series: pft_valwatch_collect_timestamp_seconds{job="postfiat", instance="node:9877", node="postfiatd"}
+    values: 0+60x60
+  - series: pft_valwatch_last_record_age_seconds{job="postfiat", instance="node:9877", node="postfiatd"}
+    values: 2x60
+  - series: pft_valwatch_quorum_margin_min{job="postfiat", instance="node:9877", node="postfiatd"}
+    values: 8x60
+  - series: pft_valwatch_quorum_margin_p50{job="postfiat", instance="node:9877", node="postfiatd"}
+    values: 8x60
+  - series: pft_valwatch_reconnects{job="postfiat", instance="node:9877", node="postfiatd"}
+    values: '0x60'
+  - series: pft_valwatch_validator_participation_ratio{job="postfiat", instance="node:9877", node="postfiatd", validator="nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7"}
+    values: 0.5x60
+  - series: pft_valwatch_validator_participation_ratio{job="postfiat", instance="node:9877", node="postfiatd", validator="nHUCEXpC5LhFAm1Mmf8TqrzVGt3QCuwWoW2V8PYynDpjZe8m8mHj"}
+    values: 0.5x60
+  - series: pft_valwatch_validator_delay_p95_ms{job="postfiat", instance="node:9877", node="postfiatd", validator="nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7"}
+    values: 9x60
+  - series: pft_valwatch_validator_delay_p95_ms{job="postfiat", instance="node:9877", node="postfiatd", validator="nHUCEXpC5LhFAm1Mmf8TqrzVGt3QCuwWoW2V8PYynDpjZe8m8mHj"}
+    values: 1586x60
+  - series: pft_valwatch_up{job="postfiat", instance="node:9877", node="postfiatd-sentry"}
+    values: 1x60
+  - series: pft_valwatch_collect_timestamp_seconds{job="postfiat", instance="node:9877", node="postfiatd-sentry"}
+    values: 0+60x60
+  - series: pft_valwatch_last_record_age_seconds{job="postfiat", instance="node:9877", node="postfiatd-sentry"}
+    values: 2x60
+  - series: pft_valwatch_quorum_margin_min{job="postfiat", instance="node:9877", node="postfiatd-sentry"}
+    values: 8x60
+  - series: pft_valwatch_quorum_margin_p50{job="postfiat", instance="node:9877", node="postfiatd-sentry"}
+    values: 8x60
+  - series: pft_valwatch_reconnects{job="postfiat", instance="node:9877", node="postfiatd-sentry"}
+    values: '0x60'
+  - series: pft_valwatch_validator_participation_ratio{job="postfiat", instance="node:9877", node="postfiatd-sentry", validator="nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7"}
+    values: 0.95x60
+  - series: pft_valwatch_validator_participation_ratio{job="postfiat", instance="node:9877", node="postfiatd-sentry", validator="nHUCEXpC5LhFAm1Mmf8TqrzVGt3QCuwWoW2V8PYynDpjZe8m8mHj"}
+    values: 0.9499x60
+  - series: pft_valwatch_validator_delay_p95_ms{job="postfiat", instance="node:9877", node="postfiatd-sentry", validator="nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7"}
+    values: 9x60
+  - series: pft_valwatch_validator_delay_p95_ms{job="postfiat", instance="node:9877", node="postfiatd-sentry", validator="nHUCEXpC5LhFAm1Mmf8TqrzVGt3QCuwWoW2V8PYynDpjZe8m8mHj"}
+    values: 1586x60
+  alert_rule_test:
+  - eval_time: 16m
+    alertname: PFTValwatchHostsDisagree
+    exp_alerts:
+    - exp_labels:
+        job: postfiat
+        instance: node:9877
+        node: postfiatd
+        validator: nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7
+        severity: warning
+      exp_annotations:
+        summary: postfiatd misses UNL validator nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7 that the other node sees
+        description: 'For 15m postfiatd saw UNL validator nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7 on only 50% of its validated ledgers while the other node saw it on at least 95%. The validator is up; this node is not receiving its validations: check this node''s peers and the cluster link. `sudo pft-valwatch report --container postfiatd`.'
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/valwatch/README.md#runbook
+- name: 'HostsDisagree is not graded when the other node is blind (up 0): Stale fires there instead'
+  interval: 1m
+  input_series:
+  - series: pft_valwatch_up{job="postfiat", instance="node:9877", node="postfiatd"}
+    values: 1x60
+  - series: pft_valwatch_collect_timestamp_seconds{job="postfiat", instance="node:9877", node="postfiatd"}
+    values: 0+60x60
+  - series: pft_valwatch_last_record_age_seconds{job="postfiat", instance="node:9877", node="postfiatd"}
+    values: 2x60
+  - series: pft_valwatch_quorum_margin_min{job="postfiat", instance="node:9877", node="postfiatd"}
+    values: 8x60
+  - series: pft_valwatch_quorum_margin_p50{job="postfiat", instance="node:9877", node="postfiatd"}
+    values: 8x60
+  - series: pft_valwatch_reconnects{job="postfiat", instance="node:9877", node="postfiatd"}
+    values: '0x60'
+  - series: pft_valwatch_validator_participation_ratio{job="postfiat", instance="node:9877", node="postfiatd", validator="nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7"}
+    values: 0.5x60
+  - series: pft_valwatch_validator_participation_ratio{job="postfiat", instance="node:9877", node="postfiatd", validator="nHUCEXpC5LhFAm1Mmf8TqrzVGt3QCuwWoW2V8PYynDpjZe8m8mHj"}
+    values: 0.975x60
+  - series: pft_valwatch_validator_delay_p95_ms{job="postfiat", instance="node:9877", node="postfiatd", validator="nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7"}
+    values: 9x60
+  - series: pft_valwatch_validator_delay_p95_ms{job="postfiat", instance="node:9877", node="postfiatd", validator="nHUCEXpC5LhFAm1Mmf8TqrzVGt3QCuwWoW2V8PYynDpjZe8m8mHj"}
+    values: 1586x60
+  - series: pft_valwatch_up{job="postfiat", instance="node:9877", node="postfiatd-sentry"}
+    values: '0x60'
+  - series: pft_valwatch_collect_timestamp_seconds{job="postfiat", instance="node:9877", node="postfiatd-sentry"}
+    values: 0+60x60
+  - series: pft_valwatch_last_record_age_seconds{job="postfiat", instance="node:9877", node="postfiatd-sentry"}
+    values: 2x60
+  - series: pft_valwatch_quorum_margin_min{job="postfiat", instance="node:9877", node="postfiatd-sentry"}
+    values: 8x60
+  - series: pft_valwatch_quorum_margin_p50{job="postfiat", instance="node:9877", node="postfiatd-sentry"}
+    values: 8x60
+  - series: pft_valwatch_reconnects{job="postfiat", instance="node:9877", node="postfiatd-sentry"}
+    values: '0x60'
+  - series: pft_valwatch_validator_participation_ratio{job="postfiat", instance="node:9877", node="postfiatd-sentry", validator="nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7"}
+    values: 1x60
+  - series: pft_valwatch_validator_participation_ratio{job="postfiat", instance="node:9877", node="postfiatd-sentry", validator="nHUCEXpC5LhFAm1Mmf8TqrzVGt3QCuwWoW2V8PYynDpjZe8m8mHj"}
+    values: 0.975x60
+  - series: pft_valwatch_validator_delay_p95_ms{job="postfiat", instance="node:9877", node="postfiatd-sentry", validator="nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7"}
+    values: 9x60
+  - series: pft_valwatch_validator_delay_p95_ms{job="postfiat", instance="node:9877", node="postfiatd-sentry", validator="nHUCEXpC5LhFAm1Mmf8TqrzVGt3QCuwWoW2V8PYynDpjZe8m8mHj"}
+    values: 1586x60
+  alert_rule_test:
+  - eval_time: 30m
+    alertname: PFTValwatchHostsDisagree
+    exp_alerts: []
 - name: participation exactly 0.8 does not fire (boundary)
   interval: 1m
   input_series:
@@ -204,6 +412,7 @@ tests:
         node: postfiatd
         validator: nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7
         severity: warning
+        notify: digest
       exp_annotations:
         summary: UNL validator nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7 is missing validations (seen by postfiatd)
         description: For 15m UNL validator nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7 sent a full validation for the agreed ledger hash on only 50% of the validated ledgers postfiatd saw in the last 15 min (alert below 80%). If the other host sees the same, the validator is down or forked; if only this host, check this node's peers. `sudo pft-valwatch report --container postfiatd`.
@@ -306,10 +515,146 @@ tests:
         node: postfiatd
         validator: nHUCEXpC5LhFAm1Mmf8TqrzVGt3QCuwWoW2V8PYynDpjZe8m8mHj
         severity: warning
+        notify: digest
       exp_annotations:
         summary: UNL validator nHUCEXpC5LhFAm1Mmf8TqrzVGt3QCuwWoW2V8PYynDpjZe8m8mHj validations arrive late at postfiatd
         description: For 15m the p95 delay of nHUCEXpC5LhFAm1Mmf8TqrzVGt3QCuwWoW2V8PYynDpjZe8m8mHj's validations behind the first UNL validation of the same ledger was 3500 ms at postfiatd (alert above 3000 ms). Late validations count for less and can miss the ledger. `sudo pft-valwatch report --container postfiatd`.
         runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/valwatch/README.md#runbook
+  - eval_time: 30m
+    alertname: PFTValwatchHostsDisagreeLate
+    exp_alerts: []
+- name: 'HostsDisagreeLate: 3500 ms at the validator vs 2000 ms at the sentry fires after 15m; vs 2001 ms does not'
+  interval: 1m
+  input_series:
+  - series: pft_valwatch_up{job="postfiat", instance="node:9877", node="postfiatd"}
+    values: 1x60
+  - series: pft_valwatch_collect_timestamp_seconds{job="postfiat", instance="node:9877", node="postfiatd"}
+    values: 0+60x60
+  - series: pft_valwatch_last_record_age_seconds{job="postfiat", instance="node:9877", node="postfiatd"}
+    values: 2x60
+  - series: pft_valwatch_quorum_margin_min{job="postfiat", instance="node:9877", node="postfiatd"}
+    values: 8x60
+  - series: pft_valwatch_quorum_margin_p50{job="postfiat", instance="node:9877", node="postfiatd"}
+    values: 8x60
+  - series: pft_valwatch_reconnects{job="postfiat", instance="node:9877", node="postfiatd"}
+    values: '0x60'
+  - series: pft_valwatch_validator_participation_ratio{job="postfiat", instance="node:9877", node="postfiatd", validator="nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7"}
+    values: 1x60
+  - series: pft_valwatch_validator_participation_ratio{job="postfiat", instance="node:9877", node="postfiatd", validator="nHUCEXpC5LhFAm1Mmf8TqrzVGt3QCuwWoW2V8PYynDpjZe8m8mHj"}
+    values: 0.975x60
+  - series: pft_valwatch_validator_delay_p95_ms{job="postfiat", instance="node:9877", node="postfiatd", validator="nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7"}
+    values: 3500x60
+  - series: pft_valwatch_validator_delay_p95_ms{job="postfiat", instance="node:9877", node="postfiatd", validator="nHUCEXpC5LhFAm1Mmf8TqrzVGt3QCuwWoW2V8PYynDpjZe8m8mHj"}
+    values: 3500x60
+  - series: pft_valwatch_up{job="postfiat", instance="node:9877", node="postfiatd-sentry"}
+    values: 1x60
+  - series: pft_valwatch_collect_timestamp_seconds{job="postfiat", instance="node:9877", node="postfiatd-sentry"}
+    values: 0+60x60
+  - series: pft_valwatch_last_record_age_seconds{job="postfiat", instance="node:9877", node="postfiatd-sentry"}
+    values: 2x60
+  - series: pft_valwatch_quorum_margin_min{job="postfiat", instance="node:9877", node="postfiatd-sentry"}
+    values: 8x60
+  - series: pft_valwatch_quorum_margin_p50{job="postfiat", instance="node:9877", node="postfiatd-sentry"}
+    values: 8x60
+  - series: pft_valwatch_reconnects{job="postfiat", instance="node:9877", node="postfiatd-sentry"}
+    values: '0x60'
+  - series: pft_valwatch_validator_participation_ratio{job="postfiat", instance="node:9877", node="postfiatd-sentry", validator="nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7"}
+    values: 1x60
+  - series: pft_valwatch_validator_participation_ratio{job="postfiat", instance="node:9877", node="postfiatd-sentry", validator="nHUCEXpC5LhFAm1Mmf8TqrzVGt3QCuwWoW2V8PYynDpjZe8m8mHj"}
+    values: 0.975x60
+  - series: pft_valwatch_validator_delay_p95_ms{job="postfiat", instance="node:9877", node="postfiatd-sentry", validator="nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7"}
+    values: 2000x60
+  - series: pft_valwatch_validator_delay_p95_ms{job="postfiat", instance="node:9877", node="postfiatd-sentry", validator="nHUCEXpC5LhFAm1Mmf8TqrzVGt3QCuwWoW2V8PYynDpjZe8m8mHj"}
+    values: 2001x60
+  alert_rule_test:
+  - eval_time: 14m
+    alertname: PFTValwatchHostsDisagreeLate
+    exp_alerts: []
+  - eval_time: 16m
+    alertname: PFTValwatchHostsDisagreeLate
+    exp_alerts:
+    - exp_labels:
+        job: postfiat
+        instance: node:9877
+        node: postfiatd
+        validator: nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7
+        severity: warning
+      exp_annotations:
+        summary: postfiatd gets UNL validator nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7 late while the other node does not
+        description: 'For 15m the p95 delay of nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7''s validations at postfiatd was 3500 ms (alert above 3000 ms) while the other node got them within 2000 ms. This node''s path to that validator is slow: check its peers and the cluster link. `sudo pft-valwatch report --container postfiatd`.'
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/valwatch/README.md#runbook
+- name: 'late on BOTH hosts (external validator slow): digest-only ValidatorLate, no HostsDisagreeLate'
+  interval: 1m
+  input_series:
+  - series: pft_valwatch_up{job="postfiat", instance="node:9877", node="postfiatd"}
+    values: 1x60
+  - series: pft_valwatch_collect_timestamp_seconds{job="postfiat", instance="node:9877", node="postfiatd"}
+    values: 0+60x60
+  - series: pft_valwatch_last_record_age_seconds{job="postfiat", instance="node:9877", node="postfiatd"}
+    values: 2x60
+  - series: pft_valwatch_quorum_margin_min{job="postfiat", instance="node:9877", node="postfiatd"}
+    values: 8x60
+  - series: pft_valwatch_quorum_margin_p50{job="postfiat", instance="node:9877", node="postfiatd"}
+    values: 8x60
+  - series: pft_valwatch_reconnects{job="postfiat", instance="node:9877", node="postfiatd"}
+    values: '0x60'
+  - series: pft_valwatch_validator_participation_ratio{job="postfiat", instance="node:9877", node="postfiatd", validator="nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7"}
+    values: 1x60
+  - series: pft_valwatch_validator_participation_ratio{job="postfiat", instance="node:9877", node="postfiatd", validator="nHUCEXpC5LhFAm1Mmf8TqrzVGt3QCuwWoW2V8PYynDpjZe8m8mHj"}
+    values: 0.975x60
+  - series: pft_valwatch_validator_delay_p95_ms{job="postfiat", instance="node:9877", node="postfiatd", validator="nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7"}
+    values: 9x60
+  - series: pft_valwatch_validator_delay_p95_ms{job="postfiat", instance="node:9877", node="postfiatd", validator="nHUCEXpC5LhFAm1Mmf8TqrzVGt3QCuwWoW2V8PYynDpjZe8m8mHj"}
+    values: 5000x60
+  - series: pft_valwatch_up{job="postfiat", instance="node:9877", node="postfiatd-sentry"}
+    values: 1x60
+  - series: pft_valwatch_collect_timestamp_seconds{job="postfiat", instance="node:9877", node="postfiatd-sentry"}
+    values: 0+60x60
+  - series: pft_valwatch_last_record_age_seconds{job="postfiat", instance="node:9877", node="postfiatd-sentry"}
+    values: 2x60
+  - series: pft_valwatch_quorum_margin_min{job="postfiat", instance="node:9877", node="postfiatd-sentry"}
+    values: 8x60
+  - series: pft_valwatch_quorum_margin_p50{job="postfiat", instance="node:9877", node="postfiatd-sentry"}
+    values: 8x60
+  - series: pft_valwatch_reconnects{job="postfiat", instance="node:9877", node="postfiatd-sentry"}
+    values: '0x60'
+  - series: pft_valwatch_validator_participation_ratio{job="postfiat", instance="node:9877", node="postfiatd-sentry", validator="nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7"}
+    values: 1x60
+  - series: pft_valwatch_validator_participation_ratio{job="postfiat", instance="node:9877", node="postfiatd-sentry", validator="nHUCEXpC5LhFAm1Mmf8TqrzVGt3QCuwWoW2V8PYynDpjZe8m8mHj"}
+    values: 0.975x60
+  - series: pft_valwatch_validator_delay_p95_ms{job="postfiat", instance="node:9877", node="postfiatd-sentry", validator="nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7"}
+    values: 9x60
+  - series: pft_valwatch_validator_delay_p95_ms{job="postfiat", instance="node:9877", node="postfiatd-sentry", validator="nHUCEXpC5LhFAm1Mmf8TqrzVGt3QCuwWoW2V8PYynDpjZe8m8mHj"}
+    values: 4000x60
+  alert_rule_test:
+  - eval_time: 16m
+    alertname: PFTValwatchValidatorLate
+    exp_alerts:
+    - exp_labels:
+        job: postfiat
+        instance: node:9877
+        node: postfiatd
+        validator: nHUCEXpC5LhFAm1Mmf8TqrzVGt3QCuwWoW2V8PYynDpjZe8m8mHj
+        severity: warning
+        notify: digest
+      exp_annotations:
+        summary: UNL validator nHUCEXpC5LhFAm1Mmf8TqrzVGt3QCuwWoW2V8PYynDpjZe8m8mHj validations arrive late at postfiatd
+        description: For 15m the p95 delay of nHUCEXpC5LhFAm1Mmf8TqrzVGt3QCuwWoW2V8PYynDpjZe8m8mHj's validations behind the first UNL validation of the same ledger was 5000 ms at postfiatd (alert above 3000 ms). Late validations count for less and can miss the ledger. `sudo pft-valwatch report --container postfiatd`.
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/valwatch/README.md#runbook
+    - exp_labels:
+        job: postfiat
+        instance: node:9877
+        node: postfiatd-sentry
+        validator: nHUCEXpC5LhFAm1Mmf8TqrzVGt3QCuwWoW2V8PYynDpjZe8m8mHj
+        severity: warning
+        notify: digest
+      exp_annotations:
+        summary: UNL validator nHUCEXpC5LhFAm1Mmf8TqrzVGt3QCuwWoW2V8PYynDpjZe8m8mHj validations arrive late at postfiatd-sentry
+        description: For 15m the p95 delay of nHUCEXpC5LhFAm1Mmf8TqrzVGt3QCuwWoW2V8PYynDpjZe8m8mHj's validations behind the first UNL validation of the same ledger was 4000 ms at postfiatd-sentry (alert above 3000 ms). Late validations count for less and can miss the ledger. `sudo pft-valwatch report --container postfiatd-sentry`.
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/valwatch/README.md#runbook
+  - eval_time: 30m
+    alertname: PFTValwatchHostsDisagreeLate
+    exp_alerts: []
 - name: quorum margin 1 fires after 10m; margin 2 on the other host does not
   interval: 1m
   input_series:

@@ -12,6 +12,13 @@
 #  4. PFTValwatchQuorumMarginCritical: the MEDIAN ledger has margin < 1 for 5m: one more silent validator stalls.
 #  5. PFTValwatchStale: no fresh graded data (collector down, stream silent, UNL cache unreadable): 1-4 are blind.
 #  6. PFTValwatchReconnecting: more than 3 stream reconnects inside the 15-min window for 15m.
+#  7. PFTValwatchHostsDisagree: a UNL validator under 80 % at one node while at least 95 % at the other for 15m.
+#  8. PFTValwatchHostsDisagreeLate: a UNL validator's p95 delay above 3 s at one node, at most 2 s at the other, 15m.
+# Paging (operator rule 2026-11-19): another validator that is missing or late (1, 2) is the network's problem, not
+# ours, so 1 and 2 carry notify="digest" (../alerts/alertmanager.yml routes that label to the no-integration digest
+# receiver: visible in Prometheus/Alertmanager, never sent to the bridge/phone). What still pages: our nodes seeing
+# different results (7, 8 = a local peering fault), quorum at risk (3, 4) and a blind/flapping collector (5, 6). Our
+# own validator is covered by PFTValidatorNotProposing (postfiat.rules.yml) once a validator token is configured.
 # Tests: valwatch.tests.yml (promtool test rules valwatch.tests.yml), 1m sample interval = the timer's period.
 groups:
   - name: pft-valwatch
@@ -21,6 +28,7 @@ groups:
         for: 15m
         labels:
           severity: warning
+          notify: digest
         annotations:
           summary: "UNL validator {{ $labels.validator }} is missing validations (seen by {{ $labels.node }})"
           description: "For 15m UNL validator {{ $labels.validator }} sent a full validation for the agreed ledger hash on only {{ $value | humanizePercentage }} of the validated ledgers {{ $labels.node }} saw in the last 15 min (alert below 80%). If the other host sees the same, the validator is down or forked; if only this host, check this node's peers. `sudo pft-valwatch report --container {{ $labels.node }}`."
@@ -30,6 +38,7 @@ groups:
         for: 15m
         labels:
           severity: warning
+          notify: digest
         annotations:
           summary: "UNL validator {{ $labels.validator }} validations arrive late at {{ $labels.node }}"
           description: "For 15m the p95 delay of {{ $labels.validator }}'s validations behind the first UNL validation of the same ledger was {{ $value }} ms at {{ $labels.node }} (alert above 3000 ms). Late validations count for less and can miss the ledger. `sudo pft-valwatch report --container {{ $labels.node }}`."
@@ -72,4 +81,28 @@ groups:
         annotations:
           summary: "pft-valwatch stream for {{ $labels.node }} keeps reconnecting"
           description: "For 15m every 15-min window held more than 3 stream disconnects ({{ $value }}) for {{ $labels.node }}. Records between them are lost. `journalctl -u pft-valwatch@{{ $labels.node }}`."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/valwatch/README.md#runbook"
+      - alert: PFTValwatchHostsDisagree
+        expr: >-
+          (pft_valwatch_validator_participation_ratio < 0.8 and on (job, instance, node) pft_valwatch_up == 1)
+          and on (validator)
+          (pft_valwatch_validator_participation_ratio >= 0.95 and on (job, instance, node) pft_valwatch_up == 1)
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.node }} misses UNL validator {{ $labels.validator }} that the other node sees"
+          description: "For 15m {{ $labels.node }} saw UNL validator {{ $labels.validator }} on only {{ $value | humanizePercentage }} of its validated ledgers while the other node saw it on at least 95%. The validator is up; this node is not receiving its validations: check this node's peers and the cluster link. `sudo pft-valwatch report --container {{ $labels.node }}`."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/valwatch/README.md#runbook"
+      - alert: PFTValwatchHostsDisagreeLate
+        expr: >-
+          (pft_valwatch_validator_delay_p95_ms > 3000 and on (job, instance, node) pft_valwatch_up == 1)
+          and on (validator)
+          (pft_valwatch_validator_delay_p95_ms <= 2000 and on (job, instance, node) pft_valwatch_up == 1)
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.node }} gets UNL validator {{ $labels.validator }} late while the other node does not"
+          description: "For 15m the p95 delay of {{ $labels.validator }}'s validations at {{ $labels.node }} was {{ $value }} ms (alert above 3000 ms) while the other node got them within 2000 ms. This node's path to that validator is slow: check its peers and the cluster link. `sudo pft-valwatch report --container {{ $labels.node }}`."
           runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/valwatch/README.md#runbook"

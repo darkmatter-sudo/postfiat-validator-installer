@@ -41,6 +41,7 @@ def S(metric, values, **lab):
 def exp(alert, value, sev="warning", **lab):
     labels = dict(BASE, **lab)
     labels["severity"] = sev
+    labels.update({k: v for k, v in R[alert]["labels"].items() if k != "severity"})  # notify="digest"
     return {"exp_labels": labels, "exp_annotations": ann(alert, value, **lab)}
 
 
@@ -92,7 +93,39 @@ tests = [
         [
             (14, "PFTValwatchValidatorLow", []),
             (16, "PFTValwatchValidatorLow", [exp("PFTValwatchValidatorLow", "70%", node=SN, validator=K1)]),
+            (14, "PFTValwatchHostsDisagree", []),
+            (16, "PFTValwatchHostsDisagree", [exp("PFTValwatchHostsDisagree", "70%", node=SN, validator=K1)]),
         ],
+    ),
+    case(
+        "validator K1 silent on BOTH hosts (2026-11-19 external outage): digest-only ValidatorLow, no HostsDisagree",
+        node(V, {("validator_participation_ratio", K1): "0x60"})
+        + node(SN, {("validator_participation_ratio", K1): "0x60"}),
+        [
+            (
+                16,
+                "PFTValwatchValidatorLow",
+                [
+                    exp("PFTValwatchValidatorLow", "0%", node=V, validator=K1),
+                    exp("PFTValwatchValidatorLow", "0%", node=SN, validator=K1),
+                ],
+            ),
+            (16, "PFTValwatchHostsDisagree", []),
+            (59, "PFTValwatchHostsDisagree", []),
+        ],
+    ),
+    case(
+        "HostsDisagree needs >= 95% on the other node: 0.95 fires, 0.9499 does not",
+        node(V, {("validator_participation_ratio", K1): "0.5x60", ("validator_participation_ratio", K2): "0.5x60"})
+        + node(
+            SN, {("validator_participation_ratio", K1): "0.95x60", ("validator_participation_ratio", K2): "0.9499x60"}
+        ),
+        [(16, "PFTValwatchHostsDisagree", [exp("PFTValwatchHostsDisagree", "50%", node=V, validator=K1)])],
+    ),
+    case(
+        "HostsDisagree is not graded when the other node is blind (up 0): Stale fires there instead",
+        node(V, {("validator_participation_ratio", K1): "0.5x60"}) + node(SN, {"up": "0x60"}),
+        [(30, "PFTValwatchHostsDisagree", [])],
     ),
     case(
         "participation exactly 0.8 does not fire (boundary)",
@@ -118,6 +151,31 @@ tests = [
         [
             (14, "PFTValwatchValidatorLate", []),
             (16, "PFTValwatchValidatorLate", [exp("PFTValwatchValidatorLate", "3500", node=V, validator=K2)]),
+            (30, "PFTValwatchHostsDisagreeLate", []),
+        ],
+    ),
+    case(
+        "HostsDisagreeLate: 3500 ms at the validator vs 2000 ms at the sentry fires after 15m; vs 2001 ms does not",
+        node(V, {("validator_delay_p95_ms", K1): "3500x60", ("validator_delay_p95_ms", K2): "3500x60"})
+        + node(SN, {("validator_delay_p95_ms", K1): "2000x60", ("validator_delay_p95_ms", K2): "2001x60"}),
+        [
+            (14, "PFTValwatchHostsDisagreeLate", []),
+            (16, "PFTValwatchHostsDisagreeLate", [exp("PFTValwatchHostsDisagreeLate", "3500", node=V, validator=K1)]),
+        ],
+    ),
+    case(
+        "late on BOTH hosts (external validator slow): digest-only ValidatorLate, no HostsDisagreeLate",
+        node(V, {("validator_delay_p95_ms", K2): "5000x60"}) + node(SN, {("validator_delay_p95_ms", K2): "4000x60"}),
+        [
+            (
+                16,
+                "PFTValwatchValidatorLate",
+                [
+                    exp("PFTValwatchValidatorLate", "5000", node=V, validator=K2),
+                    exp("PFTValwatchValidatorLate", "4000", node=SN, validator=K2),
+                ],
+            ),
+            (30, "PFTValwatchHostsDisagreeLate", []),
         ],
     ),
     case(
