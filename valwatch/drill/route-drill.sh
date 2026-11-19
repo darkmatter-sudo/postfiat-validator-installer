@@ -80,7 +80,7 @@ cat > "$SCR/p/prometheus.yml" <<'EOP'
 global: {scrape_interval: 15s, evaluation_interval: 15s}
 rule_files: [/rules/valwatch.rules.yml]
 alerting: {alertmanagers: [{static_configs: [{targets: ["127.0.0.1:19093"]}]}]}
-scrape_configs: [{job_name: postfiat, static_configs: [{targets: ["127.0.0.1:19877"]}]}]
+scrape_configs: [{job_name: postfiat, fallback_scrape_protocol: PrometheusText0.0.4, static_configs: [{targets: ["127.0.0.1:19877"]}]}]
 EOP
 sed -e 's#127.0.0.1:9095/#127.0.0.1:19095/#; s#127.0.0.1:9096/#127.0.0.1:19096/#' alerts/alertmanager.yml > "$SCR/a/alertmanager.yml"
 printf 'NTFY_URL=https://ntfy.sh/%s\n' "$TOPIC" > "$SCR/ntfy.env"
@@ -99,6 +99,7 @@ for _ in $(seq 1 30); do curl -fsS -o /dev/null "$PROM/-/ready" 2>/dev/null && b
 x "curl -fsS $PROM/api/v1/rules | jq -r '.data.groups[].rules[] | \"\(.name) \(.health)\"'"
 check "prometheus loaded the repo's 8 valwatch rules" "$([ "$(grep -c ' ok$' <<< "$XOUT")" = 8 ] && echo 0 || echo 1)"
 x "curl -fsS $PROM/api/v1/targets | jq -r '.data.activeTargets[] | \"\(.labels.job) \(.health)\"'"
+check "scrape target up" "$(grep -qx "postfiat up" <<< "$XOUT"; echo $?)"
 x "curl -fsS -o /dev/null -w '%{http_code}' $AM/-/ready"
 check "alertmanager ready" "$([ "$XOUT" = 200 ] && echo 0 || echo 1)"
 x "docker logs pft-vwdrill-bridge 2>&1 | tail -3"
