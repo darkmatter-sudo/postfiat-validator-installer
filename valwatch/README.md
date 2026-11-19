@@ -226,4 +226,12 @@ public ledger data: validator keys, ledger hashes and indexes, and receive times
   0 survived / not applied / broken; baseline, hang and orphan controls PASS.
 - `logs/18-digest-mutants.log`: `tests/mutate.py --only D01..D08` on `pft-valwatch digest` (stamp, nothing fired,
   dry run, priority, stamp write, Prometheus failure, empty topic, query scope): 8 caught, controls PASS.
+- `logs/19-digest-install.log`: `drill/digest-install-run.sh` @452856f (pft-maint window on a throwaway topic): fleet
+  sync fleet/valwatch/aptrust, `install.sh --digest` (dry run, timer enabled for 07:05 UTC, service not run), send drill
+  through the real sandboxed unit via a /run drop-in: exactly 1 low message on a throwaway topic, 2nd start "already
+  sent"; schedaudit/integrity PASS both hosts, fleet CURRENT, operator topics 0 messages. **1 FAIL = runner bug**: the
+  jobwatch check grepped `digest`, which also matched the existing `pft-authwatch-digest.timer` (6 lines, expected 3;
+  every value printed is 0). Fixed in the runner (pattern `valwatch-digest`).
+- `logs/20-digest-postcheck.log`: `drill/digest-postcheck.sh` (read-only) with the fixed pattern: PASS 5/0 (jobwatch
+  86400 s, 0 failed/missed/disabled; timer next 07:05 UTC tomorrow, no drop-in/stamp left; schedaudit, integrity, fleet).
 
