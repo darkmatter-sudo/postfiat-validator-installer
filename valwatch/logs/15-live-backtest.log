@@ -1,0 +1,24 @@
+== 2026-11-19T10:20:02Z backtest of the new valwatch page rules on the live Prometheus (read-only queries, 24h at 1m)
+$ query: count_over_time(((pft_valwatch_validator_participation_ratio < 0.8 and on (job, instance, node) pft_valwatch_up == 1) and on (validator) (pft_valwatch_validator_participation_ratio >= 0.95 and on (job, instance, node) pft_valwatch_up == 1))[24h:1m])
+  (series: 0)
+$ query: count_over_time(((pft_valwatch_validator_delay_p95_ms > 3000 and on (job, instance, node) pft_valwatch_up == 1) and on (validator) (pft_valwatch_validator_delay_p95_ms <= 2000 and on (job, instance, node) pft_valwatch_up == 1))[24h:1m])
+  (series: 0)
+-- minutes per (node, validator) in the last 24h where the digest-only rule conditions held (ValidatorLow, ValidatorLate):
+$ query: count_over_time((pft_valwatch_validator_participation_ratio < 0.8 and on (job, instance, node) pft_valwatch_up == 1)[24h:1m])
+  postfiatd-sentry	nHUdwzTWTQJzebbxcanZG2ERXikMLU9aAZa8cHtxosfiKq5N7Vd5	62
+  postfiatd	nHUdwzTWTQJzebbxcanZG2ERXikMLU9aAZa8cHtxosfiKq5N7Vd5	62
+  postfiatd	nHBxQ3srN8ErMvfMgsJ3jycSSaMFyHMk5WbrJVUTXPZgNh1VdbHH	83
+  postfiatd-sentry	nHBxQ3srN8ErMvfMgsJ3jycSSaMFyHMk5WbrJVUTXPZgNh1VdbHH	83
+  (series: 4)
+$ query: count_over_time((pft_valwatch_validator_delay_p95_ms > 3000 and on (job, instance, node) pft_valwatch_up == 1)[24h:1m])
+  postfiatd-sentry	nHUdwzTWTQJzebbxcanZG2ERXikMLU9aAZa8cHtxosfiKq5N7Vd5	69
+  postfiatd	nHUdwzTWTQJzebbxcanZG2ERXikMLU9aAZa8cHtxosfiKq5N7Vd5	69
+  (series: 2)
+$ query: count_over_time(ALERTS{alertname=~"PFTValwatch.*",alertstate="firing"}[24h:1m])
+  postfiatd	nHUdwzTWTQJzebbxcanZG2ERXikMLU9aAZa8cHtxosfiKq5N7Vd5	41
+  postfiatd-sentry	nHUdwzTWTQJzebbxcanZG2ERXikMLU9aAZa8cHtxosfiKq5N7Vd5	41
+  postfiatd	nHBxQ3srN8ErMvfMgsJ3jycSSaMFyHMk5WbrJVUTXPZgNh1VdbHH	68
+  postfiatd	nHUdwzTWTQJzebbxcanZG2ERXikMLU9aAZa8cHtxosfiKq5N7Vd5	47
+  postfiatd-sentry	nHBxQ3srN8ErMvfMgsJ3jycSSaMFyHMk5WbrJVUTXPZgNh1VdbHH	68
+  postfiatd-sentry	nHUdwzTWTQJzebbxcanZG2ERXikMLU9aAZa8cHtxosfiKq5N7Vd5	47
+  (series: 6)

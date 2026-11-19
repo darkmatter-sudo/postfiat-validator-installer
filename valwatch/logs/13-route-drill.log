@@ -1,0 +1,140 @@
+== 1. preflight 2026-11-19T10:17:15Z repo b8c03b1fedb5d87ce2bdc5da296467adc99ba974 (working tree: 0 changed files)
+$ sha256sum alerts/valwatch.rules.yml alerts/alertmanager.yml alerts/ntfy_bridge.py
+  2a026bdaf9ee5482878e0397a996a83e6930535e673ae3c925c25040c0567953  alerts/valwatch.rules.yml
+  eed7bd67a05d7876a25acb75de7018be317b433f87650a53e22bed1801102a3a  alerts/alertmanager.yml
+  86035cd2b9acfd06d0ab478223c08c86460e1f11e08230ad0d6d3b42b92e4ddc  alerts/ntfy_bridge.py
+  (exit 0)
+$ docker image inspect -f "{{.RepoTags}}" prom/prometheus:v3.5.0 prom/alertmanager:v0.28.1 python:3.12-alpine
+  [prom/prometheus:v3.5.0]
+  [prom/alertmanager:v0.28.1]
+  [python:3.12-alpine]
+  (exit 0)
+CHECK ok   images already on the host (no pull)
+$ ss -ltnH | grep -cE "127\.0\.0\.1:(19090|19093|19095|19096|19877) " || true
+  0
+  (exit 0)
+CHECK ok   drill ports free
+$ docker ps -a --format "{{.Names}}" | grep -c "^pft-vwdrill-" || true
+  0
+  (exit 0)
+CHECK ok   no leftover drill containers
+CHECK ok   operator topics known (for the read-back)
+== 2. throwaway config
+$ diff alerts/alertmanager.yml ~/.cache/vwdrill.qT3h9F/a/alertmanager.yml
+  36c36
+  <       - url: http://127.0.0.1:9095/alert
+  ---
+  >       - url: http://127.0.0.1:19095/alert
+  42c42
+  <       - url: http://127.0.0.1:9096/watchdog
+  ---
+  >       - url: http://127.0.0.1:19096/watchdog
+  (exit 1)
+CHECK ok   alertmanager.yml differs only in the two webhook ports
+$ cat ~/.cache/vwdrill.qT3h9F/m/base
+  pft_valwatch_up{node="postfiatd"} 1
+  pft_valwatch_last_record_age_seconds{node="postfiatd"} 2
+  pft_valwatch_quorum_margin_min{node="postfiatd"} 8
+  pft_valwatch_quorum_margin_p50{node="postfiatd"} 8
+  pft_valwatch_reconnects{node="postfiatd"} 0
+  pft_valwatch_validator_participation_ratio{node="postfiatd",validator="nHBxQ3srN8ErMvfMgsJ3jycSSaMFyHMk5WbrJVUTXPZgNh1VdbHH"} 0
+  pft_valwatch_validator_delay_p95_ms{node="postfiatd",validator="nHUCEXpC5LhFAm1Mmf8TqrzVGt3QCuwWoW2V8PYynDpjZe8m8mHj"} 900
+  pft_valwatch_up{node="postfiatd-sentry"} 1
+  pft_valwatch_last_record_age_seconds{node="postfiatd-sentry"} 2
+  pft_valwatch_quorum_margin_min{node="postfiatd-sentry"} 8
+  pft_valwatch_quorum_margin_p50{node="postfiatd-sentry"} 8
+  pft_valwatch_reconnects{node="postfiatd-sentry"} 0
+  pft_valwatch_validator_participation_ratio{node="postfiatd-sentry",validator="nHBxQ3srN8ErMvfMgsJ3jycSSaMFyHMk5WbrJVUTXPZgNh1VdbHH"} 0
+  pft_valwatch_validator_delay_p95_ms{node="postfiatd-sentry",validator="nHUCEXpC5LhFAm1Mmf8TqrzVGt3QCuwWoW2V8PYynDpjZe8m8mHj"} 900
+  pft_valwatch_validator_participation_ratio{node="postfiatd",validator="nHUCEXpC5LhFAm1Mmf8TqrzVGt3QCuwWoW2V8PYynDpjZe8m8mHj"} 0.5
+  pft_valwatch_validator_participation_ratio{node="postfiatd-sentry",validator="nHUCEXpC5LhFAm1Mmf8TqrzVGt3QCuwWoW2V8PYynDpjZe8m8mHj"} 1
+  (exit 0)
+== 3. start throwaway stack 2026-11-19T10:17:20Z
+$ docker run -d --name pft-vwdrill-metrics --network host -v ~/.cache/vwdrill.qT3h9F/m:/m python:3.12-alpine sh /m/serve.sh
+  5735c75f229efa76baa59e83b4a058ebe7dcff75fb316a46a65032a1ee14a050
+  (exit 0)
+$ docker run -d --name pft-vwdrill-bridge --network host --user 65534 -e BRIDGE_PORT=19095 -e NTFY_URL_FILE=/e/ntfy.env -v ~/.cache/vwdrill.qT3h9F/ntfy.env:/e/ntfy.env:ro -v ~/work/postfiat-validator-installer/alerts/ntfy_bridge.py:/b/ntfy_bridge.py:ro python:3.12-alpine python3 -u /b/ntfy_bridge.py
+  f32f23197a9cd30a7afc55c57b0bec2b31c8f9dd42f453a1297db09851e7f604
+  (exit 0)
+$ docker run -d --name pft-vwdrill-am --network host --user 65534 --tmpfs /data:mode=1777 -v ~/.cache/vwdrill.qT3h9F/a:/c:ro prom/alertmanager:v0.28.1 --config.file=/c/alertmanager.yml --storage.path=/data --web.listen-address=127.0.0.1:19093 --cluster.listen-address=
+  bf59cca41bfca43bfa5c0f87711bdd909ef3ba8c5c1c1ef80cb1e6b15e3f1b55
+  (exit 0)
+$ docker run -d --name pft-vwdrill-prom --network host --user 65534 --tmpfs /prometheus:mode=1777 -v ~/.cache/vwdrill.qT3h9F/p:/etc/prometheus:ro -v ~/work/postfiat-validator-installer/alerts/valwatch.rules.yml:/rules/valwatch.rules.yml:ro prom/prometheus:v3.5.0 --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.listen-address=127.0.0.1:19090
+  161ba1f2e8d68014c5d2a9976d491c2b968dc53890dea00772791aa61c88e117
+  (exit 0)
+$ curl -fsS http://127.0.0.1:19090/api/v1/rules | jq -r '.data.groups[].rules[] | "\(.name) \(.health)"'
+  PFTValwatchValidatorLow ok
+  PFTValwatchValidatorLate ok
+  PFTValwatchQuorumMarginLow ok
+  PFTValwatchQuorumMarginCritical ok
+  PFTValwatchStale ok
+  PFTValwatchReconnecting ok
+  PFTValwatchHostsDisagree ok
+  PFTValwatchHostsDisagreeLate ok
+  (exit 0)
+CHECK ok   prometheus loaded the repo's 8 valwatch rules
+$ curl -fsS http://127.0.0.1:19090/api/v1/targets | jq -r '.data.activeTargets[] | "\(.labels.job) \(.health)"'
+  postfiat up
+  (exit 0)
+CHECK ok   scrape target up
+$ curl -fsS -o /dev/null -w '%{http_code}' http://127.0.0.1:19093/-/ready
+  200
+  (exit 0)
+CHECK ok   alertmanager ready
+$ docker logs pft-vwdrill-bridge 2>&1 | tail -3
+  bridge listening on 127.0.0.1:19095 ntfy=on
+  (exit 0)
+== 4. wait for the 15m 'for' (poll every 60 s, up to 20 min)
+10:18:51 +1m prom: PFTValwatchHostsDisagree/postfiatd=pending PFTValwatchValidatorLow/postfiatd-sentry=pending PFTValwatchValidatorLow/postfiatd=pending PFTValwatchValidatorLow/postfiatd=pending | am: -
+10:19:51 +2m prom: PFTValwatchHostsDisagree/postfiatd=pending PFTValwatchValidatorLow/postfiatd-sentry=pending PFTValwatchValidatorLow/postfiatd=pending PFTValwatchValidatorLow/postfiatd=pending | am: -
+10:20:51 +3m prom: PFTValwatchHostsDisagree/postfiatd=pending PFTValwatchValidatorLow/postfiatd-sentry=pending PFTValwatchValidatorLow/postfiatd=pending PFTValwatchValidatorLow/postfiatd=pending | am: -
+10:21:52 +4m prom: PFTValwatchHostsDisagree/postfiatd=pending PFTValwatchValidatorLow/postfiatd-sentry=pending PFTValwatchValidatorLow/postfiatd=pending PFTValwatchValidatorLow/postfiatd=pending | am: -
+10:22:52 +5m prom: PFTValwatchHostsDisagree/postfiatd=pending PFTValwatchValidatorLow/postfiatd-sentry=pending PFTValwatchValidatorLow/postfiatd=pending PFTValwatchValidatorLow/postfiatd=pending | am: -
+10:23:52 +6m prom: PFTValwatchHostsDisagree/postfiatd=pending PFTValwatchValidatorLow/postfiatd-sentry=pending PFTValwatchValidatorLow/postfiatd=pending PFTValwatchValidatorLow/postfiatd=pending | am: -
+10:24:52 +7m prom: PFTValwatchHostsDisagree/postfiatd=pending PFTValwatchValidatorLow/postfiatd-sentry=pending PFTValwatchValidatorLow/postfiatd=pending PFTValwatchValidatorLow/postfiatd=pending | am: -
+10:25:52 +8m prom: PFTValwatchHostsDisagree/postfiatd=pending PFTValwatchValidatorLow/postfiatd-sentry=pending PFTValwatchValidatorLow/postfiatd=pending PFTValwatchValidatorLow/postfiatd=pending | am: -
+10:26:53 +9m prom: PFTValwatchHostsDisagree/postfiatd=pending PFTValwatchValidatorLow/postfiatd-sentry=pending PFTValwatchValidatorLow/postfiatd=pending PFTValwatchValidatorLow/postfiatd=pending | am: -
+10:27:53 +10m prom: PFTValwatchHostsDisagree/postfiatd=pending PFTValwatchValidatorLow/postfiatd-sentry=pending PFTValwatchValidatorLow/postfiatd=pending PFTValwatchValidatorLow/postfiatd=pending | am: -
+10:28:53 +11m prom: PFTValwatchHostsDisagree/postfiatd=pending PFTValwatchValidatorLow/postfiatd-sentry=pending PFTValwatchValidatorLow/postfiatd=pending PFTValwatchValidatorLow/postfiatd=pending | am: -
+10:29:53 +12m prom: PFTValwatchHostsDisagree/postfiatd=pending PFTValwatchValidatorLow/postfiatd-sentry=pending PFTValwatchValidatorLow/postfiatd=pending PFTValwatchValidatorLow/postfiatd=pending | am: -
+10:30:53 +13m prom: PFTValwatchHostsDisagree/postfiatd=pending PFTValwatchValidatorLow/postfiatd-sentry=pending PFTValwatchValidatorLow/postfiatd=pending PFTValwatchValidatorLow/postfiatd=pending | am: -
+10:31:54 +14m prom: PFTValwatchHostsDisagree/postfiatd=pending PFTValwatchValidatorLow/postfiatd-sentry=pending PFTValwatchValidatorLow/postfiatd=pending PFTValwatchValidatorLow/postfiatd=pending | am: -
+10:32:54 +15m prom: PFTValwatchHostsDisagree/postfiatd=firing PFTValwatchValidatorLow/postfiatd-sentry=firing PFTValwatchValidatorLow/postfiatd=firing PFTValwatchValidatorLow/postfiatd=firing | am: PFTValwatchHostsDisagree/postfiatd PFTValwatchValidatorLow/postfiatd PFTValwatchValidatorLow/postfiatd PFTValwatchValidatorLow/postfiatd-sentry
+== 5. results 2026-11-19T10:33:39Z
+$ curl -fsS http://127.0.0.1:19090/api/v1/alerts | jq -r '.data.alerts[] | [.labels.alertname, .labels.node, .labels.validator, (.labels.notify // "-"), .state] | @tsv' | sort
+  PFTValwatchHostsDisagree	postfiatd	nHUCEXpC5LhFAm1Mmf8TqrzVGt3QCuwWoW2V8PYynDpjZe8m8mHj	-	firing
+  PFTValwatchValidatorLow	postfiatd	nHBxQ3srN8ErMvfMgsJ3jycSSaMFyHMk5WbrJVUTXPZgNh1VdbHH	digest	firing
+  PFTValwatchValidatorLow	postfiatd	nHUCEXpC5LhFAm1Mmf8TqrzVGt3QCuwWoW2V8PYynDpjZe8m8mHj	digest	firing
+  PFTValwatchValidatorLow	postfiatd-sentry	nHBxQ3srN8ErMvfMgsJ3jycSSaMFyHMk5WbrJVUTXPZgNh1VdbHH	digest	firing
+  (exit 0)
+CHECK ok   prometheus: ValidatorLow firing x3
+CHECK ok   prometheus: HostsDisagree firing x1 (KY on postfiatd)
+$ curl -fsS http://127.0.0.1:19093/api/v2/alerts/groups | jq -r '.[] | "\(.receiver.name) \(.labels.alertname) alerts=\(.alerts | length)"' | sort
+  bridge PFTValwatchHostsDisagree alerts=1
+  digest PFTValwatchValidatorLow alerts=3
+  (exit 0)
+CHECK ok   alertmanager: ValidatorLow (3 alerts) in receiver digest
+CHECK ok   alertmanager: HostsDisagree (1 alert) in receiver bridge
+$ docker logs pft-vwdrill-bridge 2>&1
+  bridge listening on 127.0.0.1:19095 ntfy=on
+  webhook status=firing alertname=PFTValwatchHostsDisagree severity=warning startsAt=2026-11-19T10:32:49.832Z endsAt=0001-01-01T00:00:00Z
+  ntfy [FIRING] PFTValwatchHostsDisagree -> HTTP 200
+  (exit 0)
+CHECK ok   bridge logged HostsDisagree
+CHECK ok   bridge never saw ValidatorLow
+$ curl -fsS --max-time 20 'https://ntfy.sh/<redacted>/json?poll=1&since=1795083435' | jq -r '[.time, .title // "-", (.message | split("\n")[0])] | @tsv'
+  1795084380	[FIRING] PFTValwatchHostsDisagree	postfiatd misses UNL validator nHUCEXpC5LhFAm1Mmf8TqrzVGt3QCuwWoW2V8PYynDpjZe8m8mHj that the other node sees
+  (exit 0)
+CHECK ok   throwaway topic: exactly 1 message
+CHECK ok   throwaway topic: it is the HostsDisagree page
+CHECK ok   throwaway topic: no ValidatorLow
+$ curl -fsS --max-time 20 'https://ntfy.sh/<redacted>/json?poll=1&since=1795083435' | jq -r '[.time, .title // "-"] | @tsv'
+  
+  (exit 0)
+CHECK ok   operator topic: no drill message (vwdrill / HostsDisagree)
+$ curl -fsS --max-time 20 'https://ntfy.sh/<redacted>/json?poll=1&since=1795083435' | jq -r '[.time, .title // "-"] | @tsv'
+  
+  (exit 0)
+CHECK ok   operator topic: no drill message (vwdrill / HostsDisagree)
+RESULT: PASS - 0 check(s) failed
+trap: removed pft-vwdrill-metrics pft-vwdrill-prom pft-vwdrill-am pft-vwdrill-bridge and the scratch dir

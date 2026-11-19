@@ -1,0 +1,40 @@
+== 2026-11-19T10:34:03Z live rollout: reload pft-prometheus with the working-tree rules (HEAD b8c03b1fedb5d87ce2bdc5da296467adc99ba974)
+ M alerts/alertmanager.yml
+ M valwatch/README.md
+2a026bdaf9ee5482878e0397a996a83e6930535e673ae3c925c25040c0567953  alerts/valwatch.rules.yml
+-- before
+rules total 147
+last reload ts null
+$ sudo docker kill -s HUP pft-prometheus
+pft-prometheus
+reload successful: 
+last reload ts 
+rules total 149
+PFTValwatchValidatorLow	unknown	inactive	digest
+PFTValwatchValidatorLate	unknown	inactive	digest
+PFTValwatchQuorumMarginLow	unknown	inactive	-
+PFTValwatchQuorumMarginCritical	unknown	inactive	-
+PFTValwatchStale	unknown	inactive	-
+PFTValwatchReconnecting	unknown	inactive	-
+PFTValwatchHostsDisagree	unknown	inactive	-
+PFTValwatchHostsDisagreeLate	unknown	inactive	-
+-- alerts now (Prometheus)
+PFTAlertPipelineWatchdog	-	-	firing
+-- Alertmanager
+PFTValwatchValidatorLow	postfiatd-sentry	-	suppressed	1
+PFTValwatchValidatorLow	postfiatd	-	suppressed	1
+PFTAlertPipelineWatchdog	-	-	active	0
+-- 2026-11-19T10:34:26Z runtimeinfo + rule health after one evaluation
+reloadConfigSuccess=true lastConfigTime=2026-11-19T10:34:05Z
+ok 149
+PFTValwatchValidatorLow	ok	pending	digest
+PFTValwatchValidatorLate	ok	inactive	digest
+PFTValwatchQuorumMarginLow	ok	inactive	-
+PFTValwatchQuorumMarginCritical	ok	inactive	-
+PFTValwatchStale	ok	inactive	-
+PFTValwatchReconnecting	ok	inactive	-
+PFTValwatchHostsDisagree	ok	inactive	-
+PFTValwatchHostsDisagreeLate	ok	inactive	-
+PFTAlertPipelineWatchdog	-	-	firing
+PFTValwatchValidatorLow	postfiatd-sentry	digest	pending
+PFTValwatchValidatorLow	postfiatd	digest	pending

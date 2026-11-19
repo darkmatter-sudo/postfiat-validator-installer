@@ -1,0 +1,45 @@
+== 2026-11-19T10:11:49Z promtool rule tests + mutated-rule controls (scratch copy)
+-- baseline (unmutated)
+rc=0 0 FAILED-lines
+baseline rc=0
+-- M1 drop notify=digest from ValidatorLow
+applied '          notify: digest\n' -> ''
+rc=1 1 FAILED-lines
+CAUGHT
+  FAILED:
+    alertname: PFTValwatchValidatorLow, time: 16m, 
+              Labels:{alertname="PFTValwatchValidatorLow", instance="node:9877", job="postfiat", node="postfiatd-sentry", notify="digest", severity="warning", validator="nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9c
+-- M2 HostsDisagree other-node floor 0.95 -> 0.9
+applied '>= 0.95' -> '>= 0.9'
+rc=1 1 FAILED-lines
+CAUGHT
+  FAILED:
+    alertname: PFTValwatchHostsDisagree, time: 16m, 
+              Labels:{alertname="PFTValwatchHostsDisagree", instance="node:9877", job="postfiat", node="postfiatd", severity="warning", validator="nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7"
+-- M3 HostsDisagree without the other-node clause
+applied 'and on (validator)\n          (pft_valwatch_validator_participation_ratio >= 0.95 and on (job, instance, node) pft_valwatch_up == 1)' -> ''
+rc=1 1 FAILED-lines
+CAUGHT
+  FAILED:
+    alertname: PFTValwatchHostsDisagree, time: 16m, 
+              Labels:{alertname="PFTValwatchHostsDisagree", instance="node:9877", job="postfiat", node="postfiatd", severity="warning", validator="nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7"
+-- M4 HostsDisagreeLate other-node ceiling 2000 -> 2001
+applied '<= 2000' -> '<= 2001'
+rc=1 1 FAILED-lines
+CAUGHT
+  FAILED:
+    alertname: PFTValwatchHostsDisagreeLate, time: 16m, 
+              Labels:{alertname="PFTValwatchHostsDisagreeLate", instance="node:9877", job="postfiat", node="postfiatd", severity="warning", validator="nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHX
+-- M5 HostsDisagree ignores up of other node
+applied '(pft_valwatch_validator_participation_ratio >= 0.95 and on (job, instance, node) pft_valwatch_up == 1)' -> '(pft_valwatch_validator_participation_ratio >= 0.95)'
+rc=1 1 FAILED-lines
+CAUGHT
+  FAILED:
+    alertname: PFTValwatchHostsDisagree, time: 30m, 
+              Labels:{alertname="PFTValwatchHostsDisagree", instance="node:9877", job="postfiat", node="postfiatd", severity="warning", validator="nHB6Zc7mhr7swksEgpwTE7Hw7SvZ9cz22T2MECMSXjBeMTeHXQB7"
+-- amtool route check against the repo alertmanager.yml
+alertname=PFTValwatchValidatorLow notify=digest severity=warning -> digest
+alertname=PFTValwatchValidatorLate notify=digest severity=warning -> digest
+alertname=PFTValwatchHostsDisagree severity=warning -> bridge
+alertname=PFTValwatchHostsDisagreeLate severity=warning -> bridge
+alertname=PFTValwatchQuorumMarginCritical severity=critical -> bridge
