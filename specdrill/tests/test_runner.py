@@ -107,6 +107,7 @@ class Base(unittest.TestCase):
     def assert_torn_down(self):
         st = json.load(open(os.path.join(self.d, "state.json")))
         self.assertEqual((st["containers"], st["volumes"], st["networks"]), ({}, [], []))
+        self.assertEqual(st["dangling"], [], "teardown must remove anonymous volumes too (rm -fv)")
         c = self.calls()
         stops = [i for i, x in enumerate(c) if x == "systemctl stop pft-integrity.timer"]
         starts = [i for i, x in enumerate(c) if x == "systemctl start pft-integrity.timer"]
@@ -260,17 +261,17 @@ class TestContainment(Base):
 
     def test_extra_mount(self):
         self.scenario({"inspect_override": {"Mounts": [{"Type": "bind", "Name": ""}, {"Type": "volume", "Name": "x"}]}})
-        self.assert_refused(self.cell(), "containment: container publishes ports, mounts more than its volume")
+        self.assert_refused(self.cell(), "containment: mounts are not exactly its own volumes")
         self.assert_never_started()
 
     def test_single_bind_mount(self):
         self.scenario({"inspect_override": {"Mounts": [{"Type": "bind", "Name": ""}]}})
-        self.assert_refused(self.cell(), "containment: container publishes ports, mounts more than its volume")
+        self.assert_refused(self.cell(), "containment: mounts are not exactly its own volumes")
         self.assert_never_started()
 
     def test_single_foreign_volume(self):
         self.scenario({"inspect_override": {"Mounts": [{"Type": "volume", "Name": "postfiatd_db"}]}})
-        self.assert_refused(self.cell(), "containment: container publishes ports, mounts more than its volume")
+        self.assert_refused(self.cell(), "containment: mounts are not exactly its own volumes")
         self.assert_never_started()
 
     def test_cfg_unreadable(self):
@@ -287,6 +288,94 @@ class TestContainment(Base):
         self.scenario({"inspect_override": {"NetworkMode": "postfiatd_default"}})
         self.assert_refused(self.cell(), "containment:")
         self.assert_never_started()
+
+
+class TestVolumes(Base):
+    """The image declares 3 VOLUME paths (fixtures/inspect-real.json, a real capture); each needs its own labelled
+    volume, or docker adds an anonymous volume there (dry run dry1, 2026-11-20: refused + leaked by rm -f)."""
+
+    def state(self):
+        return json.load(open(os.path.join(self.d, "state.json")))
+
+    def test_own_volume_per_declared_path(self):
+        r = self.cell()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        vc = [x for x in self.calls() if x.startswith("docker volume create")]
+        self.assertEqual(len(vc), 3, vc)
+        for x in vc:
+            self.assertRegex(x, r"^docker volume create --label pft-specdrill=\S+ pft-specdrill-\S+-v[0-2]$")
+        create = next(x for x in self.calls() if x.startswith("docker create"))
+        for dest in ("/etc/postfiatd", "/var/lib/postfiatd/db", "/var/log/postfiatd"):
+            self.assertRegex(create, r"-v pft-specdrill-\S+-v[0-2]:" + dest + r"( |$)")
+        self.assert_torn_down()
+
+    def test_anonymous_volume_refused(self):
+        # plan built from a db-only declaration while the image really declares 3 -> docker adds 2 anonymous volumes
+        self.scenario({"image_volumes_raw": json.dumps({"/var/lib/postfiatd/db": {}})})
+        r = self.cell()
+        self.assert_refused(r, "containment: mounts are not exactly its own volumes")
+        self.assertRegex(r.stderr, r"volume:[0-9a-f]{64}:/etc/postfiatd")
+        self.assertFalse([x for x in self.calls() if x.startswith("docker start")])
+        self.assert_torn_down()  # includes: no dangling anonymous volume
+
+    def test_teardown_removes_anonymous_volumes(self):
+        self.scenario({"image_volumes_raw": json.dumps({"/var/lib/postfiatd/db": {}})})
+        self.cell()
+        rms = [x for x in self.calls() if x.startswith("docker rm ")]
+        self.assertTrue(rms)
+        self.assertTrue(all(x.startswith("docker rm -fv ") for x in rms), rms)
+        self.assertEqual(self.state()["dangling"], [])
+
+    def test_image_volumes_unreadable(self):
+        self.scenario({"image_volumes_fail": True})
+        self.assert_refused(self.cell(), "volume plan: image volumes unreadable")
+        self.assertFalse([x for x in self.calls() if x.startswith(("docker volume create", "docker create"))])
+        self.assert_torn_down()
+
+    def test_image_volumes_not_an_object(self):
+        self.scenario({"image_volumes_raw": json.dumps(["/etc/postfiatd"])})
+        self.assert_refused(self.cell(), "volume plan: image volumes unreadable")
+        self.assertFalse([x for x in self.calls() if x.startswith(("docker volume create", "docker create"))])
+
+    def test_image_without_volumes_still_gets_db(self):
+        self.scenario({"image_volumes": None})
+        r = self.cell()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        vc = [x for x in self.calls() if x.startswith("docker volume create")]
+        self.assertEqual(len(vc), 1, vc)
+        create = next(x for x in self.calls() if x.startswith("docker create"))
+        self.assertRegex(create, r"-v pft-specdrill-\S+-v0:/var/lib/postfiatd/db( |$)")
+        self.assert_torn_down()
+
+    def test_missing_own_mount_refused(self):
+        # an own volume that docker did not mount (count 2 of 3) must refuse too
+        self.scenario({"inspect_drop_mount": 1})
+        self.assert_refused(self.cell(), "containment: mounts are not exactly its own volumes")
+
+    def test_stub_matches_real_capture(self):
+        import importlib.util
+        from unittest import mock
+
+        spec = importlib.util.spec_from_file_location("stubmod", STUB)
+        m = importlib.util.module_from_spec(spec)
+        with mock.patch.dict(os.environ, {"STUB_DIR": self.d}):
+            spec.loader.exec_module(m)
+        fx = m.fixture()
+        key = lambda x: x["Destination"]
+        got, anon = m.mounts_for(fx["own3"]["argv_volumes"], fx["image_volumes"], 1)
+        self.assertEqual(sorted(got, key=key), sorted(fx["own3"]["Mounts"], key=key))
+        self.assertEqual(anon, [])
+        got, anon = m.mounts_for(fx["db_only"]["argv_volumes"], fx["image_volumes"], 1)
+        real = sorted(fx["db_only"]["Mounts"], key=key)
+        got = sorted(got, key=key)
+        self.assertEqual(
+            [(x["Type"], x["Destination"], sorted(x)) for x in got],
+            [(x["Type"], x["Destination"], sorted(x)) for x in real],
+        )
+        self.assertEqual(len(anon), 2)
+        for x in got + real:
+            if x["Destination"] != "/var/lib/postfiatd/db":
+                self.assertRegex(x["Name"], r"^[0-9a-f]{64}$")
 
 
 class TestCell(Base):
@@ -532,7 +621,7 @@ class TestCommands(Base):
         r = self.run_sd("cleanup")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("teardown: leftovers=0", r.stdout)
-        self.assertIn("docker rm -f old0", self.calls())
+        self.assertIn("docker rm -fv old0", self.calls())
         self.assertNotIn("systemctl start pft-integrity.timer", self.calls())
 
     def test_plan_makes_no_changes(self):

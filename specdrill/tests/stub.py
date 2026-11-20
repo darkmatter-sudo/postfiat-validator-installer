@@ -3,6 +3,10 @@
 pft-integrity); dispatched on argv[0]. Behaviour comes from $STUB_DIR/scenario.json and the fake clock
 $NOW_FILE; every call is appended to $STUB_DIR/calls.log so tests can assert what was NOT called.
 
+`docker create` mirrors real docker (shape from tests/fixtures/inspect-real.json, a real capture): every -v NAME:PATH
+becomes a volume Mount, and every VOLUME path the image declares that no -v covers gets an ANONYMOUS volume
+(64-hex name) that only `rm -v`/`rm -fv` removes; leaked ones stay in state["dangling"].
+
 Timelines are lists of {"at": seconds since the first `docker start`, ...} entries; the last entry with at <= now
 applies. Reference ledgers close every 4 s: ref seq = REF0 + (now - T0) // 4.
 """
@@ -15,6 +19,7 @@ import tarfile
 import time
 
 D = os.environ["STUB_DIR"]
+FIXTURE = os.path.join(os.path.dirname(os.path.realpath(__file__)), "fixtures", "inspect-real.json")
 REF0 = 8000000
 T0 = 1_000_000  # the fake clock's start; tests write it to NOW_FILE
 
@@ -34,7 +39,39 @@ def load_state():
     if os.path.exists(p):
         with open(p) as f:
             return json.load(f)
-    return {"containers": {}, "volumes": [], "networks": [], "started_at": None}
+    return {"containers": {}, "volumes": [], "networks": [], "dangling": [], "started_at": None}
+
+
+def fixture():
+    with open(FIXTURE) as f:
+        return json.load(f)
+
+
+def mounts_for(vols, declared, anon_seed):
+    """Mounts docker would report for `-v NAME:PATH` args on an image declaring `declared` paths (real key set)."""
+    m, anon = [], []
+    for v in vols:
+        name, dest = v.split(":", 1)
+        m.append(mount(name, dest))
+    covered = {v.split(":", 1)[1] for v in vols}
+    for i, dest in enumerate(sorted(set(declared) - covered)):
+        name = f"{anon_seed:032x}{i:032x}"
+        anon.append(name)
+        m.append(mount(name, dest))
+    return m, anon
+
+
+def mount(name, dest):
+    return {
+        "Type": "volume",
+        "Name": name,
+        "Source": f"/var/lib/docker/volumes/{name}/_data",
+        "Destination": dest,
+        "Driver": "local",
+        "Mode": "z",
+        "RW": True,
+        "Propagation": "",
+    }
 
 
 def now():
@@ -97,24 +134,36 @@ def docker(sc, st, a):
     if a[:2] == ["volume", "rm"]:
         st["volumes"] = [n for n in st["volumes"] if n != a[-1]]
         return 0
-    if a[:2] == ["rm", "-f"]:
+    if a[:2] in (["rm", "-f"], ["rm", "-fv"]):
         if a[2].startswith("old"):
             sc["leftover_containers"] = max(0, sc.get("leftover_containers", 0) - 1)
             with open(os.path.join(D, "scenario.json"), "w") as f:
                 json.dump(sc, f)
-        st["containers"].pop(a[2], None)
+        c = st["containers"].pop(a[2], None)
+        if c and a[1] == "-f":
+            st["dangling"] += c["anon"]
         return 0
     if a[0] == "create":
         name = a[a.index("--name") + 1]
         net = a[a.index("--network") + 1]
-        vol = a[a.index("-v") + 1].split(":")[0]
-        st["containers"][name] = {"net": net, "vol": vol, "args": a}
+        vols = [a[i + 1] for i, x in enumerate(a) if x == "-v"]
+        declared = sc.get("image_volumes", fixture()["image_volumes"]) or {}
+        mounts, anon = mounts_for(vols, declared, len(st["containers"]) + len(st["dangling"]) + 1)
+        st["containers"][name] = {"net": net, "mounts": mounts, "anon": anon, "args": a}
         return out("cid\n")
     if a[0] == "start":
         st["started_at"] = now()
         return 0
     if a[:2] == ["image", "inspect"]:
-        return 0 if sc.get("image_present", True) else 1
+        if not sc.get("image_present", True):
+            return 1
+        if "-f" in a and "Config.Volumes" in a[a.index("-f") + 1]:
+            if sc.get("image_volumes_fail"):
+                return 1
+            return out(
+                sc.get("image_volumes_raw", json.dumps(sc.get("image_volumes", fixture()["image_volumes"]))) + "\n"
+            )
+        return 0
     if a[0] == "cp":
         if sc.get("cp_fails"):
             return 1
@@ -142,7 +191,7 @@ def docker(sc, st, a):
             return out("cid\n")
         j = {
             "HostConfig": {"PortBindings": {}, "Privileged": False, "NetworkMode": c["net"]},
-            "Mounts": [{"Type": "volume", "Name": c["vol"]}],
+            "Mounts": c["mounts"][sc.get("inspect_drop_mount", 0) :],
         }
         for k, v in sc.get("inspect_override", {}).items():
             if k == "Mounts":

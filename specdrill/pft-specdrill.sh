@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # pft-specdrill: measure postfiatd resource floors on DISPOSABLE throwaway nodes, one cell at a time, without
 # touching the live validator/sentry. Each cell runs the live node's own image (never pulled) with its baked config
-# (no validator token, no ports published) on its own bridge network and its own docker volume, under one
+# (no validator token, no ports published) on its own bridge network and its own docker volumes, under one
 # --cpus / --memory / --device-{read,write}-bps limit, and records server_state, ledger lag vs the public reference
 # RPC, peers, close times, OOM/restart events and peak RSS. specdrill.py turns the cells into cells.json/csv + REPORT.md.
 #
@@ -16,7 +16,8 @@
 #   transient timer); MemAvailable - cell memory >= HEADROOM_MIB; free disk >= DISK_MIN_GB; the image is the live
 #   container's image id, present locally (run with --pull never); no leftover labelled resources.
 #   After `docker create` and before start: the cell config has no [validator_token]/[validation_seed]/[ips_fixed],
-#   and the container publishes no ports, mounts only its own volume, is unprivileged and on its own network.
+#   and the container publishes no ports, is unprivileged and on its own network, and mounts exactly its own labelled
+#   volumes, one at every VOLUME path the image declares (no anonymous volume, no bind mount).
 # Per-poll aborts (cell torn down, meta.abort = reason): live node not full or lag > LIVE_LAG_MAX for LIVE_ABORT_POLLS
 #   polls (live_lag); the maint window ended (maint_window_ended); MemAvailable < HEADROOM_MIB/2 (host_mem_low).
 # Exit codes: 0 ok, 1 cell ran but failed to record, 3 usage, 4 refused by a guard.
@@ -160,7 +161,7 @@ need_root() { [ "$(id -u)" -eq 0 ] || [ -n "$TEST" ] || die 3 "run as root"; }
 CELL_C="" CELL_V="" CELL_N="" PAUSED=0
 teardown() {
   local id
-  for id in $("$DOCKER" ps -aq --filter "label=$LABEL" 2>/dev/null); do "$DOCKER" rm -f "$id" >/dev/null 2>&1; done
+  for id in $("$DOCKER" ps -aq --filter "label=$LABEL" 2>/dev/null); do "$DOCKER" rm -fv "$id" >/dev/null 2>&1; done
   for id in $("$DOCKER" volume ls -q --filter "label=$LABEL" 2>/dev/null); do "$DOCKER" volume rm -f "$id" >/dev/null 2>&1; done
   for id in $("$DOCKER" network ls -q --filter "label=$LABEL" 2>/dev/null); do "$DOCKER" network rm "$id" >/dev/null 2>&1; done
   if [ "$PAUSED" -eq 1 ]; then   # failsafe first: pft-integrity must never run while its transient unit exists
@@ -180,17 +181,30 @@ pause_integrity() {
 }
 
 # ---------- one cell ----------
+# Volume plan: one labelled volume per VOLUME path the image declares (the image declares /etc/postfiatd,
+# /var/lib/postfiatd/db and /var/log/postfiatd; docker would add an ANONYMOUS volume for every declared path left
+# unmounted, which `rm -f` without -v leaks). Prints "NAME:PATH" lines; the db path is always included.
+volume_plan() { # IMAGE VOLPREFIX
+  local decl paths i=0 p
+  decl="$("$DOCKER" image inspect -f '{{json .Config.Volumes}}' "$1" 2>/dev/null)" || return 1
+  paths="$(jq -r 'if . == null then [] elif type == "object" then keys else error("not an object") end | .[]' \
+    <<<"$decl" 2>/dev/null)" || return 1
+  while read -r p; do [ -n "$p" ] && echo "$2-v$i:$p" && i=$(( i + 1 )); done < <(printf '%s\n/var/lib/postfiatd/db\n' "$paths" | sort -u)
+}
 # Containment check of the created (not yet started) container; prints the reason of the first violation.
-containment() { # CONTAINER NET VOL
-  local j cfg
+containment() { # CONTAINER NET PLAN(NAME:PATH lines)
+  local j cfg plan
   cfg="$("$DOCKER" cp "$1:$CFG" - 2>/dev/null | tar -xO 2>/dev/null)"
   [ -n "$cfg" ] || { echo "cell config unreadable"; return; }
   grep -qE '^\[(validator_token|validation_seed|ips_fixed)\]' <<<"$cfg" && { echo "cell config has a validator/fixed-peer stanza"; return; }
   j="$("$DOCKER" inspect "$1" 2>/dev/null)" || { echo "inspect failed"; return; }
-  jq -e --arg n "$2" --arg v "$3" '.[0] |
-    (.HostConfig.PortBindings // {} | length) == 0 and (.HostConfig.Privileged | not)
-    and .HostConfig.NetworkMode == $n and ([.Mounts[] | select(.Type != "volume" or .Name != $v)] | length) == 0
-    and (.Mounts | length) == 1' <<<"$j" >/dev/null || { echo "container publishes ports, mounts more than its volume, is privileged or off its network"; return; }
+  jq -e --arg n "$2" '.[0] | (.HostConfig.PortBindings // {} | length) == 0 and (.HostConfig.Privileged | not)
+    and .HostConfig.NetworkMode == $n' <<<"$j" >/dev/null || { echo "container publishes ports, is privileged or off its network"; return; }
+  plan="$(jq -Rn '[inputs | select(length > 0) | capture("^(?<Name>[^:]+):(?<Destination>.+)$")] | sort' <<<"$3")" \
+    || { echo "volume plan unreadable"; return; }
+  jq -e --argjson p "$plan" '([.[0].Mounts[] | {Type, Name, Destination}] | sort) == ($p | map({Type: "volume"} + .) | sort)' \
+    <<<"$j" >/dev/null \
+    || { echo "mounts are not exactly its own volumes ($(jq -c '[.[0].Mounts[] | "\(.Type):\(.Name):\(.Destination)"]' <<<"$j"))"; return; }
 }
 run_cell() { # OUT AXIS CPUS MEM IO
   local out="$1" axis="$2" cpus="$3" mem="$4" io="$5" g cell id dir t0 t full_t="" abort="" s j st seq close peers
@@ -203,17 +217,23 @@ run_cell() { # OUT AXIS CPUS MEM IO
   trap 'teardown' EXIT; trap 'abort=signal; teardown; exit 130' INT TERM
   pause_integrity
   "$DOCKER" network create --label "$LABEL=$id" "$CELL_N" >/dev/null || refuse "network create failed"
-  "$DOCKER" volume create --label "$LABEL=$id" "$CELL_V" >/dev/null || refuse "volume create failed"
+  local plan img vn vp; img="$(live_image)"
+  plan="$(volume_plan "$img" "$CELL_V")" || plan=""
+  [ -n "$plan" ] || refuse "volume plan: image volumes unreadable"
   local args=(create --name "$CELL_C" --label "$LABEL=$id" --network "$CELL_N" --pull never --restart no
-              --cpus "$cpus" --memory "${mem}m" --memory-swap "${mem}m" -v "$CELL_V:/var/lib/postfiatd/db")
+              --cpus "$cpus" --memory "${mem}m" --memory-swap "${mem}m")
+  while IFS=: read -r vn vp; do
+    "$DOCKER" volume create --label "$LABEL=$id" "$vn" >/dev/null || refuse "volume create failed"
+    args+=(-v "$vn:$vp")
+  done <<<"$plan"
   if [ "$io" -gt 0 ]; then
     local dev="${IO_DEV:-}"
     [ -n "$dev" ] || dev="$(df --output=source "$DF_PATH" | awk 'NR == 2 {print $1}' | sed 's/[0-9]*$//')"
     [ -b "$dev" ] || [ -n "$TEST" ] || refuse "io: block device '$dev' not found (set IO_DEV)"
     args+=(--device-read-bps "$dev:$io" --device-write-bps "$dev:$io")
   fi
-  "$DOCKER" "${args[@]}" "$(live_image)" >/dev/null || refuse "container create failed"
-  v="$(containment "$CELL_C" "$CELL_N" "$CELL_V")"; [ -z "$v" ] || refuse "containment: $v"
+  "$DOCKER" "${args[@]}" "$img" >/dev/null || refuse "container create failed"
+  v="$(containment "$CELL_C" "$CELL_N" "$plan")"; [ -z "$v" ] || refuse "containment: $v"
   "$DOCKER" start "$CELL_C" >/dev/null || refuse "container start failed"
   t0="$(now)"; log "cell $cell started (cpus=$cpus mem=${mem}MiB io=$io)"
   while :; do

@@ -1,0 +1,90 @@
+{
+  "_source": "real docker inspect of two never-started throwaways of the live postfiatd image (2026-11-20, pft-specdrill capture; torn down with rm -fv, volume count unchanged)",
+  "image": "sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e",
+  "image_volumes": {
+    "/etc/postfiatd": {},
+    "/var/lib/postfiatd/db": {},
+    "/var/log/postfiatd": {}
+  },
+  "own3": {
+    "argv_volumes": [
+      "pft-specdrill-cap-1795156757-db:/var/lib/postfiatd/db",
+      "pft-specdrill-cap-1795156757-etc:/etc/postfiatd",
+      "pft-specdrill-cap-1795156757-log:/var/log/postfiatd"
+    ],
+    "Mounts": [
+      {
+        "Type": "volume",
+        "Name": "pft-specdrill-cap-1795156757-log",
+        "Source": "/var/lib/docker/volumes/pft-specdrill-cap-1795156757-log/_data",
+        "Destination": "/var/log/postfiatd",
+        "Driver": "local",
+        "Mode": "z",
+        "RW": true,
+        "Propagation": ""
+      },
+      {
+        "Type": "volume",
+        "Name": "pft-specdrill-cap-1795156757-db",
+        "Source": "/var/lib/docker/volumes/pft-specdrill-cap-1795156757-db/_data",
+        "Destination": "/var/lib/postfiatd/db",
+        "Driver": "local",
+        "Mode": "z",
+        "RW": true,
+        "Propagation": ""
+      },
+      {
+        "Type": "volume",
+        "Name": "pft-specdrill-cap-1795156757-etc",
+        "Source": "/var/lib/docker/volumes/pft-specdrill-cap-1795156757-etc/_data",
+        "Destination": "/etc/postfiatd",
+        "Driver": "local",
+        "Mode": "z",
+        "RW": true,
+        "Propagation": ""
+      }
+    ]
+  },
+  "db_only": {
+    "argv_volumes": [
+      "pft-specdrill-cap-1795156757-db:/var/lib/postfiatd/db"
+    ],
+    "Mounts": [
+      {
+        "Type": "volume",
+        "Name": "pft-specdrill-cap-1795156757-db",
+        "Source": "/var/lib/docker/volumes/pft-specdrill-cap-1795156757-db/_data",
+        "Destination": "/var/lib/postfiatd/db",
+        "Driver": "local",
+        "Mode": "z",
+        "RW": true,
+        "Propagation": ""
+      },
+      {
+        "Type": "volume",
+        "Name": "b05de5166c2c3cb57c559c5c1efcaed60433fab356d022191f0dc9919ba90221",
+        "Source": "/var/lib/docker/volumes/b05de5166c2c3cb57c559c5c1efcaed60433fab356d022191f0dc9919ba90221/_data",
+        "Destination": "/etc/postfiatd",
+        "Driver": "local",
+        "Mode": "",
+        "RW": true,
+        "Propagation": ""
+      },
+      {
+        "Type": "volume",
+        "Name": "39d464f5e49db44a29d88b03ca49d14dc5db5f54542deb87680675f7420a3d26",
+        "Source": "/var/lib/docker/volumes/39d464f5e49db44a29d88b03ca49d14dc5db5f54542deb87680675f7420a3d26/_data",
+        "Destination": "/var/log/postfiatd",
+        "Driver": "local",
+        "Mode": "",
+        "RW": true,
+        "Propagation": ""
+      }
+    ]
+  },
+  "HostConfig": {
+    "PortBindings": {},
+    "Privileged": false,
+    "NetworkMode": "pft-specdrill-cap-1795156757"
+  }
+}

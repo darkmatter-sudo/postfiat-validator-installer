@@ -51,9 +51,17 @@ Every cell is refused (exit 4, nothing created) unless all of these hold, each c
 | no labelled resources left from an earlier run | `leftovers: ...` |
 
 After `docker create` and before `docker start`, the container is checked: its config has no `[validator_token]`,
-`[validation_seed]` or `[ips_fixed]` stanza, it publishes no ports, mounts only its own volume, is unprivileged and
-sits on its own bridge network (`containment: ...`, torn down, never started). The cell gets no config mount: it
-runs the image's baked testnet config, peers outbound only, and never connects to the live node.
+`[validation_seed]` or `[ips_fixed]` stanza, it publishes no ports, is unprivileged, sits on its own bridge network,
+and its mounts are exactly its own labelled volumes (`containment: ...`, torn down, never started). The cell gets no
+config bind mount: it runs the image's baked testnet config, peers outbound only, and never connects to the live node.
+
+The postfiatd image declares `VOLUME /etc/postfiatd /var/lib/postfiatd/db /var/log/postfiatd`; docker adds an
+anonymous volume at every declared path a container leaves unmounted, and `docker rm -f` without `-v` leaks it. So
+each cell creates one labelled volume per declared path (read with `docker image inspect -f '{{json .Config.Volumes}}'`,
+plus the db path; docker seeds an empty named volume from the image, so the baked config is still there), the
+containment check requires the `{Type, Name, Destination}` set of `.Mounts` to equal that plan, and teardown uses
+`docker rm -fv`. The stub's `docker create` mirrors this from a real capture (`tests/fixtures/inspect-real.json`:
+`docker inspect` of two never-started throwaways, one with all three volumes, one with only the db volume).
 
 `pft-integrity` would see a throwaway postfiatd-image container as a node change, so its hourly timer is paused for
 the cell: a transient failsafe SERVICE `specdrill-rearm-integrity` (`sleep <cell budget + 300 s> && systemctl start
