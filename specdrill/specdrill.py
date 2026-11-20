@@ -126,7 +126,8 @@ def cmd_summarize(cell_dir):
 
 def axis_spec(cells, axis):
     """minimum = smallest passing value on the axis whose every larger tested value also passed (a pass below a
-    failure is not trusted); safe = the next tested value above the minimum, else the minimum itself."""
+    failure is not trusted); safe = the next tested value above the minimum, else the minimum itself. bounded = a
+    failing cell lies below the minimum; when False the minimum is only the lowest value tested, not a floor."""
     field = AXIS_FIELD[axis]
     rows = sorted((c for c in cells if c["axis"] == axis), key=lambda c: c[field])
     if not rows:
@@ -147,6 +148,7 @@ def axis_spec(cells, axis):
         "safe": safe[field],
         "safe_cell": safe["cell"],
         "failing": [r["cell"] for r in rows if r["verdict"] != "PASS"],
+        "bounded": rows[0][field] < minimum[field],
     }
 
 
@@ -211,8 +213,10 @@ def render_report(cells, specs):
             continue
         u = unit[s["axis"]]
         failing = ", ".join(f"`{f}` ({';'.join(by[f]['reasons'])})" for f in s["failing"]) or "-"
+        low = "" if s["bounded"] else "<= "
+        note = "" if s["bounded"] else ", lowest tested: no failing cell below"
         out.append(
-            f"| {s['axis']} | {u(s['minimum'])} (`{s['minimum_cell']}`) | {u(s['safe'])} (`{s['safe_cell']}`)"
+            f"| {s['axis']} | {low}{u(s['minimum'])} (`{s['minimum_cell']}`{note}) | {u(s['safe'])} (`{s['safe_cell']}`)"
             f" | {failing} |"
         )
     out += [
@@ -239,6 +243,14 @@ def render_report(cells, specs):
         "## Live node during the drill",
         "",
         f"live validator full at every poll: {fmt(live_ok)}; max live lag seen: {fmt(live_max)} ledgers.",
+        "",
+        "## Limits of this measurement",
+        "",
+        "- Each cell is a fresh node measured for 20 minutes after it reaches `full`; memory that grows with uptime is",
+        "  not covered, so size memory from a long-running node's usage, not from the mem floor alone.",
+        "- Peak RSS is the node process's `VmHWM`, which includes file-backed pages the kernel may charge to another",
+        "  cgroup, so it can be slightly above the cell's `--memory` limit without an OOM kill.",
+        "- One host, one factor at a time from the base cell, testnet load at the time of the run.",
         "",
     ]
     return "\n".join(out)

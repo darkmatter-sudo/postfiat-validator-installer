@@ -317,6 +317,9 @@ MUTANTS = [
         "for name in sorted(os.listdir(root)):",
         "for name in sorted(os.listdir(root), reverse=True):",
     ),
+    ("H27", PY, "spec: bounded = failure below", '"bounded": rows[0][field] < minimum[field],', '"bounded": True,'),
+    ("H28", PY, "report: open floor marked <=", 'low = "" if s["bounded"] else "<= "', 'low = ""'),
+    ("H29", PY, "report: limits section", '"## Limits of this measurement",', '"",'),
 ]
 FAILED = re.compile(r"^FAILED (\S+)", re.MULTILINE)
 RESULT = re.compile(r"^=*\s*((?:\d+ \w+, )*\d+ \w+) in [0-9.]+s", re.MULTILINE)

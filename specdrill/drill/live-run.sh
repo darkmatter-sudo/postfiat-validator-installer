@@ -53,7 +53,7 @@ if [ "$DRY" = 1 ]; then
 else
   CELLENV=(); CELL_BUDGET=2220   # FULL_TIMEOUT_S 900 + WINDOW_S 1200 + slack 120 (pft-specdrill.sh cell_budget_s)
 fi
-ncells() { case "$1" in cpu) echo 4 ;; mem) echo 5 ;; io) echo 3 ;; dry) echo 1 ;; *) echo 0 ;; esac; }
+ncells() { case "$1" in cpu) echo 6 ;; mem) echo 7 ;; io) echo 5 ;; dry) echo 1 ;; *) echo 0 ;; esac; }
 ttl_of() { local t=$(( $(ncells "$1") * CELL_BUDGET + 600 )); [ "$t" -le 14400 ] || t=14400; echo "$t"; }
 TOTAL=0; for a in ${AXES//,/ }; do TOTAL=$(( TOTAL + $(ttl_of "$a") + 120 )); done
 

@@ -25,15 +25,16 @@ One factor at a time from a base cell of 2 vCPU, 2048 MiB, unlimited I/O:
 
 | axis | values |
 |---|---|
-| cpu | 0.25, 0.5, 1, 2 vCPU |
-| mem | 512, 768, 1024, 1536, 2048 MiB (`--memory-swap` = `--memory`: no swap) |
-| io | 1, 4, 16 MB/s read and write on the Docker data disk |
+| cpu | 0.05, 0.1, 0.25, 0.5, 1, 2 vCPU |
+| mem | 256, 384, 512, 768, 1024, 1536, 2048 MiB (`--memory-swap` = `--memory`: no swap) |
+| io | 0.1, 0.25, 1, 4, 16 MB/s read and write on the Docker data disk |
 
 A cell PASSES when the node reaches `full` within `FULL_DEADLINE_S` (600 s), is never OOM-killed or restarted, is
 not aborted, and its ledger lag (reference validated index minus the cell's validated index, sampled every
 `POLL_SEC` = 10 s) has a nearest-rank p95 <= 2 over the 20-minute window. A cell that is not full after
 `FULL_TIMEOUT_S` (900 s) ends as `never_full`. Per axis, the **minimum** is the smallest value whose every larger
-tested value also passed; **safe** is the next tested value above it.
+tested value also passed; **safe** is the next tested value above it. When no tested value below the minimum failed, the report
+prints it as `<= value (lowest tested ...)`: an upper bound of the floor, not the floor itself.
 
 ## Safety: what keeps the live validator untouched
 

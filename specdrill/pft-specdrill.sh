@@ -66,9 +66,9 @@ SLACK_S=120
 
 # The matrix: one factor at a time from the base cell (2 vCPU, 2048 MiB, unlimited I/O).
 BASE_CPUS=2 BASE_MEM=2048 BASE_IO=0
-MATRIX_CPU="0.25 0.5 1 2"
-MATRIX_MEM="512 768 1024 1536 2048"
-MATRIX_IO="1000000 4000000 16000000"
+MATRIX_CPU="0.05 0.1 0.25 0.5 1 2"
+MATRIX_MEM="256 384 512 768 1024 1536 2048"
+MATRIX_IO="100000 250000 1000000 4000000 16000000"
 
 now() { if [ -n "${NOW_FILE:-}" ]; then cat "$NOW_FILE"; else date -u +%s; fi; }
 nap() { if [ -n "${NOW_FILE:-}" ]; then echo $(( $(now) + $1 )) >"$NOW_FILE"; else sleep "$1"; fi; }

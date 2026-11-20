@@ -598,9 +598,8 @@ class TestCommands(Base):
         self.scenario({"cell": [{"at": 0, "state": "full", "lag": 0}]})
         r = self.run_sd("matrix", "--out", self.out, "--axes", "io", "--yes")
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(
-            sorted(os.listdir(self.out)), ["io-c2-m2048-io1000000", "io-c2-m2048-io16000000", "io-c2-m2048-io4000000"]
-        )
+        want = [f"io-c2-m2048-io{v}" for v in (100000, 250000, 1000000, 4000000, 16000000)]
+        self.assertEqual(sorted(os.listdir(self.out)), sorted(want))
 
     def test_matrix_stops_on_refusal(self):
         self.scenario({"maint": {"active": False, "remaining": 0}})
@@ -627,7 +626,7 @@ class TestCommands(Base):
     def test_plan_makes_no_changes(self):
         r = self.run_sd("plan", "--axes", "cpu,mem,io")
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(r.stdout.count("\ncell ") + r.stdout.startswith("cell "), 12)
+        self.assertEqual(r.stdout.count("\ncell ") + r.stdout.startswith("cell "), 6 + 7 + 5)
         for g in ("maint", "live", "integrity", "headroom", "disk", "image", "leftovers"):
             self.assertIn(f"ok {g}:", r.stdout)
         self.assert_nothing_created()

@@ -127,6 +127,12 @@ def cell(name, axis, val, verdict):
     return dict(base, cell=name, axis=axis, verdict=verdict, reasons=[] if verdict == "PASS" else ["never_full"])
 
 
+NULLS = dict.fromkeys(
+    ("time_to_full_s", "lag_p50", "lag_p95", "lag_max", "close_jitter_s", "peers_min", "peak_rss_mib"), None
+)
+NULLS.update(live_full_all=True, live_lag_max=0)
+
+
 class TestSpecs(unittest.TestCase):
     def test_min_and_safe(self):
         cells = [
@@ -137,6 +143,14 @@ class TestSpecs(unittest.TestCase):
         ]
         s = specdrill.axis_spec(cells, "cpu")
         self.assertEqual((s["minimum"], s["safe"], s["failing"]), (0.5, 1, ["c1"]))
+        self.assertTrue(s["bounded"])
+
+    def test_no_failure_below_is_not_a_floor(self):
+        cells = [cell("c2", "cpu", 0.5, "PASS"), cell("c3", "cpu", 1, "PASS"), cell("c4", "cpu", 2, "PASS")]
+        s = specdrill.axis_spec(cells, "cpu")
+        self.assertEqual((s["minimum"], s["safe"], s["failing"], s["bounded"]), (0.5, 1, [], False))
+        rep = specdrill.render_report([dict(c, **NULLS) for c in cells], [s])
+        self.assertIn("| cpu | <= 0.5 vCPU (`c2`, lowest tested: no failing cell below) | 1 vCPU (`c3`) | - |", rep)
 
     def test_pass_below_a_failure_not_trusted(self):
         cells = [
@@ -179,6 +193,7 @@ class TestCli(unittest.TestCase):
             self.assertEqual(outs[0], outs[1])
             rep = outs[0]["REPORT.md"]
             self.assertIn("| cpu | 1 vCPU (`cpu-1`) | 1 vCPU (`cpu-1`) | `cpu-0.5` (lag_p95>2) |", rep)
+            self.assertIn("## Limits of this measurement", rep)
             self.assertEqual(outs[0]["cells.csv"].splitlines()[0], ",".join(specdrill.CSV_COLS))
             # cells in name order (cpu-0.5 < cpu-1), independent of directory listing order
             self.assertEqual([c["cell"] for c in json.loads(outs[0]["cells.json"])["cells"]], ["cpu-0.5", "cpu-1"])
