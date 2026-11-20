@@ -18,23 +18,49 @@ import specdrill
 
 HELPER = os.path.join(SD, "specdrill.py")
 
-META = {"cell": "cpu-0.5", "axis": "cpu", "cpus": 0.5, "mem_mib": 2048, "io_bps": 0, "start": 1000,
-        "full_deadline_s": 600, "window_s": 60, "end": 1100, "abort": None, "oom_killed": False, "restarts": 0,
-        "peak_rss_bytes": 700 * 1024 * 1024}
+META = {
+    "cell": "cpu-0.5",
+    "axis": "cpu",
+    "cpus": 0.5,
+    "mem_mib": 2048,
+    "io_bps": 0,
+    "start": 1000,
+    "full_deadline_s": 600,
+    "window_s": 60,
+    "end": 1100,
+    "abort": None,
+    "oom_killed": False,
+    "restarts": 0,
+    "peak_rss_bytes": 700 * 1024 * 1024,
+}
 
 
 def smp(t, state, seq=None, close=None, ref=None, peers=None, live_state="full", live_lag=0):
-    return {"t": t, "state": state, "seq": seq, "close": close, "ref_seq": ref, "peers": peers,
-            "live_state": live_state, "live_lag": live_lag}
+    return {
+        "t": t,
+        "state": state,
+        "seq": seq,
+        "close": close,
+        "ref_seq": ref,
+        "peers": peers,
+        "live_state": live_state,
+        "live_lag": live_lag,
+    }
 
 
 # Hand-computed: full at t=1030 -> time_to_full 30 s; window [1030, 1090] holds 5 samples with lags 1,0,2,0,3
 # (sorted 0,0,1,2,3): nearest-rank p50 = 3rd = 1, p95 = ceil(4.75) = 5th = 3, max 3 -> 3 > LAG_P95_MAX 2 = FAIL.
 # Distinct validated ledgers (100,5000) (102,5008) (105,5020) (106,5025): per-ledger intervals 4, 4, 5,
 # mean 13/3, population stddev sqrt(2/9) = 0.471. Peers 8,9,9,10,10: min 8, p50 3rd = 9. t=1100 is outside.
-SAMPLES = [smp(1000, "connected"), smp(1030, "full", 100, 5000, 101, 8), smp(1040, "full", 102, 5008, 102, 9),
-           smp(1050, "full", 102, 5008, 104, 9), smp(1060, "full", 105, 5020, 105, 10),
-           smp(1090, "full", 106, 5025, 109, 10, live_lag=1), smp(1100, "full", 120, 5090, 140, 1)]
+SAMPLES = [
+    smp(1000, "connected"),
+    smp(1030, "full", 100, 5000, 101, 8),
+    smp(1040, "full", 102, 5008, 102, 9),
+    smp(1050, "full", 102, 5008, 104, 9),
+    smp(1060, "full", 105, 5020, 105, 10),
+    smp(1090, "full", 106, 5025, 109, 10, live_lag=1),
+    smp(1100, "full", 120, 5090, 140, 1),
+]
 
 
 class TestMetrics(unittest.TestCase):
@@ -88,14 +114,22 @@ def cell(name, axis, val, verdict):
 
 class TestSpecs(unittest.TestCase):
     def test_min_and_safe(self):
-        cells = [cell("c1", "cpu", 0.25, "FAIL"), cell("c2", "cpu", 0.5, "PASS"), cell("c3", "cpu", 1, "PASS"),
-                 cell("c4", "cpu", 2, "PASS")]
+        cells = [
+            cell("c1", "cpu", 0.25, "FAIL"),
+            cell("c2", "cpu", 0.5, "PASS"),
+            cell("c3", "cpu", 1, "PASS"),
+            cell("c4", "cpu", 2, "PASS"),
+        ]
         s = specdrill.axis_spec(cells, "cpu")
         self.assertEqual((s["minimum"], s["safe"], s["failing"]), (0.5, 1, ["c1"]))
 
     def test_pass_below_a_failure_not_trusted(self):
-        cells = [cell("c1", "cpu", 0.25, "FAIL"), cell("c2", "cpu", 0.5, "PASS"), cell("c3", "cpu", 1, "FAIL"),
-                 cell("c4", "cpu", 2, "PASS")]
+        cells = [
+            cell("c1", "cpu", 0.25, "FAIL"),
+            cell("c2", "cpu", 0.5, "PASS"),
+            cell("c3", "cpu", 1, "FAIL"),
+            cell("c4", "cpu", 2, "PASS"),
+        ]
         s = specdrill.axis_spec(cells, "cpu")
         self.assertEqual((s["minimum"], s["safe"]), (2, 2))
 
@@ -122,8 +156,9 @@ class TestCli(unittest.TestCase):
             self.write_cell(root, dict(META, cell="cpu-1", cpus=1), SAMPLES[:-2] + [smp(1090, "full", 106, 5025, 106)])
             outs = []
             for n in ("a", "b"):
-                r = subprocess.run([sys.executable, "-I", HELPER, "report", root, os.path.join(t, n)],
-                                   capture_output=True, text=True)
+                r = subprocess.run(
+                    [sys.executable, "-I", HELPER, "report", root, os.path.join(t, n)], capture_output=True, text=True
+                )
                 self.assertEqual(r.returncode, 0, r.stderr)
                 outs.append({f: open(os.path.join(t, n, f)).read() for f in ("cells.json", "cells.csv", "REPORT.md")})
             self.assertEqual(outs[0], outs[1])
@@ -133,8 +168,9 @@ class TestCli(unittest.TestCase):
 
     def test_report_without_cells_exits_2(self):
         with tempfile.TemporaryDirectory() as t:
-            r = subprocess.run([sys.executable, "-I", HELPER, "report", t, os.path.join(t, "o")],
-                               capture_output=True, text=True)
+            r = subprocess.run(
+                [sys.executable, "-I", HELPER, "report", t, os.path.join(t, "o")], capture_output=True, text=True
+            )
             self.assertEqual(r.returncode, 2)
             self.assertFalse(os.path.exists(os.path.join(t, "o")))
 
@@ -145,8 +181,11 @@ class TestCli(unittest.TestCase):
             def gate(rows, max_lag=3, polls=2):
                 with open(p, "w") as f:
                     f.write("".join(json.dumps(r) + "\n" for r in rows))
-                return subprocess.run([sys.executable, "-I", HELPER, "live-gate", p, str(max_lag), str(polls)],
-                                      capture_output=True, text=True).returncode
+                return subprocess.run(
+                    [sys.executable, "-I", HELPER, "live-gate", p, str(max_lag), str(polls)],
+                    capture_output=True,
+                    text=True,
+                ).returncode
 
             self.assertEqual(gate([smp(1, "full", live_lag=4)]), 0)  # fewer than POLLS samples
             self.assertEqual(gate([smp(1, "full", live_lag=4), smp(2, "full", live_lag=3)]), 0)  # 3 == max: ok

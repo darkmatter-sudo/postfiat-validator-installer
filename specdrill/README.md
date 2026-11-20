@@ -56,17 +56,35 @@ sits on its own bridge network (`containment: ...`, torn down, never started). T
 runs the image's baked testnet config, peers outbound only, and never connects to the live node.
 
 `pft-integrity` would see a throwaway postfiatd-image container as a node change, so its hourly timer is paused for
-the cell: a transient failsafe timer `specdrill-rearm-integrity` (outside the `pft-*` namespace that schedaudit and
-jobwatch watch) is armed first to restart it after the cell budget + 300 s, then `pft-integrity.timer` is stopped.
-The `EXIT`/`INT`/`TERM` trap removes every labelled container, volume and network, restarts the timer and disarms
-the failsafe.
+the cell: a transient failsafe SERVICE `specdrill-rearm-integrity` (`sleep <cell budget + 300 s> && systemctl start
+pft-integrity.timer`) is started first, then `pft-integrity.timer` is stopped. It is a service, not a timer, because
+pft-schedaudit lists every loaded timer (a transient timer would raise PFTSchedEntryUnexpected) and pft-jobwatch every
+`pft-*.timer`. The `EXIT`/`INT`/`TERM` trap removes every labelled container, volume and network, stops the failsafe
+and then restarts the timer (in that order, so no integrity run sees the transient unit).
 
 While a cell runs, each poll can abort it (torn down, `meta.json` `abort` = reason):
 `live_lag` (live node not full, unreadable, or lag > `LIVE_LAG_MAX` for `LIVE_ABORT_POLLS` = 2 polls in a row),
 `maint_window_ended`, `host_mem_low` (`MemAvailable < HEADROOM_MIB / 2`).
 
-The `pft-maint` window itself (and its throwaway ntfy target, the Alertmanager silence for host-resource alerts and
-`PFTJobDisabled` on the paused timer) is opened by the recorded drill runner, not by `pft-specdrill`.
+The `pft-maint` window itself is opened by the recorded drill runner `drill/live-run.sh`, not by `pft-specdrill`.
+
+## The recorded live run (`drill/live-run.sh`)
+
+```
+AXES=cpu,io RUN=05 bash specdrill/drill/live-run.sh 2>&1 | tee LOG     # repo root, agent user, run detached
+DRY=1 RUN=dry1 bash specdrill/drill/live-run.sh                          # one short cpu=2 cell through every step
+```
+
+It runs a byte-identical copy of the runner and helper (sha256 = HEAD, so repo edits cannot reach a running drill)
+and, per axis, opens a `pft-maint` window whose `[MAINT]` messages go to a throwaway ntfy topic. Before the first
+cell it silences exactly the three alerts a drill cell causes, on `host="validator"` only: `PFTKernelCritical`
+`pattern=~oom_cgroup|hung_task` (OOM cells, 1 MB/s I/O cells), `PFTKernelWarning pattern=oom_invoked` and
+`PFTJobDisabled timer=pft-integrity.timer`; never the pipeline watchdog. After the matrix it checks: the live
+validator was `full` at every poll of every cell with lag <= 3, 0 labelled resources, `pft-integrity` PASS on both
+hosts with nothing to accept, AppArmor/seccomp 0 denials, no new histarchive gap, and every alert that was active at
+any time during the run (Prometheus `ALERTS`) is the watchdog, a digest-only valwatch alert or one of the three
+silenced ones. It expires its silences only after a drain, then reads back the throwaway topic and every operator
+topic (0 alert/`[MAINT]` messages; the hourly agent's own `[pft-agent]` messages are counted apart).
 
 ## Data per cell
 
@@ -86,6 +104,15 @@ drives the real runner with every external binary (docker, curl, systemctl, syst
 replaced by `tests/stub.py` and a fake clock: each guard refuses with its own reason and makes no create/pause call,
 each numeric limit has a just-passing and a just-failing case, each abort path and SIGTERM tear the cell down and
 re-arm the integrity timer.
+
+`tests/mutants.py` is the mutation harness: each of its mutants breaks one guard, containment check, abort, teardown
+step, command check or metric/verdict/spec rule; each runs on its own copy of the folder with its own `TMPDIR`, and is
+CAUGHT only when pytest reports failures with at least one `FAILED` test id (a hang is killed and counts as not
+caught). Every anchor must occur exactly once; the unmutated baseline must pass first.
+
+```
+TMPDIR=$HOME/.cache python3 specdrill/tests/mutants.py -j 3
+```
 
 ## Results
 

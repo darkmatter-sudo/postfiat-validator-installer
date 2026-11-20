@@ -58,7 +58,8 @@ CGROUP_ROOT="${CGROUP_ROOT:-/sys/fs/cgroup/system.slice}"
 DF_PATH="${DF_PATH:-/var/lib/docker}"
 TEST="${PFT_SPECDRILL_TEST:-}"
 LABEL=pft-specdrill
-REARM_UNIT=specdrill-rearm-integrity   # outside the pft-* namespace (schedaudit/jobwatch never see it)
+REARM_UNIT=specdrill-rearm-integrity   # a transient SERVICE, not a timer: schedaudit lists every loaded timer and
+                                       # jobwatch every pft-*.timer, neither lists a sleeping service
 CFG=/etc/postfiatd/postfiatd.cfg
 SLACK_S=120
 
@@ -162,18 +163,18 @@ teardown() {
   for id in $("$DOCKER" ps -aq --filter "label=$LABEL" 2>/dev/null); do "$DOCKER" rm -f "$id" >/dev/null 2>&1; done
   for id in $("$DOCKER" volume ls -q --filter "label=$LABEL" 2>/dev/null); do "$DOCKER" volume rm -f "$id" >/dev/null 2>&1; done
   for id in $("$DOCKER" network ls -q --filter "label=$LABEL" 2>/dev/null); do "$DOCKER" network rm "$id" >/dev/null 2>&1; done
-  if [ "$PAUSED" -eq 1 ]; then
+  if [ "$PAUSED" -eq 1 ]; then   # failsafe first: pft-integrity must never run while its transient unit exists
+    "$SYSTEMCTL" stop "$REARM_UNIT.service" >/dev/null 2>&1
     "$SYSTEMCTL" start pft-integrity.timer && log "integrity timer re-armed"
-    "$SYSTEMCTL" stop "$REARM_UNIT.timer" >/dev/null 2>&1
     PAUSED=0
   fi
   log "teardown: leftovers=$(leftovers)"
 }
 pause_integrity() {
   local ttl=$(( $(cell_budget_s) + 300 ))
-  "$SYSTEMD_RUN" --collect --unit "$REARM_UNIT" --on-active="${ttl}s" "$SYSTEMCTL" start pft-integrity.timer \
-    >/dev/null 2>&1 || refuse "integrity: failsafe re-arm timer could not be armed"
-  "$SYSTEMCTL" stop pft-integrity.timer || { "$SYSTEMCTL" stop "$REARM_UNIT.timer"; refuse "integrity: timer stop failed"; }
+  "$SYSTEMD_RUN" --collect --unit "$REARM_UNIT" /bin/sh -c "sleep $ttl && $SYSTEMCTL start pft-integrity.timer" \
+    >/dev/null 2>&1 || refuse "integrity: failsafe re-arm unit could not be started"
+  "$SYSTEMCTL" stop pft-integrity.timer || { "$SYSTEMCTL" stop "$REARM_UNIT.service"; refuse "integrity: timer stop failed"; }
   PAUSED=1
   log "integrity timer paused (failsafe $REARM_UNIT re-arms in ${ttl}s)"
 }

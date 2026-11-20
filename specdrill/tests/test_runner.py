@@ -111,7 +111,9 @@ class Base(unittest.TestCase):
         stops = [i for i, x in enumerate(c) if x == "systemctl stop pft-integrity.timer"]
         starts = [i for i, x in enumerate(c) if x == "systemctl start pft-integrity.timer"]
         self.assertTrue(stops and starts and starts[-1] > stops[-1], "integrity timer must be re-armed after the pause")
-        self.assertIn("systemctl stop specdrill-rearm-integrity.timer", c)
+        disarm = [i for i, x in enumerate(c) if x == "systemctl stop specdrill-rearm-integrity.service"]
+        self.assertTrue(disarm, "the failsafe unit must be stopped")
+        self.assertLess(disarm[-1], starts[-1], "failsafe stopped before the timer is re-armed (no verify sees it)")
 
     def meta(self, cell="cpu-c1-m2048-io0"):
         return json.load(open(os.path.join(self.out, cell, "meta.json")))
@@ -224,7 +226,7 @@ class TestGuards(Base):
 
     def test_failsafe_arm_failure(self):
         self.scenario({"systemd_run_rc": 1})
-        self.assert_refused(self.cell(), "integrity: failsafe re-arm timer could not be armed")
+        self.assert_refused(self.cell(), "integrity: failsafe re-arm unit could not be started")
         c = self.calls()
         self.assertNotIn("systemctl stop pft-integrity.timer", c)
         self.assertFalse([x for x in c if x.startswith(("docker network create", "docker create"))])
@@ -232,7 +234,7 @@ class TestGuards(Base):
     def test_timer_stop_failure_disarms_failsafe(self):
         self.scenario({"timer_stop_rc": 1})
         self.assert_refused(self.cell(), "integrity: timer stop failed")
-        self.assertIn("systemctl stop specdrill-rearm-integrity.timer", self.calls())
+        self.assertIn("systemctl stop specdrill-rearm-integrity.service", self.calls())
         self.assertFalse([x for x in self.calls() if x.startswith(("docker network create", "docker create"))])
 
 
@@ -311,8 +313,8 @@ class TestCell(Base):
         arm = next(x for x in self.calls() if x.startswith("systemd-run"))
         self.assertEqual(
             arm,
-            "systemd-run --collect --unit specdrill-rearm-integrity --on-active=600s "
-            "systemctl start pft-integrity.timer",
+            "systemd-run --collect --unit specdrill-rearm-integrity /bin/sh -c "
+            "sleep 600 && systemctl start pft-integrity.timer",
         )  # budget 300 + 300
 
     def test_io_cell_device_limits(self):
