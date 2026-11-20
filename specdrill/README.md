@@ -85,12 +85,15 @@ DRY=1 RUN=dry1 bash specdrill/drill/live-run.sh                          # one s
 
 It runs a byte-identical copy of the runner and helper (sha256 = HEAD, so repo edits cannot reach a running drill)
 and, per axis, opens a `pft-maint` window whose `[MAINT]` messages go to a throwaway ntfy topic. Before the first
-cell it silences exactly the three alerts a drill cell causes, on `host="validator"` only: `PFTKernelCritical`
-`pattern=~oom_cgroup|hung_task` (OOM cells, 1 MB/s I/O cells), `PFTKernelWarning pattern=oom_invoked` and
-`PFTJobDisabled timer=pft-integrity.timer`; never the pipeline watchdog. After the matrix it checks: the live
+cell it silences exactly the four alerts the run causes, on the validator only: `PFTKernelCritical`
+`pattern=~oom_cgroup|hung_task` (OOM cells, 1 MB/s I/O cells), `PFTKernelWarning pattern=oom_invoked`,
+`PFTJobDisabled timer=pft-integrity.timer` (all `host="validator"`) and `PFTKeyEscrowStale reason=drift`
+(`node="validator"`: `pft-keyescrow` sees the throwaway `/etc/pft-maint/ntfy.env` as a new secret, and its 2 h
+`for:` is shorter than a matrix axis); never the pipeline watchdog. The restore re-runs `pft-keyescrow.service` right
+after the real target is back and requires `escrow drift 0, new 0`. After the matrix it checks: the live
 validator was `full` at every poll of every cell with lag <= 3, 0 labelled resources, `pft-integrity` PASS on both
 hosts with nothing to accept, AppArmor/seccomp 0 denials, no new histarchive gap, and every alert that was active at
-any time during the run (Prometheus `ALERTS`) is the watchdog, a digest-only valwatch alert or one of the three
+any time during the run (Prometheus `ALERTS`) is the watchdog, a digest-only valwatch alert or one of the four
 silenced ones. It expires its silences only after a drain, then reads back the throwaway topic and every operator
 topic (0 alert/`[MAINT]` messages; the hourly agent's own `[pft-agent]` messages are counted apart).
 

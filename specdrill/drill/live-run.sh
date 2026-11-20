@@ -8,13 +8,14 @@
 #      only the allowed silence (SIL_OK), operator topics found, `pft-specdrill plan` guards ok except maint.
 #   1. Alertmanager silences for exactly what the drill itself causes, host="validator" only (never the watchdog):
 #      PFTKernelCritical pattern=~oom_cgroup|hung_task (OOM cells, 1 MB/s I/O cells), PFTKernelWarning
-#      pattern=oom_invoked, PFTJobDisabled timer=pft-integrity.timer (paused per cell).
+#      pattern=oom_invoked, PFTJobDisabled timer=pft-integrity.timer (paused per cell), and PFTKeyEscrowStale
+#      reason=drift on node="validator" (pft-keyescrow sees the throwaway /etc/pft-maint/ntfy.env as a new secret).
 #   2. per axis: pft-maint window (both hosts, [MAINT] to a throwaway topic), `pft-specdrill matrix --axes A
 #      --yes`, window end. Live safety is recorded per poll in every cell's samples.jsonl (live_state, live_lag).
 #   3. after: pft-integrity timer active + failsafe unit gone, 0 labelled containers/volumes/networks, integrity
 #      PASS both hosts, AppArmor/seccomp 0 denials, live node full, histarchive no new gap, every alert active at
 #      any time during the run (Prometheus ALERTS) is the watchdog, a digest-only one or a silenced one; report.
-#   4. restore: real pft-maint target back, drain (only watchdog/digest alerts active), silence expired, read back
+#   4. restore: real pft-maint target back, pft-keyescrow re-collected (drift 0, new 0), drain (only watchdog/digest alerts active), silence expired, read back
 #      the throwaway and every operator topic (0 messages on the operator topics).
 #   AXES=cpu,io RUN=05 bash specdrill/drill/live-run.sh 2>&1 | tee LOG        (repo root, agent user, detached)
 #   DRY=1 RUN=dry1 bash specdrill/drill/live-run.sh    one short cpu=2 cell (WINDOW_S=120) through every step
@@ -42,7 +43,9 @@ gate() { [ "$FAILS" = 0 ] || { echo "a step failed - stopping before the next ho
 NE=/etc/pft-maint/ntfy.env; BK=/etc/pft-maint/ntfy.env.pre-specdrill
 SWAPPED=0; MAINT=0; HAD=0; SILS=""
 # alertname | extra matcher label=value(regex) : the only alerts the drill may cause, silenced on the validator
-SILENCED="PFTKernelCritical|pattern=oom_cgroup|hung_task PFTKernelWarning|pattern=oom_invoked PFTJobDisabled|timer=pft-integrity.timer"
+SILENCED="PFTKernelCritical|pattern=oom_cgroup|hung_task PFTKernelWarning|pattern=oom_invoked PFTJobDisabled|timer=pft-integrity.timer PFTKeyEscrowStale|reason=drift"
+NSIL=0; for spec in $SILENCED; do NSIL=$((NSIL + 1)); done
+hostlab() { case "$1" in PFTKeyEscrowStale) echo node ;; *) echo host ;; esac; }   # keyescrow rules label the host as node=
 since="$(date -u +%s)"
 OPS="$(mktemp -p "$HOME/.cache")"; chmod 600 "$OPS"
 if [ "$DRY" = 1 ]; then
@@ -61,6 +64,8 @@ restore() {
     if [ "$HAD" = 1 ]; then echo "\$ sudo -n mv -f \$BK \$NE   (restore the real target)"; sudo -n mv -f "$BK" "$NE"
     else echo "\$ sudo -n rm -f \$NE   (no ntfy.env before: pft-maint falls back to the real monitor target again)"; sudo -n rm -f "$NE"; fi
     SWAPPED=0
+    # the throwaway ntfy.env was a new/changed secret to pft-keyescrow: re-collect at once so its drift clears
+    echo "\$ sudo -n systemctl start pft-keyescrow.service"; sudo -n systemctl start pft-keyescrow.service; echo "  (exit $?)"
   fi
   [ -z "$SILS" ] || echo "silences $SILS left active until their end (expired only after a clean drain)"
 }
@@ -122,16 +127,16 @@ echo; echo "== 1. Alertmanager silences for what the drill itself causes (host=v
 ends="$(date -u -d "+$(( TOTAL / 60 + 30 )) min" +%FT%TZ)"
 for spec in $SILENCED; do
   an="${spec%%|*}"; lv="${spec#*|}"; ln="${lv%%=*}"; lval="${lv#*=}"
-  SBODY="$(jq -nc --arg s "$(date -u +%FT%TZ)" --arg e "$ends" --arg c "$TASK specdrill run $RUN $SHORT" --arg an "$an" --arg ln "$ln" --arg lv "$lval" \
-    '{matchers: [{name: "alertname", value: $an, isRegex: false, isEqual: true}, {name: "host", value: "validator", isRegex: false, isEqual: true},
+  SBODY="$(jq -nc --arg s "$(date -u +%FT%TZ)" --arg e "$ends" --arg c "$TASK specdrill run $RUN $SHORT" --arg an "$an" --arg ln "$ln" --arg lv "$lval" --arg hl "$(hostlab "$an")" \
+    '{matchers: [{name: "alertname", value: $an, isRegex: false, isEqual: true}, {name: $hl, value: "validator", isRegex: false, isEqual: true},
                  {name: $ln, value: $lv, isRegex: ($lv | test("[|]")), isEqual: true}], startsAt: $s, endsAt: $e, createdBy: "specdrill-live-run", comment: $c}')"
   id="$(curl -s --max-time 10 -H 'Content-Type: application/json' -X POST "$AM/api/v2/silences" -d "$SBODY" | jq -r '.silenceID // empty')"
-  echo "silence ${id:0:8}: alertname=$an host=validator $ln$([ "${lval//|/}" = "$lval" ] && echo "=" || echo "=~")$lval until $ends"
+  echo "silence ${id:0:8}: alertname=$an $(hostlab "$an")=validator $ln$([ "${lval//|/}" = "$lval" ] && echo "=" || echo "=~")$lval until $ends"
   check "silence for $an created" "$([ -n "$id" ] && echo 0 || echo 1)"
   [ -z "$id" ] || SILS="$SILS $id"
 done
 x "curl -s $AM/api/v2/silences | jq -r '.[] | select(.status.state == \"active\" and .createdBy == \"specdrill-live-run\") | [.matchers[] | .name + (if .isRegex then \"=~\" else \"=\" end) + .value] | join(\" \")'"
-check "3 drill silences active, none matches the pipeline watchdog" "$([ "$(grep -c . <<<"$XOUT")" = 3 ] && ! grep -q PFTAlertPipelineWatchdog <<<"$XOUT" && echo 0 || echo 1)"
+check "$NSIL drill silences active, none matches the pipeline watchdog" "$([ "$(grep -c . <<<"$XOUT")" = "$NSIL" ] && ! grep -q PFTAlertPipelineWatchdog <<<"$XOUT" && echo 0 || echo 1)"
 gate
 
 echo; echo "== 2. [MAINT] messages to a throwaway topic (real file kept as \$BK)"
@@ -178,8 +183,8 @@ check "AppArmor + seccomp audits PASS, 0 denials on the live container" "$([ "$(
 x "srv_state; sudo -n docker inspect -f '{{.State.StartedAt}} {{.RestartCount}}' postfiatd"
 check "both nodes full or proposing at the end" "$([ "$(grep -cE '^(full|proposing)$' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
 RUN_S=$(( $(date -u +%s) - since + 60 ))
-x "curl -s --max-time 20 $PROM/api/v1/query --data-urlencode 'query=count by (alertname, alertstate, host) (count_over_time(ALERTS[${RUN_S}s]))' | jq -r '.data.result[] | .metric | \"\\(.alertname) \\(.alertstate) \\(.host // \"-\")\"' | sort"
-OUTSIDE="$(grep -vE '^(PFTAlertPipelineWatchdog|PFTValwatchValidator(Low|Late)) |^(PFTKernelCritical|PFTKernelWarning|PFTJobDisabled) (pending|firing) validator$' <<<"$XOUT" | grep -c .)"
+x "curl -s --max-time 20 $PROM/api/v1/query --data-urlencode 'query=count by (alertname, alertstate, host, node) (count_over_time(ALERTS[${RUN_S}s]))' | jq -r '.data.result[] | .metric | \"\\(.alertname) \\(.alertstate) \\(.host // .node // \"-\")\"' | sort -u"
+OUTSIDE="$(grep -vE '^(PFTAlertPipelineWatchdog|PFTValwatchValidator(Low|Late)) |^(PFTKernelCritical|PFTKernelWarning|PFTJobDisabled|PFTKeyEscrowStale) (pending|firing) validator$' <<<"$XOUT" | grep -c .)"
 check "every alert active at any time during the run (${RUN_S}s) is the watchdog, digest-only valwatch or a silenced drill alert" "$([ "$XRC" = 0 ] && [ "$OUTSIDE" = 0 ] && echo 0 || echo 1)" "$OUTSIDE outside"
 G1="$(gaps)"; echo "histarchive follow_gaps after: ${G1:-?} (before ${G0:-?})"
 check "no new histarchive follow gap (the live node never stopped)" "$([ -n "$G0" ] && [ "$G0" = "$G1" ] && echo 0 || echo 1)"
@@ -192,6 +197,8 @@ echo; echo "== 4. restore, drain, expire the silence, read back"
 restore
 NOW_SHA=absent; if sudo -n test -e "$NE"; then NOW_SHA="$(sudo -n sha256sum "$NE" | cut -c1-64)"; fi
 check "pft-maint target back to its pre-run state" "$([ "$ORIG_SHA" = "$NOW_SHA" ] && echo 0 || echo 1)"
+x "sudo -n pft-keyescrow inventory | tail -1"
+check "pft-keyescrow re-collected: escrow drift 0, new 0" "$(grep -q 'escrow drift 0, new 0,' <<<"$XOUT" && echo 0 || echo 1)"
 x "for i in \$(seq 0 30 600); do n=\$(active_alerts | unexpected); echo \"+\${i}s: \$n\"; [ \"\$n\" = 0 ] && break; sleep 30; done; echo \$n"
 check "drained: only the watchdog and digest-only alerts active (pending included)" "$([ "$(tail -1 <<<"$XOUT")" = 0 ] && echo 0 || echo 1)"
 if [ "$(tail -1 <<<"$XOUT")" = 0 ] && [ -n "$SILS" ]; then
