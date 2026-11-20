@@ -1,0 +1,98 @@
+specdrill mutation run 02 - 2026-11-20T04:11:56Z - HEAD f37ac65d9c6f05fc4cc29c02a8d719223a5c59c6 (pristine clone of the pushed commit)
+$ sha256sum specdrill/pft-specdrill.sh specdrill/specdrill.py specdrill/tests/*.py
+  3e5b3f5537667ec59a8d581b5053dce3f40ebd656a924ba7646a5e82f469726c  specdrill/pft-specdrill.sh
+  f68f74befb4f82d359eb2f9bfd7506e2710156c4a05ab9b28b12e08e4ec083e6  specdrill/specdrill.py
+  a69a78f270484681e2a64d3e4d4f7e103b510d4f6f3ff4b198fff8e73c914953  specdrill/tests/mutants.py
+  9ee76044d478a3e2ecdec8c0312f4e559687b45f53a3a8a725e20ac1ea08f76c  specdrill/tests/stub.py
+  a68bcc33e89004f13d89d6117539a0bf0b611a3727067e36dabd85e953fdfa7d  specdrill/tests/test_runner.py
+  bb791a90dfb90d6e1f2db5ecb145635943d75e074404171331d2ef2bbb944ce6  specdrill/tests/test_specdrill.py
+$ python3 -u specdrill/tests/mutants.py -j 3 --timeout 900
+BASELINE ok   (66 passed in 468.07s (0:07:48))
+CAUGHT   R03 maint: window active               by: tests/test_runner.py::TestGuards::test_no_maint_window
+CAUGHT   R02 lock: flock                        by: tests/test_runner.py::TestGuards::test_lock_held
+CAUGHT   R01 need_root                          by: tests/test_runner.py::TestGuards::test_not_root_refused
+CAUGHT   R05 maint: boundary                    by: tests/test_runner.py::TestGuards::test_maint_window_exact_budget_passes
+CAUGHT   R06 budget: slack counted              by: tests/test_runner.py::TestGuards::test_maint_window_exact_budget_passes
+CAUGHT   R04 maint: remaining >= budget         by: tests/test_runner.py::TestGuards::test_maint_window_too_short
+CAUGHT   R07 live: unreadable                   by: tests/test_runner.py::TestGuards::test_live_unreadable
+CAUGHT   R08 live: state full                   by: tests/test_runner.py::TestGuards::test_live_not_full
+CAUGHT   R10 live: lag <= max                   by: tests/test_runner.py::TestGuards::test_live_lag_over_max
+CAUGHT   R11 live: lag boundary                 by: tests/test_runner.py::TestGuards::test_live_lag_at_max_passes
+CAUGHT   R09 live: reference unreadable         by: tests/test_runner.py::TestGuards::test_reference_unreadable
+CAUGHT   R12 integrity: verify rc               by: tests/test_runner.py::TestGuards::test_integrity_not_pass
+CAUGHT   R15 headroom: boundary                 by: tests/test_runner.py::TestGuards::test_headroom_exact_passes
+CAUGHT   R14 headroom: subtract cell            by: tests/test_runner.py::TestGuards::test_headroom_short
+CAUGHT   R13 integrity: service running         by: tests/test_runner.py::TestGuards::test_integrity_service_running
+CAUGHT   R16 disk: free >= min                  by: tests/test_runner.py::TestGuards::test_disk_short
+CAUGHT   R18 image: present locally             by: tests/test_runner.py::TestGuards::test_image_not_local
+CAUGHT   R17 image: live container              by: tests/test_runner.py::TestGuards::test_live_container_missing
+CAUGHT   R19 leftovers                          by: tests/test_runner.py::TestGuards::test_leftovers_present
+CAUGHT   R20 preflight refuses on FAIL          by: tests/test_runner.py::TestGuards::test_disk_short
+CAUGHT   R21 failsafe: arm failure refuses      by: tests/test_runner.py::TestGuards::test_failsafe_arm_failure
+CAUGHT   R22 failsafe: disarm on stop failure   by: tests/test_runner.py::TestGuards::test_timer_stop_failure_disarms_failsafe
+CAUGHT   R24 teardown: re-arm timer             by: tests/test_runner.py::TestContainment::test_cfg_unreadable
+CAUGHT   R23 failsafe: ttl                      by: tests/test_runner.py::TestCell::test_happy_path
+CAUGHT   R25 teardown: disarm failsafe          by: tests/test_runner.py::TestContainment::test_cfg_unreadable
+CAUGHT   R58 teardown: failsafe before timer    by: tests/test_runner.py::TestContainment::test_cfg_unreadable
+CAUGHT   R26 teardown: containers               by: tests/test_runner.py::TestContainment::test_cfg_unreadable
+CAUGHT   R27 teardown: volumes                  by: tests/test_runner.py::TestContainment::test_cfg_unreadable
+CAUGHT   R28 teardown: networks                 by: tests/test_runner.py::TestContainment::test_cfg_unreadable
+CAUGHT   R29 trap EXIT                          by: tests/test_runner.py::TestContainment::test_cfg_unreadable
+CAUGHT   R31 create: --pull never               by: tests/test_runner.py::TestCell::test_happy_path
+CAUGHT   R32 create: --cpus                     by: tests/test_runner.py::TestCell::test_happy_path
+CAUGHT   R33 create: --memory-swap              by: tests/test_runner.py::TestCell::test_happy_path
+CAUGHT   R30 trap INT TERM                      by: tests/test_runner.py::TestCell::test_sigterm_mid_cell_tears_down
+CAUGHT   R35 containment: enforced              by: tests/test_runner.py::TestContainment::test_cfg_unreadable
+CAUGHT   R34 create: write-bps                  by: tests/test_runner.py::TestCell::test_io_cell_device_limits
+CAUGHT   R36 containment: validator_token       by: tests/test_runner.py::TestContainment::test_validator_token_in_cfg
+CAUGHT   R37 containment: ips_fixed             by: tests/test_runner.py::TestContainment::test_ips_fixed_in_cfg
+CAUGHT   R38 containment: ports                 by: tests/test_runner.py::TestContainment::test_published_port
+CAUGHT   R39 containment: privileged            by: tests/test_runner.py::TestContainment::test_privileged
+CAUGHT   R40 containment: network               by: tests/test_runner.py::TestContainment::test_live_network
+CAUGHT   R41 containment: mount kind            by: tests/test_runner.py::TestContainment::test_single_bind_mount
+CAUGHT   R42 containment: unreadable cfg        by: tests/test_runner.py::TestContainment::test_cfg_unreadable
+CAUGHT   R43 abort: live gate                   by: tests/test_runner.py::TestCell::test_live_down_mid_cell_aborts
+CAUGHT   R45 abort: host mem low                by: tests/test_runner.py::TestCell::test_host_memory_low_mid_cell
+CAUGHT   R44 abort: maint ended                 by: tests/test_runner.py::TestCell::test_maint_window_ends_mid_cell
+CAUGHT   R46 abort: host mem boundary           by: tests/test_runner.py::TestCell::test_host_memory_at_floor_no_abort
+CAUGHT   R47 loop: container stopped            by: tests/test_runner.py::TestCell::test_oom_kill
+CAUGHT   R49 loop: window end                   by: tests/test_runner.py::TestCell::test_happy_path
+CAUGHT   R48 loop: never-full timeout           by: tests/test_runner.py::TestCell::test_never_full
+CAUGHT   R50 peak RSS = max                     by: tests/test_runner.py::TestCell::test_happy_path
+CAUGHT   R52 oom: inspect flag                  by: tests/test_runner.py::TestCell::test_oom_kill
+CAUGHT   R51 oom: memory.events                 by: tests/test_runner.py::TestCell::test_oom_kill_from_memory_events
+CAUGHT   R53 matrix: --yes                      by: tests/test_runner.py::TestCommands::test_matrix_needs_yes
+CAUGHT   R54 matrix: stop on refusal            by: tests/test_runner.py::TestCommands::test_matrix_stops_on_refusal
+CAUGHT   R57 refuse exit 4                      by: tests/test_runner.py::TestGuards::test_disk_short
+CAUGHT   H01 percentile: nearest rank           by: tests/test_specdrill.py::TestMetrics::test_percentile_nearest_rank
+CAUGHT   H02 percentile: index                  by: tests/test_specdrill.py::TestMetrics::test_percentile_nearest_rank
+CAUGHT   H03 jitter: distinct ledgers           by: tests/test_specdrill.py::TestMetrics::test_lag_p95_at_limit_passes
+CAUGHT   H04 jitter: per-ledger step            by: tests/test_specdrill.py::TestMetrics::test_summarize_hand_computed
+CAUGHT   H05 jitter: >= 2 intervals             by: tests/test_specdrill.py::TestMetrics::test_jitter_needs_two_intervals
+CAUGHT   H06 jitter: population stddev          by: tests/test_specdrill.py::TestMetrics::test_summarize_hand_computed
+CAUGHT   H07 window: upper bound                by: tests/test_specdrill.py::TestMetrics::test_lag_p95_at_limit_passes
+CAUGHT   R55 matrix: unknown axis               by: tests/test_runner.py::TestCommands::test_matrix_unknown_axis
+CAUGHT   H09 lag clamp >= 0                     by: tests/test_specdrill.py::TestMetrics::test_cell_ahead_of_reference_clamped
+CAUGHT   H10 verdict: abort                     by: tests/test_specdrill.py::TestMetrics::test_never_full_slow_full_oom_restart_abort
+CAUGHT   H11 verdict: oom                       by: tests/test_specdrill.py::TestMetrics::test_never_full_slow_full_oom_restart_abort
+CAUGHT   H12 verdict: restarts                  by: tests/test_specdrill.py::TestMetrics::test_single_restart_fails
+CAUGHT   H13 verdict: slow full                 by: tests/test_specdrill.py::TestMetrics::test_never_full_slow_full_oom_restart_abort
+CAUGHT   H14 verdict: lag p95                   by: tests/test_specdrill.py::TestMetrics::test_summarize_hand_computed
+CAUGHT   H15 verdict: lag boundary              by: tests/test_specdrill.py::TestMetrics::test_lag_p95_at_limit_passes
+CAUGHT   H16 verdict: no window samples         by: tests/test_specdrill.py::TestMetrics::test_full_without_ledger_samples
+CAUGHT   H17 spec: pass below a failure         by: tests/test_specdrill.py::TestSpecs::test_pass_below_a_failure_not_trusted
+CAUGHT   H18 spec: safe = next step             by: tests/test_specdrill.py::TestSpecs::test_min_and_safe
+CAUGHT   H19 spec: failing list                 by: tests/test_specdrill.py::TestSpecs::test_min_and_safe
+CAUGHT   H20 peers_min                          by: tests/test_specdrill.py::TestMetrics::test_summarize_hand_computed
+CAUGHT   H21 live_full_all                      by: tests/test_specdrill.py::TestMetrics::test_live_not_full_recorded
+CAUGHT   H22 live-gate: all polls bad           by: tests/test_specdrill.py::TestCli::test_live_gate
+CAUGHT   H23 live-gate: polls >= 1              by: tests/test_specdrill.py::TestCli::test_live_gate
+CAUGHT   H24 live-gate: lag boundary            by: tests/test_specdrill.py::TestCli::test_live_gate
+CAUGHT   H25 report: no cells exit 2            by: tests/test_specdrill.py::TestCli::test_report_without_cells_exits_2
+CAUGHT   H26 report: cell order                 by: tests/test_specdrill.py::TestCli::test_report_is_deterministic
+CAUGHT   H08 window: lower bound                by: tests/test_runner.py::TestCell::test_happy_path
+CAUGHT   R56 run-cell: arg check                by: tests/test_runner.py::TestCommands::test_bad_cell_args
+orphans: 0
+MUTANTS: caught 84/84
+exit=0
+end 2026-11-20T04:51:43Z
