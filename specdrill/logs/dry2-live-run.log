@@ -1,0 +1,199 @@
+specdrill live run dry2 - 2026-11-20T08:09:24Z - Ubuntu 22.04.5 LTS - repo HEAD 4085d5c495d6bf2a37fd4397e4dc20065199633a (clean: yes) - axes dry dry=1
+
+== 0. preflight (read-only)
+$ rm -rf '~/.cache/specdrill-run-dry2' && mkdir -p '~/.cache/specdrill-run-dry2/bin' && cp specdrill/pft-specdrill.sh specdrill/specdrill.py '~/.cache/specdrill-run-dry2/bin/' && chmod 755 '~/.cache/specdrill-run-dry2' '~/.cache/specdrill-run-dry2/bin' && sha256sum specdrill/pft-specdrill.sh specdrill/specdrill.py '~/.cache/specdrill-run-dry2'/bin/* | cut -c1-64
+  79ea3a18e60dcc264a8c9f258d205cce9d00ef567a9437d5cb6c8ce483625a11
+  f68f74befb4f82d359eb2f9bfd7506e2710156c4a05ab9b28b12e08e4ec083e6
+  79ea3a18e60dcc264a8c9f258d205cce9d00ef567a9437d5cb6c8ce483625a11
+  f68f74befb4f82d359eb2f9bfd7506e2710156c4a05ab9b28b12e08e4ec083e6
+  (exit 0)
+CHECK ok   run copy of runner + helper = HEAD bytes (the repo may change while the run goes)
+$ shellcheck specdrill/pft-specdrill.sh specdrill/drill/*.sh && echo shellcheck clean
+  shellcheck clean
+  (exit 0)
+CHECK ok   shellcheck clean
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 282 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 167 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts before the run
+$ srv_state
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ labelled | wc -l
+  0
+  (exit 0)
+CHECK ok   no pft-specdrill labelled container/volume/network
+$ sudo -n pft-maint status --json | jq -c '{window, remaining_sec, locks}'
+  {"window":"none","remaining_sec":null,"locks":[]}
+  (exit 0)
+CHECK ok   no pft-maint window open
+$ sudo -n env WINDOW_S=120 FULL_TIMEOUT_S=300 bash '~/.cache/specdrill-run-dry2/bin/pft-specdrill.sh' plan --axes cpu
+  cell cpu cpus=0.25 mem=2048MiB io=0 budget=540s
+  cell cpu cpus=0.5 mem=2048MiB io=0 budget=540s
+  cell cpu cpus=1 mem=2048MiB io=0 budget=540s
+  cell cpu cpus=2 mem=2048MiB io=0 budget=540s
+  FAIL maint: no active pft-maint window (window=none)
+  ok live: full, lag 1 <= 3
+  ok integrity: verify PASS
+  ok headroom: 5066 MiB - 2048 MiB >= 1536 MiB
+  ok disk: 56 GB free
+  ok image: sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+  ok leftovers: none
+  lock: /run/pft-specdrill.lock  pull: never  failsafe: specdrill-rearm-integrity
+  (exit 0)
+CHECK ok   plan: every guard ok except maint (no window yet)
+$ systemctl is-active pft-integrity.timer; systemctl list-units --all --no-legend 'specdrill-rearm-integrity*' | wc -l
+  active
+  0
+  (exit 0)
+CHECK ok   pft-integrity.timer active, no failsafe unit left
+histarchive follow_gaps before: 2
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+$ curl -s --max-time 10 http://<redacted-ip>:9090/api/v1/alerts | jq -r .status; curl -s --max-time 10 http://<redacted-ip>:9093/api/v2/status | jq -r 'if (.uptime // "") != "" then "up" else "down" end'
+  success
+  up
+  (exit 0)
+CHECK ok   Prometheus and Alertmanager answer
+$ curl -s http://<redacted-ip>:9093/api/v2/silences | jq -r '.[] | select(.status.state == "active") | .id[0:8]'
+  f13cd97b
+  (exit 0)
+CHECK ok   active silences: none, or only the allowed one (SIL_OK=f13cd97b)
+$ active_alerts | sort | uniq -c
+        1 PFTAlertPipelineWatchdog firing -
+        2 PFTValwatchValidatorLow firing digest
+  (exit 0)
+CHECK ok   only the watchdog and the digest-only valwatch alerts active
+
+== 1. Alertmanager silences for what the drill itself causes (host=validator; never the watchdog), 21 min + 30
+silence d8829df6: alertname=PFTKernelCritical host=validator pattern=~oom_cgroup|hung_task until 2026-11-20T09:01:45Z
+CHECK ok   silence for PFTKernelCritical created
+silence 74aeb032: alertname=PFTKernelWarning host=validator pattern=oom_invoked until 2026-11-20T09:01:45Z
+CHECK ok   silence for PFTKernelWarning created
+silence b0ec6b3e: alertname=PFTJobDisabled host=validator timer=pft-integrity.timer until 2026-11-20T09:01:45Z
+CHECK ok   silence for PFTJobDisabled created
+$ curl -s http://<redacted-ip>:9093/api/v2/silences | jq -r '.[] | select(.status.state == "active" and .createdBy == "specdrill-live-run") | [.matchers[] | .name + (if .isRegex then "=~" else "=" end) + .value] | join(" ")'
+  alertname=PFTKernelWarning host=validator pattern=oom_invoked
+  alertname=PFTJobDisabled host=validator timer=pft-integrity.timer
+  alertname=PFTKernelCritical host=validator pattern=~oom_cgroup|hung_task
+  (exit 0)
+CHECK ok   3 drill silences active, none matches the pipeline watchdog
+
+== 2. [MAINT] messages to a throwaway topic (real file kept as $BK)
+real /etc/pft-maint/ntfy.env present before: 0
+$ { [ $HAD = 0 ] || sudo -n cp -p $NE $BK; } && printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' "$TT" | sudo -n tee $NE >/dev/null && sudo -n chmod 600 $NE && sudo -n stat -c '%a %U' $NE
+  600 root
+  (exit 0)
+CHECK ok   throwaway target installed
+
+== 2.dry window 1140s (validator only), matrix axis dry
+$ sudo -n pft-maint start --ttl 1140 --reason 'task_df1c7e56 specdrill run dry2 axis dry'
+  window started: id m1795162245-2156576 until 2026-11-20T08:29:45Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint window open (dry)
+$ sudo -n env WINDOW_S=120 FULL_TIMEOUT_S=300 bash $RD/bin/pft-specdrill.sh run-cell --out $RD/cells --axis cpu --cpus 2 --mem 2048
+    ok maint: active, 1136s left >= 540s
+    ok live: full, lag 1 <= 3
+    ok integrity: verify PASS
+    ok headroom: 5055 MiB - 2048 MiB >= 1536 MiB
+    ok disk: 56 GB free
+    ok image: sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+    ok leftovers: none
+  [2026-11-20T08:11:18Z] integrity timer paused (failsafe specdrill-rearm-integrity re-arms in 840s)
+  [2026-11-20T08:11:21Z] cell cpu-c2-m2048-io0 started (cpus=2 mem=2048MiB io=0)
+  [2026-11-20T08:12:22Z] cell full after 60s
+  [2026-11-20T08:14:32Z] integrity timer re-armed
+  [2026-11-20T08:14:32Z] teardown: leftovers=0
+  [2026-11-20T08:14:32Z] cell cpu-c2-m2048-io0: PASS 
+  (exit 0, 224s)
+CHECK ok   axis dry: runner exit 0
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+$ systemctl is-active pft-integrity.timer; systemctl list-units --all --no-legend 'specdrill-rearm-integrity*' | wc -l; labelled | wc -l
+  active
+  0
+  0
+  (exit 0)
+CHECK ok   axis dry: integrity timer re-armed, failsafe disarmed, 0 labelled resources
+
+== 3. after the matrix: cleanup, integrity, confinement, live node, report
+$ sudo -n chown -R '<user>:' '~/.cache/specdrill-run-dry2/cells' && ls '~/.cache/specdrill-run-dry2/cells' && for d in '~/.cache/specdrill-run-dry2'/cells/*/; do jq -c '{cell, verdict, reasons, time_to_full_s, lag_p95, live_full_all, live_lag_max}' $d/cell.json; done
+  cpu-c2-m2048-io0
+  {"cell":"cpu-c2-m2048-io0","verdict":"PASS","reasons":[],"time_to_full_s":60,"lag_p95":1,"live_full_all":true,"live_lag_max":1}
+  (exit 0)
+$ cat '~/.cache/specdrill-run-dry2'/cells/*/samples.jsonl | jq -s '{polls: length, live_not_full: ([.[] | select(.live_state != "full")] | length), live_lag_max: ([.[].live_lag // 0] | max), live_lag_gt1: ([.[] | select((.live_lag // 0) > 1)] | length)}'
+  {
+    "polls": 15,
+    "live_not_full": 0,
+    "live_lag_max": 1,
+    "live_lag_gt1": 0
+  }
+  (exit 0)
+CHECK ok   live validator full at every poll of every cell, lag never above LIVE_LAG_MAX 3
+$ labelled | wc -l; sudo -n docker ps -a --format '{{.Names}}' | sort | tr '\n' ' '
+  0
+  pft-alert-bridge pft-alertmanager pft-prometheus postfiatd 
+  (exit 0)
+CHECK ok   0 labelled containers/volumes/networks left
+$ sudo -n pft-integrity verify | grep -E 'WARN|FAIL|RESULT' | cut -c1-160; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 282 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 167 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts after the run (nothing to accept)
+$ sudo -n pft-apparmor audit | grep -E 'denials|RESULT'; sudo -n pft-seccomp audit | grep -E 'RESULT'
+    [PASS] denials            0 DENIED events in the last 86401s
+  RESULT: PASS
+  RESULT: PASS
+  (exit 0)
+CHECK ok   AppArmor + seccomp audits PASS, 0 denials on the live container
+$ srv_state; sudo -n docker inspect -f '{{.State.StartedAt}} {{.RestartCount}}' postfiatd
+  full
+  full
+  2026-11-14T19:18:20.509963184Z 0
+  (exit 0)
+CHECK ok   both nodes full or proposing at the end
+$ curl -s --max-time 20 http://<redacted-ip>:9090/api/v1/query --data-urlencode 'query=count by (alertname, alertstate, host) (count_over_time(ALERTS[451s]))' | jq -r '.data.result[] | .metric | "\(.alertname) \(.alertstate) \(.host // "-")"' | sort
+  PFTAlertPipelineWatchdog firing -
+  PFTJobDisabled pending validator
+  PFTValwatchValidatorLow firing -
+  (exit 0)
+CHECK ok   every alert active at any time during the run (451s) is the watchdog, digest-only valwatch or a silenced drill alert (0 outside)
+histarchive follow_gaps after: 2 (before 2)
+CHECK ok   no new histarchive follow gap (the live node never stopped)
+
+== 4. restore, drain, expire the silence, read back
+$ sudo -n rm -f $NE   (no ntfy.env before: pft-maint falls back to the real monitor target again)
+silences  d8829df6-8d03-4304-9639-aeaabcd182d1 74aeb032-7278-4089-b34c-c77c15ca4628 b0ec6b3e-ef60-4685-ada3-b954cede3200 left active until their end (expired only after a clean drain)
+CHECK ok   pft-maint target back to its pre-run state
+$ for i in $(seq 0 30 600); do n=$(active_alerts | unexpected); echo "+${i}s: $n"; [ "$n" = 0 ] && break; sleep 30; done; echo $n
+  +0s: 0
+  0
+  (exit 0)
+CHECK ok   drained: only the watchdog and digest-only alerts active (pending included)
+$ curl -s -o /dev/null -w '%{http_code}' -X DELETE http://<redacted-ip>:9093/api/v2/silence/d8829df6-8d03-4304-9639-aeaabcd182d1
+  200
+  (exit 0)
+CHECK ok   silence d8829df6 expired
+$ curl -s -o /dev/null -w '%{http_code}' -X DELETE http://<redacted-ip>:9093/api/v2/silence/74aeb032-7278-4089-b34c-c77c15ca4628
+  200
+  (exit 0)
+CHECK ok   silence 74aeb032 expired
+$ curl -s -o /dev/null -w '%{http_code}' -X DELETE http://<redacted-ip>:9093/api/v2/silence/b0ec6b3e-ef60-4685-ada3-b954cede3200
+  200
+  (exit 0)
+CHECK ok   silence b0ec6b3e expired
+$ sleep 5; curl -s --max-time 15 "https://ntfy.sh/$TT/json?poll=1&since=1795162164" | jq -r 'select(.event == "message") | .title'
+  [MAINT] start validator
+  [MAINT] end validator
+  (exit 0)
+CHECK ok   the [MAINT] start/end messages reached the throwaway topic (2)
+operator topic read-back waits 90 s after the expiry
+  operator #1 topic: 0 alert/maint message(s), 0 agent-cycle message(s)
+  operator #2 topic: 0 alert/maint message(s), 0 agent-cycle message(s)
+CHECK ok   operator topics received no alert or [MAINT] message during the run (2 topic(s), 0 with messages)
+
+specdrill live run dry2 done 2026-11-20T08:17:36Z: 0 check(s) failed -> PASS
+exit=0
