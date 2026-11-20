@@ -267,16 +267,29 @@ def flat_counters(c, i):
     return flat
 
 
+# postfiatd 1.0.9 node_read_bytes wraps at 2**32: on the validator it went 4293619473 -> 10786189 in one
+# 30-second interval with uptime up (2026-11-20T12:23:40Z, README "32-bit wrap", logs/13). A decrease from below
+# 2**32 whose forward step modulo 2**32 is small (< WRAP_MAX_STEP) is a wrap, not an anomaly.
+WRAP = 2**32
+WRAP_MAX_STEP = 2**30
+
+
+def is_wrap(old, new):
+    return 0 <= new < old < WRAP and (new - old) % WRAP < WRAP_MAX_STEP
+
+
 def compare(prev, flat, uptime):
-    """-> (restart, decreased counter names). A restart is uptime going down; counters may then start over."""
+    """-> (restart, decreased counter names, wrapped counter names). A restart is uptime going down;
+    counters may then start over."""
     pu = prev.get("uptime")
     pc = prev.get("counters")
     if not isinstance(pu, int) or not isinstance(pc, dict):
-        return False, []
+        return False, [], []
     if uptime < pu:
-        return True, []
-    dec = sorted(k for k, v in flat.items() if isinstance(pc.get(k), int) and v < pc[k])
-    return False, dec
+        return True, [], []
+    down = sorted(k for k, v in flat.items() if isinstance(pc.get(k), int) and v < pc[k])
+    wrapped = [k for k in down if is_wrap(pc[k], flat[k])]
+    return False, [k for k in down if k not in wrapped], wrapped
 
 
 def esc(v):
@@ -460,7 +473,7 @@ def cmd_collect(a):
     over = {"job_type": ojobs, "load_job_type": oload, "method": orpc, "object_type": c["overflow_objects"]}
     prev = read_state(a.state)
     flat = flat_counters(c, i)
-    restart, dec = compare(prev, flat, i["uptime"])
+    restart, dec, wrapped = compare(prev, flat, i["uptime"])
     st = {
         "restarts": prev.get("restarts", 0) if isinstance(prev.get("restarts"), int) else 0,
         "anomalies": prev.get("anomalies", 0) if isinstance(prev.get("anomalies"), int) else 0,
@@ -473,6 +486,8 @@ def cmd_collect(a):
         die(f"textfile body {size} B + {a.reserve} B header is over the {budget} B budget (MAX_BYTES)")
     if dec:
         print(f"internals_parse: counters went down without a restart: {', '.join(dec[:5])}", file=sys.stderr)
+    if wrapped:
+        print(f"internals_parse: counters wrapped at 2^32 (not an anomaly): {', '.join(wrapped[:5])}", file=sys.stderr)
     state = {
         "ts": a.now,
         "last_success": a.now,
@@ -483,6 +498,7 @@ def cmd_collect(a):
         "anomalies": st["anomalies"],
         "last_restart": a.now if restart else prev.get("last_restart"),
         "last_anomaly": {"ts": a.now, "counters": dec[:20]} if dec else prev.get("last_anomaly"),
+        "last_wrap": {"ts": a.now, "counters": wrapped[:20]} if wrapped else prev.get("last_wrap"),
         "bytes": size,
         "series": sum(1 for ln in text.split("\n") if ln and not ln.startswith("#")),
     }

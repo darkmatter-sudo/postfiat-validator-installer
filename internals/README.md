@@ -35,6 +35,13 @@ answer): both are normalised to a 0..1 ratio, and each is range-checked in its o
   shows it going down in 7 of 39 30-second intervals (3.5 ms to 313 ms, six job types; logs/04). It is now exported as the
   gauge `job_queue_wait_seconds` (report: `delta()` floored at 0, not `rate()`) and left out of the comparison; every
   other counter stays checked (`test_queued_duration_decrease_is_not_an_anomaly`).
+- **Found live on 2026-11-20 (logs/13): `node_read_bytes` wraps at 2^32 in postfiatd 1.0.9.** On the validator it went
+  4293619473 -> 10786189 between two 30-second samples while uptime kept rising (a forward step of 12134012 bytes
+  modulo 2^32), and `PFTInternalsCounterAnomaly` fired. A decrease from a value below 2^32 whose forward step modulo
+  2^32 is under 2^30 is now a **32-bit wrap**: logged as `counters wrapped at 2^32 (not an anomaly)`, kept as
+  `last_wrap` in the state file, not counted in `counter_anomalies_total`. Any other decrease is still an anomaly
+  (`test_32bit_wrap_is_not_an_anomaly`, `test_is_wrap_boundaries`). The exported value stays as the node sends it;
+  Prometheus `rate()`/`increase()` treat the drop as a counter reset.
 - **Fail closed.** Every exported field must be present with the right type: counts are JSON integers or decimal
   strings of at most 20 digits (the node sends 64-bit counters as strings), never booleans or negatives; hit rates
   are finite numbers in 0..100 (percent) or 0..1 (SLE); job counters must satisfy finished <= started <= queued;

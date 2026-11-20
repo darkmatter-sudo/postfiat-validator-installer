@@ -1,0 +1,40 @@
+# 2026-11-20 PFTInternalsCounterAnomaly on the validator: node_read_bytes 32-bit wrap (raw commands + output)
+$ curl -s http://127.0.0.1:9090/api/v1/query_range --data-urlencode query=pft_internals_nodestore_read_bytes_total{container="postfiatd"} start=12:20:00Z end=12:27:00Z step=30
+2026-11-20T12:20:00Z 4293458953
+2026-11-20T12:20:30Z 4293458953
+2026-11-20T12:21:00Z 4293465412
+2026-11-20T12:21:30Z 4293465412
+2026-11-20T12:22:00Z 4293484149
+2026-11-20T12:22:30Z 4293484149
+2026-11-20T12:23:00Z 4293619473
+2026-11-20T12:23:30Z 4293619473
+2026-11-20T12:24:00Z 10786189
+2026-11-20T12:24:30Z 10786189
+2026-11-20T12:25:00Z 10828533
+2026-11-20T12:25:30Z 10828533
+2026-11-20T12:26:00Z 10832643
+2026-11-20T12:26:30Z 10832643
+2026-11-20T12:27:00Z 10850750
+$ curl -s ... query_range query=pft_internals_node_uptime_seconds{container="postfiatd"} (same window, step 60)
+2026-11-20T12:20:00Z 493274
+2026-11-20T12:21:00Z 493334
+2026-11-20T12:22:00Z 493394
+2026-11-20T12:23:00Z 493454
+2026-11-20T12:24:00Z 493515
+2026-11-20T12:25:00Z 493574
+2026-11-20T12:26:00Z 493634
+2026-11-20T12:27:00Z 493694
+$ sudo jq -c {uptime,restarts,anomalies,last_anomaly} /var/lib/pft-internals/state-postfiatd.json
+{"uptime":494594,"restarts":0,"anomalies":1,"last_anomaly":{"counters":["ns.nodestore_read_bytes_total"],"ts":1795177420}}
+$ python3 -c "print(2**32, 2**32 - 4293619473 + 10786189)"
+4294967296 12134012
+$ python3 -m pytest -q internals/tests/test_internals.py  (with the fix)
+54 passed, 65 subtests passed in 16.28s
+All checks passed!
+9 files already formatted
+$ quick mutants of is_wrap/compare against -k wrap
+mutant [s/% WRAP < WRAP_MAX_STEP/% WRAP <= WRAP_MAX_STEP/] -> 1 failed, 2 passed, 52 deselected, 7 subtests passed in 0.49s
+mutant [s/0 <= new < old < WRAP and/0 <= new < old and/] -> 1 failed, 2 passed, 52 deselected, 7 subtests passed in 0.38s
+mutant [s/return False, \[k for k in down if k not in wrapped\], wrapped/return False, down, wrapped/] -> 1 failed, 52 deselected in 0.33s
+$ python3 -m pytest -q internals/tests/test_internals.py  (after the comment/README edit, final tree)
+54 passed, 65 subtests passed in 13.80s

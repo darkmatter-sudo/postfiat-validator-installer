@@ -471,6 +471,42 @@ class TestRestarts(Base):
         self.assertEqual(s[f"pft_internals_counter_anomalies_total{{{C}}}"], "1")
         self.assertIn("rpc.fee.started", p.stderr)
 
+    def test_32bit_wrap_is_not_an_anomaly(self):
+        """Real 2026-11-20 validator pair: node_read_bytes 4293619473 -> 10786189 with uptime up (2**32 wrap)."""
+        gc = copy.deepcopy(self.gc)
+        gc["result"]["node_read_bytes"] = "4293619473"
+        self.ok(gc=gc)
+        si = copy.deepcopy(self.si)
+        si["result"]["info"]["uptime"] = 120107
+        gc["result"]["node_read_bytes"] = "10786189"
+        s, p = self.ok(si=si, gc=gc, now=NOW + 30)
+        self.assertEqual(s[f"pft_internals_counter_anomalies_total{{{C}}}"], "0")
+        self.assertEqual(s[f"pft_internals_nodestore_read_bytes_total{{{C}}}"], "10786189")
+        self.assertIn("counters wrapped at 2^32 (not an anomaly): ns.nodestore_read_bytes_total", p.stderr)
+        st = json.loads(read(self.state))
+        self.assertEqual(st["last_wrap"], {"ts": NOW + 30, "counters": ["ns.nodestore_read_bytes_total"]})
+        self.assertIsNone(st["last_anomaly"])
+
+    def test_is_wrap_boundaries(self):
+        sys.path.insert(0, ROOT)
+        try:
+            import internals_parse
+        finally:
+            sys.path.pop(0)
+        cases = [
+            (4293619473, 10786189, True),  # the live pair
+            (2**32 - 1, 0, True),
+            (2**32 - 1, 2**30 - 2, True),  # forward step 2**30 - 1, the largest accepted
+            (2**32 - 1, 2**30 - 1, False),  # forward step 2**30
+            (1000, 999, False),  # a small real decrease
+            (3_000_000_000, 1_000_000_000, False),  # forward step 2.29e9, too large
+            (2**32 + 5, 10, False),  # a counter already past 2**32 did not wrap at 2**32 (step mod 2**32 = 5)
+            (5, 5, False),
+        ]
+        for old, new, wrap in cases:
+            with self.subTest(old=old, new=new):
+                self.assertIs(internals_parse.is_wrap(old, new), wrap)
+
     def test_queued_duration_decrease_is_not_an_anomaly(self):
         """Real 2026-11-16 validator pair: acceptLedger queued_duration_us 55548503 -> 55543016 with uptime up."""
         si = copy.deepcopy(self.si)
