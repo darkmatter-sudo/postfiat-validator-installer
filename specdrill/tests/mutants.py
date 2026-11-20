@@ -279,7 +279,7 @@ MUTANTS = [
     ),
     ("H21", PY, "live_full_all", 'all(s.get("live_state") == "full" for s in samples)', "True"),
     ("H22", PY, "live-gate: all polls bad", "len(bad) == polls:", "len(bad) >= 1:"),
-    ("H23", PY, "live-gate: enough samples", "if len(s) == polls and ", "if "),
+    ("H23", PY, "live-gate: polls >= 1", "and int(argv[4]) >= 1:", ":"),
     ("H24", PY, "live-gate: lag boundary", '(x.get("live_lag") or 0) > max_lag', '(x.get("live_lag") or 0) >= max_lag'),
     ("H25", PY, "report: no cells exit 2", "        return 2\n", "        return 0\n"),
     (

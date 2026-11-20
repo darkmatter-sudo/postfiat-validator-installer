@@ -275,10 +275,10 @@ def cmd_report(root, out_dir):
 
 def cmd_live_gate(path, max_lag, polls):
     """Abort signal for the runner: exit 1 when each of the last POLLS samples has the live node not full or its
-    lag above MAX_LAG; exit 0 otherwise (including fewer than POLLS samples)."""
+    lag above MAX_LAG; exit 0 otherwise (including fewer than POLLS samples). POLLS >= 1 (main exits 3 otherwise)."""
     s = load_jsonl(path)[-polls:]
     bad = [x for x in s if x.get("live_state") != "full" or (x.get("live_lag") or 0) > max_lag]
-    if len(s) == polls and len(bad) == polls:
+    if len(bad) == polls:
         print("live_lag")
         return 1
     return 0
@@ -289,7 +289,7 @@ def main(argv):
         return cmd_summarize(argv[2])
     if len(argv) == 4 and argv[1] == "report":
         return cmd_report(argv[2], argv[3])
-    if len(argv) == 5 and argv[1] == "live-gate":
+    if len(argv) == 5 and argv[1] == "live-gate" and argv[4].isdigit() and int(argv[4]) >= 1:
         return cmd_live_gate(argv[2], int(argv[3]), int(argv[4]))
     sys.stderr.write(__doc__)
     return 3

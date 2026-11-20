@@ -116,6 +116,8 @@ def docker(sc, st, a):
     if a[:2] == ["image", "inspect"]:
         return 0 if sc.get("image_present", True) else 1
     if a[0] == "cp":
+        if sc.get("cp_fails"):
+            return 1
         cfg = sc.get("cfg", "[server]\nport_rpc_admin_local\n[node_db]\ntype=NuDB\n").encode()
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w") as t:

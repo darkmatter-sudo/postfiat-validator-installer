@@ -98,6 +98,21 @@ class TestMetrics(unittest.TestCase):
         self.assertEqual(c["reasons"][:3], ["aborted:live_lag", "oom_killed", "restarts=2"])
         self.assertEqual(c["verdict"], "FAIL")
 
+    def test_single_restart_fails(self):
+        c = specdrill.summarize(dict(META, restarts=1), SAMPLES)
+        self.assertEqual((c["reasons"][0], c["verdict"]), ("restarts=1", "FAIL"))
+
+    def test_full_without_ledger_samples(self):
+        # full at 1030 but no sample in the window carries seq/ref_seq -> no lag data -> FAIL, not a vacuous PASS
+        c = specdrill.summarize(META, [smp(1000, "connected"), smp(1030, "full", peers=8), smp(1040, "full", peers=8)])
+        self.assertEqual((c["window_samples"], c["reasons"], c["verdict"]), (0, ["no_window_samples"], "FAIL"))
+
+    def test_cell_ahead_of_reference_clamped(self):
+        # the public reference answered one ledger behind the cell: lag -1 -> 0 (p50/max 0, not negative)
+        s = [smp(1000, "connected"), smp(1030, "full", 101, 5000, 100, 8), smp(1040, "full", 102, 5004, 102, 8)]
+        c = specdrill.summarize(META, s)
+        self.assertEqual((c["lag_p50"], c["lag_max"], c["window_samples"]), (0, 0, 2))
+
     def test_jitter_needs_two_intervals(self):
         self.assertIsNone(specdrill.close_jitter([smp(1, "full", 1, 10), smp(2, "full", 2, 14)]))
 
@@ -165,6 +180,9 @@ class TestCli(unittest.TestCase):
             rep = outs[0]["REPORT.md"]
             self.assertIn("| cpu | 1 vCPU (`cpu-1`) | 1 vCPU (`cpu-1`) | `cpu-0.5` (lag_p95>2) |", rep)
             self.assertEqual(outs[0]["cells.csv"].splitlines()[0], ",".join(specdrill.CSV_COLS))
+            # cells in name order (cpu-0.5 < cpu-1), independent of directory listing order
+            self.assertEqual([c["cell"] for c in json.loads(outs[0]["cells.json"])["cells"]], ["cpu-0.5", "cpu-1"])
+            self.assertEqual([r.split(",")[0] for r in outs[0]["cells.csv"].splitlines()[1:]], ["cpu-0.5", "cpu-1"])
 
     def test_report_without_cells_exits_2(self):
         with tempfile.TemporaryDirectory() as t:
@@ -191,6 +209,7 @@ class TestCli(unittest.TestCase):
             self.assertEqual(gate([smp(1, "full", live_lag=4), smp(2, "full", live_lag=3)]), 0)  # 3 == max: ok
             self.assertEqual(gate([smp(1, "full", live_lag=4), smp(2, "full", live_lag=5)]), 1)
             self.assertEqual(gate([smp(1, "full", live_state="syncing"), smp(2, "full", live_lag=9)]), 1)
+            self.assertEqual(gate([smp(1, "full", live_lag=0)], polls=0), 3)  # POLLS 0 would read the whole file
 
     def test_usage_exit_3(self):
         r = subprocess.run([sys.executable, "-I", HELPER], capture_output=True, text=True)

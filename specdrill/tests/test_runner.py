@@ -263,6 +263,21 @@ class TestContainment(Base):
         self.assert_refused(self.cell(), "containment: container publishes ports, mounts more than its volume")
         self.assert_never_started()
 
+    def test_single_bind_mount(self):
+        self.scenario({"inspect_override": {"Mounts": [{"Type": "bind", "Name": ""}]}})
+        self.assert_refused(self.cell(), "containment: container publishes ports, mounts more than its volume")
+        self.assert_never_started()
+
+    def test_single_foreign_volume(self):
+        self.scenario({"inspect_override": {"Mounts": [{"Type": "volume", "Name": "postfiatd_db"}]}})
+        self.assert_refused(self.cell(), "containment: container publishes ports, mounts more than its volume")
+        self.assert_never_started()
+
+    def test_cfg_unreadable(self):
+        self.scenario({"cp_fails": True})
+        self.assert_refused(self.cell(), "containment: cell config unreadable")
+        self.assert_never_started()
+
     def test_privileged(self):
         self.scenario({"inspect_override": {"Privileged": True}})
         self.assert_refused(self.cell(), "containment:")
@@ -295,6 +310,9 @@ class TestCell(Base):
         self.assertEqual(c["peers_min"], 8)
         self.assertEqual(c["peak_rss_mib"], 625.0)  # max VmHWM 640000 kB
         self.assertEqual(self.meta()["abort"], None)
+        m = self.meta()
+        self.assertEqual(m["end"] - m["start"], 90)  # loop ends exactly at full (30) + WINDOW_S (60)
+        self.assertEqual(len(open(os.path.join(self.out, "cpu-c1-m2048-io0", "samples.jsonl")).readlines()), 10)
         self.assert_torn_down()
         create = next(x for x in self.calls() if x.startswith("docker create"))
         for frag in (
@@ -333,6 +351,8 @@ class TestCell(Base):
         self.assertIn("cell never full within 120s", r.stdout)
         c = self.celljson()
         self.assertEqual((c["verdict"], c["reasons"]), ("FAIL", ["never_full"]))
+        m = self.meta()
+        self.assertEqual(m["end"] - m["start"], 120)  # gives up exactly at FULL_TIMEOUT_S
         self.assert_torn_down()
 
     def test_slow_full(self):
@@ -354,6 +374,28 @@ class TestCell(Base):
         self.assertIn("oom_killed", c["reasons"])
         self.assertEqual(c["verdict"], "FAIL")
         self.assert_torn_down()
+
+    def write_memory_events(self, n):
+        d = os.path.join(self.d, "cg", "docker-cid.scope")
+        os.makedirs(d)
+        with open(os.path.join(d, "memory.events"), "w") as f:
+            f.write(f"low 0\nhigh 0\nmax 3\noom 1\noom_kill {n}\noom_group_kill 0\n")
+
+    def test_oom_kill_from_memory_events(self):
+        # a process in the cell was OOM-killed but the container kept running (OOMKilled false)
+        self.scenario({"cell": [{"at": 0, "state": "full", "lag": 0}]})
+        self.write_memory_events(1)
+        self.assertEqual(self.cell().returncode, 0)
+        c = self.celljson()
+        self.assertEqual((c["oom_killed"], c["verdict"]), (True, "FAIL"))
+        self.assertIn("oom_killed", c["reasons"])
+
+    def test_memory_events_zero_no_oom(self):
+        self.scenario({"cell": [{"at": 0, "state": "full", "lag": 0}]})
+        self.write_memory_events(0)
+        self.assertEqual(self.cell().returncode, 0)
+        c = self.celljson()
+        self.assertEqual((c["oom_killed"], c["verdict"]), (False, "PASS"))
 
     def test_live_lag_abort_after_two_polls(self):
         self.scenario(
@@ -479,8 +521,10 @@ class TestCommands(Base):
         self.assert_nothing_created()
 
     def test_bad_cell_args(self):
-        r = self.run_sd("run-cell", "--out", self.out, "--axis", "cpu", "--cpus", "1.2.3", "--mem", "2048")
-        self.assertEqual(r.returncode, 3)
+        for cpus, mem, io in (("1.2.3", "2048", "0"), ("1", "2g", "0"), ("1", "2048", "4M")):
+            r = self.run_sd("run-cell", "--out", self.out, "--axis", "cpu", "--cpus", cpus, "--mem", mem, "--io", io)
+            self.assertEqual(r.returncode, 3, (cpus, mem, io))
+            self.assertIn("run-cell needs", r.stderr)
         self.assertEqual(self.calls(), [])
 
     def test_cleanup_removes_leftovers(self):
