@@ -1,0 +1,61 @@
+internals counter-wrap upgrade - 2026-11-20T13:14:38Z - Ubuntu 22.04.5 LTS - repo HEAD 155cb7b974ea4bf917ddeb94c2196576d5f452bb (clean: yes)
+
+== 0. preflight (read-only)
+$ sha256sum internals/pft-internals.sh internals/internals_parse.py internals/systemd/* alerts/internals.rules.yml fleet/manifest.tsv internals/drill/wrap-upgrade-run.sh
+  12a4f22f5a1bfb8a2206a83d9378da9731073dd234b96919ec652f9954350faa  internals/pft-internals.sh
+  2b6c7793b395f1bf02ff49836a0750eb605e1e54c0e1bdc0048816e26fd52354  internals/internals_parse.py
+  810f7bd50f505208a2810dec6467fe25d9e7a208a5957d3dc677b82acc503bde  internals/systemd/pft-internals-pull@.service
+  aefd87c69aa05b06682cb3b2eb6f280ecb47749e257f25c4db6c698f09483b5f  internals/systemd/pft-internals-pull@.timer
+  5b436550824e8a3029c6e0853dbef5c81cb6fc77bb4e92ac260052074f33b605  internals/systemd/pft-internals@.service
+  8e0aa6859704ec5de315360d7d29a2d80453e557d9cd77c9ca02d7c31f8a6280  internals/systemd/pft-internals@.timer
+  cdd5c02c543b45d54d0651384056109f44dd0b34071a6eca573428bddac7fe3e  alerts/internals.rules.yml
+  9773d239a717fecbe97824cb5a2a7e688aa91f48143795032eaeda713e338129  fleet/manifest.tsv
+  b1de73606ea734b62db690d4388af2f96404d05e8595715c2435ba6929602071  internals/drill/wrap-upgrade-run.sh
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 282 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 167 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts before the upgrade
+$ srv_state
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ git show 6c6425ed9af9:internals/internals_parse.py | sha256sum | cut -c1-64; sudo -n sha256sum /usr/local/lib/pft-internals/internals_parse.py | cut -c1-64; R 'sha256sum /usr/local/lib/pft-internals/internals_parse.py | cut -c1-64'; sha256sum internals/internals_parse.py | cut -c1-64
+  84e79292c2f2e38f015c349dff31e7344942307a93b8345fe2b9e33a5481761e
+  84e79292c2f2e38f015c349dff31e7344942307a93b8345fe2b9e33a5481761e
+  84e79292c2f2e38f015c349dff31e7344942307a93b8345fe2b9e33a5481761e
+  2b6c7793b395f1bf02ff49836a0750eb605e1e54c0e1bdc0048816e26fd52354
+  (exit 0)
+CHECK ok   both hosts run the old parser (6c6425ed9af9), which differs from HEAD's
+$ git diff --stat 6c6425ed9af9 155cb7b974ea4bf917ddeb94c2196576d5f452bb -- fleet/manifest.tsv internals/pft-internals.sh internals/systemd alerts/internals.rules.yml | tail -1; git diff --name-only 6c6425ed9af9 155cb7b974ea4bf917ddeb94c2196576d5f452bb -- internals | grep -v -e '^internals/logs/' -e '^internals/tests/' -e '^internals/drill/' -e '^internals/README.md$'
+   1 file changed, 17 insertions(+)
+  internals/internals_parse.py
+  (exit 0)
+CHECK FAIL since 6c6425ed9af9 only the parser changed (manifest, collector, units, rules unchanged)
+$ pull_probe
+  1
+  pull-ssh-ok
+  (exit 0)
+CHECK ok   the pull's ssh command (pft-statewatch's PULL_SSH, non-empty) reaches the sentry when run as root
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+$ curl -s --max-time 10 http://<redacted-ip>:9090/api/v1/alerts | jq -r .status; curl -s --max-time 10 http://<redacted-ip>:9093/api/v2/status | jq -r 'if (.uptime // "") != "" then "up" else "down" end'
+  success
+  up
+  (exit 0)
+CHECK ok   Prometheus and Alertmanager answer (alert gates below fail closed)
+$ curl -s http://<redacted-ip>:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'; curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '.data.alerts[] | "\(.labels.alertname) \(.state)"' | sort | uniq -c
+  0
+        1 PFTAlertPipelineWatchdog firing
+        2 PFTValwatchValidatorLow firing
+  (exit 0)
+known pending/firing before the run (accepted by the preflight): PFTValwatchValidatorLow
+CHECK ok   no active silence; only the watchdog (+ KNOWN_PENDING) pending/firing; PFTInternalsCounterAnomaly inactive
+$ sudo -n test -e /etc/pft-maint/ntfy.env && echo present || echo absent; systemctl list-units --all --no-legend 'agent-*' 'run-u*.service' 'run-u*.timer' | wc -l
+  absent
+  0
+  (exit 0)
+CHECK ok   no drill unit running
+preflight failed - stopping before any change

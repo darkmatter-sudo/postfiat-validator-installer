@@ -172,6 +172,8 @@ fails unless every operator topic holds 0 messages at the end.
 | 10a, 10 | first alert drill: preflight; FIRING after 5 min pending and RESOLVED 49 s after the fix, both on the throwaway topic. Found: the restore resumed the sentry's alertpath check on a snapshot taken before the bridge re-create, so its next run read the snapshot from the 6 s restart and sent `[alertpath] DEGRADED` (bridge not listening) and `RECOVERED` to the operator's alertpath topic (the check's one FAIL) |
 | 11 | alert drill after the fix (2f064a6: resume only on an OK check of a snapshot taken after the re-create, read-back 90 s later): every check ok, FIRING + RESOLVED on the throwaway topic, operator topics 0 messages, integrity PASS both hosts, both nodes full. Its throwaway topic also shows a `[RESOLVED]` for run 10's drill name: that alert was still in Prometheus's 15-min resolved resend window, so Alertmanager folded it into run 11's group notification |
 | 12 | fresh clone at the pinned commit (`drill/fresh-clone.sh SHA internals/logs/07-upgrade.log --mutants`) |
+| 13 | found: `node_read_bytes` 32-bit wrap on the validator (2026-11-20T12:23:40Z) and the parser fix 87e8400 (tests + quick mutants) |
+| 14a, 14b, 14 | two-host upgrade to the wrap fix (`drill/wrap-upgrade-run.sh`): 14a preflight refused on its own too-strict manifest diff (fixed 0155adb: internals rows only), 14b preflight ok, 14 every check ok (parser bytes = repo on both hosts, state re-baselined, skew CURRENT, integrity PASS both, operator topics 0 messages) |
 
 The 24-hour two-host window started after the upgrade's state re-baseline (2026-11-16T06:05Z) and ended
 2026-11-17T06:05Z; no internals code changed in it (key-file hashes = the ones the upgrade, log 07, installed).
