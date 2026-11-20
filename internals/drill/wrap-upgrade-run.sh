@@ -74,8 +74,8 @@ x "srv_state"
 check "both nodes full or proposing" "$([ "$(grep -cE '^(full|proposing)$' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
 x "git show $OLD:internals/internals_parse.py | sha256sum | cut -c1-64; sudo -n sha256sum /usr/local/lib/pft-internals/internals_parse.py | cut -c1-64; R 'sha256sum /usr/local/lib/pft-internals/internals_parse.py | cut -c1-64'; sha256sum internals/internals_parse.py | cut -c1-64"
 check "both hosts run the old parser ($OLD), which differs from HEAD's" "$([ "$(sed -n 1p <<<"$XOUT")" = "$(sed -n 2p <<<"$XOUT")" ] && [ "$(sed -n 2p <<<"$XOUT")" = "$(sed -n 3p <<<"$XOUT")" ] && [ "$(sed -n 3p <<<"$XOUT")" != "$(sed -n 4p <<<"$XOUT")" ] && [ "$(wc -l <<<"$XOUT")" = 4 ] && echo 0 || echo 1)"
-x "git diff --stat $OLD $SHA -- fleet/manifest.tsv internals/pft-internals.sh internals/systemd alerts/internals.rules.yml | tail -1; git diff --name-only $OLD $SHA -- internals | grep -v -e '^internals/logs/' -e '^internals/tests/' -e '^internals/drill/' -e '^internals/README.md$'"
-check "since $OLD only the parser changed (manifest, collector, units, rules unchanged)" "$([ "$XOUT" = "internals/internals_parse.py" ] && echo 0 || echo 1)"
+x "git diff $OLD $SHA -- fleet/manifest.tsv | grep -cE '^[-+]internals[[:space:]]'; git diff --stat $OLD $SHA -- internals/pft-internals.sh internals/systemd alerts/internals.rules.yml | tail -1; git diff --name-only $OLD $SHA -- internals | grep -v -e '^internals/logs/' -e '^internals/tests/' -e '^internals/drill/' -e '^internals/README.md$'"
+check "since $OLD only the parser changed (internals manifest rows, collector, units, rules unchanged)" "$([ "$(tr '\n' ' ' <<<"$XOUT")" = "0 internals/internals_parse.py " ] && echo 0 || echo 1)"
 pull_probe() { # run pft-statewatch's PULL_SSH (as root, like the unit) with `true`; prints nothing of the command
   sudo -n grep -c '^PULL_SSH=' /etc/pft-statewatch.env
   sudo -n bash -c 'c="$(sed -n "s/^PULL_SSH=//p" /etc/pft-statewatch.env | tr -d "\"")"; [ -n "$c" ] && $c true' >/dev/null 2>&1 && echo pull-ssh-ok
