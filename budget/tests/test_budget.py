@@ -464,6 +464,27 @@ class TestReport(Base):
         self.assertEqual(u["verdict"], "OK")
         self.assertEqual(u["target"], 512 * MIB)  # 2 x 251 MiB = 502 MiB, rounded up to 64 MiB steps
 
+    def test_history_from_drops_pre_fix_runs(self):
+        # the 2026-11-21 case: the collector peaked near its own 128M cap before the slim loader, ~44 MiB after it
+        cap = 128 * MIB
+        old = [rec("pft-budget-collect.service", T0 + i * 3600, 116 * MIB, cap=cap) for i in range(3)]
+        new = [rec("pft-budget-collect.service", T0 + DAY + i * 3600, 44 * MIB, cap=cap) for i in range(3)]
+        other = [rec("pft-b.service", T0 + i * 3600, 470 * MIB) for i in range(3)]  # not listed: untouched
+        before = {u["unit"]: u for u in self.rep(old + new + other, T0 + 2 * DAY)["units"]}
+        self.assertEqual(before["pft-budget-collect.service"]["verdict"], "FAIL")
+        self.assertNotIn("history_from", before["pft-budget-collect.service"])
+        os.environ["PFT_BUD_HISTORY_FROM"] = f"pft-budget-collect.service={int(T0 + DAY)}"
+        try:
+            self.conf = budget.load_conf("/nonexistent")
+        finally:
+            os.environ.pop("PFT_BUD_HISTORY_FROM")
+        after = {u["unit"]: u for u in self.rep(old + new + other, T0 + 2 * DAY)["units"]}
+        u = after["pft-budget-collect.service"]
+        self.assertEqual((u["verdict"], u["invocations"], u["peak_unrecl_max"]), ("OK", 3, 44 * MIB))
+        self.assertEqual(u["history_from"], int(T0 + DAY))
+        self.assertIn("history from 2026-11-19T11:06:40Z (HISTORY_FROM)", u["reasons"])
+        self.assertEqual(after["pft-b.service"], before["pft-b.service"])
+
     def test_peak_near_cap_fails(self):
         u = self.one([rec("pft-a.service", T0 + i * DAY, 470 * MIB) for i in range(3)])
         self.assertEqual(u["verdict"], "FAIL")
@@ -764,6 +785,20 @@ class TestConf(Base):
         self.assertEqual((c["HOST"], c["INTERVAL"]), ("sentry", 0.5))
         with self.assertRaises(budget.ConfError):
             budget.load_conf(self.conf_file("NOPE=1\n"))
+
+    def test_history_from_parsed_and_checked(self):
+        c = budget.load_conf(self.conf_file("HISTORY_FROM=pft-a.service=1795000000 pft-b@x.service=1795000001\n"))
+        self.assertEqual(c["HISTORY_FROM"], {"pft-a.service": 1795000000, "pft-b@x.service": 1795000001})
+        self.assertEqual(budget.load_conf("/nonexistent")["HISTORY_FROM"], {})
+        for bad in (
+            "pft-a.service",
+            "pft-a=1795000000",
+            "pft-a.service=17950",
+            "pft-a.service=now",
+            "a b.service=1795000000",
+        ):
+            with self.assertRaises(budget.ConfError, msg=bad):
+                budget.load_conf(self.conf_file(f"HISTORY_FROM={bad}\n"))
 
     def test_bad_values(self):
         for k, v in (("HOST", "Pft Agent"), ("INTERVAL", "0"), ("KEEP", "1.5"), ("FAIL_FRACTION", "2"),

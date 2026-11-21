@@ -63,6 +63,12 @@ install fitted 5 runs over 12 minutes and projected a 7 MiB unit to 23 GiB), lon
 
 The recommended / planned cap is `max(2 × peak, 1.25 × 90-day projection, 64 MiB)`, rounded up to 64 MiB steps.
 
+After a fix changes a unit's memory profile, its old peaks keep the verdict (and `PFTBudgetCapReached`) up for the
+whole window. `HISTORY_FROM=unit.service=EPOCH ...` in the conf leaves that unit's records that ended before EPOCH out
+of the report; the unit's reasons then say `history from <UTC> (HISTORY_FROM)`. Other units are unaffected and nothing
+is deleted from the JSONL. First use: `pft-budget-collect.service` after the slim loader (`0ae4cf6`), 116 MiB of the
+old loader vs 128M cap.
+
 ## Right-sizing (plan / apply / rollback)
 
 ```

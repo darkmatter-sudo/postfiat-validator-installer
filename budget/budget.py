@@ -55,6 +55,8 @@ DEFAULTS = {
     "STALE_SEC": "300",
     "INV_CHECK_SEC": "30",
     "HOST": "local",
+    # "unit=epoch ...": the report leaves out records of `unit` that ended before epoch (a fix changed its profile)
+    "HISTORY_FROM": "",
 }
 # memory.stat fields that reclaim cannot free: what an OOM kill is really about (memory.current also counts page
 # cache, which the kernel drops before it kills, so a streaming reader sits at its cap without being at risk)
@@ -110,7 +112,18 @@ def load_conf(path):
     conf["EXCLUDE"] = conf["EXCLUDE"].split()
     if not re.match(r"^[a-z][a-z0-9-]{0,31}$", conf["HOST"]):
         raise ConfError("HOST must be a short label like validator or sentry")
+    conf["HISTORY_FROM"] = _history_from(conf["HISTORY_FROM"])
     return conf
+
+
+def _history_from(text):
+    out = {}
+    for item in text.split():
+        unit, sep, t = item.partition("=")
+        if not sep or not UNIT_RE.match(unit) or not re.match(r"^[0-9]{9,11}$", t):
+            raise ConfError(f"HISTORY_FROM: bad item {item!r} (want unit.service=epoch)")
+        out[unit] = int(t)
+    return out
 
 
 def _pos_float(conf, k):
@@ -576,7 +589,8 @@ def mib(b):
 def build_report(conf, t_now, files=None):
     recs, bad = load_records(data_files(conf) if files is None else files)
     lo = t_now - conf["WINDOW_DAYS"] * 86400
-    recs = [r for r in recs if lo <= r["t_last"] <= t_now]
+    hist = conf["HISTORY_FROM"]
+    recs = [r for r in recs if max(lo, hist.get(r["unit"], 0)) <= r["t_last"] <= t_now]
     hosts = sorted({r["host"] for r in recs})
     units = []
     for host in hosts:
@@ -587,6 +601,11 @@ def build_report(conf, t_now, files=None):
         for unit in sorted(by_unit):
             u = unit_report(unit, by_unit[unit], conf, t_now)
             u["host"] = host
+            if unit in hist:
+                u["history_from"] = hist[unit]
+                u["reasons"].append(
+                    f"history from {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(hist[unit]))} (HISTORY_FROM)"
+                )
             units.append(u)
     return {
         "version": VERSION,
