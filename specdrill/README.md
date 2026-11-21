@@ -94,9 +94,16 @@ cell it silences exactly the four alerts the run causes, on the validator only: 
 after the real target is back and requires `escrow drift 0, new 0`. After the matrix it checks: the live
 validator was `full` at every poll of every cell with lag <= 3, 0 labelled resources, `pft-integrity` PASS on both
 hosts with nothing to accept, AppArmor/seccomp 0 denials, no new histarchive gap, and every alert that was active at
-any time during the run (Prometheus `ALERTS`) is the watchdog, a digest-only valwatch alert or one of the four
-silenced ones. It expires its silences only after a drain, then reads back the throwaway topic and every operator
-topic (0 alert/`[MAINT]` messages; the hourly agent's own `[pft-agent]` messages are counted apart).
+any time during the run (Prometheus `ALERTS`) is the watchdog, a digest-only valwatch alert, one of the four
+silenced ones, one covered by the matchers of the single pre-existing silence the preflight allowed (`SIL_OK`, which
+must be active), or one about the sentry (`host="sentry"`, `node=~"sentry|postfiatd-sentry"` or
+`container="postfiatd-sentry"`), which the run never touches; sentry alerts are listed as outside the drill. It
+expires its silences only after a drain (a sentry or `SIL_OK` alert does not hold the drain: the drill silences match
+`host="validator"` only), then reads back the throwaway topic and every operator topic: 0 drill alert/`[MAINT]`
+messages. An alert message counts as a natural sentry event only if its body starts with `postfiatd-sentry` and its
+alertname had a sentry series in the run; any other alert message, including a validator-side one with the same
+alertname, fails the check. The hourly agent's own `[pft-agent]` messages are counted apart. Every helper fails
+closed: an unreachable Prometheus or Alertmanager, or a `SIL_OK` silence that is no longer active, fails the checks.
 
 ## Data per cell
 

@@ -14,9 +14,11 @@
 #      --yes`, window end. Live safety is recorded per poll in every cell's samples.jsonl (live_state, live_lag).
 #   3. after: pft-integrity timer active + failsafe unit gone, 0 labelled containers/volumes/networks, integrity
 #      PASS both hosts, AppArmor/seccomp 0 denials, live node full, histarchive no new gap, every alert active at
-#      any time during the run (Prometheus ALERTS) is the watchdog, a digest-only one or a silenced one; report.
+#      any time during the run (Prometheus ALERTS) is the watchdog, a digest-only one, a silenced drill one, one covered
+#      by the pre-existing SIL_OK silence, or one on the undrilled sentry (listed as outside the drill); report.
 #   4. restore: real pft-maint target back, pft-keyescrow re-collected (drift 0, new 0), drain (only watchdog/digest alerts active), silence expired, read back
-#      the throwaway and every operator topic (0 messages on the operator topics).
+#      the throwaway and every operator topic (0 drill messages; an alert message whose body names postfiatd-sentry and
+#      whose alertname had a sentry series in the run is listed as a natural event; anything else fails the check).
 #   AXES=cpu,io RUN=05 bash specdrill/drill/live-run.sh 2>&1 | tee LOG        (repo root, agent user, detached)
 #   DRY=1 RUN=dry1 bash specdrill/drill/live-run.sh    one short cpu=2 cell (WINDOW_S=120) through every step
 #   PREFLIGHT_ONLY=1 AXES=cpu RUN=x bash specdrill/drill/live-run.sh
@@ -75,13 +77,27 @@ srv_state() { # both nodes' server_state, validator first (host RPC; the sentry 
   R "sudo -n docker exec postfiatd-sentry curl -s -m 10 -d '{\"method\":\"server_info\"}' http://127.0.0.1:5005 | jq -r .result.info.server_state"
 }
 labelled() { sudo -n docker ps -aq --filter label=pft-specdrill; sudo -n docker volume ls -q --filter label=pft-specdrill; sudo -n docker network ls -q --filter label=pft-specdrill; }
-active_alerts() { # "name state" of every Prometheus alert (pending included); query-error on failure (fails closed)
+# matchers of the pre-existing allowed silence SIL_OK ([] if unset or not active -> nothing is "known", fails closed)
+KNOWN_M='[]'
+if [ -n "$SIL_OK" ]; then
+  KNOWN_M="$(curl -s --max-time 10 "$AM/api/v2/silences" | jq -c --arg id "$SIL_OK" '[.[] | select((.id | startswith($id)) and .status.state == "active") | .matchers][0] // []' 2>/dev/null)"
+  [ -n "$KNOWN_M" ] || KNOWN_M='[]'
+fi
+# known: labels match every SIL_OK matcher. sentry: the alert is about the sentry, which the drill never touches
+# (every cell is a throwaway on the validator; the sentry gets no window, silence or load)
+JQDEF='def cov($m): . as $l | ($m | length) > 0 and all($m[]; ((($l[.name] // "") as $v | if .isRegex then ($v | test("^(?:" + .value + ")$")) else $v == .value end) == .isEqual));
+  def sentry: (.host // "") == "sentry" or ((.node // "") | test("^(sentry|postfiatd-sentry)$")) or (.container // "") == "postfiatd-sentry";
+  def tag($m): if cov($m) then "known" elif sentry then "sentry" else "-" end;'
+active_alerts() { # "name state notify tag" of every Prometheus alert (pending included); query-error on failure (fails closed)
   local j; j="$(curl -s --max-time 10 "$PROM/api/v1/alerts")"
   if [ -n "$j" ] && jq -e '.data.alerts | type == "array"' >/dev/null 2>&1 <<<"$j"; then
-    jq -r '.data.alerts[] | .labels.alertname as $n | "\($n) \(.state) \(.labels.notify // "-")"' <<<"$j"
+    jq -r --argjson m "$KNOWN_M" "$JQDEF"' .data.alerts[] | .labels.alertname as $n | "\($n) \(.state) \(.labels.notify // "-") \(.labels | tag($m))"' <<<"$j"
   else echo query-error; fi
 }
-unexpected() { grep -vE '^PFTAlertPipelineWatchdog |^PFTValwatchValidator(Low|Late) .* digest$' | grep -c . ; }
+# preflight: everything but the watchdog, digest-only valwatch and SIL_OK-covered alerts is unexpected (sentry ones too)
+unexpected() { grep -vE '^PFTAlertPipelineWatchdog |^PFTValwatchValidator(Low|Late) .* digest [a-z-]+$| known$' | grep -c . ; }
+# drain: drill silences cover host=validator only, so a natural sentry alert cannot hide behind them; it does not block expiry
+undrained() { grep -vE '^PFTAlertPipelineWatchdog |^PFTValwatchValidator(Low|Late) .* digest [a-z-]+$| (known|sentry)$' | grep -c . ; }
 gaps() { grep -h '^pft_histarchive_follow_gaps' "$TF"/pft_histarchive*.prom 2>/dev/null | awk '{print $NF}' | head -1; }
 
 echo "specdrill live run $RUN - $(date -u +%FT%TZ) - $(. /etc/os-release; echo "$PRETTY_NAME") - repo HEAD $SHA (clean: $([ -z "$(git status --short)" ] && echo yes || echo NO)) - axes $AXES dry=$DRY"
@@ -118,6 +134,8 @@ x "curl -s --max-time 10 $PROM/api/v1/alerts | jq -r .status; curl -s --max-time
 check "Prometheus and Alertmanager answer" "$([ "$(tr '\n' ' ' <<<"$XOUT")" = "success up " ] && echo 0 || echo 1)"
 x "curl -s $AM/api/v2/silences | jq -r '.[] | select(.status.state == \"active\") | .id[0:8]'"
 check "active silences: none, or only the allowed one (SIL_OK=${SIL_OK:-none})" "$(grep -vxF "${SIL_OK:-none}" <<<"$XOUT" | grep -q . && echo 1 || echo 0)"
+echo "SIL_OK matchers (alerts they cover count as known): $KNOWN_M"
+check "SIL_OK unset, or its silence is active with matchers" "$([ -z "$SIL_OK" ] || [ "$KNOWN_M" != '[]' ] && echo 0 || echo 1)"
 x "active_alerts | sort | uniq -c"
 check "only the watchdog and the digest-only valwatch alerts active" "$([ "$(active_alerts | unexpected)" = 0 ] && echo 0 || echo 1)"
 [ "$FAILS" = 0 ] || { echo "preflight failed - stopping before any change"; exit 3; }
@@ -183,9 +201,15 @@ check "AppArmor + seccomp audits PASS, 0 denials on the live container" "$([ "$(
 x "srv_state; sudo -n docker inspect -f '{{.State.StartedAt}} {{.RestartCount}}' postfiatd"
 check "both nodes full or proposing at the end" "$([ "$(grep -cE '^(full|proposing)$' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
 RUN_S=$(( $(date -u +%s) - since + 60 ))
-x "curl -s --max-time 20 $PROM/api/v1/query --data-urlencode 'query=count by (alertname, alertstate, host, node) (count_over_time(ALERTS[${RUN_S}s]))' | jq -r '.data.result[] | .metric | \"\\(.alertname) \\(.alertstate) \\(.host // .node // \"-\")\"' | sort -u"
-OUTSIDE="$(grep -vE '^(PFTAlertPipelineWatchdog|PFTValwatchValidator(Low|Late)) |^(PFTKernelCritical|PFTKernelWarning|PFTJobDisabled|PFTKeyEscrowStale) (pending|firing) validator$' <<<"$XOUT" | grep -c .)"
-check "every alert active at any time during the run (${RUN_S}s) is the watchdog, digest-only valwatch or a silenced drill alert" "$([ "$XRC" = 0 ] && [ "$OUTSIDE" = 0 ] && echo 0 || echo 1)" "$OUTSIDE outside"
+AQ="$(curl -s --max-time 20 "$PROM/api/v1/query" --data-urlencode "query=count_over_time(ALERTS[${RUN_S}s])")"
+echo "\$ curl -s $PROM/api/v1/query --data-urlencode 'query=count_over_time(ALERTS[${RUN_S}s])' | jq '<name state scope tag per series>' | sort -u" | red
+HIST="$(jq -r --argjson m "$KNOWN_M" "$JQDEF"' .data.result[] | .metric | "\(.alertname) \(.alertstate) \(.host // .node // .container // "-") \(tag($m))"' <<<"$AQ" 2>/dev/null | sort -u)"
+printf '%s\n' "${HIST:-query-error}" | red | sed 's/^/  /'
+OUTSIDE="$(grep -vE '^(PFTAlertPipelineWatchdog|PFTValwatchValidator(Low|Late)) |^(PFTKernelCritical|PFTKernelWarning|PFTJobDisabled|PFTKeyEscrowStale) (pending|firing) validator -$| (known|sentry)$' <<<"$HIST" | grep -c .)"
+# alert names with a series on the undrilled sentry during the run (their sentry messages are natural events)
+SENTRY_SEEN=" $(awk '$4 == "sentry" {print $1}' <<<"$HIST" | sort -u | tr '\n' ' ')"
+echo "outside the drill (on the sentry, which the run never touches): ${SENTRY_SEEN# }"
+check "every alert active at any time during the run (${RUN_S}s) is the watchdog, digest-only valwatch, a silenced drill alert, SIL_OK-covered or on the undrilled sentry" "$([ -n "$HIST" ] && [ "$OUTSIDE" = 0 ] && echo 0 || echo 1)" "$OUTSIDE outside"
 G1="$(gaps)"; echo "histarchive follow_gaps after: ${G1:-?} (before ${G0:-?})"
 check "no new histarchive follow gap (the live node never stopped)" "$([ -n "$G0" ] && [ "$G0" = "$G1" ] && echo 0 || echo 1)"
 if [ "$DRY" != 1 ]; then
@@ -199,7 +223,7 @@ NOW_SHA=absent; if sudo -n test -e "$NE"; then NOW_SHA="$(sudo -n sha256sum "$NE
 check "pft-maint target back to its pre-run state" "$([ "$ORIG_SHA" = "$NOW_SHA" ] && echo 0 || echo 1)"
 x "sudo -n pft-keyescrow inventory | tail -1"
 check "pft-keyescrow re-collected: escrow drift 0, new 0" "$(grep -q 'escrow drift 0, new 0,' <<<"$XOUT" && echo 0 || echo 1)"
-x "for i in \$(seq 0 30 600); do n=\$(active_alerts | unexpected); echo \"+\${i}s: \$n\"; [ \"\$n\" = 0 ] && break; sleep 30; done; echo \$n"
+x "for i in \$(seq 0 30 600); do n=\$(active_alerts | undrained); echo \"+\${i}s: \$n\"; [ \"\$n\" = 0 ] && break; sleep 30; done; echo \$n"
 check "drained: only the watchdog and digest-only alerts active (pending included)" "$([ "$(tail -1 <<<"$XOUT")" = 0 ] && echo 0 || echo 1)"
 if [ "$(tail -1 <<<"$XOUT")" = 0 ] && [ -n "$SILS" ]; then
   for id in $SILS; do
@@ -217,10 +241,19 @@ while read -r t; do
   i=$((i + 1)); m="$(curl -s --max-time 20 "https://ntfy.sh/$t/json?poll=1&since=$since" | jq -c 'select(.event == "message")')"
   # the hourly agent cycles keep reporting to the operator during a multi-hour run: their own messages carry the
   # "[pft-agent] " title prefix (/opt/pft-agent/notify) and are counted apart; anything else is a drill leak
-  ag="$(jq -r '.title // ""' <<<"$m" | grep -c '^\[pft-agent\] ')"; n="$(jq -r '.title // ""' <<<"$m" | grep -vc '^\[pft-agent\] ')"
-  [ -n "$m" ] || n=0
-  echo "  operator #$i topic: $n alert/maint message(s), $ag agent-cycle message(s)"; [ "$n" = 0 ] || OPN=$((OPN + 1))
+  # alert messages are "[FIRING|RESOLVED] <alertname>" with a body starting with the alert's subject. A message is a
+  # natural sentry event only if its alertname had a sentry series during the run (SENTRY_SEEN) AND its body starts
+  # with "postfiatd-sentry " (the rules' {{ $labels.container }} summary); every other title is a drill leak
+  ag=0; nat=0; n=0
+  while IFS=$'\t' read -r ti w1; do
+    [ -n "$ti" ] || continue
+    an="$(sed -nE 's/^\[(FIRING|RESOLVED)\] ([A-Za-z0-9_]+).*/\2/p' <<<"$ti")"
+    if [ "${ti#\[pft-agent\] }" != "$ti" ]; then ag=$((ag + 1))
+    elif [ -n "$an" ] && [ "${SENTRY_SEEN/ $an /}" != "$SENTRY_SEEN" ] && [ "$w1" = postfiatd-sentry ]; then nat=$((nat + 1)); echo "    sentry natural event: $ti ($w1)"
+    else n=$((n + 1)); echo "    LEAK: $ti (${w1:-?})"; fi
+  done < <(jq -r '[(.title // ""), ((.message // "") | split(" ")[0] | if . == "" then "-" else . end)] | @tsv' <<<"$m")
+  echo "  operator #$i topic: $n drill alert/maint message(s), $nat sentry-only natural event message(s), $ag agent-cycle message(s)"; [ "$n" = 0 ] || OPN=$((OPN + 1))
 done < "$OPS"
-check "operator topics received no alert or [MAINT] message during the run" "$([ "$OPN" = 0 ] && echo 0 || echo 1)" "$i topic(s), $OPN with messages"
+check "operator topics received no drill alert or [MAINT] message during the run (sentry-only natural events and agent-cycle messages listed apart)" "$([ "$OPN" = 0 ] && echo 0 || echo 1)" "$i topic(s), $OPN with messages"
 echo; echo "specdrill live run $RUN done $(date -u +%FT%TZ): $FAILS check(s) failed -> $([ "$FAILS" = 0 ] && echo PASS || echo FAIL)"
 [ "$FAILS" = 0 ]
