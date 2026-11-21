@@ -245,7 +245,8 @@ while read -r t; do
   # "[pft-agent] " title prefix (/opt/pft-agent/notify) and are counted apart; anything else is a drill leak
   # alert messages are "[FIRING|RESOLVED] <alertname>" with a body starting with the alert's subject. A message is a
   # natural sentry event only if its alertname had a sentry series during the run (SENTRY_SEEN) AND its body starts
-  # with "postfiatd-sentry " (the rules' {{ $labels.container }} summary); every other title is a drill leak
+  # with "postfiatd-sentry " (the rules' {{ $labels.container }} summary) or "sentry: " ({{ $labels.host }}: summary, e.g.
+  # PFTBudgetCapReached, run 13); every other title is a drill leak
   # the daily other-validators digest (pft-valwatch-digest.timer, 07:05 UTC, operator rule 2026-11-19) is a scheduled
   # operator message: exact title "Other validators digest YYYY-MM-DD" at priority 2, counted apart
   ag=0; nat=0; dg=0; n=0
@@ -254,7 +255,7 @@ while read -r t; do
     an="$(sed -nE 's/^\[(FIRING|RESOLVED)\] ([A-Za-z0-9_]+).*/\2/p' <<<"$ti")"
     if [ "${ti#\[pft-agent\] }" != "$ti" ]; then ag=$((ag + 1))
     elif [[ "$ti" =~ ^Other\ validators\ digest\ [0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && [ "$pr" = 2 ]; then dg=$((dg + 1)); echo "    scheduled digest: $ti (priority $pr)"
-    elif [ -n "$an" ] && [ "${SENTRY_SEEN/ $an /}" != "$SENTRY_SEEN" ] && [ "$w1" = postfiatd-sentry ]; then nat=$((nat + 1)); echo "    sentry natural event: $ti ($w1)"
+    elif [ -n "$an" ] && [ "${SENTRY_SEEN/ $an /}" != "$SENTRY_SEEN" ] && { [ "$w1" = postfiatd-sentry ] || [ "$w1" = sentry: ]; }; then nat=$((nat + 1)); echo "    sentry natural event: $ti ($w1)"
     else n=$((n + 1)); echo "    LEAK: $ti (${w1:-?})"; fi
   done < <(jq -r '[(.title // ""), ((.message // "") | split(" ")[0] | if . == "" then "-" else . end), ((.priority // 3) | tostring)] | @tsv' <<<"$m")
   echo "  operator #$i topic: $n drill alert/maint message(s), $nat sentry-only natural event message(s), $dg scheduled digest message(s), $ag agent-cycle message(s)"; [ "$n" = 0 ] || OPN=$((OPN + 1))
