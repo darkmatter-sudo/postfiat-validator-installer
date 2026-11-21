@@ -16,6 +16,11 @@
 # space-terminated), DEFECT (createdBy of the defect silence that must be active), ALLOW_RE (the defect's alert line
 # that may be pending/firing while suppressed). Run 09 ships a97de5d (sampler ENODEV crash, sentry):
 #   FROM=8aef64d EXPECT='budget/budget.py ' DEFECT=budget-sampler-enodev ALLOW_RE='^PFTRuleDead (pending|firing) - (suppressed|none)$'
+# Run 15 ships 0ae4cf6 + ae192ab (slim loader, HISTORY_FROM): FROM=a97de5d EXPECT='budget/README.md budget/budget.py budget/install.sh budget/pft-budget.env.example '
+#   DEFECT=pft-agent ALLOW_RE='^(PFTBudgetCapReached (pending|firing) pft-budget-collect\.service (suppressed|none)|PFTValwatchValidatorLow (pending|firing) - active)$' (digest-only, operator rule 2026-11-19)
+#   HISTORY_UNIT=pft-budget-collect.service (step 5: HISTORY_FROM=<unit>=<sampler restart epoch> in /etc/pft-budget.env on both
+#   hosts, so the old loader's 116 MiB peaks leave the report) KNOWN_RE='^PFTValwatchValidatorLow (pending|firing) - active$'
+#   (digest-only alerts that may stay active at the end)
 set -uo pipefail
 REPO="$(git rev-parse --show-toplevel)"; cd "$REPO" || exit 3
 export TZ=UTC
@@ -24,6 +29,7 @@ AM=http://127.0.0.1:9093; PROM=http://127.0.0.1:9090
 ME="$(id -un)"; HN="$(hostname)"
 TASK=task_9fb56f10
 FROM="${FROM:-835ae15}"; EXPECT="${EXPECT:-budget/README.md budget/budget.py budget/pft-budget.env.example }"
+HISTORY_UNIT="${HISTORY_UNIT:-}"; KNOWN_RE="${KNOWN_RE:-^\$}"
 DEFECT="${DEFECT:-budget-fix}"; ALLOW_RE="${ALLOW_RE:-^PFTBudgetCapReached (pending|firing) pft-[a-z0-9@.-]+\.service (suppressed|none)\$}"
 TT="pft-drill-budget-$(head -c 6 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 TF=/var/lib/pft-exporter/textfile
@@ -72,7 +78,8 @@ echo; echo "== 0. preflight (read-only)"
 x "sha256sum budget/budget.py budget/pft-budget.sh budget/drill/upgrade-run.sh | cut -c1-64; sudo -n sha256sum /usr/local/lib/pft-budget/budget.py | cut -c1-64; R 'sha256sum /usr/local/lib/pft-budget/budget.py | cut -c1-64'"
 NEW="$(sed -n 1p <<<"$XOUT")"
 check "installed helper on both hosts differs from HEAD (upgrade pending)" "$([ "$(grep -cx "$NEW" <<<"$XOUT")" = 1 ] && [ "$(sed -n 4p <<<"$XOUT")" = "$(sed -n 5p <<<"$XOUT")" ] && echo 0 || echo 1)"
-x "git diff --stat $FROM $SHA -- budget/systemd budget/pft-budget.sh alerts/budget.rules.yml fleet/manifest.tsv | tail -1; git diff --name-only $FROM $SHA -- budget | grep -vE '^budget/(logs|tests|drill)/' "
+# manifest: only budget rows count (other add-ons' rows are installed by their own runners)
+x "git diff --stat $FROM $SHA -- budget/systemd budget/pft-budget.sh alerts/budget.rules.yml | tail -1; git diff -U0 $FROM $SHA -- fleet/manifest.tsv | grep -E '^[+-]budget[[:space:]]'; git diff --name-only $FROM $SHA -- budget | grep -vE '^budget/(logs|tests|drill)/' "
 check "installed helper = $FROM bytes on both hosts" "$([ "$(git show "$FROM":budget/budget.py | sha256sum | cut -c1-64)" = "$(sudo -n sha256sum /usr/local/lib/pft-budget/budget.py | cut -c1-64)" ] && [ "$(git show "$FROM":budget/budget.py | sha256sum | cut -c1-64)" = "$(R 'sha256sum /usr/local/lib/pft-budget/budget.py' | cut -c1-64)" ] && echo 0 || echo 1)"
 check "since the installed commit $FROM only: $EXPECT(no unit/script/rule/manifest change)" "$([ "$(sort <<<"$XOUT" | grep -v '^$' | tr '\n' ' ')" = "$EXPECT" ] && echo 0 || echo 1)"
 x "sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'"
@@ -123,14 +130,29 @@ check "installed helper = HEAD bytes on both hosts" "$([ "$(sort -u <<<"$XOUT" |
 
 [ "$FAILS" = 0 ] || { echo "a step failed - stopping (restore runs)"; exit 1; }
 echo; echo "== 4. restart the samplers (load the shipped helper), collect on both hosts, pull the sentry"
+TUP="$(date -u +%s)"
 x "sudo -n systemctl restart pft-budget-sampler.service && R 'sudo -n systemctl restart pft-budget-sampler.service' && sleep 5 && systemctl is-active pft-budget-sampler.service && R 'systemctl is-active pft-budget-sampler.service'"
 check "both samplers restarted and active" "$([ "$XRC" = 0 ] && [ "$(grep -cx active <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
 x "sudo -n systemctl start pft-budget-collect.service && R 'sudo -n systemctl start pft-budget-collect.service' && sudo -n systemctl start pft-budget-pull@sentry.service && echo collected"
 check "collect on both hosts + pull exit 0" "$XRC"
 
+if [ -n "$HISTORY_UNIT" ]; then
+  echo; echo "== 5. HISTORY_FROM=$HISTORY_UNIT=$TUP on both hosts (records of the old helper leave that unit's report)"
+  HL="HISTORY_FROM=$HISTORY_UNIT=$TUP"; HC=/etc/pft-budget.env
+  x "for h in local relay; do c=\"sudo -n cp -p $HC $HC.pre-history && sudo -n sed -i '/^HISTORY_FROM=/d' $HC && echo '$HL' | sudo -n tee -a $HC >/dev/null && grep -c '^HISTORY_FROM=' $HC\"; if [ \$h = local ]; then bash -c \"\$c\"; else R \"\$c\"; fi || exit 1; done"
+  check "one HISTORY_FROM line on each host" "$([ "$XRC" = 0 ] && [ "$(grep -cx 1 <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
+  x "sudo -n pft-budget report >/dev/null; echo \$?; R 'sudo -n pft-budget report >/dev/null; echo \$?'"
+  check "both hosts parse the conf (report exit 0/1/2, no ConfError 3)" "$([ "$(grep -cxE '[012]' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
+  # the collect run's own record is written when it ends: run it twice so the report holds >= 1 post-upgrade run
+  x "for n in 1 2; do sudo -n systemctl start pft-budget-collect.service && R 'sudo -n systemctl start pft-budget-collect.service' || exit 1; sleep 3; done; sudo -n systemctl start pft-budget-pull@sentry.service && echo collected"
+  check "two collects on both hosts + pull exit 0" "$XRC"
+  x "sudo -n pft-budget report --json | jq -r '.units[] | select(.unit == \"$HISTORY_UNIT\") | [.host, .verdict, .invocations, .peak_unrecl_max, .history_from] | @tsv'; R 'sudo -n pft-budget report --json' | jq -r '.units[] | select(.unit == \"$HISTORY_UNIT\") | [.host, .verdict, .invocations, .peak_unrecl_max, .history_from] | @tsv'"
+  check "$HISTORY_UNIT on both hosts: verdict OK, only post-upgrade runs (history_from $TUP), peak < 64 MiB" "$([ "$(awk -v t="$TUP" '$2 == "OK" && $3 >= 1 && $4 < 64 * 1048576 && $5 == t' <<<"$XOUT" | wc -l)" = 2 ] && echo 0 || echo 1)"
+fi
+
 echo; echo "== 10. VERIFIED: verdicts, Prometheus, alert"
 x "sudo -n pft-budget report | grep -E 'pft-budget-|histarchive|RESULT'; R 'sudo -n pft-budget report' | grep -E 'pft-budget-|histarchive|RESULT'"
-check "no FAIL verdict on either host; the collect unit no longer projected (span < 3 d)" "$([ "$(grep -c '^RESULT: .* 0 FAIL,' <<<"$XOUT")" = 2 ] && grep -qE '^validator +pft-budget-collect\.service .* - +- .* OK$' <<<"$XOUT" && echo 0 || echo 1)"
+check "no FAIL verdict on either host; the collect unit no longer projected (span < 3 d)" "$([ "$(grep -c '^RESULT: .* 0 FAIL,' <<<"$XOUT")" = 2 ] && grep -qE '^validator +pft-budget-collect\.service .* - +- .* OK$' <<<"$XOUT" && { [ -z "$HISTORY_UNIT" ] || grep -qE '^sentry +pft-budget-collect\.service .* - +- .* OK$' <<<"$XOUT"; } && echo 0 || echo 1)"
 x "grep -h '^pft_budget_verdict' $TF/pft_budget_validator.prom $TF/pft_budget_sentry.prom | grep -c ' 2$'; grep -h 'pft_budget_projected_30d_bytes' $TF/pft_budget_validator.prom $TF/pft_budget_sentry.prom | grep -vc '^#'"
 check "textfiles: 0 FAIL verdicts, no 30-day projection series yet (all units < 3 days of data)" "$([ "$(tr '\n' ' ' <<<"$XOUT")" = "0 0 " ] && echo 0 || echo 1)"
 x "for i in \$(seq 0 15 240); do n=\$(other_alerts | grep -c '^PFTBudget'); echo \"+\${i}s: \$n\"; [ \"\$n\" = 0 ] && break; sleep 15; done; echo \$n"
@@ -157,8 +179,8 @@ x "sudo -n systemctl start pft-keyescrow.service; grep -h '^pft_keyescrow_drift_
 check "pft-keyescrow re-run: validator drift_items 0" "$(grep -q '} 0$' <<<"$XOUT" && echo 0 || echo 1)"
 x "sleep 5; curl -s --max-time 15 \"https://ntfy.sh/\$TT/json?poll=1&since=$since\" | jq -r '.title'"
 check "the [MAINT] start and end messages reached the throwaway topic" "$([ "$(grep -c '^\[MAINT\]' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
-x "for i in \$(seq 0 15 300); do n=\$(other_alerts | grep -c .); echo \"+\${i}s: \$n\"; [ \"\$n\" = 0 ] && break; sleep 15; done; other_alerts"
-check "nothing but the watchdog pending/firing at the end" "$(grep -qE '^[A-Z]' <<<"$XOUT" && echo 1 || echo 0)"
+x "for i in \$(seq 0 15 300); do n=\$(other_alerts | grep -vE \"\$KNOWN_RE\" | grep -c .); echo \"+\${i}s: \$n\"; [ \"\$n\" = 0 ] && break; sleep 15; done; other_alerts"
+check "nothing but the watchdog (and KNOWN_RE digest-only alerts) pending/firing at the end" "$(grep -E '^[A-Z]' <<<"$XOUT" | grep -qvE "$KNOWN_RE" && echo 1 || echo 0)"
 # run 10: run 09 left this silence active for 40 min and the next run's preflight stopped on it; expire it here
 x "curl -s --max-time 10 -X DELETE $AM/api/v2/silence/$SIL -o /dev/null -w '%{http_code}\n'"
 check "rollout silence expired" "$(grep -qx 200 <<<"$XOUT" && echo 0 || echo 1)"
