@@ -18,7 +18,9 @@
 #      by the pre-existing SIL_OK silence, or one on the undrilled sentry (listed as outside the drill); report.
 #   4. restore: real pft-maint target back, pft-keyescrow re-collected (drift 0, new 0), drain (only watchdog/digest alerts active), silence expired, read back
 #      the throwaway and every operator topic (0 drill messages; an alert message whose body names postfiatd-sentry and
-#      whose alertname had a sentry series in the run is listed as a natural event; anything else fails the check).
+#      whose alertname had a sentry series in the run is listed as a natural event; the operator-approved daily
+#      "Other validators digest YYYY-MM-DD" (pft-valwatch-digest, priority 2) is listed as a scheduled digest;
+#      anything else fails the check).
 #   AXES=cpu,io RUN=05 bash specdrill/drill/live-run.sh 2>&1 | tee LOG        (repo root, agent user, detached)
 #   DRY=1 RUN=dry1 bash specdrill/drill/live-run.sh    one short cpu=2 cell (WINDOW_S=120) through every step
 #   PREFLIGHT_ONLY=1 AXES=cpu RUN=x bash specdrill/drill/live-run.sh
@@ -244,16 +246,19 @@ while read -r t; do
   # alert messages are "[FIRING|RESOLVED] <alertname>" with a body starting with the alert's subject. A message is a
   # natural sentry event only if its alertname had a sentry series during the run (SENTRY_SEEN) AND its body starts
   # with "postfiatd-sentry " (the rules' {{ $labels.container }} summary); every other title is a drill leak
-  ag=0; nat=0; n=0
-  while IFS=$'\t' read -r ti w1; do
+  # the daily other-validators digest (pft-valwatch-digest.timer, 07:05 UTC, operator rule 2026-11-19) is a scheduled
+  # operator message: exact title "Other validators digest YYYY-MM-DD" at priority 2, counted apart
+  ag=0; nat=0; dg=0; n=0
+  while IFS=$'\t' read -r ti w1 pr; do
     [ -n "$ti" ] || continue
     an="$(sed -nE 's/^\[(FIRING|RESOLVED)\] ([A-Za-z0-9_]+).*/\2/p' <<<"$ti")"
     if [ "${ti#\[pft-agent\] }" != "$ti" ]; then ag=$((ag + 1))
+    elif [[ "$ti" =~ ^Other\ validators\ digest\ [0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && [ "$pr" = 2 ]; then dg=$((dg + 1)); echo "    scheduled digest: $ti (priority $pr)"
     elif [ -n "$an" ] && [ "${SENTRY_SEEN/ $an /}" != "$SENTRY_SEEN" ] && [ "$w1" = postfiatd-sentry ]; then nat=$((nat + 1)); echo "    sentry natural event: $ti ($w1)"
     else n=$((n + 1)); echo "    LEAK: $ti (${w1:-?})"; fi
-  done < <(jq -r '[(.title // ""), ((.message // "") | split(" ")[0] | if . == "" then "-" else . end)] | @tsv' <<<"$m")
-  echo "  operator #$i topic: $n drill alert/maint message(s), $nat sentry-only natural event message(s), $ag agent-cycle message(s)"; [ "$n" = 0 ] || OPN=$((OPN + 1))
+  done < <(jq -r '[(.title // ""), ((.message // "") | split(" ")[0] | if . == "" then "-" else . end), ((.priority // 3) | tostring)] | @tsv' <<<"$m")
+  echo "  operator #$i topic: $n drill alert/maint message(s), $nat sentry-only natural event message(s), $dg scheduled digest message(s), $ag agent-cycle message(s)"; [ "$n" = 0 ] || OPN=$((OPN + 1))
 done < "$OPS"
-check "operator topics received no drill alert or [MAINT] message during the run (sentry-only natural events and agent-cycle messages listed apart)" "$([ "$OPN" = 0 ] && echo 0 || echo 1)" "$i topic(s), $OPN with messages"
+check "operator topics received no drill alert or [MAINT] message during the run (sentry-only natural events, the scheduled digest and agent-cycle messages listed apart)" "$([ "$OPN" = 0 ] && echo 0 || echo 1)" "$i topic(s), $OPN with messages"
 echo; echo "specdrill live run $RUN done $(date -u +%FT%TZ): $FAILS check(s) failed -> $([ "$FAILS" = 0 ] && echo PASS || echo FAIL)"
 [ "$FAILS" = 0 ]
