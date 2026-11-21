@@ -346,6 +346,87 @@ class TestJsonl(Base):
         got = {r["unit"]: (r["kind"], r["peak_unrecl_bytes"]) for r in recs}
         self.assertEqual(got, {"pft-a.service": ("final", 5 * MIB), "pft-b.service": ("running", 2 * MIB)})
 
+    def test_rec_view_keeps_get_semantics(self):
+        r = rec("pft-a.service", 50, 5 * MIB, cap=None)
+        del r["runtime_sec"]
+        v = budget.Rec(r)
+        self.assertEqual((v["unit"], v["peak_unrecl_bytes"], v["kind"]), ("pft-a.service", 5 * MIB, "final"))
+        self.assertIsNone(v.get("mem_max", 7))  # present but null stays None, like dict.get
+        self.assertEqual(v.get("runtime_sec", 7), 7)  # absent -> default
+        self.assertIsNone(v.get("runtime_sec"))
+        self.assertEqual(v.get("inv", "x"), "x")  # fields the report never reads are not kept
+        with self.assertRaises(KeyError):
+            v["runtime_sec"]
+        with self.assertRaises(KeyError):
+            v["inv"]
+
+    @staticmethod
+    def write_fixture(path, target_bytes, units=40):
+        """Realistic final records (32-hex invocation ids, one per line) up to target_bytes."""
+        n, size = 0, 0
+        with open(path, "w") as f:
+            while size < target_bytes:
+                r = rec(f"pft-u{n % units}.service", T0 + n * 7.0, (2 + n % 50) * MIB, inv=f"{n * 2654435761:032x}")
+                r["runtime_sec"] = 1.0 + (n % 13) * 0.25
+                r["cpu_sec"] = 0.1 * (n % 9)
+                line = json.dumps(r, sort_keys=True) + "\n"
+                f.write(line)
+                size += len(line)
+                n += 1
+        return n
+
+    def test_report_matches_full_dict_loader(self):
+        p = os.path.join(self.data, "eq.jsonl")
+        n = self.write_fixture(p, 400_000)
+        with open(p, "a") as f:  # a running checkpoint superseded by its final, and a lone running one
+            f.write(
+                json.dumps(rec("pft-u1.service", T0 + 1.0, 99 * MIB, kind="running", inv=f"{2654435761:032x}")) + "\n"
+            )
+            f.write(json.dumps(rec("pft-z.service", T0 + 5.0, 3 * MIB, kind="running", inv="z")) + "\n")
+
+        def full_loader(files):  # the previous loader: whole parsed dicts
+            best, bad = {}, 0
+            for fn in files:
+                for line in open(fn):
+                    r = json.loads(line)
+                    key = (r["host"], r["unit"], r["inv"])
+                    old = best.get(key)
+                    if (
+                        old is None
+                        or (r["kind"] == "final") > (old["kind"] == "final")
+                        or (r["kind"] == old["kind"] and r["t_last"] >= old["t_last"])
+                    ):
+                        best[key] = r
+            return list(best.values()), bad
+
+        t_now = T0 + n * 7.0 + 60
+        slim = budget.build_report(self.conf, t_now, [p])
+        orig = budget.load_records
+        try:
+            budget.load_records = full_loader
+            full = budget.build_report(self.conf, t_now, [p])
+        finally:
+            budget.load_records = orig
+        self.assertEqual(slim["records"], n + 1)
+        self.assertEqual(json.dumps(slim, sort_keys=True), json.dumps(full, sort_keys=True))
+
+    def test_peak_rss_on_24mib_fixture(self):
+        p = os.path.join(self.data, "big.jsonl")
+        n = self.write_fixture(p, 24 * MIB)
+        code = (
+            "import json, resource, sys; sys.path.insert(0, sys.argv[1]); import budget; "
+            "rep = budget.build_report(budget.load_conf('/nonexistent'), float(sys.argv[3]), [sys.argv[2]]); "
+            "print(json.dumps({'records': rep['records'], 'units': len(rep['units']), "
+            "'maxrss_kib': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss}))"
+        )
+        out = subprocess.run(
+            [sys.executable, "-c", code, BUD, p, str(T0 + n * 7.0 + 60)], capture_output=True, text=True, check=True
+        )
+        got = json.loads(out.stdout)
+        print(f"\n24MiB fixture: {n} lines -> {got}", file=sys.stderr)
+        self.assertEqual((got["records"], got["units"]), (n, 40))
+        self.assertLess(got["maxrss_kib"] * 1024, 64 * MIB)  # half of the unit's own MemoryMax=128M
+
 
 DAY = 86400.0
 T0 = 1_795_000_000.0

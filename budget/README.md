@@ -35,6 +35,10 @@ one `final` record is appended to `/var/lib/pft-budget/samples.jsonl` with syste
 runtime for that invocation; a `Result` from a newer run is never attributed to it. Long-running services get a
 `running` checkpoint every 15 min. Units that were already running when the sampler started are marked
 `from_start: false` (their peak may predate it). The JSONL rotates at 4 MiB to `.1` … `.5`, about 24 MiB at most.
+`report`/`metrics` stream that JSONL and keep one slim record per invocation (14 fields, interned strings), not the
+parsed dicts: on a 24 MiB fixture peak RSS is 44 MiB (159 MiB with whole dicts, past the collector's own `MemoryMax=128M`),
+with byte-identical reports (`logs/14-slim-loader-rss.log`, tests `test_report_matches_full_dict_loader`,
+`test_peak_rss_on_24mib_fixture`).
 
 Runs shorter than one poll interval can be missed, and a peak that lasts less than 1 s can be under-read. The sampler
 reports what it saw, with a `samples` count per run.

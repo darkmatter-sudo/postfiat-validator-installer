@@ -287,15 +287,49 @@ def data_files(conf):
     return [f for f in files if os.path.exists(f)]
 
 
+_MISSING = object()
+
+
+class Rec:
+    """Slim read-only view of one JSONL record: only the fields the report uses.
+
+    A full json dict per invocation cost ~2 KiB, so 17 MiB of retained samples took the collector past its own
+    MemoryMax (121 MiB RSS vs 128M); slots + interned strings keep it to a few hundred bytes per record.
+    """
+
+    FIELDS = (
+        "host", "unit", "kind", "t_last", "peak_unrecl_bytes", "peak_bytes", "runtime_sec", "cpu_sec",
+        "io_read_bytes", "io_write_bytes", "oom_kills", "result", "mem_max", "from_start",
+    )  # fmt: skip
+    __slots__ = FIELDS
+
+    def __init__(self, r):
+        for k in self.FIELDS:
+            v = r.get(k, _MISSING)
+            object.__setattr__(self, k, sys.intern(v) if isinstance(v, str) else v)
+
+    def __getitem__(self, k):
+        v = getattr(self, k, _MISSING) if k in self.FIELDS else _MISSING
+        if v is _MISSING:
+            raise KeyError(k)
+        return v
+
+    def get(self, k, default=None):
+        v = getattr(self, k, _MISSING) if k in self.FIELDS else _MISSING
+        return default if v is _MISSING else v
+
+
 def load_records(files):
-    """Latest record per (host, unit, inv): a final record beats any running checkpoint of the same invocation."""
+    """Latest record per (host, unit, inv): a final record beats any running checkpoint of the same invocation.
+
+    Streams line by line and keeps one slim Rec per invocation (never the parsed dicts)."""
     best, bad = {}, 0
     for fn in files:
         with open(fn, encoding="utf-8") as f:
             for line in f:
                 try:
                     r = json.loads(line)
-                    key = (r["host"], r["unit"], r["inv"])
+                    key = (sys.intern(r["host"]), sys.intern(r["unit"]), r["inv"])
                     float(r["t_last"])
                 except (ValueError, KeyError, TypeError):
                     bad += 1  # a torn last line after a crash, or a foreign line: counted, never fatal
@@ -306,7 +340,7 @@ def load_records(files):
                     or (r["kind"] == "final") > (old["kind"] == "final")
                     or (r["kind"] == old["kind"] and r["t_last"] >= old["t_last"])
                 ):
-                    best[key] = r
+                    best[key] = Rec(r)
     return list(best.values()), bad
 
 

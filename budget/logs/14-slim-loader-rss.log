@@ -1,0 +1,25 @@
+# budget slim-record loader: old (HEAD 10b72b6a4765006ec86867377f72a5496eac4be6) vs working tree; 2026-11-21T13:10:40Z
+$ input=validator.jsonl bytes=5904072 impl=old
+records=14498 units=62 counts={'OK': 2, 'WARN': 1, 'FAIL': 1, 'UNCAPPED': 58} report_sha256_16=f2e04df64b23b55a maxrss_mib=50.2
+  wall=0.51s
+$ input=validator.jsonl bytes=5904072 impl=new
+records=14498 units=62 counts={'OK': 2, 'WARN': 1, 'FAIL': 1, 'UNCAPPED': 58} report_sha256_16=f2e04df64b23b55a maxrss_mib=21.2
+  wall=0.76s
+$ input=sentry.jsonl bytes=9088683 impl=old
+records=22799 units=30 counts={'OK': 1, 'WARN': 1, 'FAIL': 0, 'UNCAPPED': 28} report_sha256_16=8a53e89e34e3bbb7 maxrss_mib=70.9
+  wall=0.88s
+$ input=sentry.jsonl bytes=9088683 impl=new
+records=22799 units=30 counts={'OK': 1, 'WARN': 1, 'FAIL': 0, 'UNCAPPED': 28} report_sha256_16=8a53e89e34e3bbb7 maxrss_mib=25.5
+  wall=0.89s
+$ input=validator.jsonl,sentry.jsonl bytes=14992755 impl=old
+records=37297 units=92 counts={'OK': 3, 'WARN': 2, 'FAIL': 1, 'UNCAPPED': 86} report_sha256_16=f2121339b77367e4 maxrss_mib=106.2
+  wall=1.08s
+$ input=validator.jsonl,sentry.jsonl bytes=14992755 impl=new
+records=37297 units=92 counts={'OK': 3, 'WARN': 2, 'FAIL': 1, 'UNCAPPED': 86} report_sha256_16=f2121339b77367e4 maxrss_mib=32.1
+  wall=1.42s
+$ input=fixture-24mib.jsonl bytes=25166169 impl=old
+records=58252 units=40 counts={'OK': 40, 'WARN': 0, 'FAIL': 0, 'UNCAPPED': 0} report_sha256_16=eec15a8039b6c39c maxrss_mib=159.1
+  wall=2.29s
+$ input=fixture-24mib.jsonl bytes=25166169 impl=new
+records=58252 units=40 counts={'OK': 40, 'WARN': 0, 'FAIL': 0, 'UNCAPPED': 0} report_sha256_16=eec15a8039b6c39c maxrss_mib=44.2
+  wall=2.20s
