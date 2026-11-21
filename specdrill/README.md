@@ -97,7 +97,12 @@ hosts with nothing to accept, AppArmor/seccomp 0 denials, no new histarchive gap
 any time during the run (Prometheus `ALERTS`) is the watchdog, a digest-only valwatch alert, one of the four
 silenced ones, one covered by the matchers of the single pre-existing silence the preflight allowed (`SIL_OK`, which
 must be active), or one about the sentry (`host="sentry"`, `node=~"sentry|postfiatd-sentry"` or
-`container="postfiatd-sentry"`), which the run never touches; sentry alerts are listed as outside the drill. It
+`container="postfiatd-sentry"`), which the run never touches; sentry alerts are listed as outside the drill. One
+more natural case is listed apart (`drill/lateboth.sh`, from run 14): a `PFTValwatchHostsDisagreeLate` that was only
+ever *pending*, where at every one of its evals the same external validator's p95 delay was above 3000 ms on *both*
+nodes within 60 s. The sentry's textfile is pulled ~15 s after the validator's, so one external validator going late
+everywhere briefly looks like a cross-host disagreement. A firing series, an eval without both-late samples, missing
+delay data, an empty response or a Prometheus error keep it outside (tests: `tests/test_lateboth.py`). It
 expires its silences only after a drain (a sentry or `SIL_OK` alert does not hold the drain: the drill silences match
 `host="validator"` only), then reads back the throwaway topic and every operator topic: 0 drill alert/`[MAINT]`
 messages. An alert message counts as a natural sentry event only if its body starts with `postfiatd-sentry` and its

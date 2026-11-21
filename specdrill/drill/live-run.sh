@@ -15,7 +15,8 @@
 #   3. after: pft-integrity timer active + failsafe unit gone, 0 labelled containers/volumes/networks, integrity
 #      PASS both hosts, AppArmor/seccomp 0 denials, live node full, histarchive no new gap, every alert active at
 #      any time during the run (Prometheus ALERTS) is the watchdog, a digest-only one, a silenced drill one, one covered
-#      by the pre-existing SIL_OK silence, or one on the undrilled sentry (listed as outside the drill); report.
+#      by the pre-existing SIL_OK silence, one on the undrilled sentry (listed as outside the drill), or a pending-only
+#      PFTValwatchHostsDisagreeLate whose validator was late on both nodes at every eval (drill/lateboth.sh); report.
 #   4. restore: real pft-maint target back, pft-keyescrow re-collected (drift 0, new 0), drain (only watchdog/digest alerts active), silence expired, read back
 #      the throwaway and every operator topic (0 drill messages; an alert message whose body names postfiatd-sentry and
 #      whose alertname had a sentry series in the run is listed as a natural event; the operator-approved daily
@@ -26,6 +27,7 @@
 #   PREFLIGHT_ONLY=1 AXES=cpu RUN=x bash specdrill/drill/live-run.sh
 set -uo pipefail
 REPO="$(git rev-parse --show-toplevel)"; cd "$REPO" || exit 3
+. "$REPO/specdrill/drill/lateboth.sh"   # late_both: natural cross-host lateness (run 14)
 export TZ=UTC
 SHA="$(git rev-parse HEAD)"; SHORT="$(git rev-parse --short HEAD)"
 AM=http://127.0.0.1:9093; PROM=http://127.0.0.1:9090
@@ -207,11 +209,19 @@ AQ="$(curl -s --max-time 20 "$PROM/api/v1/query" --data-urlencode "query=count_o
 echo "\$ curl -s $PROM/api/v1/query --data-urlencode 'query=count_over_time(ALERTS[${RUN_S}s])' | jq '<name state scope tag per series>' | sort -u" | red
 HIST="$(jq -r --argjson m "$KNOWN_M" "$JQDEF"' .data.result[] | .metric | "\(.alertname) \(.alertstate) \(.host // .node // .container // "-") \(tag($m))"' <<<"$AQ" 2>/dev/null | sort -u)"
 printf '%s\n' "${HIST:-query-error}" | red | sed 's/^/  /'
-OUTSIDE="$(grep -vE '^(PFTAlertPipelineWatchdog|PFTValwatchValidator(Low|Late)) |^(PFTKernelCritical|PFTKernelWarning|PFTJobDisabled|PFTKeyEscrowStale) (pending|firing) validator -$| (known|sentry)$' <<<"$HIST" | grep -c .)"
+# a PENDING PFTValwatchHostsDisagreeLate is natural only if its validator was late on BOTH nodes at every eval
+# (drill/lateboth.sh: the sentry textfile is pulled ~15 s after the validator's); firing ones always stay outside
+echo "\$ late_both \$PROM ${RUN_S} <now>   (pending PFTValwatchHostsDisagreeLate series: validator node evals both_late)"
+LB="$(late_both "$PROM" "$RUN_S" "$(date -u +%s)")"; LBRC=$?
+printf '%s\n' "${LB:-none}" | red | sed 's/^/  /'
+NATLATE='^$'; if [ "$LBRC" = 0 ] && [ -n "$LB" ]; then NATLATE='^PFTValwatchHostsDisagreeLate pending '; fi
+NATV=none; if [ "$NATLATE" != '^$' ]; then NATV="$(awk '{print $1}' <<<"$LB" | cut -c1-12 | sort -u | tr '\n' ' ')"; fi
+echo "natural cross-host lateness (external validator late on both nodes, listed apart): $NATV"
+OUTSIDE="$(grep -vE '^(PFTAlertPipelineWatchdog|PFTValwatchValidator(Low|Late)) |^(PFTKernelCritical|PFTKernelWarning|PFTJobDisabled|PFTKeyEscrowStale) (pending|firing) validator -$| (known|sentry)$' <<<"$HIST" | grep -vE "$NATLATE" | grep -c .)"
 # alert names with a series on the undrilled sentry during the run (their sentry messages are natural events)
 SENTRY_SEEN=" $(awk '$4 == "sentry" {print $1}' <<<"$HIST" | sort -u | tr '\n' ' ')"
 echo "outside the drill (on the sentry, which the run never touches): ${SENTRY_SEEN# }"
-check "every alert active at any time during the run (${RUN_S}s) is the watchdog, digest-only valwatch, a silenced drill alert, SIL_OK-covered or on the undrilled sentry" "$([ -n "$HIST" ] && [ "$OUTSIDE" = 0 ] && echo 0 || echo 1)" "$OUTSIDE outside"
+check "every alert active at any time during the run (${RUN_S}s) is the watchdog, digest-only valwatch, a silenced drill alert, SIL_OK-covered or on the undrilled sentry, or natural cross-host lateness" "$([ -n "$HIST" ] && [ "$OUTSIDE" = 0 ] && echo 0 || echo 1)" "$OUTSIDE outside"
 G1="$(gaps)"; echo "histarchive follow_gaps after: ${G1:-?} (before ${G0:-?})"
 check "no new histarchive follow gap (the live node never stopped)" "$([ -n "$G0" ] && [ "$G0" = "$G1" ] && echo 0 || echo 1)"
 if [ "$DRY" != 1 ]; then
