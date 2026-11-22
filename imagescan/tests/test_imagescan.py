@@ -463,11 +463,23 @@ def test_before_after_fixed_listing(tmp_path):
     ({"fetched": NOW - 8 * 86400, "own": NOW - 8 * 86400}, "fetched 192 h ago"),
     ({"own": NOW - 31 * 86400}, "own timestamp 31 d old"),
     ({"own": NOW, "fetched": NOW - 7200}, "after its fetch time"),
+    ({"own": NOW - 86400, "fetched": NOW + 3601}, "fetch time is after the scan time"),
 ])
 def test_stale_feeds_refused(tmp_path, kw, msg):
     write_feeds(tmp_path / "f", **kw)
     with pytest.raises(L.Bad, match=msg):
         L.load_feeds(str(tmp_path / "f"), NOW, 7)
+
+
+@pytest.mark.parametrize("ahead", [1, 30, 3600], ids=["ahead-1s", "ahead-30s", "ahead-1h"])
+def test_feed_fetched_during_this_scan_is_0h(tmp_path, ahead):
+    # the scan clock is read before the fetch: a feed fetched seconds later must render "0 h ago", never "-1 h ago"
+    write_feeds(tmp_path / "f", own=NOW - 86400, fetched=NOW + ahead)
+    feeds = L.load_feeds(str(tmp_path / "f"), NOW, 7)
+    assert all(f["age_seconds"] == 0 for f in feeds.values())
+    sc = {"generated_at": NOW, "feeds": feeds, "containers": [], "images": [], "drift": [], "accept_expired": 0}
+    text, _ = L.render(sc, public=True)
+    assert "fetched   0 h ago" in text and "-1 h ago" not in text
 
 
 def test_feed_hash_mismatch_refused(tmp_path):

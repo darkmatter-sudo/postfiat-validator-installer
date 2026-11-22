@@ -451,7 +451,11 @@ def load_feeds(fdir, now, max_age_days, max_content_age_days=30):
         # two clocks: when we last downloaded it from the origin (a cache-busted GET is the origin's current copy),
         # and the feed's own content timestamp, which only moves when the publisher changes an entry (vuln.go.dev
         # went 11 days without a change in 2026-11). A mirror serving an ancient file trips the second.
-        age = now - fetched
+        # the scan clock is read before this run's fetch, so a feed fetched in the same run is a few seconds
+        # after `now`: count that as 0 h (floor division made it "-1 h ago"); more than an hour ahead is a bad clock
+        if fetched > now + 3600:
+            raise Bad(f"feed {name}: fetch time is after the scan time (clock or feeds.json wrong)")
+        age = max(0, now - fetched)
         if age > max_age_days * 86400:
             raise Bad(f"feed {name} is stale: fetched {age // 3600} h ago (> {max_age_days} d)")
         if now - ts > max_content_age_days * 86400:

@@ -90,7 +90,9 @@ ev_start() { # live docker image event streams on both hosts for the whole run (
   sleep 2; echo "  image event streams started (validator pid ${EVPID:-none}, sentry pid ${EVRPID:-none})"
 }
 ev_stop() { # stop both streams (by saved PID), print the action counts of each host
-  [ -z "$EVPID" ] || { sudo -n kill "$EVPID" 2>/dev/null; wait "$EVPID" 2>/dev/null; EVPID=""; }
+  # sudo does not relay a signal sent from its own process group (the runner's), so signal its child (timeout),
+  # by parent PID; run 10 hung in `wait` on `sudo kill $EVPID` until the child was killed by hand
+  [ -z "$EVPID" ] || { sudo -n pkill -TERM -P "$EVPID" 2>/dev/null; wait "$EVPID" 2>/dev/null; EVPID=""; }
   [ -z "$EVRPID" ] || { R "sudo -n kill $EVRPID" 2>/dev/null; EVRPID=""; }
 }
 ev_counts() {
