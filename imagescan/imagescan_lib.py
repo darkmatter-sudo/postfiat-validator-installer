@@ -867,6 +867,23 @@ def withhold(scan, pattern):
     return [{k: im[k] for k in keep} for im in scan["images"] if rx.search(im["ref"])]
 
 
+def public_drift(scan, withheld):
+    """Drift as seen on the host. A bundle rebuilt without a withheld image's inventory sees that image's containers
+    as image_not_scanned; the withheld summary (taken from the host's full scan) says which image the tag named, so
+    a container running exactly it is not drift and one running anything else is running_image_differs_from_tag."""
+    wh = {w["ref"]: w["image_id"] for w in (withheld or [])}
+    running = {c["name"]: c["image_id"] for c in scan["containers"]}
+    out = []
+    for d in scan["drift"]:
+        if d["kind"] == "image_not_scanned" and d["ref"] in wh:
+            if running.get(d["container"]) == wh[d["ref"]]:
+                continue
+            d = {"container": d["container"], "ref": d["ref"], "kind": "running_image_differs_from_tag",
+                 "running": running.get(d["container"], ""), "tag": wh[d["ref"]]}
+        out.append(d)
+    return out
+
+
 def render(scan, public, before=None, withheld=None):
     gen = datetime.fromtimestamp(scan["generated_at"], timezone.utc)
     out = [f"pft-imagescan report - generated {gen:%Y-%m-%dT%H:%M:%SZ}"
@@ -877,7 +894,8 @@ def render(scan, public, before=None, withheld=None):
                    f"sha256 {f['sha256']}")
     for c in scan["containers"]:
         out.append(f"container {c['name']:<18} {c['ref']}  {c['image_id'][:19]}")
-    for d in scan["drift"]:
+    drift = public_drift(scan, withheld)
+    for d in drift:
         extra = f" (running {d['running'][:19]}, tag {d['tag'][:19]})" if "running" in d else ""
         out.append(f"DRIFT {d['container']}: {d['kind']}{extra}")
     if scan.get("accept_expired"):
@@ -924,10 +942,10 @@ def render(scan, public, before=None, withheld=None):
                 more = f" (+{len(f['packages']) - 4})" if len(f["packages"]) > 4 else ""
                 acc = " ACCEPTED" if f.get("accepted") else ""
                 out.append(f"  {f['severity']:<10} {f['fix']:<7} {f['id']:<18} {pk}{more}{acc}")
-    rc = 1 if (alert_n or scan["drift"]) else 0
+    rc = 1 if (alert_n or drift) else 0
     out.append("")
     out.append(f"RESULT: {len(images)} images ({sum(1 for i in images if i['in_use'])} in use), {total} findings, "
-               f"{alert_n} fixable high/critical in in-use images (not accepted), {len(scan['drift'])} drift -> exit {rc}")
+               f"{alert_n} fixable high/critical in in-use images (not accepted), {len(drift)} drift -> exit {rc}")
     return "\n".join(out) + "\n", rc
 
 

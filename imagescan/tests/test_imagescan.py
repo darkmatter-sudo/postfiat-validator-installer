@@ -445,6 +445,28 @@ def test_public_render_withholds_details(tmp_path):
     assert "WITHHELD" in pub2 and "libfoo1" not in pub2 and rc2 == rc == 1
 
 
+@pytest.mark.parametrize("running,drift_n", [("c", 0), ("d", 1)], ids=["runs-withheld-image", "runs-other-image"])
+def test_bundle_rebuild_without_withheld_inventory(tmp_path, running, drift_n):
+    # the public bundle leaves the withheld image's inventory out, so its re-scan sees the container's image as
+    # unscanned; the withheld summary from the host scan must turn that back into "no drift" (same image ID) or
+    # "running image differs from tag" (another ID), exactly as the host saw it
+    wid = "sha256:" + "c" * 64
+    inv_up = extract(ubuntu_image(), ref="up/stream:1", image_id=wid)
+    inv_loc = extract(debian_image(), ref="local:1", image_id="sha256:" + "e" * 64)
+    ctrs = [{"name": "n", "ref": "up/stream:1", "image_id": "sha256:" + running * 64}]
+    host = scan_all(tmp_path / "h", [inv_up, inv_loc], containers=ctrs)
+    wh = L.withhold(host, r"^up/")
+    pub_scan = scan_all(tmp_path / "p", [inv_loc], containers=ctrs)
+    assert [d["kind"] for d in pub_scan["drift"]] == ["image_not_scanned"]
+    text, rc = L.render(pub_scan, public=True, withheld=wh)
+    _, host_rc = L.render(host, public=True)
+    assert text.count("DRIFT ") == len(host["drift"]) == drift_n
+    assert "image_not_scanned" not in text and f"{drift_n} drift -> exit {rc}" in text
+    assert rc == host_rc
+    if drift_n:
+        assert "DRIFT n: running_image_differs_from_tag" in text
+
+
 def test_before_after_fixed_listing(tmp_path):
     inv = extract(debian_image(), ref="local:1")
     before = scan_all(tmp_path, [inv])
