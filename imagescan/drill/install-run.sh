@@ -20,6 +20,10 @@
 # pipeline watchdog) and is left to run out.
 #   bash imagescan/drill/install-run.sh 2>&1 | tee LOG    (from the repo root, as the agent user)
 #   PREFLIGHT_ONLY=1 bash imagescan/drill/install-run.sh  (step 0 only; changes nothing)
+#   UPGRADE=1 bash imagescan/drill/install-run.sh         (already installed and BEHIND: pft-fleet syncs only the
+#     imagescan add-on, the installed units re-scan, nothing is reloaded or newly accepted by schedaudit; inventories
+#     are cached per image ID, so the runner saves the smallest local image once per host as the event-stream
+#     presence control and requires exactly that one save per host)
 # KNOWN_PENDING: alert names already pending (long `for:`) before the run that the preflight accepts.
 # KNOWN_FIRING: alert names already firing for an explained outside reason (digest-only routing, upstream feed not
 # republished) that the preflight accepts; each is printed, and none of them is in the rollout silence.
@@ -32,6 +36,7 @@ ME="$(id -un)"; HN="$(hostname)"
 TASK=task_76248c8a
 KNOWN_PENDING="${KNOWN_PENDING:-}"
 KNOWN_FIRING="${KNOWN_FIRING:-}"
+UPGRADE="${UPGRADE:-0}"
 TT="pft-drill-imagescan-$(head -c 6 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 TF=/var/lib/pft-exporter/textfile
 ACC=/etc/pft-imagescan.accept
@@ -95,10 +100,13 @@ ev_stop() { # stop both streams (by saved PID), print the action counts of each 
   [ -z "$EVPID" ] || { sudo -n pkill -TERM -P "$EVPID" 2>/dev/null; wait "$EVPID" 2>/dev/null; EVPID=""; }
   [ -z "$EVRPID" ] || { R "sudo -n kill $EVRPID" 2>/dev/null; EVRPID=""; }
 }
+# shellcheck disable=SC2034  # used through x's eval (bash -s <<<"$CTL_SAVE")
+CTL_SAVE='i=$(sudo -n docker image ls -q --no-trunc | sort -u | while read -r id; do echo "$(sudo -n docker image inspect -f "{{.Size}}" "$id") $id"; done | sort -n | head -1 | cut -d" " -f2)
+[ -n "$i" ] && nice -n 15 ionice -c3 sudo -n docker image save "$i" > /dev/null; echo "save-rc=$?"'
 ev_counts() {
   echo "validator:"; sort "$EVL" | uniq -c; echo "sentry:"; R "sort $EVR | uniq -c; rm -f $EVR"; rm -f "$EVL"; echo image-events-end
 }
-echo "imagescan two-host install - $(date -u +%FT%TZ) - $(. /etc/os-release; echo "$PRETTY_NAME") - repo HEAD $SHA (clean: $([ -z "$(git status --short)" ] && echo yes || echo NO))"
+echo "imagescan two-host $([ "$UPGRADE" = 1 ] && echo upgrade || echo install) - $(date -u +%FT%TZ) - $(. /etc/os-release; echo "$PRETTY_NAME") - repo HEAD $SHA (clean: $([ -z "$(git status --short)" ] && echo yes || echo NO))"
 [ -z "$(git status --short)" ] || { echo "dirty tree - stopping"; exit 3; }
 git fetch -q origin
 [ "$(git rev-parse origin/main)" = "$SHA" ] || { echo "HEAD is not pushed - stopping"; exit 3; }
@@ -110,7 +118,13 @@ check "pft-integrity PASS on both hosts before install" "$([ "$(grep -c 'RESULT:
 x "srv_state"
 check "both nodes full or proposing" "$([ "$(grep -cE '^(full|proposing)$' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
 x "ls /usr/local/bin/pft-imagescan /etc/pft-imagescan.env /var/cache/pft-imagescan 2>&1; R 'ls /usr/local/bin/pft-imagescan /etc/pft-imagescan.env /var/cache/pft-imagescan 2>&1'"
-check "not installed yet on either host (no script, conf or cache)" "$([ "$(grep -c 'No such file' <<<"$XOUT")" = 6 ] && echo 0 || echo 1)"
+if [ "$UPGRADE" = 1 ]; then
+  check "installed on both hosts (script, conf and cache present)" "$([ "$(grep -c 'No such file' <<<"$XOUT")" = 0 ] && [ "$(grep -cx /usr/local/bin/pft-imagescan <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
+  x "sudo -n pft-fleet skew | grep -E ' imagescan |^ *SUMMARY'"
+  check "pft-fleet skew: imagescan BEHIND on both hosts, nothing else BEHIND/MODIFIED/MISSING/UNEXPECTED/DIVERGED" "$([ "$(grep -cE '^ *(validator|sentry) +imagescan +BEHIND' <<<"$XOUT")" = 2 ] && grep -qE '^ *SUMMARY CURRENT=[0-9]+ BEHIND=2 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0$' <<<"$XOUT" && echo 0 || echo 1)"
+else
+  check "not installed yet on either host (no script, conf or cache)" "$([ "$(grep -c 'No such file' <<<"$XOUT")" = 6 ] && echo 0 || echo 1)"
+fi
 x "sudo -n sha256sum $ACC | cut -c1-64; R 'sudo -n sha256sum $ACC | cut -c1-64'; stat -c '%a %U' $ACC; R 'stat -c \"%a %U\" $ACC'; sudo -n grep -vc '^#' $ACC"
 check "accept file (operator decision A, 30 days) present, same bytes, root 644 on both hosts, 10 lines" "$([ "$(sed -n 1p <<<"$XOUT")" = "$(sed -n 2p <<<"$XOUT")" ] && [ "$(grep -cx '644 root' <<<"$XOUT")" = 2 ] && [ "$(tail -1 <<<"$XOUT")" = 10 ] && echo 0 || echo 1)"
 x "python3 -I -c 'import sys, time; sys.path.insert(0, \"imagescan\"); import imagescan_lib as L; e, x = L.load_accept(sys.argv[1], int(time.time())); print(len(e), x)' $ACC"
@@ -152,6 +166,11 @@ echo; echo "== 0b. live docker image event streams (both hosts, read-only)"
 echo "\$ ev_start   (called directly, not through x: the stream PIDs must stay in this shell)"
 ev_start
 check "image event streams running on both hosts" "$([ -n "$EVPID" ] && sudo -n kill -0 "$EVPID" 2>/dev/null && [ -n "$EVRPID" ] && R "sudo -n kill -0 $EVRPID" 2>/dev/null && echo 0 || echo 1)"
+if [ "$UPGRADE" = 1 ]; then
+  echo "  presence control: save the smallest local image once per host to stdout > /dev/null (never -o: the CLI renames a temp file onto the target; read-only; the scan's inventories are cached)"
+  x "bash -s <<<\"\$CTL_SAVE\"; R 'bash -s' <<<\"\$CTL_SAVE\""
+  check "presence-control saves done on both hosts" "$([ "$(grep -cx 'save-rc=0' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
+fi
 
 echo; echo "== 1. rollout silence (new rules; rulecheck/fleet/aptrust/schedaudit/jobwatch/keyescrow/budget see new files, units and timers; not the watchdog)"
 ends="$(date -u -d '+90 min' +%FT%TZ)"
@@ -176,17 +195,36 @@ R "sudo -n pft-maint active" >/dev/null 2>&1; check "sentry has the window (via 
 
 echo; echo "== 3. pft-fleet: manifest (fleet add-on), imagescan, then aptrust's allowlist copy"
 [ "$FAILS" = 0 ] || { echo "a step failed - stopping before the first host change (restore runs)"; exit 1; }
+if [ "$UPGRADE" = 1 ]; then
+  x "sha256sum fleet/manifest.tsv | cut -c1-64; sudo -n sha256sum /usr/local/lib/pft-fleet/manifest.tsv /usr/local/lib/pft-aptrust/manifest.tsv | cut -c1-64; R 'sudo -n sha256sum /usr/local/lib/pft-aptrust/manifest.tsv | cut -c1-64'"
+  check "manifest copies (fleet + validator/sentry aptrust) = HEAD bytes: imagescan sync only" "$([ "$(sort -u <<<"$XOUT" | grep -c .)" = 1 ] && [ "$(grep -c . <<<"$XOUT")" = 4 ] && echo 0 || echo 1)"
+  x "sudo -n pft-fleet sync --addon imagescan --to $SHA --apply --reason '$TASK imagescan $SHORT upgrade'"
+  check "imagescan sync exit 0 (files written + integrity accepted by pft-fleet)" "$XRC"
+else
 x "sudo -n pft-fleet sync --addon fleet --to $SHA --apply --reason '$TASK imagescan manifest lines'"
 check "fleet manifest sync exit 0" "$XRC"
 x "sudo -n pft-fleet sync --addon imagescan --to $SHA --apply --reason '$TASK imagescan $SHORT first install'"
 check "imagescan sync exit 0 (files written + integrity accepted by pft-fleet)" "$XRC"
 x "sudo -n pft-fleet sync --addon aptrust --to $SHA --apply --reason '$TASK aptrust allowlist copy += imagescan rows'"
 check "aptrust sync exit 0 (its manifest copy follows the new rows)" "$XRC"
+fi
 x "sha256sum imagescan/pft-imagescan.sh imagescan/imagescan_lib.py imagescan/systemd/pft-imagescan.service imagescan/systemd/pft-imagescan.timer | cut -c1-64; sudo -n sha256sum /usr/local/bin/pft-imagescan /usr/local/lib/pft-imagescan/imagescan_lib.py /etc/systemd/system/pft-imagescan.service /etc/systemd/system/pft-imagescan.timer | cut -c1-64; R 'sha256sum /usr/local/bin/pft-imagescan /usr/local/lib/pft-imagescan/imagescan_lib.py /etc/systemd/system/pft-imagescan.service /etc/systemd/system/pft-imagescan.timer | cut -c1-64'"
 check "installed script + helper + units = repo bytes on both hosts" "$([ "$(sort <<<"$XOUT" | uniq -c | awk '$1 == 3' | wc -l)" = 4 ] && echo 0 || echo 1)"
 x "sha256sum imagescan/systemd/pft-imagescan-pull.service imagescan/systemd/pft-imagescan-pull.timer | cut -c1-64; sudo -n sha256sum /etc/systemd/system/pft-imagescan-pull.service /etc/systemd/system/pft-imagescan-pull.timer | cut -c1-64; R 'ls /etc/systemd/system/pft-imagescan-pull.service 2>&1'"
 check "pull units = repo bytes on the validator, absent on the sentry (role validator)" "$([ "$(sort <<<"$XOUT" | uniq -c | awk '$1 == 2' | wc -l)" = 2 ] && grep -q 'No such file' <<<"$XOUT" && echo 0 || echo 1)"
 
+if [ "$UPGRADE" = 1 ]; then
+[ "$FAILS" = 0 ] || { echo "a step failed - stopping before the next host change (restore runs)"; exit 1; }
+echo; echo "== 5/6. upgrade: the installed units re-scan with the new code (sentry, validator, then the validator pull)"
+x "R 'sudo -n systemctl start pft-imagescan.service; echo rc=\$?'"
+x "R 'sudo -n journalctl -u pft-imagescan.service --since @$since --no-pager -o cat' | scan_summary"
+x "sudo -n systemctl start pft-imagescan.service; echo rc=\$?"
+x "sudo -n journalctl -u pft-imagescan.service --since @$since --no-pager -o cat | scan_summary"
+x "sudo -n systemctl start pft-imagescan-pull.service; echo rc=\$?; grep -h '^pft_imagescan_up{' $TF/pft_imagescan_validator.prom $TF/pft_imagescan_sentry.prom"
+check "validator pull exit 0, both textfiles up 1" "$(grep -qx rc=0 <<<"$XOUT" && [ "$(grep -c '^pft_imagescan_up{.*} 1$' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
+x "R 'sudo -n journalctl -u pft-imagescan.service --since @$since --no-pager -o cat' | grep -c 'fetched -'; sudo -n journalctl -u pft-imagescan.service --since @$since --no-pager -o cat | grep -c 'fetched -'"
+check "no negative feed age in either report (the c0d8119 fix)" "$([ "$(tr '\n' ' ' <<<"$XOUT")" = "0 0 " ] && echo 0 || echo 1)"
+else
 [ "$FAILS" = 0 ] || { echo "a step failed - stopping before the next host change (restore runs)"; exit 1; }
 echo; echo "== 5. sentry: install.sh --host sentry (first scan reads every local image once)"
 x "git archive $SHA imagescan | R 'rm -rf ~/pft-imagescan-$SHORT && mkdir -m 700 ~/pft-imagescan-$SHORT && tar -x -C ~/pft-imagescan-$SHORT'"
@@ -204,25 +242,36 @@ check "validator conf: one PULL_SSH (copied, not printed), root-owned 600" "$(gr
 x "sudo -n bash imagescan/install.sh --pull"
 check "validator --pull exit 0, rulecheck require line added, pulled sentry textfile has up 1, timer enabled" "$([ "$XRC" = 0 ] && grep -q 'added to /etc/pft-rulecheck.conf: require pft_imagescan_sentry.prom' <<<"$XOUT" && grep -q 'pft_imagescan_up{host="sentry"} 1' <<<"$XOUT" && grep -q 'enabled pft-imagescan-pull.timer' <<<"$XOUT" && echo 0 || echo 1)"
 
+fi
 [ "$FAILS" = 0 ] || { echo "a step failed - stopping before the next host change (restore runs)"; exit 1; }
 echo; echo "== 7. rulecheck inputs (written once by install.sh)"
 x "sudo -n grep -n pft_imagescan /etc/pft-rulecheck.conf; R 'sudo -n grep -n pft_imagescan /etc/pft-rulecheck.conf'"
 check "validator 3 + sentry 2 pft_imagescan rulecheck lines, each once" "$([ "$(grep -c pft_imagescan <<<"$XOUT")" = 5 ] && [ "$(grep -c 'require pft_imagescan_sentry.prom' <<<"$XOUT")" = 2 ] && [ "$(grep -c 'require pft_imagescan_validator.prom' <<<"$XOUT")" = 1 ] && [ "$(grep -c 'textfile pft_imagescan_' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
 
 echo; echo "== 8. load the alert rules (alerts/ is mounted at /etc/pft-alerts) and check them"
-x "sudo -n docker kill -s HUP pft-prometheus >/dev/null && sleep 40 && curl -s $PROM/api/v1/status/runtimeinfo | jq -r .data.reloadConfigSuccess && curl -s $PROM/api/v1/rules | jq -r '.data.groups[] | select(.name == \"pft-imagescan\") | .rules[] | [.name, .health, .state] | @tsv'"
+if [ "$UPGRADE" = 1 ]; then RELOAD="true"; else RELOAD="sudo -n docker kill -s HUP pft-prometheus >/dev/null && sleep 40"; fi
+x "$RELOAD && curl -s $PROM/api/v1/status/runtimeinfo | jq -r .data.reloadConfigSuccess && curl -s $PROM/api/v1/rules | jq -r '.data.groups[] | select(.name == \"pft-imagescan\") | .rules[] | [.name, .health, .state] | @tsv'"
 check "config reload ok, 6 imagescan rules loaded, health ok, inactive" "$(grep -qx true <<<"$XOUT" && [ "$(grep -c '	ok	inactive' <<<"$XOUT")" = 6 ] && [ "$(grep -c '^PFTImagescan' <<<"$XOUT")" = 6 ] && echo 0 || echo 1)"
 
 echo; echo "== 9. new units/timers + conf: pft-schedaudit accept + collect, jobwatch inventory, then pft-integrity accept, both hosts"
 x "sudo -n pft-schedaudit audit | grep -E '^(NEW|REMOVED|SUMMARY)' | cut -c1-160; R 'sudo -n pft-schedaudit audit' | grep -E '^(NEW|REMOVED|SUMMARY)' | cut -c1-160"
+if [ "$UPGRADE" = 1 ]; then
+  echo "  (upgrade: units and timers unchanged, so nothing is accepted in schedaudit; collect only)"
+  x "sudo -n pft-schedaudit collect | tail -1; R 'sudo -n pft-schedaudit collect | tail -1'"
+else
 x "sudo -n pft-schedaudit accept --reason '$TASK: pft-imagescan + pft-imagescan-pull installed' | tail -2; sudo -n pft-schedaudit collect | tail -1"
 x "R \"sudo -n pft-schedaudit accept --reason '$TASK: pft-imagescan installed' | tail -2; sudo -n pft-schedaudit collect | tail -1\""
+fi
 x "sudo -n pft-jobwatch inventory 2>&1 | grep -E 'imagescan|SUMMARY' | cut -c1-200; R 'sudo -n pft-jobwatch inventory 2>&1' | grep -E 'imagescan|SUMMARY' | cut -c1-200"
 check "jobwatch learns 86400 s for both pft-imagescan.timer and 900 s for the validator pull" "$([ "$(grep -E '^pft-imagescan\.timer' <<<"$XOUT" | grep -cw 86400)" = 2 ] && [ "$(grep -E '^pft-imagescan-pull\.timer' <<<"$XOUT" | grep -cw 900)" = 1 ] && echo 0 || echo 1)"
 x "sudo -n pft-integrity verify | grep -E '^(WARN|FAIL|RESULT)' | sed -E 's/ +sha256.*//' | cut -c1-140 | head -40"
+if [ "$UPGRADE" = 1 ]; then
+  echo "  (upgrade: pft-fleet accepted the synced files; nothing else may differ, so no further accept)"
+else
 x "sudo -n pft-integrity accept --reason '$TASK: imagescan $SHORT installed (conf, cache dir, units, timers, rulecheck.conf, sched items)' | tail -2"
 x "R 'sudo -n pft-integrity verify' | grep -E '^(WARN|FAIL|RESULT)' | sed -E 's/ +sha256.*//' | cut -c1-140 | head -40"
 x "R \"sudo -n pft-integrity accept --reason '$TASK: imagescan $SHORT installed (conf, cache dir, units, timer, rulecheck.conf, sched items)'\" | tail -2"
+fi
 x "sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'"
 check "pft-integrity PASS on both hosts" "$([ "$(grep -c 'RESULT: PASS' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
 x "sudo -n pft-schedaudit audit | grep -E '^SUMMARY'; R 'sudo -n pft-schedaudit audit' | grep -E '^SUMMARY'"
@@ -243,7 +292,8 @@ x "sleep 45; prom_q 'count by (host) ({__name__=~\"pft_imagescan_.+\"})'; prom_q
 check "Prometheus has pft_imagescan series and up 1 for validator and sentry, 0 unaccepted fixable high/critical in use" "$(! grep -q query-error <<<"$XOUT" && [ "$(grep -cE '^(validator|sentry) 1$' <<<"$XOUT")" = 2 ] && [ "$(grep -cE '^(validator|sentry) 0$' <<<"$XOUT")" = 2 ] && [ "$(awk '$2 > 10' <<<"$XOUT" | wc -l)" = 2 ] && echo 0 || echo 1)"
 echo "\$ ev_stop   (called directly)"; ev_stop
 x "ev_counts"
-check "docker image events during the run on both hosts: saves seen on each (presence control), no pull, push, load, import, tag, untag or delete" "$(grep -q image-events-end <<<"$XOUT" && [ "$(sed -n '/^validator:/,/^sentry:/p' <<<"$XOUT" | grep -cwE '[0-9]+ save')" = 1 ] && [ "$(sed -n '/^sentry:/,/image-events-end/p' <<<"$XOUT" | grep -cwE '[0-9]+ save')" = 1 ] && ! grep -qwE 'pull|push|load|import|tag|untag|delete' <<<"$XOUT" && echo 0 || echo 1)"
+if [ "$UPGRADE" = 1 ]; then SAVEPAT=' *1 save'; else SAVEPAT=' *[0-9]+ save'; fi
+check "docker image events during the run on both hosts: $([ "$UPGRADE" = 1 ] && echo 'exactly the one control save on each (scan inventories cached)' || echo 'saves seen on each (presence control)'), no pull, push, load, import, tag, untag or delete" "$(grep -q image-events-end <<<"$XOUT" && [ "$(sed -n '/^validator:/,/^sentry:/p' <<<"$XOUT" | grep -cxE "$SAVEPAT")" = 1 ] && [ "$(sed -n '/^sentry:/,/image-events-end/p' <<<"$XOUT" | grep -cxE "$SAVEPAT")" = 1 ] && ! grep -qwE 'pull|push|load|import|tag|untag|delete' <<<"$XOUT" && echo 0 || echo 1)"
 x "sudo -n docker events --since $since --until \$(date -u +%s) --filter event=exec_create --format '{{.Actor.Attributes.name}} {{.Action}}' | cut -c1-60 | sed -E 's/[0-9]{4,}/N/g' | sort | uniq -c"
 echo "  (exec_create events above come from the existing collectors' fixed curl/cat shapes; imagescan's no-exec guarantee is the docker-stub test test_shell_scan_only_readonly_docker_calls_and_cache)"
 x "sudo -n pft-aptrust audit | grep -E '^(WARN|FAIL) |^RESULT'; R 'sudo -n pft-aptrust audit' | grep -E '^(WARN|FAIL) |^RESULT'"
@@ -293,5 +343,5 @@ while read -r t; do
   echo "  operator #$i topic: $n message(s)"; [ "$n" = 0 ] || OPN=$((OPN + 1))
 done < "$OPS"
 check "operator topics received nothing during the run" "$([ "$OPN" = 0 ] && echo 0 || echo 1)" "$i topic(s), $OPN with messages"
-echo; echo "install-run done $(date -u +%FT%TZ): $FAILS check(s) failed -> $([ "$FAILS" = 0 ] && echo PASS || echo FAIL)"
+echo; echo "$([ "$UPGRADE" = 1 ] && echo upgrade-run || echo install-run) done $(date -u +%FT%TZ): $FAILS check(s) failed -> $([ "$FAILS" = 0 ] && echo PASS || echo FAIL)"
 [ "$FAILS" = 0 ]
