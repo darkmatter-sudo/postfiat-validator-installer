@@ -71,6 +71,10 @@ MUTANTS = [
      "rc = 1 if alert_n else 0"),
     ("L25", "lib", "missing feed for an OS tolerated",
      '            raise Bad(f"no pinned feed {name} in feeds.json")\n', "            return {}\n"),
+    ("L26", "lib", "feed age not clamped at 0 (fetched during this scan renders -1 h)",
+     "age = max(0, now - fetched)", "age = now - fetched"),
+    ("L27", "lib", "fetch time far after the scan time accepted (bad clock)",
+     "if fetched > now + 3600:", "if fetched > now + 3600 and False:"),
 ]
 
 
