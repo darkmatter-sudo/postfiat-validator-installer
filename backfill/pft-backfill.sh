@@ -18,9 +18,9 @@
 # port answers admin calls with "Forbidden"), and postfiatd.cfg through the config volume's HOST path (docker inspect
 # Mounts[].Source): no shell and no file read inside the container, so an AppArmor profile on the node needs no
 # extra rule for this tool.
-# Exit codes: 0 no gap inside the window (repair: every planned ledger fetched + verified), 1 gaps found / node
-# not full (repair: some ledgers timed out or were skipped by the runtime cap), 2 error or hash MISMATCH, 3 usage,
-# 4 repair refused.
+# Exit codes: 0 no gap inside the window, a tip race of <= 2 ledgers included (repair: every planned ledger fetched
+# + verified), 1 gaps found / node not full (repair: some ledgers timed out or were skipped by the runtime cap),
+# 2 error or hash MISMATCH, 3 usage, 4 repair refused.
 # jq programs are single-quoted on purpose.
 # shellcheck disable=SC2016
 set -uo pipefail
@@ -140,7 +140,7 @@ cmd_status() {
       "  complete_ledgers \(if (.ranges|length) == 0 then "empty" else ([.ranges[] | if .[0] == .[1] then "\(.[0])" else "\(.[0])-\(.[1])" end] | join(",")) end)",
       "  window           \(if .window then "\(.window[0])-\(.window[1])" else "-" end)",
       "  held in window   \(.held)",
-      "  missing          interior \(.missing_interior), edge \(.missing_edge)",
+      "  missing          interior \(.missing_interior), edge \(.missing_edge), tip \(.missing_tip // 0)",
       (.gaps[] | "  gap              \(.kind) \(.lo)-\(.hi) (\(.size))")' <<<"$sum"
     [ "$rc" = 0 ] && echo "RESULT: PASS" || echo "RESULT: FAIL"
   fi

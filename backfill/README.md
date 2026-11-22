@@ -35,7 +35,14 @@ pft-backfill pull                                         validator, root: copy 
 ```
 
 Gap kinds inside the window: **interior** = missing ledgers above the oldest held one (a real hole), **edge** =
-missing ledgers below the oldest held one (history not yet acquired after a (re)start).
+missing ledgers below the oldest held one (history not yet acquired after a (re)start), **tip** = at most
+`TIP_GRACE` (2) newest ledgers up to the validated seq not yet in `complete_ledgers`. `server_info` can report
+`validated_ledger.seq` N while `complete_ledgers` still ends at N-1 (accepted, not yet stored); the live validator
+showed exactly that on 2026-11-21T08:15Z (validated 8236316, held to 8236315) and 2026-11-22T05:00Z (validated
+8260989, held to 8260988), and both were gone at the next run. Before the tip kind these counted as interior, made
+PFTBackfillGap pending, and a repair would have sent `ledger_request` for the validated seq itself, which the node
+refuses ("Ledger index too large"). Tip ledgers are exported (`kind="tip"`), never alerted or planned, and do not
+fail `status`; a longer tail (the node behind its own validated seq) is still interior.
 
 ## Repair: caps and refusals
 
@@ -83,8 +90,8 @@ carries `node="validator|sentry"`; the validator pulls the sentry's files (`pull
 <a id="alerts"></a>Rules in [`../alerts/backfill.rules.yml`](../alerts/backfill.rules.yml), promtool tests in
 [`../alerts/backfill.tests.yml`](../alerts/backfill.tests.yml) (incl. a recovery case and a blinking-gap case):
 
-- **PFTBackfillGap** - interior ledgers missing for 20 min while the node is full. Edge gaps are exported, not
-  alerted.
+- **PFTBackfillGap** - interior ledgers missing for 20 min while the node is full. Edge and tip gaps are
+  exported, not alerted.
 - **PFTBackfillCheckFailed** - status cannot read the node (`up 0`) or the last repair ended with exit 2, for 10 min.
 
 A stopped timer is caught by `pft-rulecheck` (install adds `textfile pft_backfill*.prom 20m` for the status files; the repair file is a last-run record and gets `3650d -`, first match wins; and `ignore-metric pft_backfill_repair_exit_code`, which has no series until the first opt-in repair) and PFTTextfileStale.

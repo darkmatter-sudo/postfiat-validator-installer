@@ -103,6 +103,23 @@ check "plan: newest first, capped" '[ "$OUT" = "$(printf "7729009\n7729008\n7729
 run plan --max-ledgers 50
 check "plan: interior before edge, all 9" '[ "$(wc -l <<<"$OUT")" = 9 ] && [ "$(tail -1 <<<"$OUT")" = 7729001 ]'
 
+# 2b. tip race (live 2026-11-22T05:00Z shape: validated N, complete_ledgers ends at N-1): not a gap, nothing planned
+STUB_INFO="$(info_with "7728769-7729448" 7729449 full)"
+run status
+check "tip race: exit 0 PASS" '[ "$RC" = 0 ] && grep -q "^RESULT: PASS" <<<"$OUT"'
+check "tip race: interior 0, tip 1" 'grep -q "missing          interior 0, edge 0, tip 1" <<<"$OUT"'
+check "tip race: listed as tip" 'grep -q "gap              tip 7729449-7729449 (1)" <<<"$OUT"'
+run status --prom "$R/textfile/x.prom"
+check "tip race prom: interior 0, tip 1" 'grep -qx "pft_backfill_missing_ledgers{node=\"validator\",kind=\"interior\"} 0" "$R/textfile/x.prom" && grep -qx "pft_backfill_missing_ledgers{node=\"validator\",kind=\"tip\"} 1" "$R/textfile/x.prom"'
+run plan --max-ledgers 50
+check "tip race: plan empty (ledger_request refuses >= validated)" '[ "$RC" = 0 ] && [ -z "$OUT" ]'
+# control: a 3-ledger tail is the node behind its own validated seq -> interior, exit 1, planned
+STUB_INFO="$(info_with "7728769-7729446" 7729449 full)"
+run status
+check "control tail 3: exit 1, interior 3, tip 0" '[ "$RC" = 1 ] && grep -q "missing          interior 3, edge 0, tip 0" <<<"$OUT"'
+run plan --max-ledgers 50
+check "control tail 3: planned newest first" '[ "$OUT" = "$(printf "7729449\n7729448\n7729447")" ]'
+
 # 3. edge gap (restart, history not yet acquired)
 STUB_INFO="$(info_with "7729300-7729449" 7729449 full)"
 run status

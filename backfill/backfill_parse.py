@@ -21,6 +21,10 @@ Source facts (postfiatd 1.0.9, commit 32723c15):
 Gap kinds inside the window:
   interior  missing ledgers ABOVE the oldest held ledger in the window (a real hole in the history)
   edge      missing ledgers below the oldest held ledger (history not yet acquired after a (re)start)
+  tip       at most TIP_GRACE newest ledgers up to the validated seq not yet in complete_ledgers: server_info can
+            report validated_ledger.seq N while complete_ledgers still ends at N-1 (the ledger is accepted before
+            it is stored), seen live 2026-11-21T08:15Z and 2026-11-22T05:00Z, gone at the next run. Exported, not
+            alerted, not repaired; a longer tail (node behind its own validated seq) stays interior.
 
 Exit 0 with output; exit 1 with one error line on stderr if an input is missing or malformed.
 """
@@ -34,6 +38,7 @@ import sys
 RANGE_RE = re.compile(r"^(\d+)(?:-(\d+))?$")
 MAX_GAP_SERIES = 8  # bounded label cardinality: the largest gaps only
 MAX_PLAN = 10000
+TIP_GRACE = 2  # newest ledgers of the window that may be missing as a tip race (see "tip" above)
 
 
 class InputError(Exception):
@@ -116,6 +121,7 @@ def account(info, od):
         "held": 0,
         "missing_interior": 0,
         "missing_edge": 0,
+        "missing_tip": 0,
         "gaps": [],
     }
     if od is None:
@@ -139,18 +145,27 @@ def account(info, od):
         gaps.append({"kind": "interior", "lo": b + 1, "hi": c - 1})
     if (
         held[-1][1] < whi
-    ):  # newest ledger(s) of the window not held (node behind its own validated seq)
-        gaps.append({"kind": "interior", "lo": held[-1][1] + 1, "hi": whi})
+    ):  # newest ledger(s) of the window not held: a tip race or the node behind its validated seq
+        tail = whi - held[-1][1]
+        gaps.append(
+            {
+                "kind": "tip" if tail <= TIP_GRACE else "interior",
+                "lo": held[-1][1] + 1,
+                "hi": whi,
+            }
+        )
     for g in gaps:
         g["size"] = g["hi"] - g["lo"] + 1
     res["gaps"] = gaps
     res["missing_edge"] = sum(g["size"] for g in gaps if g["kind"] == "edge")
     res["missing_interior"] = sum(g["size"] for g in gaps if g["kind"] == "interior")
+    res["missing_tip"] = sum(g["size"] for g in gaps if g["kind"] == "tip")
     return res
 
 
 def plan(acc, limit):
-    """Missing sequences, newest first (interior holes before the edge), at most `limit`."""
+    """Missing sequences, newest first (interior holes before the edge), at most `limit`. Tip ledgers are never
+    planned: the node stores them on its own within seconds."""
     out = []
     for kind in ("interior", "edge"):
         for g in sorted(
@@ -189,10 +204,11 @@ def metrics(acc, node, now):
         "# TYPE pft_backfill_missing_ledgers gauge",
         f'pft_backfill_missing_ledgers{{{lab},kind="interior"}} {acc["missing_interior"]}',
         f'pft_backfill_missing_ledgers{{{lab},kind="edge"}} {acc["missing_edge"]}',
+        f'pft_backfill_missing_ledgers{{{lab},kind="tip"}} {acc["missing_tip"]}',
         "# HELP pft_backfill_gaps Number of gaps inside the online_delete window, by kind.",
         "# TYPE pft_backfill_gaps gauge",
     ]
-    for kind in ("interior", "edge"):
+    for kind in ("interior", "edge", "tip"):
         n = sum(1 for g in acc["gaps"] if g["kind"] == kind)
         lines.append(f'pft_backfill_gaps{{{lab},kind="{kind}"}} {n}')
     lines += [

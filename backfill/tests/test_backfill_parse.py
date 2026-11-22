@@ -108,6 +108,46 @@ class Accounting(unittest.TestCase):
         )
         self.assertEqual(a["held"] + a["missing_edge"] + a["missing_interior"], 512)
 
+    def test_tip_race_live_captures(self):
+        # the two live status runs that saw validated N with complete_ledgers ending at N-1 (journal 2026-11-21T08:15Z,
+        # 2026-11-22T05:00Z): window [N-511, N], held 511, one tip ledger N, nothing interior, nothing planned
+        for cl, seq in (("8235722-8236315", 8236316), ("8260298-8260988", 8260989)):
+            with self.subTest(seq=seq):
+                a = bp.account(info(cl, seq), 512)
+                self.assertEqual(a["window"], [seq - 511, seq])
+                self.assertEqual(
+                    (
+                        a["held"],
+                        a["missing_interior"],
+                        a["missing_edge"],
+                        a["missing_tip"],
+                    ),
+                    (511, 0, 0, 1),
+                )
+                self.assertEqual(
+                    a["gaps"], [{"kind": "tip", "lo": seq, "hi": seq, "size": 1}]
+                )
+                self.assertEqual(bp.plan(a, 16), [])
+
+    def test_tip_grace_boundary(self):
+        # tail of TIP_GRACE (2) = tip; TIP_GRACE + 1 (3) = interior (the node behind its own validated seq)
+        a = bp.account(info("489-998", 1000), 512)
+        self.assertEqual((a["missing_tip"], a["missing_interior"]), (2, 0))
+        a = bp.account(info("489-997", 1000), 512)
+        self.assertEqual((a["missing_tip"], a["missing_interior"]), (0, 3))
+        self.assertEqual(
+            a["gaps"], [{"kind": "interior", "lo": 998, "hi": 1000, "size": 3}]
+        )
+        self.assertEqual(bp.plan(a, 16), [1000, 999, 998])
+
+    def test_tip_with_interior_hole(self):
+        # hole 701-710 (10) stays interior next to a 1-ledger tip; the plan holds the hole only
+        a = bp.account(info("300-700,711-999", 1000), 512)
+        self.assertEqual(
+            (a["held"], a["missing_interior"], a["missing_tip"]), (501, 10, 1)
+        )
+        self.assertEqual(bp.plan(a, 16), list(range(710, 700, -1)))
+
     def test_range_below_window_is_not_a_gap(self):
         # an old fragment below the window (rotation leftovers) does not count
         a = bp.account(info("10-20,489-1000", 1000), 512)
@@ -234,6 +274,8 @@ class Cli(unittest.TestCase):
             'pft_backfill_missing_ledgers{node="postfiatd-sentry",kind="edge"} 111',
             'pft_backfill_gaps{node="postfiatd-sentry",kind="interior"} 2',
             'pft_backfill_gaps{node="postfiatd-sentry",kind="edge"} 1',
+            'pft_backfill_missing_ledgers{node="postfiatd-sentry",kind="tip"} 0',
+            'pft_backfill_gaps{node="postfiatd-sentry",kind="tip"} 0',
             'pft_backfill_gap_size{node="postfiatd-sentry",kind="edge",first="489",last="599"} 111',
             'pft_backfill_ranges{node="postfiatd-sentry"} 2',
             'pft_backfill_status_timestamp_seconds{node="postfiatd-sentry"} 5',
