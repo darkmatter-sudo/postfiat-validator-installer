@@ -105,3 +105,7 @@ ignore-metric pft_budget_projected_30d_bytes no series until a unit has MIN_RUNS
 textfile pft_valwatch_*.prom   5m   pft_valwatch_collect_timestamp_seconds
 require pft_valwatch_postfiatd.prom
 require pft_valwatch_postfiatd-sentry.prom
+# pft-imagescan (daily image audit, 05:10 UTC + up to 30 min; sentry copy pulled every 15 min)
+textfile pft_imagescan_*.prom   36h   pft_imagescan_last_run_timestamp_seconds
+require pft_imagescan_validator.prom
+require pft_imagescan_sentry.prom

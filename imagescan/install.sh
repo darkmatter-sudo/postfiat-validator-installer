@@ -11,8 +11,8 @@
 #   sudo ./install.sh --uninstall | --pull --uninstall   disables the timer and removes that host's textfile (keeps
 #       the feed + inventory cache and the script).
 # Alert rules: copy ../alerts/imagescan.rules.yml to /etc/pft-alerts/ and list it in prometheus.yml (../alerts).
-# Before the first scan: add a `textfile pft_imagescan_*.prom 2d pft_imagescan_last_run_timestamp_seconds` line to
-# ../rulecheck's config on both hosts (else the new file is UNCONFIGURED there).
+# pft-rulecheck: if /etc/pft-rulecheck.conf exists, the textfile age line (36h, daily timer + 30 min delay) and
+# `require pft_imagescan_NAME.prom` (own host; with --pull the peer) are appended once, before the first scan.
 # Afterwards: sudo pft-integrity accept --reason "<why>" (new binary + units), pft-schedaudit accept + collect and
 # pft-jobwatch inventory (new timers), as for every add-on with a timer.
 set -euo pipefail
@@ -20,6 +20,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEXTDIR=/var/lib/pft-exporter/textfile
 LIBDIR=/usr/local/lib/pft-imagescan
 CONF=/etc/pft-imagescan.env
+RC_CONF=/etc/pft-rulecheck.conf
+RC_LINE="textfile pft_imagescan_*.prom   36h   pft_imagescan_last_run_timestamp_seconds"
 label=""; uninstall=false; pull=false
 log() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*"; }
 [ "$(id -u)" -eq 0 ] || { echo "run as root" >&2; exit 3; }
@@ -36,6 +38,14 @@ done
 # KEY -> value from CONF, empty if the file or key is missing (must not fail: set -e + pipefail)
 conf_get() { [ -f "$CONF" ] || return 0; sed -n "s/^$1=//p" "$CONF" | tail -1 | tr -d '"'; }
 
+rc_add() { # $1 = exact line; appended once to the pft-rulecheck conf if pft-rulecheck is installed
+  [ -f "$RC_CONF" ] || return 0
+  grep -qxF "$1" "$RC_CONF" || { echo "$1" >> "$RC_CONF"; log "added to $RC_CONF: $1"; }
+}
+rc_del() { # $1 = host: drop its require line (the shared textfile line stays)
+  [ ! -f "$RC_CONF" ] || sed -i "/^require pft_imagescan_$1\\.prom\$/d" "$RC_CONF"
+}
+
 install_bin() {
   install -m 755 "$HERE/pft-imagescan.sh" /usr/local/bin/pft-imagescan
   install -d -m 755 "$LIBDIR"
@@ -49,7 +59,7 @@ if $pull; then
   peer="$(conf_get PEER_LABEL)"; peer="${peer:-sentry}"
   if $uninstall; then
     systemctl disable --now pft-imagescan-pull.timer 2>/dev/null || true
-    rm -f "$TEXTDIR/pft_imagescan_$peer.prom"
+    rm -f "$TEXTDIR/pft_imagescan_$peer.prom"; rc_del "$peer"
     log "disabled pft-imagescan-pull.timer, removed the pulled textfile"
     exit 0
   fi
@@ -60,6 +70,7 @@ if $pull; then
   install_bin
   install -m 644 "$HERE/systemd/pft-imagescan-pull.service" "$HERE/systemd/pft-imagescan-pull.timer" /etc/systemd/system/
   systemctl daemon-reload
+  rc_add "$RC_LINE"; rc_add "require pft_imagescan_$peer.prom"
   log "first pull (through the sandboxed unit):"
   systemctl start pft-imagescan-pull.service || true
   if systemctl is-failed -q pft-imagescan-pull.service; then
@@ -75,7 +86,7 @@ fi
 host="${label:-$(conf_get HOST_LABEL)}"; host="${host:-validator}"
 if $uninstall; then
   systemctl disable --now pft-imagescan.timer 2>/dev/null || true
-  rm -f "$TEXTDIR/pft_imagescan_$host.prom"
+  rm -f "$TEXTDIR/pft_imagescan_$host.prom"; rc_del "$host"
   log "disabled pft-imagescan.timer, removed its textfile (kept /var/cache/pft-imagescan and the script)"
   exit 0
 fi
@@ -89,6 +100,7 @@ fi
 chown root:root "$CONF"; chmod 600 "$CONF"
 install -m 644 "$HERE/systemd/pft-imagescan.service" "$HERE/systemd/pft-imagescan.timer" /etc/systemd/system/
 systemctl daemon-reload
+rc_add "$RC_LINE"; rc_add "require pft_imagescan_$host.prom"
 log "first scan (through the sandboxed unit, HOST_LABEL=$host):"
 systemctl start pft-imagescan.service || true
 if systemctl is-failed -q pft-imagescan.service; then

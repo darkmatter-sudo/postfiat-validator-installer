@@ -122,8 +122,16 @@ sudo ./install.sh --host sentry    # sentry
 sudo ./install.sh --pull           # validator: pull the sentry's textfile every 15 min (PULL_SSH in the env file)
 ```
 
-Then: alert rules into Prometheus, a `textfile pft_imagescan_*.prom` line in `../rulecheck`'s config on both hosts,
-`pft-integrity accept`, `pft-schedaudit accept` + collect and `pft-jobwatch inventory` for the new timers.
+`install.sh` appends the `textfile pft_imagescan_*.prom 36h ...` line and `require pft_imagescan_<host>.prom` to
+`/etc/pft-rulecheck.conf` (once, before the first scan) when `../rulecheck` is installed. Then: alert rules into
+Prometheus (`../alerts/prometheus.yml` lists `imagescan.rules.yml`), `pft-integrity accept`, `pft-schedaudit accept`
++ collect and `pft-jobwatch inventory` for the new timers.
+
+The recorded two-host rollout is `drill/install-run.sh` (`PREFLIGHT_ONLY=1` first): files through `pft-fleet` (six
+`imagescan` rows in `../fleet/manifest.tsv`) in a `pft-maint` window with `[MAINT]` messages on a throwaway topic,
+sentry then validator install, rules loaded, schedaudit/jobwatch/integrity accepted, then checks of the textfiles,
+Prometheus series, live `docker events` image streams on both hosts (saves only: no pull/push/load/import/tag/delete),
+aptrust, AppArmor/seccomp denials, fleet skew and rulecheck, and a read-back of every operator topic (0 messages).
 
 ## Limits
 
