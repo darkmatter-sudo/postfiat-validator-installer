@@ -1,0 +1,6 @@
+# /etc/pft-imagescan.accept (root:root 0644). One decision per line:
+#   IMAGE_ID_PREFIX(>=12 hex of the image ID)  FINDING_ID  REVIEW_DATE(YYYY-MM-DD, <= 90 days ahead)  reason
+# An accepted finding stays in the report and in pft_imagescan_findings{accepted="true"} but no longer counts in
+# pft_imagescan_fixable_high_critical (the alert input). A new image ID or a new finding ID is never covered.
+# Past the review date the line is ignored and PFTImagescanAcceptExpired fires.
+# 0123456789ab USN-0000-1 2026-12-31 upstream image; maintainer told on 2026-11-23; rebuild not ours to do

@@ -1,0 +1,64 @@
+# Alert rules for pft-imagescan (../imagescan). pft-imagescan.timer scans once a day and writes
+# pft_imagescan_*{host="..."} to the textfile dir (validator: local; sentry: pulled by pft-imagescan-pull.timer every
+# 15 min); the pft exporter serves it. Only images that a running container uses can fire the findings alert
+# (in_use="true"); findings in idle images are reported but do not page. Accepted findings (accept file, at most 90
+# days) leave pft_imagescan_fixable_high_critical. Tests: imagescan.tests.yml (promtool test rules imagescan.tests.yml).
+groups:
+  - name: pft-imagescan
+    rules:
+      - alert: PFTImagescanFailing
+        expr: pft_imagescan_up == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pft-imagescan scan failed on {{ $labels.host }}"
+          description: "The last image scan exited 2 (stale or changed feed, docker error, unreadable image, or a version it could not compare). Image vulnerability status is unknown until a scan succeeds. Run `sudo pft-imagescan scan --no-fetch` and read the RESULT: ERROR line."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/imagescan/README.md#alerts"
+      - alert: PFTImagescanNotRunning
+        expr: time() - pft_imagescan_last_run_timestamp_seconds > 2 * 86400
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pft-imagescan has not run on {{ $labels.host }} for 2 days"
+          description: "The daily scan missed two runs: pft-imagescan.timer is stopped (or, for the sentry, pft-imagescan-pull.timer on the validator cannot copy its textfile). Check `systemctl list-timers 'pft-imagescan*'`."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/imagescan/README.md#alerts"
+      - alert: PFTImagescanFeedStale
+        # fetch runs with every daily scan; 3 days without a successful download means it is failing. The scan
+        # itself refuses a feed fetched more than 7 days ago (MAX_FEED_AGE_DAYS), so this fires 4 days before that.
+        expr: time() - pft_imagescan_feed_fetched_timestamp_seconds > 3 * 86400
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "pft-imagescan feed {{ $labels.feed }} on {{ $labels.host }} was last downloaded over 3 days ago"
+          description: "Scans keep using the pinned copy, so advisories published since are not checked; scans start failing at 7 days. Run `sudo pft-imagescan fetch` to see the download error."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/imagescan/README.md#alerts"
+      - alert: PFTImagescanFixableHighCritical
+        expr: sum by (instance, job, host, image) (pft_imagescan_fixable_high_critical{in_use="true"}) > 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.host }}: image {{ $labels.image }} has {{ $value }} fixable high/critical finding(s)"
+          description: "A container on this host runs an image with a high or critical advisory whose fix is published. Rebuild or update the image (README: Remediation); for an upstream image you cannot rebuild, tell its maintainer and record the decision in /etc/pft-imagescan.accept (finding ID + date, at most 90 days). `sudo pft-imagescan scan --no-fetch` lists the findings."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/imagescan/README.md#alerts"
+      - alert: PFTImagescanDrift
+        expr: pft_imagescan_drift > 0
+        for: 2h
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.host }}: {{ $value }} container(s) run an image other than the one their tag names"
+          description: "A newer image was pulled or built under the container's tag but the container still runs the old one (or its image could not be scanned). The scanned (tag) image is not what is running. Recreate the container in a maintenance window, or check `sudo pft-imagescan scan --no-fetch` (DRIFT lines)."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/imagescan/README.md#alerts"
+      - alert: PFTImagescanAcceptExpired
+        expr: pft_imagescan_accept_expired > 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.host }}: {{ $value }} expired line(s) in /etc/pft-imagescan.accept"
+          description: "An accepted finding passed its review date and counts again. Re-decide: remove the line once the image is fixed, or extend it with a new date and reason."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/imagescan/README.md#alerts"

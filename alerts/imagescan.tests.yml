@@ -1,0 +1,179 @@
+# promtool unit tests for imagescan.rules.yml. Run: promtool test rules imagescan.tests.yml
+# Every alert has a fire case at its `for` boundary (one minute before = not yet); clean and idle-image cases stay quiet.
+rule_files:
+- imagescan.rules.yml
+evaluation_interval: 1m
+tests:
+- name: clean for 3h fires nothing; fixable findings in an idle image never page
+  interval: 1m
+  input_series:
+  - series: pft_imagescan_up{host="validator"}
+    values: 1x180
+  - series: pft_imagescan_last_run_timestamp_seconds{host="validator"}
+    values: 0+60x180
+  - series: pft_imagescan_feed_fetched_timestamp_seconds{host="validator",feed="go"}
+    values: 0+60x180
+  - series: pft_imagescan_drift{host="validator"}
+    values: '0x180'
+  - series: pft_imagescan_accept_expired{host="validator"}
+    values: '0x180'
+  - series: pft_imagescan_fixable_high_critical{host="validator",image="a:1",in_use="true"}
+    values: '0x180'
+  - series: pft_imagescan_fixable_high_critical{host="validator",image="idle:1",in_use="false"}
+    values: 3x180
+  alert_rule_test:
+  - eval_time: 179m
+    alertname: PFTImagescanFailing
+    exp_alerts: []
+  - eval_time: 179m
+    alertname: PFTImagescanNotRunning
+    exp_alerts: []
+  - eval_time: 179m
+    alertname: PFTImagescanFeedStale
+    exp_alerts: []
+  - eval_time: 179m
+    alertname: PFTImagescanFixableHighCritical
+    exp_alerts: []
+  - eval_time: 179m
+    alertname: PFTImagescanDrift
+    exp_alerts: []
+  - eval_time: 179m
+    alertname: PFTImagescanAcceptExpired
+    exp_alerts: []
+- name: in-use fixable high/critical from 10m fires at 70m (not 69m) with the count, clears at 0
+  interval: 1m
+  input_series:
+  - series: pft_imagescan_up{host="validator"}
+    values: 1x120
+  - series: pft_imagescan_last_run_timestamp_seconds{host="validator"}
+    values: 0+60x120
+  - series: pft_imagescan_feed_fetched_timestamp_seconds{host="validator",feed="go"}
+    values: 0+60x120
+  - series: pft_imagescan_drift{host="validator"}
+    values: '0x120'
+  - series: pft_imagescan_accept_expired{host="validator"}
+    values: '0x120'
+  - series: pft_imagescan_fixable_high_critical{host="sentry",image="prom/prometheus:v3.5.0",in_use="true"}
+    values: 0x9 2x80 0x30
+  alert_rule_test:
+  - eval_time: 69m
+    alertname: PFTImagescanFixableHighCritical
+    exp_alerts: []
+  - eval_time: 70m
+    alertname: PFTImagescanFixableHighCritical
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        host: sentry
+        image: prom/prometheus:v3.5.0
+      exp_annotations:
+        summary: 'sentry: image prom/prometheus:v3.5.0 has 2 fixable high/critical finding(s)'
+        description: 'A container on this host runs an image with a high or critical advisory whose fix is published. Rebuild or update the image (README: Remediation); for an upstream image you cannot
+          rebuild, tell its maintainer and record the decision in /etc/pft-imagescan.accept (finding ID + date, at most 90 days). `sudo pft-imagescan scan --no-fetch` lists the findings.'
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/imagescan/README.md#alerts
+  - eval_time: 91m
+    alertname: PFTImagescanFixableHighCritical
+    exp_alerts: []
+- name: failed scan (up 0 from 10m) fires at 20m, not 19m
+  interval: 1m
+  input_series:
+  - series: pft_imagescan_up{host="validator"}
+    values: 1x9 0x30
+  alert_rule_test:
+  - eval_time: 19m
+    alertname: PFTImagescanFailing
+    exp_alerts: []
+  - eval_time: 20m
+    alertname: PFTImagescanFailing
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        host: validator
+      exp_annotations:
+        summary: pft-imagescan scan failed on validator
+        description: 'The last image scan exited 2 (stale or changed feed, docker error, unreadable image, or a version it could not compare). Image vulnerability status is unknown until a scan succeeds.
+          Run `sudo pft-imagescan scan --no-fetch` and read the RESULT: ERROR line.'
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/imagescan/README.md#alerts
+- name: no run for 2 days fires after for 10m (2891m), not before
+  interval: 1m
+  input_series:
+  - series: pft_imagescan_last_run_timestamp_seconds{host="validator"}
+    values: '0x2900'
+  alert_rule_test:
+  - eval_time: 2890m
+    alertname: PFTImagescanNotRunning
+    exp_alerts: []
+  - eval_time: 2891m
+    alertname: PFTImagescanNotRunning
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        host: validator
+      exp_annotations:
+        summary: pft-imagescan has not run on validator for 2 days
+        description: 'The daily scan missed two runs: pft-imagescan.timer is stopped (or, for the sentry, pft-imagescan-pull.timer on the validator cannot copy its textfile). Check `systemctl list-timers
+          ''pft-imagescan*''`.'
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/imagescan/README.md#alerts
+- name: feed not downloaded for 3 days fires after for 1h (4381m), per feed
+  interval: 1m
+  input_series:
+  - series: pft_imagescan_feed_fetched_timestamp_seconds{host="validator",feed="debian"}
+    values: '0x4400'
+  - series: pft_imagescan_feed_fetched_timestamp_seconds{host="validator",feed="go"}
+    values: 0+60x4400
+  alert_rule_test:
+  - eval_time: 4380m
+    alertname: PFTImagescanFeedStale
+    exp_alerts: []
+  - eval_time: 4381m
+    alertname: PFTImagescanFeedStale
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        host: validator
+        feed: debian
+      exp_annotations:
+        summary: pft-imagescan feed debian on validator was last downloaded over 3 days ago
+        description: Scans keep using the pinned copy, so advisories published since are not checked; scans start failing at 7 days. Run `sudo pft-imagescan fetch` to see the download error.
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/imagescan/README.md#alerts
+- name: drift for 2h fires (130m), a drift that ends after 1h never fires
+  interval: 1m
+  input_series:
+  - series: pft_imagescan_drift{host="validator"}
+    values: 0x9 1x200
+  - series: pft_imagescan_drift{host="sentry"}
+    values: 0x9 1x60 0x100
+  alert_rule_test:
+  - eval_time: 129m
+    alertname: PFTImagescanDrift
+    exp_alerts: []
+  - eval_time: 130m
+    alertname: PFTImagescanDrift
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        host: validator
+      exp_annotations:
+        summary: 'validator: 1 container(s) run an image other than the one their tag names'
+        description: A newer image was pulled or built under the container's tag but the container still runs the old one (or its image could not be scanned). The scanned (tag) image is not what is running.
+          Recreate the container in a maintenance window, or check `sudo pft-imagescan scan --no-fetch` (DRIFT lines).
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/imagescan/README.md#alerts
+- name: expired accept line fires after 1h
+  interval: 1m
+  input_series:
+  - series: pft_imagescan_accept_expired{host="validator"}
+    values: 0x9 2x80
+  alert_rule_test:
+  - eval_time: 69m
+    alertname: PFTImagescanAcceptExpired
+    exp_alerts: []
+  - eval_time: 70m
+    alertname: PFTImagescanAcceptExpired
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        host: validator
+      exp_annotations:
+        summary: 'validator: 2 expired line(s) in /etc/pft-imagescan.accept'
+        description: 'An accepted finding passed its review date and counts again. Re-decide: remove the line once the image is fixed, or extend it with a new date and reason.'
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/imagescan/README.md#alerts

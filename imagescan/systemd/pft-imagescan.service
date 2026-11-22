@@ -1,0 +1,43 @@
+[Unit]
+Description=pft-imagescan: offline vulnerability + provenance audit of the local Docker images (writes textfile metrics)
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/imagescan
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# exit 1 = fixable high/critical finding in an in-use image, or drift (reported in the metrics), not a unit failure;
+# exit 2 (scan error) fails the unit
+SuccessExitStatus=1
+ExecStart=/usr/local/bin/pft-imagescan scan
+# root only for the docker socket (root:docker 0660, owner access, no capability needed); docker is only asked
+# ps / inspect / image ls / image inspect / image save
+CacheDirectory=pft-imagescan
+CacheDirectoryMode=0700
+ReadWritePaths=/var/lib/pft-exporter/textfile
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+# measured peak: ~325 MB (Debian tracker JSON), ~85 MB while reading an image
+MemoryMax=768M
+Nice=10
+IOSchedulingClass=idle
+UMask=0077
+TimeoutStartSec=45min
