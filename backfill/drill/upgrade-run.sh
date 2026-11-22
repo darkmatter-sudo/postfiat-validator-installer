@@ -20,7 +20,7 @@ SHA="$(git rev-parse HEAD)"; SHORT="$(git rev-parse --short HEAD)"
 AM=http://127.0.0.1:9093; PROM=http://127.0.0.1:9090
 ME="$(id -un)"; HN="$(hostname)"
 TASK="${TASK:-task_df1c7e56}"
-FROM="${FROM:-00f3b33}"; EXPECT="${EXPECT:-backfill/README.md backfill/backfill_parse.py backfill/pft-backfill.sh }"
+FROM="${FROM:-943f7f4}"  # parent of the fix 46890ac (installed bytes; 00f3b33 predates the manifest rows); EXPECT="${EXPECT:-backfill/README.md backfill/backfill_parse.py backfill/pft-backfill.sh }"
 KNOWN_RE="${KNOWN_RE:-^PFTValwatchValidator(Low|Late) (pending|firing) - (active|suppressed|none)\$}"
 # a tip race seen by the OLD parser right before the sync makes PFTBackfillGap pending (never firing: for 20m)
 ALLOW_RE="${ALLOW_RE:-^PFTBackfillGap pending - (active|none)\$}"
