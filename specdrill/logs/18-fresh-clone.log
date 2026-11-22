@@ -1,0 +1,64 @@
+specdrill fresh public clone - 2026-11-22T18:38:56Z - pinned b6a54b7c760bebdf89f1c35c5415c482658e233a
+$ env -u GH_TOKEN -u GITHUB_TOKEN git -c credential.helper= clone -q https://github.com/darkmatter-sudo/postfiat-validator-installer.git repo
+  (exit 0)
+$ git checkout -q b6a54b7c760bebdf89f1c35c5415c482658e233a && git rev-parse HEAD && git status --porcelain | wc -l
+  b6a54b7c760bebdf89f1c35c5415c482658e233a
+  0
+  (exit 0)
+$ git log -1 --format='%H %P %ad %s' --date=iso-strict b6a54b7c760bebdf89f1c35c5415c482658e233a
+  b6a54b7c760bebdf89f1c35c5415c482658e233a 8d03b9904c690c87f71f37b08f8822ff2b54b0bb 2026-11-22T18:05:41+00:00 specdrill: fresh public clone transcript for 8d03b99 (pinned SHA, key-file sha256, 84 tests, shellcheck/ruff, byte-identical offline report rebuild)
+  (exit 0)
+$ git diff --stat 8d03b9904c690c87f71f37b08f8822ff2b54b0bb b6a54b7c760bebdf89f1c35c5415c482658e233a
+   specdrill/logs/17-fresh-clone.log | 51 +++++++++++++++++++++++++++++++++++++++
+   1 file changed, 51 insertions(+)
+  (exit 0)
+$ test "$(git diff --name-only 8d03b9904c690c87f71f37b08f8822ff2b54b0bb b6a54b7c760bebdf89f1c35c5415c482658e233a -- . ':(exclude)specdrill/logs/17-fresh-clone.log' | wc -l)" = 0 && echo 'only specdrill/logs/17-fresh-clone.log differs from 8d03b9904c690c87f71f37b08f8822ff2b54b0bb'
+  only specdrill/logs/17-fresh-clone.log differs from 8d03b9904c690c87f71f37b08f8822ff2b54b0bb
+  (exit 0)
+$ sha256sum specdrill/pft-specdrill.sh specdrill/specdrill.py specdrill/drill/live-run.sh specdrill/drill/lateboth.sh specdrill/tests/*.py specdrill/README.md specdrill/REPORT.md specdrill/data/cells.json specdrill/data/cells.csv specdrill/data/REPORT.md specdrill/logs/17-live-run.log specdrill/logs/17-fresh-clone.log
+  cbfac4851fda8da2c2201dfb56a007466c7352598addd97a5ade57ecb311c118  specdrill/pft-specdrill.sh
+  06bb9d2d9ef2b45ed2c03089ad5f6d7d7c5457604d0afe5b693610312ed28e85  specdrill/specdrill.py
+  8f2869340bc3d654bc43d4946d6f36e33514877e04e31bb06d5b758040f6032b  specdrill/drill/live-run.sh
+  2820467f440153b58125cdbd9e153291de78cfa5800c54064c93311b04bd4733  specdrill/drill/lateboth.sh
+  c8c8622a05961f67c43f40baf5c540e3ae4e91dd46d042b4969bc03cf063a97e  specdrill/tests/mutants.py
+  71d8ead89a591661649111c5d01ca4b1b93c0c7fb1375adcf6d4b2559ad3a201  specdrill/tests/stub.py
+  e8577103f1c97efa9e7bacbd4bb40001764753cc215da462fd9cdb5d9c307a10  specdrill/tests/test_lateboth.py
+  806294b0bd5b261f8a6d677d523f16f6c099aa032b1af9c7a25588ef9ebf214a  specdrill/tests/test_runner.py
+  455ffe2d916d251602e0b0a27917993bc8720dbba6341395621c1ea7c40b2994  specdrill/tests/test_specdrill.py
+  df2668269828415fcf2305d793a50129f3cbffd0d20bf0876ef1a5158b8d9402  specdrill/README.md
+  135f947f7b2bff60b9b22f521ea9f674c7ddb51b3b700c585b27d26357cd970b  specdrill/REPORT.md
+  c8258e6e75f8b75c6023ee57291869efc62f52654b6ddaa816c00ca7c9c263e0  specdrill/data/cells.json
+  e49800db5116e4e571d14663a902f61e7ae6195e5aeca56d0d45f8bea61b9311  specdrill/data/cells.csv
+  135f947f7b2bff60b9b22f521ea9f674c7ddb51b3b700c585b27d26357cd970b  specdrill/data/REPORT.md
+  45200755fd1a3e80e71da816b3c04cc51f4d8442f65b2027dcae73b42c6e5cc0  specdrill/logs/17-live-run.log
+  20a28fb25adade34f5d625c6983e04725a103330b88b13ab568786b5068e7088  specdrill/logs/17-fresh-clone.log
+  (exit 0)
+$ find specdrill/data/cells -mindepth 1 -maxdepth 1 -type d | wc -l
+  18
+  (exit 0)
+$ cp -r specdrill/data/cells ~/.cache/sdfresh.upYY/cells && mkdir ~/.cache/sdfresh.upYY/out && python3 -I specdrill/specdrill.py report ~/.cache/sdfresh.upYY/cells ~/.cache/sdfresh.upYY/out
+  report: 18 cells, 14 PASS -> ~/.cache/sdfresh.upYY/out
+  (exit 0)
+$ cmp specdrill/data/cells.json ~/.cache/sdfresh.upYY/out/cells.json && cmp specdrill/data/cells.csv ~/.cache/sdfresh.upYY/out/cells.csv && cmp specdrill/data/REPORT.md ~/.cache/sdfresh.upYY/out/REPORT.md && cmp specdrill/REPORT.md ~/.cache/sdfresh.upYY/out/REPORT.md && echo BYTE-IDENTICAL && sha256sum ~/.cache/sdfresh.upYY/out/cells.json ~/.cache/sdfresh.upYY/out/cells.csv ~/.cache/sdfresh.upYY/out/REPORT.md
+  BYTE-IDENTICAL
+  c8258e6e75f8b75c6023ee57291869efc62f52654b6ddaa816c00ca7c9c263e0  ~/.cache/sdfresh.upYY/out/cells.json
+  e49800db5116e4e571d14663a902f61e7ae6195e5aeca56d0d45f8bea61b9311  ~/.cache/sdfresh.upYY/out/cells.csv
+  135f947f7b2bff60b9b22f521ea9f674c7ddb51b3b700c585b27d26357cd970b  ~/.cache/sdfresh.upYY/out/REPORT.md
+  (exit 0)
+$ shellcheck specdrill/pft-specdrill.sh specdrill/drill/live-run.sh specdrill/drill/lateboth.sh && echo shellcheck clean
+  shellcheck clean
+  (exit 0)
+$ cd specdrill && ruff check .
+  All checks passed!
+  (exit 0)
+$ cd specdrill && TMPDIR=~/.cache/sdfresh.upYY python3 -m pytest -q -p no:cacheprovider tests
+  ........................................................................ [ 85%]
+  ............                                                             [100%]
+  84 passed in 290.10s (0:04:50)
+  (exit 0)
+$ git rev-parse HEAD && git status --porcelain | wc -l
+  b6a54b7c760bebdf89f1c35c5415c482658e233a
+  0
+  (exit 0)
+FAILS=0
+end 2026-11-22T18:43:55Z
