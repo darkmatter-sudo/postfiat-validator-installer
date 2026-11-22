@@ -1,0 +1,65 @@
+== tipfix-check 2026-11-22T05:17:48Z | HEAD 46890acb92a1dd7e682b5f85fad2020b7dd69026 | tree 0 changed file(s) | FROM 943f7f4576861b57bb3592d6170cd4d7f9aa78e3
+76dde7dd935d9e0ef7e263997f1c0691bd922d0ae2601318bb5efbc532b0982c  backfill/backfill_parse.py
+b777a065663899dcafe3d2204f16f0b238a29354b85ac2d88acee22a2dccac84  backfill/pft-backfill.sh
+1ea371996a03a0e6273e14d703abed7eb5f564abcc842c54ee849cd3cf53ec37  backfill/tests/test_backfill_parse.py
+1b1e6ee88f181dcc2f2bc47de17fe4785464fca79c9c3ee7db9acbfb88112008  backfill/tests/run-tests.sh
+
+== 1. fail-before: current tests vs the parser of 943f7f4576861b57bb3592d6170cd4d7f9aa78e3
+  ERROR: test_tip_grace_boundary (__main__.Accounting)
+  ERROR: test_tip_race_live_captures (__main__.Accounting) (seq=8236316)
+  ERROR: test_tip_race_live_captures (__main__.Accounting) (seq=8260989)
+  ERROR: test_tip_with_interior_hole (__main__.Accounting)
+  FAIL: test_status_with_gaps (__main__.Cli)
+  Ran 29 tests in 0.030s
+  FAILED (failures=1, errors=4)
+  failing tests: test_status_with_gaps test_tip_grace_boundary test_tip_race_live_captures test_tip_with_interior_hole 
+CHECK ok   old parser: unit suite exits 1
+CHECK ok   old parser: exactly the 4 tip tests fail (tip_grace_boundary, tip_race_live_captures, tip_with_interior_hole, status_with_gaps)
+CHECK ok   old parser: failures are assertions/KeyError on the new field, not import errors
+  FAIL tip race: exit 0 PASS ([ "$RC" = 0 ] && grep -q "^RESULT: PASS" <<<"$OUT")
+  FAIL tip race: interior 0, tip 1 (grep -q "missing          interior 0, edge 0, tip 1" <<<"$OUT")
+  FAIL tip race: listed as tip (grep -q "gap              tip 7729449-7729449 (1)" <<<"$OUT")
+  FAIL tip race prom: interior 0, tip 1 (grep -qx "pft_backfill_missing_ledgers{node=\"validator\",kind=\"interior\"} 0" "$R/textfile/x.prom" && grep -qx "pft_bac
+  FAIL tip race: plan empty (ledger_request refuses >= validated) ([ "$RC" = 0 ] && [ -z "$OUT" ])
+  RESULT: 44 passed, 5 failed
+CHECK ok   old parser: shell suite fails only on the tip-race checks
+
+== 2. after: every suite on the working tree
+  Ran 29 tests in 0.027s
+  
+  OK
+CHECK ok   unit suite passes
+  ok   tip race: exit 0 PASS
+  ok   tip race: interior 0, tip 1
+  ok   tip race: listed as tip
+  ok   tip race prom: interior 0, tip 1
+  ok   tip race: plan empty (ledger_request refuses >= validated)
+  ok   control tail 3: exit 1, interior 3, tip 0
+  ok   control tail 3: planned newest first
+  RESULT: 49 passed, 0 failed
+CHECK ok   status/plan shell suite passes
+  RESULT: 66 passed, 0 failed
+CHECK ok   repair shell suite passes
+
+== 3. parser mutants
+  M1 (grace boundary < instead of <=): killed by: test_tip_grace_boundary;
+CHECK ok   M1 grace boundary < instead of <=: KILLED
+  M2 (grace 3): killed by: control tail 3: exit 1, interior 3, tip 0 ([ "$RC" = 1 ;control tail 3: planned newest first ([ "$OUT" = "$(pri;test_tip_grace_boundary;
+CHECK ok   M2 grace 3: KILLED
+  M3 (tip counted as interior): killed by: test_tip_grace_boundary;test_tip_race_live_captures;test_tip_with_interior_hole;tip race prom: interior 0, tip 1 (grep -qx "pft_backfil;tip race: exit 0 PASS ([ "$RC" = 0 ] && grep -q "^RESUL;tip race: interior 0, tip 1 (grep -q "missing          ;tip race: listed as tip (grep -q "gap              tip ;tip race: plan empty (ledger_request refuses >= validat;
+CHECK ok   M3 tip counted as interior: KILLED
+  M4 (tip planned): killed by: test_tip_race_live_captures;test_tip_with_interior_hole;tip race: plan empty (ledger_request refuses >= validat;
+CHECK ok   M4 tip planned: KILLED
+  M5 (tip metric not exported): killed by: test_status_with_gaps;tip race prom: interior 0, tip 1 (grep -qx "pft_backfil;
+CHECK ok   M5 tip metric not exported: KILLED
+  M6 (missing_tip not counted): killed by: test_tip_grace_boundary;test_tip_race_live_captures;test_tip_with_interior_hole;tip race prom: interior 0, tip 1 (grep -qx "pft_backfil;tip race: interior 0, tip 1 (grep -q "missing          ;
+CHECK ok   M6 missing_tip not counted: KILLED
+
+== 4. lint
+  shellcheck clean
+CHECK ok   shellcheck clean
+  All checks passed!
+  2 files already formatted
+CHECK ok   ruff check + format clean
+
+tipfix-check done 2026-11-22T05:20:56Z: 0 check(s) failed -> PASS
