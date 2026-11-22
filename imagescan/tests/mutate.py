@@ -67,7 +67,7 @@ MUTANTS = [
     ("L22", "lib", "drift: running image differs from tag not reported",
      'elif c["image_id"] != cur["image_id"]:', "elif False:"),
     ("L23", "lib", "drift: unscanned image not reported", "if cur is None:\n", "if cur is None and False:\n"),
-    ("L24", "lib", "render: drift does not set exit 1", "rc = 1 if (alert_n or scan[\"drift\"]) else 0",
+    ("L24", "lib", "render: drift does not set exit 1", "rc = 1 if (alert_n or drift) else 0",
      "rc = 1 if alert_n else 0"),
     ("L25", "lib", "missing feed for an OS tolerated",
      '            raise Bad(f"no pinned feed {name} in feeds.json")\n', "            return {}\n"),
