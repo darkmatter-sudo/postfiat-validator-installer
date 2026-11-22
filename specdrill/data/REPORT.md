@@ -7,27 +7,41 @@ PASS = full within the cell deadline, no OOM kill or restart, not aborted, 20-mi
 
 | axis | minimum (measured) | safe | failing cells |
 |---|---|---|---|
-| cpu | 0.25 vCPU (`cpu-c0.25-m2048-io0`) | 0.5 vCPU (`cpu-c0.5-m2048-io0`) | - |
-| mem | 512 MiB (`mem-c2-m512-io0`) | 768 MiB (`mem-c2-m768-io0`) | - |
-| io | 1 MB/s (`io-c2-m2048-io1000000`) | 4 MB/s (`io-c2-m2048-io4000000`) | - |
+| cpu | 0.25 vCPU (`cpu-c0.25-m2048-io0`) | 0.5 vCPU (`cpu-c0.5-m2048-io0`) | `cpu-c0.05-m2048-io0` (never_full), `cpu-c0.1-m2048-io0` (lag_p95>2) |
+| mem | 512 MiB (`mem-c2-m512-io0`) | 768 MiB (`mem-c2-m768-io0`) | `mem-c2-m256-io0` (oom_killed;never_full), `mem-c2-m384-io0` (oom_killed;never_full) |
+| io | <= 0.1 MB/s (`io-c2-m2048-io100000`, lowest tested: no failing cell below) | 0.25 MB/s (`io-c2-m2048-io250000`) | - |
 
 ## Cells
 
 | cell | cpus | mem MiB | io | verdict | time to full s | lag p50/p95/max | jitter s | peers min | peak RSS MiB | reasons |
 |---|---|---|---|---|---|---|---|---|---|---|
-| cpu-c0.25-m2048-io0 | 0.25 | 2048 | unlimited | PASS | 97 | 0/1/2 | 0.713 | 9 | 587.1 | - |
-| cpu-c0.5-m2048-io0 | 0.5 | 2048 | unlimited | PASS | 64 | 1/1/2 | 0.687 | 5 | 470.1 | - |
-| cpu-c1-m2048-io0 | 1 | 2048 | unlimited | PASS | 51 | 0/1/2 | 0.665 | 3 | 467.0 | - |
-| cpu-c2-m2048-io0 | 2 | 2048 | unlimited | PASS | 60 | 1/1/1 | 0.734 | 3 | 464.1 | - |
-| io-c2-m2048-io1000000 | 2 | 2048 | 1 MB/s | PASS | 47 | 0/1/2 | 0.713 | 2 | 465.1 | - |
-| io-c2-m2048-io16000000 | 2 | 2048 | 16 MB/s | PASS | 51 | 0/1/1 | 0.773 | 4 | 465.1 | - |
-| io-c2-m2048-io4000000 | 2 | 2048 | 4 MB/s | PASS | 60 | 0/1/1 | 0.699 | 2 | 467.1 | - |
-| mem-c2-m1024-io0 | 2 | 1024 | unlimited | PASS | 60 | 0/1/2 | 0.702 | 5 | 469.5 | - |
-| mem-c2-m1536-io0 | 2 | 1536 | unlimited | PASS | 49 | 1/1/1 | 0.668 | 3 | 563.3 | - |
-| mem-c2-m2048-io0 | 2 | 2048 | unlimited | PASS | 47 | 0/1/2 | 0.705 | 3 | 466.8 | - |
-| mem-c2-m512-io0 | 2 | 512 | unlimited | PASS | 58 | 0/1/2 | 0.636 | 3 | 526.3 | - |
-| mem-c2-m768-io0 | 2 | 768 | unlimited | PASS | 49 | 0/1/2 | 0.681 | 3 | 464.6 | - |
+| cpu-c0.05-m2048-io0 | 0.05 | 2048 | unlimited | FAIL | - | -/-/- | - | - | 704.2 | never_full |
+| cpu-c0.1-m2048-io0 | 0.1 | 2048 | unlimited | FAIL | 83 | 1/3/3 | 0.464 | 2 | 467.9 | lag_p95>2 |
+| cpu-c0.25-m2048-io0 | 0.25 | 2048 | unlimited | PASS | 63 | 1/1/2 | 0.72 | 2 | 466.9 | - |
+| cpu-c0.5-m2048-io0 | 0.5 | 2048 | unlimited | PASS | 61 | 0/1/2 | 0.71 | 2 | 464.1 | - |
+| cpu-c1-m2048-io0 | 1 | 2048 | unlimited | PASS | 51 | 1/1/1 | 0.726 | 2 | 465.8 | - |
+| cpu-c2-m2048-io0 | 2 | 2048 | unlimited | PASS | 52 | 0/1/2 | 0.761 | 2 | 468.5 | - |
+| io-c2-m2048-io100000 | 2 | 2048 | 0.1 MB/s | PASS | 48 | 0/1/1 | 0.748 | 7 | 472.4 | - |
+| io-c2-m2048-io1000000 | 2 | 2048 | 1 MB/s | PASS | 53 | 0/1/1 | 0.716 | 2 | 461.5 | - |
+| io-c2-m2048-io16000000 | 2 | 2048 | 16 MB/s | PASS | 47 | 0/1/1 | 0.754 | 2 | 462.7 | - |
+| io-c2-m2048-io250000 | 2 | 2048 | 0.25 MB/s | PASS | 52 | 0/1/1 | 0.76 | 3 | 462.7 | - |
+| io-c2-m2048-io4000000 | 2 | 2048 | 4 MB/s | PASS | 60 | 0/1/1 | 0.662 | 2 | 462.1 | - |
+| mem-c2-m1024-io0 | 2 | 1024 | unlimited | PASS | 49 | 0/1/1 | 0.686 | 4 | 463.5 | - |
+| mem-c2-m1536-io0 | 2 | 1536 | unlimited | PASS | 51 | 0/1/1 | 0.706 | 4 | 462.3 | - |
+| mem-c2-m2048-io0 | 2 | 2048 | unlimited | PASS | 48 | 0/1/1 | 0.697 | 2 | 465.6 | - |
+| mem-c2-m256-io0 | 2 | 256 | unlimited | FAIL | - | -/-/- | - | - | 102.6 | oom_killed;never_full |
+| mem-c2-m384-io0 | 2 | 384 | unlimited | FAIL | - | -/-/- | - | - | 211.5 | oom_killed;never_full |
+| mem-c2-m512-io0 | 2 | 512 | unlimited | PASS | 61 | 0/1/1 | 0.778 | 2 | 463.3 | - |
+| mem-c2-m768-io0 | 2 | 768 | unlimited | PASS | 53 | 1/1/1 | 0.642 | 2 | 464.1 | - |
 
 ## Live node during the drill
 
 live validator full at every poll: yes; max live lag seen: 1 ledgers.
+
+## Limits of this measurement
+
+- Each cell is a fresh node measured for 20 minutes after it reaches `full`; memory that grows with uptime is
+  not covered, so size memory from a long-running node's usage, not from the mem floor alone.
+- Peak RSS is the node process's `VmHWM`, which includes file-backed pages the kernel may charge to another
+  cgroup, so it can be slightly above the cell's `--memory` limit without an OOM kill.
+- One host, one factor at a time from the base cell, testnet load at the time of the run.

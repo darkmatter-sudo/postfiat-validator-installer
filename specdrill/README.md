@@ -5,7 +5,7 @@ live node's own postfiatd 1.0.9 image, one at a time, each under one resource li
 `--device-read/write-bps`), and records how long each takes to reach `full`, how far behind the network it runs over
 a 20-minute window, its close-time jitter, peers, OOM/restart events and peak RSS. `specdrill.py report` turns the
 cells into `cells.json`, `cells.csv` and `REPORT.md` with a minimum and a safe value per axis.
-Status: runner, report helper and stubbed tests; live matrix results follow in [Results](#results).
+Status: runner, report helper, stubbed tests and mutation harness; recorded live matrix run 17 PASS (see [Results](#results)).
 
 ## Usage
 
@@ -140,4 +140,35 @@ TMPDIR=$HOME/.cache python3 specdrill/tests/mutants.py -j 3
 
 ## Results
 
-Pending the live matrix run.
+Recorded live matrix run 17 (`AXES=cpu,mem,io RUN=17`, code `95d852a`, 2026-11-22T11:42:59Z-17:38:49Z, 18 cells):
+**PASS, 0 failed checks** ([`logs/17-live-run.log`](logs/17-live-run.log)). The per-cell data in [`data/`](data/) and
+[`REPORT.md`](REPORT.md) come from this run.
+
+| axis | minimum (measured) | safe | failing cells below |
+|---|---|---|---|
+| cpu | 0.25 vCPU | 0.5 vCPU | 0.05 (never full), 0.1 (20-min lag p95 3 > 2) |
+| mem | 512 MiB | 768 MiB | 256, 384 (OOM-killed, never full) |
+| io (`--device-read-bps` and `--device-write-bps`, each) | <= 0.1 MB/s, lowest tested (no failing cell) | 0.25 MB/s | - |
+
+Live safety in run 17: validator `full` at every poll of every cell (max live lag 1 ledger), `pft-integrity` PASS on
+both hosts with nothing to accept, 0 AppArmor/seccomp denials, no new histarchive gap, 0 labelled containers,
+volumes or networks left, all 4 drill silences expired after a clean drain, and 0 drill alert or `[MAINT]` messages
+on either operator topic (the 6 `[MAINT]` messages reached the throwaway topic only).
+
+The CPU floor is noisy near 0.05-0.1 vCPU: in run 16 (same code) `cpu-c0.05` passed (401 s to full, lag p95 2)
+while `cpu-c0.1` failed, and in run 17 `cpu-c0.05` never reached full. Treat anything below 0.25 vCPU as unsafe.
+The memory floor is for a fresh node over 20 minutes; a long-running 1.0.9 node grows well past it (see
+[Limits](REPORT.md#limits-of-this-measurement)).
+
+Earlier full runs, kept as the record (each FAIL was in the run's live-safety checks, not in a cell runner):
+
+| run | code | result | why |
+|---|---|---|---|
+| [09](logs/09-live-run.log) | `579020a` | FAIL | cpu,io only; a natural ~2 s validator `full` exit (1 of 695 polls not full, lag max 1) and an internals 2^32 counter-wrap false alarm (fixed `87e8400`) reached the operator topic |
+| [10](logs/10-live-run.log) | `df39b4a` | PASS | 12 cells; minimums were the lowest tested values, so the matrix was extended (`ec4394f`) |
+| [11](logs/11-live-run.log) | `9657c7e` | FAIL | a pre-existing silence's alerts and sentry-side natural events were counted as outside alerts; fixed in `5142a2d` |
+| [12](logs/12-live-run.log) | `0c6063c` | FAIL | the scheduled daily other-validators digest counted as a leak; an unattended kernel upgrade raised pending vuln/reboot alerts; fixed in `10b72b6` |
+| [13](logs/13-live-run.log) | `10b72b6` | FAIL | a natural sentry `PFTBudgetCapReached` message (body `sentry: ...`) was not attributed to the sentry; fixed in `4db44e6` |
+| [14](logs/14-live-run.log) | `4db44e6` | FAIL | `PFTValwatchHostsDisagreeLate` pending from textfile pull skew while an external validator was late on both nodes; `drill/lateboth.sh` (`943f7f4`) |
+| [15](logs/15-live-run.log) | `943f7f4` | FAIL | `PFTBackfillGap` from a tip race in pft-backfill; fixed at the source (`46890ac`, backfill/logs/17) |
+| [16](logs/16-live-run.log) | `95d852a` | FAIL | a natural ~2 s validator `full` exit (`PFTNodeBriefFullExit`, about once a day with or without a drill) reached the operator topic; no drill attribution (peers flat, PSI below the pre-run max) but the card requires 0, so superseded |

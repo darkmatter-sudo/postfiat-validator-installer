@@ -1,0 +1,541 @@
+specdrill live run 11 - 2026-11-20T19:22:17Z - Ubuntu 22.04.5 LTS - repo HEAD 9657c7eadbb32dd25d34781d58a1ad380eb1873c (clean: yes) - axes cpu,mem,io dry=0
+
+== 0. preflight (read-only)
+$ rm -rf '~/.cache/specdrill-run-11' && mkdir -p '~/.cache/specdrill-run-11/bin' && cp specdrill/pft-specdrill.sh specdrill/specdrill.py '~/.cache/specdrill-run-11/bin/' && chmod 755 '~/.cache/specdrill-run-11' '~/.cache/specdrill-run-11/bin' && sha256sum specdrill/pft-specdrill.sh specdrill/specdrill.py '~/.cache/specdrill-run-11'/bin/* | cut -c1-64
+  cbfac4851fda8da2c2201dfb56a007466c7352598addd97a5ade57ecb311c118
+  06bb9d2d9ef2b45ed2c03089ad5f6d7d7c5457604d0afe5b693610312ed28e85
+  cbfac4851fda8da2c2201dfb56a007466c7352598addd97a5ade57ecb311c118
+  06bb9d2d9ef2b45ed2c03089ad5f6d7d7c5457604d0afe5b693610312ed28e85
+  (exit 0)
+CHECK ok   run copy of runner + helper = HEAD bytes (the repo may change while the run goes)
+$ shellcheck specdrill/pft-specdrill.sh specdrill/drill/*.sh && echo shellcheck clean
+  shellcheck clean
+  (exit 0)
+CHECK ok   shellcheck clean
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 282 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 167 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts before the run
+$ srv_state
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ labelled | wc -l
+  0
+  (exit 0)
+CHECK ok   no pft-specdrill labelled container/volume/network
+$ sudo -n pft-maint status --json | jq -c '{window, remaining_sec, locks}'
+  {"window":"none","remaining_sec":null,"locks":[]}
+  (exit 0)
+CHECK ok   no pft-maint window open
+$ sudo -n env  bash '~/.cache/specdrill-run-11/bin/pft-specdrill.sh' plan --axes cpu,mem,io
+  cell cpu cpus=0.05 mem=2048MiB io=0 budget=2220s
+  cell cpu cpus=0.1 mem=2048MiB io=0 budget=2220s
+  cell cpu cpus=0.25 mem=2048MiB io=0 budget=2220s
+  cell cpu cpus=0.5 mem=2048MiB io=0 budget=2220s
+  cell cpu cpus=1 mem=2048MiB io=0 budget=2220s
+  cell cpu cpus=2 mem=2048MiB io=0 budget=2220s
+  cell mem cpus=2 mem=256MiB io=0 budget=2220s
+  cell mem cpus=2 mem=384MiB io=0 budget=2220s
+  cell mem cpus=2 mem=512MiB io=0 budget=2220s
+  cell mem cpus=2 mem=768MiB io=0 budget=2220s
+  cell mem cpus=2 mem=1024MiB io=0 budget=2220s
+  cell mem cpus=2 mem=1536MiB io=0 budget=2220s
+  cell mem cpus=2 mem=2048MiB io=0 budget=2220s
+  cell io cpus=2 mem=2048MiB io=100000 budget=2220s
+  cell io cpus=2 mem=2048MiB io=250000 budget=2220s
+  cell io cpus=2 mem=2048MiB io=1000000 budget=2220s
+  cell io cpus=2 mem=2048MiB io=4000000 budget=2220s
+  cell io cpus=2 mem=2048MiB io=16000000 budget=2220s
+  FAIL maint: no active pft-maint window (window=none)
+  ok live: full, lag 0 <= 3
+  ok integrity: verify PASS
+  ok headroom: 4989 MiB - 2048 MiB >= 1536 MiB
+  ok disk: 56 GB free
+  ok image: sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+  ok leftovers: none
+  lock: /run/pft-specdrill.lock  pull: never  failsafe: specdrill-rearm-integrity
+  (exit 0)
+CHECK ok   plan: every guard ok except maint (no window yet)
+$ systemctl is-active pft-integrity.timer; systemctl list-units --all --no-legend 'specdrill-rearm-integrity*' | wc -l
+  active
+  0
+  (exit 0)
+CHECK ok   pft-integrity.timer active, no failsafe unit left
+histarchive follow_gaps before: 2
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+$ curl -s --max-time 10 http://<redacted-ip>:9090/api/v1/alerts | jq -r .status; curl -s --max-time 10 http://<redacted-ip>:9093/api/v2/status | jq -r 'if (.uptime // "") != "" then "up" else "down" end'
+  success
+  up
+  (exit 0)
+CHECK ok   Prometheus and Alertmanager answer
+$ curl -s http://<redacted-ip>:9093/api/v2/silences | jq -r '.[] | select(.status.state == "active") | .id[0:8]'
+  
+  (exit 0)
+CHECK ok   active silences: none, or only the allowed one (SIL_OK=none)
+$ active_alerts | sort | uniq -c
+        1 PFTAlertPipelineWatchdog firing -
+        2 PFTValwatchValidatorLow firing digest
+  (exit 0)
+CHECK ok   only the watchdog and the digest-only valwatch alerts active
+
+== 1. Alertmanager silences for what the drill itself causes (host=validator; never the watchdog), 673 min + 30
+silence 2eefdc31: alertname=PFTKernelCritical host=validator pattern=~oom_cgroup|hung_task until 2026-11-21T07:06:30Z
+CHECK ok   silence for PFTKernelCritical created
+silence c0860ec0: alertname=PFTKernelWarning host=validator pattern=oom_invoked until 2026-11-21T07:06:30Z
+CHECK ok   silence for PFTKernelWarning created
+silence 0ba7544d: alertname=PFTJobDisabled host=validator timer=pft-integrity.timer until 2026-11-21T07:06:30Z
+CHECK ok   silence for PFTJobDisabled created
+silence fde20266: alertname=PFTKeyEscrowStale node=validator reason=drift until 2026-11-21T07:06:30Z
+CHECK ok   silence for PFTKeyEscrowStale created
+$ curl -s http://<redacted-ip>:9093/api/v2/silences | jq -r '.[] | select(.status.state == "active" and .createdBy == "specdrill-live-run") | [.matchers[] | .name + (if .isRegex then "=~" else "=" end) + .value] | join(" ")'
+  alertname=PFTKernelWarning host=validator pattern=oom_invoked
+  alertname=PFTKeyEscrowStale node=validator reason=drift
+  alertname=PFTKernelCritical host=validator pattern=~oom_cgroup|hung_task
+  alertname=PFTJobDisabled host=validator timer=pft-integrity.timer
+  (exit 0)
+CHECK ok   4 drill silences active, none matches the pipeline watchdog
+
+== 2. [MAINT] messages to a throwaway topic (real file kept as $BK)
+real /etc/pft-maint/ntfy.env present before: 0
+$ { [ $HAD = 0 ] || sudo -n cp -p $NE $BK; } && printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' "$TT" | sudo -n tee $NE >/dev/null && sudo -n chmod 600 $NE && sudo -n stat -c '%a %U' $NE
+  600 root
+  (exit 0)
+CHECK ok   throwaway target installed
+
+== 2.cpu window 13920s (validator only), matrix axis cpu
+$ sudo -n pft-maint start --ttl 13920 --reason 'task_df1c7e56 specdrill run 11 axis cpu'
+  window started: id m1795202611-4181726 until 2026-11-20T23:15:31Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint window open (cpu)
+$ sudo -n bash $RD/bin/pft-specdrill.sh matrix --out $RD/cells --axes cpu --yes
+    ok maint: active, 13917s left >= 2220s
+    ok live: full, lag 0 <= 3
+    ok integrity: verify PASS
+    ok headroom: 4973 MiB - 2048 MiB >= 1536 MiB
+    ok disk: 56 GB free
+    ok image: sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+    ok leftovers: none
+  [2026-11-20T19:24:07Z] integrity timer paused (failsafe specdrill-rearm-integrity re-arms in 2520s)
+  [2026-11-20T19:24:11Z] cell cpu-c0.05-m2048-io0 started (cpus=0.05 mem=2048MiB io=0)
+  [2026-11-20T19:41:05Z] cell never full within 900s
+  [2026-11-20T19:41:13Z] integrity timer re-armed
+  [2026-11-20T19:41:13Z] teardown: leftovers=0
+  [2026-11-20T19:41:13Z] cell cpu-c0.05-m2048-io0: FAIL never_full
+    ok maint: active, 12858s left >= 2220s
+    ok live: full, lag 1 <= 3
+    ok integrity: verify PASS
+    ok headroom: 4988 MiB - 2048 MiB >= 1536 MiB
+    ok disk: 56 GB free
+    ok image: sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+    ok leftovers: none
+  [2026-11-20T19:41:33Z] integrity timer paused (failsafe specdrill-rearm-integrity re-arms in 2520s)
+  [2026-11-20T19:41:34Z] cell cpu-c0.1-m2048-io0 started (cpus=0.1 mem=2048MiB io=0)
+  [2026-11-20T19:42:44Z] cell full after 68s
+  [2026-11-20T20:02:51Z] integrity timer re-armed
+  [2026-11-20T20:02:51Z] teardown: leftovers=0
+  [2026-11-20T20:02:51Z] cell cpu-c0.1-m2048-io0: PASS 
+    ok maint: active, 11559s left >= 2220s
+    ok live: full, lag 0 <= 3
+    ok integrity: verify PASS
+    ok headroom: 5158 MiB - 2048 MiB >= 1536 MiB
+    ok disk: 56 GB free
+    ok image: sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+    ok leftovers: none
+  [2026-11-20T20:03:39Z] integrity timer paused (failsafe specdrill-rearm-integrity re-arms in 2520s)
+  [2026-11-20T20:03:41Z] cell cpu-c0.25-m2048-io0 started (cpus=0.25 mem=2048MiB io=0)
+  [2026-11-20T20:04:30Z] cell full after 47s
+  [2026-11-20T20:24:37Z] integrity timer re-armed
+  [2026-11-20T20:24:37Z] teardown: leftovers=0
+  [2026-11-20T20:24:37Z] cell cpu-c0.25-m2048-io0: PASS 
+    ok maint: active, 10254s left >= 2220s
+    ok live: full, lag 0 <= 3
+    ok integrity: verify PASS
+    ok headroom: 5124 MiB - 2048 MiB >= 1536 MiB
+    ok disk: 56 GB free
+    ok image: sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+    ok leftovers: none
+  [2026-11-20T20:24:59Z] integrity timer paused (failsafe specdrill-rearm-integrity re-arms in 2520s)
+  [2026-11-20T20:25:07Z] cell cpu-c0.5-m2048-io0 started (cpus=0.5 mem=2048MiB io=0)
+  [2026-11-20T20:25:58Z] cell full after 50s
+  [2026-11-20T20:46:05Z] integrity timer re-armed
+  [2026-11-20T20:46:06Z] teardown: leftovers=0
+  [2026-11-20T20:46:06Z] cell cpu-c0.5-m2048-io0: PASS 
+    ok maint: active, 8964s left >= 2220s
+    ok live: full, lag 1 <= 3
+    ok integrity: verify PASS
+    ok headroom: 5142 MiB - 2048 MiB >= 1536 MiB
+    ok disk: 56 GB free
+    ok image: sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+    ok leftovers: none
+  [2026-11-20T20:46:30Z] integrity timer paused (failsafe specdrill-rearm-integrity re-arms in 2520s)
+  [2026-11-20T20:46:32Z] cell cpu-c1-m2048-io0 started (cpus=1 mem=2048MiB io=0)
+  [2026-11-20T20:47:19Z] cell full after 47s
+  [2026-11-20T21:07:34Z] integrity timer re-armed
+  [2026-11-20T21:07:34Z] teardown: leftovers=0
+  [2026-11-20T21:07:34Z] cell cpu-c1-m2048-io0: PASS 
+    ok maint: active, 7677s left >= 2220s
+    ok live: full, lag 1 <= 3
+    ok integrity: verify PASS
+    ok headroom: 4966 MiB - 2048 MiB >= 1536 MiB
+    ok disk: 56 GB free
+    ok image: sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+    ok leftovers: none
+  [2026-11-20T21:08:16Z] integrity timer paused (failsafe specdrill-rearm-integrity re-arms in 2520s)
+  [2026-11-20T21:08:18Z] cell cpu-c2-m2048-io0 started (cpus=2 mem=2048MiB io=0)
+  [2026-11-20T21:09:18Z] cell full after 59s
+  [2026-11-20T21:29:21Z] integrity timer re-armed
+  [2026-11-20T21:29:22Z] teardown: leftovers=0
+  [2026-11-20T21:29:22Z] cell cpu-c2-m2048-io0: PASS 
+  (exit 0, 7549s)
+CHECK ok   axis cpu: runner exit 0
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+$ systemctl is-active pft-integrity.timer; systemctl list-units --all --no-legend 'specdrill-rearm-integrity*' | wc -l; labelled | wc -l
+  active
+  0
+  0
+  (exit 0)
+CHECK ok   axis cpu: integrity timer re-armed, failsafe disarmed, 0 labelled resources
+
+== 2.mem window 14400s (validator only), matrix axis mem
+$ sudo -n pft-maint start --ttl 14400 --reason 'task_df1c7e56 specdrill run 11 axis mem'
+  window started: id m1795210164-305983 until 2026-11-21T01:29:24Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint window open (mem)
+$ sudo -n bash $RD/bin/pft-specdrill.sh matrix --out $RD/cells --axes mem --yes
+    ok maint: active, 14397s left >= 2220s
+    ok live: full, lag 1 <= 3
+    ok integrity: verify PASS
+    ok headroom: 5133 MiB - 256 MiB >= 1536 MiB
+    ok disk: 56 GB free
+    ok image: sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+    ok leftovers: none
+  [2026-11-20T21:29:48Z] integrity timer paused (failsafe specdrill-rearm-integrity re-arms in 2520s)
+  [2026-11-20T21:29:50Z] cell mem-c2-m256-io0 started (cpus=2 mem=256MiB io=0)
+  [2026-11-20T21:30:33Z] cell container stopped (false true 0 0)
+  [2026-11-20T21:30:35Z] integrity timer re-armed
+  [2026-11-20T21:30:35Z] teardown: leftovers=0
+  [2026-11-20T21:30:35Z] cell mem-c2-m256-io0: FAIL oom_killed;never_full
+    ok maint: active, 14328s left >= 2220s
+    ok live: full, lag 0 <= 3
+    ok integrity: verify PASS
+    ok headroom: 5123 MiB - 384 MiB >= 1536 MiB
+    ok disk: 56 GB free
+    ok image: sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+    ok leftovers: none
+  [2026-11-20T21:31:09Z] integrity timer paused (failsafe specdrill-rearm-integrity re-arms in 2520s)
+  [2026-11-20T21:31:12Z] cell mem-c2-m384-io0 started (cpus=2 mem=384MiB io=0)
+  [2026-11-20T21:31:50Z] cell container stopped (false true 0 0)
+  [2026-11-20T21:31:51Z] integrity timer re-armed
+  [2026-11-20T21:31:51Z] teardown: leftovers=0
+  [2026-11-20T21:31:51Z] cell mem-c2-m384-io0: FAIL oom_killed;never_full
+    ok maint: active, 14253s left >= 2220s
+    ok live: full, lag 1 <= 3
+    ok integrity: verify PASS
+    ok headroom: 5116 MiB - 512 MiB >= 1536 MiB
+    ok disk: 56 GB free
+    ok image: sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+    ok leftovers: none
+  [2026-11-20T21:32:18Z] integrity timer paused (failsafe specdrill-rearm-integrity re-arms in 2520s)
+  [2026-11-20T21:32:19Z] cell mem-c2-m512-io0 started (cpus=2 mem=512MiB io=0)
+  [2026-11-20T21:33:07Z] cell full after 47s
+  [2026-11-20T21:53:15Z] integrity timer re-armed
+  [2026-11-20T21:53:15Z] teardown: leftovers=0
+  [2026-11-20T21:53:15Z] cell mem-c2-m512-io0: PASS 
+    ok maint: active, 12968s left >= 2220s
+    ok live: full, lag 0 <= 3
+    ok integrity: verify PASS
+    ok headroom: 5099 MiB - 768 MiB >= 1536 MiB
+    ok disk: 56 GB free
+    ok image: sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+    ok leftovers: none
+  [2026-11-20T21:53:45Z] integrity timer paused (failsafe specdrill-rearm-integrity re-arms in 2520s)
+  [2026-11-20T21:53:49Z] cell mem-c2-m768-io0 started (cpus=2 mem=768MiB io=0)
+  [2026-11-20T21:54:41Z] cell full after 51s
+  [2026-11-20T22:14:49Z] integrity timer re-armed
+  [2026-11-20T22:14:49Z] teardown: leftovers=0
+  [2026-11-20T22:14:49Z] cell mem-c2-m768-io0: PASS 
+    ok maint: active, 11674s left >= 2220s
+    ok live: full, lag 1 <= 3
+    ok integrity: verify PASS
+    ok headroom: 5120 MiB - 1024 MiB >= 1536 MiB
+    ok disk: 56 GB free
+    ok image: sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+    ok leftovers: none
+  [2026-11-20T22:15:49Z] integrity timer paused (failsafe specdrill-rearm-integrity re-arms in 2520s)
+  [2026-11-20T22:15:51Z] cell mem-c2-m1024-io0 started (cpus=2 mem=1024MiB io=0)
+  [2026-11-20T22:16:42Z] cell full after 50s
+  [2026-11-20T22:36:55Z] integrity timer re-armed
+  [2026-11-20T22:36:56Z] teardown: leftovers=0
+  [2026-11-20T22:36:56Z] cell mem-c2-m1024-io0: PASS 
+    ok maint: active, 10348s left >= 2220s
+    ok live: full, lag 0 <= 3
+    ok integrity: verify PASS
+    ok headroom: 4985 MiB - 1536 MiB >= 1536 MiB
+    ok disk: 56 GB free
+    ok image: sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+    ok leftovers: none
+  [2026-11-20T22:37:22Z] integrity timer paused (failsafe specdrill-rearm-integrity re-arms in 2520s)
+  [2026-11-20T22:37:24Z] cell mem-c2-m1536-io0 started (cpus=2 mem=1536MiB io=0)
+  [2026-11-20T22:38:15Z] cell full after 51s
+  [2026-11-20T22:58:21Z] integrity timer re-armed
+  [2026-11-20T22:58:21Z] teardown: leftovers=0
+  [2026-11-20T22:58:22Z] cell mem-c2-m1536-io0: PASS 
+    ok maint: active, 9062s left >= 2220s
+    ok live: full, lag 0 <= 3
+    ok integrity: verify PASS
+    ok headroom: 5111 MiB - 2048 MiB >= 1536 MiB
+    ok disk: 56 GB free
+    ok image: sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+    ok leftovers: none
+  [2026-11-20T22:58:52Z] integrity timer paused (failsafe specdrill-rearm-integrity re-arms in 2520s)
+  [2026-11-20T22:58:55Z] cell mem-c2-m2048-io0 started (cpus=2 mem=2048MiB io=0)
+  [2026-11-20T22:59:59Z] cell full after 62s
+  [2026-11-20T23:20:16Z] integrity timer re-armed
+  [2026-11-20T23:20:16Z] teardown: leftovers=0
+  [2026-11-20T23:20:16Z] cell mem-c2-m2048-io0: PASS 
+  (exit 0, 6650s)
+CHECK ok   axis mem: runner exit 0
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+$ systemctl is-active pft-integrity.timer; systemctl list-units --all --no-legend 'specdrill-rearm-integrity*' | wc -l; labelled | wc -l
+  active
+  0
+  0
+  (exit 0)
+CHECK ok   axis mem: integrity timer re-armed, failsafe disarmed, 0 labelled resources
+
+== 2.io window 11700s (validator only), matrix axis io
+$ sudo -n pft-maint start --ttl 11700 --reason 'task_df1c7e56 specdrill run 11 axis io'
+  window started: id m1795216821-599397 until 2026-11-21T02:35:21Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint window open (io)
+$ sudo -n bash $RD/bin/pft-specdrill.sh matrix --out $RD/cells --axes io --yes
+    ok maint: active, 11695s left >= 2220s
+    ok live: full, lag 0 <= 3
+    ok integrity: verify PASS
+    ok headroom: 5102 MiB - 2048 MiB >= 1536 MiB
+    ok disk: 56 GB free
+    ok image: sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+    ok leftovers: none
+  [2026-11-20T23:21:25Z] integrity timer paused (failsafe specdrill-rearm-integrity re-arms in 2520s)
+  [2026-11-20T23:21:27Z] cell io-c2-m2048-io100000 started (cpus=2 mem=2048MiB io=100000)
+  [2026-11-20T23:22:34Z] cell full after 66s
+  [2026-11-20T23:42:48Z] integrity timer re-armed
+  [2026-11-20T23:42:49Z] teardown: leftovers=0
+  [2026-11-20T23:42:49Z] cell io-c2-m2048-io100000: PASS 
+    ok maint: active, 10352s left >= 2220s
+    ok live: full, lag 0 <= 3
+    ok integrity: verify PASS
+    ok headroom: 5109 MiB - 2048 MiB >= 1536 MiB
+    ok disk: 56 GB free
+    ok image: sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+    ok leftovers: none
+  [2026-11-20T23:43:16Z] integrity timer paused (failsafe specdrill-rearm-integrity re-arms in 2520s)
+  [2026-11-20T23:43:18Z] cell io-c2-m2048-io250000 started (cpus=2 mem=2048MiB io=250000)
+  [2026-11-20T23:44:19Z] cell full after 60s
+  [2026-11-21T00:04:30Z] integrity timer re-armed
+  [2026-11-21T00:04:30Z] teardown: leftovers=0
+  [2026-11-21T00:04:30Z] cell io-c2-m2048-io250000: PASS 
+    ok maint: active, 9050s left >= 2220s
+    ok live: full, lag 0 <= 3
+    ok integrity: verify PASS
+    ok headroom: 5090 MiB - 2048 MiB >= 1536 MiB
+    ok disk: 56 GB free
+    ok image: sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+    ok leftovers: none
+  [2026-11-21T00:05:07Z] integrity timer paused (failsafe specdrill-rearm-integrity re-arms in 2520s)
+  [2026-11-21T00:05:14Z] cell io-c2-m2048-io1000000 started (cpus=2 mem=2048MiB io=1000000)
+  [2026-11-21T00:06:08Z] cell full after 51s
+  [2026-11-21T00:26:22Z] integrity timer re-armed
+  [2026-11-21T00:26:22Z] teardown: leftovers=0
+  [2026-11-21T00:26:22Z] cell io-c2-m2048-io1000000: PASS 
+    ok maint: active, 7738s left >= 2220s
+    ok live: full, lag 0 <= 3
+    ok integrity: verify PASS
+    ok headroom: 5113 MiB - 2048 MiB >= 1536 MiB
+    ok disk: 56 GB free
+    ok image: sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+    ok leftovers: none
+  [2026-11-21T00:27:07Z] integrity timer paused (failsafe specdrill-rearm-integrity re-arms in 2520s)
+  [2026-11-21T00:27:12Z] cell io-c2-m2048-io4000000 started (cpus=2 mem=2048MiB io=4000000)
+  [2026-11-21T00:28:02Z] cell full after 47s
+  [2026-11-21T00:48:10Z] integrity timer re-armed
+  [2026-11-21T00:48:11Z] teardown: leftovers=0
+  [2026-11-21T00:48:11Z] cell io-c2-m2048-io4000000: PASS 
+    ok maint: active, 6430s left >= 2220s
+    ok live: full, lag 0 <= 3
+    ok integrity: verify PASS
+    ok headroom: 5101 MiB - 2048 MiB >= 1536 MiB
+    ok disk: 56 GB free
+    ok image: sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+    ok leftovers: none
+  [2026-11-21T00:48:41Z] integrity timer paused (failsafe specdrill-rearm-integrity re-arms in 2520s)
+  [2026-11-21T00:48:43Z] cell io-c2-m2048-io16000000 started (cpus=2 mem=2048MiB io=16000000)
+  [2026-11-21T00:49:31Z] cell full after 48s
+  [2026-11-21T01:09:35Z] integrity timer re-armed
+  [2026-11-21T01:09:35Z] teardown: leftovers=0
+  [2026-11-21T01:09:35Z] cell io-c2-m2048-io16000000: PASS 
+  (exit 0, 6550s)
+CHECK ok   axis io: runner exit 0
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+$ systemctl is-active pft-integrity.timer; systemctl list-units --all --no-legend 'specdrill-rearm-integrity*' | wc -l; labelled | wc -l
+  active
+  0
+  0
+  (exit 0)
+CHECK ok   axis io: integrity timer re-armed, failsafe disarmed, 0 labelled resources
+
+== 3. after the matrix: cleanup, integrity, confinement, live node, report
+$ sudo -n chown -R '<user>:' '~/.cache/specdrill-run-11/cells' && ls '~/.cache/specdrill-run-11/cells' && for d in '~/.cache/specdrill-run-11'/cells/*/; do jq -c '{cell, verdict, reasons, time_to_full_s, lag_p95, live_full_all, live_lag_max}' $d/cell.json; done
+  cpu-c0.05-m2048-io0
+  cpu-c0.1-m2048-io0
+  cpu-c0.25-m2048-io0
+  cpu-c0.5-m2048-io0
+  cpu-c1-m2048-io0
+  cpu-c2-m2048-io0
+  io-c2-m2048-io100000
+  io-c2-m2048-io1000000
+  io-c2-m2048-io16000000
+  io-c2-m2048-io250000
+  io-c2-m2048-io4000000
+  mem-c2-m1024-io0
+  mem-c2-m1536-io0
+  mem-c2-m2048-io0
+  mem-c2-m256-io0
+  mem-c2-m384-io0
+  mem-c2-m512-io0
+  mem-c2-m768-io0
+  {"cell":"cpu-c0.05-m2048-io0","verdict":"FAIL","reasons":["never_full"],"time_to_full_s":null,"lag_p95":null,"live_full_all":true,"live_lag_max":0}
+  {"cell":"cpu-c0.1-m2048-io0","verdict":"PASS","reasons":[],"time_to_full_s":68,"lag_p95":2,"live_full_all":true,"live_lag_max":1}
+  {"cell":"cpu-c0.25-m2048-io0","verdict":"PASS","reasons":[],"time_to_full_s":47,"lag_p95":1,"live_full_all":true,"live_lag_max":0}
+  {"cell":"cpu-c0.5-m2048-io0","verdict":"PASS","reasons":[],"time_to_full_s":50,"lag_p95":1,"live_full_all":true,"live_lag_max":1}
+  {"cell":"cpu-c1-m2048-io0","verdict":"PASS","reasons":[],"time_to_full_s":47,"lag_p95":1,"live_full_all":true,"live_lag_max":1}
+  {"cell":"cpu-c2-m2048-io0","verdict":"PASS","reasons":[],"time_to_full_s":59,"lag_p95":1,"live_full_all":true,"live_lag_max":1}
+  {"cell":"io-c2-m2048-io100000","verdict":"PASS","reasons":[],"time_to_full_s":66,"lag_p95":1,"live_full_all":true,"live_lag_max":1}
+  {"cell":"io-c2-m2048-io1000000","verdict":"PASS","reasons":[],"time_to_full_s":51,"lag_p95":1,"live_full_all":true,"live_lag_max":1}
+  {"cell":"io-c2-m2048-io16000000","verdict":"PASS","reasons":[],"time_to_full_s":48,"lag_p95":1,"live_full_all":true,"live_lag_max":1}
+  {"cell":"io-c2-m2048-io250000","verdict":"PASS","reasons":[],"time_to_full_s":60,"lag_p95":1,"live_full_all":true,"live_lag_max":1}
+  {"cell":"io-c2-m2048-io4000000","verdict":"PASS","reasons":[],"time_to_full_s":47,"lag_p95":1,"live_full_all":true,"live_lag_max":1}
+  {"cell":"mem-c2-m1024-io0","verdict":"PASS","reasons":[],"time_to_full_s":50,"lag_p95":1,"live_full_all":true,"live_lag_max":0}
+  {"cell":"mem-c2-m1536-io0","verdict":"PASS","reasons":[],"time_to_full_s":51,"lag_p95":1,"live_full_all":true,"live_lag_max":1}
+  {"cell":"mem-c2-m2048-io0","verdict":"PASS","reasons":[],"time_to_full_s":62,"lag_p95":1,"live_full_all":true,"live_lag_max":1}
+  {"cell":"mem-c2-m256-io0","verdict":"FAIL","reasons":["oom_killed","never_full"],"time_to_full_s":null,"lag_p95":null,"live_full_all":true,"live_lag_max":1}
+  {"cell":"mem-c2-m384-io0","verdict":"FAIL","reasons":["oom_killed","never_full"],"time_to_full_s":null,"lag_p95":null,"live_full_all":true,"live_lag_max":0}
+  {"cell":"mem-c2-m512-io0","verdict":"PASS","reasons":[],"time_to_full_s":47,"lag_p95":1,"live_full_all":true,"live_lag_max":1}
+  {"cell":"mem-c2-m768-io0","verdict":"PASS","reasons":[],"time_to_full_s":51,"lag_p95":1,"live_full_all":true,"live_lag_max":1}
+  (exit 0)
+$ cat '~/.cache/specdrill-run-11'/cells/*/samples.jsonl | jq -s '{polls: length, live_not_full: ([.[] | select(.live_state != "full")] | length), live_lag_max: ([.[].live_lag // 0] | max), live_lag_gt1: ([.[] | select((.live_lag // 0) > 1)] | length)}'
+  {
+    "polls": 1495,
+    "live_not_full": 0,
+    "live_lag_max": 1,
+    "live_lag_gt1": 0
+  }
+  (exit 0)
+CHECK ok   live validator full at every poll of every cell, lag never above LIVE_LAG_MAX 3
+$ labelled | wc -l; sudo -n docker ps -a --format '{{.Names}}' | sort | tr '\n' ' '
+  0
+  pft-alert-bridge pft-alertmanager pft-prometheus postfiatd 
+  (exit 0)
+CHECK ok   0 labelled containers/volumes/networks left
+$ sudo -n pft-integrity verify | grep -E 'WARN|FAIL|RESULT' | cut -c1-160; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 282 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 167 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts after the run (nothing to accept)
+$ sudo -n pft-apparmor audit | grep -E 'denials|RESULT'; sudo -n pft-seccomp audit | grep -E 'RESULT'
+    [PASS] denials            0 DENIED events in the last 86402s
+  RESULT: PASS
+  RESULT: PASS
+  (exit 0)
+CHECK ok   AppArmor + seccomp audits PASS, 0 denials on the live container
+$ srv_state; sudo -n docker inspect -f '{{.State.StartedAt}} {{.RestartCount}}' postfiatd
+  full
+  full
+  2026-11-14T19:18:20.509963184Z 0
+  (exit 0)
+CHECK ok   both nodes full or proposing at the end
+$ curl -s --max-time 20 http://<redacted-ip>:9090/api/v1/query --data-urlencode 'query=count by (alertname, alertstate, host, node) (count_over_time(ALERTS[20972s]))' | jq -r '.data.result[] | .metric | "\(.alertname) \(.alertstate) \(.host // .node // "-")"' | sort -u
+  PFTAlertPipelineWatchdog firing -
+  PFTBudgetCapReached firing validator
+  PFTBudgetCapReached pending validator
+  PFTJobDisabled firing validator
+  PFTJobDisabled pending validator
+  PFTKernelCritical firing validator
+  PFTKernelWarning firing validator
+  PFTKeyEscrowStale firing validator
+  PFTKeyEscrowStale pending validator
+  PFTNodeBriefFullExit firing -
+  PFTPeerQualityDegraded pending -
+  PFTValwatchValidatorLow firing postfiatd
+  PFTValwatchValidatorLow firing postfiatd-sentry
+  (exit 0)
+CHECK FAIL every alert active at any time during the run (20972s) is the watchdog, digest-only valwatch or a silenced drill alert (4 outside)
+histarchive follow_gaps after: 2 (before 2)
+CHECK ok   no new histarchive follow gap (the live node never stopped)
+$ rm -rf specdrill/data && mkdir -p specdrill/data && cp -r '~/.cache/specdrill-run-11/cells' specdrill/data/cells && find specdrill/data/cells -name cell.json -delete && python3 -I specdrill/specdrill.py report specdrill/data/cells specdrill/data && cp specdrill/data/REPORT.md specdrill/REPORT.md && sha256sum specdrill/data/cells.json specdrill/data/cells.csv specdrill/REPORT.md
+  report: 18 cells, 15 PASS -> specdrill/data
+  c57ac6bf3d0ac0c213ecd0e5778f7c67f198a88284455550caeb06b50dc703d6  specdrill/data/cells.json
+  f25c712694532cc2ae6a0db793592206c7619ac923bcda8766b7ddced848af0f  specdrill/data/cells.csv
+  e09793e3e1553b7ab5f3ade02abd4dc082136793b267ab9c3b38614b3eac6a94  specdrill/REPORT.md
+  (exit 0)
+CHECK ok   report built from the recorded cells
+
+== 4. restore, drain, expire the silence, read back
+$ sudo -n rm -f $NE   (no ntfy.env before: pft-maint falls back to the real monitor target again)
+$ sudo -n systemctl start pft-keyescrow.service
+  (exit 0)
+silences  2eefdc31 c0860ec0 0ba7544d fde20266 left active until their end (expired only after a clean drain)
+CHECK ok   pft-maint target back to its pre-run state
+$ sudo -n pft-keyescrow inventory | tail -1
+  RESULT: ok 11, perm 0, missing 0, unreadable 0, absent(optional) 2; escrow drift 0, new 0, evolving 1 -> exit 0
+  (exit 0)
+CHECK ok   pft-keyescrow re-collected: escrow drift 0, new 0
+$ for i in $(seq 0 30 600); do n=$(active_alerts | unexpected); echo "+${i}s: $n"; [ "$n" = 0 ] && break; sleep 30; done; echo $n
+  +0s: 3
+  +30s: 2
+  +60s: 1
+  +90s: 1
+  +120s: 1
+  +150s: 1
+  +180s: 1
+  +210s: 1
+  +240s: 1
+  +270s: 1
+  +300s: 1
+  +330s: 1
+  +360s: 1
+  +390s: 1
+  +420s: 1
+  +450s: 1
+  +480s: 1
+  +510s: 1
+  +540s: 1
+  +570s: 1
+  +600s: 1
+  1
+  (exit 0)
+CHECK FAIL drained: only the watchdog and digest-only alerts active (pending included)
+$ sleep 5; curl -s --max-time 15 "https://ntfy.sh/$TT/json?poll=1&since=1795202537" | jq -r 'select(.event == "message") | .title'
+  [MAINT] start validator
+  [MAINT] end validator
+  [MAINT] start validator
+  [MAINT] end validator
+  [MAINT] start validator
+  [MAINT] end validator
+  (exit 0)
+CHECK ok   the [MAINT] start/end messages reached the throwaway topic (6)
+operator topic read-back waits 90 s after the expiry
+  operator #1 topic: 0 alert/maint message(s), 0 agent-cycle message(s)
+  operator #2 topic: 6 alert/maint message(s), 3 agent-cycle message(s)
+CHECK FAIL operator topics received no alert or [MAINT] message during the run (2 topic(s), 1 with messages)
+
+specdrill live run 11 done 2026-11-21T01:23:05Z: 3 check(s) failed -> FAIL
+silences  2eefdc31 c0860ec0 0ba7544d fde20266 left active until their end (expired only after a clean drain)
+exit=1
