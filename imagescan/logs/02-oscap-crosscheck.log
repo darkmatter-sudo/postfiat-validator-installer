@@ -1,0 +1,14 @@
+2026-11-22T20:13:17Z
+OpenSCAP command line tool (oscap) 1.2.17
+$ tests/oscap_crosscheck.py oci.com.ubuntu.jammy.usn.oval.xml.bz2 <host-validator manifest> (feed sha256 31a6fe092e8e39a2f43bcf7d7a949f468cf60a110d4a2c7ebe675121cddce75d)
+manifest lines 693; definitions 2665; oscap results false=2664, true=1
+oscap true 1; imagescan affected 1; disagreements 0
+rc=0
+$ tests/oscap_crosscheck.py oci.com.ubuntu.noble.usn.oval.xml.bz2 <postfiatd manifest> (feed sha256 ff9e3119ed990aec21c954651acbce72f6d3fbfb45ac2545a2c760db1f3f3771)
+manifest lines 311; definitions 1624; oscap results false=1607, true=17
+oscap true 17; imagescan affected 17; disagreements 0
+rc=0
+$ tests/oscap_crosscheck.py oci.com.ubuntu.jammy.usn.oval.xml.bz2 <host-zeroed manifest> (feed sha256 31a6fe092e8e39a2f43bcf7d7a949f468cf60a110d4a2c7ebe675121cddce75d)
+manifest lines 693; definitions 2665; oscap results false=2049, true=616
+oscap true 616; imagescan affected 616; disagreements 0
+rc=0

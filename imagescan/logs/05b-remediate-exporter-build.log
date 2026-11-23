@@ -1,0 +1,196 @@
+# published copy: local user, home path and local UTC offsets of image 'created' stamps redacted (rule: no host identity); otherwise unchanged
+# 2026-11-22T21:10:30Z rebuild pft-exporter:latest from local python:3.12-slim (legacy builder: never pulls without --pull)
+before id=sha256:266a6edb3c1fffb681fef1a999dc5a3f7fd42cd4807d0a8845be2b692bd7401a
+DEPRECATED: The legacy builder is deprecated and will be removed in a future release.
+            Install the buildx component to build images with BuildKit:
+            https://docs.docker.com/go/buildx/
+
+Sending build context to Docker daemon  28.16kB
+Step 1/7 : FROM python:3.12-slim
+ ---> a6e34c598f24
+Step 2/7 : LABEL org.opencontainers.image.source="https://github.com/darkmatter-sudo/postfiat-validator-installer"
+ ---> Running in 1d8de654af8c
+ ---> Removed intermediate container 1d8de654af8c
+ ---> 26b17c02bc00
+Step 3/7 : RUN apt-get update && apt-get -y --no-install-recommends upgrade && rm -rf /var/lib/apt/lists/*
+ ---> Running in 61f936c79418
+Get:1 http://deb.debian.org/debian trixie InRelease [140 kB]
+Get:2 http://deb.debian.org/debian trixie-updates InRelease [47.3 kB]
+Get:3 http://deb.debian.org/debian-security trixie-security InRelease [43.4 kB]
+Get:4 http://deb.debian.org/debian trixie/main amd64 Packages [9679 kB]
+Get:5 http://deb.debian.org/debian trixie-updates/main amd64 Packages [1108 B]
+Get:6 http://deb.debian.org/debian-security trixie-security/main amd64 Packages [309 kB]
+Fetched 10.2 MB in 2s (4729 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+Calculating upgrade...
+The following packages will be upgraded:
+  apt base-files ca-certificates libapt-pkg7.0 libc-bin libc6 liblzma5
+  libssl3t64 openssl openssl-provider-legacy tzdata zlib1g
+12 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.
+Need to get 11.3 MB of archives.
+After this operation, 27.6 kB of additional disk space will be used.
+Get:1 http://deb.debian.org/debian trixie/main amd64 libc6 amd64 2.41-12+deb13u5 [2850 kB]
+Get:2 http://deb.debian.org/debian trixie/main amd64 base-files amd64 13.8+deb13u8 [88.3 kB]
+Get:3 http://deb.debian.org/debian trixie/main amd64 liblzma5 amd64 5.8.1-1+deb13u2 [310 kB]
+Get:4 http://deb.debian.org/debian trixie/main amd64 openssl-provider-legacy amd64 3.5.9-1~deb13u1 [322 kB]
+Get:5 http://deb.debian.org/debian trixie/main amd64 zlib1g amd64 1:1.3.dfsg+really1.3.1-1+deb13u1 [88.7 kB]
+Get:6 http://deb.debian.org/debian trixie/main amd64 libssl3t64 amd64 3.5.9-1~deb13u1 [2465 kB]
+Get:7 http://deb.debian.org/debian trixie/main amd64 libapt-pkg7.0 amd64 3.0.4 [1114 kB]
+Get:8 http://deb.debian.org/debian trixie/main amd64 apt amd64 3.0.4 [1453 kB]
+Get:9 http://deb.debian.org/debian trixie/main amd64 libc-bin amd64 2.41-12+deb13u5 [639 kB]
+Get:10 http://deb.debian.org/debian trixie/main amd64 tzdata all 2026f-0+deb13u1 [268 kB]
+Get:11 http://deb.debian.org/debian trixie/main amd64 openssl amd64 3.5.9-1~deb13u1 [1518 kB]
+Get:12 http://deb.debian.org/debian trixie/main amd64 ca-certificates all 20250419+deb13u1 [161 kB]
+[91mdebconf: unable to initialize frontend: Dialog
+debconf: (TERM is not set, so the dialog frontend is not usable.)
+debconf: falling back to frontend: Readline
+debconf: unable to initialize frontend: Readline
+debconf: (Can't locate Term/ReadLine.pm in @INC (you may need to install the Term::ReadLine module) (@INC entries checked: /etc/perl /usr/local/lib/x86_64-linux-gnu/perl/5.40.1 /usr/local/share/perl/5.40.1 /usr/lib/x86_64-linux-gnu/perl5/5.40 /usr/share/perl5 /usr/lib/x86_64-linux-gnu/perl-base /usr/lib/x86_64-linux-gnu/perl/5.40 /usr/share/perl/5.40 /usr/local/lib/site_perl) at /usr/share/perl5/Debconf/FrontEnd/Readline.pm line 8, <STDIN> line 12.)
+debconf: falling back to frontend: Teletype
+[0m[91mdebconf: unable to initialize frontend: Teletype
+debconf: (This frontend requires a controlling tty.)
+debconf: falling back to frontend: Noninteractive
+[0mPreconfiguring packages ...
+Fetched 11.3 MB in 1s (19.7 MB/s)
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 5660 files and directories currently installed.)
+Preparing to unpack .../libc6_2.41-12+deb13u5_amd64.deb ...
+debconf: unable to initialize frontend: Dialog
+debconf: (TERM is not set, so the dialog frontend is not usable.)
+debconf: falling back to frontend: Readline
+debconf: unable to initialize frontend: Readline
+debconf: (Can't locate Term/ReadLine.pm in @INC (you may need to install the Term::ReadLine module) (@INC entries checked: /etc/perl /usr/local/lib/x86_64-linux-gnu/perl/5.40.1 /usr/local/share/perl/5.40.1 /usr/lib/x86_64-linux-gnu/perl5/5.40 /usr/share/perl5 /usr/lib/x86_64-linux-gnu/perl-base /usr/lib/x86_64-linux-gnu/perl/5.40 /usr/share/perl/5.40 /usr/local/lib/site_perl) at /usr/share/perl5/Debconf/FrontEnd/Readline.pm line 8.)
+debconf: falling back to frontend: Teletype
+debconf: unable to initialize frontend: Teletype
+debconf: (This frontend requires a controlling tty.)
+debconf: falling back to frontend: Noninteractive
+Unpacking libc6:amd64 (2.41-12+deb13u5) over (2.41-12+deb13u4) ...
+Setting up libc6:amd64 (2.41-12+deb13u5) ...
+debconf: unable to initialize frontend: Dialog
+debconf: (TERM is not set, so the dialog frontend is not usable.)
+debconf: falling back to frontend: Readline
+debconf: unable to initialize frontend: Readline
+debconf: (Can't locate Term/ReadLine.pm in @INC (you may need to install the Term::ReadLine module) (@INC entries checked: /etc/perl /usr/local/lib/x86_64-linux-gnu/perl/5.40.1 /usr/local/share/perl/5.40.1 /usr/lib/x86_64-linux-gnu/perl5/5.40 /usr/share/perl5 /usr/lib/x86_64-linux-gnu/perl-base /usr/lib/x86_64-linux-gnu/perl/5.40 /usr/share/perl/5.40 /usr/local/lib/site_perl) at /usr/share/perl5/Debconf/FrontEnd/Readline.pm line 8.)
+debconf: falling back to frontend: Teletype
+debconf: unable to initialize frontend: Teletype
+debconf: (This frontend requires a controlling tty.)
+debconf: falling back to frontend: Noninteractive
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 5660 files and directories currently installed.)
+Preparing to unpack .../base-files_13.8+deb13u8_amd64.deb ...
+Unpacking base-files (13.8+deb13u8) over (13.8+deb13u7) ...
+Setting up base-files (13.8+deb13u8) ...
+Installing new version of config file /etc/debian_version ...
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 5660 files and directories currently installed.)
+Preparing to unpack .../liblzma5_5.8.1-1+deb13u2_amd64.deb ...
+Unpacking liblzma5:amd64 (5.8.1-1+deb13u2) over (5.8.1-1+deb13u1) ...
+Setting up liblzma5:amd64 (5.8.1-1+deb13u2) ...
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 5660 files and directories currently installed.)
+Preparing to unpack .../openssl-provider-legacy_3.5.9-1~deb13u1_amd64.deb ...
+Unpacking openssl-provider-legacy (3.5.9-1~deb13u1) over (3.5.7-1~deb13u3) ...
+Setting up openssl-provider-legacy (3.5.9-1~deb13u1) ...
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 5660 files and directories currently installed.)
+Preparing to unpack .../zlib1g_1%3a1.3.dfsg+really1.3.1-1+deb13u1_amd64.deb ...
+Unpacking zlib1g:amd64 (1:1.3.dfsg+really1.3.1-1+deb13u1) over (1:1.3.dfsg+really1.3.1-1+b1) ...
+Setting up zlib1g:amd64 (1:1.3.dfsg+really1.3.1-1+deb13u1) ...
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 5659 files and directories currently installed.)
+Preparing to unpack .../libssl3t64_3.5.9-1~deb13u1_amd64.deb ...
+Unpacking libssl3t64:amd64 (3.5.9-1~deb13u1) over (3.5.7-1~deb13u3) ...
+Setting up libssl3t64:amd64 (3.5.9-1~deb13u1) ...
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 5659 files and directories currently installed.)
+Preparing to unpack .../libapt-pkg7.0_3.0.4_amd64.deb ...
+Unpacking libapt-pkg7.0:amd64 (3.0.4) over (3.0.3) ...
+Setting up libapt-pkg7.0:amd64 (3.0.4) ...
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 5659 files and directories currently installed.)
+Preparing to unpack .../archives/apt_3.0.4_amd64.deb ...
+Unpacking apt (3.0.4) over (3.0.3) ...
+Setting up apt (3.0.4) ...
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 5659 files and directories currently installed.)
+Preparing to unpack .../libc-bin_2.41-12+deb13u5_amd64.deb ...
+Unpacking libc-bin (2.41-12+deb13u5) over (2.41-12+deb13u4) ...
+Setting up libc-bin (2.41-12+deb13u5) ...
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 5659 files and directories currently installed.)
+Preparing to unpack .../tzdata_2026f-0+deb13u1_all.deb ...
+Unpacking tzdata (2026f-0+deb13u1) over (2026c-0+deb13u1) ...
+Preparing to unpack .../openssl_3.5.9-1~deb13u1_amd64.deb ...
+Unpacking openssl (3.5.9-1~deb13u1) over (3.5.7-1~deb13u3) ...
+Preparing to unpack .../ca-certificates_20250419+deb13u1_all.deb ...
+Unpacking ca-certificates (20250419+deb13u1) over (20250419) ...
+Setting up tzdata (2026f-0+deb13u1) ...
+debconf: unable to initialize frontend: Dialog
+debconf: (TERM is not set, so the dialog frontend is not usable.)
+debconf: falling back to frontend: Readline
+debconf: unable to initialize frontend: Readline
+debconf: (Can't locate Term/ReadLine.pm in @INC (you may need to install the Term::ReadLine module) (@INC entries checked: /etc/perl /usr/local/lib/x86_64-linux-gnu/perl/5.40.1 /usr/local/share/perl/5.40.1 /usr/lib/x86_64-linux-gnu/perl5/5.40 /usr/share/perl5 /usr/lib/x86_64-linux-gnu/perl-base /usr/lib/x86_64-linux-gnu/perl/5.40 /usr/share/perl/5.40 /usr/local/lib/site_perl) at /usr/share/perl5/Debconf/FrontEnd/Readline.pm line 8.)
+debconf: falling back to frontend: Teletype
+debconf: unable to initialize frontend: Teletype
+debconf: (This frontend requires a controlling tty.)
+debconf: falling back to frontend: Noninteractive
+
+Current default time zone: 'Etc/UTC'
+Local time is now:      Sun Nov 22 21:11:16 UTC 2026.
+Universal Time is now:  Sun Nov 22 21:11:16 UTC 2026.
+Run 'dpkg-reconfigure tzdata' if you wish to change it.
+
+Setting up openssl (3.5.9-1~deb13u1) ...
+Setting up ca-certificates (20250419+deb13u1) ...
+debconf: unable to initialize frontend: Dialog
+debconf: (TERM is not set, so the dialog frontend is not usable.)
+debconf: falling back to frontend: Readline
+debconf: unable to initialize frontend: Readline
+debconf: (Can't locate Term/ReadLine.pm in @INC (you may need to install the Term::ReadLine module) (@INC entries checked: /etc/perl /usr/local/lib/x86_64-linux-gnu/perl/5.40.1 /usr/local/share/perl/5.40.1 /usr/lib/x86_64-linux-gnu/perl5/5.40 /usr/share/perl5 /usr/lib/x86_64-linux-gnu/perl-base /usr/lib/x86_64-linux-gnu/perl/5.40 /usr/share/perl/5.40 /usr/local/lib/site_perl) at /usr/share/perl5/Debconf/FrontEnd/Readline.pm line 8.)
+debconf: falling back to frontend: Teletype
+debconf: unable to initialize frontend: Teletype
+debconf: (This frontend requires a controlling tty.)
+debconf: falling back to frontend: Noninteractive
+Updating certificates in /etc/ssl/certs...
+rehash: warning: skipping ca-certificates.crt, it does not contain exactly one certificate or CRL
+0 added, 2 removed; done.
+Processing triggers for ca-certificates (20250419+deb13u1) ...
+Updating certificates in /etc/ssl/certs...
+0 added, 0 removed; done.
+Running hooks in /etc/ca-certificates/update.d...
+done.
+ ---> Removed intermediate container 61f936c79418
+ ---> a830553ef430
+Step 4/7 : COPY pft_exporter.py /app/pft_exporter.py
+ ---> f8ce6507d7ea
+Step 5/7 : USER nobody
+ ---> Running in cee376945c53
+ ---> Removed intermediate container cee376945c53
+ ---> 6c6eee370ea1
+Step 6/7 : ENV PFT_EXPORTER_ADDR=127.0.0.1 PFT_EXPORTER_PORT=9877
+ ---> Running in 18c221be4c8a
+ ---> Removed intermediate container 18c221be4c8a
+ ---> 1d90ec777fe4
+Step 7/7 : CMD ["python3", "/app/pft_exporter.py"]
+ ---> Running in 8c4f12e85a6d
+ ---> Removed intermediate container 8c4f12e85a6d
+ ---> f05e3c62e06d
+Successfully built f05e3c62e06d
+Successfully tagged pft-exporter:latest
+build rc=0
+after id=sha256:f05e3c62e06d7808710046942597f3077ebbd44d0c06c062f9215264296b3faf created=2026-11-22T22:11:54.047117315<local-offset-redacted>
+OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-11-22T21:09:36Z
+  [FAIL] image:local:pft-exporter:latest              changed  id
+RESULT: FAIL - 281 unchanged, 0 warn, 1 fail -> exit 2
+pft-integrity accept - 2026-11-22T21:12:42Z: re-baselined 282 items by <user>
+manifest sha256: 9607ef7b898dede3a9155d5d1198ce165a0168f68ef07af2a615efe5e3b1b71a -> ba464df079afefe598c87c76b73d57c59e1d8a4bf6a10f79c517623eefcf3902 (logged to accept.log)
+accept rc=0
+OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-11-22T21:12:27Z
+RESULT: PASS - 282 unchanged, 0 warn, 0 fail -> exit 0
+# 2026-11-22T21:13:24Z remove the superseded untagged pft-exporter image
+Deleted: sha256:266a6edb3c1fffb681fef1a999dc5a3f7fd42cd4807d0a8845be2b692bd7401a
+Deleted: sha256:a07d8f2d530774041586474d16610ba5590c7fce336bd47192e57ba82183a46b
+Deleted: sha256:a37dd62dd4c6ab8c3ad56344004c3c6e08ea78b0fd8661ccef9b56a0e5dd8e1d
+Deleted: sha256:f349b66629d138541194fc6b64f002904ea7b624550a78c7e80e71ba4fe38afa
+rm rc=0
+pft-exporter:latest f05e3c62e06d
+agtipft/postfiatd:testnet-light-latest cc139becfe50
+python:3.12-slim a6e34c598f24
+python:3.12-alpine 1b668429b351
+rust:1.95.0-bookworm 6258907abe69
+prom/prometheus:v3.5.0 63805ebb8d2b
+prom/alertmanager:v0.28.1 27c475db5fb1
+RESULT: PASS - 282 unchanged, 0 warn, 0 fail -> exit 0

@@ -1,0 +1,49 @@
+# 2026-11-23T00:11:36Z imagescan mutation run, tree a2138fcf324a5075701f55607400bf4274c57702 (clean: yes)
+$ shellcheck pft-imagescan.sh install.sh
+(exit 0)
+$ ruff check .
+All checks passed!
+(exit 0)
+$ python3 -u tests/mutate.py
+CONTROL unmutated suite: rc=0 55 passed in 7.88s
+S01 CAUGHT rc=1 sh: docker pull before inspect | 1 failed, 48 passed in 2.94s
+S02 CAUGHT rc=1 sh: docker exec into each running container | 1 failed, 48 passed in 2.74s
+S03 CAUGHT rc=1 sh: docker run of each image before save | 1 failed, 48 passed in 2.30s
+S04 CAUGHT rc=1 sh: docker create (no start) before save | 1 failed, 48 passed in 2.42s
+S05 CAUGHT rc=1 sh: per-image-ID inventory cache ignored | 1 failed, 48 passed in 4.45s
+S06 CAUGHT rc=1 sh: scan error exported as up 1 | 1 failed, 49 passed in 5.65s
+S07 CAUGHT rc=1 sh: validate: foreign samples accepted | 1 failed, 48 passed in 2.62s
+S08 CAUGHT rc=1 sh: fetch: unverified download accepted | 1 failed, 54 passed in 6.90s
+S09 CAUGHT rc=1 sh: scan error exits 0 | 1 failed, 49 passed in 4.10s
+S10 CAUGHT rc=1 sh: report: unmatched inventory glob passed as a literal path (every image withheld) | 1 failed, 52 passed in 7.56s
+L01 CAUGHT rc=1 lib: feed sha256 pin ignored | 1 failed, 45 passed in 1.35s
+L02 CAUGHT rc=1 lib: feed fetch age ignored | 1 failed, 38 passed in 0.82s
+L03 CAUGHT rc=1 lib: feed own-timestamp age ignored | 1 failed, 39 passed in 0.76s
+L04 CAUGHT rc=1 lib: own timestamp after fetch accepted | 1 failed, 40 passed in 0.73s
+L05 CAUGHT rc=1 lib: OVAL: installed == fixed counted vulnerable | 1 failed, 26 passed in 0.53s
+L06 CAUGHT rc=1 lib: OVAL: ESM-only fixes counted fixable | 1 failed, 26 passed in 0.44s
+L07 CAUGHT rc=1 lib: Debian: installed == fixed counted vulnerable | 1 failed, 27 passed in 0.46s
+L08 CAUGHT rc=1 lib: Debian: open (no fix) counted fixable | 1 failed, 27 passed in 0.78s
+L09 CAUGHT rc=1 lib: Go: fixed version counted vulnerable | 1 failed, 28 passed in 0.64s
+L10 CAUGHT rc=1 lib: Go: introduced bound ignored | 1 failed, 28 passed in 0.63s
+L11 CAUGHT rc=1 lib: alert: accepted findings still alert | 1 failed, 29 passed in 0.57s
+L12 CAUGHT rc=1 lib: alert: unfixable findings alert | 1 failed, 30 passed in 0.53s
+L13 CAUGHT rc=1 lib: alert: medium findings alert | 1 failed, 30 passed in 0.51s
+L14 CAUGHT rc=1 lib: accept: image prefix ignored | 1 failed, 31 passed in 0.69s
+L15 CAUGHT rc=1 lib: accept: expiry ignored | 1 failed, 29 passed in 0.46s
+L16 CAUGHT rc=1 lib: accept: 90-day limit ignored | 1 failed, 29 passed in 0.45s
+L17 CAUGHT rc=1 lib: public render prints finding details | 1 failed, 34 passed in 0.61s
+L18 CAUGHT rc=1 lib: alert: images not in use alert | 1 failed, 32 passed in 0.51s
+L19 CAUGHT rc=1 lib: whiteouts ignored | 1 failed, 21 passed in 0.32s
+L20 CAUGHT rc=1 lib: dpkg: tilde sorts like a letter | 1 failed, 3 passed in 0.30s
+L21 CAUGHT rc=1 lib: missing layer silently skipped | 1 failed, 25 passed in 0.34s
+L22 CAUGHT rc=1 lib: drift: running image differs from tag not reported | 1 failed, 33 passed in 0.52s
+L23 CAUGHT rc=1 lib: drift: unscanned image not reported | 1 failed, 33 passed in 0.66s
+L24 CAUGHT rc=1 lib: render: drift does not set exit 1 | 1 failed, 33 passed in 0.57s
+L25 CAUGHT rc=1 lib: missing feed for an OS tolerated | 1 failed, 46 passed in 1.11s
+L26 CAUGHT rc=1 lib: feed age not clamped at 0 (fetched during this scan renders -1 h) | 1 failed, 42 passed in 0.81s
+L27 CAUGHT rc=1 lib: fetch time far after the scan time accepted (bad clock) | 1 failed, 41 passed in 1.62s
+L28 CAUGHT rc=1 lib: public rebuild: withheld image's container reported as unscanned drift | 1 failed, 35 passed in 1.23s
+L29 CAUGHT rc=1 lib: public rebuild: container running another image than the withheld tag hidden | 1 failed, 36 passed in 1.42s
+RESULT: PASS - 39/39 mutants caught, 0 survived, 0 not applied
+(exit 0)

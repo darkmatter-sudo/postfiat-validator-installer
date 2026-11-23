@@ -1,0 +1,71 @@
+pft-imagescan report - generated 2026-11-23T00:40:09Z  [PUBLIC: open-finding details withheld, counts + sha256 commitment only]
+feed debian        own 2026-11-22T23:10Z  fetched   0 h ago  sha256 16e21c0199b6fda6de6ad6afbdc002d50423eb8bbc3d3b164769ea626d2695f9
+feed go            own 2026-11-11T02:51Z  fetched   0 h ago  sha256 714ff02d9533ec6ca269e565b61b27cbd959aa0af89d51f318261322e875861c
+feed ubuntu-jammy  own 2026-11-19T19:11Z  fetched   0 h ago  sha256 31a6fe092e8e39a2f43bcf7d7a949f468cf60a110d4a2c7ebe675121cddce75d
+feed ubuntu-noble  own 2026-11-19T19:10Z  fetched   0 h ago  sha256 ff9e3119ed990aec21c954651acbce72f6d3fbfb45ac2545a2c760db1f3f3771
+container pft-alert-bridge   python:3.12-alpine  sha256:1b668429b351
+container postfiatd          agtipft/postfiatd:testnet-light-latest  sha256:cc139becfe50
+container pft-prometheus     prom/prometheus:v3.5.0  sha256:63805ebb8d2b
+container pft-alertmanager   prom/alertmanager:v0.28.1  sha256:27c475db5fb1
+
+IMAGE agtipft/postfiatd:testnet-light-latest  sha256:cc139becfe50  in_use=yes  os=Ubuntu 24.04.5 LTS  scanner=ubuntu-oval:noble  packages=311  [WITHHELD: unremediated upstream image, inventory not published]
+  count ubuntu  high       fixable=true  accepted=true  2
+  count ubuntu  medium     fixable=false accepted=false 3
+  count ubuntu  medium     fixable=true  accepted=true  8
+  count ubuntu  none       fixable=false accepted=false 1
+  count ubuntu  none       fixable=true  accepted=false 3
+  fixable high/critical not accepted: 0
+  findings_sha256 ade461fe698a7242b40216bed5bb5e555d6fead18d8360abbb989c167dc40bbb
+
+IMAGE pft-exporter:latest  sha256:f05e3c62e06d  in_use=no  os=Debian GNU/Linux 13 (trixie)  scanner=debian-tracker:trixie  packages=87  go_binaries=0
+  provenance: digests=1 source=https://github.com/darkmatter-sudo/postfiat-validator-installer flags=none
+  count debian  unrated    fixable=false accepted=false 68
+  fixable high/critical not accepted: 0 (image not in use: no alert)
+  findings_sha256 5ad1d7f3deed30fb4f297f20f02fa5218a82d955fb3e89c3764e4e58a81d06c8
+  fixed since the before-scan (sha256:266a6edb3c1f -> sha256:f05e3c62e06d): 11 of 11
+    FIXED debian CVE-2026-19499 unrated
+    FIXED debian CVE-2026-19542 unrated
+    FIXED debian CVE-2026-27171 unrated
+    FIXED debian CVE-2026-5435 unrated
+    FIXED debian CVE-2026-6238 unrated
+    FIXED debian CVE-2026-6368 unrated
+    FIXED debian CVE-2026-6791 unrated
+    FIXED debian CVE-2026-77117 unrated
+    FIXED debian CVE-2026-80489 unrated
+    FIXED debian CVE-2026-89092 unrated
+    FIXED debian TEMP-1147318-639065 unrated
+
+IMAGE prom/alertmanager:v0.28.1  sha256:27c475db5fb1  in_use=yes  os=-  scanner=none:no-package-db  packages=0  [WITHHELD: unremediated upstream image, inventory not published]
+  count go      unrated    fixable=false accepted=false 4
+  count go      unrated    fixable=true  accepted=false 226
+  fixable high/critical not accepted: 0
+  findings_sha256 204649e455f22438debe99c9f396d35be4e11fa8a90bf105b6ae26aaa9664628
+
+IMAGE prom/prometheus:v3.5.0  sha256:63805ebb8d2b  in_use=yes  os=-  scanner=none:no-package-db  packages=0  [WITHHELD: unremediated upstream image, inventory not published]
+  count go      unrated    fixable=false accepted=false 14
+  count go      unrated    fixable=true  accepted=false 240
+  fixable high/critical not accepted: 0
+  findings_sha256 0eb50ce9af3e5dda33977f3eee5da1e8ee43ae34adc56ff11b28bd05629d14a5
+
+IMAGE python:3.12-alpine  sha256:1b668429b351  in_use=yes  os=Alpine Linux v3.24  scanner=none:apk-inventory-only  packages=38  go_binaries=0
+  provenance: digests=1 source=- flags=no_source_label
+  count none
+  fixable high/critical not accepted: 0
+  findings_sha256 4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945
+
+IMAGE python:3.12-slim  sha256:a6e34c598f24  in_use=no  os=Debian GNU/Linux 13 (trixie)  scanner=debian-tracker:trixie  packages=87  go_binaries=0
+  provenance: digests=1 source=- flags=no_source_label
+  count debian  unrated    fixable=false accepted=false 68
+  count debian  unrated    fixable=true  accepted=false 18
+  fixable high/critical not accepted: 0 (image not in use: no alert)
+  findings_sha256 d01a5dd1e1e939278456ecf337105749be9b175cda8fbf3fc116138dc497ddda
+
+IMAGE rust:1.95.0-bookworm  sha256:6258907abe69  in_use=no  os=Debian GNU/Linux 12 (bookworm)  scanner=debian-tracker:bookworm  packages=413  go_binaries=0
+  provenance: digests=1 source=https://github.com/rust-lang/docker-rust flags=none
+  count debian  low        fixable=false accepted=false 6
+  count debian  unrated    fixable=false accepted=false 1367
+  count debian  unrated    fixable=true  accepted=false 4525
+  fixable high/critical not accepted: 0 (image not in use: no alert)
+  findings_sha256 6911a9480ce765bba21103a16dc276ca4ddfd06b5da86e8bd263c22b88eaa7ac
+
+RESULT: 7 images (4 in use), 6553 findings, 0 fixable high/critical in in-use images (not accepted), 0 drift -> exit 0

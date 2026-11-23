@@ -1,0 +1,641 @@
+imagescan two-host upgrade - 2026-11-22T23:50:24Z - Ubuntu 22.04.5 LTS - repo HEAD f1c89129bf4e7160ba8d8efa32e6eb1838dddd28 (clean: yes)
+
+== 0. preflight (read-only)
+$ sha256sum imagescan/pft-imagescan.sh imagescan/imagescan_lib.py imagescan/install.sh imagescan/drill/install-run.sh imagescan/systemd/* alerts/imagescan.rules.yml alerts/imagescan.tests.yml fleet/manifest.tsv
+  e980a28fb960e6e59338a8e3d5b409ea1fee74eabaa87f4b4f2499c7ba0d4abf  imagescan/pft-imagescan.sh
+  9b670172a086cd128da2fd5b17595db511d8d980772ded558a6a9efcd2630587  imagescan/imagescan_lib.py
+  18ef767cdfda0a6c5ea32cc253829507d4179e61fcc595b2757e90e5b9a369b1  imagescan/install.sh
+  7c02aa5b51d96983f970ff8e5458dc7192bd04b5c6fb40091dd2ec9946123e92  imagescan/drill/install-run.sh
+  d0aa46a02ca349fc20f1c5e8a9b045d6614c9b9dfffdfe681d1f05970929d29e  imagescan/systemd/pft-imagescan-pull.service
+  08a47543bf00aa955b4380ca805408b08011399e4a4a6ef4c7d5c8a23dd58a71  imagescan/systemd/pft-imagescan-pull.timer
+  f593113a92b1bac480230916bfc6263fd9286ac553d4d27ca0ea827936794792  imagescan/systemd/pft-imagescan.service
+  b032b32475ac9bf909e9032a9118219e685100e2b932df9faff4e8701150bc07  imagescan/systemd/pft-imagescan.timer
+  bf2145c79a3fb90392bad1be2858f42759aa3235d1bf5f8304fafd173823f3ef  alerts/imagescan.rules.yml
+  16c83cd8dada9b1e8197408dc59c56902be3a5a942159c805500f92c28e2497c  alerts/imagescan.tests.yml
+  e279fa756c9b8c7e2cc02fd86488fde115023f32270d90839678f34e97e7d159  fleet/manifest.tsv
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 287 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 170 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts before install
+$ srv_state
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ ls /usr/local/bin/pft-imagescan /etc/pft-imagescan.env /var/cache/pft-imagescan 2>&1; R 'ls /usr/local/bin/pft-imagescan /etc/pft-imagescan.env /var/cache/pft-imagescan 2>&1'
+  /etc/pft-imagescan.env
+  /usr/local/bin/pft-imagescan
+  
+  ls: cannot open directory '/var/cache/pft-imagescan': Permission denied
+  /etc/pft-imagescan.env
+  /usr/local/bin/pft-imagescan
+  
+  /var/cache/pft-imagescan:
+  feeds
+  inv
+  last-scan.json
+  (exit 0)
+CHECK ok   installed on both hosts (script, conf and cache present)
+$ sudo -n pft-fleet skew | grep -E ' imagescan |^ *SUMMARY'
+  sentry     imagescan   BEHIND     /usr/local/lib/pft-imagescan/imagescan_lib.py BEHIND @c0d8119c766d (-1)
+  validator  imagescan   BEHIND     /usr/local/lib/pft-imagescan/imagescan_lib.py BEHIND @c0d8119c766d (-1)
+  SUMMARY CURRENT=88 BEHIND=2 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 1)
+CHECK ok   pft-fleet skew: imagescan BEHIND on both hosts, nothing else BEHIND/MODIFIED/MISSING/UNEXPECTED/DIVERGED
+$ sudo -n sha256sum /etc/pft-imagescan.accept | cut -c1-64; R 'sudo -n sha256sum /etc/pft-imagescan.accept | cut -c1-64'; stat -c '%a %U' /etc/pft-imagescan.accept; R 'stat -c "%a %U" /etc/pft-imagescan.accept'; sudo -n grep -vc '^#' /etc/pft-imagescan.accept
+  cd084f0d082b7a2d2baf685c6667828615049139fe19fea82d4ae4a582e2483b
+  cd084f0d082b7a2d2baf685c6667828615049139fe19fea82d4ae4a582e2483b
+  644 root
+  644 root
+  10
+  (exit 0)
+CHECK ok   accept file (operator decision A, 30 days) present, same bytes, root 644 on both hosts, 10 lines
+$ python3 -I -c 'import sys, time; sys.path.insert(0, "imagescan"); import imagescan_lib as L; e, x = L.load_accept(sys.argv[1], int(time.time())); print(len(e), x)' /etc/pft-imagescan.accept
+  10 0
+  (exit 0)
+CHECK ok   accept file parses with the repo's own reader: 10 entries, 0 expired
+$ grep -c '^imagescan ' fleet/manifest.tsv; grep -c imagescan.rules.yml alerts/prometheus.yml; grep -c pft_imagescan rulecheck/pft-rulecheck.conf.example; grep -c pft_imagescan rulecheck/pft-rulecheck.sentry.conf.example
+  6
+  1
+  3
+  2
+  (exit 0)
+CHECK ok   HEAD lists 6 imagescan manifest lines, the rule file and 3 + 2 rulecheck lines
+$ for h in L R; do if [ $h = L ]; then bash -c 'for c in python3 docker curl jq; do command -v $c; done | wc -l; sudo -n test -f /etc/pft-rulecheck.conf && echo rc-conf'; else R 'for c in python3 docker curl jq; do command -v $c; done | wc -l; sudo -n test -f /etc/pft-rulecheck.conf && echo rc-conf'; fi; done
+  4
+  rc-conf
+  4
+  rc-conf
+  (exit 0)
+CHECK ok   python3 docker curl jq and a pft-rulecheck conf on both hosts
+$ sudo -n env TEXT_BUDGET=999999 pft-jobwatch collect --stdout 2>/dev/null | wc -c; R 'sudo -n env TEXT_BUDGET=999999 pft-jobwatch collect --stdout 2>/dev/null | wc -c'; sudo -n sed -n 's/^TEXT_BUDGET=//p' /etc/pft-jobwatch.env
+  46211
+  22650
+  65000
+  (exit 0)
+CHECK ok   jobwatch textfiles have room for the new timers (validator 46211 + 2x1200, sentry 22650 + 1200 <= budget 65000 / 61440)
+$ pull_probe
+  1
+  pull-ssh-ok
+  (exit 0)
+CHECK ok   the pull's ssh command (pft-statewatch's PULL_SSH, non-empty) reaches the sentry when run as root
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+$ curl -s --max-time 10 http://<redacted-ip>:9090/api/v1/alerts | jq -r .status; curl -s --max-time 10 http://<redacted-ip>:9093/api/v2/status | jq -r 'if (.uptime // "") != "" then "up" else "down" end'
+  success
+  up
+  (exit 0)
+CHECK ok   Prometheus and Alertmanager answer (alert gates below fail closed)
+$ curl -s http://<redacted-ip>:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'; curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '.data.alerts[] | "\(.labels.alertname) \(.state)"' | sort | uniq -c
+  0
+        1 PFTAlertPipelineWatchdog firing
+        2 PFTValwatchValidatorLow firing
+        2 PFTVulnFeedStale firing
+  (exit 0)
+known pending before the run (accepted by the preflight): none
+known firing before the run (explained outside events, accepted by the preflight): PFTValwatchValidatorLow PFTVulnFeedStale
+CHECK ok   no active silence; only the pipeline watchdog (+ KNOWN_PENDING/KNOWN_FIRING) pending/firing in Prometheus
+$ curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '.data.alerts[] | select(.state == "firing") | .labels.alertname' | grep -vx PFTAlertPipelineWatchdog | sort -u
+  PFTValwatchValidatorLow
+  PFTVulnFeedStale
+  (exit 0)
+CHECK ok   nothing but the watchdog (+ KNOWN_FIRING) FIRING; KNOWN_PENDING may only be pending
+
+== 0b. live docker image event streams (both hosts, read-only)
+$ ev_start   (called directly, not through x: the stream PIDs must stay in this shell)
+  image event streams started (validator pid 1890510, sentry pid 1527842)
+CHECK ok   image event streams running on both hosts
+  presence control: save the smallest local image once per host to stdout > /dev/null (never -o: the CLI renames a temp file onto the target; read-only; the scan's inventories are cached)
+$ bash -s <<<"$CTL_SAVE"; R 'bash -s' <<<"$CTL_SAVE"
+  save-rc=0
+  save-rc=0
+  (exit 0)
+CHECK ok   presence-control saves done on both hosts
+
+== 1. rollout silence (new rules; rulecheck/fleet/aptrust/schedaudit/jobwatch/keyescrow/budget see new files, units and timers; not the watchdog)
+CHECK ok   Alertmanager silence created (imagescan rules, rulecheck, fleet, aptrust, schedaudit, jobwatch, keyescrow, budget; not the watchdog) until 2026-11-23T01:25:22Z
+
+== 2. pft-maint window, [MAINT] messages to a throwaway topic (real file kept as $BK)
+real /etc/pft-maint/ntfy.env present before: 0
+$ { [ $HAD = 0 ] || sudo -n cp -p $NE $BK; } && printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' "$TT" | sudo -n tee $NE >/dev/null && sudo -n chmod 600 $NE && sudo -n stat -c '%a %U' $NE
+  600 root
+  (exit 0)
+CHECK ok   throwaway target installed
+$ sudo -n pft-maint start --ttl 75m --reason 'task_76248c8a imagescan install'
+  window started: id m1795391722-1896164 until 2026-11-23T01:10:22Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   pft-maint window open
+CHECK ok   sentry has the window (via the watchdog channel) after 10s
+
+== 3. pft-fleet: manifest (fleet add-on), imagescan, then aptrust's allowlist copy
+$ sha256sum fleet/manifest.tsv | cut -c1-64; sudo -n sha256sum /usr/local/lib/pft-fleet/manifest.tsv /usr/local/lib/pft-aptrust/manifest.tsv | cut -c1-64; R 'sudo -n sha256sum /usr/local/lib/pft-aptrust/manifest.tsv | cut -c1-64'
+  e279fa756c9b8c7e2cc02fd86488fde115023f32270d90839678f34e97e7d159
+  e279fa756c9b8c7e2cc02fd86488fde115023f32270d90839678f34e97e7d159
+  e279fa756c9b8c7e2cc02fd86488fde115023f32270d90839678f34e97e7d159
+  e279fa756c9b8c7e2cc02fd86488fde115023f32270d90839678f34e97e7d159
+  (exit 0)
+CHECK ok   manifest copies (fleet + validator/sentry aptrust) = HEAD bytes: imagescan sync only
+$ sudo -n pft-fleet sync --addon imagescan --to f1c89129bf4e7160ba8d8efa32e6eb1838dddd28 --apply --reason 'task_76248c8a imagescan f1c8912 upgrade'
+  [2026-11-22T23:56:01Z] sync imagescan to f1c89129bf4e7160ba8d8efa32e6eb1838dddd28 (2026-11-22T23:47:50+00:00) REF main=f1c89129bf4e7160ba8d8efa32e6eb1838dddd28
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN sentry sentry /usr/local/bin/pft-imagescan 0755 CURRENT e980a28fb960 e980a28fb960 keep
+  PLAN sentry sentry /usr/local/lib/pft-imagescan/imagescan_lib.py 0644 BEHIND 0324294844d2 9b670172a086 write
+  PLAN sentry sentry /etc/systemd/system/pft-imagescan.service 0644 CURRENT f593113a92b1 f593113a92b1 keep
+  PLAN sentry sentry /etc/systemd/system/pft-imagescan.timer 0644 CURRENT b032b32475ac b032b32475ac keep
+  PLAN validator validator /usr/local/bin/pft-imagescan 0755 CURRENT e980a28fb960 e980a28fb960 keep
+  PLAN validator validator /usr/local/lib/pft-imagescan/imagescan_lib.py 0644 BEHIND 0324294844d2 9b670172a086 write
+  PLAN validator validator /etc/systemd/system/pft-imagescan.service 0644 CURRENT f593113a92b1 f593113a92b1 keep
+  PLAN validator validator /etc/systemd/system/pft-imagescan.timer 0644 CURRENT b032b32475ac b032b32475ac keep
+  PLAN validator validator /etc/systemd/system/pft-imagescan-pull.service 0644 CURRENT d0aa46a02ca3 d0aa46a02ca3 keep
+  PLAN validator validator /etc/systemd/system/pft-imagescan-pull.timer 0644 CURRENT 08a47543bf00 08a47543bf00 keep
+  [2026-11-22T23:56:01Z] order: sentry validator
+  [2026-11-22T23:56:01Z] sentry: 1 file(s) to write
+  PRE sentry pft-maint window active PASS
+  PRE sentry node server_state=full PASS
+  PRE sentry pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP sentry /usr/local/lib/pft-imagescan/imagescan_lib.py sha256 0324294844d2 -> /var/lib/pft-fleet/backup/20261122T235601Z-imagescan-sentry
+  WRITE sentry /usr/local/lib/pft-imagescan/imagescan_lib.py 0324294844d2 -> 9b670172a086 mode 0644
+  GATE sentry sha256 /usr/local/lib/pft-imagescan/imagescan_lib.py = target 9b670172a086 PASS
+  GATE sentry syntax /usr/local/lib/pft-imagescan/imagescan_lib.py python PASS
+  GATE sentry addon units failed=none PASS
+  GATE sentry node server_state=full PASS
+  ACCEPT sentry pft-integrity baseline updated: pft-fleet sync imagescan@f1c89129bf4e (imagescan_lib.py)
+  [2026-11-22T23:56:33Z] SYNCED sentry imagescan -> f1c89129bf4e
+  [2026-11-22T23:56:33Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/lib/pft-imagescan/imagescan_lib.py sha256 0324294844d2 -> /var/lib/pft-fleet/backup/20261122T235601Z-imagescan-validator
+  WRITE validator /usr/local/lib/pft-imagescan/imagescan_lib.py 0324294844d2 -> 9b670172a086 mode 0644
+  GATE validator sha256 /usr/local/lib/pft-imagescan/imagescan_lib.py = target 9b670172a086 PASS
+  GATE validator syntax /usr/local/lib/pft-imagescan/imagescan_lib.py python PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync imagescan@f1c89129bf4e (imagescan_lib.py)
+  [2026-11-22T23:57:07Z] SYNCED validator imagescan -> f1c89129bf4e
+  [2026-11-22T23:57:07Z] sync complete
+  (exit 0)
+CHECK ok   imagescan sync exit 0 (files written + integrity accepted by pft-fleet)
+$ sha256sum imagescan/pft-imagescan.sh imagescan/imagescan_lib.py imagescan/systemd/pft-imagescan.service imagescan/systemd/pft-imagescan.timer | cut -c1-64; sudo -n sha256sum /usr/local/bin/pft-imagescan /usr/local/lib/pft-imagescan/imagescan_lib.py /etc/systemd/system/pft-imagescan.service /etc/systemd/system/pft-imagescan.timer | cut -c1-64; R 'sha256sum /usr/local/bin/pft-imagescan /usr/local/lib/pft-imagescan/imagescan_lib.py /etc/systemd/system/pft-imagescan.service /etc/systemd/system/pft-imagescan.timer | cut -c1-64'
+  e980a28fb960e6e59338a8e3d5b409ea1fee74eabaa87f4b4f2499c7ba0d4abf
+  9b670172a086cd128da2fd5b17595db511d8d980772ded558a6a9efcd2630587
+  f593113a92b1bac480230916bfc6263fd9286ac553d4d27ca0ea827936794792
+  b032b32475ac9bf909e9032a9118219e685100e2b932df9faff4e8701150bc07
+  e980a28fb960e6e59338a8e3d5b409ea1fee74eabaa87f4b4f2499c7ba0d4abf
+  9b670172a086cd128da2fd5b17595db511d8d980772ded558a6a9efcd2630587
+  f593113a92b1bac480230916bfc6263fd9286ac553d4d27ca0ea827936794792
+  b032b32475ac9bf909e9032a9118219e685100e2b932df9faff4e8701150bc07
+  e980a28fb960e6e59338a8e3d5b409ea1fee74eabaa87f4b4f2499c7ba0d4abf
+  9b670172a086cd128da2fd5b17595db511d8d980772ded558a6a9efcd2630587
+  f593113a92b1bac480230916bfc6263fd9286ac553d4d27ca0ea827936794792
+  b032b32475ac9bf909e9032a9118219e685100e2b932df9faff4e8701150bc07
+  (exit 0)
+CHECK ok   installed script + helper + units = repo bytes on both hosts
+$ sha256sum imagescan/systemd/pft-imagescan-pull.service imagescan/systemd/pft-imagescan-pull.timer | cut -c1-64; sudo -n sha256sum /etc/systemd/system/pft-imagescan-pull.service /etc/systemd/system/pft-imagescan-pull.timer | cut -c1-64; R 'ls /etc/systemd/system/pft-imagescan-pull.service 2>&1'
+  d0aa46a02ca349fc20f1c5e8a9b045d6614c9b9dfffdfe681d1f05970929d29e
+  08a47543bf00aa955b4380ca805408b08011399e4a4a6ef4c7d5c8a23dd58a71
+  d0aa46a02ca349fc20f1c5e8a9b045d6614c9b9dfffdfe681d1f05970929d29e
+  08a47543bf00aa955b4380ca805408b08011399e4a4a6ef4c7d5c8a23dd58a71
+  ls: cannot access '/etc/systemd/system/pft-imagescan-pull.service': No such file or directory
+  (exit 2)
+CHECK ok   pull units = repo bytes on the validator, absent on the sentry (role validator)
+
+== 5/6. upgrade: the installed units re-scan with the new code (sentry, validator, then the validator pull)
+$ R 'sudo -n systemctl start pft-imagescan.service; echo rc=$?'
+  rc=0
+  (exit 0)
+$ R 'sudo -n journalctl -u pft-imagescan.service --since @1795391424 --no-pager -o cat' | scan_summary
+  pft-imagescan scan - 2026-11-22T23:57:09Z  host=sentry  v1.0.0
+  fetch: ubuntu-jammy: fetched (own timestamp 2026-11-19T19:11:32Z); ubuntu-noble: fetched (own timestamp 2026-11-19T19:10:37Z); debian: fetched (own timestamp 2026-11-22T23:10:59Z); go: fetched (own ti
+  pft-imagescan report - generated 2026-11-22T23:57:09Z
+  feed debian        own 2026-11-22T23:10Z  fetched   0 h ago  sha256 16e21c0199b6fda6de6ad6afbdc002d50423eb8bbc3d3b164769ea626d2695f9
+  feed go            own 2026-11-11T02:51Z  fetched   0 h ago  sha256 714ff02d9533ec6ca269e565b61b27cbd959aa0af89d51f318261322e875861c
+  feed ubuntu-jammy  own 2026-11-19T19:11Z  fetched   0 h ago  sha256 31a6fe092e8e39a2f43bcf7d7a949f468cf60a110d4a2c7ebe675121cddce75d
+  feed ubuntu-noble  own 2026-11-19T19:10Z  fetched   0 h ago  sha256 ff9e3119ed990aec21c954651acbce72f6d3fbfb45ac2545a2c760db1f3f3771
+  container postfiatd-sentry   agtipft/postfiatd:testnet-light-latest  sha256:cc139becfe50
+  IMAGE agtipft/postfiatd:testnet-light-latest  sha256:cc139becfe50  in_use=yes  os=Ubuntu 24.04.5 LTS  scanner=ubuntu-oval:noble  packages=311  go_binaries=0
+    provenance: digests=1 source=- flags=no_source_label
+    count ubuntu  high       fixable=true  accepted=true  2
+    count ubuntu  medium     fixable=false accepted=false 3
+    count ubuntu  medium     fixable=true  accepted=true  8
+    count ubuntu  none       fixable=false accepted=false 1
+    count ubuntu  none       fixable=true  accepted=false 3
+    fixable high/critical not accepted: 0
+    findings_sha256 ade461fe698a7242b40216bed5bb5e555d6fead18d8360abbb989c167dc40bbb
+  (exit 0)
+$ sudo -n systemctl start pft-imagescan.service; echo rc=$?
+  rc=0
+  (exit 0)
+$ sudo -n journalctl -u pft-imagescan.service --since @1795391424 --no-pager -o cat | scan_summary
+  pft-imagescan scan - 2026-11-22T23:57:46Z  host=validator  v1.0.0
+  fetch: ubuntu-jammy: fetched (own timestamp 2026-11-19T19:11:32Z); ubuntu-noble: fetched (own timestamp 2026-11-19T19:10:37Z); debian: fetched (own timestamp 2026-11-22T23:10:59Z); go: fetched (own ti
+  pft-imagescan report - generated 2026-11-22T23:57:46Z
+  feed debian        own 2026-11-22T23:10Z  fetched   0 h ago  sha256 16e21c0199b6fda6de6ad6afbdc002d50423eb8bbc3d3b164769ea626d2695f9
+  feed go            own 2026-11-11T02:51Z  fetched   0 h ago  sha256 714ff02d9533ec6ca269e565b61b27cbd959aa0af89d51f318261322e875861c
+  feed ubuntu-jammy  own 2026-11-19T19:11Z  fetched   0 h ago  sha256 31a6fe092e8e39a2f43bcf7d7a949f468cf60a110d4a2c7ebe675121cddce75d
+  feed ubuntu-noble  own 2026-11-19T19:10Z  fetched   0 h ago  sha256 ff9e3119ed990aec21c954651acbce72f6d3fbfb45ac2545a2c760db1f3f3771
+  container pft-alert-bridge   python:3.12-alpine  sha256:1b668429b351
+  container postfiatd          agtipft/postfiatd:testnet-light-latest  sha256:cc139becfe50
+  container pft-prometheus     prom/prometheus:v3.5.0  sha256:63805ebb8d2b
+  container pft-alertmanager   prom/alertmanager:v0.28.1  sha256:27c475db5fb1
+  IMAGE agtipft/postfiatd:testnet-light-latest  sha256:cc139becfe50  in_use=yes  os=Ubuntu 24.04.5 LTS  scanner=ubuntu-oval:noble  packages=311  go_binaries=0
+    provenance: digests=1 source=- flags=no_source_label
+    count ubuntu  high       fixable=true  accepted=true  2
+    count ubuntu  medium     fixable=false accepted=false 3
+    count ubuntu  medium     fixable=true  accepted=true  8
+    count ubuntu  none       fixable=false accepted=false 1
+    count ubuntu  none       fixable=true  accepted=false 3
+    fixable high/critical not accepted: 0
+    findings_sha256 ade461fe698a7242b40216bed5bb5e555d6fead18d8360abbb989c167dc40bbb
+  IMAGE pft-exporter:latest  sha256:f05e3c62e06d  in_use=no  os=Debian GNU/Linux 13 (trixie)  scanner=debian-tracker:trixie  packages=87  go_binaries=0
+    provenance: digests=1 source=https://github.com/darkmatter-sudo/postfiat-validator-installer flags=none
+    count debian  unrated    fixable=false accepted=false 68
+    fixable high/critical not accepted: 0 (image not in use: no alert)
+    findings_sha256 5ad1d7f3deed30fb4f297f20f02fa5218a82d955fb3e89c3764e4e58a81d06c8
+  IMAGE prom/alertmanager:v0.28.1  sha256:27c475db5fb1  in_use=yes  os=-  scanner=none:no-package-db  packages=0  go_binaries=2
+    provenance: digests=1 source=https://github.com/prometheus/alertmanager flags=none
+    count go      unrated    fixable=false accepted=false 4
+    count go      unrated    fixable=true  accepted=false 226
+    fixable high/critical not accepted: 0
+    findings_sha256 204649e455f22438debe99c9f396d35be4e11fa8a90bf105b6ae26aaa9664628
+  IMAGE prom/prometheus:v3.5.0  sha256:63805ebb8d2b  in_use=yes  os=-  scanner=none:no-package-db  packages=0  go_binaries=2
+    provenance: digests=1 source=https://github.com/prometheus/prometheus flags=go_dirty_vcs
+    count go      unrated    fixable=false accepted=false 14
+    count go      unrated    fixable=true  accepted=false 240
+    fixable high/critical not accepted: 0
+    findings_sha256 0eb50ce9af3e5dda33977f3eee5da1e8ee43ae34adc56ff11b28bd05629d14a5
+  IMAGE python:3.12-alpine  sha256:1b668429b351  in_use=yes  os=Alpine Linux v3.24  scanner=none:apk-inventory-only  packages=38  go_binaries=0
+    provenance: digests=1 source=- flags=no_source_label
+    count none
+    fixable high/critical not accepted: 0
+    findings_sha256 4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945
+  IMAGE python:3.12-slim  sha256:a6e34c598f24  in_use=no  os=Debian GNU/Linux 13 (trixie)  scanner=debian-tracker:trixie  packages=87  go_binaries=0
+    provenance: digests=1 source=- flags=no_source_label
+    count debian  unrated    fixable=false accepted=false 68
+    count debian  unrated    fixable=true  accepted=false 18
+    fixable high/critical not accepted: 0 (image not in use: no alert)
+    findings_sha256 d01a5dd1e1e939278456ecf337105749be9b175cda8fbf3fc116138dc497ddda
+  IMAGE rust:1.95.0-bookworm  sha256:6258907abe69  in_use=no  os=Debian GNU/Linux 12 (bookworm)  scanner=debian-tracker:bookworm  packages=413  go_binaries=0
+    provenance: digests=1 source=https://github.com/rust-lang/docker-rust flags=none
+    count debian  low        fixable=false accepted=false 6
+    count debian  unrated    fixable=false accepted=false 1367
+    count debian  unrated    fixable=true  accepted=false 4525
+    fixable high/critical not accepted: 0 (image not in use: no alert)
+    findings_sha256 6911a9480ce765bba21103a16dc276ca4ddfd06b5da86e8bd263c22b88eaa7ac
+  (exit 0)
+$ sudo -n systemctl start pft-imagescan-pull.service; echo rc=$?; grep -h '^pft_imagescan_up{' /var/lib/pft-exporter/textfile/pft_imagescan_validator.prom /var/lib/pft-exporter/textfile/pft_imagescan_sentry.prom
+  rc=0
+  pft_imagescan_up{host="validator"} 1
+  pft_imagescan_up{host="sentry"} 1
+  (exit 0)
+CHECK ok   validator pull exit 0, both textfiles up 1
+$ R 'sudo -n journalctl -u pft-imagescan.service --since @1795391424 --no-pager -o cat' | grep -c 'fetched -'; sudo -n journalctl -u pft-imagescan.service --since @1795391424 --no-pager -o cat | grep -c 'fetched -'
+  0
+  0
+  (exit 1)
+CHECK ok   no negative feed age in either report (the c0d8119 fix)
+
+== 7. rulecheck inputs (written once by install.sh)
+$ sudo -n grep -n pft_imagescan /etc/pft-rulecheck.conf; R 'sudo -n grep -n pft_imagescan /etc/pft-rulecheck.conf'
+  123:textfile pft_imagescan_*.prom   36h   pft_imagescan_last_run_timestamp_seconds
+  124:require pft_imagescan_validator.prom
+  125:require pft_imagescan_sentry.prom
+  74:textfile pft_imagescan_*.prom   36h   pft_imagescan_last_run_timestamp_seconds
+  75:require pft_imagescan_sentry.prom
+  (exit 0)
+CHECK ok   validator 3 + sentry 2 pft_imagescan rulecheck lines, each once
+
+== 8. load the alert rules (alerts/ is mounted at /etc/pft-alerts) and check them
+$ true && curl -s http://<redacted-ip>:9090/api/v1/status/runtimeinfo | jq -r .data.reloadConfigSuccess && curl -s http://<redacted-ip>:9090/api/v1/rules | jq -r '.data.groups[] | select(.name == "pft-imagescan") | .rules[] | [.name, .health, .state] | @tsv'
+  true
+  PFTImagescanFailing	ok	inactive
+  PFTImagescanNotRunning	ok	inactive
+  PFTImagescanFeedStale	ok	inactive
+  PFTImagescanFixableHighCritical	ok	inactive
+  PFTImagescanDrift	ok	inactive
+  PFTImagescanAcceptExpired	ok	inactive
+  (exit 0)
+CHECK ok   config reload ok, 6 imagescan rules loaded, health ok, inactive
+
+== 9. new units/timers + conf: pft-schedaudit accept + collect, jobwatch inventory, then pft-integrity accept, both hosts
+$ sudo -n pft-schedaudit audit | grep -E '^(NEW|REMOVED|SUMMARY)' | cut -c1-160; R 'sudo -n pft-schedaudit audit' | grep -E '^(NEW|REMOVED|SUMMARY)' | cut -c1-160
+  SUMMARY entries=117 enabled=104 findings=1 allowed=1 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+  SUMMARY entries=77 enabled=64 findings=0 allowed=0 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+  (exit 0)
+  (upgrade: units and timers unchanged, so nothing is accepted in schedaudit; collect only)
+$ sudo -n pft-schedaudit collect | tail -1; R 'sudo -n pft-schedaudit collect | tail -1'
+  
+  (exit 0)
+$ sudo -n pft-jobwatch inventory 2>&1 | grep -E 'imagescan|SUMMARY' | cut -c1-200; R 'sudo -n pft-jobwatch inventory 2>&1' | grep -E 'imagescan|SUMMARY' | cut -c1-200
+  pft-imagescan-pull.timer	calendar	900	0	0	0	0	1	OnCalendar=*-*-* *:08/15:00
+  pft-imagescan.timer	calendar	86400	0	0	0	0	1	OnCalendar=*-*-* 05:10:00 UTC
+  pft-imagescan.timer	calendar	86400	0	0	0	0	1	OnCalendar=*-*-* 05:10:00 UTC
+  (exit 0)
+CHECK ok   jobwatch learns 86400 s for both pft-imagescan.timer and 900 s for the validator pull
+$ sudo -n pft-integrity verify | grep -E '^(WARN|FAIL|RESULT)' | sed -E 's/ +sha256.*//' | cut -c1-140 | head -40
+  RESULT: PASS - 287 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+  (upgrade: pft-fleet accepted the synced files; nothing else may differ, so no further accept)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 287 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 170 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts
+$ sudo -n pft-schedaudit audit | grep -E '^SUMMARY'; R 'sudo -n pft-schedaudit audit' | grep -E '^SUMMARY'
+  SUMMARY entries=117 enabled=104 findings=1 allowed=1 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+  SUMMARY entries=77 enabled=64 findings=0 allowed=0 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+  (exit 0)
+CHECK ok   schedaudit on both hosts: 0 unexpected, 0 new/removed
+$ sudo -n systemctl start pft-schedaudit-pull.service; grep -h '^pft_schedaudit_unexpected' /var/lib/pft-exporter/textfile/pft_schedaudit_*.prom | grep -vc ' 0$'
+  0
+  (exit 1)
+CHECK ok   schedaudit textfiles: every pft_schedaudit_unexpected series 0 (validator + pulled sentry copy)
+
+== 10. VERIFIED: scan results, textfiles, Prometheus series, docker image events, aptrust, confinement
+$ TZ=UTC systemctl show -p Result -p ExecMainStatus -p MemoryPeak pft-imagescan.service; R 'TZ=UTC systemctl show -p Result -p ExecMainStatus -p MemoryPeak pft-imagescan.service'
+  Result=success
+  ExecMainStatus=0
+  Result=success
+  ExecMainStatus=0
+  (exit 0)
+CHECK ok   first scan unit result success (exit 0/1) on both hosts
+$ sudo -n systemctl start pft-imagescan-pull.service; tf_check
+  grep: /etc/pft-imagescan.env: Permission denied
+  validator 7040 47 valid
+  grep: /etc/pft-imagescan.env: Permission denied
+  sentry 3776 22 valid
+  (exit 0)
+CHECK ok   both textfiles valid and under 61440 bytes
+$ grep -hE '^pft_imagescan_(up|drift|accept_expired|fixable_high_critical)\{' /var/lib/pft-exporter/textfile/pft_imagescan_validator.prom /var/lib/pft-exporter/textfile/pft_imagescan_sentry.prom
+  pft_imagescan_up{host="validator"} 1
+  pft_imagescan_fixable_high_critical{host="validator",image="agtipft/postfiatd:testnet-light-latest",in_use="true"} 0
+  pft_imagescan_fixable_high_critical{host="validator",image="pft-exporter:latest",in_use="false"} 0
+  pft_imagescan_fixable_high_critical{host="validator",image="prom/alertmanager:v0.28.1",in_use="true"} 0
+  pft_imagescan_fixable_high_critical{host="validator",image="prom/prometheus:v3.5.0",in_use="true"} 0
+  pft_imagescan_fixable_high_critical{host="validator",image="python:3.12-alpine",in_use="true"} 0
+  pft_imagescan_fixable_high_critical{host="validator",image="python:3.12-slim",in_use="false"} 0
+  pft_imagescan_fixable_high_critical{host="validator",image="rust:1.95.0-bookworm",in_use="false"} 0
+  pft_imagescan_drift{host="validator"} 0
+  pft_imagescan_accept_expired{host="validator"} 0
+  pft_imagescan_up{host="sentry"} 1
+  pft_imagescan_fixable_high_critical{host="sentry",image="agtipft/postfiatd:testnet-light-latest",in_use="true"} 0
+  pft_imagescan_drift{host="sentry"} 0
+  pft_imagescan_accept_expired{host="sentry"} 0
+  (exit 0)
+CHECK ok   textfiles: up 1, drift 0, accept_expired 0, every fixable_high_critical series 0 (both hosts)
+$ grep -hE '^pft_imagescan_findings\{.*accepted="true"' /var/lib/pft-exporter/textfile/pft_imagescan_validator.prom /var/lib/pft-exporter/textfile/pft_imagescan_sentry.prom | awk '{s[$0 ~ /host="sentry"/ ? "sentry" : "validator"] += $NF} END {for (h in s) print h, s[h]}' | sort
+  sentry 10
+  validator 10
+  (exit 0)
+CHECK ok   10 accepted findings (the upstream postfiatd image) on each host
+$ sleep 45; prom_q 'count by (host) ({__name__=~"pft_imagescan_.+"})'; prom_q 'pft_imagescan_up'; prom_q 'sum by (host) (pft_imagescan_fixable_high_critical{in_use="true"})'
+  sentry 22
+  validator 47
+  sentry 1
+  validator 1
+  sentry 0
+  validator 0
+  (exit 0)
+CHECK ok   Prometheus has pft_imagescan series and up 1 for validator and sentry, 0 unaccepted fixable high/critical in use
+$ ev_stop   (called directly)
+$ ev_counts
+  validator:
+        1 save
+  sentry:
+        1 save
+  image-events-end
+  (exit 0)
+CHECK ok   docker image events during the run on both hosts: exactly the one control save on each (scan inventories cached), no pull, push, load, import, tag, untag or delete
+$ sudo -n docker events --since 1795391424 --until $(date -u +%s) --filter event=exec_create --format '{{.Actor.Attributes.name}} {{.Action}}' | cut -c1-60 | sed -E 's/[0-9]{4,}/N/g' | sort | uniq -c
+        1 postfiatd exec_create: cat /etc/postfiatd/postfiatd.cfg
+       40 postfiatd exec_create: curl -s --max-time 10 -H Content-Type
+        1 postfiatd exec_create: curl -s --max-time 10 http://localhos
+       30 postfiatd exec_create: curl -s --max-time 8 -H Content-Type:
+        2 postfiatd exec_create: curl -s --max-time 8 -X POST -H Conte
+        2 postfiatd exec_create: curl -s -m 5 -d {"method":"server_inf
+        1 postfiatd exec_create: df -B1 -P /var/lib/postfiatd/db
+        1 postfiatd exec_create: du -sb /var/lib/postfiatd/db/nudb
+        1 postfiatd exec_create: grep -E ^[[:space:]]*(\[[^]]*\]|[0-9]
+        1 postfiatd exec_create: sh -c command -v curl >/dev/null
+        2 postfiatd exec_create: sh -c curl -s -m 5 -d "{\"method\":\"
+        1 postfiatd exec_create: sh -c du -cb "$1"/*.db "$1"/*.db-* "$
+        1 postfiatd exec_create: sh -c ls -1 "$1" 2>/dev/null sh /var/
+  (exit 0)
+  (exec_create events above come from the existing collectors' fixed curl/cat shapes; imagescan's no-exec guarantee is the docker-stub test test_shell_scan_only_readonly_docker_calls_and_cache)
+$ sudo -n pft-aptrust audit | grep -E '^(WARN|FAIL) |^RESULT'; R 'sudo -n pft-aptrust audit' | grep -E '^(WARN|FAIL) |^RESULT'
+  RESULT: PASS - 11 sources, 4 keys, 4 containers; 8 pass, 18 info, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 10 sources, 2 keys, 1 containers; 4 pass, 16 info, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   aptrust audit on both hosts: 0 warn, 0 fail (new binaries are in its allowlist copy)
+$ sudo -n systemctl start pft-aptrust.service; R 'sudo -n systemctl start pft-aptrust.service'; sudo -n systemctl start pft-aptrust-pull.service; grep -hE '^pft_aptrust_checks\{.*result="(warn|fail)"' /var/lib/pft-exporter/textfile/pft_aptrust_*.prom
+  pft_aptrust_checks{host="sentry",result="warn"} 0
+  pft_aptrust_checks{host="sentry",result="fail"} 0
+  pft_aptrust_checks{host="validator",result="warn"} 0
+  pft_aptrust_checks{host="validator",result="fail"} 0
+  (exit 0)
+CHECK ok   aptrust textfiles (validator + pulled sentry): warn 0, fail 0
+$ sudo -n pft-apparmor audit | grep -E 'denials|RESULT'; sudo -n pft-seccomp audit | grep -E 'RESULT'; R 'sudo -n pft-apparmor audit | grep -E "denials|RESULT"; sudo -n pft-seccomp audit | grep -E RESULT'
+    [PASS] denials            0 DENIED events in the last 86401s
+  RESULT: PASS
+  RESULT: PASS
+    [PASS] denials            0 DENIED events in the last 86403s
+  RESULT: PASS
+  RESULT: PASS
+  (exit 0)
+CHECK ok   AppArmor + seccomp audits PASS on both hosts with 0 denials (imagescan never enters the containers)
+
+== 11. fleet skew, rulecheck, timers, jobwatch
+$ sudo -n pft-fleet skew
+  ref main = f1c89129bf4e7160ba8d8efa32e6eb1838dddd28
+  host sentry     role sentry    ok
+  host validator  role validator ok
+  HOST       ADDON       STATE      DETAIL
+  sentry     acctpolicy  CURRENT    
+  sentry     alertpath   CURRENT    
+  sentry     apparmor    CURRENT    
+  sentry     aptrust     CURRENT    
+  sentry     audittrail  CURRENT    
+  sentry     authwatch   CURRENT    
+  sentry     backfill    CURRENT    
+  sentry     backupwatch CURRENT    
+  sentry     budget      CURRENT    
+  sentry     cluster     CURRENT    
+  sentry     divergence  CURRENT    
+  sentry     egress      CURRENT    
+  sentry     feewatch    CURRENT    
+  sentry     fwaudit     CURRENT    
+  sentry     histarchive CURRENT    
+  sentry     imagescan   CURRENT    
+  sentry     integrity   CURRENT    
+  sentry     internals   CURRENT    
+  sentry     jobwatch    CURRENT    
+  sentry     kernwatch   CURRENT    
+  sentry     keyescrow   CURRENT    
+  sentry     kmod        CURRENT    
+  sentry     logship     CURRENT    
+  sentry     maint       CURRENT    
+  sentry     mounts      CURRENT    
+  sentry     patch       CURRENT    
+  sentry     peertls     CURRENT    
+  sentry     peerwatch   CURRENT    
+  sentry     privesc     CURRENT    
+  sentry     resources   CURRENT    
+  sentry     rulecheck   CURRENT    
+  sentry     schedaudit  CURRENT    
+  sentry     seccomp     CURRENT    
+  sentry     selfheal    CURRENT    
+  sentry     sshcrypto   CURRENT    
+  sentry     statewatch  CURRENT    
+  sentry     sysctl      CURRENT    
+  sentry     timesync    CURRENT    
+  sentry     upgradewatch CURRENT    
+  sentry     valwatch    CURRENT    
+  sentry     vulnscan    CURRENT    
+  sentry     watchdog    CURRENT    
+  validator  acctpolicy  CURRENT    
+  validator  alertpath   CURRENT    
+  validator  alertstats  CURRENT    
+  validator  apparmor    CURRENT    
+  validator  aptrust     CURRENT    
+  validator  audittrail  CURRENT    
+  validator  authwatch   CURRENT    
+  validator  backfill    CURRENT    
+  validator  backup      CURRENT    
+  validator  backupwatch CURRENT    
+  validator  budget      CURRENT    
+  validator  cluster     CURRENT    
+  validator  divergence  CURRENT    
+  validator  egress      CURRENT    
+  validator  exporter    CURRENT    
+  validator  feewatch    CURRENT    
+  validator  fleet       CURRENT    
+  validator  fwaudit     CURRENT    
+  validator  histarchive CURRENT    
+  validator  imagescan   CURRENT    
+  validator  integrity   CURRENT    
+  validator  internals   CURRENT    
+  validator  jobwatch    CURRENT    
+  validator  kernwatch   CURRENT    
+  validator  keyescrow   CURRENT    
+  validator  kmod        CURRENT    
+  validator  logship     CURRENT    
+  validator  maint       CURRENT    
+  validator  monitor     CURRENT    
+  validator  mounts      CURRENT    
+  validator  patch       CURRENT    
+  validator  peertls     CURRENT    
+  validator  peerwatch   CURRENT    
+  validator  privesc     CURRENT    
+  validator  resources   CURRENT    
+  validator  retention   CURRENT    
+  validator  rulecheck   CURRENT    
+  validator  schedaudit  CURRENT    
+  validator  seccomp     CURRENT    
+  validator  selfheal    CURRENT    
+  validator  sshcrypto   CURRENT    
+  validator  statewatch  CURRENT    
+  validator  sysctl      CURRENT    
+  validator  timesync    CURRENT    
+  validator  upgradewatch CURRENT    
+  validator  valwatch    CURRENT    
+  validator  vulnscan    CURRENT    
+  validator  watchdog    CURRENT    
+  SUMMARY CURRENT=90 BEHIND=0 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 0)
+CHECK ok   pft-fleet skew exit 0, imagescan CURRENT on both hosts, nothing BEHIND/MODIFIED/MISSING/UNEXPECTED/DIVERGED
+$ R 'sudo -n systemctl start pft-jobwatch.service'; sudo -n systemctl start pft-jobwatch-pull.service; echo pulled
+  pulled
+  (exit 0)
+$ s=$(date +%s); sudo -n systemctl start pft-rulecheck.service; sudo -n journalctl -u pft-rulecheck.service --since @$s --no-pager -o cat | grep -E '^RESULT |imagescan'
+  LIVE     pft-imagescan/PFTImagescanFailing                              1/1
+  LIVE     pft-imagescan/PFTImagescanNotRunning                           1/1
+  LIVE     pft-imagescan/PFTImagescanFeedStale                            1/1
+  LIVE     pft-imagescan/PFTImagescanFixableHighCritical                  1/1
+  LIVE     pft-imagescan/PFTImagescanDrift                                1/1
+  LIVE     pft-imagescan/PFTImagescanAcceptExpired                        1/1
+  FRESH         pft_imagescan_sentry.prom                       5m33s    1d12h  pft_imagescan_last_run_timestamp_seconds
+  FRESH         pft_imagescan_validator.prom                    4m56s    1d12h  pft_imagescan_last_run_timestamp_seconds
+  RESULT OK - rules: LIVE 155 PARTIAL 0 DEAD 0 ERROR 0 IGNORED 0 | textfiles: FRESH 70 STALE 0 MISSING 0 LEFTOVER 0 UNCONFIGURED 0 -> exit 0
+  (exit 0)
+CHECK ok   validator pft-rulecheck RESULT OK
+$ R 's=$(date +%s); sudo -n systemctl start pft-rulecheck.service; sudo -n journalctl -u pft-rulecheck.service --since @$s --no-pager -o cat' | grep -E '^RESULT |imagescan'
+  FRESH         pft_imagescan_sentry.prom                       5m35s    1d12h  pft_imagescan_last_run_timestamp_seconds
+  RESULT OK - rules: skipped | textfiles: FRESH 33 STALE 0 MISSING 0 LEFTOVER 0 UNCONFIGURED 0 -> exit 0
+  (exit 0)
+CHECK ok   sentry pft-rulecheck RESULT OK
+$ sudo -n systemctl start pft-rulecheck-pull.service; echo pulled
+  pulled
+  (exit 0)
+$ systemctl is-active pft-imagescan.timer pft-imagescan-pull.timer; R 'systemctl is-active pft-imagescan.timer'; systemctl is-failed pft-imagescan.service pft-imagescan-pull.service; R 'systemctl is-failed pft-imagescan.service'
+  active
+  active
+  active
+  inactive
+  inactive
+  inactive
+  (exit 1)
+CHECK ok   timers active and services not failed on both hosts
+$ TZ=UTC systemctl show -p TimersCalendar pft-imagescan.timer pft-imagescan-pull.timer
+  TimersCalendar={ OnCalendar=*-*-* 05:10:00 UTC ; next_elapse=Mon 2026-11-23 05:10:00 UTC }
+  
+  TimersCalendar={ OnCalendar=*-*-* *:08/15:00 ; next_elapse=Mon 2026-11-23 00:08:00 UTC }
+  (exit 0)
+CHECK ok   timer calendars: scan daily 05:10 UTC, pull every 15 min at :08
+$ sudo -n systemctl start pft-jobwatch.service; grep -E '^pft_jobwatch_job_(failed|missed|disabled)\{.*imagescan' /var/lib/pft-exporter/textfile/pft_jobwatch_validator.prom; wc -c < /var/lib/pft-exporter/textfile/pft_jobwatch_validator.prom
+  pft_jobwatch_job_disabled{host="validator",timer="pft-imagescan-pull.timer"} 0
+  pft_jobwatch_job_disabled{host="validator",timer="pft-imagescan.timer"} 0
+  pft_jobwatch_job_failed{host="validator",timer="pft-imagescan-pull.timer"} 0
+  pft_jobwatch_job_failed{host="validator",timer="pft-imagescan.timer"} 0
+  pft_jobwatch_job_missed{host="validator",timer="pft-imagescan-pull.timer"} 0
+  pft_jobwatch_job_missed{host="validator",timer="pft-imagescan.timer"} 0
+  46212
+  (exit 0)
+CHECK ok   jobwatch sees both validator imagescan timers: not failed, missed or disabled
+
+== 12. end window, restore the real target, compare, keyescrow, read back the throwaway and every operator topic
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+$ sudo -n rm -f $NE   (no ntfy.env before: pft-maint falls back to the real monitor target again)
+CHECK ok   pft-maint target back to its pre-run state (/etc/pft-maint/ntfy.env: absent again)
+$ sudo -n test ! -e $BK && echo backup gone
+  backup gone
+  (exit 0)
+$ sudo -n systemctl start pft-keyescrow.service; grep -h '^pft_keyescrow_drift_items{node="validator"}' /var/lib/pft-exporter/textfile/pft_keyescrow.prom
+  pft_keyescrow_drift_items{node="validator"} 0
+  (exit 0)
+CHECK ok   pft-keyescrow re-run after the ntfy.env restore: validator drift_items 0
+$ sleep 5; curl -s --max-time 15 "https://ntfy.sh/$TT/json?poll=1&since=1795391424" | jq -r '.title'
+  [MAINT] start validator
+  [MAINT] end validator
+  (exit 0)
+CHECK ok   the [MAINT] start and end messages reached the throwaway topic
+$ for i in $(seq 0 15 150); do n=$(curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '[.data.alerts[] | select(.labels.alertname | test("Imagescan|RuleDead|TextfileStale|Rulecheck|Fleet|Aptrust|Sched|PFTJob|KeyEscrow|Budget|Integrity|AppArmor|Seccomp"))] | length'); echo "+${i}s: $n"; [ "$n" = 0 ] && break; sleep 15; done; echo $n
+  +0s: 1
+  +15s: 0
+  0
+  (exit 0)
+CHECK ok   no imagescan/rulecheck/fleet/aptrust/schedaudit/jobwatch/keyescrow/budget/confinement alert pending or firing (silence left to run out)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 287 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 170 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts at the end
+$ srv_state
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing at the end
+$ systemctl list-units --all --no-legend 'run-u*.service' 'run-u*.timer' | wc -l; R 'ls -d ~/pft-imagescan-* 2>/dev/null | wc -l'
+  0
+  0
+  (exit 0)
+CHECK ok   no transient run-u services/timers, no install copy left on the sentry
+operator topic read-back waits 90 s (>= group_interval + 30 s after the last change)
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the run (2 topic(s), 0 with messages)
+
+upgrade-run done 2026-11-23T00:05:38Z: 0 check(s) failed -> PASS
+runner exit=0

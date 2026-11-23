@@ -1,0 +1,19 @@
+$ date -u; git -C . rev-parse HEAD (working tree: imagescan/ + alerts/imagescan.* uncommitted)
+2026-11-22T20:12:51Z
+46dc48ee0f95c4d53bc4e42d8f021039d2b9838d
+$ cd imagescan && shellcheck pft-imagescan.sh install.sh
+rc=0
+$ ruff check . (ruff.toml: py310)
+All checks passed!
+rc=0
+$ python3 -m pytest -q tests
+............................................                             [100%]
+44 passed in 5.27s
+rc=0
+$ promtool check rules + test rules (prom/prometheus:v3.5.0 promtool, docker run --rm, read-only mount)
+Checking imagescan.rules.yml
+  SUCCESS: 6 rules found
+
+  SUCCESS
+
+rc=0

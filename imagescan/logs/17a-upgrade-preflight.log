@@ -1,0 +1,105 @@
+imagescan two-host upgrade - 2026-11-23T00:14:42Z - Ubuntu 22.04.5 LTS - repo HEAD a2138fcf324a5075701f55607400bf4274c57702 (clean: yes)
+
+== 0. preflight (read-only)
+$ sha256sum imagescan/pft-imagescan.sh imagescan/imagescan_lib.py imagescan/install.sh imagescan/drill/install-run.sh imagescan/systemd/* alerts/imagescan.rules.yml alerts/imagescan.tests.yml fleet/manifest.tsv
+  2119f0b872c2d5118c6f473f1182b1b47158e620bcbbf81cc893f796e25f0cbd  imagescan/pft-imagescan.sh
+  4e1c48b9833779de59cd2476acce6c7dbde2384ba121570a5338555cdd8e9787  imagescan/imagescan_lib.py
+  18ef767cdfda0a6c5ea32cc253829507d4179e61fcc595b2757e90e5b9a369b1  imagescan/install.sh
+  7c02aa5b51d96983f970ff8e5458dc7192bd04b5c6fb40091dd2ec9946123e92  imagescan/drill/install-run.sh
+  d0aa46a02ca349fc20f1c5e8a9b045d6614c9b9dfffdfe681d1f05970929d29e  imagescan/systemd/pft-imagescan-pull.service
+  08a47543bf00aa955b4380ca805408b08011399e4a4a6ef4c7d5c8a23dd58a71  imagescan/systemd/pft-imagescan-pull.timer
+  f593113a92b1bac480230916bfc6263fd9286ac553d4d27ca0ea827936794792  imagescan/systemd/pft-imagescan.service
+  b032b32475ac9bf909e9032a9118219e685100e2b932df9faff4e8701150bc07  imagescan/systemd/pft-imagescan.timer
+  bf2145c79a3fb90392bad1be2858f42759aa3235d1bf5f8304fafd173823f3ef  alerts/imagescan.rules.yml
+  16c83cd8dada9b1e8197408dc59c56902be3a5a942159c805500f92c28e2497c  alerts/imagescan.tests.yml
+  e279fa756c9b8c7e2cc02fd86488fde115023f32270d90839678f34e97e7d159  fleet/manifest.tsv
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 287 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 170 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts before install
+$ srv_state
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ ls /usr/local/bin/pft-imagescan /etc/pft-imagescan.env /var/cache/pft-imagescan 2>&1; R 'ls /usr/local/bin/pft-imagescan /etc/pft-imagescan.env /var/cache/pft-imagescan 2>&1'
+  /etc/pft-imagescan.env
+  /usr/local/bin/pft-imagescan
+  
+  ls: cannot open directory '/var/cache/pft-imagescan': Permission denied
+  /etc/pft-imagescan.env
+  /usr/local/bin/pft-imagescan
+  
+  /var/cache/pft-imagescan:
+  feeds
+  inv
+  last-scan.json
+  (exit 0)
+CHECK ok   installed on both hosts (script, conf and cache present)
+$ sudo -n pft-fleet skew | grep -E ' imagescan |^ *SUMMARY'
+  sentry     imagescan   BEHIND     /usr/local/bin/pft-imagescan BEHIND @546a5274e2f7 (-1); /usr/local/lib/pft-imagescan/imagescan_lib.py BEHIND @d5dfda98f7ed (-1)
+  validator  imagescan   BEHIND     /usr/local/bin/pft-imagescan BEHIND @546a5274e2f7 (-1); /usr/local/lib/pft-imagescan/imagescan_lib.py BEHIND @d5dfda98f7ed (-1)
+  SUMMARY CURRENT=88 BEHIND=2 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 1)
+CHECK ok   pft-fleet skew: imagescan BEHIND on both hosts, nothing else BEHIND/MODIFIED/MISSING/UNEXPECTED/DIVERGED
+$ sudo -n sha256sum /etc/pft-imagescan.accept | cut -c1-64; R 'sudo -n sha256sum /etc/pft-imagescan.accept | cut -c1-64'; stat -c '%a %U' /etc/pft-imagescan.accept; R 'stat -c "%a %U" /etc/pft-imagescan.accept'; sudo -n grep -vc '^#' /etc/pft-imagescan.accept
+  cd084f0d082b7a2d2baf685c6667828615049139fe19fea82d4ae4a582e2483b
+  cd084f0d082b7a2d2baf685c6667828615049139fe19fea82d4ae4a582e2483b
+  644 root
+  644 root
+  10
+  (exit 0)
+CHECK ok   accept file (operator decision A, 30 days) present, same bytes, root 644 on both hosts, 10 lines
+$ python3 -I -c 'import sys, time; sys.path.insert(0, "imagescan"); import imagescan_lib as L; e, x = L.load_accept(sys.argv[1], int(time.time())); print(len(e), x)' /etc/pft-imagescan.accept
+  10 0
+  (exit 0)
+CHECK ok   accept file parses with the repo's own reader: 10 entries, 0 expired
+$ grep -c '^imagescan ' fleet/manifest.tsv; grep -c imagescan.rules.yml alerts/prometheus.yml; grep -c pft_imagescan rulecheck/pft-rulecheck.conf.example; grep -c pft_imagescan rulecheck/pft-rulecheck.sentry.conf.example
+  6
+  1
+  3
+  2
+  (exit 0)
+CHECK ok   HEAD lists 6 imagescan manifest lines, the rule file and 3 + 2 rulecheck lines
+$ for h in L R; do if [ $h = L ]; then bash -c 'for c in python3 docker curl jq; do command -v $c; done | wc -l; sudo -n test -f /etc/pft-rulecheck.conf && echo rc-conf'; else R 'for c in python3 docker curl jq; do command -v $c; done | wc -l; sudo -n test -f /etc/pft-rulecheck.conf && echo rc-conf'; fi; done
+  4
+  rc-conf
+  4
+  rc-conf
+  (exit 0)
+CHECK ok   python3 docker curl jq and a pft-rulecheck conf on both hosts
+$ sudo -n env TEXT_BUDGET=999999 pft-jobwatch collect --stdout 2>/dev/null | wc -c; R 'sudo -n env TEXT_BUDGET=999999 pft-jobwatch collect --stdout 2>/dev/null | wc -c'; sudo -n sed -n 's/^TEXT_BUDGET=//p' /etc/pft-jobwatch.env
+  46212
+  22650
+  65000
+  (exit 0)
+CHECK ok   jobwatch textfiles have room for the new timers (validator 46212 + 2x1200, sentry 22650 + 1200 <= budget 65000 / 61440)
+$ pull_probe
+  1
+  pull-ssh-ok
+  (exit 0)
+CHECK ok   the pull's ssh command (pft-statewatch's PULL_SSH, non-empty) reaches the sentry when run as root
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+$ curl -s --max-time 10 http://<redacted-ip>:9090/api/v1/alerts | jq -r .status; curl -s --max-time 10 http://<redacted-ip>:9093/api/v2/status | jq -r 'if (.uptime // "") != "" then "up" else "down" end'
+  success
+  up
+  (exit 0)
+CHECK ok   Prometheus and Alertmanager answer (alert gates below fail closed)
+$ curl -s http://<redacted-ip>:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'; curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '.data.alerts[] | "\(.labels.alertname) \(.state)"' | sort | uniq -c
+  0
+        1 PFTAlertPipelineWatchdog firing
+        2 PFTValwatchValidatorLow firing
+        2 PFTVulnFeedStale firing
+  (exit 0)
+known pending before the run (accepted by the preflight): none
+known firing before the run (explained outside events, accepted by the preflight): PFTValwatchValidatorLow PFTVulnFeedStale
+CHECK ok   no active silence; only the pipeline watchdog (+ KNOWN_PENDING/KNOWN_FIRING) pending/firing in Prometheus
+$ curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '.data.alerts[] | select(.state == "firing") | .labels.alertname' | grep -vx PFTAlertPipelineWatchdog | sort -u
+  PFTValwatchValidatorLow
+  PFTVulnFeedStale
+  (exit 0)
+CHECK ok   nothing but the watchdog (+ KNOWN_FIRING) FIRING; KNOWN_PENDING may only be pending
+PREFLIGHT_ONLY: stopping before any change (0 failed)

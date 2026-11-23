@@ -179,3 +179,42 @@ drift not reported, public reports printing details, feed age not clamped / fetc
 turned into drift or hiding drift in the public rebuild), runs the suite against it and fails unless every mutant is
 caught and the unmutated control passes. The first run found 5 gaps (Go `introduced` bound, three alert-input filters,
 accept prefix); the tests that close them were added before the module was published.
+
+## Results (task_76248c8a, 2026-11-22/23, validator + sentry)
+
+Recorded runs in [`logs/`](logs/) (redacted: user, home path, IPs, throwaway topic):
+
+| log | what | result |
+|---|---|---|
+| `01-tests.log`, `02-oscap-crosscheck.log` | first suite; own OVAL evaluator vs `oscap` on the same feed + manifests | 44 passed; 0 disagreements on 3 manifests |
+| `03-mutate.log` | first mutation run | 34/34 caught |
+| `05a`/`05b`/`06a` | pft-exporter rebuild (`exporter/Dockerfile`: apt upgrade + source label) | 05a refused flag (no change), 05b built, 06a after-scan failed on a root-owned dev cache -> fixed (writable-cache check + test) |
+| `08-accept-check.log` | operator-approved 30-day accept file for the upstream postfiatd image | 17 findings, 10 accepted, 0 unaccepted fixable high/medium |
+| `10a`, `10-install.log` (+ agent note) | recorded two-host install at 5db2bf1 | 56 ok, 0 FAIL; one manual stop of the event stream (sudo ignores a signal from its own process group) -> fixed in c0d8119 |
+| `12-upgrade.log` | `UPGRADE=1` to dafb555 (feed-age clamp) | 55 ok, 0 FAIL |
+| `13`, `14`, `14b-mutate.log` | mutants after c0d8119 / d5dfda9 | 36/36; 37/38 with 1 NOT APPLIED (L24's target line had changed: the harness refused it) -> retargeted f1c8912 -> 38/38 |
+| `15-upgrade.log` | upgrade to f1c8912 (withheld-image drift fix) | 55 ok, 0 FAIL |
+| `16-mutate.log` | final mutation run at a2138fc | 39/39 caught |
+| `17a`, `17-upgrade.log` | upgrade to a2138fc (empty-inventory fix): the installed code of this submission | 55 ok, 0 FAIL |
+| `18b-public-bundles.log` | public bundles of both hosts + public reports | PASS: findings_sha256 of every image = the host's full scan; no open advisory id, local offset or path in any published file |
+| `*-commit-gate.log` | shellcheck, ruff, pytest, promtool, leak grep before each commit | clean |
+
+Every install/upgrade run checks: integrity PASS before and after, nodes full, files = repo bytes on both hosts,
+schedaudit 0 new/unexpected, jobwatch intervals, textfiles valid, Prometheus series, live `docker events` image
+streams (saves only; no pull/push/load/import/tag/delete), aptrust 0 warn/fail, AppArmor + seccomp audits PASS with
+0 DENIED events, fleet skew CURRENT, rulecheck OK, and 0 messages on every operator topic.
+
+Found -> fixed -> verified: `pft-exporter:latest` (the one image built here) 266a6edb3c1f -> f05e3c62e06d,
+18 fixable Debian findings -> 0 (`reports/validator/report-public.txt` lists the 11 of them whose ids are not also
+open in a withheld image), provenance flag `no_source_label` -> none. Defects found and fixed during the rollout:
+negative feed age (c0d8119), runner stream stop (c0d8119), public rebuild drift for withheld images (d5dfda9),
+reports with every image withheld (a2138fc).
+
+Not fixable here (published as counts + findings_sha256 only, details withheld): the upstream postfiatd image
+(2 high + 8 medium fixable USNs, accepted for 30 days in `/etc/pft-imagescan.accept` by operator decision and
+reported privately to its maintainer), and the in-use Prometheus/Alertmanager images (Go module advisories without a
+severity rating, so they never reach the high/critical alert; fixed by upstream releases, a monitoring-stack
+upgrade is outside this module).
+
+Reproduce from a public clone: `bash imagescan/drill/fresh-clone.sh <SHA>` (key-file hashes vs `logs/17`, lint,
+tests, promtool, feed sha256 vs `feeds.json`, offline public report rebuild + `cmp` for both hosts).

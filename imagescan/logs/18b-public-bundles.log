@@ -1,0 +1,124 @@
+imagescan public bundles - 2026-11-23T00:40:03Z - repo HEAD 9027fc49a8bb9cb13c79f409492e9c8ee0f15ca9 (clean: yes)
+$ sha256sum imagescan/drill/public-bundle.sh imagescan/pft-imagescan.sh imagescan/imagescan_lib.py | cut -c1-64; sudo -n sha256sum /usr/local/bin/pft-imagescan /usr/local/lib/pft-imagescan/imagescan_lib.py | cut -c1-64; ssh relay 'sha256sum /usr/local/bin/pft-imagescan /usr/local/lib/pft-imagescan/imagescan_lib.py | cut -c1-64'
+26b32c5da9f3c1a574d51a9d85b93ef0223f6d141806dba24ee7a19a68fcf4d3
+2119f0b872c2d5118c6f473f1182b1b47158e620bcbbf81cc893f796e25f0cbd
+4e1c48b9833779de59cd2476acce6c7dbde2384ba121570a5338555cdd8e9787
+2119f0b872c2d5118c6f473f1182b1b47158e620bcbbf81cc893f796e25f0cbd
+4e1c48b9833779de59cd2476acce6c7dbde2384ba121570a5338555cdd8e9787
+2119f0b872c2d5118c6f473f1182b1b47158e620bcbbf81cc893f796e25f0cbd
+4e1c48b9833779de59cd2476acce6c7dbde2384ba121570a5338555cdd8e9787
+(exit 0)
+== validator (before-scan: the pft-exporter remediation of 2026-11-22, private runlog 04)
+$ BEFORE_SCAN=$HOME/work/runlogs/imagescan/04-before-scan.json bash imagescan/drill/public-bundle.sh > ~/.cache/tmp.c02kYlrA38/validator.tar 2> ~/.cache/tmp.c02kYlrA38/validator.err; rc=$?; cat ~/.cache/tmp.c02kYlrA38/validator.err; exit $rc
+pft-imagescan scan - 2026-11-23T00:40:09Z  host=validator  v1.0.0
+IMAGE agtipft/postfiatd:testnet-light-latest  sha256:cc139becfe50  in_use=yes  os=Ubuntu 24.04.5 LTS  scanner=ubuntu-oval:noble  packages=311  go_binaries=0
+  findings_sha256 ade461fe698a7242b40216bed5bb5e555d6fead18d8360abbb989c167dc40bbb
+IMAGE pft-exporter:latest  sha256:f05e3c62e06d  in_use=no  os=Debian GNU/Linux 13 (trixie)  scanner=debian-tracker:trixie  packages=87  go_binaries=0
+  findings_sha256 5ad1d7f3deed30fb4f297f20f02fa5218a82d955fb3e89c3764e4e58a81d06c8
+IMAGE prom/alertmanager:v0.28.1  sha256:27c475db5fb1  in_use=yes  os=-  scanner=none:no-package-db  packages=0  go_binaries=2
+  findings_sha256 204649e455f22438debe99c9f396d35be4e11fa8a90bf105b6ae26aaa9664628
+IMAGE prom/prometheus:v3.5.0  sha256:63805ebb8d2b  in_use=yes  os=-  scanner=none:no-package-db  packages=0  go_binaries=2
+  findings_sha256 0eb50ce9af3e5dda33977f3eee5da1e8ee43ae34adc56ff11b28bd05629d14a5
+IMAGE python:3.12-alpine  sha256:1b668429b351  in_use=yes  os=Alpine Linux v3.24  scanner=none:apk-inventory-only  packages=38  go_binaries=0
+  findings_sha256 4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945
+IMAGE python:3.12-slim  sha256:a6e34c598f24  in_use=no  os=Debian GNU/Linux 13 (trixie)  scanner=debian-tracker:trixie  packages=87  go_binaries=0
+  findings_sha256 d01a5dd1e1e939278456ecf337105749be9b175cda8fbf3fc116138dc497ddda
+IMAGE rust:1.95.0-bookworm  sha256:6258907abe69  in_use=no  os=Debian GNU/Linux 12 (bookworm)  scanner=debian-tracker:bookworm  packages=413  go_binaries=0
+  findings_sha256 6911a9480ce765bba21103a16dc276ca4ddfd06b5da86e8bd263c22b88eaa7ac
+RESULT: 7 images (4 in use), 6553 findings, 0 fixable high/critical in in-use images (not accepted), 0 drift -> exit 0
+before.json pft-exporter:latest: 18 fixed, 7 not listed (still open in a withheld image)
+public bundle: 4 inventories kept, 3 withheld (^(agtipft/postfiatd|prom/prometheus|prom/alertmanager):), 4 feed copies, before=yes
+(exit 0)
+== sentry
+$ ssh relay 'bash -s' < imagescan/drill/public-bundle.sh > ~/.cache/tmp.c02kYlrA38/sentry.tar 2> ~/.cache/tmp.c02kYlrA38/sentry.err; rc=$?; cat ~/.cache/tmp.c02kYlrA38/sentry.err; exit $rc
+pft-imagescan scan - 2026-11-23T00:41:45Z  host=sentry  v1.0.0
+IMAGE agtipft/postfiatd:testnet-light-latest  sha256:cc139becfe50  in_use=yes  os=Ubuntu 24.04.5 LTS  scanner=ubuntu-oval:noble  packages=311  go_binaries=0
+  findings_sha256 ade461fe698a7242b40216bed5bb5e555d6fead18d8360abbb989c167dc40bbb
+RESULT: 1 images (1 in use), 17 findings, 0 fixable high/critical in in-use images (not accepted), 0 drift -> exit 0
+public bundle: 0 inventories kept, 1 withheld (^(agtipft/postfiatd|prom/prometheus|prom/alertmanager):), 4 feed copies, before=no
+(exit 0)
+$ rm -rf imagescan/reports/validator && mkdir -p imagescan/reports/validator && tar -C imagescan/reports/validator -xf ~/.cache/tmp.c02kYlrA38/validator.tar && find imagescan/reports/validator -type f -printf '%P %s\n' | sort
+before.json 7328
+containers.json 648
+feeds/debian-tracker.json.xz 9661488
+feeds/feeds.json 1253
+feeds/oci.com.ubuntu.jammy.usn.oval.xml.bz2.xz 1715744
+feeds/oci.com.ubuntu.noble.usn.oval.xml.bz2.xz 1587160
+feeds/vulndb.zip.xz 2950040
+inv/2.json 10631
+inv/5.json 3233
+inv/6.json 10382
+inv/7.json 48543
+now 11
+withheld.json 2067
+(exit 0)
+$ cp -r imagescan/reports/validator ~/.cache/tmp.c02kYlrA38/rb-validator && for f in ~/.cache/tmp.c02kYlrA38/rb-validator/feeds/*.xz; do xz -d "$f" || exit 1; done
+(exit 0)
+$ PFT_IS_CONF=/dev/null PFT_IS_LIB=$PWD/imagescan/imagescan_lib.py bash imagescan/pft-imagescan.sh report --bundle ~/.cache/tmp.c02kYlrA38/rb-validator --public --withheld ~/.cache/tmp.c02kYlrA38/rb-validator/withheld.json --before ~/.cache/tmp.c02kYlrA38/rb-validator/before.json > imagescan/reports/validator/report-public.txt; rc=$?; echo "report rc $rc"; [ $rc -le 1 ]
+report rc 0
+(exit 0)
+$ grep -E '^(RESULT|IMAGE |  findings_sha256|  fixed since|DRIFT)' imagescan/reports/validator/report-public.txt | cut -c1-170
+IMAGE agtipft/postfiatd:testnet-light-latest  sha256:cc139becfe50  in_use=yes  os=Ubuntu 24.04.5 LTS  scanner=ubuntu-oval:noble  packages=311  [WITHHELD: unremediated ups
+  findings_sha256 ade461fe698a7242b40216bed5bb5e555d6fead18d8360abbb989c167dc40bbb
+IMAGE pft-exporter:latest  sha256:f05e3c62e06d  in_use=no  os=Debian GNU/Linux 13 (trixie)  scanner=debian-tracker:trixie  packages=87  go_binaries=0
+  findings_sha256 5ad1d7f3deed30fb4f297f20f02fa5218a82d955fb3e89c3764e4e58a81d06c8
+  fixed since the before-scan (sha256:266a6edb3c1f -> sha256:f05e3c62e06d): 11 of 11
+IMAGE prom/alertmanager:v0.28.1  sha256:27c475db5fb1  in_use=yes  os=-  scanner=none:no-package-db  packages=0  [WITHHELD: unremediated upstream image, inventory not publ
+  findings_sha256 204649e455f22438debe99c9f396d35be4e11fa8a90bf105b6ae26aaa9664628
+IMAGE prom/prometheus:v3.5.0  sha256:63805ebb8d2b  in_use=yes  os=-  scanner=none:no-package-db  packages=0  [WITHHELD: unremediated upstream image, inventory not publish
+  findings_sha256 0eb50ce9af3e5dda33977f3eee5da1e8ee43ae34adc56ff11b28bd05629d14a5
+IMAGE python:3.12-alpine  sha256:1b668429b351  in_use=yes  os=Alpine Linux v3.24  scanner=none:apk-inventory-only  packages=38  go_binaries=0
+  findings_sha256 4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945
+IMAGE python:3.12-slim  sha256:a6e34c598f24  in_use=no  os=Debian GNU/Linux 13 (trixie)  scanner=debian-tracker:trixie  packages=87  go_binaries=0
+  findings_sha256 d01a5dd1e1e939278456ecf337105749be9b175cda8fbf3fc116138dc497ddda
+IMAGE rust:1.95.0-bookworm  sha256:6258907abe69  in_use=no  os=Debian GNU/Linux 12 (bookworm)  scanner=debian-tracker:bookworm  packages=413  go_binaries=0
+  findings_sha256 6911a9480ce765bba21103a16dc276ca4ddfd06b5da86e8bd263c22b88eaa7ac
+RESULT: 7 images (4 in use), 6553 findings, 0 fixable high/critical in in-use images (not accepted), 0 drift -> exit 0
+(exit 0)
+$ hits=$(grep -lE 'USN-|GHSA-|GO-20|[0-9]T[0-9:.]+[+-]0[0-9]:00|/home/|<user>' imagescan/reports/validator/report-public.txt imagescan/reports/validator/*.json imagescan/reports/validator/inv/*.json 2>/dev/null); echo "files with advisory ids of open findings, local offsets or local paths: ${hits:-none}"; [ -z "$hits" ]
+files with advisory ids of open findings, local offsets or local paths: none
+(exit 0)
+$ diff <(grep -E '^  findings_sha256 ' ~/.cache/tmp.c02kYlrA38/validator.err | sort) <(grep -E '^  findings_sha256 ' imagescan/reports/validator/report-public.txt | sort) && echo "validator: every image's findings_sha256 in the public report = the host's full scan ($(grep -c '^  findings_sha256 ' imagescan/reports/validator/report-public.txt) images)"
+validator: every image's findings_sha256 in the public report = the host's full scan (7 images)
+(exit 0)
+$ rm -rf imagescan/reports/sentry && mkdir -p imagescan/reports/sentry && tar -C imagescan/reports/sentry -xf ~/.cache/tmp.c02kYlrA38/sentry.tar && find imagescan/reports/sentry -type f -printf '%P %s\n' | sort
+containers.json 178
+feeds/debian-tracker.json.xz 9661488
+feeds/feeds.json 1253
+feeds/oci.com.ubuntu.jammy.usn.oval.xml.bz2.xz 1715744
+feeds/oci.com.ubuntu.noble.usn.oval.xml.bz2.xz 1587160
+feeds/vulndb.zip.xz 2950040
+now 11
+withheld.json 951
+(exit 0)
+$ cp -r imagescan/reports/sentry ~/.cache/tmp.c02kYlrA38/rb-sentry && for f in ~/.cache/tmp.c02kYlrA38/rb-sentry/feeds/*.xz; do xz -d "$f" || exit 1; done
+(exit 0)
+$ PFT_IS_CONF=/dev/null PFT_IS_LIB=$PWD/imagescan/imagescan_lib.py bash imagescan/pft-imagescan.sh report --bundle ~/.cache/tmp.c02kYlrA38/rb-sentry --public --withheld ~/.cache/tmp.c02kYlrA38/rb-sentry/withheld.json  > imagescan/reports/sentry/report-public.txt; rc=$?; echo "report rc $rc"; [ $rc -le 1 ]
+report rc 0
+(exit 0)
+$ grep -E '^(RESULT|IMAGE |  findings_sha256|  fixed since|DRIFT)' imagescan/reports/sentry/report-public.txt | cut -c1-170
+IMAGE agtipft/postfiatd:testnet-light-latest  sha256:cc139becfe50  in_use=yes  os=Ubuntu 24.04.5 LTS  scanner=ubuntu-oval:noble  packages=311  [WITHHELD: unremediated ups
+  findings_sha256 ade461fe698a7242b40216bed5bb5e555d6fead18d8360abbb989c167dc40bbb
+RESULT: 1 images (1 in use), 17 findings, 0 fixable high/critical in in-use images (not accepted), 0 drift -> exit 0
+(exit 0)
+$ hits=$(grep -lE 'USN-|GHSA-|GO-20|[0-9]T[0-9:.]+[+-]0[0-9]:00|/home/|<user>' imagescan/reports/sentry/report-public.txt imagescan/reports/sentry/*.json imagescan/reports/sentry/inv/*.json 2>/dev/null); echo "files with advisory ids of open findings, local offsets or local paths: ${hits:-none}"; [ -z "$hits" ]
+files with advisory ids of open findings, local offsets or local paths: none
+(exit 0)
+$ diff <(grep -E '^  findings_sha256 ' ~/.cache/tmp.c02kYlrA38/sentry.err | sort) <(grep -E '^  findings_sha256 ' imagescan/reports/sentry/report-public.txt | sort) && echo "sentry: every image's findings_sha256 in the public report = the host's full scan ($(grep -c '^  findings_sha256 ' imagescan/reports/sentry/report-public.txt) images)"
+sentry: every image's findings_sha256 in the public report = the host's full scan (1 images)
+(exit 0)
+== validator: no FIXED id in the public report is open in a withheld image (host's last scan, read privately; prints counts only)
+$ sudo -n cat /var/cache/pft-imagescan/last-scan.json | python3 -I -c 'import json, re, sys
+s = json.load(sys.stdin); rx = "^(agtipft/postfiatd|prom/prometheus|prom/alertmanager):"
+held = {x for i in s["images"] if re.search(rx, i["ref"]) for f in i["findings"] for x in [f["id"], *f.get("cves", [])]}
+fixed = {l.split()[2] for l in open(sys.argv[1]) if l.strip().startswith("FIXED ")}
+print("withheld open ids:", len(held), " public FIXED ids:", len(fixed), " overlap:", len(fixed & held))
+sys.exit(0 if held and fixed and not fixed & held else 1)' imagescan/reports/validator/report-public.txt
+withheld open ids: 312  public FIXED ids: 11  overlap: 0
+(exit 0)
+$ du -sh imagescan/reports/validator imagescan/reports/sentry
+16M	imagescan/reports/validator
+16M	imagescan/reports/sentry
+(exit 0)
+
+public-bundles done 2026-11-23T00:43:18Z: 0 step(s) failed -> PASS
