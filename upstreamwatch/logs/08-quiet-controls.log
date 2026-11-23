@@ -1,0 +1,73 @@
+quiet-controls start 2026-11-23T04:40:14Z repo HEAD 98090e79951eff60ccbca08497afa8c035b32da6 PIN 53ffc9ddde2d8da76013d9b07d8ef8aa4e205440 OLD 1f6ccc19a5bb88219ae47e4d9623efc7a98f26ae
+OLD lines 62-63 sha256 8e6ec20624980d3d974b7b651407e9c8a9205e1237dc368481d4dfa2d4f1e796
+  | x "curl -s $AM/api/v2/status | jq -r '.config.original' | grep -n -A2 'notify=\"digest\"'; curl -s $AM/api/v2/status | jq -r '.config.original' | grep -n -A3 'name: digest'"
+  | check "loaded Alertmanager config: notify=\"digest\" route -> receiver digest, which has no integration" "$(grep -q 'receiver: digest' <<<"$XOUT" && ! grep -A3 'name: digest' <<<"$XOUT" | grep -qE '_configs:' && echo 0 || echo 1)"
+NEW lines 65-68 sha256 2e7b8435a097aa982b49fe9c42f9e3d04d9ac964324af3e55ee0cc4d8bec4a8d
+  | x "awk '/^  - receiver:/ {b = \$0; next} b != \"\" && /^    / {b = b \"\\n\" \$0; if (/notify=\"digest\"/) hit = 1; next} {if (hit) {print b; exit} b = \"\"}' <<<\"\$AMCONF\""
+  | ROUTE_OK="$(grep -q '^  - receiver: digest$' <<<"$XOUT" && grep -q 'notify="digest"' <<<"$XOUT" && echo 0 || echo 1)"
+  | x "awk '/^- name: digest\$/ {f = 1; print; next} f && /^- name:/ {exit} f' <<<\"\$AMCONF\""
+  | check "loaded Alertmanager config: notify=\"digest\" route -> receiver digest, which has no integration" "$([ "$ROUTE_OK" = 0 ] && [ "$(grep -c . <<<"$XOUT")" = 1 ] && grep -qx -- '- name: digest' <<<"$XOUT" && echo 0 || echo 1)"
+live config: 73 lines; sha256 b1a94aa85b39081b2298f4d00a2a70d6427e8e235b87e8f948a463547445ed0a
+
+== 1. OLD assertion (run 03) on the live config
+$ curl -s http://127.0.0.1:9093/api/v2/status | jq -r '.config.original' | grep -n -A2 'notify="digest"'; curl -s http://127.0.0.1:9093/api/v2/status | jq -r '.config.original' | grep -n -A3 'name: digest'
+  33:    - notify="digest"
+  34-    continue: false
+  35-  group_wait: 10s
+  62:- name: digest
+  63-- name: alertpath
+  64-  webhook_configs:
+  65-  - send_resolved: true
+  (exit 0)
+CHECK FAIL loaded Alertmanager config: notify="digest" route -> receiver digest, which has no integration
+EXPECT ok   old/live: assertion result 1 as expected
+
+== 2. NEW assertion (run 04) on the live config
+$ awk '/^  - receiver:/ {b = $0; next} b != "" && /^    / {b = b "\n" $0; if (/notify="digest"/) hit = 1; next} {if (hit) {print b; exit} b = ""}' <<<"$AMCONF"
+    - receiver: digest
+      matchers:
+      - notify="digest"
+      continue: false
+  (exit 0)
+$ awk '/^- name: digest$/ {f = 1; print; next} f && /^- name:/ {exit} f' <<<"$AMCONF"
+  - name: digest
+  (exit 0)
+CHECK ok   loaded Alertmanager config: notify="digest" route -> receiver digest, which has no integration
+EXPECT ok   new/live: assertion result 0 as expected
+
+== 3. control A: notify="digest" route -> receiver bridge
+  diff: 31c31
+  diff: <   - receiver: digest
+  diff: ---
+  diff: >   - receiver: bridge
+$ awk '/^  - receiver:/ {b = $0; next} b != "" && /^    / {b = b "\n" $0; if (/notify="digest"/) hit = 1; next} {if (hit) {print b; exit} b = ""}' <<<"$AMCONF"
+    - receiver: bridge
+      matchers:
+      - notify="digest"
+      continue: false
+  (exit 0)
+$ awk '/^- name: digest$/ {f = 1; print; next} f && /^- name:/ {exit} f' <<<"$AMCONF"
+  - name: digest
+  (exit 0)
+CHECK FAIL loaded Alertmanager config: notify="digest" route -> receiver digest, which has no integration
+EXPECT ok   new/controlA: assertion result 1 as expected
+
+== 4. control B: receiver digest gains a webhook_configs integration
+  diff: 62a63,64
+  diff: >   webhook_configs:
+  diff: >   - url: <secret>
+$ awk '/^  - receiver:/ {b = $0; next} b != "" && /^    / {b = b "\n" $0; if (/notify="digest"/) hit = 1; next} {if (hit) {print b; exit} b = ""}' <<<"$AMCONF"
+    - receiver: digest
+      matchers:
+      - notify="digest"
+      continue: false
+  (exit 0)
+$ awk '/^- name: digest$/ {f = 1; print; next} f && /^- name:/ {exit} f' <<<"$AMCONF"
+  - name: digest
+    webhook_configs:
+    - url: <secret>
+  (exit 0)
+CHECK FAIL loaded Alertmanager config: notify="digest" route -> receiver digest, which has no integration
+EXPECT ok   new/controlB: assertion result 1 as expected
+
+quiet-controls done 2026-11-23T04:40:16Z: 0 expectation(s) failed -> PASS
