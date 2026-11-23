@@ -1,0 +1,162 @@
+upstreamwatch two-host install - 2026-11-23T02:15:09Z - Ubuntu 22.04.5 LTS - repo HEAD 9b9bcf3c0ee223680881f8e5514587cc0b165b8e (clean: yes)
+
+== 0. preflight (read-only)
+$ sha256sum upstreamwatch/pft-upstreamwatch.sh upstreamwatch/upstreamwatch_lib.py upstreamwatch/install.sh upstreamwatch/drill/install-run.sh upstreamwatch/systemd/* alerts/upstreamwatch.rules.yml alerts/upstreamwatch.tests.yml alerts/vulnscan.rules.yml fleet/manifest.tsv
+  89a696239dd591f23c3cef3bbd810e83e91b13c3c38f0fdb8c3fe2ba796ee151  upstreamwatch/pft-upstreamwatch.sh
+  98513d5e6f902639951895f9f14b794c0d3673d7d90211f23e6babac789f8bda  upstreamwatch/upstreamwatch_lib.py
+  2981b2cf7a42eeb76613fe31e6e72409e6089d9488937993fa3b4ed51189040e  upstreamwatch/install.sh
+  a8b5db6ef7732030f890d6cbdd9ab6338086c89bcabe128ef20c759e33895211  upstreamwatch/drill/install-run.sh
+  ea4369a44b543b85b0c6c5ab6992a63b44d90d2f102ee498d6a313a0af852f3c  upstreamwatch/systemd/pft-upstreamwatch-digest.service
+  5a6ba7d28829a0e7d6f65ccf399d6b07614914b992e96505e4c85c8424408410  upstreamwatch/systemd/pft-upstreamwatch-digest.timer
+  4075c43e3d10cfce92dfc39fbd6fb36ad2d0014203f0d9837f8e27df9b50e6f8  upstreamwatch/systemd/pft-upstreamwatch-pull.service
+  4ac067858da6772995378172d3f8eaa4d3d42b92c33cc3a8c78f0686a36ff05f  upstreamwatch/systemd/pft-upstreamwatch-pull.timer
+  f821cb5e5dcbbda8b24555c5a64da0725e3712f64a2e3cb06cf59c81908de5c2  upstreamwatch/systemd/pft-upstreamwatch.service
+  baf67f723c0125c44d7197d8b83057ed43ec2c4626e76c84e431f2647d58bd6a  upstreamwatch/systemd/pft-upstreamwatch.timer
+  5dee1c9a668306f9bf230dcfdf885e3e9641e014bdb194c24a2dcf6aa4a52854  alerts/upstreamwatch.rules.yml
+  b3eb1539da5d558a446f2998d2c1a67cbef62e643856b876ce8d4dbbe145ee8f  alerts/upstreamwatch.tests.yml
+  b26256b7f7c416e66012c1f97acf0edccb5f18978b9f145bcaa27a07c5717100  alerts/vulnscan.rules.yml
+  d27f1914ae2b7d41c9c65d0097e6cb7123b7fa90e7094c0d3a86918502448556  fleet/manifest.tsv
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 287 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 170 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts before install
+$ srv_state
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ ls /usr/local/bin/pft-upstreamwatch /etc/pft-upstreamwatch.env /var/lib/pft-upstreamwatch 2>&1; R 'ls /usr/local/bin/pft-upstreamwatch /etc/pft-upstreamwatch.env /var/lib/pft-upstreamwatch 2>&1'
+  ls: cannot access '/usr/local/bin/pft-upstreamwatch': No such file or directory
+  ls: cannot access '/etc/pft-upstreamwatch.env': No such file or directory
+  ls: cannot access '/var/lib/pft-upstreamwatch': No such file or directory
+  ls: cannot access '/usr/local/bin/pft-upstreamwatch': No such file or directory
+  ls: cannot access '/etc/pft-upstreamwatch.env': No such file or directory
+  ls: cannot access '/var/lib/pft-upstreamwatch': No such file or directory
+  (exit 2)
+CHECK ok   not installed yet on either host (no script, conf or state dir)
+$ grep -c '^upstreamwatch ' fleet/manifest.tsv; grep -c upstreamwatch.rules.yml alerts/prometheus.yml; grep -c pft_upstreamwatch rulecheck/pft-rulecheck.conf.example; grep -c pft_upstreamwatch rulecheck/pft-rulecheck.sentry.conf.example
+  8
+  1
+  3
+  2
+  (exit 0)
+CHECK ok   HEAD lists 8 upstreamwatch manifest lines, the rule file and 3 + 2 rulecheck lines
+$ sudo -n env PFT_FLEET_MANIFEST=fleet/manifest.tsv pft-fleet sync --addon upstreamwatch --to 9b9bcf3c0ee223680881f8e5514587cc0b165b8e 2>&1 | tail -12
+  PLAN sentry sentry /etc/systemd/system/pft-upstreamwatch.service 0644 MISSING - f821cb5e5dcb write
+  PLAN sentry sentry /etc/systemd/system/pft-upstreamwatch.timer 0644 MISSING - baf67f723c01 write
+  PLAN validator validator /usr/local/bin/pft-upstreamwatch 0755 MISSING - 89a696239dd5 write
+  PLAN validator validator /usr/local/lib/pft-upstreamwatch/upstreamwatch_lib.py 0644 MISSING - 98513d5e6f90 write
+  PLAN validator validator /etc/systemd/system/pft-upstreamwatch.service 0644 MISSING - f821cb5e5dcb write
+  PLAN validator validator /etc/systemd/system/pft-upstreamwatch.timer 0644 MISSING - baf67f723c01 write
+  PLAN validator validator /etc/systemd/system/pft-upstreamwatch-pull.service 0644 MISSING - 4075c43e3d10 write
+  PLAN validator validator /etc/systemd/system/pft-upstreamwatch-pull.timer 0644 MISSING - 4ac067858da6 write
+  PLAN validator validator /etc/systemd/system/pft-upstreamwatch-digest.service 0644 MISSING - ea4369a44b54 write
+  PLAN validator validator /etc/systemd/system/pft-upstreamwatch-digest.timer 0644 MISSING - 5a6ba7d28829 write
+  [2026-11-23T02:16:33Z] order: sentry validator
+  [2026-11-23T02:16:33Z] dry run (no --apply): nothing changed
+  (exit 0)
+CHECK ok   pft-fleet dry-run plan parses the HEAD manifest (exit 0, nothing applied)
+$ for h in L R; do if [ $h = L ]; then bash -c 'for c in python3 docker curl jq; do command -v $c; done | wc -l; sudo -n test -f /etc/pft-rulecheck.conf && echo rc-conf'; else R 'for c in python3 docker curl jq; do command -v $c; done | wc -l; sudo -n test -f /etc/pft-rulecheck.conf && echo rc-conf'; fi; done
+  4
+  rc-conf
+  4
+  rc-conf
+  (exit 0)
+CHECK ok   python3 docker curl jq and a pft-rulecheck conf on both hosts
+$ sudo -n env TEXT_BUDGET=999999 pft-jobwatch collect --stdout 2>/dev/null | wc -c; R 'sudo -n env TEXT_BUDGET=999999 pft-jobwatch collect --stdout 2>/dev/null | wc -c'; sudo -n sed -n 's/^TEXT_BUDGET=//p' /etc/pft-jobwatch.env
+  46212
+  22650
+  65000
+  (exit 0)
+CHECK ok   jobwatch textfiles have room for the new timers (validator 46212 + 3x1200, sentry 22650 + 1200 <= budget 65000 / 61440)
+$ pull_probe
+  1
+  pull-ssh-ok
+  (exit 0)
+CHECK ok   the pull's ssh command (pft-statewatch's PULL_SSH, non-empty) reaches the sentry when run as root
+  dev collect: HEAD code (repo script + helper, PFT_UW_LIB/PFT_UW_CONF) as root into scratch data + textfile dirs; nothing installed or written outside them
+$ printf 'HOST_LABEL=validator\nDATA_DIR=%s/data\n' $DEV > $DEV/conf && mkdir -p $DEV/tf && sudo -n env PFT_UW_LIB=$PWD/upstreamwatch/upstreamwatch_lib.py PFT_UW_CONF=$DEV/conf bash upstreamwatch/pft-upstreamwatch.sh run --textfile-dir $DEV/tf; echo rc=$?; grep -E '^pft_upstreamwatch_(up|feed_state|release_state)\{' $DEV/tf/pft_upstreamwatch_validator.prom | grep ' 1$'
+  pft-upstreamwatch - host validator - 2026-11-23T02:16:36Z
+  
+  FEED                   STATE            FETCH AGE  CONTENT AGE  REASON
+  usn-host               upstream_quiet      21.6 h       79.1 h  local copy is upstream's latest (upstream answered 304 to our ETag); upstream has not published for 79.1 h
+  ubuntu-jammy           upstream_quiet       1.8 h       79.1 h  local copy is upstream's latest (upstream content clock is 0.0 h after ours (tolerance 6.0 h)); upstream has not published for 79.1 h
+  ubuntu-noble           upstream_quiet       1.8 h       79.1 h  local copy is upstream's latest (upstream content clock is 0.0 h after ours (tolerance 6.0 h)); upstream has not published for 79.1 h
+  debian                 ok                   1.8 h        3.1 h  local copy is upstream's latest (upstream content clock is 2.5 h after ours (tolerance 6.0 h)); content 3.1 h old
+  go                     upstream_quiet       1.8 h      286.9 h  local copy is upstream's latest (upstream content clock is 0.0 h after ours (tolerance 6.0 h)); upstream has not published for 286.9 h
+  debian-oval-bookworm   ok                       -        2.8 h  upstream last published 2.8 h ago (no local copy)
+  
+  release (postfiatd, agtipft/postfiatd:testnet-light-latest): current
+    digest  current  running sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+                     registry sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e  (testnet-light-latest digest equals the running image's)
+    version current  (this node 1.0.9 >= foundation 1.0.9)
+  
+  RESULT: ok=2 upstream_quiet=4 local_stale=0 fetch_failing=0 unreachable=0 release=current
+  rc=0
+  pft_upstreamwatch_up{host="validator"} 1
+  pft_upstreamwatch_feed_state{host="validator",feed="usn-host",state="upstream_quiet"} 1
+  pft_upstreamwatch_feed_state{host="validator",feed="ubuntu-jammy",state="upstream_quiet"} 1
+  pft_upstreamwatch_feed_state{host="validator",feed="ubuntu-noble",state="upstream_quiet"} 1
+  pft_upstreamwatch_feed_state{host="validator",feed="debian",state="ok"} 1
+  pft_upstreamwatch_feed_state{host="validator",feed="go",state="upstream_quiet"} 1
+  pft_upstreamwatch_feed_state{host="validator",feed="debian-oval-bookworm",state="ok"} 1
+  pft_upstreamwatch_release_state{host="validator",container="postfiatd",state="current"} 1
+  (exit 0)
+CHECK ok   validator dev collect: rc 0, up 1, no local_stale/fetch_failing, usn-host upstream_quiet, release current
+$ git archive 9b9bcf3c0ee223680881f8e5514587cc0b165b8e upstreamwatch | R 'sudo -n rm -rf ~/.cache/upstreamwatch-dev-9b9bcf3 && mkdir -m 755 -p ~/.cache/upstreamwatch-dev-9b9bcf3/tf && tar -x -C ~/.cache/upstreamwatch-dev-9b9bcf3 && printf "HOST_LABEL=sentry\nCONTAINER=postfiatd-sentry\nDATA_DIR=%s/data\n" ~/.cache/upstreamwatch-dev-9b9bcf3 > ~/.cache/upstreamwatch-dev-9b9bcf3/conf && cd ~/.cache/upstreamwatch-dev-9b9bcf3 && sudo -n env PFT_UW_LIB=$PWD/upstreamwatch/upstreamwatch_lib.py PFT_UW_CONF=$PWD/conf bash upstreamwatch/pft-upstreamwatch.sh run --textfile-dir $PWD/tf; echo rc=$?; grep -E "^pft_upstreamwatch_(up|feed_state|release_state)\{" tf/pft_upstreamwatch_sentry.prom | grep " 1$"'
+  pft-upstreamwatch - host sentry - 2026-11-23T02:16:57Z
+  
+  FEED                   STATE            FETCH AGE  CONTENT AGE  REASON
+  usn-host               upstream_quiet      21.6 h       79.1 h  local copy is upstream's latest (upstream answered 304 to our ETag); upstream has not published for 79.1 h
+  ubuntu-jammy           upstream_quiet       1.8 h       79.1 h  local copy is upstream's latest (upstream content clock is 0.0 h after ours (tolerance 6.0 h)); upstream has not published for 79.1 h
+  ubuntu-noble           upstream_quiet       1.8 h       79.1 h  local copy is upstream's latest (upstream content clock is 0.0 h after ours (tolerance 6.0 h)); upstream has not published for 79.1 h
+  debian                 ok                   1.8 h        3.1 h  local copy is upstream's latest (upstream content clock is 2.5 h after ours (tolerance 6.0 h)); content 3.1 h old
+  go                     upstream_quiet       1.8 h      286.9 h  local copy is upstream's latest (upstream content clock is 0.0 h after ours (tolerance 6.0 h)); upstream has not published for 286.9 h
+  debian-oval-bookworm   ok                       -        2.8 h  upstream last published 2.8 h ago (no local copy)
+  
+  release (postfiatd-sentry, agtipft/postfiatd:testnet-light-latest): current
+    digest  current  running sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+                     registry sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e  (testnet-light-latest digest equals the running image's)
+    version current  (this node 1.0.9 >= foundation 1.0.9)
+  
+  RESULT: ok=2 upstream_quiet=4 local_stale=0 fetch_failing=0 unreachable=0 release=current
+  rc=0
+  pft_upstreamwatch_up{host="sentry"} 1
+  pft_upstreamwatch_feed_state{host="sentry",feed="usn-host",state="upstream_quiet"} 1
+  pft_upstreamwatch_feed_state{host="sentry",feed="ubuntu-jammy",state="upstream_quiet"} 1
+  pft_upstreamwatch_feed_state{host="sentry",feed="ubuntu-noble",state="upstream_quiet"} 1
+  pft_upstreamwatch_feed_state{host="sentry",feed="debian",state="ok"} 1
+  pft_upstreamwatch_feed_state{host="sentry",feed="go",state="upstream_quiet"} 1
+  pft_upstreamwatch_feed_state{host="sentry",feed="debian-oval-bookworm",state="ok"} 1
+  pft_upstreamwatch_release_state{host="sentry",container="postfiatd-sentry",state="current"} 1
+  (exit 0)
+CHECK ok   sentry dev collect: rc 0, up 1, no local_stale/fetch_failing, usn-host upstream_quiet, release current
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+$ curl -s --max-time 10 http://<redacted-ip>:9090/api/v1/alerts | jq -r .status; curl -s --max-time 10 http://<redacted-ip>:9093/api/v2/status | jq -r 'if (.uptime // "") != "" then "up" else "down" end'
+  success
+  up
+  (exit 0)
+CHECK ok   Prometheus and Alertmanager answer (alert gates below fail closed)
+$ curl -s http://<redacted-ip>:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'; curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '.data.alerts[] | "\(.labels.alertname) \(.state)"' | sort | uniq -c
+  0
+        1 PFTAlertPipelineWatchdog firing
+        2 PFTValwatchValidatorLow firing
+        2 PFTVulnFeedStale firing
+  (exit 0)
+known pending before the run (accepted by the preflight): none
+known firing before the run (explained outside events, accepted by the preflight): PFTValwatchValidatorLow PFTVulnFeedStale
+CHECK ok   no active silence; only the pipeline watchdog (+ KNOWN_PENDING/KNOWN_FIRING) pending/firing in Prometheus
+$ curl -s http://<redacted-ip>:9090/api/v1/alerts | jq -r '.data.alerts[] | select(.state == "firing") | .labels.alertname' | grep -vx PFTAlertPipelineWatchdog | sort -u
+  PFTValwatchValidatorLow
+  PFTVulnFeedStale
+  (exit 0)
+CHECK ok   nothing but the watchdog (+ KNOWN_FIRING) FIRING; KNOWN_PENDING may only be pending
+$ prom_q 'ALERTS{alertname="PFTVulnFeedStale",alertstate="firing"}'
+  sentry 1
+  validator 1
+  (exit 0)
+CHECK ok   PFTVulnFeedStale firing on validator and sentry before the install (the live stale-feed condition)
+PREFLIGHT_ONLY: stopping before any change (0 failed)
