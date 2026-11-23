@@ -1,0 +1,82 @@
+upstreamwatch quiet-reclassification check - 2026-11-23T03:58:48Z - repo HEAD 39ad00ac289c922841c6db8f89e5dfaf1433c5e9 - window since 2026-11-23T02:17:59Z
+
+== 1. the stale-feed condition persists, PFTVulnFeedStale is reclassified
+$ prom_q 'time() - pft_vulnscan_feed_timestamp_seconds > 3 * 86400'
+  sentry - 290836.378000021
+  validator - 290836.378000021
+  (exit 0)
+CHECK ok   USN feed still older than 3 days on validator and sentry (condition unchanged, not fixed by hand)
+$ prom_q 'pft_upstreamwatch_feed_state{feed="usn-host",state="upstream_quiet"} == 1'
+  sentry usn-host 1
+  validator usn-host 1
+  (exit 0)
+CHECK ok   usn-host upstream_quiet on both hosts
+$ curl -s http://127.0.0.1:9090/api/v1/alerts | jq -r '[.data.alerts[] | select(.labels.alertname == "PFTVulnFeedStale")] | length'
+  0
+  (exit 0)
+CHECK ok   PFTVulnFeedStale neither pending nor firing
+$ curl -s http://127.0.0.1:9093/api/v2/silences | jq -r '.[] | select(.status.state == "active") | [.id[0:8], .comment, (.matchers | map(.name + "=" + .value) | join(","))] | @tsv'
+  
+  (exit 0)
+CHECK ok   no active silence covers PFTUpstream* or PFTVulnFeedStale (rollout silence ended)
+
+== 2. PFTUpstreamFeedQuiet fires for every upstream_quiet feed, nothing else of PFTUpstream*
+$ prom_q 'pft_upstreamwatch_feed_state{state="upstream_quiet"} == 1'
+  sentry go 1
+  sentry ubuntu-jammy 1
+  sentry ubuntu-noble 1
+  sentry usn-host 1
+  validator go 1
+  validator ubuntu-jammy 1
+  validator ubuntu-noble 1
+  validator usn-host 1
+  (exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/alerts | jq -r '.data.alerts[] | select(.labels.alertname | startswith("PFTUpstream")) | "\(.labels.alertname) \(.labels.host) \(.labels.feed // "-") \(.state)"' | sort
+  PFTUpstreamFeedQuiet sentry go firing
+  PFTUpstreamFeedQuiet sentry ubuntu-jammy firing
+  PFTUpstreamFeedQuiet sentry ubuntu-noble firing
+  PFTUpstreamFeedQuiet sentry usn-host firing
+  PFTUpstreamFeedQuiet validator go firing
+  PFTUpstreamFeedQuiet validator ubuntu-jammy firing
+  PFTUpstreamFeedQuiet validator ubuntu-noble firing
+  PFTUpstreamFeedQuiet validator usn-host firing
+  (exit 0)
+CHECK ok   PFTUpstreamFeedQuiet firing for exactly the upstream_quiet (host, feed) pairs (8 pair(s))
+CHECK ok   no other PFTUpstream* alert pending or firing (LocalStale, FetchFailing, ReleaseAvailable, Failing, NotRunning)
+
+== 3. Alertmanager routing and the bridge
+$ curl -s 'http://127.0.0.1:9093/api/v2/alerts?active=true&silenced=false&inhibited=false' | jq -r '.[] | select(.labels.alertname == "PFTUpstreamFeedQuiet") | "\(.labels.host) \(.labels.feed) \(.labels.notify) \([.receivers[].name] | join(",")) \(.status.state)"' | sort
+  sentry go digest digest active
+  sentry ubuntu-jammy digest digest active
+  sentry ubuntu-noble digest digest active
+  sentry usn-host digest digest active
+  validator go digest digest active
+  validator ubuntu-jammy digest digest active
+  validator ubuntu-noble digest digest active
+  validator usn-host digest digest active
+  (exit 0)
+CHECK ok   every PFTUpstreamFeedQuiet alert in Alertmanager is active, notify=digest, receiver digest only
+$ awk '/^  - receiver:/ {b = $0; next} b != "" && /^    / {b = b "\n" $0; if (/notify="digest"/) hit = 1; next} {if (hit) {print b; exit} b = ""}' <<<"$AMCONF"
+    - receiver: digest
+      matchers:
+      - notify="digest"
+      continue: false
+  (exit 0)
+$ awk '/^- name: digest$/ {f = 1; print; next} f && /^- name:/ {exit} f' <<<"$AMCONF"
+  - name: digest
+  (exit 0)
+CHECK ok   loaded Alertmanager config: notify="digest" route -> receiver digest, which has no integration
+$ sudo -n docker logs --since 1795400279 pft-alert-bridge 2>&1 | wc -l; sudo -n docker logs --since 1795400279 pft-alert-bridge 2>&1 | grep -cE 'PFTUpstream|PFTVulnFeedStale'
+  0
+  0
+  (exit 1)
+CHECK ok   the ntfy bridge (container pft-alert-bridge) logged no PFTUpstream*/PFTVulnFeedStale alert since the install started (0 bridge log line(s) in the window)
+
+== 4. operator topics
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+  operator #1 topic: 0 message(s) since 2026-11-23T02:17:59Z
+  operator #2 topic: 0 message(s) since 2026-11-23T02:17:59Z
+CHECK ok   operator topics received nothing since the install started (upstream_quiet never paged) (2 topic(s), 0 with messages)
+
+quiet-check done 2026-11-23T03:58:52Z: 0 check(s) failed -> PASS

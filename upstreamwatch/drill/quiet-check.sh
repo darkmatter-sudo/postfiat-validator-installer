@@ -23,7 +23,7 @@ SINCE="${SINCE:?SINCE=<install run start epoch> required}"
 [[ "$SINCE" =~ ^[0-9]{10}$ ]] || { echo "SINCE must be an epoch"; exit 3; }
 R() { ssh -o LogLevel=ERROR -o BatchMode=yes relay "$@"; }
 RHN="$(R hostname 2>/dev/null)"; RHN="${RHN:-$HN}"
-red() { sed -E "s#$HOME#~#g; s#\b$ME\b#<user>#g; s#$HN#<host>#g; s#$RHN#<host>#g; s#\b([0-9]{1,3}\.){3}[0-9]{1,3}\b#<redacted-ip>#g; s#/opt/pft-agent/[^[:space:]]*#<operator-agent-path>#g"; }
+red() { sed -E "s#$HOME#~#g; s#\b$ME\b#<user>#g; s#$HN#<host>#g; s#$RHN#<host>#g; /\b127\.0\.0\.1\b/!s#\b([0-9]{1,3}\.){3}[0-9]{1,3}\b#<redacted-ip>#g; s#/opt/pft-agent/[^[:space:]]*#<operator-agent-path>#g"; }
 XRC=0; XOUT=""
 x() { echo "\$ $*" | red; XOUT="$(eval "$*" 2>&1)"; XRC=$?; printf '%s\n' "$XOUT" | red | sed 's/^/  /'; echo "  (exit $XRC)"; }
 FAILS=0
@@ -59,8 +59,13 @@ check "no other PFTUpstream* alert pending or firing (LocalStale, FetchFailing, 
 echo; echo "== 3. Alertmanager routing and the bridge"
 x "curl -s '$AM/api/v2/alerts?active=true&silenced=false&inhibited=false' | jq -r '.[] | select(.labels.alertname == \"PFTUpstreamFeedQuiet\") | \"\(.labels.host) \(.labels.feed) \(.labels.notify) \([.receivers[].name] | join(\",\")) \(.status.state)\"' | sort"
 check "every PFTUpstreamFeedQuiet alert in Alertmanager is active, notify=digest, receiver digest only" "$([ "$(grep -c . <<<"$XOUT")" = "$(grep -c . <<<"$QUIET")" ] && [ "$(grep -c ' digest digest active$' <<<"$XOUT")" = "$(grep -c . <<<"$QUIET")" ] && echo 0 || echo 1)"
-x "curl -s $AM/api/v2/status | jq -r '.config.original' | grep -n -A2 'notify=\"digest\"'; curl -s $AM/api/v2/status | jq -r '.config.original' | grep -n -A3 'name: digest'"
-check "loaded Alertmanager config: notify=\"digest\" route -> receiver digest, which has no integration" "$(grep -q 'receiver: digest' <<<"$XOUT" && ! grep -A3 'name: digest' <<<"$XOUT" | grep -qE '_configs:' && echo 0 || echo 1)"
+# Alertmanager prints its normalized config with `receiver:` BEFORE `matchers:`, so read whole list items: the route
+# item that matches notify="digest", and the receivers item `- name: digest` up to the next `- name:`
+export AMCONF; AMCONF="$(curl -s "$AM/api/v2/status" | jq -r '.config.original')"
+x "awk '/^  - receiver:/ {b = \$0; next} b != \"\" && /^    / {b = b \"\\n\" \$0; if (/notify=\"digest\"/) hit = 1; next} {if (hit) {print b; exit} b = \"\"}' <<<\"\$AMCONF\""
+ROUTE_OK="$(grep -q '^  - receiver: digest$' <<<"$XOUT" && grep -q 'notify="digest"' <<<"$XOUT" && echo 0 || echo 1)"
+x "awk '/^- name: digest\$/ {f = 1; print; next} f && /^- name:/ {exit} f' <<<\"\$AMCONF\""
+check "loaded Alertmanager config: notify=\"digest\" route -> receiver digest, which has no integration" "$([ "$ROUTE_OK" = 0 ] && [ "$(grep -c . <<<"$XOUT")" = 1 ] && grep -qx -- '- name: digest' <<<"$XOUT" && echo 0 || echo 1)"
 x "sudo -n docker logs --since $SINCE pft-alert-bridge 2>&1 | wc -l; sudo -n docker logs --since $SINCE pft-alert-bridge 2>&1 | grep -cE 'PFTUpstream|PFTVulnFeedStale'"
 check "the ntfy bridge (container pft-alert-bridge) logged no PFTUpstream*/PFTVulnFeedStale alert since the install started" "$([ "$(tail -1 <<<"$XOUT")" = 0 ] && echo 0 || echo 1)" "$(head -1 <<<"$XOUT") bridge log line(s) in the window"
 
