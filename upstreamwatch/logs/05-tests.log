@@ -1,0 +1,92 @@
+upstreamwatch tests - 2026-11-23T03:59:36Z - repo HEAD 3419f15777512c68e80800d5c828759d1461e7cb (working tree: 0 changed files)
+$ shellcheck upstreamwatch/pft-upstreamwatch.sh upstreamwatch/install.sh upstreamwatch/drill/*.sh
+(exit 0)
+$ ruff check upstreamwatch
+All checks passed!
+(exit 0)
+$ cd upstreamwatch && python3 -m pytest -v -p no:cacheprovider tests
+============================= test session starts ==============================
+platform linux -- Python 3.10.12, pytest-9.1.1, pluggy-1.7.0 -- /usr/bin/python3
+rootdir: ~/work/postfiat-validator-installer/upstreamwatch
+collecting ... collected 60 items
+
+tests/test_upstreamwatch.py::test_live_capture_reclassifies_quiet_usn_feeds PASSED [  1%]
+tests/test_upstreamwatch.py::test_live_capture_render_is_byte_identical_offline PASSED [  3%]
+tests/test_upstreamwatch.py::test_ok_when_latest_and_young PASSED        [  5%]
+tests/test_upstreamwatch.py::test_upstream_quiet_when_latest_but_old PASSED [  6%]
+tests/test_upstreamwatch.py::test_quiet_boundary_is_exclusive PASSED     [  8%]
+tests/test_upstreamwatch.py::test_local_stale_when_upstream_newer_beyond_grace PASSED [ 10%]
+tests/test_upstreamwatch.py::test_upstream_newer_within_grace_is_ok PASSED [ 11%]
+tests/test_upstreamwatch.py::test_tolerance_absorbs_publish_lag PASSED   [ 13%]
+tests/test_upstreamwatch.py::test_304_means_latest PASSED                [ 15%]
+tests/test_upstreamwatch.py::test_304_with_newer_last_modified_is_not_trusted PASSED [ 16%]
+tests/test_upstreamwatch.py::test_control_200_with_other_etag_and_newer_lm_is_stale PASSED [ 18%]
+tests/test_upstreamwatch.py::test_same_etag_means_latest PASSED          [ 20%]
+tests/test_upstreamwatch.py::test_fetch_failing_wins_over_everything_upstream PASSED [ 21%]
+tests/test_upstreamwatch.py::test_fetch_age_boundary PASSED              [ 23%]
+tests/test_upstreamwatch.py::test_unreachable_dead_and_5xx_and_429 PASSED [ 25%]
+tests/test_upstreamwatch.py::test_unreachable_never_hides_local_corruption PASSED [ 26%]
+tests/test_upstreamwatch.py::test_missing_last_modified_is_unreachable PASSED [ 28%]
+tests/test_upstreamwatch.py::test_clock_skew_local_clock_ahead_uses_upstream_date PASSED [ 30%]
+tests/test_upstreamwatch.py::test_clock_skew_local_clock_behind PASSED   [ 31%]
+tests/test_upstreamwatch.py::test_future_last_modified_is_refused PASSED [ 33%]
+tests/test_upstreamwatch.py::test_reference_feed_upstream_only PASSED    [ 35%]
+tests/test_upstreamwatch.py::test_go_content_clock_from_index PASSED     [ 36%]
+tests/test_upstreamwatch.py::test_unknown_feed_name PASSED               [ 38%]
+tests/test_upstreamwatch.py::test_local_vulnscan_reads_timestamp_and_etag PASSED [ 40%]
+tests/test_upstreamwatch.py::test_truncated_vulnscan_feed_hash_mismatch PASSED [ 41%]
+tests/test_upstreamwatch.py::test_truncated_vulnscan_feed_with_matching_hash_fails_format PASSED [ 43%]
+tests/test_upstreamwatch.py::test_missing_vulnscan_cache PASSED          [ 45%]
+tests/test_upstreamwatch.py::test_local_imagescan_all_kinds_and_truncation PASSED [ 46%]
+tests/test_upstreamwatch.py::test_http_retries_with_backoff_then_gives_up PASSED [ 48%]
+tests/test_upstreamwatch.py::test_http_429_honours_retry_after_then_succeeds PASSED [ 50%]
+tests/test_upstreamwatch.py::test_http_no_retry_on_404 PASSED            [ 51%]
+tests/test_upstreamwatch.py::test_http_dead_endpoint PASSED              [ 53%]
+tests/test_upstreamwatch.py::test_probe_sends_conditional_head PASSED    [ 55%]
+tests/test_upstreamwatch.py::test_registry_401_then_token_then_digest PASSED [ 56%]
+tests/test_upstreamwatch.py::test_registry_token_401_is_unknown PASSED   [ 58%]
+tests/test_upstreamwatch.py::test_registry_realm_must_be_https PASSED    [ 60%]
+tests/test_upstreamwatch.py::test_registry_429_retried PASSED            [ 61%]
+tests/test_upstreamwatch.py::test_release_current PASSED                 [ 63%]
+tests/test_upstreamwatch.py::test_release_behind_on_digest PASSED        [ 65%]
+tests/test_upstreamwatch.py::test_release_behind_on_version_numeric_compare PASSED [ 66%]
+tests/test_upstreamwatch.py::test_release_unknown_cases PASSED           [ 68%]
+tests/test_upstreamwatch.py::test_parse_ref PASSED                       [ 70%]
+tests/test_upstreamwatch.py::test_running_build_reader PASSED            [ 71%]
+tests/test_upstreamwatch.py::test_prom_one_hot_and_validates PASSED      [ 73%]
+tests/test_upstreamwatch.py::test_text_marks_paged_states PASSED         [ 75%]
+tests/test_upstreamwatch.py::test_label_escaping PASSED                  [ 76%]
+tests/test_upstreamwatch.py::test_config_validation PASSED               [ 78%]
+tests/test_upstreamwatch.py::test_evaluate_refuses_other_schema PASSED   [ 80%]
+tests/test_upstreamwatch.py::test_shell_run_quiet_feeds_exit0_and_docker_only_inspects PASSED [ 81%]
+tests/test_upstreamwatch.py::test_shell_run_local_stale_exits_1 PASSED   [ 83%]
+tests/test_upstreamwatch.py::test_shell_run_dead_upstreams_unreachable_not_paged PASSED [ 85%]
+tests/test_upstreamwatch.py::test_shell_collect_error_writes_up0 PASSED  [ 86%]
+tests/test_upstreamwatch.py::test_shell_lib_failure_writes_up0 PASSED    [ 88%]
+tests/test_upstreamwatch.py::test_shell_unknown_conf_key PASSED          [ 90%]
+tests/test_upstreamwatch.py::test_shell_validate PASSED                  [ 91%]
+tests/test_upstreamwatch.py::test_shell_pull_validates_peer_file PASSED  [ 93%]
+tests/test_upstreamwatch.py::test_digest_sends_once_a_day_low_priority PASSED [ 95%]
+tests/test_upstreamwatch.py::test_digest_nothing_to_send PASSED          [ 96%]
+tests/test_upstreamwatch.py::test_digest_dead_prometheus_fails_closed PASSED [ 98%]
+tests/test_upstreamwatch.py::test_digest_empty_prometheus_answer_fails_closed PASSED [100%]
+
+============================= 60 passed in 24.25s ==============================
+(exit 0)
+$ python3 upstreamwatch/tests/gen_rule_tests.py | cmp - alerts/upstreamwatch.tests.yml
+(exit 0)
+$ promtool check rules upstreamwatch.rules.yml vulnscan.rules.yml   (docker run --rm --network none prom/prometheus:v3.5.0)
+Checking upstreamwatch.rules.yml
+  SUCCESS: 6 rules found
+
+Checking vulnscan.rules.yml
+  SUCCESS: 5 rules found
+
+(exit 0)
+$ promtool test rules upstreamwatch.tests.yml vulnscan.tests.yml   (docker run --rm --network none prom/prometheus:v3.5.0)
+  SUCCESS
+
+  SUCCESS
+
+(exit 0)
+tests done 2026-11-23T04:01:59Z
