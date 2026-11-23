@@ -197,6 +197,9 @@ Recorded runs in [`logs/`](logs/) (redacted: user, home path, IPs, throwaway top
 | `16-mutate.log` | final mutation run at a2138fc | 39/39 caught |
 | `17a`, `17-upgrade.log` | upgrade to a2138fc (empty-inventory fix): the installed code of this submission | 55 ok, 0 FAIL |
 | `18b-public-bundles.log` | public bundles of both hosts + public reports | PASS: findings_sha256 of every image = the host's full scan; no open advisory id, local offset or path in any published file |
+| `19-fresh-clone-FAIL-empty-inv-dir.log` | first fresh clone (eb551b0) | validator cmp exit 0; sentry FAIL: git keeps no empty `inv/`, so the all-withheld sentry bundle was "not a bundle" -> `inv/.keep` (2bf8816) |
+| `18c-public-bundles.log` | bundles + reports re-made with 2bf8816: the committed `reports/` | PASS, same checks as 18b (feed copies byte-identical) |
+| `19b-fresh-clone.log` | fresh public clone of the submitted commit | see the submission |
 | `*-commit-gate.log` | shellcheck, ruff, pytest, promtool, leak grep before each commit | clean |
 
 Every install/upgrade run checks: integrity PASS before and after, nodes full, files = repo bytes on both hosts,

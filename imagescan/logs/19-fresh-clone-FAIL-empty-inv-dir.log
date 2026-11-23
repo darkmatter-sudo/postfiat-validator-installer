@@ -1,0 +1,112 @@
+OS: Ubuntu 22.04.5 LTS | 2026-11-23T00:44:29Z | imagescan fresh-clone verification at eb551b0c2f43459cb2fe2053fd3c6269e5f8e6fc | shellcheck 0.8.0 | Python 3.10.12 | ruff 0.17.1 | xz (XZ Utils) 5.2.5
+(work dir: a new mktemp dir under ~/.cache, mode 755; /tmp is noexec on this host)
+$ env -u GH_TOKEN -u GITHUB_TOKEN GIT_TERMINAL_PROMPT=0 git -c credential.helper= clone -q https://github.com/darkmatter-sudo/postfiat-validator-installer.git repo
+(exit 0)
+$ git checkout -q eb551b0c2f43459cb2fe2053fd3c6269e5f8e6fc && git rev-parse HEAD
+eb551b0c2f43459cb2fe2053fd3c6269e5f8e6fc
+(exit 0)
+$ git status --short | wc -l
+0
+(exit 0)
+== key files vs the files installed on both hosts (logs/17: the upgrade to the submitted code)
+$ sha256sum imagescan/pft-imagescan.sh imagescan/imagescan_lib.py imagescan/systemd/pft-imagescan.service imagescan/systemd/pft-imagescan.timer | cut -c1-64 > ~/.cache/tmp.fVTZkCxO9K/now.txt && cat ~/.cache/tmp.fVTZkCxO9K/now.txt
+2119f0b872c2d5118c6f473f1182b1b47158e620bcbbf81cc893f796e25f0cbd
+4e1c48b9833779de59cd2476acce6c7dbde2384ba121570a5338555cdd8e9787
+f593113a92b1bac480230916bfc6263fd9286ac553d4d27ca0ea827936794792
+b032b32475ac9bf909e9032a9118219e685100e2b932df9faff4e8701150bc07
+(exit 0)
+$ sed -n '/^\$ sha256sum imagescan\/pft-imagescan.sh imagescan\/imagescan_lib.py imagescan\/systemd\/pft-imagescan.service/,/^  (exit/p' imagescan/logs/17-upgrade.log | grep -oE '^  [0-9a-f]{64}$' | tr -d ' ' > ~/.cache/tmp.fVTZkCxO9K/log.txt && wc -l < ~/.cache/tmp.fVTZkCxO9K/log.txt
+12
+(exit 0)
+$ sed -n '1,4p' ~/.cache/tmp.fVTZkCxO9K/log.txt > ~/.cache/tmp.fVTZkCxO9K/repo-at-install.txt && [ -s ~/.cache/tmp.fVTZkCxO9K/repo-at-install.txt ] && diff ~/.cache/tmp.fVTZkCxO9K/repo-at-install.txt ~/.cache/tmp.fVTZkCxO9K/now.txt && echo 'identical: 4/4 sha256 equal repo-at-install (logs/17)'
+identical: 4/4 sha256 equal repo-at-install (logs/17)
+(exit 0)
+$ sed -n '5,8p' ~/.cache/tmp.fVTZkCxO9K/log.txt > ~/.cache/tmp.fVTZkCxO9K/validator.txt && [ -s ~/.cache/tmp.fVTZkCxO9K/validator.txt ] && diff ~/.cache/tmp.fVTZkCxO9K/validator.txt ~/.cache/tmp.fVTZkCxO9K/now.txt && echo 'identical: 4/4 sha256 equal validator (logs/17)'
+identical: 4/4 sha256 equal validator (logs/17)
+(exit 0)
+$ sed -n '9,12p' ~/.cache/tmp.fVTZkCxO9K/log.txt > ~/.cache/tmp.fVTZkCxO9K/sentry.txt && [ -s ~/.cache/tmp.fVTZkCxO9K/sentry.txt ] && diff ~/.cache/tmp.fVTZkCxO9K/sentry.txt ~/.cache/tmp.fVTZkCxO9K/now.txt && echo 'identical: 4/4 sha256 equal sentry (logs/17)'
+identical: 4/4 sha256 equal sentry (logs/17)
+(exit 0)
+== static checks
+$ shellcheck imagescan/pft-imagescan.sh imagescan/install.sh imagescan/drill/*.sh
+(exit 0)
+$ ruff check imagescan
+All checks passed!
+(exit 0)
+$ cd imagescan && ruff check .
+All checks passed!
+(exit 0)
+== tests
+$ cd imagescan && TMPDIR=~/.cache/tmp.fVTZkCxO9K TEST_TMPDIR=~/.cache/tmp.fVTZkCxO9K timeout 900 python3 -m pytest -q -p no:cacheprovider tests </dev/null 2>&1 | tail -n 2
+.......................................................                  [100%]
+55 passed in 7.78s
+(exit 0)
+== promtool (pinned image already on the host)
+$ docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /w prom/prometheus:v3.5.0 check rules imagescan.rules.yml
+Checking imagescan.rules.yml
+  SUCCESS: 6 rules found
+
+(exit 0)
+$ docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /w prom/prometheus:v3.5.0 test rules imagescan.tests.yml
+  SUCCESS
+
+(exit 0)
+== offline public report rebuild per host from the committed bundle
+$ cp -r imagescan/reports/validator ~/.cache/tmp.fVTZkCxO9K/bundle-validator && rm -f ~/.cache/tmp.fVTZkCxO9K/bundle-validator/report-public.txt && for f in ~/.cache/tmp.fVTZkCxO9K/bundle-validator/feeds/*.xz; do xz -d "$f" || exit 1; done && ls ~/.cache/tmp.fVTZkCxO9K/bundle-validator/feeds
+debian-tracker.json
+feeds.json
+oci.com.ubuntu.jammy.usn.oval.xml.bz2
+oci.com.ubuntu.noble.usn.oval.xml.bz2
+vulndb.zip
+(exit 0)
+$ python3 -I -c 'import hashlib, json, sys, os
+d = sys.argv[1]; m = json.load(open(os.path.join(d, "feeds.json")))["feeds"]; bad = 0
+for k, v in sorted(m.items()):
+    got = hashlib.sha256(open(os.path.join(d, v["file"]), "rb").read()).hexdigest(); ok = got == v["sha256"]; bad += not ok
+    print(k, v["file"], got, "ok" if ok else "MISMATCH")
+sys.exit(1 if bad else 0)' ~/.cache/tmp.fVTZkCxO9K/bundle-validator/feeds
+debian debian-tracker.json 16e21c0199b6fda6de6ad6afbdc002d50423eb8bbc3d3b164769ea626d2695f9 ok
+go vulndb.zip 714ff02d9533ec6ca269e565b61b27cbd959aa0af89d51f318261322e875861c ok
+ubuntu-jammy oci.com.ubuntu.jammy.usn.oval.xml.bz2 31a6fe092e8e39a2f43bcf7d7a949f468cf60a110d4a2c7ebe675121cddce75d ok
+ubuntu-noble oci.com.ubuntu.noble.usn.oval.xml.bz2 ff9e3119ed990aec21c954651acbce72f6d3fbfb45ac2545a2c760db1f3f3771 ok
+(exit 0)
+$ PFT_IS_CONF=/dev/null PFT_IS_LIB=$PWD/imagescan/imagescan_lib.py bash imagescan/pft-imagescan.sh report --bundle ~/.cache/tmp.fVTZkCxO9K/bundle-validator --public --withheld ~/.cache/tmp.fVTZkCxO9K/bundle-validator/withheld.json --before ~/.cache/tmp.fVTZkCxO9K/bundle-validator/before.json > ~/.cache/tmp.fVTZkCxO9K/report-validator.txt; echo "report rc $?"; cmp ~/.cache/tmp.fVTZkCxO9K/report-validator.txt imagescan/reports/validator/report-public.txt && echo 'cmp exit 0: validator public report byte-identical'
+report rc 0
+cmp exit 0: validator public report byte-identical
+(exit 0)
+$ grep -E '^(RESULT|IMAGE .*WITHHELD|  fixed since|DRIFT)' imagescan/reports/validator/report-public.txt | cut -c1-160
+IMAGE agtipft/postfiatd:testnet-light-latest  sha256:cc139becfe50  in_use=yes  os=Ubuntu 24.04.5 LTS  scanner=ubuntu-oval:noble  packages=311  [WITHHELD: unreme
+  fixed since the before-scan (sha256:266a6edb3c1f -> sha256:f05e3c62e06d): 11 of 11
+IMAGE prom/alertmanager:v0.28.1  sha256:27c475db5fb1  in_use=yes  os=-  scanner=none:no-package-db  packages=0  [WITHHELD: unremediated upstream image, inventor
+IMAGE prom/prometheus:v3.5.0  sha256:63805ebb8d2b  in_use=yes  os=-  scanner=none:no-package-db  packages=0  [WITHHELD: unremediated upstream image, inventory n
+RESULT: 7 images (4 in use), 6553 findings, 0 fixable high/critical in in-use images (not accepted), 0 drift -> exit 0
+(exit 0)
+$ cp -r imagescan/reports/sentry ~/.cache/tmp.fVTZkCxO9K/bundle-sentry && rm -f ~/.cache/tmp.fVTZkCxO9K/bundle-sentry/report-public.txt && for f in ~/.cache/tmp.fVTZkCxO9K/bundle-sentry/feeds/*.xz; do xz -d "$f" || exit 1; done && ls ~/.cache/tmp.fVTZkCxO9K/bundle-sentry/feeds
+debian-tracker.json
+feeds.json
+oci.com.ubuntu.jammy.usn.oval.xml.bz2
+oci.com.ubuntu.noble.usn.oval.xml.bz2
+vulndb.zip
+(exit 0)
+$ python3 -I -c 'import hashlib, json, sys, os
+d = sys.argv[1]; m = json.load(open(os.path.join(d, "feeds.json")))["feeds"]; bad = 0
+for k, v in sorted(m.items()):
+    got = hashlib.sha256(open(os.path.join(d, v["file"]), "rb").read()).hexdigest(); ok = got == v["sha256"]; bad += not ok
+    print(k, v["file"], got, "ok" if ok else "MISMATCH")
+sys.exit(1 if bad else 0)' ~/.cache/tmp.fVTZkCxO9K/bundle-sentry/feeds
+debian debian-tracker.json 16e21c0199b6fda6de6ad6afbdc002d50423eb8bbc3d3b164769ea626d2695f9 ok
+go vulndb.zip 714ff02d9533ec6ca269e565b61b27cbd959aa0af89d51f318261322e875861c ok
+ubuntu-jammy oci.com.ubuntu.jammy.usn.oval.xml.bz2 31a6fe092e8e39a2f43bcf7d7a949f468cf60a110d4a2c7ebe675121cddce75d ok
+ubuntu-noble oci.com.ubuntu.noble.usn.oval.xml.bz2 ff9e3119ed990aec21c954651acbce72f6d3fbfb45ac2545a2c760db1f3f3771 ok
+(exit 0)
+$ PFT_IS_CONF=/dev/null PFT_IS_LIB=$PWD/imagescan/imagescan_lib.py bash imagescan/pft-imagescan.sh report --bundle ~/.cache/tmp.fVTZkCxO9K/bundle-sentry --public --withheld ~/.cache/tmp.fVTZkCxO9K/bundle-sentry/withheld.json  > ~/.cache/tmp.fVTZkCxO9K/report-sentry.txt; echo "report rc $?"; cmp ~/.cache/tmp.fVTZkCxO9K/report-sentry.txt imagescan/reports/sentry/report-public.txt && echo 'cmp exit 0: sentry public report byte-identical'
+pft-imagescan: not a bundle: ~/.cache/tmp.fVTZkCxO9K/bundle-sentry
+report rc 2
+cmp: EOF on ~/.cache/tmp.fVTZkCxO9K/report-sentry.txt which is empty
+(exit 1)
+$ grep -E '^(RESULT|IMAGE .*WITHHELD|  fixed since|DRIFT)' imagescan/reports/sentry/report-public.txt | cut -c1-160
+IMAGE agtipft/postfiatd:testnet-light-latest  sha256:cc139becfe50  in_use=yes  os=Ubuntu 24.04.5 LTS  scanner=ubuntu-oval:noble  packages=311  [WITHHELD: unreme
+RESULT: 1 images (1 in use), 17 findings, 0 fixable high/critical in in-use images (not accepted), 0 drift -> exit 0
+(exit 0)
+
+fresh-clone done 2026-11-23T00:45:05Z: 1 check(s) failed -> FAIL
