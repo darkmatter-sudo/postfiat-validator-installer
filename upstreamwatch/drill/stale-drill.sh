@@ -84,7 +84,8 @@ scrape_configs: [{job_name: textfile, fallback_scrape_protocol: PrometheusText0.
 EOP
 sed -e 's#127.0.0.1:9095/#127.0.0.1:19195/#; s#127.0.0.1:9096/#127.0.0.1:19196/#' alerts/alertmanager.yml > "$SCR/a/alertmanager.yml"
 printf 'NTFY_URL=https://ntfy.sh/%s\n' "$TOPIC" > "$SCR/ntfy.env"
-chmod -R a+rX "$SCR"
+# the root-owned feed copies are already 644 (chmod warns about them, harmless): keep its stderr redacted
+chmod -R a+rX "$SCR" 2>&1 | red
 x "diff alerts/alertmanager.yml $SCR/a/alertmanager.yml"
 check "alertmanager.yml differs only in the two webhook ports" "$([ "$(diff alerts/alertmanager.yml "$SCR/a/alertmanager.yml" | grep -c '^[<>]')" = 4 ] && echo 0 || echo 1)"
 gate 2

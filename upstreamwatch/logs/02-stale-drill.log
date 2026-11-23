@@ -1,0 +1,277 @@
+== 1. preflight 2026-11-23T03:11:30Z repo 39c1679f843a72c839b1ad70259092194014b9dc (working tree: 0 changed files)
+$ sha256sum /usr/local/bin/pft-upstreamwatch upstreamwatch/pft-upstreamwatch.sh /usr/local/lib/pft-upstreamwatch/upstreamwatch_lib.py upstreamwatch/upstreamwatch_lib.py alerts/upstreamwatch.rules.yml alerts/alertmanager.yml alerts/ntfy_bridge.py
+  89a696239dd591f23c3cef3bbd810e83e91b13c3c38f0fdb8c3fe2ba796ee151  /usr/local/bin/pft-upstreamwatch
+  89a696239dd591f23c3cef3bbd810e83e91b13c3c38f0fdb8c3fe2ba796ee151  upstreamwatch/pft-upstreamwatch.sh
+  98513d5e6f902639951895f9f14b794c0d3673d7d90211f23e6babac789f8bda  /usr/local/lib/pft-upstreamwatch/upstreamwatch_lib.py
+  98513d5e6f902639951895f9f14b794c0d3673d7d90211f23e6babac789f8bda  upstreamwatch/upstreamwatch_lib.py
+  5dee1c9a668306f9bf230dcfdf885e3e9641e014bdb194c24a2dcf6aa4a52854  alerts/upstreamwatch.rules.yml
+  d758ea34aa6dc3826f07a3761157843f11f70e5bf3adb314a5fd7033b2cd2949  alerts/alertmanager.yml
+  86035cd2b9acfd06d0ab478223c08c86460e1f11e08230ad0d6d3b42b92e4ddc  alerts/ntfy_bridge.py
+  (exit 0)
+CHECK ok   installed script + helper = repo files
+$ docker image inspect -f "{{.RepoTags}}" prom/prometheus:v3.5.0 prom/alertmanager:v0.28.1 python:3.12-alpine
+  [prom/prometheus:v3.5.0]
+  [prom/alertmanager:v0.28.1]
+  [python:3.12-alpine]
+  (exit 0)
+CHECK ok   images already on the host (no pull)
+$ ss -ltnH | grep -cE "127\.0\.0\.1:(19190|19193|19195|19196|19877) " || true
+  0
+  (exit 0)
+CHECK ok   drill ports free
+$ docker ps -a --format "{{.Names}}" | grep -c "^pft-uwdrill-" || true
+  0
+  (exit 0)
+CHECK ok   no leftover drill containers
+CHECK ok   operator topics known (for the read-back)
+$ sudo -n sha256sum /var/cache/pft-vulnscan/feed.xml.bz2; sudo -n cat /var/cache/pft-vulnscan/feed.meta
+  4d2e7ed048a0bf7d59ed85e43f3a27f8ac25067703ca96379e1ff519776b57f8  /var/cache/pft-vulnscan/feed.xml.bz2
+  sha256=4d2e7ed048a0bf7d59ed85e43f3a27f8ac25067703ca96379e1ff519776b57f8
+  fetched_at=1795322321
+  last_checked=1795322321
+  url=https://security-metadata.canonical.com/oval/com.ubuntu.jammy.usn.oval.xml.bz2
+  (exit 0)
+CHECK ok   live USN feed intact (sha256 = feed.meta)
+== 2. scratch config + truncated feed copy
+$ cat ~/.cache/uwdrill.cWkmtz/uw.env; ls -l ~/.cache/uwdrill.cWkmtz/vs; sha256sum ~/.cache/uwdrill.cWkmtz/vs/feed.xml.bz2
+  HOST_LABEL=validator
+  FEEDS="usn-host ubuntu-jammy go debian-oval-bookworm"
+  VULNSCAN_CACHE=~/.cache/uwdrill.cWkmtz/vs
+  DATA_DIR=~/.cache/uwdrill.cWkmtz/data
+  TEXTFILE_DIR=~/.cache/uwdrill.cWkmtz/tf
+  BUILD_TEXTFILE=/var/lib/pft-exporter/textfile/pft_upgradewatch_postfiatd.prom
+  total 920
+  -rw-r--r-- 1 root root     23 Nov 22 04:38 feed.etag
+  -rw-r--r-- 1 root root    201 Nov 22 04:38 feed.meta
+  -rw-r--r-- 1 root root 930835 Nov 23 03:11 feed.xml.bz2
+  192b6dad7025376e65574ca22170179f8fcf2a83ce66e3c5cb5248fdf652e12e  ~/.cache/uwdrill.cWkmtz/vs/feed.xml.bz2
+  (exit 0)
+CHECK ok   scratch copy truncated to half (1861671 -> 930835 bytes), sha256 no longer matches feed.meta
+chmod: changing permissions of '~/.cache/uwdrill.cWkmtz/vs/feed.etag': Operation not permitted
+chmod: changing permissions of '~/.cache/uwdrill.cWkmtz/vs/feed.meta': Operation not permitted
+chmod: changing permissions of '~/.cache/uwdrill.cWkmtz/vs/feed.xml.bz2': Operation not permitted
+$ diff alerts/alertmanager.yml ~/.cache/uwdrill.cWkmtz/a/alertmanager.yml
+  37c37
+  <       - url: http://127.0.0.1:9095/alert
+  ---
+  >       - url: http://127.0.0.1:19195/alert
+  43c43
+  <       - url: http://127.0.0.1:9096/watchdog
+  ---
+  >       - url: http://127.0.0.1:19196/watchdog
+  (exit 1)
+CHECK ok   alertmanager.yml differs only in the two webhook ports
+== 3. phase A collect (truncated copy) 2026-11-23T03:11:31Z
+$ uwrun
+  pft-upstreamwatch - host validator - 2026-11-23T03:11:32Z
+  
+  FEED                   STATE            FETCH AGE  CONTENT AGE  REASON
+  usn-host               local_stale              -            -  local copy unusable: ValueError: feed sha256 differs from feed.meta (truncated or replaced)
+  ubuntu-jammy           upstream_quiet       2.7 h       80.0 h  local copy is upstream's latest (upstream content clock is 0.0 h after ours (tolerance 6.0 h)); upstream has not published for 80.0 h
+  go                     upstream_quiet       2.7 h      288.3 h  local copy is upstream's latest (upstream content clock is 0.0 h after ours (tolerance 6.0 h)); upstream has not published for 288.3 h
+  debian-oval-bookworm   ok                       -        3.7 h  upstream last published 3.7 h ago (no local copy)
+  
+  release (postfiatd, agtipft/postfiatd:testnet-light-latest): current
+    digest  current  running sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+                     registry sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e  (testnet-light-latest digest equals the running image's)
+    version current  (this node 1.0.9 >= foundation 1.0.9)
+  
+  RESULT: ok=1 upstream_quiet=2 local_stale=1 fetch_failing=0 unreachable=0 release=current -> PAGE (local_stale/fetch_failing)
+  (exit 1)
+CHECK ok   run exit 1 (paged state present)
+CHECK ok   usn-host local_stale: local copy unusable (sha256 differs)
+$ grep -E '^pft_upstreamwatch_(feed_state\{.*\} 1|up|release_state\{.*\} 1)' ~/.cache/uwdrill.cWkmtz/tf/pft_upstreamwatch_validator.prom
+  pft_upstreamwatch_up{host="validator"} 1
+  pft_upstreamwatch_feed_state{host="validator",feed="usn-host",state="local_stale"} 1
+  pft_upstreamwatch_feed_state{host="validator",feed="ubuntu-jammy",state="upstream_quiet"} 1
+  pft_upstreamwatch_feed_state{host="validator",feed="go",state="upstream_quiet"} 1
+  pft_upstreamwatch_feed_state{host="validator",feed="debian-oval-bookworm",state="ok"} 1
+  pft_upstreamwatch_release_state{host="validator",container="postfiatd",state="current"} 1
+  (exit 0)
+CHECK ok   textfile: up 1, usn-host state local_stale
+upstream_quiet feeds in the scratch textfile: 2
+== 4. start throwaway stack 2026-11-23T03:11:41Z
+$ docker run -d --name pft-uwdrill-metrics --network host --user 65534 -v ~/.cache/uwdrill.cWkmtz/tf:/m:ro python:3.12-alpine python3 -m http.server 19877 --bind 127.0.0.1 --directory /m
+  0e8dfd5513a9db2d99c9e703cb88ebf0fd8d74e1577fd6da0bc67c964b55cf4b
+  (exit 0)
+$ docker run -d --name pft-uwdrill-bridge --network host --user 65534 -e BRIDGE_PORT=19195 -e NTFY_URL_FILE=/e/ntfy.env -v ~/.cache/uwdrill.cWkmtz/ntfy.env:/e/ntfy.env:ro -v ~/work/postfiat-validator-installer/alerts/ntfy_bridge.py:/b/ntfy_bridge.py:ro python:3.12-alpine python3 -u /b/ntfy_bridge.py
+  38d0bf514530c6a240e887e3fd8ba2fa20d16ce04d79d575eeb21ae5117b907d
+  (exit 0)
+$ docker run -d --name pft-uwdrill-am --network host --user 65534 --tmpfs /data:mode=1777 -v ~/.cache/uwdrill.cWkmtz/a:/c:ro prom/alertmanager:v0.28.1 --config.file=/c/alertmanager.yml --storage.path=/data --web.listen-address=127.0.0.1:19193 --cluster.listen-address=
+  990158356c0c81d76fd14635d871b74dde20d2c25dae5c7f86e816d0c4c759af
+  (exit 0)
+$ docker run -d --name pft-uwdrill-prom --network host --user 65534 --tmpfs /prometheus:mode=1777 -v ~/.cache/uwdrill.cWkmtz/p:/etc/prometheus:ro -v ~/work/postfiat-validator-installer/alerts/upstreamwatch.rules.yml:/rules/upstreamwatch.rules.yml:ro prom/prometheus:v3.5.0 --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.listen-address=127.0.0.1:19190
+  b0a6e0820ddb673d3efb17cb7ba3fc6abc787d86c491a7af94c200beaaf23d6d
+  (exit 0)
+$ curl -fsS http://127.0.0.1:19190/api/v1/rules | jq -r '.data.groups[].rules[] | "\(.name) \(.health)"'
+  PFTUpstreamFeedLocalStale ok
+  PFTUpstreamFeedFetchFailing ok
+  PFTUpstreamFeedQuiet ok
+  PFTUpstreamReleaseAvailable ok
+  PFTUpstreamwatchFailing ok
+  PFTUpstreamwatchNotRunning ok
+  (exit 0)
+CHECK ok   prometheus loaded the repo's 6 upstreamwatch rules
+$ curl -fsS http://127.0.0.1:19190/api/v1/targets | jq -r '.data.activeTargets[] | "\(.labels.job) \(.health)"'
+  textfile up
+  (exit 0)
+CHECK ok   scrape target up
+$ curl -fsS -o /dev/null -w '%{http_code}' http://127.0.0.1:19193/-/ready
+  200
+  (exit 0)
+CHECK ok   alertmanager ready
+$ alerts
+  PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending
+  (exit 0)
+CHECK ok   PFTUpstreamFeedLocalStale pending for usn-host
+$ docker logs pft-uwdrill-bridge 2>&1 | tail -3
+  bridge listening on 127.0.0.1:19195 ntfy=on
+  (exit 0)
+== 5. wait for the 65m 'for' (poll every 60 s, re-collect every 15 min, up to 80 min)
+03:13:08 +1m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:14:09 +2m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:15:10 +3m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:16:11 +4m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:17:12 +5m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:18:13 +6m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:19:14 +7m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:20:15 +8m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:21:16 +9m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:22:16 +10m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:23:17 +11m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:24:18 +12m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:25:19 +13m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:26:20 +14m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:27:29 re-collect exit 1: usn-host               local_stale              -            -  local copy unusable: ValueError: feed sha256 differs from feed.meta (truncated or replaced)
+03:27:30 +15m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:28:31 +16m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:29:32 +17m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:30:33 +18m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:31:34 +19m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:32:35 +20m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:33:36 +21m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:34:36 +22m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:35:37 +23m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:36:39 +24m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:37:40 +25m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:38:41 +26m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:39:42 +27m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:40:43 +28m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:41:43 +29m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:42:53 re-collect exit 1: usn-host               local_stale              -            -  local copy unusable: ValueError: feed sha256 differs from feed.meta (truncated or replaced)
+03:42:53 +30m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:43:54 +31m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:44:55 +32m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:45:56 +33m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:46:57 +34m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:47:58 +35m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:48:59 +36m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:50:00 +37m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:51:01 +38m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:52:03 +39m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:53:04 +40m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:54:05 +41m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:55:06 +42m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:56:07 +43m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:57:08 +44m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:58:17 re-collect exit 1: usn-host               local_stale              -            -  local copy unusable: ValueError: feed sha256 differs from feed.meta (truncated or replaced)
+03:58:18 +45m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+03:59:19 +46m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+04:00:19 +47m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+04:01:21 +48m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+04:02:22 +49m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+04:03:22 +50m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+04:04:23 +51m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+04:05:24 +52m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+04:06:25 +53m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+04:07:26 +54m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+04:08:26 +55m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+04:09:27 +56m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+04:10:28 +57m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+04:11:29 +58m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+04:12:30 +59m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+04:13:38 re-collect exit 1: usn-host               local_stale              -            -  local copy unusable: ValueError: feed sha256 differs from feed.meta (truncated or replaced)
+04:13:39 +60m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+04:14:40 +61m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+04:15:41 +62m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+04:16:42 +63m prom: PFTUpstreamFeedLocalStale/usn-host=pending PFTUpstreamFeedQuiet/go=pending PFTUpstreamFeedQuiet/ubuntu-jammy=pending | throwaway msgs: 0
+04:17:43 +64m prom: PFTUpstreamFeedLocalStale/usn-host=firing PFTUpstreamFeedQuiet/go=firing PFTUpstreamFeedQuiet/ubuntu-jammy=firing | throwaway msgs: 1
+== 6. phase A results 2026-11-23T04:18:13Z
+$ curl -fsS http://127.0.0.1:19190/api/v1/alerts | jq -r '.data.alerts[] | [.labels.alertname, .labels.host, .labels.feed, (.labels.notify // "-"), .state] | @tsv' | sort
+  PFTUpstreamFeedLocalStale	validator	usn-host	-	firing
+  PFTUpstreamFeedQuiet	validator	go	digest	firing
+  PFTUpstreamFeedQuiet	validator	ubuntu-jammy	digest	firing
+  (exit 0)
+CHECK ok   prometheus: PFTUpstreamFeedLocalStale firing for validator/usn-host
+CHECK ok   prometheus: no FetchFailing / Release / Failing / NotRunning
+$ curl -fsS http://127.0.0.1:19193/api/v2/alerts/groups | jq -r '.[] | "\(.receiver.name) \(.labels.alertname) alerts=\(.alerts | length)"' | sort
+  bridge PFTUpstreamFeedLocalStale alerts=1
+  digest PFTUpstreamFeedQuiet alerts=2
+  (exit 0)
+CHECK ok   alertmanager: LocalStale (1 alert) in receiver bridge
+CHECK ok   alertmanager: no PFTUpstreamFeedQuiet in receiver bridge
+CHECK ok   alertmanager: PFTUpstreamFeedQuiet (2) in receiver digest
+$ topic
+  1795407431	[FIRING] PFTUpstreamFeedLocalStale	Feed usn-host on validator is behind upstream or corrupt
+  (exit 0)
+CHECK ok   throwaway topic: exactly 1 message, the LocalStale [FIRING] page
+== 7. phase B recovery: restore the copy from the live cache 2026-11-23T04:18:14Z
+$ sha256sum ~/.cache/uwdrill.cWkmtz/vs/feed.xml.bz2
+  4d2e7ed048a0bf7d59ed85e43f3a27f8ac25067703ca96379e1ff519776b57f8  ~/.cache/uwdrill.cWkmtz/vs/feed.xml.bz2
+  (exit 0)
+CHECK ok   scratch copy restored (sha256 = live)
+$ uwrun
+  pft-upstreamwatch - host validator - 2026-11-23T04:18:14Z
+  
+  FEED                   STATE            FETCH AGE  CONTENT AGE  REASON
+  usn-host               upstream_quiet      23.7 h       81.1 h  local copy is upstream's latest (upstream answered 304 to our ETag); upstream has not published for 81.1 h
+  ubuntu-jammy           upstream_quiet       3.9 h       81.1 h  local copy is upstream's latest (upstream content clock is 0.0 h after ours (tolerance 6.0 h)); upstream has not published for 81.1 h
+  go                     upstream_quiet       3.9 h      289.3 h  local copy is upstream's latest (upstream content clock is 0.0 h after ours (tolerance 6.0 h)); upstream has not published for 289.3 h
+  debian-oval-bookworm   ok                       -        0.9 h  upstream last published 0.9 h ago (no local copy)
+  
+  release (postfiatd, agtipft/postfiatd:testnet-light-latest): current
+    digest  current  running sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+                     registry sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e  (testnet-light-latest digest equals the running image's)
+    version current  (this node 1.0.9 >= foundation 1.0.9)
+  
+  RESULT: ok=1 upstream_quiet=3 local_stale=0 fetch_failing=0 unreachable=0 release=current
+  (exit 0)
+CHECK ok   run exit 0 (no paged state)
+CHECK ok   usn-host back to upstream_quiet/ok
+04:18:56 +30s prom: PFTUpstreamFeedQuiet/go=firing PFTUpstreamFeedQuiet/ubuntu-jammy=firing PFTUpstreamFeedQuiet/usn-host=pending | throwaway msgs: 1
+04:19:27 +60s prom: PFTUpstreamFeedQuiet/go=firing PFTUpstreamFeedQuiet/ubuntu-jammy=firing PFTUpstreamFeedQuiet/usn-host=pending | throwaway msgs: 2
+== 8. phase B results 2026-11-23T04:19:42Z
+$ alerts
+  PFTUpstreamFeedQuiet/go=firing PFTUpstreamFeedQuiet/ubuntu-jammy=firing PFTUpstreamFeedQuiet/usn-host=pending
+  (exit 0)
+CHECK ok   prometheus: PFTUpstreamFeedLocalStale gone
+$ topic
+  1795407431	[FIRING] PFTUpstreamFeedLocalStale	Feed usn-host on validator is behind upstream or corrupt
+  1795407551	[RESOLVED] PFTUpstreamFeedLocalStale	Feed usn-host on validator is behind upstream or corrupt
+  (exit 0)
+CHECK ok   throwaway topic: exactly 2 messages, [FIRING] then [RESOLVED] LocalStale, no FeedQuiet
+$ docker logs pft-uwdrill-bridge 2>&1
+  bridge listening on 127.0.0.1:19195 ntfy=on
+  webhook status=firing alertname=PFTUpstreamFeedLocalStale severity=warning startsAt=2026-11-23T04:17:00.203Z endsAt=0001-01-01T00:00:00Z
+  ntfy [FIRING] PFTUpstreamFeedLocalStale -> HTTP 200
+  webhook status=resolved alertname=PFTUpstreamFeedLocalStale severity=warning startsAt=2026-11-23T04:17:00.203Z endsAt=2026-11-23T04:18:45.203Z
+  ntfy [RESOLVED] PFTUpstreamFeedLocalStale -> HTTP 200
+  (exit 0)
+CHECK ok   bridge saw LocalStale firing + resolved
+CHECK ok   bridge never saw PFTUpstreamFeedQuiet
+$ sudo -n sha256sum /var/cache/pft-vulnscan/feed.xml.bz2
+  4d2e7ed048a0bf7d59ed85e43f3a27f8ac25067703ca96379e1ff519776b57f8  /var/cache/pft-vulnscan/feed.xml.bz2
+  (exit 0)
+CHECK ok   live USN feed untouched
+== 9. operator topics (read only; no drill message)
+$ curl -fsS --max-time 20 'https://ntfy.sh/<redacted>/json?poll=1&since=1795403490' | jq -r 'select(.event == "message") | [.time, .title // "-"] | @tsv'
+  
+  (exit 0)
+CHECK ok   operator topic: no drill message (PFTUpstream* / uwdrill)
+$ curl -fsS --max-time 20 'https://ntfy.sh/<redacted>/json?poll=1&since=1795403490' | jq -r 'select(.event == "message") | [.time, .title // "-"] | @tsv'
+  
+  (exit 0)
+CHECK ok   operator topic: no drill message (PFTUpstream* / uwdrill)
+phase A start 2026-11-23T03:11:30Z, recovery start 2026-11-23T04:18:14Z
+RESULT: PASS - 0 check(s) failed
+trap: removed pft-uwdrill-metrics pft-uwdrill-prom pft-uwdrill-am pft-uwdrill-bridge and the scratch dir
