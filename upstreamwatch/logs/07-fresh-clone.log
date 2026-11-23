@@ -1,0 +1,88 @@
+OS: Ubuntu 22.04.5 LTS | 2026-11-23T04:20:50Z | upstreamwatch fresh-clone verification at 53ffc9ddde2d8da76013d9b07d8ef8aa4e205440 | shellcheck 0.8.0 | Python 3.10.12 | ruff 0.17.1
+(work dir: a new mktemp dir under ~/.cache, mode 755; /tmp is noexec on this host)
+$ env -u GH_TOKEN -u GITHUB_TOKEN GIT_TERMINAL_PROMPT=0 git -c credential.helper= clone -q https://github.com/darkmatter-sudo/postfiat-validator-installer.git repo
+(exit 0)
+$ git checkout -q 53ffc9ddde2d8da76013d9b07d8ef8aa4e205440 && git rev-parse HEAD
+53ffc9ddde2d8da76013d9b07d8ef8aa4e205440
+(exit 0)
+$ git status --short | wc -l
+0
+(exit 0)
+== key files vs the files installed on both hosts (logs/01 step 4: repo, validator, sentry)
+$ sha256sum upstreamwatch/pft-upstreamwatch.sh upstreamwatch/upstreamwatch_lib.py upstreamwatch/systemd/pft-upstreamwatch.service upstreamwatch/systemd/pft-upstreamwatch.timer | cut -c1-64 > ~/.cache/tmp.cnGrZyJhXg/now.txt && sha256sum upstreamwatch/pft-upstreamwatch.sh upstreamwatch/upstreamwatch_lib.py upstreamwatch/systemd/pft-upstreamwatch.service upstreamwatch/systemd/pft-upstreamwatch.timer
+89a696239dd591f23c3cef3bbd810e83e91b13c3c38f0fdb8c3fe2ba796ee151  upstreamwatch/pft-upstreamwatch.sh
+98513d5e6f902639951895f9f14b794c0d3673d7d90211f23e6babac789f8bda  upstreamwatch/upstreamwatch_lib.py
+f821cb5e5dcbbda8b24555c5a64da0725e3712f64a2e3cb06cf59c81908de5c2  upstreamwatch/systemd/pft-upstreamwatch.service
+baf67f723c0125c44d7197d8b83057ed43ec2c4626e76c84e431f2647d58bd6a  upstreamwatch/systemd/pft-upstreamwatch.timer
+(exit 0)
+$ sed -n '/^\$ sha256sum upstreamwatch\/pft-upstreamwatch.sh upstreamwatch\/upstreamwatch_lib.py upstreamwatch\/systemd\/pft-upstreamwatch.service upstreamwatch\/systemd\/pft-upstreamwatch.timer | cut/,/^  (exit/p' upstreamwatch/logs/01-install.log | grep -oE '^  [0-9a-f]{64}$' | tr -d ' ' > ~/.cache/tmp.cnGrZyJhXg/log.txt && wc -l < ~/.cache/tmp.cnGrZyJhXg/log.txt
+12
+(exit 0)
+$ sed -n '1,4p' ~/.cache/tmp.cnGrZyJhXg/log.txt > ~/.cache/tmp.cnGrZyJhXg/repo-at-install.txt && [ -s ~/.cache/tmp.cnGrZyJhXg/repo-at-install.txt ] && diff ~/.cache/tmp.cnGrZyJhXg/repo-at-install.txt ~/.cache/tmp.cnGrZyJhXg/now.txt && echo 'identical: 4/4 sha256 equal repo-at-install (logs/01)'
+identical: 4/4 sha256 equal repo-at-install (logs/01)
+(exit 0)
+$ sed -n '5,8p' ~/.cache/tmp.cnGrZyJhXg/log.txt > ~/.cache/tmp.cnGrZyJhXg/validator.txt && [ -s ~/.cache/tmp.cnGrZyJhXg/validator.txt ] && diff ~/.cache/tmp.cnGrZyJhXg/validator.txt ~/.cache/tmp.cnGrZyJhXg/now.txt && echo 'identical: 4/4 sha256 equal validator (logs/01)'
+identical: 4/4 sha256 equal validator (logs/01)
+(exit 0)
+$ sed -n '9,12p' ~/.cache/tmp.cnGrZyJhXg/log.txt > ~/.cache/tmp.cnGrZyJhXg/sentry.txt && [ -s ~/.cache/tmp.cnGrZyJhXg/sentry.txt ] && diff ~/.cache/tmp.cnGrZyJhXg/sentry.txt ~/.cache/tmp.cnGrZyJhXg/now.txt && echo 'identical: 4/4 sha256 equal sentry (logs/01)'
+identical: 4/4 sha256 equal sentry (logs/01)
+(exit 0)
+== static checks
+$ shellcheck upstreamwatch/pft-upstreamwatch.sh upstreamwatch/install.sh upstreamwatch/drill/*.sh
+(exit 0)
+$ ruff check upstreamwatch
+All checks passed!
+(exit 0)
+$ cd upstreamwatch && ruff check .
+All checks passed!
+(exit 0)
+== tests
+$ cd upstreamwatch && TMPDIR=~/.cache/tmp.cnGrZyJhXg timeout 900 python3 -m pytest -q -p no:cacheprovider tests </dev/null 2>&1 | tail -n 2
+............................................................             [100%]
+60 passed in 23.24s
+(exit 0)
+== promtool (pinned image already on the host)
+$ docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /w prom/prometheus:v3.5.0 check rules upstreamwatch.rules.yml
+Checking upstreamwatch.rules.yml
+  SUCCESS: 6 rules found
+
+(exit 0)
+$ docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /w prom/prometheus:v3.5.0 test rules upstreamwatch.tests.yml
+  SUCCESS
+
+(exit 0)
+== offline report re-render per host from the committed observation
+$ sha256sum upstreamwatch/reports/validator/obs.json
+6d779766b41fe0878120d6ffe1b3c33a22e0e9007b96cd9fdd83b1937e807388  upstreamwatch/reports/validator/obs.json
+(exit 0)
+$ PFT_UW_CONF=/dev/null PFT_UW_LIB=$PWD/upstreamwatch/upstreamwatch_lib.py bash upstreamwatch/pft-upstreamwatch.sh report --obs upstreamwatch/reports/validator/obs.json --format text > ~/.cache/tmp.cnGrZyJhXg/validator.txt && cmp ~/.cache/tmp.cnGrZyJhXg/validator.txt upstreamwatch/reports/validator/report.txt && echo 'cmp exit 0: validator report.txt byte-identical'
+cmp exit 0: validator report.txt byte-identical
+(exit 0)
+$ PFT_UW_CONF=/dev/null PFT_UW_LIB=$PWD/upstreamwatch/upstreamwatch_lib.py bash upstreamwatch/pft-upstreamwatch.sh report --obs upstreamwatch/reports/validator/obs.json --format json > ~/.cache/tmp.cnGrZyJhXg/validator.json && cmp ~/.cache/tmp.cnGrZyJhXg/validator.json upstreamwatch/reports/validator/report.json && echo 'cmp exit 0: validator report.json byte-identical'
+cmp exit 0: validator report.json byte-identical
+(exit 0)
+$ PFT_UW_CONF=/dev/null PFT_UW_LIB=$PWD/upstreamwatch/upstreamwatch_lib.py bash upstreamwatch/pft-upstreamwatch.sh report --obs upstreamwatch/reports/validator/obs.json --format prom > ~/.cache/tmp.cnGrZyJhXg/validator.prom && cmp ~/.cache/tmp.cnGrZyJhXg/validator.prom upstreamwatch/reports/validator/report.prom && echo 'cmp exit 0: validator report.prom byte-identical'
+cmp exit 0: validator report.prom byte-identical
+(exit 0)
+$ grep -E '^(usn-host|RESULT)' upstreamwatch/reports/validator/report.txt | cut -c1-160
+usn-host               upstream_quiet      23.1 h       80.5 h  local copy is upstream's latest (upstream answered 304 to our ETag); upstream has not published 
+RESULT: ok=2 upstream_quiet=4 local_stale=0 fetch_failing=0 unreachable=0 release=current
+(exit 0)
+$ sha256sum upstreamwatch/reports/sentry/obs.json
+613ba206d5e4cbf63b1089a8f5783731e8d8bf9ca9f52446ce2dfe797c630204  upstreamwatch/reports/sentry/obs.json
+(exit 0)
+$ PFT_UW_CONF=/dev/null PFT_UW_LIB=$PWD/upstreamwatch/upstreamwatch_lib.py bash upstreamwatch/pft-upstreamwatch.sh report --obs upstreamwatch/reports/sentry/obs.json --format text > ~/.cache/tmp.cnGrZyJhXg/sentry.txt && cmp ~/.cache/tmp.cnGrZyJhXg/sentry.txt upstreamwatch/reports/sentry/report.txt && echo 'cmp exit 0: sentry report.txt byte-identical'
+cmp exit 0: sentry report.txt byte-identical
+(exit 0)
+$ PFT_UW_CONF=/dev/null PFT_UW_LIB=$PWD/upstreamwatch/upstreamwatch_lib.py bash upstreamwatch/pft-upstreamwatch.sh report --obs upstreamwatch/reports/sentry/obs.json --format json > ~/.cache/tmp.cnGrZyJhXg/sentry.json && cmp ~/.cache/tmp.cnGrZyJhXg/sentry.json upstreamwatch/reports/sentry/report.json && echo 'cmp exit 0: sentry report.json byte-identical'
+cmp exit 0: sentry report.json byte-identical
+(exit 0)
+$ PFT_UW_CONF=/dev/null PFT_UW_LIB=$PWD/upstreamwatch/upstreamwatch_lib.py bash upstreamwatch/pft-upstreamwatch.sh report --obs upstreamwatch/reports/sentry/obs.json --format prom > ~/.cache/tmp.cnGrZyJhXg/sentry.prom && cmp ~/.cache/tmp.cnGrZyJhXg/sentry.prom upstreamwatch/reports/sentry/report.prom && echo 'cmp exit 0: sentry report.prom byte-identical'
+cmp exit 0: sentry report.prom byte-identical
+(exit 0)
+$ grep -E '^(usn-host|RESULT)' upstreamwatch/reports/sentry/report.txt | cut -c1-160
+usn-host               upstream_quiet      23.1 h       80.5 h  local copy is upstream's latest (upstream answered 304 to our ETag); upstream has not published 
+RESULT: ok=2 upstream_quiet=4 local_stale=0 fetch_failing=0 unreachable=0 release=current
+(exit 0)
+
+fresh-clone done 2026-11-23T04:22:28Z: 0 check(s) failed -> PASS
