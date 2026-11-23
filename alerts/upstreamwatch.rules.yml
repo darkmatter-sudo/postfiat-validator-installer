@@ -1,0 +1,69 @@
+# Alert rules for pft-upstreamwatch (../upstreamwatch). pft-upstreamwatch.timer runs hourly and writes
+# pft_upstreamwatch_*{host="..."} to the textfile dir (validator: local; sentry: pulled by pft-upstreamwatch-pull.timer
+# every 15 min). Feed states are one-hot (pft_upstreamwatch_feed_state{feed,state}). Only LOCAL faults page:
+# local_stale (upstream published newer content > STALE_GRACE_HOURS ago that we still lack, or our copy is
+# truncated/corrupt) and fetch_failing (our fetcher has not downloaded/revalidated for FETCH_MAX_AGE_HOURS).
+# upstream_quiet (our copy IS upstream's latest, upstream simply has not republished) and a newer postfiatd release
+# carry notify="digest": never paged, summed once a day by pft-upstreamwatch-digest.timer. unreachable is not an
+# alert of its own: if it persists, the fetcher goes overdue and fetch_failing pages.
+# for: 65m on the feed alerts = the state was seen by two consecutive hourly runs (one run's sample cannot page).
+# Tests: upstreamwatch.tests.yml (promtool test rules upstreamwatch.tests.yml).
+groups:
+  - name: pft-upstreamwatch
+    rules:
+      - alert: PFTUpstreamFeedLocalStale
+        expr: pft_upstreamwatch_feed_state{state="local_stale"} == 1
+        for: 65m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Feed {{ $labels.feed }} on {{ $labels.host }} is behind upstream or corrupt"
+          description: "Upstream has published newer content than our copy for longer than the grace period, or the local copy fails its sha256/format check. Scans on this host use outdated data. Run `sudo pft-upstreamwatch run` for the reason, then the owning fetcher (`sudo pft-vulnscan fetch` / `sudo pft-imagescan fetch`)."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/upstreamwatch/README.md#alerts"
+      - alert: PFTUpstreamFeedFetchFailing
+        expr: pft_upstreamwatch_feed_state{state="fetch_failing"} == 1
+        for: 65m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Feed {{ $labels.feed }} on {{ $labels.host }} has not been fetched or revalidated for too long"
+          description: "The local fetcher (../vulnscan or ../imagescan) has not completed a download or a 304 revalidation within FETCH_MAX_AGE_HOURS. Check its timer and run its fetch by hand to see the error."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/upstreamwatch/README.md#alerts"
+      - alert: PFTUpstreamFeedQuiet
+        expr: pft_upstreamwatch_feed_state{state="upstream_quiet"} == 1
+        for: 65m
+        labels:
+          severity: info
+          notify: digest
+        annotations:
+          summary: "Upstream has not republished feed {{ $labels.feed }} (seen from {{ $labels.host }})"
+          description: "Our copy is upstream's latest; upstream itself has published nothing for QUIET_AGE_HOURS. Nothing to fix locally (daily digest only)."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/upstreamwatch/README.md#alerts"
+      - alert: PFTUpstreamReleaseAvailable
+        expr: pft_upstreamwatch_release_state{state="behind"} == 1
+        for: 2h
+        labels:
+          severity: info
+          notify: digest
+        annotations:
+          summary: "A newer postfiatd image or build is published than {{ $labels.container }} on {{ $labels.host }} runs"
+          description: "The registry tag now points at a different manifest than the running image, or the foundation RPC reports a newer build_version. Plan the upgrade with ../upgrade or ../rollout (daily digest only)."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/upstreamwatch/README.md#alerts"
+      - alert: PFTUpstreamwatchFailing
+        expr: pft_upstreamwatch_up == 0
+        for: 2h
+        labels:
+          severity: warning
+        annotations:
+          summary: "pft-upstreamwatch on {{ $labels.host }} fails to collect"
+          description: "The last runs exited with a collect error (textfile up 0): feed freshness and release state for this host are unknown. Run `sudo pft-upstreamwatch run`."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/upstreamwatch/README.md#alerts"
+      - alert: PFTUpstreamwatchNotRunning
+        expr: time() - pft_upstreamwatch_last_run_timestamp_seconds > 3 * 3600
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "pft-upstreamwatch has not run on {{ $labels.host }} for 3 hours"
+          description: "pft-upstreamwatch.timer is stopped (or, for the sentry, pft-upstreamwatch-pull.timer on the validator cannot copy its textfile). Check `systemctl list-timers 'pft-upstreamwatch*'`."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/upstreamwatch/README.md#alerts"

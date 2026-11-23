@@ -1,0 +1,11 @@
+[Unit]
+Description=Run pft-upstreamwatch hourly (feed freshness + postfiatd release watch)
+
+[Timer]
+OnCalendar=*-*-* *:41:00
+RandomizedDelaySec=4m
+AccuracySec=1m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

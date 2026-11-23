@@ -25,9 +25,14 @@ groups:
           description: "The daily scan missed two runs: pft-vulnscan.timer is stopped (or, for the sentry, pft-vulnscan-pull.timer on the validator cannot copy its textfile). Check `systemctl list-timers pft-vulnscan*`."
           runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/vulnscan/README.md#alerts"
       - alert: PFTVulnFeedStale
-        # Canonical regenerates the feed several times a day; 3 days old means the fetch is failing. The scan itself
-        # refuses a feed older than 7 days (MAX_FEED_AGE_DAYS), so this fires 4 days before that.
-        expr: pft_vulnscan_feed_timestamp_seconds > 0 and time() - pft_vulnscan_feed_timestamp_seconds > 3 * 86400
+        # Canonical usually regenerates the feed several times a day, so 3 days old normally means the fetch is
+        # failing. The scan itself refuses a feed older than 7 days (MAX_FEED_AGE_DAYS), so this fires 4 days before
+        # that. Retuned for ../upstreamwatch: when it sees that our copy IS upstream's latest and upstream simply has
+        # not republished (usn-host upstream_quiet, e.g. 2026-11-19 -> 11-23), this does not page; a real local fault
+        # pages as PFTUpstreamFeedLocalStale / PFTUpstreamFeedFetchFailing. Without upstreamwatch series it is unchanged.
+        expr: >-
+          (pft_vulnscan_feed_timestamp_seconds > 0 and time() - pft_vulnscan_feed_timestamp_seconds > 3 * 86400)
+          unless on (host) (pft_upstreamwatch_feed_state{feed="usn-host", state="upstream_quiet"} == 1)
         for: 1h
         labels:
           severity: warning

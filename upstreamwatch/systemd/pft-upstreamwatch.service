@@ -1,0 +1,42 @@
+[Unit]
+Description=pft-upstreamwatch: feed two-clock freshness + postfiatd release watch (writes textfile metrics)
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/upstreamwatch
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# exit 1 = a feed is local_stale/fetch_failing (reported in the metrics, alerts page), not a unit failure;
+# exit 2 (collect error, textfile up 0) fails the unit
+SuccessExitStatus=1
+ExecStart=/usr/local/bin/pft-upstreamwatch run
+# root (no capabilities: owner access) to read the root-only ../imagescan feed cache (0700) and the docker socket;
+# docker is only asked `inspect` / `image inspect`. Read-only except its own state dir and the textfile dir.
+StateDirectory=pft-upstreamwatch
+StateDirectoryMode=0755
+ReadWritePaths=/var/lib/pft-exporter/textfile
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+MemoryMax=256M
+Nice=10
+IOSchedulingClass=idle
+UMask=0022
+TimeoutStartSec=10min

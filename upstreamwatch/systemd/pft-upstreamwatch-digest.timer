@@ -1,0 +1,11 @@
+[Unit]
+Description=Send the pft-upstreamwatch digest once a day (07:20 UTC)
+
+[Timer]
+OnCalendar=*-*-* 07:20:00 UTC
+AccuracySec=1m
+# no catch-up run at install or boot: the next 07:20 covers the last 24 h anyway
+Persistent=false
+
+[Install]
+WantedBy=timers.target
