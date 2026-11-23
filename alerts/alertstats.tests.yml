@@ -129,3 +129,58 @@ tests:
   - eval_time: 20m
     alertname: PFTAlertFlapping
     exp_alerts: []
+- name: digest-only alert flapping (operator rule 2026-11-19) carries notify=digest; a near-name and a paging alert do not
+  interval: 1m
+  input_series:
+  - series: pft_alertstats_up{host="validator"}
+    values: 1x20
+  - series: pft_alertstats_flapping{host="validator",alertname="PFTValwatchValidatorLate"}
+    values: 1x20
+  - series: pft_alertstats_flapping{host="sentry",alertname="PFTUpstreamFeedQuiet"}
+    values: 1x20
+  - series: pft_alertstats_flapping{host="validator",alertname="PFTValwatchValidatorLateBoth"}
+    values: 1x20
+  - series: pft_alertstats_flapping{host="validator",alertname="PFTValwatchOurValidatorLate"}
+    values: 1x20
+  alert_rule_test:
+  - eval_time: 5m
+    alertname: PFTAlertFlapping
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        host: validator
+        flapping_alert: PFTValwatchValidatorLate
+        reason: flapping
+        notify: digest
+      exp_annotations:
+        summary: "validator: alert PFTValwatchValidatorLate is flapping (>= 3 unsilenced firings within 1h in the last 24h)"
+        description: "pft-alertstats rebuilds alert episodes from Prometheus ALERTS history once a day. A flapping alert fires, resolves and fires again for one underlying problem; read `sudo pft-alertstats report --offline /var/lib/pft-alertstats/bundles/<latest>.json.gz` (per-alert flaps, TTR, max near-miss) and widen its for: or fix the expression. report-error: run `sudo pft-alertstats run` and read the error (Prometheus unreachable or query_range refused)."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/alertstats/README.md#alert"
+    - exp_labels:
+        severity: warning
+        host: sentry
+        flapping_alert: PFTUpstreamFeedQuiet
+        reason: flapping
+        notify: digest
+      exp_annotations:
+        summary: "sentry: alert PFTUpstreamFeedQuiet is flapping (>= 3 unsilenced firings within 1h in the last 24h)"
+        description: "pft-alertstats rebuilds alert episodes from Prometheus ALERTS history once a day. A flapping alert fires, resolves and fires again for one underlying problem; read `sudo pft-alertstats report --offline /var/lib/pft-alertstats/bundles/<latest>.json.gz` (per-alert flaps, TTR, max near-miss) and widen its for: or fix the expression. report-error: run `sudo pft-alertstats run` and read the error (Prometheus unreachable or query_range refused)."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/alertstats/README.md#alert"
+    - exp_labels:
+        severity: warning
+        host: validator
+        flapping_alert: PFTValwatchValidatorLateBoth
+        reason: flapping
+      exp_annotations:
+        summary: "validator: alert PFTValwatchValidatorLateBoth is flapping (>= 3 unsilenced firings within 1h in the last 24h)"
+        description: "pft-alertstats rebuilds alert episodes from Prometheus ALERTS history once a day. A flapping alert fires, resolves and fires again for one underlying problem; read `sudo pft-alertstats report --offline /var/lib/pft-alertstats/bundles/<latest>.json.gz` (per-alert flaps, TTR, max near-miss) and widen its for: or fix the expression. report-error: run `sudo pft-alertstats run` and read the error (Prometheus unreachable or query_range refused)."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/alertstats/README.md#alert"
+    - exp_labels:
+        severity: warning
+        host: validator
+        flapping_alert: PFTValwatchOurValidatorLate
+        reason: flapping
+      exp_annotations:
+        summary: "validator: alert PFTValwatchOurValidatorLate is flapping (>= 3 unsilenced firings within 1h in the last 24h)"
+        description: "pft-alertstats rebuilds alert episodes from Prometheus ALERTS history once a day. A flapping alert fires, resolves and fires again for one underlying problem; read `sudo pft-alertstats report --offline /var/lib/pft-alertstats/bundles/<latest>.json.gz` (per-alert flaps, TTR, max near-miss) and widen its for: or fix the expression. report-error: run `sudo pft-alertstats run` and read the error (Prometheus unreachable or query_range refused)."
+        runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/alertstats/README.md#alert"

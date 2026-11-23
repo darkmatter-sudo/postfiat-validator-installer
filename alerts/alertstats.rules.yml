@@ -11,17 +11,22 @@
 #   report-error  the last run could not capture Prometheus (pft_alertstats_up 0).
 # A stopped timer leaves the textfile old: pft-rulecheck grades it (textfile pft_alertstats.prom 30h ->
 # PFTTextfileStale), so staleness is not a second alertstats alert. Hygiene findings do not page (see the report).
+# Digest-only alerts (rules with `notify: digest`) never page, so their flapping must not page either
+# (operator rule 2026-11-19): a flapping_alert in that list gets notify="digest" and Alertmanager routes it to
+# the daily digest. Keep the list equal to `grep -l 'notify: digest' *.rules.yml` alert names (alertstats test).
 # Tests: alertstats.tests.yml (promtool test rules alertstats.tests.yml), 1m sample interval.
 groups:
   - name: pft-alertstats
     rules:
       - alert: PFTAlertFlapping
         expr: |
-          label_replace(
+          label_replace(label_replace(
             max by (host, flapping_alert) (
               label_replace(pft_alertstats_flapping, "flapping_alert", "$1", "alertname", "(.+)")
             ) == 1,
-            "reason", "flapping", "", "")
+            "reason", "flapping", "", ""),
+            "notify", "digest", "flapping_alert",
+            "PFTValwatchValidatorLow|PFTValwatchValidatorLate|PFTUpstreamFeedQuiet|PFTUpstreamReleaseAvailable|PFTAuthFailedBurst")
           or
           label_replace(label_replace(max by (host) (pft_alertstats_up) == 0, "reason", "report-error", "", ""),
             "flapping_alert", "-", "", "")
