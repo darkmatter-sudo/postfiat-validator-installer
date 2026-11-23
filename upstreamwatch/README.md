@@ -129,3 +129,16 @@ and without a matching recorded hash, dead endpoints, retry/backoff/Retry-After,
 non-https realm and 429, version compare, and shell-level runs against a docker stub (only `inspect`/`image inspect`
 logged). It also checks up-0 on a collect error, pull validation, digest send/once-a-day/nothing-to-send, and that
 a dead or empty Prometheus fails closed.
+
+## Drills and evidence (`drill/`, `logs/`)
+
+All runs are recorded with `tee` on the validator; logs are redacted (home path, user, host names, IPs, topics).
+
+| script | what it proves | log |
+|---|---|---|
+| `drill/install-run.sh` | two-host install through `../fleet` (integrity, schedaudit, jobwatch, rulecheck accepted; 0 AppArmor/seccomp denials); the live stale USN condition is reclassified `upstream_quiet` and `PFTVulnFeedStale` stops firing; no docker pull | `logs/00-preflight.log`, `logs/01-install.log` |
+| `drill/stale-drill.sh` | throwaway stack (repo rules + Alertmanager config, bridge to a random throwaway ntfy topic): a truncated scratch copy of the USN feed is `local_stale`, `PFTUpstreamFeedLocalStale` fires after `for: 65m` and pages the throwaway topic once; restoring the copy resolves it ([RESOLVED]); `upstream_quiet` feeds in the same textfile go only to receiver `digest`. The live feed cache is only read | `logs/02-stale-drill.log` |
+| `drill/quiet-check.sh` | on the live stack, after the 65 m `for`: the feed is still > 3 days old on both hosts, `PFTVulnFeedStale` is neither pending nor firing, `PFTUpstreamFeedQuiet` fires for exactly the quiet feeds, Alertmanager routes them to `digest` only, the bridge logged none, operator topics received 0 messages | `logs/03-quiet-check.log` |
+| (inline) | shellcheck, ruff, full `pytest -v`, generated promtool tests unchanged, `promtool check` + `test` | `logs/04-tests.log` |
+| `drill/reports.sh` | live text/JSON/Prometheus reports of both hosts in `reports/<host>/`, rendered offline from the committed `obs.json` | `logs/05-reports.log` |
+| `drill/fresh-clone.sh SHA` | anonymous public clone at SHA: key-file sha256 = installed on both hosts (logs/01), static checks, full tests, promtool, every report re-rendered and compared with `cmp` (exit 0) | `logs/06-fresh-clone.log` |
