@@ -55,20 +55,27 @@ for file in $files; do
   sudo -n cat "$CACHE/feeds/$file" | xz -T1 -6 -c > "$p/feeds/$file.xz"
 done
 if [ -n "$BEFORE_SCAN" ]; then
-  # only the findings the remediation removed (gone from the current scan): still-open advisories are not published
-  # (and provenance.created in UTC, as for the inventories)
+  # only the findings the remediation removed (gone from the current scan): still-open advisories are not published,
+  # and neither is a fixed ID that is still open in a withheld image (CVE ids are shared across distributions, so
+  # listing it would hint at the withheld image's open findings; the count goes to stderr). provenance.created in UTC.
   python3 -I -c 'import json, re, sys
 from datetime import datetime, timezone
 s = json.load(open(sys.argv[1])); refs = set(sys.argv[2].split(",")); cur = json.load(open(sys.argv[3]))
 now = {i["ref"]: {(f["source"], f["id"]) for f in i["findings"]} for i in cur["images"]}
+held = {x for i in cur["images"] if re.search(sys.argv[4], i["ref"]) for f in i["findings"] for x in [f["id"], *f.get("cves", [])]}
 s["images"] = [dict(i, findings=[f for f in i["findings"] if (f["source"], f["id"]) not in now.get(i["ref"], set())])
                for i in s["images"] if i["ref"] in refs and i["ref"] in now]
+for i in s["images"]:
+    keep = [f for f in i["findings"] if not ({f["id"], *f.get("cves", [])} & held)]
+    n = len(i["findings"])
+    print("before.json %s: %d fixed, %d not listed (still open in a withheld image)" % (i["ref"], n, n - len(keep)), file=sys.stderr)
+    i["findings"] = keep
 for i in s["images"]:
     m = re.fullmatch(r"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(\.\d+)?([+-]\d\d:\d\d)", (i.get("provenance") or {}).get("created") or "")
     if m:
         t = datetime.fromisoformat(m.group(1) + m.group(3)).astimezone(timezone.utc)
         i["provenance"]["created"] = t.strftime("%Y-%m-%dT%H:%M:%S") + (m.group(2) or "") + "Z"
-json.dump(s, sys.stdout, sort_keys=True, indent=1); print()' "$BEFORE_SCAN" "$BEFORE_REFS" "$w/scan.json" > "$p/before.json"
+json.dump(s, sys.stdout, sort_keys=True, indent=1); print()' "$BEFORE_SCAN" "$BEFORE_REFS" "$w/scan.json" "$WITHHOLD_REF" > "$p/before.json"
 fi
 shopt -s nullglob; xzs=("$p"/feeds/*.xz); shopt -u nullglob
 [ "${#xzs[@]}" = "$(wc -w <<<"$files")" ] || { echo "feed copies: ${#xzs[@]} of $(wc -w <<<"$files")" >&2; exit 2; }

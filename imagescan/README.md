@@ -142,7 +142,8 @@ the `-o` target) as the event-stream presence control and requires exactly that 
 into scratch dirs, every inventory except the withheld upstream images (by default the in-use postfiatd, Prometheus
 and Alertmanager images, whose open fixable advisories this module reports but does not remediate), containers, scan time, `feeds.json` + xz copies
 of the pinned feed files, `withheld.json` (counts + `findings_sha256` only) and an optional before-scan reduced to the
-remediated refs and to the findings the remediation removed (so its `fixed ... N of N` counts only those). It never copies the accept file (it names the withheld findings). `drill/fresh-clone.sh SHA` clones
+remediated refs and to the findings the remediation removed (so its `fixed ... N of N` counts only those),
+less any fixed ID still open in a withheld image (CVE ids are shared across distributions; the count is logged). It never copies the accept file (it names the withheld findings). `drill/fresh-clone.sh SHA` clones
 the public repo at SHA and rebuilds each committed public report offline from that bundle (feed sha256 checked
 against `feeds.json`), comparing with `cmp`.
 
