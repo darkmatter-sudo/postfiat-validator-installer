@@ -40,6 +40,7 @@ rule_files:
   - /etc/pft-alerts/budget.rules.yml      # ../budget (a pft-* unit's measured memory peak or 30-day projection at its MemoryMax; stale sampler/report)
   - /etc/pft-alerts/valwatch.rules.yml    # ../valwatch (a UNL validator silent/late at a node, quorum margin thin or zero, stale collector, stream reconnecting)
   - /etc/pft-alerts/imagescan.rules.yml    # ../imagescan (fixable high/critical finding in an in-use image, image drift, expired accept, stale/failed scan or feed)
+  - /etc/pft-alerts/upstreamwatch.rules.yml # ../upstreamwatch (feed local_stale/fetch_failing pages; upstream_quiet + release available digest-only; stale/failing collector)
   - /etc/pft-slo/*.rules.yml    # ../slo (availability SLO + burn-rate alerts); run-stack.sh mounts it
 alerting:
   alertmanagers:
