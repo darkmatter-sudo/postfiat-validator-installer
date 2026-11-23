@@ -29,6 +29,8 @@ sudo -n chown -R "$(id -u):$(id -g)" "$w/b"
 # shellcheck disable=SC2024
 sudo -n cat "$CACHE/last-scan.json" > "$w/scan.json"
 p="$w/pub"; mkdir -p "$p/inv" "$p/feeds"
+# git keeps no empty directory: a bundle whose every image is withheld still needs inv/ after a clone
+: > "$p/inv/.keep"
 python3 -I "$LIB" withhold --scan "$w/scan.json" --ref "$WITHHOLD_REF" > "$p/withheld.json"
 utc_created() { # the inventory with provenance.created as the same instant in UTC (locally built images carry the
   # builder's local offset; scan and render never read the field)
