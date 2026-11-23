@@ -646,6 +646,26 @@ def test_shell_bundle_report_reproduces(tmp_path, exec_dir):
     assert a.returncode == 0 and a.stdout == c.stdout and "GO-0000-0004" not in a.stdout
 
 
+def test_shell_report_bundle_with_every_image_withheld(tmp_path, exec_dir):
+    # a sentry whose only image is the withheld upstream one: the public bundle has no inventory at all, and the
+    # report must still rebuild (withheld counts + commitment, no drift for the container running it)
+    env, _tf, cache = shell_env(tmp_path, [("up/stream:1", "c" * 64, ubuntu_image())], exec_dir)
+    b = tmp_path / "bundle"
+    r = run(["scan", "--no-fetch", "--bundle", str(b)], env)
+    assert r.returncode == 1, r.stdout + r.stderr  # in-use fixable high (USN-0000-1)
+    host = json.loads((cache / "last-scan.json").read_text())
+    (b / "withheld.json").write_text(json.dumps(L.withhold(host, r"^up/")))
+    for f in (b / "inv").iterdir():
+        f.unlink()
+    for f in ("vulndb.zip", "debian-tracker.json", "oci.com.ubuntu.noble.usn.oval.xml.bz2"):
+        (b / "feeds" / f).write_bytes((cache / "feeds" / f).read_bytes())
+    a = run(["report", "--bundle", str(b), "--public", "--withheld", str(b / "withheld.json")],
+            dict(env, PFT_IS_DOCKER="/nonexistent"))
+    assert a.returncode == 1, a.stdout + a.stderr  # same verdict as the host: the withheld image still alerts
+    assert "WITHHELD" in a.stdout and "DRIFT" not in a.stdout and "USN-0000-1" not in a.stdout
+    assert host["images"][0]["findings_sha256"] in a.stdout and "RESULT: 1 images (1 in use)" in a.stdout
+
+
 def test_validate_rejects_foreign_samples(tmp_path, exec_dir):
     env, _tf, _ = shell_env(tmp_path, [("go:1", "2" * 64, go_only_image())], exec_dir)
     bad = tmp_path / "bad.prom"

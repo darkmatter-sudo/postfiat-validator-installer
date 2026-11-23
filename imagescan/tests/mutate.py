@@ -39,6 +39,8 @@ MUTANTS = [
      'if ! ts="$(check_feed "$kind" "$tmp/$file" "$lm")"; then', 'ts="$(now)"; if false; then'),
     ("S09", "sh", "scan error exits 0", "printf 'RESULT: ERROR - %s: up 0 -> exit 2\\n' \"$1\"\n    die \"$1\"",
      "printf 'RESULT: ERROR - %s: up 0 -> exit 2\\n' \"$1\"\n    exit 0"),
+    ("S10", "sh", "report: unmatched inventory glob passed as a literal path (every image withheld)",
+     '  shopt -s nullglob; invs=("$b"/inv/*.json); shopt -u nullglob\n', '  invs=("$b"/inv/*.json)\n'),
     ("L01", "lib", "feed sha256 pin ignored", 'if got != m["sha256"]:', "if False:"),
     ("L02", "lib", "feed fetch age ignored", "if age > max_age_days * 86400:", "if False:"),
     ("L03", "lib", "feed own-timestamp age ignored", "if now - ts > max_content_age_days * 86400:", "if False:"),

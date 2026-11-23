@@ -1003,7 +1003,7 @@ def main(argv=None):
     t.add_argument("kind")
     t.add_argument("path")
     s = sub.add_parser("scan")
-    s.add_argument("--inventory", nargs="+", required=True)
+    s.add_argument("--inventory", nargs="*", default=[])  # none: every image of the host is withheld
     s.add_argument("--containers")
     s.add_argument("--feeds", required=True)
     s.add_argument("--now", type=int, required=True)

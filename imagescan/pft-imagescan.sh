@@ -267,9 +267,12 @@ scan() {
   if [ "$nofetch" = 0 ]; then fetchmsg="$(fetch)" || fetchmsg="FAILED: $fetchmsg"; fi
   printf 'pft-imagescan scan - %s  host=%s  v%s\nfetch: %s\n' "$(date -u -d "@$t0" +%FT%TZ)" "$HOST_LABEL" "$VERSION" "$fetchmsg"
   why="$(inventory "$w")" || fail "inventory: $why"
-  local accept=()
+  local accept=() invs=()
   [ -f "$ACCEPT_FILE" ] && accept=(--accept "$ACCEPT_FILE")
-  python3 -I "$LIB" scan --inventory "$w"/inv/*.json --containers "$w/containers.json" --feeds "$CACHE_DIR/feeds" \
+  # a host without images (or a public bundle whose every image is withheld) has no inventory: an unmatched glob
+  # would reach the helper as a literal path
+  shopt -s nullglob; invs=("$w"/inv/*.json); shopt -u nullglob
+  python3 -I "$LIB" scan --inventory "${invs[@]}" --containers "$w/containers.json" --feeds "$CACHE_DIR/feeds" \
     --now "$t0" --max-age-days "$MAX_FEED_AGE_DAYS" --max-content-age-days "$MAX_CONTENT_AGE_DAYS" "${accept[@]}" \
     > "$w/scan.json" 2> "$w/err" || fail "$(head -1 "$w/err")"
   python3 -I "$LIB" render --scan "$w/scan.json"
@@ -281,7 +284,7 @@ scan() {
   cp -f "$w/scan.json" "$CACHE_DIR/last-scan.json.tmp" && mv -f "$CACHE_DIR/last-scan.json.tmp" "$CACHE_DIR/last-scan.json"
   if [ -n "$bundle" ]; then
     mkdir -p "$bundle/inv" "$bundle/feeds" || fail "cannot create bundle $bundle"
-    if ! { cp -f "$w"/inv/*.json "$bundle/inv/" && cp -f "$w/containers.json" "$bundle/" && echo "$t0" > "$bundle/now" \
+    if ! { { [ "${#invs[@]}" = 0 ] || cp -f "${invs[@]}" "$bundle/inv/"; } && cp -f "$w/containers.json" "$bundle/" && echo "$t0" > "$bundle/now" \
            && cp -f "$CACHE_DIR/feeds/feeds.json" "$bundle/feeds/"; }; then fail "bundle copy failed"; fi
     [ -f "$ACCEPT_FILE" ] && cp -f "$ACCEPT_FILE" "$bundle/accept"
     printf 'bundle: %s (inventories, containers, feeds.json, now; feed files stay in %s/feeds)\n' "$bundle" "$CACHE_DIR"
@@ -291,7 +294,7 @@ scan() {
 
 # report --bundle DIR [--public] [--before SCAN] [--withheld FILE]: offline, from saved inputs only
 report() {
-  local b="" pub=() before=() wh=() w acc=() max_age="$MAX_FEED_AGE_DAYS" content="$MAX_CONTENT_AGE_DAYS"
+  local b="" pub=() before=() wh=() w acc=() invs=() max_age="$MAX_FEED_AGE_DAYS" content="$MAX_CONTENT_AGE_DAYS"
   while [ $# -gt 0 ]; do
     case "$1" in
       --bundle) b="${2:?}"; shift ;;
@@ -304,10 +307,11 @@ report() {
   done
   if ! { [ -d "$b/inv" ] && [ -s "$b/now" ] && [ -s "$b/feeds/feeds.json" ]; }; then die "not a bundle: $b"; fi
   [ -f "$b/accept" ] && acc=(--accept "$b/accept")
+  shopt -s nullglob; invs=("$b"/inv/*.json); shopt -u nullglob
   w="$(mktemp -d)" || die "cannot create a temp dir"
   # shellcheck disable=SC2064
   trap "rm -rf '$w'" EXIT
-  python3 -I "$LIB" scan --inventory "$b"/inv/*.json --containers "$b/containers.json" --feeds "$b/feeds" \
+  python3 -I "$LIB" scan --inventory "${invs[@]}" --containers "$b/containers.json" --feeds "$b/feeds" \
     --now "$(cat "$b/now")" --max-age-days "$max_age" --max-content-age-days "$content" "${acc[@]}" \
     > "$w/scan.json" || exit 2
   python3 -I "$LIB" render --scan "$w/scan.json" "${pub[@]}" "${before[@]}" "${wh[@]}"

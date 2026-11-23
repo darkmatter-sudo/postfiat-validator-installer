@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # fresh-clone: anonymous public clone of this repo at a commit, then every offline check of imagescan/
-# (task_76248c8a4b04f05417f1bd7088735a54): sha256 of the key files against what logs/15 recorded as installed on both
+# (task_76248c8a4b04f05417f1bd7088735a54): sha256 of the key files against what logs/17 recorded as installed on both
 # hosts, shellcheck, ruff (from the repo root and from imagescan/), the test suite, promtool check + test, and per
 # host the offline public report rebuilt from the committed bundle (reports/<host>/: inventories minus the withheld
 # upstream image, containers, scan time, feeds.json + xz feed copies, withheld.json, before.json) compared with cmp
@@ -22,16 +22,16 @@ must "env -u GH_TOKEN -u GITHUB_TOKEN GIT_TERMINAL_PROMPT=0 git -c credential.he
 cd repo || exit 3
 must "git checkout -q $SHA && git rev-parse HEAD"
 must "git status --short | wc -l"
-U=imagescan/logs/15-upgrade.log
+U=imagescan/logs/17-upgrade.log
 K="imagescan/pft-imagescan.sh imagescan/imagescan_lib.py imagescan/systemd/pft-imagescan.service imagescan/systemd/pft-imagescan.timer"
-echo "== key files vs the files installed on both hosts (logs/15: the upgrade to the submitted code)"
+echo "== key files vs the files installed on both hosts (logs/17: the upgrade to the submitted code)"
 must "sha256sum $K | cut -c1-64 > $W/now.txt && cat $W/now.txt"
-# logs/15 step 3 prints 12 hashes: repo (4), validator installed (4), sentry installed (4)
+# logs/17 step 3 prints 12 hashes: repo (4), validator installed (4), sentry installed (4)
 must "sed -n '/^\\\$ sha256sum imagescan\\/pft-imagescan.sh imagescan\\/imagescan_lib.py imagescan\\/systemd\\/pft-imagescan.service/,/^  (exit/p' $U | grep -oE '^  [0-9a-f]{64}$' | tr -d ' ' > $W/log.txt && wc -l < $W/log.txt"
 n=0
 for h in repo-at-install validator sentry; do
   n=$((n + 1))
-  must "sed -n '$(((n - 1) * 4 + 1)),$((n * 4))p' $W/log.txt > $W/$h.txt && [ -s $W/$h.txt ] && diff $W/$h.txt $W/now.txt && echo 'identical: 4/4 sha256 equal $h (logs/15)'"
+  must "sed -n '$(((n - 1) * 4 + 1)),$((n * 4))p' $W/log.txt > $W/$h.txt && [ -s $W/$h.txt ] && diff $W/$h.txt $W/now.txt && echo 'identical: 4/4 sha256 equal $h (logs/17)'"
 done
 echo "== static checks"
 must "shellcheck imagescan/pft-imagescan.sh imagescan/install.sh imagescan/drill/*.sh"
@@ -47,7 +47,7 @@ for h in validator sentry; do
   R=imagescan/reports/$h; B="$W/bundle-$h"
   must "cp -r $R $B && rm -f $B/report-public.txt && for f in $B/feeds/*.xz; do xz -d \"\$f\" || exit 1; done && ls $B/feeds"
   must "python3 -I -c 'import hashlib, json, sys, os
-d = sys.argv[1]; m = json.load(open(os.path.join(d, \"feeds.json\"))); bad = 0
+d = sys.argv[1]; m = json.load(open(os.path.join(d, \"feeds.json\")))[\"feeds\"]; bad = 0
 for k, v in sorted(m.items()):
     got = hashlib.sha256(open(os.path.join(d, v[\"file\"]), \"rb\").read()).hexdigest(); ok = got == v[\"sha256\"]; bad += not ok
     print(k, v[\"file\"], got, \"ok\" if ok else \"MISMATCH\")

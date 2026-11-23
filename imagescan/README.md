@@ -139,9 +139,10 @@ runner saves the smallest local image once per host (to stdout, never `-o`: the 
 the `-o` target) as the event-stream presence control and requires exactly that one save per host.
 
 `drill/public-bundle.sh` (run on a host, tar on stdout) makes the publishable input of a report: a `--no-fetch` scan
-into scratch dirs, every inventory except the withheld upstream image, containers, scan time, `feeds.json` + xz copies
+into scratch dirs, every inventory except the withheld upstream images (by default the in-use postfiatd, Prometheus
+and Alertmanager images, whose open fixable advisories this module reports but does not remediate), containers, scan time, `feeds.json` + xz copies
 of the pinned feed files, `withheld.json` (counts + `findings_sha256` only) and an optional before-scan reduced to the
-remediated refs. It never copies the accept file (it names the withheld findings). `drill/fresh-clone.sh SHA` clones
+remediated refs and to the findings the remediation removed (so its `fixed ... N of N` counts only those). It never copies the accept file (it names the withheld findings). `drill/fresh-clone.sh SHA` clones
 the public repo at SHA and rebuilds each committed public report offline from that bundle (feed sha256 checked
 against `feeds.json`), comparing with `cmp`.
 
@@ -158,17 +159,18 @@ against `feeds.json`), comparing with `cmp`.
 
 ## Tests
 
-`cd imagescan && python3 -m pytest -q tests` (54 tests, no root, no network, no docker): synthetic OCI-layout save
+`cd imagescan && python3 -m pytest -q tests` (55 tests, no root, no network, no docker): synthetic OCI-layout save
 streams with gzip layers, whiteouts, opaque dirs, a symlinked os-release, an attestation blob and the canonical empty
 layer around **real Go build-info bytes** cut from `amtool` in `prom/alertmanager:v0.28.1`; dpkg / semver / Go
 version edge tables; Ubuntu OVAL, Debian tracker and OSV controls (installed == fixed, `"0"`, ESM-only, withdrawn,
 other release, main module); stale / future / changed feeds; accept-file rules; drift; public rendering; and the
 shell script against a recording docker stub (only read-only verbs, second run served from the inventory cache,
 failed scan -> up 0, an unwritable inventory cache named in the error, bundle report reproducible without docker, fetch refuses a truncated download), and the public rebuild of a bundle
-without the withheld image's inventory (no drift when the container runs the withheld image, drift when it runs another). Stubs go
+without the withheld image's inventory (no drift when the container runs the withheld image, drift when it runs another), also with every image
+withheld (an empty inventory set). Stubs go
 under `TEST_TMPDIR` (default `~/.cache`) because `/tmp` is `noexec` on the hardened hosts.
 
-`python3 -u tests/mutate.py` checks that the suite would notice a broken tool: it applies each of 38 one-line
+`python3 -u tests/mutate.py` checks that the suite would notice a broken tool: it applies each of 39 one-line
 mutants to a copy (a `docker pull` / `exec` / `run` / `create` inserted into the script, the feed pin and both age
 checks disabled, off-by-one version bounds in all three matchers, ESM or open CVEs counted fixable, accept-file prefix /
 expiry / 90-day rules dropped, medium, unfixable or not-in-use findings alerting, whiteouts and missing layers ignored,
