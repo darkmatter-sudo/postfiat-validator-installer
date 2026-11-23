@@ -1,0 +1,296 @@
+{
+ "collected_epoch": 1795405346,
+ "config": {
+  "backoff_seconds": 2.0,
+  "build_max_age_seconds": 3600,
+  "build_textfile": "/var/lib/pft-exporter/textfile/pft_upgradewatch_postfiatd-sentry.prom",
+  "container": "postfiatd-sentry",
+  "content_tolerance_seconds": 21600,
+  "debian_oval_base": "https://www.debian.org/security/oval",
+  "debian_tracker_url": "https://security-tracker.debian.org/tracker/data/json",
+  "feeds": "usn-host ubuntu-jammy ubuntu-noble debian go debian-oval-bookworm",
+  "fetch_max_age_hours": 50,
+  "foundation_rpc": "https://rpc.testnet.postfiat.org/",
+  "go_base": "https://vuln.go.dev",
+  "host": "sentry",
+  "http_timeout": 20,
+  "imagescan_cache": "/var/cache/pft-imagescan",
+  "quiet_age_hours": 72,
+  "registry_url": "",
+  "retries": 3,
+  "skew_max_seconds": 300,
+  "stale_grace_hours": 30,
+  "ubuntu_base": "https://security-metadata.canonical.com/oval",
+  "vulnscan_cache": "/var/cache/pft-vulnscan"
+ },
+ "feeds": [
+  {
+   "content_url": "",
+   "kind": "ubuntu-oval",
+   "local": "vulnscan",
+   "local_obs": {
+    "checked_epoch": 1795322343,
+    "content_epoch": 1795115492,
+    "error": "",
+    "etag": "\"1c6827-660a5e65d2bc0\"",
+    "fetched_epoch": 1795322343,
+    "recorded_sha256": "4d2e7ed048a0bf7d59ed85e43f3a27f8ac25067703ca96379e1ff519776b57f8",
+    "sha256": "4d2e7ed048a0bf7d59ed85e43f3a27f8ac25067703ca96379e1ff519776b57f8",
+    "source": "vulnscan"
+   },
+   "name": "usn-host",
+   "upstream": {
+    "attempts": [
+     304
+    ],
+    "conditional": true,
+    "error": "HTTP 304",
+    "headers": {
+     "date": "Mon, 23 Nov 2026 03:42:30 GMT",
+     "etag": "\"1c6827-660a5e65d2bc0\"",
+     "last-modified": "Thu, 19 Nov 2026 19:11:51 GMT"
+    },
+    "status": 304
+   },
+   "url": "https://security-metadata.canonical.com/oval/com.ubuntu.jammy.usn.oval.xml.bz2"
+  },
+  {
+   "content_url": "",
+   "kind": "ubuntu-oval",
+   "local": "imagescan",
+   "local_obs": {
+    "checked_epoch": 1795393565,
+    "content_epoch": 1795115492,
+    "error": "",
+    "etag": "",
+    "fetched_epoch": 1795393565,
+    "recorded_sha256": "31a6fe092e8e39a2f43bcf7d7a949f468cf60a110d4a2c7ebe675121cddce75d",
+    "sha256": "31a6fe092e8e39a2f43bcf7d7a949f468cf60a110d4a2c7ebe675121cddce75d",
+    "source": "imagescan"
+   },
+   "name": "ubuntu-jammy",
+   "upstream": {
+    "attempts": [
+     200
+    ],
+    "conditional": false,
+    "error": "",
+    "headers": {
+     "content-length": "1806921",
+     "content-type": "application/x-bzip2",
+     "date": "Mon, 23 Nov 2026 03:42:33 GMT",
+     "etag": "\"1b9249-660a5e62f6500\"",
+     "last-modified": "Thu, 19 Nov 2026 19:11:48 GMT"
+    },
+    "status": 200
+   },
+   "url": "https://security-metadata.canonical.com/oval/oci.com.ubuntu.jammy.usn.oval.xml.bz2"
+  },
+  {
+   "content_url": "",
+   "kind": "ubuntu-oval",
+   "local": "imagescan",
+   "local_obs": {
+    "checked_epoch": 1795393571,
+    "content_epoch": 1795115437,
+    "error": "",
+    "etag": "",
+    "fetched_epoch": 1795393571,
+    "recorded_sha256": "ff9e3119ed990aec21c954651acbce72f6d3fbfb45ac2545a2c760db1f3f3771",
+    "sha256": "ff9e3119ed990aec21c954651acbce72f6d3fbfb45ac2545a2c760db1f3f3771",
+    "source": "imagescan"
+   },
+   "name": "ubuntu-noble",
+   "upstream": {
+    "attempts": [
+     200
+    ],
+    "conditional": false,
+    "error": "",
+    "headers": {
+     "content-length": "1722350",
+     "content-type": "application/x-bzip2",
+     "date": "Mon, 23 Nov 2026 03:42:37 GMT",
+     "etag": "\"1a47ee-660a5e2ab2040\"",
+     "last-modified": "Thu, 19 Nov 2026 19:10:49 GMT"
+    },
+    "status": 200
+   },
+   "url": "https://security-metadata.canonical.com/oval/oci.com.ubuntu.noble.usn.oval.xml.bz2"
+  },
+  {
+   "content_url": "",
+   "kind": "debian-tracker",
+   "local": "imagescan",
+   "local_obs": {
+    "checked_epoch": 1795393577,
+    "content_epoch": 1795389059,
+    "error": "",
+    "etag": "",
+    "fetched_epoch": 1795393577,
+    "recorded_sha256": "16e21c0199b6fda6de6ad6afbdc002d50423eb8bbc3d3b164769ea626d2695f9",
+    "sha256": "16e21c0199b6fda6de6ad6afbdc002d50423eb8bbc3d3b164769ea626d2695f9",
+    "source": "imagescan"
+   },
+   "name": "debian",
+   "upstream": {
+    "attempts": [
+     200
+    ],
+    "conditional": false,
+    "error": "",
+    "headers": {
+     "content-length": "92317045",
+     "content-type": "application/json",
+     "date": "Mon, 23 Nov 2026 03:42:38 GMT",
+     "last-modified": "Mon, 23 Nov 2026 02:26:48 GMT"
+    },
+    "status": 200
+   },
+   "url": "https://security-tracker.debian.org/tracker/data/json"
+  },
+  {
+   "content_url": "https://vuln.go.dev/index/db.json",
+   "kind": "go-osv",
+   "local": "imagescan",
+   "local_obs": {
+    "checked_epoch": 1795393596,
+    "content_epoch": 1794365471,
+    "error": "",
+    "etag": "",
+    "fetched_epoch": 1795393596,
+    "recorded_sha256": "714ff02d9533ec6ca269e565b61b27cbd959aa0af89d51f318261322e875861c",
+    "sha256": "714ff02d9533ec6ca269e565b61b27cbd959aa0af89d51f318261322e875861c",
+    "source": "imagescan"
+   },
+   "name": "go",
+   "upstream": {
+    "attempts": [
+     200
+    ],
+    "conditional": false,
+    "content": {
+     "attempts": [
+      200
+     ],
+     "body": "{\"modified\":\"2026-11-11T02:51:11Z\"}",
+     "error": "",
+     "headers": {
+      "content-length": "35",
+      "content-type": "application/json",
+      "date": "Mon, 23 Nov 2026 03:42:39 GMT",
+      "etag": "\"18d5e94f8f07377ad8098fd3fe8ecb48\"",
+      "last-modified": "Sun, 22 Nov 2026 23:16:08 GMT"
+     },
+     "status": 200
+    },
+    "error": "",
+    "headers": {
+     "content-length": "3599175",
+     "content-type": "application/zip",
+     "date": "Mon, 23 Nov 2026 03:10:48 GMT",
+     "etag": "\"855c49c13011d8149630eecf6c813fb9\"",
+     "last-modified": "Sun, 22 Nov 2026 23:16:09 GMT"
+    },
+    "status": 200
+   },
+   "url": "https://vuln.go.dev/vulndb.zip"
+  },
+  {
+   "content_url": "",
+   "kind": "debian-oval",
+   "local": "",
+   "local_obs": {
+    "error": "",
+    "source": ""
+   },
+   "name": "debian-oval-bookworm",
+   "upstream": {
+    "attempts": [
+     200
+    ],
+    "conditional": false,
+    "error": "",
+    "headers": {
+     "content-length": "10336757",
+     "content-type": "application/x-bzip2",
+     "date": "Mon, 23 Nov 2026 03:42:40 GMT",
+     "etag": "\"9db9f5-660e5d01af419\"",
+     "last-modified": "Sun, 22 Nov 2026 23:26:55 GMT"
+    },
+    "status": 200
+   },
+   "url": "https://www.debian.org/security/oval/oval-definitions-bookworm.xml.bz2"
+  }
+ ],
+ "finished_epoch": 1795405364,
+ "host": "sentry",
+ "release": {
+  "container": "postfiatd-sentry",
+  "error": "",
+  "foundation": {
+   "attempts": [
+    200
+   ],
+   "error": "",
+   "version": "1.0.9"
+  },
+  "image_id": "sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e",
+  "ref": "agtipft/postfiatd:testnet-light-latest",
+  "registry": "registry-1.docker.io",
+  "registry_obs": {
+   "steps": [
+    {
+     "attempts": [
+      401
+     ],
+     "error": "HTTP 401",
+     "headers": {
+      "content-length": "160",
+      "content-type": "application/json",
+      "date": "Mon, 23 Nov 2026 03:42:42 GMT",
+      "www-authenticate": "Bearer realm=\"https://auth.docker.io/token\",service=\"registry.docker.io\",scope=\"repository:agtipft/postfiatd:pull\""
+     },
+     "status": 401,
+     "what": "manifest"
+    },
+    {
+     "attempts": [
+      200
+     ],
+     "error": "",
+     "headers": {},
+     "status": 200,
+     "what": "token"
+    },
+    {
+     "attempts": [
+      200
+     ],
+     "error": "",
+     "headers": {
+      "content-length": "7644",
+      "content-type": "application/vnd.docker.distribution.manifest.v2+json",
+      "date": "Mon, 23 Nov 2026 03:42:43 GMT",
+      "docker-content-digest": "sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e",
+      "etag": "\"sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e\""
+     },
+     "status": 200,
+     "what": "manifest"
+    }
+   ],
+   "url": "https://registry-1.docker.io/v2/agtipft/postfiatd/manifests/testnet-light-latest"
+  },
+  "repo": "agtipft/postfiatd",
+  "repo_digests": [
+   "agtipft/postfiatd@sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e"
+  ],
+  "running_build": {
+   "error": "",
+   "mtime": 1795405231,
+   "version": "1.0.9"
+  },
+  "tag": "testnet-light-latest"
+ },
+ "schema": "upstreamwatch/1"
+}

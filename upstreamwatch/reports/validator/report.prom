@@ -1,0 +1,99 @@
+# HELP pft_upstreamwatch_up 1 if the last pft-upstreamwatch run completed
+# TYPE pft_upstreamwatch_up gauge
+pft_upstreamwatch_up{host="validator"} 1
+# HELP pft_upstreamwatch_last_run_timestamp_seconds when the observations were collected
+# TYPE pft_upstreamwatch_last_run_timestamp_seconds gauge
+pft_upstreamwatch_last_run_timestamp_seconds{host="validator"} 1795405330
+# HELP pft_upstreamwatch_feed_state 1 for the feed's current state (ok upstream_quiet local_stale fetch_failing unreachable)
+# TYPE pft_upstreamwatch_feed_state gauge
+pft_upstreamwatch_feed_state{host="validator",feed="usn-host",state="ok"} 0
+pft_upstreamwatch_feed_state{host="validator",feed="usn-host",state="upstream_quiet"} 1
+pft_upstreamwatch_feed_state{host="validator",feed="usn-host",state="local_stale"} 0
+pft_upstreamwatch_feed_state{host="validator",feed="usn-host",state="fetch_failing"} 0
+pft_upstreamwatch_feed_state{host="validator",feed="usn-host",state="unreachable"} 0
+pft_upstreamwatch_feed_state{host="validator",feed="ubuntu-jammy",state="ok"} 0
+pft_upstreamwatch_feed_state{host="validator",feed="ubuntu-jammy",state="upstream_quiet"} 1
+pft_upstreamwatch_feed_state{host="validator",feed="ubuntu-jammy",state="local_stale"} 0
+pft_upstreamwatch_feed_state{host="validator",feed="ubuntu-jammy",state="fetch_failing"} 0
+pft_upstreamwatch_feed_state{host="validator",feed="ubuntu-jammy",state="unreachable"} 0
+pft_upstreamwatch_feed_state{host="validator",feed="ubuntu-noble",state="ok"} 0
+pft_upstreamwatch_feed_state{host="validator",feed="ubuntu-noble",state="upstream_quiet"} 1
+pft_upstreamwatch_feed_state{host="validator",feed="ubuntu-noble",state="local_stale"} 0
+pft_upstreamwatch_feed_state{host="validator",feed="ubuntu-noble",state="fetch_failing"} 0
+pft_upstreamwatch_feed_state{host="validator",feed="ubuntu-noble",state="unreachable"} 0
+pft_upstreamwatch_feed_state{host="validator",feed="debian",state="ok"} 1
+pft_upstreamwatch_feed_state{host="validator",feed="debian",state="upstream_quiet"} 0
+pft_upstreamwatch_feed_state{host="validator",feed="debian",state="local_stale"} 0
+pft_upstreamwatch_feed_state{host="validator",feed="debian",state="fetch_failing"} 0
+pft_upstreamwatch_feed_state{host="validator",feed="debian",state="unreachable"} 0
+pft_upstreamwatch_feed_state{host="validator",feed="go",state="ok"} 0
+pft_upstreamwatch_feed_state{host="validator",feed="go",state="upstream_quiet"} 1
+pft_upstreamwatch_feed_state{host="validator",feed="go",state="local_stale"} 0
+pft_upstreamwatch_feed_state{host="validator",feed="go",state="fetch_failing"} 0
+pft_upstreamwatch_feed_state{host="validator",feed="go",state="unreachable"} 0
+pft_upstreamwatch_feed_state{host="validator",feed="debian-oval-bookworm",state="ok"} 1
+pft_upstreamwatch_feed_state{host="validator",feed="debian-oval-bookworm",state="upstream_quiet"} 0
+pft_upstreamwatch_feed_state{host="validator",feed="debian-oval-bookworm",state="local_stale"} 0
+pft_upstreamwatch_feed_state{host="validator",feed="debian-oval-bookworm",state="fetch_failing"} 0
+pft_upstreamwatch_feed_state{host="validator",feed="debian-oval-bookworm",state="unreachable"} 0
+# HELP pft_upstreamwatch_feed_fetch_age_seconds seconds since the local fetcher last downloaded/revalidated
+# TYPE pft_upstreamwatch_feed_fetch_age_seconds gauge
+pft_upstreamwatch_feed_fetch_age_seconds{host="validator",feed="usn-host"} 83009
+pft_upstreamwatch_feed_fetch_age_seconds{host="validator",feed="ubuntu-jammy"} 11722
+pft_upstreamwatch_feed_fetch_age_seconds{host="validator",feed="ubuntu-noble"} 11717
+pft_upstreamwatch_feed_fetch_age_seconds{host="validator",feed="debian"} 11712
+pft_upstreamwatch_feed_fetch_age_seconds{host="validator",feed="go"} 11703
+# HELP pft_upstreamwatch_feed_content_age_seconds age of the newest content we hold (upstream Date clock)
+# TYPE pft_upstreamwatch_feed_content_age_seconds gauge
+pft_upstreamwatch_feed_content_age_seconds{host="validator",feed="usn-host"} 289841
+pft_upstreamwatch_feed_content_age_seconds{host="validator",feed="ubuntu-jammy"} 289844
+pft_upstreamwatch_feed_content_age_seconds{host="validator",feed="ubuntu-noble"} 289902
+pft_upstreamwatch_feed_content_age_seconds{host="validator",feed="debian"} 16281
+pft_upstreamwatch_feed_content_age_seconds{host="validator",feed="go"} 1037977
+pft_upstreamwatch_feed_content_age_seconds{host="validator",feed="debian-oval-bookworm"} 15326
+# HELP pft_upstreamwatch_feed_upstream_age_seconds upstream Date minus upstream Last-Modified
+# TYPE pft_upstreamwatch_feed_upstream_age_seconds gauge
+pft_upstreamwatch_feed_upstream_age_seconds{host="validator",feed="usn-host"} 289822
+pft_upstreamwatch_feed_upstream_age_seconds{host="validator",feed="ubuntu-jammy"} 289828
+pft_upstreamwatch_feed_upstream_age_seconds{host="validator",feed="ubuntu-noble"} 289890
+pft_upstreamwatch_feed_upstream_age_seconds{host="validator",feed="debian"} 4532
+pft_upstreamwatch_feed_upstream_age_seconds{host="validator",feed="go"} 14079
+pft_upstreamwatch_feed_upstream_age_seconds{host="validator",feed="debian-oval-bookworm"} 15326
+# HELP pft_upstreamwatch_feed_upstream_newer_seconds upstream content clock minus ours
+# TYPE pft_upstreamwatch_feed_upstream_newer_seconds gauge
+pft_upstreamwatch_feed_upstream_newer_seconds{host="validator",feed="ubuntu-jammy"} 16
+pft_upstreamwatch_feed_upstream_newer_seconds{host="validator",feed="ubuntu-noble"} 12
+pft_upstreamwatch_feed_upstream_newer_seconds{host="validator",feed="debian"} 11749
+pft_upstreamwatch_feed_upstream_newer_seconds{host="validator",feed="go"} 0
+# HELP pft_upstreamwatch_feed_clock_skew_seconds local clock minus upstream Date header
+# TYPE pft_upstreamwatch_feed_clock_skew_seconds gauge
+pft_upstreamwatch_feed_clock_skew_seconds{host="validator",feed="usn-host"} -3
+pft_upstreamwatch_feed_clock_skew_seconds{host="validator",feed="ubuntu-jammy"} -6
+pft_upstreamwatch_feed_clock_skew_seconds{host="validator",feed="ubuntu-noble"} -9
+pft_upstreamwatch_feed_clock_skew_seconds{host="validator",feed="debian"} -10
+pft_upstreamwatch_feed_clock_skew_seconds{host="validator",feed="go"} 1882
+pft_upstreamwatch_feed_clock_skew_seconds{host="validator",feed="debian-oval-bookworm"} -11
+# HELP pft_upstreamwatch_feed_probe_attempts HTTP attempts this run (HEAD + content GET, retries included)
+# TYPE pft_upstreamwatch_feed_probe_attempts gauge
+pft_upstreamwatch_feed_probe_attempts{host="validator",feed="usn-host"} 1
+pft_upstreamwatch_feed_probe_attempts{host="validator",feed="ubuntu-jammy"} 1
+pft_upstreamwatch_feed_probe_attempts{host="validator",feed="ubuntu-noble"} 1
+pft_upstreamwatch_feed_probe_attempts{host="validator",feed="debian"} 1
+pft_upstreamwatch_feed_probe_attempts{host="validator",feed="go"} 2
+pft_upstreamwatch_feed_probe_attempts{host="validator",feed="debian-oval-bookworm"} 1
+# HELP pft_upstreamwatch_release_state 1 for the release watch state (current behind unknown)
+# TYPE pft_upstreamwatch_release_state gauge
+pft_upstreamwatch_release_state{host="validator",container="postfiatd",state="current"} 1
+pft_upstreamwatch_release_state{host="validator",container="postfiatd",state="behind"} 0
+pft_upstreamwatch_release_state{host="validator",container="postfiatd",state="unknown"} 0
+# HELP pft_upstreamwatch_release_check 1 for each check's state (digest: registry tag vs running image; version: foundation build_version vs this node)
+# TYPE pft_upstreamwatch_release_check gauge
+pft_upstreamwatch_release_check{host="validator",container="postfiatd",check="digest",state="current"} 1
+pft_upstreamwatch_release_check{host="validator",container="postfiatd",check="digest",state="behind"} 0
+pft_upstreamwatch_release_check{host="validator",container="postfiatd",check="digest",state="unknown"} 0
+pft_upstreamwatch_release_check{host="validator",container="postfiatd",check="version",state="current"} 1
+pft_upstreamwatch_release_check{host="validator",container="postfiatd",check="version",state="behind"} 0
+pft_upstreamwatch_release_check{host="validator",container="postfiatd",check="version",state="unknown"} 0
+# HELP pft_upstreamwatch_release_info running and foundation build_version
+# TYPE pft_upstreamwatch_release_info gauge
+pft_upstreamwatch_release_info{host="validator",container="postfiatd",running="1.0.9",foundation="1.0.9"} 1
