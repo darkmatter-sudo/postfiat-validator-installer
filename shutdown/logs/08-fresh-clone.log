@@ -1,0 +1,45 @@
+# 2026-11-24T17:35:16Z fresh anonymous clone of https://github.com/darkmatter-sudo/postfiat-validator-installer at 5b33daf2214470d35eaec26bb64eab50fdf6f011 (scratch dir <W>; /tmp is noexec on this host)
+# Ubuntu 22.04.5 LTS | version: 0.8.0 | Python 3.10.12 | ruff 0.17.1 | bash 5.1.16(1)-release
+$ env -u GH_TOKEN -u GITHUB_TOKEN GIT_TERMINAL_PROMPT=0 git -c credential.helper= clone -q https://github.com/darkmatter-sudo/postfiat-validator-installer.git c && cd c && git checkout -q 5b33daf2214470d35eaec26bb64eab50fdf6f011 && git rev-parse HEAD && git status --short | wc -l
+5b33daf2214470d35eaec26bb64eab50fdf6f011
+0
+rc=0
+$ cd shutdown && sha256sum -c SHA256SUMS
+pft-shutdown.sh: OK
+README.md: OK
+drill/live-run.sh: OK
+tests/run-tests.sh: OK
+tests/apply-tests.inc.sh: OK
+tests/stub_docker.py: OK
+logs/04-measure-n3.log: OK
+logs/06-apply-cycle.log: OK
+logs/07-kill-drill.log: OK
+logs/07b-post-run07-cleanup.log: OK
+.gitignore: OK
+rc=0
+$ for l in 04-measure-n3 06-apply-cycle 07-kill-drill; do f=shutdown/logs/$l.log; c=$(head -1 $f | grep -o 'repo HEAD [0-9a-f]*' | cut -d' ' -f3); h=$(git show $c:shutdown/pft-shutdown.sh | sha256sum | cut -c1-64); n=$(grep -cx "  $h" $f); [ "$n" = 3 ] || { echo "MISMATCH $l"; exit 1; }; echo "$l: run copies (repo + 2 hosts) = pft-shutdown.sh at $c sha256 $h"; done; git diff --stat 78fc026826cb2260977c93a6517ce6e64b883c00 5b33daf2214470d35eaec26bb64eab50fdf6f011 -- shutdown/pft-shutdown.sh | tail -1
+04-measure-n3: run copies (repo + 2 hosts) = pft-shutdown.sh at 78fc026826cb2260977c93a6517ce6e64b883c00 sha256 70b60e778e94afadf3def737625fa0b3352373fbf14e4cfb920eb95857800908
+06-apply-cycle: run copies (repo + 2 hosts) = pft-shutdown.sh at f3974c8b5b1f0237b0581d4b5d1e189bc2083eae sha256 cb7b186afcfcaf201cfb36305251a8b405d518403acef61d1e4a0dfc75bc2ffd
+07-kill-drill: run copies (repo + 2 hosts) = pft-shutdown.sh at 9d3cdcd2b05ff6a50f970e95d1af146fccad8ddb sha256 cb7b186afcfcaf201cfb36305251a8b405d518403acef61d1e4a0dfc75bc2ffd
+ 1 file changed, 291 insertions(+), 10 deletions(-)
+rc=0
+$ shellcheck shutdown/pft-shutdown.sh shutdown/drill/live-run.sh shutdown/tests/*.sh
+rc=0
+$ ruff check shutdown/tests/stub_docker.py && ruff format --check shutdown/tests/stub_docker.py
+All checks passed!
+1 file already formatted
+rc=0
+$ bash shutdown/tests/run-tests.sh </dev/null > ~/.cache/sdfresh-Lh4t/tests.out 2>&1; rc=$?; grep -c '^ok ' ~/.cache/sdfresh-Lh4t/tests.out; grep '^FAIL' ~/.cache/sdfresh-Lh4t/tests.out; tail -1 ~/.cache/sdfresh-Lh4t/tests.out; exit $rc
+170
+RESULT: 170 passed, 0 failed
+rc=0
+$ grep -h '^RESULT\|done 2026' shutdown/logs/0*.log | grep 'live run' 
+pft-shutdown live run 03 done 2026-11-24T12:33:35Z: 0 check(s) failed -> PASS
+pft-shutdown live run 06 done 2026-11-24T15:58:34Z: 0 check(s) failed -> PASS
+pft-shutdown live run 07 done 2026-11-24T17:29:34Z: 1 check(s) failed -> FAIL
+rc=0
+$ git status --short | wc -l
+0
+rc=0
+# end 2026-11-24T17:37:33Z fails=0
+FRESH PASS
