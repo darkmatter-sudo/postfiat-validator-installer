@@ -581,7 +581,7 @@ do_ack() { # UNTIL REASON: acknowledge the denials up to UNTIL (after a drill's 
 # the seccomp option. Canonical JSON: apply's gate requires it unchanged, so a lost flag rolls back.
 confine_sig() { # INSPECT0
   jq -cS '{image: .Config.Image, cmd: (.Config.Cmd // []), entrypoint: (.Config.Entrypoint // []),
-    user: (.Config.User // ""), env: (.Config.Env // [] | sort),
+    user: (.Config.User // ""), stop_timeout: (.Config.StopTimeout // null), env: (.Config.Env // [] | sort),
     cap_add: (.HostConfig.CapAdd // [] | map(ascii_upcase | sub("^CAP_"; "")) | sort),
     cap_drop: (.HostConfig.CapDrop // [] | map(ascii_upcase) | sort),
     read_only: (.HostConfig.ReadonlyRootfs // false), tmpfs: (.HostConfig.Tmpfs // {}),
@@ -603,6 +603,7 @@ run_args() { # INSPECT0 IMAGE_ENV_JSON SECCOMP(FILE|default)
   jq -r --argjson ienv "$2" --arg sc "$3" '
     "--name=\(.Name[1:])",
     "--restart=\(.HostConfig.RestartPolicy.Name)\(if .HostConfig.RestartPolicy.Name == "on-failure" then ":\(.HostConfig.RestartPolicy.MaximumRetryCount)" else "" end)",
+    (if (.Config.StopTimeout // null) != null then "--stop-timeout=\(.Config.StopTimeout)" else empty end),
     (if (.Config.User // "") != "" then "--user=\(.Config.User)" else empty end),
     "--log-driver=\(.HostConfig.LogConfig.Type)",
     ((.HostConfig.LogConfig.Config // {}) | to_entries[] | "--log-opt=\(.key)=\(.value)"),

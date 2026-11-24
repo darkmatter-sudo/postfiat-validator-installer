@@ -31,7 +31,7 @@ TAG="$(jq -r .Config.Image <<<"$I")"
   || { echo "$(ts) recreate: tag $TAG no longer points at the running image ${IMG:7:12} - refusing"; exit 2; }
 
 summary() { # INSPECT_JSON(.[0]) -> the config that must not change
-  jq -S -c '{Name, Image, Cmd: .Config.Cmd, Entrypoint: .Config.Entrypoint, User: .Config.User, Env: .Config.Env,
+  jq -S -c '{Name, Image, Cmd: .Config.Cmd, Entrypoint: .Config.Entrypoint, User: .Config.User, StopTimeout: .Config.StopTimeout, Env: .Config.Env,
     Mounts: [.Mounts[] | {Type, Name, Source, Destination, RW}] | sort_by(.Destination),
     Ports: .HostConfig.PortBindings, Restart: .HostConfig.RestartPolicy, Log: .HostConfig.LogConfig,
     Network: .HostConfig.NetworkMode, CapAdd: .HostConfig.CapAdd, CapDrop: .HostConfig.CapDrop,
@@ -53,6 +53,7 @@ args() { # INSPECT_JSON IMAGE_ENV_JSON -> one docker-run arg per line; profile f
   jq -r --argjson ienv "$2" '
     "--name=\(.Name[1:])",
     "--restart=\(.HostConfig.RestartPolicy.Name)\(if .HostConfig.RestartPolicy.Name == "on-failure" then ":\(.HostConfig.RestartPolicy.MaximumRetryCount)" else "" end)",
+    (if (.Config.StopTimeout // null) != null then "--stop-timeout=\(.Config.StopTimeout)" else empty end),
     (if (.Config.User // "") != "" then "--user=\(.Config.User)" else empty end),
     "--log-driver=\(.HostConfig.LogConfig.Type)",
     ((.HostConfig.LogConfig.Config // {}) | to_entries[] | "--log-opt=\(.key)=\(.value)"),

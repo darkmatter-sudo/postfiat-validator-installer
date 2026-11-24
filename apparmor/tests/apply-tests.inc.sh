@@ -103,6 +103,12 @@ grep -q -- '--publish=<redacted-ip>:2560:2559' <<<"$OUT" && ok "apply run: publi
 grep -q 'gate PASS - exercise done, DENIED since T0: 0' <<<"$OUT" && ok "apply run: gate exercised the node, 0 DENIED" || ko "apply run: gate line" "$OUT"
 grep -q 'exec postfiatd-sentry sh -c du -sb "$1/nudb" | cut -f1 sh /var/lib/postfiatd/db' "$A/d/calls" && grep -q 'exec postfiatd-sentry timeout 5 bash -c exec 3<>/dev/tcp/127.0.0.1/5005' "$A/d/calls" \
   && ok "apply run: gate ran the add-ons' read-only commands (retention du, egress /dev/tcp)" || ko "apply run: add-on exercise" "$(grep ' exec ' "$A/d/calls")"
+[ "$(cj postfiatd-sentry '.Config.StopTimeout // "unset"')" = unset ] && ! grep -q -- '--stop-timeout' "$A/d/calls" \
+  && ok "apply run: no StopTimeout before -> none added (control)" || ko "apply run: StopTimeout appeared" "$(cj postfiatd-sentry .Config.StopTimeout)"
+mk_apply run; jq '.Config.StopTimeout = 60' "$A/d/containers/postfiatd-sentry.json" > "$A/st.json" && mv "$A/st.json" "$A/d/containers/postfiatd-sentry.json"
+arun apply --profile-file "$A/profile" --yes
+[ "$RC" = 0 ] && [ "$(cj postfiatd-sentry .Config.StopTimeout)" = 60 ] && grep -q -- '--stop-timeout=60' "$A/d/calls" \
+  && ok "apply run: StopTimeout 60 carried into the re-created container (shutdown/ F3)" || ko "apply run: StopTimeout rc=$RC $(cj postfiatd-sentry .Config.StopTimeout)" "$OUT"
 [ "$(stf .phase)" = applied ] && [ "$(stf .kind)" = run ] && ok "apply run: state applied" || ko "apply run: state" "$(cat "$A"/root/var/lib/pft-apparmor/apply-*.json)"
 arun audit
 grep -qE '^\s*\[PASS\] container ' <<<"$OUT" && grep -qE '^\s*\[PASS\] recreate ' <<<"$OUT" && grep -qE '^\s*\[PASS\] mode ' <<<"$OUT" \

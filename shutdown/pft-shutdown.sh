@@ -7,6 +7,8 @@
 # Usage: pft-shutdown audit [--json] [--required SEC]
 #        pft-shutdown measure --yes [--timeout SEC] [--json]
 #        pft-shutdown kill-drill --yes [--json]
+#        pft-shutdown apply --yes [--required SEC]     (inside a pft-maint window)
+#        pft-shutdown rollback --yes                   (undo the last apply; inside a pft-maint window)
 #
 #  measure     ONE guarded clean stop of the local postfiatd container: `docker stop -t TIMEOUT` (default 120 s,
 #              far above any expected stop), wall time, container ExitCode/OOMKilled, the shutdown markers postfiatd
@@ -22,6 +24,22 @@
 #              clean / kill-drill: database errors after restart (reasons listed); 2 not back to full within
 #              RECOVER_TIMEOUT (container started); 4 refused; 64 error.
 #
+#  apply     sets the container's StopTimeout to REQUIRED (below: measured p100 x SAFETY_FACTOR) with ONE re-create.
+#            Refused (exit 4, nothing changed) without --yes, root, an active pft-maint window, a running full node,
+#            >= MIN_RUNS clean measured stops (or --required), when the image tag no longer names the running image,
+#            or while an earlier apply with another value is in place. Idempotent: StopTimeout already = REQUIRED ->
+#            "nothing to do", exit 0. Compose container: backs up .env (and an existing overlay) to STATE_DIR/backup,
+#            writes docker-compose.shutdown.yml (stop_grace_period REQUIREDs) + COMPOSE_FILE, validates it with
+#            `docker compose config`, then `docker compose up -d`. docker run container: stop, rename to
+#            NAME-preshutdown-<id>-apply (restart=no), `docker run` with the same configuration + --stop-timeout.
+#            Gate: re-created, StopTimeout = REQUIRED, every other setting unchanged (signature: image, cmd, env,
+#            mounts, ports, restart, log, network, caps, read-only, tmpfs, limits, AppArmor, security_opt incl. the
+#            stored seccomp profile), server_state full within RECOVER_TIMEOUT. Gate fail / error / INT -> automatic
+#            rollback. On PASS the stopped previous container is removed (volumes kept).
+#  rollback  the previous StopTimeout back (compose: .env + overlay from the backups, compose up; run: re-create with
+#            the previous value), same gate. Exit (apply/rollback): 0 PASS or nothing to do, 1 failed + rolled back,
+#            4 refused, 5 rollback failed, 6 interrupted (rolled back), 64 error.
+#
 #  audit   read-only. One line per check, PASS / FAIL / INFO, then RESULT. REQUIRED is the stop budget postfiatd
 #          needs: max(MIN_TIMEOUT, ceil(p100 * SAFETY_FACTOR)) where p100 is the slowest clean stop recorded by
 #          `measure` in STATE_DIR/measure-<container>.json; without measurements REQUIRED = MIN_TIMEOUT (basis
@@ -31,7 +49,8 @@
 #                    of `docker stop`, `docker compose stop/up/down` and `docker restart` without -t
 #   F3 recreate      the value the NEXT re-creation gives the container >= REQUIRED: compose stop_grace_period
 #                    (`docker compose config`, unset = 10 s) for a compose container; for a `docker run` container
-#                    the recreate tooling must carry --stop-timeout (RECREATE_TOOLS are grepped; none = FAIL)
+#                    EVERY installed recreate tool (RECREATE_TOOLS that exist) must carry --stop-timeout over (they
+#                    are grepped; a tool without it = FAIL naming it; none installed = FAIL)
 #   F4 daemon        dockerd shutdown-timeout (daemon.json, default 15 s): with live-restore off, stopping dockerd
 #                    stops every container and waits at most this long -> must be >= REQUIRED; with live-restore on
 #                    dockerd leaves containers running (PASS, not on the stop path)
@@ -44,8 +63,10 @@
 # Exit codes: 0 PASS; otherwise the OR of the failed findings: 1 F1, 2 F2, 4 F3, 8 F4, 16 F5, 32 F6 (1..63);
 #             64 error (container missing, docker unreadable); 65 usage.
 # Env: CONTAINER (auto: postfiatd or postfiatd-sentry)  MIN_TIMEOUT (30)  SAFETY_FACTOR (3)
-#      STATE_DIR (/var/lib/pft-shutdown)  RECREATE_TOOLS (newline list, default /usr/local/sbin/pft-confine and
-#      /usr/local/lib/pft-shutdown/recreate.sh)
+#      STATE_DIR (/var/lib/pft-shutdown)  RECREATE_TOOLS (newline list, default /usr/local/bin/pft-seccomp,
+#      /usr/local/bin/pft-apparmor, /usr/local/sbin/pft-confine, /usr/local/bin/pft-confine)
+#      apply/rollback: MIN_RUNS (3)  SECCOMP_FILE (/etc/pft-seccomp/pft-postfiatd.json: docker run re-create of a
+#      container with a seccomp profile)  PFT_SHUTDOWN_INJECT=gate (apply's gate fails: automatic-rollback drill)
 #      measure/kill-drill: RECOVER_TIMEOUT (900)  POLL_SEC (5)  SETTLE_SEC (60, wait after full before the
 #      complete_ledgers hole check)
 #      Test hooks: PFT_SHUTDOWN_ROOT (path prefix for files)  PFT_SHUTDOWN_DOCKER / _SYSTEMCTL / _MAINT (commands)
@@ -67,8 +88,14 @@ MIN_TIMEOUT="${MIN_TIMEOUT:-30}"
 SAFETY_FACTOR="${SAFETY_FACTOR:-3}"
 STATE_DIR="${STATE_DIR:-$R/var/lib/pft-shutdown}"
 DJSON="$R/etc/docker/daemon.json"
-RECREATE_TOOLS="${RECREATE_TOOLS:-$R/usr/local/sbin/pft-confine
-$R/usr/local/lib/pft-shutdown/recreate.sh}"
+RECREATE_TOOLS="${RECREATE_TOOLS:-$R/usr/local/bin/pft-seccomp
+$R/usr/local/bin/pft-apparmor
+$R/usr/local/sbin/pft-confine
+$R/usr/local/bin/pft-confine}"
+MIN_RUNS="${MIN_RUNS:-3}"
+INJECT="${PFT_SHUTDOWN_INJECT:-}"   # "gate": apply's gate fails (automatic-rollback drill)
+SECCOMP_FILE="${SECCOMP_FILE:-/etc/pft-seccomp/pft-postfiatd.json}"
+NOJ='{}'
 DOCKER_DEFAULT_STOP=10   # Docker's StopTimeout when unset (also compose's stop_grace_period default)
 DOCKERD_DEFAULT_SHUTDOWN=15
 
@@ -140,7 +167,7 @@ CODE=0
 fail() { res FAIL "$1" "$3"; CODE=$((CODE | $2)); }
 
 audit_checks() {
-  local I img_sig sig st lr djson sd unit scope sc cmpwd cmpfiles svc g gs reboot tool hit
+  local I img_sig sig st lr djson sd unit scope sc cmpwd cmpfiles svc g gs reboot tool hit miss
   I="$("$DOCKER" inspect "$CONTAINER" 2>/dev/null | jq -c '.[0] // empty')"
   [ -n "$I" ] || die "cannot inspect container $CONTAINER"
   djson='{}'; [ -f "$DJSON" ] && { djson="$(jq -c . "$DJSON" 2>/dev/null)" || die "daemon.json is not valid JSON"; }
@@ -182,12 +209,14 @@ audit_checks() {
       fi
     fi
   else
-    hit=""
+    hit=""; miss=""
     while IFS= read -r tool; do
-      [ -n "$tool" ] && [ -f "$tool" ] && grep -q -- '--stop-timeout' "$tool" && hit="${hit:+$hit, }${tool#"$R"}"
+      [ -n "$tool" ] && [ -f "$tool" ] || continue
+      if grep -q -- '--stop-timeout' "$tool"; then hit="${hit:+$hit, }${tool#"$R"}"; else miss="${miss:+$miss, }${tool#"$R"}"; fi
     done <<<"$RECREATE_TOOLS"
-    [ -n "$hit" ] && res PASS F3 "docker run container: recreate tooling carries --stop-timeout ($hit)" \
-      || fail F3 4 "docker run container: no recreate tool carries --stop-timeout, a re-creation resets StopTimeout to ${DOCKER_DEFAULT_STOP}s"
+    if [ -n "$miss" ]; then fail F3 4 "docker run container: recreate tool(s) without --stop-timeout: $miss (a re-creation resets StopTimeout to ${DOCKER_DEFAULT_STOP}s)"
+    elif [ -n "$hit" ]; then res PASS F3 "docker run container: every recreate tool carries --stop-timeout ($hit)"
+    else fail F3 4 "docker run container: no recreate tool carries --stop-timeout, a re-creation resets StopTimeout to ${DOCKER_DEFAULT_STOP}s"; fi
   fi
 
   # F4 daemon shutdown-timeout
@@ -337,6 +366,238 @@ cycle() { # MODE: clean | sigkill
   echo "RESULT: PASS - $mode stop ${st}s, back to full in ${tf}s, holes ${hn}, database errors 0"; return 0
 }
 
+# ---- apply / rollback
+# Signature of everything a re-create must keep (image, cmd, user, env, mounts, ports, restart, log, network, the
+# confine/AppArmor/seccomp profile, resources) - all but StopTimeout. The gate requires it unchanged.
+keep_sig() { # INSPECT0
+  jq -cS '{image: .Config.Image, image_id: .Image, cmd: (.Config.Cmd // []), entrypoint: (.Config.Entrypoint // []),
+    user: (.Config.User // ""), env: (.Config.Env // [] | sort), stop_signal: (.Config.StopSignal // ""),
+    cap_add: (.HostConfig.CapAdd // [] | sort), cap_drop: (.HostConfig.CapDrop // [] | sort),
+    read_only: (.HostConfig.ReadonlyRootfs // false), tmpfs: (.HostConfig.Tmpfs // {}),
+    pids: (.HostConfig.PidsLimit // 0), memory: (.HostConfig.Memory // 0), memory_swap: (.HostConfig.MemorySwap // 0),
+    cpu_shares: (.HostConfig.CpuShares // 0), memory_reservation: (.HostConfig.MemoryReservation // 0),
+    apparmor: (.AppArmorProfile // ""), security_opt: (.HostConfig.SecurityOpt // [] | sort),
+    mounts: (.Mounts // [] | map({type: .Type, name: (if .Type == "volume" then .Name else null end),
+             source: (if .Type == "bind" then .Source else null end), dest: .Destination, rw: .RW}) | sort_by(.dest)),
+    ports: (.HostConfig.PortBindings // {}), network: (.HostConfig.NetworkMode // ""), log: (.HostConfig.LogConfig // {}),
+    restart: (.HostConfig.RestartPolicy.Name // "")}' <<<"$1"
+}
+sig_diff() { jq -rn --argjson a "$1" --argjson b "$2" '[($a + $b) | keys[] | select($a[.] != $b[.])] | join(",")'; }
+inspect0() { "$DOCKER" inspect "$1" 2>/dev/null | jq -c '.[0] // empty' 2>/dev/null; }
+stop_of() { jq -r '.Config.StopTimeout // "unset"' <<<"${1:-$NOJ}"; }   # INSPECT0 -> seconds or "unset"
+
+# docker run args that re-create a `docker run` container exactly, with --stop-timeout STOP (unset: none).
+# Docker stores a seccomp profile inline (json.Compact of the file): it is passed again as seccomp=SECCOMP_FILE,
+# and the gate's signature (stored SecurityOpt verbatim) proves the bytes are the same.
+run_args() { # INSPECT0 IMAGE_ENV_JSON STOP
+  jq -r --argjson ienv "$2" --arg st "$3" --arg scf "$SECCOMP_FILE" '
+    "--name=\(.Name[1:])",
+    "--restart=\(.HostConfig.RestartPolicy.Name)\(if .HostConfig.RestartPolicy.Name == "on-failure" then ":\(.HostConfig.RestartPolicy.MaximumRetryCount)" else "" end)",
+    (if $st != "unset" then "--stop-timeout=\($st)" else empty end),
+    (if (.Config.StopSignal // "") != "" then "--stop-signal=\(.Config.StopSignal)" else empty end),
+    (if (.Config.User // "") != "" then "--user=\(.Config.User)" else empty end),
+    "--log-driver=\(.HostConfig.LogConfig.Type)",
+    ((.HostConfig.LogConfig.Config // {}) | to_entries[] | "--log-opt=\(.key)=\(.value)"),
+    (if (.HostConfig.NetworkMode // "default") != "default" then "--network=\(.HostConfig.NetworkMode)" else empty end),
+    ((.HostConfig.PortBindings // {}) | to_entries[] | .key as $k | .value[]
+      | "--publish=\(if (.HostIp // "") != "" then .HostIp + ":" else "" end)\(.HostPort):\($k | sub("/tcp$"; ""))"),
+    (.Mounts // [] | .[] | if .Type == "volume" then "--volume=\(.Name):\(.Destination)\(if .RW then "" else ":ro" end)"
+                           elif .Type == "bind" then "--volume=\(.Source):\(.Destination)\(if .RW then "" else ":ro" end)"
+                           else empty end),
+    (.Config.Env // [] | map(select(. as $e | $ienv | index($e) | not)) | .[] | "--env=\(.)"),
+    (.HostConfig.CapDrop // [] | .[] | "--cap-drop=\(.)"),
+    (.HostConfig.CapAdd // [] | .[] | "--cap-add=\(.)"),
+    (if .HostConfig.ReadonlyRootfs then "--read-only" else empty end),
+    (.HostConfig.Tmpfs // {} | to_entries[] | "--tmpfs=\(.key)\(if .value != "" then ":" + .value else "" end)"),
+    (if (.HostConfig.PidsLimit // 0) > 0 then "--pids-limit=\(.HostConfig.PidsLimit)" else empty end),
+    (if (.HostConfig.Memory // 0) > 0 then "--memory=\(.HostConfig.Memory)" else empty end),
+    (if (.HostConfig.MemorySwap // 0) != 0 then "--memory-swap=\(.HostConfig.MemorySwap)" else empty end),
+    (if (.HostConfig.CpuShares // 0) > 0 then "--cpu-shares=\(.HostConfig.CpuShares)" else empty end),
+    (if (.HostConfig.MemoryReservation // 0) > 0 then "--memory-reservation=\(.HostConfig.MemoryReservation)" else empty end),
+    (.HostConfig.SecurityOpt // [] | .[] | if startswith("seccomp") then "--security-opt=seccomp=\($scf)" else "--security-opt=\(.)" end),
+    .Config.Image, (.Config.Cmd // [])[]' <<<"$1"
+}
+show_args() { sed -E 's/^(--env=[^=]*)=.*/\1=<value>/; s/([0-9]{1,3}\.){3}[0-9]{1,3}/<redacted-ip>/g' | paste -sd' '; }
+
+# CPU weight / memory.low set live with `docker update` are not in the compose files: put them back after compose up
+keep_resources() { # CONTAINER SIG
+  local cs mr cur a=()
+  cs="$(jq -r '.cpu_shares' <<<"$2")"; mr="$(jq -r '.memory_reservation' <<<"$2")"
+  [ "$cs" -gt 0 ] || [ "$mr" -gt 0 ] || return 0
+  cur="$(inspect0 "$1" | jq -r '"\(.HostConfig.CpuShares // 0) \(.HostConfig.MemoryReservation // 0)"')"
+  [ "$cur" = "$cs $mr" ] && return 0
+  [ "$cs" -gt 0 ] && a+=("--cpu-shares=$cs"); [ "$mr" -gt 0 ] && a+=("--memory-reservation=$mr")
+  "$DOCKER" update "${a[@]}" "$1" >/dev/null 2>&1 && echo "  resources: restored ${a[*]} (compose up dropped '$cur')"
+}
+
+# After a re-create: new container (StartedAt changed), StopTimeout = WANT, keep-signature unchanged, full.
+gate() { # WHAT BEFORE_STARTED WANT_STOP SIG
+  local what="$1" before="$2" want="$3" sig="$4" t0 i hard soft s st info
+  t0="$(now)"
+  while :; do
+    i="$(inspect0 "$CONTAINER")"; hard=""; soft=""
+    if [ -z "$i" ]; then hard=" container missing;"; else
+      s="$(jq -r '.State.StartedAt // ""' <<<"$i")"; [ -n "$s" ] && [ "$s" != "$before" ] || hard+=" not re-created (StartedAt unchanged);"
+      st="$(stop_of "$i")"; [ "$st" = "$want" ] || hard+=" StopTimeout $st want $want;"
+      [ "$(keep_sig "$i")" = "$sig" ] || hard+=" configuration changed: $(sig_diff "$sig" "$(keep_sig "$i")");"
+    fi
+    info="$(rpc_info)"; is_full "$info" || soft=" server_state $(jq -r '.server_state // "unreachable"' <<<"${info:-$NOJ}");"
+    if [ -z "$hard$soft" ]; then
+      echo "  $what gate PASS after $(since "$t0" "$(now)")s: re-created, StopTimeout $st, configuration unchanged, server_state $(jq -r .server_state <<<"$info")"
+      return 0
+    fi
+    # a configuration difference never heals: fail at once; only "not full yet" is waited for
+    [ -n "$hard" ] && break
+    awk -v a="$t0" -v b="$(now)" -v t="$RECOVER_TIMEOUT" 'BEGIN { exit !(b - a >= t) }' && break
+    sleep "$POLL_SEC"
+  done
+  echo "  $what gate FAIL:$hard$soft"; return 1
+}
+
+state_set() { jq "$@" "$ASTATE" > "$ASTATE.tmp" && mv -f "$ASTATE.tmp" "$ASTATE"; }
+
+# re-create the container with StopTimeout STOP (compose: overlay present/absent from the state's backups)
+recreate() { # STOP(seconds|unset) HOW(apply|restore) -> rc
+  local stop="$1" how="$2" i ienv old args
+  i="$(inspect0 "$CONTAINER")"
+  if [ "$(jq -r .kind "$ASTATE")" = compose ]; then
+    local wd; wd="$R$(jq -r .working_dir "$ASTATE")"
+    ( cd "$wd" && "$DOCKER" compose up -d --timeout "$(jq -r .stop_budget "$ASTATE")" 2>&1 ) | sed 's/^/  | /'
+    [ "${PIPESTATUS[0]}" = 0 ] || { echo "  compose up failed"; return 1; }
+    keep_resources "$CONTAINER" "$(jq -r .sig "$ASTATE")"
+    return 0
+  fi
+  [ -n "$i" ] || { echo "  container $CONTAINER missing"; return 1; }
+  ienv="$("$DOCKER" image inspect "$(jq -r .Config.Image <<<"$i")" 2>/dev/null | jq -c '.[0].Config.Env // []' 2>/dev/null)"; [ -n "$ienv" ] || ienv='[]'
+  mapfile -t args < <(run_args "$i" "$ienv" "$stop")
+  old="$CONTAINER-preshutdown-$(jq -r .id "$ASTATE")-$how"
+  echo "  recreate: docker run -d $(printf '%s\n' "${args[@]}" | show_args)"
+  "$DOCKER" stop -t "$(jq -r .stop_budget "$ASTATE")" "$CONTAINER" >/dev/null 2>&1 && "$DOCKER" rename "$CONTAINER" "$old" >/dev/null 2>&1 \
+    && "$DOCKER" update --restart=no "$old" >/dev/null 2>&1 || { echo "  could not stop/rename $CONTAINER"; "$DOCKER" start "$CONTAINER" >/dev/null 2>&1; return 2; }
+  state_set --arg o "$old" '.old_container = $o'
+  "$DOCKER" run -d "${args[@]}" >/dev/null 2>&1 || { echo "  docker run failed"; return 1; }
+  return 0
+}
+restore_old() { # run kind: the stopped previous container back under its name
+  local old rp; old="$(jq -r '.old_container // ""' "$ASTATE")"; rp="$(jq -r '.restart' "$ASTATE")"
+  [ -n "$old" ] && [ -n "$(inspect0 "$old")" ] || { echo "  previous container ${old:-?} missing"; return 1; }
+  "$DOCKER" rm -f "$CONTAINER" >/dev/null 2>&1
+  "$DOCKER" rename "$old" "$CONTAINER" >/dev/null 2>&1 && "$DOCKER" update --restart="$rp" "$CONTAINER" >/dev/null 2>&1 \
+    && "$DOCKER" start "$CONTAINER" >/dev/null 2>&1 && { echo "  previous container restored as $CONTAINER (restart=$rp)"; state_set '.old_container = ""'; return 0; }
+  echo "  restoring the previous container FAILED"; return 1
+}
+drop_old() { # run kind, gate passed: the stopped previous container is not needed (volumes are kept: no -v)
+  local old; old="$(jq -r '.old_container // ""' "$ASTATE")"; [ -n "$old" ] || return 0
+  "$DOCKER" rm "$old" >/dev/null 2>&1 && echo "  previous container $old removed (volumes kept)"; state_set '.old_container = ""'
+}
+# compose kind: write (apply) or restore (rollback) .env and docker-compose.shutdown.yml
+compose_files_set() { # apply SEC | restore
+  local wd ov eb ob; wd="$R$(jq -r .working_dir "$ASTATE")"; ov="$wd/docker-compose.shutdown.yml"
+  eb="$(jq -r .env_backup "$ASTATE")"; ob="$(jq -r '.override_backup // ""' "$ASTATE")"
+  if [ "$1" = apply ]; then
+    printf '# written by pft-shutdown apply (measured stop budget); undo with: sudo pft-shutdown rollback --yes\nservices:\n  %s:\n    stop_grace_period: %ss\n' \
+      "$(jq -r .service "$ASTATE")" "$2" > "$ov.tmp" && mv -f "$ov.tmp" "$ov" || return 1
+    { grep -v '^COMPOSE_FILE=' "$eb"; echo "COMPOSE_FILE=$(jq -r .files "$ASTATE"):docker-compose.shutdown.yml"; } > "$wd/.env.tmp" \
+      && chmod --reference="$eb" "$wd/.env.tmp" 2>/dev/null; mv -f "$wd/.env.tmp" "$wd/.env" || return 1
+    echo "  wrote $(jq -r .working_dir "$ASTATE")/docker-compose.shutdown.yml (stop_grace_period ${2}s); COMPOSE_FILE += docker-compose.shutdown.yml"
+  else
+    cp -p -- "$eb" "$wd/.env" || return 1
+    if [ -n "$ob" ]; then cp -p -- "$ob" "$ov" || return 1; else rm -f -- "$ov"; fi
+    echo "  .env restored$([ -n "$ob" ] && echo ", previous docker-compose.shutdown.yml restored" || echo ", docker-compose.shutdown.yml removed")"
+  fi
+  ( cd "$wd" && "$DOCKER" compose config -q >/dev/null 2>&1 ) || { echo "  docker compose config invalid"; return 1; }
+}
+
+do_rollback() { # auto|manual
+  local how="$1" s pre before i
+  s="$(cat "$ASTATE")"; pre="$(jq -r .pre_stop <<<"$s")"
+  [ "$(jq -r '.rolled_back // false' <<<"$s")" = true ] && { echo "$(ts) rollback: apply $(jq -r .id <<<"$s") already rolled back - nothing to do"; return 0; }
+  echo "$(ts) rollback ($how) of apply $(jq -r .id <<<"$s") on $CONTAINER: back to StopTimeout $pre"
+  i="$(inspect0 "$CONTAINER")"; before="$(jq -r '.State.StartedAt // ""' <<<"${i:-$NOJ}")"
+  if [ "$(jq -r .kind <<<"$s")" = compose ] && [ "$(jq -r '.recreated // false' <<<"$s")" != true ]; then
+    # failed before the re-create: only the files go back, the running container was never touched
+    compose_files_set restore || { echo "$(ts) ROLLBACK FAILED (compose files)"; return 5; }
+    state_set --arg t "$(ts)" --arg h "$how" '. + {rolled_back: true, rolled_back_at: $t, rollback: $h}'
+    echo "$(ts) rollback RESULT: PASS - files restored, $CONTAINER was not re-created"; return 0
+  elif [ "$(jq -r .kind <<<"$s")" = compose ]; then
+    compose_files_set restore && recreate "$pre" restore || { echo "$(ts) ROLLBACK FAILED (compose)"; return 5; }
+  elif [ "$how" = auto ] && [ -n "$(jq -r '.old_container // ""' <<<"$s")" ]; then
+    restore_old || { echo "$(ts) ROLLBACK FAILED (run)"; return 5; }
+    i="$(inspect0 "$CONTAINER")"; before=""   # the old container itself: started again, not re-created
+  else
+    recreate "$pre" restore || { echo "$(ts) ROLLBACK FAILED (run)"; return 5; }
+  fi
+  gate rollback "$before" "$pre" "$(jq -r .sig <<<"$s")" || { echo "$(ts) ROLLBACK: previous StopTimeout restored but the gate failed"; return 5; }
+  [ "$(jq -r .kind <<<"$s")" = run ] && drop_old
+  state_set --arg t "$(ts)" --arg h "$how" '. + {rolled_back: true, rolled_back_at: $t, rollback: $h}'
+  echo "$(ts) rollback RESULT: PASS - $CONTAINER StopTimeout $pre again, node full"
+}
+
+do_apply() {
+  local i st want sig before id kind wd svc cfgs files eb ov ob rest info tag
+  [ "$(id -u)" = 0 ] || [ -n "$R" ] || die "apply needs root" 4
+  [ "$YES" = 1 ] || die "refused: pass --yes (apply re-creates the live $CONTAINER once)" 4
+  "$MAINT" active >/dev/null 2>&1 || die "refused: no active pft-maint window (start one and silence alerting first)" 4
+  i="$(inspect0 "$CONTAINER")"; [ -n "$i" ] || die "cannot inspect container $CONTAINER"
+  [ "$(jq -r '.State.Running' <<<"$i")" = true ] || die "refused: $CONTAINER is not running" 4
+  required
+  [ -n "${REQ_OVERRIDE:-}" ] || [[ "$REQ_BASIS" == p100* ]] || die "refused: no measured basis for the stop budget ($REQ_BASIS); run measure first or pass --required" 4
+  [ -n "${REQ_OVERRIDE:-}" ] || [ "$(jq '[.runs[] | select(.mode == "clean" and .clean == true)] | length' "$STATE_DIR/measure-$CONTAINER.json")" -ge "$MIN_RUNS" ] \
+    || die "refused: fewer than MIN_RUNS=$MIN_RUNS clean measured stops for $CONTAINER" 4
+  want="$REQ"; st="$(stop_of "$i")"
+  if [ "$st" = "$want" ]; then echo "$(ts) apply: $CONTAINER StopTimeout is already ${want}s ($REQ_BASIS) - nothing to do"; return 0; fi
+  [ -f "$ASTATE" ] && [ "$(jq -r '.rolled_back // false' "$ASTATE")" != true ] \
+    && die "refused: the last apply ($(jq -r .id "$ASTATE")) set a different value and is still in place; rollback first" 4
+  info="$(rpc_info)"; is_full "$info" || die "refused: $CONTAINER server_state is $(jq -r '.server_state // "unreachable"' <<<"${info:-$NOJ}") (want full/proposing)" 4
+  cfgs="$(jq -r '.Config.Labels["com.docker.compose.project.config_files"] // ""' <<<"$i")"
+  if [ -n "$cfgs" ]; then kind=compose; else kind=run; fi
+  tag="$(jq -r .Config.Image <<<"$i")"
+  [ "$("$DOCKER" image inspect -f '{{.Id}}' "$tag" 2>/dev/null)" = "$(jq -r .Image <<<"$i")" ] \
+    || die "refused: tag $tag no longer names the running image (a re-create would upgrade it)" 4
+  [ "$kind" = run ] && jq -e '.HostConfig.SecurityOpt // [] | map(select(startswith("seccomp"))) | length > 0' >/dev/null <<<"$i" \
+    && { [ -f "$R$SECCOMP_FILE" ] || die "refused: $CONTAINER has a seccomp profile but SECCOMP_FILE $SECCOMP_FILE is missing" 4; }
+  id="$(date -u +%Y%m%dT%H%M%SZ)"; sig="$(keep_sig "$i")"; before="$(jq -r '.State.StartedAt // ""' <<<"$i")"
+  mkdir -p "$STATE_DIR/backup" && chmod 0700 "$STATE_DIR" || die "cannot create $STATE_DIR"
+  # stop budget for the stop that the re-create itself does: the measured value, never less than the current one
+  rest="$want"; [ "$st" != unset ] && [ "$st" -gt "$rest" ] && rest="$st"
+  jq -n --arg id "$id" --arg c "$CONTAINER" --arg k "$kind" --arg pre "$st" --argjson want "$want" --arg basis "$REQ_BASIS" \
+    --arg sig "$sig" --argjson sb "$rest" --arg rp "$(jq -r .HostConfig.RestartPolicy.Name <<<"$i")" \
+    '{id: $id, container: $c, kind: $k, pre_stop: $pre, want_stop: $want, basis: $basis, sig: $sig, stop_budget: $sb, restart: $rp,
+      old_container: "", rolled_back: false}' > "$ASTATE" || die "cannot write $ASTATE"
+  echo "$(ts) apply $id on $CONTAINER ($kind): StopTimeout $st -> ${want}s ($REQ_BASIS)"
+  if [ "$kind" = compose ]; then
+    wd="$(jq -r '.Config.Labels["com.docker.compose.project.working_dir"] // ""' <<<"$i")"
+    svc="$(jq -r '.Config.Labels["com.docker.compose.service"] // ""' <<<"$i")"
+    [ -d "$R$wd" ] && [ -n "$svc" ] || die "compose working dir/service unknown"
+    files="$(tr ',' '\n' <<<"$cfgs" | sed 's#.*/##' | grep -vx 'docker-compose.shutdown.yml' | paste -sd:)"
+    eb="$STATE_DIR/backup/env.$id"; ov="$R$wd/docker-compose.shutdown.yml"; ob=""
+    touch "$R$wd/.env"; cp -p -- "$R$wd/.env" "$eb" || die "cannot back up .env"
+    if [ -f "$ov" ]; then ob="$STATE_DIR/backup/docker-compose.shutdown.yml.$id"; cp -p -- "$ov" "$ob" || die "cannot back up $ov"; fi
+    state_set --arg wd "$wd" --arg s "$svc" --arg f "$files" --arg eb "$eb" --arg ob "$ob" \
+      '. + {working_dir: $wd, service: $s, files: $f, env_backup: $eb, override_backup: $ob}'
+    echo "  backups: .env -> $eb${ob:+, docker-compose.shutdown.yml -> $ob}"
+    trap 'echo "$(ts) apply: interrupted -> automatic rollback"; do_rollback auto; exit 6' INT TERM
+    if ! compose_files_set apply "$want"; then echo "$(ts) apply: overlay invalid -> automatic rollback"; do_rollback auto && return 1; return 5; fi
+    local g; g="$(cd "$R$wd" && "$DOCKER" compose config --format json 2>/dev/null | jq -r --arg s "$svc" '.services[$s].stop_grace_period // ""')"
+    if [ "$(dur_s "$g" 2>/dev/null)" != "$want" ]; then echo "$(ts) apply: compose config gives stop_grace_period '${g}', not ${want}s -> automatic rollback"; do_rollback auto && return 1; return 5; fi
+    echo "  validated: docker compose config -> stop_grace_period $g"
+  else
+    trap 'echo "$(ts) apply: interrupted -> automatic rollback"; do_rollback auto; exit 6' INT TERM
+  fi
+  state_set '.recreated = true'
+  recreate "$want" apply; local rc=$?
+  if [ "$rc" = 2 ]; then trap - INT TERM; state_set '.rolled_back = true | .rollback = "not re-created"'; echo "$(ts) apply: FAIL - $CONTAINER could not be stopped/renamed, nothing re-created"; return 1; fi
+  if [ "$rc" != 0 ]; then echo "$(ts) apply: re-create failed -> automatic rollback"; do_rollback auto && return 1; return 5; fi
+  if [ "$INJECT" = gate ]; then sig="$(jq -c '.injected = true' <<<"$sig")"; echo "  PFT_SHUTDOWN_INJECT=gate: the gate compares against a wrong signature"; fi
+  if ! gate apply "$before" "$want" "$sig"; then
+    echo "$(ts) apply: gate failed -> automatic rollback"; do_rollback auto; rc=$?; trap - INT TERM; [ "$rc" = 0 ] && return 1; return "$rc"
+  fi
+  trap - INT TERM
+  [ "$kind" = run ] && drop_old
+  state_set --arg t "$(ts)" '. + {applied_at: $t}'
+  echo "$(ts) apply RESULT: PASS - $CONTAINER StopTimeout ${want}s, configuration unchanged, node full (state $ASTATE)"
+}
+
 print_text() {
   local r s id m
   echo "pft-shutdown audit $CONTAINER - $(ts)"
@@ -390,6 +651,26 @@ case "$cmd" in
     detect_container
     [ "$cmd" = measure ] && { cycle clean; exit $?; }
     TIMEOUT=0; cycle sigkill; exit $?
+    ;;
+  apply|rollback)
+    YES=0; JSON=0; REQ_OVERRIDE=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --yes) YES=1 ;;
+        --required) [ "$cmd" = apply ] && [[ "${2:-}" =~ ^[0-9]+$ ]] && [ "$2" -gt 0 ] || usage; REQ_OVERRIDE="$2"; shift ;;
+        *) usage ;;
+      esac
+      shift
+    done
+    command -v jq >/dev/null || die "jq missing"
+    detect_container
+    ASTATE="$STATE_DIR/apply-$CONTAINER.json"
+    [ "$cmd" = apply ] && { do_apply; exit $?; }
+    [ "$(id -u)" = 0 ] || [ -n "$R" ] || die "rollback needs root" 4
+    [ "$YES" = 1 ] || die "refused: pass --yes (rollback re-creates the live $CONTAINER once)" 4
+    "$MAINT" active >/dev/null 2>&1 || die "refused: no active pft-maint window (start one and silence alerting first)" 4
+    [ -f "$ASTATE" ] || die "no apply state for $CONTAINER ($ASTATE)" 4
+    do_rollback manual; exit $?
     ;;
   *) usage ;;
 esac

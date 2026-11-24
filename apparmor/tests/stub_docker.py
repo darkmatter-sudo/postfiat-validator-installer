@@ -86,6 +86,8 @@ def do_run(args):
             hc["RestartPolicy"]["Name"] = v.split(":")[0]
         elif k == "user":
             cfg["User"] = v
+        elif k == "stop-timeout":
+            cfg["StopTimeout"] = int(v)
         elif k == "log-driver":
             hc["LogConfig"]["Type"] = v
         elif k == "log-opt":

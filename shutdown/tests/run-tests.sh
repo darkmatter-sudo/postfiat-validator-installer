@@ -64,7 +64,7 @@ nofail() { grep -q '\[FAIL' <<<"$OUT" && ko "$1: no FAIL lines" "$OUT" || ok "$1
 fresh compose; run audit; expect "compose host good -> PASS" 0 '^RESULT: PASS$'; nofail "compose host good"
 expect "compose F3 reads stop_grace_period" 0 '\[PASS\] F3 compose stop_grace_period 30s >= required 30s'
 fresh run; run audit; expect "run host good -> PASS" 0 '^RESULT: PASS$'; nofail "run host good"
-expect "run F3 names the recreate tool" 0 '\[PASS\] F3 docker run container: recreate tooling carries --stop-timeout \(/usr/local/sbin/pft-confine\)'
+expect "run F3 names the recreate tool" 0 '\[PASS\] F3 docker run container: every recreate tool carries --stop-timeout \(/usr/local/sbin/pft-confine\)'
 expect "reboot path uses the scope" 0 '\[PASS\] F6 reboot \(live-restore\): .*SIGKILL after 90s'
 
 # --- one bad fixture per finding: ROLE | setup | exit | FAIL line regex
@@ -83,7 +83,9 @@ F3 grace unset|compose|echo '{"services":{"postfiatd":{"image":"x"}}}' > "$E/s/c
 F3 grace short|compose|echo '{"services":{"postfiatd":{"stop_grace_period":"29s"}}}' > "$E/s/compose.json"|4|\[FAIL\] F3 compose stop_grace_period 29s < required 30s
 F3 service missing|compose|echo '{"services":{"other":{}}}' > "$E/s/compose.json"|4|\[FAIL\] F3 compose project /opt/postfiatd: cannot read service postfiatd
 F3 grace garbage|compose|echo '{"services":{"postfiatd":{"stop_grace_period":"soon"}}}' > "$E/s/compose.json"|4|\[FAIL\] F3 compose stop_grace_period 'soon' unparseable
-F3 run no tool|run|printf 'docker run x\n' > "$E/root/usr/local/sbin/pft-confine"|4|\[FAIL\] F3 docker run container: no recreate tool carries --stop-timeout
+F3 run tool without flag|run|printf 'docker run x\n' > "$E/root/usr/local/sbin/pft-confine"|4|\[FAIL\] F3 docker run container: recreate tool\(s\) without --stop-timeout: /usr/local/sbin/pft-confine \(a re-creation
+F3 run no tool installed|run|rm "$E/root/usr/local/sbin/pft-confine"|4|\[FAIL\] F3 docker run container: no recreate tool carries --stop-timeout
+F3 run one of two tools lacks it|run|mkdir -p "$E/root/usr/local/bin" && printf 'docker run x\n' > "$E/root/usr/local/bin/pft-seccomp"|4|\[FAIL\] F3 docker run container: recreate tool\(s\) without --stop-timeout: /usr/local/bin/pft-seccomp \(
 F4 lr off short (reboot chain too)|compose|echo '{"live-restore":false}' > "$E/root/etc/docker/daemon.json"|40|\[FAIL\] F4 live-restore off, dockerd shutdown-timeout unset -> 15s < required 30s
 F4 lr off 29 (reboot chain too)|run|echo '{"shutdown-timeout":29}' > "$E/root/etc/docker/daemon.json"|40|\[FAIL\] F4 live-restore off, dockerd shutdown-timeout 29s < required 30s
 F5 unit short|compose|unitset docker.service TimeoutStopUSec 20s|16|\[FAIL\] F5 docker.service TimeoutStopUSec 20s < required 30s
@@ -221,6 +223,9 @@ H="$(sed -n '/^holes()/,/^}/p' "$TOOL")"
 chkh() { local got; got="$(bash -c "$H; holes '$1' $2")"; [ "$got" = "$3" ] && ok "holes '$1' >= $2 = $3" || ko "holes '$1' $2 = $3 (got '$got')"; }
 chkh "100-200" 100 "|0"; chkh "100-200,215-230" 100 "201-214|14"; chkh "1-5,10-20,25" 12 "21-24|4"; chkh "1-5,10-20" 8 "8-9|2"
 chkh "1-5,10-20" 3 "6-9|4"; chkh "empty" 0 "|0"
+
+# shellcheck disable=SC1091 # linted on its own: tests/apply-tests.inc.sh
+. "$HERE/apply-tests.inc.sh"
 
 echo "RESULT: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]

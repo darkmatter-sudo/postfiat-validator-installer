@@ -232,6 +232,8 @@ grep -q 'NETWORK=testnet' <<<"$OUT" && ko "apply run: env value printed" "$OUT" 
 grep -q 'gate PASS - exercise done, seccomp denials since T0: 0' <<<"$OUT" && ok "apply run: gate exercised the node, 0 denials" || ko "apply run: gate" "$OUT"
 grep -q 'exec postfiatd-sentry sh -c du -sb "$1/nudb" | cut -f1 sh /var/lib/postfiatd/db' "$A/d/calls" && grep -q 'exec postfiatd-sentry timeout 5 bash -c exec 3<>/dev/tcp/127.0.0.1/5005' "$A/d/calls" \
   && ok "apply run: gate ran the add-ons' docker exec commands" || ko "apply run: add-on exercise" "$(grep ' exec ' "$A/d/calls")"
+[ "$(cj "$CN" '.Config.StopTimeout // "unset"')" = unset ] && ! grep -q -- '--stop-timeout' "$A/d/calls" \
+  && ok "apply run: no StopTimeout before -> none added (control)" || ko "apply run: StopTimeout appeared" "$(cj "$CN" .Config.StopTimeout)"
 [ "$(stf .phase)" = applied ] && [ "$(stf .kind)" = run ] && [ "$(stf .pre_state)" = default ] && ok "apply run: state applied, pre_state default" || ko "apply run: state"
 run audit
 [ "$RC" = 0 ] && ok "apply run: audit afterwards PASS" || ko "apply run: audit rc=$RC" "$OUT"
@@ -250,6 +252,10 @@ run rollback --yes
 run rollback --yes; [ "$RC" = 0 ] && grep -q 'already rolled back' <<<"$OUT" && ok "rollback twice: no-op" || ko "rollback twice: rc=$RC" "$OUT"
 run apply --profile-file "$PROFILE" --yes
 [ "$RC" = 0 ] && [ "$(scopt)" = "$WANT" ] && ok "re-apply after rollback: PASS" || ko "re-apply: rc=$RC" "$OUT"
+mk run; jq '.Config.StopTimeout = 60' "$A/d/containers/$CN.json" > "$A/st.json" && mv "$A/st.json" "$A/d/containers/$CN.json"
+run apply --profile-file "$PROFILE" --yes
+[ "$RC" = 0 ] && [ "$(cj "$CN" .Config.StopTimeout)" = 60 ] && grep -q -- '--stop-timeout=60' "$A/d/calls" \
+  && ok "apply run: StopTimeout 60 carried into the re-created container (shutdown/ F3)" || ko "apply run: StopTimeout rc=$RC $(cj "$CN" .Config.StopTimeout)" "$OUT"
 
 mk compose; ENV0="$(cat "$A/root/opt/postfiatd/.env")"; run apply --profile-file "$PROFILE" --yes
 [ "$RC" = 0 ] && ok "apply compose: PASS" || ko "apply compose: rc=$RC" "$OUT"
