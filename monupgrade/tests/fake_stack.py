@@ -15,6 +15,8 @@ Knobs (env):
   STUB_NO_DELIVERY=1         Alertmanager accepts the test alert but nothing reaches the ntfy topic
   STUB_WATCHDOG_SILENCED=1   the watchdog alert is silenced
   STUB_API_DOWN=1            every API call fails
+  STUB_SILENCES_LOST=<regex> Alertmanager on a matching image reports no silences (state lost)
+  STUB_DROP_SECOPT=<regex>   `docker run` of a matching image ignores --security-opt (configuration drift)
 """
 
 import json
@@ -210,6 +212,8 @@ def run(st, a):
             die("fake docker run: unsupported option " + o, 99)
         i += 2
     image, c["args"] = a[i], a[i + 1 :]
+    if match("STUB_DROP_SECOPT", image):
+        c["security"] = []
     if match("STUB_RUN_FAIL", image):
         die("docker: Error response from daemon: stub run failure", 125)
     img = find_image(st, image)
@@ -299,7 +303,8 @@ def curl(args):
         print(json.dumps([{"name": "bridge"}, {"name": "digest"}, {"name": "alertpath"}]))
     elif path == "/api/v2/silences":
         vols = [m["Name"] for m in am["mounts"] if m["Destination"] == "/alertmanager"]
-        print(json.dumps(st["silences"] if vols == [st["am_volume"]] else []))
+        lost = vols != [st["am_volume"]] or match("STUB_SILENCES_LOST", am["image"])
+        print(json.dumps([] if lost else st["silences"]))
     elif path.startswith("/api/v2/alerts") and method == "POST":
         for al in json.loads(data):
             name = al["labels"]["alertname"]

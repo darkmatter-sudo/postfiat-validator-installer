@@ -96,8 +96,8 @@ bash tests/run-apply-tests.sh  # apply/rollback: stateful fake docker + Promethe
 Each failure path asserts its exit code, its named reason and what must NOT have happened (no pull, no check
 container). The selection fixtures cover the age gate, semver order (`v3.15.1` > `v3.9.10`), other majors,
 `-rc`/`-distroless`/`latest`, and invalid hub JSON. The apply suite runs apply -> second apply (no-op) -> rollback ->
-rollback (no-op) -> re-apply, 14 refusals (each with zero container-changing docker calls), and 8 injected gate
-failures (docker run, readiness, lost rule, unhealthy rule, target down, no delivery, exposed port) that must all end
-on the original images with restart policies, Alertmanager data volume and silences intact. The fake derives every
+rollback (no-op) -> re-apply, 14 refusals (each with zero container-changing docker calls), and 10 injected gate
+failures (docker run x2, readiness, lost rule, unhealthy rule, target down, no delivery, exposed port, lost silences,
+configuration drift) that must all end on the original images with restart policies, Alertmanager data volume and silences intact. The fake derives every
 API answer from the containers actually running (version = image tag; silences only if the original Alertmanager
 volume is mounted), so the re-create logic itself is under test.

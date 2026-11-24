@@ -195,6 +195,8 @@ failure ruleerr "CHECK rules-health +FAIL \[\"PFTB\"\]" STUB_RULE_ERR='prometheu
 failure target "CHECK targets_up-parity +FAIL" STUB_TARGET_DOWN='prometheus:v3\.15'
 failure delivery "CHECK test-alert +FAIL not delivered to NTFY_TEST_URL" STUB_NO_DELIVERY=1
 failure exposed "CHECK loopback-only +FAIL" STUB_SS_EXPOSED=1
+failure silences "CHECK silences-kept +FAIL lost \[\"sil-1\"\]" STUB_SILENCES_LOST='alertmanager:v0\.35'
+failure secopt "CHECK pft-alertmanager-signature FAIL .*no-new-privileges" STUB_DROP_SECOPT='alertmanager:v0\.35'
 
 # rollback whose gate fails goes back to the applied images
 setup rbfail
