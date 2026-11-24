@@ -14,6 +14,8 @@
 #                   unprivileged user; it is mounted read-only into the bridge (which runs as that user),
 #                   so the topic never appears in `docker inspect`. Without it the bridge only logs.
 #   EXPORTER        exporter address to preflight (default 127.0.0.1:9877)
+#   EXPORTER_CHECK  1 (default) = refuse to start without the exporter; 0 = skip (a canary stack on a host
+#                   without the exporter, ../monupgrade/drill/canary.sh: its scrape targets stay down)
 #   SLO_DIR         folder with *.rules.yml mounted at /etc/pft-slo (default ../slo; empty = none)
 set -euo pipefail
 
@@ -50,6 +52,7 @@ preflight() {
   command -v ss >/dev/null || die "ss (iproute2) not found"
   # capture first: with pipefail, `curl | grep -q` fails (curl exit 23) once /metrics outgrows the pipe buffer
   local m
+  [ "${EXPORTER_CHECK:-1}" = 0 ] && log "exporter preflight skipped (EXPORTER_CHECK=0)" ||
   { m="$(curl -fsS --max-time 5 "http://$EXPORTER/metrics")" && grep -q '^pft_up ' <<<"$m"; } \
     || die "exporter not answering on $EXPORTER (install ../exporter first)"
   if [ -n "${NTFY_ENV_FILE:-}" ]; then
