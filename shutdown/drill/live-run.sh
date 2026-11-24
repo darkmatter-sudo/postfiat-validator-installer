@@ -171,7 +171,7 @@ if [ -z "$o" ]; then
   check "silence expired after a clean drain" "$([ "$XOUT" = 200 ] && echo 0 || echo 1)"; SIL=""
 else check "drained within ${DRAIN_MAX_S}s" 1; fi
 sleep 30
-x "curl -s -m 15 'https://ntfy.sh/\$TT/json?poll=1&since=$since' | jq -r 'select(.event == \"message\") | .title'"
+x "curl -s -m 15 'https://ntfy.sh/$TT/json?poll=1&since=$since' | jq -r 'select(.event == \"message\") | .title'"
 check "[MAINT] start/end reached the throwaway topic" "$([ "$(grep -c '^\[MAINT\]' <<<"$XOUT")" -ge 2 ] && echo 0 || echo 1)"
 i=0; OPN=0
 while read -r t; do
