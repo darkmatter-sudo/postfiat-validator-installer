@@ -368,6 +368,46 @@ def seal_day(ar, day, lf=None):
         return _seal_day(ar, day, lf)
 
 
+def gzip_day_stream(src, dst):
+    """Gzip src to dst line by line (bytes equal to gzip.compress(raw, 9, mtime=0)) and return the manifest fields.
+
+    Memory stays at one line: the follower used to read and parse the whole day at once, which raised its
+    resident size by ~110 MiB at the first 00:00Z seal and never gave it back (pft-budget, 2026-11-24).
+    """
+    h_raw = hashlib.sha256()
+    st = {
+        "count": 0,
+        "txs": 0,
+        "bytes_raw": 0,
+        "first": None,
+        "first_d": None,
+        "last": None,
+        "last_hash": None,
+    }
+    with open(src, "rb") as fh, open(dst, "wb") as out:
+        with gzip.GzipFile(
+            filename="", fileobj=out, mode="wb", compresslevel=9, mtime=0
+        ) as gzf:
+            for x in fh:
+                gzf.write(x)
+                h_raw.update(x)
+                st["bytes_raw"] += len(x)
+                if not x.strip():
+                    continue
+                rec = json.loads(x)
+                st["count"] += 1
+                st["txs"] += len(rec.get("t", []))
+                if st["first"] is None:
+                    st["first"], st["first_d"] = rec["i"], rec["d"]
+                st["last"], st["last_hash"] = rec["i"], rec["h"]
+        out.flush()
+        os.fsync(out.fileno())
+    st["sha256_raw"] = h_raw.hexdigest()
+    st["bytes_gz"] = os.path.getsize(dst)
+    st["sha256_gz"] = sha256_file(dst)
+    return st
+
+
 def _seal_day(ar, day, lf=None):
     src = ar.active_path(day)
     entries = ar.manifest_entries()
@@ -389,36 +429,35 @@ def _seal_day(ar, day, lf=None):
         raise RuntimeError(
             f"seal {day}: MANIFEST has an entry but the segment is missing or differs"
         )
-    with open(src, "rb") as fh:
-        raw = fh.read()
-    lines = [json.loads(x) for x in raw.split(b"\n") if x.strip()]
-    if not lines:
+    tmp = ar.seg_path(day) + ".tmp"
+    try:
+        st = gzip_day_stream(src, tmp)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
+    if not st["count"]:
+        os.unlink(tmp)
         os.unlink(src)
         return None
-    tmp = ar.seg_path(day) + ".tmp"
-    gz = gzip.compress(raw, compresslevel=9, mtime=0)
-    with open(tmp, "wb") as fh:
-        fh.write(gz)
-        fh.flush()
-        os.fsync(fh.fileno())
     os.replace(tmp, ar.seg_path(day))
     fsync_dir(ar.segments)
-    first_hdr = parse_header(bytes.fromhex(lines[0]["d"]))
+    first_hdr = parse_header(bytes.fromhex(st["first_d"]))
     prev = entries[-1] if entries else None
     entry = {
         "v": 1,
         "day": day,
         "segment": f"segments/{day}.jsonl.gz",
-        "first": lines[0]["i"],
-        "last": lines[-1]["i"],
-        "count": len(lines),
+        "first": st["first"],
+        "last": st["last"],
+        "count": st["count"],
         "first_parent": first_hdr["parent_hash"],
-        "last_hash": lines[-1]["h"],
-        "txs": sum(len(x.get("t", [])) for x in lines),
-        "bytes_raw": len(raw),
-        "bytes_gz": len(gz),
-        "sha256_raw": hashlib.sha256(raw).hexdigest(),
-        "sha256_gz": hashlib.sha256(gz).hexdigest(),
+        "last_hash": st["last_hash"],
+        "txs": st["txs"],
+        "bytes_raw": st["bytes_raw"],
+        "bytes_gz": st["bytes_gz"],
+        "sha256_raw": st["sha256_raw"],
+        "sha256_gz": st["sha256_gz"],
         "sealed_utc": utcnow(),
         "prev_entry": prev["entry"] if prev else None,
     }

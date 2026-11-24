@@ -66,7 +66,10 @@ A ledger line is `{"i": index, "h": hash, "d": header hex, "t": [[tx_blob, meta]
 **Crash safety.** One `write` + `fsync` per line, so a SIGKILL leaves at most one torn last line; resume cuts it and
 continues at the last archived ledger + 1 (no duplicates, no skips). Sealing writes `X.gz.tmp`, fsyncs, renames,
 fsyncs the directory, appends the MANIFEST entry and only then removes the active file; resume finishes or redoes a
-half-done seal (each step has a test). **Gaps.** If the follower was down longer than the node keeps ledgers, the
+half-done seal (each step has a test). The seal streams the day line by line (gzip, hashes and counts in one
+pass, bytes equal to a one-shot `gzip.compress(raw, 9, mtime=0)`), so the follower's memory does not grow with the
+day size: reading the whole ~32 MB day at once had raised its peak by ~110 MiB at each 00:00Z seal and made
+`PFTBudgetCapReached` project past its 256M cap (2026-11-24; real-day probe 134 MiB -> 20 MiB peak RSS). **Gaps.** If the follower was down longer than the node keeps ledgers, the
 pruned range is recorded in `gaps.jsonl` with its reason and the chain restarts after it; `verify` accepts a missing
 range only when it is recorded, and the alert below fires for an hour after any new gap.
 

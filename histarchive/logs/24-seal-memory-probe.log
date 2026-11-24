@@ -1,0 +1,20 @@
+histarchive seal memory probe - 2026-11-24T09:46:11Z - repo HEAD f84d17cddbcd887ba8a6a17f9e24b97e01afbdb7 + working tree (streaming seal, uncommitted at probe time)
+$ sudo cat /var/lib/pft-histarchive/archive/segments/2026-11-23.jsonl.gz | gunzip > $S/day.jsonl
+  (exit 0) 31893009 bytes
+$ sha256sum (old = HEAD:histarchive/histarchive.py, new = working tree)
+4db728a63c0db7a264bde69db22952d5e679da1d5030429264de4e1f77b20bb6  $S/oldmod/histarchive.py
+02bb12098347053f3750894de062716d686726c7fbb4d64f9f7c72069691dbec  histarchive/histarchive.py
+$ /usr/bin/time -f 'old maxrss_kb=%M wall=%es' python3 -I histarchive/tests/seal_probe.py old $S/day.jsonl $S/oldmod $S/old.gz
+old maxrss_kb=137064 wall=4.13s
+  (exit 0)
+{"bytes_gz": 7771383, "bytes_raw": 31893009, "count": 28551, "first": 8283586, "first_parent": "099FB62B2B5003EFAEF753B432DAC2EB2A076EB72A48F4010B9F024FC1EB3069", "last": 8312136, "last_hash": "AE1F47F4AA34384B1293B9AB340C0E3B05996C48D36D258B61D0AE6277BCEC6E", "sha256_gz": "393c07140d3e54d5e5b9c410c86bb33541356905baabdd8a5eeb7248462545f7", "sha256_raw": "009522fb06846c15a1a0144ca4e8afb8e8336a3e863f9b38ed964fa699e2a239", "txs": 9720}
+$ /usr/bin/time -f 'new maxrss_kb=%M wall=%es' python3 -I histarchive/tests/seal_probe.py new $S/day.jsonl histarchive $S/new.gz
+new maxrss_kb=20360 wall=3.48s
+  (exit 0)
+{"bytes_gz": 7771383, "bytes_raw": 31893009, "count": 28551, "first": 8283586, "first_parent": "099FB62B2B5003EFAEF753B432DAC2EB2A076EB72A48F4010B9F024FC1EB3069", "last": 8312136, "last_hash": "AE1F47F4AA34384B1293B9AB340C0E3B05996C48D36D258B61D0AE6277BCEC6E", "sha256_gz": "393c07140d3e54d5e5b9c410c86bb33541356905baabdd8a5eeb7248462545f7", "sha256_raw": "009522fb06846c15a1a0144ca4e8afb8e8336a3e863f9b38ed964fa699e2a239", "txs": 9720}
+$ cmp old.json new.json; cmp old.gz new.gz; sudo cmp new.gz live segments/2026-11-23.jsonl.gz
+  (exit 0)
+  (exit 0)
+  (exit 0)
+$ sudo jq -c 'select(.day=="2026-11-23") | {count,first,last,txs,bytes_raw,bytes_gz,sha256_raw,sha256_gz}' MANIFEST.jsonl
+{"count":28551,"first":8283586,"last":8312136,"txs":9720,"bytes_raw":31893009,"bytes_gz":7771383,"sha256_raw":"009522fb06846c15a1a0144ca4e8afb8e8336a3e863f9b38ed964fa699e2a239","sha256_gz":"393c07140d3e54d5e5b9c410c86bb33541356905baabdd8a5eeb7248462545f7"}

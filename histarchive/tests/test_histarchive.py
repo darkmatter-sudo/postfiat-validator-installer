@@ -422,6 +422,84 @@ class TestFollow(Base):
         )
         self.assertIn("RESUME at ledger 1010", out)
 
+    def test_seal_stream_equals_one_shot_seal(self):
+        # the streaming seal must write the same bytes and manifest fields as the old read-all seal
+        self.serve(make_chain(1000, 30))
+        self.follow(1000, 1029)
+        ar = ha.Archive(self.dir)
+        raw = rb(ar.active_path("2026-11-10"))
+        lines = [json.loads(x) for x in raw.split(b"\n") if x.strip()]
+        self.assertGreater(len(lines), 5)
+        e = ha.seal_day(ar, "2026-11-10")
+        gz = gzip.compress(raw, compresslevel=9, mtime=0)
+        self.assertEqual(rb(ar.seg_path("2026-11-10")), gz)
+        self.assertEqual(e["sha256_gz"], hashlib.sha256(gz).hexdigest())
+        self.assertEqual(e["sha256_raw"], hashlib.sha256(raw).hexdigest())
+        self.assertEqual((e["bytes_raw"], e["bytes_gz"]), (len(raw), len(gz)))
+        self.assertEqual(
+            (e["first"], e["last"], e["count"]),
+            (lines[0]["i"], lines[-1]["i"], len(lines)),
+        )
+        self.assertEqual(e["last_hash"], lines[-1]["h"])
+        self.assertEqual(e["txs"], sum(len(x.get("t", [])) for x in lines))
+        self.assertGreater(e["txs"], 0)
+        hdr = ha.parse_header(bytes.fromhex(lines[0]["d"]))
+        self.assertEqual(e["first_parent"], hdr["parent_hash"])
+        self.assertFalse(os.path.exists(ar.active_path("2026-11-10")))
+        self.assertFalse(os.path.exists(ar.seg_path("2026-11-10") + ".tmp"))
+
+    def test_seal_stream_memory_is_one_line_not_one_day(self):
+        # ~20 MB day: the old read-all seal peaked at ~76 MB of Python allocations; the stream stays at one line plus
+        # sha256_file's 1 MiB chunks (~2 MB), whatever the day size
+        import tracemalloc
+
+        self.serve(make_chain(1000, 10))
+        self.follow(1000, 1009)
+        ar = ha.Archive(self.dir)
+        last = json.loads(rb(ar.active_path("2026-11-10")).splitlines()[-1])
+        with open(ar.active_path("2026-11-10"), "ab") as fh:
+            for k in range(20000):
+                rec = dict(
+                    last,
+                    i=1010 + k,
+                    h=hashlib.sha256(str(k).encode()).hexdigest().upper(),
+                )
+                fh.write(json.dumps(rec).encode() + b"\n")
+        size = os.path.getsize(ar.active_path("2026-11-10"))
+        self.assertGreater(size, 15_000_000)
+        tracemalloc.start()
+        try:
+            e = ha.seal_day(ar, "2026-11-10")
+            _cur, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        self.assertEqual(e["count"], 20010)
+        self.assertLess(peak, 4_000_000, f"seal peak {peak} B for a {size} B day")
+
+    def test_seal_stream_bad_line_leaves_no_tmp_and_no_entry(self):
+        self.serve(make_chain(1000, 30))
+        self.follow(1000, 1009)
+        ar = ha.Archive(self.dir)
+        with open(ar.active_path("2026-11-10"), "ab") as fh:
+            fh.write(b"{not json\n")
+        with self.assertRaises(ValueError):
+            ha.seal_day(ar, "2026-11-10")
+        self.assertFalse(os.path.exists(ar.seg_path("2026-11-10") + ".tmp"))
+        self.assertFalse(os.path.exists(ar.seg_path("2026-11-10")))
+        self.assertTrue(os.path.exists(ar.active_path("2026-11-10")))
+        self.assertNotIn("2026-11-10", [x["day"] for x in ar.manifest_entries()])
+
+    def test_seal_stream_blank_day_removed_without_segment(self):
+        ar = ha.Archive(self.dir)
+        os.makedirs(ar.active, exist_ok=True)
+        os.makedirs(ar.segments, exist_ok=True)
+        with open(ar.active_path("2026-11-10"), "wb") as fh:
+            fh.write(b"\n\n")
+        self.assertIsNone(ha.seal_day(ar, "2026-11-10"))
+        self.assertFalse(os.path.exists(ar.active_path("2026-11-10")))
+        self.assertFalse(os.path.exists(ar.seg_path("2026-11-10")))
+        self.assertFalse(os.path.exists(ar.seg_path("2026-11-10") + ".tmp"))
+
     def test_pruned_while_down_records_gap(self):
         node = self.serve(make_chain(1000, 60))
         node.validated = 1019
