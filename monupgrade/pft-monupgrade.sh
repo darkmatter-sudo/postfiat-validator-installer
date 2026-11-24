@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2015  # `test && ok || fail` chains: the ok/check/log helpers always return 0
 # pft-monupgrade: reversible upgrades of the pinned Prometheus + Alertmanager images of the loopback monitoring
 # stack (../alerts/run-stack.sh: containers pft-prometheus, pft-alertmanager; `docker run`, no compose file).
 #
 # Usage: pft-monupgrade plan [--out FILE] [--no-pull]
+#        pft-monupgrade apply --plan FILE --yes      (inside a pft-maint window, alerts routed to NTFY_TEST_URL)
+#        pft-monupgrade rollback --yes               (undo the last apply; same guards)
 #
 #  plan   records the running image ref, image id and repo digest of each container, selects a target tag per
 #         image and pins it to its registry digest, pulls the target BY DIGEST (no container is touched; the image
@@ -183,7 +186,7 @@ plan() {
     esac
   done
   log "pft-monupgrade plan (alerts dir $(basename "$ALERTS_DIR"), slo dir ${SLO_DIR:+$(basename "$SLO_DIR")}, min age ${MIN_AGE_DAYS} d)"
-  declare -A ref id dig tag ttag tdig tpushed
+  declare -A ref iid dig tag ttag tdig tpushed
   local names=(prometheus alertmanager) cont=("$PROM_CONTAINER" "$AM_CONTAINER") repos=("$PROM_REPO" "$AM_REPO")
   local overrides=("${TARGET_PROM:-}" "${TARGET_AM:-}") n line
   for i in 0 1; do
@@ -192,9 +195,9 @@ plan() {
       fail "$n" container-missing "${cont[$i]}"; continue
     fi
     IFS=$'\t' read -r a b c <<<"$line"
-    ref[$n]="$a"; id[$n]="$b"; dig[$n]="$c"
+    ref[$n]="$a"; iid[$n]="$b"; dig[$n]="$c"
     tag[$n]="$(tag_of "${ref[$n]}")"
-    printf 'CURRENT %-12s container=%s ref=%s id=%s digest=%s\n' "$n" "${cont[$i]}" "${ref[$n]}" "${id[$n]}" "${dig[$n]}"
+    printf 'CURRENT %-12s container=%s ref=%s id=%s digest=%s\n' "$n" "${cont[$i]}" "${ref[$n]}" "${iid[$n]}" "${dig[$n]}"
     if [ -z "${tag[$n]}" ] || [ "${dig[$n]}" = - ]; then fail "$n" current-unpinned "ref ${ref[$n]}"; continue; fi
     if [ -n "${overrides[$i]}" ]; then
       ttag[$n]="${overrides[$i]%%@*}"
@@ -263,7 +266,366 @@ plan() {
   return 0
 }
 
+# --- apply / rollback ---------------------------------------------------------------------------------------------
+
+read -r -a CURL <<< "${CURL:-curl}"
+read -r -a SS <<< "${SS:-ss}"
+PROM_URL="${PROM_URL:-http://127.0.0.1:9090}"
+AM_URL="${AM_URL:-http://127.0.0.1:9093}"
+BRIDGE_CONTAINER="${BRIDGE_CONTAINER:-pft-alert-bridge}"
+STATE_DIR="${STATE_DIR:-/var/lib/pft-monupgrade}"
+PFT_MAINT_BIN="${PFT_MAINT_BIN:-/usr/local/bin/pft-maint}"
+PLAN_MAX_AGE="${PLAN_MAX_AGE:-86400}"
+READY_TIMEOUT="${READY_TIMEOUT:-120}"
+SETTLE_TIMEOUT="${SETTLE_TIMEOUT:-180}"
+DELIVERY_TIMEOUT="${DELIVERY_TIMEOUT:-150}"
+POLL="${POLL:-3}"
+WATCHDOG="${WATCHDOG:-PFTAlertPipelineWatchdog}"
+TEST_ALERT="${TEST_ALERT:-PFTMonupgradeTest}"
+
+api() { "${CURL[@]}" -fsS --max-time 10 "$@"; }
+# json URL -> body on stdout, rc 1 when unreachable / empty / not JSON (fail closed)
+json() { local j; j="$(api "$1" 2>/dev/null)" && [ -n "$j" ] && jq -e 'type' >/dev/null 2>&1 <<<"$j" && printf '%s\n' "$j"; }
+now() { date -u +%s; }
+
+# signature NAME -> everything a re-create must keep, except the image (one JSON line)
+signature() {
+  "${DOCKER[@]}" inspect "$1" 2>/dev/null | jq -c '.[0] | {
+    args: .Args, entrypoint: .Config.Entrypoint, user: .Config.User,
+    mounts: ([.Mounts[] | {Type, Name: (if .Type == "volume" then .Name else null end), Source: (if .Type == "bind" then .Source else null end), Destination, RW}] | sort_by(.Destination)),
+    restart: .HostConfig.RestartPolicy.Name, network: .HostConfig.NetworkMode, security: .HostConfig.SecurityOpt,
+    capdrop: .HostConfig.CapDrop, capadd: .HostConfig.CapAdd, readonly: .HostConfig.ReadonlyRootfs,
+    tmpfs: .HostConfig.Tmpfs, log: .HostConfig.LogConfig, memory: .HostConfig.Memory, nanocpus: .HostConfig.NanoCpus,
+    privileged: .HostConfig.Privileged, ports: .HostConfig.PortBindings}'
+}
+
+# run_args NAME -> NUL-separated `docker run` options rebuilt from the container's own configuration
+run_args() {
+  "${DOCKER[@]}" inspect "$1" | jq -j '.[0] | (
+    ["-d", "--name", (.Name | ltrimstr("/")), "--restart", .HostConfig.RestartPolicy.Name,
+     "--network", .HostConfig.NetworkMode]
+    + ([.HostConfig.SecurityOpt // [] | .[] | ["--security-opt", .]] | add // [])
+    + ([.HostConfig.CapDrop // [] | .[] | ["--cap-drop", .]] | add // [])
+    + ([.HostConfig.CapAdd // [] | .[] | ["--cap-add", .]] | add // [])
+    + (if .HostConfig.ReadonlyRootfs then ["--read-only"] else [] end)
+    + (if (.Config.User // "") != "" then ["--user", .Config.User] else [] end)
+    + (if .HostConfig.LogConfig.Type != "json-file" or (.HostConfig.LogConfig.Config // {}) != {} then
+        ["--log-driver", .HostConfig.LogConfig.Type] + ([.HostConfig.LogConfig.Config // {} | to_entries[] | ["--log-opt", "\(.key)=\(.value)"]] | add // [])
+       else [] end)
+    + ([.Mounts[] | ["-v", ((if .Type == "volume" then .Name else .Source end) + ":" + .Destination + (if .RW then "" else ":ro" end))]] | add // [])
+  ) | map(. + "\u0000") | join("")'
+}
+
+# recreate NAME IMAGE -> stop + rename the old container (kept, restart=no) and `docker run` IMAGE with the same
+# configuration and arguments; rc 0 when the new container is running
+recreate() {
+  local name="$1" img="$2" opts=() cmd=()
+  mapfile -d '' -t opts < <(run_args "$name") || return 1
+  mapfile -t cmd < <("${DOCKER[@]}" inspect "$name" | jq -r '.[0].Args[]') || return 1
+  [ "${#opts[@]}" -gt 6 ] || { log "ERROR: cannot read the configuration of $name"; return 1; }
+  "${DOCKER[@]}" inspect -f '{{.HostConfig.RestartPolicy.Name}}' "$name" >"$STATE_DIR/restart.$name" || return 1
+  signature "$name" >"$STATE_DIR/sig.$name" || return 1
+  "${DOCKER[@]}" stop -t 30 "$name" >/dev/null || return 1
+  "${DOCKER[@]}" rename "$name" "$name-premonupgrade" || return 1
+  "${DOCKER[@]}" update --restart=no "$name-premonupgrade" >/dev/null || return 1
+  log "  recreate $name on $img"
+  if ! "${DOCKER[@]}" run "${opts[@]}" "$img" "${cmd[@]}" >/dev/null; then
+    log "  docker run failed for $name: restoring the previous container"
+    restore_old "$name"; return 1
+  fi
+}
+
+# restore_old NAME -> remove the new container, put the kept previous one back (rename, restart policy, start)
+restore_old() {
+  local name="$1" pol
+  "${DOCKER[@]}" inspect "$name-premonupgrade" >/dev/null 2>&1 || return 1
+  pol="$(cat "$STATE_DIR/restart.$name" 2>/dev/null)"
+  "${DOCKER[@]}" rm -f "$name" >/dev/null 2>&1 || true
+  "${DOCKER[@]}" rename "$name-premonupgrade" "$name" && "${DOCKER[@]}" update --restart="${pol:-unless-stopped}" "$name" >/dev/null \
+    && "${DOCKER[@]}" start "$name" >/dev/null
+}
+
+wait_ready() {
+  local t0; t0="$(now)"
+  while :; do
+    api "$PROM_URL/-/ready" >/dev/null 2>&1 && api "$AM_URL/-/ready" >/dev/null 2>&1 && return 0
+    [ $(($(now) - t0)) -ge "$READY_TIMEOUT" ] && return 1
+    sleep "$POLL"
+  done
+}
+
+# snapshot -> one JSON object: versions, rule set + health, targets, receivers, active silence ids, watchdog status
+snapshot() {
+  local bi st rules tg rc sil wd
+  bi="$(json "$PROM_URL/api/v1/status/buildinfo")" || return 1
+  st="$(json "$AM_URL/api/v2/status")" || return 1
+  rules="$(json "$PROM_URL/api/v1/rules")" || return 1
+  tg="$(json "$PROM_URL/api/v1/targets")" || return 1
+  rc="$(json "$AM_URL/api/v2/receivers")" || return 1
+  sil="$(json "$AM_URL/api/v2/silences")" || return 1
+  wd="$(json "$AM_URL/api/v2/alerts?filter=alertname%3D%22$WATCHDOG%22")" || return 1
+  jq -nc --argjson bi "$bi" --argjson st "$st" --argjson r "$rules" --argjson tg "$tg" --argjson rc "$rc" \
+    --argjson sil "$sil" --argjson wd "$wd" '{
+      prom_version: $bi.data.version, am_version: $st.versionInfo.version,
+      rules: ([$r.data.groups[] | .name as $g | .rules[] | "\($g)/\(.name)"] | sort),
+      rules_not_ok: ([$r.data.groups[] | .rules[] | select(.health != "ok") | .name] | sort),
+      targets: ([$tg.data.activeTargets[] | "\(.labels.job) \(.scrapeUrl)"] | sort),
+      targets_up: ([$tg.data.activeTargets[] | select(.health == "up") | "\(.labels.job) \(.scrapeUrl)"] | sort),
+      receivers: ([$rc[].name] | sort),
+      silences: ([$sil[] | select(.status.state == "active") | .id] | sort),
+      watchdog: ([$wd[] | {state: .status.state, silenced: (.status.silencedBy | length)}])}'
+}
+
+# isolation -> rc 0 when the bridge delivers to NTFY_TEST_URL only (mounted env file = test URL, bridge started after
+# the file was written); prints the reason otherwise
+isolation() {
+  local src started mt url
+  [ -n "${NTFY_TEST_URL:-}" ] || { echo "NTFY_TEST_URL is not set"; return 1; }
+  src="$("${DOCKER[@]}" inspect "$BRIDGE_CONTAINER" 2>/dev/null \
+    | jq -r '.[0].Mounts[] | select(.Destination == "/run/secrets/ntfy.env") | .Source')"
+  [ -n "$src" ] && [ -r "$src" ] || { echo "bridge ntfy env not mounted/readable"; return 1; }
+  url="$(sed -n 's/^NTFY_URL=//p' "$src" | head -n1)"
+  [ "$url" = "$NTFY_TEST_URL" ] || { echo "bridge env does not point at NTFY_TEST_URL"; return 1; }
+  started="$("${DOCKER[@]}" inspect -f '{{.State.StartedAt}}' "$BRIDGE_CONTAINER" | sed 's/\.[0-9]*Z$/Z/')"
+  mt="$(stat -c %Y "$src")"
+  [ "$(date -u -d "$started" +%s)" -ge "$mt" ] || { echo "bridge started before its env file changed (still the old URL)"; return 1; }
+}
+
+# watchdog_clear SNAPSHOT -> rc 0 when the watchdog is active in Alertmanager and no silence covers it
+watchdog_clear() { jq -e '(.watchdog | length) > 0 and all(.watchdog[]; .state == "active" and .silenced == 0)' >/dev/null <<<"$1"; }
+
+# test_alert RUNID -> post a synthetic alert to Alertmanager and wait for it on the NTFY_TEST_URL topic
+test_alert() {
+  local rid="$1" t0 body got="" st
+  t0="$(now)"
+  body="$(jq -nc --arg n "$TEST_ALERT" --arg id "$rid" --arg e "$(date -u -d "+10 min" +%FT%TZ)" \
+    '[{labels: {alertname: $n, severity: "info", run: $id}, annotations: {summary: "pft-monupgrade test \($id)"}, endsAt: $e}]')"
+  api -X POST -H 'Content-Type: application/json' --data "$body" "$AM_URL/api/v2/alerts" >/dev/null \
+    || { echo "post to Alertmanager failed"; return 1; }
+  st="$(json "$AM_URL/api/v2/alerts?filter=alertname%3D%22$TEST_ALERT%22")" \
+    && jq -e 'any(.[]; .status.silencedBy == [] and .status.inhibitedBy == [])' >/dev/null <<<"$st" \
+    || { echo "test alert silenced/inhibited or not in Alertmanager"; return 1; }
+  while [ $(($(now) - t0)) -lt "$DELIVERY_TIMEOUT" ]; do
+    got="$(api "$NTFY_TEST_URL/json?poll=1&since=$t0" 2>/dev/null | jq -r --arg id "$rid" --arg n "$TEST_ALERT" \
+      'select(.event == "message" and ((.title // "") | contains($n)) and ((.message // "") | contains($id))) | .title' 2>/dev/null | head -n1)"
+    [ -n "$got" ] && { printf 'delivered "%s" after %ss\n' "$got" "$(($(now) - t0))"; return 0; }
+    sleep "$POLL"
+  done
+  echo "not delivered to NTFY_TEST_URL within ${DELIVERY_TIMEOUT}s"; return 1
+}
+
+resolve_test_alert() {
+  local body
+  body="$(jq -nc --arg n "$TEST_ALERT" --arg id "$1" --arg e "$(date -u +%FT%TZ)" \
+    '[{labels: {alertname: $n, severity: "info", run: $id}, annotations: {summary: "pft-monupgrade test \($id)"}, endsAt: $e}]')"
+  api -X POST -H 'Content-Type: application/json' --data "$body" "$AM_URL/api/v2/alerts" >/dev/null || true
+}
+
+# loopback_only -> rc 0 when 9090/9093 listen on loopback only
+loopback_only() {
+  local l
+  l="$("${SS[@]}" -Htln 2>/dev/null | awk '{print $4}' | grep -E ':(9090|9093)$' || true)"
+  [ -n "$l" ] && ! grep -qvE '^(127\.0\.0\.1|\[::1\]):' <<<"$l"
+}
+
+# gate PRE_SNAPSHOT PROM_REF AM_REF RUNID -> rc 0 PASS; prints one CHECK line per check
+GATE_FAILS=()
+gate() {
+  local pre="$1" pref="$2" aref="$3" rid="$4" post="" t0 n c msg
+  GATE_FAILS=()
+  check() { if [ "$2" = ok ]; then printf '  CHECK %-22s ok %s\n' "$1" "${3:-}"; else printf '  CHECK %-22s FAIL %s\n' "$1" "${3:-}"; GATE_FAILS+=("$1"); fi; }
+  for n in prometheus alertmanager; do
+    c="$PROM_CONTAINER"; [ "$n" = alertmanager ] && c="$AM_CONTAINER"
+    local want="$pref"; [ "$n" = alertmanager ] && want="$aref"
+    local ref running
+    ref="$("${DOCKER[@]}" inspect -f '{{.Config.Image}}' "$c" 2>/dev/null)"
+    running="$("${DOCKER[@]}" inspect -f '{{.State.Running}}' "$c" 2>/dev/null)"
+    [ "$ref" = "$want" ] && [ "$running" = true ] && check "$n-image" ok "$ref" || check "$n-image" fail "ref=$ref running=$running want=$want"
+  done
+  wait_ready && check ready ok || check ready fail "not ready within ${READY_TIMEOUT}s"
+  # rules need one evaluation and the scrape target one scrape before they are comparable
+  t0="$(now)"
+  while :; do
+    post="$(snapshot)" || post=""
+    if [ -n "$post" ] && jq -e --argjson pre "$pre" '.rules_not_ok == $pre.rules_not_ok and .targets_up == $pre.targets_up
+      and (.watchdog | length) > 0' >/dev/null 2>&1 <<<"$post"; then break; fi
+    [ $(($(now) - t0)) -ge "$SETTLE_TIMEOUT" ] && break
+    sleep "$POLL"
+  done
+  [ -n "$post" ] || { check snapshot fail "Prometheus/Alertmanager API unreadable"; return 1; }
+  local pv av
+  pv="$(jq -r .prom_version <<<"$post")"; av="$(jq -r .am_version <<<"$post")"
+  [ "v$pv" = "$(tag_of "$pref")" ] && check prometheus-version ok "$pv" || check prometheus-version fail "$pv"
+  [ "v$av" = "$(tag_of "$aref")" ] && check alertmanager-version ok "$av" || check alertmanager-version fail "$av"
+  for c in rules targets targets_up receivers; do
+    if jq -e --argjson pre "$pre" --arg k "$c" '.[$k] == $pre[$k]' >/dev/null <<<"$post"; then
+      check "$c-parity" ok "$(jq -r --arg k "$c" '.[$k] | length' <<<"$post") items"
+    else
+      check "$c-parity" fail "$(jq -rc --argjson pre "$pre" --arg k "$c" '{missing: ($pre[$k] - .[$k]), new: (.[$k] - $pre[$k])}' <<<"$post")"
+    fi
+  done
+  jq -e --argjson pre "$pre" '(.rules_not_ok - $pre.rules_not_ok) == []' >/dev/null <<<"$post" \
+    && check rules-health ok "not ok: $(jq -c .rules_not_ok <<<"$post") (before: $(jq -c .rules_not_ok <<<"$pre"))" \
+    || check rules-health fail "$(jq -c .rules_not_ok <<<"$post")"
+  jq -e --argjson pre "$pre" '($pre.silences - .silences) == []' >/dev/null <<<"$post" \
+    && check silences-kept ok "$(jq -r '.silences | length' <<<"$post") active" \
+    || check silences-kept fail "lost $(jq -c --argjson pre "$pre" '$pre.silences - .silences' <<<"$post")"
+  watchdog_clear "$post" && check watchdog-unsilenced ok || check watchdog-unsilenced fail "$(jq -c .watchdog <<<"$post")"
+  loopback_only && check loopback-only ok || check loopback-only fail
+  msg="$(test_alert "$rid")" && check test-alert ok "$msg" || check test-alert fail "$msg"
+  resolve_test_alert "$rid"
+  [ "${#GATE_FAILS[@]}" -eq 0 ]
+}
+
+refuse() { log "REFUSED: $*"; exit 4; }
+
+# switch_to PROM_REF AM_REF PRE RUNID LABEL -> recreate what differs, gate; rc 0 PASS
+switch_to() {
+  local pref="$1" aref="$2" pre="$3" id="$4" label="$5" did=()
+  if [ "$("${DOCKER[@]}" inspect -f '{{.Config.Image}}' "$AM_CONTAINER")" != "$aref" ]; then
+    recreate "$AM_CONTAINER" "$aref" || return 1; did+=("$AM_CONTAINER")
+  fi
+  if [ "$("${DOCKER[@]}" inspect -f '{{.Config.Image}}' "$PROM_CONTAINER")" != "$pref" ]; then
+    recreate "$PROM_CONTAINER" "$pref" || return 1; did+=("$PROM_CONTAINER")
+  fi
+  local c sig_old sig_new bad=0
+  for c in "${did[@]}"; do
+    sig_old="$(cat "$STATE_DIR/sig.$c")"; sig_new="$(signature "$c")"
+    if [ -n "$sig_old" ] && [ "$sig_old" = "$sig_new" ]; then printf '  CHECK %-22s ok\n' "$c-signature"
+    else printf '  CHECK %-22s FAIL %s\n' "$c-signature" "$(diff <(jq . <<<"$sig_old") <(jq . <<<"$sig_new") | tr '\n' ' ')"; bad=1; fi
+  done
+  log "$label gate"
+  gate "$pre" "$pref" "$aref" "$id" && [ "$bad" -eq 0 ]
+}
+
+# drop_old -> remove the kept previous containers after a PASS (volumes are referenced by name and kept)
+drop_old() {
+  local c
+  for c in "$PROM_CONTAINER" "$AM_CONTAINER"; do
+    "${DOCKER[@]}" rm -f "$c-premonupgrade" >/dev/null 2>&1 && log "  removed $c-premonupgrade" || true
+  done
+}
+
+# back_out -> put every kept previous container back (automatic rollback of a failed switch)
+back_out() {
+  local c
+  for c in "$AM_CONTAINER" "$PROM_CONTAINER"; do
+    if "${DOCKER[@]}" inspect "$c-premonupgrade" >/dev/null 2>&1; then
+      restore_old "$c" && log "  restored previous $c" || log "  ERROR: could not restore previous $c"
+    fi
+  done
+}
+
+guards() { # guards YES -> exit 4 on any refusal
+  [ "$1" = 1 ] || refuse "--yes missing"
+  [ "$(id -u)" = 0 ] || [ "${PFT_MU_ALLOW_NONROOT:-0}" = 1 ] || refuse "run as root"
+  [ -x "$PFT_MAINT_BIN" ] && "$PFT_MAINT_BIN" active >/dev/null 2>&1 || refuse "no active pft-maint window"
+  local why
+  why="$(isolation)" || refuse "alert routing not isolated: $why"
+  "${DOCKER[@]}" inspect "$PROM_CONTAINER-premonupgrade" >/dev/null 2>&1 && refuse "$PROM_CONTAINER-premonupgrade exists (earlier run not finished)"
+  "${DOCKER[@]}" inspect "$AM_CONTAINER-premonupgrade" >/dev/null 2>&1 && refuse "$AM_CONTAINER-premonupgrade exists (earlier run not finished)"
+  api "$PROM_URL/-/ready" >/dev/null 2>&1 && api "$AM_URL/-/ready" >/dev/null 2>&1 || refuse "Prometheus/Alertmanager not ready"
+  return 0
+}
+
+trap_int() { INTERRUPTED=1; }
+
+do_switch() { # do_switch MODE PROM_REF AM_REF -> exit code
+  local mode="$1" pref="$2" aref="$3" pre id rc
+  id="$(date -u +%Y%m%dT%H%M%SZ)-$mode"
+  pre="$(snapshot)" || refuse "Prometheus/Alertmanager API unreadable"
+  watchdog_clear "$pre" || refuse "watchdog $WATCHDOG not active or silenced: $(jq -c .watchdog <<<"$pre")"
+  install -d -m 700 "$STATE_DIR/backup/$id" || { log "ERROR: cannot create $STATE_DIR/backup/$id"; return 64; }
+  "${DOCKER[@]}" inspect "$PROM_CONTAINER" "$AM_CONTAINER" >"$STATE_DIR/backup/$id/inspect.json"
+  cp "$ALERTS_DIR/prometheus.yml" "$ALERTS_DIR/alertmanager.yml" "$STATE_DIR/backup/$id/"
+  json "$AM_URL/api/v2/silences" >"$STATE_DIR/backup/$id/silences.json"
+  printf '%s\n' "$pre" >"$STATE_DIR/backup/$id/snapshot.json"
+  (cd "$STATE_DIR/backup/$id" && sha256sum inspect.json prometheus.yml alertmanager.yml silences.json snapshot.json >SHA256SUMS)
+  log "backup $id: inspect, prometheus.yml, alertmanager.yml, silences ($(jq -r '.silences | length' <<<"$pre") active), snapshot (rules $(jq -r '.rules | length' <<<"$pre"), targets $(jq -r '.targets | length' <<<"$pre"))"
+  local prev_p prev_a
+  prev_p="$("${DOCKER[@]}" inspect -f '{{.Config.Image}}' "$PROM_CONTAINER")"
+  prev_a="$("${DOCKER[@]}" inspect -f '{{.Config.Image}}' "$AM_CONTAINER")"
+  INTERRUPTED=0; trap trap_int INT TERM
+  if switch_to "$pref" "$aref" "$pre" "$id" "$mode" && [ "$INTERRUPTED" = 0 ]; then
+    trap - INT TERM
+    drop_old
+    jq -n --arg at "$(date -u +%FT%TZ)" --arg m "$mode" --arg pp "$prev_p" --arg pa "$prev_a" --arg cp "$pref" --arg ca "$aref" \
+      --arg id "$id" '{at: $at, mode: $m, run: $id, previous: {prometheus: $pp, alertmanager: $pa}, current: {prometheus: $cp, alertmanager: $ca}}' \
+      >"$STATE_DIR/state.json"
+    log "RESULT: PASS - $mode: prometheus $prev_p -> $pref, alertmanager $prev_a -> $aref"
+    return 0
+  fi
+  rc=1
+  log "$mode FAILED (${GATE_FAILS[*]:-recreate/signature}$([ "$INTERRUPTED" = 1 ] && echo ", interrupted")): automatic rollback to the previous containers"
+  back_out
+  if wait_ready; then log "  previous containers ready"; else log "  ERROR: previous containers not ready"; rc=2; fi
+  trap - INT TERM
+  log "RESULT: FAIL - $mode rolled back (exit $rc)"
+  return "$rc"
+}
+
+apply() {
+  local plan_file="" yes=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --plan) plan_file="${2:?--plan FILE}"; shift 2 ;;
+      --yes) yes=1; shift ;;
+      *) echo "unknown option: $1" >&2; exit 2 ;;
+    esac
+  done
+  [ -n "$plan_file" ] || { echo "apply needs --plan FILE" >&2; exit 2; }
+  log "pft-monupgrade apply"
+  local p pref aref cp ca rp ra age
+  p="$(jq -e -c . "$plan_file" 2>/dev/null)" || refuse "plan $plan_file unreadable"
+  jq -e '.fails == [] and (.prometheus.target_digest | test("^sha256:[0-9a-f]{64}$")) and (.alertmanager.target_digest | test("^sha256:[0-9a-f]{64}$"))' \
+    >/dev/null <<<"$p" || refuse "plan has failures or no pinned targets"
+  pref="$PROM_REPO:$(jq -r .prometheus.target_tag <<<"$p")@$(jq -r .prometheus.target_digest <<<"$p")"
+  aref="$AM_REPO:$(jq -r .alertmanager.target_tag <<<"$p")@$(jq -r .alertmanager.target_digest <<<"$p")"
+  rp="$("${DOCKER[@]}" inspect -f '{{.Config.Image}}' "$PROM_CONTAINER" 2>/dev/null)" || refuse "$PROM_CONTAINER missing"
+  ra="$("${DOCKER[@]}" inspect -f '{{.Config.Image}}' "$AM_CONTAINER" 2>/dev/null)" || refuse "$AM_CONTAINER missing"
+  if [ "$rp" = "$pref" ] && [ "$ra" = "$aref" ]; then
+    log "RESULT: NOTHING TO DO - both containers already run the plan targets ($pref, $aref)"; return 0
+  fi
+  [ "$yes" = 1 ] || refuse "--yes missing"
+  age=$(( $(now) - $(date -u -d "$(jq -r .planned_at <<<"$p")" +%s) ))
+  [ "$age" -le "$PLAN_MAX_AGE" ] || refuse "plan is ${age}s old (> PLAN_MAX_AGE $PLAN_MAX_AGE): run plan again"
+  cp="$(current "$PROM_CONTAINER" "$PROM_REPO" | cut -f3)"; ca="$(current "$AM_CONTAINER" "$AM_REPO" | cut -f3)"
+  [ "$rp" = "$pref" ] || [ "$cp" = "$(jq -r .prometheus.current_digest <<<"$p")" ] || refuse "prometheus changed since the plan (running $cp)"
+  [ "$ra" = "$aref" ] || [ "$ca" = "$(jq -r .alertmanager.current_digest <<<"$p")" ] || refuse "alertmanager changed since the plan (running $ca)"
+  local r
+  for r in "$pref" "$aref"; do
+    "${DOCKER[@]}" image inspect -f '{{range .RepoDigests}}{{println .}}{{end}}' "${r%%:*}@${r#*@}" 2>/dev/null | grep -qxF "${r%%:*}@${r#*@}" \
+      || refuse "target $r not in the image store with its digest (run plan)"
+  done
+  guards "$yes"
+  do_switch apply "$pref" "$aref"
+}
+
+rollback() {
+  local yes=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --yes) yes=1; shift ;;
+      *) echo "unknown option: $1" >&2; exit 2 ;;
+    esac
+  done
+  log "pft-monupgrade rollback"
+  local st pref aref
+  st="$(jq -e -c . "$STATE_DIR/state.json" 2>/dev/null)" || refuse "no earlier apply recorded in STATE_DIR"
+  [ "$(jq -r .mode <<<"$st")" = apply ] || { log "RESULT: NOTHING TO DO - the last change was already a rollback"; return 0; }
+  pref="$(jq -r .previous.prometheus <<<"$st")"; aref="$(jq -r .previous.alertmanager <<<"$st")"
+  guards "$yes"
+  local r d
+  for r in "$pref" "$aref"; do
+    case "$r" in *@sha256:*) d="${r%%:*}@${r#*@}" ;; *) d="$r" ;; esac
+    "${DOCKER[@]}" image inspect "$d" >/dev/null 2>&1 || refuse "previous image $r no longer in the image store"
+  done
+  do_switch rollback "$pref" "$aref"
+}
+
 case "${1:-}" in
   plan) shift; plan "$@"; exit $? ;;
-  *) sed -n '2,30p' "$0"; exit 2 ;;
+  apply) shift; apply "$@"; exit $? ;;
+  rollback) shift; rollback "$@"; exit $? ;;
+  *) sed -n '3,36p' "$0"; exit 2 ;;
 esac

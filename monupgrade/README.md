@@ -5,7 +5,7 @@
 `docker run`, no compose file) without risking the alerting of a Post Fiat node: every target image is pinned to its
 registry digest and checked against the live rules and configuration before anything is swapped.
 
-Status: `plan` and its offline tests. `apply` / `rollback` and the recorded runs follow.
+Status: `plan`, `apply`, `rollback` and their offline tests. The recorded two-host runs follow.
 
 ## plan (no container change)
 
@@ -49,12 +49,55 @@ will consume it.
 Env: `DOCKER` (e.g. `"sudo docker"`), `ALERTS_DIR`, `SLO_DIR`, `PROM_CONTAINER`, `AM_CONTAINER`, `PROM_REPO`,
 `AM_REPO`, `TARGET_PROM`, `TARGET_AM`, `MIN_AGE_DAYS`, `HUB_URL`; tests only: `HUB_TAGS_DIR`, `NOW`.
 
+## apply / rollback
+
+```
+pft-monupgrade apply --plan FILE --yes     # re-create both containers on the plan's digest-pinned targets
+pft-monupgrade rollback --yes              # back to the images that ran before the last apply
+```
+
+**Refused (exit 4, no container touched)** without `--yes`; not root; no active `pft-maint` window; alert routing
+not isolated (`NTFY_TEST_URL` unset, the bridge's mounted `ntfy.env` not pointing at it, or the bridge started before
+that file changed); Prometheus/Alertmanager not ready or their API unreadable; the watchdog
+(`PFTAlertPipelineWatchdog`) not active or covered by a silence; a `*-premonupgrade` container left over. `apply`
+also refuses a plan older than `PLAN_MAX_AGE` (24 h), a plan with failures, a running digest that differs from the
+plan's `current_digest`, or a target that is not in the image store with its digest. Both containers already on the
+targets -> `NOTHING TO DO`, exit 0 (a second apply is a no-op); `rollback` after a rollback likewise.
+
+**Switch.** Backup to `STATE_DIR/backup/<run>/` (`docker inspect` of both containers, `prometheus.yml`,
+`alertmanager.yml`, Alertmanager silences, an API snapshot, `SHA256SUMS`). Alertmanager first, then Prometheus: stop,
+rename to `NAME-premonupgrade` (restart policy `no`, kept for the automatic rollback), `docker run` the new image
+with the configuration rebuilt from the container's own `docker inspect` (name, restart policy, network,
+security-opt, cap-drop/add, read-only, user, log driver, every bind and volume mount, arguments). Alertmanager's
+data volume is mounted by name, so silences and the notification log survive the swap (`run-stack.sh up` would
+start a fresh one).
+
+**Gate** (one `CHECK` line each): both containers running the wanted ref; `/-/ready`; Prometheus and Alertmanager
+versions = target tags; the rule set (group/name), scrape targets, targets up and receivers identical to the
+snapshot before the switch (waits up to `SETTLE_TIMEOUT` for the first evaluation); no rule unhealthy that was healthy
+before; every active silence still active; watchdog active and unsilenced; 9090/9093 listening on loopback only; a
+synthetic `PFTMonupgradeTest` alert posted to Alertmanager is not silenced and reaches the `NTFY_TEST_URL` topic
+within `DELIVERY_TIMEOUT` (then resolved); configuration signature of each re-created container (everything above
+except the image) equal to the one recorded before the change. PASS -> the `-premonupgrade` containers are removed
+(volumes kept), `STATE_DIR/state.json` records previous/current refs, exit 0. Any failure or error -> automatic
+rollback (an INT/TERM during the switch is held until the gate ends and then also rolls back) (the kept previous containers are renamed back, their restart policy restored and started),
+exit 1 (2 if the previous containers are not ready afterwards).
+
+Prometheus keeps its TSDB volume across the swap in both directions; a rollback across a TSDB format change would
+need the data volume restored from backup (the targets used here are all Prometheus 3.x).
+
 ## Tests
 
 ```
-bash tests/run-tests.sh      # offline: stub docker (tests/stub_docker.sh) + Docker Hub fixtures (tests/fixtures)
+bash tests/run-tests.sh        # plan: stub docker (tests/stub_docker.sh) + Docker Hub fixtures (tests/fixtures)
+bash tests/run-apply-tests.sh  # apply/rollback: stateful fake docker + Prometheus/Alertmanager/ntfy APIs (tests/fake_stack.py)
 ```
 
 Each failure path asserts its exit code, its named reason and what must NOT have happened (no pull, no check
 container). The selection fixtures cover the age gate, semver order (`v3.15.1` > `v3.9.10`), other majors,
-`-rc`/`-distroless`/`latest`, and invalid hub JSON.
+`-rc`/`-distroless`/`latest`, and invalid hub JSON. The apply suite runs apply -> second apply (no-op) -> rollback ->
+rollback (no-op) -> re-apply, 14 refusals (each with zero container-changing docker calls), and 8 injected gate
+failures (docker run, readiness, lost rule, unhealthy rule, target down, no delivery, exposed port) that must all end
+on the original images with restart policies, Alertmanager data volume and silences intact. The fake derives every
+API answer from the containers actually running (version = image tag; silences only if the original Alertmanager
+volume is mounted), so the re-create logic itself is under test.
