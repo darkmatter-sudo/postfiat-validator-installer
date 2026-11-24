@@ -35,8 +35,8 @@ TA="pft-drill-monupgrade-a-$(rnd)"   # alerts of the stack under test (canary or
 TAU="https://ntfy.sh/$TA"
 RD=".cache/monupgrade-run-$RUN"      # relative to $HOME on both hosts
 R() { ssh -o LogLevel=ERROR -o BatchMode=yes relay "$@" </dev/null; }
-RHN="$(R hostname 2>/dev/null)"; RHN="${RHN:-$HN}"; RME="$(R id -un 2>/dev/null)"; RME="${RME:-$ME}"
-red() { sed -E "s#$HOME#~#g; s#/home/$ME#~#g; s#/home/$RME#~#g; s#\b$ME\b#<user>#g; s#\b$RME\b#<user>#g; s#$HN#<host>#g; s#$RHN#<host>#g; s#\b([0-9]{1,3}\.){3}[0-9]{1,3}\b#<redacted-ip>#g; s#$TT#<throwaway-topic>#g; s#$TA#<throwaway-alert-topic>#g; s#/opt/pft-agent/[^[:space:]]*#<operator-agent-path>#g"; }
+RHN="$(R hostname 2>/dev/null)"; RHN="${RHN:-$HN}"; RME="$(R id -un 2>/dev/null)"; RME="${RME:-$ME}"; [ "$RME" = root ] && RME="$ME"   # never redact the word root
+red() { sed -E "s#$HOME#~#g; s#/home/$ME#~#g; s#/home/$RME#~#g; s#\b$ME\b#<user>#g; s#\b$RME\b#<user>#g; s#$HN#<host>#g; s#$RHN#<host>#g; s#\b127\.0\.0\.1\b#LOOPBACK#g; s#\b([0-9]{1,3}\.){3}[0-9]{1,3}\b#<redacted-ip>#g; s#LOOPBACK#127.0.0.1#g; s#$TT#<throwaway-topic>#g; s#$TA#<throwaway-alert-topic>#g; s#/opt/pft-agent/[^[:space:]]*#<operator-agent-path>#g"; }
 XRC=0; XOUT=""
 x() { echo "\$ $*" | red; XOUT="$( (eval "$*") 2>&1)"; XRC=$?; printf '%s\n' "$XOUT" | red | sed 's/^/  /'; echo "  (exit $XRC)"; }
 FAILS=0
@@ -178,7 +178,7 @@ echo; echo "== 2. switches"
 for h in $HOSTS; do
   echo; echo "-- $h ($(date -u +%FT%TZ))"
   if [ "$h" = sentry ]; then
-    x "R 'rm -rf ~/$RD && mkdir -p ~/$RD/repo ~/$RD/canary && chmod 700 ~/$RD' && git archive HEAD | ssh -o LogLevel=ERROR -o BatchMode=yes relay 'tar -x -C ~/$RD/repo' && R 'printf \"NTFY_URL=%s\n\" $TAU > ~/$RD/canary/ntfy.env && chmod 600 ~/$RD/canary/ntfy.env && cd ~/$RD/repo && sha256sum monupgrade/pft-monupgrade.sh alerts/run-stack.sh alerts/prometheus.yml alerts/alertmanager.yml' && sha256sum monupgrade/pft-monupgrade.sh alerts/run-stack.sh alerts/prometheus.yml alerts/alertmanager.yml"
+    x "R 'rm -rf ~/$RD && mkdir -p ~/$RD/repo ~/$RD/canary && chmod 700 ~/$RD' && git archive HEAD | ssh -o LogLevel=ERROR -o BatchMode=yes relay 'tar -x -C ~/$RD/repo' && R 'printf \"NTFY_URL=%s\n\" $TAU > ~/$RD/canary/ntfy.env && chmod 600 ~/$RD/canary/ntfy.env && sudo -n chown 65534:65534 ~/$RD/canary/ntfy.env && cd ~/$RD/repo && sha256sum monupgrade/pft-monupgrade.sh alerts/run-stack.sh alerts/prometheus.yml alerts/alertmanager.yml' && sha256sum monupgrade/pft-monupgrade.sh alerts/run-stack.sh alerts/prometheus.yml alerts/alertmanager.yml"
     check "sentry run copy = HEAD bytes" "$([ "$XRC" = 0 ] && [ "$(wc -l <<<"$XOUT")" = 8 ] && [ "$(awk '{print $1}' <<<"$XOUT" | sort | uniq -c | awk '$1 != 2' | wc -l)" = 0 ] && echo 0 || echo 1)"; gate
     x "R 'STATE=~/$RD/canary NTFY_ENV_FILE=~/$RD/canary/ntfy.env PROM_IMAGE=$CP AM_IMAGE=$CA bash $RD/repo/monupgrade/drill/canary.sh up' | tail -25"
     [ "$XRC" = 0 ] && CANARY=1; check "sentry canary up (validator's current images, bridge -> throwaway)" "$XRC"; gate
