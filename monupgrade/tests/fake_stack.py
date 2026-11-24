@@ -192,6 +192,11 @@ def run(st, a):
             c["capdrop"].append(v)
         elif o == "--user":
             c["user"] = v
+        elif o == "--log-driver":
+            c["log"]["Type"] = v
+        elif o == "--log-opt":
+            k, val = v.split("=", 1)
+            c["log"]["Config"][k] = val
         elif o == "--read-only":
             c["readonly"] = True
             i += 1
@@ -212,6 +217,8 @@ def run(st, a):
             die("fake docker run: unsupported option " + o, 99)
         i += 2
     image, c["args"] = a[i], a[i + 1 :]
+    if c["log"]["Config"] == {} and os.environ.get("STUB_DAEMON_LOG_OPTS"):  # dockerd's daemon.json log-opts defaults
+        c["log"]["Config"] = json.loads(os.environ["STUB_DAEMON_LOG_OPTS"])
     if match("STUB_DROP_SECOPT", image):
         c["security"] = []
     if match("STUB_RUN_FAIL", image):

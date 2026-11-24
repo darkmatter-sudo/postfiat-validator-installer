@@ -79,7 +79,10 @@ snapshot before the switch (waits up to `SETTLE_TIMEOUT` for the first evaluatio
 before; every active silence still active; watchdog active and unsilenced; 9090/9093 listening on loopback only; a
 synthetic `PFTMonupgradeTest` alert posted to Alertmanager is not silenced and reaches the `NTFY_TEST_URL` topic
 within `DELIVERY_TIMEOUT` (then resolved); configuration signature of each re-created container (everything above
-except the image) equal to the one recorded before the change. PASS -> the `-premonupgrade` containers are removed
+except the image) equal to the one recorded before the change. One difference is accepted and named: a container created
+without log options gets dockerd's `daemon.json` `log-opts` defaults when it is re-created (`docker run` cannot ask
+for none; dry run 4 on the validator failed the signature on exactly that and rolled back). Any other log difference,
+or log options without a matching `daemon.json`, still fails. PASS -> the `-premonupgrade` containers are removed
 (volumes kept), `STATE_DIR/state.json` records previous/current refs, exit 0. Any failure or error -> automatic
 rollback (an INT/TERM during the switch is held until the gate ends and then also rolls back) (the kept previous containers are renamed back, their restart policy restored and started),
 exit 1 (2 if the previous containers are not ready afterwards).

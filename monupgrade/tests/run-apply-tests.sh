@@ -214,6 +214,21 @@ expect_rc bigapi 0
 expect_out bigapi "CHECK rules-parity +ok 3 items"
 on_images bigapi "$P_NEW" "$A_NEW"
 
+# dockerd adds its daemon.json log-opts to every new container (dry run 4 on the validator: signature FAIL, rolled back)
+DJ="$SCRATCH/daemon.json"; printf '{"log-driver": "json-file", "log-opts": {"max-size": "100m", "max-file": "5"}}\n' >"$DJ"
+setup dlog
+run_tool DOCKER_DAEMON_JSON="$DJ" STUB_DAEMON_LOG_OPTS='{"max-file":"5","max-size":"100m"}' -- apply --plan "$STUB_DIR/plan.json" --yes
+expect_rc dlog 0
+expect_out dlog "CHECK pft-prometheus-signature ok \(log options = daemon.json log-opts defaults"
+expect_out dlog "CHECK pft-alertmanager-signature ok \(log options = daemon.json log-opts defaults"
+on_images dlog "$P_NEW" "$A_NEW"
+run_tool DOCKER_DAEMON_JSON="$DJ" STUB_DAEMON_LOG_OPTS='{"max-file":"5","max-size":"100m"}' -- rollback --yes
+expect_rc dlog-rollback 0
+expect_out dlog-rollback "CHECK pft-prometheus-signature +ok$"
+on_images dlog-rollback "$P_OLD" "$A_OLD"
+failure dlog-other "CHECK pft-prometheus-signature FAIL .*max-size" DOCKER_DAEMON_JSON="$DJ" STUB_DAEMON_LOG_OPTS='{"max-file":"5","max-size":"1m"}'
+failure dlog-nodaemon "CHECK pft-alertmanager-signature FAIL .*max-size" DOCKER_DAEMON_JSON="$SCRATCH/none.json" STUB_DAEMON_LOG_OPTS='{"max-file":"5","max-size":"100m"}'
+
 # usage
 setup u; run_tool -- apply --yes; expect_rc usage-noplan 2
 run_tool -- rollback --bogus; expect_rc usage-rollback 2

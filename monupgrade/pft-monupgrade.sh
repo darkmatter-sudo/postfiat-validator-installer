@@ -483,6 +483,17 @@ gate() {
 
 refuse() { log "REFUSED: $*"; exit 4; }
 
+# daemon_log_defaults SIG_OLD SIG_NEW -> rc 0 when the only difference is that the old container had no log options
+# and the new one has exactly the daemon's default "log-opts" (dockerd adds them to every container created after
+# daemon.json set them; `docker run` cannot ask for "none"). Any other log difference stays a signature failure.
+DOCKER_DAEMON_JSON="${DOCKER_DAEMON_JSON:-/etc/docker/daemon.json}"
+daemon_log_defaults() {
+  local d
+  d="$(jq -c '."log-opts" // {}' "$DOCKER_DAEMON_JSON" 2>/dev/null)" || return 1
+  jq -n -e --argjson o "$1" --argjson n "$2" --argjson d "$d" \
+    '$d != {} and $o.log.Config == {} and $n.log.Type == $o.log.Type and ($o | .log.Config = $d) == $n' >/dev/null 2>&1
+}
+
 # switch_to PROM_REF AM_REF PRE RUNID LABEL -> recreate what differs, gate; rc 0 PASS
 switch_to() {
   local pref="$1" aref="$2" pre="$3" id="$4" label="$5" did=()
@@ -496,6 +507,8 @@ switch_to() {
   for c in "${did[@]}"; do
     sig_old="$(cat "$STATE_DIR/sig.$c")"; sig_new="$(signature "$c")"
     if [ -n "$sig_old" ] && [ "$sig_old" = "$sig_new" ]; then printf '  CHECK %-22s ok\n' "$c-signature"
+    elif [ -n "$sig_old" ] && daemon_log_defaults "$sig_old" "$sig_new"; then
+      printf '  CHECK %-22s ok (log options = daemon.json log-opts defaults, applied by dockerd to the new container)\n' "$c-signature"
     else printf '  CHECK %-22s FAIL %s\n' "$c-signature" "$(diff <(jq . <<<"$sig_old") <(jq . <<<"$sig_new") | tr '\n' ' ')"; bad=1; fi
   done
   log "$label gate"
