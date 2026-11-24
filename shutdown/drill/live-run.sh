@@ -24,7 +24,10 @@ AM=http://127.0.0.1:9093; PROM=http://127.0.0.1:9090; RPC=http://127.0.0.1:5005
 ME="$(id -un)"; HN="$(hostname)"
 TASK=task_32fe8c3a
 RUN="${RUN:?set RUN}"; DRY="${DRY:-0}"; MODE="${MODE:-measure}"; HOSTS="${HOSTS:-sentry validator}"; N="${N:-3}"
-PAUSE_S="${PAUSE_S:-60}"; DRAIN_MAX_S="${DRAIN_MAX_S:-1800}"
+# a validator stop records a histarchive gap: PFTHistarchiveIntegrity (delta(follow_gaps[1h]) > 0) fires for 1 h after
+# it even once the gap is filled, so drain and silence must outlast that hour (dry2: 30-min drain cap, silence extended)
+VX=0; case " $HOSTS " in *" validator "*) VX=75 ;; esac
+PAUSE_S="${PAUSE_S:-60}"; DRAIN_MAX_S="${DRAIN_MAX_S:-$((VX > 0 ? VX * 60 : 1800))}"
 case "$MODE" in measure|kill-drill) ;; *) echo "MODE must be measure or kill-drill"; exit 3 ;; esac
 SD=/var/lib/pft-shutdown; [ "$DRY" = 1 ] && SD="/var/lib/pft-shutdown/dry-$RUN"
 TT="pft-drill-shutdown-$(head -c 6 /dev/urandom | od -An -tx1 | tr -d ' \n')"
@@ -43,7 +46,7 @@ since="$(date -u +%s)"
 OPS="$(mktemp -p "$HOME/.cache")"; chmod 600 "$OPS"
 NRUNS=0; for _ in $HOSTS; do NRUNS=$((NRUNS + N)); done
 # per run: stop (<=120 s) + recovery (<=900 s budget, ~2 min seen) + settle 60 + pause; silence = runs + alert windows
-SIL_MIN="${SIL_MIN:-$((NRUNS * 8 + 45))}"; TTL_MIN="$((NRUNS * 8 + 20))"
+SIL_MIN="${SIL_MIN:-$((NRUNS * 8 + 45 + VX))}"; TTL_MIN="$((NRUNS * 8 + 20))"
 
 state_v() { curl -s -m 10 -d '{"method":"server_info"}' "$RPC" | jq -r '.result.info.server_state // "?"'; }
 state_s() { R "sudo -n docker exec postfiatd-sentry curl -s -m 10 -d '{\"method\":\"server_info\"}' http://127.0.0.1:5005 | jq -r '.result.info.server_state // \"?\"'"; }
