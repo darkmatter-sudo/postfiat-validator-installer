@@ -130,5 +130,97 @@ chkp() { local got; got="$(bash -c "$P; $1 '$2'" 2>/dev/null)"; [ "$got" = "$3" 
 chkp span_s "1min 30s" 90; chkp span_s infinity inf; chkp span_s 500ms 1; chkp span_s "1h 2min 3s" 3723; chkp span_s 90 90
 chkp dur_s 1m30s 90; chkp dur_s 45s 45; chkp dur_s 2m 120; chkp dur_s 1h 3600; chkp dur_s 1500ms 2; chkp dur_s 10 ""
 
+# --- measure / kill-drill: stubbed docker stop/kill/start, server_info sequence, pft-maint, debug.log
+# mfresh: a compose host whose container logs to $E/root/opt/postfiatd/logs/debug.log. s/stop: how `docker stop`
+# behaves ("EXIT MARKERS" e.g. "0 yes", "137 no"); s/rpc: one server_info JSON per line, the last one repeats.
+mfresh() {
+  fresh compose; mkdir -p "$E/root/opt/postfiatd/logs" "$E/root/var/lib/pft-shutdown"
+  echo "2026-11-24T00:00:00Z NetworkOPs:NFO running" > "$E/root/opt/postfiatd/logs/debug.log"
+  ins '.[0].State={Running:true, ExitCode:0, OOMKilled:false, FinishedAt:"0001-01-01T00:00:00Z"} | .[0].Mounts=[{Destination:"/var/log/postfiatd", Source:"/opt/postfiatd/logs"}]'
+  echo "0 yes" > "$E/s/stop"; : > "$E/s/calls"; echo 0 > "$E/s/rpcn"; echo 0 > "$E/s/maint"; : > "$E/s/startlog"
+  printf '%s\n' '{"result":{"info":{"server_state":"full","complete_ledgers":"100-200","validated_ledger":{"seq":200}}}}' \
+    '{"result":{"info":{"server_state":"connected","complete_ledgers":"empty"}}}' \
+    '{"result":{"info":{"server_state":"full","complete_ledgers":"100-200,215-230","validated_ledger":{"seq":230}}}}' > "$E/s/rpc"
+  cat > "$E/bin/docker" <<B
+#!/usr/bin/env bash
+S="$E/s"; L="$E/root/opt/postfiatd/logs/debug.log"; echo "\$*" >> "\$S/calls"
+st() { jq "\$1" "\$S/inspect.json" > "\$S/i.tmp" && mv "\$S/i.tmp" "\$S/inspect.json"; }
+case "\$1" in
+  inspect) if [ "\$2" = -f ]; then jq -r '.[0].State.Running' "\$S/inspect.json"; else cat "\$S/inspect.json"; fi ;;
+  stop) read -r ec mk < "\$S/stop"
+        [ "\$mk" = yes ] && printf '%s\n' "x Application:WRN Received signal 15" "x Application:WRN Server stopping: signal" "x Application:NFO Application stopping" >> "\$L"
+        st ".[0].State.Running=false | .[0].State.ExitCode=\$ec | .[0].State.FinishedAt=\"2026-11-24T01:00:00Z\"" ;;
+  kill) st '.[0].State.Running=false | .[0].State.ExitCode=137' ;;
+  start) mv "\$L" "\$L-rotated"; cat "\$S/startlog" > "\$L"; st '.[0].State.Running=true' ;;
+  image) cat "\$S/image-signal" ;;
+  compose) cat "\$S/compose.json" ;;
+  *) exit 1 ;;
+esac
+B
+  printf '#!/bin/sh\nexit "$(cat %s/s/maint)"\n' "$E" > "$E/bin/maint"
+  cat > "$E/bin/rpc" <<B
+#!/usr/bin/env bash
+n=\$(( \$(cat "$E/s/rpcn") + 1 )); echo "\$n" > "$E/s/rpcn"; t=\$(wc -l < "$E/s/rpc"); [ "\$n" -le "\$t" ] || n=\$t; sed -n "\${n}p" "$E/s/rpc"
+B
+  chmod 755 "$E/bin/docker" "$E/bin/maint" "$E/bin/rpc"
+  export PFT_SHUTDOWN_MAINT="$E/bin/maint" PFT_SHUTDOWN_RPC="$E/bin/rpc" STATE_DIR="$E/root/var/lib/pft-shutdown" \
+    POLL_SEC=0 SETTLE_SEC=0 RECOVER_TIMEOUT=5
+}
+MJ() { jq -r "$1" "$STATE_DIR/measure-postfiatd.json"; }
+stopped() { grep -qE "^(stop|kill)" "$E/s/calls" && echo yes || echo no; }
+
+mfresh; run measure --yes
+expect "measure clean -> PASS" 0 'RESULT: PASS - clean stop [0-9.]+s, back to full in [0-9.]+s, holes 14, database errors 0'
+expect "measure counts all three markers" 0 'Received signal 1, Server stopping 1, Application stopping 1'
+expect "measure holes 201-214" 0 'holes at/above 100: 201-214 \(14 ledgers\)'
+[ "$(MJ '.runs | length')" = 1 ] && [ "$(MJ '.runs[0] | "\(.mode) \(.clean) \(.exit_code) \(.hole_ledgers) \(.timeout_s)"')" = "clean true 0 14 120" ] \
+  && ok "measure appends one clean run to the state" || ko "measure state" "$(cat "$STATE_DIR/measure-postfiatd.json")"
+grep -q '^stop -t 120 postfiatd$' "$E/s/calls" && grep -q '^start postfiatd$' "$E/s/calls" && ok "measure: docker stop -t 120, docker start" || ko "measure calls" "$(cat "$E/s/calls")"
+echo 0 > "$E/s/rpcn"; ins '.[0].State.Running=true'; run measure --yes --timeout 60
+[ "$(MJ '.runs | length')" = 2 ] && [ "$(MJ '.runs[1].timeout_s')" = 60 ] && ok "second run appended, --timeout 60" || ko "second run" "$OUT"
+run audit; expect "audit reads the measured runs" 0 'required stop budget: 30s \(p100 [0-9.]+s x 3 = [0-9]+s, floor 30s \(2 clean runs\)\)'
+
+mfresh; echo "137 no" > "$E/s/stop"; run measure --yes
+expect "SIGKILLed stop -> FAIL 1" 1 'reason: exit code 137 \(137 = SIGKILL after the timeout\)'
+expect "SIGKILLed stop: no marker reason" 1 "reason: no 'Received signal' marker in debug.log"
+[ "$(MJ '.runs[0].clean')" = false ] && ok "unclean stop recorded clean=false" || ko "unclean recorded" "$OUT"
+run audit; expect "unclean run not counted in REQUIRED" 0 'default \(no clean run in'
+mfresh; echo "0 no" > "$E/s/stop"; run measure --yes; expect "exit 0 without marker -> FAIL 1" 1 "reason: no 'Received signal' marker"
+mfresh; ins '.[0].State.OOMKilled=true'; run measure --yes; expect "OOM-killed -> FAIL 1" 1 'reason: OOM-killed'
+mfresh; echo "2026-11-24T01:00:05Z NodeObject:FTL NodeStore corrupt node" > "$E/s/startlog"; run measure --yes
+expect "database error after start -> FAIL 1" 1 'reason: 1 database error line\(s\) after restart'
+mfresh; printf '%s\n' '{"result":{"info":{"server_state":"full","complete_ledgers":"100-200","validated_ledger":{"seq":200}}}}' \
+  '{"result":{"info":{"server_state":"syncing"}}}' > "$E/s/rpc"; RECOVER_TIMEOUT=1 POLL_SEC=1 run measure --yes
+expect "not full within RECOVER_TIMEOUT -> 2" 2 'RESULT: FAIL - not back to full within 1s'
+
+# guards: refused before any stop
+mfresh; run measure; expect "no --yes -> refused 4" 4 'refused: pass --yes'; [ "$(stopped)" = no ] && ok "no --yes: nothing stopped" || ko "no --yes stopped"
+mfresh; echo 1 > "$E/s/maint"; run measure --yes; expect "no maint window -> refused 4" 4 'refused: no active pft-maint window'
+[ "$(stopped)" = no ] && ok "no window: nothing stopped" || ko "no window stopped"
+mfresh; echo '{"result":{"info":{"server_state":"syncing"}}}' > "$E/s/rpc"; run measure --yes
+expect "node not full -> refused 4" 4 'refused: postfiatd server_state is syncing'; [ "$(stopped)" = no ] && ok "not full: nothing stopped" || ko "not full stopped"
+mfresh; : > "$E/s/rpc"; run measure --yes; expect "RPC unreachable -> refused 4" 4 'server_state is unreachable'
+mfresh; ins '.[0].State.Running=false'; run measure --yes; expect "container not running -> refused 4" 4 'refused: postfiatd is not running'
+mfresh; run measure --yes --timeout 0; expect "--timeout 0 -> usage 65" 65 'Usage:'
+mfresh; run kill-drill --yes --timeout 5; expect "kill-drill takes no --timeout -> 65" 65 'Usage:'
+
+# kill-drill
+mfresh; run kill-drill --yes
+expect "kill-drill -> PASS" 0 'RESULT: PASS - sigkill stop [0-9.]+s, back to full'
+grep -q '^kill -s KILL postfiatd$' "$E/s/calls" && ok "kill-drill: docker kill -s KILL" || ko "kill-drill calls" "$(cat "$E/s/calls")"
+[ "$(MJ '.runs[0] | "\(.mode) \(.clean) \(.exit_code)"')" = "sigkill false 137" ] && ok "kill-drill recorded mode sigkill, never clean" || ko "kill-drill state" "$OUT"
+run audit; expect "sigkill run not counted in REQUIRED" 0 'default \(no clean run in'
+mfresh; echo "x SHAMapStore:ERR database malformed" > "$E/s/startlog"; run kill-drill --yes
+expect "kill-drill db error -> FAIL 1" 1 'reason: 1 database error line'
+mfresh; run measure --yes --json
+jq -e 'select(.mode? == "clean") | .clean == true and .markers.received_signal == 1 and .hole_ledgers == 14 and .reasons == []' <<<"$(grep '^{' <<<"$OUT")" >/dev/null \
+  && ok "measure --json prints the run" || ko "measure --json" "$OUT"
+
+# holes()
+H="$(sed -n '/^holes()/,/^}/p' "$TOOL")"
+chkh() { local got; got="$(bash -c "$H; holes '$1' $2")"; [ "$got" = "$3" ] && ok "holes '$1' >= $2 = $3" || ko "holes '$1' $2 = $3 (got '$got')"; }
+chkh "100-200" 100 "|0"; chkh "100-200,215-230" 100 "201-214|14"; chkh "1-5,10-20,25" 12 "21-24|4"; chkh "1-5,10-20" 8 "8-9|2"
+chkh "1-5,10-20" 3 "6-9|4"; chkh "empty" 0 "|0"
+
 echo "RESULT: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]
