@@ -112,10 +112,11 @@ run_tool -- apply --plan "$STUB_DIR/plan.json" --yes
 expect_rc apply 0
 for c in prometheus-image alertmanager-image ready prometheus-version alertmanager-version rules-parity targets-parity \
   targets_up-parity receivers-parity rules-health silences-kept watchdog-unsilenced loopback-only test-alert \
-  pft-prometheus-signature pft-alertmanager-signature; do
+  test-alert-resolved pft-prometheus-signature pft-alertmanager-signature; do
   expect_out apply "CHECK $c +ok"
 done
 expect_out apply "CHECK test-alert +ok delivered \"\[FIRING\] PFTMonupgradeTest\""
+expect_out apply "CHECK test-alert-resolved +ok delivered \"\[RESOLVED\] PFTMonupgradeTest\""
 expect_out apply "RESULT: PASS - apply: prometheus $P_OLD -> $P_NEW, alertmanager $A_OLD -> $A_NEW"
 on_images apply "$P_NEW" "$A_NEW"
 expect_eq "apply: config + user + args carried" "$(st '.containers["pft-alertmanager"] | [.user, .network, (.security|join(",")), (.capdrop|join(",")), (.args|length)] | join(" ")')" "nobody host no-new-privileges ALL 4"
@@ -195,6 +196,7 @@ failure ruleerr "CHECK rules-health +FAIL \[\"PFTB\"\]" STUB_RULE_ERR='prometheu
 failure target "CHECK targets_up-parity +FAIL" STUB_TARGET_DOWN='prometheus:v3\.15'
 failure delivery "CHECK test-alert +FAIL not delivered to NTFY_TEST_URL" STUB_NO_DELIVERY=1
 failure exposed "CHECK loopback-only +FAIL" STUB_SS_EXPOSED=1
+failure noresolved "CHECK test-alert-resolved +FAIL \[RESOLVED\] not delivered to NTFY_TEST_URL" STUB_NO_RESOLVED=1
 failure silences "CHECK silences-kept +FAIL lost \[\"sil-1\"\]" STUB_SILENCES_LOST='alertmanager:v0\.35'
 failure secopt "CHECK pft-alertmanager-signature FAIL .*no-new-privileges" STUB_DROP_SECOPT='alertmanager:v0\.35'
 

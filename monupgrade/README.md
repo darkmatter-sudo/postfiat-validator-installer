@@ -78,7 +78,8 @@ versions = target tags; the rule set (group/name), scrape targets, targets up an
 snapshot before the switch (waits up to `SETTLE_TIMEOUT` for the first evaluation); no rule unhealthy that was healthy
 before; every active silence still active; watchdog active and unsilenced; 9090/9093 listening on loopback only; a
 synthetic `PFTMonupgradeTest` alert posted to Alertmanager is not silenced and reaches the `NTFY_TEST_URL` topic
-within `DELIVERY_TIMEOUT` (then resolved); configuration signature of each re-created container (everything above
+within `DELIVERY_TIMEOUT`, and after it is resolved its `[RESOLVED]` reaches that topic too (Alertmanager sends it at
+the next group flush; dry run 5 moved the bridge back first and one `[RESOLVED]` reached the operator); configuration signature of each re-created container (everything above
 except the image) equal to the one recorded before the change. One difference is accepted and named: a container created
 without log options gets dockerd's `daemon.json` `log-opts` defaults when it is re-created (`docker run` cannot ask
 for none; dry run 4 on the validator failed the signature on exactly that and rolled back). Any other log difference,
@@ -125,7 +126,8 @@ The sentry runs **no** Prometheus/Alertmanager: the sentry's alerts are evaluate
   Alertmanager silence for everything except the watchdog, `PFTMonupgradeTest` and digest-only alerts (the gate
   checks that the watchdog never matches it); per host `plan` -> `apply` -> `rollback` -> `apply` -> `apply`
   (`NOTHING TO DO`); the validator's live bridge is moved to the throwaway topic for its cycle (`run-stack.sh
-  bridge`) and back after it; imagescan after (fixable counts per monitoring image only, never ids); integrity
+  bridge`) and back after it, only once no `PFTMonupgradeTest` is active and every `[FIRING]` of it on the throwaway
+  topic has its `[RESOLVED]` (`test_drain`, also in the exit trap); imagescan after (fixable counts per monitoring image only, never ids); integrity
   accept of the re-created monitoring containers; end window, drain, expire the silence, read back the throwaway
   topics and every operator topic. The drain counts every Prometheus alert (pending too) that no silence
   other than the run's own matches, evaluating the matchers itself, so nothing held back by the run's silence can

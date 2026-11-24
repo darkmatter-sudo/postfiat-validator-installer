@@ -13,6 +13,7 @@ Knobs (env):
   STUB_RULE_ERR=<regex>      Prometheus on a matching image reports one rule with health "err"
   STUB_TARGET_DOWN=<regex>   Prometheus on a matching image reports the scrape target down
   STUB_NO_DELIVERY=1         Alertmanager accepts the test alert but nothing reaches the ntfy topic
+  STUB_NO_RESOLVED=1         the test alert's [FIRING] is delivered, its [RESOLVED] is not
   STUB_WATCHDOG_SILENCED=1   the watchdog alert is silenced
   STUB_API_DOWN=1            every API call fails
   STUB_SILENCES_LOST=<regex> Alertmanager on a matching image reports no silences (state lost)
@@ -319,14 +320,14 @@ def curl(args):
         for al in json.loads(data):
             name = al["labels"]["alertname"]
             st["posted"].append(al)
-            if os.environ.get("STUB_NO_DELIVERY") != "1" and al["endsAt"] > time.strftime(
-                "%Y-%m-%dT%H:%M:%SZ", time.gmtime()
-            ):
+            firing = al["endsAt"] > time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            off = "STUB_NO_DELIVERY" if firing else "STUB_NO_RESOLVED"
+            if os.environ.get("STUB_NO_DELIVERY") != "1" and os.environ.get(off) != "1":
                 st["ntfy"].append(
                     {
                         "event": "message",
                         "time": int(time.time()),
-                        "title": f"[FIRING] {name}",
+                        "title": f"[{'FIRING' if firing else 'RESOLVED'}] {name}",
                         "message": al["annotations"]["summary"],
                     }
                 )

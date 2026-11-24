@@ -418,11 +418,23 @@ test_alert() {
   echo "not delivered to NTFY_TEST_URL within ${DELIVERY_TIMEOUT}s"; return 1
 }
 
+# resolve_test_alert RUNID -> end the synthetic alert and wait until its [RESOLVED] reaches NTFY_TEST_URL too:
+# Alertmanager sends it at the next group flush (group_interval), so returning earlier lets a caller that moves the
+# bridge back to the real topic deliver it there (dry run 5: one [RESOLVED] PFTMonupgradeTest reached the operator)
 resolve_test_alert() {
-  local body
-  body="$(jq -nc --arg n "$TEST_ALERT" --arg id "$1" --arg e "$(date -u +%FT%TZ)" \
+  local rid="$1" t0 body got=""
+  t0="$(now)"
+  body="$(jq -nc --arg n "$TEST_ALERT" --arg id "$rid" --arg e "$(date -u +%FT%TZ)" \
     '[{labels: {alertname: $n, severity: "info", run: $id}, annotations: {summary: "pft-monupgrade test \($id)"}, endsAt: $e}]')"
-  api -X POST -H 'Content-Type: application/json' --data "$body" "$AM_URL/api/v2/alerts" >/dev/null || true
+  api -X POST -H 'Content-Type: application/json' --data "$body" "$AM_URL/api/v2/alerts" >/dev/null \
+    || { echo "resolve post to Alertmanager failed"; return 1; }
+  while [ $(($(now) - t0)) -lt "$DELIVERY_TIMEOUT" ]; do
+    got="$(api "$NTFY_TEST_URL/json?poll=1&since=$t0" 2>/dev/null | jq -r --arg id "$rid" --arg n "[RESOLVED] $TEST_ALERT" \
+      'select(.event == "message" and ((.title // "") | startswith($n)) and ((.message // "") | contains($id))) | .title' 2>/dev/null | head -n1)"
+    [ -n "$got" ] && { printf 'delivered "%s" after %ss\n' "$got" "$(($(now) - t0))"; return 0; }
+    sleep "$POLL"
+  done
+  echo "[RESOLVED] not delivered to NTFY_TEST_URL within ${DELIVERY_TIMEOUT}s"; return 1
 }
 
 # loopback_only -> rc 0 when 9090/9093 listen on loopback only
@@ -477,7 +489,7 @@ gate() {
   watchdog_clear "$post" && check watchdog-unsilenced ok || check watchdog-unsilenced fail "$(jq -c .watchdog <<<"$post")"
   loopback_only && check loopback-only ok || check loopback-only fail
   msg="$(test_alert "$rid")" && check test-alert ok "$msg" || check test-alert fail "$msg"
-  resolve_test_alert "$rid"
+  msg="$(resolve_test_alert "$rid")" && check test-alert-resolved ok "$msg" || check test-alert-resolved fail "$msg"
   [ "${#GATE_FAILS[@]}" -eq 0 ]
 }
 

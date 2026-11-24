@@ -45,5 +45,27 @@ SIL=run expect "no alerts" ""
 cp "$D/p.full" "$D/p"; : >"$D/s"; SIL=run expect "empty Alertmanager body fails closed" "query-error"
 echo '{"error":"x"}' >"$D/s"; SIL=run expect "non-array silences fail closed" "query-error"
 echo '[]' >"$D/s"; PROM=Z SIL=run expect "dead Prometheus fails closed" "query-error"
+
+# test_drain(): nothing of the test alert may be left for Alertmanager to flush once the bridge moves back
+eval "$(sed -n '/^test_drain() {/,/^}/p' "$T/../drill/live-run.sh")"
+# shellcheck disable=SC2034  # TAU, since: read by the eval'd test_drain()
+TAU=N since=0
+curl() { local u="${*: -1}"; case "$u" in A/*) cat "$D/am" ;; N/*) cat "$D/nt" ;; *) return 7 ;; esac; }
+msg() { printf '{"event":"message","title":"%s"}\n' "$@"; }
+expect_drain() { # NAME WANT_RC
+  local out rc; out="$(TEST_DRAIN_S=0 test_drain 2>&1)"; rc=$?
+  if [ "$rc" = "$2" ]; then PASS=$((PASS + 1)); printf 'ok   %s: rc %s (%s)\n' "$1" "$rc" "$out"
+  else FAILN=$((FAILN + 1)); printf 'FAIL %s: rc %s, want %s (%s)\n' "$1" "$rc" "$2" "$out"; fi
+}
+echo '[]' >"$D/am"; { echo '{"event":"open"}'; msg '[FIRING] PFTMonupgradeTest' '[RESOLVED] PFTMonupgradeTest' '[FIRING] PFTMonupgradeTest' '[RESOLVED] PFTMonupgradeTest'; } >"$D/nt"
+expect_drain "every firing resolved, none active" 0
+msg '[FIRING] PFTMonupgradeTest' >>"$D/nt"; expect_drain "dry run 5 shape: last firing without its resolved" 1
+msg '[RESOLVED] PFTMonupgradeTest' >>"$D/nt"; echo '[{"labels":{"alertname":"PFTMonupgradeTest"}}]' >"$D/am"
+expect_drain "still active in Alertmanager" 1
+echo '[]' >"$D/am"; msg '[FIRING] PFTOther' >>"$D/nt"; expect_drain "other alerts on the topic are not counted" 0
+: >"$D/am"; expect_drain "empty Alertmanager body fails closed" 1
+echo '[]' >"$D/am"; AM_URL_O=Z expect_drain "dead Alertmanager fails closed" 1
+TAU_O=Z expect_drain "dead throwaway topic fails closed" 1
+: >"$D/nt"; expect_drain "empty topic body fails closed" 1
 printf '\nRESULT: %s passed, %s failed\n' "$PASS" "$FAILN"
 [ "$FAILN" -eq 0 ]

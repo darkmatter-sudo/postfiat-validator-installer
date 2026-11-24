@@ -70,12 +70,32 @@ others() { # Prometheus alerts (pending included) other than the watchdog and di
   else out=query-error; fi
   rm -rf "$d"; [ -z "$out" ] || printf '%s\n' "$out"
 }
+test_drain() { # rc 0 when no PFTMonupgradeTest is active in Alertmanager and every [FIRING] of it on the throwaway alert
+  # topic since the run start has its [RESOLVED] there too, i.e. nothing of the test alert is left for Alertmanager to
+  # flush after the bridge moves back to the real topic (dry run 5: the last [RESOLVED] reached the operator a minute
+  # after the move). Waits up to TEST_DRAIN_S. AM_URL_O / TAU_O: dead-endpoint controls. Unreadable fails closed.
+  local t0 a n f r
+  t0="$(date -u +%s)"
+  while :; do
+    a="$(curl -s -m 10 "${AM_URL_O:-$AM}/api/v2/alerts?filter=alertname%3D%22PFTMonupgradeTest%22")"
+    n="$(curl -s -m 15 "${TAU_O:-$TAU}/json?poll=1&since=$since")" || n=""
+    if [ -n "$a" ] && [ -n "$n" ] && jq -e 'type == "array"' >/dev/null 2>&1 <<<"$a"; then
+      a="$(jq 'length' <<<"$a")"
+      f="$(jq -r 'select(.event == "message") | .title // ""' 2>/dev/null <<<"$n" | grep -c '^\[FIRING\] PFTMonupgradeTest')"
+      r="$(jq -r 'select(.event == "message") | .title // ""' 2>/dev/null <<<"$n" | grep -c '^\[RESOLVED\] PFTMonupgradeTest')"
+      [ "$a" = 0 ] && [ "$r" -ge "$f" ] && { echo "test alerts drained: active 0, firing $f, resolved $r"; return 0; }
+    else a=query-error; f='?'; r='?'; fi
+    [ $(($(date -u +%s) - t0)) -ge "${TEST_DRAIN_S:-180}" ] && break
+    sleep 5
+  done
+  echo "test alerts NOT drained after ${TEST_DRAIN_S:-180}s: active $a, firing $f, resolved $r"; return 1
+}
 bridge_to() { # ENV_FILE: re-create only the live bridge with that ntfy env (Prometheus + Alertmanager keep running)
   NTFY_ENV_FILE="$1" DOCKER="sudo -n docker" bash alerts/run-stack.sh bridge
 }
 restore() {
   echo; echo "== restore (trap)"
-  if [ "$BRIDGE_TEST" = 1 ]; then echo "\$ bridge_to \$REAL_BRIDGE_ENV"; bridge_to "$REAL_BRIDGE_ENV" 2>&1 | red | sed 's/^/  /'; BRIDGE_TEST=0; fi
+  if [ "$BRIDGE_TEST" = 1 ]; then echo "\$ test_drain"; test_drain 2>&1 | red | sed 's/^/  /'; echo "\$ bridge_to \$REAL_BRIDGE_ENV"; bridge_to "$REAL_BRIDGE_ENV" 2>&1 | red | sed 's/^/  /'; BRIDGE_TEST=0; fi
   if [ "$CANARY" = 1 ]; then echo "\$ canary down (sentry)"; R "STATE=~/$RD/canary bash $RD/repo/monupgrade/drill/canary.sh down" 2>&1 | red | sed 's/^/  /'; CANARY=0; fi
   if [ "$MSTART" = 1 ] && sudo -n pft-maint active >/dev/null 2>&1; then echo "\$ sudo -n pft-maint end"; sudo -n pft-maint end 2>&1 | red | sed 's/^/  /'; fi
   MSTART=0
@@ -207,6 +227,7 @@ for h in $HOSTS; do
     x "printf 'NTFY_URL=%s\n' '$TAU' > $TENV && chmod 600 $TENV && bridge_to $TENV"
     [ "$XRC" = 0 ] && BRIDGE_TEST=1; check "validator bridge -> throwaway alert topic" "$XRC"; gate
     cycle validator
+    x test_drain; check "validator test alerts drained to the throwaway topic before the bridge moves back" "$XRC"; gate
     x "bridge_to $REAL_BRIDGE_ENV && rm -f $TENV"; check "validator bridge -> real target again" "$XRC"; BRIDGE_TEST=0
     x "sudo -n docker ps --filter name=pft- --format '{{.Names}} {{.Image}} {{.Status}}'"
     echo; echo "-- imagescan after (validator; monitoring images, counts only)"
