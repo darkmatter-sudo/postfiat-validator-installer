@@ -1,0 +1,399 @@
+pft-shutdown live run 06 - 2026-11-24T14:36:44Z - Ubuntu 22.04.5 LTS - repo HEAD f3974c8b5b1f0237b0581d4b5d1e189bc2083eae (clean: yes) - mode apply-cycle hosts 'sentry validator' n=3 dry=0
+
+== 0. preflight (read-only)
+$ rm -rf ~/.cache/shutdown-run-06 && mkdir -p ~/.cache/shutdown-run-06 && cp shutdown/pft-shutdown.sh ~/.cache/shutdown-run-06/ && R 'rm -rf ~/.cache/shutdown-run-06 && mkdir -p ~/.cache/shutdown-run-06' && scp -q -o BatchMode=yes shutdown/pft-shutdown.sh relay:.cache/shutdown-run-06/ && sha256sum shutdown/pft-shutdown.sh ~/.cache/shutdown-run-06/pft-shutdown.sh | cut -c1-64; R 'sha256sum .cache/shutdown-run-06/pft-shutdown.sh' | cut -c1-64
+  cb7b186afcfcaf201cfb36305251a8b405d518403acef61d1e4a0dfc75bc2ffd
+  cb7b186afcfcaf201cfb36305251a8b405d518403acef61d1e4a0dfc75bc2ffd
+  cb7b186afcfcaf201cfb36305251a8b405d518403acef61d1e4a0dfc75bc2ffd
+  (exit 0)
+CHECK ok   run copies on both hosts = HEAD bytes
+$ shellcheck shutdown/pft-shutdown.sh shutdown/tests/run-tests.sh shutdown/drill/*.sh && echo shellcheck clean
+  shellcheck clean
+  (exit 0)
+CHECK ok   shellcheck clean
+$ bash shutdown/tests/run-tests.sh | tail -1
+  RESULT: 170 passed, 0 failed
+  (exit 0)
+CHECK ok   offline tests pass
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 294 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 173 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts
+$ state_v; state_s
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ sudo -n pft-maint status | head -1; sudo -n pft-maint lock list; R 'sudo -n pft-maint status | head -1'
+  no maintenance window (alerting is live)
+  no data-collection locks
+  no maintenance window (alerting is live)
+  (exit 0)
+CHECK ok   no maintenance window on either host, no lock
+$ others
+  
+  (exit 0)
+CHECK ok   nothing active but the watchdog and digest-only alerts
+$ curl -s -m 10 http://<redacted-ip>:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'
+  0
+  (exit 0)
+CHECK ok   no active silence
+$ open_gaps | wc -l
+  0
+  (exit 0)
+CHECK ok   no open histarchive gap
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+
+== 1. throwaway [MAINT] target, silence, maintenance window on both hosts
+real $NE present before: 0
+$ { [ 0 = 0 ] || sudo -n cp -p /etc/pft-maint/ntfy.env /etc/pft-maint/ntfy.env.pre-shutdown; } && printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' '<throwaway-topic>' | sudo -n tee /etc/pft-maint/ntfy.env >/dev/null && sudo -n chmod 600 /etc/pft-maint/ntfy.env && sudo -n stat -c '%a %U' /etc/pft-maint/ntfy.env
+  600 root
+  (exit 0)
+CHECK ok   pft-maint target is the throwaway topic
+silence (every alert but the watchdog and the digest-only ones, both hosts) until 2026-11-24T17:27:47Z id e2f77fdb
+CHECK ok   Alertmanager silence created
+$ sudo -n pft-maint start --ttl 68m --reason 'task_32fe8c3a pft-shutdown apply-cycle run 06'
+  window started: id m1795531188-3804632 until 2026-11-24T15:47:48Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   maintenance window started
+$ R 'sudo -n pft-maint active && echo active'
+  active
+  (exit 0)
+CHECK ok   window valid on the sentry
+
+== 2. apply-cycle runs
+
+-- sentry apply / rollback / re-apply (2026-11-24T14:41:07Z)
+$ R 'sudo -n env STATE_DIR=/var/lib/pft-shutdown bash .cache/shutdown-run-06/pft-shutdown.sh audit'
+  pft-shutdown audit postfiatd-sentry - 2026-11-24T14:41:12Z
+  required stop budget: 60s (p100 19.7s x 3 = 60s, floor 30s (3 clean runs))
+    [PASS] F1 stop signal SIGTERM (postfiatd shuts down cleanly on SIGTERM/SIGINT)
+    [FAIL] F2 container StopTimeout unset -> Docker default 10s < required 60s: docker stop/restart sends SIGKILL too early
+    [PASS] F3 docker run container: every recreate tool carries --stop-timeout (/usr/local/bin/pft-seccomp, /usr/local/bin/pft-apparmor)
+    [PASS] F4 live-restore on: stopping dockerd leaves containers running (shutdown-timeout unset -> 15s not on the stop path)
+    [PASS] F5 docker.service TimeoutStopUSec inf >= required 60s
+    [PASS] F6 reboot (live-restore): systemd stops the container scope with signal 15, SIGKILL after 90s >= required 60s
+  RESULT: FAIL - exit 2
+  (exit 2)
+CHECK ok   sentry audit before: audit exit 2 (want 2)
+$ R 'sudo -n env STATE_DIR=/var/lib/pft-shutdown bash .cache/shutdown-run-06/pft-shutdown.sh apply --yes'
+  2026-11-24T14:41:17Z apply 20261124T144117Z on postfiatd-sentry (run): StopTimeout unset -> 60s (p100 19.7s x 3 = 60s, floor 30s (3 clean runs))
+    recreate: docker run -d --name=postfiatd-sentry --restart=unless-stopped --stop-timeout=60 --user=0:0 --log-driver=json-file --log-opt=max-file=10 --log-opt=max-size=100m --network=bridge --publish=<redacted> --volume=pft-sentry-config:/etc/postfiatd --volume=pft-sentry-data:/var/lib/postfiatd/db --volume=7f505992998799bdc092cfb03d16aaae688a0190738c4429bb66f05355511ec9:/var/log/postfiatd --cap-drop=ALL --cap-add=CAP_SETGID --cap-add=CAP_SETUID --read-only --tmpfs=/run:rw,noexec,nosuid,size=64m --tmpfs=/tmp:rw,noexec,nosuid,size=64m --tmpfs=/var/backups:rw,noexec,nosuid,size=64m --tmpfs=/var/lib/apt:rw,noexec,nosuid,size=64m --tmpfs=/var/lib/logrotate:rw,noexec,nosuid,size=64m --pids-limit=256 --memory=2147483648 --memory-swap=2147483648 --cpu-shares=8192 --memory-reservation=1342177280 --security-opt=no-new-privileges --security-opt=apparmor=pft-postfiatd --security-opt=seccomp=/etc/pft-seccomp/pft-postfiatd.json agtipft/postfiatd:testnet-light-latest --conf /etc/postfiatd/postfiatd.cfg
+    apply gate PASS after 51.6s: re-created, StopTimeout 60, configuration unchanged, server_state full
+    previous container postfiatd-sentry-preshutdown-20261124T144117Z-apply removed (volumes kept)
+  2026-11-24T14:42:19Z apply RESULT: PASS - postfiatd-sentry StopTimeout 60s, configuration unchanged, node full (state /var/lib/pft-shutdown/apply-postfiatd-sentry.json)
+  (exit 0)
+CHECK ok   sentry apply PASS
+$ state_v; state_s
+  full
+  full
+  (exit 0)
+CHECK ok   sentry apply: both nodes full
+$ R 'sudo -n pft-egress check --container postfiatd-sentry | tail -1'
+  RESULT: PASS
+  (exit 0)
+CHECK ok   sentry apply: pft-egress check
+$ R 'sudo -n env STATE_DIR=/var/lib/pft-shutdown bash .cache/shutdown-run-06/pft-shutdown.sh audit'
+  pft-shutdown audit postfiatd-sentry - 2026-11-24T14:42:28Z
+  required stop budget: 60s (p100 19.7s x 3 = 60s, floor 30s (3 clean runs))
+    [PASS] F1 stop signal SIGTERM (postfiatd shuts down cleanly on SIGTERM/SIGINT)
+    [PASS] F2 container StopTimeout 60s >= required 60s
+    [PASS] F3 docker run container: every recreate tool carries --stop-timeout (/usr/local/bin/pft-seccomp, /usr/local/bin/pft-apparmor)
+    [PASS] F4 live-restore on: stopping dockerd leaves containers running (shutdown-timeout unset -> 15s not on the stop path)
+    [PASS] F5 docker.service TimeoutStopUSec inf >= required 60s
+    [PASS] F6 reboot (live-restore): systemd stops the container scope with signal 15, SIGKILL after 90s >= required 60s
+  RESULT: PASS
+  (exit 0)
+CHECK ok   sentry audit after apply: audit exit 0 (want 0)
+$ R 'sudo -n env STATE_DIR=/var/lib/pft-shutdown bash .cache/shutdown-run-06/pft-shutdown.sh rollback --yes'
+  2026-11-24T14:43:31Z rollback (manual) of apply 20261124T144117Z on postfiatd-sentry: back to StopTimeout unset
+    recreate: docker run -d --name=postfiatd-sentry --restart=unless-stopped --user=0:0 --log-driver=json-file --log-opt=max-file=10 --log-opt=max-size=100m --network=bridge --publish=<redacted> --volume=pft-sentry-config:/etc/postfiatd --volume=pft-sentry-data:/var/lib/postfiatd/db --volume=7f505992998799bdc092cfb03d16aaae688a0190738c4429bb66f05355511ec9:/var/log/postfiatd --cap-drop=ALL --cap-add=CAP_SETGID --cap-add=CAP_SETUID --read-only --tmpfs=/run:rw,noexec,nosuid,size=64m --tmpfs=/tmp:rw,noexec,nosuid,size=64m --tmpfs=/var/backups:rw,noexec,nosuid,size=64m --tmpfs=/var/lib/apt:rw,noexec,nosuid,size=64m --tmpfs=/var/lib/logrotate:rw,noexec,nosuid,size=64m --pids-limit=256 --memory=2147483648 --memory-swap=2147483648 --cpu-shares=8192 --memory-reservation=1342177280 --security-opt=no-new-privileges --security-opt=apparmor=pft-postfiatd --security-opt=seccomp=/etc/pft-seccomp/pft-postfiatd.json agtipft/postfiatd:testnet-light-latest --conf /etc/postfiatd/postfiatd.cfg
+    rollback gate PASS after 49.6s: re-created, StopTimeout unset, configuration unchanged, server_state full
+    previous container postfiatd-sentry-preshutdown-20261124T144117Z-restore removed (volumes kept)
+  2026-11-24T14:44:28Z rollback RESULT: PASS - postfiatd-sentry StopTimeout unset again, node full
+  (exit 0)
+CHECK ok   sentry rollback PASS
+$ state_v; state_s
+  full
+  full
+  (exit 0)
+CHECK ok   sentry rollback: both nodes full
+$ R 'sudo -n pft-egress check --container postfiatd-sentry | tail -1'
+  RESULT: PASS
+  (exit 0)
+CHECK ok   sentry rollback: pft-egress check
+$ R 'sudo -n env STATE_DIR=/var/lib/pft-shutdown bash .cache/shutdown-run-06/pft-shutdown.sh audit'
+  pft-shutdown audit postfiatd-sentry - 2026-11-24T14:44:34Z
+  required stop budget: 60s (p100 19.7s x 3 = 60s, floor 30s (3 clean runs))
+    [PASS] F1 stop signal SIGTERM (postfiatd shuts down cleanly on SIGTERM/SIGINT)
+    [FAIL] F2 container StopTimeout unset -> Docker default 10s < required 60s: docker stop/restart sends SIGKILL too early
+    [PASS] F3 docker run container: every recreate tool carries --stop-timeout (/usr/local/bin/pft-seccomp, /usr/local/bin/pft-apparmor)
+    [PASS] F4 live-restore on: stopping dockerd leaves containers running (shutdown-timeout unset -> 15s not on the stop path)
+    [PASS] F5 docker.service TimeoutStopUSec inf >= required 60s
+    [PASS] F6 reboot (live-restore): systemd stops the container scope with signal 15, SIGKILL after 90s >= required 60s
+  RESULT: FAIL - exit 2
+  (exit 2)
+CHECK ok   sentry audit after rollback: audit exit 2 (want 2)
+$ R 'sudo -n env STATE_DIR=/var/lib/pft-shutdown bash .cache/shutdown-run-06/pft-shutdown.sh apply --yes'
+  2026-11-24T14:45:37Z apply 20261124T144537Z on postfiatd-sentry (run): StopTimeout unset -> 60s (p100 19.7s x 3 = 60s, floor 30s (3 clean runs))
+    recreate: docker run -d --name=postfiatd-sentry --restart=unless-stopped --stop-timeout=60 --user=0:0 --log-driver=json-file --log-opt=max-file=10 --log-opt=max-size=100m --network=bridge --publish=<redacted> --volume=pft-sentry-config:/etc/postfiatd --volume=pft-sentry-data:/var/lib/postfiatd/db --volume=7f505992998799bdc092cfb03d16aaae688a0190738c4429bb66f05355511ec9:/var/log/postfiatd --cap-drop=ALL --cap-add=CAP_SETGID --cap-add=CAP_SETUID --read-only --tmpfs=/run:rw,noexec,nosuid,size=64m --tmpfs=/tmp:rw,noexec,nosuid,size=64m --tmpfs=/var/backups:rw,noexec,nosuid,size=64m --tmpfs=/var/lib/apt:rw,noexec,nosuid,size=64m --tmpfs=/var/lib/logrotate:rw,noexec,nosuid,size=64m --pids-limit=256 --memory=2147483648 --memory-swap=2147483648 --cpu-shares=8192 --memory-reservation=1342177280 --security-opt=no-new-privileges --security-opt=apparmor=pft-postfiatd --security-opt=seccomp=/etc/pft-seccomp/pft-postfiatd.json agtipft/postfiatd:testnet-light-latest --conf /etc/postfiatd/postfiatd.cfg
+    apply gate PASS after 46.6s: re-created, StopTimeout 60, configuration unchanged, server_state full
+    previous container postfiatd-sentry-preshutdown-20261124T144537Z-apply removed (volumes kept)
+  2026-11-24T14:46:46Z apply RESULT: PASS - postfiatd-sentry StopTimeout 60s, configuration unchanged, node full (state /var/lib/pft-shutdown/apply-postfiatd-sentry.json)
+  (exit 0)
+CHECK ok   sentry re-apply PASS
+$ state_v; state_s
+  full
+  full
+  (exit 0)
+CHECK ok   sentry re-apply: both nodes full
+$ R 'sudo -n pft-egress check --container postfiatd-sentry | tail -1'
+  RESULT: PASS
+  (exit 0)
+CHECK ok   sentry re-apply: pft-egress check
+$ R 'sudo -n env STATE_DIR=/var/lib/pft-shutdown bash .cache/shutdown-run-06/pft-shutdown.sh apply --yes'
+  2026-11-24T14:46:52Z apply: postfiatd-sentry StopTimeout is already 60s (p100 19.7s x 3 = 60s, floor 30s (3 clean runs)) - nothing to do
+  (exit 0)
+CHECK ok   sentry second apply is a no-op
+$ R 'sudo -n env STATE_DIR=/var/lib/pft-shutdown bash .cache/shutdown-run-06/pft-shutdown.sh audit'
+  pft-shutdown audit postfiatd-sentry - 2026-11-24T14:46:55Z
+  required stop budget: 60s (p100 19.7s x 3 = 60s, floor 30s (3 clean runs))
+    [PASS] F1 stop signal SIGTERM (postfiatd shuts down cleanly on SIGTERM/SIGINT)
+    [PASS] F2 container StopTimeout 60s >= required 60s
+    [PASS] F3 docker run container: every recreate tool carries --stop-timeout (/usr/local/bin/pft-seccomp, /usr/local/bin/pft-apparmor)
+    [PASS] F4 live-restore on: stopping dockerd leaves containers running (shutdown-timeout unset -> 15s not on the stop path)
+    [PASS] F5 docker.service TimeoutStopUSec inf >= required 60s
+    [PASS] F6 reboot (live-restore): systemd stops the container scope with signal 15, SIGKILL after 90s >= required 60s
+  RESULT: PASS
+  (exit 0)
+CHECK ok   sentry audit after re-apply: audit exit 0 (want 0)
+
+-- validator apply / rollback / re-apply (2026-11-24T14:47:56Z)
+$ sudo -n env STATE_DIR=/var/lib/pft-shutdown bash ~/.cache/shutdown-run-06/pft-shutdown.sh audit
+  pft-shutdown audit postfiatd - 2026-11-24T14:47:58Z
+  required stop budget: 31s (p100 10.1s x 3 = 31s, floor 30s (3 clean runs))
+    [PASS] F1 stop signal SIGTERM (postfiatd shuts down cleanly on SIGTERM/SIGINT)
+    [FAIL] F2 container StopTimeout unset -> Docker default 10s < required 31s: docker stop/restart sends SIGKILL too early
+    [FAIL] F3 compose stop_grace_period unset -> 10s < required 31s: the next compose up re-creates it short
+    [PASS] F4 live-restore on: stopping dockerd leaves containers running (shutdown-timeout unset -> 15s not on the stop path)
+    [PASS] F5 docker.service TimeoutStopUSec inf >= required 31s
+    [PASS] F6 reboot (live-restore): systemd stops the container scope with signal 15, SIGKILL after 90s >= required 31s
+  RESULT: FAIL - exit 6
+  (exit 6)
+CHECK ok   validator audit before: audit exit 6 (want 6)
+$ sudo -n env STATE_DIR=/var/lib/pft-shutdown bash ~/.cache/shutdown-run-06/pft-shutdown.sh apply --yes
+  2026-11-24T14:48:00Z apply 20261124T144800Z on postfiatd (compose): StopTimeout unset -> 31s (p100 10.1s x 3 = 31s, floor 30s (3 clean runs))
+    backups: .env -> /var/lib/pft-shutdown/backup/env.20261124T144800Z
+    wrote /opt/postfiatd/docker-compose.shutdown.yml (stop_grace_period 31s); COMPOSE_FILE += docker-compose.shutdown.yml
+    validated: docker compose config -> stop_grace_period 31s
+    | time="2026-11-24T14:48:04Z" level=warning msg="/opt/postfiatd/docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+    |  Container postfiatd  Recreate
+    |  Container postfiatd  Recreated
+    |  Container postfiatd  Starting
+    |  Container postfiatd  Started
+    apply gate PASS after 47.7s: re-created, StopTimeout 31, configuration unchanged, server_state full
+  2026-11-24T14:49:05Z apply RESULT: PASS - postfiatd StopTimeout 31s, configuration unchanged, node full (state /var/lib/pft-shutdown/apply-postfiatd.json)
+  (exit 0)
+CHECK ok   validator apply PASS
+$ state_v; state_s
+  full
+  full
+  (exit 0)
+CHECK ok   validator apply: both nodes full
+$ sudo -n pft-egress check --container postfiatd | tail -1
+  RESULT: PASS
+  (exit 0)
+CHECK ok   validator apply: pft-egress check
+$ sudo -n pft-histarchive fill-gap 8329739-8329754 --rpc https://rpc.testnet.postfiat.org/ | tail -2
+    RESULT: gaps 8 open 0 filled 8 fillable 0
+  RESULT: PASS - fill-gap 8329739-8329754, verify rc 0
+  (exit 0)
+CHECK ok   histarchive fill-gap 8329739-8329754
+$ open_gaps | wc -l
+  0
+  (exit 0)
+CHECK ok   validator apply: no open histarchive gap
+$ sudo -n env STATE_DIR=/var/lib/pft-shutdown bash ~/.cache/shutdown-run-06/pft-shutdown.sh audit
+  pft-shutdown audit postfiatd - 2026-11-24T14:50:46Z
+  required stop budget: 31s (p100 10.1s x 3 = 31s, floor 30s (3 clean runs))
+    [PASS] F1 stop signal SIGTERM (postfiatd shuts down cleanly on SIGTERM/SIGINT)
+    [PASS] F2 container StopTimeout 31s >= required 31s
+    [PASS] F3 compose stop_grace_period 31s >= required 31s (files: docker-compose.yml,docker-compose.override.yml,docker-compose.confine.yml,docker-compose.apparmor.yml,docker-compose.seccomp.yml,docker-compose.resources.yml,docker-compose.shutdown.yml)
+    [PASS] F4 live-restore on: stopping dockerd leaves containers running (shutdown-timeout unset -> 15s not on the stop path)
+    [PASS] F5 docker.service TimeoutStopUSec inf >= required 31s
+    [PASS] F6 reboot (live-restore): systemd stops the container scope with signal 15, SIGKILL after 90s >= required 31s
+  RESULT: PASS
+  (exit 0)
+CHECK ok   validator audit after apply: audit exit 0 (want 0)
+$ sudo -n env STATE_DIR=/var/lib/pft-shutdown bash ~/.cache/shutdown-run-06/pft-shutdown.sh rollback --yes
+  2026-11-24T14:51:46Z rollback (manual) of apply 20261124T144800Z on postfiatd: back to StopTimeout unset
+    .env restored, docker-compose.shutdown.yml removed
+    | time="2026-11-24T14:51:49Z" level=warning msg="/opt/postfiatd/docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+    |  Container postfiatd  Recreate
+    |  Container postfiatd  Recreated
+    |  Container postfiatd  Starting
+    |  Container postfiatd  Started
+    rollback gate PASS after 48.2s: re-created, StopTimeout unset, configuration unchanged, server_state full
+  2026-11-24T14:52:45Z rollback RESULT: PASS - postfiatd StopTimeout unset again, node full
+  (exit 0)
+CHECK ok   validator rollback PASS
+$ state_v; state_s
+  full
+  full
+  (exit 0)
+CHECK ok   validator rollback: both nodes full
+$ sudo -n pft-egress check --container postfiatd | tail -1
+  RESULT: PASS
+  (exit 0)
+CHECK ok   validator rollback: pft-egress check
+$ sudo -n pft-histarchive fill-gap 8329812-8329826 --rpc https://rpc.testnet.postfiat.org/ | tail -2
+    RESULT: gaps 9 open 0 filled 9 fillable 0
+  RESULT: PASS - fill-gap 8329812-8329826, verify rc 0
+  (exit 0)
+CHECK ok   histarchive fill-gap 8329812-8329826
+$ open_gaps | wc -l
+  0
+  (exit 0)
+CHECK ok   validator rollback: no open histarchive gap
+$ sudo -n env STATE_DIR=/var/lib/pft-shutdown bash ~/.cache/shutdown-run-06/pft-shutdown.sh audit
+  pft-shutdown audit postfiatd - 2026-11-24T14:54:10Z
+  required stop budget: 31s (p100 10.1s x 3 = 31s, floor 30s (3 clean runs))
+    [PASS] F1 stop signal SIGTERM (postfiatd shuts down cleanly on SIGTERM/SIGINT)
+    [FAIL] F2 container StopTimeout unset -> Docker default 10s < required 31s: docker stop/restart sends SIGKILL too early
+    [FAIL] F3 compose stop_grace_period unset -> 10s < required 31s: the next compose up re-creates it short
+    [PASS] F4 live-restore on: stopping dockerd leaves containers running (shutdown-timeout unset -> 15s not on the stop path)
+    [PASS] F5 docker.service TimeoutStopUSec inf >= required 31s
+    [PASS] F6 reboot (live-restore): systemd stops the container scope with signal 15, SIGKILL after 90s >= required 31s
+  RESULT: FAIL - exit 6
+  (exit 6)
+CHECK ok   validator audit after rollback: audit exit 6 (want 6)
+$ sudo -n env STATE_DIR=/var/lib/pft-shutdown bash ~/.cache/shutdown-run-06/pft-shutdown.sh apply --yes
+  2026-11-24T14:55:13Z apply 20261124T145513Z on postfiatd (compose): StopTimeout unset -> 31s (p100 10.1s x 3 = 31s, floor 30s (3 clean runs))
+    backups: .env -> /var/lib/pft-shutdown/backup/env.20261124T145513Z
+    wrote /opt/postfiatd/docker-compose.shutdown.yml (stop_grace_period 31s); COMPOSE_FILE += docker-compose.shutdown.yml
+    validated: docker compose config -> stop_grace_period 31s
+    | time="2026-11-24T14:55:16Z" level=warning msg="/opt/postfiatd/docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+    |  Container postfiatd  Recreate
+    |  Container postfiatd  Recreated
+    |  Container postfiatd  Starting
+    |  Container postfiatd  Started
+    apply gate PASS after 43.0s: re-created, StopTimeout 31, configuration unchanged, server_state full
+  2026-11-24T14:56:23Z apply RESULT: PASS - postfiatd StopTimeout 31s, configuration unchanged, node full (state /var/lib/pft-shutdown/apply-postfiatd.json)
+  (exit 0)
+CHECK ok   validator re-apply PASS
+$ state_v; state_s
+  full
+  full
+  (exit 0)
+CHECK ok   validator re-apply: both nodes full
+$ sudo -n pft-egress check --container postfiatd | tail -1
+  RESULT: PASS
+  (exit 0)
+CHECK ok   validator re-apply: pft-egress check
+$ sudo -n pft-histarchive fill-gap 8329881-8329900 --rpc https://rpc.testnet.postfiat.org/ | tail -2
+    RESULT: gaps 10 open 0 filled 10 fillable 0
+  RESULT: PASS - fill-gap 8329881-8329900, verify rc 0
+  (exit 0)
+CHECK ok   histarchive fill-gap 8329881-8329900
+$ open_gaps | wc -l
+  0
+  (exit 0)
+CHECK ok   validator re-apply: no open histarchive gap
+$ sudo -n env STATE_DIR=/var/lib/pft-shutdown bash ~/.cache/shutdown-run-06/pft-shutdown.sh apply --yes
+  2026-11-24T14:57:50Z apply: postfiatd StopTimeout is already 31s (p100 10.1s x 3 = 31s, floor 30s (3 clean runs)) - nothing to do
+  (exit 0)
+CHECK ok   validator second apply is a no-op
+$ sudo -n env STATE_DIR=/var/lib/pft-shutdown bash ~/.cache/shutdown-run-06/pft-shutdown.sh audit
+  pft-shutdown audit postfiatd - 2026-11-24T14:57:53Z
+  required stop budget: 31s (p100 10.1s x 3 = 31s, floor 30s (3 clean runs))
+    [PASS] F1 stop signal SIGTERM (postfiatd shuts down cleanly on SIGTERM/SIGINT)
+    [PASS] F2 container StopTimeout 31s >= required 31s
+    [PASS] F3 compose stop_grace_period 31s >= required 31s (files: docker-compose.yml,docker-compose.override.yml,docker-compose.confine.yml,docker-compose.apparmor.yml,docker-compose.seccomp.yml,docker-compose.resources.yml,docker-compose.shutdown.yml)
+    [PASS] F4 live-restore on: stopping dockerd leaves containers running (shutdown-timeout unset -> 15s not on the stop path)
+    [PASS] F5 docker.service TimeoutStopUSec inf >= required 31s
+    [PASS] F6 reboot (live-restore): systemd stops the container scope with signal 15, SIGKILL after 90s >= required 31s
+  RESULT: PASS
+  (exit 0)
+CHECK ok   validator audit after re-apply: audit exit 0 (want 0)
+$ sudo -n systemctl start pft-backup.service && sudo -n systemctl start pft-backupwatch.service && systemctl show -p Result --value pft-backupwatch.service
+  success
+  (exit 0)
+CHECK ok   validator backup + backupwatch after the change
+$ sudo -n cat /var/lib/pft-shutdown/apply-postfiatd.json 2>/dev/null | jq -c 'del(.sig)'; R 'sudo -n cat /var/lib/pft-shutdown/apply-postfiatd-sentry.json 2>/dev/null' | jq -c 'del(.sig)'
+  {"id":"20261124T145513Z","container":"postfiatd","kind":"compose","pre_stop":"unset","want_stop":31,"basis":"p100 10.1s x 3 = 31s, floor 30s (3 clean runs)","stop_budget":31,"restart":"unless-stopped","old_container":"","rolled_back":false,"working_dir":"/opt/postfiatd","service":"postfiatd","files":"docker-compose.yml:docker-compose.override.yml:docker-compose.confine.yml:docker-compose.apparmor.yml:docker-compose.seccomp.yml:docker-compose.resources.yml","env_backup":"/var/lib/pft-shutdown/backup/env.20261124T145513Z","override_backup":"","recreated":true,"applied_at":"2026-11-24T14:56:23Z"}
+  {"id":"20261124T144537Z","container":"postfiatd-sentry","kind":"run","pre_stop":"unset","want_stop":60,"basis":"p100 19.7s x 3 = 60s, floor 30s (3 clean runs)","stop_budget":60,"restart":"unless-stopped","old_container":"","rolled_back":false,"recreated":true,"applied_at":"2026-11-24T14:46:46Z"}
+  (exit 0)
+
+-- intended changes into pft-integrity (re-created containers; validator .env + overlay)
+$ sudo -n pft-integrity verify | grep -vE '^ *(OK|PASS)' | tail -20; R 'sudo -n pft-integrity verify | tail -12'
+  pft-integrity verify - 2026-11-24T14:58:45Z
+  OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-11-24T14:33:29Z
+    [FAIL] compose:.env                                 changed  mtime, sha256
+    [WARN] compose:docker-compose.shutdown.yml          added    new file
+    [FAIL] container:postfiatd                          changed  labels
+  RESULT: FAIL - 292 unchanged, 1 warn, 2 fail -> exit 2
+  pft-integrity verify - 2026-11-24T14:59:05Z
+  OS: Ubuntu 22.04.5 LTS | container: postfiatd-sentry | baseline: 2026-11-24T14:32:17Z
+  RESULT: PASS - 173 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+$ R 'sudo -n pft-integrity accept --reason "task_32fe8c3a: pft-shutdown apply-cycle run 06 (sentry re-created)" | tail -1'
+  manifest sha256: 5f5a1c1326ee77d2d387863b00dd8f44390662e5a2222cd31ac8c94c087ad474 -> 9bd1c302d3068a30c690e981a993a1988e8007d25ea56e60c86e96f64860ca09 (logged to accept.log)
+  (exit 0)
+CHECK ok   sentry integrity accept
+$ sudo -n pft-integrity accept --reason 'task_32fe8c3a: pft-shutdown apply-cycle run 06 (validator re-created, .env + docker-compose.shutdown.yml)' | tail -1
+  manifest sha256: 64ef744bf21fc2fb1bad93010b9eb281d5a3262b362517d05524264d515b3df9 -> ec43a4b6af492074ca943926ef129500f7ce917c26b058e66a8e859acb18ba03 (logged to accept.log)
+  (exit 0)
+CHECK ok   validator integrity accept
+
+== 3. end window, restore, checks, drain, read back
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+  (exit 0)
+CHECK ok   window ended
+$ sudo -n rm -f /etc/pft-maint/ntfy.env
+  
+  (exit 0)
+$ sudo -n systemctl start pft-keyescrow.service; sudo -n pft-keyescrow inventory | tail -1
+  RESULT: ok 11, perm 0, missing 0, unreadable 0, absent(optional) 2; escrow drift 0, new 0, evolving 1 -> exit 0
+  (exit 0)
+CHECK ok   keyescrow drift 0 after the target restore
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 295 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 173 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   integrity PASS both hosts
+$ sudo -n pft-apparmor audit | grep RESULT; sudo -n pft-seccomp audit | grep RESULT; R 'sudo -n pft-apparmor audit | grep RESULT; sudo -n pft-seccomp audit | grep RESULT'
+  RESULT: PASS
+  RESULT: PASS
+  RESULT: PASS
+  RESULT: PASS
+  (exit 0)
+CHECK ok   AppArmor + seccomp PASS on both hosts
+$ state_v; state_s
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full at the end
+drain after 3360s:
+    (nothing but the watchdog / digest-only alerts)
+$ curl -s -m 10 -o /dev/null -w '%{http_code}' -X DELETE http://<redacted-ip>:9093/api/v2/silence/e2f77fdb-4caf-47d2-aa95-7ba488a05063
+  200
+  (exit 0)
+CHECK ok   silence expired after a clean drain
+$ curl -s -m 15 'https://ntfy.sh/<throwaway-topic>/json?poll=1&since=1795531004' | jq -r 'select(.event == "message") | .title'
+  [MAINT] start validator
+  [MAINT] end validator
+  (exit 0)
+CHECK ok   [MAINT] start/end reached the throwaway topic
+  operator #1 topic: 0 non-agent message(s)
+  operator #2 topic: 0 non-agent message(s)
+CHECK ok   operator topics got no alert/[MAINT] message during the run (2 topic(s))
+$ R 'rm -rf ~/.cache/shutdown-run-06'; rm -rf ~/.cache/shutdown-run-06
+  
+  (exit 0)
+
+pft-shutdown live run 06 done 2026-11-24T15:58:34Z: 0 check(s) failed -> PASS
+
+== restore (trap)
