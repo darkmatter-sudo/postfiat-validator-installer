@@ -74,7 +74,10 @@ RPC_FIELDS = ("started", "finished", "errored", "duration_us")
 # postfiatd 1.0.9's job_queue queued_duration_us is NOT monotonic: on the validator it went down in 7 of 39
 # 30-second intervals (by 3.5 ms to 313 ms, six job types; logs/03, logs/04). It is exported as a gauge
 # and left out of the restart / anomaly comparison; every other job, RPC and NodeStore counter stays checked.
+# It can also be NEGATIVE: on the sentry 23 min after a clean restart writeAhead read -136 (2026-11-24), which
+# made every collect fail (PFTInternalsStale). NON_MONOTONIC fields accept a signed integer.
 NON_MONOTONIC = {"queued_duration_us"}
+SINT_RE = re.compile(r"^-?[0-9]{1,20}$")
 LOAD_FIELDS = ("per_second", "peak_time", "avg_time", "in_progress")
 
 
@@ -118,6 +121,17 @@ def uint(v, where):
     if isinstance(v, str) and UINT_RE.match(v):
         return int(v)
     raise Invalid(f"{where}: not a non-negative integer ({str(v)[:40]!r})")
+
+
+def sint(v, where):
+    """A signed integer (JSON int, not bool, or a decimal string): only for the NON_MONOTONIC job_queue gauge."""
+    if isinstance(v, bool):
+        raise Invalid(f"{where}: boolean where a number was expected")
+    if isinstance(v, int):
+        return v
+    if isinstance(v, str) and SINT_RE.match(v):
+        return int(v)
+    raise Invalid(f"{where}: not an integer ({str(v)[:40]!r})")
 
 
 def ratio(v, where, scale):
@@ -204,7 +218,10 @@ def parse_info(r, conf):
             continue
         if not JOB_RE.match(name):
             raise Invalid(f"server_info.counters.job_queue: bad job type name {name[:60]!r}")
-        jobs[name] = {f: uint(need(v, f, f"job_queue.{name}"), f"job_queue.{name}.{f}") for f in JOB_FIELDS}
+        jobs[name] = {
+            f: (sint if f in NON_MONOTONIC else uint)(need(v, f, f"job_queue.{name}"), f"job_queue.{name}.{f}")
+            for f in JOB_FIELDS
+        }
         if not jobs[name]["finished"] <= jobs[name]["started"] <= jobs[name]["queued"]:
             raise Invalid(f"job_queue.{name}: want finished <= started <= queued")
     if not jobs:

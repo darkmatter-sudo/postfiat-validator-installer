@@ -198,6 +198,22 @@ class TestValidation(Base):
                 gc["result"]["node_reads_total"] = v
                 self.bad(rf"get_counts.node_reads_total: {why}", gc=gc)
 
+    def test_queued_duration_may_be_negative(self):
+        # postfiatd 1.0.9 after a restart: writeAhead queued_duration_us -136 (sentry, 2026-11-24)
+        name = next(k for k in self.si["result"]["info"]["counters"]["job_queue"] if k != "total")
+        for v in (-136, "-136"):
+            with self.subTest(v=v):
+                si = copy.deepcopy(self.si)
+                si["result"]["info"]["counters"]["job_queue"][name]["queued_duration_us"] = v
+                s, _ = self.ok(si=si)
+                self.assertEqual(s[f'pft_internals_job_queue_wait_seconds{{{C},job_type="{name}"}}'], "-0.000136")
+        for f, v, why in (("running_duration_us", -1, "negative"), ("queued", -1, "negative"),
+                          ("queued_duration_us", "-1x", "not an integer"), ("queued_duration_us", True, "boolean")):  # fmt: skip
+            with self.subTest(f=f, v=v):
+                si = copy.deepcopy(self.si)
+                si["result"]["info"]["counters"]["job_queue"][name][f] = v
+                self.bad(rf"job_queue.{name}.{f}: {why}", si=si)
+
     def test_uint_accepts_int_and_decimal_string(self):
         gc = copy.deepcopy(self.gc)
         gc["result"]["node_writes"] = 5
