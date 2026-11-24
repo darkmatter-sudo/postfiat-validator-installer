@@ -41,6 +41,13 @@ MAX_VALIDATORS = 64  # textfile label cap
 MAX_LINE = 65536  # bytes (a U record is ~56 B per UNL key); longer records are counted and skipped
 EDGE_MS = 5000  # ledgers closer than this to either end of the window are not graded (validations straddle it)
 EXIT_USAGE = 3
+# postfiatd reports validation_quorum 4294967295 (UINT32 max) while it starts ("connected", UNL not loaded yet);
+# taken as the quorum it gave a margin of about -4.29e9 until the next sample (2026-11-24 sentry re-creates)
+QUORUM_UNSET = 0xFFFFFFFF
+
+
+def usable_quorum(q):
+    return 0 < q < QUORUM_UNSET
 
 
 def now_ms():
@@ -375,7 +382,7 @@ def iter_load(directory, t_from=None, t_to=None, st=None):
                 if t == "V" and rec.get("k") not in unl_union:
                     continue
                 if t_from is not None and r < t_from * 1000:
-                    if t in ("U", "Q") and r >= carry.get(t, {}).get("r", -1):
+                    if (t == "U" or (t == "Q" and usable_quorum(int(rec["q"])))) and r >= carry.get(t, {}).get("r", -1):
                         carry[t] = rec
                 elif t_to is None or r < t_to * 1000:
                     if t == "V":
@@ -425,7 +432,8 @@ def analyze(recs, bad=0, warn_delay_ms=3000, min_participation=0.9, min_margin=2
         if t == "U":
             unl = rec
         elif t == "Q":
-            quorum = int(rec["q"]) or quorum
+            q = int(rec["q"])
+            quorum = q if usable_quorum(q) else quorum  # 0 / UINT32 max while the node starts: keep the known one
         elif t == "C":
             if rec.get("ev") == "disconnect":
                 reconnects += 1

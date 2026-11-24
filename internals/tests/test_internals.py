@@ -466,6 +466,24 @@ class TestRestarts(Base):
         self.assertEqual(s[f"pft_internals_node_restarts_total{{{C}}}"], "1")
         self.assertEqual(s[f"pft_internals_counter_anomalies_total{{{C}}}"], "0")
 
+    def test_restart_with_uptime_up_is_restart(self):
+        """Real 2026-11-24 sentry: re-created twice in 3 min, the samples in between failed, uptime 60 -> 88 s."""
+        self.ok()
+        si, gc = self.bump(self.si, self.gc, 120077 + 10, 0.001)  # 180 s later: start time +170 s
+        s, p = self.ok(si=si, gc=gc, now=NOW + 180)
+        self.assertEqual(s[f"pft_internals_node_restarts_total{{{C}}}"], "1")
+        self.assertEqual(s[f"pft_internals_counter_anomalies_total{{{C}}}"], "0")
+        self.assertEqual(p.stderr, "")
+        self.assertEqual(json.loads(read(self.state))["last_restart"], NOW + 180)
+
+    def test_start_shift_within_tolerance_is_anomaly(self):
+        """Control: start time +30 s (= START_SHIFT_MAX, sampling jitter) with counters down stays an anomaly."""
+        self.ok()
+        si, gc = self.bump(self.si, self.gc, 120077 + 30, 0.5)  # 60 s later, uptime +30
+        s, _ = self.ok(si=si, gc=gc, now=NOW + 60)
+        self.assertEqual(s[f"pft_internals_node_restarts_total{{{C}}}"], "0")
+        self.assertEqual(s[f"pft_internals_counter_anomalies_total{{{C}}}"], "1")
+
     def test_decrease_without_restart_is_anomaly(self):
         self.ok()
         si, gc = self.bump(self.si, self.gc, 120137, 0.5)
@@ -480,7 +498,7 @@ class TestRestarts(Base):
     def test_single_rpc_counter_decrease_is_anomaly(self):
         self.ok()
         si = copy.deepcopy(self.si)
-        si["result"]["info"]["uptime"] = 120100
+        si["result"]["info"]["uptime"] = 120137  # start time unchanged (60 s later, uptime +60)
         si["result"]["info"]["counters"]["rpc"]["fee"]["errored"] = "0"
         si["result"]["info"]["counters"]["rpc"]["fee"]["started"] = "2000"
         s, p = self.ok(si=si, now=NOW + 60)

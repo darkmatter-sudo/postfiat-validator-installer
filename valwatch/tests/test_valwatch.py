@@ -904,6 +904,24 @@ def test_quorum_zero_sample_keeps_known_quorum(vrecs):
     assert {lg["q"] for lg in rep["ledger_detail"].values()} == {17} and rep["quorum_last"] == 17
 
 
+def test_quorum_uint32_sentinel_keeps_known_quorum(vrecs):
+    """Real 2026-11-24 sentry start: {"q": 4294967295, "s": "connected"} gave quorum_margin_min -4294967271."""
+    mid = sorted(r["r"] for r in vrecs)[len(vrecs) // 3]
+    base = analyze(vrecs, detail=True)
+    rep = analyze([*vrecs, {"t": "Q", "q": 4294967295, "s": "connected", "r": mid}], detail=True)
+    assert rep["ledger_detail"] == base["ledger_detail"] and rep["quorum_margin"]["min"] == base["quorum_margin"]["min"]
+    assert rep["quorum_last"] == 17
+    end = max(r["r"] for r in vrecs) + 1  # control: the largest real value is still taken
+    assert analyze([*vrecs, {"t": "Q", "q": 4294967294, "s": "full", "r": end}])["quorum_last"] == 4294967294
+
+
+def test_load_does_not_carry_sentinel_quorum(tmp_path, vrecs):
+    t_from = (max(r["r"] for r in vrecs) // 1000) - 60
+    late = {"t": "Q", "q": 4294967295, "s": "connected", "r": t_from * 1000 - 500}  # newest Q before the window
+    carried, _, _ = valwatch.load(write_dir(tmp_path / "d", [*vrecs, late]), t_from=t_from)
+    assert [c["q"] for c in carried if c["t"] == "Q"] == [17]
+
+
 def test_only_disconnects_count_as_reconnects(vrecs):
     mid = sorted(r["r"] for r in vrecs)[len(vrecs) // 2]
     conn = {"t": "C", "ev": "connect", "why": "", "r": mid}

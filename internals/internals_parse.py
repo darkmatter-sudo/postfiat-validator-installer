@@ -13,7 +13,9 @@ status: reads STATE and prints a summary (or --json); exit 0 ok, 4 no state / st
 Restart safety: the node's counters are cumulative since its start and are exported as *_total counters (rate()
 and increase() handle the reset at a node restart). The parser also compares every counter with the previous
 sample: a restart (uptime went down) adds 1 to pft_internals_node_restarts_total; a counter that went DOWN while
-uptime went UP is not a restart and adds 1 to pft_internals_counter_anomalies_total.
+uptime went UP is not a restart and adds 1 to pft_internals_counter_anomalies_total. Counters down with a start
+time (sample time - uptime) moved forward by more than START_SHIFT_MAX s is a restart too (samples missed between
+quick restarts).
 
 Cardinality: job types, RPC methods and object types become label values only if they match a strict name
 pattern, and at most MAX_JOB_TYPES / MAX_RPC_METHODS / MAX_OBJECT_TYPES distinct names (sorted) are kept; the rest
@@ -295,9 +297,14 @@ def is_wrap(old, new):
     return 0 <= new < old < WRAP and (new - old) % WRAP < WRAP_MAX_STEP
 
 
-def compare(prev, flat, uptime):
-    """-> (restart, decreased counter names, wrapped counter names). A restart is uptime going down;
-    counters may then start over."""
+# Counters down + a node start time (sample time - uptime) that moved forward by more than this is a restart even
+# when uptime went up: two quick re-creates with the samples in between failed (2026-11-24 sentry: start +180 s, uptime 60 -> 88).
+START_SHIFT_MAX = 30
+
+
+def compare(prev, flat, uptime, now=None):
+    """-> (restart, decreased counter names, wrapped counter names). A restart is uptime going down, or counters
+    going down while the node's start time (now - uptime) moved forward by more than START_SHIFT_MAX."""
     pu = prev.get("uptime")
     pc = prev.get("counters")
     if not isinstance(pu, int) or not isinstance(pc, dict):
@@ -306,7 +313,11 @@ def compare(prev, flat, uptime):
         return True, [], []
     down = sorted(k for k, v in flat.items() if isinstance(pc.get(k), int) and v < pc[k])
     wrapped = [k for k in down if is_wrap(pc[k], flat[k])]
-    return False, [k for k in down if k not in wrapped], wrapped
+    dec = [k for k in down if k not in wrapped]
+    pt = prev.get("ts")
+    if dec and isinstance(pt, int) and now is not None and (now - uptime) - (pt - pu) > START_SHIFT_MAX:
+        return True, [], []
+    return False, dec, wrapped
 
 
 def esc(v):
@@ -490,7 +501,7 @@ def cmd_collect(a):
     over = {"job_type": ojobs, "load_job_type": oload, "method": orpc, "object_type": c["overflow_objects"]}
     prev = read_state(a.state)
     flat = flat_counters(c, i)
-    restart, dec, wrapped = compare(prev, flat, i["uptime"])
+    restart, dec, wrapped = compare(prev, flat, i["uptime"], a.now)
     st = {
         "restarts": prev.get("restarts", 0) if isinstance(prev.get("restarts"), int) else 0,
         "anomalies": prev.get("anomalies", 0) if isinstance(prev.get("anomalies"), int) else 0,
