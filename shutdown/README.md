@@ -5,8 +5,8 @@
 cleanly before Docker or systemd sends SIGKILL?** postfiatd is PID 1 in the official image (the entrypoint
 `exec`s it), so the container's stop signal reaches the daemon directly.
 
-Status: `audit`, `measure`, `kill-drill`, `apply` and `rollback` with their offline tests are in place; the recorded
-two-host apply/rollback/re-apply and kill-drill runs are added in follow-up commits of this folder.
+Status: `audit`, `measure`, `kill-drill`, `apply` and `rollback` with their offline tests, and the recorded two-host
+runs (see [Results](#results-two-hosts-2026-11-24)). Both hosts now run with the measured stop budget applied.
 
 ## audit (read-only)
 
@@ -120,3 +120,56 @@ failing `docker run` each roll back to the previous container; a compose config 
 restores the files with nothing re-created; every refusal (no `--yes`, no window, no/too few measurements, tag moved,
 not full, seccomp file missing, another value applied) leaves container, `.env` and overlay untouched.
 
+
+## Results (two hosts, 2026-11-24)
+
+Recorded with `drill/live-run.sh` (one Alertmanager silence of everything but the watchdog and digest-only alerts,
+a `pft-maint` window on both hosts, `[MAINT]` notices to a throwaway topic only, sentry first, then drain and read
+back). Raw runner output; only the sentry's `--publish` address is redacted.
+
+| log | what | result |
+|-----|------|--------|
+| [`logs/04-measure-n3.log`](logs/04-measure-n3.log) | 3 clean `measure` stops per host | PASS, 0 checks failed |
+| [`logs/06-apply-cycle.log`](logs/06-apply-cycle.log) | per host: audit, apply, audit, rollback, audit, re-apply, no-op apply, audit | PASS, 0 checks failed |
+| [`logs/07-kill-drill.log`](logs/07-kill-drill.log) | 1 SIGKILL `kill-drill` per host | every drill check PASS; 1 FAIL: drain (outside alert, below) |
+| [`logs/07b-post-run07-cleanup.log`](logs/07b-post-run07-cleanup.log) | run 07 silence expired by hand, final state | both full, integrity PASS |
+
+Clean stops (`docker stop -t 120`, all with `Received signal 15` + `Server stopping`, exit code 0, holes 0, database
+error lines 0):
+
+| host | stop wall time (s) | back to full (s) | p100 | required = max(30, ceil(p100 x 3)) |
+|------|--------------------|------------------|------|-------------------------------------|
+| sentry (`docker run`) | 5.0, 7.1, 19.7 | 53.5, 51.5, 44.3 | 19.7 | 60 s |
+| validator (compose) | 3.2, 3.8, 10.1 | 48.5, 49.1, 40.6 | 10.1 | 31 s |
+
+The sentry's slowest clean stop (19.7 s) is about twice Docker's default 10 s, so an unconfigured `docker stop`
+can SIGKILL it mid-shutdown.
+
+Audit before / after (`logs/06`): validator exit 6 (F2 StopTimeout unset, F3 compose `stop_grace_period` unset) -> 0
+after apply -> 6 after rollback -> 0 after re-apply; sentry exit 2 (F2) -> 0 -> 2 -> 0. A second apply on each host
+printed `nothing to do`. Every apply/rollback gate: re-created, configuration signature unchanged, `full` in 43-52 s.
+The sentry's F3 failed in the first dev audit too (its installed `pft-seccomp` / `pft-apparmor` recreate paths dropped
+`--stop-timeout`); fixed in those tools and deployed before run 06, so run 06 starts at exit 2.
+
+Crash vs clean (`logs/07` vs `logs/04`):
+
+| host | SIGKILL: exit code, wall | back to full | holes | db error lines | clean stops: back to full |
+|------|--------------------------|--------------|-------|----------------|---------------------------|
+| sentry | 137, 6.1 s | 54.7 s | 0 | 0 | 44.3-53.5 s |
+| validator | 137, 1.4 s | 49.1 s | 0 | 0 | 40.6-49.1 s |
+
+No shutdown markers after SIGKILL (as expected). On 1.0.9 recovery after a crash was as fast as after a clean stop,
+with no database errors and no `complete_ledgers` holes on either host. The validator's local history archive
+recorded the ledgers it missed while down (8331327-8331340) as a gap, and `pft-histarchive fill-gap` filled it from
+public RPC (verify rc 0).
+
+Run 07's one FAIL: at 16:30Z, during the drain, `PFTBudgetCapReached` for `pft-budget-collect.service` (pft-budget's
+own 30-day memory projection, cap 128 MiB, peak about 37 MiB) went pending on both hosts. The drill did not cause it:
+it started when the unit's history first spanned `PROJ_MIN_SPAN_DAYS` (3 d after its 2026-11-21 reset). It kept the
+drain from finishing within 4500 s, so the runner left its silence in place. The silence was then expired by hand
+once that alert, the only one remaining, was covered by its own narrow silence (`logs/07b`). The operator topics got
+no message during the run.
+
+Integrity: each run accepted its own re-creates into `pft-integrity`; at the end both hosts PASS, AppArmor and
+seccomp audits PASS, both nodes `full`. File hashes: [`SHA256SUMS`](SHA256SUMS) (`sha256sum -c SHA256SUMS` from this
+folder).
