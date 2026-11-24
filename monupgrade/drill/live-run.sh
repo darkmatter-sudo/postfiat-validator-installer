@@ -24,7 +24,7 @@ set -uo pipefail
 REPO="$(git rev-parse --show-toplevel)"; cd "$REPO" || exit 3
 export TZ=UTC
 SHA="$(git rev-parse HEAD)"
-AM=http://127.0.0.1:9093; RPC=http://127.0.0.1:5005
+AM=http://127.0.0.1:9093; PROM=http://127.0.0.1:9090; RPC=http://127.0.0.1:5005
 ME="$(id -un)"; HN="$(hostname)"
 TASK=task_add0edd0
 RUN="${RUN:?set RUN}"; DRY="${DRY:-0}"; HOSTS="${HOSTS:-sentry validator}"
@@ -52,11 +52,23 @@ MU="sudo -n env STATE_DIR=$SD NTFY_TEST_URL=$TAU"
 
 state_v() { curl -s -m 10 -d '{"method":"server_info"}' "$RPC" | jq -r '.result.info.server_state // "?"'; }
 state_s() { R "sudo -n docker exec postfiatd-sentry curl -s -m 10 -d '{\"method\":\"server_info\"}' http://127.0.0.1:5005 | jq -r '.result.info.server_state // \"?\"'"; }
-others() { # unsilenced, uninhibited Alertmanager alerts other than the watchdog and the digest-only ones; fails closed
-  local j; j="$(curl -s -m 15 "$AM/api/v2/alerts?active=true&silenced=false&inhibited=false")"
-  [ -n "$j" ] && jq -e 'type == "array"' >/dev/null 2>&1 <<<"$j" || { echo query-error; return; }
-  jq -r '.[] | select(.labels.alertname != "PFTAlertPipelineWatchdog" and (.labels.notify // "") != "digest")
-    | "\(.labels.alertname) \(.labels.host // .labels.node // .labels.instance // "-")"' <<<"$j"
+others() { # Prometheus alerts (pending included) other than the watchdog and digest-only ones that no active silence
+  # but this run's own ($SIL) matches (matchers evaluated here, so pending alerts count too): what would reach the
+  # operator once the run's silence is expired. Bodies via files; unreadable/empty fails closed. PROM_URL_O /
+  # AM_URL_O: dead-endpoint controls.
+  local d out
+  d="$(mktemp -d)"
+  if curl -s -m 15 "${PROM_URL_O:-$PROM}/api/v1/alerts" >"$d/p" && curl -s -m 15 "${AM_URL_O:-$AM}/api/v2/silences" >"$d/s" \
+    && [ -s "$d/p" ] && [ -s "$d/s" ] && jq -e '.data.alerts | type == "array"' "$d/p" >/dev/null 2>&1 && jq -e 'type == "array"' "$d/s" >/dev/null 2>&1; then
+    out="$(jq -rn --slurpfile p "$d/p" --slurpfile s "$d/s" --arg sil "$SIL" '
+      [$s[0][] | select(.status.state == "active" and .id != $sil) | .matchers] as $ms
+      | $p[0].data.alerts[] | select(.labels.alertname != "PFTAlertPipelineWatchdog" and (.labels.notify // "") != "digest")
+      | .labels as $l
+      | select(any($ms[]; all(.[]; . as $m | ($l[$m.name] // "") as $v
+          | (if $m.isRegex then ($v | test("^(?:" + $m.value + ")$")) else $v == $m.value end) == ($m.isEqual != false))) | not)
+      | "\(.labels.alertname) \(.labels.host // .labels.node // .labels.instance // "-") \(.state)"')" || out=query-error
+  else out=query-error; fi
+  rm -rf "$d"; [ -z "$out" ] || printf '%s\n' "$out"
 }
 bridge_to() { # ENV_FILE: re-create only the live bridge with that ntfy env (Prometheus + Alertmanager keep running)
   NTFY_ENV_FILE="$1" DOCKER="sudo -n docker" bash alerts/run-stack.sh bridge
@@ -100,8 +112,8 @@ git fetch -q origin; [ "$(git rev-parse origin/main)" = "$SHA" ] || { echo "HEAD
 echo; echo "== 0. preflight (read-only)"
 x "shellcheck monupgrade/pft-monupgrade.sh monupgrade/tests/*.sh monupgrade/drill/*.sh alerts/run-stack.sh && echo shellcheck clean"
 check "shellcheck clean" "$XRC"
-x "bash monupgrade/tests/run-tests.sh | tail -1; bash monupgrade/tests/run-apply-tests.sh | tail -1"
-check "offline tests pass (plan + apply suites)" "$([ "$(grep -c ' 0 failed$' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
+x "bash monupgrade/tests/run-tests.sh | tail -1; bash monupgrade/tests/run-apply-tests.sh | tail -1; bash monupgrade/tests/run-drill-tests.sh | tail -1"
+check "offline tests pass (plan + apply + drill suites)" "$([ "$(grep -c ' 0 failed$' <<<"$XOUT")" = 3 ] && echo 0 || echo 1)"
 x "sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'"
 check "pft-integrity PASS on both hosts" "$([ "$(grep -c 'RESULT: PASS' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
 x "state_v; state_s"
@@ -109,7 +121,7 @@ check "both nodes full or proposing" "$([ "$(grep -cE '^(full|proposing)$' <<<"$
 x "sudo -n pft-maint status | head -1; sudo -n pft-maint lock list; R 'sudo -n pft-maint status | head -1'"
 check "no maintenance window on either host, no lock" "$([ "$(grep -c '^no maintenance window' <<<"$XOUT")" = 2 ] && grep -q '^no data-collection locks' <<<"$XOUT" && echo 0 || echo 1)"
 x "others"
-check "no unsilenced alert but the watchdog and digest-only ones" "$([ -z "$XOUT" ] && echo 0 || echo 1)"
+check "no alert but the watchdog, digest-only and already-silenced ones" "$([ -z "$XOUT" ] && echo 0 || echo 1)"
 x "curl -s -m 10 $AM/api/v2/silences | jq -r '.[] | select(.status.state == \"active\") | \"\(.id[0:8]) until \(.endsAt) \(.comment)\"'"
 echo "  (pre-existing silences are kept; pft-monupgrade's gate checks that each one survives every switch)"
 x "R 'sudo -n docker ps -a --filter name=pft- --format {{.Names}}; sudo -n docker volume ls -q --filter name=pft-prometheus-data' | wc -l"
@@ -220,7 +232,7 @@ check "both nodes full at the end" "$([ "$(grep -cE '^(full|proposing)$' <<<"$XO
 x "curl -s -m 5 -o /dev/null -w 'prometheus %{http_code}\n' http://127.0.0.1:9090/-/healthy; curl -s -m 5 -o /dev/null -w 'alertmanager %{http_code}\n' $AM/-/healthy; curl -s -m 5 http://127.0.0.1:9090/api/v1/status/buildinfo | jq -r '\"prometheus version \" + .data.version'; curl -s -m 5 $AM/api/v2/status | jq -r '\"alertmanager version \" + .versionInfo.version'"
 check "validator Prometheus + Alertmanager healthy" "$([ "$(grep -cE ' 200$' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
 t=0; while :; do o="$(others)"; [ -z "$o" ] && break; [ "$t" -ge "$DRAIN_MAX_S" ] && break; sleep 30; t=$((t + 30)); done
-echo "drain after ${t}s:"; printf '%s\n' "${o:-  (nothing unsilenced but the watchdog / digest-only alerts)}" | red | sed 's/^/  /'
+echo "drain after ${t}s:"; printf '%s\n' "${o:-  (nothing but the watchdog / digest-only / pre-silenced alerts)}" | red | sed 's/^/  /'
 if [ -z "$o" ]; then
   x "curl -s -m 10 -o /dev/null -w '%{http_code}' -X DELETE $AM/api/v2/silence/$SIL"
   check "silence expired after a clean drain" "$([ "$XOUT" = 200 ] && echo 0 || echo 1)"; SIL=""

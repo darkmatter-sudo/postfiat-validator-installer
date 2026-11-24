@@ -92,6 +92,7 @@ need the data volume restored from backup (the targets used here are all Prometh
 ```
 bash tests/run-tests.sh        # plan: stub docker (tests/stub_docker.sh) + Docker Hub fixtures (tests/fixtures)
 bash tests/run-apply-tests.sh  # apply/rollback: stateful fake docker + Prometheus/Alertmanager/ntfy APIs (tests/fake_stack.py)
+bash tests/run-drill-tests.sh  # drill/live-run.sh drain check: silence matchers (regex, negative, expired, own) vs pending/firing alerts
 ```
 
 Each failure path asserts its exit code, its named reason and what must NOT have happened (no pull, no check
@@ -123,7 +124,9 @@ The sentry runs **no** Prometheus/Alertmanager: the sentry's alerts are evaluate
   (`NOTHING TO DO`); the validator's live bridge is moved to the throwaway topic for its cycle (`run-stack.sh
   bridge`) and back after it; imagescan after (fixable counts per monitoring image only, never ids); integrity
   accept of the re-created monitoring containers; end window, drain, expire the silence, read back the throwaway
-  topics and every operator topic.
+  topics and every operator topic. The drain counts every Prometheus alert (pending too) that no silence
+  other than the run's own matches, evaluating the matchers itself, so nothing held back by the run's silence can
+  page after it is expired.
 
 ```
 HOSTS="sentry validator" RUN=NN bash monupgrade/drill/live-run.sh 2>&1 | tee LOG
