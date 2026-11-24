@@ -285,6 +285,9 @@ def curl(args):
             rules = rules[:2]
         if match("STUB_RULE_ERR", prom["image"]):
             rules[1]["health"] = "err"
+        if os.environ.get("STUB_RULES_BIG") == "1":  # a real rule set: the body alone is > MAX_ARG_STRLEN (128 KiB)
+            for r in rules:
+                r["query"] = "x" * 100000
         print(json.dumps({"status": "success", "data": {"groups": [{"name": "g1", "rules": rules}]}}))
     elif path == "/api/v1/targets":
         h = "down" if match("STUB_TARGET_DOWN", prom["image"]) else "up"

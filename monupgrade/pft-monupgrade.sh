@@ -354,18 +354,18 @@ wait_ready() {
   done
 }
 
-# snapshot -> one JSON object: versions, rule set + health, targets, receivers, active silence ids, watchdog status
+# snapshot -> one JSON object: versions, rule set + health, targets, receivers, active silence ids, watchdog status.
+# The API bodies go to jq as files: a real /api/v1/rules body is larger than one argv string (MAX_ARG_STRLEN 128 KiB).
 snapshot() {
-  local bi st rules tg rc sil wd
-  bi="$(json "$PROM_URL/api/v1/status/buildinfo")" || return 1
-  st="$(json "$AM_URL/api/v2/status")" || return 1
-  rules="$(json "$PROM_URL/api/v1/rules")" || return 1
-  tg="$(json "$PROM_URL/api/v1/targets")" || return 1
-  rc="$(json "$AM_URL/api/v2/receivers")" || return 1
-  sil="$(json "$AM_URL/api/v2/silences")" || return 1
-  wd="$(json "$AM_URL/api/v2/alerts?filter=alertname%3D%22$WATCHDOG%22")" || return 1
-  jq -nc --argjson bi "$bi" --argjson st "$st" --argjson r "$rules" --argjson tg "$tg" --argjson rc "$rc" \
-    --argjson sil "$sil" --argjson wd "$wd" '{
+  local d rc=1
+  d="$(mktemp -d)" || return 1
+  if json "$PROM_URL/api/v1/status/buildinfo" >"$d/bi" && json "$AM_URL/api/v2/status" >"$d/st" \
+    && json "$PROM_URL/api/v1/rules" >"$d/r" && json "$PROM_URL/api/v1/targets" >"$d/tg" \
+    && json "$AM_URL/api/v2/receivers" >"$d/rc" && json "$AM_URL/api/v2/silences" >"$d/sil" \
+    && json "$AM_URL/api/v2/alerts?filter=alertname%3D%22$WATCHDOG%22" >"$d/wd"; then
+    jq -nc --slurpfile bi "$d/bi" --slurpfile st "$d/st" --slurpfile r "$d/r" --slurpfile tg "$d/tg" \
+      --slurpfile rc "$d/rc" --slurpfile sil "$d/sil" --slurpfile wd "$d/wd" '
+      $bi[0] as $bi | $st[0] as $st | $r[0] as $r | $tg[0] as $tg | $rc[0] as $rc | $sil[0] as $sil | $wd[0] as $wd | {
       prom_version: $bi.data.version, am_version: $st.versionInfo.version,
       rules: ([$r.data.groups[] | .name as $g | .rules[] | "\($g)/\(.name)"] | sort),
       rules_not_ok: ([$r.data.groups[] | .rules[] | select(.health != "ok") | .name] | sort),
@@ -374,6 +374,10 @@ snapshot() {
       receivers: ([$rc[].name] | sort),
       silences: ([$sil[] | select(.status.state == "active") | .id] | sort),
       watchdog: ([$wd[] | {state: .status.state, silenced: (.status.silencedBy | length)}])}'
+    rc=$?
+  fi
+  rm -rf "$d"
+  return "$rc"
 }
 
 # isolation -> rc 0 when the bridge delivers to NTFY_TEST_URL only (mounted env file = test URL, bridge started after

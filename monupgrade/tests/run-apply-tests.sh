@@ -207,6 +207,13 @@ expect_rc rbfail 1
 expect_out rbfail "RESULT: FAIL - rollback rolled back"
 on_images rbfail "$P_NEW" "$A_NEW"
 
+# API bodies larger than one argv string (real rule set, dry run 2 on the sentry canary): read from files, not --argjson
+setup big
+run_tool STUB_RULES_BIG=1 -- apply --plan "$STUB_DIR/plan.json" --yes
+expect_rc bigapi 0
+expect_out bigapi "CHECK rules-parity +ok 3 items"
+on_images bigapi "$P_NEW" "$A_NEW"
+
 # usage
 setup u; run_tool -- apply --yes; expect_rc usage-noplan 2
 run_tool -- rollback --bogus; expect_rc usage-rollback 2

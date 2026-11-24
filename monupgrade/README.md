@@ -5,7 +5,8 @@
 `docker run`, no compose file) without risking the alerting of a Post Fiat node: every target image is pinned to its
 registry digest and checked against the live rules and configuration before anything is swapped.
 
-Status: `plan`, `apply`, `rollback` and their offline tests. The recorded two-host runs follow.
+Status: `plan`, `apply`, `rollback`, their offline tests and the live-run tooling (`drill/`). The recorded two-host
+runs follow.
 
 ## plan (no container change)
 
@@ -100,4 +101,31 @@ rollback (no-op) -> re-apply, 14 refusals (each with zero container-changing doc
 failures (docker run x2, readiness, lost rule, unhealthy rule, target down, no delivery, exposed port, lost silences,
 configuration drift) that must all end on the original images with restart policies, Alertmanager data volume and silences intact. The fake derives every
 API answer from the containers actually running (version = image tag; silences only if the original Alertmanager
-volume is mounted), so the re-create logic itself is under test.
+volume is mounted), so the re-create logic itself is under test. One more case serves a `/api/v1/rules` body larger than one argv string
+(the live one is ~134 KB; dry run 2 on the sentry canary refused with `Argument list too long` before the fix), so
+the API bodies are read by jq from files.
+
+## Live runs (`drill/`)
+
+The sentry runs **no** Prometheus/Alertmanager: the sentry's alerts are evaluated by the validator's stack. So
+"sentry first" means a **temporary canary stack** on the sentry, then the live stack on the validator.
+
+- `drill/canary.sh up|down` (on the sentry, from a run copy of the pushed commit): `run-stack.sh up` with
+  `EXPORTER_CHECK=0` (no exporter there, so its scrape targets are down before and after, compared as is), the
+  validator's **current** images pinned to their digests, the bridge pointed at a throwaway topic. It refuses a host
+  that already has any stack container or the Prometheus volume. `down` removes the containers, both volumes and
+  every image pulled after `up` (image store = before), and fails if anything is left.
+- `drill/live-run.sh` (repo root on the validator): preflight (clean pushed HEAD, shellcheck, both offline suites,
+  integrity PASS both hosts, both nodes full, no window, no unsilenced alert but the watchdog/digest-only ones,
+  imagescan before); pft-maint window on both hosts with its `[MAINT]` target on a throwaway topic and one
+  Alertmanager silence for everything except the watchdog, `PFTMonupgradeTest` and digest-only alerts (the gate
+  checks that the watchdog never matches it); per host `plan` -> `apply` -> `rollback` -> `apply` -> `apply`
+  (`NOTHING TO DO`); the validator's live bridge is moved to the throwaway topic for its cycle (`run-stack.sh
+  bridge`) and back after it; imagescan after (fixable counts per monitoring image only, never ids); integrity
+  accept of the re-created monitoring containers; end window, drain, expire the silence, read back the throwaway
+  topics and every operator topic.
+
+```
+HOSTS="sentry validator" RUN=NN bash monupgrade/drill/live-run.sh 2>&1 | tee LOG
+DRY=1 HOSTS=sentry RUN=dryN ...     # not the basis; a dry validator cycle rolls back once more at the end
+```
