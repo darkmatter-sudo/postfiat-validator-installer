@@ -16,6 +16,10 @@
 #      throwaway topic and every operator topic (0 messages other than the agent's own).
 #   MODE=measure HOSTS="sentry validator" N=3 RUN=03 bash shutdown/drill/live-run.sh 2>&1 | tee LOG   (repo root)
 #   DRY=1 MODE=measure HOSTS=sentry N=1 RUN=dry1 ...   same steps, state in STATE_DIR/dry-RUN (not the basis)
+#   MODE=apply-cycle: per host audit (before) -> apply -> audit -> rollback -> audit -> re-apply -> apply again (no-op)
+#      -> audit, each re-create checked like a stop (full, egress, histarchive gap); validator: pft-backup + backupwatch;
+#      then the re-created containers (and the validator's .env + overlay) are accepted into pft-integrity.
+#      DRY=1 seeds STATE_DIR/dry-RUN with the recorded measurements and rolls back once more at the end.
 set -uo pipefail
 REPO="$(git rev-parse --show-toplevel)"; cd "$REPO" || exit 3
 export TZ=UTC
@@ -28,7 +32,9 @@ RUN="${RUN:?set RUN}"; DRY="${DRY:-0}"; MODE="${MODE:-measure}"; HOSTS="${HOSTS:
 # it even once the gap is filled, so drain and silence must outlast that hour (dry2: 30-min drain cap, silence extended)
 VX=0; case " $HOSTS " in *" validator "*) VX=75 ;; esac
 PAUSE_S="${PAUSE_S:-60}"; DRAIN_MAX_S="${DRAIN_MAX_S:-$((VX > 0 ? VX * 60 : 1800))}"
-case "$MODE" in measure|kill-drill) ;; *) echo "MODE must be measure or kill-drill"; exit 3 ;; esac
+case "$MODE" in measure|kill-drill|apply-cycle) ;; *) echo "MODE must be measure, kill-drill or apply-cycle"; exit 3 ;; esac
+# apply-cycle re-creates each node 3 times (apply, rollback, re-apply; a dry run rolls back once more at the end)
+[ "$MODE" = apply-cycle ] && N=$((DRY == 1 ? 4 : 3))
 SD=/var/lib/pft-shutdown; [ "$DRY" = 1 ] && SD="/var/lib/pft-shutdown/dry-$RUN"
 TT="pft-drill-shutdown-$(head -c 6 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 RD=".cache/shutdown-run-$RUN"   # relative to $HOME on both hosts
@@ -128,33 +134,88 @@ check "window valid on the sentry" "$([ "$XOUT" = active ] && echo 0 || echo 1)"
 gate
 
 echo; echo "== 2. $MODE runs"
-k=0
-for h in $HOSTS; do
-  for i in $(seq 1 "$N"); do
-    k=$((k + 1)); echo; echo "-- $h $MODE $i/$N ($(date -u +%FT%TZ))"
-    if [ "$h" = sentry ]; then
-      x "R 'sudo -n env STATE_DIR=$SD bash $RD/pft-shutdown.sh $MODE --yes'"
-    else
-      x "sudo -n env STATE_DIR=$SD bash ~/$RD/pft-shutdown.sh $MODE --yes"
+psh() { # HOST ARGS...: pft-shutdown on that host (run copy, STATE_DIR=$SD)
+  local h="$1"; shift
+  if [ "$h" = sentry ]; then x "R 'sudo -n env STATE_DIR=$SD bash $RD/pft-shutdown.sh $*'"; else x "sudo -n env STATE_DIR=$SD bash ~/$RD/pft-shutdown.sh $*"; fi
+}
+after() { # HOST LABEL: both nodes full, egress, validator: histarchive gap of the stop filled
+  local h="$1" l="$2" g
+  x "state_v; state_s"
+  check "$l: both nodes full" "$([ "$(grep -cE '^(full|proposing)$' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
+  if [ "$h" = sentry ]; then x "R 'sudo -n pft-egress check --container postfiatd-sentry | tail -1'"; else x "sudo -n pft-egress check --container postfiatd | tail -1"; fi
+  check "$l: pft-egress check" "$XRC"
+  if [ "$h" = validator ]; then
+    sleep 30
+    for g in $(open_gaps); do
+      x "sudo -n pft-histarchive fill-gap $g --rpc https://rpc.testnet.postfiat.org/ | tail -2"
+      check "histarchive fill-gap $g" "$XRC"
+    done
+    x "open_gaps | wc -l"; check "$l: no open histarchive gap" "$([ "$XOUT" = 0 ] && echo 0 || echo 1)"
+  fi
+}
+audit_is() { # HOST LABEL WANT_EXIT
+  psh "$1" audit; echo "$XOUT" | grep -q '^required stop budget: .*(p100' || { check "$2: audit uses the measured budget" 1; return; }
+  check "$2: audit exit $XRC (want $3)" "$([ "$XRC" = "$3" ] && echo 0 || echo 1)"
+}
+step() { # HOST LABEL ARGS... -> check the RESULT line of apply/rollback
+  local h="$1" l="$2"; shift 2; psh "$h" "$@" --yes
+  check "$l" "$([ "$XRC" = 0 ] && grep -qE '(apply|rollback) RESULT: PASS' <<<"$XOUT" && echo 0 || echo 1)"
+}
+if [ "$MODE" = apply-cycle ]; then
+  if [ "$DRY" = 1 ]; then   # the dry state dir gets the recorded measurements, so REQUIRED is the same as the real one
+    x "sudo -n mkdir -p -m 0700 $SD && sudo -n cp -p /var/lib/pft-shutdown/measure-postfiatd.json $SD/; R 'sudo -n mkdir -p -m 0700 $SD && sudo -n cp -p /var/lib/pft-shutdown/measure-postfiatd-sentry.json $SD/'"
+    check "dry state dirs seeded with the recorded measurements" "$XRC"; gate
+  fi
+  k=0
+  for h in $HOSTS; do
+    echo; echo "-- $h apply / rollback / re-apply ($(date -u +%FT%TZ))"
+    # before: F2 (StopTimeout unset = 10 s); validator also F3 (compose stop_grace_period unset); the sentry's recreate
+    # tools carry --stop-timeout since f1595a1, so its F3 passes before the apply too
+    wb=6; [ "$h" = sentry ] && wb=2
+    audit_is "$h" "$h audit before" "$wb"; gate
+    step "$h" "$h apply PASS" apply; after "$h" "$h apply"; gate
+    audit_is "$h" "$h audit after apply" 0; gate
+    sleep "$PAUSE_S"
+    step "$h" "$h rollback PASS" rollback; after "$h" "$h rollback"; gate
+    audit_is "$h" "$h audit after rollback" "$wb"; gate
+    sleep "$PAUSE_S"
+    step "$h" "$h re-apply PASS" apply; after "$h" "$h re-apply"; gate
+    psh "$h" apply --yes
+    check "$h second apply is a no-op" "$([ "$XRC" = 0 ] && grep -q 'nothing to do' <<<"$XOUT" && echo 0 || echo 1)"
+    audit_is "$h" "$h audit after re-apply" 0; gate
+    if [ "$DRY" = 1 ]; then
+      sleep "$PAUSE_S"; step "$h" "$h dry: final rollback PASS" rollback; after "$h" "$h dry final rollback"
+      audit_is "$h" "$h dry: audit after the final rollback" "$wb"; gate
     fi
-    check "$h $MODE $i PASS" "$([ "$XRC" = 0 ] && grep -q '^RESULT: PASS' <<<"$XOUT" && echo 0 || echo 1)"
-    x "state_v; state_s"
-    check "$h $MODE $i: both nodes full" "$([ "$(grep -cE '^(full|proposing)$' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
-    if [ "$h" = sentry ]; then x "R 'sudo -n pft-egress check --container postfiatd-sentry | tail -1'"; else x "sudo -n pft-egress check --container postfiatd | tail -1"; fi
-    check "$h $MODE $i: pft-egress check" "$XRC"
-    if [ "$h" = validator ]; then
-      sleep 30
-      for g in $(open_gaps); do
-        x "sudo -n pft-histarchive fill-gap $g --rpc https://rpc.testnet.postfiat.org/ | tail -2"
-        check "histarchive fill-gap $g" "$XRC"
-      done
-      x "open_gaps | wc -l"; check "$h $MODE $i: no open histarchive gap" "$([ "$XOUT" = 0 ] && echo 0 || echo 1)"
+    if [ "$h" = validator ]; then   # backupwatch: every COMPOSE_FILE member must be in the newest archive
+      x "sudo -n systemctl start pft-backup.service && sudo -n systemctl start pft-backupwatch.service && systemctl show -p Result --value pft-backupwatch.service"
+      check "validator backup + backupwatch after the change" "$([ "$XRC" = 0 ] && [ "$(tail -1 <<<"$XOUT")" = success ] && echo 0 || echo 1)"
     fi
     gate
-    [ "$k" -lt "$NRUNS" ] && sleep "$PAUSE_S"
+    k=$((k + 1)); [ "$k" -lt "$(wc -w <<<"$HOSTS")" ] && sleep "$PAUSE_S"
   done
-done
-x "sudo -n cat $SD/measure-postfiatd.json 2>/dev/null | jq -c '.runs[] | {time, mode, stop_s, exit_code, clean, recover_s, hole_ledgers, db_error_lines}'; R 'sudo -n cat $SD/measure-postfiatd-sentry.json 2>/dev/null' | jq -c '.runs[] | {time, mode, stop_s, exit_code, clean, recover_s, hole_ledgers, db_error_lines}'"
+  x "sudo -n cat $SD/apply-postfiatd.json 2>/dev/null | jq -c 'del(.sig)'; R 'sudo -n cat $SD/apply-postfiatd-sentry.json 2>/dev/null' | jq -c 'del(.sig)'"
+  echo; echo "-- intended changes into pft-integrity (re-created containers; validator .env + overlay)"
+  x "sudo -n pft-integrity verify | grep -vE '^ *(OK|PASS)' | tail -20; R 'sudo -n pft-integrity verify | tail -12'"
+  for h in $HOSTS; do
+    if [ "$h" = sentry ]; then x "R 'sudo -n pft-integrity accept --reason \"$TASK: pft-shutdown $MODE run $RUN (sentry re-created)\" | tail -1'"
+    else x "sudo -n pft-integrity accept --reason '$TASK: pft-shutdown $MODE run $RUN (validator re-created, .env + docker-compose.shutdown.yml)' | tail -1"; fi
+    check "$h integrity accept" "$XRC"
+  done
+else
+  k=0
+  for h in $HOSTS; do
+    for i in $(seq 1 "$N"); do
+      k=$((k + 1)); echo; echo "-- $h $MODE $i/$N ($(date -u +%FT%TZ))"
+      psh "$h" "$MODE" --yes
+      check "$h $MODE $i PASS" "$([ "$XRC" = 0 ] && grep -q '^RESULT: PASS' <<<"$XOUT" && echo 0 || echo 1)"
+      after "$h" "$h $MODE $i"
+      gate
+      [ "$k" -lt "$NRUNS" ] && sleep "$PAUSE_S"
+    done
+  done
+  x "sudo -n cat $SD/measure-postfiatd.json 2>/dev/null | jq -c '.runs[] | {time, mode, stop_s, exit_code, clean, recover_s, hole_ledgers, db_error_lines}'; R 'sudo -n cat $SD/measure-postfiatd-sentry.json 2>/dev/null' | jq -c '.runs[] | {time, mode, stop_s, exit_code, clean, recover_s, hole_ledgers, db_error_lines}'"
+fi
 
 echo; echo "== 3. end window, restore, checks, drain, read back"
 x "sudo -n pft-maint end"; MSTART=0; check "window ended" "$XRC"
