@@ -1,0 +1,290 @@
+pft-shutdown live run 03 - 2026-11-24T11:09:05Z - Ubuntu 22.04.5 LTS - repo HEAD 78fc026826cb2260977c93a6517ce6e64b883c00 (clean: yes) - mode measure hosts 'sentry validator' n=3 dry=0
+
+== 0. preflight (read-only)
+$ rm -rf ~/.cache/shutdown-run-03 && mkdir -p ~/.cache/shutdown-run-03 && cp shutdown/pft-shutdown.sh ~/.cache/shutdown-run-03/ && R 'rm -rf ~/.cache/shutdown-run-03 && mkdir -p ~/.cache/shutdown-run-03' && scp -q -o BatchMode=yes shutdown/pft-shutdown.sh relay:.cache/shutdown-run-03/ && sha256sum shutdown/pft-shutdown.sh ~/.cache/shutdown-run-03/pft-shutdown.sh | cut -c1-64; R 'sha256sum .cache/shutdown-run-03/pft-shutdown.sh' | cut -c1-64
+  70b60e778e94afadf3def737625fa0b3352373fbf14e4cfb920eb95857800908
+  70b60e778e94afadf3def737625fa0b3352373fbf14e4cfb920eb95857800908
+  70b60e778e94afadf3def737625fa0b3352373fbf14e4cfb920eb95857800908
+  (exit 0)
+CHECK ok   run copies on both hosts = HEAD bytes
+$ shellcheck shutdown/pft-shutdown.sh shutdown/tests/run-tests.sh shutdown/drill/*.sh && echo shellcheck clean
+  shellcheck clean
+  (exit 0)
+CHECK ok   shellcheck clean
+$ bash shutdown/tests/run-tests.sh | tail -1
+  RESULT: 99 passed, 0 failed
+  (exit 0)
+CHECK ok   offline tests pass
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 294 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 173 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts
+$ state_v; state_s
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ sudo -n pft-maint status | head -1; sudo -n pft-maint lock list; R 'sudo -n pft-maint status | head -1'
+  no maintenance window (alerting is live)
+  no data-collection locks
+  no maintenance window (alerting is live)
+  (exit 0)
+CHECK ok   no maintenance window on either host, no lock
+$ others
+  
+  (exit 0)
+CHECK ok   nothing active but the watchdog and digest-only alerts
+$ curl -s -m 10 http://<redacted-ip>:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'
+  0
+  (exit 0)
+CHECK ok   no active silence
+$ open_gaps | wc -l
+  0
+  (exit 0)
+CHECK ok   no open histarchive gap
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+
+== 1. throwaway [MAINT] target, silence, maintenance window on both hosts
+real $NE present before: 0
+$ { [ 0 = 0 ] || sudo -n cp -p /etc/pft-maint/ntfy.env /etc/pft-maint/ntfy.env.pre-shutdown; } && printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' '<throwaway-topic>' | sudo -n tee /etc/pft-maint/ntfy.env >/dev/null && sudo -n chmod 600 /etc/pft-maint/ntfy.env && sudo -n stat -c '%a %U' /etc/pft-maint/ntfy.env
+  600 root
+  (exit 0)
+CHECK ok   pft-maint target is the throwaway topic
+silence (every alert but the watchdog and the digest-only ones, both hosts) until 2026-11-24T13:59:19Z id 98f447c7
+CHECK ok   Alertmanager silence created
+$ sudo -n pft-maint start --ttl 68m --reason 'task_32fe8c3a pft-shutdown measure run 03'
+  window started: id m1795518679-3071210 until 2026-11-24T12:19:19Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   maintenance window started
+$ R 'sudo -n pft-maint active && echo active'
+  active
+  (exit 0)
+CHECK ok   window valid on the sentry
+
+== 2. measure runs
+
+-- sentry measure 1/3 (2026-11-24T11:12:33Z)
+$ R 'sudo -n env STATE_DIR=/var/lib/pft-shutdown bash .cache/shutdown-run-03/pft-shutdown.sh measure --yes'
+  pft-shutdown clean postfiatd-sentry - 2026-11-24T11:12:36Z - complete_ledgers 8324812-8325466 validated 8325466
+    stop: clean rc 0 wall 5.0s exit_code 0 oom_killed false finished 2026-11-24T11:12:39.829596367Z
+    markers in debug.log since the stop: Received signal 1, Server stopping 1, Application stopping 0 (debug.log)
+      | 2026-Nov-24 11:12:36.666614458 UTC Application:NFO Received signal 15
+      | 2026-Nov-24 11:12:36.666707583 UTC Application:WRN Server stopping: Signal: 15
+    start: server_state full after 53.5s (timeout 900s); complete_ledgers 8324812-8325506
+    holes at/above 8324812: none (0 ledgers); database error lines in the startup log: 0
+    recorded in /var/lib/pft-shutdown/measure-postfiatd-sentry.json (1 clean stop(s); p100 5s)
+  RESULT: PASS - clean stop 5.0s, back to full in 53.5s, holes 0, database errors 0
+  (exit 0)
+CHECK ok   sentry measure 1 PASS
+$ state_v; state_s
+  full
+  full
+  (exit 0)
+CHECK ok   sentry measure 1: both nodes full
+$ R 'sudo -n pft-egress check --container postfiatd-sentry | tail -1'
+  RESULT: PASS
+  (exit 0)
+CHECK ok   sentry measure 1: pft-egress check
+
+-- sentry measure 2/3 (2026-11-24T11:15:40Z)
+$ R 'sudo -n env STATE_DIR=/var/lib/pft-shutdown bash .cache/shutdown-run-03/pft-shutdown.sh measure --yes'
+  pft-shutdown clean postfiatd-sentry - 2026-11-24T11:15:46Z - complete_ledgers 8324812-8325529 validated 8325529
+    stop: clean rc 0 wall 7.1s exit_code 0 oom_killed false finished 2026-11-24T11:15:51.113750715Z
+    markers in debug.log since the stop: Received signal 1, Server stopping 1, Application stopping 0 (debug.log)
+      | 2026-Nov-24 11:15:47.046036451 UTC Application:NFO Received signal 15
+      | 2026-Nov-24 11:15:47.046135997 UTC Application:WRN Server stopping: Signal: 15
+    start: server_state full after 51.5s (timeout 900s); complete_ledgers 8324812-8325569
+    holes at/above 8324812: none (0 ledgers); database error lines in the startup log: 0
+    recorded in /var/lib/pft-shutdown/measure-postfiatd-sentry.json (2 clean stop(s); p100 7.1s)
+  RESULT: PASS - clean stop 7.1s, back to full in 51.5s, holes 0, database errors 0
+  (exit 0)
+CHECK ok   sentry measure 2 PASS
+$ state_v; state_s
+  full
+  full
+  (exit 0)
+CHECK ok   sentry measure 2: both nodes full
+$ R 'sudo -n pft-egress check --container postfiatd-sentry | tail -1'
+  RESULT: PASS
+  (exit 0)
+CHECK ok   sentry measure 2: pft-egress check
+
+-- sentry measure 3/3 (2026-11-24T11:18:53Z)
+$ R 'sudo -n env STATE_DIR=/var/lib/pft-shutdown bash .cache/shutdown-run-03/pft-shutdown.sh measure --yes'
+  pft-shutdown clean postfiatd-sentry - 2026-11-24T11:18:56Z - complete_ledgers 8324812-8325592 validated 8325592
+    stop: clean rc 0 wall 19.7s exit_code 0 oom_killed false finished 2026-11-24T11:19:14.119492109Z
+    markers in debug.log since the stop: Received signal 1, Server stopping 1, Application stopping 0 (debug.log)
+      | 2026-Nov-24 11:18:56.534659034 UTC Application:NFO Received signal 15
+      | 2026-Nov-24 11:18:56.534753610 UTC Application:WRN Server stopping: Signal: 15
+    start: server_state full after 44.3s (timeout 900s); complete_ledgers 8324812-8325634
+    holes at/above 8324812: none (0 ledgers); database error lines in the startup log: 0
+    recorded in /var/lib/pft-shutdown/measure-postfiatd-sentry.json (3 clean stop(s); p100 19.7s)
+  RESULT: PASS - clean stop 19.7s, back to full in 44.3s, holes 0, database errors 0
+  (exit 0)
+CHECK ok   sentry measure 3 PASS
+$ state_v; state_s
+  full
+  full
+  (exit 0)
+CHECK ok   sentry measure 3: both nodes full
+$ R 'sudo -n pft-egress check --container postfiatd-sentry | tail -1'
+  RESULT: PASS
+  (exit 0)
+CHECK ok   sentry measure 3: pft-egress check
+
+-- validator measure 1/3 (2026-11-24T11:22:10Z)
+$ sudo -n env STATE_DIR=/var/lib/pft-shutdown bash ~/.cache/shutdown-run-03/pft-shutdown.sh measure --yes
+  pft-shutdown clean postfiatd - 2026-11-24T11:22:10Z - complete_ledgers 8324810-8325657 validated 8325657
+    stop: clean rc 0 wall 3.2s exit_code 0 oom_killed false finished 2026-11-24T11:22:12.443629488Z
+    markers in debug.log since the stop: Received signal 1, Server stopping 1, Application stopping 0 (debug.log)
+      | 2026-Nov-24 11:22:10.801652504 UTC Application:NFO Received signal 15
+      | 2026-Nov-24 11:22:10.801739717 UTC Application:WRN Server stopping: Signal: 15
+    start: server_state full after 48.5s (timeout 900s); complete_ledgers 8324810-8325694
+    holes at/above 8324810: none (0 ledgers); database error lines in the startup log: 0
+    recorded in /var/lib/pft-shutdown/measure-postfiatd.json (1 clean stop(s); p100 3.2s)
+  RESULT: PASS - clean stop 3.2s, back to full in 48.5s, holes 0, database errors 0
+  (exit 0)
+CHECK ok   validator measure 1 PASS
+$ state_v; state_s
+  full
+  full
+  (exit 0)
+CHECK ok   validator measure 1: both nodes full
+$ sudo -n pft-egress check --container postfiatd | tail -1
+  RESULT: PASS
+  (exit 0)
+CHECK ok   validator measure 1: pft-egress check
+$ sudo -n pft-histarchive fill-gap 8325658-8325672 --rpc https://rpc.testnet.postfiat.org/ | tail -2
+    RESULT: gaps 5 open 0 filled 5 fillable 0
+  RESULT: PASS - fill-gap 8325658-8325672, verify rc 0
+  (exit 0)
+CHECK ok   histarchive fill-gap 8325658-8325672
+$ open_gaps | wc -l
+  0
+  (exit 0)
+CHECK ok   validator measure 1: no open histarchive gap
+
+-- validator measure 2/3 (2026-11-24T11:26:19Z)
+$ sudo -n env STATE_DIR=/var/lib/pft-shutdown bash ~/.cache/shutdown-run-03/pft-shutdown.sh measure --yes
+  pft-shutdown clean postfiatd - 2026-11-24T11:26:19Z - complete_ledgers 8324810-8325739 validated 8325739
+    stop: clean rc 0 wall 3.8s exit_code 0 oom_killed false finished 2026-11-24T11:26:22.588713421Z
+    markers in debug.log since the stop: Received signal 1, Server stopping 1, Application stopping 0 (debug.log)
+      | 2026-Nov-24 11:26:19.937718418 UTC Application:NFO Received signal 15
+      | 2026-Nov-24 11:26:19.937854052 UTC Application:WRN Server stopping: Signal: 15
+    start: server_state full after 49.1s (timeout 900s); complete_ledgers 8324810-8325777
+    holes at/above 8324810: none (0 ledgers); database error lines in the startup log: 0
+    recorded in /var/lib/pft-shutdown/measure-postfiatd.json (2 clean stop(s); p100 3.8s)
+  RESULT: PASS - clean stop 3.8s, back to full in 49.1s, holes 0, database errors 0
+  (exit 0)
+CHECK ok   validator measure 2 PASS
+$ state_v; state_s
+  full
+  full
+  (exit 0)
+CHECK ok   validator measure 2: both nodes full
+$ sudo -n pft-egress check --container postfiatd | tail -1
+  RESULT: PASS
+  (exit 0)
+CHECK ok   validator measure 2: pft-egress check
+$ sudo -n pft-histarchive fill-gap 8325740-8325755 --rpc https://rpc.testnet.postfiat.org/ | tail -2
+    RESULT: gaps 6 open 0 filled 6 fillable 0
+  RESULT: PASS - fill-gap 8325740-8325755, verify rc 0
+  (exit 0)
+CHECK ok   histarchive fill-gap 8325740-8325755
+$ open_gaps | wc -l
+  0
+  (exit 0)
+CHECK ok   validator measure 2: no open histarchive gap
+
+-- validator measure 3/3 (2026-11-24T11:30:28Z)
+$ sudo -n env STATE_DIR=/var/lib/pft-shutdown bash ~/.cache/shutdown-run-03/pft-shutdown.sh measure --yes
+  pft-shutdown clean postfiatd - 2026-11-24T11:30:29Z - complete_ledgers 8324810-8325822 validated 8325822
+    stop: clean rc 0 wall 10.1s exit_code 0 oom_killed false finished 2026-11-24T11:30:38.583861646Z
+    markers in debug.log since the stop: Received signal 1, Server stopping 1, Application stopping 0 (debug.log)
+      | 2026-Nov-24 11:30:29.944450304 UTC Application:NFO Received signal 15
+      | 2026-Nov-24 11:30:29.944567394 UTC Application:WRN Server stopping: Signal: 15
+    start: server_state full after 40.6s (timeout 900s); complete_ledgers 8325323-8325859
+    holes at/above 8324810: none (0 ledgers); database error lines in the startup log: 0
+    recorded in /var/lib/pft-shutdown/measure-postfiatd.json (3 clean stop(s); p100 10.1s)
+  RESULT: PASS - clean stop 10.1s, back to full in 40.6s, holes 0, database errors 0
+  (exit 0)
+CHECK ok   validator measure 3 PASS
+$ state_v; state_s
+  full
+  full
+  (exit 0)
+CHECK ok   validator measure 3: both nodes full
+$ sudo -n pft-egress check --container postfiatd | tail -1
+  RESULT: PASS
+  (exit 0)
+CHECK ok   validator measure 3: pft-egress check
+$ sudo -n pft-histarchive fill-gap 8325823-8325838 --rpc https://rpc.testnet.postfiat.org/ | tail -2
+    RESULT: gaps 7 open 0 filled 7 fillable 0
+  RESULT: PASS - fill-gap 8325823-8325838, verify rc 0
+  (exit 0)
+CHECK ok   histarchive fill-gap 8325823-8325838
+$ open_gaps | wc -l
+  0
+  (exit 0)
+CHECK ok   validator measure 3: no open histarchive gap
+$ sudo -n cat /var/lib/pft-shutdown/measure-postfiatd.json 2>/dev/null | jq -c '.runs[] | {time, mode, stop_s, exit_code, clean, recover_s, hole_ledgers, db_error_lines}'; R 'sudo -n cat /var/lib/pft-shutdown/measure-postfiatd-sentry.json 2>/dev/null' | jq -c '.runs[] | {time, mode, stop_s, exit_code, clean, recover_s, hole_ledgers, db_error_lines}'
+  {"time":"2026-11-24T11:24:03Z","mode":"clean","stop_s":3.2,"exit_code":0,"clean":true,"recover_s":48.5,"hole_ledgers":0,"db_error_lines":0}
+  {"time":"2026-11-24T11:28:13Z","mode":"clean","stop_s":3.8,"exit_code":0,"clean":true,"recover_s":49.1,"hole_ledgers":0,"db_error_lines":0}
+  {"time":"2026-11-24T11:32:21Z","mode":"clean","stop_s":10.1,"exit_code":0,"clean":true,"recover_s":40.6,"hole_ledgers":0,"db_error_lines":0}
+  {"time":"2026-11-24T11:14:36Z","mode":"clean","stop_s":5,"exit_code":0,"clean":true,"recover_s":53.5,"hole_ledgers":0,"db_error_lines":0}
+  {"time":"2026-11-24T11:17:46Z","mode":"clean","stop_s":7.1,"exit_code":0,"clean":true,"recover_s":51.5,"hole_ledgers":0,"db_error_lines":0}
+  {"time":"2026-11-24T11:21:03Z","mode":"clean","stop_s":19.7,"exit_code":0,"clean":true,"recover_s":44.3,"hole_ledgers":0,"db_error_lines":0}
+  (exit 0)
+
+== 3. end window, restore, checks, drain, read back
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+  (exit 0)
+CHECK ok   window ended
+$ sudo -n rm -f /etc/pft-maint/ntfy.env
+  
+  (exit 0)
+$ sudo -n systemctl start pft-keyescrow.service; sudo -n pft-keyescrow inventory | tail -1
+  RESULT: ok 11, perm 0, missing 0, unreadable 0, absent(optional) 2; escrow drift 0, new 0, evolving 1 -> exit 0
+  (exit 0)
+CHECK ok   keyescrow drift 0 after the target restore
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 294 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 173 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   integrity PASS both hosts
+$ sudo -n pft-apparmor audit | grep RESULT; sudo -n pft-seccomp audit | grep RESULT; R 'sudo -n pft-apparmor audit | grep RESULT; sudo -n pft-seccomp audit | grep RESULT'
+  RESULT: PASS
+  RESULT: PASS
+  RESULT: PASS
+  RESULT: PASS
+  (exit 0)
+CHECK ok   AppArmor + seccomp PASS on both hosts
+$ state_v; state_s
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full at the end
+drain after 3480s:
+    (nothing but the watchdog / digest-only alerts)
+$ curl -s -m 10 -o /dev/null -w '%{http_code}' -X DELETE http://<redacted-ip>:9093/api/v2/silence/98f447c7-b426-4070-80c4-533b0b4acd38
+  200
+  (exit 0)
+CHECK ok   silence expired after a clean drain
+$ curl -s -m 15 'https://ntfy.sh/<throwaway-topic>/json?poll=1&since=1795518545' | jq -r 'select(.event == "message") | .title'
+  [MAINT] start validator
+  [MAINT] end validator
+  (exit 0)
+CHECK ok   [MAINT] start/end reached the throwaway topic
+  operator #1 topic: 0 non-agent message(s)
+  operator #2 topic: 0 non-agent message(s)
+CHECK ok   operator topics got no alert/[MAINT] message during the run (2 topic(s))
+$ R 'rm -rf ~/.cache/shutdown-run-03'; rm -rf ~/.cache/shutdown-run-03
+  
+  (exit 0)
+
+pft-shutdown live run 03 done 2026-11-24T12:33:35Z: 0 check(s) failed -> PASS
+
+== restore (trap)
