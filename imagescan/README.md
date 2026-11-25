@@ -11,7 +11,8 @@ run `postfiatd`, Prometheus and Alertmanager. `pft-imagescan.sh` does, without r
   timestamp in `feeds.json`): Canonical's OCI USN OVAL feed per Ubuntu release, the Debian security tracker, the Go
   vulnerability database (vuln.go.dev, OSV);
 - provenance flags (no registry digest, no source label, Go binary built from a dirty tree, unreadable build info) and
-  drift (a container runs an image other than the one its tag now names) are reported;
+  drift (a container runs an image other than the one its tag now names) are reported; a digest-pinned container
+  (`image: repo:tag@sha256:...`) is matched by its tag and is not drift while the image it runs was scanned;
 - results go to a text report, a JSON scan file, Prometheus textfile metrics and six alert rules.
 
 Docker is only ever asked `ps`, `inspect`, `image ls`, `image inspect` and `image save`: no `exec`, `run`, `create`,
@@ -171,7 +172,7 @@ without the withheld image's inventory (no drift when the container runs the wit
 withheld (an empty inventory set). Stubs go
 under `TEST_TMPDIR` (default `~/.cache`) because `/tmp` is `noexec` on the hardened hosts.
 
-`python3 -u tests/mutate.py` checks that the suite would notice a broken tool: it applies each of 39 one-line
+`python3 -u tests/mutate.py` checks that the suite would notice a broken tool: it applies each of 42 one-line
 mutants to a copy (a `docker pull` / `exec` / `run` / `create` inserted into the script, the feed pin and both age
 checks disabled, off-by-one version bounds in all three matchers, ESM or open CVEs counted fixable, accept-file prefix /
 expiry / 90-day rules dropped, medium, unfixable or not-in-use findings alerting, whiteouts and missing layers ignored,

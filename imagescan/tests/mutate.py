@@ -78,9 +78,15 @@ MUTANTS = [
     ("L27", "lib", "fetch time far after the scan time accepted (bad clock)",
      "if fetched > now + 3600:", "if fetched > now + 3600 and False:"),
     ("L28", "lib", "public rebuild: withheld image's container reported as unscanned drift",
-     'if d["kind"] == "image_not_scanned" and d["ref"] in wh:', "if False:"),
+     'if d["kind"] == "image_not_scanned" and tag_ref(d["ref"]) in wh:', "if False:"),
     ("L29", "lib", "public rebuild: container running another image than the withheld tag hidden",
-     "            if running.get(d[\"container\"]) == wh[d[\"ref\"]]:\n", "            if True:\n"),
+     "            if running.get(d[\"container\"]) == wh[tag_ref(d[\"ref\"])]:\n", "            if True:\n"),
+    ("L30", "lib", "drift: digest-pinned container running an UNSCANNED image skipped",
+     'if pinned and c["image_id"] in scanned_ids:', "if pinned:"),
+    ("L31", "lib", "drift: digest-pinned ref not stripped to its tag",
+     'return ref.split("@", 1)[0]', "return ref"),
+    ("L32", "lib", "drift: digest-pinned container with a scanned image ID still reported",
+     "        if pinned and c[\"image_id\"] in scanned_ids:\n            continue\n", ""),
 ]
 
 

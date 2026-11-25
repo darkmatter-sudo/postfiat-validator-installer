@@ -842,9 +842,15 @@ def do_scan(inv_paths, containers_path, feeds_dir, now, max_age_days, max_conten
     for im in images:
         im["in_use"] = im["image_id"] in running
     by_ref = {i["ref"]: i for i in images}
+    scanned_ids = {i["image_id"] for i in images}
     drift = []
     for c in sorted(containers, key=lambda c: c["name"]):
-        cur = by_ref.get(c["ref"])
+        # a digest-pinned container (Config.Image repo:tag@sha256:...) is looked up by its tag; it runs exactly the
+        # digest it was pinned to, so a scanned image ID is not drift even when the tag now names another image
+        pinned = "@" in c["ref"]
+        if pinned and c["image_id"] in scanned_ids:
+            continue
+        cur = by_ref.get(tag_ref(c["ref"]))
         if cur is None:
             drift.append({"container": c["name"], "ref": c["ref"], "kind": "image_not_scanned"})
         elif c["image_id"] != cur["image_id"]:
@@ -867,6 +873,11 @@ def withhold(scan, pattern):
     return [{k: im[k] for k in keep} for im in scan["images"] if rx.search(im["ref"])]
 
 
+def tag_ref(ref):
+    """repo:tag@sha256:... -> repo:tag (the key `docker image ls` lists the image under)."""
+    return ref.split("@", 1)[0]
+
+
 def public_drift(scan, withheld):
     """Drift as seen on the host. A bundle rebuilt without a withheld image's inventory sees that image's containers
     as image_not_scanned; the withheld summary (taken from the host's full scan) says which image the tag named, so
@@ -875,11 +886,11 @@ def public_drift(scan, withheld):
     running = {c["name"]: c["image_id"] for c in scan["containers"]}
     out = []
     for d in scan["drift"]:
-        if d["kind"] == "image_not_scanned" and d["ref"] in wh:
-            if running.get(d["container"]) == wh[d["ref"]]:
+        if d["kind"] == "image_not_scanned" and tag_ref(d["ref"]) in wh:
+            if running.get(d["container"]) == wh[tag_ref(d["ref"])]:
                 continue
             d = {"container": d["container"], "ref": d["ref"], "kind": "running_image_differs_from_tag",
-                 "running": running.get(d["container"], ""), "tag": wh[d["ref"]]}
+                 "running": running.get(d["container"], ""), "tag": wh[tag_ref(d["ref"])]}
         out.append(d)
     return out
 

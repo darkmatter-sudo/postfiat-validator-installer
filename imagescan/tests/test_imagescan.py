@@ -432,6 +432,40 @@ def test_drift_and_unscanned(tmp_path):
     assert L.render(sc, public=False)[1] == 1
 
 
+def test_digest_pinned_containers(tmp_path):
+    # `docker run repo@sha256:...` / compose `image: repo:tag@sha256:...` give Config.Image "repo:tag@sha256:..."
+    # (run 08 of monupgrade: two false image_not_scanned -> PFTImagescanDrift); the tag is the lookup key and a
+    # pinned container running a scanned image ID is not drift
+    sid, oid, uid = ("sha256:" + x * 64 for x in "d9a")
+    inv = extract(go_only_image(), ref="prom/x:1", image_id=sid)
+    inv2 = extract(go_only_image(), ref="prom/x:0", image_id=oid)
+    sc = scan_all(tmp_path, [inv, inv2], containers=[
+        {"name": "a", "ref": "prom/x:1@" + sid, "image_id": sid},
+        {"name": "b", "ref": "prom/x:1@" + oid, "image_id": oid},
+        {"name": "c", "ref": "prom/x:1@" + uid, "image_id": uid},
+        {"name": "d", "ref": "gone/y:2@" + uid, "image_id": uid},
+        {"name": "e", "ref": "prom/x@" + sid, "image_id": sid}])
+    kinds = {d["container"]: d["kind"] for d in sc["drift"]}
+    assert kinds == {"c": "running_image_differs_from_tag", "d": "image_not_scanned"}
+    assert L.render(sc, public=False)[1] == 1
+    ok = scan_all(tmp_path / "ok", [inv], containers=[{"name": "a", "ref": "prom/x:1@" + sid, "image_id": sid}])
+    assert ok["drift"] == [] and L.render(ok, public=False)[1] == 0
+
+
+@pytest.mark.parametrize("running,drift_n", [("c", 0), ("d", 1)], ids=["runs-withheld-image", "runs-other-image"])
+def test_bundle_rebuild_pinned_withheld(tmp_path, running, drift_n):
+    wid = "sha256:" + "c" * 64
+    inv_up = extract(ubuntu_image(), ref="up/stream:1", image_id=wid)
+    inv_loc = extract(debian_image(), ref="local:1", image_id="sha256:" + "e" * 64)
+    ctrs = [{"name": "n", "ref": "up/stream:1@" + wid, "image_id": "sha256:" + running * 64}]
+    host = scan_all(tmp_path / "h", [inv_up, inv_loc], containers=ctrs)
+    wh = L.withhold(host, r"^up/")
+    pub_scan = scan_all(tmp_path / "p", [inv_loc], containers=ctrs)
+    text, rc = L.render(pub_scan, public=True, withheld=wh)
+    assert len(host["drift"]) == text.count("DRIFT ") == drift_n and "image_not_scanned" not in text
+    assert rc == L.render(host, public=True)[1]
+
+
 def test_public_render_withholds_details(tmp_path):
     inv = extract(ubuntu_image(), ref="up/stream:1", image_id="sha256:" + "c" * 64)
     sc = scan_all(tmp_path, [inv], containers=[{"name": "n", "ref": "up/stream:1", "image_id": "sha256:" + "c" * 64}])
