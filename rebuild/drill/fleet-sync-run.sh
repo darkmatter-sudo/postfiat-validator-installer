@@ -6,12 +6,14 @@
 # Writes only what the dry run plans (must be exactly EXPECT); nothing is restarted. [MAINT] messages go to a throwaway
 # topic, the real target is restored and compared, and every operator topic is read back (must be 0).
 #   ADDON=fleet EXPECT=manifest.tsv bash rebuild/drill/fleet-sync-run.sh 2>&1 | tee LOG   (repo root, agent user)
+# EXPECT_HOSTS="sentry validator" (default: validator): the hosts on which exactly that one file is written; TASK
+# overrides the task tag in the silence/window reasons.
 set -uo pipefail
 REPO="$(git rev-parse --show-toplevel)"; cd "$REPO" || exit 3
 SHA="$(git rev-parse HEAD)"; SHORT="$(git rev-parse --short HEAD)"
 AM=http://127.0.0.1:9093; PROM=http://127.0.0.1:9090
 ME="$(id -un)"; HN="$(hostname)"
-TASK=task_b225ea76
+TASK="${TASK:-task_b225ea76}"; EXPECT_HOSTS="${EXPECT_HOSTS:-validator}"
 ADDON="${ADDON:?ADDON=name}"; EXPECT="${EXPECT:?EXPECT=basename of the one file the sync must write}"
 TT="pft-drill-rebuild-$(head -c 6 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 red() { sed -E "s#$HOME#~#g; s#\b$ME\b#<user>#g; s#$HN#<host>#g; s#\b([0-9]{1,3}\.){3}[0-9]{1,3}\b#<redacted-ip>#g; s#$TT#<throwaway-topic>#g"; }
@@ -44,10 +46,11 @@ check "pft-integrity PASS before the update" "$(grep -q 'RESULT: PASS' <<<"$XOUT
 x "sudo -n docker exec postfiatd curl -s -m 10 -d '{\"method\":\"server_info\"}' http://127.0.0.1:5005 | jq -r .result.info.server_state"
 check "node full or proposing" "$(grep -qxE '(full|proposing)' <<<"$XOUT" && echo 0 || echo 1)"
 x "sudo -n pft-fleet skew | grep -E ' $ADDON |SUMMARY'"
-check "before: $ADDON BEHIND on the validator" "$(grep -qE "^ *validator +$ADDON +BEHIND" <<<"$XOUT" && echo 0 || echo 1)"
+for h in $EXPECT_HOSTS; do check "before: $ADDON BEHIND on the $h" "$(grep -qE "^ *$h +$ADDON +BEHIND" <<<"$XOUT" && echo 0 || echo 1)"; done
 x "sudo -n pft-fleet sync --addon $ADDON --to $SHA | grep -E '^PLAN .* (write|keep)$' | awk '{print \$2, \$4, \$6, \$NF}'"
-WPATH="$(grep ' write$' <<<"$XOUT" | awk '{print $2}')"
-check "dry run: only $EXPECT is written, on the validator only" "$([ "$(grep -c ' write$' <<<"$XOUT")" = 1 ] && grep ' write$' <<<"$XOUT" | grep -q "^validator .*/$EXPECT " && echo 0 || echo 1)"
+WPATH="$(grep ' write$' <<<"$XOUT" | awk '{print $2}' | sort -u)"
+WHOSTS="$(grep ' write$' <<<"$XOUT" | awk '{print $1}' | sort | tr '\n' ' ')"
+check "dry run: only $EXPECT is written, on exactly: $EXPECT_HOSTS" "$([ "$(grep -c ' write$' <<<"$XOUT")" = "$(wc -w <<<"$EXPECT_HOSTS")" ] && [ "$(wc -l <<<"$WPATH")" = 1 ] && [[ "$WPATH" == */"$EXPECT" ]] && [ "$WHOSTS" = "$(tr ' ' '\n' <<<"$EXPECT_HOSTS" | sort | tr '\n' ' ')" ] && echo 0 || echo 1)"
 { for f in /etc/postfiat-monitor.env /etc/pft-integrity.env; do sudo -n sed -n 's/^NTFY_TOPIC=//p' "$f" 2>/dev/null; done
   sed -n 's|^NTFY_URL=.*/||p' "$HOME/.config/pft-alerts/ntfy.env" 2>/dev/null
   sed -n 's/^NTFY_TOPIC=//p' /opt/pft-agent/config.env 2>/dev/null
@@ -77,18 +80,22 @@ x "sudo -n pft-maint start --ttl 30m --reason '$TASK $ADDON sync $SHORT'"
 [ "$XRC" = 0 ] && MAINT=1
 check "pft-maint window open" "$XRC"
 
-echo; echo "== 3. pft-fleet: $ADDON to HEAD on the validator (write + integrity accept by pft-fleet)"
+echo; echo "== 3. pft-fleet: $ADDON to HEAD on: $EXPECT_HOSTS (write + integrity accept by pft-fleet)"
 x "sudo -n pft-fleet sync --addon $ADDON --to $SHA --apply --reason '$TASK: $ADDON $EXPECT to $SHORT (rebuild drill finding)'"
 check "$ADDON sync exit 0" "$XRC"
 SRC="$(awk -v a="$ADDON" -v p="$WPATH" '$1 == a && $3 == p {print $2}' fleet/manifest.tsv)"
-x "sha256sum '$SRC' | cut -c1-64; sudo -n sha256sum '$WPATH' | cut -c1-64"
+x "sha256sum '$SRC' | cut -c1-64; sudo -n sha256sum '$WPATH' | cut -c1-64$(case " $EXPECT_HOSTS " in *" sentry "*) printf "; ssh -o BatchMode=yes relay 'sha256sum %s' </dev/null | cut -c1-64" "$WPATH";; esac)"
 check "installed $WPATH = repo bytes ($SRC)" "$([ -n "$SRC" ] && [ "$(sort -u <<<"$XOUT" | wc -l)" = 1 ] && echo 0 || echo 1)"
 
 echo; echo "== 5. integrity and fleet skew"
 x "sudo -n pft-integrity verify | tail -1"
 check "pft-integrity PASS" "$(grep -q 'RESULT: PASS' <<<"$XOUT" && echo 0 || echo 1)"
+case " $EXPECT_HOSTS " in *" sentry "*)
+  x "ssh -o BatchMode=yes relay 'pft-integrity verify | tail -1' </dev/null"
+  check "sentry pft-integrity PASS" "$(grep -q 'RESULT: PASS' <<<"$XOUT" && echo 0 || echo 1)" ;; esac
 x "sudo -n pft-fleet skew | grep -E ' $ADDON |SUMMARY'"
-check "$ADDON CURRENT on the validator, fleet BEHIND=0" "$(grep -qE "^ *validator +$ADDON +CURRENT" <<<"$XOUT" && grep -q 'BEHIND=0' <<<"$XOUT" && echo 0 || echo 1)"
+for h in $EXPECT_HOSTS; do check "$ADDON CURRENT on the $h" "$(grep -qE "^ *$h +$ADDON +CURRENT" <<<"$XOUT" && echo 0 || echo 1)"; done
+check "fleet BEHIND=0" "$(grep -q 'BEHIND=0' <<<"$XOUT" && echo 0 || echo 1)"
 
 echo; echo "== 6. end window, restore the real target, compare, read back the throwaway and every operator topic"
 restore
