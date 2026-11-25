@@ -42,6 +42,7 @@ Exit: `0` upgrade available and every target check passed, `3` nothing to upgrad
 | `no-target` | no eligible tag (age / major / suffix), or an override that is not `vX.Y.Z` + sha256 |
 | `pull-failed` | pull by digest failed, or (`--no-pull`) the digest is not in the store |
 | `digest-mismatch` | pulled image's `RepoDigests` do not contain the pinned digest |
+| `tag-failed` | `docker tag REPO@DIGEST REPO:TAG` of the verified pull failed (a digest pull leaves the image untagged) |
 | `promtool-check-config` / `promtool-check-rules` / `promtool-test-rules` / `amtool-check-config` | that check failed on the target image |
 
 `--out FILE` writes the plan as JSON (current ref/digest, target tag/digest, control result, failure reasons); `apply`

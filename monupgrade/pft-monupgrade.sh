@@ -17,12 +17,12 @@
 #         Target selection (per image, unless TARGET_PROM / TARGET_AM = vX.Y.Z or vX.Y.Z@sha256:...): the highest
 #         vX.Y.Z tag (no suffix: no -rc, no -distroless) of the same major as the running tag, pushed at least
 #         MIN_AGE_DAYS ago. The digest is the tag's manifest-list digest from Docker Hub; after the pull the local
-#         RepoDigests must contain it.
+#         RepoDigests must contain it, then it is tagged REPO:TAG locally.
 #         Exit: 0 an upgrade is available and every target check passed; 3 nothing to upgrade (both current);
 #         4 a target check failed (reasons listed); 1 error (reasons listed); 2 usage.
 #         Every failure prints `FAIL <image> reason=<name>`, names: container-missing, current-unpinned,
-#         hub-unreachable, no-target, pull-failed, digest-mismatch, promtool-check-config, promtool-check-rules,
-#         promtool-test-rules, amtool-check-config (a CONTROL failure prints `CONTROL-FAIL` with the same names).
+#         hub-unreachable, no-target, pull-failed, digest-mismatch, tag-failed, promtool-check-config,
+#         promtool-check-rules, promtool-test-rules, amtool-check-config (a CONTROL failure prints `CONTROL-FAIL` with the same names).
 #
 # Env: DOCKER (default "docker"), ALERTS_DIR (default ../alerts), SLO_DIR (default ../slo), PROM_CONTAINER,
 #      AM_CONTAINER, PROM_REPO (prom/prometheus), AM_REPO (prom/alertmanager), TARGET_PROM, TARGET_AM,
@@ -172,6 +172,11 @@ pull_pinned() {
   out="$("${DOCKER[@]}" image inspect -f '{{range .RepoDigests}}{{println .}}{{end}}' "$repo@$dig" 2>/dev/null)" \
     || { fail "$name" pull-failed "image $repo@$dig not in the local store"; return 1; }
   grep -qxF "$repo@$dig" <<<"$out" || { fail "$name" digest-mismatch "RepoDigests: $(tr '\n' ' ' <<<"$out")"; return 1; }
+  if [ "$NO_PULL" -eq 0 ]; then
+    # `pull repo:tag@digest` leaves the image untagged; tag it so `docker image ls` (pft-imagescan, pft-fleet) lists
+    # the verified digest under its tag
+    out="$("${DOCKER[@]}" tag "$repo@$dig" "$repo:$tag" 2>&1)" || { fail "$name" tag-failed "$out"; return 1; }
+  fi
   printf '  %-12s %s %s:%s, RepoDigests contain %s\n' "$name" "$([ "$NO_PULL" -eq 0 ] && echo pulled || echo present)" "$repo" "$tag" "$dig"
 }
 

@@ -4,6 +4,7 @@
 #              STUB_REF_PROM / STUB_REF_AM  Config.Image of pft-prometheus / pft-alertmanager
 #              STUB_FAIL_PULL=1             every pull fails
 #              STUB_MISMATCH=1              image inspect of a pulled ref reports another digest
+#              STUB_FAIL_TAG=1              every tag fails
 #              STUB_FAIL_RUN="<regex>"      `run` calls whose joined args match the regex exit 1 with an error line
 set -u
 printf '%s\n' "$*" >>"$STUB_DIR/calls"
@@ -33,6 +34,9 @@ case "$1" in
   pull)
     [ "${STUB_FAIL_PULL:-0}" = 1 ] && { echo "Error response from daemon: manifest unknown" >&2; exit 1; }
     printf '%s\n' "$*" >>"$STUB_DIR/pulled"; echo "${*: -1}" ;;
+  tag)
+    [ "${STUB_FAIL_TAG:-0}" = 1 ] && { echo "Error response from daemon: No such image: $2" >&2; exit 1; }
+    grep -q "@${2#*@}\$" "$STUB_DIR/pulled" 2>/dev/null || { echo "Error response from daemon: No such image: $2" >&2; exit 1; } ;;
   run)
     if [ -n "${STUB_FAIL_RUN:-}" ] && [[ "$*" =~ $STUB_FAIL_RUN ]]; then echo "FAILED: error: stub failure"; exit 1; fi
     case "$*" in

@@ -52,6 +52,8 @@ expect_out select "TARGET  prometheus   tag=v3.15.1 digest=sha256:c{64} pushed=2
 expect_out select "TARGET  alertmanager tag=v0.35.0 digest=sha256:7{64}"
 expect_calls select "^pull -q $P15\$" 1
 expect_calls select "^pull -q $A35\$" 1
+expect_calls select "^tag prom/prometheus@sha256:c{64} prom/prometheus:v3.15.1\$" 1
+expect_calls select "^tag prom/alertmanager@sha256:7{64} prom/alertmanager:v0.35.0\$" 1
 expect_out select "RESULT: READY - upgrade prometheus alertmanager: prometheus v3.5.0 -> v3.15.1, alertmanager v0.28.1 -> v0.35.0 \(control PASS\)"
 # every check container is read-only, offline, nobody, removed, with read-only config mounts
 expect_calls select "^run " 10
@@ -128,6 +130,12 @@ expect_rc mismatch 1
 expect_out mismatch "FAIL prometheus reason=digest-mismatch"
 expect_out mismatch "FAIL alertmanager reason=digest-mismatch"
 expect_calls mismatch "^run " 0
+expect_calls mismatch "^tag " 0
+run_case tagfail STUB_FAIL_TAG=1 -- plan
+expect_rc tagfail 1
+expect_out tagfail "FAIL prometheus reason=tag-failed"
+expect_out tagfail "FAIL alertmanager reason=tag-failed"
+expect_calls tagfail "^run " 0
 
 # 11 each target check fails on its own -> exit 4 with that reason only; control stays PASS
 for c in "check config:promtool-check-config" "check rules:promtool-check-rules" "test rules:promtool-test-rules" \
@@ -172,7 +180,7 @@ expect_calls ovrbad "^(pull|run) " 0
 run_case nopull -- plan --no-pull
 expect_rc nopull 1
 expect_out nopull "FAIL prometheus reason=pull-failed"
-expect_calls nopull "^(pull|run) " 0
+expect_calls nopull "^(pull|run|tag) " 0
 
 # 16 usage
 run_case usage -- bogus

@@ -232,6 +232,8 @@ for h in $HOSTS; do
     x "sudo -n docker ps --filter name=pft- --format '{{.Names}} {{.Image}} {{.Status}}'"
     echo; echo "-- imagescan after (validator; monitoring images, counts only)"
     scan_counts after
+    x "sudo -n jq '.drift | length' /var/cache/pft-imagescan/last-scan.json"
+    check "imagescan after: 0 drift (re-created, digest-pinned monitoring containers matched)" "$([ "$(tail -1 <<<"$XOUT")" = 0 ] && echo 0 || echo 1)"
     x "fixed_counts $BEFORE"; rm -f "$BEFORE"
     echo; echo "-- intended changes into pft-integrity (re-created monitoring containers)"
     x "sudo -n pft-integrity verify | grep -vE '^ *(OK|PASS)' | tail -20"
