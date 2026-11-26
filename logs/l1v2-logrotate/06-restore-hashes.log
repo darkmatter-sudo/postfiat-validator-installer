@@ -1,0 +1,153 @@
+# 2026-11-26T07:11:42Z Ubuntu 22.04.5 LTS logrotate 3.19.0
+$ cd ~/work/postfiat-validator-installer && git rev-parse HEAD && git log -1 --format='%H %s' -- logs/l1v2-logrotate/06-restore-hashes.sh && sha256sum logs/l1v2-logrotate/06-restore-hashes.sh && git status --short logs/l1v2-logrotate/06-restore-hashes.sh | wc -l
+ec6b06ccc04cbda40fcfafea707867f1344e1bad
+ec6b06ccc04cbda40fcfafea707867f1344e1bad logs/l1v2-logrotate: 06-restore-hashes.sh, sha256 of every rule file before/inside/after PR #260 install.sh refusals
+ffca9960710b6ded2f0c9589bfa3109263c2a2e0571776fc9847f4575aad3e71  logs/l1v2-logrotate/06-restore-hashes.sh
+0
+exit=0
+$ git clone -q https://github.com/darkmatter-sudo/postfiatl1v2 ~/.cache/tmp.oAiV6LreFG/pr && cd ~/.cache/tmp.oAiV6LreFG/pr && git checkout -q e941096678b92323ada2169de14c645e54deeb05 && git rev-parse HEAD && sha256sum ops/validator-host/logrotate/install.sh systemd/postfiat-logrotate.example scripts/test-validator-host-logrotate
+e941096678b92323ada2169de14c645e54deeb05
+c9500e138dccbc4470f1e21e4dc58733d40bc72e9c94fb7f2dbcc457e6620e43  ops/validator-host/logrotate/install.sh
+395f9d37b4c6d733ab214476f135b3d842aeb58393f1ea5506c4c0bcd6b7c1d6  systemd/postfiat-logrotate.example
+62fff49877a71907b8df64bc31c0a4732af127ee392580bd4b5a76c44256de4c  scripts/test-validator-host-logrotate
+exit=0
+$ bash ~/work/postfiat-validator-installer/logs/l1v2-logrotate/06-restore-hashes.sh ~/.cache/tmp.oAiV6LreFG/pr
+tree: e941096678b92323ada2169de14c645e54deeb05 install.sh sha256 c9500e138dccbc4470f1e21e4dc58733d40bc72e9c94fb7f2dbcc457e6620e43
+logrotate 3.19.0
+=== case generic+fleet
+  sha256 before install.sh:
+    395f9d37b4c6d733ab214476f135b3d842aeb58393f1ea5506c4c0bcd6b7c1d6  /etc/logrotate.d/postfiat
+    0828b21a3850128d63e46115906b26b77e873a30e7691e66958a87e213262341  /etc/logrotate.d/postfiat-rpc-events
+    87f11b8d3c324b6f118ab14bb0654bf1629f06cf89fc6a75ca63301c9840af47  /etc/logrotate.d/postfiat-validator-events
+    (absent)  /etc/logrotate.d/postfiat-service-output
+  install.sh rc=1; stderr:
+    | error: postfiat-rpc-events:1 duplicate log entry for /var/log/postfiat/validator-0/rpc-events.ndjson
+    | error: found error in file postfiat-rpc-events, skipping
+    | error: postfiat-validator-events:1 duplicate log entry for /var/log/postfiat/validator-0/transport-validator-events.ndjson
+    | error: found error in file postfiat-validator-events, skipping
+    | refusing: the installed logrotate configuration already has postfiat errors (above); fix those first
+  matched '^error: .*postfiat' lines (install.sh prints exactly its grep hits):
+    > error: postfiat-rpc-events:1 duplicate log entry for /var/log/postfiat/validator-0/rpc-events.ndjson
+    > error: found error in file postfiat-rpc-events, skipping
+    > error: postfiat-validator-events:1 duplicate log entry for /var/log/postfiat/validator-0/transport-validator-events.ndjson
+    > error: found error in file postfiat-validator-events, skipping
+  sha256 inside install.sh, at each logrotate dry-run call:
+    --- at logrotate call 1
+    395f9d37b4c6d733ab214476f135b3d842aeb58393f1ea5506c4c0bcd6b7c1d6  /etc/logrotate.d/postfiat
+    0828b21a3850128d63e46115906b26b77e873a30e7691e66958a87e213262341  /etc/logrotate.d/postfiat-rpc-events
+    87f11b8d3c324b6f118ab14bb0654bf1629f06cf89fc6a75ca63301c9840af47  /etc/logrotate.d/postfiat-validator-events
+    (absent)  /etc/logrotate.d/postfiat-service-output
+  sha256 after install.sh:
+    395f9d37b4c6d733ab214476f135b3d842aeb58393f1ea5506c4c0bcd6b7c1d6  /etc/logrotate.d/postfiat
+    0828b21a3850128d63e46115906b26b77e873a30e7691e66958a87e213262341  /etc/logrotate.d/postfiat-rpc-events
+    87f11b8d3c324b6f118ab14bb0654bf1629f06cf89fc6a75ca63301c9840af47  /etc/logrotate.d/postfiat-validator-events
+    (absent)  /etc/logrotate.d/postfiat-service-output
+  ok: rc=1
+  ok: sha256 of every rule file identical before/after
+  ok: pre-check refusal (nothing written)
+=== case generic
+  sha256 before install.sh:
+    395f9d37b4c6d733ab214476f135b3d842aeb58393f1ea5506c4c0bcd6b7c1d6  /etc/logrotate.d/postfiat
+    (absent)  /etc/logrotate.d/postfiat-service-output
+    (absent)  /etc/logrotate.d/postfiat-rpc-events
+    (absent)  /etc/logrotate.d/postfiat-validator-events
+  install.sh rc=1; stderr:
+    | error: postfiat-service-output:2 duplicate log entry for /var/log/postfiat/validator-0/stdout.log
+    | error: postfiat-service-output:2 duplicate log entry for /var/log/postfiat/validator-0/stderr.log
+    | error: postfiat-service-output:2 duplicate log entry for /var/log/postfiat/validator-0/rpc-stdout.log
+    | error: postfiat-service-output:2 duplicate log entry for /var/log/postfiat/validator-0/rpc-stderr.log
+    | error: found error in file postfiat-service-output, skipping
+    | refusing: another rule already rotates these files (above); restored /etc/logrotate.d/postfiat-service-output /etc/logrotate.d/postfiat-rpc-events /etc/logrotate.d/postfiat-validator-events
+    | keep either systemd/postfiat-logrotate.example or the validator-host rules, not both
+  matched '^error: .*postfiat' lines (install.sh prints exactly its grep hits):
+    > error: postfiat-service-output:2 duplicate log entry for /var/log/postfiat/validator-0/stdout.log
+    > error: postfiat-service-output:2 duplicate log entry for /var/log/postfiat/validator-0/stderr.log
+    > error: postfiat-service-output:2 duplicate log entry for /var/log/postfiat/validator-0/rpc-stdout.log
+    > error: postfiat-service-output:2 duplicate log entry for /var/log/postfiat/validator-0/rpc-stderr.log
+    > error: found error in file postfiat-service-output, skipping
+  sha256 inside install.sh, at each logrotate dry-run call:
+    --- at logrotate call 1
+    395f9d37b4c6d733ab214476f135b3d842aeb58393f1ea5506c4c0bcd6b7c1d6  /etc/logrotate.d/postfiat
+    (absent)  /etc/logrotate.d/postfiat-service-output
+    (absent)  /etc/logrotate.d/postfiat-rpc-events
+    (absent)  /etc/logrotate.d/postfiat-validator-events
+    --- at logrotate call 2
+    395f9d37b4c6d733ab214476f135b3d842aeb58393f1ea5506c4c0bcd6b7c1d6  /etc/logrotate.d/postfiat
+    9f0e8de5121fdf23dfd9d4a6b345dcd3b7f5ef9b68531d05ce8a50a1df45f641  /etc/logrotate.d/postfiat-service-output
+    (absent)  /etc/logrotate.d/postfiat-rpc-events
+    (absent)  /etc/logrotate.d/postfiat-validator-events
+  sha256 after install.sh:
+    395f9d37b4c6d733ab214476f135b3d842aeb58393f1ea5506c4c0bcd6b7c1d6  /etc/logrotate.d/postfiat
+    (absent)  /etc/logrotate.d/postfiat-service-output
+    (absent)  /etc/logrotate.d/postfiat-rpc-events
+    (absent)  /etc/logrotate.d/postfiat-validator-events
+  ok: rc=1
+  ok: sha256 of every rule file identical before/after
+  ok: post-check 'refusing: ... restored' path taken
+=== case logonly+fleet
+  sha256 before install.sh:
+    16837d1d2674f247c1cadf15bacc237522ffe7737cb21246f092393c58cac06a  /etc/logrotate.d/postfiat-local
+    0828b21a3850128d63e46115906b26b77e873a30e7691e66958a87e213262341  /etc/logrotate.d/postfiat-rpc-events
+    87f11b8d3c324b6f118ab14bb0654bf1629f06cf89fc6a75ca63301c9840af47  /etc/logrotate.d/postfiat-validator-events
+    (absent)  /etc/logrotate.d/postfiat-service-output
+  install.sh rc=1; stderr:
+    | error: postfiat-service-output:2 duplicate log entry for /var/log/postfiat/validator-0/stdout.log
+    | error: postfiat-service-output:2 duplicate log entry for /var/log/postfiat/validator-0/stderr.log
+    | error: postfiat-service-output:2 duplicate log entry for /var/log/postfiat/validator-0/rpc-stdout.log
+    | error: postfiat-service-output:2 duplicate log entry for /var/log/postfiat/validator-0/rpc-stderr.log
+    | error: found error in file postfiat-service-output, skipping
+    | refusing: another rule already rotates these files (above); restored /etc/logrotate.d/postfiat-service-output /etc/logrotate.d/postfiat-rpc-events /etc/logrotate.d/postfiat-validator-events
+    | keep either systemd/postfiat-logrotate.example or the validator-host rules, not both
+  matched '^error: .*postfiat' lines (install.sh prints exactly its grep hits):
+    > error: postfiat-service-output:2 duplicate log entry for /var/log/postfiat/validator-0/stdout.log
+    > error: postfiat-service-output:2 duplicate log entry for /var/log/postfiat/validator-0/stderr.log
+    > error: postfiat-service-output:2 duplicate log entry for /var/log/postfiat/validator-0/rpc-stdout.log
+    > error: postfiat-service-output:2 duplicate log entry for /var/log/postfiat/validator-0/rpc-stderr.log
+    > error: found error in file postfiat-service-output, skipping
+  sha256 inside install.sh, at each logrotate dry-run call:
+    --- at logrotate call 1
+    16837d1d2674f247c1cadf15bacc237522ffe7737cb21246f092393c58cac06a  /etc/logrotate.d/postfiat-local
+    0828b21a3850128d63e46115906b26b77e873a30e7691e66958a87e213262341  /etc/logrotate.d/postfiat-rpc-events
+    87f11b8d3c324b6f118ab14bb0654bf1629f06cf89fc6a75ca63301c9840af47  /etc/logrotate.d/postfiat-validator-events
+    (absent)  /etc/logrotate.d/postfiat-service-output
+    --- at logrotate call 2
+    16837d1d2674f247c1cadf15bacc237522ffe7737cb21246f092393c58cac06a  /etc/logrotate.d/postfiat-local
+    eba70c617d040d8d5d41d6ff0b070ab557db95fc16a4e4ce17230b378a43c81a  /etc/logrotate.d/postfiat-rpc-events
+    9f0e8de5121fdf23dfd9d4a6b345dcd3b7f5ef9b68531d05ce8a50a1df45f641  /etc/logrotate.d/postfiat-service-output
+    6aa78728eb948fea1b8ce3280843b9d39d987dce82b120b870ba5bb81525de4a  /etc/logrotate.d/postfiat-validator-events
+  sha256 after install.sh:
+    16837d1d2674f247c1cadf15bacc237522ffe7737cb21246f092393c58cac06a  /etc/logrotate.d/postfiat-local
+    0828b21a3850128d63e46115906b26b77e873a30e7691e66958a87e213262341  /etc/logrotate.d/postfiat-rpc-events
+    87f11b8d3c324b6f118ab14bb0654bf1629f06cf89fc6a75ca63301c9840af47  /etc/logrotate.d/postfiat-validator-events
+    (absent)  /etc/logrotate.d/postfiat-service-output
+  ok: rc=1
+  ok: sha256 of every rule file identical before/after
+  ok: post-check 'refusing: ... restored' path taken
+  ok: fleet rules restored WITH delaycompress (install.sh had removed it)
+  ok: at call 2 (after install.sh wrote) no fleet-rule hash equals its before value
+RESULT: PASS
+exit=0
+# control: same tree with install.sh's restore loop (lines 53-55) removed; the harness must FAIL
+$ cp -a ~/.cache/tmp.oAiV6LreFG/pr ~/.cache/tmp.oAiV6LreFG/ctl && sed -i '53,55d' ~/.cache/tmp.oAiV6LreFG/ctl/ops/validator-host/logrotate/install.sh && { diff <(git -C ~/.cache/tmp.oAiV6LreFG/pr show HEAD:ops/validator-host/logrotate/install.sh) ~/.cache/tmp.oAiV6LreFG/ctl/ops/validator-host/logrotate/install.sh; [ $? -eq 1 ] && echo 'control tree differs from the PR only by the 3 restore lines'; }
+53,55d52
+<   for r in "${rules[@]}"; do
+<     if [ -e "$work/${r##*/}" ]; then cp -p "$work/${r##*/}" "$r"; else rm -f "$r"; fi
+<   done
+control tree differs from the PR only by the 3 restore lines
+exit=0
+$ out=$(bash ~/work/postfiat-validator-installer/logs/l1v2-logrotate/06-restore-hashes.sh ~/.cache/tmp.oAiV6LreFG/ctl); rc=$?; printf '%s\n' "$out" | grep -E '^=== |FAIL|RESULT'; echo harness_rc=$rc; [ $rc -ne 0 ] && echo 'control: harness FAILS without the restore loop, as expected'
+=== case generic+fleet
+=== case generic
+  FAIL: sha256 of every rule file identical before/after
+=== case logonly+fleet
+  FAIL: sha256 of every rule file identical before/after
+  FAIL: fleet rules restored WITH delaycompress (install.sh had removed it)
+RESULT: FAIL
+harness_rc=1
+control: harness FAILS without the restore loop, as expected
+exit=0
+$ cd ~/.cache/tmp.oAiV6LreFG/pr && bash scripts/test-validator-host-logrotate | tail -3
+  ok: install.sh says why it refused
+  ok: install.sh cases
+RESULT: PASS
+exit=0
