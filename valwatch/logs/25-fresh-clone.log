@@ -1,0 +1,135 @@
+fresh public clone - 2026-11-26T13:29:08Z - pin 9e210eee6c80e35d063e12957e9cdb29ce72b645
+$ git -c credential.helper= clone -q https://github.com/darkmatter-sudo/postfiat-validator-installer.git r && cd r && git checkout -q 9e210eee6c80e35d063e12957e9cdb29ce72b645
+(exit 0)
+$ git rev-parse HEAD; git status --short | wc -l
+9e210eee6c80e35d063e12957e9cdb29ce72b645
+0
+$ sha256sum (key files at the pin)
+5468410a6b2dd1e6e78e16b9c716c285b0cefed576038f3c881fbfd06d009ab8  alerts/valwatch.rules.yml
+c2e06309c994347725ce327f78b8ac7db31f435dbb51c1abfd184c80e6979adf  alerts/valwatch.tests.yml
+ae0103d5d4070e730bc476ce365fb2c91498dcfef92a9f6d23af29e658334d59  valwatch/skewreplay.py
+f23d91e6c1c8a2c934571c8b1fb5e9fec8fe26decf493f39374b77bd4d8f7cc1  valwatch/tests/gen_rule_tests.py
+65de761e3e72ec697a2ec063a6b5df3dd7553308084f02c3b8bb2939a2ae16d4  valwatch/tests/mutate.py
+98af85eac9020e4fa239d27ade59f40701c5ce64359e6218ed1643f659b37373  valwatch/tests/test_skewreplay.py
+b42de652967f772e9872c164c1444a1ae2de7cf5863c6ec367c06d422ca9d626  valwatch/drill/skew-run.sh
+1d3a044b1d2191ff880d7814ced97648e02b995974225ddff39bcdb060cabc27  valwatch/data/skew/context.json
+550ed5e1e51fa28589756cd564177d8f41de57028d8ffb1f4ae67d0ceed8c667  valwatch/data/skew/meta.json
+9cfb92a07ab9ed924fdd0c9f8520aeb6fb24548077c4a4f5b40ff80ff7a7f59f  valwatch/data/skew/replay.json
+7f1f205c029137dd96182bf06c55fbef96df6922f672564098d8e1c71dec3182  valwatch/data/skew/skew.json.gz
+a8d8cde80c12c40b4dfa997a26a375326529e53d9ea6fbf3e1899781a880ad7b  valwatch/reports/skew.txt
+$ bash valwatch/drill/skew-run.sh offline
+valwatch skew offline - 2026-11-26T13:29:14Z - repo HEAD 9e210eee6c80e35d063e12957e9cdb29ce72b645 (clean: yes)
+$ sha256sum alerts/valwatch.rules.yml alerts/valwatch.tests.yml valwatch/skewreplay.py valwatch/tests/gen_rule_tests.py valwatch/tests/mutate.py valwatch/tests/test_skewreplay.py valwatch/drill/skew-run.sh
+  5468410a6b2dd1e6e78e16b9c716c285b0cefed576038f3c881fbfd06d009ab8  alerts/valwatch.rules.yml
+  c2e06309c994347725ce327f78b8ac7db31f435dbb51c1abfd184c80e6979adf  alerts/valwatch.tests.yml
+  ae0103d5d4070e730bc476ce365fb2c91498dcfef92a9f6d23af29e658334d59  valwatch/skewreplay.py
+  f23d91e6c1c8a2c934571c8b1fb5e9fec8fe26decf493f39374b77bd4d8f7cc1  valwatch/tests/gen_rule_tests.py
+  65de761e3e72ec697a2ec063a6b5df3dd7553308084f02c3b8bb2939a2ae16d4  valwatch/tests/mutate.py
+  98af85eac9020e4fa239d27ade59f40701c5ce64359e6218ed1643f659b37373  valwatch/tests/test_skewreplay.py
+  b42de652967f772e9872c164c1444a1ae2de7cf5863c6ec367c06d422ca9d626  valwatch/drill/skew-run.sh
+  (exit 0)
+
+== 1. generated rule tests in sync with the generator
+$ python3 valwatch/tests/gen_rule_tests.py | cmp - alerts/valwatch.tests.yml && echo in-sync
+  in-sync
+  (exit 0)
+CHECK ok   valwatch.tests.yml = gen_rule_tests.py output
+$ grep -c '^- name: ' alerts/valwatch.tests.yml; grep -c 'interval: 15s' alerts/valwatch.tests.yml; grep -c 'expr: ALERTS' alerts/valwatch.tests.yml
+  44
+  29
+  258
+  (exit 0)
+
+== 2. promtool test rules (new rules)
+$ docker run --rm --network none --entrypoint promtool -v ~/.cache/fc535b.PeSr/r/alerts:/w:ro -w /w prom/prometheus:v3.5.0 test rules valwatch.tests.yml
+    SUCCESS
+  (exit 0)
+CHECK ok   promtool prom/prometheus:v3.5.0: SUCCESS
+$ docker run --rm --network none --entrypoint promtool -v ~/.cache/fc535b.PeSr/r/alerts:/w:ro -w /w prom/prometheus:v3.16.0 test rules valwatch.tests.yml
+  Processing test file: valwatch.tests.yml
+    SUCCESS
+  (exit 0)
+CHECK ok   promtool prom/prometheus:v3.16.0: SUCCESS
+
+== 3. control: the same generator over the OLD rules (496470f052ac5058fe0759cd6ffb3ccd381004b9) must fail the skew cases
+  promtool on old rules: exit 1
+$ grep -oE 'ALERTS\{alertname=..(PFTValwatchHostsDisagree|PFTValwatchHostsDisagreeLate)..\}", time: [0-9ms]+' ~/.cache/vwskew.Cw6uof/old.out | sed 's/ALERTS{alertname=..//; s/..}", time: / @/' | sort | uniq -c | sort -k2,2 -k3,3V
+        4 PFTValwatchHostsDisagree @10m
+        3 PFTValwatchHostsDisagree @10m15s
+        2 PFTValwatchHostsDisagree @10m30s
+        2 PFTValwatchHostsDisagree @10m45s
+        1 PFTValwatchHostsDisagree @11m
+        1 PFTValwatchHostsDisagree @11m15s
+        2 PFTValwatchHostsDisagree @11m30s
+        2 PFTValwatchHostsDisagree @21m45s
+        4 PFTValwatchHostsDisagree @30m
+        3 PFTValwatchHostsDisagree @30m15s
+        2 PFTValwatchHostsDisagree @30m30s
+        2 PFTValwatchHostsDisagree @30m45s
+        1 PFTValwatchHostsDisagree @31m
+        1 PFTValwatchHostsDisagree @31m15s
+        4 PFTValwatchHostsDisagreeLate @10m
+        3 PFTValwatchHostsDisagreeLate @10m15s
+        2 PFTValwatchHostsDisagreeLate @10m30s
+        2 PFTValwatchHostsDisagreeLate @10m45s
+        1 PFTValwatchHostsDisagreeLate @11m
+        1 PFTValwatchHostsDisagreeLate @11m15s
+        2 PFTValwatchHostsDisagreeLate @11m30s
+        2 PFTValwatchHostsDisagreeLate @21m45s
+        4 PFTValwatchHostsDisagreeLate @30m
+        3 PFTValwatchHostsDisagreeLate @30m15s
+        2 PFTValwatchHostsDisagreeLate @30m30s
+        2 PFTValwatchHostsDisagreeLate @30m45s
+        1 PFTValwatchHostsDisagreeLate @31m
+        1 PFTValwatchHostsDisagreeLate @31m15s
+  (exit 0)
+$ grep -E '^ +name: ' ~/.cache/vwskew.Cw6uof/old.out | sed 's/^ *//'
+  name: PFTValwatchHostsDisagreeLate real one-node fault from 10m (sentry healthy): expr matches from 11m45s, fires at 26m45s,
+  name: PFTValwatchHostsDisagree real one-node fault from 10m (sentry healthy): expr matches from 11m45s, fires at 26m45s,
+  (exit 0)
+CHECK ok   old rules FAIL the new skew assertions (exit 1, >= 1 failing ALERTS assertion) (60 failing ALERTS assertions)
+
+== 4. pytest (unit + shell + stub-node + skewreplay offline tests)
+$ cd valwatch && TMPDIR=~/.cache/vwskew.Cw6uof python3 -m pytest -q -p no:cacheprovider tests 2>&1 | tail -3
+  ........................................................................ [ 70%]
+  ..............................                                           [100%]
+  102 passed in 26.64s
+  (exit 0)
+CHECK ok   pytest: 0 failed
+
+== 5. lint
+$ shellcheck valwatch/pft-valwatch.sh valwatch/install.sh valwatch/drill/skew-run.sh && echo shellcheck-ok
+  shellcheck-ok
+  (exit 0)
+CHECK ok   shellcheck
+$ cd valwatch && ruff check . && ruff format --check .
+  All checks passed!
+  8 files already formatted
+  (exit 0)
+CHECK ok   ruff
+
+== 6. offline replay of the committed data = committed report
+$ python3 -I valwatch/skewreplay.py analyze valwatch/data/skew --out ~/.cache/vwskew.Cw6uof/skew.txt > /dev/null; echo analyze-exit $?; cmp ~/.cache/vwskew.Cw6uof/skew.txt valwatch/reports/skew.txt && echo identical
+  analyze-exit 0
+  identical
+  (exit 0)
+CHECK ok   offline analyze byte-identical to reports/skew.txt
+$ grep -nE '^(SKEW (min|window|max)|SKEW_OUTSIDE|REPLAY|OLD_ONLY|NEW_ONLY|RESULT)' valwatch/reports/skew.txt
+  5:SKEW min -9 p01 -1 p50 1 p75 2 p90 60 p99 61 max 180 max|skew| 180
+  14:SKEW window 120 s absorbs |skew| <= 105 s: 44284/44289 steps (99.989%), outside: 5
+  15:SKEW_OUTSIDE 2026-11-20T05:54:45Z 121 s
+  16:SKEW_OUTSIDE 2026-11-20T05:55:00Z 121 s
+  17:SKEW_OUTSIDE 2026-11-20T05:55:15Z 121 s
+  18:SKEW_OUTSIDE 2026-11-20T05:55:30Z 121 s
+  19:SKEW_OUTSIDE 2026-11-20T05:55:45Z 180 s
+  20:SKEW max |skew| of the absorbed steps: 68 s
+  21:REPLAY PFTValwatchHostsDisagree: old 0 pending intervals (0 s), new 0 (0 s), both 0, old-only 0, new-only 0
+  22:REPLAY PFTValwatchHostsDisagreeLate: old 2 pending intervals (30 s), new 0 (0 s), both 0, old-only 2, new-only 0
+  23:OLD_ONLY PFTValwatchHostsDisagreeLate node=postfiatd validator=nHBmj7zUY2yMc9f5wgNcCuWj79BUieNmc1GG8PqiEP1tgNZZWLVM 2026-11-21T20:25:45Z .. 2026-11-21T20:25:45Z (15 s): SKEW - postfiatd-sentry crossed the same threshold at 2026-11-21T20:26:00Z (28302, +15 s); 15 s <= 195 s
+  24:OLD_ONLY PFTValwatchHostsDisagreeLate node=postfiatd-sentry validator=nHUdwzTWTQJzebbxcanZG2ERXikMLU9aAZa8cHtxosfiKq5N7Vd5 2026-11-19T07:58:45Z .. 2026-11-19T07:58:45Z (15 s): SKEW - postfiatd crossed the same threshold at 2026-11-19T07:58:30Z (19928, -15 s); 15 s <= 195 s
+  25:RESULT: PASS (0 old-only intervals not attributed to skew + new-only)
+  (exit 0)
+CHECK ok   report RESULT: PASS
+
+RESULT: PASS (offline)
+(exit 0)
