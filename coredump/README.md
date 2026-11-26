@@ -110,4 +110,24 @@ Temp files go under `TEST_TMPDIR` (default `~/.cache`; `/tmp` is noexec on harde
 
 ## Results
 
-Recorded two-host runs are listed here when complete.
+Recorded 2026-11-26 (UTC). Line numbers refer to the files in [`logs/`](logs/).
+
+| What | Result | Log lines |
+|---|---|---|
+| offline tests | 103 passed, 0 failed | `05-tests-shellcheck.log:122` |
+| shellcheck (tool, tests, drill, runner) | 0 findings | `05-tests-shellcheck.log:11` |
+| mutants (CD01..CD13 + apply/rollback) | control PASS; 70 caught, 0 survived, 0 not applied | `06-mutants.log:4,76` |
+| sentry found -> apply -> rollback -> re-apply | audit exit 2 -> 0 -> 2 -> 0; drill A/B core/none -> none/none -> core/none -> none/none | `04-live-run-two-host.log:92,190,228,238,275,285,327,337` |
+| validator found -> apply -> rollback -> re-apply | audit exit 2 -> 1 -> 2 -> 1 (CD08 WARN pending re-create, below); drill core/none -> none/none -> core/none -> none/none | `04-live-run-two-host.log:357,455,490,500,533,543,582,592` |
+| second apply refused while applied | exit 4 on both hosts | `04-live-run-two-host.log:309,564` |
+| both nodes `full` after every step; validator postfiatd not restarted | StartedAt unchanged, uptime grew | `04-live-run-two-host.log:208,210,255,257,303,305,470,472,513,515,558,560,654,656` |
+| pft-integrity | intended changes accepted, PASS 299 / 174 unchanged | `04-live-run-two-host.log:620,624,626,627,629` |
+| silent run | silence expired after a clean drain; operator topics 0 messages | `04-live-run-two-host.log:662,670` |
+
+Validator deviation (by design, operator rule until after 2026-12-01): its postfiatd container was not re-created, so
+the persistent container ulimit (`docker-compose.coredump.yml`, CD08) only takes effect at the next planned re-create.
+Until then the running processes are held at `RLIMIT_CORE 0` live by `prlimit` (CD06 PASS) and the host handler no
+longer writes cores (CD01/CD02 PASS); the validator crash drill shows no core for either probe after apply.
+
+Before run 04, two unpublished dry runs found one runner/tool bug: the sentry re-create gate reported "configuration
+changed" on an identical re-create and rolled back automatically; fixed in a2bfafd05b5de340f913cf6f2fbddb151b442eaf.

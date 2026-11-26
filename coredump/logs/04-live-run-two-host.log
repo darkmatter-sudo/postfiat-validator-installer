@@ -1,0 +1,677 @@
+pft-coredump live run 04 - 2026-11-26T18:44:20Z - Ubuntu 22.04.5 LTS - repo HEAD 20d2db2911d62530b946a55b54b2a195b69a5821 (clean: yes) - hosts 'sentry validator' dry=0
+
+== 0. preflight (read-only)
+$ rm -rf ~/.cache/coredump-run-04 && mkdir -p ~/.cache/coredump-run-04 && cp coredump/pft-coredump.sh coredump/drill/crash-drill.sh ~/.cache/coredump-run-04/ && R 'rm -rf ~/.cache/coredump-run-04 && mkdir -p ~/.cache/coredump-run-04' && scp -q -o BatchMode=yes coredump/pft-coredump.sh coredump/drill/crash-drill.sh relay:.cache/coredump-run-04/ && sha256sum coredump/pft-coredump.sh ~/.cache/coredump-run-04/pft-coredump.sh coredump/drill/crash-drill.sh ~/.cache/coredump-run-04/crash-drill.sh; R 'sha256sum .cache/coredump-run-04/pft-coredump.sh .cache/coredump-run-04/crash-drill.sh'
+  07932bc36b6f3a33387826a4028f22b6ff6f66b026009756e4e5de1211964f96  coredump/pft-coredump.sh
+  07932bc36b6f3a33387826a4028f22b6ff6f66b026009756e4e5de1211964f96  ~/.cache/coredump-run-04/pft-coredump.sh
+  42587fb2b66d4e3e34326e6d706e0c064c052a84e3fae6292e65af3dd0b47199  coredump/drill/crash-drill.sh
+  42587fb2b66d4e3e34326e6d706e0c064c052a84e3fae6292e65af3dd0b47199  ~/.cache/coredump-run-04/crash-drill.sh
+  07932bc36b6f3a33387826a4028f22b6ff6f66b026009756e4e5de1211964f96  .cache/coredump-run-04/pft-coredump.sh
+  42587fb2b66d4e3e34326e6d706e0c064c052a84e3fae6292e65af3dd0b47199  .cache/coredump-run-04/crash-drill.sh
+  (exit 0)
+CHECK ok   run copies on both hosts = HEAD bytes
+$ shellcheck coredump/pft-coredump.sh coredump/tests/run-tests.sh coredump/tests/stubs/* coredump/drill/*.sh && echo shellcheck clean
+  shellcheck clean
+  (exit 0)
+CHECK ok   shellcheck clean
+$ bash coredump/tests/run-tests.sh | tail -1
+  RESULT: 103 passed, 0 failed
+  (exit 0)
+CHECK ok   offline tests pass
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 297 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 173 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts
+$ state_v; state_s
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+validator postfiatd StartedAt 2026-11-24T16:08:15.907959686Z, server_info uptime 182261s (recorded at 2026-11-26T18:45:58Z)
+$ sudo -n pft-maint status | head -1; sudo -n pft-maint lock list; R 'sudo -n pft-maint status | head -1'
+  no maintenance window (alerting is live)
+  /usr/local/bin/pft-maint: line 221: echo: write error: Broken pipe
+  no data-collection locks
+  no maintenance window (alerting is live)
+  (exit 0)
+CHECK ok   no maintenance window on either host, no lock
+$ others
+  
+  (exit 0)
+CHECK ok   nothing active but the watchdog and digest-only alerts
+$ curl -s -m 10 http://<redacted-ip>:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'
+  0
+  (exit 0)
+CHECK ok   no active silence
+$ R 'grep -c HostConfig.Ulimits /usr/local/bin/pft-seccomp /usr/local/bin/pft-apparmor'
+  /usr/local/bin/pft-seccomp:1
+  /usr/local/bin/pft-apparmor:1
+  (exit 0)
+CHECK ok   sentry recreate tools copy Ulimits (fleet-synced)
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+
+== 1. throwaway [MAINT] target, silence, maintenance window on both hosts
+real $NE present before: 0
+$ { [ 0 = 0 ] || sudo -n cp -p /etc/pft-maint/ntfy.env /etc/pft-maint/ntfy.env.pre-coredump; } && printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' '<throwaway-topic>' | sudo -n tee /etc/pft-maint/ntfy.env >/dev/null && sudo -n chmod 600 /etc/pft-maint/ntfy.env && sudo -n stat -c '%a %U' /etc/pft-maint/ntfy.env
+  600 root
+  (exit 0)
+CHECK ok   pft-maint target is the throwaway topic
+silence (every alert but the watchdog and the digest-only ones, both hosts) until 2026-11-26T20:16:02Z id 8a58d25d
+CHECK ok   Alertmanager silence created
+$ sudo -n pft-maint start --ttl 75m --reason 'task_d7136fac pft-coredump run 04'
+  window started: id m1795718762-2594259 until 2026-11-26T20:01:02Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   maintenance window started
+$ R 'sudo -n pft-maint active && echo active'
+  active
+  (exit 0)
+CHECK ok   window valid on the sentry
+
+== 2. found -> fixed -> rollback -> re-apply
+
+-- sentry (2026-11-26T18:47:16Z)
+$ R 'sudo -n env STATE_DIR=/var/lib/pft-coredump bash .cache/coredump-run-04/pft-coredump.sh audit'
+  pft-coredump audit - 2026-11-26T18:47:19Z - container postfiatd-sentry
+    [FAIL] CD01 pattern-live: kernel.core_pattern 'core' writes a core file (relative = the crashing process's cwd)
+    [FAIL] CD02 pattern-boot: next boot: 'core' from kernel default (file)
+    [PASS] CD03 suid-dumpable: fs.suid_dumpable 0
+    [PASS] CD04 apport: installed, enabled=0
+    [PASS] CD05 systemd-coredump: not installed (n/a)
+    [FAIL] CD06 rlimit-live: 2/2 container processes with RLIMIT_CORE soft > 0 (PID 1: unlimited:unlimited)
+    [WARN] CD07 dump-filter: coredump_filter 00000033 includes anonymous memory (heap, where keys live)
+    [FAIL] CD08 container-ulimit: running container ulimit core unset
+    [FAIL] CD09 recreate-ulimit: docker run: HostConfig core unset
+    [INFO] CD10 docker-default: docker.service LimitCORE=infinity containerd.service LimitCORE=infinity daemon default-ulimits core=unset
+    [PASS] CD11 swap: no active swap
+    [PASS] CD12 hibernate: no swap: no hibernation image can be written
+    [PASS] CD13 core-files: 0 core/crash files in 9 scanned dirs (depth 3)
+  RESULT: FAIL - 5 fail, 1 warn -> exit 2
+  (exit 2)
+CHECK ok   sentry found: audit exit 2 (want 2), CD01=FAIL CD02=FAIL CD06=FAIL CD08=FAIL CD09=FAIL CD13=PASS
+$ R 'sudo -n env STATE_DIR=/var/lib/pft-coredump bash .cache/coredump-run-04/pft-coredump.sh audit --json'
+  {
+    "tool": "pft-coredump",
+    "time": "2026-11-26T18:47:22Z",
+    "container": "postfiatd-sentry",
+    "exit": 2,
+    "checks": [
+      {
+        "status": "FAIL",
+        "id": "CD01",
+        "check": "pattern-live",
+        "detail": "kernel.core_pattern 'core' writes a core file (relative = the crashing process's cwd)"
+      },
+      {
+        "status": "FAIL",
+        "id": "CD02",
+        "check": "pattern-boot",
+        "detail": "next boot: 'core' from kernel default (file)"
+      },
+      {
+        "status": "PASS",
+        "id": "CD03",
+        "check": "suid-dumpable",
+        "detail": "fs.suid_dumpable 0"
+      },
+      {
+        "status": "PASS",
+        "id": "CD04",
+        "check": "apport",
+        "detail": "installed, enabled=0"
+      },
+      {
+        "status": "PASS",
+        "id": "CD05",
+        "check": "systemd-coredump",
+        "detail": "not installed (n/a)"
+      },
+      {
+        "status": "FAIL",
+        "id": "CD06",
+        "check": "rlimit-live",
+        "detail": "2/2 container processes with RLIMIT_CORE soft > 0 (PID 1: unlimited:unlimited)"
+      },
+      {
+        "status": "WARN",
+        "id": "CD07",
+        "check": "dump-filter",
+        "detail": "coredump_filter 00000033 includes anonymous memory (heap, where keys live)"
+      },
+      {
+        "status": "FAIL",
+        "id": "CD08",
+        "check": "container-ulimit",
+        "detail": "running container ulimit core unset"
+      },
+      {
+        "status": "FAIL",
+        "id": "CD09",
+        "check": "recreate-ulimit",
+        "detail": "docker run: HostConfig core unset"
+      },
+      {
+        "status": "INFO",
+        "id": "CD10",
+        "check": "docker-default",
+        "detail": "docker.service LimitCORE=infinity containerd.service LimitCORE=infinity daemon default-ulimits core=unset"
+      },
+      {
+        "status": "PASS",
+        "id": "CD11",
+        "check": "swap",
+        "detail": "no active swap"
+      },
+      {
+        "status": "PASS",
+        "id": "CD12",
+        "check": "hibernate",
+        "detail": "no swap: no hibernation image can be written"
+      },
+      {
+        "status": "PASS",
+        "id": "CD13",
+        "check": "core-files",
+        "detail": "0 core/crash files in 9 scanned dirs (depth 3)"
+      }
+    ]
+  }
+  (exit 2)
+$ R 'sudo -n env DRILL_DIR=/var/lib/pft-coredump/drill bash .cache/coredump-run-04/crash-drill.sh sentry-found core none'
+  crash-drill sentry-found - 2026-11-26T18:47:23Z - image of postfiatd-sentry sha256:cc139becfe50 (local, no pull)
+    host kernel.core_pattern 'core' core_uses_pid 1
+    probe A ulimit core=-1: child exit 139 (139 = SIGSEGV); shell: "Segmentation fault (core dumped)"; in-container ulimit -c unlimited -> 1 file(s), 454656 bytes => core (expected core: ok)
+      cleanup: 1 file(s) deleted unread
+    probe B ulimit core=0:0: child exit 139 (139 = SIGSEGV); shell: "Segmentation fault"; in-container ulimit -c 0 -> 0 file(s), 0 bytes => none (expected none: ok)
+      cleanup: 0 file(s) deleted unread
+  crash-drill sentry-found RESULT: PASS
+  (exit 0)
+CHECK ok   sentry found: crash drill A=core B=none
+$ R 'sudo -n env STATE_DIR=/var/lib/pft-coredump bash .cache/coredump-run-04/pft-coredump.sh apply --recreate --yes'
+  2026-11-26T18:47:27Z apply on postfiatd-sentry (run)
+    snapshot snap-20261126T184727Z: core_pattern 'core', 2 process limits, kind run
+    1. /etc/sysctl.d/60-pft-coredump.conf written, kernel.core_pattern '|/bin/false' live
+    2. systemd-coredump not installed (n/a)
+    3. live RLIMIT_CORE 0:0 on 2 container processes (no restart)
+    recreate: docker run -d --name=postfiatd-sentry --restart=unless-stopped --stop-timeout=60 --user=0:0 --log-driver=json-file --log-opt=max-file=10 --log-opt=max-size=100m --network=bridge --publish=<redacted-ip>:2560:2559 --volume=pft-sentry-data:/var/lib/postfiatd/db --volume=7f505992998799bdc092cfb03d16aaae688a0190738c4429bb66f05355511ec9:/var/log/postfiatd --volume=pft-sentry-config:/etc/postfiatd --cap-drop=ALL --cap-add=CAP_SETGID --cap-add=CAP_SETUID --read-only --tmpfs=/run:rw,noexec,nosuid,size=64m --tmpfs=/tmp:rw,noexec,nosuid,size=64m --tmpfs=/var/backups:rw,noexec,nosuid,size=64m --tmpfs=/var/lib/apt:rw,noexec,nosuid,size=64m --tmpfs=/var/lib/logrotate:rw,noexec,nosuid,size=64m --pids-limit=256 --memory=2147483648 --memory-swap=2147483648 --cpu-shares=8192 --memory-reservation=1342177280 --ulimit=core=0:0 --security-opt=no-new-privileges --security-opt=apparmor=pft-postfiatd --security-opt=seccomp=/etc/pft-seccomp/pft-postfiatd.json agtipft/postfiatd:testnet-light-latest --conf /etc/postfiatd/postfiatd.cfg
+    apply gate PASS after 40s: re-created, Ulimits [{"Name":"core","Hard":0,"Soft":0}], configuration unchanged, server_state full
+    previous container postfiatd-sentry-precd-snap-20261126T184727Z-apply removed (volumes kept)
+    4. re-created with --ulimit core=0:0 (2 processes 0:0)
+  2026-11-26T18:48:16Z apply RESULT: PASS - snap-20261126T184727Z applied
+  (exit 0)
+CHECK ok   sentry apply PASS
+$ state_v; state_s
+  full
+  full
+  (exit 0)
+CHECK ok   sentry apply: both nodes full
+validator postfiatd StartedAt 2026-11-24T16:08:15.907959686Z, uptime 182400s (+139s since preflight, wall +139s)
+CHECK ok   sentry apply: validator postfiatd not restarted (StartedAt unchanged, uptime grew)
+$ R 'sudo -n env STATE_DIR=/var/lib/pft-coredump bash .cache/coredump-run-04/pft-coredump.sh audit'
+  pft-coredump audit - 2026-11-26T18:48:20Z - container postfiatd-sentry
+    [PASS] CD01 pattern-live: kernel.core_pattern '|/bin/false' (pipe, nothing written)
+    [PASS] CD02 pattern-boot: next boot: '|/bin/false' from /etc/sysctl.d/60-pft-coredump.conf
+    [PASS] CD03 suid-dumpable: fs.suid_dumpable 0
+    [PASS] CD04 apport: installed, enabled=0
+    [PASS] CD05 systemd-coredump: not installed (n/a)
+    [PASS] CD06 rlimit-live: 2/2 container processes RLIMIT_CORE 0:0
+    [INFO] CD07 dump-filter: coredump_filter 00000033 (no dump possible: CD06 PASS)
+    [PASS] CD08 container-ulimit: running container ulimit core 0:0
+    [PASS] CD09 recreate-ulimit: docker run: HostConfig core 0:0, every installed recreate tool copies Ulimits
+    [INFO] CD10 docker-default: docker.service LimitCORE=infinity containerd.service LimitCORE=infinity daemon default-ulimits core=unset
+    [PASS] CD11 swap: no active swap
+    [PASS] CD12 hibernate: no swap: no hibernation image can be written
+    [PASS] CD13 core-files: 0 core/crash files in 9 scanned dirs (depth 3)
+  RESULT: PASS - 0 fail, 0 warn -> exit 0
+  (exit 0)
+CHECK ok   sentry after apply: audit exit 0 (want 0), CD01=PASS CD02=PASS CD06=PASS CD07=INFO CD08=PASS CD09=PASS CD13=PASS
+$ R 'sudo -n env DRILL_DIR=/var/lib/pft-coredump/drill bash .cache/coredump-run-04/crash-drill.sh sentry-applied none none'
+  crash-drill sentry-applied - 2026-11-26T18:48:20Z - image of postfiatd-sentry sha256:cc139becfe50 (local, no pull)
+    host kernel.core_pattern '|/bin/false' core_uses_pid 1
+    probe A ulimit core=-1: child exit 139 (139 = SIGSEGV); shell: "Segmentation fault (core dumped)"; in-container ulimit -c unlimited -> 0 file(s), 0 bytes => none (expected none: ok)
+      cleanup: 0 file(s) deleted unread
+    probe B ulimit core=0:0: child exit 139 (139 = SIGSEGV); shell: "Segmentation fault (core dumped)"; in-container ulimit -c 0 -> 0 file(s), 0 bytes => none (expected none: ok)
+      cleanup: 0 file(s) deleted unread
+  crash-drill sentry-applied RESULT: PASS
+  (exit 0)
+CHECK ok   sentry applied: crash drill A=none B=none
+$ R 'sudo -n env STATE_DIR=/var/lib/pft-coredump bash .cache/coredump-run-04/pft-coredump.sh rollback --yes'
+  2026-11-26T18:48:53Z rollback (manual) to snap-20261126T184727Z on postfiatd-sentry
+    recreate: docker run -d --name=postfiatd-sentry --restart=unless-stopped --stop-timeout=60 --user=0:0 --log-driver=json-file --log-opt=max-file=10 --log-opt=max-size=100m --network=bridge --publish=<redacted-ip>:2560:2559 --volume=pft-sentry-data:/var/lib/postfiatd/db --volume=7f505992998799bdc092cfb03d16aaae688a0190738c4429bb66f05355511ec9:/var/log/postfiatd --volume=pft-sentry-config:/etc/postfiatd --cap-drop=ALL --cap-add=CAP_SETGID --cap-add=CAP_SETUID --read-only --tmpfs=/run:rw,noexec,nosuid,size=64m --tmpfs=/tmp:rw,noexec,nosuid,size=64m --tmpfs=/var/backups:rw,noexec,nosuid,size=64m --tmpfs=/var/lib/apt:rw,noexec,nosuid,size=64m --tmpfs=/var/lib/logrotate:rw,noexec,nosuid,size=64m --pids-limit=256 --memory=2147483648 --memory-swap=2147483648 --cpu-shares=8192 --memory-reservation=1342177280 --security-opt=no-new-privileges --security-opt=apparmor=pft-postfiatd --security-opt=seccomp=/etc/pft-seccomp/pft-postfiatd.json agtipft/postfiatd:testnet-light-latest --conf /etc/postfiatd/postfiatd.cfg
+    rollback gate PASS after 45s: re-created, Ulimits [], configuration unchanged, server_state full
+    previous container postfiatd-sentry-precd-snap-20261126T184727Z-restore removed (volumes kept)
+    pid 2586238 gone (limit unlimited:unlimited not restored)
+    pid 2586351 gone (limit unlimited:unlimited not restored)
+    live RLIMIT_CORE restored for 2 snapshot processes
+    kernel.core_pattern 'core' again
+  2026-11-26T18:49:43Z rollback RESULT: PASS - snap-20261126T184727Z restored
+  (exit 0)
+CHECK ok   sentry rollback PASS
+$ state_v; state_s
+  full
+  full
+  (exit 0)
+CHECK ok   sentry rollback: both nodes full
+validator postfiatd StartedAt 2026-11-24T16:08:15.907959686Z, uptime 182487s (+226s since preflight, wall +226s)
+CHECK ok   sentry rollback: validator postfiatd not restarted (StartedAt unchanged, uptime grew)
+$ R 'sudo -n env STATE_DIR=/var/lib/pft-coredump bash .cache/coredump-run-04/pft-coredump.sh audit'
+  pft-coredump audit - 2026-11-26T18:49:47Z - container postfiatd-sentry
+    [FAIL] CD01 pattern-live: kernel.core_pattern 'core' writes a core file (relative = the crashing process's cwd)
+    [FAIL] CD02 pattern-boot: next boot: 'core' from kernel default (file)
+    [PASS] CD03 suid-dumpable: fs.suid_dumpable 0
+    [PASS] CD04 apport: installed, enabled=0
+    [PASS] CD05 systemd-coredump: not installed (n/a)
+    [FAIL] CD06 rlimit-live: 2/2 container processes with RLIMIT_CORE soft > 0 (PID 1: unlimited:unlimited)
+    [WARN] CD07 dump-filter: coredump_filter 00000033 includes anonymous memory (heap, where keys live)
+    [FAIL] CD08 container-ulimit: running container ulimit core unset
+    [FAIL] CD09 recreate-ulimit: docker run: HostConfig core unset
+    [INFO] CD10 docker-default: docker.service LimitCORE=infinity containerd.service LimitCORE=infinity daemon default-ulimits core=unset
+    [PASS] CD11 swap: no active swap
+    [PASS] CD12 hibernate: no swap: no hibernation image can be written
+    [PASS] CD13 core-files: 0 core/crash files in 9 scanned dirs (depth 3)
+  RESULT: FAIL - 5 fail, 1 warn -> exit 2
+  (exit 2)
+CHECK ok   sentry after rollback (= found): audit exit 2 (want 2), CD01=FAIL CD02=FAIL CD06=FAIL CD08=FAIL CD09=FAIL CD13=PASS
+$ R 'sudo -n env DRILL_DIR=/var/lib/pft-coredump/drill bash .cache/coredump-run-04/crash-drill.sh sentry-rolled-back core none'
+  crash-drill sentry-rolled-back - 2026-11-26T18:49:48Z - image of postfiatd-sentry sha256:cc139becfe50 (local, no pull)
+    host kernel.core_pattern 'core' core_uses_pid 1
+    probe A ulimit core=-1: child exit 139 (139 = SIGSEGV); shell: "Segmentation fault (core dumped)"; in-container ulimit -c unlimited -> 1 file(s), 454656 bytes => core (expected core: ok)
+      cleanup: 1 file(s) deleted unread
+    probe B ulimit core=0:0: child exit 139 (139 = SIGSEGV); shell: "Segmentation fault"; in-container ulimit -c 0 -> 0 file(s), 0 bytes => none (expected none: ok)
+      cleanup: 0 file(s) deleted unread
+  crash-drill sentry-rolled-back RESULT: PASS
+  (exit 0)
+CHECK ok   sentry rolled-back: crash drill A=core B=none
+$ R 'sudo -n env STATE_DIR=/var/lib/pft-coredump bash .cache/coredump-run-04/pft-coredump.sh apply --recreate --yes'
+  2026-11-26T18:50:20Z apply on postfiatd-sentry (run)
+    snapshot snap-20261126T185020Z: core_pattern 'core', 2 process limits, kind run
+    1. /etc/sysctl.d/60-pft-coredump.conf written, kernel.core_pattern '|/bin/false' live
+    2. systemd-coredump not installed (n/a)
+    3. live RLIMIT_CORE 0:0 on 2 container processes (no restart)
+    recreate: docker run -d --name=postfiatd-sentry --restart=unless-stopped --stop-timeout=60 --user=0:0 --log-driver=json-file --log-opt=max-file=10 --log-opt=max-size=100m --network=bridge --publish=<redacted-ip>:2560:2559 --volume=7f505992998799bdc092cfb03d16aaae688a0190738c4429bb66f05355511ec9:/var/log/postfiatd --volume=pft-sentry-config:/etc/postfiatd --volume=pft-sentry-data:/var/lib/postfiatd/db --cap-drop=ALL --cap-add=CAP_SETGID --cap-add=CAP_SETUID --read-only --tmpfs=/run:rw,noexec,nosuid,size=64m --tmpfs=/tmp:rw,noexec,nosuid,size=64m --tmpfs=/var/backups:rw,noexec,nosuid,size=64m --tmpfs=/var/lib/apt:rw,noexec,nosuid,size=64m --tmpfs=/var/lib/logrotate:rw,noexec,nosuid,size=64m --pids-limit=256 --memory=2147483648 --memory-swap=2147483648 --cpu-shares=8192 --memory-reservation=1342177280 --ulimit=core=0:0 --security-opt=no-new-privileges --security-opt=apparmor=pft-postfiatd --security-opt=seccomp=/etc/pft-seccomp/pft-postfiatd.json agtipft/postfiatd:testnet-light-latest --conf /etc/postfiatd/postfiatd.cfg
+    apply gate PASS after 40s: re-created, Ulimits [{"Name":"core","Hard":0,"Soft":0}], configuration unchanged, server_state full
+    previous container postfiatd-sentry-precd-snap-20261126T185020Z-apply removed (volumes kept)
+    4. re-created with --ulimit core=0:0 (2 processes 0:0)
+  2026-11-26T18:51:15Z apply RESULT: PASS - snap-20261126T185020Z applied
+  (exit 0)
+CHECK ok   sentry re-apply PASS
+$ state_v; state_s
+  full
+  full
+  (exit 0)
+CHECK ok   sentry re-apply: both nodes full
+validator postfiatd StartedAt 2026-11-24T16:08:15.907959686Z, uptime 182579s (+318s since preflight, wall +318s)
+CHECK ok   sentry re-apply: validator postfiatd not restarted (StartedAt unchanged, uptime grew)
+$ R 'sudo -n env STATE_DIR=/var/lib/pft-coredump bash .cache/coredump-run-04/pft-coredump.sh apply --yes --recreate'
+  apply: refused - snap-20261126T185020Z is applied and not rolled back (rollback first)
+  (exit 4)
+CHECK ok   sentry second apply refused while applied (exit 4)
+$ R 'sudo -n env STATE_DIR=/var/lib/pft-coredump bash .cache/coredump-run-04/pft-coredump.sh audit'
+  pft-coredump audit - 2026-11-26T18:51:19Z - container postfiatd-sentry
+    [PASS] CD01 pattern-live: kernel.core_pattern '|/bin/false' (pipe, nothing written)
+    [PASS] CD02 pattern-boot: next boot: '|/bin/false' from /etc/sysctl.d/60-pft-coredump.conf
+    [PASS] CD03 suid-dumpable: fs.suid_dumpable 0
+    [PASS] CD04 apport: installed, enabled=0
+    [PASS] CD05 systemd-coredump: not installed (n/a)
+    [PASS] CD06 rlimit-live: 2/2 container processes RLIMIT_CORE 0:0
+    [INFO] CD07 dump-filter: coredump_filter 00000033 (no dump possible: CD06 PASS)
+    [PASS] CD08 container-ulimit: running container ulimit core 0:0
+    [PASS] CD09 recreate-ulimit: docker run: HostConfig core 0:0, every installed recreate tool copies Ulimits
+    [INFO] CD10 docker-default: docker.service LimitCORE=infinity containerd.service LimitCORE=infinity daemon default-ulimits core=unset
+    [PASS] CD11 swap: no active swap
+    [PASS] CD12 hibernate: no swap: no hibernation image can be written
+    [PASS] CD13 core-files: 0 core/crash files in 9 scanned dirs (depth 3)
+  RESULT: PASS - 0 fail, 0 warn -> exit 0
+  (exit 0)
+CHECK ok   sentry after re-apply: audit exit 0 (want 0), CD01=PASS CD02=PASS CD06=PASS CD07=INFO CD08=PASS CD09=PASS CD13=PASS
+$ R 'sudo -n env DRILL_DIR=/var/lib/pft-coredump/drill bash .cache/coredump-run-04/crash-drill.sh sentry-re-applied none none'
+  crash-drill sentry-re-applied - 2026-11-26T18:51:20Z - image of postfiatd-sentry sha256:cc139becfe50 (local, no pull)
+    host kernel.core_pattern '|/bin/false' core_uses_pid 1
+    probe A ulimit core=-1: child exit 139 (139 = SIGSEGV); shell: "Segmentation fault (core dumped)"; in-container ulimit -c unlimited -> 0 file(s), 0 bytes => none (expected none: ok)
+      cleanup: 0 file(s) deleted unread
+    probe B ulimit core=0:0: child exit 139 (139 = SIGSEGV); shell: "Segmentation fault (core dumped)"; in-container ulimit -c 0 -> 0 file(s), 0 bytes => none (expected none: ok)
+      cleanup: 0 file(s) deleted unread
+  crash-drill sentry-re-applied RESULT: PASS
+  (exit 0)
+CHECK ok   sentry re-applied: crash drill A=none B=none
+
+-- validator (2026-11-26T18:51:21Z)
+$ sudo -n env STATE_DIR=/var/lib/pft-coredump bash ~/.cache/coredump-run-04/pft-coredump.sh audit
+  pft-coredump audit - 2026-11-26T18:51:23Z - container postfiatd
+    [FAIL] CD01 pattern-live: kernel.core_pattern 'core' writes a core file (relative = the crashing process's cwd)
+    [FAIL] CD02 pattern-boot: next boot: 'core' from kernel default (file)
+    [PASS] CD03 suid-dumpable: fs.suid_dumpable 0
+    [PASS] CD04 apport: installed, enabled=0
+    [PASS] CD05 systemd-coredump: not installed (n/a)
+    [FAIL] CD06 rlimit-live: 2/2 container processes with RLIMIT_CORE soft > 0 (PID 1: unlimited:unlimited)
+    [WARN] CD07 dump-filter: coredump_filter 00000033 includes anonymous memory (heap, where keys live)
+    [FAIL] CD08 container-ulimit: running container ulimit core unset
+    [FAIL] CD09 recreate-ulimit: compose config (/opt/postfiatd) ulimits core unset
+    [INFO] CD10 docker-default: docker.service LimitCORE=infinity containerd.service LimitCORE=infinity daemon default-ulimits core=unset
+    [PASS] CD11 swap: no active swap
+    [PASS] CD12 hibernate: no swap: no hibernation image can be written
+    [PASS] CD13 core-files: 0 core/crash files in 9 scanned dirs (depth 3)
+  RESULT: FAIL - 5 fail, 1 warn -> exit 2
+  (exit 2)
+CHECK ok   validator found: audit exit 2 (want 2), CD01=FAIL CD02=FAIL CD06=FAIL CD08=FAIL CD09=FAIL CD13=PASS
+$ sudo -n env STATE_DIR=/var/lib/pft-coredump bash ~/.cache/coredump-run-04/pft-coredump.sh audit --json
+  {
+    "tool": "pft-coredump",
+    "time": "2026-11-26T18:51:26Z",
+    "container": "postfiatd",
+    "exit": 2,
+    "checks": [
+      {
+        "status": "FAIL",
+        "id": "CD01",
+        "check": "pattern-live",
+        "detail": "kernel.core_pattern 'core' writes a core file (relative = the crashing process's cwd)"
+      },
+      {
+        "status": "FAIL",
+        "id": "CD02",
+        "check": "pattern-boot",
+        "detail": "next boot: 'core' from kernel default (file)"
+      },
+      {
+        "status": "PASS",
+        "id": "CD03",
+        "check": "suid-dumpable",
+        "detail": "fs.suid_dumpable 0"
+      },
+      {
+        "status": "PASS",
+        "id": "CD04",
+        "check": "apport",
+        "detail": "installed, enabled=0"
+      },
+      {
+        "status": "PASS",
+        "id": "CD05",
+        "check": "systemd-coredump",
+        "detail": "not installed (n/a)"
+      },
+      {
+        "status": "FAIL",
+        "id": "CD06",
+        "check": "rlimit-live",
+        "detail": "2/2 container processes with RLIMIT_CORE soft > 0 (PID 1: unlimited:unlimited)"
+      },
+      {
+        "status": "WARN",
+        "id": "CD07",
+        "check": "dump-filter",
+        "detail": "coredump_filter 00000033 includes anonymous memory (heap, where keys live)"
+      },
+      {
+        "status": "FAIL",
+        "id": "CD08",
+        "check": "container-ulimit",
+        "detail": "running container ulimit core unset"
+      },
+      {
+        "status": "FAIL",
+        "id": "CD09",
+        "check": "recreate-ulimit",
+        "detail": "compose config (/opt/postfiatd) ulimits core unset"
+      },
+      {
+        "status": "INFO",
+        "id": "CD10",
+        "check": "docker-default",
+        "detail": "docker.service LimitCORE=infinity containerd.service LimitCORE=infinity daemon default-ulimits core=unset"
+      },
+      {
+        "status": "PASS",
+        "id": "CD11",
+        "check": "swap",
+        "detail": "no active swap"
+      },
+      {
+        "status": "PASS",
+        "id": "CD12",
+        "check": "hibernate",
+        "detail": "no swap: no hibernation image can be written"
+      },
+      {
+        "status": "PASS",
+        "id": "CD13",
+        "check": "core-files",
+        "detail": "0 core/crash files in 9 scanned dirs (depth 3)"
+      }
+    ]
+  }
+  (exit 2)
+$ sudo -n env DRILL_DIR=/var/lib/pft-coredump/drill bash ~/.cache/coredump-run-04/crash-drill.sh validator-found core none
+  crash-drill validator-found - 2026-11-26T18:51:26Z - image of postfiatd sha256:cc139becfe50 (local, no pull)
+    host kernel.core_pattern 'core' core_uses_pid 1
+    probe A ulimit core=-1: child exit 139 (139 = SIGSEGV); shell: "Segmentation fault (core dumped)"; in-container ulimit -c unlimited -> 1 file(s), 454656 bytes => core (expected core: ok)
+      cleanup: 1 file(s) deleted unread
+    probe B ulimit core=0:0: child exit 139 (139 = SIGSEGV); shell: "Segmentation fault"; in-container ulimit -c 0 -> 0 file(s), 0 bytes => none (expected none: ok)
+      cleanup: 0 file(s) deleted unread
+  crash-drill validator-found RESULT: PASS
+  (exit 0)
+CHECK ok   validator found: crash drill A=core B=none
+$ sudo -n env STATE_DIR=/var/lib/pft-coredump bash ~/.cache/coredump-run-04/pft-coredump.sh apply --yes
+  2026-11-26T18:51:28Z apply on postfiatd (compose)
+    snapshot snap-20261126T185128Z: core_pattern 'core', 2 process limits, kind compose
+    1. /etc/sysctl.d/60-pft-coredump.conf written, kernel.core_pattern '|/bin/false' live
+    2. systemd-coredump not installed (n/a)
+    3. live RLIMIT_CORE 0:0 on 2 container processes (no restart)
+    4. /opt/postfiatd/docker-compose.coredump.yml written, COMPOSE_FILE += docker-compose.coredump.yml, compose config valid; container NOT re-created (next planned re-create applies it)
+  2026-11-26T18:51:32Z apply RESULT: PASS - snap-20261126T185128Z applied
+  (exit 0)
+CHECK ok   validator apply PASS
+$ state_v; state_s
+  full
+  full
+  (exit 0)
+CHECK ok   validator apply: both nodes full
+validator postfiatd StartedAt 2026-11-24T16:08:15.907959686Z, uptime 182595s (+334s since preflight, wall +334s)
+CHECK ok   validator apply: validator postfiatd not restarted (StartedAt unchanged, uptime grew)
+$ sudo -n env STATE_DIR=/var/lib/pft-coredump bash ~/.cache/coredump-run-04/pft-coredump.sh audit
+  pft-coredump audit - 2026-11-26T18:51:35Z - container postfiatd
+    [PASS] CD01 pattern-live: kernel.core_pattern '|/bin/false' (pipe, nothing written)
+    [PASS] CD02 pattern-boot: next boot: '|/bin/false' from /etc/sysctl.d/60-pft-coredump.conf
+    [PASS] CD03 suid-dumpable: fs.suid_dumpable 0
+    [PASS] CD04 apport: installed, enabled=0
+    [PASS] CD05 systemd-coredump: not installed (n/a)
+    [PASS] CD06 rlimit-live: 2/2 container processes RLIMIT_CORE 0:0
+    [INFO] CD07 dump-filter: coredump_filter 00000033 (no dump possible: CD06 PASS)
+    [WARN] CD08 container-ulimit: running container core unset, pending re-create (next re-create gives 0:0; live limit: CD06)
+    [PASS] CD09 recreate-ulimit: compose config (/opt/postfiatd) ulimits core 0:0
+    [INFO] CD10 docker-default: docker.service LimitCORE=infinity containerd.service LimitCORE=infinity daemon default-ulimits core=unset
+    [PASS] CD11 swap: no active swap
+    [PASS] CD12 hibernate: no swap: no hibernation image can be written
+    [PASS] CD13 core-files: 0 core/crash files in 9 scanned dirs (depth 3)
+  RESULT: WARN - 0 fail, 1 warn -> exit 1
+  (exit 1)
+CHECK ok   validator after apply: audit exit 1 (want 1), CD01=PASS CD02=PASS CD06=PASS CD07=INFO CD08=WARN CD09=PASS CD13=PASS
+$ sudo -n env DRILL_DIR=/var/lib/pft-coredump/drill bash ~/.cache/coredump-run-04/crash-drill.sh validator-applied none none
+  crash-drill validator-applied - 2026-11-26T18:51:35Z - image of postfiatd sha256:cc139becfe50 (local, no pull)
+    host kernel.core_pattern '|/bin/false' core_uses_pid 1
+    probe A ulimit core=-1: child exit 139 (139 = SIGSEGV); shell: "Segmentation fault (core dumped)"; in-container ulimit -c unlimited -> 0 file(s), 0 bytes => none (expected none: ok)
+      cleanup: 0 file(s) deleted unread
+    probe B ulimit core=0:0: child exit 139 (139 = SIGSEGV); shell: "Segmentation fault (core dumped)"; in-container ulimit -c 0 -> 0 file(s), 0 bytes => none (expected none: ok)
+      cleanup: 0 file(s) deleted unread
+  crash-drill validator-applied RESULT: PASS
+  (exit 0)
+CHECK ok   validator applied: crash drill A=none B=none
+$ sudo -n env STATE_DIR=/var/lib/pft-coredump bash ~/.cache/coredump-run-04/pft-coredump.sh rollback --yes
+  2026-11-26T18:52:07Z rollback (manual) to snap-20261126T185128Z on postfiatd
+    compose: .env and docker-compose.coredump.yml as before apply
+    live RLIMIT_CORE restored for 2 snapshot processes
+    kernel.core_pattern 'core' again
+  2026-11-26T18:52:07Z rollback RESULT: PASS - snap-20261126T185128Z restored
+  (exit 0)
+CHECK ok   validator rollback PASS
+$ state_v; state_s
+  full
+  full
+  (exit 0)
+CHECK ok   validator rollback: both nodes full
+validator postfiatd StartedAt 2026-11-24T16:08:15.907959686Z, uptime 182631s (+370s since preflight, wall +370s)
+CHECK ok   validator rollback: validator postfiatd not restarted (StartedAt unchanged, uptime grew)
+$ sudo -n env STATE_DIR=/var/lib/pft-coredump bash ~/.cache/coredump-run-04/pft-coredump.sh audit
+  pft-coredump audit - 2026-11-26T18:52:10Z - container postfiatd
+    [FAIL] CD01 pattern-live: kernel.core_pattern 'core' writes a core file (relative = the crashing process's cwd)
+    [FAIL] CD02 pattern-boot: next boot: 'core' from kernel default (file)
+    [PASS] CD03 suid-dumpable: fs.suid_dumpable 0
+    [PASS] CD04 apport: installed, enabled=0
+    [PASS] CD05 systemd-coredump: not installed (n/a)
+    [FAIL] CD06 rlimit-live: 2/2 container processes with RLIMIT_CORE soft > 0 (PID 1: unlimited:unlimited)
+    [WARN] CD07 dump-filter: coredump_filter 00000033 includes anonymous memory (heap, where keys live)
+    [FAIL] CD08 container-ulimit: running container ulimit core unset
+    [FAIL] CD09 recreate-ulimit: compose config (/opt/postfiatd) ulimits core unset
+    [INFO] CD10 docker-default: docker.service LimitCORE=infinity containerd.service LimitCORE=infinity daemon default-ulimits core=unset
+    [PASS] CD11 swap: no active swap
+    [PASS] CD12 hibernate: no swap: no hibernation image can be written
+    [PASS] CD13 core-files: 0 core/crash files in 9 scanned dirs (depth 3)
+  RESULT: FAIL - 5 fail, 1 warn -> exit 2
+  (exit 2)
+CHECK ok   validator after rollback (= found): audit exit 2 (want 2), CD01=FAIL CD02=FAIL CD06=FAIL CD08=FAIL CD09=FAIL CD13=PASS
+$ sudo -n env DRILL_DIR=/var/lib/pft-coredump/drill bash ~/.cache/coredump-run-04/crash-drill.sh validator-rolled-back core none
+  crash-drill validator-rolled-back - 2026-11-26T18:52:11Z - image of postfiatd sha256:cc139becfe50 (local, no pull)
+    host kernel.core_pattern 'core' core_uses_pid 1
+    probe A ulimit core=-1: child exit 139 (139 = SIGSEGV); shell: "Segmentation fault (core dumped)"; in-container ulimit -c unlimited -> 1 file(s), 454656 bytes => core (expected core: ok)
+      cleanup: 1 file(s) deleted unread
+    probe B ulimit core=0:0: child exit 139 (139 = SIGSEGV); shell: "Segmentation fault"; in-container ulimit -c 0 -> 0 file(s), 0 bytes => none (expected none: ok)
+      cleanup: 0 file(s) deleted unread
+  crash-drill validator-rolled-back RESULT: PASS
+  (exit 0)
+CHECK ok   validator rolled-back: crash drill A=core B=none
+$ sudo -n env STATE_DIR=/var/lib/pft-coredump bash ~/.cache/coredump-run-04/pft-coredump.sh apply --yes
+  2026-11-26T18:52:43Z apply on postfiatd (compose)
+    snapshot snap-20261126T185243Z: core_pattern 'core', 2 process limits, kind compose
+    1. /etc/sysctl.d/60-pft-coredump.conf written, kernel.core_pattern '|/bin/false' live
+    2. systemd-coredump not installed (n/a)
+    3. live RLIMIT_CORE 0:0 on 2 container processes (no restart)
+    4. /opt/postfiatd/docker-compose.coredump.yml written, COMPOSE_FILE += docker-compose.coredump.yml, compose config valid; container NOT re-created (next planned re-create applies it)
+  2026-11-26T18:52:46Z apply RESULT: PASS - snap-20261126T185243Z applied
+  (exit 0)
+CHECK ok   validator re-apply PASS
+$ state_v; state_s
+  full
+  full
+  (exit 0)
+CHECK ok   validator re-apply: both nodes full
+validator postfiatd StartedAt 2026-11-24T16:08:15.907959686Z, uptime 182670s (+409s since preflight, wall +409s)
+CHECK ok   validator re-apply: validator postfiatd not restarted (StartedAt unchanged, uptime grew)
+$ sudo -n env STATE_DIR=/var/lib/pft-coredump bash ~/.cache/coredump-run-04/pft-coredump.sh apply --yes
+  apply: refused - snap-20261126T185243Z is applied and not rolled back (rollback first)
+  (exit 4)
+CHECK ok   validator second apply refused while applied (exit 4)
+$ sudo -n env STATE_DIR=/var/lib/pft-coredump bash ~/.cache/coredump-run-04/pft-coredump.sh audit
+  pft-coredump audit - 2026-11-26T18:52:49Z - container postfiatd
+    [PASS] CD01 pattern-live: kernel.core_pattern '|/bin/false' (pipe, nothing written)
+    [PASS] CD02 pattern-boot: next boot: '|/bin/false' from /etc/sysctl.d/60-pft-coredump.conf
+    [PASS] CD03 suid-dumpable: fs.suid_dumpable 0
+    [PASS] CD04 apport: installed, enabled=0
+    [PASS] CD05 systemd-coredump: not installed (n/a)
+    [PASS] CD06 rlimit-live: 2/2 container processes RLIMIT_CORE 0:0
+    [INFO] CD07 dump-filter: coredump_filter 00000033 (no dump possible: CD06 PASS)
+    [WARN] CD08 container-ulimit: running container core unset, pending re-create (next re-create gives 0:0; live limit: CD06)
+    [PASS] CD09 recreate-ulimit: compose config (/opt/postfiatd) ulimits core 0:0
+    [INFO] CD10 docker-default: docker.service LimitCORE=infinity containerd.service LimitCORE=infinity daemon default-ulimits core=unset
+    [PASS] CD11 swap: no active swap
+    [PASS] CD12 hibernate: no swap: no hibernation image can be written
+    [PASS] CD13 core-files: 0 core/crash files in 9 scanned dirs (depth 3)
+  RESULT: WARN - 0 fail, 1 warn -> exit 1
+  (exit 1)
+CHECK ok   validator after re-apply: audit exit 1 (want 1), CD01=PASS CD02=PASS CD06=PASS CD07=INFO CD08=WARN CD09=PASS CD13=PASS
+$ sudo -n env DRILL_DIR=/var/lib/pft-coredump/drill bash ~/.cache/coredump-run-04/crash-drill.sh validator-re-applied none none
+  crash-drill validator-re-applied - 2026-11-26T18:52:49Z - image of postfiatd sha256:cc139becfe50 (local, no pull)
+    host kernel.core_pattern '|/bin/false' core_uses_pid 1
+    probe A ulimit core=-1: child exit 139 (139 = SIGSEGV); shell: "Segmentation fault (core dumped)"; in-container ulimit -c unlimited -> 0 file(s), 0 bytes => none (expected none: ok)
+      cleanup: 0 file(s) deleted unread
+    probe B ulimit core=0:0: child exit 139 (139 = SIGSEGV); shell: "Segmentation fault (core dumped)"; in-container ulimit -c 0 -> 0 file(s), 0 bytes => none (expected none: ok)
+      cleanup: 0 file(s) deleted unread
+  crash-drill validator-re-applied RESULT: PASS
+  (exit 0)
+CHECK ok   validator re-applied: crash drill A=none B=none
+$ sudo -n systemctl start pft-backup.service && sudo -n systemctl start pft-backupwatch.service && systemctl show -p Result --value pft-backupwatch.service
+  success
+  (exit 0)
+CHECK ok   validator backup + backupwatch after the change
+
+== 3. install + intended changes into pft-integrity
+$ sudo -n install -m 0755 -o root -g root coredump/pft-coredump.sh /usr/local/bin/pft-coredump && R 'sudo -n install -m 0755 -o root -g root .cache/coredump-run-04/pft-coredump.sh /usr/local/bin/pft-coredump' && sha256sum coredump/pft-coredump.sh /usr/local/bin/pft-coredump | cut -c1-64; R 'sha256sum /usr/local/bin/pft-coredump' | cut -c1-64
+  07932bc36b6f3a33387826a4028f22b6ff6f66b026009756e4e5de1211964f96
+  07932bc36b6f3a33387826a4028f22b6ff6f66b026009756e4e5de1211964f96
+  07932bc36b6f3a33387826a4028f22b6ff6f66b026009756e4e5de1211964f96
+  (exit 0)
+CHECK ok   pft-coredump installed on both hosts = HEAD bytes
+$ sudo -n pft-integrity verify | grep -vE '^ *(OK|PASS)' | tail -20; R 'sudo -n pft-integrity verify | grep -vE "^ *(OK|PASS)" | tail -20'
+  pft-integrity verify - 2026-11-26T18:53:13Z
+  OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-11-26T18:23:31Z
+    [WARN] bin:pft-coredump                             added    new file
+    [FAIL] compose:.env                                 changed  mtime, sha256
+    [WARN] compose:docker-compose.coredump.yml          added    new file
+  RESULT: FAIL - 296 unchanged, 2 warn, 1 fail -> exit 2
+  pft-integrity verify - 2026-11-26T18:53:26Z
+  OS: Ubuntu 22.04.5 LTS | container: postfiatd-sentry | baseline: 2026-11-26T18:23:19Z
+    [WARN] bin:pft-coredump                             added    new file
+  RESULT: WARN - 173 unchanged, 1 warn, 0 fail -> exit 1
+  (exit 0)
+$ R 'sudo -n pft-integrity accept --reason "task_d7136fac: pft-coredump run 04 (sysctl.d core_pattern drop-in, sentry re-created with --ulimit core=0:0, /usr/local/bin/pft-coredump)" | tail -1'
+  manifest sha256: 2e880b7020f998fe38b640f4aee8b6a4e26e2c27460dafe3bea0120401b6de12 -> 1c7920f749aae05e92471edd4c84e803d135f9abd69eea94321f3c157b478c06 (logged to accept.log)
+  (exit 0)
+CHECK ok   sentry integrity accept
+$ sudo -n pft-integrity accept --reason 'task_d7136fac: pft-coredump run 04 (sysctl.d core_pattern drop-in, .env + docker-compose.coredump.yml, /usr/local/bin/pft-coredump; postfiatd not restarted)' | tail -1
+  manifest sha256: 3af725cd271db9422451f8619492ed8b9ce94ef8f3b215beede07a7c73da86c9 -> 5fd853f3c1fd04b20c131737f38e435d6f77dc317e02dd1c15de114fbfd2f9ce (logged to accept.log)
+  (exit 0)
+CHECK ok   validator integrity accept
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 299 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 174 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   integrity PASS both hosts after accept
+
+== 4. end window, restore, checks, drain, read back
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+  (exit 0)
+CHECK ok   window ended
+$ sudo -n rm -f /etc/pft-maint/ntfy.env
+  
+  (exit 0)
+$ sudo -n systemctl start pft-keyescrow.service; sudo -n pft-keyescrow inventory | tail -1
+  RESULT: ok 11, perm 0, missing 0, unreadable 0, absent(optional) 2; escrow drift 0, new 0, evolving 1 -> exit 0
+  (exit 0)
+CHECK ok   keyescrow drift 0 after the target restore
+$ sudo -n pft-apparmor audit | grep RESULT; sudo -n pft-seccomp audit | grep RESULT; R 'sudo -n pft-apparmor audit | grep RESULT; sudo -n pft-seccomp audit | grep RESULT'
+  RESULT: PASS
+  RESULT: PASS
+  RESULT: PASS
+  RESULT: PASS
+  (exit 0)
+CHECK ok   AppArmor + seccomp PASS on both hosts
+$ state_v; state_s
+  full
+  full
+  (exit 0)
+CHECK ok   end: both nodes full
+validator postfiatd StartedAt 2026-11-24T16:08:15.907959686Z, uptime 182778s (+517s since preflight, wall +517s)
+CHECK ok   end: validator postfiatd not restarted (StartedAt unchanged, uptime grew)
+drain after 810s:
+    (nothing but the watchdog / digest-only alerts)
+$ curl -s -m 10 -o /dev/null -w '%{http_code}' -X DELETE http://<redacted-ip>:9093/api/v2/silence/8a58d25d
+  200
+  (exit 0)
+CHECK ok   silence expired after a clean drain
+$ curl -s -m 15 'https://ntfy.sh/<throwaway-topic>/json?poll=1&since=1795718660' | jq -r 'select(.event == "message") | .title'
+  [MAINT] start validator
+  [MAINT] end validator
+  (exit 0)
+CHECK ok   [MAINT] start/end reached the throwaway topic
+  operator #1 topic: 0 non-agent message(s)
+  operator #2 topic: 0 non-agent message(s)
+CHECK ok   operator topics got no alert/[MAINT] message during the run (2 topic(s))
+$ R 'rm -rf ~/.cache/coredump-run-04'; rm -rf ~/.cache/coredump-run-04
+  
+  (exit 0)
+
+pft-coredump live run 04 done 2026-11-26T19:08:42Z: 0 check(s) failed -> PASS
+
+== restore (trap)
