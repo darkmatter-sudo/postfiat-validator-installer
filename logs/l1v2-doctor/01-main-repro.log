@@ -1,0 +1,111 @@
+# 2026-11-26T14:46:38Z Ubuntu 22.04.5 LTS | systemd 249 (249.11-0ubuntu3.23) | kernel 5.15.0-204-generic | version: 0.8.0
+# repo HEAD b7506921e64298f8156813bfbf1af7b900ffa9c7 (HEAD)
+$ git log -1 --format='%H %s'
+b7506921e64298f8156813bfbf1af7b900ffa9c7 Set the route-failure tests' clock from the real time so they pass at any hour (#276)
+exit=0
+$ grep -n -A4 'scripts/testnet-validator-doctor \\' docs/runbooks/operator-day-two.md docs/runbooks/public-operator-runbook.md docs/runbooks/validator-doctor.md | grep -E 'service|doctor'
+docs/runbooks/operator-day-two.md:37:scripts/testnet-validator-doctor \
+docs/runbooks/operator-day-two.md-39-  --validator-service postfiat-validator-0.service \
+docs/runbooks/operator-day-two.md-40-  --rpc-service postfiat-rpc-0.service
+docs/runbooks/operator-day-two.md:46:scripts/testnet-validator-doctor \
+docs/runbooks/operator-day-two.md-49-  --validator-service-template 'postfiat-{node_id}.service' \
+docs/runbooks/operator-day-two.md-50-  --rpc-service-template 'postfiat-rpc-{index}.service'
+docs/runbooks/public-operator-runbook.md:316:scripts/testnet-validator-doctor \
+docs/runbooks/public-operator-runbook.md-318-  --validator-service postfiat-validator-0.service \
+docs/runbooks/public-operator-runbook.md-319-  --rpc-service postfiat-rpc-0.service
+docs/runbooks/validator-doctor.md:13:scripts/testnet-validator-doctor \
+docs/runbooks/validator-doctor.md-14-  --data-root reports/testnet-validator-doctor-smoke/nodes \
+docs/runbooks/validator-doctor.md-15-  --validator-count 4
+docs/runbooks/validator-doctor.md-16-```
+docs/runbooks/validator-doctor.md-17-
+docs/runbooks/validator-doctor.md:24:scripts/testnet-validator-doctor \
+docs/runbooks/validator-doctor.md-25-  --data-dir /var/lib/postfiat/validator-0 \
+docs/runbooks/validator-doctor.md-26-  --validator-service postfiat-validator-0.service \
+docs/runbooks/validator-doctor.md-27-  --rpc-service postfiat-rpc-0.service
+docs/runbooks/validator-doctor.md-28-```
+docs/runbooks/validator-doctor.md:39:scripts/testnet-validator-doctor \
+docs/runbooks/validator-doctor.md-40-  --data-root /var/lib/postfiat \
+docs/runbooks/validator-doctor.md-41-  --validator-count 5 \
+docs/runbooks/validator-doctor.md-42-  --validator-service-template 'postfiat-{node_id}.service' \
+docs/runbooks/validator-doctor.md-43-  --rpc-service-template 'postfiat-rpc-{index}.service'
+exit=0
+$ grep -n -A8 '^def parse_unit_map' scripts/testnet-validator-doctor
+226:def parse_unit_map(values: list[str] | None) -> dict[str, str]:
+227-    mapping: dict[str, str] = {}
+228-    for value in values or []:
+229-        if "=" not in value:
+230-            raise SystemExit(f"unit mapping must be node_id=unit: {value}")
+231-        node_id, unit = value.split("=", 1)
+232-        mapping[node_id.strip()] = unit.strip()
+233-    return mapping
+234-
+exit=0
+$ sed -n '975,999p' scripts/testnet-validator-doctor | nl -ba -v975 | grep -E 'no_build|cargo|parse_unit_map|parse_log_files|discover_data_dirs'
+   975	    if not args.no_build:
+   977	            ["cargo", "build", "-p", "postfiat-node"],
+   978	            log_prefix=args.log_dir / "cargo-build",
+   996	    data_dirs = discover_data_dirs(args)
+   997	    validator_unit_map = parse_unit_map(args.validator_service)
+   998	    rpc_unit_map = parse_unit_map(args.rpc_service)
+   999	    log_files = parse_log_files(args.log_file)
+exit=0
+$ ls deployments/*/rootfs/etc/systemd/system/ | grep -E '^postfiat-validator-[0-9]+(-rpc)?\.service$' | sort -u
+postfiat-validator-0-rpc.service
+postfiat-validator-0.service
+postfiat-validator-1-rpc.service
+postfiat-validator-1.service
+postfiat-validator-2-rpc.service
+postfiat-validator-2.service
+postfiat-validator-3-rpc.service
+postfiat-validator-3.service
+postfiat-validator-4-rpc.service
+postfiat-validator-4.service
+postfiat-validator-5-rpc.service
+postfiat-validator-5.service
+exit=0
+$ grep -n 'Description=' deployments/combined-devnet-20260923/rootfs/etc/systemd/system/postfiat-validator-0.service deployments/combined-devnet-20260923/rootfs/etc/systemd/system/postfiat-validator-0-rpc.service
+deployments/combined-devnet-20260923/rootfs/etc/systemd/system/postfiat-validator-0.service:2:Description=PostFiat L1 validator validator-0
+deployments/combined-devnet-20260923/rootfs/etc/systemd/system/postfiat-validator-0-rpc.service:2:Description=PostFiat L1 RPC validator-0
+exit=0
+$ grep -o -- '--validator-id validator-0 ' deployments/combined-devnet-20260923/rootfs/etc/systemd/system/postfiat-validator-0.service deployments/combined-devnet-20260923/rootfs/etc/systemd/system/postfiat-validator-0-rpc.service | sort -u
+deployments/combined-devnet-20260923/rootfs/etc/systemd/system/postfiat-validator-0-rpc.service:--validator-id validator-0 
+deployments/combined-devnet-20260923/rootfs/etc/systemd/system/postfiat-validator-0.service:--validator-id validator-0 
+exit=0
+$ mkdir -p target/repro/bin target/repro/validator-0 && printf '#!/bin/sh\necho "cargo $* started $(date -u +%%T)" >&2\nsleep 5\nexit 0\n' > target/repro/bin/cargo && chmod +x target/repro/bin/cargo && cat target/repro/bin/cargo
+#!/bin/sh
+echo "cargo $* started $(date -u +%T)" >&2
+sleep 5
+exit 0
+exit=0
+$ : 1 runbook single-validator command verbatim from validator-doctor.md:24-27, with a stub cargo that takes 5 s
+exit=0
+$ start=$(date +%s.%N); PATH=$PWD/target/repro/bin:$PATH scripts/testnet-validator-doctor --data-dir target/repro/validator-0 --validator-service postfiat-validator-0.service --rpc-service postfiat-rpc-0.service --log-dir target/repro/logs --output target/repro/r.json; rc=$?; echo "doctor rc=$rc elapsed=$(echo "$(date +%s.%N) - $start" | bc)s"; cat target/repro/logs/cargo-build.stderr.log; exit $rc
+unit mapping must be node_id=unit: postfiat-validator-0.service
+doctor rc=1 elapsed=5.115551941s
+cargo build -p postfiat-node started 14:46:38
+exit=1
+$ : 2 same command with --no-build: the bare unit is still rejected, so the published command cannot run at all
+exit=0
+$ scripts/testnet-validator-doctor --no-build --data-dir target/repro/validator-0 --validator-service postfiat-validator-0.service --rpc-service postfiat-rpc-0.service --log-dir target/repro/logs --output target/repro/r.json
+unit mapping must be node_id=unit: postfiat-validator-0.service
+exit=1
+$ : 3 empty sides pass parse_unit_map on main
+exit=0
+$ python3 -c "from importlib.machinery import SourceFileLoader as L; d=L('d','scripts/testnet-validator-doctor').load_module(); print(d.parse_unit_map(['=postfiat-validator-0.service'])); print(d.parse_unit_map(['validator-0=']))"
+{'': 'postfiat-validator-0.service'}
+{'validator-0': ''}
+exit=0
+$ : 4 templates from operator-day-two.md:49-50 and validator-doctor.md:42-43 expanded for shipped node ids validator-N, index N
+exit=0
+$ python3 -c "from importlib.machinery import SourceFileLoader as L; d=L('d','scripts/testnet-validator-doctor').load_module(); [print(f'validator-{i}', d.format_template('postfiat-{node_id}.service', f'validator-{i}', i), d.format_template('postfiat-rpc-{index}.service', f'validator-{i}', i)) for i in range(6)]"
+validator-0 postfiat-validator-0.service postfiat-rpc-0.service
+validator-1 postfiat-validator-1.service postfiat-rpc-1.service
+validator-2 postfiat-validator-2.service postfiat-rpc-2.service
+validator-3 postfiat-validator-3.service postfiat-rpc-3.service
+validator-4 postfiat-validator-4.service postfiat-rpc-4.service
+validator-5 postfiat-validator-5.service postfiat-rpc-5.service
+exit=0
+$ rm -rf target/repro && git status --short | wc -l
+0
+exit=0
+# end 2026-11-26T14:46:43Z
