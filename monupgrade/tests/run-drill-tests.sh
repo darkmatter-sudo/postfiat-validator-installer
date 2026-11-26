@@ -67,5 +67,19 @@ echo '[]' >"$D/am"; msg '[FIRING] PFTOther' >>"$D/nt"; expect_drain "other alert
 echo '[]' >"$D/am"; AM_URL_O=Z expect_drain "dead Alertmanager fails closed" 1
 TAU_O=Z expect_drain "dead throwaway topic fails closed" 1
 : >"$D/nt"; expect_drain "empty topic body fails closed" 1
+# prev_refs(): PRE_ROLLBACK only when the last recorded change is an apply of exactly the live refs
+eval "$(sed -n '/^prev_refs() {/,/^}/p' "$T/../drill/live-run.sh")"
+LP='prom/prometheus:v3.16.0@sha256:aa'; LA='prom/alertmanager:v0.35.0@sha256:bb'
+st() { jq -nc --arg m "$1" --arg p "$2" --arg a "$3" '{mode: $m, previous: {prometheus: "prom/prometheus:v3.5.0", alertmanager: "prom/alertmanager:v0.28.1"}, current: {prometheus: $p, alertmanager: $a}}' >"$D/st"; }
+expect_prev() { # NAME WANT_RC [WANT_OUT]
+  local out rc; out="$(prev_refs "$D/st" "$LP" "$LA")"; rc=$?
+  if [ "$rc" = "$2" ] && [ "$out" = "${3:-}" ]; then PASS=$((PASS + 1)); printf 'ok   %s: rc %s %s\n' "$1" "$rc" "$out"
+  else FAILN=$((FAILN + 1)); printf 'FAIL %s: rc %s "%s", want rc %s "%s"\n' "$1" "$rc" "$out" "$2" "${3:-}"; fi
+}
+st apply "$LP" "$LA"; expect_prev "apply of the live refs -> previous refs" 0 "prom/prometheus:v3.5.0 prom/alertmanager:v0.28.1"
+st rollback "$LP" "$LA"; expect_prev "last change a rollback -> refused" 1
+st apply "$LP" 'prom/alertmanager:v0.35.0'; expect_prev "current ref differs from the live one (unpinned) -> refused" 1
+st apply "$LP" "$LA"; jq '.previous.alertmanager = ""' "$D/st" >"$D/st2" && mv "$D/st2" "$D/st"; expect_prev "empty previous ref -> refused" 1
+: >"$D/st"; expect_prev "empty state file -> refused" 1
 printf '\nRESULT: %s passed, %s failed\n' "$PASS" "$FAILN"
 [ "$FAILN" -eq 0 ]

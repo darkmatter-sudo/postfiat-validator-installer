@@ -20,6 +20,10 @@
 #   HOSTS="sentry validator" RUN=03 bash monupgrade/drill/live-run.sh 2>&1 | tee LOG   (repo root)
 #   DRY=1 HOSTS=sentry RUN=dry1 ...   same steps, state in STATE_DIR/dry-RUN (not the basis); a dry validator run
 #   rolls back once more at the end, so the live stack is left on its previous images.
+#   PRE_ROLLBACK=1 ...   the validator already runs the targets of an earlier recorded apply (plan would exit 3):
+#   the sentry canary starts from that apply's PREVIOUS images, and the validator first rolls that apply back
+#   (pft-monupgrade rollback, same gates, inside the window and with the bridge on the throwaway topic), then the
+#   imagescan "before" is taken again and the usual cycle runs. Not combined with DRY=1.
 set -uo pipefail
 REPO="$(git rev-parse --show-toplevel)"; cd "$REPO" || exit 3
 export TZ=UTC
@@ -27,7 +31,7 @@ SHA="$(git rev-parse HEAD)"
 AM=http://127.0.0.1:9093; PROM=http://127.0.0.1:9090; RPC=http://127.0.0.1:5005
 ME="$(id -un)"; HN="$(hostname)"
 TASK=task_add0edd0
-RUN="${RUN:?set RUN}"; DRY="${DRY:-0}"; HOSTS="${HOSTS:-sentry validator}"
+RUN="${RUN:?set RUN}"; DRY="${DRY:-0}"; HOSTS="${HOSTS:-sentry validator}"; PRE_ROLLBACK="${PRE_ROLLBACK:-0}"
 SD=/var/lib/pft-monupgrade; [ "$DRY" = 1 ] && SD="/var/lib/pft-monupgrade/dry-$RUN"
 rnd() { head -c 6 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
 TT="pft-drill-monupgrade-$(rnd)"     # [MAINT] start/end
@@ -89,6 +93,15 @@ test_drain() { # rc 0 when no PFTMonupgradeTest is active in Alertmanager and ev
     sleep 5
   done
   echo "test alerts NOT drained after ${TEST_DRAIN_S:-180}s: active $a, firing $f, resolved $r"; return 1
+}
+prev_refs() { # STATE_JSON LIVE_PROM_REF LIVE_AM_REF -> "PREV_PROM PREV_AM" when the last recorded change is an apply
+  # whose current refs are exactly the live ones (so `rollback` puts back those previous refs); fails otherwise
+  local o
+  o="$(jq -r --arg p "$2" --arg a "$3" 'select(.mode == "apply" and .current.prometheus == $p and .current.alertmanager == $a
+    and (.previous.prometheus // "") != "" and (.previous.alertmanager // "") != "")
+    | "\(.previous.prometheus) \(.previous.alertmanager)"' "$1" 2>/dev/null)" || return 1
+  [ -n "$o" ] || return 1
+  printf '%s\n' "$o"
 }
 bridge_to() { # ENV_FILE: re-create only the live bridge with that ntfy env (Prometheus + Alertmanager keep running)
   NTFY_ENV_FILE="$1" DOCKER="sudo -n docker" bash alerts/run-stack.sh bridge
@@ -157,6 +170,15 @@ pin() { local d; d="$(sudo -n docker image inspect -f '{{range .RepoDigests}}{{p
 CP="$(pin pft-prometheus prom/prometheus "$PREF")"; CA="$(pin pft-alertmanager prom/alertmanager "$AREF")"
 echo "validator live images: prometheus $PREF ($CP), alertmanager $AREF ($CA)"
 check "validator's current images pinned to their digests (canary uses the same)" "$([ -n "$CP" ] && [ -n "$CA" ] && echo 0 || echo 1)"
+PP=""; PA=""
+if [ "$PRE_ROLLBACK" = 1 ]; then
+  x "sudo -n jq -c '{at, mode, run, previous, current}' $SD/state.json"
+  read -r PP PA <<<"$(prev_refs <(sudo -n cat "$SD/state.json" 2>/dev/null) "$PREF" "$AREF")"
+  pinref() { local d; d="$(sudo -n docker image inspect -f '{{range .RepoDigests}}{{println .}}{{end}}' "$1" 2>/dev/null | awk -v r="$2@" 'index($0, r) == 1 { print substr($0, length(r) + 1); exit }')"; [ -n "$d" ] && echo "${1%%@*}@$d"; }
+  CP="$( [ -n "$PP" ] && pinref "$PP" prom/prometheus)"; CA="$( [ -n "$PA" ] && pinref "$PA" prom/alertmanager)"
+  echo "PRE_ROLLBACK: last apply's previous images prometheus $PP ($CP), alertmanager $PA ($CA): the sentry canary starts from them, the validator rolls back to them first"
+  check "PRE_ROLLBACK: last change is an apply of the live images; its previous images are local and pinned; not dry" "$([ "$DRY" != 1 ] && [ -n "$CP" ] && [ -n "$CA" ] && echo 0 || echo 1)"
+fi
 echo; echo "-- imagescan before (validator; monitoring images, counts only)"
 scan_counts before
 BEFORE="$HOME/$RD-scan-before.json"; mkdir -p "$HOME/.cache"; sudo -n install -m 600 -o "$ME" /var/cache/pft-imagescan/last-scan.json "$BEFORE"
@@ -226,6 +248,16 @@ for h in $HOSTS; do
     TENV="$HOME/$RD-bridge.env"
     x "printf 'NTFY_URL=%s\n' '$TAU' > $TENV && chmod 600 $TENV && bridge_to $TENV"
     [ "$XRC" = 0 ] && BRIDGE_TEST=1; check "validator bridge -> throwaway alert topic" "$XRC"; gate
+    if [ "$PRE_ROLLBACK" = 1 ]; then
+      x "$MU bash monupgrade/pft-monupgrade.sh rollback --yes"
+      check "validator pre-rollback PASS (undo the earlier recorded apply)" "$([ "$XRC" = 0 ] && grep -q 'RESULT: PASS - rollback' <<<"$XOUT" && echo 0 || echo 1)"; gate
+      x "sudo -n docker inspect -f '{{.Config.Image}}' pft-prometheus pft-alertmanager"
+      check "validator back on the previous images" "$([ "$XOUT" = "$PP"$'\n'"$PA" ] && echo 0 || echo 1)"; gate
+      echo; echo "-- imagescan before, again (validator after the pre-rollback; monitoring images, counts only)"
+      scan_counts before
+      sudo -n install -m 600 -o "$ME" /var/cache/pft-imagescan/last-scan.json "$BEFORE"
+      sleep 30
+    fi
     cycle validator
     x test_drain; check "validator test alerts drained to the throwaway topic before the bridge moves back" "$XRC"; gate
     x "bridge_to $REAL_BRIDGE_ENV && rm -f $TENV"; check "validator bridge -> real target again" "$XRC"; BRIDGE_TEST=0

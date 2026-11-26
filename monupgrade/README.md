@@ -97,7 +97,7 @@ need the data volume restored from backup (the targets used here are all Prometh
 ```
 bash tests/run-tests.sh        # plan: stub docker (tests/stub_docker.sh) + Docker Hub fixtures (tests/fixtures)
 bash tests/run-apply-tests.sh  # apply/rollback: stateful fake docker + Prometheus/Alertmanager/ntfy APIs (tests/fake_stack.py)
-bash tests/run-drill-tests.sh  # drill/live-run.sh drain check: silence matchers (regex, negative, expired, own) vs pending/firing alerts
+bash tests/run-drill-tests.sh  # drill/live-run.sh drain check: silence matchers (regex, negative, expired, own) vs pending/firing alerts; test_drain; prev_refs
 ```
 
 Each failure path asserts its exit code, its named reason and what must NOT have happened (no pull, no check
@@ -137,4 +137,11 @@ The sentry runs **no** Prometheus/Alertmanager: the sentry's alerts are evaluate
 ```
 HOSTS="sentry validator" RUN=NN bash monupgrade/drill/live-run.sh 2>&1 | tee LOG
 DRY=1 HOSTS=sentry RUN=dryN ...     # not the basis; a dry validator cycle rolls back once more at the end
+PRE_ROLLBACK=1 HOSTS="sentry validator" RUN=NN ...   # validator already on an earlier apply's targets (see below)
 ```
+
+`PRE_ROLLBACK=1` is for a stack that already runs the targets of an earlier recorded apply (a new `plan` would exit 3).
+Preflight requires the last state entry to be an `apply` whose current refs are exactly the live ones and pins that
+apply's previous images (`prev_refs`, tested in `run-drill-tests.sh`); the sentry canary starts from those, and on the
+validator `pft-monupgrade rollback` (same gates, inside the window, bridge on the throwaway topic) runs before the
+cycle, followed by a fresh imagescan "before". Not combined with `DRY=1`.
