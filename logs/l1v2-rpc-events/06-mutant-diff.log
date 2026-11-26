@@ -1,0 +1,109 @@
+== task_6a35 recorded run: mutant diffs  2026-11-26T09:42:15Z
+$ git clone -q https://github.com/darkmatter-sudo/postfiatl1v2.git ~/.cache/tmp.EoWECU6hPB/repo
+[exit 0]
+$ git checkout -q 4b9a8b6f9c7f87315f0a7d78a894be097a1caa2a
+[exit 0]
+$ git log -1 --format='repo HEAD %H %s'
+repo HEAD 4b9a8b6f9c7f87315f0a7d78a894be097a1caa2a scripts: add rpc-events-report, a read-only check over rpc-events.ndjson
+[exit 0]
+$ sha256sum scripts/rpc-events-report scripts/test-rpc-events-report
+782375f82fe8bf5c7c8dbd2f29b7f53fc2b77dea37cc9aae8d3445ac2f39ae40  scripts/rpc-events-report
+bcf6111f01ae95cb228e10cee5ce0eeb210e3691439c540b415be88a5a406d27  scripts/test-rpc-events-report
+[exit 0]
+-- unmutated baseline (must pass)
+$ scripts/test-rpc-events-report | tail -1
+RESULT: PASS (107 passed, 0 failed)
+[exit 0]
+== mutant: inode ignored
+occurrences of the mutated text: 1
+(diff exits 1 because the files differ)
+$ diff -u --label a/scripts/rpc-events-report --label b/scripts/rpc-events-report scripts/rpc-events-report ~/.cache/tmp.EoWECU6hPB/mut-inode-ignored/scripts/rpc-events-report
+--- a/scripts/rpc-events-report
++++ b/scripts/rpc-events-report
+@@ -332,7 +332,7 @@
+         return [(live_path, 0, False)], False, False, None
+     offset = state["offset"]
+     if (
+-        live_stat.st_ino == state["inode"]
++        True
+         and live_stat.st_size >= offset
+         and fingerprint(live_path, state["fp_len"]) == state["fp"]
+     ):
+[exit 1]
+-- test suite against the mutated tool
+FAIL same-head rename: events counted exactly once: got '2' want '3'
+FAIL same-head rename: rotated: got 'false' want 'true'
+RESULT: FAIL (105 passed, 2 failed)
+test-rpc-events-report exit status: 1
+CAUGHT inode ignored
+== mutant: rotated read from 0
+occurrences of the mutated text: 1
+(diff exits 1 because the files differ)
+$ diff -u --label a/scripts/rpc-events-report --label b/scripts/rpc-events-report scripts/rpc-events-report ~/.cache/tmp.EoWECU6hPB/mut-rotated-read-from-0/scripts/rpc-events-report
+--- a/scripts/rpc-events-report
++++ b/scripts/rpc-events-report
+@@ -343,7 +343,7 @@
+         if not same_head(candidate, state):
+             continue
+         newer = list(reversed(candidates[:index]))
+-        segments = [(candidate, offset, True)] + [(path, 0, True) for path in newer]
++        segments = [(candidate, 0, True)] + [(path, 0, True) for path in newer]
+         segments.append((live_path, 0, False))
+         return segments, False, True, None
+     return [(live_path, 0, False)], True, True, None
+[exit 1]
+-- test suite against the mutated tool
+FAIL copytruncate+gz: events counted exactly once: got '18' want '8'
+FAIL copytruncate+gz: read the rotated file from the old offset: got 'true:false' want 'true:true'
+FAIL regrown copytruncate: events counted exactly once: got '45' want '42'
+FAIL rename x2: events counted exactly once: got '62' want '22'
+FAIL duplicate copy: events counted exactly once: got '13' want '4'
+FAIL same-head rename: events counted exactly once: got '4' want '3'
+FAIL logrotate: events over 5 runs = lines written: got '130' want '112'
+RESULT: FAIL (100 passed, 7 failed)
+test-rpc-events-report exit status: 1
+CAUGHT rotated read from 0
+-- the assertions that report these failures (test file at the PR head)
+$ grep -n -e '^check_eq()' -e '^rotation_case()' -e 'events counted exactly once' -e '"$1: rotated"' -e 'read the rotated file from the old offset' -e 'rotation_case "same-head rename"' -e 'rotation_case "copytruncate+gz"' -e '^  exit 1' scripts/test-rpc-events-report
+43:check_eq() { # name actual expected
+305:rotation_case() { # name: sets up L/S, runs, compares events with expected
+306:  check_eq "$1: events counted exactly once" "$(jqv "$2" .events)" "$3"
+307:  check_eq "$1: rotated" "$(jqv "$2" .rotated)" true
+323:rotation_case "copytruncate+gz" "$WORK/c1" 8
+324:check_eq "copytruncate+gz: read the rotated file from the old offset" "$(jqv "$WORK/c1" '.segments[0].path | endswith(".1.gz")'):$(jqv "$WORK/c1" '.segments[0].start > 0')" "true:true"
+365:rotation_case "same-head rename" "$WORK/d1" 3
+511:  exit 1
+[exit 0]
+$ sed -n '43,45p;305,310p;323,324p;353,365p;507,512p' scripts/test-rpc-events-report
+check_eq() { # name actual expected
+  if [ "$2" = "$3" ]; then pass "$1 ($2)"; else fail "$1" "got '$2' want '$3'"; fi
+}
+rotation_case() { # name: sets up L/S, runs, compares events with expected
+  check_eq "$1: events counted exactly once" "$(jqv "$2" .events)" "$3"
+  check_eq "$1: rotated" "$(jqv "$2" .rotated)" true
+  check_eq "$1: no gap" "$(jqv "$2" .gap)" false
+  check_eq "$1: exit" "$(rc_of "$2")" 0
+}
+rotation_case "copytruncate+gz" "$WORK/c1" 8
+check_eq "copytruncate+gz: read the rotated file from the old offset" "$(jqv "$WORK/c1" '.segments[0].path | endswith(".1.gz")'):$(jqv "$WORK/c1" '.segments[0].start > 0')" "true:true"
+echo "== rotation: rename where the new file starts with the same bytes (rpc-serve restarted)"
+R="$WORK/rot2"
+mkdir -p "$R"
+L="$R/rpc-events.ndjson"
+S="$R/state.json"
+first='{"schema":"postfiat-rpc-serve-event-v1","node_id":"synthetic-validator-0","request_index":1,"peer_addr":"127.0.0.1","id":"synthetic-remote-1","method":"invalid","ok":false,"error_code":"rpc_read_error"}'
+printf '%s\n' "$first" >"$L"
+report "$WORK/d0" check --json --state "$S" "$L"
+mv "$L" "$L.1"
+printf '%s\n' "$first" >"$L"
+gen "$L" 2 10.0.0.10 status true
+report "$WORK/d1" check --json --state "$S" "$L"
+rotation_case "same-head rename" "$WORK/d1" 3
+if [ "$FAILS" -eq 0 ]; then
+  echo "RESULT: PASS ($PASSES passed, 0 failed)"
+else
+  echo "RESULT: FAIL ($PASSES passed, $FAILS failed)"
+  exit 1
+fi
+[exit 0]
+RUN RESULT: PASS

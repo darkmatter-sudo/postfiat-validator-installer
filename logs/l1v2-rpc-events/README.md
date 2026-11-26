@@ -18,5 +18,7 @@ started through the glibc 2.39 loader, libc and libm copied from a local Ubuntu 
 | 03-fresh-clone.log | fresh clone of the fork, checkout of the PR head, same tests: 107/0 and 123/0, control refused |
 | 04-mutants.log | `mutants.py` (this folder): unmutated baseline PASS, then 15 single-line mutants of the guards in `rpc-events-report`, each must apply once and make the suite fail: 15 caught |
 | runner.sh | the script that produced 02-04 |
+| 06-mutant-diff.log | `mutant-diff.sh` (this folder), for the verification request: fresh clone at the PR head, unmutated baseline 107/0, then the `inode ignored` and `rotated read from 0` mutants from `mutants.py` shown as `diff -u`, the FAIL lines of `scripts/test-rpc-events-report` against each mutated tool and its exit status (1), and the line-numbered assertions that report them |
 
 Run 01 (unpublished) was superseded by 02: the runner's own `sed` took `smoke;` as a file name in the `bash -n` step; fixed in runner.sh, no repository change.
+Run 05 (unpublished) was superseded by 06: same result, but its `diff -u` headers carried local file timestamps; 06 uses `--label`.
