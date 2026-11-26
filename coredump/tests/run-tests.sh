@@ -271,7 +271,7 @@ PFT_COREDUMP_INJECT=gate cd_run apply --yes --recreate
 check "gate failure: exit 1, old container restored (StartedAt changes, Ulimits unset)" '[ "$RC" = 1 ] && grep -q "previous container restored" <<<"$OUT" && [ "$(jq -c ".HostConfig.Ulimits // []" "$STUB/c/postfiatd-sentry.json")" = "[]" ]' "rc=$RC $OUT"
 check "gate failure: pattern + drop-in rolled back, no stray containers" '[ "$(pat)" = core ] && [ ! -e "$ROOT/etc/sysctl.d/60-pft-coredump.conf" ] && [ "$(find "$STUB/c" -name "*.json" | wc -l)" = 1 ] && [ "$(jq -r .HostConfig.RestartPolicy.Name "$STUB/c/postfiatd-sentry.json")" = unless-stopped ]'
 fixture run; touch "$STUB/maint" "$STUB/run_drop_ro"; cd_run apply --yes --recreate
-check "gate: a setting lost in the re-create (read-only) fails + rolls back" '[ "$RC" = 1 ] && grep -q "configuration changed" <<<"$OUT" && [ "$(jq -r .HostConfig.ReadonlyRootfs "$STUB/c/postfiatd-sentry.json")" = true ] && [ "$(pat)" = core ]' "rc=$RC"
+check "gate: a setting lost in the re-create (read-only) fails + rolls back" '[ "$RC" = 1 ] && grep -q "configuration changed: read_only" <<<"$OUT" && [ "$(jq -r .HostConfig.ReadonlyRootfs "$STUB/c/postfiatd-sentry.json")" = true ] && [ "$(pat)" = core ]' "rc=$RC"
 fixture run; touch "$STUB/maint" "$STUB/run_drop_ulimit"; cd_run apply --yes --recreate
 check "gate: re-created without the ulimit fails + rolls back" '[ "$RC" = 1 ] && grep -q "Ulimits \[\] want" <<<"$OUT" && [ "$(pat)" = core ]' "rc=$RC $(grep gate <<<"$OUT")"
 fixture run; touch "$STUB/maint" "$STUB/run_fail"; cd_run apply --yes --recreate

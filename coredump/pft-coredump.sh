@@ -326,11 +326,20 @@ rpc_info() { # server_info .result.info JSON or nothing (host RPC port, else doc
 is_full() { [ -n "$1" ] && jq -e '.server_state == "full" or .server_state == "proposing"' >/dev/null 2>&1 <<<"$1"; }
 
 # configuration that a re-create must keep (everything but Ulimits and the container identity)
-keep_sig() { jq -cS '{image: .Config.Image, cmd: .Config.Cmd, env: .Config.Env, user: .Config.User, stop: .Config.StopTimeout,
-  restart: .HostConfig.RestartPolicy, log: .HostConfig.LogConfig, net: .HostConfig.NetworkMode, ports: .HostConfig.PortBindings,
-  mounts: [.Mounts[]? | {Type, Source, Destination, RW}], capadd: .HostConfig.CapAdd, capdrop: .HostConfig.CapDrop,
-  ro: .HostConfig.ReadonlyRootfs, tmpfs: .HostConfig.Tmpfs, pids: .HostConfig.PidsLimit, mem: .HostConfig.Memory,
-  swap: .HostConfig.MemorySwap, cpu: .HostConfig.CpuShares, memres: .HostConfig.MemoryReservation, sec: .HostConfig.SecurityOpt}' <<<"$1"; }
+keep_sig() { # INSPECT0 (shutdown/'s signature + stop timeout: env/caps/mounts sorted, as the daemon re-orders them)
+  jq -cS '{image: .Config.Image, image_id: .Image, cmd: (.Config.Cmd // []), entrypoint: (.Config.Entrypoint // []),
+    user: (.Config.User // ""), env: (.Config.Env // [] | sort), stop_signal: (.Config.StopSignal // ""), stop: .Config.StopTimeout,
+    cap_add: (.HostConfig.CapAdd // [] | sort), cap_drop: (.HostConfig.CapDrop // [] | sort),
+    read_only: (.HostConfig.ReadonlyRootfs // false), tmpfs: (.HostConfig.Tmpfs // {}),
+    pids: (.HostConfig.PidsLimit // 0), memory: (.HostConfig.Memory // 0), memory_swap: (.HostConfig.MemorySwap // 0),
+    cpu_shares: (.HostConfig.CpuShares // 0), memory_reservation: (.HostConfig.MemoryReservation // 0),
+    apparmor: (.AppArmorProfile // ""), security_opt: (.HostConfig.SecurityOpt // [] | sort),
+    mounts: (.Mounts // [] | map({type: .Type, name: (if .Type == "volume" then .Name else null end),
+             source: (if .Type == "bind" then .Source else null end), dest: .Destination, rw: .RW}) | sort_by(.dest)),
+    ports: (.HostConfig.PortBindings // {}), network: (.HostConfig.NetworkMode // ""), log: (.HostConfig.LogConfig // {}),
+    restart: (.HostConfig.RestartPolicy.Name // "")}' <<<"$1"
+}
+sig_diff() { jq -rn --argjson a "$1" --argjson b "$2" '[($a + $b) | keys[] | select($a[.] != $b[.])] | join(",")'; }
 ulimits_of() { jq -c '.HostConfig.Ulimits // []' <<<"$1"; }
 
 # docker run args re-creating a `docker run` container exactly, with Ulimits = ULIMITS_JSON (same set as the
@@ -373,7 +382,7 @@ gate() { # WHAT BEFORE_STARTED WANT_ULIMITS_JSON SIG
     if [ -z "$i" ]; then hard=" container missing;"; else
       s="$(jq -r '.State.StartedAt // ""' <<<"$i")"; [ -n "$s" ] && [ "$s" != "$2" ] || hard+=" not re-created;"
       [ "$(ulimits_of "$i")" = "$3" ] || hard+=" Ulimits $(ulimits_of "$i") want $3;"
-      [ "$(keep_sig "$i")" = "$4" ] || hard+=" configuration changed;"
+      [ "$(keep_sig "$i")" = "$4" ] || hard+=" configuration changed: $(sig_diff "$4" "$(keep_sig "$i")");"
       [ "${PFT_COREDUMP_INJECT:-}" = gate ] && hard+=" injected gate failure;"
     fi
     info="$(rpc_info)"; is_full "$info" || soft=" server_state $(jq -r '.server_state // "unreachable"' <<<"${info:-$NOJ}");"

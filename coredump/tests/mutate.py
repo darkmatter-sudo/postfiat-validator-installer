@@ -398,7 +398,7 @@ MUTANTS = [
         "A19",
         "apply",
         "gate ignores configuration changes",
-        '[ "$(keep_sig "$i")" = "$4" ] || hard+=" configuration changed;"',
+        '[ "$(keep_sig "$i")" = "$4" ] || hard+=" configuration changed: $(sig_diff "$4" "$(keep_sig "$i")");"',
         "true",
     ),
     (
