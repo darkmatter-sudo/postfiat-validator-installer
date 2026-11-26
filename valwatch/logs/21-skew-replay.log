@@ -1,0 +1,73 @@
+valwatch skew collect - 2026-11-26T13:02:42Z - repo HEAD 66561a4ca0d94a9b19c039315d23c81ba41c6a80 (clean: yes)
+$ sha256sum alerts/valwatch.rules.yml alerts/valwatch.tests.yml valwatch/skewreplay.py valwatch/tests/gen_rule_tests.py valwatch/tests/mutate.py valwatch/tests/test_skewreplay.py valwatch/drill/skew-run.sh
+  5468410a6b2dd1e6e78e16b9c716c285b0cefed576038f3c881fbfd06d009ab8  alerts/valwatch.rules.yml
+  c2e06309c994347725ce327f78b8ac7db31f435dbb51c1abfd184c80e6979adf  alerts/valwatch.tests.yml
+  ae0103d5d4070e730bc476ce365fb2c91498dcfef92a9f6d23af29e658334d59  valwatch/skewreplay.py
+  f23d91e6c1c8a2c934571c8b1fb5e9fec8fe26decf493f39374b77bd4d8f7cc1  valwatch/tests/gen_rule_tests.py
+  67f8431d0b165c804c763589801be47e4c047031dea5293a41bfc6ec6ca9b3b7  valwatch/tests/mutate.py
+  98af85eac9020e4fa239d27ade59f40701c5ce64359e6218ed1643f659b37373  valwatch/tests/test_skewreplay.py
+  b4c61cc52579d6dbd43ef95c04b55c74a870f7236f40d51055cc5f4718f6a396  valwatch/drill/skew-run.sh
+  (exit 0)
+
+== 1. old rules (496470f052ac5058fe0759cd6ffb3ccd381004b9) and new rules (HEAD)
+$ sha256sum /tmp/vwskew.JJZxPR/old.rules.yml alerts/valwatch.rules.yml
+  2a026bdaf9ee5482878e0397a996a83e6930535e673ae3c925c25040c0567953  /tmp/vwskew.JJZxPR/old.rules.yml
+  5468410a6b2dd1e6e78e16b9c716c285b0cefed576038f3c881fbfd06d009ab8  alerts/valwatch.rules.yml
+  (exit 0)
+
+== 2. collect (read-only query_range over the retained history, 15 s step)
+$ python3 -u valwatch/skewreplay.py collect --prom http://<redacted-ip>:9090 --old-rules /tmp/vwskew.JJZxPR/old.rules.yml --new-rules alerts/valwatch.rules.yml --out valwatch/data/skew
+  range 1795033560 .. 1795698150 (7.69 d), step 15 s, prometheus 3.16.0
+  PFTValwatchHostsDisagree old: 0 matching steps in 0 series
+  PFTValwatchHostsDisagree new: 0 matching steps in 0 series
+  PFTValwatchHostsDisagreeLate old: 2 matching steps in 2 series
+  PFTValwatchHostsDisagreeLate new: 0 matching steps in 0 series
+  wrote context.json sha256 1d3a044b1d2191ff880d7814ced97648e02b995974225ddff39bcdb060cabc27
+  wrote meta.json sha256 550ed5e1e51fa28589756cd564177d8f41de57028d8ffb1f4ae67d0ceed8c667
+  wrote replay.json sha256 9cfb92a07ab9ed924fdd0c9f8520aeb6fb24548077c4a4f5b40ff80ff7a7f59f
+  wrote skew.json sha256 8c94e3f63d5af940cc2c275298582e3973e51b04d70083181b9d41f60216001c
+  (exit 0)
+CHECK ok   collect
+$ ls -l valwatch/data/skew; sha256sum valwatch/data/skew/*
+  total 152
+  -rw-rw-r-- 1 <user> <user>   9545 Nov 26 13:02 context.json
+  -rw-rw-r-- 1 <user> <user>    249 Nov 26 13:02 meta.json
+  -rw-rw-r-- 1 <user> <user>   1382 Nov 26 13:02 replay.json
+  -rw-rw-r-- 1 <user> <user> 132812 Nov 26 13:02 skew.json.gz
+  1d3a044b1d2191ff880d7814ced97648e02b995974225ddff39bcdb060cabc27  valwatch/data/skew/context.json
+  550ed5e1e51fa28589756cd564177d8f41de57028d8ffb1f4ae67d0ceed8c667  valwatch/data/skew/meta.json
+  9cfb92a07ab9ed924fdd0c9f8520aeb6fb24548077c4a4f5b40ff80ff7a7f59f  valwatch/data/skew/replay.json
+  7f1f205c029137dd96182bf06c55fbef96df6922f672564098d8e1c71dec3182  valwatch/data/skew/skew.json.gz
+  (exit 0)
+
+== 3. analyze
+$ python3 -u valwatch/skewreplay.py analyze valwatch/data/skew --out valwatch/reports/skew.txt
+  range 2026-11-18T20:26:00Z .. 2026-11-26T13:02:30Z (7.69 d), step 15 s, prometheus 3.16.0
+  old rules sha256 2a026bdaf9ee5482878e0397a996a83e6930535e673ae3c925c25040c0567953
+  new rules sha256 5468410a6b2dd1e6e78e16b9c716c285b0cefed576038f3c881fbfd06d009ab8
+  SKEW validator - sentry collect_timestamp (s): n=44289
+  SKEW min -9 p01 -1 p50 1 p75 2 p90 60 p99 61 max 180 max|skew| 180
+  SKEW_HIST [-15, +0) s: 4580 (10.34%)
+  SKEW_HIST [+0, +15) s: 29099 (65.70%)
+  SKEW_HIST [+15, +30) s: 1 (0.00%)
+  SKEW_HIST [+45, +60) s: 1570 (3.54%)
+  SKEW_HIST [+60, +75) s: 9034 (20.40%)
+  SKEW_HIST [+120, +135) s: 4 (0.01%)
+  SKEW_HIST [+180, +195) s: 1 (0.00%)
+  SKEW share of steps with |skew| > 15 s: 23.96%
+  SKEW window 120 s absorbs |skew| <= 105 s: 44284/44289 steps (99.989%), outside: 5
+  SKEW_OUTSIDE 2026-11-20T05:54:45Z 121 s
+  SKEW_OUTSIDE 2026-11-20T05:55:00Z 121 s
+  SKEW_OUTSIDE 2026-11-20T05:55:15Z 121 s
+  SKEW_OUTSIDE 2026-11-20T05:55:30Z 121 s
+  SKEW_OUTSIDE 2026-11-20T05:55:45Z 180 s
+  SKEW max |skew| of the absorbed steps: 68 s
+  REPLAY PFTValwatchHostsDisagree: old 0 pending intervals (0 s), new 0 (0 s), both 0, old-only 0, new-only 0
+  REPLAY PFTValwatchHostsDisagreeLate: old 2 pending intervals (30 s), new 0 (0 s), both 0, old-only 2, new-only 0
+  OLD_ONLY PFTValwatchHostsDisagreeLate node=postfiatd validator=nHBmj7zUY2yMc9f5wgNcCuWj79BUieNmc1GG8PqiEP1tgNZZWLVM 2026-11-21T20:25:45Z .. 2026-11-21T20:25:45Z (15 s): SKEW - postfiatd-sentry crossed the same threshold at 2026-11-21T20:26:00Z (28302, +15 s); 15 s <= 195 s
+  OLD_ONLY PFTValwatchHostsDisagreeLate node=postfiatd-sentry validator=nHUdwzTWTQJzebbxcanZG2ERXikMLU9aAZa8cHtxosfiKq5N7Vd5 2026-11-19T07:58:45Z .. 2026-11-19T07:58:45Z (15 s): SKEW - postfiatd crossed the same threshold at 2026-11-19T07:58:30Z (19928, -15 s); 15 s <= 195 s
+  RESULT: PASS (0 old-only intervals not attributed to skew + new-only)
+  (exit 0)
+CHECK ok   analyze: every old-only interval attributed skew, new-only 0
+
+RESULT: PASS (collect)

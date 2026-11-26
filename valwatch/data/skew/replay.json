@@ -1,0 +1,37 @@
+{
+"PFTValwatchHostsDisagree":{
+"new":{
+"expr":"(max_over_time(pft_valwatch_validator_participation_ratio[2m]) < 0.8 and on (job, instance, node) pft_valwatch_up == 1) and on (validator) (min_over_time(pft_valwatch_validator_participation_ratio[2m]) >= 0.95 and on (job, instance, node) pft_valwatch_up == 1)",
+"series":[]
+},
+"old":{
+"expr":"(pft_valwatch_validator_participation_ratio < 0.8 and on (job, instance, node) pft_valwatch_up == 1) and on (validator) (pft_valwatch_validator_participation_ratio >= 0.95 and on (job, instance, node) pft_valwatch_up == 1)",
+"series":[]
+}
+},
+"PFTValwatchHostsDisagreeLate":{
+"new":{
+"expr":"(min_over_time(pft_valwatch_validator_delay_p95_ms[2m]) > 3000 and on (job, instance, node) pft_valwatch_up == 1) and on (validator) (max_over_time(pft_valwatch_validator_delay_p95_ms[2m]) <= 2000 and on (job, instance, node) pft_valwatch_up == 1)",
+"series":[]
+},
+"old":{
+"expr":"(pft_valwatch_validator_delay_p95_ms > 3000 and on (job, instance, node) pft_valwatch_up == 1) and on (validator) (pft_valwatch_validator_delay_p95_ms <= 2000 and on (job, instance, node) pft_valwatch_up == 1)",
+"series":[
+{
+"node":"postfiatd",
+"steps":[
+1795292745
+],
+"validator":"nHBmj7zUY2yMc9f5wgNcCuWj79BUieNmc1GG8PqiEP1tgNZZWLVM"
+},
+{
+"node":"postfiatd-sentry",
+"steps":[
+1795075125
+],
+"validator":"nHUdwzTWTQJzebbxcanZG2ERXikMLU9aAZa8cHtxosfiKq5N7Vd5"
+}
+]
+}
+}
+}
