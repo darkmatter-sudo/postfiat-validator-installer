@@ -392,7 +392,7 @@ MUTANTS = [
     (
         "R24",
         R,
-        "HostsDisagreeLate window 2m -> 1m (shorter than the measured 66 s lag + scrape step)",
+        "HostsDisagreeLate window 2m -> 1m (shorter than the measured 68 s lag + scrape step)",
         "(min_over_time(pft_valwatch_validator_delay_p95_ms[2m]) > 3000",
         "(min_over_time(pft_valwatch_validator_delay_p95_ms[1m]) > 3000",
     ),
