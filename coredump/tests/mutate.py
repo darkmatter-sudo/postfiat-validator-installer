@@ -65,6 +65,13 @@ MUTANTS = [
         'k="${k#-}"',
     ),
     (
+        "M07",
+        "CD02",
+        "'-' (ignore-errors) key prefix not stripped",
+        'k="${k#-}"; k="${k//\\//.}"',
+        'k="${k//\\//.}"',
+    ),
+    (
         "M08",
         "CD02",
         "apport override ignored at boot",
@@ -504,11 +511,10 @@ MUTANTS = [
 ]
 
 
-# Equivalent mutants (no input can reach the difference), documented instead of counted:
-# M07 "comment lines parsed" (drop the '#'/';' skip in sysctl_boot): a commented line keeps its '#'/';' in the key
-# ("# kernel.core_pattern"), which never equals kernel.core_pattern, so the skip only saves work. Dev run
-# 2026-11-26 reported it SURVIVED.
-EQUIVALENT = ["M07"]
+# Equivalent mutants (no input can reach the difference), documented instead of counted. The former M07 (drop the
+# '#'/';' comment skip in sysctl_boot) was one: a commented key keeps its '#'/';' and never equals the real key. It was
+# replaced 2026-11-26 by the '-' prefix mutant above, so every listed mutant must be caught.
+EQUIVALENT = []
 
 
 def run_suite(tool, timeout):
@@ -601,7 +607,11 @@ def main():
     print(f"checks with mutants: {len(checks)} ({','.join(checks)})")
     print(
         f"RESULT: {caught} caught, {survived} survived, {not_applied} not applied of {len(selected)}{subset}"
-        f" (+ {len(EQUIVALENT)} documented equivalent: {', '.join(EQUIVALENT)})"
+        + (
+            f" (+ {len(EQUIVALENT)} documented equivalent: {', '.join(EQUIVALENT)})"
+            if EQUIVALENT
+            else ""
+        )
     )
     return 0 if survived == 0 and not_applied == 0 else 1
 

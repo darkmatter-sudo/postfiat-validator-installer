@@ -113,6 +113,9 @@ echo 'kernel/core_pattern = core' > "$ROOT/usr/lib/sysctl.d/70-slash.conf"; cd_r
 check "CD02 FAIL: slash key form is parsed" '[ "$(st CD02)" = FAIL ] && grep -q "70-slash.conf" <<<"$OUT"'
 rm "$ROOT/usr/lib/sysctl.d/70-slash.conf"; echo '# kernel.core_pattern = core' > "$ROOT/etc/sysctl.d/80-comment.conf"; cd_run audit
 check "CD02 PASS: commented line ignored" '[ "$(st CD02)" = PASS ]'
+rm "$ROOT/etc/sysctl.d/80-comment.conf"; echo '-kernel.core_pattern = core' > "$ROOT/etc/sysctl.d/85-dash.conf"; cd_run audit
+check "CD02 FAIL: '-' (ignore-errors) prefix is parsed" '[ "$(st CD02)" = FAIL ] && grep -q "85-dash.conf" <<<"$OUT"'
+rm "$ROOT/etc/sysctl.d/85-dash.conf"
 echo 'enabled=1' > "$ROOT/etc/default/apport"; cd_run audit
 check "CD02+CD04 FAIL: apport enabled overrides the drop-in" '[ "$(st CD02)" = FAIL ] && [ "$(st CD04)" = FAIL ]'
 : > "$ROOT/etc/default/apport"; cd_run audit
