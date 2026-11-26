@@ -1,0 +1,48 @@
+# 2026-11-26T03:36:34Z fresh anonymous clone of https://github.com/darkmatter-sudo/postfiat-validator-installer at decc958016c003815610225b03746abbd81d5ccf (scratch dir <W>; /tmp is noexec on this host)
+# Ubuntu 22.04.5 LTS | version: 0.8.0 | Python 3.10.12 | ruff 0.17.1 | bash 5.1.16(1)-release
+$ env -u GH_TOKEN -u GITHUB_TOKEN GIT_TERMINAL_PROMPT=0 git -c credential.helper= clone -q https://github.com/darkmatter-sudo/postfiat-validator-installer.git c && cd c && git checkout -q decc958016c003815610225b03746abbd81d5ccf && git rev-parse HEAD && git status --short | wc -l
+decc958016c003815610225b03746abbd81d5ccf
+0
+rc=0
+$ cd monupgrade && sha256sum -c SHA256SUMS
+pft-monupgrade.sh: OK
+README.md: OK
+drill/canary.sh: OK
+drill/live-run.sh: OK
+tests/run-tests.sh: OK
+tests/run-apply-tests.sh: OK
+tests/run-drill-tests.sh: OK
+tests/stub_docker.sh: OK
+tests/fake_stack.py: OK
+ruff.toml: OK
+.gitignore: OK
+logs/09-run09.log: OK
+tests/fixtures/prom_alertmanager.json: OK
+tests/fixtures/prom_prometheus.json: OK
+rc=0
+$ f=monupgrade/logs/09-run09.log; c=$(grep -m1 -o 'repo HEAD [0-9a-f]\{40\}' $f | cut -d' ' -f3); [ -n "$c" ] || { echo NO-RUN-HEAD; exit 1; }; h=$(git show $c:monupgrade/pft-monupgrade.sh | sha256sum | cut -c1-64); n=$(grep -c "^  $h  monupgrade/pft-monupgrade.sh$" $f); [ "$n" = 2 ] || { echo "MISMATCH n=$n"; exit 1; }; echo "recorded-run copies (validator repo + sentry) = pft-monupgrade.sh at $c sha256 $h"; git diff --stat $c decc958016c003815610225b03746abbd81d5ccf -- monupgrade/pft-monupgrade.sh monupgrade/drill monupgrade/tests alerts | tail -1
+recorded-run copies (validator repo + sentry) = pft-monupgrade.sh at c5735e09eecd5b7941108aa3498a7fd970d405dc sha256 b1d5812af6f469cdb36d09e2e8c511bc84fec58ad1e110fbcd145ca7ecbde46c
+rc=0
+$ shellcheck monupgrade/pft-monupgrade.sh monupgrade/tests/*.sh monupgrade/drill/*.sh alerts/run-stack.sh
+rc=0
+$ ruff check monupgrade/tests/fake_stack.py && ruff format --check monupgrade/tests/fake_stack.py
+All checks passed!
+1 file already formatted
+rc=0
+$ bash monupgrade/tests/run-tests.sh </dev/null > ~/.cache/mufresh-30JG/run-tests.out 2>&1; rc=$?; grep '^FAIL' ~/.cache/mufresh-30JG/run-tests.out; tail -1 ~/.cache/mufresh-30JG/run-tests.out; exit $rc
+RESULT: 98 passed, 0 failed
+rc=0
+$ bash monupgrade/tests/run-apply-tests.sh </dev/null > ~/.cache/mufresh-30JG/run-apply-tests.out 2>&1; rc=$?; grep '^FAIL' ~/.cache/mufresh-30JG/run-apply-tests.out; tail -1 ~/.cache/mufresh-30JG/run-apply-tests.out; exit $rc
+RESULT: 374 passed, 0 failed
+rc=0
+$ bash monupgrade/tests/run-drill-tests.sh </dev/null > ~/.cache/mufresh-30JG/run-drill-tests.out 2>&1; rc=$?; grep '^FAIL' ~/.cache/mufresh-30JG/run-drill-tests.out; tail -1 ~/.cache/mufresh-30JG/run-drill-tests.out; exit $rc
+RESULT: 22 passed, 0 failed
+rc=0
+$ grep -h 'live run.*done 2026' monupgrade/logs/09-run09.log
+pft-monupgrade live run 09 done 2026-11-26T03:31:05Z: 0 check(s) failed -> PASS
+rc=0
+$ git status --short | wc -l
+0
+rc=0
+# end 2026-11-26T03:39:57Z fails=0
+FRESH PASS
