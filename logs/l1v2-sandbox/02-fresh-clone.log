@@ -1,0 +1,259 @@
+# 2026-11-26T11:02:42Z Ubuntu 22.04.5 LTS | systemd 249 (249.11-0ubuntu3.23) | kernel 5.15.0-204-generic | version: 0.8.0
+# repo HEAD 7203a70f0449e760a9d5b8ea1bf75972d9a52356 (validator-host-sandbox)
+$ git remote get-url origin
+https://github.com/darkmatter-sudo/postfiatl1v2.git
+exit=0
+$ gh pr view 269 -R postfiatorg/postfiatl1v2 --json headRefOid,headRepositoryOwner,headRefName --jq '"PR #269 head " + .headRefOid + " (" + .headRepositoryOwner.login + ":" + .headRefName + ")"'
+PR #269 head 7203a70f0449e760a9d5b8ea1bf75972d9a52356 (darkmatter-sudo:validator-host-sandbox)
+exit=0
+$ git rev-parse HEAD; git status --short | wc -l
+7203a70f0449e760a9d5b8ea1bf75972d9a52356
+0
+exit=0
+$ sha256sum ops/validator-host/systemd/* scripts/test-validator-host-sandbox docs/runbooks/validator-host-sandbox.md
+bdeaebd2d6047c44e6a586d764245c57e2a3d4c16c34b3b2ebe2c7438f827ce8  ops/validator-host/systemd/install.sh
+e11e467b2d4e017be985038f77ae626efde889fc88c088c4d37ba76b11d29fa4  ops/validator-host/systemd/postfiat-rpc-sandbox.conf
+2640187fea8e6d983430e0eb481efa92c9074eee0dafca3d7f0caa69aa2dfd34  ops/validator-host/systemd/postfiat-validator-transport-sandbox.conf
+302fbb5cda1d7e857638ec2c8bd7bdd64d916c9892e0a8db790656912feb771c  scripts/test-validator-host-sandbox
+1e2b27f199d975e7c08a73cab9bf80ebd2db959434437bcabbdde18935dcda03  docs/runbooks/validator-host-sandbox.md
+exit=0
+$ sha256sum ~/.cache/rpcev-rel/postfiat-node; grep -E ' postfiat-node$' ~/.cache/rpcev-rel/cobalt-operator-assets-SHA256SUMS.txt
+e036033d437d85c4f60fc8e6689a771fdda01dd2ce88456571e6c9092faf4caf  ~/.cache/rpcev-rel/postfiat-node
+e036033d437d85c4f60fc8e6689a771fdda01dd2ce88456571e6c9092faf4caf  postfiat-node
+exit=0
+$ shellcheck ops/validator-host/systemd/install.sh scripts/test-validator-host-sandbox && echo shellcheck clean
+shellcheck clean
+exit=0
+$ TMPDIR=$HOME/.cache/sbx-tmp scripts/test-validator-host-sandbox
+== drop-in contents
+PASS postfiat-rpc-sandbox.conf: section
+PASS postfiat-rpc-sandbox.conf: directives
+PASS postfiat-rpc-sandbox.conf: nothing already set in postfiat-rpc.service.example
+PASS postfiat-rpc-sandbox.conf: nothing already set in postfiat-validator-transport.service.example
+PASS postfiat-validator-transport-sandbox.conf: section
+PASS postfiat-validator-transport-sandbox.conf: directives
+PASS postfiat-validator-transport-sandbox.conf: nothing already set in postfiat-rpc.service.example
+PASS postfiat-validator-transport-sandbox.conf: nothing already set in postfiat-validator-transport.service.example
+== install.sh with a stub systemctl
+PASS dry-run exit
+PASS dry-run writes nothing
+PASS dry-run calls no daemon-reload/restart
+PASS install exit
+PASS install file identical
+PASS install mode
+PASS install daemon-reload
+PASS install does not restart
+PASS install prints restart note
+PASS transport install exit
+PASS transport file identical
+PASS --restart restarts
+PASS uninstall exit
+PASS uninstall removed dir
+PASS uninstall again is a no-op
+PASS rollback on a mismatch exit
+PASS rollback removed the drop-in
+PASS unloaded unit refused
+PASS path in unit name refused
+PASS non-service unit refused
+PASS unknown kind refused
+SKIP live part: SANDBOX_NODE_BIN not set
+RESULT: PASS (29 passed, 0 failed)
+exit=0
+$ sudo TMPDIR=$HOME/.cache/sbx-tmp SANDBOX_NODE_BIN=$HOME/.cache/rpcev-rel/postfiat-node SANDBOX_NODE_SHA256=e036033d437d85c4f60fc8e6689a771fdda01dd2ce88456571e6c9092faf4caf SANDBOX_NODE_LIBDIR=$HOME/.cache/rpcev-rel/glibc239 scripts/test-validator-host-sandbox
+== drop-in contents
+PASS postfiat-rpc-sandbox.conf: section
+PASS postfiat-rpc-sandbox.conf: directives
+PASS postfiat-rpc-sandbox.conf: nothing already set in postfiat-rpc.service.example
+PASS postfiat-rpc-sandbox.conf: nothing already set in postfiat-validator-transport.service.example
+PASS postfiat-validator-transport-sandbox.conf: section
+PASS postfiat-validator-transport-sandbox.conf: directives
+PASS postfiat-validator-transport-sandbox.conf: nothing already set in postfiat-rpc.service.example
+PASS postfiat-validator-transport-sandbox.conf: nothing already set in postfiat-validator-transport.service.example
+== install.sh with a stub systemctl
+PASS dry-run exit
+PASS dry-run writes nothing
+PASS dry-run calls no daemon-reload/restart
+PASS install exit
+PASS install file identical
+PASS install mode
+PASS install daemon-reload
+PASS install does not restart
+PASS install prints restart note
+PASS transport install exit
+PASS transport file identical
+PASS --restart restarts
+PASS uninstall exit
+PASS uninstall removed dir
+PASS uninstall again is a no-op
+PASS rollback on a mismatch exit
+PASS rollback removed the drop-in
+PASS unloaded unit refused
+PASS path in unit name refused
+PASS non-service unit refused
+PASS unknown kind refused
+== live: release binary
+binary sha256 e036033d437d85c4f60fc8e6689a771fdda01dd2ce88456571e6c9092faf4caf expected e036033d437d85c4f60fc8e6689a771fdda01dd2ce88456571e6c9092faf4caf
+PASS release binary sha256 matches
+loader: /var/lib/postfiat-sbxtest.RIUjxq/lib/ld-linux-x86-64.so.2 sha256 c20a2dc8917c755f02b94049356320fe1f62ac7d9f8994731f807d9df39302da
+example sandbox directives: rpc 19, transport 19
+== live rpc: postfiat-sbxtest-896184-rpc.service, example directives only
+PASS rpc before: ready
+  req1 ok
+  req2 ok
+  req3 rpc_server_error
+  req4 rpc_server_error
+  req5 rpc_method_not_allowed
+  req6 rpc_parse_error
+  exposure 5.0, MainPID 896527, Seccomp_filters 16
+== live rpc: install.sh install (no restart)
+  | /lib/systemd/system/snapd.service:23: Unknown key name 'RestartMode' in section 'Service', ignoring.
+  | /run/systemd/transient/postfiat-sbxtest-896184-rpc.service:6: Special user nobody configured, this is not safe!
+  | installed /run/systemd/system/postfiat-sbxtest-896184-rpc.service.d/50-postfiat-sandbox.conf; effective properties:
+  |   PrivateDevices=yes
+  |   ProtectClock=yes
+  |   ProtectHostname=yes
+  |   ProtectProc=invisible
+  |   ProcSubset=pid
+  |   RestrictNamespaces=yes
+  |   RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+  |   MemoryDenyWriteExecute=yes
+  |   SystemCallFilter=@system-service (369 syscalls, ptrace not allowed)
+  |   SystemCallErrorNumber=1
+  | not restarted; takes effect at the next restart: systemctl restart postfiat-sbxtest-896184-rpc.service
+PASS rpc: install.sh exit
+PASS rpc: running process not restarted (MainPID)
+PASS rpc: running process unchanged (Seccomp_filters)
+== live rpc: restart with the drop-in
+PASS rpc after: ready
+  req1 ok
+  req2 ok
+  req3 rpc_server_error
+  req4 rpc_server_error
+  req5 rpc_method_not_allowed
+  req6 rpc_parse_error
+PASS rpc after: same replies as before
+PASS rpc after: PrivateDevices
+PASS rpc after: ProtectClock
+PASS rpc after: ProtectHostname
+PASS rpc after: ProtectProc
+PASS rpc after: ProcSubset
+PASS rpc after: RestrictNamespaces
+PASS rpc after: RestrictAddressFamilies
+PASS rpc after: MemoryDenyWriteExecute
+PASS rpc after: SystemCallFilter
+PASS rpc after: SystemCallErrorNumber
+  Seccomp_filters before 16 after 34
+PASS rpc after: more seccomp filters on the main process
+  exposure before 5.0 after 1.8
+PASS rpc: exposure score 5.0 -> 1.8
+PASS rpc: event log has status ok from both runs
+== live rpc: install.sh uninstall + restart
+  | removed /run/systemd/system/postfiat-sbxtest-896184-rpc.service.d/50-postfiat-sandbox.conf
+  | not restarted; takes effect at the next restart: systemctl restart postfiat-sbxtest-896184-rpc.service
+PASS rpc: install.sh uninstall exit
+PASS rpc rollback: ready
+PASS rpc rollback: PrivateDevices
+PASS rpc rollback: exposure back to 5.0
+== live transport: postfiat-sbxtest-896184-transport.service, example directives only
+PASS transport before: ready
+  schema postfiat-transport-validator-serve-ready-v1
+  bind 127.0.0.1:48391
+  prewarm requested true swap_warm true private_egress_warm true
+  connect ok
+  exposure 5.0, MainPID 897035, Seccomp_filters 16
+== live transport: install.sh install (no restart)
+  | /lib/systemd/system/snapd.service:23: Unknown key name 'RestartMode' in section 'Service', ignoring.
+  | /run/systemd/transient/postfiat-sbxtest-896184-transport.service:6: Special user nobody configured, this is not safe!
+  | installed /run/systemd/system/postfiat-sbxtest-896184-transport.service.d/50-postfiat-sandbox.conf; effective properties:
+  |   PrivateDevices=yes
+  |   ProtectClock=yes
+  |   ProtectHostname=yes
+  |   ProtectProc=invisible
+  |   ProcSubset=pid
+  |   RestrictNamespaces=yes
+  |   RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+  |   MemoryDenyWriteExecute=yes
+  |   SystemCallFilter=@system-service (369 syscalls, ptrace not allowed)
+  |   SystemCallErrorNumber=1
+  | not restarted; takes effect at the next restart: systemctl restart postfiat-sbxtest-896184-transport.service
+PASS transport: install.sh exit
+PASS transport: running process not restarted (MainPID)
+PASS transport: running process unchanged (Seccomp_filters)
+== live transport: restart with the drop-in
+PASS transport after: ready
+  schema postfiat-transport-validator-serve-ready-v1
+  bind 127.0.0.1:48391
+  prewarm requested true swap_warm true private_egress_warm true
+  connect ok
+PASS transport after: same replies as before
+PASS transport after: PrivateDevices
+PASS transport after: ProtectClock
+PASS transport after: ProtectHostname
+PASS transport after: ProtectProc
+PASS transport after: ProcSubset
+PASS transport after: RestrictNamespaces
+PASS transport after: RestrictAddressFamilies
+PASS transport after: MemoryDenyWriteExecute
+PASS transport after: SystemCallFilter
+PASS transport after: SystemCallErrorNumber
+  Seccomp_filters before 16 after 34
+PASS transport after: more seccomp filters on the main process
+  exposure before 5.0 after 1.8
+PASS transport: exposure score 5.0 -> 1.8
+== live transport: install.sh uninstall + restart
+  | removed /run/systemd/system/postfiat-sbxtest-896184-transport.service.d/50-postfiat-sandbox.conf
+  | not restarted; takes effect at the next restart: systemctl restart postfiat-sbxtest-896184-transport.service
+PASS transport: install.sh uninstall exit
+PASS transport rollback: ready
+PASS transport rollback: PrivateDevices
+PASS transport rollback: exposure back to 5.0
+== per-directive effects (example set + one directive vs example set alone)
+  PrivateDevices: with=EFFECT without=NOEFFECT
+PASS effect PrivateDevices (with / without)
+  ProtectClock: with=EFFECT without=NOEFFECT
+PASS effect ProtectClock (with / without)
+  ProtectHostname: with=EFFECT without=NOEFFECT
+PASS effect ProtectHostname (with / without)
+  ProtectProc: with=EFFECT without=NOEFFECT
+PASS effect ProtectProc (with / without)
+  ProcSubset: with=EFFECT without=NOEFFECT
+PASS effect ProcSubset (with / without)
+  RestrictNamespaces: with=EFFECT without=NOEFFECT
+PASS effect RestrictNamespaces (with / without)
+  RestrictAddressFamilies: with=EFFECT without=NOEFFECT
+PASS effect RestrictAddressFamilies (with / without)
+  MemoryDenyWriteExecute: with=EFFECT without=NOEFFECT
+PASS effect MemoryDenyWriteExecute (with / without)
+  SystemCallFilter: with=EFFECT without=NOEFFECT
+PASS effect SystemCallFilter (with / without)
+  SystemCallErrorNumber: with=EFFECT without=NOEFFECT
+PASS effect SystemCallErrorNumber (with / without)
+RESULT: PASS (85 passed, 0 failed)
+exit=0
+$ sudo TMPDIR=$HOME/.cache/sbx-tmp SANDBOX_NODE_BIN=$HOME/.cache/rpcev-rel/postfiat-node SANDBOX_NODE_SHA256=e036033d437d85c4f60fc8e6689a771fdda01dd2ce88456571e6c9092faf4caf SANDBOX_NODE_LIBDIR=$HOME/.cache/rpcev-rel/glibc239 scripts/test-validator-host-sandbox --negative-controls
+== negative control no-inet
+  | FAIL rpc after: ready: error: rpc serve bind `127.0.0.1:35471` failed: Address family not supported by protocol (os error 97)
+  | FAIL rpc after: RestrictAddressFamilies: got 'RestrictAddressFamilies=AF_UNIX ' want 'RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX '
+  | FAIL rpc after: seccomp filters: before 16 after none
+  | FAIL rpc: event log has status ok from both runs: got '2 ["status",true]' want '4 ["status",true]'
+  | FAIL transport after: ready: error: transport validator service bind `127.0.0.1:53251` failed: Address family not supported by protocol (os error 97)
+  | FAIL transport after: RestrictAddressFamilies: got 'RestrictAddressFamilies=AF_UNIX ' want 'RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX '
+  | FAIL transport after: seccomp filters: before 16 after none
+  | RESULT: FAIL (47 passed, 7 failed)
+PASS control no-inet rejected (exit 1)
+== negative control missing-protectproc
+  | FAIL rpc after: ProtectProc: got 'ProtectProc=default' want 'ProtectProc=invisible'
+  | FAIL transport after: ProtectProc: got 'ProtectProc=default' want 'ProtectProc=invisible'
+  | FAIL effect ProtectProc: not in the drop-in
+  | RESULT: FAIL (53 passed, 3 failed)
+PASS control missing-protectproc rejected (exit 1)
+== negative control bad-sha256
+  | FAIL release binary sha256: refusing to run an unverified binary
+  | RESULT: FAIL (0 passed, 1 failed)
+PASS control bad-sha256 rejected (exit 1)
+RESULT: PASS (3 passed, 0 failed)
+exit=0
+$ echo "leftover units: $(systemctl list-units --all 'postfiat-sbxtest*' --no-legend | wc -l), /run drop-ins: $(ls /run/systemd/system | grep -c sbxtest), data dirs: $(ls -d /var/lib/postfiat-sbxtest* 2>/dev/null | wc -l)"
+leftover units: 0, /run drop-ins: 0, data dirs: 0
+exit=0
+# end 2026-11-26T11:05:51Z

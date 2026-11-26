@@ -1,0 +1,120 @@
+# 2026-11-26T11:07:45Z Ubuntu 22.04.5 LTS | systemd 249 (249.11-0ubuntu3.23) | kernel 5.15.0-204-generic | version: 0.8.0
+# repo HEAD 7203a70f0449e760a9d5b8ea1bf75972d9a52356 (validator-host-sandbox)
+$ git rev-parse HEAD; git status --short | wc -l
+7203a70f0449e760a9d5b8ea1bf75972d9a52356
+0
+exit=0
+$ sha256sum ~/.cache/sbx-tmp/mutants.py ops/validator-host/systemd/install.sh
+900bfbc5717bd13d0bf2a1c78673567d2d87ecdcd585c5993567070f889d2166  ~/.cache/sbx-tmp/mutants.py
+bdeaebd2d6047c44e6a586d764245c57e2a3d4c16c34b3b2ebe2c7438f827ce8  ops/validator-host/systemd/install.sh
+exit=0
+$ TMPDIR=$HOME/.cache/sbx-tmp python3 -I ~/.cache/sbx-tmp/mutants.py .
+baseline (unmutated): exit 0 RESULT: PASS (29 passed, 0 failed)
+
+== mutant: restart always (matches 1)
+--- a/ops/validator-host/systemd/install.sh
++++ b/ops/validator-host/systemd/install.sh
+@@ -110 +110 @@
+-  if [ "$restart" -eq 1 ]; then
++  if true; then
+  FAIL install does not restart: got '1' want '0'
+  FAIL install prints restart note: got '0' want '1'
+  FAIL --restart restarts: got '0
+  exit 1 RESULT: FAIL (26 passed, 3 failed) -> CAUGHT
+
+== mutant: dry-run executes (matches 1)
+--- a/ops/validator-host/systemd/install.sh
++++ b/ops/validator-host/systemd/install.sh
+@@ -61 +61 @@
+-  if [ "$dry" -eq 1 ]; then
++  if false; then
+  FAIL dry-run writes nothing: got '2' want '0'
+  FAIL dry-run calls no daemon-reload/restart: got '1' want '0'
+  FAIL install daemon-reload: got '2' want '1'
+  exit 1 RESULT: FAIL (26 passed, 3 failed) -> CAUGHT
+
+== mutant: no rollback on mismatch (matches 1)
+--- a/ops/validator-host/systemd/install.sh
++++ b/ops/validator-host/systemd/install.sh
+@@ -160 +160 @@
+-check_effective || rollback
++check_effective || true
+  FAIL rollback on a mismatch exit: got '0' want '1'
+  FAIL rollback removed the drop-in: got 'present' want 'gone'
+  exit 1 RESULT: FAIL (27 passed, 2 failed) -> CAUGHT
+
+== mutant: LoadState not checked (matches 1)
+--- a/ops/validator-host/systemd/install.sh
++++ b/ops/validator-host/systemd/install.sh
+@@ -135 +135 @@
+-[ "$load_state" = loaded ] || {
++true || {
+  FAIL unloaded unit refused: got '0' want '1'
+  exit 1 RESULT: FAIL (28 passed, 1 failed) -> CAUGHT
+
+== mutant: path in unit name allowed (matches 1)
+--- a/ops/validator-host/systemd/install.sh
++++ b/ops/validator-host/systemd/install.sh
+@@ -55 +55 @@
+-  */* | .* | *..*) echo "refusing unit name: $unit" >&2; exit 2 ;;
++  */nothing) echo "refusing unit name: $unit" >&2; exit 2 ;;
+  FAIL path in unit name refused: got '0' want '2'
+  exit 1 RESULT: FAIL (28 passed, 1 failed) -> CAUGHT
+
+== mutant: drop-in mode 0666 (matches 1)
+--- a/ops/validator-host/systemd/install.sh
++++ b/ops/validator-host/systemd/install.sh
+@@ -140 +140 @@
+-run install -m 0644 "$src" "$dest"
++run install -m 0666 "$src" "$dest"
+  FAIL install mode: got '666' want '644'
+  exit 1 RESULT: FAIL (28 passed, 1 failed) -> CAUGHT
+
+== mutant: true shown as no (matches 1)
+--- a/ops/validator-host/systemd/install.sh
++++ b/ops/validator-host/systemd/install.sh
+@@ -71 +71 @@
+-    true) echo yes ;;
++    true) echo no ;;
+  FAIL install exit: got '1' want '0'
+  FAIL install file identical: got '' want 'same'
+  FAIL install mode: got '' want '644'
+  FAIL install daemon-reload: got '2' want '1'
+  FAIL install prints restart note: got '0' want '1'
+  FAIL transport install exit: got '1' want '0'
+  FAIL transport file identical: got '' want 'same'
+  FAIL --restart restarts: got '1
+  exit 1 RESULT: FAIL (21 passed, 8 failed) -> CAUGHT
+
+== mutant: uninstall keeps file (matches 1)
+--- a/ops/validator-host/systemd/install.sh
++++ b/ops/validator-host/systemd/install.sh
+@@ -126 +126 @@
+-  run rm -f "$dest"
++  run true "$dest"
+  FAIL uninstall removed dir: got 'present' want 'gone'
+  exit 1 RESULT: FAIL (28 passed, 1 failed) -> CAUGHT
+
+== mutant: no daemon-reload on install (matches 1)
+--- a/ops/validator-host/systemd/install.sh
++++ b/ops/validator-host/systemd/install.sh
+@@ -141 +141 @@
+-run "$SYSTEMCTL" daemon-reload
++run true
+  FAIL install daemon-reload: got '0' want '1'
+  exit 1 RESULT: FAIL (28 passed, 1 failed) -> CAUGHT
+
+== mutant: timer units allowed (matches 1)
+--- a/ops/validator-host/systemd/install.sh
++++ b/ops/validator-host/systemd/install.sh
+@@ -51,2 +51,2 @@
+-  *.service) ;;
+-  *) echo "UNIT must end in .service: $unit" >&2; exit 2 ;;
++  *) ;;
++  *.never) echo "UNIT must end in .service: $unit" >&2; exit 2 ;;
+  FAIL non-service unit refused: got '0' want '2'
+  exit 1 RESULT: FAIL (28 passed, 1 failed) -> CAUGHT
+
+RUN PASS
+exit=0
+# end 2026-11-26T11:08:24Z
