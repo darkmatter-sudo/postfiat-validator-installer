@@ -1,0 +1,49 @@
+=== cd08-proof 2026-11-26T20:09:06Z repo HEAD ec70966f47dbef90dcf53ca870ede32bba90430a
+=== 1. overlay diff: pre-apply snapshot (overlay absent) -> current /opt/postfiatd/docker-compose.coredump.yml
+--- snapshot 'absent' list:
+/etc/sysctl.d/60-pft-coredump.conf
+/etc/systemd/coredump.conf.d/60-pft-coredump.conf
+/opt/postfiatd/docker-compose.coredump.yml
+--- a/docker-compose.coredump.yml (absent before apply)
++++ b/docker-compose.coredump.yml
+@@ -0,0 +1,7 @@
++# written by pft-coredump apply; undo with: sudo pft-coredump rollback --yes
++services:
++  postfiatd:
++    ulimits:
++      core:
++        soft: 0
++        hard: 0
+diff exit=1 (1 = differs)
+=== 2. .env diff, COMPOSE_FILE line only (other .env keys not printed)
+--- a/.env (snapshot snap-20261126T185243Z)
++++ b/.env (now)
+@@ -1 +1 @@
+-COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.confine.yml:docker-compose.apparmor.yml:docker-compose.seccomp.yml:docker-compose.resources.yml:docker-compose.shutdown.yml
++COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:docker-compose.confine.yml:docker-compose.apparmor.yml:docker-compose.seccomp.yml:docker-compose.resources.yml:docker-compose.shutdown.yml:docker-compose.coredump.yml
+diff exit=1 (1 = differs)
+=== 3. what the NEXT re-create would get: docker compose config (YAML), postfiatd ulimits block
+    ulimits:
+      core:
+        soft: 0
+        hard: 0
+    user: "0:0"
+=== 4. running container: docker inspect postfiatd
+$ sudo docker inspect --format '{{json .HostConfig.Ulimits}}' postfiatd
+null
+$ sudo docker inspect postfiatd | jq '.[0] | {Created, StartedAt: .State.StartedAt, RestartCount, Ulimits: .HostConfig.Ulimits, CoreUlimit: ([.HostConfig.Ulimits[]? | select(.Name=="core")] | length)}'
+{
+  "Created": "2026-11-24T14:55:17.845125599Z",
+  "StartedAt": "2026-11-24T16:08:15.907959686Z",
+  "RestartCount": 0,
+  "Ulimits": null,
+  "CoreUlimit": 0
+}
+=== 5. live process limit (set by apply step 3 prlimit, no restart): /proc/<pid1>/limits
+Max core file size        0                    0                    bytes     
+=== 6. pft-coredump audit CD08/CD09
+  [WARN] CD08 container-ulimit: running container core unset, pending re-create (next re-create gives 0:0; live limit: CD06)
+  [PASS] CD09 recreate-ulimit: compose config (/opt/postfiatd) ulimits core 0:0
+=== 7. server_state
+server_state=full uptime=187253s build=1.0.9
+=== end
