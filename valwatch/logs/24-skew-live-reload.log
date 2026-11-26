@@ -1,0 +1,83 @@
+valwatch skew reload - 2026-11-26T13:23:34Z - repo HEAD 20253df7144d95cafa3942d5f1f2b3a5845924da (clean: yes)
+$ sha256sum alerts/valwatch.rules.yml alerts/valwatch.tests.yml valwatch/skewreplay.py valwatch/tests/gen_rule_tests.py valwatch/tests/mutate.py valwatch/tests/test_skewreplay.py valwatch/drill/skew-run.sh
+  5468410a6b2dd1e6e78e16b9c716c285b0cefed576038f3c881fbfd06d009ab8  alerts/valwatch.rules.yml
+  c2e06309c994347725ce327f78b8ac7db31f435dbb51c1abfd184c80e6979adf  alerts/valwatch.tests.yml
+  ae0103d5d4070e730bc476ce365fb2c91498dcfef92a9f6d23af29e658334d59  valwatch/skewreplay.py
+  f23d91e6c1c8a2c934571c8b1fb5e9fec8fe26decf493f39374b77bd4d8f7cc1  valwatch/tests/gen_rule_tests.py
+  65de761e3e72ec697a2ec063a6b5df3dd7553308084f02c3b8bb2939a2ae16d4  valwatch/tests/mutate.py
+  98af85eac9020e4fa239d27ade59f40701c5ce64359e6218ed1643f659b37373  valwatch/tests/test_skewreplay.py
+  b42de652967f772e9872c164c1444a1ae2de7cf5863c6ec367c06d422ca9d626  valwatch/drill/skew-run.sh
+  (exit 0)
+
+== 1. before: node, loaded rule, integrity
+$ sudo postfiat-health 2>&1 | grep -E 'server_state|RESULT'
+    [PASS] RPC responding (server_state: full)
+  RESULT: HEALTHY
+  (exit 0)
+$ q
+  PFTValwatchHostsDisagree ok inactive | (max_over_time(pft_valwatch_validator_participation_ratio[2m]) < 0.8 and on (job, instance, node) pft_valwatch_up == 1) and on (validator) (min_over_time(pft_valwatch_validator_participation_ratio[2m]) >= 0.95 and on (job, instance, node) pft_valwatch_up == 1)
+  PFTValwatchHostsDisagreeLate ok inactive | (min_over_time(pft_valwatch_validator_delay_p95_ms[2m]) > 3000 and on (job, instance, node) pft_valwatch_up == 1) and on (validator) (max_over_time(pft_valwatch_validator_delay_p95_ms[2m]) <= 2000 and on (job, instance, node) pft_valwatch_up == 1)
+  (exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/status/config | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["data"]["yaml"]))'
+  2755
+  (exit 0)
+$ sudo pft-integrity verify 2>&1 | tail -1
+  RESULT: PASS - 297 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+
+== 2. rules-only reload: SIGHUP to pft-prometheus (no restart; Alertmanager, postfiatd untouched)
+$ docker kill -s HUP pft-prometheus
+  pft-prometheus
+  (exit 0)
+$ curl -s http://127.0.0.1:9090/api/v1/status/runtimeinfo | python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; print("reloadConfigSuccess", d["reloadConfigSuccess"], "lastConfigTime", d["lastConfigTime"])'
+  reloadConfigSuccess True lastConfigTime 2026-11-26T13:24:16Z
+  (exit 0)
+CHECK ok   reloadConfigSuccess true
+$ docker inspect -f '{{.State.StartedAt}} {{.RestartCount}}' pft-prometheus postfiatd
+  2026-11-26T03:25:54.012890207Z 0
+  2026-11-24T16:08:15.907959686Z 0
+  (exit 0)
+CHECK ok   pft-prometheus and postfiatd not restarted (StartedAt/RestartCount unchanged)
+
+== 3. loaded rules = repo (after the first evaluation: health is 'unknown' until then)
+$ q
+  PFTValwatchHostsDisagree ok inactive | (max_over_time(pft_valwatch_validator_participation_ratio[2m]) < 0.8 and on (job, instance, node) pft_valwatch_up == 1) and on (validator) (min_over_time(pft_valwatch_validator_participation_ratio[2m]) >= 0.95 and on (job, instance, node) pft_valwatch_up == 1)
+  PFTValwatchHostsDisagreeLate ok inactive | (min_over_time(pft_valwatch_validator_delay_p95_ms[2m]) > 3000 and on (job, instance, node) pft_valwatch_up == 1) and on (validator) (max_over_time(pft_valwatch_validator_delay_p95_ms[2m]) <= 2000 and on (job, instance, node) pft_valwatch_up == 1)
+  (exit 0)
+CHECK ok   both loaded expressions = repo (min/max_over_time [2m]), health ok
+$ curl -s 'http://127.0.0.1:9090/api/v1/rules' | python3 -c 'import json,sys; g=json.load(sys.stdin)["data"]["groups"]; r=[x for y in g for x in y["rules"]]; print(len(r), "rules,", sum(x["health"]!="ok" for x in r), "not ok")'
+  161 rules, 0 not ok
+  (exit 0)
+CHECK ok   every loaded rule health ok
+
+== 4. rulecheck, integrity, fleet, node
+$ sudo pft-rulecheck check 2>&1 | grep -E 'HostsDisagree|^RESULT' | head -4
+  LIVE     pft-valwatch/PFTValwatchHostsDisagree                          2/2         
+  LIVE     pft-valwatch/PFTValwatchHostsDisagreeLate                      2/2         
+  RESULT OK - rules: LIVE 161 PARTIAL 0 DEAD 0 ERROR 0 IGNORED 0 | textfiles: FRESH 72 STALE 0 MISSING 0 LEFTOVER 0 UNCONFIGURED 0 -> exit 0
+  (exit 0)
+CHECK ok   pft-rulecheck: HostsDisagree* not DEAD
+$ sudo pft-rulecheck check >/dev/null 2>&1; echo rulecheck-exit $?
+  rulecheck-exit 0
+  (exit 0)
+CHECK ok   pft-rulecheck exit 0
+$ sudo pft-integrity verify 2>&1 | tail -1; ssh -o BatchMode=yes relay 'sudo pft-integrity verify 2>&1 | tail -1' </dev/null
+  RESULT: PASS - 297 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 173 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   integrity PASS on both hosts (rules are read from the repo bind mount: no installed file changed)
+$ sudo pft-fleet skew 2>&1 | grep -E '^ref|^HOST|valwatch|DIVERGED'
+  ref main = 20253df7144d95cafa3942d5f1f2b3a5845924da
+  HOST       ADDON       STATE      DETAIL
+  sentry     valwatch    CURRENT    
+  validator  valwatch    CURRENT    
+  SUMMARY CURRENT=92 BEHIND=0 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  (exit 0)
+CHECK ok   fleet: valwatch CURRENT on both hosts, DIVERGED=0
+$ sudo postfiat-health 2>&1 | grep -E 'server_state|RESULT'
+    [PASS] RPC responding (server_state: full)
+  RESULT: HEALTHY
+  (exit 0)
+CHECK ok   validator postfiatd full / HEALTHY
+
+RESULT: PASS (reload)

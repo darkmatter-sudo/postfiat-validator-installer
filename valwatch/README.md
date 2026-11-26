@@ -265,11 +265,16 @@ public ledger data: validator keys, ledger hashes and indexes, and receive times
   86400 s, 0 failed/missed/disabled; timer next 07:05 UTC tomorrow, no drop-in/stamp left; schedaudit, integrity, fleet).
 - `logs/21-skew-replay.log`: `drill/skew-run.sh collect` @66561a4: read-only query_range over the retained 7.69 d,
   skew distribution, old (496470f) vs new replay of both rules, attribution: PASS (2 old-only, both skew; new 0).
-- `logs/22-skew-offline.log`: `drill/skew-run.sh offline`: generator in sync, promtool v3.5.0 + v3.16.0 SUCCESS, the
-  same generator over the old rules fails the skew assertions (control), pytest, shellcheck, ruff, offline replay of
-  `data/skew/` byte-identical to `reports/skew.txt`.
-- `logs/23-rule-mutants.log`: `tests/mutate.py --only R01..R28`: R16/R17/R19 re-anchored to the windowed
-  expressions, R20-R28 added (either window removed, 2m -> 1m / 3m, for 15m -> 13m, faulty thresholds inclusive).
-- `logs/24-skew-live-reload.log`: `drill/skew-run.sh reload`: SIGHUP to the validator Prometheus only,
-  reloadConfigSuccess, loaded expressions = repo, rulecheck, integrity both hosts, fleet, postfiatd full.
+- `logs/22-skew-offline.log`: `drill/skew-run.sh offline` @20253df: generator in sync, promtool v3.5.0 + v3.16.0
+  SUCCESS, the same generator over the old rules fails 60 skew ALERTS assertions (control), pytest 102 passed,
+  shellcheck, ruff, offline replay of `data/skew/` byte-identical to `reports/skew.txt`: PASS 9/9.
+- `logs/23-rule-mutants.log`: `tests/mutate.py --only R01..R28` @c083848 (20253df changes only drill/skew-run.sh):
+  R16/R17/R19 re-anchored to the windowed expressions, R20-R28 added (either window removed, 2m -> 1m / 3m,
+  for 15m -> 13m, faulty thresholds inclusive): 28 caught, 0 survived / not applied / broken, controls PASS.
+- `logs/24-skew-live-reload.log`: `drill/skew-run.sh reload` @20253df: SIGHUP to the validator Prometheus only
+  (StartedAt/RestartCount of pft-prometheus and postfiatd unchanged), reloadConfigSuccess, loaded expressions = repo,
+  161 rules health ok, rulecheck LIVE, integrity PASS both hosts, fleet valwatch CURRENT, postfiatd full: PASS 9/9.
+  The first reload (13:21:36Z) ran in an earlier attempt whose checks read rule health before the first evaluation
+  (`unknown`) and matched `DIVERGED=0` as DIVERGED; found -> fixed in 20253df, so this run's "before" already shows
+  the windowed rules.
 - `logs/25-fresh-clone.log`: anonymous public clone at the pin, `drill/skew-run.sh offline`.
