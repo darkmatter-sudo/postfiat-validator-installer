@@ -5,8 +5,8 @@
 `docker run`, no compose file) without risking the alerting of a Post Fiat node: every target image is pinned to its
 registry digest and checked against the live rules and configuration before anything is swapped.
 
-Status: `plan`, `apply`, `rollback`, their offline tests and the live-run tooling (`drill/`). The recorded two-host
-runs follow.
+Status: shipped. `plan`, `apply`, `rollback`, offline tests, live-run tooling (`drill/`) and a recorded two-host run
+([`logs/09-run09.log`](logs/09-run09.log), PASS, see [Results](#results-recorded-run-09)).
 
 ## plan (no container change)
 
@@ -145,3 +145,35 @@ Preflight requires the last state entry to be an `apply` whose current refs are 
 apply's previous images (`prev_refs`, tested in `run-drill-tests.sh`); the sentry canary starts from those, and on the
 validator `pft-monupgrade rollback` (same gates, inside the window, bridge on the throwaway topic) runs before the
 cycle, followed by a fresh imagescan "before". Not combined with `DRY=1`.
+
+## Results (recorded run 09)
+
+`PRE_ROLLBACK=1 HOSTS="sentry validator" RUN=09`, repo HEAD `c5735e09eecd5b7941108aa3498a7fd970d405dc`,
+2026-11-26 02:45-03:31Z, [`logs/09-run09.log`](logs/09-run09.log): **0 checks failed -> PASS**.
+
+| step | sentry (temporary canary stack) | validator (live stack) |
+|---|---|---|
+| start images | v3.5.0 / v0.28.1, pinned by digest | v3.16.0 / v0.35.0 (earlier run 08) -> `rollback` PASS -> v3.5.0 / v0.28.1 |
+| `plan` | READY, exit 0 (log line 224) | READY, exit 0 (line 411) |
+| `apply` | PASS (252) | PASS (439) |
+| `rollback` | PASS (280) | PASS (467) |
+| re-`apply` | PASS (308) | PASS (495) |
+| second `apply` | `NOTHING TO DO` (313) | `NOTHING TO DO` (500) |
+| after | canary removed, integrity PASS (329, 333) | Prometheus 3.16.0 / Alertmanager 0.35.0 healthy 200 (572) |
+
+Every switch gated on image digests, readiness, versions, rule (161) / target / receiver parity, rule health, silences
+kept, watchdog not matched by the run's silence (`watchdog-unsilenced ok`), loopback-only ports, and a
+`PFTMonupgradeTest` `[FIRING]` + `[RESOLVED]` delivered to a throwaway topic. End of run: both nodes `full` (565),
+pft-integrity PASS both hosts (560), silence expired after a clean drain (578), **0 alert/[MAINT] messages on the
+operator topics** (594). `postfiatd` / `postfiatd-sentry` were not touched (monitoring containers only).
+
+imagescan (validator, monitoring images; fixable findings of the image each container ran before minus after, line
+528-530): **prometheus 109 fixed, alertmanager 104 fixed, 0 new**; 0 drift after the re-create (527). Counts of
+findings still open and all advisory ids are withheld from the published log.
+
+Deviations: the sentry has no monitoring stack of its own, so "sentry first" is a temporary canary stack there (same
+config from the pinned commit, removed afterwards). Recorded run 08 (2026-11-25, HEAD `2f33d35`) completed every
+switch on both hosts but FAILED its drain check on a false `PFTImagescanDrift` (digest-pinned container refs; fixed in
+imagescan `fe952c2` and monupgrade `d8ed603`); it left the validator on the targets, hence `PRE_ROLLBACK=1` for run 09.
+The sentry canary check label (line 191) still reads "validator's current images"; under `PRE_ROLLBACK` they are the
+pre-rollback images printed on line 50.

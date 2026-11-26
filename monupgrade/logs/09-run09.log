@@ -1,0 +1,602 @@
+# published copy of runlogs/task_add0-18-run09.log: output already redacted by live-run.sh red(); in addition the counts of findings still open per monitoring image (scan rows: fixable/high_critical; fixed_counts: fixable_before/fixable_after) are replaced by "<withheld>" - only fixed and new counts are published. No other change.
+pft-monupgrade live run 09 - 2026-11-26T02:45:33Z - Ubuntu 22.04.5 LTS - repo HEAD c5735e09eecd5b7941108aa3498a7fd970d405dc (clean: yes) - hosts 'sentry validator' dry=0
+
+== 0. preflight (read-only)
+$ shellcheck monupgrade/pft-monupgrade.sh monupgrade/tests/*.sh monupgrade/drill/*.sh alerts/run-stack.sh && echo shellcheck clean
+  shellcheck clean
+  (exit 0)
+CHECK ok   shellcheck clean
+$ bash monupgrade/tests/run-tests.sh | tail -1; bash monupgrade/tests/run-apply-tests.sh | tail -1; bash monupgrade/tests/run-drill-tests.sh | tail -1
+  RESULT: 98 passed, 0 failed
+  RESULT: 374 passed, 0 failed
+  RESULT: 22 passed, 0 failed
+  (exit 0)
+CHECK ok   offline tests pass (plan + apply + drill suites)
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 297 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 173 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts
+$ state_v; state_s
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ sudo -n pft-maint status | head -1; sudo -n pft-maint lock list; R 'sudo -n pft-maint status | head -1'
+  no maintenance window (alerting is live)
+  no data-collection locks
+  no maintenance window (alerting is live)
+  (exit 0)
+CHECK ok   no maintenance window on either host, no lock
+$ others
+  
+  (exit 0)
+CHECK ok   no alert but the watchdog, digest-only and already-silenced ones
+$ curl -s -m 10 http://127.0.0.1:9093/api/v2/silences | jq -r '.[] | select(.status.state == "active") | "\(.id[0:8]) until \(.endsAt) \(.comment)"'
+  
+  (exit 0)
+  (pre-existing silences are kept; pft-monupgrade's gate checks that each one survives every switch)
+$ R 'sudo -n docker ps -a --filter name=pft- --format {{.Names}}; sudo -n docker volume ls -q --filter name=pft-prometheus-data' | wc -l
+  0
+  (exit 0)
+CHECK ok   sentry has no monitoring stack (canary host)
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+validator live images: prometheus prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06 (prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06), alertmanager prom/alertmanager:v0.35.0@sha256:e638797febd034838eca8b98cdbd46f951e9bf7f178777aa8669167406a9946c (prom/alertmanager:v0.35.0@sha256:e638797febd034838eca8b98cdbd46f951e9bf7f178777aa8669167406a9946c)
+CHECK ok   validator's current images pinned to their digests (canary uses the same)
+$ sudo -n jq -c '{at, mode, run, previous, current}' /var/lib/pft-monupgrade/state.json
+  {"at":"2026-11-25T01:03:12Z","mode":"apply","run":"20261125T010047Z-apply","previous":{"prometheus":"prom/prometheus:v3.5.0","alertmanager":"prom/alertmanager:v0.28.1"},"current":{"prometheus":"prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06","alertmanager":"prom/alertmanager:v0.35.0@sha256:e638797febd034838eca8b98cdbd46f951e9bf7f178777aa8669167406a9946c"}}
+  (exit 0)
+PRE_ROLLBACK: last apply's previous images prometheus prom/prometheus:v3.5.0 (prom/prometheus:v3.5.0@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996), alertmanager prom/alertmanager:v0.28.1 (prom/alertmanager:v0.28.1@sha256:27c475db5fb156cab31d5c18a4251ac7ed567746a2483ff264516437a39b15ba): the sentry canary starts from them, the validator rolls back to them first
+CHECK ok   PRE_ROLLBACK: last change is an apply of the live images; its previous images are local and pinned; not dry
+
+-- imagescan before (validator; monitoring images, counts only)
+$ sudo -n pft-imagescan scan --no-fetch >/dev/null; echo scan exit $?
+  scan exit 0
+  (exit 0)
+  {"label":"before","ref":"prom/alertmanager:v0.28.1","in_use":false,"fixable":"<withheld>","high_critical":"<withheld>"}
+  {"label":"before","ref":"prom/alertmanager:v0.35.0","in_use":true,"fixable":"<withheld>","high_critical":"<withheld>"}
+  {"label":"before","ref":"prom/prometheus:v3.16.0","in_use":true,"fixable":"<withheld>","high_critical":"<withheld>"}
+  {"label":"before","ref":"prom/prometheus:v3.5.0","in_use":false,"fixable":"<withheld>","high_critical":"<withheld>"}
+
+== 1. throwaway [MAINT] target, silence, maintenance window on both hosts
+real $NE present before: 0
+$ { [ 0 = 0 ] || sudo -n cp -p /etc/pft-maint/ntfy.env /etc/pft-maint/ntfy.env.pre-monupgrade; } && printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' '<throwaway-topic>' | sudo -n tee /etc/pft-maint/ntfy.env >/dev/null && sudo -n chmod 600 /etc/pft-maint/ntfy.env && sudo -n stat -c '%a %U' /etc/pft-maint/ntfy.env
+  600 root
+  (exit 0)
+CHECK ok   pft-maint target is the throwaway topic
+silence (every alert but the watchdog, PFTMonupgradeTest and the digest-only ones) until 2026-11-26T04:41:22Z id e1f949a5
+CHECK ok   Alertmanager silence created
+$ sudo -n pft-maint start --ttl 95m --reason 'task_add0edd0 pft-monupgrade run 09'
+  window started: id m1795661482-4100700 until 2026-11-26T04:26:22Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   maintenance window started
+$ R 'sudo -n pft-maint active && echo active'
+  active
+  (exit 0)
+CHECK ok   window valid on the sentry
+
+== 2. switches
+
+-- sentry (2026-11-26T02:52:37Z)
+$ R 'rm -rf ~/.cache/monupgrade-run-09 && mkdir -p ~/.cache/monupgrade-run-09/repo ~/.cache/monupgrade-run-09/canary && chmod 700 ~/.cache/monupgrade-run-09' && git archive HEAD | ssh -o LogLevel=ERROR -o BatchMode=yes relay 'tar -x -C ~/.cache/monupgrade-run-09/repo' && R 'printf "NTFY_URL=%s\n" https://ntfy.sh/<throwaway-alert-topic> > ~/.cache/monupgrade-run-09/canary/ntfy.env && chmod 600 ~/.cache/monupgrade-run-09/canary/ntfy.env && sudo -n chown 65534:65534 ~/.cache/monupgrade-run-09/canary/ntfy.env && cd ~/.cache/monupgrade-run-09/repo && sha256sum monupgrade/pft-monupgrade.sh alerts/run-stack.sh alerts/prometheus.yml alerts/alertmanager.yml' && sha256sum monupgrade/pft-monupgrade.sh alerts/run-stack.sh alerts/prometheus.yml alerts/alertmanager.yml
+  b1d5812af6f469cdb36d09e2e8c511bc84fec58ad1e110fbcd145ca7ecbde46c  monupgrade/pft-monupgrade.sh
+  4d4245f5bdb814748b9b532eb24082829f49d2bcf218244886c09d213ec6f4ec  alerts/run-stack.sh
+  6e11bc4b7c2fe6b85a6450670b72c598bf4d43581034d458cfcfe6ff3e1a4f50  alerts/prometheus.yml
+  d758ea34aa6dc3826f07a3761157843f11f70e5bf3adb314a5fd7033b2cd2949  alerts/alertmanager.yml
+  b1d5812af6f469cdb36d09e2e8c511bc84fec58ad1e110fbcd145ca7ecbde46c  monupgrade/pft-monupgrade.sh
+  4d4245f5bdb814748b9b532eb24082829f49d2bcf218244886c09d213ec6f4ec  alerts/run-stack.sh
+  6e11bc4b7c2fe6b85a6450670b72c598bf4d43581034d458cfcfe6ff3e1a4f50  alerts/prometheus.yml
+  d758ea34aa6dc3826f07a3761157843f11f70e5bf3adb314a5fd7033b2cd2949  alerts/alertmanager.yml
+  (exit 0)
+CHECK ok   sentry run copy = HEAD bytes
+$ R 'STATE=~/.cache/monupgrade-run-09/canary NTFY_ENV_FILE=~/.cache/monupgrade-run-09/canary/ntfy.env PROM_IMAGE=prom/prometheus:v3.5.0@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996 AM_IMAGE=prom/alertmanager:v0.28.1@sha256:27c475db5fb156cab31d5c18a4251ac7ed567746a2483ff264516437a39b15ba bash .cache/monupgrade-run-09/repo/monupgrade/drill/canary.sh up' | tail -25
+  Unable to find image 'prom/prometheus:v3.5.0@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996' locally
+  docker.io/prom/prometheus@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996: Pulling from prom/prometheus
+  208063e2dcbb: Pulling fs layer
+  9fa9226be034: Pulling fs layer
+  097a69c6efe6: Pulling fs layer
+  2dfc70ad9941: Pulling fs layer
+  fd1d3a5a5f79: Pulling fs layer
+  5e4c02bc6754: Pulling fs layer
+  76619c1908eb: Pulling fs layer
+  a4e782810d03: Pulling fs layer
+  2ee6cb77bebd: Pulling fs layer
+  1617e25568b2: Pulling fs layer
+  9fa9226be034: Download complete
+  208063e2dcbb: Download complete
+  5e4c02bc6754: Download complete
+  9fa9226be034: Pull complete
+  2dfc70ad9941: Download complete
+  fd1d3a5a5f79: Download complete
+  76619c1908eb: Download complete
+  a4e782810d03: Download complete
+  1617e25568b2: Download complete
+  1617e25568b2: Pull complete
+  2ee6cb77bebd: Download complete
+  097a69c6efe6: Download complete
+  097a69c6efe6: Pull complete
+  2ee6cb77bebd: Pull complete
+  a4e782810d03: Pull complete
+  76619c1908eb: Pull complete
+  2dfc70ad9941: Pull complete
+  fd1d3a5a5f79: Pull complete
+  5e4c02bc6754: Pull complete
+  208063e2dcbb: Pull complete
+  Digest: sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996
+  Status: Downloaded newer image for prom/prometheus@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996
+  Unable to find image 'prom/alertmanager:v0.28.1@sha256:27c475db5fb156cab31d5c18a4251ac7ed567746a2483ff264516437a39b15ba' locally
+  docker.io/prom/alertmanager@sha256:27c475db5fb156cab31d5c18a4251ac7ed567746a2483ff264516437a39b15ba: Pulling from prom/alertmanager
+  545c14a5a415: Pulling fs layer
+  5759234535c5: Pulling fs layer
+  4f4fb700ef54: Pulling fs layer
+  a9c7f41169bf: Pulling fs layer
+  6fcbfeb5877c: Pulling fs layer
+  4f4fb700ef54: Already exists
+  4f4fb700ef54: Pull complete
+  5759234535c5: Download complete
+  a9c7f41169bf: Download complete
+  6fcbfeb5877c: Download complete
+  545c14a5a415: Download complete
+  545c14a5a415: Pull complete
+  6fcbfeb5877c: Pull complete
+  a9c7f41169bf: Pull complete
+  5759234535c5: Pull complete
+  Digest: sha256:27c475db5fb156cab31d5c18a4251ac7ed567746a2483ff264516437a39b15ba
+  Status: Downloaded newer image for prom/alertmanager@sha256:27c475db5fb156cab31d5c18a4251ac7ed567746a2483ff264516437a39b15ba
+  Unable to find image 'python:3.12-alpine' locally
+  3.12-alpine: Pulling from library/python
+  cc36311dc778: Pulling fs layer
+  aa121b1b1cdb: Pulling fs layer
+  113b91713f05: Pulling fs layer
+  881fc932939e: Pulling fs layer
+  cc36311dc778: Download complete
+  aa121b1b1cdb: Download complete
+  69d5cdcd015f: Download complete
+  bfa9e4cb3258: Download complete
+  881fc932939e: Download complete
+  113b91713f05: Download complete
+  881fc932939e: Pull complete
+  aa121b1b1cdb: Pull complete
+  113b91713f05: Pull complete
+  cc36311dc778: Pull complete
+  Digest: sha256:c5ba3deef00c7758561a0f03c26f44f10589263d40e732b8748e0d1f38f6dd89
+  Status: Downloaded newer image for python:3.12-alpine
+    SUCCESS: 17 rules found
+  
+  2026-11-26T02:55:26Z amtool check-config
+  Checking '/w/alertmanager.yml'  SUCCESS
+  Found:
+   - global config
+   - route
+   - 2 inhibit rules
+   - 3 receivers
+   - 0 templates
+  
+  2026-11-26T02:55:45Z starting pft-alert-bridge (ntfy: on)
+  2026-11-26T02:56:07Z starting pft-alertmanager
+  2026-11-26T02:56:10Z starting pft-prometheus
+    listen :9090 -> 127.0.0.1:9090
+    listen :9093 -> 127.0.0.1:9093
+    listen :9095 -> 127.0.0.1:9095
+  2026-11-26T02:56:16Z all stack listeners are loopback-only
+  pft-prometheus  Up 7 seconds  prom/prometheus:v3.5.0
+  pft-alertmanager  Up 8 seconds  prom/alertmanager:v0.28.1
+  pft-alert-bridge  Up 11 seconds  python:3.12-alpine
+  2026-11-26T02:56:18Z scrape targets:
+  2026-11-26T02:56:18Z Prometheus alerts (pending/firing):
+    PFTRulecheckNotRunning state=pending since=2026-11-26T02:56:18.429093581Z
+  2026-11-26T02:56:18Z Alertmanager alerts:
+  (exit 0)
+CHECK ok   sentry canary up (validator's current images, bridge -> throwaway)
+$ for i in $(seq 1 40); do R 'curl -s -m 5 http://127.0.0.1:9093/api/v2/alerts?filter=alertname%3D%22PFTAlertPipelineWatchdog%22' | jq -e 'length > 0' >/dev/null && { echo watchdog active after $((i * 3))s; break; }; sleep 3; done
+  watchdog active after 6s
+  (exit 0)
+CHECK ok   canary watchdog active
+$ R 'sudo -n mkdir -p -m 700 /var/lib/pft-monupgrade'
+  
+  (exit 0)
+$ R 'sudo -n env STATE_DIR=/var/lib/pft-monupgrade NTFY_TEST_URL=https://ntfy.sh/<throwaway-alert-topic> bash .cache/monupgrade-run-09/repo/monupgrade/pft-monupgrade.sh plan --out /var/lib/pft-monupgrade/plan.json'
+  2026-11-26T02:56:29Z pft-monupgrade plan (alerts dir alerts, slo dir slo, min age 14 d)
+  CURRENT prometheus   container=pft-prometheus ref=prom/prometheus:v3.5.0@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996 id=sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996 digest=sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996
+  TARGET  prometheus   tag=v3.16.0 digest=sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06 pushed=2026-11-05T15:45:48Z
+  CURRENT alertmanager container=pft-alertmanager ref=prom/alertmanager:v0.28.1@sha256:27c475db5fb156cab31d5c18a4251ac7ed567746a2483ff264516437a39b15ba id=sha256:27c475db5fb156cab31d5c18a4251ac7ed567746a2483ff264516437a39b15ba digest=sha256:27c475db5fb156cab31d5c18a4251ac7ed567746a2483ff264516437a39b15ba
+  TARGET  alertmanager tag=v0.35.0 digest=sha256:e638797febd034838eca8b98cdbd46f951e9bf7f178777aa8669167406a9946c pushed=2026-11-09T16:55:12Z
+    prometheus   pulled prom/prometheus:v3.16.0, RepoDigests contain sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06
+    alertmanager pulled prom/alertmanager:v0.35.0, RepoDigests contain sha256:e638797febd034838eca8b98cdbd46f951e9bf7f178777aa8669167406a9946c
+  2026-11-26T02:57:26Z control: checks with the CURRENT images
+    current   promtool-check-config  PASS (81 output lines)
+    current   promtool-check-rules   PASS (78 output lines)
+    current   (rule files)           39 rule files
+    current   promtool-test-rules    PASS (39 output lines)
+    current   (test files)           38+1 test files, 39 SUCCESS lines
+    current   amtool-check-config    PASS (7 output lines)
+  2026-11-26T03:01:45Z checks with the TARGET images
+    target    promtool-check-config  PASS (81 output lines)
+    target    promtool-check-rules   PASS (78 output lines)
+    target    (rule files)           39 rule files
+    target    promtool-test-rules    PASS (78 output lines)
+    target    (test files)           38+1 test files, 39 SUCCESS lines
+    target    amtool-check-config    PASS (7 output lines)
+  2026-11-26T03:04:13Z plan written to plan.json
+  2026-11-26T03:04:13Z RESULT: READY - upgrade prometheus alertmanager: prometheus v3.5.0 -> v3.16.0, alertmanager v0.28.1 -> v0.35.0 (control PASS); image store changed -> pft-integrity accept
+  (exit 0)
+CHECK ok   sentry plan READY (exit 0)
+$ R 'sudo -n env STATE_DIR=/var/lib/pft-monupgrade NTFY_TEST_URL=https://ntfy.sh/<throwaway-alert-topic> bash .cache/monupgrade-run-09/repo/monupgrade/pft-monupgrade.sh apply --plan /var/lib/pft-monupgrade/plan.json --yes'
+  2026-11-26T03:04:13Z pft-monupgrade apply
+  2026-11-26T03:04:16Z backup 20261126T030415Z-apply: inspect, prometheus.yml, alertmanager.yml, silences (0 active), snapshot (rules 161, targets 1)
+  2026-11-26T03:04:17Z   recreate pft-alertmanager on prom/alertmanager:v0.35.0@sha256:e638797febd034838eca8b98cdbd46f951e9bf7f178777aa8669167406a9946c
+  2026-11-26T03:04:19Z   recreate pft-prometheus on prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06
+    CHECK pft-alertmanager-signature ok
+    CHECK pft-prometheus-signature ok
+  2026-11-26T03:04:19Z apply gate
+    CHECK prometheus-image       ok prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06
+    CHECK alertmanager-image     ok prom/alertmanager:v0.35.0@sha256:e638797febd034838eca8b98cdbd46f951e9bf7f178777aa8669167406a9946c
+    CHECK ready                  ok 
+    CHECK prometheus-version     ok 3.16.0
+    CHECK alertmanager-version   ok 0.35.0
+    CHECK rules-parity           ok 161 items
+    CHECK targets-parity         ok 1 items
+    CHECK targets_up-parity      ok 0 items
+    CHECK receivers-parity       ok 3 items
+    CHECK rules-health           ok not ok: [] (before: [])
+    CHECK silences-kept          ok 0 active
+    CHECK watchdog-unsilenced    ok 
+    CHECK loopback-only          ok 
+    CHECK test-alert             ok delivered "[FIRING] PFTMonupgradeTest" after 14s
+    CHECK test-alert-resolved    ok delivered "[RESOLVED] PFTMonupgradeTest" after 59s
+  2026-11-26T03:06:07Z   removed pft-prometheus-premonupgrade
+  2026-11-26T03:06:07Z   removed pft-alertmanager-premonupgrade
+  2026-11-26T03:06:07Z RESULT: PASS - apply: prometheus prom/prometheus:v3.5.0@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996 -> prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06, alertmanager prom/alertmanager:v0.28.1@sha256:27c475db5fb156cab31d5c18a4251ac7ed567746a2483ff264516437a39b15ba -> prom/alertmanager:v0.35.0@sha256:e638797febd034838eca8b98cdbd46f951e9bf7f178777aa8669167406a9946c
+  (exit 0)
+CHECK ok   sentry apply PASS
+$ R 'sudo -n env STATE_DIR=/var/lib/pft-monupgrade NTFY_TEST_URL=https://ntfy.sh/<throwaway-alert-topic> bash .cache/monupgrade-run-09/repo/monupgrade/pft-monupgrade.sh rollback --yes'
+  2026-11-26T03:06:39Z pft-monupgrade rollback
+  2026-11-26T03:06:40Z backup 20261126T030640Z-rollback: inspect, prometheus.yml, alertmanager.yml, silences (0 active), snapshot (rules 161, targets 1)
+  2026-11-26T03:06:42Z   recreate pft-alertmanager on prom/alertmanager:v0.28.1@sha256:27c475db5fb156cab31d5c18a4251ac7ed567746a2483ff264516437a39b15ba
+  2026-11-26T03:06:44Z   recreate pft-prometheus on prom/prometheus:v3.5.0@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996
+    CHECK pft-alertmanager-signature ok
+    CHECK pft-prometheus-signature ok
+  2026-11-26T03:06:45Z rollback gate
+    CHECK prometheus-image       ok prom/prometheus:v3.5.0@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996
+    CHECK alertmanager-image     ok prom/alertmanager:v0.28.1@sha256:27c475db5fb156cab31d5c18a4251ac7ed567746a2483ff264516437a39b15ba
+    CHECK ready                  ok 
+    CHECK prometheus-version     ok 3.5.0
+    CHECK alertmanager-version   ok 0.28.1
+    CHECK rules-parity           ok 161 items
+    CHECK targets-parity         ok 1 items
+    CHECK targets_up-parity      ok 0 items
+    CHECK receivers-parity       ok 3 items
+    CHECK rules-health           ok not ok: [] (before: [])
+    CHECK silences-kept          ok 0 active
+    CHECK watchdog-unsilenced    ok 
+    CHECK loopback-only          ok 
+    CHECK test-alert             ok delivered "[FIRING] PFTMonupgradeTest" after 12s
+    CHECK test-alert-resolved    ok delivered "[RESOLVED] PFTMonupgradeTest" after 60s
+  2026-11-26T03:08:17Z   removed pft-prometheus-premonupgrade
+  2026-11-26T03:08:17Z   removed pft-alertmanager-premonupgrade
+  2026-11-26T03:08:17Z RESULT: PASS - rollback: prometheus prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06 -> prom/prometheus:v3.5.0@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996, alertmanager prom/alertmanager:v0.35.0@sha256:e638797febd034838eca8b98cdbd46f951e9bf7f178777aa8669167406a9946c -> prom/alertmanager:v0.28.1@sha256:27c475db5fb156cab31d5c18a4251ac7ed567746a2483ff264516437a39b15ba
+  (exit 0)
+CHECK ok   sentry rollback PASS
+$ R 'sudo -n env STATE_DIR=/var/lib/pft-monupgrade NTFY_TEST_URL=https://ntfy.sh/<throwaway-alert-topic> bash .cache/monupgrade-run-09/repo/monupgrade/pft-monupgrade.sh apply --plan /var/lib/pft-monupgrade/plan.json --yes'
+  2026-11-26T03:08:47Z pft-monupgrade apply
+  2026-11-26T03:08:51Z backup 20261126T030850Z-apply: inspect, prometheus.yml, alertmanager.yml, silences (0 active), snapshot (rules 161, targets 1)
+  2026-11-26T03:08:52Z   recreate pft-alertmanager on prom/alertmanager:v0.35.0@sha256:e638797febd034838eca8b98cdbd46f951e9bf7f178777aa8669167406a9946c
+  2026-11-26T03:08:53Z   recreate pft-prometheus on prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06
+    CHECK pft-alertmanager-signature ok
+    CHECK pft-prometheus-signature ok
+  2026-11-26T03:08:54Z apply gate
+    CHECK prometheus-image       ok prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06
+    CHECK alertmanager-image     ok prom/alertmanager:v0.35.0@sha256:e638797febd034838eca8b98cdbd46f951e9bf7f178777aa8669167406a9946c
+    CHECK ready                  ok 
+    CHECK prometheus-version     ok 3.16.0
+    CHECK alertmanager-version   ok 0.35.0
+    CHECK rules-parity           ok 161 items
+    CHECK targets-parity         ok 1 items
+    CHECK targets_up-parity      ok 0 items
+    CHECK receivers-parity       ok 3 items
+    CHECK rules-health           ok not ok: [] (before: [])
+    CHECK silences-kept          ok 0 active
+    CHECK watchdog-unsilenced    ok 
+    CHECK loopback-only          ok 
+    CHECK test-alert             ok delivered "[FIRING] PFTMonupgradeTest" after 13s
+    CHECK test-alert-resolved    ok delivered "[RESOLVED] PFTMonupgradeTest" after 63s
+  2026-11-26T03:11:11Z   removed pft-prometheus-premonupgrade
+  2026-11-26T03:11:11Z   removed pft-alertmanager-premonupgrade
+  2026-11-26T03:11:11Z RESULT: PASS - apply: prometheus prom/prometheus:v3.5.0@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996 -> prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06, alertmanager prom/alertmanager:v0.28.1@sha256:27c475db5fb156cab31d5c18a4251ac7ed567746a2483ff264516437a39b15ba -> prom/alertmanager:v0.35.0@sha256:e638797febd034838eca8b98cdbd46f951e9bf7f178777aa8669167406a9946c
+  (exit 0)
+CHECK ok   sentry re-apply PASS
+$ R 'sudo -n env STATE_DIR=/var/lib/pft-monupgrade NTFY_TEST_URL=https://ntfy.sh/<throwaway-alert-topic> bash .cache/monupgrade-run-09/repo/monupgrade/pft-monupgrade.sh apply --plan /var/lib/pft-monupgrade/plan.json --yes'
+  2026-11-26T03:11:12Z pft-monupgrade apply
+  2026-11-26T03:11:13Z RESULT: NOTHING TO DO - both containers already run the plan targets (prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06, prom/alertmanager:v0.35.0@sha256:e638797febd034838eca8b98cdbd46f951e9bf7f178777aa8669167406a9946c)
+  (exit 0)
+CHECK ok   sentry second apply is a no-op
+$ R 'STATE=~/.cache/monupgrade-run-09/canary bash .cache/monupgrade-run-09/repo/monupgrade/drill/canary.sh down'
+  2026-11-26T03:11:15Z removed container pft-prometheus
+  2026-11-26T03:11:16Z removed container pft-alertmanager
+  2026-11-26T03:11:16Z removed container pft-alert-bridge
+  2026-11-26T03:11:16Z removed volume 65ab6b6e453fb34788fb31f2
+  2026-11-26T03:11:16Z removed volume pft-prometheus-data
+  2026-11-26T03:11:17Z removed image 27c475db5fb1
+  2026-11-26T03:11:18Z removed image 63805ebb8d2b
+  2026-11-26T03:11:18Z removed image c5ba3deef00c
+  2026-11-26T03:11:18Z removed image e04987641b57
+  2026-11-26T03:11:18Z removed image e638797febd0
+  2026-11-26T03:11:19Z image store = before up
+  2026-11-26T03:11:20Z no stack container left
+  2026-11-26T03:11:20Z RESULT: canary removed
+  (exit 0)
+CHECK ok   sentry canary removed (containers, volumes, pulled images)
+$ R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 173 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   sentry integrity PASS after the canary
+
+-- validator (2026-11-26T03:11:35Z)
+$ printf 'NTFY_URL=%s\n' 'https://ntfy.sh/<throwaway-alert-topic>' > ~/.cache/monupgrade-run-09-bridge.env && chmod 600 ~/.cache/monupgrade-run-09-bridge.env && bridge_to ~/.cache/monupgrade-run-09-bridge.env
+  2026-11-26T03:11:38Z starting pft-alert-bridge (ntfy: on)
+  2026-11-26T03:11:41Z pft-alert-bridge listening
+  (exit 0)
+CHECK ok   validator bridge -> throwaway alert topic
+$ sudo -n env STATE_DIR=/var/lib/pft-monupgrade NTFY_TEST_URL=https://ntfy.sh/<throwaway-alert-topic> bash monupgrade/pft-monupgrade.sh rollback --yes
+  2026-11-26T03:11:41Z pft-monupgrade rollback
+  2026-11-26T03:11:43Z backup 20261126T031142Z-rollback: inspect, prometheus.yml, alertmanager.yml, silences (1 active), snapshot (rules 161, targets 1)
+  2026-11-26T03:11:44Z   recreate pft-alertmanager on prom/alertmanager:v0.28.1
+  2026-11-26T03:11:46Z   recreate pft-prometheus on prom/prometheus:v3.5.0
+    CHECK pft-alertmanager-signature ok
+    CHECK pft-prometheus-signature ok
+  2026-11-26T03:11:47Z rollback gate
+    CHECK prometheus-image       ok prom/prometheus:v3.5.0
+    CHECK alertmanager-image     ok prom/alertmanager:v0.28.1
+    CHECK ready                  ok 
+    CHECK prometheus-version     ok 3.5.0
+    CHECK alertmanager-version   ok 0.28.1
+    CHECK rules-parity           ok 161 items
+    CHECK targets-parity         ok 1 items
+    CHECK targets_up-parity      ok 1 items
+    CHECK receivers-parity       ok 3 items
+    CHECK rules-health           ok not ok: [] (before: [])
+    CHECK silences-kept          ok 1 active
+    CHECK watchdog-unsilenced    ok 
+    CHECK loopback-only          ok 
+    CHECK test-alert             ok delivered "[FIRING] PFTMonupgradeTest" after 12s
+    CHECK test-alert-resolved    ok delivered "[RESOLVED] PFTMonupgradeTest" after 60s
+  2026-11-26T03:13:23Z   removed pft-prometheus-premonupgrade
+  2026-11-26T03:13:23Z   removed pft-alertmanager-premonupgrade
+  2026-11-26T03:13:23Z RESULT: PASS - rollback: prometheus prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06 -> prom/prometheus:v3.5.0, alertmanager prom/alertmanager:v0.35.0@sha256:e638797febd034838eca8b98cdbd46f951e9bf7f178777aa8669167406a9946c -> prom/alertmanager:v0.28.1
+  (exit 0)
+CHECK ok   validator pre-rollback PASS (undo the earlier recorded apply)
+$ sudo -n docker inspect -f '{{.Config.Image}}' pft-prometheus pft-alertmanager
+  prom/prometheus:v3.5.0
+  prom/alertmanager:v0.28.1
+  (exit 0)
+CHECK ok   validator back on the previous images
+
+-- imagescan before, again (validator after the pre-rollback; monitoring images, counts only)
+$ sudo -n pft-imagescan scan --no-fetch >/dev/null; echo scan exit $?
+  scan exit 0
+  (exit 0)
+  {"label":"before","ref":"prom/alertmanager:v0.28.1","in_use":true,"fixable":"<withheld>","high_critical":"<withheld>"}
+  {"label":"before","ref":"prom/alertmanager:v0.35.0","in_use":false,"fixable":"<withheld>","high_critical":"<withheld>"}
+  {"label":"before","ref":"prom/prometheus:v3.16.0","in_use":false,"fixable":"<withheld>","high_critical":"<withheld>"}
+  {"label":"before","ref":"prom/prometheus:v3.5.0","in_use":true,"fixable":"<withheld>","high_critical":"<withheld>"}
+$ sudo -n mkdir -p -m 700 /var/lib/pft-monupgrade
+  
+  (exit 0)
+$ sudo -n env STATE_DIR=/var/lib/pft-monupgrade NTFY_TEST_URL=https://ntfy.sh/<throwaway-alert-topic> bash monupgrade/pft-monupgrade.sh plan --out /var/lib/pft-monupgrade/plan.json
+  2026-11-26T03:14:17Z pft-monupgrade plan (alerts dir alerts, slo dir slo, min age 14 d)
+  CURRENT prometheus   container=pft-prometheus ref=prom/prometheus:v3.5.0 id=sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996 digest=sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996
+  TARGET  prometheus   tag=v3.16.0 digest=sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06 pushed=2026-11-05T15:45:48Z
+  CURRENT alertmanager container=pft-alertmanager ref=prom/alertmanager:v0.28.1 id=sha256:27c475db5fb156cab31d5c18a4251ac7ed567746a2483ff264516437a39b15ba digest=sha256:27c475db5fb156cab31d5c18a4251ac7ed567746a2483ff264516437a39b15ba
+  TARGET  alertmanager tag=v0.35.0 digest=sha256:e638797febd034838eca8b98cdbd46f951e9bf7f178777aa8669167406a9946c pushed=2026-11-09T16:55:12Z
+    prometheus   pulled prom/prometheus:v3.16.0, RepoDigests contain sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06
+    alertmanager pulled prom/alertmanager:v0.35.0, RepoDigests contain sha256:e638797febd034838eca8b98cdbd46f951e9bf7f178777aa8669167406a9946c
+  2026-11-26T03:14:26Z control: checks with the CURRENT images
+    current   promtool-check-config  PASS (81 output lines)
+    current   promtool-check-rules   PASS (78 output lines)
+    current   (rule files)           39 rule files
+    current   promtool-test-rules    PASS (39 output lines)
+    current   (test files)           38+1 test files, 39 SUCCESS lines
+    current   amtool-check-config    PASS (7 output lines)
+  2026-11-26T03:17:49Z checks with the TARGET images
+    target    promtool-check-config  PASS (81 output lines)
+    target    promtool-check-rules   PASS (78 output lines)
+    target    (rule files)           39 rule files
+    target    promtool-test-rules    PASS (78 output lines)
+    target    (test files)           38+1 test files, 39 SUCCESS lines
+    target    amtool-check-config    PASS (7 output lines)
+  2026-11-26T03:20:50Z plan written to plan.json
+  2026-11-26T03:20:50Z RESULT: READY - upgrade prometheus alertmanager: prometheus v3.5.0 -> v3.16.0, alertmanager v0.28.1 -> v0.35.0 (control PASS); image store changed -> pft-integrity accept
+  (exit 0)
+CHECK ok   validator plan READY (exit 0)
+$ sudo -n env STATE_DIR=/var/lib/pft-monupgrade NTFY_TEST_URL=https://ntfy.sh/<throwaway-alert-topic> bash monupgrade/pft-monupgrade.sh apply --plan /var/lib/pft-monupgrade/plan.json --yes
+  2026-11-26T03:20:50Z pft-monupgrade apply
+  2026-11-26T03:20:54Z backup 20261126T032053Z-apply: inspect, prometheus.yml, alertmanager.yml, silences (1 active), snapshot (rules 161, targets 1)
+  2026-11-26T03:20:56Z   recreate pft-alertmanager on prom/alertmanager:v0.35.0@sha256:e638797febd034838eca8b98cdbd46f951e9bf7f178777aa8669167406a9946c
+  2026-11-26T03:20:58Z   recreate pft-prometheus on prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06
+    CHECK pft-alertmanager-signature ok
+    CHECK pft-prometheus-signature ok
+  2026-11-26T03:20:59Z apply gate
+    CHECK prometheus-image       ok prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06
+    CHECK alertmanager-image     ok prom/alertmanager:v0.35.0@sha256:e638797febd034838eca8b98cdbd46f951e9bf7f178777aa8669167406a9946c
+    CHECK ready                  ok 
+    CHECK prometheus-version     ok 3.16.0
+    CHECK alertmanager-version   ok 0.35.0
+    CHECK rules-parity           ok 161 items
+    CHECK targets-parity         ok 1 items
+    CHECK targets_up-parity      ok 1 items
+    CHECK receivers-parity       ok 3 items
+    CHECK rules-health           ok not ok: [] (before: [])
+    CHECK silences-kept          ok 1 active
+    CHECK watchdog-unsilenced    ok 
+    CHECK loopback-only          ok 
+    CHECK test-alert             ok delivered "[FIRING] PFTMonupgradeTest" after 14s
+    CHECK test-alert-resolved    ok delivered "[RESOLVED] PFTMonupgradeTest" after 59s
+  2026-11-26T03:23:06Z   removed pft-prometheus-premonupgrade
+  2026-11-26T03:23:06Z   removed pft-alertmanager-premonupgrade
+  2026-11-26T03:23:06Z RESULT: PASS - apply: prometheus prom/prometheus:v3.5.0 -> prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06, alertmanager prom/alertmanager:v0.28.1 -> prom/alertmanager:v0.35.0@sha256:e638797febd034838eca8b98cdbd46f951e9bf7f178777aa8669167406a9946c
+  (exit 0)
+CHECK ok   validator apply PASS
+$ sudo -n env STATE_DIR=/var/lib/pft-monupgrade NTFY_TEST_URL=https://ntfy.sh/<throwaway-alert-topic> bash monupgrade/pft-monupgrade.sh rollback --yes
+  2026-11-26T03:23:37Z pft-monupgrade rollback
+  2026-11-26T03:23:39Z backup 20261126T032338Z-rollback: inspect, prometheus.yml, alertmanager.yml, silences (1 active), snapshot (rules 161, targets 1)
+  2026-11-26T03:23:41Z   recreate pft-alertmanager on prom/alertmanager:v0.28.1
+  2026-11-26T03:23:44Z   recreate pft-prometheus on prom/prometheus:v3.5.0
+    CHECK pft-alertmanager-signature ok
+    CHECK pft-prometheus-signature ok
+  2026-11-26T03:23:44Z rollback gate
+    CHECK prometheus-image       ok prom/prometheus:v3.5.0
+    CHECK alertmanager-image     ok prom/alertmanager:v0.28.1
+    CHECK ready                  ok 
+    CHECK prometheus-version     ok 3.5.0
+    CHECK alertmanager-version   ok 0.28.1
+    CHECK rules-parity           ok 161 items
+    CHECK targets-parity         ok 1 items
+    CHECK targets_up-parity      ok 1 items
+    CHECK receivers-parity       ok 3 items
+    CHECK rules-health           ok not ok: [] (before: [])
+    CHECK silences-kept          ok 1 active
+    CHECK watchdog-unsilenced    ok 
+    CHECK loopback-only          ok 
+    CHECK test-alert             ok delivered "[FIRING] PFTMonupgradeTest" after 12s
+    CHECK test-alert-resolved    ok delivered "[RESOLVED] PFTMonupgradeTest" after 60s
+  2026-11-26T03:25:17Z   removed pft-prometheus-premonupgrade
+  2026-11-26T03:25:17Z   removed pft-alertmanager-premonupgrade
+  2026-11-26T03:25:17Z RESULT: PASS - rollback: prometheus prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06 -> prom/prometheus:v3.5.0, alertmanager prom/alertmanager:v0.35.0@sha256:e638797febd034838eca8b98cdbd46f951e9bf7f178777aa8669167406a9946c -> prom/alertmanager:v0.28.1
+  (exit 0)
+CHECK ok   validator rollback PASS
+$ sudo -n env STATE_DIR=/var/lib/pft-monupgrade NTFY_TEST_URL=https://ntfy.sh/<throwaway-alert-topic> bash monupgrade/pft-monupgrade.sh apply --plan /var/lib/pft-monupgrade/plan.json --yes
+  2026-11-26T03:25:48Z pft-monupgrade apply
+  2026-11-26T03:25:51Z backup 20261126T032550Z-apply: inspect, prometheus.yml, alertmanager.yml, silences (1 active), snapshot (rules 161, targets 1)
+  2026-11-26T03:25:52Z   recreate pft-alertmanager on prom/alertmanager:v0.35.0@sha256:e638797febd034838eca8b98cdbd46f951e9bf7f178777aa8669167406a9946c
+  2026-11-26T03:25:53Z   recreate pft-prometheus on prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06
+    CHECK pft-alertmanager-signature ok
+    CHECK pft-prometheus-signature ok
+  2026-11-26T03:25:54Z apply gate
+    CHECK prometheus-image       ok prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06
+    CHECK alertmanager-image     ok prom/alertmanager:v0.35.0@sha256:e638797febd034838eca8b98cdbd46f951e9bf7f178777aa8669167406a9946c
+    CHECK ready                  ok 
+    CHECK prometheus-version     ok 3.16.0
+    CHECK alertmanager-version   ok 0.35.0
+    CHECK rules-parity           ok 161 items
+    CHECK targets-parity         ok 1 items
+    CHECK targets_up-parity      ok 1 items
+    CHECK receivers-parity       ok 3 items
+    CHECK rules-health           ok not ok: [] (before: [])
+    CHECK silences-kept          ok 1 active
+    CHECK watchdog-unsilenced    ok 
+    CHECK loopback-only          ok 
+    CHECK test-alert             ok delivered "[FIRING] PFTMonupgradeTest" after 13s
+    CHECK test-alert-resolved    ok delivered "[RESOLVED] PFTMonupgradeTest" after 59s
+  2026-11-26T03:28:07Z   removed pft-prometheus-premonupgrade
+  2026-11-26T03:28:07Z   removed pft-alertmanager-premonupgrade
+  2026-11-26T03:28:07Z RESULT: PASS - apply: prometheus prom/prometheus:v3.5.0 -> prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06, alertmanager prom/alertmanager:v0.28.1 -> prom/alertmanager:v0.35.0@sha256:e638797febd034838eca8b98cdbd46f951e9bf7f178777aa8669167406a9946c
+  (exit 0)
+CHECK ok   validator re-apply PASS
+$ sudo -n env STATE_DIR=/var/lib/pft-monupgrade NTFY_TEST_URL=https://ntfy.sh/<throwaway-alert-topic> bash monupgrade/pft-monupgrade.sh apply --plan /var/lib/pft-monupgrade/plan.json --yes
+  2026-11-26T03:28:07Z pft-monupgrade apply
+  2026-11-26T03:28:08Z RESULT: NOTHING TO DO - both containers already run the plan targets (prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06, prom/alertmanager:v0.35.0@sha256:e638797febd034838eca8b98cdbd46f951e9bf7f178777aa8669167406a9946c)
+  (exit 0)
+CHECK ok   validator second apply is a no-op
+$ test_drain
+  test alerts drained: active 0, firing 7, resolved 7
+  (exit 0)
+CHECK ok   validator test alerts drained to the throwaway topic before the bridge moves back
+$ bridge_to ~/.config/pft-alerts/ntfy.env && rm -f ~/.cache/monupgrade-run-09-bridge.env
+  2026-11-26T03:28:09Z starting pft-alert-bridge (ntfy: on)
+  2026-11-26T03:28:12Z pft-alert-bridge listening
+  (exit 0)
+CHECK ok   validator bridge -> real target again
+$ sudo -n docker ps --filter name=pft- --format '{{.Names}} {{.Image}} {{.Status}}'
+  pft-alert-bridge python:3.12-alpine Up 2 seconds
+  pft-prometheus prom/prometheus:v3.16.0 Up 2 minutes
+  pft-alertmanager prom/alertmanager:v0.35.0 Up 2 minutes
+  (exit 0)
+
+-- imagescan after (validator; monitoring images, counts only)
+$ sudo -n pft-imagescan scan --no-fetch >/dev/null; echo scan exit $?
+  scan exit 0
+  (exit 0)
+  {"label":"after","ref":"prom/alertmanager:v0.28.1","in_use":false,"fixable":"<withheld>","high_critical":"<withheld>"}
+  {"label":"after","ref":"prom/alertmanager:v0.35.0","in_use":true,"fixable":"<withheld>","high_critical":"<withheld>"}
+  {"label":"after","ref":"prom/prometheus:v3.16.0","in_use":true,"fixable":"<withheld>","high_critical":"<withheld>"}
+  {"label":"after","ref":"prom/prometheus:v3.5.0","in_use":false,"fixable":"<withheld>","high_critical":"<withheld>"}
+$ sudo -n jq '.drift | length' /var/cache/pft-imagescan/last-scan.json
+  0
+  (exit 0)
+CHECK ok   imagescan after: 0 drift (re-created, digest-pinned monitoring containers matched)
+$ fixed_counts ~/.cache/monupgrade-run-09-scan-before.json
+  {"image":"prometheus","fixable_before":"<withheld>","fixable_after":"<withheld>","fixed":109,"new":0}
+  {"image":"alertmanager","fixable_before":"<withheld>","fixable_after":"<withheld>","fixed":104,"new":0}
+  (exit 0)
+
+-- intended changes into pft-integrity (re-created monitoring containers)
+$ sudo -n pft-integrity verify | grep -vE '^ *(OK|PASS)' | tail -20
+  pft-integrity verify - 2026-11-26T03:29:05Z
+  OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-11-25T01:53:54Z
+  RESULT: PASS - 297 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+$ sudo -n pft-integrity accept --reason 'task_add0edd0: pft-monupgrade run 09 (monitoring containers re-created)' | tail -1
+  manifest sha256: cf9440497d27dbde04640bbb9273142ddc95337ed08873dfbd4bfae072016bee -> 7836e08721914fd42bb979f3a8e57ffdd8949ad0181f2216af2ba1a6839b9e10 (logged to accept.log)
+  (exit 0)
+CHECK ok   validator integrity accept
+
+== 3. end window, restore, checks, drain, read back
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+  (exit 0)
+CHECK ok   window ended
+$ sudo -n rm -f /etc/pft-maint/ntfy.env
+  
+  (exit 0)
+$ sudo -n systemctl start pft-keyescrow.service; sudo -n pft-keyescrow inventory | tail -1
+  RESULT: ok 11, perm 0, missing 0, unreadable 0, absent(optional) 2; escrow drift 0, new 0, evolving 1 -> exit 0
+  (exit 0)
+CHECK ok   keyescrow drift 0 after the target restore
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 297 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 173 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   integrity PASS both hosts
+$ state_v; state_s
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full at the end
+$ curl -s -m 5 -o /dev/null -w 'prometheus %{http_code}\n' http://127.0.0.1:9090/-/healthy; curl -s -m 5 -o /dev/null -w 'alertmanager %{http_code}\n' http://127.0.0.1:9093/-/healthy; curl -s -m 5 http://127.0.0.1:9090/api/v1/status/buildinfo | jq -r '"prometheus version " + .data.version'; curl -s -m 5 http://127.0.0.1:9093/api/v2/status | jq -r '"alertmanager version " + .versionInfo.version'
+  prometheus 200
+  alertmanager 200
+  prometheus version 3.16.0
+  alertmanager version 0.35.0
+  (exit 0)
+CHECK ok   validator Prometheus + Alertmanager healthy
+drain after 0s:
+    (nothing but the watchdog / digest-only / pre-silenced alerts)
+$ curl -s -m 10 -o /dev/null -w '%{http_code}' -X DELETE http://127.0.0.1:9093/api/v2/silence/e1f949a5-80ea-4bb7-93af-f87ef37c7210
+  200
+  (exit 0)
+CHECK ok   silence expired after a clean drain
+$ curl -s -m 15 'https://ntfy.sh/<throwaway-topic>/json?poll=1&since=1795661133' | jq -r 'select(.event == "message") | .title'
+  [MAINT] start validator
+  [MAINT] end validator
+  (exit 0)
+CHECK ok   [MAINT] start/end reached the throwaway topic
+$ curl -s -m 15 'https://ntfy.sh/<throwaway-alert-topic>/json?poll=1&since=1795661133' | jq -r 'select(.event == "message") | .title' | sort | uniq -c
+        1 [FIRING] PFTExporterDown
+        1 [FIRING] PFTLogshipBroken
+        7 [FIRING] PFTMonupgradeTest
+        1 [FIRING] PFTSLOFastBurn
+        7 [RESOLVED] PFTMonupgradeTest
+  (exit 0)
+CHECK ok   test alerts reached the throwaway alert topic
+  operator #1 topic: 0 non-agent message(s)
+  operator #2 topic: 0 non-agent message(s)
+CHECK ok   operator topics got no alert/[MAINT] message during the run (2 topic(s))
+$ R 'rm -rf ~/.cache/monupgrade-run-09'
+  
+  (exit 0)
+
+pft-monupgrade live run 09 done 2026-11-26T03:31:05Z: 0 check(s) failed -> PASS
+
+== restore (trap)
+exit=0
