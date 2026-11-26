@@ -26,7 +26,7 @@ export TZ=UTC
 SHA="$(git rev-parse HEAD)"
 AM=http://127.0.0.1:9093; PROM=http://127.0.0.1:9090; RPC=http://127.0.0.1:5005
 ME="$(id -un)"; HN="$(hostname)"
-TASK=task_32fe8c3a
+TASK="${TASK:-task_32fe8c3a}"   # task id used in silence/maint/integrity reasons
 RUN="${RUN:?set RUN}"; DRY="${DRY:-0}"; MODE="${MODE:-measure}"; HOSTS="${HOSTS:-sentry validator}"; N="${N:-3}"
 # a validator stop records a histarchive gap: PFTHistarchiveIntegrity (delta(follow_gaps[1h]) > 0) fires for 1 h after
 # it even once the gap is filled, so drain and silence must outlast that hour (dry2: 30-min drain cap, silence extended)

@@ -1,0 +1,17 @@
+# Throwaway A/B override: no host ports, no fixed container name, own named volumes
+# (removed with down -v), no host bind mounts, no restart. stop_grace_period is NOT touched.
+services:
+  postfiatd:
+    container_name: !reset null
+    ports: !reset []
+    restart: "no"
+    volumes: !override
+      - cfg:/etc/postfiatd
+      - db:/var/lib/postfiatd/db
+      - log:/var/log/postfiatd
+    labels:
+      pft.stopgrace.throwaway: "1"
+volumes:
+  cfg:
+  db:
+  log:
