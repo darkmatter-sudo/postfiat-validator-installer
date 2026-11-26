@@ -1,0 +1,75 @@
+== task_6a35 recorded run: mutants  2026-11-26T08:46:21Z
+host: Ubuntu 22.04, glibc 2.35, Python 3.10.12, version:0.8.0, ruff 0.17.1, jq-1.6, logrotate 3.19.0
+$ git log -1 --format='repo HEAD %H %s'
+repo HEAD 4b9a8b6f9c7f87315f0a7d78a894be097a1caa2a scripts: add rpc-events-report, a read-only check over rpc-events.ndjson
+[exit 0]
+$ sha256sum scripts/rpc-events-report scripts/test-rpc-events-report ~/.cache/rpcev-mut/mut.py
+782375f82fe8bf5c7c8dbd2f29b7f53fc2b77dea37cc9aae8d3445ac2f39ae40  scripts/rpc-events-report
+bcf6111f01ae95cb228e10cee5ce0eeb210e3691439c540b415be88a5a406d27  scripts/test-rpc-events-report
+5d2792a6ab61792632a798757928737fea5bfe144bbdb3fbe9ff8b432f95d2b0  ~/.cache/rpcev-mut/mut.py
+[exit 0]
+$ cat ~/.cache/rpcev-mut/mut.py
+import os, shutil, subprocess, sys, tempfile
+repo = sys.argv[1]
+M = [
+ ("fingerprint ignored", 'and fingerprint(live_path, state["fp_len"]) == state["fp"]', 'and True'),
+ ("inode ignored", 'live_stat.st_ino == state["inode"]', 'True'),
+ ("torn tail consumed when live", '                return offset\n            return line_start', '                return offset\n            return offset'),
+ ("newer rotated skipped", 'segments = [(candidate, offset, True)] + [(path, 0, True) for path in newer]', 'segments = [(candidate, offset, True)]'),
+ ("rotated read from 0", 'segments = [(candidate, offset, True)]', 'segments = [(candidate, 0, True)]'),
+ ("pooled keys ignored", 'if counter.other > limit:', 'if False:'),
+ ("limit off by one", 'status = "ok" if value <= limit else "breach"', 'status = "ok" if value < limit else "breach"'),
+ ("state path not checked", 'if state["path"] != live_path:', 'if False:'),
+ ("no lock", 'fcntl.flock(lock_handle, fcntl.LOCK_EX | fcntl.LOCK_NB)', 'pass'),
+ ("gap not a breach", '"name": "continuity",\n                "status": "breach"', '"name": "continuity",\n                "status": "ok"'),
+ ("schema not checked", 'or record.get("schema") != EVENT_SCHEMA', ''),
+ ("oversize counted as event", '        stats.bad["oversize"] += 1\n        if not complete', '        stats.events += 1\n        if not complete'),
+ ("start-at-end mid-line", 'end = last_line_end(handle, os.fstat(handle.fileno()).st_size)', 'end = os.fstat(handle.fileno()).st_size'),
+ ("error ratio min-events ignored", 'if stats.events < args.min_events:', 'if False:'),
+ ("method filter ignored", 'if self.methods is not None and method not in self.methods:', 'if False:'),
+]
+src = open(os.path.join(repo, "scripts/rpc-events-report")).read()
+def run(tag, text):
+    d = tempfile.mkdtemp(dir=os.path.expanduser("~/.cache/rpcev-mut"))
+    os.makedirs(d + "/scripts"); shutil.copytree(repo + "/ops", d + "/ops")
+    open(d + "/scripts/rpc-events-report", "w").write(text)
+    shutil.copy(repo + "/scripts/test-rpc-events-report", d + "/scripts/")
+    env = dict(os.environ, TMPDIR=d)
+    p = subprocess.run(["bash", d + "/scripts/test-rpc-events-report"], capture_output=True, text=True, env=env, stdin=subprocess.DEVNULL, timeout=600)
+    fails = [l for l in p.stdout.splitlines() if l.startswith("FAIL")]
+    res = [l for l in p.stdout.splitlines() if l.startswith("RESULT")]
+    shutil.rmtree(d)
+    return p.returncode, res, fails
+rc, res, fails = run("baseline", src)
+print("baseline rc", rc, res); assert rc == 0
+caught = 0
+for name, old, new in M:
+    n = src.count(old)
+    if n != 1:
+        print(f"NOT APPLIED ({n}) {name}"); continue
+    rc, res, fails = run(name, src.replace(old, new))
+    ok = rc != 0 and res and fails
+    caught += bool(ok)
+    print(("CAUGHT " if ok else "SURVIVED ") + name, res, fails[:2])
+print(f"mutants {len(M)} caught {caught}")
+[exit 0]
+$ python3 -I ~/.cache/rpcev-mut/mut.py ~/work/postfiatl1v2
+baseline rc 0 ['RESULT: PASS (107 passed, 0 failed)']
+CAUGHT fingerprint ignored ['RESULT: FAIL (101 passed, 6 failed)'] ["FAIL regrown copytruncate: events counted exactly once: got '37' want '42'", "FAIL regrown copytruncate: rotated: got 'false' want 'true'"]
+CAUGHT inode ignored ['RESULT: FAIL (105 passed, 2 failed)'] ["FAIL same-head rename: events counted exactly once: got '2' want '3'", "FAIL same-head rename: rotated: got 'false' want 'true'"]
+CAUGHT torn tail consumed when live ['RESULT: FAIL (106 passed, 1 failed)'] ["FAIL torn tail: completed line counted on the next run: got '0:1' want '1:0'"]
+CAUGHT newer rotated skipped ['RESULT: FAIL (105 passed, 2 failed)'] ["FAIL rename x2: events counted exactly once: got '15' want '22'", "FAIL rename x2: segments read: got 'rpc-events.ndjson.2.gz rpc-events.ndjson' want 'rpc-events.ndjson.2.gz rpc-events.ndjson.1 rpc-events.ndjson'"]
+CAUGHT rotated read from 0 ['RESULT: FAIL (100 passed, 7 failed)'] ["FAIL copytruncate+gz: events counted exactly once: got '18' want '8'", "FAIL copytruncate+gz: read the rotated file from the old offset: got 'true:false' want 'true:true'"]
+CAUGHT pooled keys ignored ['RESULT: FAIL (106 passed, 1 failed)'] ["FAIL cap: pooled count over limit is a breach: got '0:10.0.1.1' want '1:(other)'"]
+CAUGHT limit off by one ['RESULT: FAIL (103 passed, 4 failed)'] ["FAIL max_peer_method: at limit 40 exit: got '1' want '0'", "FAIL max_method: at limit 80 exit: got '1' want '0'"]
+CAUGHT state path not checked ['RESULT: FAIL (104 passed, 3 failed)'] ["FAIL reused state for another log: exit: got '1' want '2'", 'FAIL reused state: reason']
+CAUGHT no lock ['RESULT: FAIL (106 passed, 1 failed)'] ["FAIL locked state: exit: got '0' want '2'"]
+CAUGHT gap not a breach ['RESULT: FAIL (104 passed, 3 failed)'] ["FAIL gap: exit: got '0' want '1'", "FAIL gap: continuity breach: got 'true,ok' want 'true,breach'"]
+CAUGHT schema not checked ['RESULT: FAIL (104 passed, 3 failed)'] ["FAIL malformed: events: got '6' want '5'", "FAIL malformed: wrong_schema (array, other schema, non-string method): got '2' want '3'"]
+CAUGHT oversize counted as event ['RESULT: FAIL (104 passed, 3 failed)'] ["FAIL malformed: events: got '6' want '5'", "FAIL malformed: oversize: got '0' want '1'"]
+CAUGHT start-at-end mid-line ['RESULT: FAIL (106 passed, 1 failed)'] ["FAIL start-at-end: the partial line is counted once completed: got '0' want '1'"]
+CAUGHT error ratio min-events ignored ['RESULT: FAIL (106 passed, 1 failed)'] ["FAIL max_error_ratio: below --min-events is skipped: got '1:breach' want '0:skipped'"]
+CAUGHT method filter ignored ['RESULT: FAIL (104 passed, 3 failed)'] ["FAIL filter: events counted: got '102' want '22'", "FAIL filter: filtered_out: got '0' want '80'"]
+mutants 15 caught 15
+[exit 0]
+RUN RESULT: PASS

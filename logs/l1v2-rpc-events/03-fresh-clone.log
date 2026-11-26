@@ -1,0 +1,440 @@
+== task_6a35 recorded run: clone  2026-11-26T08:44:38Z
+host: Ubuntu 22.04, glibc 2.35, Python 3.10.12, version:0.8.0, ruff 0.17.1, jq-1.6, logrotate 3.19.0
+$ git clone -q https://github.com/darkmatter-sudo/postfiatl1v2.git ~/.cache/tmp.6wXbzGFtvc/postfiatl1v2
+[exit 0]
+$ git checkout -q 4b9a8b6f9c7f87315f0a7d78a894be097a1caa2a
+[exit 0]
+$ git log -1 --format='repo HEAD %H %s'
+repo HEAD 4b9a8b6f9c7f87315f0a7d78a894be097a1caa2a scripts: add rpc-events-report, a read-only check over rpc-events.ndjson
+[exit 0]
+$ git rev-parse HEAD~1 && git diff --stat HEAD~1 HEAD
+615d3d37e5c3d911454dc6533a880855e02a6ecf
+ docs/runbooks/public-rpc-operator-policy.md |  81 +++
+ scripts/README.md                           |   1 +
+ scripts/rpc-events-report                   | 755 ++++++++++++++++++++++++++++
+ scripts/test-rpc-events-report              | 512 +++++++++++++++++++
+ 4 files changed, 1349 insertions(+)
+[exit 0]
+$ sha256sum scripts/rpc-events-report scripts/test-rpc-events-report docs/runbooks/public-rpc-operator-policy.md
+782375f82fe8bf5c7c8dbd2f29b7f53fc2b77dea37cc9aae8d3445ac2f39ae40  scripts/rpc-events-report
+bcf6111f01ae95cb228e10cee5ce0eeb210e3691439c540b415be88a5a406d27  scripts/test-rpc-events-report
+74d52edde858440ccacfbd9f60d85676711c2a264e3fb18c1b01f8e5fc85cb59  docs/runbooks/public-rpc-operator-policy.md
+[exit 0]
+-- release binary: postfiatorg/postfiatl1v2 release cobalt-operator-v2-20260824
+$ gh release view cobalt-operator-v2-20260824 -R postfiatorg/postfiatl1v2 --json tagName,publishedAt,assets -q '.tagName, .publishedAt, (.assets[] | select(.name=="postfiat-node") | .name + " " + (.size|tostring) + " " + .digest)'
+cobalt-operator-v2-20260824
+2026-08-24T07:57:21Z
+postfiat-node 47466872 sha256:e036033d437d85c4f60fc8e6689a771fdda01dd2ce88456571e6c9092faf4caf
+[exit 0]
+$ curl -fsSL https://github.com/postfiatorg/postfiatl1v2/releases/download/cobalt-operator-v2-20260824/cobalt-operator-assets-SHA256SUMS.txt | grep ' postfiat-node$'
+e036033d437d85c4f60fc8e6689a771fdda01dd2ce88456571e6c9092faf4caf  postfiat-node
+[exit 0]
+$ sha256sum ~/.cache/rpcev-rel/postfiat-node
+e036033d437d85c4f60fc8e6689a771fdda01dd2ce88456571e6c9092faf4caf  ~/.cache/rpcev-rel/postfiat-node
+[exit 0]
+-- glibc 2.39 loader+libc+libm copied from the local Ubuntu 24.04 image (the release binary needs GLIBC_2.39; host has 2.35)
+$ sha256sum ~/.cache/rpcev-rel/glibc239/*
+c20a2dc8917c755f02b94049356320fe1f62ac7d9f8994731f807d9df39302da  ~/.cache/rpcev-rel/glibc239/ld-linux-x86-64.so.2
+3a15d66867d83762c7f2f1e37359cb8f6c5743edb369c65285cb0b1c4f7498bf  ~/.cache/rpcev-rel/glibc239/libc.so.6
+fce00b6f25f459cf4ae0b7fae4257909a1a8a86f9149e7c029a5d617baf1ccd0  ~/.cache/rpcev-rel/glibc239/libm.so.6
+[exit 0]
+$ ~/.cache/rpcev-rel/glibc239/ld-linux-x86-64.so.2 --library-path ~/.cache/rpcev-rel/glibc239 ~/.cache/rpcev-rel/glibc239/libc.so.6 | head -1
+GNU C Library (Ubuntu GLIBC 2.39-0ubuntu8.9) stable release version 2.39.
+[exit 0]
+$ shellcheck scripts/test-rpc-events-report
+[exit 0]
+$ ruff check scripts/rpc-events-report
+All checks passed!
+[exit 0]
+$ ruff format --check scripts/rpc-events-report
+1 file already formatted
+[exit 0]
+$ bash -n scripts/test-rpc-events-report && python3 -c 'import ast,sys; ast.parse(open(sys.argv[1]).read())' scripts/rpc-events-report && echo syntax ok
+syntax ok
+[exit 0]
+-- test without the release binary (as CI would run it)
+$ scripts/test-rpc-events-report
+== tool 782375f82fe8bf5c7c8dbd2f29b7f53fc2b77dea37cc9aae8d3445ac2f39ae40
+== real capture SKIPPED (set RPC_EVENTS_NODE_BIN and RPC_EVENTS_NODE_SHA256)
+== synthetic: flood
+rpc-events-report check: BREACH (exit 1)
+read ~/.cache/rpcev-tmp/tmp.dwCohEz2an/flood.ndjson [to end] bytes 0-92304
+lines 435 events 435 ok 430 errors 5 filtered_out 0
+bad_lines 0 (bad_json 0, wrong_schema 0, torn 0, oversize 0)
+top methods: owned_apply_v3 400, status 35
+top peers: 10.0.0.5 400, 10.0.0.6 35
+top error codes: rpc_internal 5
+top peer+method: 10.0.0.5 owned_apply_v3 400, 10.0.0.6 status 35
+BREACH max_peer_method value 400 limit 100 peer 10.0.0.5 method owned_apply_v3
+OK max_errors value 5 limit 10
+PASS flood: exit (1)
+PASS flood: breach names peer 10.0.0.5 and method owned_apply_v3
+PASS flood: unrelated check stays OK
+== synthetic: normal traffic passes
+rpc-events-report check: OK (exit 0)
+read ~/.cache/rpcev-tmp/tmp.dwCohEz2an/normal.ndjson [to end] bytes 0-17022
+lines 102 events 102 ok 100 errors 2 filtered_out 0
+bad_lines 0 (bad_json 0, wrong_schema 0, torn 0, oversize 0)
+top methods: status 80, server_info 20, tx 2
+top peers: 10.0.0.7 62, 10.0.0.6 40
+top error codes: rpc_not_found 2
+top peer+method: 10.0.0.6 status 40, 10.0.0.7 status 40, 10.0.0.7 server_info 20, 10.0.0.7 tx 2
+OK max_peer_method value 40 limit 50 peer 10.0.0.6 method status
+OK max_method value 80 limit 90 method status
+OK max_peer value 62 limit 70 peer 10.0.0.7
+OK max_errors value 2 limit 2
+OK max_error_ratio value 0.019608 limit 0.05
+OK max_bad_lines value 0 limit 0
+PASS normal: exit (0)
+PASS normal: checks all ok (ok)
+== synthetic: every threshold at its limit (exit 0) and one below (exit 1)
+PASS max_peer_method: at limit 40 exit (0)
+PASS max_peer_method: limit 39 exit (1)
+PASS max_peer_method: breach check named (max_peer_method)
+PASS max_peer_method: breach names (10.0.0.6 status)
+PASS max_method: at limit 80 exit (0)
+PASS max_method: limit 79 exit (1)
+PASS max_method: breach check named (max_method)
+PASS max_method: breach names (status)
+PASS max_peer: at limit 62 exit (0)
+PASS max_peer: limit 61 exit (1)
+PASS max_peer: breach check named (max_peer)
+PASS max_peer: breach names (10.0.0.7)
+PASS max_errors: at limit 2 exit (0)
+PASS max_errors: limit 1 exit (1)
+PASS max_errors: breach check named (max_errors)
+PASS max_error_ratio: at limit 0.0197 exit (0)
+PASS max_error_ratio: limit 0.0196 exit (1)
+PASS max_error_ratio: breach check named (max_error_ratio)
+PASS max_bad_lines: at limit 1 exit (0)
+PASS max_bad_lines: limit 0 exit (1)
+PASS max_bad_lines: breach check named (max_bad_lines)
+PASS max_error_ratio: below --min-events is skipped (0:skipped)
+== synthetic: method filter
+PASS filter: events counted (22)
+PASS filter: filtered_out (80)
+PASS filter: exit (status flood not counted) (0)
+== synthetic: capped key tables
+PASS cap: distinct peers kept (2)
+PASS cap: pooled events (9)
+PASS cap: dropped keys (2)
+PASS cap: pooled count over limit is a breach (1:(other))
+PASS cap: pooled count at limit passes (0)
+== synthetic: torn, bad JSON, wrong schema, oversize
+PASS malformed: exit (0)
+PASS malformed: events (5)
+PASS malformed: bad_json (torn mid-file + invalid utf-8) (2)
+PASS malformed: wrong_schema (array, other schema, non-string method) (3)
+PASS malformed: oversize (1)
+PASS malformed: torn tail (1)
+PASS malformed: lines (12)
+PASS malformed: --max-bad-lines 7 exit (0)
+PASS malformed: --max-bad-lines 6 exit (1)
+== incremental: a torn tail is left for the next run and counted once
+PASS torn tail: first run events (4)
+PASS torn tail: not counted as bad while live (0)
+PASS torn tail: completed line counted on the next run (1:0)
+PASS no new lines: events (0)
+== rotation: copytruncate + compress
+PASS copytruncate: first run (10)
+PASS copytruncate+gz: events counted exactly once (8)
+PASS copytruncate+gz: rotated (true)
+PASS copytruncate+gz: no gap (false)
+PASS copytruncate+gz: exit (0)
+PASS copytruncate+gz: read the rotated file from the old offset (true:true)
+== rotation: live file regrows past the old offset before the check
+PASS regrown copytruncate: events counted exactly once (42)
+PASS regrown copytruncate: rotated (true)
+PASS regrown copytruncate: no gap (false)
+PASS regrown copytruncate: exit (0)
+== rotation: rename (create) and two rotations between runs
+PASS rename x2: events counted exactly once (22)
+PASS rename x2: rotated (true)
+PASS rename x2: no gap (false)
+PASS rename x2: exit (0)
+PASS rename x2: segments read (rpc-events.ndjson.2.gz rpc-events.ndjson.1 rpc-events.ndjson)
+== rotation: a copy of the same file (FILE.1 while FILE.1.gz is written) is not counted twice
+PASS duplicate copy: events counted exactly once (4)
+PASS duplicate copy: rotated (true)
+PASS duplicate copy: no gap (false)
+PASS duplicate copy: exit (0)
+== rotation: rename where the new file starts with the same bytes (rpc-serve restarted)
+PASS same-head rename: events counted exactly once (3)
+PASS same-head rename: rotated (true)
+PASS same-head rename: no gap (false)
+PASS same-head rename: exit (0)
+== rotation: position lost -> continuity breach
+PASS gap: exit (1)
+PASS gap: continuity breach (true,breach)
+PASS gap: live file still counted (5)
+PASS gap: next run is clean (0:0)
+== rotation: real logrotate with ops/validator-host/logrotate/postfiat-rpc-events
+-- rule under test:
+~/.cache/rpcev-tmp/tmp.dwCohEz2an/lr/validator-*/rpc-events.ndjson {
+    size 1k
+    rotate 3
+    compress
+    missingok
+    notifempty
+    copytruncate
+}
+PASS logrotate round 1: rc,gap (0,false)
+PASS logrotate round 2: rc,gap (0,false)
+PASS logrotate round 3: rc,gap (0,false)
+PASS logrotate round 4: rc,gap (0,false)
+-- after rotation: rpc-events.ndjson 672 rpc-events.ndjson.1.gz 368 rpc-events.ndjson.2.gz 313 rpc-events.ndjson.3.gz 261 rpc-events.ndjson.synthetic-counter 3 
+PASS logrotate: events over 5 runs = lines written (112)
+== state: reuse, corruption, locking, start-at-end
+PASS reused state for another log: exit (2)
+PASS reused state: reason given
+PASS reused state: state unchanged (a6f8f1d19c2e612cb60a5dc73459212fd390d97cf3768b4d0dea8c3ff8fc0839)
+PASS corrupt state: exit (2)
+PASS state fingerprint longer than its offset: exit (2)
+PASS state offset past the end and no rotated copy: continuity breach (1:true)
+PASS negative offset: exit (2)
+PASS locked state: exit (2)
+PASS start-at-end: existing lines skipped (0)
+PASS start-at-end: the partial line is counted once completed (1)
+== usage errors exit 2
+PASS two files with --state (2)
+PASS missing file (2)
+PASS --start-at-end without --state (2)
+PASS negative limit (2)
+PASS corrupt gzip (2)
+== output schema
+PASS schema (postfiat-rpc-events-report-v1)
+PASS top-level keys (bad_lines,by_error_code,by_method,by_peer,by_peer_method,checks,errors,event_schema,events,exit_code,filtered_out,gap,handler_ms,key_cap,lines,method_filter,mode,ok,rotated,schema,segments,verdict)
+PASS table keys (distinct,dropped_keys,other,top)
+PASS peer+method row keys (count,method,peer)
+PASS check row keys (limit,name,status,value)
+PASS exit_code field = process exit (1)
+PASS verdict (breach)
+PASS handler_ms (json) (400,1.5)
+== bounded memory: 300000 events, 300000 distinct peers, --max-keys 1000
+file 51312 KiB, peak RSS 17448 KiB
+PASS big: exit (0)
+PASS big: events (300000)
+PASS big: peers table capped (1000,299000)
+PASS big: peak RSS 17448 KiB < 64 MiB
+RESULT: PASS (107 passed, 0 failed)
+[exit 0]
+-- test with the sha256-checked release binary (real loopback capture)
+$ RPC_EVENTS_NODE_BIN=~/.cache/rpcev-rel/postfiat-node RPC_EVENTS_NODE_SHA256=e036033d437d85c4f60fc8e6689a771fdda01dd2ce88456571e6c9092faf4caf RPC_EVENTS_NODE_LAUNCHER='~/.cache/rpcev-rel/glibc239/ld-linux-x86-64.so.2 --library-path ~/.cache/rpcev-rel/glibc239' scripts/test-rpc-events-report
+== tool 782375f82fe8bf5c7c8dbd2f29b7f53fc2b77dea37cc9aae8d3445ac2f39ae40
+== real capture: postfiat-node rpc-serve on 127.0.0.1
+binary sha256 e036033d437d85c4f60fc8e6689a771fdda01dd2ce88456571e6c9092faf4caf expected e036033d437d85c4f60fc8e6689a771fdda01dd2ce88456571e6c9092faf4caf
+PASS release binary sha256 matches
+sent {"version": "postfiat-local-rpc-v1", "id -> ok
+sent {"version": "postfiat-local-rpc-v1", "id -> ok
+sent {"version": "postfiat-local-rpc-v1", "id -> ok
+sent {"version": "postfiat-local-rpc-v1", "id -> ok
+sent {"version": "postfiat-local-rpc-v1", "id -> rpc_server_error
+sent this is not json -> rpc_parse_error
+sent {"version": "postfiat-local-rpc-v1", "id -> rpc_method_not_allowed
+sent xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx -> rpc_parse_error
+-- captured event log (9 lines):
+{"schema":"postfiat-rpc-serve-event-v1","node_id":"validator-0","request_index":1,"peer_addr":"127.0.0.1","id":"remote-1","method":"invalid","ok":false,"error_code":"rpc_read_error","error_class":"rpc_read_error"}
+{"schema":"postfiat-rpc-serve-event-v1","node_id":"validator-0","request_index":2,"peer_addr":"127.0.0.1","id":"capture-2","method":"status","ok":true,"handler_mode":"in_process_health_cache","handler_ms":0.342581}
+{"schema":"postfiat-rpc-serve-event-v1","node_id":"validator-0","request_index":3,"peer_addr":"127.0.0.1","id":"capture-3","method":"status","ok":true,"handler_mode":"in_process_health_cache","handler_ms":0.18271199999999999}
+{"schema":"postfiat-rpc-serve-event-v1","node_id":"validator-0","request_index":4,"peer_addr":"127.0.0.1","id":"capture-4","method":"status","ok":true,"handler_mode":"in_process_health_cache","handler_ms":0.28912099999999996}
+{"schema":"postfiat-rpc-serve-event-v1","node_id":"validator-0","request_index":5,"peer_addr":"127.0.0.1","id":"capture-5","method":"status","ok":true,"handler_mode":"in_process_health_cache","handler_ms":0.06975}
+{"schema":"postfiat-rpc-serve-event-v1","node_id":"validator-0","request_index":6,"peer_addr":"127.0.0.1","id":"capture-6","method":"server_info","ok":false,"handler_mode":"isolated_or_specialized","handler_ms":2.39749,"error_code":"rpc_server_error","error_class":"rpc_server_error"}
+{"schema":"postfiat-rpc-serve-event-v1","node_id":"validator-0","request_index":7,"peer_addr":"127.0.0.1","id":"remote-7","method":"invalid","ok":false,"error_code":"rpc_parse_error","error_class":"parse_error"}
+{"schema":"postfiat-rpc-serve-event-v1","node_id":"validator-0","request_index":8,"peer_addr":"127.0.0.1","id":"capture-8","method":"no_such_method","ok":false,"handler_mode":"isolated_or_specialized","handler_ms":0.085489,"error_code":"rpc_method_not_allowed","error_class":"method_not_allowed"}
+{"schema":"postfiat-rpc-serve-event-v1","node_id":"validator-0","request_index":9,"peer_addr":"127.0.0.1","id":"remote-9","method":"invalid","ok":false,"error_code":"rpc_parse_error","error_class":"parse_error"}
+PASS real: summary exit (0)
+PASS real: events = log lines (9)
+PASS real: bad lines (0)
+PASS real: method status count matches jq (4)
+PASS real: method server_info count matches jq (1)
+PASS real: method invalid count matches jq (3)
+PASS real: method no_such_method count matches jq (1)
+PASS real: errors match jq (5)
+PASS real: error_code rpc_method_not_allowed matches jq (1)
+PASS real: error_code rpc_parse_error matches jq (2)
+PASS real: error_code rpc_read_error matches jq (1)
+PASS real: error_code rpc_server_error matches jq (1)
+rpc-events-report check: BREACH (exit 1)
+read ~/.cache/rpcev-tmp/tmp.7dFjzFuwmz/real/rpc-events.ndjson [to end] bytes 0-2101
+lines 9 events 9 ok 4 errors 5 filtered_out 0
+bad_lines 0 (bad_json 0, wrong_schema 0, torn 0, oversize 0)
+top methods: status 4, invalid 3, no_such_method 1, server_info 1
+top peers: 127.0.0.1 9
+top error codes: rpc_parse_error 2, rpc_method_not_allowed 1, rpc_read_error 1, rpc_server_error 1
+top peer+method: 127.0.0.1 status 4, 127.0.0.1 invalid 3, 127.0.0.1 no_such_method 1, 127.0.0.1 server_info 1
+BREACH max_peer_method value 4 limit 3 peer 127.0.0.1 method status
+PASS real: flood check exit (1)
+PASS real: breach names peer 127.0.0.1 and method status
+PASS real: same log within limit 4 exit (0)
+== synthetic: flood
+rpc-events-report check: BREACH (exit 1)
+read ~/.cache/rpcev-tmp/tmp.7dFjzFuwmz/flood.ndjson [to end] bytes 0-92304
+lines 435 events 435 ok 430 errors 5 filtered_out 0
+bad_lines 0 (bad_json 0, wrong_schema 0, torn 0, oversize 0)
+top methods: owned_apply_v3 400, status 35
+top peers: 10.0.0.5 400, 10.0.0.6 35
+top error codes: rpc_internal 5
+top peer+method: 10.0.0.5 owned_apply_v3 400, 10.0.0.6 status 35
+BREACH max_peer_method value 400 limit 100 peer 10.0.0.5 method owned_apply_v3
+OK max_errors value 5 limit 10
+PASS flood: exit (1)
+PASS flood: breach names peer 10.0.0.5 and method owned_apply_v3
+PASS flood: unrelated check stays OK
+== synthetic: normal traffic passes
+rpc-events-report check: OK (exit 0)
+read ~/.cache/rpcev-tmp/tmp.7dFjzFuwmz/normal.ndjson [to end] bytes 0-17022
+lines 102 events 102 ok 100 errors 2 filtered_out 0
+bad_lines 0 (bad_json 0, wrong_schema 0, torn 0, oversize 0)
+top methods: status 80, server_info 20, tx 2
+top peers: 10.0.0.7 62, 10.0.0.6 40
+top error codes: rpc_not_found 2
+top peer+method: 10.0.0.6 status 40, 10.0.0.7 status 40, 10.0.0.7 server_info 20, 10.0.0.7 tx 2
+OK max_peer_method value 40 limit 50 peer 10.0.0.6 method status
+OK max_method value 80 limit 90 method status
+OK max_peer value 62 limit 70 peer 10.0.0.7
+OK max_errors value 2 limit 2
+OK max_error_ratio value 0.019608 limit 0.05
+OK max_bad_lines value 0 limit 0
+PASS normal: exit (0)
+PASS normal: checks all ok (ok)
+== synthetic: every threshold at its limit (exit 0) and one below (exit 1)
+PASS max_peer_method: at limit 40 exit (0)
+PASS max_peer_method: limit 39 exit (1)
+PASS max_peer_method: breach check named (max_peer_method)
+PASS max_peer_method: breach names (10.0.0.6 status)
+PASS max_method: at limit 80 exit (0)
+PASS max_method: limit 79 exit (1)
+PASS max_method: breach check named (max_method)
+PASS max_method: breach names (status)
+PASS max_peer: at limit 62 exit (0)
+PASS max_peer: limit 61 exit (1)
+PASS max_peer: breach check named (max_peer)
+PASS max_peer: breach names (10.0.0.7)
+PASS max_errors: at limit 2 exit (0)
+PASS max_errors: limit 1 exit (1)
+PASS max_errors: breach check named (max_errors)
+PASS max_error_ratio: at limit 0.0197 exit (0)
+PASS max_error_ratio: limit 0.0196 exit (1)
+PASS max_error_ratio: breach check named (max_error_ratio)
+PASS max_bad_lines: at limit 1 exit (0)
+PASS max_bad_lines: limit 0 exit (1)
+PASS max_bad_lines: breach check named (max_bad_lines)
+PASS max_error_ratio: below --min-events is skipped (0:skipped)
+== synthetic: method filter
+PASS filter: events counted (22)
+PASS filter: filtered_out (80)
+PASS filter: exit (status flood not counted) (0)
+== synthetic: capped key tables
+PASS cap: distinct peers kept (2)
+PASS cap: pooled events (9)
+PASS cap: dropped keys (2)
+PASS cap: pooled count over limit is a breach (1:(other))
+PASS cap: pooled count at limit passes (0)
+== synthetic: torn, bad JSON, wrong schema, oversize
+PASS malformed: exit (0)
+PASS malformed: events (5)
+PASS malformed: bad_json (torn mid-file + invalid utf-8) (2)
+PASS malformed: wrong_schema (array, other schema, non-string method) (3)
+PASS malformed: oversize (1)
+PASS malformed: torn tail (1)
+PASS malformed: lines (12)
+PASS malformed: --max-bad-lines 7 exit (0)
+PASS malformed: --max-bad-lines 6 exit (1)
+== incremental: a torn tail is left for the next run and counted once
+PASS torn tail: first run events (4)
+PASS torn tail: not counted as bad while live (0)
+PASS torn tail: completed line counted on the next run (1:0)
+PASS no new lines: events (0)
+== rotation: copytruncate + compress
+PASS copytruncate: first run (10)
+PASS copytruncate+gz: events counted exactly once (8)
+PASS copytruncate+gz: rotated (true)
+PASS copytruncate+gz: no gap (false)
+PASS copytruncate+gz: exit (0)
+PASS copytruncate+gz: read the rotated file from the old offset (true:true)
+== rotation: live file regrows past the old offset before the check
+PASS regrown copytruncate: events counted exactly once (42)
+PASS regrown copytruncate: rotated (true)
+PASS regrown copytruncate: no gap (false)
+PASS regrown copytruncate: exit (0)
+== rotation: rename (create) and two rotations between runs
+PASS rename x2: events counted exactly once (22)
+PASS rename x2: rotated (true)
+PASS rename x2: no gap (false)
+PASS rename x2: exit (0)
+PASS rename x2: segments read (rpc-events.ndjson.2.gz rpc-events.ndjson.1 rpc-events.ndjson)
+== rotation: a copy of the same file (FILE.1 while FILE.1.gz is written) is not counted twice
+PASS duplicate copy: events counted exactly once (4)
+PASS duplicate copy: rotated (true)
+PASS duplicate copy: no gap (false)
+PASS duplicate copy: exit (0)
+== rotation: rename where the new file starts with the same bytes (rpc-serve restarted)
+PASS same-head rename: events counted exactly once (3)
+PASS same-head rename: rotated (true)
+PASS same-head rename: no gap (false)
+PASS same-head rename: exit (0)
+== rotation: position lost -> continuity breach
+PASS gap: exit (1)
+PASS gap: continuity breach (true,breach)
+PASS gap: live file still counted (5)
+PASS gap: next run is clean (0:0)
+== rotation: real logrotate with ops/validator-host/logrotate/postfiat-rpc-events
+-- rule under test:
+~/.cache/rpcev-tmp/tmp.7dFjzFuwmz/lr/validator-*/rpc-events.ndjson {
+    size 1k
+    rotate 3
+    compress
+    missingok
+    notifempty
+    copytruncate
+}
+PASS logrotate round 1: rc,gap (0,false)
+PASS logrotate round 2: rc,gap (0,false)
+PASS logrotate round 3: rc,gap (0,false)
+PASS logrotate round 4: rc,gap (0,false)
+-- after rotation: rpc-events.ndjson 672 rpc-events.ndjson.1.gz 368 rpc-events.ndjson.2.gz 313 rpc-events.ndjson.3.gz 261 rpc-events.ndjson.synthetic-counter 3 
+PASS logrotate: events over 5 runs = lines written (112)
+== state: reuse, corruption, locking, start-at-end
+PASS reused state for another log: exit (2)
+PASS reused state: reason given
+PASS reused state: state unchanged (816d8c42b60a9340361226c1b11ad3f3a902c5c0b1b21913b24a1916453a7b18)
+PASS corrupt state: exit (2)
+PASS state fingerprint longer than its offset: exit (2)
+PASS state offset past the end and no rotated copy: continuity breach (1:true)
+PASS negative offset: exit (2)
+PASS locked state: exit (2)
+PASS start-at-end: existing lines skipped (0)
+PASS start-at-end: the partial line is counted once completed (1)
+== usage errors exit 2
+PASS two files with --state (2)
+PASS missing file (2)
+PASS --start-at-end without --state (2)
+PASS negative limit (2)
+PASS corrupt gzip (2)
+== output schema
+PASS schema (postfiat-rpc-events-report-v1)
+PASS top-level keys (bad_lines,by_error_code,by_method,by_peer,by_peer_method,checks,errors,event_schema,events,exit_code,filtered_out,gap,handler_ms,key_cap,lines,method_filter,mode,ok,rotated,schema,segments,verdict)
+PASS table keys (distinct,dropped_keys,other,top)
+PASS peer+method row keys (count,method,peer)
+PASS check row keys (limit,name,status,value)
+PASS exit_code field = process exit (1)
+PASS verdict (breach)
+PASS handler_ms (json) (400,1.5)
+== bounded memory: 300000 events, 300000 distinct peers, --max-keys 1000
+file 51312 KiB, peak RSS 17288 KiB
+PASS big: exit (0)
+PASS big: events (300000)
+PASS big: peers table capped (1000,299000)
+PASS big: peak RSS 17288 KiB < 64 MiB
+RESULT: PASS (123 passed, 0 failed)
+[exit 0]
+-- control: a wrong expected hash must refuse to run the binary (expect exit 1)
+$ RPC_EVENTS_NODE_BIN=~/.cache/rpcev-rel/postfiat-node RPC_EVENTS_NODE_SHA256=0000000000000000000000000000000000000000000000000000000000000000 scripts/test-rpc-events-report
+== tool 782375f82fe8bf5c7c8dbd2f29b7f53fc2b77dea37cc9aae8d3445ac2f39ae40
+== real capture: postfiat-node rpc-serve on 127.0.0.1
+binary sha256 e036033d437d85c4f60fc8e6689a771fdda01dd2ce88456571e6c9092faf4caf expected 0000000000000000000000000000000000000000000000000000000000000000
+FAIL release binary sha256: refusing to run an unverified binary
+RESULT: FAIL (0 passed, 1 failed)
+[exit 1]
+control OK: refused
+RUN RESULT: PASS
