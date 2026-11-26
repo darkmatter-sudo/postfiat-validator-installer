@@ -1,0 +1,103 @@
+# 2026-11-26T15:40:04Z Ubuntu 22.04.5 LTS | systemd 249 (249.11-0ubuntu3.23) | kernel 5.15.0-204-generic | version: 0.8.0
+# cwd is not a git repo (the first command clones)
+$ git clone -q https://github.com/darkmatter-sudo/postfiatl1v2.git l1v2 && git -C l1v2 checkout -q cd67df7b37ced37922dfdef16c7a65ff5b1153ca && git -C l1v2 rev-parse HEAD
+cd67df7b37ced37922dfdef16c7a65ff5b1153ca
+exit=0
+$ git clone -q https://github.com/darkmatter-sudo/postfiat-validator-installer.git inst && git -C inst checkout -q 2f0c900330461bf32f16a563747674d738a9e7d5 && git -C inst rev-parse HEAD
+2f0c900330461bf32f16a563747674d738a9e7d5
+exit=0
+$ sha256sum l1v2/scripts/test-validator-doctor-invocations l1v2/docs/runbooks/validator-doctor.md inst/logs/l1v2-doctor/probe-continuation.py
+0621ce972eff9e6fb3912faaf5601395f8db7976a60331ce15551f47e35af423  l1v2/scripts/test-validator-doctor-invocations
+14c43078632560a5f9a22d2b8ad98510e1aa83ab7503185fbe2dcb4f085e2a8a  l1v2/docs/runbooks/validator-doctor.md
+b23a76e929bba26aa41e6339f02a42af54ef5726167c8799304fe6c6b7ddd82b  inst/logs/l1v2-doctor/probe-continuation.py
+exit=0
+$ grep -n '' l1v2/docs/runbooks/validator-doctor.md | sed -n '23,28p'
+23:```bash
+24:scripts/testnet-validator-doctor \
+25:  --data-dir /var/lib/postfiat/validator-0 \
+26:  --validator-service validator-0=postfiat-validator-0.service \
+27:  --rpc-service validator-0=postfiat-validator-0-rpc.service
+28:```
+exit=0
+$ grep -n '' l1v2/scripts/test-validator-doctor-invocations | sed -n '59,66p;93,122p'
+59:FIXTURE_EXPECTATIONS = {
+60:    "good.md": None,
+61:    "bare-unit.md": "not node_id=unit",
+62:    "wrong-rpc-unit.md": "not a shipped rpc unit",
+63:    "wrong-rpc-template.md": "template expands to",
+64:    "unknown-node.md": "not a shipped node id",
+65:    "unknown-flag.md": "flags do not parse",
+66:}
+93:def fenced_commands(path: Path) -> list[tuple[int, str]]:
+94:    """(first line number, logical line) for each line inside a fenced code
+95:    block, with backslash continuations joined. Text outside fences is
+96:    ignored, and a fence closes only with a bare run of its own character at
+97:    least as long as the one that opened it (CommonMark)."""
+98:    found: list[tuple[int, str]] = []
+99:    fence: str | None = None
+100:    pending: list[str] = []
+101:    start = 0
+102:    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+103:        match = FENCE_RE.match(line)
+104:        if fence is None:
+105:            if match:
+106:                fence = match.group(1)
+107:            continue
+108:        marker = match.group(1) if match else ""
+109:        if marker[:1] == fence[0] and len(marker) >= len(fence) and line.strip() == marker:
+110:            fence = None
+111:            pending = []
+112:            continue
+113:        if not pending:
+114:            start = number
+115:        stripped = line.rstrip()
+116:        if stripped.endswith("\\"):
+117:            pending.append(stripped[:-1])
+118:            continue
+119:        pending.append(stripped)
+120:        found.append((start, " ".join(part.strip() for part in pending)))
+121:        pending = []
+122:    return found
+exit=0
+$ python3 -I -B inst/logs/l1v2-doctor/probe-continuation.py l1v2
+== joined (fenced_commands as shipped): docs/runbooks/validator-doctor.md lines 23-28 ==
+  (24, 'scripts/testnet-validator-doctor --data-dir /var/lib/postfiat/validator-0 --validator-service validator-0=postfiat-validator-0.service --rpc-service validator-0=postfiat-validator-0-rpc.service')
+  doctor invocations found in lines 23-28: 1
+  doctor argv from line 24: ['--data-dir', '/var/lib/postfiat/validator-0', '--validator-service', 'validator-0=postfiat-validator-0.service', '--rpc-service', 'validator-0=postfiat-validator-0-rpc.service']
+  problems: none
+ok   scripts/fixtures/validator-doctor-invocations/good.md:9 --data-dir /var/lib/postfiat/validator-0 --validator-service validator-0=postfiat-validator-0.service --rpc-service validator-0=postfiat-validator-0-rpc.service
+ok   scripts/fixtures/validator-doctor-invocations/good.md:18 --data-root /var/lib/postfiat --validator-count 6 --validator-service-template 'postfiat-{node_id}.service' --rpc-service-template 'postfiat-{node_id}-rpc.service'
+ok   scripts/fixtures/validator-doctor-invocations/good.md:24 --data-dir /d --rpc-service ' validator-5 = postfiat-validator-5-rpc.service '
+  fixture good.md: invocations=3 expected=pass -> ok
+BAD  scripts/fixtures/validator-doctor-invocations/bare-unit.md:4 --data-dir /var/lib/postfiat/validator-0 --validator-service postfiat-validator-0.service
+  fixture bare-unit.md: invocations=1 expected=not node_id=unit -> ok
+BAD  scripts/fixtures/validator-doctor-invocations/wrong-rpc-unit.md:4 --data-dir /var/lib/postfiat/validator-0 --rpc-service validator-0=postfiat-rpc-0.service
+  fixture wrong-rpc-unit.md: invocations=1 expected=not a shipped rpc unit -> ok
+BAD  scripts/fixtures/validator-doctor-invocations/wrong-rpc-template.md:4 --data-root /var/lib/postfiat --validator-count 5 --rpc-service-template 'postfiat-rpc-{index}.service'
+  fixture wrong-rpc-template.md: invocations=1 expected=template expands to -> ok
+BAD  scripts/fixtures/validator-doctor-invocations/unknown-node.md:4 --data-dir /var/lib/postfiat/validator-0 --validator-service node0=postfiat-validator-0.service
+  fixture unknown-node.md: invocations=1 expected=not a shipped node id -> ok
+BAD  scripts/fixtures/validator-doctor-invocations/unknown-flag.md:4 --data-dir /var/lib/postfiat/validator-0 --validator-unit validator-0=postfiat-validator-0.service
+  fixture unknown-flag.md: invocations=1 expected=flags do not parse -> ok
+  fixture expectations failing: 0 of 6
+== NOT joined (mutant): docs/runbooks/validator-doctor.md lines 23-28 ==
+  (24, 'scripts/testnet-validator-doctor \\')
+  (25, '  --data-dir /var/lib/postfiat/validator-0 \\')
+  (26, '  --validator-service validator-0=postfiat-validator-0.service \\')
+  (27, '  --rpc-service validator-0=postfiat-validator-0-rpc.service')
+  doctor invocations found in lines 23-28: 0
+ok   scripts/fixtures/validator-doctor-invocations/good.md:24 --data-dir /d --rpc-service ' validator-5 = postfiat-validator-5-rpc.service '
+  fixture good.md: invocations=1 expected=pass -> ok
+  fixture bare-unit.md: invocations=0 expected=not node_id=unit -> FAIL
+  fixture wrong-rpc-unit.md: invocations=0 expected=not a shipped rpc unit -> FAIL
+  fixture wrong-rpc-template.md: invocations=0 expected=template expands to -> FAIL
+  fixture unknown-node.md: invocations=0 expected=not a shipped node id -> FAIL
+  fixture unknown-flag.md: invocations=0 expected=flags do not parse -> FAIL
+  fixture expectations failing: 5 of 6
+exit=0
+$ cd l1v2 && python3 -I -B scripts/test-validator-doctor-invocations | tail -3
+ok   malformed bare-log-file: --log-file '/var/log/postfiat/validator-0.log' -> exit=1 elapsed=0.077s cargo_started=False message="--log-file must be node_id=path, for example validator-0=/path/to/log; got '/var/log/postfiat/validator-0.log'"
+ok   valid mappings still build first: exit=1 cargo_args='build -p postfiat-node' reason=node_build_failed stdout='testnet_validator_doctor=failed report=target/test-validator-doctor-invocations-wm0mdtgo/valid/report.json reason=node_build_failed'
+test_validator_doctor_invocations=ok failures=0
+exit=0
+# end 2026-11-26T15:40:35Z
