@@ -15,7 +15,7 @@ export TZ=UTC
 MODE="${1:-}"
 SHA="$(git rev-parse HEAD)"
 ME="$(id -un)"; HN="$(hostname)"
-red() { sed -E "s#$HOME#~#g; s#\b$ME\b#<user>#g; s#$HN#<host>#g; s#\b([0-9]{1,3}\.){3}[0-9]{1,3}\b#<redacted-ip>#g"; }
+red() { sed -E "s#$HOME#~#g; s#\b$ME\b#<user>#g; s#$HN#<host>#g; s#127\.0\.0\.1#LOOPBACK#g; s#\b([0-9]{1,3}\.){3}[0-9]{1,3}\b#<redacted-ip>#g; s#LOOPBACK#127.0.0.1#g"; }
 XRC=0; XOUT=""
 x() { echo "\$ $*" | red; XOUT="$(eval "$*" 2>&1)"; XRC=$?; printf '%s\n' "$XOUT" | red | sed 's/^/  /'; echo "  (exit $XRC)"; }
 FAILS=0
@@ -100,7 +100,11 @@ for g in json.load(sys.stdin)["data"]["groups"]:
   check "reloadConfigSuccess true" "$(grep -q 'reloadConfigSuccess True' <<<"$XOUT" && echo 0 || echo 1)"
   x "docker inspect -f '{{.State.StartedAt}} {{.RestartCount}}' pft-prometheus postfiatd"
   check "pft-prometheus and postfiatd not restarted (StartedAt/RestartCount unchanged)" "$([ "$XOUT" = "$before" ] && echo 0 || echo 1)"
-  echo; echo "== 3. loaded rules = repo"
+  echo; echo "== 3. loaded rules = repo (after the first evaluation: health is 'unknown' until then)"
+  for _ in $(seq 1 12); do
+    sleep 5
+    [ "$(q | grep -c ' ok ')" = 2 ] && break
+  done
   x q
   want="$(python3 -c '
 import sys, yaml
@@ -120,7 +124,7 @@ for r in yaml.safe_load(open(sys.argv[1]))["groups"][0]["rules"]:
   x "sudo pft-integrity verify 2>&1 | tail -1; ssh -o BatchMode=yes relay 'sudo pft-integrity verify 2>&1 | tail -1' </dev/null"
   check "integrity PASS on both hosts (rules are read from the repo bind mount: no installed file changed)" "$([ "$(grep -c 'RESULT: PASS' <<<"$XOUT")" = 2 ] && echo 0 || echo 1)"
   x "sudo pft-fleet skew 2>&1 | grep -E '^ref|^HOST|valwatch|DIVERGED'"
-  check "fleet: valwatch not DIVERGED" "$(grep -q DIVERGED <<<"$XOUT" && echo 1 || echo 0)"
+  check "fleet: valwatch CURRENT on both hosts, DIVERGED=0" "$([ "$(grep -cE '^(sentry|validator) +valwatch +CURRENT' <<<"$XOUT")" = 2 ] && grep -q 'DIVERGED=0' <<<"$XOUT" && echo 0 || echo 1)"
   x "sudo postfiat-health 2>&1 | grep -E 'server_state|RESULT'"
   check "validator postfiatd full / HEALTHY" "$(grep -q 'RESULT: HEALTHY' <<<"$XOUT" && echo 0 || echo 1)"
   ;;
