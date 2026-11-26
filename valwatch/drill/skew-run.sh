@@ -25,7 +25,8 @@ PROM=http://127.0.0.1:9090
 echo "valwatch skew $MODE - $(date -u +%FT%TZ) - repo HEAD $SHA (clean: $([ -z "$(git status --short)" ] && echo yes || echo NO))"
 [ -z "$(git status --short)" ] || { echo "dirty tree - stopping"; exit 3; }
 x "sha256sum $A/valwatch.rules.yml $A/valwatch.tests.yml $V/skewreplay.py $V/tests/gen_rule_tests.py $V/tests/mutate.py $V/tests/test_skewreplay.py $V/drill/skew-run.sh"
-SCR="$(mktemp -d "${TMPDIR:-/tmp}/vwskew.XXXXXX")"; trap 'rm -rf "$SCR"' EXIT
+# scratch under ~/.cache like README "Tests": the stub-node tests do not pass with TMPDIR=/tmp (11 fail there)
+mkdir -p "$HOME/.cache"; SCR="$(mktemp -d "$HOME/.cache/vwskew.XXXXXX")"; trap 'rm -rf "$SCR"' EXIT
 
 case "$MODE" in
 collect)
