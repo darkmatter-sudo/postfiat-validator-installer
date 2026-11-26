@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# prlimit stub: prlimit --pid PID --core=SOFT:HARD rewrites the fake /proc/PID/limits
+set -uo pipefail
+echo "prlimit $*" >> "$PFT_STUB/calls"
+[ "$1" = --pid ] || exit 1
+f="$PFT_COREDUMP_ROOT/proc/$2/limits"; [ -f "$f" ] || exit 1
+[ -e "$PFT_STUB/prlimit_fail" ] && exit 1
+v="${3#--core=}"
+printf 'Limit                     Soft Limit           Hard Limit           Units     \nMax core file size        %s            %s            bytes     \n' "${v%%:*}" "${v#*:}" > "$f"

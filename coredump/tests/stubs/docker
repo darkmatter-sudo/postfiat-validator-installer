@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# docker stub for tests/run-tests.sh. State: $PFT_STUB/c/<name>.json (one inspect object per container),
+# fake processes under $PFT_COREDUMP_ROOT/proc. Every call is appended to $PFT_STUB/calls.
+set -uo pipefail
+S="$PFT_STUB"; P="$PFT_COREDUMP_ROOT/proc"
+echo "docker $*" >> "$S/calls"
+c() { echo "$S/c/$1.json"; }
+# a fresh fake process for container NAME, RLIMIT_CORE from its Ulimits (none = unlimited), new StartedAt
+spawn() {
+  local f n pid soft hard
+  f="$(c "$1")"; n="$(cat "$S/nextpid" 2>/dev/null || echo 5000)"; echo $((n + 10)) > "$S/nextpid"; pid="$n"
+  read -r soft hard <<<"$(jq -r '[.HostConfig.Ulimits // [] | .[] | select(.Name == "core")] | first // {Soft: "unlimited", Hard: "unlimited"} | "\(.Soft) \(.Hard)"' "$f")"
+  [ "$soft" = -1 ] && soft=unlimited; [ "$hard" = -1 ] && hard=unlimited
+  mkdir -p "$P/$pid"; echo "0::/system.slice/docker-$1-$pid.scope" > "$P/$pid/cgroup"; echo 00000033 > "$P/$pid/coredump_filter"
+  printf 'Limit                     Soft Limit           Hard Limit           Units     \nMax core file size        %s            %s            bytes     \n' "$soft" "$hard" > "$P/$pid/limits"
+  jq --argjson p "$pid" --arg t "$(date +%s%N)" '.State.Pid = $p | .State.Running = true | .State.StartedAt = $t' "$f" > "$f.t" && mv "$f.t" "$f"
+}
+kill_proc() { local pid; pid="$(jq -r '.State.Pid // 0' "$(c "$1")")"; [ "$pid" -gt 0 ] && rm -rf "${P:?}/$pid"; }
+case "$1" in
+  inspect) f="$(c "$2")"; [ -f "$f" ] || { echo '[]'; exit 1; }; jq -c '[.]' "$f" ;;
+  image) echo '[{"Config":{"Env":["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"]}}]' ;;
+  port) exit 1 ;;
+  exec) exit 1 ;;
+  compose)
+    shift; [ "$1" = config ] || exit 1
+    [ -e "$S/compose_bad" ] && exit 1
+    [ -e "$S/compose_json" ] && { [ "${2:-}" = -q ] || cat "$S/compose_json"; exit 0; }   # a given config output
+    cf="$(sed -n 's/^COMPOSE_FILE=//p' .env 2>/dev/null | tail -1)"
+    if [[ ":$cf:" == *":docker-compose.coredump.yml:"* ]] && grep -q 'hard: 0' docker-compose.coredump.yml 2>/dev/null \
+       && grep -q 'soft: 0' docker-compose.coredump.yml; then
+      out='{"services":{"postfiatd":{"ulimits":{"core":{}}}}}'   # compose 2.40 JSON omits zero soft/hard
+    else out='{"services":{"postfiatd":{}}}'; fi
+    [ "${2:-}" = -q ] || echo "$out" ;;
+  stop) f="$(c "${*: -1}")"; [ -f "$f" ] || exit 1; kill_proc "${*: -1}"; jq '.State.Running = false | .State.Pid = 0' "$f" > "$f.t" && mv "$f.t" "$f" ;;
+  rename) [ -f "$(c "$2")" ] && [ ! -e "$(c "$3")" ] || exit 1; jq --arg n "/$3" '.Name = $n' "$(c "$2")" > "$(c "$3")" && rm "$(c "$2")"; echo "$3" > "$S/last_renamed" ;;
+  update) n="${*: -1}"; f="$(c "$n")"; [ -f "$f" ] || exit 1; r="${2#--restart=}"; jq --arg r "$r" '.HostConfig.RestartPolicy.Name = $r' "$f" > "$f.t" && mv "$f.t" "$f" ;;
+  start) f="$(c "$2")"; [ -f "$f" ] || exit 1; spawn "$2" ;;
+  rm) n="${*: -1}"; [ -f "$(c "$n")" ] || exit 1; kill_proc "$n"; rm -f "$(c "$n")" ;;
+  run)
+    [ -e "$S/run_fail" ] && exit 1
+    shift; [ "$1" = -d ] && shift
+    old="$(c "$(cat "$S/last_renamed")")"; name=""; ul='[]'; ro=false; so='[]'; st=null; img=""; restart=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --name=*) name="${1#--name=}" ;;
+        --ulimit=*) [ -e "$S/run_drop_ulimit" ] && { shift; continue; }; v="${1#--ulimit=}"; ul="$(jq -c --arg n "${v%%=*}" --arg s "${v#*=}" '. + [{Name: $n, Hard: ($s | split(":")[1] | tonumber), Soft: ($s | split(":")[0] | tonumber)}]' <<<"$ul")" ;;
+        --read-only) [ -e "$S/run_drop_ro" ] || ro=true ;;
+        --restart=*) restart="${1#--restart=}" ;;
+        --stop-timeout=*) st="${1#--stop-timeout=}" ;;
+        --security-opt=*) so="$(jq -c --arg o "${1#--security-opt=}" '. + [$o | if startswith("seccomp=") then "seccomp={stored}" else . end]' <<<"$so")" ;;
+        --*) ;;
+        *) img="$1"; break ;;
+      esac
+      shift
+    done
+    [ -n "$name" ] && [ ! -e "$(c "$name")" ] || exit 1
+    jq -r '.HostConfig.RestartPolicy.Name' "$old" > "$S/old_restart_at_run"   # the kept container while the new one runs
+    jq --arg n "/$name" --argjson ul "$ul" --argjson ro "$ro" --argjson so "$so" --argjson st "$st" --arg img "$img" --arg r "$restart" \
+      '.Name = $n | .HostConfig.Ulimits = (if $ul == [] then null else $ul end) | .HostConfig.ReadonlyRootfs = $ro
+       | .HostConfig.SecurityOpt = $so | .Config.StopTimeout = $st | .Config.Image = $img | .HostConfig.RestartPolicy.Name = $r' "$old" > "$(c "$name")"
+    spawn "$name"; echo deadbeef ;;
+  *) exit 1 ;;
+esac

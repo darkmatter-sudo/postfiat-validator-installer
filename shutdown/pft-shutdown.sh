@@ -414,6 +414,7 @@ run_args() { # INSPECT0 IMAGE_ENV_JSON STOP
     (if (.HostConfig.MemorySwap // 0) != 0 then "--memory-swap=\(.HostConfig.MemorySwap)" else empty end),
     (if (.HostConfig.CpuShares // 0) > 0 then "--cpu-shares=\(.HostConfig.CpuShares)" else empty end),
     (if (.HostConfig.MemoryReservation // 0) > 0 then "--memory-reservation=\(.HostConfig.MemoryReservation)" else empty end),
+    (.HostConfig.Ulimits // [] | .[] | "--ulimit=\(.Name)=\(.Soft):\(.Hard)"),
     (.HostConfig.SecurityOpt // [] | .[] | if startswith("seccomp") then "--security-opt=seccomp=\($scf)" else "--security-opt=\(.)" end),
     .Config.Image, (.Config.Cmd // [])[]' <<<"$1"
 }

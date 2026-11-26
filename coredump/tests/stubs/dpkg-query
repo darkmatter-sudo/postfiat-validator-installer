@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# dpkg-query stub: a package is installed when $PFT_STUB/pkg/<name> exists
+if [ -e "$PFT_STUB/pkg/${*: -1}" ]; then printf 'install ok installed'; else printf 'unknown ok not-installed'; exit 1; fi

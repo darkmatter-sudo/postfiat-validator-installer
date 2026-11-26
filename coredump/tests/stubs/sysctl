@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# sysctl stub: sysctl -q -w kernel.core_pattern=VALUE writes the fake /proc/sys/kernel/core_pattern
+set -uo pipefail
+echo "sysctl $*" >> "$PFT_STUB/calls"
+[ "$1" = -q ] && shift; [ "$1" = -w ] || exit 1
+kv="$2"; k="${kv%%=*}"; [ "$k" = kernel.core_pattern ] || exit 1
+printf '%s\n' "${kv#*=}" > "$PFT_COREDUMP_ROOT/proc/sys/kernel/core_pattern"

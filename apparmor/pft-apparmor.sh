@@ -675,6 +675,7 @@ run_args() { # INSPECT0 IMAGE_ENV_JSON PROFILE
     (if (.HostConfig.PidsLimit // 0) > 0 then "--pids-limit=\(.HostConfig.PidsLimit)" else empty end),
     (if (.HostConfig.Memory // 0) > 0 then "--memory=\(.HostConfig.Memory)" else empty end),
     (if (.HostConfig.MemorySwap // 0) != 0 then "--memory-swap=\(.HostConfig.MemorySwap)" else empty end),
+    (.HostConfig.Ulimits // [] | .[] | "--ulimit=\(.Name)=\(.Soft):\(.Hard)"),
     (.HostConfig.SecurityOpt // [] | map(select(startswith("apparmor") | not))[] | "--security-opt=\(.)"),
     "--security-opt=apparmor=\($p)",
     .Config.Image, (.Config.Cmd // [])[]' <<<"$1"
