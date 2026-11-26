@@ -14,6 +14,10 @@
 #  6. PFTValwatchReconnecting: more than 3 stream reconnects inside the 15-min window for 15m.
 #  7. PFTValwatchHostsDisagree: a UNL validator under 80 % at one node while at least 95 % at the other for 15m.
 #  8. PFTValwatchHostsDisagreeLate: a UNL validator's p95 delay above 3 s at one node, at most 2 s at the other, 15m.
+# 7 and 8 compare both sides over [2m] (faulty side throughout, healthy side throughout), not one instant: the sentry
+# textfile reaches this Prometheus up to 68 s after the validator's (p99 61 s; measured 2026-11-26 over the retained
+# 7.7 d, ../valwatch/logs/21-skew-replay.log), so a change seen by both nodes first shows on one node only. A 2m window
+# absorbs a lag of up to 105 s at the 15 s scrape step; a real one-node fault fires 1m45s later than with one instant.
 # Paging (operator rule 2026-11-19): another validator that is missing or late (1, 2) is the network's problem, not
 # ours, so 1 and 2 carry notify="digest" (../alerts/alertmanager.yml routes that label to the no-integration digest
 # receiver: visible in Prometheus/Alertmanager, never sent to the bridge/phone). What still pages: our nodes seeing
@@ -84,25 +88,29 @@ groups:
           runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/valwatch/README.md#runbook"
       - alert: PFTValwatchHostsDisagree
         expr: >-
-          (pft_valwatch_validator_participation_ratio < 0.8 and on (job, instance, node) pft_valwatch_up == 1)
+          (max_over_time(pft_valwatch_validator_participation_ratio[2m]) < 0.8
+            and on (job, instance, node) pft_valwatch_up == 1)
           and on (validator)
-          (pft_valwatch_validator_participation_ratio >= 0.95 and on (job, instance, node) pft_valwatch_up == 1)
+          (min_over_time(pft_valwatch_validator_participation_ratio[2m]) >= 0.95
+            and on (job, instance, node) pft_valwatch_up == 1)
         for: 15m
         labels:
           severity: warning
         annotations:
           summary: "{{ $labels.node }} misses UNL validator {{ $labels.validator }} that the other node sees"
-          description: "For 15m {{ $labels.node }} saw UNL validator {{ $labels.validator }} on only {{ $value | humanizePercentage }} of its validated ledgers while the other node saw it on at least 95%. The validator is up; this node is not receiving its validations: check this node's peers and the cluster link. `sudo pft-valwatch report --container {{ $labels.node }}`."
+          description: "For 15m {{ $labels.node }} saw UNL validator {{ $labels.validator }} on at most {{ $value | humanizePercentage }} of its validated ledgers (highest sample of the last 2m) while every sample of the other node in those 2m was at least 95%. The validator is up; this node is not receiving its validations: check this node's peers and the cluster link. `sudo pft-valwatch report --container {{ $labels.node }}`."
           runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/valwatch/README.md#runbook"
       - alert: PFTValwatchHostsDisagreeLate
         expr: >-
-          (pft_valwatch_validator_delay_p95_ms > 3000 and on (job, instance, node) pft_valwatch_up == 1)
+          (min_over_time(pft_valwatch_validator_delay_p95_ms[2m]) > 3000
+            and on (job, instance, node) pft_valwatch_up == 1)
           and on (validator)
-          (pft_valwatch_validator_delay_p95_ms <= 2000 and on (job, instance, node) pft_valwatch_up == 1)
+          (max_over_time(pft_valwatch_validator_delay_p95_ms[2m]) <= 2000
+            and on (job, instance, node) pft_valwatch_up == 1)
         for: 15m
         labels:
           severity: warning
         annotations:
           summary: "{{ $labels.node }} gets UNL validator {{ $labels.validator }} late while the other node does not"
-          description: "For 15m the p95 delay of {{ $labels.validator }}'s validations at {{ $labels.node }} was {{ $value }} ms (alert above 3000 ms) while the other node got them within 2000 ms. This node's path to that validator is slow: check its peers and the cluster link. `sudo pft-valwatch report --container {{ $labels.node }}`."
+          description: "For 15m the p95 delay of {{ $labels.validator }}'s validations at {{ $labels.node }} was at least {{ $value }} ms (lowest sample of the last 2m, alert above 3000 ms) while every sample of the other node in those 2m was within 2000 ms. This node's path to that validator is slow: check its peers and the cluster link. `sudo pft-valwatch report --container {{ $labels.node }}`."
           runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/valwatch/README.md#runbook"

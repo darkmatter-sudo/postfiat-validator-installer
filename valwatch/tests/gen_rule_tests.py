@@ -217,8 +217,196 @@ tests = [
         ],
     ),
 ]
+
+# Cross-host skew (2026-11-26): the sentry textfile reaches Prometheus up to 66 s after the validator's
+# (../valwatch/logs/21-skew-replay.log), so a change seen by BOTH nodes first shows on one node only. These cases run
+# at 15 s samples (the live scrape and evaluation interval) and assert the rules' own ALERTS series step by step with
+# promql_expr_test (alert_rule_test cannot see pending alerts; ALERTS{alertstate="pending"} can). OLD_* are the instant
+# expressions of 496470f: each skew case also asserts the old expression matched there, so the fixture really
+# reproduces the false pending.
+OLD_LATE = (
+    "(pft_valwatch_validator_delay_p95_ms > 3000 and on (job, instance, node) pft_valwatch_up == 1)"
+    " and on (validator)"
+    " (pft_valwatch_validator_delay_p95_ms <= 2000 and on (job, instance, node) pft_valwatch_up == 1)"
+)
+OLD_DIS = (
+    "(pft_valwatch_validator_participation_ratio < 0.8 and on (job, instance, node) pft_valwatch_up == 1)"
+    " and on (validator)"
+    " (pft_valwatch_validator_participation_ratio >= 0.95 and on (job, instance, node) pft_valwatch_up == 1)"
+)
+NEW = {a: f'ALERTS{{alertname="{a}"}}' for a in ("PFTValwatchHostsDisagree", "PFTValwatchHostsDisagreeLate")}
+Q = 240  # 15 s samples in 60 min (Q + 1 samples, t = 0 .. 60m)
+LAT, PART = "validator_delay_p95_ms", "validator_participation_ratio"
+
+
+def runs(vals):
+    """Per-sample values -> promtool notation ('a' repeated n times = 'axN-1')."""
+    out, i = [], 0
+    while i < len(vals):
+        j = i
+        while j + 1 < len(vals) and vals[j + 1] == vals[i]:
+            j += 1
+        out.append(f"{vals[i]}x{j - i}")
+        i = j + 1
+    return " ".join(out)
+
+
+def step(good, bad, start=None, end=None, spike=None):
+    """Q + 1 samples: `bad` in [start, end) (sample indexes), else `good`; `spike` = {index: value}."""
+    v = [bad if (start is not None and i >= start and (end is None or i < end)) else good for i in range(Q + 1)]
+    for i, x in (spike or {}).items():
+        v[i] = x
+    return runs(v)
+
+
+def node15(n, metric, values):
+    """Healthy node at 15 s samples; `values` replaces K1's series of `metric`."""
+    base = {
+        "up": f"1x{Q}",
+        "collect_timestamp_seconds": f"0+15x{Q}",
+        "last_record_age_seconds": f"2x{Q}",
+        "quorum_margin_min": f"8x{Q}",
+        "quorum_margin_p50": f"8x{Q}",
+        "reconnects": f"0x{Q}",
+        (PART, K1): f"1x{Q}",
+        (LAT, K1): f"9x{Q}",
+    }
+    base[(metric, K1)] = values
+    return [S(k[0], v, node=n, validator=k[1]) if isinstance(k, tuple) else S(k, v, node=n) for k, v in base.items()]
+
+
+def ts(sec):
+    return f"{sec // 60}m{sec % 60}s" if sec % 60 else f"{sec // 60}m"
+
+
+def sample(metric, n, value, named):
+    """Old-expression control sample (named: the metric itself, value = the series value)."""
+    lab = dict(BASE, node=n, validator=K1)
+    body = "{" + ", ".join(f'{k}="{v}"' for k, v in sorted(lab.items())) + "}"
+    return {"labels": (P + metric if named else "") + body, "value": value}
+
+
+def alerts_row(alert, n, state="pending"):
+    """ALERTS{...} sample of `alert` for K1 at node n (value 1)."""
+    lab = dict(BASE, node=n, validator=K1, alertname=alert, alertstate=state, severity="warning")
+    return {"labels": "ALERTS{" + ", ".join(f'{k}="{v}"' for k, v in sorted(lab.items())) + "}", "value": 1}
+
+
+def case15(name, series, exprs, alerts=()):
+    """exprs: list of (eval_sec, expr, [samples]); alerts: list of (eval_sec, alertname, [exp...])."""
+    out = {"name": name, "interval": "15s", "input_series": series}
+    out["promql_expr_test"] = [{"expr": e, "eval_time": ts(t), "exp_samples": smp} for t, e, smp in exprs]
+    if alerts:
+        out["alert_rule_test"] = [{"eval_time": ts(t), "alertname": a, "exp_alerts": e} for t, a, e in alerts]
+    return out
+
+
+KINDS = (
+    # alert, metric, healthy, faulty, old expression, faulty value as $value renders it
+    ("PFTValwatchHostsDisagreeLate", LAT, 1586, 3500, OLD_LATE, "3500"),
+    ("PFTValwatchHostsDisagree", PART, 1, 0.5, OLD_DIS, "50%"),
+)
+T0 = 40  # sample index of the change: 10m
+T1 = 120  # 30m
+for alert, metric, good, bad, old, shown in KINDS:
+    for lag in (15, 30, 60, 90):
+        k = lag // 15
+        # onset: the validator turns faulty at 10m, the sentry `lag` s later (both see the same faulty validator)
+        tests.append(
+            case15(
+                f"{alert} skew onset: K1 faulty on both nodes, sentry sample {lag} s behind -> new expr empty "
+                f"10m .. {ts(T0 * 15 + lag + 150)}; old instant expr matched at 10m (validator side)",
+                node15(V, metric, step(good, bad, T0)) + node15(SN, metric, step(good, bad, T0 + k)),
+                [(T0 * 15, old, [sample(metric, V, bad, True)])]
+                + [(t, NEW[alert], []) for t in range(T0 * 15, T0 * 15 + lag + 165, 15)],
+                [(26 * 60, alert, []), (45 * 60, alert, [])],
+            )
+        )
+        # recovery: faulty on both from 0, the validator recovers at 30m, the sentry `lag` s later
+        tests.append(
+            case15(
+                f"{alert} skew recovery: K1 recovers at 30m on the validator, {lag} s later on the sentry -> new "
+                f"expr empty 30m .. {ts(T1 * 15 + lag + 150)}; old instant expr matched at 30m (sentry side)",
+                node15(V, metric, step(good, bad, 0, T1)) + node15(SN, metric, step(good, bad, 0, T1 + k)),
+                [(T1 * 15, old, [sample(metric, SN, bad, True)])]
+                + [(t, NEW[alert], []) for t in range(T1 * 15, T1 * 15 + lag + 165, 15)],
+            )
+        )
+    # real one-node fault: faulty on the validator from 10m, sentry healthy throughout. Hand-computed: the [2m]
+    # window (left-open in Prometheus 3) holds only faulty samples from 11m45s (9m45s, the last healthy one, drops
+    # out), so the expression first matches at 11m45s; for 15m -> firing at 26m45s (old instant rule: 25m00s).
+    tests.append(
+        case15(
+            f"{alert} real one-node fault from 10m (sentry healthy): expr matches from 11m45s, fires at 26m45s",
+            node15(V, metric, step(good, bad, T0)) + node15(SN, metric, step(good, good)),
+            [(11 * 60 + 30, NEW[alert], []), (11 * 60 + 45, NEW[alert], [alerts_row(alert, V)])],
+            [
+                (26 * 60 + 30, alert, []),
+                (26 * 60 + 45, alert, [exp(alert, shown, node=V, validator=K1)]),
+                (59 * 60, alert, [exp(alert, shown, node=V, validator=K1)]),
+            ],
+        )
+    )
+    # a lag longer than the window is a real disagreement: lag 120 s matches for exactly one step (11m45s)
+    tests.append(
+        case15(
+            f"{alert} boundary: lag 120 s exceeds the 2m window -> matches at 11m45s only",
+            node15(V, metric, step(good, bad, T0)) + node15(SN, metric, step(good, bad, T0 + 8)),
+            [
+                (11 * 60 + 30, NEW[alert], []),
+                (11 * 60 + 45, NEW[alert], [alerts_row(alert, V)]),
+                (12 * 60, NEW[alert], []),
+            ],
+        )
+    )
+    # window length: one off-value sample at 20m on the HEALTHY side blocks exactly 20m .. 21m45s
+    off = 2500 if metric == LAT else 0.9
+    tests.append(
+        case15(
+            f"{alert} window boundary (healthy side): one {off} sample at 20m on the sentry blocks 20m .. 21m45s",
+            node15(V, metric, step(good, bad, 0)) + node15(SN, metric, step(good, good, spike={80: off})),
+            [
+                (19 * 60 + 45, NEW[alert], [alerts_row(alert, V, "firing")]),
+                (20 * 60, NEW[alert], []),
+                (21 * 60 + 45, NEW[alert], []),
+                (22 * 60, NEW[alert], [alerts_row(alert, V)]),
+            ],
+        )
+    )
+    # ... and on the FAULTY side (one in-between sample at 20m on the validator)
+    dip = 2500 if metric == LAT else 0.9
+    tests.append(
+        case15(
+            f"{alert} window boundary (faulty side): one {dip} sample at 20m on the validator blocks 20m .. 21m45s",
+            node15(V, metric, step(good, bad, 0, spike={80: dip})) + node15(SN, metric, step(good, good)),
+            [
+                (19 * 60 + 45, NEW[alert], [alerts_row(alert, V, "firing")]),
+                (20 * 60, NEW[alert], []),
+                (21 * 60 + 45, NEW[alert], []),
+                (22 * 60, NEW[alert], [alerts_row(alert, V)]),
+            ],
+        )
+    )
+# thresholds over the window: 3001 ms fires, 3000 ms does not; 0.7999 fires, 0.8 does not (other node healthy)
+for alert, metric, hit, miss, shown in (
+    ("PFTValwatchHostsDisagreeLate", LAT, 3001, 3000, "3001"),
+    ("PFTValwatchHostsDisagree", PART, 0.7999, 0.8, "79.99%"),
+):
+    for val, fires in ((hit, True), (miss, False)):
+        tests.append(
+            case15(
+                f"{alert} threshold: {val} on the validator for 60m (sentry healthy) "
+                + ("fires at 15m" if fires else "never matches"),
+                node15(V, metric, step(val, val)) + node15(SN, metric, step(9 if metric == LAT else 1, 0)),
+                [(30 * 60, NEW[alert], [alerts_row(alert, V, "firing")] if fires else [])],
+                [
+                    (14 * 60 + 45, alert, []),
+                    (15 * 60, alert, [exp(alert, shown, node=V, validator=K1)] if fires else []),
+                ],
+            )
+        )
 # Stale's description has no $value; drop None placeholders the replacement left untouched
-doc = {"rule_files": ["valwatch.rules.yml"], "evaluation_interval": "1m", "tests": tests}
+doc = {"rule_files": ["valwatch.rules.yml"], "evaluation_interval": "15s", "tests": tests}
 sys.stdout.write(
     "# promtool unit tests for valwatch.rules.yml (annotations copied from the rules with the labels filled in).\n"
 )

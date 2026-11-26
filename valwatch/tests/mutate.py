@@ -339,23 +339,96 @@ MUTANTS = [
         "R16",
         R,
         "HostsDisagree without the other-node clause (pages on external outages)",
-        "          and on (validator)\n          (pft_valwatch_validator_participation_ratio >= 0.95",
-        "          or on (validator)\n          (pft_valwatch_validator_participation_ratio >= 0.95",
+        "          and on (validator)\n          (min_over_time(pft_valwatch_validator_participation_ratio[2m]) >= 0.95",
+        "          or on (validator)\n          (min_over_time(pft_valwatch_validator_participation_ratio[2m]) >= 0.95",
     ),
     (
         "R17",
         R,
         "HostsDisagree grades a blind other node",
-        "(pft_valwatch_validator_participation_ratio >= 0.95 and on (job, instance, node) pft_valwatch_up == 1)",
-        "(pft_valwatch_validator_participation_ratio >= 0.95)",
+        (
+            "(min_over_time(pft_valwatch_validator_participation_ratio[2m]) >= 0.95\n"
+            "            and on (job, instance, node) pft_valwatch_up == 1)"
+        ),
+        "(min_over_time(pft_valwatch_validator_participation_ratio[2m]) >= 0.95)",
     ),
     ("R18", R, "HostsDisagreeLate other-node ceiling 2000 -> 2001", "<= 2000", "<= 2001"),
     (
         "R19",
         R,
         "HostsDisagreeLate threshold 3000 -> 3500",
-        "(pft_valwatch_validator_delay_p95_ms > 3000 and on",
-        "(pft_valwatch_validator_delay_p95_ms > 3500 and on",
+        "(min_over_time(pft_valwatch_validator_delay_p95_ms[2m]) > 3000\n",
+        "(min_over_time(pft_valwatch_validator_delay_p95_ms[2m]) > 3500\n",
+    ),
+    # 2026-11-26 cross-host skew: both sides of HostsDisagree* are compared over [2m], not one instant
+    (
+        "R20",
+        R,
+        "HostsDisagreeLate faulty side instant again (onset skew pends)",
+        "(min_over_time(pft_valwatch_validator_delay_p95_ms[2m]) > 3000",
+        "(pft_valwatch_validator_delay_p95_ms > 3000",
+    ),
+    (
+        "R21",
+        R,
+        "HostsDisagreeLate healthy side instant again (recovery skew pends)",
+        "(max_over_time(pft_valwatch_validator_delay_p95_ms[2m]) <= 2000",
+        "(pft_valwatch_validator_delay_p95_ms <= 2000",
+    ),
+    (
+        "R22",
+        R,
+        "HostsDisagree faulty side instant again (onset skew pends)",
+        "(max_over_time(pft_valwatch_validator_participation_ratio[2m]) < 0.8",
+        "(pft_valwatch_validator_participation_ratio < 0.8",
+    ),
+    (
+        "R23",
+        R,
+        "HostsDisagree healthy side instant again (recovery skew pends)",
+        "(min_over_time(pft_valwatch_validator_participation_ratio[2m]) >= 0.95",
+        "(pft_valwatch_validator_participation_ratio >= 0.95",
+    ),
+    (
+        "R24",
+        R,
+        "HostsDisagreeLate window 2m -> 1m (shorter than the measured 66 s lag + scrape step)",
+        "(min_over_time(pft_valwatch_validator_delay_p95_ms[2m]) > 3000",
+        "(min_over_time(pft_valwatch_validator_delay_p95_ms[1m]) > 3000",
+    ),
+    (
+        "R25",
+        R,
+        "HostsDisagree healthy-side window 2m -> 3m",
+        "(min_over_time(pft_valwatch_validator_participation_ratio[2m]) >= 0.95",
+        "(min_over_time(pft_valwatch_validator_participation_ratio[3m]) >= 0.95",
+    ),
+    (
+        "R26",
+        R,
+        "HostsDisagreeLate for 15m -> 13m (detection time changed)",
+        (
+            "(max_over_time(pft_valwatch_validator_delay_p95_ms[2m]) <= 2000\n"
+            "            and on (job, instance, node) pft_valwatch_up == 1)\n        for: 15m"
+        ),
+        (
+            "(max_over_time(pft_valwatch_validator_delay_p95_ms[2m]) <= 2000\n"
+            "            and on (job, instance, node) pft_valwatch_up == 1)\n        for: 13m"
+        ),
+    ),
+    (
+        "R27",
+        R,
+        "HostsDisagreeLate faulty-side threshold > 3000 -> >= 3000",
+        "(min_over_time(pft_valwatch_validator_delay_p95_ms[2m]) > 3000",
+        "(min_over_time(pft_valwatch_validator_delay_p95_ms[2m]) >= 3000",
+    ),
+    (
+        "R28",
+        R,
+        "HostsDisagree faulty-side threshold < 0.8 -> <= 0.8",
+        "(max_over_time(pft_valwatch_validator_participation_ratio[2m]) < 0.8",
+        "(max_over_time(pft_valwatch_validator_participation_ratio[2m]) <= 0.8",
     ),
 ]
 
@@ -435,6 +508,7 @@ def promtool(d, timeout):
     return run(cmd + ["-w", "/w", PROMTOOL_IMAGE, "test", "rules", "valwatch.tests.yml"], timeout)
 
 
+PROMQL_FAIL = re.compile(r'expr: "ALERTS\{alertname=\\"(\w+)\\"\}", time: (\w+),')
 SUMMARY = re.compile(r"^=*\s*(\d+ failed|\d+ error)[^\n]* in [0-9.]+s", re.MULTILINE)
 
 
@@ -466,6 +540,11 @@ def one(work, timeout, m):
         names = sorted(
             {ln.strip()[len("name: ") :].rstrip(",") for ln in out.splitlines() if ln.strip().startswith("name: ")}
         )
+        # promql_expr_test failures carry no test name: name them by the queried ALERTS series and eval time
+        exprs = PROMQL_FAIL.findall(out)
+        if exprs:
+            shown = ", ".join(f"{a}@{t}" for a, t in exprs[:3]) + (f" +{len(exprs) - 3} more" if len(exprs) > 3 else "")
+            names = [f"ALERTS {shown}"] + names
         return mid, "CAUGHT", f"- {desc} [promtool FAILED: {'; '.join(names)[:220]}]"
     fails = failing_tests(out)
     if not fails or not SUMMARY.search(out):
