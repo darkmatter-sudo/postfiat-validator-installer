@@ -1,0 +1,76 @@
+# 2026-11-26T06:48:16Z Ubuntu 22.04.5 LTS logrotate 3.19.0 version: 0.8.0
+$ git worktree add -q --detach ~/.cache/l1v2-main 615d3d37e5c3d911454dc6533a880855e02a6ecf && git -C ~/.cache/l1v2-main log -1 --format='%H %s'
+615d3d37e5c3d911454dc6533a880855e02a6ecf Add the 26 November handoff: sol-exit-r3 on the validators, proving on a daily Colab session, the validator-5 flood and the pull request sweep (#258)
+exit=0
+$ cd ~/.cache/l1v2-main && T=~/.cache/l1v2-repro && mkdir -p $T/d $T/log/validator-0 && for f in stdout.log stderr.log rpc-stdout.log rpc-stderr.log rpc-events.ndjson transport-validator-events.ndjson; do echo x > $T/log/validator-0/$f; done && sed "s#/var/log/postfiat#$T/log#g; /^ *su /d; /^ *create /d" systemd/postfiat-logrotate.example > $T/d/postfiat && for r in postfiat-service-output postfiat-rpc-events postfiat-validator-events; do sed "s#/var/log/postfiat#$T/log#g" ops/validator-host/logrotate/$r > $T/d/$r; done && chmod 644 $T/d/* && ls $T/d
+postfiat
+postfiat-rpc-events
+postfiat-service-output
+postfiat-validator-events
+exit=0
+$ logrotate --debug --state ~/.cache/l1v2-repro/state ~/.cache/l1v2-repro/d 2>&1 | grep -E '^error|^rotating pattern|^considering log'
+error: postfiat-rpc-events:1 duplicate log entry for ~/.cache/l1v2-repro/log/validator-0/rpc-events.ndjson
+error: found error in file postfiat-rpc-events, skipping
+error: postfiat-service-output:2 duplicate log entry for ~/.cache/l1v2-repro/log/validator-0/stdout.log
+error: postfiat-service-output:2 duplicate log entry for ~/.cache/l1v2-repro/log/validator-0/stderr.log
+error: postfiat-service-output:2 duplicate log entry for ~/.cache/l1v2-repro/log/validator-0/rpc-stdout.log
+error: postfiat-service-output:2 duplicate log entry for ~/.cache/l1v2-repro/log/validator-0/rpc-stderr.log
+error: found error in file postfiat-service-output, skipping
+error: postfiat-validator-events:1 duplicate log entry for ~/.cache/l1v2-repro/log/validator-0/transport-validator-events.ndjson
+error: found error in file postfiat-validator-events, skipping
+rotating pattern: ~/.cache/l1v2-repro/log/*.log ~/.cache/l1v2-repro/log/*.jsonl ~/.cache/l1v2-repro/log/*.ndjson ~/.cache/l1v2-repro/log/*/*.log ~/.cache/l1v2-repro/log/*/*.jsonl ~/.cache/l1v2-repro/log/*/*.ndjson  after 1 days (14 rotations)
+considering log ~/.cache/l1v2-repro/log/*.log
+considering log ~/.cache/l1v2-repro/log/*.jsonl
+considering log ~/.cache/l1v2-repro/log/*.ndjson
+considering log ~/.cache/l1v2-repro/log/validator-0/rpc-stderr.log
+considering log ~/.cache/l1v2-repro/log/validator-0/rpc-stdout.log
+considering log ~/.cache/l1v2-repro/log/validator-0/stderr.log
+considering log ~/.cache/l1v2-repro/log/validator-0/stdout.log
+considering log ~/.cache/l1v2-repro/log/*/*.jsonl
+considering log ~/.cache/l1v2-repro/log/validator-0/rpc-events.ndjson
+considering log ~/.cache/l1v2-repro/log/validator-0/transport-validator-events.ndjson
+rotating pattern: ~/.cache/l1v2-repro/log/validator-*/rpc-events.ndjson  536870912 bytes (3 rotations)
+rotating pattern: ~/.cache/l1v2-repro/log/validator-*/stdout.log
+rotating pattern: ~/.cache/l1v2-repro/log/validator-*/transport-validator-events.ndjson  2147483648 bytes (3 rotations)
+exit=0
+$ logrotate --debug --state ~/.cache/l1v2-repro/state ~/.cache/l1v2-repro/d >/dev/null 2>&1; echo "logrotate rc=$?"
+logrotate rc=1
+exit=0
+$ cd ~/.cache/l1v2-main && sed -n 19,20p ops/validator-host/logrotate/install.sh
+sed -i '/^[[:space:]]*delaycompress[[:space:]]*$/d' /etc/logrotate.d/postfiat-rpc-events /etc/logrotate.d/postfiat-validator-events
+logrotate -d /etc/logrotate.d/postfiat-service-output /etc/logrotate.d/postfiat-rpc-events /etc/logrotate.d/postfiat-validator-events >/dev/null 2>/tmp/logrotate-dry.txt || { echo "dry run failed"; tail -5 /tmp/logrotate-dry.txt; exit 1; }
+exit=0
+$ cd ~/.cache/l1v2-main && shellcheck ops/validator-host/logrotate/install.sh
+
+In ops/validator-host/logrotate/install.sh line 1:
+set -eu
+^-- SC2148 (error): Tips depend on target shell and yours is unknown. Add a shebang or a 'shell' directive.
+
+
+In ops/validator-host/logrotate/install.sh line 21:
+for f in /var/log/postfiat/validator-$n/*.ndjson.[0-9]; do [ -f "$f" ] && gzip -9 "$f"; done
+                                     ^-- SC2231 (info): Quote expansions in this for loop glob to prevent wordsplitting, e.g. "$dir"/*.txt .
+
+
+In ops/validator-host/logrotate/install.sh line 28:
+ls -la --time-style=+%F /var/log/postfiat/validator-$n/ | awk 'NR>3{printf "  %6.0fM %s\n",$5/1048576,$7}'
+^-- SC2012 (info): Use find instead of ls to better handle non-alphanumeric filenames.
+                                                    ^-- SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+ls -la --time-style=+%F /var/log/postfiat/validator-"$n"/ | awk 'NR>3{printf "  %6.0fM %s\n",$5/1048576,$7}'
+
+
+In ops/validator-host/logrotate/install.sh line 29:
+systemctl is-active postfiat-validator-$n.service postfiat-validator-$n-rpc.service | tr '\n' ' '; echo
+                                       ^-- SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                                     ^-- SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+systemctl is-active postfiat-validator-"$n".service postfiat-validator-"$n"-rpc.service | tr '\n' ' '; echo
+
+For more information:
+  https://www.shellcheck.net/wiki/SC2148 -- Tips depend on target shell and y...
+  https://www.shellcheck.net/wiki/SC2012 -- Use find instead of ls to better ...
+  https://www.shellcheck.net/wiki/SC2086 -- Double quote to prevent globbing ...
+exit=1

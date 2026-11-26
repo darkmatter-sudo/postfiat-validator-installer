@@ -1,0 +1,106 @@
+# 2026-11-26T06:48:52Z Ubuntu 22.04.5 LTS logrotate 3.19.0 version: 0.8.0
+$ git rev-parse HEAD && git log -1 --format='%H %ad %an %s' && git status --short
+e941096678b92323ada2169de14c645e54deeb05
+e941096678b92323ada2169de14c645e54deeb05 Thu Nov 26 06:48:39 2026 +0000 darkmatter-sudo validator-host logrotate: refuse rules that duplicate another rule; add regression test
+exit=0
+$ git diff --stat 615d3d37e5c3d911454dc6533a880855e02a6ecf HEAD
+ docs/runbooks/operator-day-two.md       |   9 ++
+ ops/validator-host/logrotate/install.sh |  55 +++++++++--
+ scripts/test-validator-host-logrotate   | 167 ++++++++++++++++++++++++++++++++
+ 3 files changed, 224 insertions(+), 7 deletions(-)
+exit=0
+$ sha256sum ops/validator-host/logrotate/install.sh scripts/test-validator-host-logrotate ops/validator-host/logrotate/postfiat-service-output ops/validator-host/logrotate/postfiat-rpc-events ops/validator-host/logrotate/postfiat-validator-events systemd/postfiat-logrotate.example
+c9500e138dccbc4470f1e21e4dc58733d40bc72e9c94fb7f2dbcc457e6620e43  ops/validator-host/logrotate/install.sh
+62fff49877a71907b8df64bc31c0a4732af127ee392580bd4b5a76c44256de4c  scripts/test-validator-host-logrotate
+9f0e8de5121fdf23dfd9d4a6b345dcd3b7f5ef9b68531d05ce8a50a1df45f641  ops/validator-host/logrotate/postfiat-service-output
+eba70c617d040d8d5d41d6ff0b070ab557db95fc16a4e4ce17230b378a43c81a  ops/validator-host/logrotate/postfiat-rpc-events
+6aa78728eb948fea1b8ce3280843b9d39d987dce82b120b870ba5bb81525de4a  ops/validator-host/logrotate/postfiat-validator-events
+395f9d37b4c6d733ab214476f135b3d842aeb58393f1ea5506c4c0bcd6b7c1d6  systemd/postfiat-logrotate.example
+exit=0
+$ TMPDIR=~/.cache scripts/test-validator-host-logrotate
+tree: e941096678b92323ada2169de14c645e54deeb05 logrotate 3.19.0
+heredoc: install.sh writes postfiat-service-output byte for byte
+  ok: heredoc identical to postfiat-service-output (12 lines)
+rules: each rule file parses alone and selects only its own files
+  ok: postfiat-service-output: size 100M, rotate 3, 4 service logs per validator
+  ok: postfiat-rpc-events: size 512M, rotate 3, rpc-events.ndjson per validator
+  ok: postfiat-validator-events: size 2G, rotate 3, transport-validator-events.ndjson per validator
+  ok: postfiat-service-output: compress
+  ok: postfiat-service-output: copytruncate
+  ok: postfiat-service-output: no delaycompress
+  ok: postfiat-rpc-events: compress
+  ok: postfiat-rpc-events: copytruncate
+  ok: postfiat-rpc-events: no delaycompress
+  ok: postfiat-validator-events: compress
+  ok: postfiat-validator-events: copytruncate
+  ok: postfiat-validator-events: no delaycompress
+coexistence: install.sh against a scratch /etc and /var/log (private namespace)
+case fleet: validator-host event rules already installed (as on the six validators), no generic rule
+  | v0 before: 45% 54G free
+  | v0 after:  45% 54G free
+  |        0M rpc-events.ndjson
+  |        0M rpc-stderr.log
+  |        0M rpc-stdout.log
+  |        0M stderr.log
+  |        0M stdout.log
+  |        0M transport-validator-events.ndjson
+  | active 
+  ok: install.sh rc=0
+  ok: installed postfiat-service-output identical to the repo file
+  ok: postfiat-rpc-events: delaycompress removed, identical to the repo file
+  ok: postfiat-validator-events: delaycompress removed, identical to the repo file
+  full-config dry run rc=0, 0 error lines
+  ok: full configuration conflict-free
+case generic: systemd/postfiat-logrotate.example installed as /etc/logrotate.d/postfiat (runbook)
+  | v0 before: 45% 54G free
+  | error: postfiat-service-output:2 duplicate log entry for /var/log/postfiat/validator-0/stdout.log
+  | error: postfiat-service-output:2 duplicate log entry for /var/log/postfiat/validator-0/stderr.log
+  | error: postfiat-service-output:2 duplicate log entry for /var/log/postfiat/validator-0/rpc-stdout.log
+  | error: postfiat-service-output:2 duplicate log entry for /var/log/postfiat/validator-0/rpc-stderr.log
+  | error: found error in file postfiat-service-output, skipping
+  | refusing: another rule already rotates these files (above); restored /etc/logrotate.d/postfiat-service-output /etc/logrotate.d/postfiat-rpc-events /etc/logrotate.d/postfiat-validator-events
+  | keep either systemd/postfiat-logrotate.example or the validator-host rules, not both
+  full-config dry run rc=0, 0 error lines
+  ok: full configuration conflict-free after install.sh
+  ok: install.sh refuses (rc=1, want 1)
+  ok: /etc/logrotate.d unchanged by install.sh
+  ok: install.sh says why it refused
+case generic+fleet: the example and the fleet event rules both installed (already conflicting)
+  | v0 before: 45% 54G free
+  | error: postfiat-rpc-events:1 duplicate log entry for /var/log/postfiat/validator-0/rpc-events.ndjson
+  | error: found error in file postfiat-rpc-events, skipping
+  | error: postfiat-validator-events:1 duplicate log entry for /var/log/postfiat/validator-0/transport-validator-events.ndjson
+  | error: found error in file postfiat-validator-events, skipping
+  | refusing: the installed logrotate configuration already has postfiat errors (above); fix those first
+  full-config dry run rc=1:
+    error: postfiat-rpc-events:1 duplicate log entry for /var/log/postfiat/validator-0/rpc-events.ndjson
+    error: found error in file postfiat-rpc-events, skipping
+    error: postfiat-validator-events:1 duplicate log entry for /var/log/postfiat/validator-0/transport-validator-events.ndjson
+    error: found error in file postfiat-validator-events, skipping
+  ok: pre-existing conflict reported, install.sh added no error (4 error lines before)
+  ok: install.sh refuses (rc=1, want 1)
+  ok: /etc/logrotate.d unchanged by install.sh
+  ok: install.sh says why it refused
+  ok: install.sh cases
+RESULT: PASS
+exit=0
+$ shellcheck ops/validator-host/logrotate/install.sh scripts/test-validator-host-logrotate scripts/test-postfiat-logrotate && echo shellcheck_clean=3_files
+shellcheck_clean=3_files
+exit=0
+$ getent passwd postfiat || echo 'no postfiat user on this host (the example rotates as postfiat:postfiat)'; scripts/test-postfiat-logrotate 2>&1 | grep -E 'error|config=ok'
+no postfiat user on this host (the example rotates as postfiat:postfiat)
+error: ~/work/postfiatl1v2/systemd/postfiat-logrotate.example:11 unknown user 'postfiat'
+error: found error in /var/log/postfiat/*.log /var/log/postfiat/*.jsonl /var/log/postfiat/*.ndjson /var/log/postfiat/*/*.log /var/log/postfiat/*/*.jsonl /var/log/postfiat/*/*.ndjson , skipping
+exit=0
+$ unshare -rm bash -c 'mount --bind ~/.cache/l1v2-pw/passwd /etc/passwd && mount --bind ~/.cache/l1v2-pw/group /etc/group && getent passwd postfiat && scripts/test-postfiat-logrotate'
+postfiat:x:0:0::/nonexistent:/usr/sbin/nologin
+WARNING: logrotate in debug mode does nothing except printing debug messages!  Consider using verbose mode (-v) instead if this is not what you want.
+
+Potentially dangerous mode on ~/work/postfiatl1v2/systemd/postfiat-logrotate.example: 0664
+error: Ignoring ~/work/postfiatl1v2/systemd/postfiat-logrotate.example because it is writable by group or others.
+Reading state from file: /tmp/tmp.y4nhtPyfim
+Allocating hash table for state file, size 64 entries
+
+Handling 0 logs
+postfiat_logrotate_config=ok
+exit=0

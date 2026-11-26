@@ -1,0 +1,86 @@
+# 2026-11-26T06:48:51Z Ubuntu 22.04.5 LTS logrotate 3.19.0 version: 0.8.0
+$ git rev-parse HEAD && git -C ~/.cache/l1v2-main rev-parse HEAD
+e941096678b92323ada2169de14c645e54deeb05
+615d3d37e5c3d911454dc6533a880855e02a6ecf
+exit=0
+$ git diff --stat 615d3d37e5c3d911454dc6533a880855e02a6ecf HEAD
+ docs/runbooks/operator-day-two.md       |   9 ++
+ ops/validator-host/logrotate/install.sh |  55 +++++++++--
+ scripts/test-validator-host-logrotate   | 167 ++++++++++++++++++++++++++++++++
+ 3 files changed, 224 insertions(+), 7 deletions(-)
+exit=0
+$ TMPDIR=~/.cache scripts/test-validator-host-logrotate ~/.cache/l1v2-main
+tree: 615d3d37e5c3d911454dc6533a880855e02a6ecf logrotate 3.19.0
+heredoc: install.sh writes postfiat-service-output byte for byte
+  ok: heredoc identical to postfiat-service-output (12 lines)
+rules: each rule file parses alone and selects only its own files
+  ok: postfiat-service-output: size 100M, rotate 3, 4 service logs per validator
+  ok: postfiat-rpc-events: size 512M, rotate 3, rpc-events.ndjson per validator
+  ok: postfiat-validator-events: size 2G, rotate 3, transport-validator-events.ndjson per validator
+  ok: postfiat-service-output: compress
+  ok: postfiat-service-output: copytruncate
+  ok: postfiat-service-output: no delaycompress
+  ok: postfiat-rpc-events: compress
+  ok: postfiat-rpc-events: copytruncate
+  ok: postfiat-rpc-events: no delaycompress
+  ok: postfiat-validator-events: compress
+  ok: postfiat-validator-events: copytruncate
+  ok: postfiat-validator-events: no delaycompress
+coexistence: install.sh against a scratch /etc and /var/log (private namespace)
+case fleet: validator-host event rules already installed (as on the six validators), no generic rule
+  | v0 before: 45% 54G free
+  | v0 after:  45% 54G free
+  |        0M rpc-events.ndjson
+  |        0M rpc-stderr.log
+  |        0M rpc-stdout.log
+  |        0M stderr.log
+  |        0M stdout.log
+  |        0M transport-validator-events.ndjson
+  | active 
+  ok: install.sh rc=0
+  ok: installed postfiat-service-output identical to the repo file
+  ok: postfiat-rpc-events: delaycompress removed, identical to the repo file
+  ok: postfiat-validator-events: delaycompress removed, identical to the repo file
+  full-config dry run rc=0, 0 error lines
+  ok: full configuration conflict-free
+case generic: systemd/postfiat-logrotate.example installed as /etc/logrotate.d/postfiat (runbook)
+  | v0 before: 45% 54G free
+  | sed: can't read /etc/logrotate.d/postfiat-rpc-events: No such file or directory
+  | sed: can't read /etc/logrotate.d/postfiat-validator-events: No such file or directory
+  full-config dry run rc=1:
+    error: postfiat-service-output:2 duplicate log entry for /var/log/postfiat/validator-0/stdout.log
+    error: postfiat-service-output:2 duplicate log entry for /var/log/postfiat/validator-0/stderr.log
+    error: postfiat-service-output:2 duplicate log entry for /var/log/postfiat/validator-0/rpc-stdout.log
+    error: postfiat-service-output:2 duplicate log entry for /var/log/postfiat/validator-0/rpc-stderr.log
+    error: found error in file postfiat-service-output, skipping
+  FAIL: full configuration conflict-free after install.sh
+  FAIL: install.sh refuses (rc=2, want 1)
+  FAIL: /etc/logrotate.d unchanged by install.sh
+  FAIL: install.sh says why it refused
+case generic+fleet: the example and the fleet event rules both installed (already conflicting)
+  | v0 before: 45% 54G free
+  | v0 after:  45% 54G free
+  |        0M rpc-events.ndjson
+  |        0M rpc-stderr.log
+  |        0M rpc-stdout.log
+  |        0M stderr.log
+  |        0M stdout.log
+  |        0M transport-validator-events.ndjson
+  | active 
+  full-config dry run rc=1:
+    error: postfiat-rpc-events:1 duplicate log entry for /var/log/postfiat/validator-0/rpc-events.ndjson
+    error: found error in file postfiat-rpc-events, skipping
+    error: postfiat-service-output:2 duplicate log entry for /var/log/postfiat/validator-0/stdout.log
+    error: postfiat-service-output:2 duplicate log entry for /var/log/postfiat/validator-0/stderr.log
+    error: postfiat-service-output:2 duplicate log entry for /var/log/postfiat/validator-0/rpc-stdout.log
+    error: postfiat-service-output:2 duplicate log entry for /var/log/postfiat/validator-0/rpc-stderr.log
+    error: found error in file postfiat-service-output, skipping
+    error: postfiat-validator-events:1 duplicate log entry for /var/log/postfiat/validator-0/transport-validator-events.ndjson
+    error: found error in file postfiat-validator-events, skipping
+  FAIL: pre-existing conflict reported, install.sh added no error (4 error lines before)
+  FAIL: install.sh refuses (rc=0, want 1)
+  FAIL: /etc/logrotate.d unchanged by install.sh
+  FAIL: install.sh says why it refused
+  FAIL: install.sh cases
+RESULT: FAIL
+exit=1
