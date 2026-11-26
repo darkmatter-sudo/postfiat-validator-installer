@@ -1,0 +1,21 @@
+# 2026-11-26T21:19:22Z Ubuntu 22.04.5 LTS | Docker Compose version 2.40.3+ds1-0ubuntu1~22.04.1 | jq-1.6 | version: 0.8.0
+# repo HEAD 0085a1ff885d6a446369cf73a4430f75af22be55
+$ git log -1 --format='main %H'
+main 0085a1ff885d6a446369cf73a4430f75af22be55
+exit=0
+$ grep -c stop_grace_period scripts/docker-compose-external-validator.yml scripts/docker-compose-rpc.yml scripts/docker-compose-validator.yml || true
+scripts/docker-compose-external-validator.yml:0
+scripts/docker-compose-rpc.yml:0
+scripts/docker-compose-validator.yml:0
+exit=0
+$ git show 758fc0506b6ad77ec4c7744127c865fbd3904831:scripts/test-compose-stop-grace.sh > scripts/test-compose-stop-grace.sh && chmod 755 scripts/test-compose-stop-grace.sh && sha256sum scripts/test-compose-stop-grace.sh && echo "script from PR head 758fc0506b6ad77ec4c7744127c865fbd3904831"
+407feb76a6db4902a3d873cc154598fda7271af1849b83201b6f5c75f8c2a518  scripts/test-compose-stop-grace.sh
+script from PR head 758fc0506b6ad77ec4c7744127c865fbd3904831
+exit=0
+$ scripts/test-compose-stop-grace.sh
+FAIL scripts/docker-compose-external-validator.yml: postfiatd stop_grace_period unset (Docker default 10s), need >= 60s
+FAIL scripts/docker-compose-rpc.yml: postfiatd stop_grace_period unset (Docker default 10s), need >= 60s
+FAIL scripts/docker-compose-validator.yml: postfiatd stop_grace_period unset (Docker default 10s), need >= 60s
+RESULT: 3 file(s), 3 failure(s)
+exit=1
+# end 2026-11-26T21:19:23Z

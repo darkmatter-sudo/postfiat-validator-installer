@@ -1,0 +1,46 @@
+# 2026-11-26T21:23:19Z Ubuntu 22.04.5 LTS | Docker Compose version 2.40.3+ds1-0ubuntu1~22.04.1 | jq-1.6 | version: 0.8.0
+# cwd is not a git repo
+$ git clone -q --filter=blob:none https://github.com/postfiatorg/postfiatd.git pfd && echo cloned upstream
+cloned upstream
+exit=0
+$ cd pfd && git fetch -q origin pull/54/head && git checkout -q --detach FETCH_HEAD && git log -1 --format='PR #54 head %H' && git rev-parse HEAD^ && git merge-base --is-ancestor 0085a1ff885d6a446369cf73a4430f75af22be55 HEAD && echo "main 0085a1ff is ancestor"
+PR #54 head 758fc0506b6ad77ec4c7744127c865fbd3904831
+0085a1ff885d6a446369cf73a4430f75af22be55
+main 0085a1ff is ancestor
+exit=0
+$ cd pfd && git diff --stat 0085a1ff885d6a446369cf73a4430f75af22be55 HEAD
+ scripts/docker-compose-external-validator.yml |   2 +
+ scripts/docker-compose-rpc.yml                |   2 +
+ scripts/docker-compose-validator.yml          |   2 +
+ scripts/test-compose-stop-grace.sh            | 109 ++++++++++++++++++++++++++
+ 4 files changed, 115 insertions(+)
+exit=0
+$ cd pfd && sha256sum scripts/test-compose-stop-grace.sh scripts/docker-compose-external-validator.yml scripts/docker-compose-rpc.yml scripts/docker-compose-validator.yml
+407feb76a6db4902a3d873cc154598fda7271af1849b83201b6f5c75f8c2a518  scripts/test-compose-stop-grace.sh
+0c9eb49e9d655205e4a6318615dffb4b1270da1ab79a3cefeedfb0ce3244f6e0  scripts/docker-compose-external-validator.yml
+23905906b25ee5a6684edea39360cb702fe018a40eba94999d653ffafd0a79b5  scripts/docker-compose-rpc.yml
+26d8fea32a827744e06dd9a5d7194afe7504d2fe9ad8230f7c0a4708236cc69c  scripts/docker-compose-validator.yml
+exit=0
+$ cd pfd && shellcheck scripts/test-compose-stop-grace.sh && echo shellcheck clean
+shellcheck clean
+exit=0
+$ cd pfd && scripts/test-compose-stop-grace.sh
+PASS scripts/docker-compose-external-validator.yml: postfiatd stop_grace_period 1m0s = 60s >= 60s
+PASS scripts/docker-compose-rpc.yml: postfiatd stop_grace_period 1m0s = 60s >= 60s
+PASS scripts/docker-compose-validator.yml: postfiatd stop_grace_period 1m0s = 60s >= 60s
+RESULT: 3 file(s), 0 failure(s)
+exit=0
+$ cd pfd && git checkout -q 0085a1ff885d6a446369cf73a4430f75af22be55 -- scripts/docker-compose-external-validator.yml scripts/docker-compose-rpc.yml scripts/docker-compose-validator.yml && git status --short && scripts/test-compose-stop-grace.sh
+M  scripts/docker-compose-external-validator.yml
+M  scripts/docker-compose-rpc.yml
+M  scripts/docker-compose-validator.yml
+FAIL scripts/docker-compose-external-validator.yml: postfiatd stop_grace_period unset (Docker default 10s), need >= 60s
+FAIL scripts/docker-compose-rpc.yml: postfiatd stop_grace_period unset (Docker default 10s), need >= 60s
+FAIL scripts/docker-compose-validator.yml: postfiatd stop_grace_period unset (Docker default 10s), need >= 60s
+RESULT: 3 file(s), 3 failure(s)
+exit=1
+$ cd pfd && git checkout -q HEAD -- scripts && git status --short | wc -l && scripts/test-compose-stop-grace.sh >/dev/null && echo "PR head files restored: exit 0"
+0
+PR head files restored: exit 0
+exit=0
+# end 2026-11-26T21:23:35Z

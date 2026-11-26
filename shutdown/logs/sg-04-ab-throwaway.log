@@ -1,0 +1,78 @@
+# 2026-11-26T21:22:08Z A/B N=3 SYNC=180s file=scripts/docker-compose-external-validator.yml
+$ docker compose version; docker image inspect agtipft/postfiatd:testnet-light-latest -f '{{.Id}}'
+Docker Compose version 2.40.3+ds1-0ubuntu1~22.04.1
+sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+$ curl -fsS -o main.yml https://raw.githubusercontent.com/postfiatorg/postfiatd/0085a1ff885d6a446369cf73a4430f75af22be55/scripts/docker-compose-external-validator.yml
+  sha256 13886c2ac89e7558b5ebaacec7db598223f120234d5fcb32407d811788521442  grace_lines=0
+$ curl -fsS -o branch.yml https://raw.githubusercontent.com/darkmatter-sudo/postfiatd/758fc0506b6ad77ec4c7744127c865fbd3904831/scripts/docker-compose-external-validator.yml
+  sha256 0c9eb49e9d655205e4a6318615dffb4b1270da1ab79a3cefeedfb0ce3244f6e0  grace_lines=1
+$ sha256sum throwaway.override.yml; cat throwaway.override.yml
+7f3707e4e46434ecfa9b0e84c822e46b8f517124738fd14180dec8f0394a5021  throwaway.override.yml
+# Throwaway A/B override: no host ports, no fixed container name, own named volumes
+# (removed with down -v), no host bind mounts, no restart. stop_grace_period is NOT touched.
+services:
+  postfiatd:
+    container_name: !reset null
+    ports: !reset []
+    restart: "no"
+    volumes: !override
+      - cfg:/etc/postfiatd
+      - db:/var/lib/postfiatd/db
+      - log:/var/log/postfiatd
+    labels:
+      pft.stopgrace.throwaway: "1"
+volumes:
+  cfg:
+  db:
+  log:
+== round 1 variant main project sg-ab-main-1
+  rendered: {"stop_grace_period":"unset","ports":[],"container_name":null,"restart":"no","volumes":["volume:cfg","volume:db","volume:log"]}
+  container 0b538b70c6ce Config.StopTimeout=null ports=0
+  after 180s: running=true validation_lines=1235 last_state=STATE->full
+  STOP variant=main round=1 wall=3.480419755s exit=0 oom=false received_signal=1 server_stopping=1
+    log: 2026-Nov-26 21:25:15.030057379 UTC Application:NFO Received signal 15
+    log: 2026-Nov-26 21:25:15.030161494 UTC Application:WRN Server stopping: Signal: 15
+  cleanup: containers=0 volumes=0
+== round 1 variant branch project sg-ab-branch-1
+  rendered: {"stop_grace_period":"1m0s","ports":[],"container_name":null,"restart":"no","volumes":["volume:cfg","volume:db","volume:log"]}
+  container f6264be7320f Config.StopTimeout=60 ports=0
+  after 180s: running=true validation_lines=1209 last_state=STATE->full
+  STOP variant=branch round=1 wall=1.881248552s exit=0 oom=false received_signal=1 server_stopping=1
+    log: 2026-Nov-26 21:28:23.964663715 UTC Application:NFO Received signal 15
+    log: 2026-Nov-26 21:28:23.964755917 UTC Application:WRN Server stopping: Signal: 15
+  cleanup: containers=0 volumes=0
+== round 2 variant main project sg-ab-main-2
+  rendered: {"stop_grace_period":"unset","ports":[],"container_name":null,"restart":"no","volumes":["volume:cfg","volume:db","volume:log"]}
+  container f2a0bf1fa524 Config.StopTimeout=null ports=0
+  after 180s: running=true validation_lines=1224 last_state=STATE->full
+  STOP variant=main round=2 wall=4.121147304s exit=0 oom=false received_signal=1 server_stopping=1
+    log: 2026-Nov-26 21:31:32.134321175 UTC Application:NFO Received signal 15
+    log: 2026-Nov-26 21:31:32.134536947 UTC Application:WRN Server stopping: Signal: 15
+  cleanup: containers=0 volumes=0
+== round 2 variant branch project sg-ab-branch-2
+  rendered: {"stop_grace_period":"1m0s","ports":[],"container_name":null,"restart":"no","volumes":["volume:cfg","volume:db","volume:log"]}
+  container 3f2b04729c82 Config.StopTimeout=60 ports=0
+  after 180s: running=true validation_lines=1204 last_state=STATE->full
+  STOP variant=branch round=2 wall=1.674163137s exit=0 oom=false received_signal=1 server_stopping=1
+    log: 2026-Nov-26 21:34:42.669614309 UTC Application:NFO Received signal 15
+    log: 2026-Nov-26 21:34:42.669712312 UTC Application:WRN Server stopping: Signal: 15
+  cleanup: containers=0 volumes=0
+== round 3 variant main project sg-ab-main-3
+  rendered: {"stop_grace_period":"unset","ports":[],"container_name":null,"restart":"no","volumes":["volume:cfg","volume:db","volume:log"]}
+  container a5b374f46a4b Config.StopTimeout=null ports=0
+  after 180s: running=true validation_lines=1175 last_state=STATE->full
+  STOP variant=main round=3 wall=1.660799824s exit=0 oom=false received_signal=1 server_stopping=1
+    log: 2026-Nov-26 21:37:47.746607711 UTC Application:NFO Received signal 15
+    log: 2026-Nov-26 21:37:47.746861634 UTC Application:WRN Server stopping: Signal: 15
+  cleanup: containers=0 volumes=0
+== round 3 variant branch project sg-ab-branch-3
+  rendered: {"stop_grace_period":"1m0s","ports":[],"container_name":null,"restart":"no","volumes":["volume:cfg","volume:db","volume:log"]}
+  container 0570111da639 Config.StopTimeout=60 ports=0
+  after 180s: running=true validation_lines=1200 last_state=STATE->full
+  STOP variant=branch round=3 wall=1.655389168s exit=0 oom=false received_signal=1 server_stopping=1
+    log: 2026-Nov-26 21:40:53.332083746 UTC Application:NFO Received signal 15
+    log: 2026-Nov-26 21:40:53.332156091 UTC Application:WRN Server stopping: Signal: 15
+  cleanup: containers=0 volumes=0
+# end 2026-11-26T21:40:55Z postfiatd-sentry: running StartedAt=2026-11-26T18:50:33.943703779Z throwaway containers left=0
+RESULT: runner_failures=0
+exit=0

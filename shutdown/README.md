@@ -173,3 +173,40 @@ no message during the run.
 Integrity: each run accepted its own re-creates into `pft-integrity`; at the end both hosts PASS, AppArmor and
 seccomp audits PASS, both nodes `full`. File hashes: [`SHA256SUMS`](SHA256SUMS) (`sha256sum -c SHA256SUMS` from this
 folder).
+
+## Upstream: `stop_grace_period` in postfiatd's compose files (2026-11-26)
+
+[postfiatorg/postfiatd#54](https://github.com/postfiatorg/postfiatd/pull/54) adds `stop_grace_period: 60s` to the
+`postfiatd` service of the three operator compose files (`scripts/docker-compose-{external-validator,rpc,validator}.yml`)
+and `scripts/test-compose-stop-grace.sh`, which renders each file with `docker compose config --format json` and fails
+unless the service's grace period is at least 60 s (a missing key counts as unset = Docker's 10 s default). The
+upstream repository has issues disabled, so the problem report is in the PR description.
+
+| log | what | result |
+|-----|------|--------|
+| [`logs/sg-01-check-main.log`](logs/sg-01-check-main.log) | check script (from the PR head) against main `0085a1ff` | 3 FAIL `unset`, exit 1 |
+| [`logs/sg-02-check-branch.log`](logs/sg-02-check-branch.log) | PR head `758fc050`: diff, shellcheck, check, 9 control inputs | 3 PASS, exit 0; controls fail/pass as expected |
+| [`logs/sg-04-ab-throwaway.log`](logs/sg-04-ab-throwaway.log) | A/B on the sentry host: 3 rounds x {main file, PR file}, throwaway compose projects ([`stopgrace/`](stopgrace/)) | 6 clean stops, cleanup 0 left (STOP lines 32, 40, 48, 56, 64, 72) |
+| [`logs/sg-05-sentry-measure.log`](logs/sg-05-sentry-measure.log) | fallback: one recorded clean stop of the live sentry (`drill/live-run.sh MODE=measure HOSTS=sentry N=1`, silenced, maintenance window, throwaway alert topic) | PASS |
+| [`logs/sg-06-fresh-clone.log`](logs/sg-06-fresh-clone.log) | fresh clone of upstream, `pull/54/head`, hashes, check on PR head and with main's files | exit 0 / exit 1 |
+
+A/B (`stopgrace/ab-run.sh`): each round fetches the compose file from a pinned raw URL (main `0085a1ff`, PR head
+`758fc050`), starts it under its own compose project with `stopgrace/throwaway.override.yml` (no host ports, no fixed
+container name, own named volumes, `restart: "no"`, grace period untouched), lets the node sync 180 s with testnet peers
+(`STATE->full` in every round), runs `docker compose stop` and then `down -v`.
+
+| variant | `Config.StopTimeout` | stop wall time (s) | exit | `Received signal 15` / `Server stopping` |
+|---------|----------------------|--------------------|------|------------------------------------------|
+| main (no `stop_grace_period`) | null (Docker default 10 s) | 3.48, 4.12, 1.66 | 0, 0, 0 | 1/1 each |
+| PR head (`60s`) | 60 | 1.88, 1.67, 1.66 | 0, 0, 0 | 1/1 each |
+
+A throwaway node with a 3-minute-old database stops in under 10 s, so the main file did not reach Docker's SIGKILL
+(no exit 137) in these runs. The request allowed a fallback for this case: one recorded stop of the live sentry
+(run sg05, `docker stop -t 120`). It stopped cleanly in 2.6 s and was back to `full` in 49.5 s (`logs/sg-05` lines 71,
+78; run PASS, 0 checks failed, line 149). The case for the PR rests on the slowest
+measured clean stop of the long-running sentry node, 19.7 s on 2026-11-24 (`logs/04-measure-n3.log` line 117), about
+twice Docker's default. Stop time varies from run to run (5.0 / 7.1 / 19.7 s on the same node), so 60 s
+(about 3x the slowest seen) is an upper bound, not a delay: `docker compose stop` returns as soon as the node exits.
+
+CI: the PR's `PR Check` workflow run is `action_required` (GitHub holds workflow runs from first-time contributors
+until a maintainer approves them); the PR touches no C++ or workflow files.

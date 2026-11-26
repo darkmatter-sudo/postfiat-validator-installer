@@ -1,0 +1,151 @@
+pft-shutdown live run sg05 - 2026-11-26T21:41:19Z - Ubuntu 22.04.5 LTS - repo HEAD b8ce9e029d1d67bacec5d4e8a4d5b000a4458ab8 (clean: yes) - mode measure hosts 'sentry' n=1 dry=0
+
+== 0. preflight (read-only)
+$ rm -rf ~/.cache/shutdown-run-sg05 && mkdir -p ~/.cache/shutdown-run-sg05 && cp shutdown/pft-shutdown.sh ~/.cache/shutdown-run-sg05/ && R 'rm -rf ~/.cache/shutdown-run-sg05 && mkdir -p ~/.cache/shutdown-run-sg05' && scp -q -o BatchMode=yes shutdown/pft-shutdown.sh relay:.cache/shutdown-run-sg05/ && sha256sum shutdown/pft-shutdown.sh ~/.cache/shutdown-run-sg05/pft-shutdown.sh | cut -c1-64; R 'sha256sum .cache/shutdown-run-sg05/pft-shutdown.sh' | cut -c1-64
+  94ca49e3553f59fe66c7727af5e58468c38fd66377c47c56d240264ad09d9ea8
+  94ca49e3553f59fe66c7727af5e58468c38fd66377c47c56d240264ad09d9ea8
+  94ca49e3553f59fe66c7727af5e58468c38fd66377c47c56d240264ad09d9ea8
+  (exit 0)
+CHECK ok   run copies on both hosts = HEAD bytes
+$ shellcheck shutdown/pft-shutdown.sh shutdown/tests/run-tests.sh shutdown/drill/*.sh && echo shellcheck clean
+  shellcheck clean
+  (exit 0)
+CHECK ok   shellcheck clean
+$ bash shutdown/tests/run-tests.sh | tail -1
+  RESULT: 170 passed, 0 failed
+  (exit 0)
+CHECK ok   offline tests pass
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 299 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 174 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   pft-integrity PASS on both hosts
+$ state_v; state_s
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full or proposing
+$ sudo -n pft-maint status | head -1; sudo -n pft-maint lock list; R 'sudo -n pft-maint status | head -1'
+  no maintenance window (alerting is live)
+  no data-collection locks
+  no maintenance window (alerting is live)
+  (exit 0)
+CHECK ok   no maintenance window on either host, no lock
+$ others
+  
+  (exit 0)
+CHECK ok   nothing active but the watchdog and digest-only alerts
+$ curl -s -m 10 http://<redacted-ip>:9093/api/v2/silences | jq -r '[.[] | select(.status.state == "active")] | length'
+  0
+  (exit 0)
+CHECK ok   no active silence
+$ open_gaps | wc -l
+  0
+  (exit 0)
+CHECK ok   no open histarchive gap
+operator topics to read back: 2 (not printed)
+CHECK ok   operator topics found
+
+== 1. throwaway [MAINT] target, silence, maintenance window on both hosts
+real $NE present before: 0
+$ { [ 0 = 0 ] || sudo -n cp -p /etc/pft-maint/ntfy.env /etc/pft-maint/ntfy.env.pre-shutdown; } && printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' '<throwaway-topic>' | sudo -n tee /etc/pft-maint/ntfy.env >/dev/null && sudo -n chmod 600 /etc/pft-maint/ntfy.env && sudo -n stat -c '%a %U' /etc/pft-maint/ntfy.env
+  600 root
+  (exit 0)
+CHECK ok   pft-maint target is the throwaway topic
+silence (every alert but the watchdog and the digest-only ones, both hosts) until 2026-11-26T22:36:10Z id ee453800
+CHECK ok   Alertmanager silence created
+$ sudo -n pft-maint start --ttl 28m --reason 'task_2b890e24 pft-shutdown measure run sg05'
+  window started: id m1795729390-3985644 until 2026-11-26T22:11:10Z | sentry copy: pushed
+  (exit 0)
+CHECK ok   maintenance window started
+$ R 'sudo -n pft-maint active && echo active'
+  active
+  (exit 0)
+CHECK ok   window valid on the sentry
+
+== 2. measure runs
+
+-- sentry measure 1/1 (2026-11-26T21:44:23Z)
+$ R 'sudo -n env STATE_DIR=/var/lib/pft-shutdown bash .cache/shutdown-run-sg05/pft-shutdown.sh measure --yes'
+  pft-shutdown clean postfiatd-sentry - 2026-11-26T21:44:24Z - complete_ledgers 8394472-8395120 validated 8395120
+    stop: clean rc 0 wall 2.6s exit_code 0 oom_killed false finished 2026-11-26T21:44:26.546313866Z
+    markers in debug.log since the stop: Received signal 1, Server stopping 1, Application stopping 0 (debug.log)
+      | 2026-Nov-26 21:44:24.507732412 UTC Application:NFO Received signal 15
+      | 2026-Nov-26 21:44:24.507992418 UTC Application:WRN Server stopping: Signal: 15
+    start: server_state full after 49.5s (timeout 900s); complete_ledgers 8394472-8395157
+    holes at/above 8394472: none (0 ledgers); database error lines in the startup log: 0
+    recorded in /var/lib/pft-shutdown/measure-postfiatd-sentry.json (4 clean stop(s); p100 19.7s)
+  RESULT: PASS - clean stop 2.6s, back to full in 49.5s, holes 0, database errors 0
+  (exit 0)
+CHECK ok   sentry measure 1 PASS
+$ state_v; state_s
+  full
+  full
+  (exit 0)
+CHECK ok   sentry measure 1: both nodes full
+$ R 'sudo -n pft-egress check --container postfiatd-sentry | tail -1'
+  RESULT: PASS
+  (exit 0)
+CHECK ok   sentry measure 1: pft-egress check
+$ sudo -n cat /var/lib/pft-shutdown/measure-postfiatd.json 2>/dev/null | jq -c '.runs[] | {time, mode, stop_s, exit_code, clean, recover_s, hole_ledgers, db_error_lines}'; R 'sudo -n cat /var/lib/pft-shutdown/measure-postfiatd-sentry.json 2>/dev/null' | jq -c '.runs[] | {time, mode, stop_s, exit_code, clean, recover_s, hole_ledgers, db_error_lines}'
+  {"time":"2026-11-24T11:24:03Z","mode":"clean","stop_s":3.2,"exit_code":0,"clean":true,"recover_s":48.5,"hole_ledgers":0,"db_error_lines":0}
+  {"time":"2026-11-24T11:28:13Z","mode":"clean","stop_s":3.8,"exit_code":0,"clean":true,"recover_s":49.1,"hole_ledgers":0,"db_error_lines":0}
+  {"time":"2026-11-24T11:32:21Z","mode":"clean","stop_s":10.1,"exit_code":0,"clean":true,"recover_s":40.6,"hole_ledgers":0,"db_error_lines":0}
+  {"time":"2026-11-24T16:10:06Z","mode":"sigkill","stop_s":1.4,"exit_code":137,"clean":false,"recover_s":49.1,"hole_ledgers":0,"db_error_lines":0}
+  {"time":"2026-11-24T11:14:36Z","mode":"clean","stop_s":5,"exit_code":0,"clean":true,"recover_s":53.5,"hole_ledgers":0,"db_error_lines":0}
+  {"time":"2026-11-24T11:17:46Z","mode":"clean","stop_s":7.1,"exit_code":0,"clean":true,"recover_s":51.5,"hole_ledgers":0,"db_error_lines":0}
+  {"time":"2026-11-24T11:21:03Z","mode":"clean","stop_s":19.7,"exit_code":0,"clean":true,"recover_s":44.3,"hole_ledgers":0,"db_error_lines":0}
+  {"time":"2026-11-24T16:07:04Z","mode":"sigkill","stop_s":6.1,"exit_code":137,"clean":false,"recover_s":54.7,"hole_ledgers":0,"db_error_lines":0}
+  {"time":"2026-11-26T21:46:17Z","mode":"clean","stop_s":2.6,"exit_code":0,"clean":true,"recover_s":49.5,"hole_ledgers":0,"db_error_lines":0}
+  (exit 0)
+
+== 3. end window, restore, checks, drain, read back
+$ sudo -n pft-maint end
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+  (exit 0)
+CHECK ok   window ended
+$ sudo -n rm -f /etc/pft-maint/ntfy.env
+  
+  (exit 0)
+$ sudo -n systemctl start pft-keyescrow.service; sudo -n pft-keyescrow inventory | tail -1
+  RESULT: ok 11, perm 0, missing 0, unreadable 0, absent(optional) 2; escrow drift 0, new 0, evolving 1 -> exit 0
+  (exit 0)
+CHECK ok   keyescrow drift 0 after the target restore
+$ sudo -n pft-integrity verify | tail -1; R 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 299 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 174 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+CHECK ok   integrity PASS both hosts
+$ sudo -n pft-apparmor audit | grep RESULT; sudo -n pft-seccomp audit | grep RESULT; R 'sudo -n pft-apparmor audit | grep RESULT; sudo -n pft-seccomp audit | grep RESULT'
+  RESULT: PASS
+  RESULT: PASS
+  RESULT: PASS
+  RESULT: PASS
+  (exit 0)
+CHECK ok   AppArmor + seccomp PASS on both hosts
+$ state_v; state_s
+  full
+  full
+  (exit 0)
+CHECK ok   both nodes full at the end
+drain after 780s:
+    (nothing but the watchdog / digest-only alerts)
+$ curl -s -m 10 -o /dev/null -w '%{http_code}' -X DELETE http://<redacted-ip>:9093/api/v2/silence/ee453800
+  200
+  (exit 0)
+CHECK ok   silence expired after a clean drain
+$ curl -s -m 15 'https://ntfy.sh/<throwaway-topic>/json?poll=1&since=1795729279' | jq -r 'select(.event == "message") | .title'
+  [MAINT] start validator
+  [MAINT] end validator
+  (exit 0)
+CHECK ok   [MAINT] start/end reached the throwaway topic
+  operator #1 topic: 0 non-agent message(s)
+  operator #2 topic: 0 non-agent message(s)
+CHECK ok   operator topics got no alert/[MAINT] message during the run (2 topic(s))
+$ R 'rm -rf ~/.cache/shutdown-run-sg05'; rm -rf ~/.cache/shutdown-run-sg05
+  
+  (exit 0)
+
+pft-shutdown live run sg05 done 2026-11-26T22:00:46Z: 0 check(s) failed -> PASS
+
+== restore (trap)

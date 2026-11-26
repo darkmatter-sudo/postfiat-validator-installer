@@ -1,0 +1,132 @@
+# 2026-11-26T21:19:36Z Ubuntu 22.04.5 LTS | Docker Compose version 2.40.3+ds1-0ubuntu1~22.04.1 | jq-1.6 | version: 0.8.0
+# repo HEAD 758fc0506b6ad77ec4c7744127c865fbd3904831
+$ git status --short | wc -l
+0
+exit=0
+$ git diff --stat 0085a1ff885d6a446369cf73a4430f75af22be55 HEAD
+ scripts/docker-compose-external-validator.yml |   2 +
+ scripts/docker-compose-rpc.yml                |   2 +
+ scripts/docker-compose-validator.yml          |   2 +
+ scripts/test-compose-stop-grace.sh            | 109 ++++++++++++++++++++++++++
+ 4 files changed, 115 insertions(+)
+exit=0
+$ git diff 0085a1ff885d6a446369cf73a4430f75af22be55 HEAD -- scripts/docker-compose-external-validator.yml scripts/docker-compose-rpc.yml scripts/docker-compose-validator.yml
+diff --git a/scripts/docker-compose-external-validator.yml b/scripts/docker-compose-external-validator.yml
+index 9112d6deb..cf9166ed4 100644
+--- a/scripts/docker-compose-external-validator.yml
++++ b/scripts/docker-compose-external-validator.yml
+@@ -15,6 +15,8 @@ services:
+       - ./logs:/var/log/postfiatd
+     user: "0:0"
+     restart: unless-stopped
++    # Clean shutdown can take longer than Docker's 10 s default; give it time before SIGKILL.
++    stop_grace_period: 60s
+     logging:
+       driver: "json-file"
+       options:
+diff --git a/scripts/docker-compose-rpc.yml b/scripts/docker-compose-rpc.yml
+index fa824efe5..1440f7d3f 100644
+--- a/scripts/docker-compose-rpc.yml
++++ b/scripts/docker-compose-rpc.yml
+@@ -15,6 +15,8 @@ services:
+       - ./logs:/var/log/postfiatd
+     user: "0:0"
+     restart: unless-stopped
++    # Clean shutdown can take longer than Docker's 10 s default; give it time before SIGKILL.
++    stop_grace_period: 60s
+     logging:
+       driver: "json-file"
+       options:
+diff --git a/scripts/docker-compose-validator.yml b/scripts/docker-compose-validator.yml
+index d1a3c13a4..1a7cf30fa 100644
+--- a/scripts/docker-compose-validator.yml
++++ b/scripts/docker-compose-validator.yml
+@@ -15,6 +15,8 @@ services:
+       - ./logs:/var/log/postfiatd
+     user: "0:0"
+     restart: unless-stopped
++    # Clean shutdown can take longer than Docker's 10 s default; give it time before SIGKILL.
++    stop_grace_period: 60s
+     logging:
+       driver: "json-file"
+       options:
+exit=0
+$ sha256sum scripts/test-compose-stop-grace.sh
+407feb76a6db4902a3d873cc154598fda7271af1849b83201b6f5c75f8c2a518  scripts/test-compose-stop-grace.sh
+exit=0
+$ shellcheck scripts/test-compose-stop-grace.sh && echo shellcheck clean
+shellcheck clean
+exit=0
+$ scripts/test-compose-stop-grace.sh
+PASS scripts/docker-compose-external-validator.yml: postfiatd stop_grace_period 1m0s = 60s >= 60s
+PASS scripts/docker-compose-rpc.yml: postfiatd stop_grace_period 1m0s = 60s >= 60s
+PASS scripts/docker-compose-validator.yml: postfiatd stop_grace_period 1m0s = 60s >= 60s
+RESULT: 3 file(s), 0 failure(s)
+exit=0
+$ for f in scripts/docker-compose-*.yml; do printf '%s ' "$f"; NETWORK=testnet HOSTNAME=check docker compose -f "$f" config --format json 2>/dev/null | jq -c '[.services | to_entries[] | {(.key): (.value.stop_grace_period // "unset")}] | add'; done
+scripts/docker-compose-external-validator.yml {"postfiatd":"1m0s"}
+scripts/docker-compose-rpc.yml {"postfiatd":"1m0s","promtail":"unset"}
+scripts/docker-compose-validator.yml {"postfiatd":"1m0s","promtail":"unset"}
+exit=0
+$ mkdir -p ../sg-ctl && for v in 30s 59s 60s 1m 90s 1h 500ms; do printf 'services:\n  postfiatd:\n    image: x\n    stop_grace_period: %s\n' "$v" > "../sg-ctl/grace-$v.yml"; done && printf 'services:\n  postfiatd:\n    image: x\n' > ../sg-ctl/grace-missing.yml && printf 'services:\n  other:\n    image: x\n    stop_grace_period: 90s\n' > ../sg-ctl/no-postfiatd.yml && printf 'services:\n  postfiatd:\n    image: x\n    stop_grace_period: soon\n' > ../sg-ctl/grace-invalid.yml && ls ../sg-ctl
+grace-1h.yml
+grace-1m.yml
+grace-30s.yml
+grace-500ms.yml
+grace-59s.yml
+grace-60s.yml
+grace-90s.yml
+grace-invalid.yml
+grace-missing.yml
+no-postfiatd.yml
+exit=0
+$ scripts/test-compose-stop-grace.sh ../sg-ctl/grace-60s.yml ../sg-ctl/grace-1m.yml ../sg-ctl/grace-90s.yml ../sg-ctl/grace-1h.yml
+PASS ../sg-ctl/grace-60s.yml: postfiatd stop_grace_period 1m0s = 60s >= 60s
+PASS ../sg-ctl/grace-1m.yml: postfiatd stop_grace_period 1m0s = 60s >= 60s
+PASS ../sg-ctl/grace-90s.yml: postfiatd stop_grace_period 1m30s = 90s >= 60s
+PASS ../sg-ctl/grace-1h.yml: postfiatd stop_grace_period 1h0m0s = 3600s >= 60s
+RESULT: 4 file(s), 0 failure(s)
+exit=0
+$ scripts/test-compose-stop-grace.sh ../sg-ctl/grace-missing.yml
+FAIL ../sg-ctl/grace-missing.yml: postfiatd stop_grace_period unset (Docker default 10s), need >= 60s
+RESULT: 1 file(s), 1 failure(s)
+exit=1
+$ scripts/test-compose-stop-grace.sh ../sg-ctl/grace-59s.yml
+FAIL ../sg-ctl/grace-59s.yml: postfiatd stop_grace_period 59s = 59s < 60s
+RESULT: 1 file(s), 1 failure(s)
+exit=1
+$ scripts/test-compose-stop-grace.sh ../sg-ctl/grace-30s.yml ../sg-ctl/grace-500ms.yml
+FAIL ../sg-ctl/grace-30s.yml: postfiatd stop_grace_period 30s = 30s < 60s
+FAIL ../sg-ctl/grace-500ms.yml: postfiatd stop_grace_period 500ms = 0s < 60s
+RESULT: 2 file(s), 2 failure(s)
+exit=1
+$ scripts/test-compose-stop-grace.sh ../sg-ctl/no-postfiatd.yml
+FAIL ../sg-ctl/no-postfiatd.yml: service 'postfiatd' not found
+RESULT: 1 file(s), 1 failure(s)
+exit=1
+$ scripts/test-compose-stop-grace.sh ../sg-ctl/grace-invalid.yml
+FAIL ../sg-ctl/grace-invalid.yml: docker compose config could not render the file
+RESULT: 1 file(s), 1 failure(s)
+exit=1
+$ scripts/test-compose-stop-grace.sh ../sg-ctl/does-not-exist.yml
+FAIL ../sg-ctl/does-not-exist.yml: file not found
+RESULT: 1 file(s), 1 failure(s)
+exit=1
+$ scripts/test-compose-stop-grace.sh scripts/docker-compose-rpc.yml ../sg-ctl/grace-missing.yml
+PASS scripts/docker-compose-rpc.yml: postfiatd stop_grace_period 1m0s = 60s >= 60s
+FAIL ../sg-ctl/grace-missing.yml: postfiatd stop_grace_period unset (Docker default 10s), need >= 60s
+RESULT: 2 file(s), 1 failure(s)
+exit=1
+$ MIN_GRACE_SECONDS=61 scripts/test-compose-stop-grace.sh
+FAIL scripts/docker-compose-external-validator.yml: postfiatd stop_grace_period 1m0s = 60s < 61s
+FAIL scripts/docker-compose-rpc.yml: postfiatd stop_grace_period 1m0s = 60s < 61s
+FAIL scripts/docker-compose-validator.yml: postfiatd stop_grace_period 1m0s = 60s < 61s
+RESULT: 3 file(s), 3 failure(s)
+exit=1
+$ MIN_GRACE_SECONDS=abc scripts/test-compose-stop-grace.sh
+ERROR: MIN_GRACE_SECONDS must be a whole number
+exit=2
+$ rm -rf ../sg-ctl && git status --short | wc -l
+0
+exit=0
+# end 2026-11-26T21:19:43Z
