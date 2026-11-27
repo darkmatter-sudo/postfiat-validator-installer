@@ -28,9 +28,9 @@ vulnscan/pft-vulnscan.sh=/usr/local/bin/pft-vulnscan
 vulnscan/systemd/pft-vulnscan-heal.service=/etc/systemd/system/pft-vulnscan-heal.service"
 REPO_FILES="$(echo "$MAP" | cut -d= -f1 | tr '\n' ' ')"
 DEST_FILES="$(echo "$MAP" | cut -d= -f2 | tr '\n' ' ')"
-must "sha256sum $REPO_FILES | tee $W/clone.full | cut -c1-64 > $W/clone.txt"
-must "sudo -n sha256sum $DEST_FILES | tee $W/validator.full | cut -c1-64 > $W/validator.txt"
-must "ssh -o BatchMode=yes relay 'sudo -n sha256sum $DEST_FILES' </dev/null | tee $W/sentry.full | cut -c1-64 > $W/sentry.txt"
+must "sha256sum $REPO_FILES > $W/clone.full && cat $W/clone.full && cut -c1-64 $W/clone.full > $W/clone.txt"
+must "sudo -n sha256sum $DEST_FILES > $W/validator.full && cat $W/validator.full && cut -c1-64 $W/validator.full > $W/validator.txt"
+must "ssh -o BatchMode=yes relay 'sudo -n sha256sum $DEST_FILES' </dev/null > $W/sentry.full && cat $W/sentry.full && cut -c1-64 $W/sentry.full > $W/sentry.txt"
 for h in validator sentry; do
   must "[ \$(wc -l < $W/$h.txt) = 5 ] && diff $W/clone.txt $W/$h.txt && echo 'identical: 5/5 sha256 clone = installed on $h'"
 done
