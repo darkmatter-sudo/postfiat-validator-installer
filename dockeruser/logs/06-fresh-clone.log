@@ -1,0 +1,73 @@
+dockeruser 06 fresh clone - 2026-11-27T07:30:32Z - PIN 14ce33bc250807211c5c8273fcdefd43aad3c3cc
+$ git clone https://github.com/darkmatter-sudo/postfiat-validator-installer.git inst && git -C inst checkout 14ce33bc250807211c5c8273fcdefd43aad3c3cc
+rc=0 HEAD 14ce33bc250807211c5c8273fcdefd43aad3c3cc
+$ git clone https://github.com/darkmatter-sudo/postfiatorg.github.io.git guide && git -C guide checkout e9d1fc074062ed8e4e6eadd35248ecb041189b5a
+rc=0 HEAD e9d1fc074062ed8e4e6eadd35248ecb041189b5a
+PR head (upstream pull): refs/pull/59/head
+== sha256 of the tools at PIN (compare with the sha256 headers of logs 03-05)
+cf5893942f7c55307c8396e215c945f13fe5bcc16c9fec5dac4069d631d7619a  extract_dockeruser.py
+b9631bfa4650b48eeb791dd7221f6347ba65ef89fe6d75366c375035e2e2d63d  check-guide.sh
+70ae4058ee1d9fe570cff5ef1352f22bb0800e611ce5babbe0a9bec60db0d3ae  sentry-proof.sh
+715326552d27ee58f1f26dd5ec5d1f060b1b8ef1b101287995ae7f524b6ae697  tests/test-netns.sh
+== published logs at PIN
+afc78fd7733734d65270400632ba3972eea1e81f91ef40112b228761480cd216  ./01-guide-static.log
+7a8dcc18449f16c1ae6fb055ea8e38875d25b66eb6af125a1cf606b24023683d  ./02-netns-sentry.log
+d700be73ffbff22f3db50f822cd7d70d6a985f2b20126112bdd4b80d85d72430  ./03-sentry-pre.log
+d3f597607e8b559565d0804f39e717ef5c317f44cf5b052ec73b85e41ef4139c  ./04-sentry-reboot.log
+bd02fb76438bebab305bf6b50ff48c64539964d9b8cc80a32afbf08d742f23d3  ./05-sentry-post.log
+  815 total
+== static checks
+PASS diff touches exactly the 3 guide copies
+PASS extract content/validator-setup.md
+sha256 2e3d88742169fbebace5f66e24c2bbfe2e25bb12781af978770401bc6b2f2d11 copy1/section.txt
+sha256 a94e0c9c4e0eb379f8496585aab9959039de25673b4a7c0b94f846642b881bae copy1/install.sh
+sha256 2acf07a7f03b5900ca1f7bc819814a262b3da1c9c681325abda59cc897e790b0 copy1/postfiat-docker-user.sh
+sha256 23b14063ecfd4c51b99ab04243a531ff1c49012697781a6d78dffc9ab524f400 copy1/postfiat-docker-user.service
+sha256 0ebd0e15ebb366c16b782953800097a65f4bdad4d513f5f9213f3d5465d6b38f copy1/check.sh
+PASS extract static/agents/validator-setup.md
+PASS extract static/agents/validator-setup.txt
+PASS section.txt identical in all 3 copies
+PASS install.sh identical in all 3 copies
+PASS postfiat-docker-user.sh identical in all 3 copies
+PASS postfiat-docker-user.service identical in all 3 copies
+PASS check.sh identical in all 3 copies
+PASS shellcheck -s bash install block
+PASS shellcheck -s sh postfiat-docker-user.sh
+PASS shellcheck -s bash check block
+PASS shellcheck -s sh check body
+PASS systemd-analyze verify: rc 0, no finding for postfiat-docker-user.service
+RESULT: 0 failed
+check-guide exit=0
+== netns suite on the sentry (extract from this clone)
+netns: private (net:[4026532260] != host)
+FAIL: cannot read the DOCKER-USER chain
+PASS T01-no-chain (check rc=1, 'FAIL: cannot read the DOCKER-USER chain')
+PASS T02-apply (exact 5 rules, RETURN last)
+PASS T02-check (check rc=0, 'OK: TCP 2559 DOCKER-USER limits present, RETURN last, unit enabled')
+PASS T03-idempotent (6 lines incl. -N, sha unchanged x2)
+PASS T04-foreign-kept
+PASS T04-check (check rc=0, 'OK:')
+PASS T05-dup-control (check rc=1, 'FAIL: TCP 2559 rules missing, changed or out of order')
+PASS T05-dedup
+PASS T05-check (check rc=0, 'OK:')
+PASS T06-missing-rule (check rc=1, 'FAIL: TCP 2559 rules missing, changed or out of order')
+PASS T06-repaired (check rc=0, 'OK:')
+PASS T07-changed-limit (check rc=1, 'FAIL: TCP 2559 rules missing, changed or out of order')
+PASS T07-repaired (check rc=0, 'OK:')
+PASS T08-return-first (check rc=1, 'FAIL: RETURN must appear once, as the last rule')
+PASS T08-repaired (check rc=0, 'OK:')
+PASS T09-rule-after-return (check rc=1, 'FAIL: RETURN must appear once, as the last rule')
+PASS T09-repaired (check rc=0, 'OK:')
+PASS T10-unit-disabled
+PASS T11-order (check rc=1, 'FAIL: TCP 2559 rules missing, changed or out of order')
+PASS T11-repaired (check rc=0, 'OK:')
+PASS T12-append-error rc=4
+PASS T12-state-is-flagged (check rc=1, 'FAIL:')
+PASS T13-delete-error rc=4
+PASS T13-repaired (check rc=0, 'OK:')
+RESULT: 24 passed, 0 failed
+test-netns exit=0
+== live state of the sentry now (read-only guide check)
+OK: TCP 2559 DOCKER-USER limits present, RETURN last, unit enabled
+guide check exit=0
+FRESH PASS (check-guide=0 netns=0 live-check=0)
