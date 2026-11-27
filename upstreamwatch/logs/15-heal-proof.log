@@ -1,0 +1,213 @@
+# published copy of a raw run log: host names -> <sentry-host>, local timezone -> <local-tz>, IPs/topics/home already redacted at record time
+heal-proof (sentry) - 2026-11-27T16:21:43Z
+repo HEAD 8a3c7e20ab24e46f1439112fe6856f0c5f8cbf1f  heal-proof.sh sha256 bbf27fd812a25d7366d2512089583734a3a42f243a89b23a95c3dd27df71a48b
+older feed usn-jammy-20261126T0855Z.xml.bz2 sha256 fb0df633af327dbbd35b93b15f4c7dde8df6065e9172cfe5188545f21d7f865a etag "1dcc51-6612a1da2e780"
+GATE PASS committed older feed has the recorded sha256
+GATE PASS working tree clean for upstreamwatch/ vulnscan/ alerts/
+== 0. installed bytes on the sentry == repo HEAD
+$ [sentry] sha256sum /usr/local/bin/pft-upstreamwatch /usr/local/lib/pft-upstreamwatch/upstreamwatch_lib.py /etc/systemd/system/pft-upstreamwatch.service /usr/local/bin/pft-vulnscan /etc/systemd/system/pft-vulnscan-heal.service
+  cfa4192edf4000210ffd5673aa0e794dd26f4e7c124f8fb41630e49dfe52d946  /usr/local/bin/pft-upstreamwatch
+  d0e07ccd29a50d87f1d44d52ee06d19b23a1105cae1ba0cc113e334f90ddb67e  /usr/local/lib/pft-upstreamwatch/upstreamwatch_lib.py
+  2c94412ecb1c835bf4d8f45291af528a70b80c32e08e50a94452d5bbe225a955  /etc/systemd/system/pft-upstreamwatch.service
+  879817ec6ca2547d738775be898b8f41b857f0b47f05a67de8c8483b273a8694  /usr/local/bin/pft-vulnscan
+  c4ef7dfeeba1d25b557d9da20b71618bcc60468fee95f80f0446243685d3de46  /etc/systemd/system/pft-vulnscan-heal.service
+  (exit 0)
+GATE PASS sentry runs this commit's pft-upstreamwatch, lib, unit, pft-vulnscan and heal unit
+== 1. preconditions
+$ [sentry] pft-maint active; echo maint_rc=$?; systemctl is-active pft-upstreamwatch.service pft-vulnscan.service pft-vulnscan-heal.service; echo next=$(( $(systemctl show -p NextElapseUSecRealtime --value pft-upstreamwatch.timer | xargs -I{} date -u -d {} +%s) - $(date -u +%s) ))
+  maint_rc=1
+  inactive
+  inactive
+  inactive
+  next=1243
+  (exit 0)
+$ [sentry] curl -sSI -m 20 -H 'Cache-Control: no-cache' "https://security-metadata.canonical.com/oval/com.ubuntu.jammy.usn.oval.xml.bz2?pft-heal-proof=$(date -u +%s)" | grep -i -E '^(date|last-modified|etag):'
+  date: Fri, 27 Nov 2026 16:21:49 GMT
+  last-modified: Thu, 26 Nov 2026 16:51:41 GMT
+  etag: "1dd000-66130c1fa6140"
+  (exit 0)
+  older feed <oval:timestamp> 1795683348 (2026-11-26T08:55:48Z); upstream Last-Modified 1795711901 (2026-11-26T16:51:41Z)
+GATE PASS preconditions (no window, units idle, timer >= 10 min away, upstream newer and within grace)
+== 2. backup + heal state aside
+$ [sentry] set -e; mkdir -m 700 /var/lib/pft-upstreamwatch/drill-1795796503; cp -p /var/cache/pft-vulnscan/feed.xml.bz2 /var/cache/pft-vulnscan/feed.meta /var/cache/pft-vulnscan/feed.etag /var/lib/pft-upstreamwatch/drill-1795796503/; if [ -e /var/lib/pft-upstreamwatch/heal-state.json ]; then mv /var/lib/pft-upstreamwatch/heal-state.json /var/lib/pft-upstreamwatch/drill-1795796503/; echo 'heal-state moved aside:'; cat /var/lib/pft-upstreamwatch/drill-1795796503/heal-state.json; else echo 'no heal state yet'; fi; touch /var/lib/pft-upstreamwatch/heal.jsonl; echo journal_lines=$(wc -l < /var/lib/pft-upstreamwatch/heal.jsonl); ls /var/lib/pft-upstreamwatch/drill-1795796503
+  heal-state moved aside:
+  {
+   "usn-host": {
+    "attempts": 1,
+    "last_attempt_epoch": 1795796289,
+    "last_rc": 0,
+    "last_result": "healed",
+    "last_result_epoch": 1795796369,
+    "note": "lag 0 after the refetch"
+   }
+  }
+  journal_lines=4
+  feed.etag
+  feed.meta
+  feed.xml.bz2
+  heal-state.json
+  (exit 0)
+GATE PASS backup taken
+== 3. install the committed older feed into the sentry's vulnscan cache
+$ ssh -o BatchMode=yes -o ConnectTimeout=15 relay 'umask 077; mkdir -p ~/.cache && cat > ~/.cache/uwheal-older.xml.bz2' < '~/work/postfiat-validator-installer/upstreamwatch/drill/fixtures/usn-jammy-20261126T0855Z.xml.bz2'
+  
+  (exit 0)
+$ [sentry] set -e; cd /var/cache/pft-vulnscan; exec 7> .lock; flock -w 60 7; install -m 644 ~/.cache/uwheal-older.xml.bz2 feed.xml.bz2; rm -f ~/.cache/uwheal-older.xml.bz2; printf '%s\n' '"1dcc51-6612a1da2e780"' > feed.etag; t=$(date -u +%s); printf 'sha256=%s\nfetched_at=%s\nlast_checked=%s\nurl=%s\n' "$(sha256sum < feed.xml.bz2 | cut -c1-64)" $t $t https://security-metadata.canonical.com/oval/com.ubuntu.jammy.usn.oval.xml.bz2 > feed.meta; cat feed.meta; cat feed.etag
+  sha256=fb0df633af327dbbd35b93b15f4c7dde8df6065e9172cfe5188545f21d7f865a
+  fetched_at=1795796516
+  last_checked=1795796516
+  url=https://security-metadata.canonical.com/oval/com.ubuntu.jammy.usn.oval.xml.bz2
+  "1dcc51-6612a1da2e780"
+  (exit 0)
+GATE PASS older feed installed (sha256 fb0df633af327dbbd35b93b15f4c7dde8df6065e9172cfe5188545f21d7f865a)
+== A. report without healing: local_lagging + lag metric
+$ [sentry] pft-upstreamwatch run --no-heal; echo run_rc=$?; grep -E 'feed="usn-host"' /var/lib/pft-exporter/textfile/pft_upstreamwatch_sentry.prom | grep -E 'feed_state.*local_lagging|lag_seconds'
+  pft-upstreamwatch - host sentry - 2026-11-27T16:21:57Z
+  
+  FEED                   STATE            FETCH AGE  CONTENT AGE      LAG  REASON
+  usn-host               local_lagging        0.0 h       31.4 h   23.5 h  upstream content is 7.9 h newer than ours; published 23.5 h ago, within grace 30 h
+  ubuntu-jammy           local_lagging       11.0 h       31.4 h   23.5 h  upstream content is 7.9 h newer than ours; published 23.5 h ago, within grace 30 h
+  ubuntu-noble           local_lagging       11.0 h       31.5 h   23.5 h  upstream content is 7.9 h newer than ours; published 23.5 h ago, within grace 30 h
+  debian                 local_lagging       11.0 h       11.6 h    0.9 h  upstream content is 10.7 h newer than ours; published 0.9 h ago, within grace 30 h
+  go                     ok                  11.0 h       71.5 h    0.0 h  local copy is upstream's latest (upstream content clock is 0.0 h after ours (tolerance 6.0 h)); content 71.5 h old
+  debian-oval-bookworm   ok                       -        4.9 h        -  upstream last published 4.9 h ago (no local copy)
+  
+  release (postfiatd-sentry, agtipft/postfiatd:testnet-light-latest): current
+    digest  current  running sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+                     registry sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e  (testnet-light-latest digest equals the running image's)
+    version current  (this node 1.0.9 >= foundation 1.0.9)
+  
+  RESULT: ok=2 upstream_quiet=0 local_lagging=4 local_stale=0 fetch_failing=0 unreachable=0 release=current
+  run_rc=0
+  pft_upstreamwatch_feed_state{host="sentry",feed="usn-host",state="local_lagging"} 1
+  pft_upstreamwatch_feed_lag_seconds{host="sentry",feed="usn-host"} 84621
+  (exit 0)
+GATE PASS A: usn-host local_lagging
+GATE PASS A: textfile pft_upstreamwatch_feed_lag_seconds = 84621 > LAG_HEAL_HOURS (7200 s)
+GATE PASS A: textfile one-hot local_lagging 1
+GATE PASS A: --no-heal made no heal decision
+$ sudo -n systemctl start pft-upstreamwatch-pull.service; systemctl is-failed pft-upstreamwatch-pull.service
+  inactive
+  (exit 1)
+  prom: pft_upstreamwatch_feed_state{host="sentry",feed="usn-host",state="local_lagging"} = 1 (after 15 s)
+GATE PASS A: Prometheus has sentry usn-host local_lagging = 1
+  prom: pft_upstreamwatch_feed_lag_seconds{host="sentry",feed="usn-host"} = 84621 (after 5 s)
+GATE PASS A: Prometheus pft_upstreamwatch_feed_lag_seconds{host=sentry} = 84621
+== B. the real unit: exactly one bounded heal
+$ [sentry] systemctl start pft-upstreamwatch.service; echo start_rc=$?; systemctl show -p Result -p ExecMainStatus pft-upstreamwatch.service; journalctl --utc -o short-iso -u pft-upstreamwatch.service -u pft-vulnscan-heal.service --since @1795796551 --no-pager | grep -E 'heal|fetch|RESULT|usn-host|Started|Finished|Deactivated'
+  start_rc=0
+  Result=success
+  ExecMainStatus=0
+  2026-11-27T16:22:54+0000 <sentry-host> pft-upstreamwatch[1477041]: heal: usn-host start - lag 23.5 h > LAG_HEAL_HOURS 2 h; systemctl start pft-vulnscan-heal.service
+  2026-11-27T16:22:54+0000 <sentry-host> systemd[1]: Starting pft-vulnscan heal: one forced cache-busting USN OVAL refetch + scan (started by pft-upstreamwatch, no timer)...
+  2026-11-27T16:23:07+0000 <sentry-host> pft-vulnscan[1478136]:          sha256 83708e914a65cd49f0b97189245a9ac599c88902cc0b3498236601fc25baac55  fetch: forced unconditional GET: fetched
+  2026-11-27T16:23:46+0000 <sentry-host> pft-vulnscan[1481241]: RESULT: 0 affected USNs (0 critical, 0 high, 0 medium, 0 low, 0 negligible, 0 none, 0 unknown; 0 fixable only via Ubuntu Pro/ESM), 0 CVEs; reboot owed: no -> exit 0
+  2026-11-27T16:23:46+0000 <sentry-host> systemd[1]: pft-vulnscan-heal.service: Deactivated successfully.
+  2026-11-27T16:23:46+0000 <sentry-host> systemd[1]: Finished pft-vulnscan heal: one forced cache-busting USN OVAL refetch + scan (started by pft-upstreamwatch, no timer).
+  2026-11-27T16:23:46+0000 <sentry-host> systemd[1]: pft-vulnscan-heal.service: Consumed 42.912s CPU time.
+  2026-11-27T16:24:04+0000 <sentry-host> pft-upstreamwatch[1477041]: heal: usn-host healed - lag 0 after the refetch (rc 0)
+  2026-11-27T16:24:05+0000 <sentry-host> pft-upstreamwatch[1477041]: usn-host               ok                   0.0 h       23.5 h    0.0 h  local copy is upstream's latest (upstream answered 304 to our ETag); content 23.5 h old
+  2026-11-27T16:24:05+0000 <sentry-host> pft-upstreamwatch[1477041]: heal usn-host: attempts 1, last 2026-11-27T16:22:54Z healed (rc 0) - lag 0 after the refetch
+  2026-11-27T16:24:05+0000 <sentry-host> pft-upstreamwatch[1477041]: RESULT: ok=3 upstream_quiet=0 local_lagging=3 local_stale=0 fetch_failing=0 unreachable=0 release=current
+  2026-11-27T16:24:05+0000 <sentry-host> systemd[1]: pft-upstreamwatch.service: Deactivated successfully.
+  2026-11-27T16:24:05+0000 <sentry-host> systemd[1]: Finished pft-upstreamwatch: feed two-clock freshness + postfiatd release watch (writes textfile metrics).
+  (exit 0)
+GATE PASS B: pft-upstreamwatch.service ran (rc 0)
+GATE PASS B: journal shows heal start + healed
+GATE PASS B: pft-vulnscan-heal.service did the forced cache-busting GET
+$ [sentry] tail -n +$(( 4 + 1 )) /var/lib/pft-upstreamwatch/heal.jsonl; echo ---; cat /var/lib/pft-upstreamwatch/heal-state.json; echo ---; cat /var/cache/pft-vulnscan/feed.meta; grep -E '^pft_vulnscan_(up|feed_timestamp_seconds)' /var/lib/pft-exporter/textfile/pft_vulnscan_sentry.prom; pft-upstreamwatch report | sed -n '1,4p;/^heal/p;/^RESULT/p'; jq -r '.feeds[] | select(.name == "usn-host") | "obs upstream last-modified: \(.upstream.headers["last-modified"])  local content_epoch: \(.local_obs.content_epoch)"' /var/lib/pft-upstreamwatch/last-obs.json; grep -E 'feed="usn-host"' /var/lib/pft-exporter/textfile/pft_upstreamwatch_sentry.prom | grep -E 'state="ok"|lag_seconds|heal_'
+  {"epoch":1795796574,"feed":"usn-host","event":"start","reason":"lag 23.5 h > LAG_HEAL_HOURS 2 h; systemctl start pft-vulnscan-heal.service","rc":0}
+  {"epoch":1795796644,"feed":"usn-host","event":"healed","reason":"lag 0 after the refetch","rc":0}
+  ---
+  {
+   "usn-host": {
+    "attempts": 1,
+    "last_attempt_epoch": 1795796574,
+    "last_rc": 0,
+    "last_result": "healed",
+    "last_result_epoch": 1795796644,
+    "note": "lag 0 after the refetch"
+   }
+  }
+  ---
+  sha256=83708e914a65cd49f0b97189245a9ac599c88902cc0b3498236601fc25baac55
+  fetched_at=1795796581
+  last_checked=1795796581
+  url=https://security-metadata.canonical.com/oval/com.ubuntu.jammy.usn.oval.xml.bz2
+  pft_vulnscan_up{host="sentry"} 1
+  pft_vulnscan_feed_timestamp_seconds{host="sentry"} 1795711879
+  pft-upstreamwatch - host sentry - 2026-11-27T16:23:47Z
+  
+  FEED                   STATE            FETCH AGE  CONTENT AGE      LAG  REASON
+  usn-host               ok                   0.0 h       23.5 h    0.0 h  local copy is upstream's latest (upstream answered 304 to our ETag); content 23.5 h old
+  heal usn-host: attempts 1, last 2026-11-27T16:22:54Z healed (rc 0) - lag 0 after the refetch
+  RESULT: ok=3 upstream_quiet=0 local_lagging=3 local_stale=0 fetch_failing=0 unreachable=0 release=current
+  obs upstream last-modified: Thu, 26 Nov 2026 16:51:41 GMT  local content_epoch: 1795711879
+  pft_upstreamwatch_feed_state{host="sentry",feed="usn-host",state="ok"} 1
+  pft_upstreamwatch_feed_lag_seconds{host="sentry",feed="usn-host"} 0
+  pft_upstreamwatch_heal_attempts{host="sentry",feed="usn-host"} 1
+  pft_upstreamwatch_heal_last_attempt_timestamp_seconds{host="sentry",feed="usn-host"} 1795796574
+  pft_upstreamwatch_heal_last_result{host="sentry",feed="usn-host",result="started"} 0
+  pft_upstreamwatch_heal_last_result{host="sentry",feed="usn-host",result="healed"} 1
+  pft_upstreamwatch_heal_last_result{host="sentry",feed="usn-host",result="still_lagging"} 0
+  pft_upstreamwatch_heal_last_result{host="sentry",feed="usn-host",result="failed"} 0
+  (exit 0)
+GATE PASS B: heal.jsonl got exactly 2 new lines: start + healed
+GATE PASS B: heal-state attempts 1, last_result healed
+GATE PASS B: cache replaced (sha256 83708e914a65... != older feed)
+GATE PASS B: pft_vulnscan_feed_timestamp_seconds 1795711879 (2026-11-26T16:51:19Z) moved past the older feed (1795683348) to upstream's Last-Modified (1795711901) within tolerance
+GATE PASS B: heal scan up 1
+GATE PASS B: usn-host back to ok, lag 0
+GATE PASS B: textfile heal_last_result healed 1
+== C. the unit again: nothing left to heal
+$ [sentry] systemctl start pft-upstreamwatch.service; echo start_rc=$?; echo journal_lines=$(wc -l < /var/lib/pft-upstreamwatch/heal.jsonl); jq -c '."usn-host" | {attempts, last_result}' /var/lib/pft-upstreamwatch/heal-state.json; pft-upstreamwatch report | grep -E '^usn-host'
+  start_rc=0
+  journal_lines=6
+  {"attempts":1,"last_result":"healed"}
+  usn-host               ok                   0.0 h       23.5 h    0.0 h  local copy is upstream's latest (upstream answered 304 to our ETag); content 23.5 h old
+  (exit 0)
+GATE PASS C: no new heal (journal +0, attempts still 1)
+GATE PASS C: usn-host still ok
+== D. validator view + operator topic
+$ sudo -n systemctl start pft-upstreamwatch-pull.service pft-vulnscan-pull.service; systemctl is-failed pft-upstreamwatch-pull.service pft-vulnscan-pull.service
+  inactive
+  inactive
+  (exit 1)
+  prom: pft_upstreamwatch_feed_state{host="sentry",feed="usn-host",state="ok"} = 1 (after 20 s)
+GATE PASS D: Prometheus sentry usn-host ok = 1
+  prom: pft_upstreamwatch_feed_lag_seconds{host="sentry",feed="usn-host"} = 0 (after 5 s)
+GATE PASS D: Prometheus sentry lag 0
+  prom: pft_upstreamwatch_heal_last_result{host="sentry",feed="usn-host",result="healed"} = 1 (after 5 s)
+GATE PASS D: Prometheus sentry heal_last_result healed = 1
+  prom: pft_upstreamwatch_heal_attempts{host="sentry",feed="usn-host"} = 1 (after 5 s)
+GATE PASS D: Prometheus sentry heal_attempts = 1
+  prom: pft_vulnscan_feed_timestamp_seconds{host="sentry"} = 1795711879 (after 5 s)
+GATE PASS D: Prometheus sentry vulnscan feed timestamp = healed copy
+  waited 5 s for the rule evaluation after the ok sample
+$ curl -s -m 10 'http://<redacted-ip>:9090/api/v1/alerts' | jq -r '.data.alerts[] | select(.labels.host == "sentry" and (.labels.alertname | test("^PFT(Upstream|Vuln)"))) | "\(.labels.alertname) feed=\(.labels.feed // "-") notify=\(.labels.notify // "page") \(.state)"'
+  PFTUpstreamFeedLagging feed=ubuntu-noble notify=digest pending
+  PFTUpstreamFeedLagging feed=debian notify=digest pending
+  PFTUpstreamFeedLagging feed=ubuntu-jammy notify=digest pending
+  (exit 0)
+GATE PASS D: no PFTUpstream*/PFTVuln* alert for sentry usn-host pending or firing
+GATE PASS D: no paging (non-digest) PFTUpstream*/PFTVuln* alert for the sentry
+$ curl -s -m 10 http://<redacted-ip>:9093/api/v2/alerts | jq -r '.[] | select(.labels.host == "sentry" and (.labels.alertname | test("^PFT(Upstream|Vuln)"))) | "\(.labels.alertname) feed=\(.labels.feed // "-") receivers=\([.receivers[].name] | join(","))"'
+  
+  (exit 0)
+GATE PASS D: Alertmanager routes none of them to the bridge (operator)
+$ [sentry] pft-integrity verify | tail -1; rm -rf /var/lib/pft-upstreamwatch/drill-1795796503 && echo backup-removed
+  RESULT: PASS - 178 unchanged, 0 warn, 0 fail -> exit 0
+  backup-removed
+  (exit 0)
+GATE PASS D: sentry integrity verify PASS (cache + heal state are not integrity items)
+$ curl -s -m 15 'https://ntfy.sh/<redacted>/json?poll=1&since=1795796503' | jq -r 'select(.event == "message") | .title' | wc -l
+  0
+  (exit 0)
+GATE PASS D: operator monitor topic: 0 messages since step 0
+GATE PASS D: alert-bridge topic known
+$ curl -s -m 15 'https://ntfy.sh/<redacted>/json?poll=1&since=1795796503' | jq -r 'select(.event == "message") | .title' | wc -l
+  0
+  (exit 0)
+GATE PASS D: operator alert-bridge topic: 0 messages since step 0
+RESULT: 0 gate(s) failed -> PASS
+exit=0

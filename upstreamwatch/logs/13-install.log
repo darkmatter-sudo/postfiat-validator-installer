@@ -1,0 +1,285 @@
+# published copy of a raw run log: host names -> <sentry-host>, local timezone -> <local-tz>, IPs/topics/home already redacted at record time
+uwheal deploy vulnscan+upstreamwatch@94d06587ff024bc240f19254400ce099949646a5 - 2026-11-27T15:52:53Z
+$ git cat-file -t 94d06587ff024bc240f19254400ce099949646a5 && git merge-base --is-ancestor 94d06587ff024bc240f19254400ce099949646a5 origin/main && echo ancestor-of-origin/main
+  commit
+  ancestor-of-origin/main
+  (exit 0)
+GATE PASS TO is a pushed commit
+$ sudo -n pft-maint status | head -1
+  no maintenance window (alerting is live)
+  (exit 0)
+$ for h in local relay; do if [ $h = local ]; then docker ps --format '{{.Names}} {{.Image}} {{.Status}}' | grep -E '^postfiatd '; else ssh -o BatchMode=yes relay "docker ps --format '{{.Names}} {{.Image}} {{.Status}}' | grep -E '^postfiatd-sentry '" </dev/null; fi; done
+  postfiatd agtipft/postfiatd:testnet-light-latest Up 3 days
+  postfiatd-sentry agtipft/postfiatd:testnet-light-latest Up 8 hours
+  (exit 0)
+$ sudo -n pft-maint start --ttl 25m --reason 'pft-fleet sync vulnscan+upstreamwatch (task_dfa49)'
+  window started: id m1795794774-1930744 until 2026-11-27T16:17:54Z | sentry copy: pushed
+  (exit 0)
+$ ssh -o BatchMode=yes relay 'sudo -n pft-maint active && echo active' </dev/null
+  active
+  (exit 0)
+$ sudo -n pft-fleet sync --addon fleet --to 94d06587ff024bc240f19254400ce099949646a5
+  [2026-11-27T15:54:36Z] sync fleet to 94d06587ff024bc240f19254400ce099949646a5 (2026-11-27T15:48:02+00:00) REF main=94d06587ff024bc240f19254400ce099949646a5
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN validator validator /usr/local/sbin/pft-fleet 0755 CURRENT 61cafcfcdaa9 61cafcfcdaa9 keep
+  PLAN validator validator /usr/local/lib/pft-fleet/fleet_lib.py 0644 CURRENT dcb37d26f33f dcb37d26f33f keep
+  PLAN validator validator /usr/local/lib/pft-fleet/manifest.tsv 0644 BEHIND d27f1914ae2b 8d19f53a8f6c write
+  PLAN validator validator /etc/systemd/system/pft-fleet.service 0644 CURRENT 3105a2f0a144 3105a2f0a144 keep
+  PLAN validator validator /etc/systemd/system/pft-fleet.timer 0644 CURRENT 79839ee00a81 79839ee00a81 keep
+  [2026-11-27T15:54:36Z] order: sentry validator
+  [2026-11-27T15:54:36Z] dry run (no --apply): nothing changed
+  (exit 0)
+$ sudo -n pft-fleet sync --addon fleet --to 94d06587ff024bc240f19254400ce099949646a5 --apply --reason 'task_dfa49345fcc602ce6d66553813e99516: local_lagging + bounded vulnscan heal'
+  [2026-11-27T15:55:06Z] sync fleet to 94d06587ff024bc240f19254400ce099949646a5 (2026-11-27T15:48:02+00:00) REF main=94d06587ff024bc240f19254400ce099949646a5
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN validator validator /usr/local/sbin/pft-fleet 0755 CURRENT 61cafcfcdaa9 61cafcfcdaa9 keep
+  PLAN validator validator /usr/local/lib/pft-fleet/fleet_lib.py 0644 CURRENT dcb37d26f33f dcb37d26f33f keep
+  PLAN validator validator /usr/local/lib/pft-fleet/manifest.tsv 0644 BEHIND d27f1914ae2b 8d19f53a8f6c write
+  PLAN validator validator /etc/systemd/system/pft-fleet.service 0644 CURRENT 3105a2f0a144 3105a2f0a144 keep
+  PLAN validator validator /etc/systemd/system/pft-fleet.timer 0644 CURRENT 79839ee00a81 79839ee00a81 keep
+  [2026-11-27T15:55:06Z] order: sentry validator
+  [2026-11-27T15:55:06Z] sentry: every fleet file already at 94d06587ff02 - nothing to do
+  [2026-11-27T15:55:06Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/lib/pft-fleet/manifest.tsv sha256 d27f1914ae2b -> /var/lib/pft-fleet/backup/20261127T155506Z-fleet-validator
+  WRITE validator /usr/local/lib/pft-fleet/manifest.tsv d27f1914ae2b -> 8d19f53a8f6c mode 0644
+  GATE validator sha256 /usr/local/lib/pft-fleet/manifest.tsv = target 8d19f53a8f6c PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync fleet@94d06587ff02 (manifest.tsv)
+  [2026-11-27T15:55:41Z] SYNCED validator fleet -> 94d06587ff02
+  [2026-11-27T15:55:41Z] sync complete
+  (exit 0)
+GATE PASS fleet sync fleet both hosts
+$ sudo -n pft-fleet sync --addon vulnscan --to 94d06587ff024bc240f19254400ce099949646a5
+  [2026-11-27T15:56:12Z] sync vulnscan to 94d06587ff024bc240f19254400ce099949646a5 (2026-11-27T15:48:02+00:00) REF main=94d06587ff024bc240f19254400ce099949646a5
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN sentry sentry /usr/local/bin/pft-vulnscan 0755 BEHIND c533f87c313d 879817ec6ca2 write
+  PLAN sentry sentry /usr/local/lib/pft-vulnscan/vulnscan_parse.py 0644 CURRENT 8b3b6c9cad5d 8b3b6c9cad5d keep
+  PLAN sentry sentry /etc/systemd/system/pft-vulnscan.service 0644 CURRENT 156a28dcfafa 156a28dcfafa keep
+  PLAN sentry sentry /etc/systemd/system/pft-vulnscan.timer 0644 CURRENT 0abdc52cf860 0abdc52cf860 keep
+  PLAN sentry sentry /etc/systemd/system/pft-vulnscan-heal.service 0644 MISSING - c4ef7dfeeba1 write
+  PLAN validator validator /usr/local/bin/pft-vulnscan 0755 BEHIND c533f87c313d 879817ec6ca2 write
+  PLAN validator validator /usr/local/lib/pft-vulnscan/vulnscan_parse.py 0644 CURRENT 8b3b6c9cad5d 8b3b6c9cad5d keep
+  PLAN validator validator /etc/systemd/system/pft-vulnscan.service 0644 CURRENT 156a28dcfafa 156a28dcfafa keep
+  PLAN validator validator /etc/systemd/system/pft-vulnscan.timer 0644 CURRENT 0abdc52cf860 0abdc52cf860 keep
+  PLAN validator validator /etc/systemd/system/pft-vulnscan-heal.service 0644 MISSING - c4ef7dfeeba1 write
+  PLAN validator validator /etc/systemd/system/pft-vulnscan-pull.service 0644 CURRENT 06a53b993993 06a53b993993 keep
+  PLAN validator validator /etc/systemd/system/pft-vulnscan-pull.timer 0644 CURRENT 235a42c17dbe 235a42c17dbe keep
+  [2026-11-27T15:56:12Z] order: sentry validator
+  [2026-11-27T15:56:12Z] dry run (no --apply): nothing changed
+  (exit 0)
+$ sudo -n pft-fleet sync --addon vulnscan --to 94d06587ff024bc240f19254400ce099949646a5 --apply --reason 'task_dfa49345fcc602ce6d66553813e99516: local_lagging + bounded vulnscan heal'
+  [2026-11-27T15:56:40Z] sync vulnscan to 94d06587ff024bc240f19254400ce099949646a5 (2026-11-27T15:48:02+00:00) REF main=94d06587ff024bc240f19254400ce099949646a5
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN sentry sentry /usr/local/bin/pft-vulnscan 0755 BEHIND c533f87c313d 879817ec6ca2 write
+  PLAN sentry sentry /usr/local/lib/pft-vulnscan/vulnscan_parse.py 0644 CURRENT 8b3b6c9cad5d 8b3b6c9cad5d keep
+  PLAN sentry sentry /etc/systemd/system/pft-vulnscan.service 0644 CURRENT 156a28dcfafa 156a28dcfafa keep
+  PLAN sentry sentry /etc/systemd/system/pft-vulnscan.timer 0644 CURRENT 0abdc52cf860 0abdc52cf860 keep
+  PLAN sentry sentry /etc/systemd/system/pft-vulnscan-heal.service 0644 MISSING - c4ef7dfeeba1 write
+  PLAN validator validator /usr/local/bin/pft-vulnscan 0755 BEHIND c533f87c313d 879817ec6ca2 write
+  PLAN validator validator /usr/local/lib/pft-vulnscan/vulnscan_parse.py 0644 CURRENT 8b3b6c9cad5d 8b3b6c9cad5d keep
+  PLAN validator validator /etc/systemd/system/pft-vulnscan.service 0644 CURRENT 156a28dcfafa 156a28dcfafa keep
+  PLAN validator validator /etc/systemd/system/pft-vulnscan.timer 0644 CURRENT 0abdc52cf860 0abdc52cf860 keep
+  PLAN validator validator /etc/systemd/system/pft-vulnscan-heal.service 0644 MISSING - c4ef7dfeeba1 write
+  PLAN validator validator /etc/systemd/system/pft-vulnscan-pull.service 0644 CURRENT 06a53b993993 06a53b993993 keep
+  PLAN validator validator /etc/systemd/system/pft-vulnscan-pull.timer 0644 CURRENT 235a42c17dbe 235a42c17dbe keep
+  [2026-11-27T15:56:40Z] order: sentry validator
+  [2026-11-27T15:56:40Z] sentry: 2 file(s) to write
+  PRE sentry pft-maint window active PASS
+  PRE sentry node server_state=full PASS
+  PRE sentry pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP sentry /usr/local/bin/pft-vulnscan sha256 c533f87c313d -> /var/lib/pft-fleet/backup/20261127T155640Z-vulnscan-sentry
+  BACKUP sentry /etc/systemd/system/pft-vulnscan-heal.service absent before sync (rollback removes it)
+  WRITE sentry /usr/local/bin/pft-vulnscan c533f87c313d -> 879817ec6ca2 mode 0755
+  WRITE sentry /etc/systemd/system/pft-vulnscan-heal.service - -> c4ef7dfeeba1 mode 0644
+  RELOAD sentry systemctl daemon-reload
+  GATE sentry sha256 /usr/local/bin/pft-vulnscan = target 879817ec6ca2 PASS
+  GATE sentry syntax /usr/local/bin/pft-vulnscan bash -n PASS
+  GATE sentry sha256 /etc/systemd/system/pft-vulnscan-heal.service = target c4ef7dfeeba1 PASS
+  GATE sentry unit pft-vulnscan-heal.service LoadState=loaded PASS
+  GATE sentry addon units failed=none PASS
+  GATE sentry node server_state=full PASS
+  ACCEPT sentry pft-integrity baseline updated: pft-fleet sync vulnscan@94d06587ff02 (pft-vulnscan,pft-vulnscan-heal.service)
+  [2026-11-27T15:57:21Z] SYNCED sentry vulnscan -> 94d06587ff02
+  [2026-11-27T15:57:21Z] validator: 2 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/bin/pft-vulnscan sha256 c533f87c313d -> /var/lib/pft-fleet/backup/20261127T155640Z-vulnscan-validator
+  BACKUP validator /etc/systemd/system/pft-vulnscan-heal.service absent before sync (rollback removes it)
+  WRITE validator /usr/local/bin/pft-vulnscan c533f87c313d -> 879817ec6ca2 mode 0755
+  WRITE validator /etc/systemd/system/pft-vulnscan-heal.service - -> c4ef7dfeeba1 mode 0644
+  RELOAD validator systemctl daemon-reload
+  GATE validator sha256 /usr/local/bin/pft-vulnscan = target 879817ec6ca2 PASS
+  GATE validator syntax /usr/local/bin/pft-vulnscan bash -n PASS
+  GATE validator sha256 /etc/systemd/system/pft-vulnscan-heal.service = target c4ef7dfeeba1 PASS
+  GATE validator unit pft-vulnscan-heal.service LoadState=loaded PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync vulnscan@94d06587ff02 (pft-vulnscan,pft-vulnscan-heal.service)
+  [2026-11-27T15:57:54Z] SYNCED validator vulnscan -> 94d06587ff02
+  [2026-11-27T15:57:54Z] sync complete
+  (exit 0)
+GATE PASS fleet sync vulnscan both hosts
+$ sudo -n pft-fleet sync --addon upstreamwatch --to 94d06587ff024bc240f19254400ce099949646a5
+  [2026-11-27T15:58:24Z] sync upstreamwatch to 94d06587ff024bc240f19254400ce099949646a5 (2026-11-27T15:48:02+00:00) REF main=94d06587ff024bc240f19254400ce099949646a5
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN sentry sentry /usr/local/bin/pft-upstreamwatch 0755 BEHIND 89a696239dd5 cfa4192edf40 write
+  PLAN sentry sentry /usr/local/lib/pft-upstreamwatch/upstreamwatch_lib.py 0644 BEHIND 98513d5e6f90 d0e07ccd29a5 write
+  PLAN sentry sentry /etc/systemd/system/pft-upstreamwatch.service 0644 BEHIND f821cb5e5dcb 2c94412ecb1c write
+  PLAN sentry sentry /etc/systemd/system/pft-upstreamwatch.timer 0644 CURRENT baf67f723c01 baf67f723c01 keep
+  PLAN validator validator /usr/local/bin/pft-upstreamwatch 0755 BEHIND 89a696239dd5 cfa4192edf40 write
+  PLAN validator validator /usr/local/lib/pft-upstreamwatch/upstreamwatch_lib.py 0644 BEHIND 98513d5e6f90 d0e07ccd29a5 write
+  PLAN validator validator /etc/systemd/system/pft-upstreamwatch.service 0644 BEHIND f821cb5e5dcb 2c94412ecb1c write
+  PLAN validator validator /etc/systemd/system/pft-upstreamwatch.timer 0644 CURRENT baf67f723c01 baf67f723c01 keep
+  PLAN validator validator /etc/systemd/system/pft-upstreamwatch-pull.service 0644 CURRENT 4075c43e3d10 4075c43e3d10 keep
+  PLAN validator validator /etc/systemd/system/pft-upstreamwatch-pull.timer 0644 CURRENT 4ac067858da6 4ac067858da6 keep
+  PLAN validator validator /etc/systemd/system/pft-upstreamwatch-digest.service 0644 CURRENT ea4369a44b54 ea4369a44b54 keep
+  PLAN validator validator /etc/systemd/system/pft-upstreamwatch-digest.timer 0644 CURRENT 5a6ba7d28829 5a6ba7d28829 keep
+  [2026-11-27T15:58:24Z] order: sentry validator
+  [2026-11-27T15:58:24Z] dry run (no --apply): nothing changed
+  (exit 0)
+$ sudo -n pft-fleet sync --addon upstreamwatch --to 94d06587ff024bc240f19254400ce099949646a5 --apply --reason 'task_dfa49345fcc602ce6d66553813e99516: local_lagging + bounded vulnscan heal'
+  [2026-11-27T15:58:51Z] sync upstreamwatch to 94d06587ff024bc240f19254400ce099949646a5 (2026-11-27T15:48:02+00:00) REF main=94d06587ff024bc240f19254400ce099949646a5
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN sentry sentry /usr/local/bin/pft-upstreamwatch 0755 BEHIND 89a696239dd5 cfa4192edf40 write
+  PLAN sentry sentry /usr/local/lib/pft-upstreamwatch/upstreamwatch_lib.py 0644 BEHIND 98513d5e6f90 d0e07ccd29a5 write
+  PLAN sentry sentry /etc/systemd/system/pft-upstreamwatch.service 0644 BEHIND f821cb5e5dcb 2c94412ecb1c write
+  PLAN sentry sentry /etc/systemd/system/pft-upstreamwatch.timer 0644 CURRENT baf67f723c01 baf67f723c01 keep
+  PLAN validator validator /usr/local/bin/pft-upstreamwatch 0755 BEHIND 89a696239dd5 cfa4192edf40 write
+  PLAN validator validator /usr/local/lib/pft-upstreamwatch/upstreamwatch_lib.py 0644 BEHIND 98513d5e6f90 d0e07ccd29a5 write
+  PLAN validator validator /etc/systemd/system/pft-upstreamwatch.service 0644 BEHIND f821cb5e5dcb 2c94412ecb1c write
+  PLAN validator validator /etc/systemd/system/pft-upstreamwatch.timer 0644 CURRENT baf67f723c01 baf67f723c01 keep
+  PLAN validator validator /etc/systemd/system/pft-upstreamwatch-pull.service 0644 CURRENT 4075c43e3d10 4075c43e3d10 keep
+  PLAN validator validator /etc/systemd/system/pft-upstreamwatch-pull.timer 0644 CURRENT 4ac067858da6 4ac067858da6 keep
+  PLAN validator validator /etc/systemd/system/pft-upstreamwatch-digest.service 0644 CURRENT ea4369a44b54 ea4369a44b54 keep
+  PLAN validator validator /etc/systemd/system/pft-upstreamwatch-digest.timer 0644 CURRENT 5a6ba7d28829 5a6ba7d28829 keep
+  [2026-11-27T15:58:51Z] order: sentry validator
+  [2026-11-27T15:58:51Z] sentry: 3 file(s) to write
+  PRE sentry pft-maint window active PASS
+  PRE sentry node server_state=full PASS
+  PRE sentry pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP sentry /usr/local/bin/pft-upstreamwatch sha256 89a696239dd5 -> /var/lib/pft-fleet/backup/20261127T155851Z-upstreamwatch-sentry
+  BACKUP sentry /usr/local/lib/pft-upstreamwatch/upstreamwatch_lib.py sha256 98513d5e6f90 -> /var/lib/pft-fleet/backup/20261127T155851Z-upstreamwatch-sentry
+  BACKUP sentry /etc/systemd/system/pft-upstreamwatch.service sha256 f821cb5e5dcb -> /var/lib/pft-fleet/backup/20261127T155851Z-upstreamwatch-sentry
+  WRITE sentry /usr/local/bin/pft-upstreamwatch 89a696239dd5 -> cfa4192edf40 mode 0755
+  WRITE sentry /usr/local/lib/pft-upstreamwatch/upstreamwatch_lib.py 98513d5e6f90 -> d0e07ccd29a5 mode 0644
+  WRITE sentry /etc/systemd/system/pft-upstreamwatch.service f821cb5e5dcb -> 2c94412ecb1c mode 0644
+  RELOAD sentry systemctl daemon-reload
+  GATE sentry sha256 /usr/local/bin/pft-upstreamwatch = target cfa4192edf40 PASS
+  GATE sentry syntax /usr/local/bin/pft-upstreamwatch bash -n PASS
+  GATE sentry sha256 /usr/local/lib/pft-upstreamwatch/upstreamwatch_lib.py = target d0e07ccd29a5 PASS
+  GATE sentry syntax /usr/local/lib/pft-upstreamwatch/upstreamwatch_lib.py python PASS
+  GATE sentry sha256 /etc/systemd/system/pft-upstreamwatch.service = target 2c94412ecb1c PASS
+  GATE sentry unit pft-upstreamwatch.service LoadState=loaded PASS
+  GATE sentry addon units failed=none PASS
+  GATE sentry node server_state=full PASS
+  ACCEPT sentry pft-integrity baseline updated: pft-fleet sync upstreamwatch@94d06587ff02 (pft-upstreamwatch,upstreamwatch_lib.py,pft-upstreamwatch.service)
+  [2026-11-27T15:59:39Z] SYNCED sentry upstreamwatch -> 94d06587ff02
+  [2026-11-27T15:59:39Z] validator: 3 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/bin/pft-upstreamwatch sha256 89a696239dd5 -> /var/lib/pft-fleet/backup/20261127T155851Z-upstreamwatch-validator
+  BACKUP validator /usr/local/lib/pft-upstreamwatch/upstreamwatch_lib.py sha256 98513d5e6f90 -> /var/lib/pft-fleet/backup/20261127T155851Z-upstreamwatch-validator
+  BACKUP validator /etc/systemd/system/pft-upstreamwatch.service sha256 f821cb5e5dcb -> /var/lib/pft-fleet/backup/20261127T155851Z-upstreamwatch-validator
+  WRITE validator /usr/local/bin/pft-upstreamwatch 89a696239dd5 -> cfa4192edf40 mode 0755
+  WRITE validator /usr/local/lib/pft-upstreamwatch/upstreamwatch_lib.py 98513d5e6f90 -> d0e07ccd29a5 mode 0644
+  WRITE validator /etc/systemd/system/pft-upstreamwatch.service f821cb5e5dcb -> 2c94412ecb1c mode 0644
+  RELOAD validator systemctl daemon-reload
+  GATE validator sha256 /usr/local/bin/pft-upstreamwatch = target cfa4192edf40 PASS
+  GATE validator syntax /usr/local/bin/pft-upstreamwatch bash -n PASS
+  GATE validator sha256 /usr/local/lib/pft-upstreamwatch/upstreamwatch_lib.py = target d0e07ccd29a5 PASS
+  GATE validator syntax /usr/local/lib/pft-upstreamwatch/upstreamwatch_lib.py python PASS
+  GATE validator sha256 /etc/systemd/system/pft-upstreamwatch.service = target 2c94412ecb1c PASS
+  GATE validator unit pft-upstreamwatch.service LoadState=loaded PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync upstreamwatch@94d06587ff02 (pft-upstreamwatch,upstreamwatch_lib.py,pft-upstreamwatch.service)
+  [2026-11-27T16:00:31Z] SYNCED validator upstreamwatch -> 94d06587ff02
+  [2026-11-27T16:00:31Z] sync complete
+  (exit 0)
+GATE PASS fleet sync upstreamwatch both hosts
+$ systemctl cat pft-vulnscan-heal.service | grep -E '^(ExecStart|ProtectSystem|CacheDirectory)='; ssh -o BatchMode=yes relay 'systemctl show -p LoadState --value pft-vulnscan-heal.service' </dev/null
+  ExecStart=/usr/local/bin/pft-vulnscan scan --force-fetch
+  CacheDirectory=pft-vulnscan
+  ProtectSystem=strict
+  loaded
+  (exit 0)
+GATE PASS heal unit loaded on both hosts
+$ systemctl show -p TimeoutStartUSec --value pft-upstreamwatch.service; ssh -o BatchMode=yes relay 'systemctl show -p TimeoutStartUSec --value pft-upstreamwatch.service' </dev/null
+  40min
+  40min
+  (exit 0)
+$ pft-upstreamwatch version; grep -c local_lagging /usr/local/lib/pft-upstreamwatch/upstreamwatch_lib.py; ssh -o BatchMode=yes relay 'grep -c local_lagging /usr/local/lib/pft-upstreamwatch/upstreamwatch_lib.py; grep -c force-fetch /usr/local/bin/pft-vulnscan' </dev/null
+  /usr/local/bin/pft-upstreamwatch: line 87: /etc/pft-upstreamwatch.env: Permission denied
+  pft-upstreamwatch 1.1.0
+  5
+  5
+  4
+  (exit 0)
+$ git -C ~/work/postfiat-validator-installer status --short -- alerts | wc -l; sudo -n docker kill -s HUP pft-prometheus >/dev/null && sleep 5 && curl -s -m 10 http://<redacted-ip>:9090/api/v1/status/runtimeinfo | jq -r .data.reloadConfigSuccess && curl -s -m 10 http://<redacted-ip>:9090/api/v1/rules | jq -r '.data.groups[] | select(.name == "pft-upstreamwatch") | .rules[] | select(.name == "PFTUpstreamFeedLagging") | "\(.name) for=\(.duration) notify=\(.labels.notify)"'
+  0
+  true
+  PFTUpstreamFeedLagging for=10800 notify=digest
+  (exit 0)
+GATE PASS Prometheus reloaded: PFTUpstreamFeedLagging loaded (for 3h, notify digest)
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+$ sudo -n pft-schedaudit audit | tail -2; ssh -o BatchMode=yes relay 'sudo -n pft-schedaudit audit | tail -2' </dev/null
+  ALLOWED	nonsystem_user	cron.d/pft-agent@d997c0d9e4	/etc/cron.d/pft-agent	runs as a regular user (uid >= 1000)	# operator task agent: an unprivileged cron job that runs as its own login user by design
+  SUMMARY entries=120 enabled=107 findings=1 allowed=1 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+  SUMMARY entries=79 enabled=66 findings=0 allowed=0 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+  (exit 0)
+GATE PASS schedaudit clean both hosts
+$ sudo -n pft-integrity verify | tail -1; ssh -o BatchMode=yes relay 'sudo -n pft-integrity verify | tail -1' </dev/null
+  RESULT: PASS - 300 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 178 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+GATE PASS integrity PASS both hosts
+$ sudo -n pft-fleet skew | grep -E 'fleet|vulnscan|upstreamwatch|^RESULT|DIVERGED'; echo skew_rc=${PIPESTATUS[0]}
+  sentry     upstreamwatch CURRENT    
+  sentry     vulnscan    CURRENT    
+  validator  fleet       CURRENT    
+  validator  upstreamwatch CURRENT    
+  validator  vulnscan    CURRENT    
+  SUMMARY CURRENT=90 BEHIND=2 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  skew_rc=1
+  (exit 0)
+GATE FAIL fleet skew rc 0
+$ sudo -n systemctl start pft-rulecheck.service; systemctl is-failed pft-rulecheck.service; grep -E '^pft_rulecheck_(up|problems)' /var/lib/pft-exporter/textfile/pft_rulecheck*.prom | head -4
+  inactive
+  /var/lib/pft-exporter/textfile/pft_rulecheck_sentry.prom:pft_rulecheck_up{host="sentry"} 1
+  /var/lib/pft-exporter/textfile/pft_rulecheck_validator.prom:pft_rulecheck_up{host="validator"} 1
+  (exit 0)
+$ sudo -n pft-jobwatch collect >/dev/null && sudo -n pft-jobwatch inventory | grep -E 'vulnscan|upstreamwatch'; TEXT_BUDGET=999999 sudo -n pft-jobwatch collect --stdout | wc -c
+  pft-upstreamwatch-digest.timer	calendar	86400	0	0	0	0	1	OnCalendar=*-*-* 07:20:00 UTC
+  pft-upstreamwatch-pull.timer	calendar	900	0	0	0	0	1	OnCalendar=*-*-* *:11/15:00
+  pft-upstreamwatch.timer	calendar	3600	0	0	0	0	1	OnCalendar=*-*-* *:41:00
+  pft-vulnscan-pull.timer	calendar	900	0	0	0	0	1	OnCalendar=*-*-* *:05/15:00
+  pft-vulnscan.timer	calendar	86400	0	0	0	0	1	OnCalendar=*-*-* 04:20:00 UTC
+  47993
+  (exit 0)
+$ sudo -n pft-keyescrow inventory | tail -1
+  RESULT: ok 11, perm 0, missing 0, unreadable 0, absent(optional) 2; escrow drift 0, new 0, evolving 1 -> exit 0
+  (exit 0)
+$ for h in local relay; do if [ $h = local ]; then docker ps --format '{{.Names}} {{.Image}} {{.Status}}' | grep -E '^postfiatd '; else ssh -o BatchMode=yes relay "docker ps --format '{{.Names}} {{.Image}} {{.Status}}' | grep -E '^postfiatd-sentry '" </dev/null; fi; done
+  postfiatd agtipft/postfiatd:testnet-light-latest Up 3 days
+  postfiatd-sentry agtipft/postfiatd:testnet-light-latest Up 9 hours
+  (exit 0)
+GATE PASS postfiatd containers unchanged (same name/image, still Up)
+$ curl -s -m 10 http://<redacted-ip>:5005 -d '{"method":"server_info"}' | jq -r .result.info.server_state
+  full
+  (exit 0)
+GATE PASS validator server_state full
+$ curl -s -m 15 'https://ntfy.sh/<throwaway-topic>/json?poll=1&since=1795794773' | jq -r 'select(.event == "message") | .title'
+  [MAINT] start validator
+  [MAINT] end validator
+  (exit 0)
+$ curl -s -m 15 'https://ntfy.sh/<redacted>/json?poll=1&since=1795794773' | jq -r 'select(.event == "message") | .title' | wc -l
+  0
+  (exit 0)
+GATE PASS operator topic: 0 messages since the run started
+RESULT: 1 gate(s) failed -> FAIL

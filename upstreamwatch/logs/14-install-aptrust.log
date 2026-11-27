@@ -1,0 +1,81 @@
+# published copy of a raw run log: host names -> <sentry-host>, local timezone -> <local-tz>, IPs/topics/home already redacted at record time
+fleet sync aptrust@94d06587ff024bc240f19254400ce099949646a5 - 2026-11-27T16:04:00Z
+$ sudo -n pft-maint start --ttl 20m --reason 'pft-fleet sync aptrust (task_dfa49345fcc602ce6d66553813e99516: allowlist copy of fleet/manifest.tsv (pft-vulnscan-heal.service))'
+  window started: id m1795795441-2016738 until 2026-11-27T16:24:01Z | sentry copy: pushed
+  (exit 0)
+$ ssh -o BatchMode=yes relay 'sudo -n pft-maint active && echo active' </dev/null
+  active
+  (exit 0)
+$ sudo -n pft-fleet sync --addon aptrust --to 94d06587ff024bc240f19254400ce099949646a5
+  [2026-11-27T16:06:07Z] sync aptrust to 94d06587ff024bc240f19254400ce099949646a5 (2026-11-27T15:48:02+00:00) REF main=94d06587ff024bc240f19254400ce099949646a5
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN sentry sentry /usr/local/bin/pft-aptrust 0755 CURRENT 0e7722706169 0e7722706169 keep
+  PLAN sentry sentry /usr/local/lib/pft-aptrust/manifest.tsv 0644 BEHIND d27f1914ae2b 8d19f53a8f6c write
+  PLAN sentry sentry /etc/systemd/system/pft-aptrust.service 0644 CURRENT 4dfc8751acb0 4dfc8751acb0 keep
+  PLAN sentry sentry /etc/systemd/system/pft-aptrust.timer 0644 CURRENT 1f6d67e56237 1f6d67e56237 keep
+  PLAN validator validator /usr/local/bin/pft-aptrust 0755 CURRENT 0e7722706169 0e7722706169 keep
+  PLAN validator validator /usr/local/lib/pft-aptrust/manifest.tsv 0644 BEHIND d27f1914ae2b 8d19f53a8f6c write
+  PLAN validator validator /etc/systemd/system/pft-aptrust.service 0644 CURRENT 4dfc8751acb0 4dfc8751acb0 keep
+  PLAN validator validator /etc/systemd/system/pft-aptrust.timer 0644 CURRENT 1f6d67e56237 1f6d67e56237 keep
+  PLAN validator validator /etc/systemd/system/pft-aptrust-pull.service 0644 CURRENT 25f018e00e72 25f018e00e72 keep
+  PLAN validator validator /etc/systemd/system/pft-aptrust-pull.timer 0644 CURRENT edf767945c09 edf767945c09 keep
+  [2026-11-27T16:06:07Z] order: sentry validator
+  [2026-11-27T16:06:07Z] dry run (no --apply): nothing changed
+  (exit 0)
+$ sudo -n pft-fleet sync --addon aptrust --to 94d06587ff024bc240f19254400ce099949646a5 --apply --reason 'task_dfa49345fcc602ce6d66553813e99516: allowlist copy of fleet/manifest.tsv (pft-vulnscan-heal.service)'
+  [2026-11-27T16:06:47Z] sync aptrust to 94d06587ff024bc240f19254400ce099949646a5 (2026-11-27T15:48:02+00:00) REF main=94d06587ff024bc240f19254400ce099949646a5
+  PLAN HOST ROLE PATH MODE CURRENT_STATE CURRENT_SHA TARGET_SHA ACTION
+  PLAN sentry sentry /usr/local/bin/pft-aptrust 0755 CURRENT 0e7722706169 0e7722706169 keep
+  PLAN sentry sentry /usr/local/lib/pft-aptrust/manifest.tsv 0644 BEHIND d27f1914ae2b 8d19f53a8f6c write
+  PLAN sentry sentry /etc/systemd/system/pft-aptrust.service 0644 CURRENT 4dfc8751acb0 4dfc8751acb0 keep
+  PLAN sentry sentry /etc/systemd/system/pft-aptrust.timer 0644 CURRENT 1f6d67e56237 1f6d67e56237 keep
+  PLAN validator validator /usr/local/bin/pft-aptrust 0755 CURRENT 0e7722706169 0e7722706169 keep
+  PLAN validator validator /usr/local/lib/pft-aptrust/manifest.tsv 0644 BEHIND d27f1914ae2b 8d19f53a8f6c write
+  PLAN validator validator /etc/systemd/system/pft-aptrust.service 0644 CURRENT 4dfc8751acb0 4dfc8751acb0 keep
+  PLAN validator validator /etc/systemd/system/pft-aptrust.timer 0644 CURRENT 1f6d67e56237 1f6d67e56237 keep
+  PLAN validator validator /etc/systemd/system/pft-aptrust-pull.service 0644 CURRENT 25f018e00e72 25f018e00e72 keep
+  PLAN validator validator /etc/systemd/system/pft-aptrust-pull.timer 0644 CURRENT edf767945c09 edf767945c09 keep
+  [2026-11-27T16:06:47Z] order: sentry validator
+  [2026-11-27T16:06:47Z] sentry: 1 file(s) to write
+  PRE sentry pft-maint window active PASS
+  PRE sentry node server_state=full PASS
+  PRE sentry pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP sentry /usr/local/lib/pft-aptrust/manifest.tsv sha256 d27f1914ae2b -> /var/lib/pft-fleet/backup/20261127T160647Z-aptrust-sentry
+  WRITE sentry /usr/local/lib/pft-aptrust/manifest.tsv d27f1914ae2b -> 8d19f53a8f6c mode 0644
+  GATE sentry sha256 /usr/local/lib/pft-aptrust/manifest.tsv = target 8d19f53a8f6c PASS
+  GATE sentry addon units failed=none PASS
+  GATE sentry node server_state=full PASS
+  ACCEPT sentry pft-integrity baseline updated: pft-fleet sync aptrust@94d06587ff02 (manifest.tsv)
+  [2026-11-27T16:07:54Z] SYNCED sentry aptrust -> 94d06587ff02
+  [2026-11-27T16:07:54Z] validator: 1 file(s) to write
+  PRE validator pft-maint window active PASS
+  PRE validator node server_state=full PASS
+  PRE validator pft-integrity PASS (0 findings, all on files this sync rewrites) PASS
+  BACKUP validator /usr/local/lib/pft-aptrust/manifest.tsv sha256 d27f1914ae2b -> /var/lib/pft-fleet/backup/20261127T160647Z-aptrust-validator
+  WRITE validator /usr/local/lib/pft-aptrust/manifest.tsv d27f1914ae2b -> 8d19f53a8f6c mode 0644
+  GATE validator sha256 /usr/local/lib/pft-aptrust/manifest.tsv = target 8d19f53a8f6c PASS
+  GATE validator addon units failed=none PASS
+  GATE validator node server_state=full PASS
+  ACCEPT validator pft-integrity baseline updated: pft-fleet sync aptrust@94d06587ff02 (manifest.tsv)
+  [2026-11-27T16:08:42Z] SYNCED validator aptrust -> 94d06587ff02
+  [2026-11-27T16:08:42Z] sync complete
+  (exit 0)
+  window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+$ sudo -n pft-keyescrow inventory | tail -1
+  RESULT: ok 11, perm 0, missing 0, unreadable 0, absent(optional) 2; escrow drift 0, new 0, evolving 1 -> exit 0
+  (exit 0)
+$ sudo -n pft-fleet skew | grep -E 'aptrust|^RESULT|DIVERGED'; echo skew_rc=${PIPESTATUS[0]}
+  sentry     aptrust     CURRENT    
+  validator  aptrust     CURRENT    
+  SUMMARY CURRENT=92 BEHIND=0 MODIFIED=0 MISSING=0 UNEXPECTED=0 DIVERGED=0
+  skew_rc=0
+  (exit 0)
+$ sudo -n pft-integrity verify | tail -1; ssh -o BatchMode=yes relay 'sudo -n pft-integrity verify | tail -1' </dev/null
+  RESULT: PASS - 300 unchanged, 0 warn, 0 fail -> exit 0
+  RESULT: PASS - 178 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+$ curl -s -m 15 'https://ntfy.sh/<throwaway-topic>/json?poll=1&since=1795795440' | jq -r 'select(.event == "message") | .title'
+  [MAINT] start validator
+  [MAINT] end validator
+  (exit 0)
+sync rc 0

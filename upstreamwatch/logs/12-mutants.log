@@ -1,0 +1,52 @@
+# published copy of a raw run log: host names -> <sentry-host>, local timezone -> <local-tz>, IPs/topics/home already redacted at record time
+uwheal mutants - 2026-11-27T15:51:46Z
+repo HEAD 94d06587ff024bc240f19254400ce099949646a5  mutate.py sha256 ca4098ad045f7b497c5b2f12f48e171d266ae880f03ff7fb9a7402f56113e1b6  status: 0 changed files
+$ TEST_TMPDIR=$HOME/.cache nice -n 15 python3 -u upstreamwatch/tests/mutate.py --jobs 3 --timeout 400
+control baseline suite (unmutated copy): PASS 84 passed in 57.60s
+control baseline promtool (unmutated copy): PASS   SUCCESS
+control baseline run-tests.sh (unmutated vulnscan copy): PASS ['RESULT: 153/153 passed']
+control timeout (helper never returns, --hang-timeout 60): HANG after 61 s, 0 process(es) left
+P01 CAUGHT - lag within grace reported ok (the old blind spot) [14 failing: test_upstream_newer_within_grace_is_local_lagging, test_live_capture_20261127_is_local_lagging, test_lag_boundaries_at_grace, test_lag_future_last_modified_within_skew_is_zero ...]
+P02 CAUGHT - lag not clamped at 0 (future Last-Modified within skew) [1 failing: test_lag_future_last_modified_within_skew_is_zero]
+P03 CAUGHT - lag left unknown when our copy is the latest [3 failing: test_lag_zero_when_latest_on_every_path, test_shell_heal_heals_once_and_returns_to_ok, test_shell_heal_still_lagging_then_rate_limited_then_retried]
+P04 CAUGHT - grace boundary > -> >= (lag == grace pages) [1 failing: test_lag_boundaries_at_grace]
+P05 CAUGHT - heal threshold <= -> < (lag == LAG_HEAL_HOURS heals) [2 failing: test_heal_plan_lag_threshold, test_shell_heal_below_threshold_no_decision]
+P06 CAUGHT - rate-limit boundary < -> <= (exactly HEAL_INTERVAL_HOURS still blocked) [2 failing: test_heal_plan_rate_limit_boundary, test_shell_heal_still_lagging_then_rate_limited_then_retried]
+P07 CAUGHT - no rate limit [3 failing: test_heal_plan_rate_limit_boundary, test_heal_plan_guards_and_order, test_shell_heal_still_lagging_then_rate_limited_then_retried]
+P08 CAUGHT - maintenance guard removed [2 failing: test_heal_plan_guards_and_order, test_shell_heal_maint_window_blocks]
+P09 CAUGHT - running-unit guard removed [2 failing: test_heal_plan_guards_and_order, test_shell_heal_busy_unit_blocks]
+P10 CAUGHT - imagescan/reference feeds healed too [1 failing: test_heal_plan_only_vulnscan_feeds_and_lagging_states]
+P11 CAUGHT - local_stale (lag beyond grace) not healed [1 failing: test_heal_plan_lag_threshold]
+P12 CAUGHT - LAG_HEAL_HOURS=0 does not disable [2 failing: test_heal_plan_guards_and_order, test_shell_heal_disabled_and_bad_config]
+P13 CAUGHT - attempts not counted [2 failing: test_heal_record_persists_attempts_and_results, test_shell_heal_still_lagging_then_rate_limited_then_retried]
+P14 CAUGHT - every result moves the rate-limit clock [4 failing: test_heal_record_persists_attempts_and_results, test_heal_record_updates_obs_copy, test_shell_heal_heals_once_and_returns_to_ok, test_shell_heal_still_lagging_then_rate_limited_then_retried]
+P15 CAUGHT - obs copy of the heal state not updated [4 failing: test_heal_record_updates_obs_copy, test_shell_heal_heals_once_and_returns_to_ok, test_shell_heal_still_lagging_then_rate_limited_then_retried, test_shell_heal_unit_failure_recorded]
+P16 CAUGHT - lag metric not exported [3 failing: test_prom_and_text_carry_lag, test_shell_heal_heals_once_and_returns_to_ok, test_shell_heal_control_without_heal_stays_lagging]
+P17 CAUGHT - heal result not one-hot [1 failing: test_heal_record_updates_obs_copy]
+P18 CAUGHT - heal state not collected into the observations [1 failing: test_shell_heal_still_lagging_then_rate_limited_then_retried]
+P19 CAUGHT - unknown heal result accepted [1 failing: test_heal_record_persists_attempts_and_results]
+S01 CAUGHT - malformed/unknown maint state no longer blocks [1 failing: test_shell_heal_maint_window_blocks]
+S02 CAUGHT - busy units ignored [2 failing: test_shell_heal_heals_once_and_returns_to_ok, test_shell_heal_busy_unit_blocks]
+S03 CAUGHT - heal lock not taken [1 failing: test_shell_heal_lock_held_blocks]
+S04 CAUGHT - start not persisted before the unit runs [2 failing: test_shell_heal_heals_once_and_returns_to_ok, test_shell_heal_still_lagging_then_rate_limited_then_retried]
+S05 CAUGHT - no re-collect after the heal [2 failing: test_shell_heal_heals_once_and_returns_to_ok, test_shell_heal_still_lagging_then_rate_limited_then_retried]
+S06 CAUGHT - every heal reported healed [1 failing: test_shell_heal_still_lagging_then_rate_limited_then_retried]
+S07 CAUGHT - failed unit start treated as success [1 failing: test_shell_heal_unit_failure_recorded]
+S08 CAUGHT - --no-heal ignored [1 failing: test_shell_heal_control_without_heal_stays_lagging]
+S09 CAUGHT - LAG_HEAL_HOURS not validated [1 failing: test_shell_heal_disabled_and_bad_config]
+S10 CAUGHT - HEAL_UNIT not validated [1 failing: test_shell_heal_disabled_and_bad_config]
+S11 CAUGHT - heal journal not written [3 failing: test_shell_heal_heals_once_and_returns_to_ok, test_shell_heal_still_lagging_then_rate_limited_then_retried, test_shell_heal_unit_failure_recorded]
+S12 CAUGHT - heal started without a decision [4 failing: test_shell_heal_still_lagging_then_rate_limited_then_retried, test_shell_heal_maint_window_blocks, test_shell_heal_busy_unit_blocks, test_shell_heal_disabled_and_bad_config]
+R01 CAUGHT - PFTUpstreamFeedLagging pages (notify digest dropped) [promtool FAILED: local_lagging for 4 h then ok: only PFTUpstreamFeedLagging (notify=digest) fires, after 3 h]
+R02 CAUGHT - PFTUpstreamFeedLagging for 3h -> 1h (fires inside the heal window) [promtool FAILED: local_lagging for 2 h (healed by the bounded refetch) then ok: nothing fires; local_lagging for 4 h then ok: only PFTUpstreamFeedLagging (notify=digest) fires, after 3 h]
+R03 CAUGHT - PFTUpstreamFeedLagging selects local_stale [promtool FAILED: local_lagging for 4 h then ok: only PFTUpstreamFeedLagging (notify=digest) fires, after 3 h]
+V01 CAUGHT - scan --force-fetch ignored [5 FAIL: --force-fetch: exactly one request, no ETag, Cache-Control: no-cache, ?pft-vulnscan-nocache=NOW; --force-fetch: says so, cache = origin feed, feed timestamp metric updated]
+V02 CAUGHT - forced GET without the cache-busting query [11 FAIL: stale 304: unconditional GET reaches the origin, fetched; stale 304: 2nd request = FEED_URL?pft-vulnscan-nocache=NOW, no ETag, no-cache header]
+V03 CAUGHT - cache lock never waited for [3 FAIL: lock held by another run: scan --force-fetch waits LOCK_WAIT (1 s), exit 2, no request, cache + textfile untouched; lock held: fetch exits 2 too]
+V04 CAUGHT - scan does not take the lock [3 FAIL: no temp files left (only the cache lock file); lock held by another run: scan --force-fetch waits LOCK_WAIT (1 s), exit 2, no request, cache + textfile untouched]
+V05 CAUGHT - fetch --force ignored [1 FAIL: fetch --force: one cache-busting request, rc 0]
+V06 CAUGHT - --no-fetch with --force-fetch accepted [1 FAIL: --no-fetch --force-fetch refused (rc 2, nothing written)]
+V07 CAUGHT - forced GET keeps the ETag [9 FAIL: cached feed 25 h old: message names the age and the refetch; two requests: first with the ETag, second without it and with Cache-Control: no-cache]
+orphan check: 0 process(es) still running that name this run's scratch dir
+RESULT: 41 caught, 0 survived, 0 not applied, 0 broken of 41
+(exit 0)

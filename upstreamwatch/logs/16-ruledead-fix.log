@@ -1,0 +1,10 @@
+# published copy of a raw run log: host names -> <sentry-host>, local timezone -> <local-tz>, IPs/topics/home already redacted at record time
+== 2026-11-27T16:12:06Z PFTRuleDead for PFTUpstreamFeedLagging (no local_lagging series yet): refresh validator textfile, rerun rulecheck
+FEED                   STATE            FETCH AGE  CONTENT AGE      LAG  REASON
+usn-host               local_lagging       11.4 h       31.3 h   23.3 h  upstream content is 7.9 h newer than ours; published 23.3 h ago, within grace 30 h
+ubuntu-jammy           local_lagging       10.6 h       31.3 h   23.3 h  upstream content is 7.9 h newer than ours; published 23.3 h ago, within grace 30 h
+RESULT: ok=2 upstream_quiet=0 local_lagging=4 local_stale=0 fetch_failing=0 unreachable=0 release=current
+run rc=0
+6
+pft_rulecheck_rule_dead{host="validator",group="pft-upstreamwatch",rule="PFTUpstreamFeedLagging",idx="3",state="LIVE"} 0
+{"silenceID":"5df54171-02a2-49f0-9131-f2b6c536c5da"}

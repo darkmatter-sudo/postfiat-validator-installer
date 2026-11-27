@@ -1,0 +1,25 @@
+# published copy of a raw run log: host names -> <sentry-host>, local timezone -> <local-tz>, IPs/topics/home already redacted at record time
+reports re-render (new renderer: LAG column, local_lagging one-hot) from the UNCHANGED committed obs.json - 2026-11-27T16:36:59Z
+repo HEAD 5bebe894f0dcdf016b64952c1008a4ea4cc83335
+$ sha256sum upstreamwatch/reports/validator/obs.json
+6d779766b41fe0878120d6ffe1b3c33a22e0e9007b96cd9fdd83b1937e807388  upstreamwatch/reports/validator/obs.json
+validator report.txt rc=0 1742 bytes
+validator report.json rc=0 3995 bytes
+validator report.prom rc=0 9297 bytes
+usn-host               upstream_quiet      23.1 h       80.5 h    0.0 h  local copy is upstream's latest (upstream answered 304 to our ETag); upstream has not published f
+RESULT: ok=2 upstream_quiet=4 local_lagging=0 local_stale=0 fetch_failing=0 unreachable=0 release=current
+$ sha256sum upstreamwatch/reports/sentry/obs.json
+613ba206d5e4cbf63b1089a8f5783731e8d8bf9ca9f52446ce2dfe797c630204  upstreamwatch/reports/sentry/obs.json
+sentry report.txt rc=0 1746 bytes
+sentry report.json rc=0 4000 bytes
+sentry report.prom rc=0 9110 bytes
+usn-host               upstream_quiet      23.1 h       80.5 h    0.0 h  local copy is upstream's latest (upstream answered 304 to our ETag); upstream has not published f
+RESULT: ok=2 upstream_quiet=4 local_lagging=0 local_stale=0 fetch_failing=0 unreachable=0 release=current
+ upstreamwatch/reports/sentry/report.json    |  8 ++++++++
+ upstreamwatch/reports/sentry/report.prom    | 15 ++++++++++++++-
+ upstreamwatch/reports/sentry/report.txt     | 16 ++++++++--------
+ upstreamwatch/reports/validator/report.json |  8 ++++++++
+ upstreamwatch/reports/validator/report.prom | 15 ++++++++++++++-
+ upstreamwatch/reports/validator/report.txt  | 16 ++++++++--------
+ 6 files changed, 60 insertions(+), 18 deletions(-)
+0

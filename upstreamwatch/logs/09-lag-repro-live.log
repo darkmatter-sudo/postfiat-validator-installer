@@ -1,0 +1,42 @@
+# published copy of a raw run log: host names -> <sentry-host>, local timezone -> <local-tz>, IPs/topics/home already redacted at record time
+== 2026-11-27T15:10:38Z live reproduction: validator
+pft-upstreamwatch - host validator - 2026-11-27T14:43:25Z
+
+FEED                   STATE            FETCH AGE  CONTENT AGE  REASON
+usn-host               ok                   9.9 h       29.8 h  upstream content is 7.9 h newer than ours; published 21.9 h ago, within grace 30 h
+ubuntu-jammy           ok                   9.1 h       29.8 h  upstream content is 7.9 h newer than ours; published 21.9 h ago, within grace 30 h
+ubuntu-noble           ok                   9.1 h       29.8 h  upstream content is 7.9 h newer than ours; published 21.9 h ago, within grace 30 h
+{
+  "collected_epoch": 1795790605,
+  "f": [
+    {
+      "local_obs": {
+        "fetched_epoch": 1795754869,
+        "checked_epoch": 1795754869,
+        "content_epoch": 1795683348,
+        "etag": "\"1dcc51-6612a1da2e780\""
+      },
+      "upstream": {
+        "content-length": "1953792",
+        "content-type": "application/x-bzip2",
+        "date": "Fri, 27 Nov 2026 14:43:28 GMT",
+        "etag": "\"1dd000-66130c1fa6140\"",
+        "last-modified": "Thu, 26 Nov 2026 16:51:41 GMT"
+      },
+      "status": 200
+    }
+  ]
+}
+== sentry
+pft-upstreamwatch - host sentry - 2026-11-27T14:41:22Z
+
+FEED                   STATE            FETCH AGE  CONTENT AGE  REASON
+usn-host               ok                  10.2 h       29.8 h  upstream content is 7.9 h newer than ours; published 21.8 h ago, within grace 30 h
+ubuntu-jammy           ok                   9.3 h       29.8 h  upstream content is 7.9 h newer than ours; published 21.8 h ago, within grace 30 h
+ubuntu-noble           ok                   9.3 h       29.8 h  upstream content is 7.9 h newer than ours; published 21.9 h ago, within grace 30 h
+sha256=fb0df633af327dbbd35b93b15f4c7dde8df6065e9172cfe5188545f21d7f865a
+fetched_at=1795753753
+last_checked=1795753753
+url=https://security-metadata.canonical.com/oval/com.ubuntu.jammy.usn.oval.xml.bz2
+Fri 2026-11-27 16:41:42 <local-tz> 31min left     Fri 2026-11-27 15:41:21 <local-tz> 29min ago    pft-upstreamwatch.timer                      pft-upstreamwatch.service
+Sat 2026-11-28 05:34:28 <local-tz> 13h left       Fri 2026-11-27 05:29:07 <local-tz> 10h ago      pft-vulnscan.timer                           pft-vulnscan.service

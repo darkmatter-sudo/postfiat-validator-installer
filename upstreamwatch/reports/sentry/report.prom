@@ -4,35 +4,41 @@ pft_upstreamwatch_up{host="sentry"} 1
 # HELP pft_upstreamwatch_last_run_timestamp_seconds when the observations were collected
 # TYPE pft_upstreamwatch_last_run_timestamp_seconds gauge
 pft_upstreamwatch_last_run_timestamp_seconds{host="sentry"} 1795405346
-# HELP pft_upstreamwatch_feed_state 1 for the feed's current state (ok upstream_quiet local_stale fetch_failing unreachable)
+# HELP pft_upstreamwatch_feed_state 1 for the feed's current state (ok upstream_quiet local_lagging local_stale fetch_failing unreachable)
 # TYPE pft_upstreamwatch_feed_state gauge
 pft_upstreamwatch_feed_state{host="sentry",feed="usn-host",state="ok"} 0
 pft_upstreamwatch_feed_state{host="sentry",feed="usn-host",state="upstream_quiet"} 1
+pft_upstreamwatch_feed_state{host="sentry",feed="usn-host",state="local_lagging"} 0
 pft_upstreamwatch_feed_state{host="sentry",feed="usn-host",state="local_stale"} 0
 pft_upstreamwatch_feed_state{host="sentry",feed="usn-host",state="fetch_failing"} 0
 pft_upstreamwatch_feed_state{host="sentry",feed="usn-host",state="unreachable"} 0
 pft_upstreamwatch_feed_state{host="sentry",feed="ubuntu-jammy",state="ok"} 0
 pft_upstreamwatch_feed_state{host="sentry",feed="ubuntu-jammy",state="upstream_quiet"} 1
+pft_upstreamwatch_feed_state{host="sentry",feed="ubuntu-jammy",state="local_lagging"} 0
 pft_upstreamwatch_feed_state{host="sentry",feed="ubuntu-jammy",state="local_stale"} 0
 pft_upstreamwatch_feed_state{host="sentry",feed="ubuntu-jammy",state="fetch_failing"} 0
 pft_upstreamwatch_feed_state{host="sentry",feed="ubuntu-jammy",state="unreachable"} 0
 pft_upstreamwatch_feed_state{host="sentry",feed="ubuntu-noble",state="ok"} 0
 pft_upstreamwatch_feed_state{host="sentry",feed="ubuntu-noble",state="upstream_quiet"} 1
+pft_upstreamwatch_feed_state{host="sentry",feed="ubuntu-noble",state="local_lagging"} 0
 pft_upstreamwatch_feed_state{host="sentry",feed="ubuntu-noble",state="local_stale"} 0
 pft_upstreamwatch_feed_state{host="sentry",feed="ubuntu-noble",state="fetch_failing"} 0
 pft_upstreamwatch_feed_state{host="sentry",feed="ubuntu-noble",state="unreachable"} 0
 pft_upstreamwatch_feed_state{host="sentry",feed="debian",state="ok"} 1
 pft_upstreamwatch_feed_state{host="sentry",feed="debian",state="upstream_quiet"} 0
+pft_upstreamwatch_feed_state{host="sentry",feed="debian",state="local_lagging"} 0
 pft_upstreamwatch_feed_state{host="sentry",feed="debian",state="local_stale"} 0
 pft_upstreamwatch_feed_state{host="sentry",feed="debian",state="fetch_failing"} 0
 pft_upstreamwatch_feed_state{host="sentry",feed="debian",state="unreachable"} 0
 pft_upstreamwatch_feed_state{host="sentry",feed="go",state="ok"} 0
 pft_upstreamwatch_feed_state{host="sentry",feed="go",state="upstream_quiet"} 1
+pft_upstreamwatch_feed_state{host="sentry",feed="go",state="local_lagging"} 0
 pft_upstreamwatch_feed_state{host="sentry",feed="go",state="local_stale"} 0
 pft_upstreamwatch_feed_state{host="sentry",feed="go",state="fetch_failing"} 0
 pft_upstreamwatch_feed_state{host="sentry",feed="go",state="unreachable"} 0
 pft_upstreamwatch_feed_state{host="sentry",feed="debian-oval-bookworm",state="ok"} 1
 pft_upstreamwatch_feed_state{host="sentry",feed="debian-oval-bookworm",state="upstream_quiet"} 0
+pft_upstreamwatch_feed_state{host="sentry",feed="debian-oval-bookworm",state="local_lagging"} 0
 pft_upstreamwatch_feed_state{host="sentry",feed="debian-oval-bookworm",state="local_stale"} 0
 pft_upstreamwatch_feed_state{host="sentry",feed="debian-oval-bookworm",state="fetch_failing"} 0
 pft_upstreamwatch_feed_state{host="sentry",feed="debian-oval-bookworm",state="unreachable"} 0
@@ -65,6 +71,13 @@ pft_upstreamwatch_feed_upstream_newer_seconds{host="sentry",feed="ubuntu-jammy"}
 pft_upstreamwatch_feed_upstream_newer_seconds{host="sentry",feed="ubuntu-noble"} 12
 pft_upstreamwatch_feed_upstream_newer_seconds{host="sentry",feed="debian"} 11749
 pft_upstreamwatch_feed_upstream_newer_seconds{host="sentry",feed="go"} 0
+# HELP pft_upstreamwatch_feed_lag_seconds how long upstream has had content our copy lacks (0 = our copy is the latest)
+# TYPE pft_upstreamwatch_feed_lag_seconds gauge
+pft_upstreamwatch_feed_lag_seconds{host="sentry",feed="usn-host"} 0
+pft_upstreamwatch_feed_lag_seconds{host="sentry",feed="ubuntu-jammy"} 0
+pft_upstreamwatch_feed_lag_seconds{host="sentry",feed="ubuntu-noble"} 0
+pft_upstreamwatch_feed_lag_seconds{host="sentry",feed="debian"} 0
+pft_upstreamwatch_feed_lag_seconds{host="sentry",feed="go"} 0
 # HELP pft_upstreamwatch_feed_clock_skew_seconds local clock minus upstream Date header
 # TYPE pft_upstreamwatch_feed_clock_skew_seconds gauge
 pft_upstreamwatch_feed_clock_skew_seconds{host="sentry",feed="usn-host"} -4

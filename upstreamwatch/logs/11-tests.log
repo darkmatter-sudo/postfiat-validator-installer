@@ -1,0 +1,62 @@
+# published copy of a raw run log: host names -> <sentry-host>, local timezone -> <local-tz>, IPs/topics/home already redacted at record time
+uwheal tests - 2026-11-27T15:48:28Z
+repo HEAD 94d06587ff024bc240f19254400ce099949646a5  status: 0 changed files
+$ sha256sum upstreamwatch/pft-upstreamwatch.sh upstreamwatch/upstreamwatch_lib.py upstreamwatch/systemd/pft-upstreamwatch.service vulnscan/pft-vulnscan.sh vulnscan/systemd/pft-vulnscan-heal.service alerts/upstreamwatch.rules.yml alerts/upstreamwatch.tests.yml upstreamwatch/tests/test_upstreamwatch.py upstreamwatch/tests/mutate.py vulnscan/tests/run-tests.sh upstreamwatch/drill/heal-proof.sh
+  cfa4192edf4000210ffd5673aa0e794dd26f4e7c124f8fb41630e49dfe52d946  upstreamwatch/pft-upstreamwatch.sh
+  d0e07ccd29a50d87f1d44d52ee06d19b23a1105cae1ba0cc113e334f90ddb67e  upstreamwatch/upstreamwatch_lib.py
+  2c94412ecb1c835bf4d8f45291af528a70b80c32e08e50a94452d5bbe225a955  upstreamwatch/systemd/pft-upstreamwatch.service
+  879817ec6ca2547d738775be898b8f41b857f0b47f05a67de8c8483b273a8694  vulnscan/pft-vulnscan.sh
+  c4ef7dfeeba1d25b557d9da20b71618bcc60468fee95f80f0446243685d3de46  vulnscan/systemd/pft-vulnscan-heal.service
+  0ae7cd89a6f146051105dd986a94531232bca90fb619bd7b9e5c780b5361a97e  alerts/upstreamwatch.rules.yml
+  65b33c048366b5804aad297b2c4438749ef24fb18b8150f051028ae48f10f70c  alerts/upstreamwatch.tests.yml
+  ccd3dd24df2a53c4476a95a8607aaf0f45252764aa96629b33775dfdda6b3d22  upstreamwatch/tests/test_upstreamwatch.py
+  ca4098ad045f7b497c5b2f12f48e171d266ae880f03ff7fb9a7402f56113e1b6  upstreamwatch/tests/mutate.py
+  670eb6b2b3e96561748b9fcb9c1022132b29ca63d2307d821d993ea5022ebfa8  vulnscan/tests/run-tests.sh
+  e5782b416b0254cdeeb0415edcc7a99fcd49cdbb156c7f52fca298e96f60aa48  upstreamwatch/drill/heal-proof.sh
+  (exit 0)
+$ shellcheck --version | sed -n 2p; shellcheck upstreamwatch/pft-upstreamwatch.sh upstreamwatch/install.sh upstreamwatch/drill/heal-proof.sh vulnscan/pft-vulnscan.sh vulnscan/install.sh vulnscan/tests/run-tests.sh
+  version: 0.8.0
+  (exit 0)
+GATE PASS shellcheck clean
+$ ruff --version; cd upstreamwatch && ruff check upstreamwatch_lib.py tests/
+  ruff 0.17.1
+  All checks passed!
+  (exit 0)
+GATE PASS ruff check clean
+$ cd upstreamwatch && TMPDIR=$HOME/.cache python3 -m pytest -q -p no:cacheprovider tests 2>&1 | tail -3
+  ........................................................................ [ 85%]
+  ............                                                             [100%]
+  84 passed in 52.68s
+  (exit 0)
+GATE PASS upstreamwatch pytest: all passed
+$ TEST_TMPDIR=$HOME/.cache bash vulnscan/tests/run-tests.sh | grep -E '^(FAIL|RESULT|== 12)'
+  grep: /etc/pft-vulnscan.env: Permission denied
+  grep: /etc/pft-vulnscan.env: Permission denied
+  grep: /etc/pft-vulnscan.env: Permission denied
+  grep: /etc/pft-vulnscan.env: Permission denied
+  grep: /etc/pft-vulnscan.env: Permission denied
+  == 12. forced refetch (../upstreamwatch heal: pft-vulnscan-heal.service = scan --force-fetch) and the cache lock
+  RESULT: 153/153 passed
+  (exit 0)
+GATE PASS vulnscan run-tests.sh: all passed
+$ python3 upstreamwatch/tests/gen_rule_tests.py | cmp - alerts/upstreamwatch.tests.yml && echo 'generated promtool tests unchanged'
+  generated promtool tests unchanged
+  (exit 0)
+GATE PASS alerts/upstreamwatch.tests.yml = generator output
+$ docker run --rm --network none -v "$PWD/alerts":/w:ro -w /w --entrypoint promtool prom/prometheus:v3.16.0 check rules upstreamwatch.rules.yml vulnscan.rules.yml
+  Checking upstreamwatch.rules.yml
+    SUCCESS: 7 rules found
+  
+  Checking vulnscan.rules.yml
+    SUCCESS: 5 rules found
+  (exit 0)
+GATE PASS promtool check rules
+$ docker run --rm --network none -v "$PWD/alerts":/w:ro -w /w --entrypoint promtool prom/prometheus:v3.16.0 test rules upstreamwatch.tests.yml vulnscan.tests.yml
+  Processing test file: upstreamwatch.tests.yml
+    SUCCESS
+  
+  Processing test file: vulnscan.tests.yml
+    SUCCESS
+  (exit 0)
+GATE PASS promtool test rules
+RESULT: 0 gate(s) failed -> PASS

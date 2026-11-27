@@ -1,16 +1,16 @@
 pft-upstreamwatch - host validator - 2026-11-23T03:42:10Z
 
-FEED                   STATE            FETCH AGE  CONTENT AGE  REASON
-usn-host               upstream_quiet      23.1 h       80.5 h  local copy is upstream's latest (upstream answered 304 to our ETag); upstream has not published for 80.5 h
-ubuntu-jammy           upstream_quiet       3.3 h       80.5 h  local copy is upstream's latest (upstream content clock is 0.0 h after ours (tolerance 6.0 h)); upstream has not published for 80.5 h
-ubuntu-noble           upstream_quiet       3.3 h       80.5 h  local copy is upstream's latest (upstream content clock is 0.0 h after ours (tolerance 6.0 h)); upstream has not published for 80.5 h
-debian                 ok                   3.3 h        4.5 h  local copy is upstream's latest (upstream content clock is 3.3 h after ours (tolerance 6.0 h)); content 4.5 h old
-go                     upstream_quiet       3.3 h      288.3 h  local copy is upstream's latest (upstream content clock is 0.0 h after ours (tolerance 6.0 h)); upstream has not published for 288.3 h
-debian-oval-bookworm   ok                       -        4.3 h  upstream last published 4.3 h ago (no local copy)
+FEED                   STATE            FETCH AGE  CONTENT AGE      LAG  REASON
+usn-host               upstream_quiet      23.1 h       80.5 h    0.0 h  local copy is upstream's latest (upstream answered 304 to our ETag); upstream has not published for 80.5 h
+ubuntu-jammy           upstream_quiet       3.3 h       80.5 h    0.0 h  local copy is upstream's latest (upstream content clock is 0.0 h after ours (tolerance 6.0 h)); upstream has not published for 80.5 h
+ubuntu-noble           upstream_quiet       3.3 h       80.5 h    0.0 h  local copy is upstream's latest (upstream content clock is 0.0 h after ours (tolerance 6.0 h)); upstream has not published for 80.5 h
+debian                 ok                   3.3 h        4.5 h    0.0 h  local copy is upstream's latest (upstream content clock is 3.3 h after ours (tolerance 6.0 h)); content 4.5 h old
+go                     upstream_quiet       3.3 h      288.3 h    0.0 h  local copy is upstream's latest (upstream content clock is 0.0 h after ours (tolerance 6.0 h)); upstream has not published for 288.3 h
+debian-oval-bookworm   ok                       -        4.3 h        -  upstream last published 4.3 h ago (no local copy)
 
 release (postfiatd, agtipft/postfiatd:testnet-light-latest): current
   digest  current  running sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
                    registry sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e  (testnet-light-latest digest equals the running image's)
   version current  (this node 1.0.9 >= foundation 1.0.9)
 
-RESULT: ok=2 upstream_quiet=4 local_stale=0 fetch_failing=0 unreachable=0 release=current
+RESULT: ok=2 upstream_quiet=4 local_lagging=0 local_stale=0 fetch_failing=0 unreachable=0 release=current
