@@ -1,0 +1,107 @@
+OS: Ubuntu 22.04.5 LTS | 2026-11-27T17:26:37Z | heal fresh-clone verification at 0aa3ff313adb1da85f512e6bf34516f0574ef00b | shellcheck 0.8.0 | Python 3.10.12 | ruff 0.17.1
+(work dir: a new mktemp dir under ~/.cache, mode 755; /tmp is noexec on this host)
+$ env -u GH_TOKEN -u GITHUB_TOKEN GIT_TERMINAL_PROMPT=0 git -c credential.helper= clone -q https://github.com/darkmatter-sudo/postfiat-validator-installer.git repo
+(exit 0)
+$ git checkout -q 0aa3ff313adb1da85f512e6bf34516f0574ef00b && git rev-parse HEAD
+0aa3ff313adb1da85f512e6bf34516f0574ef00b
+(exit 0)
+$ git status --short | wc -l
+0
+(exit 0)
+== key files: clone vs installed on both hosts (pft-fleet manifest destinations)
+$ sha256sum upstreamwatch/pft-upstreamwatch.sh upstreamwatch/upstreamwatch_lib.py upstreamwatch/systemd/pft-upstreamwatch.service vulnscan/pft-vulnscan.sh vulnscan/systemd/pft-vulnscan-heal.service  > ~/.cache/tmp.mRJwu2JAPG/clone.full && cat ~/.cache/tmp.mRJwu2JAPG/clone.full && cut -c1-64 ~/.cache/tmp.mRJwu2JAPG/clone.full > ~/.cache/tmp.mRJwu2JAPG/clone.txt
+cfa4192edf4000210ffd5673aa0e794dd26f4e7c124f8fb41630e49dfe52d946  upstreamwatch/pft-upstreamwatch.sh
+d0e07ccd29a50d87f1d44d52ee06d19b23a1105cae1ba0cc113e334f90ddb67e  upstreamwatch/upstreamwatch_lib.py
+2c94412ecb1c835bf4d8f45291af528a70b80c32e08e50a94452d5bbe225a955  upstreamwatch/systemd/pft-upstreamwatch.service
+879817ec6ca2547d738775be898b8f41b857f0b47f05a67de8c8483b273a8694  vulnscan/pft-vulnscan.sh
+c4ef7dfeeba1d25b557d9da20b71618bcc60468fee95f80f0446243685d3de46  vulnscan/systemd/pft-vulnscan-heal.service
+(exit 0)
+$ sudo -n sha256sum /usr/local/bin/pft-upstreamwatch /usr/local/lib/pft-upstreamwatch/upstreamwatch_lib.py /etc/systemd/system/pft-upstreamwatch.service /usr/local/bin/pft-vulnscan /etc/systemd/system/pft-vulnscan-heal.service  > ~/.cache/tmp.mRJwu2JAPG/validator.full && cat ~/.cache/tmp.mRJwu2JAPG/validator.full && cut -c1-64 ~/.cache/tmp.mRJwu2JAPG/validator.full > ~/.cache/tmp.mRJwu2JAPG/validator.txt
+cfa4192edf4000210ffd5673aa0e794dd26f4e7c124f8fb41630e49dfe52d946  /usr/local/bin/pft-upstreamwatch
+d0e07ccd29a50d87f1d44d52ee06d19b23a1105cae1ba0cc113e334f90ddb67e  /usr/local/lib/pft-upstreamwatch/upstreamwatch_lib.py
+2c94412ecb1c835bf4d8f45291af528a70b80c32e08e50a94452d5bbe225a955  /etc/systemd/system/pft-upstreamwatch.service
+879817ec6ca2547d738775be898b8f41b857f0b47f05a67de8c8483b273a8694  /usr/local/bin/pft-vulnscan
+c4ef7dfeeba1d25b557d9da20b71618bcc60468fee95f80f0446243685d3de46  /etc/systemd/system/pft-vulnscan-heal.service
+(exit 0)
+$ ssh -o BatchMode=yes relay 'sudo -n sha256sum /usr/local/bin/pft-upstreamwatch /usr/local/lib/pft-upstreamwatch/upstreamwatch_lib.py /etc/systemd/system/pft-upstreamwatch.service /usr/local/bin/pft-vulnscan /etc/systemd/system/pft-vulnscan-heal.service ' </dev/null > ~/.cache/tmp.mRJwu2JAPG/sentry.full && cat ~/.cache/tmp.mRJwu2JAPG/sentry.full && cut -c1-64 ~/.cache/tmp.mRJwu2JAPG/sentry.full > ~/.cache/tmp.mRJwu2JAPG/sentry.txt
+cfa4192edf4000210ffd5673aa0e794dd26f4e7c124f8fb41630e49dfe52d946  /usr/local/bin/pft-upstreamwatch
+d0e07ccd29a50d87f1d44d52ee06d19b23a1105cae1ba0cc113e334f90ddb67e  /usr/local/lib/pft-upstreamwatch/upstreamwatch_lib.py
+2c94412ecb1c835bf4d8f45291af528a70b80c32e08e50a94452d5bbe225a955  /etc/systemd/system/pft-upstreamwatch.service
+879817ec6ca2547d738775be898b8f41b857f0b47f05a67de8c8483b273a8694  /usr/local/bin/pft-vulnscan
+c4ef7dfeeba1d25b557d9da20b71618bcc60468fee95f80f0446243685d3de46  /etc/systemd/system/pft-vulnscan-heal.service
+(exit 0)
+$ [ $(wc -l < ~/.cache/tmp.mRJwu2JAPG/validator.txt) = 5 ] && diff ~/.cache/tmp.mRJwu2JAPG/clone.txt ~/.cache/tmp.mRJwu2JAPG/validator.txt && echo 'identical: 5/5 sha256 clone = installed on validator'
+identical: 5/5 sha256 clone = installed on validator
+(exit 0)
+$ [ $(wc -l < ~/.cache/tmp.mRJwu2JAPG/sentry.txt) = 5 ] && diff ~/.cache/tmp.mRJwu2JAPG/clone.txt ~/.cache/tmp.mRJwu2JAPG/sentry.txt && echo 'identical: 5/5 sha256 clone = installed on sentry'
+identical: 5/5 sha256 clone = installed on sentry
+(exit 0)
+$ sha256sum alerts/upstreamwatch.rules.yml alerts/upstreamwatch.tests.yml upstreamwatch/tests/test_upstreamwatch.py upstreamwatch/tests/mutate.py vulnscan/tests/run-tests.sh upstreamwatch/drill/heal-proof.sh upstreamwatch/README.md
+0ae7cd89a6f146051105dd986a94531232bca90fb619bd7b9e5c780b5361a97e  alerts/upstreamwatch.rules.yml
+65b33c048366b5804aad297b2c4438749ef24fb18b8150f051028ae48f10f70c  alerts/upstreamwatch.tests.yml
+ccd3dd24df2a53c4476a95a8607aaf0f45252764aa96629b33775dfdda6b3d22  upstreamwatch/tests/test_upstreamwatch.py
+ca4098ad045f7b497c5b2f12f48e171d266ae880f03ff7fb9a7402f56113e1b6  upstreamwatch/tests/mutate.py
+670eb6b2b3e96561748b9fcb9c1022132b29ca63d2307d821d993ea5022ebfa8  vulnscan/tests/run-tests.sh
+bbf27fd812a25d7366d2512089583734a3a42f243a89b23a95c3dd27df71a48b  upstreamwatch/drill/heal-proof.sh
+b290dc17bcf0fc97d99f1feb87e44998e7fa2121dc32d9c42733d72d559ab23c  upstreamwatch/README.md
+(exit 0)
+== static checks
+$ shellcheck upstreamwatch/pft-upstreamwatch.sh upstreamwatch/install.sh upstreamwatch/drill/*.sh vulnscan/pft-vulnscan.sh vulnscan/install.sh vulnscan/tests/run-tests.sh && echo 'shellcheck: 0 findings'
+shellcheck: 0 findings
+(exit 0)
+$ cd upstreamwatch && ruff check .
+All checks passed!
+(exit 0)
+== tests
+$ cd upstreamwatch && TMPDIR=~/.cache/tmp.mRJwu2JAPG timeout 900 python3 -m pytest -q -p no:cacheprovider tests </dev/null 2>&1 | tail -n 2
+............                                                             [100%]
+84 passed in 64.57s (0:01:04)
+(exit 0)
+$ TEST_TMPDIR=~/.cache/tmp.mRJwu2JAPG timeout 1200 bash vulnscan/tests/run-tests.sh </dev/null | grep -E '^(FAIL|RESULT)'
+grep: /etc/pft-vulnscan.env: Permission denied
+grep: /etc/pft-vulnscan.env: Permission denied
+grep: /etc/pft-vulnscan.env: Permission denied
+grep: /etc/pft-vulnscan.env: Permission denied
+grep: /etc/pft-vulnscan.env: Permission denied
+RESULT: 153/153 passed
+(exit 0)
+$ python3 upstreamwatch/tests/gen_rule_tests.py | cmp - alerts/upstreamwatch.tests.yml && echo 'generated promtool tests unchanged'
+generated promtool tests unchanged
+(exit 0)
+== promtool (pinned image already on the host)
+$ docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /w prom/prometheus:v3.16.0 check rules upstreamwatch.rules.yml vulnscan.rules.yml
+Checking upstreamwatch.rules.yml
+  SUCCESS: 7 rules found
+
+Checking vulnscan.rules.yml
+  SUCCESS: 5 rules found
+
+(exit 0)
+$ docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /w prom/prometheus:v3.16.0 test rules upstreamwatch.tests.yml vulnscan.tests.yml
+Processing test file: upstreamwatch.tests.yml
+  SUCCESS
+
+Processing test file: vulnscan.tests.yml
+  SUCCESS
+
+(exit 0)
+== README section with the state table and the new settings
+$ grep -n -E '^## (States|Bounded heal)|local_lagging|LAG_HEAL_HOURS|HEAL_INTERVAL_HOURS' upstreamwatch/README.md | head -n 20
+37:## States
+43:| `local_lagging` | upstream published newer content that our copy lacks, **no longer than** `STALE_GRACE_HOURS` (30) ago: a cache served our fetcher an old copy, or the daily fetch ran before upstream published. `lag` = upstream `Date` minus upstream content clock (`pft_upstreamwatch_feed_lag_seconds`, LAG column). For `usn-host` the [bounded heal](#bounded-heal) refetches once the lag exceeds `LAG_HEAL_HOURS` | `PFTUpstreamFeedLagging`, `notify="digest"`, `for: 3h`, **never paged** |
+50:(not latest: `local_lagging` while lag <= grace, `local_stale` after it). Before 2026-11-27 a lag within the grace
+59:## Bounded heal
+65:next fetch was a day away (live capture: `tests/fixtures/obs-live-validator-20261127.json`). `local_lagging` makes the
+69:   `../vulnscan`) in `local_lagging` or `local_stale` with `lag > LAG_HEAL_HOURS`. In this order it then skips
+70:   `disabled` (`LAG_HEAL_HOURS=0`), `rate_limited` (the last start for this feed was less than `HEAL_INTERVAL_HOURS`
+82:   the next try is `HEAL_INTERVAL_HOURS` later) or `failed` (the unit start failed). The result is written to
+86:JSON line (the last 1000 are kept) and printed to the unit's journal. At most `24 / HEAL_INTERVAL_HOURS` (4) refetches
+92:| `LAG_HEAL_HOURS` | `2` | heal a feed whose lag is **more** than this; `0` = never heal |
+93:| `HEAL_INTERVAL_HOURS` | `6` | at most one heal start per feed in this many hours (counted from the last start) |
+202:| (inline) | **local_lagging + bounded heal (2026-11-27):** live reproduction of the blind spot, before the fix: both hosts' usn-host `ok` with upstream 7.9 h newer, published 21.9 h ago | `logs/09-lag-repro-live.log` |
+207:| `drill/heal-proof.sh` | sentry, against the committed older feed `drill/fixtures/usn-jammy-20261126T0855Z.xml.bz2`: `local_lagging`, `pft_upstreamwatch_feed_lag_seconds` in the textfile and in Prometheus, exactly one heal through the real units (journal start + healed, attempts 1), the cache now holds upstream's copy (feed timestamp = upstream Last-Modified), back to `ok`/lag 0, a second run heals nothing, no paging alert, 0 messages on both operator topics | `logs/15-heal-proof.log` |
+208:| (inline) | self-caused `PFTRuleDead` at the install: the new rule was loaded before any `local_lagging` series existed. Fixed by one `run --no-heal` (rule LIVE); its [RESOLVED] was silenced | `logs/16-ruledead-fix.log` |
+209:| (inline) | `reports/<host>/report.*` re-rendered with the new renderer (LAG column, `local_lagging` one-hot rows) from the unchanged committed `obs.json`. Same states as before, so `drill/fresh-clone.sh` compares byte for byte again | `logs/18-reports-rerender.log` |
+(exit 0)
+
+fresh-clone done 2026-11-27T17:30:29Z: 0 check(s) failed -> PASS
