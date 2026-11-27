@@ -1,0 +1,368 @@
+healthcheck sentry-proof - 2026-11-27T10:14:33Z
+sha256: sentry-proof.sh 9316b3e999a675489d2047da519d4faf5d0589b22681a803653c39048b17fe34
+        install.sh 9ed87fc2aecaf02c11362141dfd12dfa4ec0937fb0467004bd2c312386e64267
+        visibility.sh 8fd999c72396a12362f6a39683357d38cd2ec041dbea82b432a1647a21b08f80
+        uninstall.sh ea5f300777a4b7adb501229658e5c6bcd271ca35feb28e3f51754f2ec99a8f0c
+        alert.conf 1a818892d0fc45c8491e4fa60c3d890fbe6ce19e663601443d86e810f3a8ee87
+        postfiat-healthcheck 1c8d414f1be05373cac25c2d5073d70a90a65edd0dad75123604638dcae34eb6
+        postfiat-healthcheck.service 92d8d3d2e804b25a57f4073d44e1b3d51d950d29afdf61c0fb073503dfec4adb
+        postfiat-healthcheck.timer 027b9b2aa1e03a76a284e16343ed82d4b4b8bb2ebc8dc1475edf117ad02da8a1
+host: sentry (Ubuntu 22.04.5 LTS systemd 249 (249.11-0ubuntu3.23))
+
+== 2026-11-27T10:14:33Z S0 preflight
+server_state full peers=17
+CHECK ok   S0 sentry node full
+container StartedAt 2026-11-27T07:25:34.425256078Z
+$ pft-integrity verify | tail -1
+RESULT: PASS - 174 unchanged, 0 warn, 0 fail -> exit 0
+rc=0
+CHECK ok   S0 sentry integrity PASS before any change
+integrity timer next: Fri 2026-11-27 11:01:30 UTC
+seconds until the next integrity run: 2799
+CHECK ok   S0 next pft-integrity run > 10 min away
+unsilenced active AM alerts for host=sentry: none
+CHECK ok   S0 no sentry alert active
+$ ls -ld /usr/local/bin/postfiat-healthcheck /etc/systemd/system/postfiat-healthcheck.* /etc/default/postfiat-healthcheck /var/lib/systemd/timers/stamp-postfiat-healthcheck.timer /usr/local/bin/scratch-healthcheck /etc/systemd/system/scratch-healthcheck.* /etc/default/scratch-healthcheck /var/lib/systemd/timers/stamp-scratch-healthcheck.timer 2>&1 | sed 's/^/  /'
+  ls: cannot access '/usr/local/bin/postfiat-healthcheck': No such file or directory
+  ls: cannot access '/etc/systemd/system/postfiat-healthcheck.*': No such file or directory
+  ls: cannot access '/etc/default/postfiat-healthcheck': No such file or directory
+  ls: cannot access '/var/lib/systemd/timers/stamp-postfiat-healthcheck.timer': No such file or directory
+  ls: cannot access '/usr/local/bin/scratch-healthcheck': No such file or directory
+  ls: cannot access '/etc/systemd/system/scratch-healthcheck.*': No such file or directory
+  ls: cannot access '/etc/default/scratch-healthcheck': No such file or directory
+  ls: cannot access '/var/lib/systemd/timers/stamp-scratch-healthcheck.timer': No such file or directory
+rc=2
+CHECK ok   S0 nothing installed yet (real or scratch, incl. timer stamp files)
+
+== 2026-11-27T10:14:52Z S1 maintenance silence (Alertmanager, host="sentry", 40m)
+silence fbb800e6 until 2026-11-27T10:54:52Z
+CHECK ok   S1 silence created
+
+== 2026-11-27T10:14:52Z S2 install exactly as the guide says
+$ printf 'CONTAINER=%s\n' postfiatd-sentry | tee /etc/default/postfiat-healthcheck
+CONTAINER=postfiatd-sentry
+rc=0
+CHECK ok   S2 defaults file: CONTAINER override (documented in the guide)
+install time 1795774494 (10:14:54Z)
+$ ssh relay bash -s < install.sh   (guide install block, sha256 9ed87fc2aecaf02c)
+Created symlink /etc/systemd/system/timers.target.wants/postfiat-healthcheck.timer → /etc/systemd/system/postfiat-healthcheck.timer.
+rc=0
+CHECK ok   S2 guide install block exit 0
+$ pft-integrity accept --reason 'task_05f47: postfiat-healthcheck script + service + timer + defaults file from the guide PR' | tail -1
+manifest sha256: a5deea3963298aa281a24f22cb1d64143ee204825bbb22e53e1af032f0615257 -> abca0d33b756c2083d5d4336b61b6cd56f5d5f6d86e0a338ffeaac0d435a2156 (logged to accept.log)
+rc=0
+$ pft-schedaudit accept --reason 'task_05f47: postfiat-healthcheck script + service + timer + defaults file from the guide PR' | tail -1
+accepted 79 entries (+1 -0): task_05f47: postfiat-healthcheck script + service + timer + defaults file from the guide PR
+rc=0
+$ pft-schedaudit collect && pft-schedaudit audit | tail -1
+SUMMARY entries=79 enabled=66 findings=0 allowed=0 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+rc=0
+CHECK ok   S2 integrity + schedaudit accepted the intended new files and timer
+installed sha256: 1c8d414f1be05373cac25c2d5073d70a90a65edd0dad75123604638dcae34eb6 92d8d3d2e804b25a57f4073d44e1b3d51d950d29afdf61c0fb073503dfec4adb 027b9b2aa1e03a76a284e16343ed82d4b4b8bb2ebc8dc1475edf117ad02da8a1
+guide     sha256: 1c8d414f1be05373cac25c2d5073d70a90a65edd0dad75123604638dcae34eb6 92d8d3d2e804b25a57f4073d44e1b3d51d950d29afdf61c0fb073503dfec4adb 027b9b2aa1e03a76a284e16343ed82d4b4b8bb2ebc8dc1475edf117ad02da8a1
+CHECK ok   S2 installed files byte-identical to the guide
+$ stat -c '%a %U %n' /usr/local/bin/postfiat-healthcheck
+755 root /usr/local/bin/postfiat-healthcheck
+rc=0
+$ systemctl is-enabled postfiat-healthcheck.timer && systemctl is-active postfiat-healthcheck.timer
+enabled
+active
+rc=0
+CHECK ok   S2 timer enabled and active
+$ systemd-analyze verify /etc/systemd/system/postfiat-healthcheck.timer /etc/systemd/system/postfiat-healthcheck.service 2>&1 | grep postfiat-healthcheck; test ${PIPESTATUS[0]} = 0
+rc=0
+CHECK ok   S2 systemd-analyze verify of the installed units: rc 0, no finding
+$ systemctl show postfiat-healthcheck.timer -p TimersCalendar -p Persistent -p NextElapseUSecRealtime
+TimersCalendar={ OnCalendar=*-*-* *:00/5:00 ; next_elapse=Fri 2026-11-27 10:20:00 UTC }
+NextElapseUSecRealtime=Fri 2026-11-27 10:20:00 UTC
+Persistent=yes
+rc=0
+
+== 2026-11-27T10:16:08Z S3 run now (guide visibility block, unchanged)
+$ ssh relay bash -s < visibility.sh
+exit 0
+CHECK complete_ledgers OK 8409320-8410004 (newest range 685, min 64)
+RESULT OK
+postfiat-healthcheck.service: Deactivated successfully.
+Finished Post Fiat node health check (read-only).
+Starting Post Fiat node health check (read-only)...
+CHECK state OK full (want one of: full proposing validating)
+CHECK validated_ledger_age OK 5 s (max 60)
+CHECK peers OK 17 (min 3)
+CHECK complete_ledgers OK 8409320-8410027 (newest range 708, min 64)
+RESULT OK
+postfiat-healthcheck.service: Deactivated successfully.
+Finished Post Fiat node health check (read-only).
+NEXT                        LEFT          LAST                        PASSED       UNIT                       ACTIVATES
+Fri 2026-11-27 10:20:00 UTC 3min 47s left Fri 2026-11-27 10:15:00 UTC 1min 12s ago postfiat-healthcheck.timer postfiat-healthcheck.service
+
+1 timers listed.
+Pass --all to see loaded but inactive timers, too.
+  UNIT LOAD ACTIVE SUB DESCRIPTION
+0 loaded units listed.
+CHECK ok   S3 run now: exit 0, RESULT OK
+
+== 2026-11-27T10:16:16Z S4 wait for 3 timer runs (timer fires every 5 min)
+2026-11-27T10:16:18Z timer runs with RESULT OK so far: 0
+2026-11-27T10:17:21Z timer runs with RESULT OK so far: 0
+2026-11-27T10:18:22Z timer runs with RESULT OK so far: 0
+2026-11-27T10:19:24Z timer runs with RESULT OK so far: 0
+2026-11-27T10:20:26Z timer runs with RESULT OK so far: 1
+2026-11-27T10:21:28Z timer runs with RESULT OK so far: 1
+2026-11-27T10:22:29Z timer runs with RESULT OK so far: 1
+2026-11-27T10:23:30Z timer runs with RESULT OK so far: 1
+2026-11-27T10:24:30Z timer runs with RESULT OK so far: 1
+2026-11-27T10:25:31Z timer runs with RESULT OK so far: 2
+2026-11-27T10:26:34Z timer runs with RESULT OK so far: 2
+2026-11-27T10:27:35Z timer runs with RESULT OK so far: 2
+2026-11-27T10:28:36Z timer runs with RESULT OK so far: 2
+2026-11-27T10:29:37Z timer runs with RESULT OK so far: 2
+$ journalctl -u postfiat-healthcheck.service --since @1795774494 -o short-iso --no-pager
+2026-11-27T10:15:00+0000 <hostname> systemd[1]: Starting Post Fiat node health check (read-only)...
+2026-11-27T10:15:01+0000 <hostname> postfiat-healthcheck[508305]: CHECK state OK full (want one of: full proposing validating)
+2026-11-27T10:15:01+0000 <hostname> postfiat-healthcheck[508305]: CHECK validated_ledger_age OK 3 s (max 60)
+2026-11-27T10:15:01+0000 <hostname> postfiat-healthcheck[508305]: CHECK peers OK 17 (min 3)
+2026-11-27T10:15:01+0000 <hostname> postfiat-healthcheck[508305]: CHECK complete_ledgers OK 8409320-8410004 (newest range 685, min 64)
+2026-11-27T10:15:01+0000 <hostname> postfiat-healthcheck[508305]: RESULT OK
+2026-11-27T10:15:01+0000 <hostname> systemd[1]: postfiat-healthcheck.service: Deactivated successfully.
+2026-11-27T10:15:01+0000 <hostname> systemd[1]: Finished Post Fiat node health check (read-only).
+2026-11-27T10:16:10+0000 <hostname> systemd[1]: Starting Post Fiat node health check (read-only)...
+2026-11-27T10:16:12+0000 <hostname> postfiat-healthcheck[513309]: CHECK state OK full (want one of: full proposing validating)
+2026-11-27T10:16:12+0000 <hostname> postfiat-healthcheck[513309]: CHECK validated_ledger_age OK 5 s (max 60)
+2026-11-27T10:16:12+0000 <hostname> postfiat-healthcheck[513309]: CHECK peers OK 17 (min 3)
+2026-11-27T10:16:12+0000 <hostname> postfiat-healthcheck[513309]: CHECK complete_ledgers OK 8409320-8410027 (newest range 708, min 64)
+2026-11-27T10:16:12+0000 <hostname> postfiat-healthcheck[513309]: RESULT OK
+2026-11-27T10:16:12+0000 <hostname> systemd[1]: postfiat-healthcheck.service: Deactivated successfully.
+2026-11-27T10:16:12+0000 <hostname> systemd[1]: Finished Post Fiat node health check (read-only).
+2026-11-27T10:20:01+0000 <hostname> systemd[1]: Starting Post Fiat node health check (read-only)...
+2026-11-27T10:20:02+0000 <hostname> postfiat-healthcheck[523053]: CHECK state OK full (want one of: full proposing validating)
+2026-11-27T10:20:02+0000 <hostname> postfiat-healthcheck[523053]: CHECK validated_ledger_age OK 3 s (max 60)
+2026-11-27T10:20:02+0000 <hostname> postfiat-healthcheck[523053]: CHECK peers OK 17 (min 3)
+2026-11-27T10:20:02+0000 <hostname> postfiat-healthcheck[523053]: CHECK complete_ledgers OK 8409320-8410104 (newest range 785, min 64)
+2026-11-27T10:20:02+0000 <hostname> postfiat-healthcheck[523053]: RESULT OK
+2026-11-27T10:20:02+0000 <hostname> systemd[1]: postfiat-healthcheck.service: Deactivated successfully.
+2026-11-27T10:20:02+0000 <hostname> systemd[1]: Finished Post Fiat node health check (read-only).
+2026-11-27T10:25:00+0000 <hostname> systemd[1]: Starting Post Fiat node health check (read-only)...
+2026-11-27T10:25:01+0000 <hostname> postfiat-healthcheck[534666]: CHECK state OK full (want one of: full proposing validating)
+2026-11-27T10:25:01+0000 <hostname> postfiat-healthcheck[534666]: CHECK validated_ledger_age OK 2 s (max 60)
+2026-11-27T10:25:01+0000 <hostname> postfiat-healthcheck[534666]: CHECK peers OK 17 (min 3)
+2026-11-27T10:25:01+0000 <hostname> postfiat-healthcheck[534666]: CHECK complete_ledgers OK 8409320-8410203 (newest range 884, min 64)
+2026-11-27T10:25:01+0000 <hostname> postfiat-healthcheck[534666]: RESULT OK
+2026-11-27T10:25:01+0000 <hostname> systemd[1]: postfiat-healthcheck.service: Deactivated successfully.
+2026-11-27T10:25:01+0000 <hostname> systemd[1]: Finished Post Fiat node health check (read-only).
+2026-11-27T10:30:01+0000 <hostname> systemd[1]: Starting Post Fiat node health check (read-only)...
+2026-11-27T10:30:05+0000 <hostname> postfiat-healthcheck[547497]: CHECK state OK full (want one of: full proposing validating)
+2026-11-27T10:30:05+0000 <hostname> postfiat-healthcheck[547497]: CHECK validated_ledger_age OK 2 s (max 60)
+2026-11-27T10:30:05+0000 <hostname> postfiat-healthcheck[547497]: CHECK peers OK 17 (min 3)
+2026-11-27T10:30:05+0000 <hostname> postfiat-healthcheck[547497]: CHECK complete_ledgers OK 8409320-8410304 (newest range 985, min 64)
+2026-11-27T10:30:05+0000 <hostname> postfiat-healthcheck[547497]: RESULT OK
+2026-11-27T10:30:06+0000 <hostname> systemd[1]: postfiat-healthcheck.service: Deactivated successfully.
+2026-11-27T10:30:06+0000 <hostname> systemd[1]: Finished Post Fiat node health check (read-only).
+rc=0
+CHECK ok   S4 3 timer runs, each RESULT OK (3)
+$ systemctl show postfiat-healthcheck.timer -p LastTriggerUSec -p NextElapseUSecRealtime
+NextElapseUSecRealtime=Fri 2026-11-27 10:35:00 UTC
+LastTriggerUSec=Fri 2026-11-27 10:30:00 UTC
+rc=0
+CHECK ok   S4 no failed run since the install (0)
+Result=success ExecMainStatus=0 NRestarts=0
+CHECK ok   S4 last run Result=success
+$ systemctl list-timers postfiat-healthcheck.timer --no-pager
+NEXT                        LEFT         LAST                        PASSED  UNIT                       ACTIVATES
+Fri 2026-11-27 10:35:00 UTC 4min 9s left Fri 2026-11-27 10:30:00 UTC 49s ago postfiat-healthcheck.timer postfiat-healthcheck.service
+
+1 timers listed.
+Pass --all to see loaded but inactive timers, too.
+rc=0
+$ systemctl --failed --no-pager
+  UNIT LOAD ACTIVE SUB DESCRIPTION
+0 loaded units listed.
+rc=0
+CHECK ok   S4 systemctl --failed empty (none)
+
+== 2026-11-27T10:30:52Z S5 induced peers-only FAIL with MIN_PEERS (node keeps running)
+server_state full peers=17
+$ echo MIN_PEERS=1000 | tee -a /etc/default/postfiat-healthcheck; cat /etc/default/postfiat-healthcheck
+MIN_PEERS=1000
+CONTAINER=postfiatd-sentry
+MIN_PEERS=1000
+rc=0
+$ systemctl start postfiat-healthcheck.service
+Job for postfiat-healthcheck.service failed because the control process exited with error code.
+See "systemctl status postfiat-healthcheck.service" and "journalctl -xeu postfiat-healthcheck.service" for details.
+rc=1
+CHECK ok   S5 service run fails (systemctl start rc != 0) (rc=1)
+$ journalctl -u postfiat-healthcheck.service --since @1795775455 -o cat --no-pager
+Starting Post Fiat node health check (read-only)...
+CHECK state OK full (want one of: full proposing validating)
+CHECK validated_ledger_age OK 4 s (max 60)
+CHECK peers FAIL 17 (min 1000)
+CHECK complete_ledgers OK 8409320-8410320 (newest range 1001, min 64)
+RESULT FAIL 1
+postfiat-healthcheck.service: Main process exited, code=exited, status=1/FAILURE
+postfiat-healthcheck.service: Failed with result 'exit-code'.
+Failed to start Post Fiat node health check (read-only).
+rc=0
+CHECK ok   S5 only peers FAIL (3 other checks OK, RESULT FAIL 1)
+Result=exit-code ExecMainStatus=1
+CHECK ok   S5 Result=exit-code, exit status 1
+$ systemctl --failed --no-pager
+  UNIT                         LOAD   ACTIVE SUB    DESCRIPTION
+● postfiat-healthcheck.service loaded failed failed Post Fiat node health check (read-only)
+
+LOAD   = Reflects whether the unit definition was properly loaded.
+ACTIVE = The high-level unit activation state, i.e. generalization of SUB.
+SUB    = The low-level unit activation state, values depend on unit type.
+1 loaded units listed.
+rc=0
+CHECK ok   S5 systemctl --failed lists postfiat-healthcheck.service
+server_state full peers=17
+CHECK ok   S5 node not stopped: still full, container StartedAt unchanged
+
+== 2026-11-27T10:31:11Z S6 clear the override: next run OK
+$ sed -i '/^MIN_PEERS=/d' /etc/default/postfiat-healthcheck; cat /etc/default/postfiat-healthcheck
+CONTAINER=postfiatd-sentry
+rc=0
+$ systemctl start postfiat-healthcheck.service
+rc=0
+CHECK ok   S6 service run succeeds
+$ journalctl -u postfiat-healthcheck.service --since @1795775472 -o cat --no-pager
+Starting Post Fiat node health check (read-only)...
+CHECK state OK full (want one of: full proposing validating)
+CHECK validated_ledger_age OK 1 s (max 60)
+CHECK peers OK 17 (min 3)
+CHECK complete_ledgers OK 8409320-8410327 (newest range 1008, min 64)
+RESULT OK
+postfiat-healthcheck.service: Deactivated successfully.
+Finished Post Fiat node health check (read-only).
+rc=0
+CHECK ok   S6 RESULT OK after the override is removed
+CHECK ok   S6 Result=success
+$ systemctl --failed --no-pager
+  UNIT LOAD ACTIVE SUB DESCRIPTION
+0 loaded units listed.
+rc=0
+CHECK ok   S6 systemctl --failed empty again (none)
+$ pft-integrity verify | tail -1
+RESULT: PASS - 177 unchanged, 0 warn, 0 fail -> exit 0
+rc=0
+CHECK ok   S6 integrity PASS (defaults file back to its accepted content)
+
+== 2026-11-27T10:31:39Z S7 uninstall, exercised on a scratch copy (postfiat-healthcheck -> scratch-healthcheck)
+$ printf 'CONTAINER=%s\n' postfiatd-sentry | tee /etc/default/scratch-healthcheck
+CONTAINER=postfiatd-sentry
+rc=0
+$ ssh relay bash -s < (install.sh renamed)
+Created symlink /etc/systemd/system/timers.target.wants/scratch-healthcheck.timer → /etc/systemd/system/scratch-healthcheck.timer.
+rc=0
+CHECK ok   S7 scratch install exit 0
+$ mkdir -p /etc/systemd/system/scratch-healthcheck.service.d && cat > /etc/systemd/system/scratch-healthcheck.service.d/alert.conf <<'EOF'
+# /etc/systemd/system/postfiat-healthcheck.service.d/alert.conf
+[Unit]
+OnFailure=my-alert@%n.service
+EOF
+systemctl daemon-reload; systemctl show scratch-healthcheck.service -p OnFailure --value
+my-alert@scratch-healthcheck.service.service
+rc=0
+$ pft-integrity accept --reason 'task_05f47: scratch-healthcheck copy for the uninstall test (removed in the same step)' | tail -1
+manifest sha256: abca0d33b756c2083d5d4336b61b6cd56f5d5f6d86e0a338ffeaac0d435a2156 -> 3307fa1cdaa03b4e2879b1a871e670bf903d3e75b05b251e3e72552618fb300b (logged to accept.log)
+rc=0
+$ pft-schedaudit accept --reason 'task_05f47: scratch-healthcheck copy for the uninstall test (removed in the same step)' | tail -1
+accepted 80 entries (+1 -0): task_05f47: scratch-healthcheck copy for the uninstall test (removed in the same step)
+rc=0
+$ pft-schedaudit collect && pft-schedaudit audit | tail -1
+SUMMARY entries=80 enabled=67 findings=0 allowed=0 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+rc=0
+$ systemctl start scratch-healthcheck.service && journalctl -u scratch-healthcheck.service -o cat --no-pager | tail -1
+RESULT OK
+rc=0
+CHECK ok   S7 scratch copy runs
+$ ls -ld /usr/local/bin/scratch-healthcheck /etc/systemd/system/scratch-healthcheck.* /etc/default/scratch-healthcheck /var/lib/systemd/timers/stamp-scratch-healthcheck.timer
+-rw-r--r-- 1 root root   27 Nov 27 10:31 /etc/default/scratch-healthcheck
+-rw-r--r-- 1 root root  253 Nov 27 10:31 /etc/systemd/system/scratch-healthcheck.service
+drwxr-xr-x 2 root root 4096 Nov 27 10:31 /etc/systemd/system/scratch-healthcheck.service.d
+-rw-r--r-- 1 root root  147 Nov 27 10:31 /etc/systemd/system/scratch-healthcheck.timer
+-rwxr-xr-x 1 root root 2574 Nov 27 10:31 /usr/local/bin/scratch-healthcheck
+-rw-r--r-- 1 root root    0 Nov 27 10:31 /var/lib/systemd/timers/stamp-scratch-healthcheck.timer
+rc=0
+$ systemctl is-active scratch-healthcheck.timer
+active
+rc=0
+CHECK ok   S7 scratch timer active before uninstall
+$ ssh relay bash -s < (uninstall.sh renamed)
+  sudo systemctl disable --now scratch-healthcheck.timer
+  sudo rm -f /etc/systemd/system/scratch-healthcheck.timer /etc/systemd/system/scratch-healthcheck.service
+  sudo rm -rf /etc/systemd/system/scratch-healthcheck.service.d
+  sudo rm -f /usr/local/bin/scratch-healthcheck /etc/default/scratch-healthcheck
+  sudo rm -f /var/lib/systemd/timers/stamp-scratch-healthcheck.timer
+  sudo systemctl daemon-reload
+  sudo systemctl reset-failed scratch-healthcheck.service 2>/dev/null || true
+Removed /etc/systemd/system/timers.target.wants/scratch-healthcheck.timer.
+rc=0
+CHECK ok   S7 guide uninstall block (renamed) exit 0
+$ ls -ld /usr/local/bin/scratch-healthcheck /etc/systemd/system/scratch-healthcheck.* /etc/default/scratch-healthcheck /var/lib/systemd/timers/stamp-scratch-healthcheck.timer 2>&1 | sed 's/^/  /'
+  ls: cannot access '/usr/local/bin/scratch-healthcheck': No such file or directory
+  ls: cannot access '/etc/systemd/system/scratch-healthcheck.*': No such file or directory
+  ls: cannot access '/etc/default/scratch-healthcheck': No such file or directory
+  ls: cannot access '/var/lib/systemd/timers/stamp-scratch-healthcheck.timer': No such file or directory
+rc=2
+CHECK ok   S7 every scratch file removed (incl. the timer stamp) (0 left)
+$ systemctl list-units --all --no-pager 'scratch-healthcheck*'; systemctl list-timers --all --no-pager 'scratch-healthcheck*'
+  UNIT LOAD ACTIVE SUB DESCRIPTION
+0 loaded units listed.
+To show all installed unit files use 'systemctl list-unit-files'.
+NEXT LEFT LAST PASSED UNIT ACTIVATES
+
+0 timers listed.
+rc=0
+CHECK ok   S7 no scratch unit or unit file left loaded (0)
+CHECK ok   S7 real health check untouched (files identical, timer active)
+$ pft-integrity accept --reason 'task_05f47: scratch-healthcheck removed by the guide uninstall block' | tail -1
+manifest sha256: 3307fa1cdaa03b4e2879b1a871e670bf903d3e75b05b251e3e72552618fb300b -> 0a134e6af523e94aeaec2286887e474460abf20f661de40a1cfe7a89011b460f (logged to accept.log)
+rc=0
+$ pft-schedaudit accept --reason 'task_05f47: scratch-healthcheck removed by the guide uninstall block' | tail -1
+accepted 79 entries (+0 -1): task_05f47: scratch-healthcheck removed by the guide uninstall block
+rc=0
+$ pft-schedaudit collect && pft-schedaudit audit | tail -1
+SUMMARY entries=79 enabled=66 findings=0 allowed=0 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+rc=0
+CHECK ok   S7 integrity + schedaudit accepted the removal
+
+== 2026-11-27T10:33:06Z S8 end state
+server_state full peers=17
+CHECK ok   S8 sentry node full, never restarted
+$ pft-integrity verify | tail -1
+RESULT: PASS - 177 unchanged, 0 warn, 0 fail -> exit 0
+rc=0
+CHECK ok   S8 integrity PASS
+$ pft-schedaudit audit | tail -1 | grep -E 'unexpected_findings=0 new=0 removed=0'
+SUMMARY entries=79 enabled=66 findings=0 allowed=0 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+rc=0
+CHECK ok   S8 schedaudit: 0 unexpected, 0 new, 0 removed
+$ pft-jobwatch collect && pft-jobwatch inventory | grep -E '^(job|postfiat-healthcheck.timer)'
+job	kind	interval_seconds	disabled	failed	consecutive_failures	missed	present	spec
+postfiat-healthcheck.timer	calendar	300	0	0	0	0	1	OnCalendar=*-*-* *:00/5:00
+rc=0
+CHECK ok   S8 jobwatch inventory lists postfiat-healthcheck.timer
+$ env TEXT_BUDGET=999999 pft-jobwatch collect --stdout | wc -c
+23758
+rc=0
+$ systemctl list-timers postfiat-healthcheck.timer --no-pager
+NEXT                        LEFT          LAST                        PASSED       UNIT                       ACTIVATES
+Fri 2026-11-27 10:35:00 UTC 1min 14s left Fri 2026-11-27 10:30:00 UTC 3min 44s ago postfiat-healthcheck.timer postfiat-healthcheck.service
+
+1 timers listed.
+Pass --all to see loaded but inactive timers, too.
+rc=0
+$ systemctl --failed --no-pager
+  UNIT LOAD ACTIVE SUB DESCRIPTION
+0 loaded units listed.
+rc=0
+CHECK ok   S8 systemctl --failed empty (none)
+
+== 2026-11-27T10:33:46Z S9 end of the maintenance silence
+CHECK ok   S9 nothing active for the sentry before expiry
+expire silence http 200
+
+RESULT: PASS - 0 failed check(s) - 2026-11-27T10:33:46Z
+exit=0

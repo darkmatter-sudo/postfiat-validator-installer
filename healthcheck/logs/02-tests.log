@@ -1,0 +1,261 @@
+healthcheck log 02 - fault injection + mutants - 2026-11-27T09:56:34Z
+tools HEAD 0502968873646d6b1fe1826c7d5e2592d501b4e2 | guide HEAD 7685c56a7dfa2c2ff52d80ac8f2f513645d3414d | Python 3.10.12 | curl 7.81.0 | sh = /usr/bin/dash
+sha256 1c8d414f1be05373cac25c2d5073d70a90a65edd0dad75123604638dcae34eb6 out/copy1/postfiat-healthcheck (extracted in log 01)
+$ ruff check tools/healthcheck && shellcheck tools/healthcheck/*.sh
+All checks passed!
+lint clean
+$ python3 -I tools/healthcheck/tests/test_healthcheck.py out/copy1 --mutants
+docker shim self-check: PATH resolves docker to the shim, unknown container -> Docker-style error
+script out/copy1/postfiat-healthcheck | mock RPC 127.0.0.1:<port> | 42 cases
+PASS case healthy full: rc=0
+     | CHECK state OK full (want one of: full proposing validating)
+     | CHECK validated_ledger_age OK 2 s (max 60)
+     | CHECK peers OK 20 (min 3)
+     | CHECK complete_ledgers OK 100-1000 (newest range 901, min 64)
+     | RESULT OK
+PASS case healthy proposing: rc=0
+     | CHECK state OK proposing (want one of: full proposing validating)
+     | CHECK validated_ledger_age OK 2 s (max 60)
+     | CHECK peers OK 20 (min 3)
+     | CHECK complete_ledgers OK 100-1000 (newest range 901, min 64)
+     | RESULT OK
+PASS case healthy validating, two ranges: rc=0
+     | CHECK state OK validating (want one of: full proposing validating)
+     | CHECK validated_ledger_age OK 2 s (max 60)
+     | CHECK peers OK 20 (min 3)
+     | CHECK complete_ledgers OK 5-10,100-1000 (newest range 901, min 64)
+     | RESULT OK
+PASS case state syncing: rc=1
+     | CHECK state FAIL syncing (want one of: full proposing validating)
+     | CHECK validated_ledger_age OK 2 s (max 60)
+     | CHECK peers OK 20 (min 3)
+     | CHECK complete_ledgers OK 100-1000 (newest range 901, min 64)
+     | RESULT FAIL 1
+PASS case state connected: rc=1
+     | CHECK state FAIL connected (want one of: full proposing validating)
+     | CHECK validated_ledger_age OK 2 s (max 60)
+     | CHECK peers OK 20 (min 3)
+     | CHECK complete_ledgers OK 100-1000 (newest range 901, min 64)
+     | RESULT FAIL 1
+PASS case state missing: rc=1
+     | CHECK state FAIL None (want one of: full proposing validating)
+     | CHECK validated_ledger_age OK 2 s (max 60)
+     | CHECK peers OK 20 (min 3)
+     | CHECK complete_ledgers OK 100-1000 (newest range 901, min 64)
+     | RESULT FAIL 1
+PASS case ledger age 120 s: rc=1
+     | CHECK state OK full (want one of: full proposing validating)
+     | CHECK validated_ledger_age FAIL 120 s (max 60)
+     | CHECK peers OK 20 (min 3)
+     | CHECK complete_ledgers OK 100-1000 (newest range 901, min 64)
+     | RESULT FAIL 1
+PASS case ledger age 60 s (boundary): rc=0
+     | CHECK state OK full (want one of: full proposing validating)
+     | CHECK validated_ledger_age OK 60 s (max 60)
+     | CHECK peers OK 20 (min 3)
+     | CHECK complete_ledgers OK 100-1000 (newest range 901, min 64)
+     | RESULT OK
+PASS case ledger age 61 s: rc=1
+     | CHECK state OK full (want one of: full proposing validating)
+     | CHECK validated_ledger_age FAIL 61 s (max 60)
+     | CHECK peers OK 20 (min 3)
+     | CHECK complete_ledgers OK 100-1000 (newest range 901, min 64)
+     | RESULT FAIL 1
+PASS case no validated ledger: rc=1
+     | CHECK state OK full (want one of: full proposing validating)
+     | CHECK validated_ledger_age FAIL None s (max 60)
+     | CHECK peers OK 20 (min 3)
+     | CHECK complete_ledgers OK 100-1000 (newest range 901, min 64)
+     | RESULT FAIL 1
+PASS case validated ledger null: rc=1
+     | CHECK state OK full (want one of: full proposing validating)
+     | CHECK validated_ledger_age FAIL None s (max 60)
+     | CHECK peers OK 20 (min 3)
+     | CHECK complete_ledgers OK 100-1000 (newest range 901, min 64)
+     | RESULT FAIL 1
+PASS case age not a number: rc=1
+     | CHECK state OK full (want one of: full proposing validating)
+     | CHECK validated_ledger_age FAIL 2 s (max 60)
+     | CHECK peers OK 20 (min 3)
+     | CHECK complete_ledgers OK 100-1000 (newest range 901, min 64)
+     | RESULT FAIL 1
+PASS case peers 2: rc=1
+     | CHECK state OK full (want one of: full proposing validating)
+     | CHECK validated_ledger_age OK 2 s (max 60)
+     | CHECK peers FAIL 2 (min 3)
+     | CHECK complete_ledgers OK 100-1000 (newest range 901, min 64)
+     | RESULT FAIL 1
+PASS case peers 3 (boundary): rc=0
+     | CHECK state OK full (want one of: full proposing validating)
+     | CHECK validated_ledger_age OK 2 s (max 60)
+     | CHECK peers OK 3 (min 3)
+     | CHECK complete_ledgers OK 100-1000 (newest range 901, min 64)
+     | RESULT OK
+PASS case peers missing: rc=1
+     | CHECK state OK full (want one of: full proposing validating)
+     | CHECK validated_ledger_age OK 2 s (max 60)
+     | CHECK peers FAIL None (min 3)
+     | CHECK complete_ledgers OK 100-1000 (newest range 901, min 64)
+     | RESULT FAIL 1
+PASS case peers is a bool: rc=1
+     | CHECK state OK full (want one of: full proposing validating)
+     | CHECK validated_ledger_age OK 2 s (max 60)
+     | CHECK peers FAIL True (min 1)
+     | CHECK complete_ledgers OK 100-1000 (newest range 901, min 64)
+     | RESULT FAIL 1
+PASS case complete_ledgers empty: rc=1
+     | CHECK state OK full (want one of: full proposing validating)
+     | CHECK validated_ledger_age OK 2 s (max 60)
+     | CHECK peers OK 20 (min 3)
+     | CHECK complete_ledgers FAIL empty (newest range 0, min 64)
+     | RESULT FAIL 1
+PASS case complete_ledgers malformed: rc=1
+     | CHECK state OK full (want one of: full proposing validating)
+     | CHECK validated_ledger_age OK 2 s (max 60)
+     | CHECK peers OK 20 (min 3)
+     | CHECK complete_ledgers FAIL 100-1000x (newest range 0, min 64)
+     | RESULT FAIL 1
+PASS case complete_ledgers missing: rc=1
+     | CHECK state OK full (want one of: full proposing validating)
+     | CHECK validated_ledger_age OK 2 s (max 60)
+     | CHECK peers OK 20 (min 3)
+     | CHECK complete_ledgers FAIL  (newest range 0, min 64)
+     | RESULT FAIL 1
+PASS case newest range short: rc=1
+     | CHECK state OK full (want one of: full proposing validating)
+     | CHECK validated_ledger_age OK 2 s (max 60)
+     | CHECK peers OK 20 (min 3)
+     | CHECK complete_ledgers FAIL 1-10000,20000-20009 (newest range 10, min 64)
+     | RESULT FAIL 1
+PASS case newest range 64 (boundary): rc=0
+     | CHECK state OK full (want one of: full proposing validating)
+     | CHECK validated_ledger_age OK 2 s (max 60)
+     | CHECK peers OK 20 (min 3)
+     | CHECK complete_ledgers OK 937-1000 (newest range 64, min 64)
+     | RESULT OK
+PASS case newest range 63: rc=1
+     | CHECK state OK full (want one of: full proposing validating)
+     | CHECK validated_ledger_age OK 2 s (max 60)
+     | CHECK peers OK 20 (min 3)
+     | CHECK complete_ledgers FAIL 938-1000 (newest range 63, min 64)
+     | RESULT FAIL 1
+PASS case single ledger: rc=1
+     | CHECK state OK full (want one of: full proposing validating)
+     | CHECK validated_ledger_age OK 2 s (max 60)
+     | CHECK peers OK 20 (min 3)
+     | CHECK complete_ledgers FAIL 1000 (newest range 1, min 64)
+     | RESULT FAIL 1
+PASS case everything wrong: rc=1
+     | CHECK state FAIL disconnected (want one of: full proposing validating)
+     | CHECK validated_ledger_age FAIL None s (max 60)
+     | CHECK peers FAIL 0 (min 3)
+     | CHECK complete_ledgers FAIL empty (newest range 0, min 64)
+     | RESULT FAIL 4
+PASS case unknown: RPC down: rc=2
+     | CHECK rpc UNKNOWN server_info via docker exec postfiatd failed
+     | RESULT UNKNOWN
+PASS case unknown: container not running: rc=2
+     | CHECK rpc UNKNOWN server_info via docker exec nosuch failed
+     | RESULT UNKNOWN
+PASS case unknown: not JSON: rc=2
+     | CHECK rpc UNKNOWN reply has no result.info
+     | RESULT UNKNOWN
+PASS case unknown: empty reply: rc=2
+     | CHECK rpc UNKNOWN reply has no result.info
+     | RESULT UNKNOWN
+PASS case unknown: RPC error: rc=2
+     | CHECK rpc UNKNOWN reply has no result.info
+     | RESULT UNKNOWN
+PASS case unknown: info not an object: rc=2
+     | CHECK rpc UNKNOWN reply has no result.info
+     | RESULT UNKNOWN
+PASS case unknown: RPC slower than RPC_TIMEOUT: rc=2
+     | CHECK rpc UNKNOWN server_info via docker exec postfiatd failed
+     | RESULT UNKNOWN
+PASS case override MIN_PEERS=30: rc=1
+     | CHECK state OK full (want one of: full proposing validating)
+     | CHECK validated_ledger_age OK 2 s (max 60)
+     | CHECK peers FAIL 20 (min 30)
+     | CHECK complete_ledgers OK 100-1000 (newest range 901, min 64)
+     | RESULT FAIL 1
+PASS case override MIN_PEERS=0, 0 peers: rc=0
+     | CHECK state OK full (want one of: full proposing validating)
+     | CHECK validated_ledger_age OK 2 s (max 60)
+     | CHECK peers OK 0 (min 0)
+     | CHECK complete_ledgers OK 100-1000 (newest range 901, min 64)
+     | RESULT OK
+PASS case override MAX_LEDGER_AGE=1: rc=1
+     | CHECK state OK full (want one of: full proposing validating)
+     | CHECK validated_ledger_age FAIL 2 s (max 1)
+     | CHECK peers OK 20 (min 3)
+     | CHECK complete_ledgers OK 100-1000 (newest range 901, min 64)
+     | RESULT FAIL 1
+PASS case override MAX_LEDGER_AGE=300, age 120: rc=0
+     | CHECK state OK full (want one of: full proposing validating)
+     | CHECK validated_ledger_age OK 120 s (max 300)
+     | CHECK peers OK 20 (min 3)
+     | CHECK complete_ledgers OK 100-1000 (newest range 901, min 64)
+     | RESULT OK
+PASS case override OK_STATES=proposing, full: rc=1
+     | CHECK state FAIL full (want one of: proposing)
+     | CHECK validated_ledger_age OK 2 s (max 60)
+     | CHECK peers OK 20 (min 3)
+     | CHECK complete_ledgers OK 100-1000 (newest range 901, min 64)
+     | RESULT FAIL 1
+PASS case override OK_STATES=proposing, proposing: rc=0
+     | CHECK state OK proposing (want one of: proposing)
+     | CHECK validated_ledger_age OK 2 s (max 60)
+     | CHECK peers OK 20 (min 3)
+     | CHECK complete_ledgers OK 100-1000 (newest range 901, min 64)
+     | RESULT OK
+PASS case override MIN_LEDGERS=2000: rc=1
+     | CHECK state OK full (want one of: full proposing validating)
+     | CHECK validated_ledger_age OK 2 s (max 60)
+     | CHECK peers OK 20 (min 3)
+     | CHECK complete_ledgers FAIL 100-1000 (newest range 901, min 2000)
+     | RESULT FAIL 1
+PASS case override CONTAINER=postfiatd-sentry: rc=0
+     | CHECK state OK full (want one of: full proposing validating)
+     | CHECK validated_ledger_age OK 2 s (max 60)
+     | CHECK peers OK 20 (min 3)
+     | CHECK complete_ledgers OK 100-1000 (newest range 901, min 64)
+     | RESULT OK
+PASS case invalid MIN_PEERS=abc: rc=2
+     | CHECK config UNKNOWN MIN_PEERS='abc' is not a whole number
+     | RESULT UNKNOWN
+PASS case invalid MAX_LEDGER_AGE=-1: rc=2
+     | CHECK config UNKNOWN MAX_LEDGER_AGE='-1' is not a whole number
+     | RESULT UNKNOWN
+PASS case empty MIN_LEDGERS falls back to the default 64: rc=1
+     | CHECK state OK full (want one of: full proposing validating)
+     | CHECK validated_ledger_age OK 2 s (max 60)
+     | CHECK peers OK 20 (min 3)
+     | CHECK complete_ledgers FAIL 938-1000 (newest range 63, min 64)
+     | RESULT FAIL 1
+cases: 42 passed, 0 failed
+== mutants (22)
+KILLED   mutant  1 age <= limit -> <  (by case: ledger age 60 s (boundary))
+KILLED   mutant  2 peers >= limit -> >  (by case: peers 3 (boundary))
+KILLED   mutant  3 span >= limit -> >  (by case: newest range 64 (boundary))
+KILLED   mutant  4 range span without +1  (by case: healthy validating, two ranges)
+KILLED   mutant  5 oldest range instead of newest  (by case: healthy validating, two ranges)
+KILLED   mutant  6 rpc failure exit 2 -> 1  (by case: unknown: RPC down)
+KILLED   mutant  7 FAIL exits 0  (by case: state syncing)
+KILLED   mutant  8 UNKNOWN exits 1  (by case: unknown: not JSON)
+KILLED   mutant  9 failures not counted  (by case: state syncing)
+KILLED   mutant 10 state check always true  (by case: state syncing)
+KILLED   mutant 11 age type check dropped  (by case: no validated ledger)
+KILLED   mutant 12 negative thresholds accepted  (by case: invalid MAX_LEDGER_AGE=-1)
+KILLED   mutant 13 default MIN_PEERS 3 -> 0  (by case: peers 2)
+KILLED   mutant 14 default MAX_LEDGER_AGE 60 -> 600  (by case: ledger age 120 s)
+KILLED   mutant 15 default MIN_LEDGERS 64 -> 1  (by case: healthy validating, two ranges)
+KILLED   mutant 16 default OK_STATES without full  (by case: healthy full)
+KILLED   mutant 17 bools accepted as numbers  (by case: peers is a bool)
+KILLED   mutant 18 no RPC timeout  (by case: unknown: RPC slower than RPC_TIMEOUT)
+KILLED   mutant 19 info type guard dropped  (by case: unknown: info not an object)
+KILLED   mutant 20 complete_ledgers prefix match  (by case: complete_ledgers malformed)
+KILLED   mutant 21 wrong container default  (by case: healthy full)
+KILLED   mutant 22 container ignored  (by case: unknown: container not running)
+mutants: 22/22 killed, 0 survived
+RESULT: PASS - 0 case(s) failed, 0 mutant(s) survived
+test exit=0
