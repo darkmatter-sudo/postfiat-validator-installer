@@ -5,11 +5,13 @@
 #   bash upstream-rollback/sentry-proof.sh EXTRACT_DIR 2>&1 | tee LOG   (validator, agent user; reaches the sentry
 #   with `ssh relay`; EXTRACT_DIR = extract_rollback.py output of the PR-branch guide)
 # Never touches the validator's postfiatd or the sentry's postfiatd-sentry: the throwaway project lives in
-# /var/tmp/pftrb-<random> on the sentry, its container is named postfiatd (the name the guide's blocks use, free on the
-# sentry), runs `sleep infinity` with network_mode none, and uses three LOCAL images that share the real image's
+# /var/tmp/pftrb-<random> on the sentry, its service is named postfiatd as in the guide but its CONTAINER is named
+# pftrb-postfiatd (many host tools - pft-cluster, timesync, mounts, ... - pick a container named exactly postfiatd
+# when one exists, so the guide's container name must stay free), runs `sleep infinity` with network_mode none, and uses three LOCAL images that share the real image's
 # layers: OLD = the sentry's real image under a local rolling tag (it carries the real RepoDigest), NEW and FIXED =
 # `docker commit` copies with a label (their RepoDigest is the local name; there is no registry copy).
-# The guide blocks run unchanged through `ssh relay bash -s`, except: (a) every rolling-tag `docker compose pull`
+# The guide blocks run through `ssh relay bash -s` with only these edits: (0) `docker inspect postfiatd` ->
+# `docker inspect pftrb-postfiatd` (blocks 02, 04, 06; the container name, see above), (a) every rolling-tag `docker compose pull`
 # becomes `docker tag <NEW|FIXED> <local rolling tag>` (the release is simulated; there is no registry for a local
 # tag), (b) the rollback's REC= placeholder line is set to the record under test. Both edits are printed as diffs.
 # The pinned `docker compose pull` (override present) is run unchanged against Docker Hub and must be a no-op.
@@ -20,7 +22,7 @@
 #  S2 project       throwaway compose project on OLD; images NEW and FIXED committed
 #  S3 record        guide blocks 01 + 02: record file = OLD image ID + real RepoDigest, "recorded" line printed
 #  S4 upgrade       guide blocks 01 + 03 (pull -> tag NEW; 03 has no cd of its own): container recreated on NEW
-#  S5 controls      C1 record with the container renamed away (no postfiatd; on this containerd image store
+#  S5 controls      C1 record with the container renamed away (on this containerd image store
 #                   even committed images carry a RepoDigest): no "recorded" line; C2 rollback with that record: "no
 #                   repo_digest", nothing changed; C3 existing override: "exists: not changed", override bytes and
 #                   container unchanged, last two lines differ
@@ -42,7 +44,7 @@
 # Env: RELAY (relay)  SIL_MIN (45)  TASK (task_8ab4d4e6)
 set -uo pipefail
 RELAY="${RELAY:-relay}"; SIL_MIN="${SIL_MIN:-45}"; TASK="${TASK:-task_8ab4d4e6}"
-AM=http://127.0.0.1:9093
+AM=http://127.0.0.1:9093; PROM=http://127.0.0.1:9090
 X="${1:-}"
 BLOCKS=(01-dircheck.sh 02-record.sh 03-upgrade.sh 04-workdir.sh 05-verify.sh 06-rollback.sh 07-return.sh)
 for f in "${BLOCKS[@]}"; do [ -f "$X/$f" ] || { echo "usage: bash $0 EXTRACT_DIR (missing $X/$f)" >&2; exit 2; }; done
@@ -51,7 +53,7 @@ ME="$(id -un)"; HN="$(hostname)"
 SN="$(ssh -o LogLevel=ERROR -o BatchMode=yes "$RELAY" hostname </dev/null)"
 RID="$(head -c 4 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 D="/var/tmp/pftrb-$RID"; TAG="localhost/pftrb/postfiatd:testnet-light-latest"; NEWT="localhost/pftrb/postfiatd:new-$RID"
-FIXT="localhost/pftrb/postfiatd:fixed-$RID"; REARM="pftrb-integrity-rearm-$RID"
+FIXT="localhost/pftrb/postfiatd:fixed-$RID"; REARM="pftrb-integrity-rearm-$RID"; CN=pftrb-postfiatd
 TT="pft-drill-rollback-$(head -c 6 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 red() { sed -E "s#$HOME#~#g; s#\b$ME\b#<user>#g; s#$HN#<host>#g; s#\b$SN\b#<sentry>#g; s#\b([0-9]{1,3}\.){3}[0-9]{1,3}\b#<redacted-ip>#g; s#$TT#<throwaway-topic>#g"; }
 ts() { date -u +%FT%TZ; }
@@ -72,10 +74,10 @@ G() {
   printf '%s\n' "$XOUT" | red | sed 's/^/  /'; echo "  (exit $XRC)"
 }
 # E NAME SED-EXPR: edited copy of a block in $W, with the diff printed
-W="$(mktemp -d)"; OPS="$(mktemp)"; chmod 600 "$OPS"
-E() { sed "$2" "$X/$1" > "$W/$1"; echo "  edit of $1 for this test (diff guide -> run):"; diff "$X/$1" "$W/$1" | sed 's/^/    /'; }
-cid() { R "docker inspect -f '{{.Id}}' postfiatd 2>/dev/null"; }
-cimg() { R "docker inspect -f '{{.Image}}' postfiatd 2>/dev/null"; }
+W="$(mktemp -d)"; B="$W/base"; mkdir "$B"; OPS="$(mktemp)"; chmod 600 "$OPS"
+E() { sed "$2" "$B/$1" > "$W/$1"; echo "  edit of $1 for this test (diff guide -> run):"; diff "$X/$1" "$W/$1" | sed 's/^/    /'; }
+cid() { R "docker inspect -f '{{.Id}}' $CN 2>/dev/null"; }
+cimg() { R "docker inspect -f '{{.Image}}' $CN 2>/dev/null"; }
 real() { # name ID StartedAt state for one real container
   if [ "$1" = validator ]; then
     echo "validator postfiatd $(sudo -n docker inspect -f '{{.Id}} {{.State.StartedAt}}' postfiatd) $(sudo -n docker exec postfiatd curl -s -m 10 -d '{"method":"server_info"}' http://127.0.0.1:5005 | jq -r .result.info.server_state)"
@@ -106,16 +108,18 @@ restore() {
     SWAPPED=0
   fi
 }
-sentry_alerts() { curl -s -m 10 "$AM/api/v2/alerts?active=true" | jq -r '[.[] | select(.labels.host == "sentry") | .labels.alertname] | unique | .[]'; }
+# sentry alerts pending or firing in Prometheus (sentry rules are evaluated on the validator); pending ones never
+# reach Alertmanager, so a drain on AM alone can expire the silence just before one fires (fresh-clone run 2026-11-27)
+sentry_alerts() { curl -s -m 10 "$PROM/api/v1/alerts" | jq -r '[.data.alerts[] | select(.labels.host == "sentry") | .labels.alertname] | unique | .[]'; }
 PRE=""
 unsilence() { # expire the run's silence once nothing for the sentry is active (else it runs out on its own)
   [ -n "$SIL" ] || return 0
   local p=""
-  for _ in $(seq 1 30); do
+  for _ in $(seq 1 45); do
     p="$(sentry_alerts | grep -vxF -e "${PRE:-@none@}" | paste -sd, -)"
-    [ -z "$p" ] && break; echo "$(ts) sentry alerts active that were not active at S0: $p (wait 20 s)"; sleep 20
+    [ -z "$p" ] && break; echo "$(ts) sentry alerts pending/firing that were not at S0: $p (wait 20 s)"; sleep 20
   done
-  check "no sentry alert active before the silence ends, other than those already active at S0" "$(ok '[ -z "$p" ]')" "${p:-none}"
+  check "no sentry alert pending or firing before the silence ends, other than those already active at S0" "$(ok '[ -z "$p" ]')" "${p:-none}"
   if [ -z "$p" ]; then x "curl -s -m 10 -XDELETE '$AM/api/v2/silence/$SIL' -o /dev/null -w 'expire silence http %{http_code}'"
   else echo "silence ${SIL:0:8} kept until $ends (something active)"; fi
   SIL=""
@@ -132,7 +136,7 @@ echo "upstream-rollback sentry-proof - $(ts) - repo HEAD $(git -C "$REPO" rev-pa
 echo "sha256: sentry-proof.sh $(sha256sum "$0" | cut -c1-64)"
 for f in "${BLOCKS[@]}" section.txt; do echo "        $f $(sha256sum "$X/$f" | cut -c1-64)"; done
 echo "sentry: $(R 'lsb_release -ds; docker --version; docker compose version' | paste -sd' ' -)"
-echo "throwaway project: $D (container postfiatd, network none), local tags $TAG $NEWT $FIXT"
+echo "throwaway project: $D (container $CN, network none), local tags $TAG $NEWT $FIXT"
 
 step "S0 preflight"
 V0="$(real validator)"; S0="$(real sentry)"; echo "$V0"; echo "$S0"
@@ -140,10 +144,10 @@ check "S0 validator postfiatd full or proposing" "$(ok '[[ "$V0" =~ (full|propos
 check "S0 sentry postfiatd-sentry full" "$(ok '[[ "$S0" =~ full$ ]]')"
 x "sudo -n pft-integrity verify | tail -1"; check "S0 validator integrity PASS" "$(ok 'grep -q "RESULT: PASS" <<<"$XOUT"')"
 x "R 'pft-integrity verify | tail -1'"; check "S0 sentry integrity PASS" "$(ok 'grep -q "RESULT: PASS" <<<"$XOUT"')"
-x "R 'docker ps -a --format {{.Names}} | grep -cx postfiatd; docker images --format {{.Repository}} | grep -c pftrb; ls -d /var/tmp/pftrb-* 2>/dev/null | wc -l'"
-check "S0 sentry has no postfiatd container, pftrb image or pftrb dir" "$(ok '[ "$(paste -sd, <<<"$XOUT")" = 0,0,0 ]')"
-x "curl -s -m 10 '$AM/api/v2/alerts?active=true' | jq -r '[.[] | select(.labels.host == \"sentry\" and .labels.severity != \"info\") | .labels.alertname] | length'"
-check "S0 no sentry alert above severity info active" "$(ok '[ "$(tail -1 <<<"$XOUT")" = 0 ]')"
+x "R 'docker ps -a --format {{.Names}} | grep -cxE \"postfiatd|$CN\"; docker images --format {{.Repository}} | grep -c pftrb; ls -d /var/tmp/pftrb-* 2>/dev/null | wc -l'"
+check "S0 sentry has no postfiatd or $CN container, no pftrb image or pftrb dir" "$(ok '[ "$(paste -sd, <<<"$XOUT")" = 0,0,0 ]')"
+x "curl -s -m 10 '$PROM/api/v1/alerts' | jq -r '[.data.alerts[] | select(.labels.host == \"sentry\" and .labels.severity != \"info\") | .labels.alertname] | length'"
+check "S0 no sentry alert above severity info pending or firing" "$(ok '[ "$(tail -1 <<<"$XOUT")" = 0 ]')"
 x "R 'pft-schedaudit audit | tail -1'"; check "S0 sentry schedaudit: 0 unexpected" "$(ok 'grep -q "unexpected_findings=0 new=0 removed=0" <<<"$XOUT"')"
 PRE="$(sentry_alerts)"; echo "sentry alerts already active before the run (left alone): $(paste -sd, - <<<"${PRE:-none}")"
 INV0="$(inventory)"; echo "image + container inventory (sentry):"; red <<<"$INV0" | sed 's/^/  /'
@@ -159,6 +163,11 @@ check "S0 OLD image has a RepoDigest" "$(ok '[[ "$ODIG" == *@sha256:* ]]')"
 echo "operator topics to read back: $(wc -l < "$OPS") (not printed)"
 check "S0 operator topics found" "$(ok '[ -s "$OPS" ]')"
 [ "$FAILS" = 0 ] || { echo "RESULT: preflight failed ($FAILS), nothing changed"; exit 1; }
+
+step "S0b container-name edit of the guide blocks (the only edit applied to every run of 02, 04, 06)"
+for f in "${BLOCKS[@]}"; do sed "s/\bdocker inspect postfiatd /docker inspect $CN /" "$X/$f" > "$B/$f"; done
+for f in "${BLOCKS[@]}"; do diff "$X/$f" "$B/$f" >/dev/null && continue; echo "  $f:"; diff "$X/$f" "$B/$f" | sed "s/^/    /"; done
+check "S0b name edit changed exactly blocks 02, 04, 06, one line each" "$(ok '[ "$(for f in "${BLOCKS[@]}"; do diff "$X/$f" "$B/$f" | grep -c "^>"; done | paste -sd, -)" = 0,1,0,1,0,1,0 ]')"
 
 step "S1 quiet: silence, pft-maint window to a throwaway topic, sentry integrity timer paused"
 ends="$(date -u -d "+$SIL_MIN min" +%FT%TZ)"
@@ -182,7 +191,7 @@ PAUSED=1; check "S1 sentry pft-integrity.timer inactive, re-arm failsafe active"
 
 step "S2 throwaway compose project on OLD; NEW and FIXED images committed"
 PROJ=1
-COMPOSE="$(printf '%s\n' 'services:' '  postfiatd:' "    image: $TAG" '    container_name: postfiatd' '    network_mode: none' \
+COMPOSE="$(printf '%s\n' 'services:' '  postfiatd:' "    image: $TAG" "    container_name: $CN" '    network_mode: none' \
   '    init: true' '    entrypoint: ["sleep", "infinity"]' '    restart: "no"')"
 x "printf '%s\n' \"\$COMPOSE\" | RS 'mkdir -m 700 $D && cat > $D/docker-compose.yml && cat $D/docker-compose.yml'"
 x "R 'docker tag $OLD $TAG && for t in new fixed; do c=\$(docker create --name pftrb-mk-\$t-$RID $OLD true) && docker commit --change \"LABEL org.postfiat.rollbacktest=\$t\" \$c localhost/pftrb/postfiatd:\$t-$RID >/dev/null && docker rm -f \$c >/dev/null; done'"
@@ -192,12 +201,12 @@ echo "NEW $NEW (RepoDigests $(R "docker image inspect -f '{{json .RepoDigests}}'
 echo "FIXED $FIX (RepoDigests $(R "docker image inspect -f '{{json .RepoDigests}}' $FIX"))"
 check "S2 OLD, NEW, FIXED are three different image IDs" "$(ok '[ -n "$NEW" ] && [ -n "$FIX" ] && [ "$(printf "%s\n" "$OLD" "$NEW" "$FIX" | sort -u | wc -l)" = 3 ]')"
 x "R 'cd $D && docker compose up -d 2>&1 && docker compose config | grep image:'"
-C0="$(cid)"; echo "container postfiatd $C0 image $(cimg)"
-check "S2 throwaway container runs on OLD" "$(ok '[ "$(cimg)" = "$OLD" ] && [ "$(R "docker inspect -f {{.State.Status}}/{{.HostConfig.NetworkMode}} postfiatd")" = running/none ]')"
+C0="$(cid)"; echo "container $CN $C0 image $(cimg)"
+check "S2 throwaway container runs on OLD" "$(ok '[ "$(cimg)" = "$OLD" ] && [ "$(R "docker inspect -f {{.State.Status}}/{{.HostConfig.NetworkMode}} $CN")" = running/none ]')"
 [ "$FAILS" = 0 ] || { echo "RESULT: project setup failed ($FAILS)"; exit 1; }
 
 step "S3 record before the upgrade (guide blocks 01 + 02, unchanged)"
-G "01-dircheck.sh + 02-record.sh" "$X/01-dircheck.sh" "$X/02-record.sh"
+G "01-dircheck.sh + 02-record.sh" "$B/01-dircheck.sh" "$B/02-record.sh"
 REC1="$(grep -o 'recorded pre-upgrade-[0-9TZ]*\.txt' <<<"$XOUT" | cut -d' ' -f2)"
 echo "record file: ${REC1:-none}"; x "R 'cat $D/$REC1'"
 check "S3 'recorded' line printed, file name pre-upgrade-<UTC>.txt" "$(ok '[[ "$REC1" =~ ^pre-upgrade-[0-9]{8}T[0-9]{6}Z\.txt$ ]]')"
@@ -205,17 +214,17 @@ check "S3 record = OLD image ID + real RepoDigest" "$(ok '[ "$XOUT" = "$(printf 
 
 step "S4 upgrade (guide block 03; the rolling-tag pull becomes a local tag move to NEW)"
 E 03-upgrade.sh "s#^docker compose pull\$#docker tag $NEW $TAG#"
-G "01-dircheck.sh + 03-upgrade.sh (edited; 03 runs in the node directory 01 changed to)" "$X/01-dircheck.sh" "$W/03-upgrade.sh"
-C1="$(cid)"; echo "container postfiatd $C1 image $(cimg)"
+G "01-dircheck.sh + 03-upgrade.sh (edited; 03 runs in the node directory 01 changed to)" "$B/01-dircheck.sh" "$W/03-upgrade.sh"
+C1="$(cid)"; echo "container $CN $C1 image $(cimg)"
 check "S4 container recreated on NEW" "$(ok '[ "$(cimg)" = "$NEW" ] && [ "$C1" != "$C0" ]')"
-G "04-workdir.sh" "$X/04-workdir.sh"; check "S4 guide block 04 finds the project dir" "$(ok '[ "$XOUT" = "$D" ]')"
+G "04-workdir.sh" "$B/04-workdir.sh"; check "S4 guide block 04 finds the project dir" "$(ok '[ "$XOUT" = "$D" ]')"
 
 step "S5 controls"
 sleep 1
-x "R 'docker rename postfiatd pftrb-hold-$RID && echo \"containers named postfiatd: \$(docker ps -a --format {{.Names}} | grep -cx postfiatd)\"'"
-G "C1: 01 + 02 with no container named postfiatd" "$X/01-dircheck.sh" "$X/02-record.sh"
-check "C1 no 'recorded' line when no postfiatd container runs" "$(ok '! grep -q "^recorded " <<<"$XOUT"')"
-x "R 'docker rename pftrb-hold-$RID postfiatd && docker inspect -f {{.Id}} postfiatd'"
+x "R 'docker rename $CN pftrb-hold-$RID && echo \"containers named $CN: \$(docker ps -a --format {{.Names}} | grep -cx $CN)\"'"
+G "C1: 01 + 02 with no container named $CN" "$B/01-dircheck.sh" "$B/02-record.sh"
+check "C1 no 'recorded' line when the container is missing" "$(ok '! grep -q "^recorded " <<<"$XOUT"')"
+x "R 'docker rename pftrb-hold-$RID $CN && docker inspect -f {{.Id}} $CN'"
 check "C1 container renamed back, same ID" "$(ok '[ "$(cid)" = "$C1" ]')"
 RECB="$(R "cd $D && ls -t pre-upgrade-*.txt | head -1")"; x "R 'cat $D/$RECB'"
 check "C1 its record has an empty repo_digest" "$(ok '[ "$RECB" != "$REC1" ] && grep -qx "repo_digest=" <<<"$XOUT"')"
@@ -235,7 +244,7 @@ check "C3 control override removed again" "$(ok '[ "$(tail -1 <<<"$XOUT")" = 0 ]
 step "S6 rollback (guide block 06 with the S3 record)"
 G "06-rollback.sh (REC set)" "$W/06-rollback.sh"
 L2="$(tail -2 <<<"$XOUT" | paste -sd' ' -)"
-C2="$(cid)"; echo "container postfiatd $C2 image $(cimg)"
+C2="$(cid)"; echo "container $CN $C2 image $(cimg)"
 check "S6 docker compose config shows the recorded digest" "$(ok 'grep -qx "    image: $ODIG" <<<"$XOUT"')"
 check "S6 container recreated on OLD; last two lines equal" "$(ok '[ "$(cimg)" = "$OLD" ] && [ "$C2" != "$C1" ] && [ "$L2" = "$OLD $OLD" ]')"
 x "R 'cat $D/docker-compose.override.yml'"
@@ -250,12 +259,12 @@ check "S7 docker compose up -d keeps the same container on OLD" "$(ok '[ "$(cid)
 
 step "S8 return to the rolling tag (record first, then guide block 07; the pull becomes a tag move to FIXED)"
 sleep 1
-G "01 + 02 (record the pinned image)" "$X/01-dircheck.sh" "$X/02-record.sh"
+G "01 + 02 (record the pinned image)" "$B/01-dircheck.sh" "$B/02-record.sh"
 REC2="$(grep -o 'recorded pre-upgrade-[0-9TZ]*\.txt' <<<"$XOUT" | cut -d' ' -f2)"
 check "S8 pinned image recorded (OLD, digest)" "$(ok '[ -n "$REC2" ] && [ "$REC2" != "$REC1" ] && grep -qx "image_id=$OLD" <<<"$XOUT" && grep -qx "repo_digest=$ODIG" <<<"$XOUT"')"
 E 07-return.sh "s#^docker compose pull\$#docker tag $FIX $TAG#"
 G "07-return.sh (edited)" "$W/07-return.sh"
-C3="$(cid)"; echo "container postfiatd $C3 image $(cimg)"
+C3="$(cid)"; echo "container $CN $C3 image $(cimg)"
 check "S8 config shows the -light-latest tag again" "$(ok 'grep -qx "    image: $TAG" <<<"$XOUT"')"
 check "S8 override gone; container recreated on FIXED" "$(ok '[ "$(R "test -e $D/docker-compose.override.yml && echo yes || echo no")" = no ] && [ "$(cimg)" = "$FIX" ] && [ "$C3" != "$C2" ]')"
 

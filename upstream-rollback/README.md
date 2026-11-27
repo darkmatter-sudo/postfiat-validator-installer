@@ -26,16 +26,20 @@ The rolling-tag advice (`-light-latest`, no version pins) is unchanged. The chan
 
 ## What the live test does
 
-The throwaway project lives in `/var/tmp/pftrb-<random>` on the sentry. Its container is named `postfiatd`, the name
-the guide's blocks use. That name is free on the sentry, whose real node is `postfiatd-sentry`. The container runs
-`sleep infinity` with `network_mode: none`. It uses three local images that share the real image's layers:
+The throwaway project lives in `/var/tmp/pftrb-<random>` on the sentry. Its compose service is named `postfiatd`, as
+in the guide. Its container is named `pftrb-postfiatd`, because many host tools on our hosts (pft-cluster, timesync,
+mounts and others) pick a container named exactly `postfiatd` when one exists. A dry run showed `pft-cluster` auditing
+the throwaway container that way. The container runs `sleep infinity` with `network_mode: none`. It uses three local
+images that share the real image's layers:
 
 - OLD: the sentry's real image under a local rolling tag `localhost/pftrb/postfiatd:testnet-light-latest`. It keeps
   the real `agtipft/postfiatd@sha256:...` RepoDigest.
 - NEW and FIXED: `docker commit` copies with a label. They stand for the bad release and the fixed release.
 
-The guide blocks run unchanged through `ssh relay bash -s`, with these two edits, both printed as a diff in the log:
+The guide blocks run through `ssh relay bash -s` with only these edits, each printed as a diff in the log:
 
+0. `docker inspect postfiatd` becomes `docker inspect pftrb-postfiatd` (one line each in blocks 02, 04 and 06). This
+   is the container name, see above.
 1. Each **rolling-tag** `docker compose pull` (blocks 03 and 07) becomes `docker tag <NEW|FIXED> <local rolling tag>`.
    The local tag has no registry, so the release is simulated, and the test downloads nothing new.
 2. The rollback's `REC=pre-upgrade-YYYYMMDDTHHMMSSZ.txt` placeholder line is set to the record under test, as the
@@ -45,7 +49,7 @@ The **pinned** `docker compose pull` (override present) runs unchanged against D
 that it changes nothing: the image and container inventory and the container ID stay the same.
 
 Assertions: the record holds the OLD image ID and the real RepoDigest; the upgrade recreates the container on NEW;
-three controls (C1: no `postfiatd` container, so there is no `recorded` line; C2: a rollback with that incomplete
+three controls (C1: the container is renamed away, so there is no `recorded` line; C2: a rollback with that incomplete
 record prints `no repo_digest` and changes nothing; C3: with an existing override, the block prints
 `exists: not changed`, and the override bytes and the container stay the same); the rollback config shows the
 digest, the container is recreated on OLD, the two printed image IDs are equal, and the override is exactly the three
