@@ -86,4 +86,14 @@ bash upstream-rollback/sentry-proof.sh out 2>&1 | tee LOG
 
 ## Logs
 
-(filled in with the recorded runs)
+Both runs use the kit at `0f9291e77f089341ef3611f9d0d68b7ff5a5e5b6` and the PR branch head
+`cfd638132dfc84a79d12c8410fb59a1ab8e27823`. Both passed every check.
+
+| log | run |
+|---|---|
+| `logs/01-sentry-proof.log` | `sentry-proof.sh` from a checkout of this repo at the kit commit (2026-11-27 20:39-20:50Z): S0-S11, 52 CHECK ok, 0 failed |
+| `logs/02-fresh-clone.log` | `fresh-clone.sh 0f9291e... cfd6381...` (2026-11-27 20:51-20:58Z): anonymous clones, F1-F5, then F6 = the full live test from the clone; 68 CHECK ok, 0 failed |
+
+History: seven earlier runs (unpublished) found and fixed harness bugs before these two: a missing `cd` in a
+block, a transient re-arm timer that `pft-schedaudit` reported, a throwaway container name that host tools picked
+up, and a silence drain that read Alertmanager instead of Prometheus pending alerts.

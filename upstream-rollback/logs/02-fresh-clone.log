@@ -1,0 +1,652 @@
+upstream-rollback fresh-clone - 2026-11-27T20:50:57Z - PIN 0f9291e77f089341ef3611f9d0d68b7ff5a5e5b6 PRSHA cfd638132dfc84a79d12c8410fb59a1ab8e27823
+tools: git version 2.34.1, Python 3.10.12, shellcheck 0.8.0
+
+== F1 fresh public clones
+$ git clone -q https://github.com/darkmatter-sudo/postfiat-validator-installer.git kit && git -C kit checkout -q 0f9291e77f089341ef3611f9d0d68b7ff5a5e5b6 && git -C kit rev-parse HEAD
+  0f9291e77f089341ef3611f9d0d68b7ff5a5e5b6
+  (exit 0)
+CHECK ok   F1 kit at PIN
+$ git -C kit log -1 --format='%H %ad %an %s' --date=iso-strict
+  0f9291e77f089341ef3611f9d0d68b7ff5a5e5b6 2026-11-27T20:29:14+00:00 darkmatter-sudo upstream-rollback: throwaway container pftrb-postfiatd, drain on Prometheus pending+firing
+  (exit 0)
+$ git clone -q https://github.com/darkmatter-sudo/postfiatorg.github.io.git guide && git -C guide checkout -q cfd638132dfc84a79d12c8410fb59a1ab8e27823 && git -C guide rev-parse HEAD
+  cfd638132dfc84a79d12c8410fb59a1ab8e27823
+  (exit 0)
+CHECK ok   F1 guide at PRSHA
+$ git -C guide fetch -q https://github.com/postfiatorg/postfiatorg.github.io.git main && git -C guide rev-parse FETCH_HEAD && git -C guide merge-base --is-ancestor 99a341201863ce31aaf259943ef810011605d415 cfd638132dfc84a79d12c8410fb59a1ab8e27823 && echo 'PRSHA descends from 99a341201863ce31aaf259943ef810011605d415'
+  c51596636d3720c7e4f046af3ee98451b9a64e17
+  PRSHA descends from 99a341201863ce31aaf259943ef810011605d415
+  (exit 0)
+CHECK ok   F1 PRSHA descends from upstream main 99a3412
+$ git -C guide log --format='%h %ad %s' --date=iso-strict 99a341201863ce31aaf259943ef810011605d415..cfd638132dfc84a79d12c8410fb59a1ab8e27823
+  cfd6381 2026-11-27T19:35:57+00:00 Validator guide: name both causes of an incomplete pre-upgrade record
+  51ced19 2026-11-27T19:11:53+00:00 Validator guide: rollback block never overwrites an existing override
+  345439e 2026-11-27T18:40:26+00:00 Validator guide: record pre-upgrade image digest, add digest-pinned rollback
+  (exit 0)
+$ git -C guide diff --stat 99a341201863ce31aaf259943ef810011605d415 cfd638132dfc84a79d12c8410fb59a1ab8e27823
+   content/validator-setup.md        | 66 +++++++++++++++++++++++++++++++++++++--
+   static/agents/validator-setup.md  | 66 +++++++++++++++++++++++++++++++++++++--
+   static/agents/validator-setup.txt | 66 +++++++++++++++++++++++++++++++++++++--
+   3 files changed, 192 insertions(+), 6 deletions(-)
+  (exit 0)
+$ git -C guide diff --name-only 99a341201863ce31aaf259943ef810011605d415 cfd638132dfc84a79d12c8410fb59a1ab8e27823
+  content/validator-setup.md
+  static/agents/validator-setup.md
+  static/agents/validator-setup.txt
+  (exit 0)
+CHECK ok   F1 the PR changes exactly the three guide copies
+
+== F2 hashes
+$ cd guide && sha256sum content/validator-setup.md static/agents/validator-setup.md static/agents/validator-setup.txt > ../guide.sha256; cd .. && cat guide.sha256
+  17777e48aee2cd314ca78b8531f429528578cf3e4dc371b39074887b50c825d7  content/validator-setup.md
+  a8c5777a9f378fe68ad09ce8c7d8ef238816fdcb207927ead324ca9d1049b852  static/agents/validator-setup.md
+  a8c5777a9f378fe68ad09ce8c7d8ef238816fdcb207927ead324ca9d1049b852  static/agents/validator-setup.txt
+  (exit 0)
+$ cd kit/upstream-rollback && sha256sum extract_rollback.py sentry-proof.sh fresh-clone.sh README.md > ../../kit.sha256; cd ../.. && cat kit.sha256
+  78c778d5a0687e659285c1c242007d5bad91e581e842b97c1487e576657f525b  extract_rollback.py
+  2f0c30ba89debe4c7b5c91651390ec467425df2903cfd0cc7cd95b9de8b57667  sentry-proof.sh
+  e63c061df1ae3c166b2c4e59983d107dae7adae979c640f7c2b2fb97aa20bb79  fresh-clone.sh
+  669829b01954b3b2f131305627ae77b351435397798011556e37a21239f3b36e  README.md
+  (exit 0)
+
+== F3 three-copy diff
+$ diff <(sec guide/content/validator-setup.md) <(sec guide/static/agents/validator-setup.md) && echo 'section 10 identical: content/validator-setup.md = static/agents/validator-setup.md'
+  section 10 identical: content/validator-setup.md = static/agents/validator-setup.md
+  (exit 0)
+CHECK ok   F3 section 10 of static/agents/validator-setup.md = content/validator-setup.md
+$ diff <(sec guide/content/validator-setup.md) <(sec guide/static/agents/validator-setup.txt) && echo 'section 10 identical: content/validator-setup.md = static/agents/validator-setup.txt'
+  section 10 identical: content/validator-setup.md = static/agents/validator-setup.txt
+  (exit 0)
+CHECK ok   F3 section 10 of static/agents/validator-setup.txt = content/validator-setup.md
+$ sec guide/content/validator-setup.md | sha256sum; sec guide/static/agents/validator-setup.md | sha256sum; sec guide/static/agents/validator-setup.txt | sha256sum
+  1c89a6d636171952b60a40b0a489d24bbcf1761e224e2ca62ff2830e58a1b2a2  -
+  1c89a6d636171952b60a40b0a489d24bbcf1761e224e2ca62ff2830e58a1b2a2  -
+  1c89a6d636171952b60a40b0a489d24bbcf1761e224e2ca62ff2830e58a1b2a2  -
+  (exit 0)
+CHECK ok   F3 one section hash for all three copies
+$ diff <(hunks content/validator-setup.md) <(hunks static/agents/validator-setup.md) && echo 'PR hunks identical: content/validator-setup.md = static/agents/validator-setup.md'
+  PR hunks identical: content/validator-setup.md = static/agents/validator-setup.md
+  (exit 0)
+CHECK ok   F3 PR diff hunks of static/agents/validator-setup.md = content/validator-setup.md
+$ diff <(hunks content/validator-setup.md) <(hunks static/agents/validator-setup.txt) && echo 'PR hunks identical: content/validator-setup.md = static/agents/validator-setup.txt'
+  PR hunks identical: content/validator-setup.md = static/agents/validator-setup.txt
+  (exit 0)
+CHECK ok   F3 PR diff hunks of static/agents/validator-setup.txt = content/validator-setup.md
+$ git -C guide diff 99a341201863ce31aaf259943ef810011605d415 cfd638132dfc84a79d12c8410fb59a1ab8e27823 -- content/validator-setup.md
+  diff --git a/content/validator-setup.md b/content/validator-setup.md
+  index c0e3d2a..73979cb 100644
+  --- a/content/validator-setup.md
+  +++ b/content/validator-setup.md
+  @@ -552,12 +552,28 @@ Upgrades are announced in the validator Discord channel. Run the commands from t
+   ```bash
+   cd "$POSTFIATD_DIR"
+   grep 'image:' docker-compose.yml
+  -docker compose pull
+  -docker compose up -d
+   ```
+   
+   The `image:` line must end in `-light-latest`. If an earlier version of this guide led you to pin a version number such as `testnet-light-1.0.4`, change the line back to `agtipft/postfiatd:${NETWORK:-devnet}-light-latest` before pulling. A pinned node is skipped by `docker compose pull` and stays on the old release without any error.
+   
+  +Before pulling, record the image the node runs now, so you can return to it if the new release misbehaves. This writes a dated file into the node directory with the image ID and its registry digest:
+  +
+  +```bash
+  +REC="pre-upgrade-$(date -u +%Y%m%dT%H%M%SZ).txt"
+  +IMAGE_ID=$(docker inspect postfiatd --format '{{.Image}}')
+  +REPO_DIGEST=$(docker image inspect "$IMAGE_ID" --format '{{index .RepoDigests 0}}')
+  +printf 'image_id=%s\nrepo_digest=%s\n' "$IMAGE_ID" "$REPO_DIGEST" > "$REC"
+  +cat "$REC"
+  +grep -q '^repo_digest=.*@sha256:' "$REC" && echo "recorded $REC"
+  +```
+  +
+  +The last line must print `recorded pre-upgrade-...txt`. If it prints nothing, the record is incomplete: either no container named `postfiatd` is running, or its image has no registry digest. Fix that or ask in the validator Discord channel before upgrading. Then upgrade:
+  +
+  +```bash
+  +docker compose pull
+  +docker compose up -d
+  +```
+  +
+   If you do not remember where the node directory is, the running container knows:
+   
+   ```bash
+  @@ -575,6 +591,52 @@ docker exec postfiatd curl -s http://localhost:5005/ -X POST \
+     | python3 -m json.tool | grep -E '"server_state"|"build_version"'
+   ```
+   
+  +### Rolling Back an Upgrade
+  +
+  +Roll back only when the new release is clearly at fault and the validator channel has not announced a fix. A rollback runs the older release against a database the newer one has already written. If the release's announcement or its document under `docs/` mentions a database, config or protocol format change, do not roll back on your own; ask in the validator Discord channel first.
+  +
+  +The rollback pins the old image by digest in `docker-compose.override.yml`, which Docker Compose reads automatically next to `docker-compose.yml`. The downloaded `docker-compose.yml` stays unchanged. Set `REC` to the record written before the upgrade you are undoing:
+  +
+  +```bash
+  +cd "$POSTFIATD_DIR"
+  +ls pre-upgrade-*.txt
+  +REC=pre-upgrade-YYYYMMDDTHHMMSSZ.txt
+  +REPO_DIGEST=$(sed -n 's/^repo_digest=//p' "$REC")
+  +if [ -e docker-compose.override.yml ]; then
+  +  echo "docker-compose.override.yml exists: not changed, add the image line by hand"
+  +elif [ -z "$REPO_DIGEST" ]; then
+  +  echo "no repo_digest in $REC: nothing changed"
+  +else
+  +  printf 'services:\n  postfiatd:\n    image: %s\n' "$REPO_DIGEST" > docker-compose.override.yml
+  +  docker compose config | grep 'image:'
+  +  docker compose up -d
+  +fi
+  +docker inspect postfiatd --format '{{.Image}}'
+  +sed -n 's/^image_id=//p' "$REC"
+  +```
+  +
+  +`docker compose config` must show the `@sha256:` digest from the record, and the last two lines must print the same image ID. Then run the `server_info` check above: `server_state` should return to `full` (or `proposing`) and `build_version` should show the old release.
+  +
+  +If an override file already exists, it holds your own settings, so the block leaves it and the node unchanged and the last two lines differ. Add `image: <repo_digest from the record>` to the `postfiatd` service in that file by hand, then run `docker compose up -d` and compare the two image IDs again.
+  +
+  +While the override pins the image, `docker compose pull` leaves the node on the recorded image, the same silent behavior as a pinned version tag. Keep the pin only until the fixed release is announced.
+  +
+  +The old image normally stays on the host after an upgrade, so the rollback needs no download. `docker image prune` deletes it, because the pull moved the `-light-latest` tag to the new image. Do not prune images until you are satisfied with an upgrade. If the old image is gone, `docker compose up -d` downloads it again by digest, which works only while Docker Hub still holds that digest.
+  +
+  +### Returning to the Rolling Tag
+  +
+  +When the fixed release is announced, record the running image as at the start of this section, so this upgrade can be undone too. Then remove the override this procedure created and upgrade as usual. If you added the `image:` line to your own override file instead, delete only that line rather than the file.
+  +
+  +```bash
+  +cd "$POSTFIATD_DIR"
+  +rm docker-compose.override.yml
+  +docker compose config | grep 'image:'
+  +docker compose pull
+  +docker compose up -d
+  +```
+  +
+  +`docker compose config` must show the `-light-latest` image again. Finish with the `server_info` check above.
+  +
+   ## Endpoint Visibility and Your Diversity Score
+   
+   The Dynamic UNL scoring pipeline scores infrastructure diversity from your validator's resolved public endpoint. The foundation's peer crawl walks the network on TCP `2559`, matches each node's validator public key, and resolves the address it saw. From that address the pipeline derives your provider family and country and hands the scoring model precomputed concentration counts across the whole validator set: the fewer validators that share your provider family and country, the higher your diversity sub-score.
+  (exit 0)
+
+== F4 extraction from the PR branch, with controls
+$ python3 -I kit/upstream-rollback/extract_rollback.py out guide/content/validator-setup.md guide/static/agents/validator-setup.md guide/static/agents/validator-setup.txt
+  section.txt 92 lines sha256 27957bb7df3555e35e41b6d6182d8b612a4f66848f2a7aef785a66607e9fa49a
+  01-dircheck.sh 2 lines sha256 27e070c6cb7cfc6c859d7fc8ac4723847a94abcc81de08921a4fbe8a305548ed
+  02-record.sh 6 lines sha256 51fcfd98d91837e2d6e1a7a6af280859b942c0acf9cd108a22bfeb5532191141
+  03-upgrade.sh 2 lines sha256 5f2c575735ab5ba7922e8cdfd99d6e1f107715a3243433f240286d1afbe650d2
+  04-workdir.sh 1 lines sha256 e0e22857e2b77786d54b0e605e8256a1a918d34ae0a238a0a6684652f81da2ed
+  05-verify.sh 4 lines sha256 0ac1f07c9c146f15e555ddcb0e54c5519c669c5d3c6dce87f2da565c495df165
+  06-rollback.sh 15 lines sha256 2d516cea8097f4733db5722d7acb954f25e4c9b77dc4ff4ebb44b5bd13b7ca33
+  07-return.sh 5 lines sha256 92198ddffa52e59ffc3b5f307a21c609b5eb51449d009b912596d7c44a95f448
+  copies with identical section 10: 3
+  (exit 0)
+CHECK ok   F4 seven blocks extracted, three identical copies
+$ git -C guide show 99a341201863ce31aaf259943ef810011605d415:content/validator-setup.md > main.md && python3 -I kit/upstream-rollback/extract_rollback.py ctl-main main.md
+  extract: main.md: expected 7 bash blocks, found ['bash', 'bash', 'bash']
+  (exit 1)
+CHECK ok   F4 control: upstream main's section 10 is rejected (no rollback blocks)
+$ python3 -I kit/upstream-rollback/extract_rollback.py ctl-mix guide/content/validator-setup.md main.md
+  extract: main.md: section 10 differs from guide/content/validator-setup.md
+  (exit 1)
+CHECK ok   F4 control: a copy with a different section 10 is rejected
+
+== F5 shellcheck
+$ cd out && shellcheck -s bash -e SC2164 0*.sh && echo 'blocks clean'; cd ..
+  blocks clean
+  (exit 0)
+CHECK ok   F5 shellcheck -e SC2164 clean on the seven blocks
+$ cd out && shellcheck -s bash -f gcc 0*.sh; cd ..
+  01-dircheck.sh:1:1: warning: Use 'cd ... || exit' or 'cd ... || return' in case cd fails. [SC2164]
+  06-rollback.sh:1:1: warning: Use 'cd ... || exit' or 'cd ... || return' in case cd fails. [SC2164]
+  07-return.sh:1:1: warning: Use 'cd ... || exit' or 'cd ... || return' in case cd fails. [SC2164]
+  (exit 0)
+CHECK ok   F5 without the exclusion only SC2164 on the three cd lines
+$ shellcheck kit/upstream-rollback/sentry-proof.sh kit/upstream-rollback/fresh-clone.sh && echo 'kit scripts clean'
+  kit scripts clean
+  (exit 0)
+CHECK ok   F5 shellcheck clean on the kit scripts
+
+== F6 live test from the clone (sentry throwaway project)
+$ bash kit/upstream-rollback/sentry-proof.sh out
+  | upstream-rollback sentry-proof - 2026-11-27T20:51:22Z - repo HEAD 0f9291e77f089341ef3611f9d0d68b7ff5a5e5b6 (clean: yes)
+  | sha256: sentry-proof.sh 2f0c30ba89debe4c7b5c91651390ec467425df2903cfd0cc7cd95b9de8b57667
+  |         01-dircheck.sh 27e070c6cb7cfc6c859d7fc8ac4723847a94abcc81de08921a4fbe8a305548ed
+  |         02-record.sh 51fcfd98d91837e2d6e1a7a6af280859b942c0acf9cd108a22bfeb5532191141
+  |         03-upgrade.sh 5f2c575735ab5ba7922e8cdfd99d6e1f107715a3243433f240286d1afbe650d2
+  |         04-workdir.sh e0e22857e2b77786d54b0e605e8256a1a918d34ae0a238a0a6684652f81da2ed
+  |         05-verify.sh 0ac1f07c9c146f15e555ddcb0e54c5519c669c5d3c6dce87f2da565c495df165
+  |         06-rollback.sh 2d516cea8097f4733db5722d7acb954f25e4c9b77dc4ff4ebb44b5bd13b7ca33
+  |         07-return.sh 92198ddffa52e59ffc3b5f307a21c609b5eb51449d009b912596d7c44a95f448
+  |         section.txt 27957bb7df3555e35e41b6d6182d8b612a4f66848f2a7aef785a66607e9fa49a
+  | sentry: Ubuntu 22.04.5 LTS Docker version 29.1.3, build 29.1.3-0ubuntu3~22.04.2 Docker Compose version 2.40.3+ds1-0ubuntu1~22.04.1
+  | throwaway project: /var/tmp/pftrb-6a0e86af (container pftrb-postfiatd, network none), local tags localhost/pftrb/postfiatd:testnet-light-latest localhost/pftrb/postfiatd:new-6a0e86af localhost/pftrb/postfiatd:fixed-6a0e86af
+  | 
+  | == 2026-11-27T20:51:23Z S0 preflight
+  | validator postfiatd d658ad69a7a8af86db3ed05635909c0dd32c1da85d15bd6cd6e1b8b13c453267 2026-11-24T16:08:15.907959686Z full
+  | sentry postfiatd-sentry 923fcdc30430224fde8fb159bcdd1f4b925b6a5067761cfc1010e9839148db6e 2026-11-27T07:25:34.425256078Z full
+  | CHECK ok   S0 validator postfiatd full or proposing
+  | CHECK ok   S0 sentry postfiatd-sentry full
+  | $ sudo -n pft-integrity verify | tail -1
+  |   RESULT: PASS - 300 unchanged, 0 warn, 0 fail -> exit 0
+  |   (exit 0)
+  | CHECK ok   S0 validator integrity PASS
+  | $ R 'pft-integrity verify | tail -1'
+  |   RESULT: PASS - 178 unchanged, 0 warn, 0 fail -> exit 0
+  |   (exit 0)
+  | CHECK ok   S0 sentry integrity PASS
+  | $ R 'docker ps -a --format {{.Names}} | grep -cxE "postfiatd|pftrb-postfiatd"; docker images --format {{.Repository}} | grep -c pftrb; ls -d /var/tmp/pftrb-* 2>/dev/null | wc -l'
+  |   0
+  |   0
+  |   0
+  |   (exit 0)
+  | CHECK ok   S0 sentry has no postfiatd or pftrb-postfiatd container, no pftrb image or pftrb dir
+  | $ curl -s -m 10 'http://<redacted-ip>:9090/api/v1/alerts' | jq -r '[.data.alerts[] | select(.labels.host == "sentry" and .labels.severity != "info") | .labels.alertname] | length'
+  |   0
+  |   (exit 0)
+  | CHECK ok   S0 no sentry alert above severity info pending or firing
+  | $ R 'pft-schedaudit audit | tail -1'
+  |   SUMMARY entries=79 enabled=66 findings=0 allowed=0 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+  |   (exit 0)
+  | CHECK ok   S0 sentry schedaudit: 0 unexpected
+  | sentry alerts already active before the run (left alone): PFTUpstreamFeedLagging,PFTUpstreamFeedQuiet
+  | image + container inventory (sentry):
+  |   sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e agtipft/postfiatd:testnet-light-latest
+  |   postfiatd-sentry
+  |   postfiatd-sentry-preaa-20261103T121134Z
+  |   postfiatd-sentry-preconfine-20261024T222524Z
+  |   postfiatd-sentry-presc-20261106T083724Z
+  | OLD = image of postfiatd-sentry: sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e, RepoDigests[0] agtipft/postfiatd@sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+  | CHECK ok   S0 OLD image has a RepoDigest
+  | operator topics to read back: 2 (not printed)
+  | CHECK ok   S0 operator topics found
+  | 
+  | == 2026-11-27T20:52:05Z S0b container-name edit of the guide blocks (the only edit applied to every run of 02, 04, 06)
+  |   02-record.sh:
+  |     2c2
+  |     < IMAGE_ID=$(docker inspect postfiatd --format '{{.Image}}')
+  |     ---
+  |     > IMAGE_ID=$(docker inspect pftrb-postfiatd --format '{{.Image}}')
+  |   04-workdir.sh:
+  |     1c1
+  |     < docker inspect postfiatd --format '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}'
+  |     ---
+  |     > docker inspect pftrb-postfiatd --format '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}'
+  |   06-rollback.sh:
+  |     14c14
+  |     < docker inspect postfiatd --format '{{.Image}}'
+  |     ---
+  |     > docker inspect pftrb-postfiatd --format '{{.Image}}'
+  | CHECK ok   S0b name edit changed exactly blocks 02, 04, 06, one line each
+  | 
+  | == 2026-11-27T20:52:05Z S1 quiet: silence, pft-maint window to a throwaway topic, sentry integrity timer paused
+  | silence 9be57ced host=sentry until 2026-11-27T21:37:05Z
+  | CHECK ok   S1 silence created
+  | real /etc/pft-maint/ntfy.env present before: 0
+  | $ { [ $HAD = 0 ] || sudo -n cp -p $NE $BK; } && printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' "$TT" | sudo -n tee $NE >/dev/null && sudo -n chmod 600 $NE && sudo -n stat -c '%a %U' $NE
+  |   600 root
+  |   (exit 0)
+  | CHECK ok   S1 throwaway pft-maint target installed
+  | $ sudo -n pft-maint start --ttl 45m --reason 'task_8ab4d4e6 upgrade-rollback throwaway project on the sentry'
+  |   window started: id m1795812725-2718132 until 2026-11-27T21:37:05Z | sentry copy: pushed
+  |   (exit 0)
+  | CHECK ok   S1 pft-maint window open
+  | $ R 'pft-maint active && echo sentry window active'
+  |   sentry window active
+  |   (exit 0)
+  | CHECK ok   S1 sentry has the window
+  | $ R 'systemd-run --collect --unit pftrb-integrity-rearm-6a0e86af /bin/sh -c "sleep 3000; systemctl start pft-integrity.timer" 2>&1 && systemctl stop pft-integrity.timer && systemctl is-active pft-integrity.timer; systemctl is-active pftrb-integrity-rearm-6a0e86af.service'
+  |   Running as unit: pftrb-integrity-rearm-6a0e86af.service
+  |   inactive
+  |   active
+  |   (exit 0)
+  | CHECK ok   S1 sentry pft-integrity.timer inactive, re-arm failsafe active
+  | 
+  | == 2026-11-27T20:53:03Z S2 throwaway compose project on OLD; NEW and FIXED images committed
+  | $ printf '%s\n' "$COMPOSE" | RS 'mkdir -m 700 /var/tmp/pftrb-6a0e86af && cat > /var/tmp/pftrb-6a0e86af/docker-compose.yml && cat /var/tmp/pftrb-6a0e86af/docker-compose.yml'
+  |   services:
+  |     postfiatd:
+  |       image: localhost/pftrb/postfiatd:testnet-light-latest
+  |       container_name: pftrb-postfiatd
+  |       network_mode: none
+  |       init: true
+  |       entrypoint: ["sleep", "infinity"]
+  |       restart: "no"
+  |   (exit 0)
+  | $ R 'docker tag sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e localhost/pftrb/postfiatd:testnet-light-latest && for t in new fixed; do c=$(docker create --name pftrb-mk-$t-6a0e86af sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e true) && docker commit --change "LABEL org.postfiat.rollbacktest=$t" $c localhost/pftrb/postfiatd:$t-6a0e86af >/dev/null && docker rm -f $c >/dev/null; done'
+  |   
+  |   (exit 0)
+  | CHECK ok   S2 images tagged and committed
+  | NEW sha256:420b154267f6634bb3598d81285c6907afec40f3086ad6e2d6354430e5ebb9a7 (RepoDigests ["localhost/pftrb/postfiatd@sha256:420b154267f6634bb3598d81285c6907afec40f3086ad6e2d6354430e5ebb9a7"])
+  | FIXED sha256:f04683749f64799f2f91703671e7f9ef9adc4321fc9778eaa1d4a7fcc3a988a9 (RepoDigests ["localhost/pftrb/postfiatd@sha256:f04683749f64799f2f91703671e7f9ef9adc4321fc9778eaa1d4a7fcc3a988a9"])
+  | CHECK ok   S2 OLD, NEW, FIXED are three different image IDs
+  | $ R 'cd /var/tmp/pftrb-6a0e86af && docker compose up -d 2>&1 && docker compose config | grep image:'
+  |    Container pftrb-postfiatd  Creating
+  |    Container pftrb-postfiatd  Created
+  |    Container pftrb-postfiatd  Starting
+  |    Container pftrb-postfiatd  Started
+  |       image: localhost/pftrb/postfiatd:testnet-light-latest
+  |   (exit 0)
+  | container pftrb-postfiatd 4999bfc1a5006f7d143f706a550190941141da0e9545acc9a0362f076016c980 image sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+  | CHECK ok   S2 throwaway container runs on OLD
+  | 
+  | == 2026-11-27T20:54:22Z S3 record before the upgrade (guide blocks 01 + 02, unchanged)
+  | $ ssh relay bash -s   <<< export POSTFIATD_DIR=/var/tmp/pftrb-6a0e86af + 01-dircheck.sh + 02-record.sh
+  |   --- 01-dircheck.sh sha256 27e070c6cb7cfc6c
+  |   | cd "$POSTFIATD_DIR"
+  |   | grep 'image:' docker-compose.yml
+  |   --- 02-record.sh sha256 de162b642651e1f8
+  |   | REC="pre-upgrade-$(date -u +%Y%m%dT%H%M%SZ).txt"
+  |   | IMAGE_ID=$(docker inspect pftrb-postfiatd --format '{{.Image}}')
+  |   | REPO_DIGEST=$(docker image inspect "$IMAGE_ID" --format '{{index .RepoDigests 0}}')
+  |   | printf 'image_id=%s\nrepo_digest=%s\n' "$IMAGE_ID" "$REPO_DIGEST" > "$REC"
+  |   | cat "$REC"
+  |   | grep -q '^repo_digest=.*@sha256:' "$REC" && echo "recorded $REC"
+  |       image: localhost/pftrb/postfiatd:testnet-light-latest
+  |   image_id=sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+  |   repo_digest=agtipft/postfiatd@sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+  |   recorded pre-upgrade-20261127T205422Z.txt
+  |   (exit 0)
+  | record file: pre-upgrade-20261127T205422Z.txt
+  | $ R 'cat /var/tmp/pftrb-6a0e86af/pre-upgrade-20261127T205422Z.txt'
+  |   image_id=sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+  |   repo_digest=agtipft/postfiatd@sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+  |   (exit 0)
+  | CHECK ok   S3 'recorded' line printed, file name pre-upgrade-<UTC>.txt
+  | CHECK ok   S3 record = OLD image ID + real RepoDigest
+  | 
+  | == 2026-11-27T20:54:23Z S4 upgrade (guide block 03; the rolling-tag pull becomes a local tag move to NEW)
+  |   edit of 03-upgrade.sh for this test (diff guide -> run):
+  |     1c1
+  |     < docker compose pull
+  |     ---
+  |     > docker tag sha256:420b154267f6634bb3598d81285c6907afec40f3086ad6e2d6354430e5ebb9a7 localhost/pftrb/postfiatd:testnet-light-latest
+  | $ ssh relay bash -s   <<< export POSTFIATD_DIR=/var/tmp/pftrb-6a0e86af + 01-dircheck.sh + 03-upgrade.sh (edited; 03 runs in the node directory 01 changed to)
+  |   --- 01-dircheck.sh sha256 27e070c6cb7cfc6c
+  |   | cd "$POSTFIATD_DIR"
+  |   | grep 'image:' docker-compose.yml
+  |   --- 03-upgrade.sh sha256 d97eaabebd2109f3
+  |   | docker tag sha256:420b154267f6634bb3598d81285c6907afec40f3086ad6e2d6354430e5ebb9a7 localhost/pftrb/postfiatd:testnet-light-latest
+  |   | docker compose up -d
+  |       image: localhost/pftrb/postfiatd:testnet-light-latest
+  |    Container pftrb-postfiatd  Recreate
+  |    Container pftrb-postfiatd  Recreated
+  |    Container pftrb-postfiatd  Starting
+  |    Container pftrb-postfiatd  Started
+  |   (exit 0)
+  | container pftrb-postfiatd ad37035701eb44cde3354070662c4cfcafcab98045c1be5e14a048966acaea72 image sha256:420b154267f6634bb3598d81285c6907afec40f3086ad6e2d6354430e5ebb9a7
+  | CHECK ok   S4 container recreated on NEW
+  | $ ssh relay bash -s   <<< export POSTFIATD_DIR=/var/tmp/pftrb-6a0e86af + 04-workdir.sh
+  |   --- 04-workdir.sh sha256 eed0a2cd36ae83b7
+  |   | docker inspect pftrb-postfiatd --format '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}'
+  |   /var/tmp/pftrb-6a0e86af
+  |   (exit 0)
+  | CHECK ok   S4 guide block 04 finds the project dir
+  | 
+  | == 2026-11-27T20:54:27Z S5 controls
+  | $ R 'docker rename pftrb-postfiatd pftrb-hold-6a0e86af && echo "containers named pftrb-postfiatd: $(docker ps -a --format {{.Names}} | grep -cx pftrb-postfiatd)"'
+  |   containers named pftrb-postfiatd: 0
+  |   (exit 0)
+  | $ ssh relay bash -s   <<< export POSTFIATD_DIR=/var/tmp/pftrb-6a0e86af + C1: 01 + 02 with no container named pftrb-postfiatd
+  |   --- 01-dircheck.sh sha256 27e070c6cb7cfc6c
+  |   | cd "$POSTFIATD_DIR"
+  |   | grep 'image:' docker-compose.yml
+  |   --- 02-record.sh sha256 de162b642651e1f8
+  |   | REC="pre-upgrade-$(date -u +%Y%m%dT%H%M%SZ).txt"
+  |   | IMAGE_ID=$(docker inspect pftrb-postfiatd --format '{{.Image}}')
+  |   | REPO_DIGEST=$(docker image inspect "$IMAGE_ID" --format '{{index .RepoDigests 0}}')
+  |   | printf 'image_id=%s\nrepo_digest=%s\n' "$IMAGE_ID" "$REPO_DIGEST" > "$REC"
+  |   | cat "$REC"
+  |   | grep -q '^repo_digest=.*@sha256:' "$REC" && echo "recorded $REC"
+  |       image: localhost/pftrb/postfiatd:testnet-light-latest
+  |   error: no such object: pftrb-postfiatd
+  |   Error: No such image: 
+  |   image_id=
+  |   repo_digest=
+  |   (exit 1)
+  | CHECK ok   C1 no 'recorded' line when the container is missing
+  | $ R 'docker rename pftrb-hold-6a0e86af pftrb-postfiatd && docker inspect -f {{.Id}} pftrb-postfiatd'
+  |   ad37035701eb44cde3354070662c4cfcafcab98045c1be5e14a048966acaea72
+  |   (exit 0)
+  | CHECK ok   C1 container renamed back, same ID
+  | $ R 'cat /var/tmp/pftrb-6a0e86af/pre-upgrade-20261127T205429Z.txt'
+  |   image_id=
+  |   repo_digest=
+  |   (exit 0)
+  | CHECK ok   C1 its record has an empty repo_digest
+  |   edit of 06-rollback.sh for this test (diff guide -> run):
+  |     3c3
+  |     < REC=pre-upgrade-YYYYMMDDTHHMMSSZ.txt
+  |     ---
+  |     > REC=pre-upgrade-20261127T205429Z.txt
+  |     14c14
+  |     < docker inspect postfiatd --format '{{.Image}}'
+  |     ---
+  |     > docker inspect pftrb-postfiatd --format '{{.Image}}'
+  | $ ssh relay bash -s   <<< export POSTFIATD_DIR=/var/tmp/pftrb-6a0e86af + C2: 06 with the incomplete record
+  |   --- 06-rollback.sh sha256 58cd75344668e954
+  |   | cd "$POSTFIATD_DIR"
+  |   | ls pre-upgrade-*.txt
+  |   | REC=pre-upgrade-20261127T205429Z.txt
+  |   | REPO_DIGEST=$(sed -n 's/^repo_digest=//p' "$REC")
+  |   | if [ -e docker-compose.override.yml ]; then
+  |   |   echo "docker-compose.override.yml exists: not changed, add the image line by hand"
+  |   | elif [ -z "$REPO_DIGEST" ]; then
+  |   |   echo "no repo_digest in $REC: nothing changed"
+  |   | else
+  |   |   printf 'services:\n  postfiatd:\n    image: %s\n' "$REPO_DIGEST" > docker-compose.override.yml
+  |   |   docker compose config | grep 'image:'
+  |   |   docker compose up -d
+  |   | fi
+  |   | docker inspect pftrb-postfiatd --format '{{.Image}}'
+  |   | sed -n 's/^image_id=//p' "$REC"
+  |   pre-upgrade-20261127T205422Z.txt
+  |   pre-upgrade-20261127T205429Z.txt
+  |   no repo_digest in pre-upgrade-20261127T205429Z.txt: nothing changed
+  |   sha256:420b154267f6634bb3598d81285c6907afec40f3086ad6e2d6354430e5ebb9a7
+  |   (exit 0)
+  | CHECK ok   C2 'no repo_digest' printed, no override written, container unchanged
+  | $ printf '%s\n' 'services:' '  postfiatd:' '    labels:' '      operator.note: my own override' | RS 'cat > /var/tmp/pftrb-6a0e86af/docker-compose.override.yml && sha256sum /var/tmp/pftrb-6a0e86af/docker-compose.override.yml'
+  |   39d5870a599aa5e277cab346ceb533a3b2540aac81ce29057f0eb90ce1371361  /var/tmp/pftrb-6a0e86af/docker-compose.override.yml
+  |   (exit 0)
+  |   edit of 06-rollback.sh for this test (diff guide -> run):
+  |     3c3
+  |     < REC=pre-upgrade-YYYYMMDDTHHMMSSZ.txt
+  |     ---
+  |     > REC=pre-upgrade-20261127T205422Z.txt
+  |     14c14
+  |     < docker inspect postfiatd --format '{{.Image}}'
+  |     ---
+  |     > docker inspect pftrb-postfiatd --format '{{.Image}}'
+  | $ ssh relay bash -s   <<< export POSTFIATD_DIR=/var/tmp/pftrb-6a0e86af + C3: 06 with an existing override
+  |   --- 06-rollback.sh sha256 960d15dcbdeab81e
+  |   | cd "$POSTFIATD_DIR"
+  |   | ls pre-upgrade-*.txt
+  |   | REC=pre-upgrade-20261127T205422Z.txt
+  |   | REPO_DIGEST=$(sed -n 's/^repo_digest=//p' "$REC")
+  |   | if [ -e docker-compose.override.yml ]; then
+  |   |   echo "docker-compose.override.yml exists: not changed, add the image line by hand"
+  |   | elif [ -z "$REPO_DIGEST" ]; then
+  |   |   echo "no repo_digest in $REC: nothing changed"
+  |   | else
+  |   |   printf 'services:\n  postfiatd:\n    image: %s\n' "$REPO_DIGEST" > docker-compose.override.yml
+  |   |   docker compose config | grep 'image:'
+  |   |   docker compose up -d
+  |   | fi
+  |   | docker inspect pftrb-postfiatd --format '{{.Image}}'
+  |   | sed -n 's/^image_id=//p' "$REC"
+  |   pre-upgrade-20261127T205422Z.txt
+  |   pre-upgrade-20261127T205429Z.txt
+  |   docker-compose.override.yml exists: not changed, add the image line by hand
+  |   sha256:420b154267f6634bb3598d81285c6907afec40f3086ad6e2d6354430e5ebb9a7
+  |   sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+  |   (exit 0)
+  | CHECK ok   C3 'exists: not changed' printed
+  | CHECK ok   C3 override bytes unchanged, container unchanged, last two lines differ
+  | $ R 'rm /var/tmp/pftrb-6a0e86af/docker-compose.override.yml && cd /var/tmp/pftrb-6a0e86af && docker compose config | grep -c operator.note'
+  |   0
+  |   (exit 1)
+  | CHECK ok   C3 control override removed again
+  | 
+  | == 2026-11-27T20:54:35Z S6 rollback (guide block 06 with the S3 record)
+  | $ ssh relay bash -s   <<< export POSTFIATD_DIR=/var/tmp/pftrb-6a0e86af + 06-rollback.sh (REC set)
+  |   --- 06-rollback.sh sha256 960d15dcbdeab81e
+  |   | cd "$POSTFIATD_DIR"
+  |   | ls pre-upgrade-*.txt
+  |   | REC=pre-upgrade-20261127T205422Z.txt
+  |   | REPO_DIGEST=$(sed -n 's/^repo_digest=//p' "$REC")
+  |   | if [ -e docker-compose.override.yml ]; then
+  |   |   echo "docker-compose.override.yml exists: not changed, add the image line by hand"
+  |   | elif [ -z "$REPO_DIGEST" ]; then
+  |   |   echo "no repo_digest in $REC: nothing changed"
+  |   | else
+  |   |   printf 'services:\n  postfiatd:\n    image: %s\n' "$REPO_DIGEST" > docker-compose.override.yml
+  |   |   docker compose config | grep 'image:'
+  |   |   docker compose up -d
+  |   | fi
+  |   | docker inspect pftrb-postfiatd --format '{{.Image}}'
+  |   | sed -n 's/^image_id=//p' "$REC"
+  |   pre-upgrade-20261127T205422Z.txt
+  |   pre-upgrade-20261127T205429Z.txt
+  |       image: agtipft/postfiatd@sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+  |    Container pftrb-postfiatd  Recreate
+  |    Container pftrb-postfiatd  Recreated
+  |    Container pftrb-postfiatd  Starting
+  |    Container pftrb-postfiatd  Started
+  |   sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+  |   sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+  |   (exit 0)
+  | container pftrb-postfiatd 307ed1c6f67317515ca88aa5671ed45446ec4b758521ecbb216a84062eb328a1 image sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+  | CHECK ok   S6 docker compose config shows the recorded digest
+  | CHECK ok   S6 container recreated on OLD; last two lines equal
+  | $ R 'cat /var/tmp/pftrb-6a0e86af/docker-compose.override.yml'
+  |   services:
+  |     postfiatd:
+  |       image: agtipft/postfiatd@sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+  |   (exit 0)
+  | CHECK ok   S6 override = the three published lines with the digest
+  | 
+  | == 2026-11-27T20:54:38Z S7 pinned pull is a no-op (guide 'docker compose pull' with the override, unchanged, against Docker Hub)
+  | $ R 'cd /var/tmp/pftrb-6a0e86af && docker compose pull 2>&1'
+  |    postfiatd Pulling 
+  |    postfiatd Pulled 
+  |   (exit 0)
+  | CHECK ok   S7 docker compose pull exit 0
+  | CHECK ok   S7 image + container inventory unchanged by the pull
+  | $ R 'cd /var/tmp/pftrb-6a0e86af && docker compose up -d 2>&1'
+  |    Container pftrb-postfiatd  Running
+  |   (exit 0)
+  | CHECK ok   S7 docker compose up -d keeps the same container on OLD
+  | 
+  | == 2026-11-27T20:54:46Z S8 return to the rolling tag (record first, then guide block 07; the pull becomes a tag move to FIXED)
+  | $ ssh relay bash -s   <<< export POSTFIATD_DIR=/var/tmp/pftrb-6a0e86af + 01 + 02 (record the pinned image)
+  |   --- 01-dircheck.sh sha256 27e070c6cb7cfc6c
+  |   | cd "$POSTFIATD_DIR"
+  |   | grep 'image:' docker-compose.yml
+  |   --- 02-record.sh sha256 de162b642651e1f8
+  |   | REC="pre-upgrade-$(date -u +%Y%m%dT%H%M%SZ).txt"
+  |   | IMAGE_ID=$(docker inspect pftrb-postfiatd --format '{{.Image}}')
+  |   | REPO_DIGEST=$(docker image inspect "$IMAGE_ID" --format '{{index .RepoDigests 0}}')
+  |   | printf 'image_id=%s\nrepo_digest=%s\n' "$IMAGE_ID" "$REPO_DIGEST" > "$REC"
+  |   | cat "$REC"
+  |   | grep -q '^repo_digest=.*@sha256:' "$REC" && echo "recorded $REC"
+  |       image: localhost/pftrb/postfiatd:testnet-light-latest
+  |   image_id=sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+  |   repo_digest=agtipft/postfiatd@sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+  |   recorded pre-upgrade-20261127T205447Z.txt
+  |   (exit 0)
+  | CHECK ok   S8 pinned image recorded (OLD, digest)
+  |   edit of 07-return.sh for this test (diff guide -> run):
+  |     4c4
+  |     < docker compose pull
+  |     ---
+  |     > docker tag sha256:f04683749f64799f2f91703671e7f9ef9adc4321fc9778eaa1d4a7fcc3a988a9 localhost/pftrb/postfiatd:testnet-light-latest
+  | $ ssh relay bash -s   <<< export POSTFIATD_DIR=/var/tmp/pftrb-6a0e86af + 07-return.sh (edited)
+  |   --- 07-return.sh sha256 46671731fcc56a3d
+  |   | cd "$POSTFIATD_DIR"
+  |   | rm docker-compose.override.yml
+  |   | docker compose config | grep 'image:'
+  |   | docker tag sha256:f04683749f64799f2f91703671e7f9ef9adc4321fc9778eaa1d4a7fcc3a988a9 localhost/pftrb/postfiatd:testnet-light-latest
+  |   | docker compose up -d
+  |       image: localhost/pftrb/postfiatd:testnet-light-latest
+  |    Container pftrb-postfiatd  Recreate
+  |    Container pftrb-postfiatd  Recreated
+  |    Container pftrb-postfiatd  Starting
+  |    Container pftrb-postfiatd  Started
+  |   (exit 0)
+  | container pftrb-postfiatd e6a6c2b88c08c3404e06a291ff32476b1bb7d21ccf0356a8b1f50597ff3bd866 image sha256:f04683749f64799f2f91703671e7f9ef9adc4321fc9778eaa1d4a7fcc3a988a9
+  | CHECK ok   S8 config shows the -light-latest tag again
+  | CHECK ok   S8 override gone; container recreated on FIXED
+  | 
+  | == 2026-11-27T20:54:52Z S9 shellcheck of every extracted block (shellcheck 0.8.0, on the validator)
+  | $ cd '~/.cache/rbclone.xB2bpT/out' && shellcheck -s bash -e SC2164 01-dircheck.sh 02-record.sh 03-upgrade.sh 04-workdir.sh 05-verify.sh 06-rollback.sh 07-return.sh
+  |   
+  |   (exit 0)
+  | CHECK ok   S9 shellcheck -e SC2164 clean on all 7 blocks
+  | $ cd '~/.cache/rbclone.xB2bpT/out' && shellcheck -s bash -f gcc 01-dircheck.sh 02-record.sh 03-upgrade.sh 04-workdir.sh 05-verify.sh 06-rollback.sh 07-return.sh
+  |   01-dircheck.sh:1:1: warning: Use 'cd ... || exit' or 'cd ... || return' in case cd fails. [SC2164]
+  |   06-rollback.sh:1:1: warning: Use 'cd ... || exit' or 'cd ... || return' in case cd fails. [SC2164]
+  |   07-return.sh:1:1: warning: Use 'cd ... || exit' or 'cd ... || return' in case cd fails. [SC2164]
+  |   (exit 1)
+  | CHECK ok   S9 without the exclusion: only SC2164, only on cd "$POSTFIATD_DIR" lines (01:1, 06:1, 07:1)
+  | 
+  | == 2026-11-27T20:54:52Z S10 cleanup of the throwaway project
+  | $ R 'cd /var/tmp/pftrb-6a0e86af && docker compose down -t 2 2>&1; docker rmi localhost/pftrb/postfiatd:testnet-light-latest localhost/pftrb/postfiatd:new-6a0e86af localhost/pftrb/postfiatd:fixed-6a0e86af 2>&1; rm -rf /var/tmp/pftrb-6a0e86af; ls -d /var/tmp/pftrb-6a0e86af 2>&1'
+  |    Container pftrb-postfiatd  Stopping
+  |    Container pftrb-postfiatd  Stopped
+  |    Container pftrb-postfiatd  Removing
+  |    Container pftrb-postfiatd  Removed
+  |   Untagged: localhost/pftrb/postfiatd:testnet-light-latest
+  |   Untagged: localhost/pftrb/postfiatd:new-6a0e86af
+  |   Deleted: sha256:420b154267f6634bb3598d81285c6907afec40f3086ad6e2d6354430e5ebb9a7
+  |   Untagged: localhost/pftrb/postfiatd:fixed-6a0e86af
+  |   Deleted: sha256:f04683749f64799f2f91703671e7f9ef9adc4321fc9778eaa1d4a7fcc3a988a9
+  |   ls: cannot access '/var/tmp/pftrb-6a0e86af': No such file or directory
+  |   (exit 2)
+  | CHECK ok   S10 image + container inventory = S0
+  | $ R 'docker image inspect -f "{{json .RepoTags}} {{json .RepoDigests}}" sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e'
+  |   ["agtipft/postfiatd:testnet-light-latest","agtipft/postfiatd@sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e"] ["agtipft/postfiatd@sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e"]
+  |   (exit 0)
+  | 
+  | == 2026-11-27T20:54:54Z S11 end state
+  | $ R 'systemctl start pft-integrity.timer && systemctl stop pftrb-integrity-rearm-6a0e86af.service; systemctl is-active pft-integrity.timer; systemctl is-active pftrb-integrity-rearm-6a0e86af.service'
+  |   active
+  |   inactive
+  |   (exit 3)
+  | CHECK ok   S11 sentry pft-integrity.timer re-armed, failsafe gone
+  | $ R 'pft-jobwatch collect >/dev/null 2>&1; echo jobwatch collect $?; pft-schedaudit collect >/dev/null 2>&1; echo schedaudit collect $?; pft-schedaudit audit | tail -1'
+  |   jobwatch collect 0
+  |   schedaudit collect 0
+  |   SUMMARY entries=79 enabled=66 findings=0 allowed=0 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+  |   (exit 0)
+  | CHECK ok   S11 sentry schedaudit: 0 unexpected, 0 new, 0 removed
+  | validator postfiatd d658ad69a7a8af86db3ed05635909c0dd32c1da85d15bd6cd6e1b8b13c453267 2026-11-24T16:08:15.907959686Z full
+  | sentry postfiatd-sentry 923fcdc30430224fde8fb159bcdd1f4b925b6a5067761cfc1010e9839148db6e 2026-11-27T07:25:34.425256078Z full
+  | CHECK ok   S11 validator postfiatd: same ID + StartedAt, full or proposing
+  | CHECK ok   S11 sentry postfiatd-sentry: same ID + StartedAt, full
+  | $ sudo -n pft-integrity verify | tail -1
+  |   RESULT: PASS - 300 unchanged, 0 warn, 0 fail -> exit 0
+  |   (exit 0)
+  | CHECK ok   S11 validator integrity PASS
+  | $ R 'pft-integrity verify | tail -1'
+  |   RESULT: PASS - 178 unchanged, 0 warn, 0 fail -> exit 0
+  |   (exit 0)
+  | CHECK ok   S11 sentry integrity PASS
+  | $ sudo -n pft-maint end
+  |   window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+  | $ sudo -n rm -f $NE   (no ntfy.env before: pft-maint falls back to the real monitor target again)
+  | CHECK ok   S11 pft-maint target back to its pre-run state
+  | CHECK ok   no sentry alert pending or firing before the silence ends, other than those already active at S0 (none)
+  | $ curl -s -m 10 -XDELETE 'http://<redacted-ip>:9093/api/v2/silence/9be57ced-e88d-497d-bbc9-20525d7bfd83' -o /dev/null -w 'expire silence http %{http_code}'
+  |   expire silence http 200
+  |   (exit 0)
+  | CHECK ok   no new sentry alert in the 3 minutes after the silence ended (none)
+  | $ sleep 5; curl -s -m 15 "https://ntfy.sh/$TT/json?poll=1&since=1795812682" | jq -r 'select(.event == "message") | .title'
+  |   [MAINT] start validator
+  |   [MAINT] end validator
+  |   (exit 0)
+  | CHECK ok   S11 throwaway topic got the [MAINT] start and end messages
+  |   operator topic #1: 0 message(s)
+  |   operator topic #2: 0 message(s)
+  | CHECK ok   S11 operator topics received nothing during the run (2 topic(s), 0 with messages)
+  | 
+  | sentry-proof done 2026-11-27T20:58:55Z: 0 check(s) failed -> PASS
+  (exit 0)
+CHECK ok   F6 sentry-proof PASS from the fresh clone
+
+fresh-clone done 2026-11-27T20:58:55Z: 0 check(s) failed -> PASS
+fresh-clone exit 0
