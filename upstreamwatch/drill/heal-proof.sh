@@ -15,8 +15,9 @@
 #     attempts 1), pft-vulnscan-heal.service ran scan --force-fetch, the cache now holds upstream's copy (content clock
 #     within tolerance of upstream's Last-Modified), pft_vulnscan_feed_timestamp_seconds moved, usn-host ok, lag 0
 #  C  the unit again: nothing to heal (no new journal line, attempts still 1), still ok
-#  D  validator pulls: Prometheus shows sentry ok / lag 0 / heal healed; no PFTUpstream*/PFTVuln* alert for the sentry
-#     pending or firing; the operator ntfy topic received 0 messages since step 0
+#  D  validator pulls: Prometheus shows sentry ok / lag 0 / heal healed; no alert for usn-host and no paging
+#     (non-digest) PFTUpstream*/PFTVuln* alert for the sentry pending or firing (digest-only ones for OTHER feeds are
+#     listed); both operator ntfy topics (monitor + alert bridge) received 0 messages since step 0
 # Nothing here touches postfiatd. Exit 0 only if every gate passed.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -27,8 +28,10 @@ FEED_SHA=fb0df633af327dbbd35b93b15f4c7dde8df6065e9172cfe5188545f21d7f865a
 SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 relay)
 PROM=http://127.0.0.1:9090
 OPS="$(sudo -n sed -n 's/^NTFY_TOPIC=//p' /etc/postfiat-monitor.env | head -1)"
+BRIDGE_URL="$(sed -n 's/^NTFY_URL=//p' "$HOME/.config/pft-alerts/ntfy.env" 2>/dev/null | tr -d '"' | head -1)"
+BRT="${BRIDGE_URL##*/}"
 FAILS=0; T0="$(date -u +%s)"
-red() { sed -E "s#${OPS:-@@none@@}#<redacted>#g; s#\b([0-9]{1,3}\.){3}[0-9]{1,3}\b#<redacted-ip>#g; s#/home/[a-z0-9_-]+#~#g"; }
+red() { sed -E "s#${OPS:-@@none@@}#<redacted>#g; s#${BRT:-@@none@@}#<redacted>#g; s#\b([0-9]{1,3}\.){3}[0-9]{1,3}\b#<redacted-ip>#g; s#/home/[a-z0-9_-]+#~#g"; }
 # x CMD: run locally; rx CMD: run on the sentry as root (the text goes over stdin, no ssh argv quoting)
 x() { echo "\$ $*" | red; XOUT="$( (eval "$*") 2>&1)"; XRC=$?; printf '%s\n' "$XOUT" | red | sed 's/^/  /'; echo "  (exit $XRC)"; }
 rx() { echo "\$ [sentry] $*" | red; XOUT="$(printf '%s\n' "$*" | "${SSH[@]}" 'sudo -n bash -s' 2>&1)"; XRC=$?
@@ -120,14 +123,18 @@ wait_prom 'pft_upstreamwatch_feed_lag_seconds{host="sentry",feed="usn-host"}' 0;
 wait_prom 'pft_upstreamwatch_heal_last_result{host="sentry",feed="usn-host",result="healed"}' 1; gate $? "D: Prometheus sentry heal_last_result healed = 1"
 wait_prom 'pft_upstreamwatch_heal_attempts{host="sentry",feed="usn-host"}' 1; gate $? "D: Prometheus sentry heal_attempts = 1"
 wait_prom 'pft_vulnscan_feed_timestamp_seconds{host="sentry"}' "$nts"; gate $? "D: Prometheus sentry vulnscan feed timestamp = healed copy"
-x "curl -s -m 10 '$PROM/api/v1/alerts' | jq -r '.data.alerts[] | select(.labels.host == \"sentry\" and (.labels.alertname | test(\"^PFT(Upstream|Vuln)\"))) | \"\(.labels.alertname) \(.state)\"' | wc -l"
-[ "$XOUT" = 0 ]; gate $? "D: no PFTUpstream*/PFTVuln* alert for the sentry pending or firing"
-x "curl -s -m 10 http://127.0.0.1:9093/api/v2/alerts | jq -r '.[] | select(.labels.host == \"sentry\" and (.labels.alertname | test(\"^PFT(Upstream|Vuln)\"))) | .labels.alertname' | wc -l"
-[ "$XOUT" = 0 ]; gate $? "D: Alertmanager holds none of them for the sentry"
+x "curl -s -m 10 '$PROM/api/v1/alerts' | jq -r '.data.alerts[] | select(.labels.host == \"sentry\" and (.labels.alertname | test(\"^PFT(Upstream|Vuln)\"))) | \"\(.labels.alertname) feed=\(.labels.feed // \"-\") notify=\(.labels.notify // \"page\") \(.state)\"'"
+! grep -q 'feed=usn-host ' <<< "$XOUT"; gate $? "D: no PFTUpstream*/PFTVuln* alert for sentry usn-host pending or firing"
+! grep -q 'notify=page ' <<< "$XOUT"; gate $? "D: no paging (non-digest) PFTUpstream*/PFTVuln* alert for the sentry"
+x "curl -s -m 10 http://127.0.0.1:9093/api/v2/alerts | jq -r '.[] | select(.labels.host == \"sentry\" and (.labels.alertname | test(\"^PFT(Upstream|Vuln)\"))) | \"\(.labels.alertname) feed=\(.labels.feed // \"-\") receivers=\([.receivers[].name] | join(\",\"))\"'"
+! grep -q 'receivers=.*bridge' <<< "$XOUT"; gate $? "D: Alertmanager routes none of them to the bridge (operator)"
 rx "pft-integrity verify | tail -1; rm -rf $B && echo backup-removed"
 gate "$XRC" "D: sentry integrity verify PASS (cache + heal state are not integrity items)"
 sleep 30
 x "curl -s -m 15 'https://ntfy.sh/$OPS/json?poll=1&since=$T0' | jq -r 'select(.event == \"message\") | .title' | wc -l"
-[ "$XOUT" = 0 ]; gate $? "D: operator topic: 0 messages since step 0"
+[ "$XOUT" = 0 ]; gate $? "D: operator monitor topic: 0 messages since step 0"
+[ -n "$BRT" ]; gate $? "D: alert-bridge topic known"
+x "curl -s -m 15 '$BRIDGE_URL/json?poll=1&since=$T0' | jq -r 'select(.event == \"message\") | .title' | wc -l"
+[ "$XOUT" = 0 ]; gate $? "D: operator alert-bridge topic: 0 messages since step 0"
 echo "RESULT: $FAILS gate(s) failed -> $([ "$FAILS" = 0 ] && echo PASS || echo FAIL)"
 [ "$FAILS" = 0 ]
