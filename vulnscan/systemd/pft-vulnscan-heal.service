@@ -1,0 +1,39 @@
+[Unit]
+Description=pft-vulnscan heal: one forced cache-busting USN OVAL refetch + scan (started by pft-upstreamwatch, no timer)
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/vulnscan
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Started only by ../upstreamwatch (bounded heal: lag > LAG_HEAL_HOURS, once per HEAL_INTERVAL_HOURS, not in a
+# pft-maint window). Same sandbox as pft-vulnscan.service. exit 1 = findings or reboot owed, not a unit failure
+SuccessExitStatus=1
+ExecStart=/usr/local/bin/pft-vulnscan scan --force-fetch
+CacheDirectory=pft-vulnscan
+CacheDirectoryMode=0755
+ReadWritePaths=/var/lib/pft-exporter/textfile
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+# AF_NETLINK: oscap 1.2 probes fail without it ("Can't receive message: 125"), see logs/04-sandbox-bisect.log
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+Nice=10
+IOSchedulingClass=idle
+UMask=0022
+TimeoutStartSec=20min

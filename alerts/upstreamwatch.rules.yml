@@ -6,6 +6,10 @@
 # upstream_quiet (our copy IS upstream's latest, upstream simply has not republished) and a newer postfiatd release
 # carry notify="digest": never paged, summed once a day by pft-upstreamwatch-digest.timer. unreachable is not an
 # alert of its own: if it persists, the fetcher goes overdue and fetch_failing pages.
+# local_lagging (upstream has newer content we lack, for no longer than STALE_GRACE_HOURS) is digest-only too:
+# pft-upstreamwatch heals usn-host itself (bounded ../vulnscan refetch after LAG_HEAL_HOURS), and a lag that outlives
+# the grace period turns into local_stale, which pages. PFTUpstreamFeedLagging (for: 3h) only shows that a lag
+# survived the heal window (LAG_HEAL_HOURS 2 h + one hourly run).
 # for: 65m on the feed alerts = the state was seen by two consecutive hourly runs (one run's sample cannot page).
 # Tests: upstreamwatch.tests.yml (promtool test rules upstreamwatch.tests.yml).
 groups:
@@ -39,6 +43,16 @@ groups:
           summary: "Upstream has not republished feed {{ $labels.feed }} (seen from {{ $labels.host }})"
           description: "Our copy is upstream's latest; upstream itself has published nothing for QUIET_AGE_HOURS. Nothing to fix locally (daily digest only)."
           runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/upstreamwatch/README.md#alerts"
+      - alert: PFTUpstreamFeedLagging
+        expr: pft_upstreamwatch_feed_state{state="local_lagging"} == 1
+        for: 3h
+        labels:
+          severity: info
+          notify: digest
+        annotations:
+          summary: "Feed {{ $labels.feed }} on {{ $labels.host }} lags upstream (within the grace period)"
+          description: "Upstream has published content our copy lacks (pft_upstreamwatch_feed_lag_seconds), not yet longer than STALE_GRACE_HOURS. For usn-host pft-upstreamwatch starts one bounded refetch (pft-vulnscan-heal.service) per HEAL_INTERVAL_HOURS; see pft_upstreamwatch_heal_last_result and /var/lib/pft-upstreamwatch/heal.jsonl. Pages only if it turns into local_stale (daily digest only)."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/upstreamwatch/README.md#bounded-heal"
       - alert: PFTUpstreamReleaseAvailable
         expr: pft_upstreamwatch_release_state{state="behind"} == 1
         for: 2h

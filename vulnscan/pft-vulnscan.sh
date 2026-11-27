@@ -4,8 +4,9 @@
 # says which updates apt can install; pft-vulnscan says which published USNs/CVEs still apply to what is installed,
 # including the ones apt cannot fix (fix only in Ubuntu Pro / ESM pockets).
 #
-# Usage: pft-vulnscan scan [--json] [--no-fetch] [--textfile-dir DIR]   fetch the feed if changed, evaluate, report
-#        pft-vulnscan fetch                                             only refresh the cached feed
+# Usage: pft-vulnscan scan [--json] [--no-fetch|--force-fetch] [--textfile-dir DIR]
+#                                                                       fetch the feed if changed, evaluate, report
+#        pft-vulnscan fetch [--force]                                   only refresh the cached feed
 #        sudo pft-vulnscan pull                                         validator: copy the peer's textfile (see below)
 #        pft-vulnscan validate FILE HOST                                exit 0 if FILE is an acceptable textfile for HOST
 #        pft-vulnscan version
@@ -19,6 +20,11 @@
 #         The same GET follows a 200 whose feed is older than REFETCH_AGE_HOURS. The unconditional GET adds a
 #         cache-busting query (?pft-vulnscan-nocache=EPOCH): on 2026-11-09 a Canonical cache answered the plain
 #         no-cache GET with a 3-day-old copy (x-cache-status HIT), while a query string is a cache MISS (origin).
+#         --force / scan --force-fetch: go straight to that unconditional cache-busting GET, whatever the cached
+#         copy's age (../upstreamwatch's bounded heal, pft-vulnscan-heal.service: on 2026-11-27 the daily fetch got
+#         a 20 h old copy from a cache although upstream had published 12 h earlier, below REFETCH_AGE_HOURS).
+#  lock   scan and fetch hold CACHE_DIR/.lock (flock, waiting up to LOCK_WAIT s, default 1200), so the daily scan,
+#         the heal unit and a manual run never write the cache at the same time; exit 2 if the wait runs out.
 #  scan   1. fetch (unless --no-fetch); if that fails a cached feed is still used (the age check below decides).
 #         2. the cached .bz2 must match the sha256 in feed.meta (else exit 2: cache changed behind our back).
 #         3. decompress, `oscap oval eval --results`, then vulnscan_parse.py: refuses (exit 2) a feed older than
@@ -40,7 +46,7 @@
 # Config: /etc/pft-vulnscan.env (KEY=VALUE, root-owned; PFT_VS_CONF overrides the path): HOST_LABEL (validator),
 #   PEER_LABEL (sentry), FEED_URL (Canonical jammy USN OVAL .bz2), MAX_FEED_AGE_DAYS (7), CACHE_DIR
 #   (/var/cache/pft-vulnscan), TEXTFILE_DIR (/var/lib/pft-exporter/textfile), REMOTE_DIR (same), FETCH_TIMEOUT (120),
-#   REFETCH_AGE_HOURS (24),
+#   REFETCH_AGE_HOURS (24), LOCK_WAIT (1200),
 #   OSCAP_TIMEOUT (900), PULL_SSH, PULL_TIMEOUT (30).
 # Test hooks: PFT_VS_OSCAP PFT_VS_CURL PFT_VS_DPKG_QUERY PFT_VS_PARSER (commands/paths), PFT_VS_NOW (epoch),
 #   PFT_VS_UNAME_R (running kernel), PFT_VS_ROOT (prefix for /var/run/reboot-required).
@@ -48,18 +54,19 @@
 # shellcheck disable=SC2016,SC1091
 set -uo pipefail
 umask 022
-VERSION=1.2.0
+VERSION=1.3.0
 
 HOST_LABEL=validator; PEER_LABEL=sentry
 FEED_URL=https://security-metadata.canonical.com/oval/com.ubuntu.jammy.usn.oval.xml.bz2
 MAX_FEED_AGE_DAYS=7; CACHE_DIR=/var/cache/pft-vulnscan; TEXTFILE_DIR=/var/lib/pft-exporter/textfile
 REMOTE_DIR=/var/lib/pft-exporter/textfile; FETCH_TIMEOUT=120; REFETCH_AGE_HOURS=24; OSCAP_TIMEOUT=900; PULL_SSH=""; PULL_TIMEOUT=30
+LOCK_WAIT=1200
 MAX_BYTES=16384
 CONF="${PFT_VS_CONF:-/etc/pft-vulnscan.env}"
 if [ -f "$CONF" ]; then
   while IFS='=' read -r k v; do
     case "$k" in
-      HOST_LABEL|PEER_LABEL|FEED_URL|MAX_FEED_AGE_DAYS|CACHE_DIR|TEXTFILE_DIR|REMOTE_DIR|FETCH_TIMEOUT|REFETCH_AGE_HOURS|OSCAP_TIMEOUT|PULL_SSH|PULL_TIMEOUT)
+      HOST_LABEL|PEER_LABEL|FEED_URL|MAX_FEED_AGE_DAYS|CACHE_DIR|TEXTFILE_DIR|REMOTE_DIR|FETCH_TIMEOUT|REFETCH_AGE_HOURS|OSCAP_TIMEOUT|PULL_SSH|PULL_TIMEOUT|LOCK_WAIT)
         v="${v%\"}"; v="${v#\"}"; printf -v "$k" '%s' "$v" ;;
     esac
   done < <(grep -E '^[A-Z_]+=' "$CONF")
@@ -76,6 +83,13 @@ die() { printf 'pft-vulnscan: %s\n' "$1" >&2; exit "${2:-2}"; }
 now() { if [ -n "${PFT_VS_NOW:-}" ]; then echo "$PFT_VS_NOW"; else date -u +%s; fi; }
 valid_label() { [[ "$1" =~ ^[a-z][a-z0-9_-]{0,31}$ ]]; }
 sha() { sha256sum < "$1" | cut -c1-64; }
+# lock: hold CACHE_DIR/.lock on fd 7 for the rest of the process (released on exit)
+lock() {
+  [[ "$LOCK_WAIT" =~ ^[0-9]{1,5}$ ]] || die "LOCK_WAIT must be a whole number of seconds (got: $LOCK_WAIT)"
+  mkdir -p "$CACHE_DIR" || die "cannot create $CACHE_DIR"
+  exec 7> "$CACHE_DIR/.lock" || die "cannot open $CACHE_DIR/.lock"
+  flock -w "$LOCK_WAIT" 7 || die "another pft-vulnscan run holds $CACHE_DIR/.lock (waited $LOCK_WAIT s)"
+}
 meta_get() { sed -n "s/^$1=//p" "$CACHE_DIR/feed.meta" 2>/dev/null | head -1; }
 
 # decompress SRC.bz2 DST -> rc 0, or rc 1 (not bzip2 / truncated)
@@ -215,11 +229,12 @@ EOF
 }
 
 scan() {
-  local json=0 nofetch=0 t0 t1 fetchmsg="skipped (--no-fetch)" work js err fts=0 rc
+  local json=0 nofetch=0 force="" t0 t1 fetchmsg="skipped (--no-fetch)" work js err fts=0 rc
   while [ $# -gt 0 ]; do
     case "$1" in
       --json) json=1 ;;
       --no-fetch) nofetch=1 ;;
+      --force-fetch) force=force ;;
       --textfile-dir) TEXTFILE_DIR="${2:?}"; shift ;;
       *) die "unknown argument: $1" ;;
     esac
@@ -227,6 +242,8 @@ scan() {
   done
   valid_label "$HOST_LABEL" || die "bad HOST_LABEL"
   [[ "$MAX_FEED_AGE_DAYS" =~ ^[1-9][0-9]*$ ]] || die "bad MAX_FEED_AGE_DAYS"
+  [ "$nofetch" = 0 ] || [ -z "$force" ] || die "--no-fetch and --force-fetch exclude each other"
+  lock
   t0="$(now)"
   work="$(mktemp -d)" || die "cannot create a temp dir"
   # shellcheck disable=SC2064 # expand $work now
@@ -247,7 +264,8 @@ scan() {
   for c in "$OSCAP" python3; do command -v "$c" >/dev/null || fail "$c not installed"; done
   [ -r "$PARSER" ] || fail "parser $PARSER missing"
   if [ "$nofetch" = 0 ]; then
-    fetchmsg="$(fetch)" || fetchmsg="FAILED: $fetchmsg (using the cached feed if there is one)"
+    fetchmsg="$(fetch $force)" || fetchmsg="FAILED: $fetchmsg (using the cached feed if there is one)"
+    [ -z "$force" ] || fetchmsg="forced unconditional GET: $fetchmsg"
   fi
   [ -s "$CACHE_DIR/feed.xml.bz2" ] || fail "no cached feed in $CACHE_DIR (fetch: $fetchmsg)"
   local want got; want="$(meta_get sha256)"; got="$(sha "$CACHE_DIR/feed.xml.bz2")"
@@ -353,7 +371,8 @@ pull() {
 cmd="${1:-}"; [ $# -gt 0 ] && shift
 case "$cmd" in
   scan) scan "$@" ;;
-  fetch) msg="$(fetch)" || die "fetch failed: $msg" 1; echo "$msg (sha256 $(meta_get sha256))" ;;
+  fetch) f=""; case "${1:-}" in --force) f=force ;; "") ;; *) die "usage: pft-vulnscan fetch [--force]" ;; esac
+         lock; msg="$(fetch $f)" || die "fetch failed: $msg" 1; echo "$msg (sha256 $(meta_get sha256))" ;;
   pull) pull "$@" ;;
   validate) [ $# -eq 2 ] || die "usage: pft-vulnscan validate FILE HOST"; valid_label "$2" || die "bad host label"
             why="$(validate "$1" "$2")" && exit 0; echo "$why"; exit 2 ;;

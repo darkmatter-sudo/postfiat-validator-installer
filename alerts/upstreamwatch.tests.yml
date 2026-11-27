@@ -12,6 +12,8 @@ tests:
     values: '0x359'
   - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="upstream_quiet"}
     values: 1x359
+  - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="local_lagging"}
+    values: '0x359'
   - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="local_stale"}
     values: '0x359'
   - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="fetch_failing"}
@@ -71,6 +73,8 @@ tests:
   - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="ok"}
     values: 0x119 1x119
   - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="upstream_quiet"}
+    values: 0x119 0x119
+  - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="local_lagging"}
     values: 0x119 0x119
   - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="local_stale"}
     values: 1x119 0x119
@@ -132,6 +136,8 @@ tests:
     values: 1x59 0x59 1x119
   - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="upstream_quiet"}
     values: 0x59 0x59 0x119
+  - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="local_lagging"}
+    values: 0x59 0x59 0x119
   - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="local_stale"}
     values: 0x59 1x59 0x119
   - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="fetch_failing"}
@@ -161,6 +167,8 @@ tests:
   - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="sentry", feed="debian", state="ok"}
     values: 0x89 1x59
   - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="sentry", feed="debian", state="upstream_quiet"}
+    values: 0x89 0x59
+  - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="sentry", feed="debian", state="local_lagging"}
     values: 0x89 0x59
   - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="sentry", feed="debian", state="local_stale"}
     values: 0x89 0x59
@@ -203,6 +211,8 @@ tests:
     values: '0x359'
   - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="go", state="upstream_quiet"}
     values: '0x359'
+  - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="go", state="local_lagging"}
+    values: '0x359'
   - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="go", state="local_stale"}
     values: '0x359'
   - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="go", state="fetch_failing"}
@@ -231,6 +241,154 @@ tests:
     exp_alerts: []
   - eval_time: 5h
     alertname: PFTUpstreamFeedQuiet
+    exp_alerts: []
+- name: 'local_lagging for 4 h then ok: only PFTUpstreamFeedLagging (notify=digest) fires, after 3 h'
+  interval: 1m
+  input_series:
+  - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="ok"}
+    values: 0x239 1x59
+  - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="upstream_quiet"}
+    values: 0x239 0x59
+  - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="local_lagging"}
+    values: 1x239 0x59
+  - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="local_stale"}
+    values: 0x239 0x59
+  - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="fetch_failing"}
+    values: 0x239 0x59
+  - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="unreachable"}
+    values: 0x239 0x59
+  - series: pft_upstreamwatch_up{job="postfiat", instance="node:9877", host="validator"}
+    values: 1x299
+  - series: pft_upstreamwatch_last_run_timestamp_seconds{job="postfiat", instance="node:9877", host="validator"}
+    values: 0x59 3600x59 7200x59 10800x59 14400x59 18000x59
+  alert_rule_test:
+  - eval_time: 179m
+    alertname: PFTUpstreamFeedLagging
+    exp_alerts: []
+  - eval_time: 181m
+    alertname: PFTUpstreamFeedLagging
+    exp_alerts:
+    - exp_labels:
+        job: postfiat
+        instance: node:9877
+        host: validator
+        feed: usn-host
+        severity: info
+        notify: digest
+        state: local_lagging
+      exp_annotations:
+        summary: Feed usn-host on validator lags upstream (within the grace period)
+        description: Upstream has published content our copy lacks (pft_upstreamwatch_feed_lag_seconds), not yet longer than STALE_GRACE_HOURS. For usn-host pft-upstreamwatch starts one bounded refetch
+          (pft-vulnscan-heal.service) per HEAL_INTERVAL_HOURS; see pft_upstreamwatch_heal_last_result and /var/lib/pft-upstreamwatch/heal.jsonl. Pages only if it turns into local_stale (daily digest only).
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/upstreamwatch/README.md#bounded-heal
+  - eval_time: 242m
+    alertname: PFTUpstreamFeedLagging
+    exp_alerts: []
+  - eval_time: 181m
+    alertname: PFTUpstreamFeedLocalStale
+    exp_alerts: []
+  - eval_time: 181m
+    alertname: PFTUpstreamFeedFetchFailing
+    exp_alerts: []
+  - eval_time: 181m
+    alertname: PFTUpstreamFeedQuiet
+    exp_alerts: []
+  - eval_time: 239m
+    alertname: PFTUpstreamFeedLocalStale
+    exp_alerts: []
+  - eval_time: 239m
+    alertname: PFTUpstreamFeedFetchFailing
+    exp_alerts: []
+  - eval_time: 239m
+    alertname: PFTUpstreamFeedQuiet
+    exp_alerts: []
+- name: 'local_lagging for 2 h (healed by the bounded refetch) then ok: nothing fires'
+  interval: 1m
+  input_series:
+  - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="ok"}
+    values: 0x119 1x179
+  - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="upstream_quiet"}
+    values: 0x119 0x179
+  - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="local_lagging"}
+    values: 1x119 0x179
+  - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="local_stale"}
+    values: 0x119 0x179
+  - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="fetch_failing"}
+    values: 0x119 0x179
+  - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="unreachable"}
+    values: 0x119 0x179
+  - series: pft_upstreamwatch_up{job="postfiat", instance="node:9877", host="validator"}
+    values: 1x299
+  - series: pft_upstreamwatch_last_run_timestamp_seconds{job="postfiat", instance="node:9877", host="validator"}
+    values: 0x59 3600x59 7200x59 10800x59 14400x59 18000x59
+  alert_rule_test:
+  - eval_time: 119m
+    alertname: PFTUpstreamFeedLagging
+    exp_alerts: []
+  - eval_time: 119m
+    alertname: PFTUpstreamFeedLocalStale
+    exp_alerts: []
+  - eval_time: 119m
+    alertname: PFTUpstreamFeedFetchFailing
+    exp_alerts: []
+  - eval_time: 121m
+    alertname: PFTUpstreamFeedLagging
+    exp_alerts: []
+  - eval_time: 121m
+    alertname: PFTUpstreamFeedLocalStale
+    exp_alerts: []
+  - eval_time: 121m
+    alertname: PFTUpstreamFeedFetchFailing
+    exp_alerts: []
+  - eval_time: 200m
+    alertname: PFTUpstreamFeedLagging
+    exp_alerts: []
+  - eval_time: 200m
+    alertname: PFTUpstreamFeedLocalStale
+    exp_alerts: []
+  - eval_time: 200m
+    alertname: PFTUpstreamFeedFetchFailing
+    exp_alerts: []
+- name: 'local_lagging 2 h then local_stale 2 h: the lag outlived the grace period -> PFTUpstreamFeedLocalStale pages'
+  interval: 1m
+  input_series:
+  - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="ok"}
+    values: 0x119 0x119
+  - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="upstream_quiet"}
+    values: 0x119 0x119
+  - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="local_lagging"}
+    values: 1x119 0x119
+  - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="local_stale"}
+    values: 0x119 1x119
+  - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="fetch_failing"}
+    values: 0x119 0x119
+  - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="unreachable"}
+    values: 0x119 0x119
+  - series: pft_upstreamwatch_up{job="postfiat", instance="node:9877", host="validator"}
+    values: 1x239
+  - series: pft_upstreamwatch_last_run_timestamp_seconds{job="postfiat", instance="node:9877", host="validator"}
+    values: 0x59 3600x59 7200x59 10800x59 14400x59
+  alert_rule_test:
+  - eval_time: 184m
+    alertname: PFTUpstreamFeedLocalStale
+    exp_alerts: []
+  - eval_time: 186m
+    alertname: PFTUpstreamFeedLocalStale
+    exp_alerts:
+    - exp_labels:
+        job: postfiat
+        instance: node:9877
+        host: validator
+        feed: usn-host
+        severity: warning
+        state: local_stale
+      exp_annotations:
+        summary: Feed usn-host on validator is behind upstream or corrupt
+        description: Upstream has published newer content than our copy for longer than the grace period, or the local copy fails its sha256/format check. Scans on this host use outdated data. Run `sudo
+          pft-upstreamwatch run` for the reason, then the owning fetcher (`sudo pft-vulnscan fetch` / `sudo pft-imagescan fetch`).
+        runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/upstreamwatch/README.md#alerts
+  - eval_time: 186m
+    alertname: PFTUpstreamFeedLagging
     exp_alerts: []
 - name: 'release behind for 3 h then current: PFTUpstreamReleaseAvailable (digest) fires after 2 h'
   interval: 1m
@@ -341,6 +499,8 @@ tests:
     values: '0x5960'
   - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="upstream_quiet"}
     values: 1x5960
+  - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="local_lagging"}
+    values: '0x5960'
   - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="local_stale"}
     values: '0x5960'
   - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="fetch_failing"}
@@ -358,6 +518,8 @@ tests:
   - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="ok"}
     values: '0x5960'
   - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="upstream_quiet"}
+    values: '0x5960'
+  - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="local_lagging"}
     values: '0x5960'
   - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="local_stale"}
     values: 1x5960
@@ -379,6 +541,27 @@ tests:
         summary: USN OVAL feed on validator is older than 3 days
         description: pft-vulnscan keeps scanning with its cached feed, so USNs published since are not checked; scans start failing at 7 days. Run `sudo pft-vulnscan fetch` to see the download error.
         runbook_url: https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/vulnscan/README.md#alerts
+- name: 'PFTVulnFeedStale control: feed 4 days old and usn-host local_lagging -> still pages (not quiet)'
+  interval: 1m
+  input_series:
+  - *id001
+  - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="ok"}
+    values: '0x5960'
+  - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="upstream_quiet"}
+    values: '0x5960'
+  - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="local_lagging"}
+    values: 1x5960
+  - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="local_stale"}
+    values: '0x5960'
+  - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="fetch_failing"}
+    values: '0x5960'
+  - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="usn-host", state="unreachable"}
+    values: '0x5960'
+  alert_rule_test:
+  - eval_time: 5880m
+    alertname: PFTVulnFeedStale
+    exp_alerts:
+    - *id002
 - name: 'PFTVulnFeedStale control: no upstreamwatch series at all -> pages as before'
   interval: 1m
   input_series:
@@ -396,6 +579,8 @@ tests:
     values: '0x5960'
   - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="sentry", feed="usn-host", state="upstream_quiet"}
     values: 1x5960
+  - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="sentry", feed="usn-host", state="local_lagging"}
+    values: '0x5960'
   - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="sentry", feed="usn-host", state="local_stale"}
     values: '0x5960'
   - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="sentry", feed="usn-host", state="fetch_failing"}
@@ -415,6 +600,8 @@ tests:
     values: '0x5960'
   - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="ubuntu-jammy", state="upstream_quiet"}
     values: 1x5960
+  - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="ubuntu-jammy", state="local_lagging"}
+    values: '0x5960'
   - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="ubuntu-jammy", state="local_stale"}
     values: '0x5960'
   - series: pft_upstreamwatch_feed_state{job="postfiat", instance="node:9877", host="validator", feed="ubuntu-jammy", state="fetch_failing"}

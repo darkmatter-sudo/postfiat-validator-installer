@@ -231,9 +231,10 @@ def test_local_stale_when_upstream_newer_beyond_grace():
     assert "newer than ours" in r["reason"] and r["upstream_newer"] == 60 * H
 
 
-def test_upstream_newer_within_grace_is_ok():
+def test_upstream_newer_within_grace_is_local_lagging():
+    # was "ok" before local_lagging existed (the 2026-11-24 / 11-27 blind spot)
     r = ev(feed_obs(lm=NOW - 20 * H, content_epoch=NOW - 100 * H))
-    assert r["state"] == "ok" and "within grace" in r["reason"]
+    assert r["state"] == "local_lagging" and "within grace" in r["reason"] and r["lag"] == 20 * H
 
 
 def test_tolerance_absorbs_publish_lag():
@@ -547,7 +548,7 @@ def test_prom_one_hot_and_validates(tmp_path):
     txt = uw.render(copy.deepcopy(LIVE), "prom")
     for name in ("usn-host", "go", "debian-oval-bookworm"):
         rows = [ln for ln in txt.splitlines() if ln.startswith(f'pft_upstreamwatch_feed_state{{host="validator",feed="{name}"')]
-        assert len(rows) == 5 and sum(int(r.rsplit(" ", 1)[1]) for r in rows) == 1
+        assert len(rows) == 6 and sum(int(r.rsplit(" ", 1)[1]) for r in rows) == 1
     assert 'pft_upstreamwatch_release_state{host="validator",container="postfiatd",state="current"} 1' in txt
     p = tmp_path / "t.prom"
     p.write_text(txt)
@@ -758,3 +759,322 @@ def test_digest_empty_prometheus_answer_fails_closed(env):
     env["srv"].routes["/prom/api/v1/query"] = [(200, {}, b"")]
     r = sh(env, "digest")
     assert r.returncode == 1 and "unexpected Prometheus answer" in r.stderr
+
+
+# ================================================================================================ local_lagging + lag
+
+
+def test_live_capture_20261127_is_local_lagging():
+    # real headers of 2026-11-27T14:43Z: our USN copy 26 Nov 08:55Z, upstream Last-Modified 26 Nov 16:51Z
+    obs = json.loads((HERE / "fixtures" / "obs-live-validator-20261127.json").read_text())
+    res = uw.evaluate(obs)
+    usn = next(f for f in res["feeds"] if f["name"] == "usn-host")
+    assert usn["state"] == "local_lagging" and usn["lag"] == 1795790608 - 1795711901
+    assert res["counts"]["local_lagging"] >= 1 and res["counts"]["local_stale"] == 0
+    assert "-> PAGE" not in uw.render(obs, "text")
+
+
+def test_lag_boundaries_at_grace():
+    g = 30 * H
+    r = ev(feed_obs(lm=NOW - g, content_epoch=NOW - 100 * H))
+    assert r["state"] == "local_lagging" and r["lag"] == g
+    r = ev(feed_obs(lm=NOW - g - 1, content_epoch=NOW - 100 * H))
+    assert r["state"] == "local_stale" and r["lag"] == g + 1
+    r = ev(feed_obs(lm=NOW, content_epoch=NOW - 10 * H))
+    assert r["state"] == "local_lagging" and r["lag"] == 0
+    r = ev(feed_obs(lm=NOW - 3 * H, content_epoch=NOW - 10 * H), stale_grace_hours=2)
+    assert r["state"] == "local_stale"
+
+
+def test_lag_zero_when_latest_on_every_path():
+    assert ev(feed_obs())["lag"] == 0  # content clock within tolerance
+    assert ev(feed_obs(status=304, lm=None, content_epoch=NOW - 2 * H))["lag"] == 0
+    assert ev(feed_obs(etag='"same"', local_etag='"same"'))["lag"] == 0
+    q = ev(feed_obs(lm=NOW - 80 * H, content_epoch=NOW - 80 * H))
+    assert q["state"] == "upstream_quiet" and q["lag"] == 0
+
+
+def test_lag_none_when_unknown():
+    assert ev(feed_obs(status=503, attempts=[503, 503]))["lag"] is None
+    assert ev(feed_obs(fetched=NOW - 51 * H))["lag"] is None
+    assert ev(feed_obs(local_error="OSError: gone"))["lag"] is None
+
+
+def test_lag_future_last_modified_within_skew_is_zero():
+    r = ev(feed_obs(lm=NOW + 200, content_epoch=NOW - 10 * H))
+    assert r["state"] == "local_lagging" and r["lag"] == 0
+
+
+def test_lag_tolerance_edge():
+    tol = 21600
+    assert ev(feed_obs(lm=NOW - H, content_epoch=NOW - H - tol))["state"] == "ok"
+    r = ev(feed_obs(lm=NOW - H, content_epoch=NOW - H - tol - 1))
+    assert r["state"] == "local_lagging" and r["lag"] == H
+
+
+def test_prom_and_text_carry_lag():
+    obs = copy.deepcopy(LIVE)
+    obs["feeds"][0] = feed_obs(lm=NOW - 5 * H, content_epoch=NOW - 30 * H)
+    obs["collected_epoch"] = NOW
+    txt = uw.render(obs, "prom")
+    assert 'pft_upstreamwatch_feed_lag_seconds{host="validator",feed="usn-host"} 18000' in txt
+    assert 'pft_upstreamwatch_feed_state{host="validator",feed="usn-host",state="local_lagging"} 1' in txt
+    t = uw.render(obs, "text")
+    row = next(ln for ln in t.splitlines() if ln.startswith("usn-host"))
+    assert "local_lagging" in row and " 5.0 h  " in row and "-> PAGE" not in t
+    j = json.loads(uw.render(obs, "json"))
+    assert j["feeds"][0]["lag"] == 18000 and j["counts"]["local_lagging"] == 1
+
+
+# ================================================================================================ heal plan (pure)
+
+
+def lag_res(lag, state=None, local="vulnscan", name="usn-host", heal=None):
+    st = state or ("local_lagging" if lag <= 30 * H else "local_stale")
+    return {"feeds": [{"name": name, "local": local, "state": st, "lag": lag}], "heal": heal or {}}
+
+
+def plan(res, now=NOW, maint=False, running=False, **kw):
+    return uw.heal_plan(res, now, cfg(**kw), maint, running)
+
+
+def test_heal_plan_lag_threshold():
+    assert plan(lag_res(2 * H)) == []  # exactly LAG_HEAL_HOURS: not yet
+    d = plan(lag_res(2 * H + 1))
+    assert len(d) == 1 and d[0]["action"] == "heal" and d[0]["feed"] == "usn-host" and "LAG_HEAL_HOURS 2 h" in d[0]["reason"]
+    assert plan(lag_res(3 * H), lag_heal_hours=4) == []
+    assert plan(lag_res(40 * H))[0]["action"] == "heal"  # local_stale (beyond grace) is healed too
+
+
+def test_heal_plan_only_vulnscan_feeds_and_lagging_states():
+    assert plan(lag_res(5 * H, local="imagescan", name="ubuntu-jammy")) == []
+    assert plan(lag_res(5 * H, local="")) == []
+    for st in ("ok", "upstream_quiet", "fetch_failing", "unreachable"):
+        assert plan(lag_res(5 * H, state=st)) == []
+    assert plan({"feeds": [{"name": "usn-host", "local": "vulnscan", "state": "local_stale", "lag": None}], "heal": {}}) == []
+
+
+def test_heal_plan_rate_limit_boundary():
+    last = {"usn-host": {"last_attempt_epoch": NOW - 6 * H + 1, "attempts": 1}}
+    d = plan(lag_res(5 * H, heal=last))
+    assert d[0]["action"] == "skip" and d[0]["reason"].startswith("rate_limited")
+    last["usn-host"]["last_attempt_epoch"] = NOW - 6 * H
+    assert plan(lag_res(5 * H, heal=last))[0]["action"] == "heal"
+    last["usn-host"]["last_attempt_epoch"] = NOW - 2 * H
+    assert plan(lag_res(5 * H, heal=last), heal_interval_hours=1)[0]["action"] == "heal"
+    # another feed's attempt does not rate-limit this one
+    assert plan(lag_res(5 * H, heal={"other": {"last_attempt_epoch": NOW}}))[0]["action"] == "heal"
+
+
+def test_heal_plan_guards_and_order():
+    assert plan(lag_res(5 * H), maint=True)[0]["reason"].startswith("maint_window")
+    assert plan(lag_res(5 * H), running=True)[0]["reason"].startswith("vulnscan_running")
+    assert plan(lag_res(5 * H), maint=True, running=True)[0]["reason"].startswith("maint_window")
+    recent = {"usn-host": {"last_attempt_epoch": NOW - H}}
+    assert plan(lag_res(5 * H, heal=recent), maint=True)[0]["reason"].startswith("rate_limited")
+    d = plan(lag_res(5 * H), lag_heal_hours=0)
+    assert d[0]["action"] == "skip" and d[0]["reason"].startswith("disabled")
+    assert all(x["action"] == "skip" for x in plan(lag_res(5 * H), maint=True, running=True))
+
+
+def test_heal_record_persists_attempts_and_results(tmp_path):
+    p = str(tmp_path / "heal.json")
+    e = uw.heal_record(p, "usn-host", NOW, "started", 0, "lag 5 h")
+    assert e["attempts"] == 1 and e["last_attempt_epoch"] == NOW and e["last_result"] == "started"
+    e = uw.heal_record(p, "usn-host", NOW + 120, "healed", 0, "lag 0")
+    assert e["attempts"] == 1 and e["last_attempt_epoch"] == NOW and e["last_result_epoch"] == NOW + 120
+    e = uw.heal_record(p, "usn-host", NOW + 7 * H, "started", 0)
+    assert e["attempts"] == 2 and e["last_attempt_epoch"] == NOW + 7 * H
+    assert json.loads(Path(p).read_text())["usn-host"]["attempts"] == 2
+    with pytest.raises(ValueError):
+        uw.heal_record(p, "usn-host", NOW, "bogus", 0)
+    Path(p).write_text("[1]")
+    with pytest.raises(ValueError):
+        uw.read_heal_state(p)
+    assert uw.read_heal_state(str(tmp_path / "absent.json")) == {} and uw.read_heal_state("") == {}
+
+
+def test_heal_record_updates_obs_copy(tmp_path):
+    o = tmp_path / "obs.json"
+    o.write_text(json.dumps(LIVE))
+    uw.heal_record(str(tmp_path / "h.json"), "usn-host", NOW, "started", 0, obs_path=str(o))
+    uw.heal_record(str(tmp_path / "h.json"), "usn-host", NOW + 60, "still_lagging", 0, "lag 5 h", obs_path=str(o))
+    obs = json.loads(o.read_text())
+    assert obs["heal"]["usn-host"]["last_result"] == "still_lagging"
+    prom = uw.render(obs, "prom")
+    assert 'pft_upstreamwatch_heal_attempts{host="validator",feed="usn-host"} 1' in prom
+    assert f'pft_upstreamwatch_heal_last_attempt_timestamp_seconds{{host="validator",feed="usn-host"}} {NOW}' in prom
+    rows = [ln for ln in prom.splitlines() if ln.startswith("pft_upstreamwatch_heal_last_result")]
+    assert len(rows) == 4 and [r for r in rows if r.endswith(" 1")] == [
+        'pft_upstreamwatch_heal_last_result{host="validator",feed="usn-host",result="still_lagging"} 1']
+    p = tmp_path / "t.prom"
+    p.write_text(prom)
+    assert uw.validate(str(p), "validator") == ""
+    assert "heal usn-host: attempts 1" in uw.render(obs, "text") and "still_lagging" in uw.render(obs, "text")
+
+
+def test_no_heal_metrics_without_state():
+    assert "pft_upstreamwatch_heal_" not in uw.render(copy.deepcopy(LIVE), "prom")
+
+
+def test_load_cfg_heal_keys():
+    assert uw.load_cfg("")["lag_heal_hours"] == 2 and uw.load_cfg("")["heal_interval_hours"] == 6
+
+
+# ================================================================================================ heal (shell level)
+
+SYSTEMCTL_STUB = r"""#!/usr/bin/env python3
+import os, shutil, sys
+a = sys.argv[1:]
+with open(os.environ["SC_LOG"], "a") as f:
+    f.write(" ".join(a) + "\n")
+if a[:2] == ["is-active", "--quiet"]:
+    sys.exit(0 if a[2] in os.environ.get("SC_ACTIVE", "").split() else 3)
+if a[0] == "start":
+    src = os.environ.get("SC_HEAL_SRC", "")
+    if src:  # what pft-vulnscan scan --force-fetch would leave behind: the origin's newer feed
+        for n in ("feed.xml.bz2", "feed.meta", "feed.etag"):
+            shutil.copy(os.path.join(src, n), os.path.join(os.environ["SC_VS"], n))
+    sys.exit(int(os.environ.get("SC_START_RC", "0")))
+sys.exit(64)
+"""
+
+
+@pytest.fixture
+def henv(env):
+    """usn-host lagging 5 h: upstream published NOW-5h (ETag "new"), our copy is from NOW-30h (ETag "usn")."""
+    t, now = env["tmp"], NOW
+    write_vulnscan(env["vs"], now - 30 * H, now - 3 * H, etag='"usn"')
+    write_vulnscan(t / "origin", now - 5 * H, now, etag='"new"')
+    env["srv"].routes["/oval/com.ubuntu.jammy.usn.oval.xml.bz2"] = [
+        (200, {"ETag": '"new"', "Date": hdate(now), "Last-Modified": hdate(now - 5 * H)}, b"")]
+    stub = t / "systemctl"
+    stub.write_text(SYSTEMCTL_STUB)
+    stub.chmod(0o755)
+    maint = t / "maint"
+    maint.write_text("#!/bin/sh\nexit ${MAINT_RC:-1}\n")
+    maint.chmod(0o755)
+    env["conf"].write_text(env["conf"].read_text() + f"MAINT_CMD={maint}\n")
+    env["env"].update(PFT_UW_SYSTEMCTL=str(stub), SC_LOG=str(t / "sc.log"), SC_VS=str(env["vs"]),
+                      SC_HEAL_SRC=str(t / "origin"))
+    return env
+
+
+def sc_calls(env):
+    p = env["tmp"] / "sc.log"
+    return p.read_text().splitlines() if p.exists() else []
+
+
+def journal(env):
+    p = env["data"] / "heal.jsonl"
+    return [json.loads(x) for x in p.read_text().splitlines()] if p.exists() else []
+
+
+def test_shell_heal_heals_once_and_returns_to_ok(henv):
+    r = sh(henv, "run")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert sc_calls(henv) == ["is-active --quiet pft-vulnscan.service", "is-active --quiet pft-vulnscan-heal.service",
+                              "start pft-vulnscan-heal.service"]
+    assert [e["event"] for e in journal(henv)] == ["start", "healed"]
+    assert "heal: usn-host healed - lag 0 after the refetch (rc 0)" in r.stdout
+    row = next(ln for ln in r.stdout.splitlines() if ln.startswith("usn-host"))
+    assert " ok " in row and "upstream ETag equals ours" in row
+    prom = (henv["tf"] / "pft_upstreamwatch_validator.prom").read_text()
+    assert 'feed="usn-host",state="ok"} 1' in prom and 'pft_upstreamwatch_feed_lag_seconds{host="validator",feed="usn-host"} 0' in prom
+    assert 'pft_upstreamwatch_heal_last_result{host="validator",feed="usn-host",result="healed"} 1' in prom
+    assert 'pft_upstreamwatch_heal_attempts{host="validator",feed="usn-host"} 1' in prom
+    st = json.loads((henv["data"] / "heal-state.json").read_text())["usn-host"]
+    assert st["attempts"] == 1 and st["last_attempt_epoch"] == NOW and st["last_result"] == "healed"
+    # offline re-render of the final observations equals the run's report (heal line included)
+    rep = sh(henv, "report", "--obs", str(henv["data"] / "last-obs.json"))
+    assert rep.stdout in r.stdout and "heal usn-host: attempts 1" in rep.stdout
+    # the next run: nothing to heal, no new start, journal unchanged
+    r2 = sh(henv, "run")
+    assert r2.returncode == 0 and sc_calls(henv).count("start pft-vulnscan-heal.service") == 1
+    assert len(journal(henv)) == 2
+
+
+def test_shell_heal_control_without_heal_stays_lagging(henv):
+    r = sh(henv, "run", "--no-heal")
+    assert r.returncode == 0 and sc_calls(henv) == [] and journal(henv) == []
+    row = next(ln for ln in r.stdout.splitlines() if ln.startswith("usn-host"))
+    assert "local_lagging" in row and "5.0 h" in row
+    prom = (henv["tf"] / "pft_upstreamwatch_validator.prom").read_text()
+    assert 'pft_upstreamwatch_feed_lag_seconds{host="validator",feed="usn-host"} 18000' in prom
+
+
+def test_shell_heal_still_lagging_then_rate_limited_then_retried(henv):
+    henv["env"]["SC_HEAL_SRC"] = ""  # the refetch gets the old copy again (cache still old)
+    r = sh(henv, "run")
+    assert r.returncode == 0 and "heal: usn-host still_lagging" in r.stdout
+    assert 'result="still_lagging"} 1' in (henv["tf"] / "pft_upstreamwatch_validator.prom").read_text()
+    henv["env"]["PFT_UW_NOW"] = str(NOW + 6 * H - 1)
+    r = sh(henv, "run")
+    assert "heal: usn-host skip - rate_limited" in r.stdout
+    assert sc_calls(henv).count("start pft-vulnscan-heal.service") == 1
+    henv["env"]["PFT_UW_NOW"] = str(NOW + 6 * H)
+    henv["env"]["SC_HEAL_SRC"] = str(henv["tmp"] / "origin")
+    r = sh(henv, "run")
+    assert "heal: usn-host healed" in r.stdout and sc_calls(henv).count("start pft-vulnscan-heal.service") == 2
+    assert [e["event"] for e in journal(henv)] == ["start", "still_lagging", "skip", "start", "healed"]
+    assert json.loads((henv["data"] / "heal-state.json").read_text())["usn-host"]["attempts"] == 2
+
+
+def test_shell_heal_maint_window_blocks(henv):
+    for rc in ("0", "2", "127"):
+        henv["env"]["MAINT_RC"] = rc
+        r = sh(henv, "run")
+        assert "heal: usn-host skip - maint_window" in r.stdout, rc
+    assert "start pft-vulnscan-heal.service" not in sc_calls(henv)
+    assert 'state="local_lagging"} 1' in (henv["tf"] / "pft_upstreamwatch_validator.prom").read_text()
+
+
+def test_shell_heal_busy_unit_blocks(henv):
+    for u in ("pft-vulnscan.service", "pft-vulnscan-heal.service"):
+        henv["env"]["SC_ACTIVE"] = u
+        r = sh(henv, "run")
+        assert "heal: usn-host skip - vulnscan_running" in r.stdout
+    assert "start pft-vulnscan-heal.service" not in sc_calls(henv)
+
+
+def test_shell_heal_lock_held_blocks(henv):
+    henv["data"].mkdir(exist_ok=True)
+    holder = subprocess.Popen(["flock", str(henv["data"] / "heal.lock"), "sleep", "20"])
+    try:
+        import time
+
+        time.sleep(0.5)
+        r = sh(henv, "run")
+    finally:
+        holder.kill()
+        holder.wait()
+    assert "heal: usn-host skip - locked" in r.stdout and "start pft-vulnscan-heal.service" not in sc_calls(henv)
+    assert not (henv["data"] / "heal-state.json").exists()
+
+
+def test_shell_heal_unit_failure_recorded(henv):
+    henv["env"]["SC_START_RC"] = "1"
+    henv["env"]["SC_HEAL_SRC"] = ""
+    r = sh(henv, "run")
+    assert r.returncode == 0 and "heal: usn-host failed - systemctl start pft-vulnscan-heal.service failed" in r.stdout
+    assert journal(henv)[-1]["event"] == "failed" and journal(henv)[-1]["rc"] == 1
+    assert 'result="failed"} 1' in (henv["tf"] / "pft_upstreamwatch_validator.prom").read_text()
+
+
+def test_shell_heal_disabled_and_bad_config(henv):
+    base = henv["conf"].read_text()
+    henv["conf"].write_text(base + "LAG_HEAL_HOURS=0\n")
+    r = sh(henv, "run")
+    assert "heal: usn-host skip - disabled" in r.stdout and "start pft-vulnscan-heal.service" not in sc_calls(henv)
+    for bad in ("LAG_HEAL_HOURS=x", "HEAL_INTERVAL_HOURS=0", "HEAL_TIMEOUT=-1", "HEAL_UNIT=evil;rm.service"):
+        henv["conf"].write_text(base + bad + "\n")
+        r = sh(henv, "run")
+        assert r.returncode == 2 and bad.split("=")[0] in r.stderr, bad
+
+
+def test_shell_heal_below_threshold_no_decision(henv):
+    henv["srv"].routes["/oval/com.ubuntu.jammy.usn.oval.xml.bz2"] = [
+        (200, {"ETag": '"new"', "Date": hdate(NOW), "Last-Modified": hdate(NOW - 2 * H)}, b"")]
+    r = sh(henv, "run")
+    assert r.returncode == 0 and "heal:" not in r.stdout and journal(henv) == []
+    assert not any(c.startswith("start") for c in sc_calls(henv))

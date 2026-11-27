@@ -2,7 +2,8 @@
 # Install / uninstall pft-vulnscan (+ daily timer).
 #   sudo ./install.sh [--host LABEL]   installs OpenSCAP (libopenscap8) if missing, the script ->
 #       /usr/local/bin/pft-vulnscan, parser -> /usr/local/lib/pft-vulnscan/vulnscan_parse.py, pft-vulnscan.service/
-#       .timer, writes HOST_LABEL into /etc/pft-vulnscan.env (validator by default; use --host sentry on a sentry),
+#       .timer + pft-vulnscan-heal.service (no timer: started by ../upstreamwatch), writes HOST_LABEL into
+#       /etc/pft-vulnscan.env (validator by default; use --host sentry on a sentry),
 #       runs one scan through the sandboxed unit (must give up 1), then enables pft-vulnscan.timer (daily 04:20 UTC
 #       + up to 30 min random delay, Persistent).
 #   sudo ./install.sh --pull           on the host that runs ../alerts: pft-vulnscan-pull.service/.timer; needs
@@ -89,7 +90,9 @@ else
   printf '# pft-vulnscan config (see pft-vulnscan.env.example)\nHOST_LABEL=%s\n' "$host" > "$CONF"
 fi
 chown root:root "$CONF"; chmod 600 "$CONF"
-install -m 644 "$HERE/systemd/pft-vulnscan.service" "$HERE/systemd/pft-vulnscan.timer" /etc/systemd/system/
+# pft-vulnscan-heal.service: no timer; ../upstreamwatch starts it (bounded heal, scan --force-fetch)
+install -m 644 "$HERE/systemd/pft-vulnscan.service" "$HERE/systemd/pft-vulnscan.timer" "$HERE/systemd/pft-vulnscan-heal.service" \
+  /etc/systemd/system/
 systemctl daemon-reload
 log "first scan (through the sandboxed unit, HOST_LABEL=$host):"
 systemctl start pft-vulnscan.service || true

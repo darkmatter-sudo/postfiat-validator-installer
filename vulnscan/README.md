@@ -16,8 +16,9 @@ itself once a day; `pft-vulnscan pull` on the validator copies the sentry's text
 ## Usage
 
 ```
-pft-vulnscan scan [--json] [--no-fetch] [--textfile-dir DIR]   fetch the feed if changed, evaluate, report
-pft-vulnscan fetch                                             only refresh the cached feed
+pft-vulnscan scan [--json] [--no-fetch|--force-fetch] [--textfile-dir DIR]
+                                                               fetch the feed if changed, evaluate, report
+pft-vulnscan fetch [--force]                                   only refresh the cached feed
 sudo pft-vulnscan pull                                         validator: copy the sentry's textfile
 pft-vulnscan validate FILE HOST                                check a textfile before it is served
 ```
@@ -61,6 +62,15 @@ RESULT: 3 affected USNs (0 critical, 0 high, 2 medium, 0 low, 0 negligible, 1 no
    both hosts. A `HEAD` with a query string showed `x-cache-status: MISS` (origin) where the plain URL showed `HIT`.
    The unconditional GET never repeats itself: at most 2 requests per run, and if the origin has nothing newer the
    output says so (`fetched, but downloaded feed is 30 h old (> 24 h)`); the 7-day refusal still applies.
+   **Forced refetch (1.3.0):** `scan --force-fetch` / `fetch --force` go straight to that unconditional
+   cache-busting GET, whatever the cached copy's age (output `fetch: forced unconditional GET: fetched`). It is the
+   `ExecStart` of `pft-vulnscan-heal.service` (no timer), which `../upstreamwatch` starts as its
+   [bounded heal](../upstreamwatch/README.md#bounded-heal). Why: on 2026-11-27 the daily fetch at 04:29Z got a 20 h old
+   copy from a cache, although upstream had published 12 h earlier. The copy was younger than `REFETCH_AGE_HOURS`, so
+   the stale-copy refetch above did not trigger.
+   **Lock (1.3.0):** `scan` and `fetch` hold `CACHE_DIR/.lock` (flock) for the whole run and wait up to `LOCK_WAIT`
+   (1200 s) for it, then exit 2. The daily scan, the heal unit and a manual run never write the cache at the same
+   time.
 2. **Cache integrity.** The cached `.bz2` must match the sha256 in `feed.meta`, else exit 2.
 3. **Freshness.** The feed's own `<oval:timestamp>` must be at most `MAX_FEED_AGE_DAYS` (7) old, else exit 2. A
    stale feed would silently miss every USN published since, so it is never used.
@@ -108,7 +118,7 @@ timestamp (0) never fire, and that a failed scan restarts the 48h clock.
 ## Install
 
 ```
-sudo ./install.sh                  # validator: installs libopenscap8 if missing, script, units, first scan, timer
+sudo ./install.sh                  # validator: installs libopenscap8 if missing, script, units (+ heal unit), first scan, timer
 sudo ./install.sh --host sentry    # on the sentry
 # validator, after adding PEER_LABEL and PULL_SSH to /etc/pft-vulnscan.env (see pft-vulnscan.env.example):
 sudo ./install.sh --pull
@@ -124,7 +134,7 @@ pull: every 15 min.
 
 ## Tests
 
-`bash tests/run-tests.sh` (no root, nothing on the host changes; 141 assertions):
+`bash tests/run-tests.sh` (no root, nothing on the host changes; 153 assertions):
 
 - stub `curl`/`oscap`/`dpkg-query` and a fake clock, with a feed built by `tests/make_fixture.py` in the exact shape of
   Canonical's (`oscap oval validate` passes on it);
@@ -138,6 +148,12 @@ pull: every 15 min.
   one request with no query, a stale 304 and an old 200 each reach the origin through the query, `url=` in
   `feed.meta` stays the plain URL, an old origin gives exactly 2 requests, `&` for a URL that has a query; 9 of these
   fail against 1.1.0, log 17);
+- forced refetch + lock (section 12): control first (a 3 h old copy and a stale cache's 304 are kept: the 11-27 blind
+  spot), then `--force-fetch` sends exactly one request without ETag, with `Cache-Control: no-cache` and the query, and
+  replaces the copy; an old origin gives no recursion; a network failure keeps the cache; `--no-fetch --force-fetch`
+  and `fetch --bogus` are refused; with the lock held by another process, `scan --force-fetch` waits `LOCK_WAIT`, exits
+  2, sends no request and leaves cache + textfile untouched (`fetch` too); a lock released within `LOCK_WAIT` is
+  waited for;
 - **negative controls, each proving exit 2 + `up 0` + no affected series + `last_success` carried over + the
   specific message:** stale feed (8 days; exactly 7 is accepted), missing result, duplicate result, `error` and
   `unknown` results, inventory false, oscap failure, oscap missing, 1-byte tampered cache, valid bzip2 of a truncated

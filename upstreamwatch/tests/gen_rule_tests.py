@@ -26,13 +26,13 @@ for fn in FILES:
         for g in yaml.safe_load(f)["groups"]:
             for r in g["rules"]:
                 R[r["alert"]] = r
-OURS = ["PFTUpstreamFeedLocalStale", "PFTUpstreamFeedFetchFailing", "PFTUpstreamFeedQuiet",
+OURS = ["PFTUpstreamFeedLocalStale", "PFTUpstreamFeedFetchFailing", "PFTUpstreamFeedQuiet", "PFTUpstreamFeedLagging",
         "PFTUpstreamReleaseAvailable", "PFTUpstreamwatchFailing", "PFTUpstreamwatchNotRunning"]
 missing = {a for a in R if a.startswith("PFTUpstream")} - set(OURS)
 if missing:
     sys.exit(f"rules without a test case: {sorted(missing)}")
 BASE = {"job": "postfiat", "instance": "node:9877"}
-STATES = ("ok", "upstream_quiet", "local_stale", "fetch_failing", "unreachable")
+STATES = ("ok", "upstream_quiet", "local_lagging", "local_stale", "fetch_failing", "unreachable")
 
 
 def sel(metric, **labels):
@@ -121,6 +121,23 @@ T.append(case("unreachable for 6 h pages nothing (fetch_failing covers a persist
               feed_series("validator", "go", [("unreachable", 360)]) + run_series("validator", 360),
               [(t, a, []) for t in ("2h", "5h") for a in (*paged, "PFTUpstreamFeedQuiet")]))
 
+# 5b local_lagging: digest-only after 3 h (the heal window), never paged; a short lag (healed) fires nothing
+T.append(case("local_lagging for 4 h then ok: only PFTUpstreamFeedLagging (notify=digest) fires, after 3 h",
+              feed_series("validator", "usn-host", [("local_lagging", 240), ("ok", 60)]) + run_series("validator", 300),
+              [("179m", "PFTUpstreamFeedLagging", []),
+               ("181m", "PFTUpstreamFeedLagging", [fired("PFTUpstreamFeedLagging", **FEED)]),
+               ("242m", "PFTUpstreamFeedLagging", [])]
+              + [(t, a, []) for t in ("181m", "239m") for a in (*paged, "PFTUpstreamFeedQuiet")]))
+T.append(case("local_lagging for 2 h (healed by the bounded refetch) then ok: nothing fires",
+              feed_series("validator", "usn-host", [("local_lagging", 120), ("ok", 180)]) + run_series("validator", 300),
+              [(t, a, []) for t in ("119m", "121m", "200m") for a in ("PFTUpstreamFeedLagging", *paged)]))
+T.append(case("local_lagging 2 h then local_stale 2 h: the lag outlived the grace period -> PFTUpstreamFeedLocalStale pages",
+              feed_series("validator", "usn-host", [("local_lagging", 120), ("local_stale", 120)])
+              + run_series("validator", 240),
+              [("184m", "PFTUpstreamFeedLocalStale", []),
+               ("186m", "PFTUpstreamFeedLocalStale", [fired("PFTUpstreamFeedLocalStale", **FEED)]),
+               ("186m", "PFTUpstreamFeedLagging", [])]))
+
 # 6 release behind: digest-only after 2 h, resolves
 REL = {"host": "validator", "container": "postfiatd"}
 
@@ -160,6 +177,9 @@ T.append(case("PFTVulnFeedStale: feed 4 days old and usn-host upstream_quiet -> 
               [(f"{DAY4 + 120}m", "PFTVulnFeedStale", [])]))
 T.append(case("PFTVulnFeedStale control: feed 4 days old, usn-host ok/local_stale -> still pages",
               VS4 + feed_series("validator", "usn-host", [("local_stale", DAY4 + 201)]),
+              [(f"{DAY4 + 120}m", "PFTVulnFeedStale", [vs_fired])]))
+T.append(case("PFTVulnFeedStale control: feed 4 days old and usn-host local_lagging -> still pages (not quiet)",
+              VS4 + feed_series("validator", "usn-host", [("local_lagging", DAY4 + 201)]),
               [(f"{DAY4 + 120}m", "PFTVulnFeedStale", [vs_fired])]))
 T.append(case("PFTVulnFeedStale control: no upstreamwatch series at all -> pages as before",
               VS4, [(f"{DAY4 + 120}m", "PFTVulnFeedStale", [vs_fired])]))

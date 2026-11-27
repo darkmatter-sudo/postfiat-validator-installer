@@ -11,7 +11,8 @@ Type=oneshot
 SuccessExitStatus=1
 ExecStart=/usr/local/bin/pft-upstreamwatch run
 # root (no capabilities: owner access) to read the root-only ../imagescan feed cache (0700) and the docker socket;
-# docker is only asked `inspect` / `image inspect`. Read-only except its own state dir and the textfile dir.
+# docker is only asked `inspect` / `image inspect`. Read-only except its own state dir and the textfile dir; the
+# bounded heal only asks systemd (D-Bus) to start pft-vulnscan-heal.service, which writes the feed cache itself.
 StateDirectory=pft-upstreamwatch
 StateDirectoryMode=0755
 ReadWritePaths=/var/lib/pft-exporter/textfile
@@ -39,4 +40,5 @@ MemoryMax=256M
 Nice=10
 IOSchedulingClass=idle
 UMask=0022
-TimeoutStartSec=10min
+# 40 min: a bounded heal waits for pft-vulnscan-heal.service (HEAL_TIMEOUT 1500 s; its own TimeoutStartSec 20min)
+TimeoutStartSec=40min

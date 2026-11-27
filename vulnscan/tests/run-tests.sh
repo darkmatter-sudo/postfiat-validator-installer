@@ -98,7 +98,7 @@ check "last_success = now" 'has "$OUT" "pft_vulnscan_last_success_timestamp_seco
 check "feed timestamp = fixture <oval:timestamp>" 'has "$OUT" "pft_vulnscan_feed_timestamp_seconds{$L} $NOW"'
 check "feed.meta sha256 = served file" 'grep -qx "sha256=$(sha256sum < "$T/srv/feed.xml.bz2" | cut -c1-64)" "$T/cache/feed.meta"'
 check "textfile validates" 'PFT_VS_CONF=/nonexistent bash "$S" validate "$OUT" validator'
-check "no temp files left" '[ "$(find "$T/tf" "$T/cache" -name ".*" -newer "$T/conf" | wc -l)" = 0 ]'
+check "no temp files left (only the cache lock file)" '[ "$(find "$T/tf" "$T/cache" -name ".*" ! -name .lock -newer "$T/conf" | wc -l)" = 0 ] && [ -f "$T/cache/.lock" ]'
 
 echo "== 2. --json (findings-producing)"
 echo 304 > "$T/curl_mode"
@@ -296,6 +296,47 @@ echo cache304 > "$T/curl_mode"; : > "$T/curl_calls"; NOWV=$NOWB run
 check "FEED_URL with a query: cache-buster appended with &" 'sed -n 2p "$T/curl_calls" | grep -q -- "f.xml.bz2?k=v&pft-vulnscan-nocache=$NOWB$"'
 printf 'CACHE_DIR=%s\nTEXTFILE_DIR=%s\n' "$T/cache" "$T/tf" > "$T/conf"
 check "no temp dirs left in the cache" '[ "$(find "$T/cache" -name ".fetch.*" | wc -l)" = 0 ]'
+
+echo "== 12. forced refetch (../upstreamwatch heal: pft-vulnscan-heal.service = scan --force-fetch) and the cache lock"
+rm -rf "$T/cache"; mkdir "$T/cache"; rm -f "$T/oscap_args"
+printf 'CACHE_DIR=%s\nTEXTFILE_DIR=%s\n' "$T/cache" "$T/tf" > "$T/conf"
+serve; echo 200 > "$T/curl_mode"; run                                   # seed: young copy (<oval:timestamp> = NOW)
+cp "$T/srv/feed.xml.bz2" "$T/old.bz2"
+serve --ts 2099-01-01T02:00:00; cp "$T/srv/feed.xml.bz2" "$T/srv/origin.xml.bz2"; cp "$T/old.bz2" "$T/srv/feed.xml.bz2"
+NOWF=$((NOW + 3 * 3600))
+echo cache304 > "$T/curl_mode"; : > "$T/curl_calls"; NOWV=$NOWF run
+check "control: copy 3 h old, a stale cache answers 304 -> kept (below REFETCH_AGE_HOURS: the 11-27 blind spot)" 'rc 1 && grep -q "fetch: not modified$" "$T/out" && [ "$(wc -l < "$T/curl_calls")" = 1 ] && cmp -s "$T/old.bz2" "$T/cache/feed.xml.bz2"'
+: > "$T/curl_calls"; NOWV=$NOWF run --force-fetch
+check "--force-fetch: exactly one request, no ETag, Cache-Control: no-cache, ?pft-vulnscan-nocache=NOW" 'rc 1 && [ "$(wc -l < "$T/curl_calls")" = 1 ] && ! grep -q -- "--etag-compare" "$T/curl_calls" && grep -q -- "-H Cache-Control: no-cache" "$T/curl_calls" && grep -q "?pft-vulnscan-nocache=$NOWF$" "$T/curl_calls"'
+check "--force-fetch: says so, cache = origin feed, feed timestamp metric updated" 'grep -q "fetch: forced unconditional GET: fetched$" "$T/out" && cmp -s "$T/srv/origin.xml.bz2" "$T/cache/feed.xml.bz2" && has "$OUT" "pft_vulnscan_feed_timestamp_seconds{$L} $((NOW + 2 * 3600))"'
+cp "$T/old.bz2" "$T/srv/origin.xml.bz2"; cp "$T/old.bz2" "$T/srv/feed.xml.bz2"; rm -f "$T/cache/"*
+echo 200 > "$T/curl_mode"; run; echo cache > "$T/curl_mode"; : > "$T/curl_calls"; NOWV=$NOWF run --force-fetch
+check "--force-fetch when the origin is old too: one request, no recursion, scan still up 1" 'rc 1 && [ "$(wc -l < "$T/curl_calls")" = 1 ] && grep -q "fetch: forced unconditional GET: fetched$" "$T/out" && has "$OUT" "pft_vulnscan_up{$L} 1"'
+echo fail > "$T/curl_mode"; NOWV=$NOWF run --force-fetch
+check "--force-fetch network failure: FAILED reason, cached feed still used" 'rc 1 && grep -q "fetch: forced unconditional GET: FAILED: download failed (curl rc 6" "$T/out" && has "$OUT" "pft_vulnscan_up{$L} 1"'
+run --no-fetch --force-fetch
+check "--no-fetch --force-fetch refused (rc 2, nothing written)" 'rc 2 && grep -q "exclude each other" "$T/err"'
+echo cache > "$T/curl_mode"; : > "$T/curl_calls"
+PFT_VS_CONF="$T/conf" PFT_VS_CURL="$T/bin/curl" PFT_VS_NOW=$NOWF bash "$S" fetch --force > "$T/out" 2> "$T/err"; echo $? > "$T/rc"
+check "fetch --force: one cache-busting request, rc 0" 'rc 0 && [ "$(wc -l < "$T/curl_calls")" = 1 ] && grep -q "?pft-vulnscan-nocache=$NOWF$" "$T/curl_calls" && grep -q "^fetched" "$T/out"'
+PFT_VS_CONF="$T/conf" PFT_VS_CURL="$T/bin/curl" bash "$S" fetch --bogus > "$T/out" 2> "$T/err"; echo $? > "$T/rc"
+check "fetch --bogus refused (rc 2)" 'rc 2 && grep -q "usage: pft-vulnscan fetch" "$T/err"'
+cp "$T/cache/feed.xml.bz2" "$T/locked.bz2"; cp "$T/tf/pft_vulnscan_validator.prom" "$T/locked.prom"
+flock "$T/cache/.lock" sleep 6 & holder=$!; sleep 1
+printf 'CACHE_DIR=%s\nTEXTFILE_DIR=%s\nLOCK_WAIT=1\n' "$T/cache" "$T/tf" > "$T/conf"
+: > "$T/curl_calls"; s0=$(date +%s); run --force-fetch; s1=$(date +%s)
+check "lock held by another run: scan --force-fetch waits LOCK_WAIT (1 s), exit 2, no request, cache + textfile untouched" 'rc 2 && grep -q "holds $T/cache/.lock (waited 1 s)" "$T/err" && [ ! -s "$T/curl_calls" ] && cmp -s "$T/locked.bz2" "$T/cache/feed.xml.bz2" && cmp -s "$T/locked.prom" "$OUT" && [ $((s1 - s0)) -ge 1 ]'
+PFT_VS_CONF="$T/conf" PFT_VS_CURL="$T/bin/curl" bash "$S" fetch > "$T/out" 2> "$T/err"; echo $? > "$T/rc"
+check "lock held: fetch exits 2 too" 'rc 2 && grep -q "holds" "$T/err"'
+wait "$holder"
+printf 'CACHE_DIR=%s\nTEXTFILE_DIR=%s\nLOCK_WAIT=30\n' "$T/cache" "$T/tf" > "$T/conf"
+flock "$T/cache/.lock" sleep 2 & holder=$!; sleep 0.5
+: > "$T/curl_calls"; s0=$(date +%s); NOWV=$NOWF run --force-fetch; s1=$(date +%s); wait "$holder"
+check "lock released within LOCK_WAIT: the run waits, then fetches (one request)" 'rc 1 && [ "$(wc -l < "$T/curl_calls")" = 1 ] && [ $((s1 - s0)) -ge 1 ]'
+printf 'CACHE_DIR=%s\nTEXTFILE_DIR=%s\nLOCK_WAIT=x\n' "$T/cache" "$T/tf" > "$T/conf"
+run
+check "bad LOCK_WAIT refused" 'rc 2 && grep -q "LOCK_WAIT must be" "$T/err"'
+printf 'CACHE_DIR=%s\nTEXTFILE_DIR=%s\n' "$T/cache" "$T/tf" > "$T/conf"
 
 echo "RESULT: $pass/$total passed"
 [ "$pass" = "$total" ]

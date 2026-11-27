@@ -7,6 +7,10 @@ Stdlib only. Called by pft-upstreamwatch.sh:
                                                  headers, registry digest, foundation build_version, docker inspect)
   render  --obs OBS.json --format text|json|prom evaluate + render; pure function of OBS.json (offline re-render)
   validate FILE HOST                             check a textfile before it is served
+  heal-plan --obs OBS.json --now T --maint 0|1 --running 0|1
+                                                 which lagging feeds to heal now (one JSON line each; pure)
+  heal-record --state S.json --feed F --now T --result R --rc N [--obs OBS.json]
+                                                 persist one heal attempt/result in the state file (atomic)
 
 Observations hold only raw facts (headers, epochs, hashes). Every state is derived by evaluate(), so a committed
 OBS.json re-renders byte-identically anywhere (no network, no docker, no clock).
@@ -15,6 +19,10 @@ Feed states (one per feed):
   ok              local copy is the latest upstream content and it is younger than QUIET_AGE_HOURS
   upstream_quiet  local copy is the latest upstream content, but upstream itself has not published for
                   QUIET_AGE_HOURS (nothing is wrong locally; never paged, daily digest only)
+  local_lagging   upstream has published newer content that the local copy lacks, but for no longer than
+                  STALE_GRACE_HOURS (a CDN served our fetcher an old copy, or the daily fetch ran before upstream
+                  published); never paged, digest only. For usn-host, pft-upstreamwatch heals it with one bounded
+                  ../vulnscan refetch (heal_plan below) once the lag exceeds LAG_HEAL_HOURS
   local_stale     upstream has published newer content more than STALE_GRACE_HOURS ago and the local copy still
                   lacks it, or the local copy is missing/truncated/corrupt (sha256 or format check fails)
   fetch_failing   the local fetcher has not completed a download/revalidation for FETCH_MAX_AGE_HOURS
@@ -39,13 +47,14 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 
 SCHEMA = "upstreamwatch/1"
-STATES = ("ok", "upstream_quiet", "local_stale", "fetch_failing", "unreachable")
+STATES = ("ok", "upstream_quiet", "local_lagging", "local_stale", "fetch_failing", "unreachable")
+HEAL_RESULTS = ("started", "healed", "still_lagging", "failed")
 RELEASE_STATES = ("current", "behind", "unknown")
 MANIFEST_ACCEPT = (
     "application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, "
     "application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json"
 )
-UA = "pft-upstreamwatch/1.0 (+https://github.com/darkmatter-sudo/postfiat-validator-installer)"
+UA = "pft-upstreamwatch/1.1 (+https://github.com/darkmatter-sudo/postfiat-validator-installer)"
 OVAL_TS = re.compile(rb"<(?:oval:)?timestamp>(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)")
 DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 
@@ -72,6 +81,9 @@ DEFAULTS = {
     "build_textfile": "/var/lib/pft-exporter/textfile/pft_upgradewatch_postfiatd.prom",
     "build_max_age_seconds": 3600,
     "docker": "docker",
+    "lag_heal_hours": 2,
+    "heal_interval_hours": 6,
+    "heal_state": "",
 }
 
 
@@ -360,6 +372,20 @@ def collect_release(cfg, sleep=time.sleep):
     return rel
 
 
+def read_heal_state(path):
+    """heal state file -> {feed: {last_attempt_epoch, attempts, last_result, last_rc, ...}}; {} if absent."""
+    if not path:
+        return {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            st = json.load(f)
+    except FileNotFoundError:
+        return {}
+    if not isinstance(st, dict) or not all(isinstance(v, dict) for v in st.values()):
+        raise ValueError(f"heal state {path} is not an object of objects")
+    return st
+
+
 def collect(cfg, now=None, sleep=time.sleep):
     obs = {"schema": SCHEMA, "host": cfg["host"], "collected_epoch": int(now if now is not None else time.time()),
            "config": {k: cfg[k] for k in sorted(DEFAULTS) if k != "docker"}, "feeds": []}
@@ -377,6 +403,7 @@ def collect(cfg, now=None, sleep=time.sleep):
             local = {"source": "", "error": ""}
         obs["feeds"].append({"name": name, **d, "local_obs": local, "upstream": probe_feed(d, local, cfg, sleep)})
     obs["release"] = collect_release(cfg, sleep)
+    obs["heal"] = read_heal_state(cfg.get("heal_state", ""))
     obs["finished_epoch"] = int(time.time()) if now is None else obs["collected_epoch"]
     return obs
 
@@ -411,7 +438,7 @@ def evaluate_feed(f, now, cfg):
     """-> dict with state, reason and the clocks behind it."""
     r = {"name": f["name"], "kind": f.get("kind", ""), "url": f.get("url", ""), "state": "unreachable",
          "reason": "", "fetch_age": None, "content_age": None, "upstream_age": None, "upstream_newer": None,
-         "skew": None, "attempts": 0, "local": f.get("local", "")}
+         "skew": None, "attempts": 0, "local": f.get("local", ""), "lag": None}
     if f.get("error"):
         r["reason"] = f["error"]
         return r
@@ -476,14 +503,18 @@ def evaluate_feed(f, now, cfg):
         how = (f"upstream content clock is {hours(max(newer, 0))} after ours (tolerance {hours(tol)})"
                if latest else f"upstream content is {hours(newer)} newer than ours")
     if not latest:
-        missed = up_date - up_content
+        # lag = how long upstream has had content we lack (upstream Date clock; a Last-Modified up to
+        # SKEW_MAX_SECONDS in upstream's future counts as 0)
+        missed = max(0, up_date - up_content)
+        r["lag"] = missed
         if missed > int(cfg["stale_grace_hours"]) * 3600:
             r["state"] = "local_stale"
             r["reason"] = f"{how}; upstream published it {hours(missed)} ago (> grace {cfg['stale_grace_hours']} h)"
         else:
-            r["state"] = "ok"
+            r["state"] = "local_lagging"
             r["reason"] = f"{how}; published {hours(missed)} ago, within grace {cfg['stale_grace_hours']} h"
         return r
+    r["lag"] = 0
     if r["content_age"] > quiet:
         r["state"] = "upstream_quiet"
         r["reason"] = f"local copy is upstream's latest ({how}); upstream has not published for {hours(r['content_age'])}"
@@ -550,8 +581,73 @@ def evaluate(obs):
     now = obs["collected_epoch"]
     feeds = [evaluate_feed(f, now, cfg) for f in obs["feeds"]]
     return {"schema": SCHEMA, "host": obs["host"], "generated_epoch": now, "feeds": feeds,
-            "release": evaluate_release(obs["release"], now, cfg),
+            "release": evaluate_release(obs["release"], now, cfg), "heal": obs.get("heal", {}),
             "counts": {s: sum(1 for f in feeds if f["state"] == s) for s in STATES}}
+
+
+# ----------------------------------------------------------------------------------------------------------------
+# bounded heal (pure decision; pft-upstreamwatch.sh observes the guards and starts pft-vulnscan-heal.service)
+
+HEALABLE = {"vulnscan"}  # local fetchers that have a heal unit (../vulnscan: pft-vulnscan-heal.service)
+
+
+def heal_plan(res, now, cfg, maint, running):
+    """-> one decision per feed whose lag exceeds LAG_HEAL_HOURS: {feed, action heal|skip, reason, lag}.
+
+    Order of checks: disabled (LAG_HEAL_HOURS 0), rate limit (one attempt per feed per HEAL_INTERVAL_HOURS, counted
+    from the last START, whatever its result), maintenance window active, vulnscan already running. The lock is
+    taken by the shell after this (a held lock is journaled as skip/locked)."""
+    out = []
+    lag_max, interval = int(cfg["lag_heal_hours"]) * 3600, int(cfg["heal_interval_hours"]) * 3600
+    for f in res["feeds"]:
+        if f.get("local") not in HEALABLE or f["state"] not in ("local_lagging", "local_stale"):
+            continue
+        if f.get("lag") is None or f["lag"] <= lag_max:
+            continue
+        d = {"feed": f["name"], "lag": f["lag"], "state": f["state"], "action": "skip"}
+        last = int(res.get("heal", {}).get(f["name"], {}).get("last_attempt_epoch", 0))
+        if lag_max == 0:
+            d["reason"] = "disabled (LAG_HEAL_HOURS=0)"
+        elif last and now - last < interval:
+            d["reason"] = (f"rate_limited: last attempt {hours(now - last)} ago "
+                           f"(< HEAL_INTERVAL_HOURS {cfg['heal_interval_hours']} h)")
+        elif maint:
+            d["reason"] = "maint_window: a pft-maint window is active"
+        elif running:
+            d["reason"] = "vulnscan_running: pft-vulnscan.service or pft-vulnscan-heal.service is active"
+        else:
+            d["action"] = "heal"
+            d["reason"] = f"lag {hours(f['lag'])} > LAG_HEAL_HOURS {cfg['lag_heal_hours']} h"
+        out.append(d)
+    return out
+
+
+def heal_record(path, feed, now, result, rc, note="", obs_path=""):
+    """Persist one heal event (atomic). result 'started' counts an attempt; the others close it. With obs_path the
+    observation file's "heal" copy is updated too, so the report rendered from it shows the recorded result."""
+    if result not in HEAL_RESULTS:
+        raise ValueError(f"result must be one of {HEAL_RESULTS}")
+    st = read_heal_state(path)
+    e = st.setdefault(feed, {"attempts": 0, "last_attempt_epoch": 0})
+    if result == "started":
+        e["attempts"] = int(e.get("attempts", 0)) + 1
+        e["last_attempt_epoch"] = int(now)
+    e["last_result"], e["last_rc"], e["last_result_epoch"] = result, int(rc), int(now)
+    e["note"] = note[:200]
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(st, f, indent=1, sort_keys=True)
+        f.write("\n")
+    os.replace(tmp, path)
+    if obs_path:
+        with open(obs_path, encoding="utf-8") as f:
+            obs = json.load(f)
+        obs["heal"] = st
+        with open(obs_path + ".tmp", "w", encoding="utf-8") as f:
+            json.dump(obs, f, indent=1, sort_keys=True)
+            f.write("\n")
+        os.replace(obs_path + ".tmp", obs_path)
+    return e
 
 
 # ----------------------------------------------------------------------------------------------------------------
@@ -564,11 +660,15 @@ def iso(e):
 
 def render_text(res):
     L = [f"pft-upstreamwatch - host {res['host']} - {iso(res['generated_epoch'])}", "",
-         f"{'FEED':<22} {'STATE':<15} {'FETCH AGE':>10} {'CONTENT AGE':>12}  REASON"]
+         f"{'FEED':<22} {'STATE':<15} {'FETCH AGE':>10} {'CONTENT AGE':>12} {'LAG':>8}  REASON"]
     for f in res["feeds"]:
         fa = hours(f["fetch_age"]) if f["fetch_age"] is not None else "-"
         ca = hours(f["content_age"]) if f["content_age"] is not None else "-"
-        L.append(f"{f['name']:<22} {f['state']:<15} {fa:>10} {ca:>12}  {f['reason']}")
+        lg = hours(f["lag"]) if f.get("lag") is not None else "-"
+        L.append(f"{f['name']:<22} {f['state']:<15} {fa:>10} {ca:>12} {lg:>8}  {f['reason']}")
+    for n, v in sorted(res.get("heal", {}).items()):
+        L.append(f"heal {n}: attempts {int(v.get('attempts', 0))}, last {iso(int(v.get('last_attempt_epoch', 0)))} "
+                 f"{v.get('last_result', '?')} (rc {v.get('last_rc', '-')}){' - ' + v['note'] if v.get('note') else ''}")
     rel = res["release"]
     L += ["", f"release ({rel['container']}, {rel['ref'] or '?'}): {rel['state']}",
           f"  digest  {rel['digest_state']:<8} running {rel['running_digest'] or '?'}",
@@ -594,8 +694,8 @@ def render_prom(res):
         "# HELP pft_upstreamwatch_last_run_timestamp_seconds when the observations were collected",
         "# TYPE pft_upstreamwatch_last_run_timestamp_seconds gauge",
         f"pft_upstreamwatch_last_run_timestamp_seconds{{{h}}} {res['generated_epoch']}",
-        ("# HELP pft_upstreamwatch_feed_state 1 for the feed's current state (ok upstream_quiet local_stale "
-         "fetch_failing unreachable)"),
+        ("# HELP pft_upstreamwatch_feed_state 1 for the feed's current state (ok upstream_quiet local_lagging "
+         "local_stale fetch_failing unreachable)"),
         "# TYPE pft_upstreamwatch_feed_state gauge",
     ]
     for f in res["feeds"]:
@@ -607,6 +707,7 @@ def render_prom(res):
         ("feed_content_age_seconds", "content_age", "age of the newest content we hold (upstream Date clock)"),
         ("feed_upstream_age_seconds", "upstream_age", "upstream Date minus upstream Last-Modified"),
         ("feed_upstream_newer_seconds", "upstream_newer", "upstream content clock minus ours"),
+        ("feed_lag_seconds", "lag", "how long upstream has had content our copy lacks (0 = our copy is the latest)"),
         ("feed_clock_skew_seconds", "skew", "local clock minus upstream Date header"),
         ("feed_probe_attempts", "attempts", "HTTP attempts this run (HEAD + content GET, retries included)"),
     ):
@@ -614,6 +715,21 @@ def render_prom(res):
         for f in res["feeds"]:
             if f[key] is not None:
                 L.append(f'pft_upstreamwatch_{metric}{{{h},feed="{label(f["name"])}"}} {f[key]}')
+    heal = res["heal"]
+    if heal:
+        L += ["# HELP pft_upstreamwatch_heal_attempts bounded ../vulnscan heal refetches started for the feed (all time)",
+              "# TYPE pft_upstreamwatch_heal_attempts gauge"]
+        L += [f'pft_upstreamwatch_heal_attempts{{{h},feed="{label(n)}"}} {int(v.get("attempts", 0))}'
+              for n, v in sorted(heal.items())]
+        L += ["# HELP pft_upstreamwatch_heal_last_attempt_timestamp_seconds when the last heal refetch started",
+              "# TYPE pft_upstreamwatch_heal_last_attempt_timestamp_seconds gauge"]
+        L += [f'pft_upstreamwatch_heal_last_attempt_timestamp_seconds{{{h},feed="{label(n)}"}} '
+              f'{int(v.get("last_attempt_epoch", 0))}' for n, v in sorted(heal.items())]
+        L += [("# HELP pft_upstreamwatch_heal_last_result 1 for the last heal's result (started healed still_lagging "
+               "failed)"), "# TYPE pft_upstreamwatch_heal_last_result gauge"]
+        for n, v in sorted(heal.items()):
+            L += [f'pft_upstreamwatch_heal_last_result{{{h},feed="{label(n)}",result="{s}"}} '
+                  f'{1 if v.get("last_result") == s else 0}' for s in HEAL_RESULTS]
     rel = res["release"]
     c = f'{h},container="{label(rel["container"])}"'
     L += ["# HELP pft_upstreamwatch_release_state 1 for the release watch state (current behind unknown)",
@@ -691,9 +807,10 @@ def load_cfg(path):
             raise ValueError(f"unknown config keys: {sorted(unknown)}")
         cfg.update(given)
     for k in ("quiet_age_hours", "stale_grace_hours", "fetch_max_age_hours", "content_tolerance_seconds",
-              "skew_max_seconds", "retries", "http_timeout", "build_max_age_seconds"):
+              "skew_max_seconds", "retries", "http_timeout", "build_max_age_seconds", "lag_heal_hours",
+              "heal_interval_hours"):
         cfg[k] = int(cfg[k])
-        if cfg[k] < (1 if k != "skew_max_seconds" else 0):
+        if cfg[k] < (0 if k in ("skew_max_seconds", "lag_heal_hours") else 1):
             raise ValueError(f"{k} must be positive")
     cfg["backoff_seconds"] = float(cfg["backoff_seconds"])
     return cfg
@@ -715,6 +832,19 @@ def main(argv=None):
     v = sub.add_parser("validate")
     v.add_argument("file")
     v.add_argument("host")
+    hp = sub.add_parser("heal-plan")
+    hp.add_argument("--obs", required=True)
+    hp.add_argument("--now", type=int, required=True)
+    hp.add_argument("--maint", type=int, choices=(0, 1), required=True)
+    hp.add_argument("--running", type=int, choices=(0, 1), required=True)
+    hr = sub.add_parser("heal-record")
+    hr.add_argument("--state", required=True)
+    hr.add_argument("--feed", required=True)
+    hr.add_argument("--now", type=int, required=True)
+    hr.add_argument("--result", required=True)
+    hr.add_argument("--rc", type=int, default=0)
+    hr.add_argument("--note", default="")
+    hr.add_argument("--obs", default="")
     a = ap.parse_args(argv)
     try:
         if a.cmd == "collect":
@@ -728,6 +858,16 @@ def main(argv=None):
         if a.cmd == "render":
             with open(a.obs, encoding="utf-8") as f:
                 sys.stdout.write(render(json.load(f), a.format))
+            return 0
+        if a.cmd == "heal-plan":
+            with open(a.obs, encoding="utf-8") as f:
+                obs = json.load(f)
+            res = evaluate(obs)
+            for d in heal_plan(res, a.now, {**DEFAULTS, **obs["config"]}, a.maint == 1, a.running == 1):
+                print(json.dumps(d, sort_keys=True))
+            return 0
+        if a.cmd == "heal-record":
+            print(json.dumps(heal_record(a.state, a.feed, a.now, a.result, a.rc, a.note, a.obs), sort_keys=True))
             return 0
         if a.cmd == "down":
             sys.stdout.write(prom_down(a.host, a.now))
