@@ -1,0 +1,32 @@
+== 2026-11-27T16:46:16Z validator: first timer run of the new code (no drill): bounded heal of the live 11-27 lag
+$ cat /var/lib/pft-upstreamwatch/heal.jsonl
+{"epoch":1795797874,"feed":"usn-host","event":"start","reason":"lag 23.9 h > LAG_HEAL_HOURS 2 h; systemctl start pft-vulnscan-heal.service","rc":0}
+{"epoch":1795797957,"feed":"usn-host","event":"healed","reason":"lag 0 after the refetch","rc":0}
+$ journalctl -u pft-upstreamwatch.service -u pft-vulnscan-heal.service (this run)
+2026-11-27T16:44:34+0000 <validator-host> pft-upstreamwatch[2164178]: heal: usn-host start - lag 23.9 h > LAG_HEAL_HOURS 2 h; systemctl start pft-vulnscan-heal.service
+2026-11-27T16:44:34+0000 <validator-host> systemd[1]: Starting pft-vulnscan heal: one forced cache-busting USN OVAL refetch + scan (started by pft-upstreamwatch, no timer)...
+2026-11-27T16:44:45+0000 <validator-host> pft-vulnscan[2164714]:          sha256 83708e914a65cd49f0b97189245a9ac599c88902cc0b3498236601fc25baac55  fetch: forced unconditional GET: fetched
+2026-11-27T16:45:38+0000 <validator-host> pft-vulnscan[2167692]: RESULT: 0 affected USNs (0 critical, 0 high, 0 medium, 0 low, 0 negligible, 0 none, 0 unknown; 0 fixable only via Ubuntu Pro/ESM), 0 CVEs; reboot owed: no -> exit 0
+2026-11-27T16:45:38+0000 <validator-host> systemd[1]: pft-vulnscan-heal.service: Deactivated successfully.
+2026-11-27T16:45:38+0000 <validator-host> systemd[1]: Finished pft-vulnscan heal: one forced cache-busting USN OVAL refetch + scan (started by pft-upstreamwatch, no timer).
+2026-11-27T16:45:38+0000 <validator-host> systemd[1]: pft-vulnscan-heal.service: Consumed 50.058s CPU time.
+2026-11-27T16:45:57+0000 <validator-host> pft-upstreamwatch[2164178]: heal: usn-host healed - lag 0 after the refetch (rc 0)
+2026-11-27T16:45:58+0000 <validator-host> pft-upstreamwatch[2164178]: usn-host               ok                   0.0 h       23.9 h    0.0 h  local copy is upstream's latest (upstream answered 304 to our ETag); content 23.9 h old
+2026-11-27T16:45:58+0000 <validator-host> pft-upstreamwatch[2164178]: heal usn-host: attempts 1, last 2026-11-27T16:44:34Z healed (rc 0) - lag 0 after the refetch
+2026-11-27T16:45:58+0000 <validator-host> pft-upstreamwatch[2164178]: RESULT: ok=2 upstream_quiet=1 local_lagging=3 local_stale=0 fetch_failing=0 unreachable=0 release=current
+2026-11-27T16:45:58+0000 <validator-host> systemd[1]: Finished pft-upstreamwatch: feed two-clock freshness + postfiatd release watch (writes textfile metrics).
+$ pft-upstreamwatch report
+FEED                   STATE            FETCH AGE  CONTENT AGE      LAG  REASON
+usn-host               ok                   0.0 h       23.9 h    0.0 h  local copy is upstream's latest (upstream answered 304 to our ETag); content 23.9 h old
+heal usn-host: attempts 1, last 2026-11-27T16:44:34Z healed (rc 0) - lag 0 after the refetch
+RESULT: ok=2 upstream_quiet=1 local_lagging=3 local_stale=0 fetch_failing=0 unreachable=0 release=current
+pft_upstreamwatch_feed_state{host="validator",feed="usn-host",state="ok"} 1
+pft_upstreamwatch_feed_lag_seconds{host="validator",feed="usn-host"} 0
+pft_upstreamwatch_heal_attempts{host="validator",feed="usn-host"} 1
+pft_upstreamwatch_heal_last_attempt_timestamp_seconds{host="validator",feed="usn-host"} 1795797874
+pft_upstreamwatch_heal_last_result{host="validator",feed="usn-host",result="started"} 0
+pft_upstreamwatch_heal_last_result{host="validator",feed="usn-host",result="healed"} 1
+pft_upstreamwatch_heal_last_result{host="validator",feed="usn-host",result="still_lagging"} 0
+pft_upstreamwatch_heal_last_result{host="validator",feed="usn-host",result="failed"} 0
+pft_vulnscan_up{host="validator"} 1
+pft_vulnscan_feed_timestamp_seconds{host="validator"} 1795711879
