@@ -64,9 +64,10 @@ left=$(( $(date -u -d "$nxt" +%s 2>/dev/null || echo 0) - $(date -u +%s) )); ech
 [ "$left" -gt 600 ]; check "S0 next pft-integrity run > 10 min away" $?
 pend="$(curl -s "$AM/api/v2/alerts?active=true&silenced=false&inhibited=false" | jq -r '[.[] | select(.labels.host == "sentry") | .labels.alertname] | join(",")')"
 echo "unsilenced active AM alerts for host=sentry: ${pend:-none}"; [ -z "$pend" ]; check "S0 no sentry alert active" $?
-x "ls -l /usr/local/bin/postfiat-healthcheck /etc/systemd/system/postfiat-healthcheck.* /etc/default/postfiat-healthcheck /usr/local/bin/scratch-healthcheck /etc/systemd/system/scratch-healthcheck.* 2>&1 | sed 's/^/  /'"
-n="$(R 'ls /usr/local/bin/postfiat-healthcheck /etc/systemd/system/postfiat-healthcheck.service /etc/systemd/system/postfiat-healthcheck.timer /usr/local/bin/scratch-healthcheck /etc/systemd/system/scratch-healthcheck.service /etc/systemd/system/scratch-healthcheck.timer 2>/dev/null | wc -l')"
-[ "$n" = 0 ]; check "S0 nothing installed yet (real or scratch)" $?
+ALL='/usr/local/bin/postfiat-healthcheck /etc/systemd/system/postfiat-healthcheck.* /etc/default/postfiat-healthcheck /var/lib/systemd/timers/stamp-postfiat-healthcheck.timer /usr/local/bin/scratch-healthcheck /etc/systemd/system/scratch-healthcheck.* /etc/default/scratch-healthcheck /var/lib/systemd/timers/stamp-scratch-healthcheck.timer'
+x "ls -ld $ALL 2>&1 | sed 's/^/  /'"
+n="$(R "ls -d $ALL 2>/dev/null | wc -l")"
+[ "$n" = 0 ]; check "S0 nothing installed yet (real or scratch, incl. timer stamp files)" $?
 if [ "$FAILS" != 0 ]; then echo "RESULT: preflight failed ($FAILS), nothing changed"; exit 1; fi
 
 step "S1 maintenance silence (Alertmanager, host=\"sentry\", ${SIL_MIN}m)"
@@ -95,7 +96,7 @@ x "systemd-analyze verify /etc/systemd/system/postfiat-healthcheck.timer /etc/sy
 check "S2 systemd-analyze verify of the installed units: rc 0, no finding" $?
 x "systemctl show postfiat-healthcheck.timer -p TimersCalendar -p Persistent -p NextElapseUSecRealtime"
 
-step "S3 run by hand (guide visibility block, unchanged)"
+step "S3 run now (guide visibility block, unchanged)"
 echo "\$ ssh relay bash -s < visibility.sh"
 out="$(RS bash -s < "$X/visibility.sh" 2>&1)"; echo "$out"
 grep -qx 'RESULT OK' <<<"$out" && grep -qx 'exit 0' <<<"$out"; check "S3 run now: exit 0, RESULT OK" $?
@@ -153,13 +154,14 @@ systemctl daemon-reload; systemctl show scratch-healthcheck.service -p OnFailure
 accept "task_05f47: scratch-healthcheck copy for the uninstall test (removed in the same step)"
 x "systemctl start scratch-healthcheck.service && journalctl -u scratch-healthcheck.service -o cat --no-pager | tail -1"
 check "S7 scratch copy runs" $?
-x "ls -ld /usr/local/bin/scratch-healthcheck /etc/systemd/system/scratch-healthcheck.* /etc/default/scratch-healthcheck"
+x "ls -ld /usr/local/bin/scratch-healthcheck /etc/systemd/system/scratch-healthcheck.* /etc/default/scratch-healthcheck /var/lib/systemd/timers/stamp-scratch-healthcheck.timer"
 x "systemctl is-active scratch-healthcheck.timer"; check "S7 scratch timer active before uninstall" $?
 echo "\$ ssh relay bash -s < (uninstall.sh renamed)"; ren "$X/uninstall.sh" | sed 's/^/  /'
 ren "$X/uninstall.sh" | RS bash -s; rc=$?; echo "rc=$rc"; check "S7 guide uninstall block (renamed) exit 0" "$rc"
-x "ls -ld /usr/local/bin/scratch-healthcheck /etc/systemd/system/scratch-healthcheck.* /etc/default/scratch-healthcheck 2>&1 | sed 's/^/  /'"
-left="$(R 'ls -d /usr/local/bin/scratch-healthcheck /etc/systemd/system/scratch-healthcheck.* /etc/default/scratch-healthcheck 2>/dev/null | wc -l')"
-[ "$left" = 0 ]; check "S7 every scratch file removed" $? "$left left"
+SCR='/usr/local/bin/scratch-healthcheck /etc/systemd/system/scratch-healthcheck.* /etc/default/scratch-healthcheck /var/lib/systemd/timers/stamp-scratch-healthcheck.timer'
+x "ls -ld $SCR 2>&1 | sed 's/^/  /'"
+left="$(R "ls -d $SCR 2>/dev/null | wc -l")"
+[ "$left" = 0 ]; check "S7 every scratch file removed (incl. the timer stamp)" $? "$left left"
 lt="$(R 'systemctl list-units --all --no-legend --plain "scratch-healthcheck*" | wc -l; systemctl list-unit-files --no-legend "scratch-healthcheck*" | wc -l' | paste -sd+ - | bc)"
 x "systemctl list-units --all --no-pager 'scratch-healthcheck*'; systemctl list-timers --all --no-pager 'scratch-healthcheck*'"
 [ "$lt" = 0 ]; check "S7 no scratch unit or unit file left loaded" $? "$lt"
