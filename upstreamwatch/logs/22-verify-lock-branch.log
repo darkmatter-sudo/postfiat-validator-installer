@@ -1,0 +1,84 @@
+# 2026-11-27T17:43:52Z verification probe: heal lock-held branch (task_dfa49)
+$ git clone -q https://github.com/darkmatter-sudo/postfiat-validator-installer.git r
+exit=0
+$ git checkout -q 3340eb6496af404b03f2fd717a329e1391628eb9
+exit=0
+$ git rev-parse HEAD
+3340eb6496af404b03f2fd717a329e1391628eb9
+exit=0
+$ git diff --stat 94d06587ff024bc240f19254400ce099949646a5 3340eb6496af404b03f2fd717a329e1391628eb9 -- upstreamwatch/upstreamwatch_lib.py upstreamwatch/pft-upstreamwatch.sh upstreamwatch/tests/test_upstreamwatch.py
+exit=0
+(empty diff = both files identical at 94d06587ff024bc240f19254400ce099949646a5 and 3340eb6496af404b03f2fd717a329e1391628eb9)
+$ sha256sum upstreamwatch/upstreamwatch_lib.py upstreamwatch/pft-upstreamwatch.sh upstreamwatch/tests/test_upstreamwatch.py
+d0e07ccd29a50d87f1d44d52ee06d19b23a1105cae1ba0cc113e334f90ddb67e  upstreamwatch/upstreamwatch_lib.py
+cfa4192edf4000210ffd5673aa0e794dd26f4e7c124f8fb41630e49dfe52d946  upstreamwatch/pft-upstreamwatch.sh
+ccd3dd24df2a53c4476a95a8607aaf0f45252764aa96629b33775dfdda6b3d22  upstreamwatch/tests/test_upstreamwatch.py
+exit=0
+$ awk 'NR>=594 && NR<=622 {printf "%6d\t%s\n", NR, $0}' upstreamwatch/upstreamwatch_lib.py
+   594	def heal_plan(res, now, cfg, maint, running):
+   595	    """-> one decision per feed whose lag exceeds LAG_HEAL_HOURS: {feed, action heal|skip, reason, lag}.
+   596	
+   597	    Order of checks: disabled (LAG_HEAL_HOURS 0), rate limit (one attempt per feed per HEAL_INTERVAL_HOURS, counted
+   598	    from the last START, whatever its result), maintenance window active, vulnscan already running. The lock is
+   599	    taken by the shell after this (a held lock is journaled as skip/locked)."""
+   600	    out = []
+   601	    lag_max, interval = int(cfg["lag_heal_hours"]) * 3600, int(cfg["heal_interval_hours"]) * 3600
+   602	    for f in res["feeds"]:
+   603	        if f.get("local") not in HEALABLE or f["state"] not in ("local_lagging", "local_stale"):
+   604	            continue
+   605	        if f.get("lag") is None or f["lag"] <= lag_max:
+   606	            continue
+   607	        d = {"feed": f["name"], "lag": f["lag"], "state": f["state"], "action": "skip"}
+   608	        last = int(res.get("heal", {}).get(f["name"], {}).get("last_attempt_epoch", 0))
+   609	        if lag_max == 0:
+   610	            d["reason"] = "disabled (LAG_HEAL_HOURS=0)"
+   611	        elif last and now - last < interval:
+   612	            d["reason"] = (f"rate_limited: last attempt {hours(now - last)} ago "
+   613	                           f"(< HEAL_INTERVAL_HOURS {cfg['heal_interval_hours']} h)")
+   614	        elif maint:
+   615	            d["reason"] = "maint_window: a pft-maint window is active"
+   616	        elif running:
+   617	            d["reason"] = "vulnscan_running: pft-vulnscan.service or pft-vulnscan-heal.service is active"
+   618	        else:
+   619	            d["action"] = "heal"
+   620	            d["reason"] = f"lag {hours(f['lag'])} > LAG_HEAL_HOURS {cfg['lag_heal_hours']} h"
+   621	        out.append(d)
+   622	    return out
+exit=0
+$ grep -n -E 'heal-plan|flock -n 8|heal_log "\$feed" skip|--result started' upstreamwatch/pft-upstreamwatch.sh
+171:  plan="$(python3 -I "$LIB" heal-plan --obs "$OBS" --now "$(now)" --maint "$maint" --running "$running")" \
+176:    if [ "$action" != heal ]; then heal_log "$feed" skip "$reason"; continue; fi
+177:    exec 8> "$HEAL_LOCK" || { heal_log "$feed" skip "locked: cannot open $HEAL_LOCK"; continue; }
+178:    if ! flock -n 8; then heal_log "$feed" skip "locked: another heal holds $HEAL_LOCK"; exec 8>&-; continue; fi
+180:    python3 -I "$LIB" heal-record --state "$HEAL_STATE" --feed "$feed" --now "$(now)" --result started \
+181:      --note "$reason" > /dev/null || { heal_log "$feed" skip "cannot write $HEAL_STATE"; exec 8>&-; continue; }
+exit=0
+$ grep -n -E 'HEAL_LOCK=|DATA_DIR=/' upstreamwatch/pft-upstreamwatch.sh
+61:VULNSCAN_CACHE=/var/cache/pft-vulnscan; IMAGESCAN_CACHE=/var/cache/pft-imagescan; DATA_DIR=/var/lib/pft-upstreamwatch
+66:HEAL_STATE=""; HEAL_LOCK=""; HEAL_JOURNAL=""
+101:[ -n "$HEAL_LOCK" ] || HEAL_LOCK="$DATA_DIR/heal.lock"
+exit=0
+$ grep -n -A4 'if result == "started"' upstreamwatch/upstreamwatch_lib.py
+632:    if result == "started":
+633-        e["attempts"] = int(e.get("attempts", 0)) + 1
+634-        e["last_attempt_epoch"] = int(now)
+635-    e["last_result"], e["last_rc"], e["last_result_epoch"] = result, int(rc), int(now)
+636-    e["note"] = note[:200]
+exit=0
+$ cp ~/work/postfiat-validator-installer/upstreamwatch/drill/verify-lock-probe.py upstreamwatch/tests/test_zz_lockprobe.py
+exit=0
+$ sha256sum upstreamwatch/tests/test_zz_lockprobe.py
+766450d502fe696df0ebe662edc964386780262e3fd24dcae0f0c9e51fcb8bf5  upstreamwatch/tests/test_zz_lockprobe.py
+exit=0
+(test_zz_lockprobe.py star-imports test_upstreamwatch.py for its fixtures, so pytest collects the 84 suite tests there too: expect 84 + 2 probes = 86)
+$ python3 -u -m pytest -q -s -p no:cacheprovider --basetemp ~/.cache/pyt/vdfa49rec tests/test_zz_lockprobe.py
+....................................................................................STDOUT heal: usn-host skip - locked: another heal holds DATA_DIR/heal.lock
+JOURNAL {"epoch": 1795398000, "event": "skip", "feed": "usn-host", "rc": 0, "reason": "locked: another heal holds DATA_DIR/heal.lock"}
+HEAL_STATE absent
+.STDOUT heal: usn-host skip - locked: another heal holds DATA_DIR/heal.lock
+JOURNAL {"epoch": 1795398000, "event": "skip", "feed": "usn-host", "rc": 0, "reason": "locked: another heal holds DATA_DIR/heal.lock"}
+HEAL_STATE {  "usn-host": {   "attempts": 1,   "last_attempt_epoch": 1795372800,   "last_rc": 0,   "last_result": "still_lagging",   "last_result_epoch": 1795372800,   "note": "probe prior attempt"  } }
+.
+86 passed in 60.33s (0:01:00)
+exit=0
+# end 2026-11-27T17:45:15Z
