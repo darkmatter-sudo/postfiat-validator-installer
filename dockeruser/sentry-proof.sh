@@ -18,7 +18,7 @@ for f in install.sh check.sh postfiat-docker-user.sh postfiat-docker-user.servic
   [ -f "$X/$f" ] || { echo "missing $X/$f" >&2; exit 2; }
 done
 ts() { date -u +%FT%TZ; }
-R() { ssh -o LogLevel=ERROR -o ConnectTimeout=10 -o BatchMode=yes "$RELAY" "$@" </dev/null; }
+R() { ssh -o LogLevel=ERROR -o ConnectTimeout=10 -o BatchMode=yes "$RELAY" "export TZ=UTC; $*" </dev/null; } # remote times in UTC
 RS() { ssh -o LogLevel=ERROR -o ConnectTimeout=10 -o BatchMode=yes "$RELAY" "$@"; } # with stdin (scripts)
 FAILS=0
 check() { if [ "$2" = 0 ]; then echo "CHECK ok   $1${3:+ ($3)}"; else echo "CHECK FAIL $1${3:+ ($3)}"; FAILS=$((FAILS + 1)); fi; }
@@ -122,8 +122,11 @@ else
   [ -n "$boot" ] && [ "$boot" != "$BOOT0" ]; check "Q1 new boot id" $?
   x "uptime -s; systemctl show postfiat-docker-user.service -p ActiveState -p SubState -p Result -p ExecMainStatus -p ActiveEnterTimestamp"
   x "journalctl --utc -b -u postfiat-docker-user.service -o short-iso --no-pager | tail -5"
-  act="$(R 'systemctl show postfiat-docker-user.service -p ActiveState -p Result --value' | paste -sd' ' -)"
-  [ "$act" = "active success" ]; check "Q1 unit ran at boot: active, Result success" $?
+  # one property per call: `systemctl show -p A -p B --value` prints in systemd's own order, not the -p order
+  act="$(R 'systemctl show postfiat-docker-user.service -p ActiveState --value')"
+  res="$(R 'systemctl show postfiat-docker-user.service -p Result --value')"
+  echo "ActiveState=$act Result=$res"
+  [ "$act" = active ] && [ "$res" = success ]; check "Q1 unit ran at boot: active, Result success" $?
   x "systemctl show -p After postfiat-docker-user.service --value | tr ' ' '\\n' | grep -x docker.service"
   check "Q1 unit ordered After=docker.service" $?
 
