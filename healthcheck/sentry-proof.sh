@@ -100,7 +100,9 @@ step "S3 run now (guide visibility block, unchanged)"
 echo "\$ ssh relay bash -s < visibility.sh"
 out="$(RS bash -s < "$X/visibility.sh" 2>&1)"; echo "$out"
 grep -qx 'RESULT OK' <<<"$out" && grep -qx 'exit 0' <<<"$out"; check "S3 run now: exit 0, RESULT OK" $?
-T3="$(R 'date +%s')"; sleep 1 # S4 counts only runs started by the timer after this point
+# S4 counts only runs started by the timer after T3; journal --since has 1 s resolution and the S3 run (finished,
+# systemctl start waits for a oneshot) logged in the current second, so T3 is the next second
+sleep 2; T3="$(R 'date +%s')"
 
 step "S4 wait for $RUNS timer runs (timer fires every 5 min)"
 for _ in $(seq 1 $(( RUNS * 6 + 6 ))); do
