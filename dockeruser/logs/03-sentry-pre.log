@@ -1,0 +1,162 @@
+dockeruser sentry-proof pre - 2026-11-27T07:20:03Z
+sha256: sentry-proof.sh 854acb2f615b797872936c9051d09f66ed3de43349ff96652c2fc6f413dff687
+        install.sh a94e0c9c4e0eb379f8496585aab9959039de25673b4a7c0b94f846642b881bae
+        check.sh 0ebd0e15ebb366c16b782953800097a65f4bdad4d513f5f9213f3d5465d6b38f
+        postfiat-docker-user.sh 2acf07a7f03b5900ca1f7bc819814a262b3da1c9c681325abda59cc897e790b0
+        postfiat-docker-user.service 23b14063ecfd4c51b99ab04243a531ff1c49012697781a6d78dffc9ab524f400
+host: sentry (Ubuntu 22.04.5 LTS 5.15.0-204-generic) | iptables v1.8.7 (nf_tables)
+
+== 2026-11-27T07:20:11Z P0 preflight
+boot_id 6ab7ec5c
+server_state full peers=11 complete_ledgers=8405736-8406544
+CHECK ok   P0 sentry node full
+$ pft-integrity verify | tail -1
+RESULT: PASS - 174 unchanged, 0 warn, 0 fail -> exit 0
+rc=0
+CHECK ok   P0 sentry integrity PASS before any change
+integrity timer next: <local time zone redacted> (2026-11-27T08:00:31Z)
+seconds until the next integrity run: 2390
+CHECK ok   P0 next pft-integrity run > 10 min away
+unsilenced active AM alerts for host=sentry: none
+CHECK ok   P0 no sentry alert active
+
+== 2026-11-27T07:20:41Z P1 maintenance silence (Alertmanager, host="sentry", 20m)
+silence b7b53d18 until 2026-11-27T07:40:41Z
+CHECK ok   P1 silence created
+
+== 2026-11-27T07:20:41Z P2 before: installed files and DOCKER-USER
+$ sha256sum /usr/local/sbin/postfiat-docker-user.sh /etc/systemd/system/postfiat-docker-user.service
+b60cf6474e3d53b2a55f77cb4035767d33d324d8fab51288fba828dde39acdca  /usr/local/sbin/postfiat-docker-user.sh
+7d932a0c2c4e0bee1777329af46cd30ead96496061989f476c2d08f9064f51a0  /etc/systemd/system/postfiat-docker-user.service
+rc=0
+$ systemctl is-enabled postfiat-docker-user.service; systemctl is-active postfiat-docker-user.service
+enabled
+active
+rc=0
+$ iptables -w -S DOCKER-USER
+-N DOCKER-USER
+-A DOCKER-USER -s <redacted-ip>/32 -i docker0 ! -o docker0 -m comment --comment "pft-egress:postfiatd-sentry" -j PFT-EGRESS
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state RELATED,ESTABLISHED -j ACCEPT
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m connlimit --connlimit-above 50 --connlimit-mask 32 --connlimit-saddr -j DROP
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -m limit --limit 100/sec --limit-burst 50 -j ACCEPT
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -j DROP
+-A DOCKER-USER -j RETURN
+rc=0
+
+== 2026-11-27T07:20:45Z P3 install exactly as the guide says (install block, unchanged)
+$ ssh relay bash -s < install.sh
+Chain DOCKER-USER (1 references)
+ pkts bytes target     prot opt in     out     source               destination         
+  68M   40G PFT-EGRESS  all  --  docker0 !docker0  <redacted-ip>           0.0.0.0/0            /* pft-egress:postfiatd-sentry */
+    4   631 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:2559 state RELATED,ESTABLISHED
+    0     0 DROP       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:2559 #conn src/32 > 50
+    0     0 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:2559 state NEW limit: avg 100/sec burst 50
+    0     0 DROP       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:2559 state NEW
+   11  1627 RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0           
+rc=0
+CHECK ok   P3 guide install block exit 0
+$ pft-integrity accept --reason 'task_27cde: postfiat-docker-user.sh + unit from the guide PR' | tail -2
+pft-integrity accept - 2026-11-27T07:21:14Z: re-baselined 174 items by root
+manifest sha256: 1c7920f749aae05e92471edd4c84e803d135f9abd69eea94321f3c157b478c06 -> 87c72af1637fde1a3485d6a7f7b7e0b92d99f50f5dba38722474d8b59382be3d (logged to accept.log)
+rc=0
+CHECK ok   P3 integrity baseline accepted for the two intended changes
+installed sha256: 2acf07a7f03b5900ca1f7bc819814a262b3da1c9c681325abda59cc897e790b0 23b14063ecfd4c51b99ab04243a531ff1c49012697781a6d78dffc9ab524f400
+guide     sha256: 2acf07a7f03b5900ca1f7bc819814a262b3da1c9c681325abda59cc897e790b0 23b14063ecfd4c51b99ab04243a531ff1c49012697781a6d78dffc9ab524f400
+CHECK ok   P3 installed files byte-identical to the guide
+$ systemctl is-enabled postfiat-docker-user.service
+enabled
+rc=0
+CHECK ok   P3 unit enabled
+
+== 2026-11-27T07:21:16Z P4 rules present: guide check must exit 0
+$ iptables -w -S DOCKER-USER
+-N DOCKER-USER
+-A DOCKER-USER -s <redacted-ip>/32 -i docker0 ! -o docker0 -m comment --comment "pft-egress:postfiatd-sentry" -j PFT-EGRESS
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state RELATED,ESTABLISHED -j ACCEPT
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m connlimit --connlimit-above 50 --connlimit-mask 32 --connlimit-saddr -j DROP
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -m limit --limit 100/sec --limit-burst 50 -j ACCEPT
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -j DROP
+-A DOCKER-USER -j RETURN
+rc=0
+$ ssh relay bash -s < check.sh   (guide check block, sha256 0ebd0e15ebb366c1)
+OK: TCP 2559 DOCKER-USER limits present, RETURN last, unit enabled
+rc=0
+CHECK ok   P4 check exit 0 with rules present
+
+== 2026-11-27T07:21:17Z P5 lose the rules: stop the unit, flush the TCP 2559 rules and RETURN (other DOCKER-USER rules on this host stay)
+$ systemctl stop postfiat-docker-user.service
+rc=0
+$ for n in $(iptables -w -S DOCKER-USER | awk 'NR > 1 && (/--dport 2559 / || $0 == "-A DOCKER-USER -j RETURN") { print NR - 1 }' | sort -rn); do iptables -w -D DOCKER-USER $n || exit 1; done
+rc=0
+CHECK ok   P5 flush
+$ iptables -w -S DOCKER-USER
+-N DOCKER-USER
+-A DOCKER-USER -s <redacted-ip>/32 -i docker0 ! -o docker0 -m comment --comment "pft-egress:postfiatd-sentry" -j PFT-EGRESS
+rc=0
+TCP 2559 rules now: 0
+CHECK ok   P5 no TCP 2559 rule left
+$ ssh relay bash -s < check.sh   (guide check block, sha256 0ebd0e15ebb366c1)
+FAIL: TCP 2559 rules missing, changed or out of order
+rc=1
+CHECK ok   P5 check detects the loss: exit 1
+
+== 2026-11-27T07:21:22Z P6 unit start restores the rules
+$ systemctl start postfiat-docker-user.service
+rc=0
+CHECK ok   P6 unit start
+$ systemctl show postfiat-docker-user.service -p ActiveState -p SubState -p Result -p ExecMainStatus
+Result=success
+ExecMainStatus=0
+ActiveState=active
+SubState=exited
+rc=0
+$ iptables -w -S DOCKER-USER
+-N DOCKER-USER
+-A DOCKER-USER -s <redacted-ip>/32 -i docker0 ! -o docker0 -m comment --comment "pft-egress:postfiatd-sentry" -j PFT-EGRESS
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state RELATED,ESTABLISHED -j ACCEPT
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m connlimit --connlimit-above 50 --connlimit-mask 32 --connlimit-saddr -j DROP
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -m limit --limit 100/sec --limit-burst 50 -j ACCEPT
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -j DROP
+-A DOCKER-USER -j RETURN
+rc=0
+$ ssh relay bash -s < check.sh   (guide check block, sha256 0ebd0e15ebb366c1)
+OK: TCP 2559 DOCKER-USER limits present, RETURN last, unit enabled
+rc=0
+CHECK ok   P6 check exit 0 after unit start
+
+== 2026-11-27T07:21:25Z P7 idempotency: two more runs, rule count and chain unchanged
+run 0: lines=7 sha=f06a68c62af29687
+$ systemctl restart postfiat-docker-user.service
+rc=0
+CHECK ok   P7 restart 1
+run 1: lines=7 sha=f06a68c62af29687
+CHECK ok   P7 run 1: rule count and chain unchanged
+$ systemctl restart postfiat-docker-user.service
+rc=0
+CHECK ok   P7 restart 2
+run 2: lines=7 sha=f06a68c62af29687
+CHECK ok   P7 run 2: rule count and chain unchanged
+$ ssh relay bash -s < check.sh   (guide check block, sha256 0ebd0e15ebb366c1)
+OK: TCP 2559 DOCKER-USER limits present, RETURN last, unit enabled
+rc=0
+CHECK ok   P7 check exit 0 after the idempotent runs
+
+== 2026-11-27T07:21:32Z P8 node and egress policy after the sequence
+server_state full peers=11 complete_ledgers=8405736-8406569
+CHECK ok   P8 sentry node full
+$ pft-egress check --container postfiatd-sentry | tail -1
+RESULT: PASS
+rc=0
+CHECK ok   P8 pft-egress check (jump kept at DOCKER-USER 1)
+$ pft-integrity verify | tail -1
+RESULT: PASS - 174 unchanged, 0 warn, 0 fail -> exit 0
+rc=0
+CHECK ok   P8 integrity PASS
+
+== 2026-11-27T07:21:59Z P9 end of the maintenance silence
+CHECK ok   P9 nothing active for the sentry before expiry
+expire silence http 200
+boot_id_before 6ab7ec5c-1f86-47ba-9500-1d1c37d4bb35
+
+RESULT: PASS - 0 failed check(s) - 2026-11-27T07:21:59Z
+# published copy: line 17 local time zone replaced by UTC (only edit; IPs/host names/topics redacted at capture)

@@ -37,3 +37,23 @@ The reboot goes through `patch/drill/live-run.sh` (`INJECT=sentry-reboot`, every
 silence). `post`: new boot id, unit ran at boot, four 2559 rules with RETURN last, check exit 0, `server_state full`.
 Other `DOCKER-USER` rules on the host (an egress-policy jump at position 1) are left alone throughout, which the
 previous `iptables -F DOCKER-USER` did not do.
+
+## Results (2026-11-27)
+
+Upstream: issue [postfiatorg/postfiatorg.github.io#58](https://github.com/postfiatorg/postfiatorg.github.io/issues/58),
+PR [#59](https://github.com/postfiatorg/postfiatorg.github.io/pull/59), commit `e9d1fc074062ed8e4e6eadd35248ecb041189b5a`
+(parent = upstream main `8da236f68fb1dbc050fe6463c427f6e0bb5d5d1c`), 3 files, +192/-24.
+
+| Log | What | Result lines |
+| --- | --- | --- |
+| `logs/01-guide-static.log` | fresh clones; full diff; check-guide | 276 diff = 3 files; 318-322 5 parts identical in all copies; 324-327 shellcheck; 332 systemd-analyze; 334 exit 0 |
+| `logs/02-netns-sentry.log` | netns suite on the sentry | 111 `24 passed, 0 failed`; 9/113 host chain sha256 unchanged |
+| `logs/03-sentry-pre.log` | install from the guide, lose rules, detect, restore, idempotency | 57/65 install exit 0 + byte-identical; 84 check 0; 97/100 flushed + check rc=1; 106/125 start + check 0; 128-138 runs 0-2 `lines=7` same sha256; 161 PASS |
+| `logs/04-sentry-reboot.log` | sentry reboot via `patch/drill/live-run.sh` | 89-90 reboot, back after 69 s, new boot id; 133 operator topics 0 messages |
+| `logs/05-sentry-post.log` | after the reboot | 22/25 unit ran at boot, active/success; 42-47 four rules, RETURN last, check 0; 51 `server_state` full; 61 PASS |
+
+History: the first post-reboot run (unpublished) had one harness FAIL: `systemctl show -p ActiveState -p Result --value`
+prints properties in systemd's order, so the string compare failed although the unit was active/success; fixed in
+`2ead044c6e65f684210d9aba5df1ed4453419a9e` (one property per call, remote times in UTC) and re-run as log 05.
+Log 03 ran `sentry-proof.sh` at `f982b02273efb41ce3dcedeea89eb267fda49118`; that fix changed only the post path and the
+remote time zone.

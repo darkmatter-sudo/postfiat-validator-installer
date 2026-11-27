@@ -1,0 +1,335 @@
+dockeruser 01 guide static checks - 2026-11-27T07:18:59Z
+$ git clone https://github.com/darkmatter-sudo/postfiatorg.github.io.git guide && git -C guide checkout e9d1fc074062ed8e4e6eadd35248ecb041189b5a
+rc=0
+guide HEAD e9d1fc074062ed8e4e6eadd35248ecb041189b5a parent 8da236f68fb1dbc050fe6463c427f6e0bb5d5d1c
+$ git clone https://github.com/darkmatter-sudo/postfiat-validator-installer.git inst && git -C inst checkout f982b02273efb41ce3dcedeea89eb267fda49118
+rc=0
+installer HEAD f982b02273efb41ce3dcedeea89eb267fda49118
+upstream main HEAD 8da236f68fb1dbc050fe6463c427f6e0bb5d5d1c
+$ git -C guide diff HEAD~1 HEAD (full diff of the change)
+diff --git a/content/validator-setup.md b/content/validator-setup.md
+index dc13ef6..e7d9ed5 100644
+--- a/content/validator-setup.md
++++ b/content/validator-setup.md
+@@ -167,18 +167,74 @@ sudo ufw --force enable
+ sudo ufw status verbose
+ ```
+ 
+-Add Docker `DOCKER-USER` rate limits for peer traffic:
++Add Docker `DOCKER-USER` rate limits for peer traffic. Traffic to a port Docker publishes is forwarded past UFW's input rules, so the limits for TCP `2559` go in Docker's `DOCKER-USER` chain. Rules added there with plain `iptables` are not saved and are gone after a reboot, so install them as a small idempotent script that a oneshot unit runs after Docker starts:
++
++```bash
++sudo tee /usr/local/sbin/postfiat-docker-user.sh >/dev/null <<'EOF'
++#!/bin/sh
++# Re-apply the TCP 2559 DOCKER-USER limits. Safe to run any number of times:
++# it removes only the chain's TCP 2559 rules and its RETURN rule, keeps every
++# other DOCKER-USER rule, then appends the 2559 rules and RETURN (RETURN last).
++set -eu
++C=DOCKER-USER
++iptables -w -N "$C" 2>/dev/null || true
++# delete by rule number, highest first (line 1 of `iptables -S` is the chain)
++iptables -w -S "$C" |
++  awk -v r="-A $C -j RETURN" 'NR > 1 && (/--dport 2559 / || $0 == r) { print NR - 1 }' |
++  sort -rn |
++  while read -r n; do iptables -w -D "$C" "$n"; done
++iptables -w -A "$C" -p tcp --dport 2559 -m state --state ESTABLISHED,RELATED -j ACCEPT
++iptables -w -A "$C" -p tcp --dport 2559 -m connlimit --connlimit-above 50 -j DROP
++iptables -w -A "$C" -p tcp --dport 2559 -m state --state NEW -m limit --limit 100/second --limit-burst 50 -j ACCEPT
++iptables -w -A "$C" -p tcp --dport 2559 -m state --state NEW -j DROP
++iptables -w -A "$C" -j RETURN
++EOF
++sudo chmod 755 /usr/local/sbin/postfiat-docker-user.sh
++
++sudo tee /etc/systemd/system/postfiat-docker-user.service >/dev/null <<'EOF'
++[Unit]
++Description=Post Fiat TCP 2559 DOCKER-USER rate limits
++After=docker.service
++Requires=docker.service
++PartOf=docker.service
++
++[Service]
++Type=oneshot
++RemainAfterExit=yes
++ExecStart=/usr/local/sbin/postfiat-docker-user.sh
++
++[Install]
++WantedBy=multi-user.target
++EOF
++sudo systemctl daemon-reload
++sudo systemctl enable postfiat-docker-user.service
++sudo systemctl restart postfiat-docker-user.service
++sudo iptables -L DOCKER-USER -n -v
++```
++
++`PartOf=docker.service` re-runs the script whenever Docker restarts, and `restart` (not `start`) re-applies the rules when the unit was already active.
++
++Check the rules at any time, and again after a reboot. The check is read-only and exits non-zero if anything is missing:
+ 
+ ```bash
+-sudo iptables -F DOCKER-USER 2>/dev/null || true
+-sudo iptables -I DOCKER-USER -j RETURN
+-sudo iptables -I DOCKER-USER -p tcp --dport 2559 -m state --state NEW -j DROP
+-sudo iptables -I DOCKER-USER -p tcp --dport 2559 -m state --state NEW -m limit --limit 100/second --limit-burst 50 -j ACCEPT
+-sudo iptables -I DOCKER-USER -p tcp --dport 2559 -m connlimit --connlimit-above 50 -j DROP
+-sudo iptables -I DOCKER-USER -p tcp --dport 2559 -m state --state ESTABLISHED,RELATED -j ACCEPT
+-sudo iptables -L DOCKER-USER -n -v
++sudo sh -s <<'EOF'
++want='-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state RELATED,ESTABLISHED -j ACCEPT
++-A DOCKER-USER -p tcp -m tcp --dport 2559 -m connlimit --connlimit-above 50 --connlimit-mask 32 --connlimit-saddr -j DROP
++-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -m limit --limit 100/sec --limit-burst 50 -j ACCEPT
++-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -j DROP'
++rules=$(iptables -w -S DOCKER-USER) || { echo "FAIL: cannot read the DOCKER-USER chain"; exit 1; }
++got=$(printf '%s\n' "$rules" | grep -e '--dport 2559 ' || true)
++[ "$got" = "$want" ] || { echo "FAIL: TCP 2559 rules missing, changed or out of order"; exit 1; }
++n=$(printf '%s\n' "$rules" | grep -c -x -e '-A DOCKER-USER -j RETURN' || true)
++last=$(printf '%s\n' "$rules" | tail -n 1)
++if [ "$n" != 1 ] || [ "$last" != '-A DOCKER-USER -j RETURN' ]; then echo "FAIL: RETURN must appear once, as the last rule"; exit 1; fi
++systemctl is-enabled --quiet postfiat-docker-user.service || { echo "FAIL: postfiat-docker-user.service is not enabled"; exit 1; }
++echo "OK: TCP 2559 DOCKER-USER limits present, RETURN last, unit enabled"
++EOF
+ ```
+ 
++The expected lines are how `iptables -S` (1.8, Ubuntu 22.04 and newer) prints the rules above.
++
+ Expected security posture:
+ 
+ - Public inbound allowed: SSH and TCP `2559`
+diff --git a/static/agents/validator-setup.md b/static/agents/validator-setup.md
+index 2f55f1e..ced5977 100644
+--- a/static/agents/validator-setup.md
++++ b/static/agents/validator-setup.md
+@@ -148,18 +148,74 @@ sudo ufw --force enable
+ sudo ufw status verbose
+ ```
+ 
+-Add Docker `DOCKER-USER` rate limits for peer traffic:
++Add Docker `DOCKER-USER` rate limits for peer traffic. Traffic to a port Docker publishes is forwarded past UFW's input rules, so the limits for TCP `2559` go in Docker's `DOCKER-USER` chain. Rules added there with plain `iptables` are not saved and are gone after a reboot, so install them as a small idempotent script that a oneshot unit runs after Docker starts:
++
++```bash
++sudo tee /usr/local/sbin/postfiat-docker-user.sh >/dev/null <<'EOF'
++#!/bin/sh
++# Re-apply the TCP 2559 DOCKER-USER limits. Safe to run any number of times:
++# it removes only the chain's TCP 2559 rules and its RETURN rule, keeps every
++# other DOCKER-USER rule, then appends the 2559 rules and RETURN (RETURN last).
++set -eu
++C=DOCKER-USER
++iptables -w -N "$C" 2>/dev/null || true
++# delete by rule number, highest first (line 1 of `iptables -S` is the chain)
++iptables -w -S "$C" |
++  awk -v r="-A $C -j RETURN" 'NR > 1 && (/--dport 2559 / || $0 == r) { print NR - 1 }' |
++  sort -rn |
++  while read -r n; do iptables -w -D "$C" "$n"; done
++iptables -w -A "$C" -p tcp --dport 2559 -m state --state ESTABLISHED,RELATED -j ACCEPT
++iptables -w -A "$C" -p tcp --dport 2559 -m connlimit --connlimit-above 50 -j DROP
++iptables -w -A "$C" -p tcp --dport 2559 -m state --state NEW -m limit --limit 100/second --limit-burst 50 -j ACCEPT
++iptables -w -A "$C" -p tcp --dport 2559 -m state --state NEW -j DROP
++iptables -w -A "$C" -j RETURN
++EOF
++sudo chmod 755 /usr/local/sbin/postfiat-docker-user.sh
++
++sudo tee /etc/systemd/system/postfiat-docker-user.service >/dev/null <<'EOF'
++[Unit]
++Description=Post Fiat TCP 2559 DOCKER-USER rate limits
++After=docker.service
++Requires=docker.service
++PartOf=docker.service
++
++[Service]
++Type=oneshot
++RemainAfterExit=yes
++ExecStart=/usr/local/sbin/postfiat-docker-user.sh
++
++[Install]
++WantedBy=multi-user.target
++EOF
++sudo systemctl daemon-reload
++sudo systemctl enable postfiat-docker-user.service
++sudo systemctl restart postfiat-docker-user.service
++sudo iptables -L DOCKER-USER -n -v
++```
++
++`PartOf=docker.service` re-runs the script whenever Docker restarts, and `restart` (not `start`) re-applies the rules when the unit was already active.
++
++Check the rules at any time, and again after a reboot. The check is read-only and exits non-zero if anything is missing:
+ 
+ ```bash
+-sudo iptables -F DOCKER-USER 2>/dev/null || true
+-sudo iptables -I DOCKER-USER -j RETURN
+-sudo iptables -I DOCKER-USER -p tcp --dport 2559 -m state --state NEW -j DROP
+-sudo iptables -I DOCKER-USER -p tcp --dport 2559 -m state --state NEW -m limit --limit 100/second --limit-burst 50 -j ACCEPT
+-sudo iptables -I DOCKER-USER -p tcp --dport 2559 -m connlimit --connlimit-above 50 -j DROP
+-sudo iptables -I DOCKER-USER -p tcp --dport 2559 -m state --state ESTABLISHED,RELATED -j ACCEPT
+-sudo iptables -L DOCKER-USER -n -v
++sudo sh -s <<'EOF'
++want='-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state RELATED,ESTABLISHED -j ACCEPT
++-A DOCKER-USER -p tcp -m tcp --dport 2559 -m connlimit --connlimit-above 50 --connlimit-mask 32 --connlimit-saddr -j DROP
++-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -m limit --limit 100/sec --limit-burst 50 -j ACCEPT
++-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -j DROP'
++rules=$(iptables -w -S DOCKER-USER) || { echo "FAIL: cannot read the DOCKER-USER chain"; exit 1; }
++got=$(printf '%s\n' "$rules" | grep -e '--dport 2559 ' || true)
++[ "$got" = "$want" ] || { echo "FAIL: TCP 2559 rules missing, changed or out of order"; exit 1; }
++n=$(printf '%s\n' "$rules" | grep -c -x -e '-A DOCKER-USER -j RETURN' || true)
++last=$(printf '%s\n' "$rules" | tail -n 1)
++if [ "$n" != 1 ] || [ "$last" != '-A DOCKER-USER -j RETURN' ]; then echo "FAIL: RETURN must appear once, as the last rule"; exit 1; fi
++systemctl is-enabled --quiet postfiat-docker-user.service || { echo "FAIL: postfiat-docker-user.service is not enabled"; exit 1; }
++echo "OK: TCP 2559 DOCKER-USER limits present, RETURN last, unit enabled"
++EOF
+ ```
+ 
++The expected lines are how `iptables -S` (1.8, Ubuntu 22.04 and newer) prints the rules above.
++
+ Expected security posture:
+ 
+ - Public inbound allowed: SSH and TCP `2559`
+diff --git a/static/agents/validator-setup.txt b/static/agents/validator-setup.txt
+index 2f55f1e..ced5977 100644
+--- a/static/agents/validator-setup.txt
++++ b/static/agents/validator-setup.txt
+@@ -148,18 +148,74 @@ sudo ufw --force enable
+ sudo ufw status verbose
+ ```
+ 
+-Add Docker `DOCKER-USER` rate limits for peer traffic:
++Add Docker `DOCKER-USER` rate limits for peer traffic. Traffic to a port Docker publishes is forwarded past UFW's input rules, so the limits for TCP `2559` go in Docker's `DOCKER-USER` chain. Rules added there with plain `iptables` are not saved and are gone after a reboot, so install them as a small idempotent script that a oneshot unit runs after Docker starts:
++
++```bash
++sudo tee /usr/local/sbin/postfiat-docker-user.sh >/dev/null <<'EOF'
++#!/bin/sh
++# Re-apply the TCP 2559 DOCKER-USER limits. Safe to run any number of times:
++# it removes only the chain's TCP 2559 rules and its RETURN rule, keeps every
++# other DOCKER-USER rule, then appends the 2559 rules and RETURN (RETURN last).
++set -eu
++C=DOCKER-USER
++iptables -w -N "$C" 2>/dev/null || true
++# delete by rule number, highest first (line 1 of `iptables -S` is the chain)
++iptables -w -S "$C" |
++  awk -v r="-A $C -j RETURN" 'NR > 1 && (/--dport 2559 / || $0 == r) { print NR - 1 }' |
++  sort -rn |
++  while read -r n; do iptables -w -D "$C" "$n"; done
++iptables -w -A "$C" -p tcp --dport 2559 -m state --state ESTABLISHED,RELATED -j ACCEPT
++iptables -w -A "$C" -p tcp --dport 2559 -m connlimit --connlimit-above 50 -j DROP
++iptables -w -A "$C" -p tcp --dport 2559 -m state --state NEW -m limit --limit 100/second --limit-burst 50 -j ACCEPT
++iptables -w -A "$C" -p tcp --dport 2559 -m state --state NEW -j DROP
++iptables -w -A "$C" -j RETURN
++EOF
++sudo chmod 755 /usr/local/sbin/postfiat-docker-user.sh
++
++sudo tee /etc/systemd/system/postfiat-docker-user.service >/dev/null <<'EOF'
++[Unit]
++Description=Post Fiat TCP 2559 DOCKER-USER rate limits
++After=docker.service
++Requires=docker.service
++PartOf=docker.service
++
++[Service]
++Type=oneshot
++RemainAfterExit=yes
++ExecStart=/usr/local/sbin/postfiat-docker-user.sh
++
++[Install]
++WantedBy=multi-user.target
++EOF
++sudo systemctl daemon-reload
++sudo systemctl enable postfiat-docker-user.service
++sudo systemctl restart postfiat-docker-user.service
++sudo iptables -L DOCKER-USER -n -v
++```
++
++`PartOf=docker.service` re-runs the script whenever Docker restarts, and `restart` (not `start`) re-applies the rules when the unit was already active.
++
++Check the rules at any time, and again after a reboot. The check is read-only and exits non-zero if anything is missing:
+ 
+ ```bash
+-sudo iptables -F DOCKER-USER 2>/dev/null || true
+-sudo iptables -I DOCKER-USER -j RETURN
+-sudo iptables -I DOCKER-USER -p tcp --dport 2559 -m state --state NEW -j DROP
+-sudo iptables -I DOCKER-USER -p tcp --dport 2559 -m state --state NEW -m limit --limit 100/second --limit-burst 50 -j ACCEPT
+-sudo iptables -I DOCKER-USER -p tcp --dport 2559 -m connlimit --connlimit-above 50 -j DROP
+-sudo iptables -I DOCKER-USER -p tcp --dport 2559 -m state --state ESTABLISHED,RELATED -j ACCEPT
+-sudo iptables -L DOCKER-USER -n -v
++sudo sh -s <<'EOF'
++want='-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state RELATED,ESTABLISHED -j ACCEPT
++-A DOCKER-USER -p tcp -m tcp --dport 2559 -m connlimit --connlimit-above 50 --connlimit-mask 32 --connlimit-saddr -j DROP
++-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -m limit --limit 100/sec --limit-burst 50 -j ACCEPT
++-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -j DROP'
++rules=$(iptables -w -S DOCKER-USER) || { echo "FAIL: cannot read the DOCKER-USER chain"; exit 1; }
++got=$(printf '%s\n' "$rules" | grep -e '--dport 2559 ' || true)
++[ "$got" = "$want" ] || { echo "FAIL: TCP 2559 rules missing, changed or out of order"; exit 1; }
++n=$(printf '%s\n' "$rules" | grep -c -x -e '-A DOCKER-USER -j RETURN' || true)
++last=$(printf '%s\n' "$rules" | tail -n 1)
++if [ "$n" != 1 ] || [ "$last" != '-A DOCKER-USER -j RETURN' ]; then echo "FAIL: RETURN must appear once, as the last rule"; exit 1; fi
++systemctl is-enabled --quiet postfiat-docker-user.service || { echo "FAIL: postfiat-docker-user.service is not enabled"; exit 1; }
++echo "OK: TCP 2559 DOCKER-USER limits present, RETURN last, unit enabled"
++EOF
+ ```
+ 
++The expected lines are how `iptables -S` (1.8, Ubuntu 22.04 and newer) prints the rules above.
++
+ Expected security posture:
+ 
+ - Public inbound allowed: SSH and TCP `2559`
+$ sudo bash inst/dockeruser/check-guide.sh guide HEAD~1 HEAD out
+== 1 changed files e9d1fc074062ed8e4e6eadd35248ecb041189b5a~1..e9d1fc074062ed8e4e6eadd35248ecb041189b5a
+M	content/validator-setup.md
+M	static/agents/validator-setup.md
+M	static/agents/validator-setup.txt
+PASS diff touches exactly the 3 guide copies
+ content/validator-setup.md        | 72 ++++++++++++++++++++++++++++++++++-----
+ static/agents/validator-setup.md  | 72 ++++++++++++++++++++++++++++++++++-----
+ static/agents/validator-setup.txt | 72 ++++++++++++++++++++++++++++++++++-----
+ 3 files changed, 192 insertions(+), 24 deletions(-)
+== 2 extracted sections at e9d1fc074062ed8e4e6eadd35248ecb041189b5a
+-- content/validator-setup.md
+section.txt 68 lines
+install.sh 40 lines
+postfiat-docker-user.sh 17 lines
+postfiat-docker-user.service 13 lines
+check.sh 14 lines
+PASS extract content/validator-setup.md
+sha256 2e3d88742169fbebace5f66e24c2bbfe2e25bb12781af978770401bc6b2f2d11 copy1/section.txt
+sha256 a94e0c9c4e0eb379f8496585aab9959039de25673b4a7c0b94f846642b881bae copy1/install.sh
+sha256 2acf07a7f03b5900ca1f7bc819814a262b3da1c9c681325abda59cc897e790b0 copy1/postfiat-docker-user.sh
+sha256 23b14063ecfd4c51b99ab04243a531ff1c49012697781a6d78dffc9ab524f400 copy1/postfiat-docker-user.service
+sha256 0ebd0e15ebb366c16b782953800097a65f4bdad4d513f5f9213f3d5465d6b38f copy1/check.sh
+-- static/agents/validator-setup.md
+section.txt 68 lines
+install.sh 40 lines
+postfiat-docker-user.sh 17 lines
+postfiat-docker-user.service 13 lines
+check.sh 14 lines
+PASS extract static/agents/validator-setup.md
+sha256 2e3d88742169fbebace5f66e24c2bbfe2e25bb12781af978770401bc6b2f2d11 copy2/section.txt
+sha256 a94e0c9c4e0eb379f8496585aab9959039de25673b4a7c0b94f846642b881bae copy2/install.sh
+sha256 2acf07a7f03b5900ca1f7bc819814a262b3da1c9c681325abda59cc897e790b0 copy2/postfiat-docker-user.sh
+sha256 23b14063ecfd4c51b99ab04243a531ff1c49012697781a6d78dffc9ab524f400 copy2/postfiat-docker-user.service
+sha256 0ebd0e15ebb366c16b782953800097a65f4bdad4d513f5f9213f3d5465d6b38f copy2/check.sh
+-- static/agents/validator-setup.txt
+section.txt 68 lines
+install.sh 40 lines
+postfiat-docker-user.sh 17 lines
+postfiat-docker-user.service 13 lines
+check.sh 14 lines
+PASS extract static/agents/validator-setup.txt
+sha256 2e3d88742169fbebace5f66e24c2bbfe2e25bb12781af978770401bc6b2f2d11 copy3/section.txt
+sha256 a94e0c9c4e0eb379f8496585aab9959039de25673b4a7c0b94f846642b881bae copy3/install.sh
+sha256 2acf07a7f03b5900ca1f7bc819814a262b3da1c9c681325abda59cc897e790b0 copy3/postfiat-docker-user.sh
+sha256 23b14063ecfd4c51b99ab04243a531ff1c49012697781a6d78dffc9ab524f400 copy3/postfiat-docker-user.service
+sha256 0ebd0e15ebb366c16b782953800097a65f4bdad4d513f5f9213f3d5465d6b38f copy3/check.sh
+PASS section.txt identical in all 3 copies
+PASS install.sh identical in all 3 copies
+PASS postfiat-docker-user.sh identical in all 3 copies
+PASS postfiat-docker-user.service identical in all 3 copies
+PASS check.sh identical in all 3 copies
+== 3 shellcheck (0.8.0)
+PASS shellcheck -s bash install block
+PASS shellcheck -s sh postfiat-docker-user.sh
+PASS shellcheck -s bash check block
+PASS shellcheck -s sh check body
+== 4 systemd-analyze verify (systemd 249 (249.11-0ubuntu3.23))
+systemd-analyze verify rc=0
+  output: /lib/systemd/system/snapd.service:23: Unknown key name 'RestartMode' in section 'Service', ignoring.
+lines naming postfiat-docker-user: 0 (other lines are about unrelated host units)
+PASS systemd-analyze verify: rc 0, no finding for postfiat-docker-user.service
+RESULT: 0 failed
+check-guide exit=0
+extract.tar sha256 e1d662b3ca8c08e16d63bb78e84e83e8bf9cd3d54b5f821ff938f0b70999702a

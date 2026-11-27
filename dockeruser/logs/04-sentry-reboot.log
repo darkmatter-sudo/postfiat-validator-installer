@@ -1,0 +1,144 @@
+pft-patch live-run - 2026-11-27T07:22:22Z - Ubuntu 22.04.5 LTS - run 20261127T072222Z
+sha256: pft-patch.sh 3c893a4cf4aef5eca0f36cdd344de1b931d15bbaa5ce9afbde3677a9422c56b5 | live-run.sh ee96c935ff5842213714454f04bbd0bc5b6ebd10a27619750b2fac6cb3cb359f
+        redact.py f1056b69a9d270d2cc9c40c38d637f431ec0cfa63e053f23b52d5bed86c9c1c8
+args: PFT_PATCH_INJECT=sentry-reboot pft-patch run --yes --hosts sentry | expected exit 0
+
+== 0. preflight (nothing changed yet)
+  pft-maint: no data-collection locks, no window open
+  sentry: installed /usr/local/sbin/pft-patch sha256 3c893a4cf4aef5eca0f36cdd344de1b931d15bbaa5ce9afbde3677a9422c56b5
+  validator: installed /usr/local/sbin/pft-patch sha256 3c893a4cf4aef5eca0f36cdd344de1b931d15bbaa5ce9afbde3677a9422c56b5
+  operator topics to watch: 2 (not printed)
+  sentry (postfiatd-sentry): server_state=full
+  validator (postfiatd): server_state=full
+  literals for redaction: 2 ip, 2 key, 4 topic, 1 user (values not printed)
+$ redact.py control --literals <literals>
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:key    found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:topic  found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:ip     found before: yes left after: 0
+    PASS control literal:user   found before: yes left after: 0
+    PASS control node_key       found before: yes left after: 0
+    PASS control ed_key         found before: yes left after: 0
+    PASS control ipv4           found before: yes left after: 0
+    PASS control ipv6           found before: yes left after: 0
+    PASS keep    build 1.0.9 ledger 7545048     unchanged: yes
+    PASS keep    2026-10-28T03:07:55Z gate 03:0 unchanged: yes
+    PASS keep    ConsensusPhase::accepted       unchanged: yes
+    PASS keep    admin 127.0.0.1:5005           unchanged: yes
+    PASS keep    sha256 a8e2420c9b57c367        unchanged: yes
+  REDACTION CONTROL: PASS (18/18)
+
+== 1. redirect notifiers, outer Alertmanager silence
+  local:/etc/postfiat-monitor.env sha256 6dc3b10fb491 (before)
+  local:/etc/postfiat-monitor.env -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/postfiat-monitor.env.pre-patch-drill
+  local:/etc/pft-integrity.env sha256 b3cd1c3da7ff (before)
+  local:/etc/pft-integrity.env -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/pft-integrity.env.pre-patch-drill
+  relay:/etc/pft-watchdog/ntfy.env sha256 ddb52721a668 (before)
+  relay:/etc/pft-watchdog/ntfy.env -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/pft-watchdog/ntfy.env.pre-patch-drill
+  relay:/etc/pft-integrity.env sha256 cdd330a974d2 (before)
+  relay:/etc/pft-integrity.env -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/pft-integrity.env.pre-patch-drill
+  relay:/etc/pft-alertpath/ntfy.env sha256 ddb52721a668 (before)
+  relay:/etc/pft-alertpath/ntfy.env -> https://ntfy.sh/<redacted> (ALERT), original kept as /etc/pft-alertpath/ntfy.env.pre-patch-drill
+  local:/etc/pft-maint/ntfy.env created for the drill only -> https://ntfy.sh/<redacted> (MAINT)
+  relay:/etc/pft-maint/ntfy.env created for the drill only -> https://ntfy.sh/<redacted> (MAINT)
+  outer Alertmanager silence alertname=~".+", alertname!="PFTAlertPipelineWatchdog" until 2026-11-27T08:52:45Z (id bf5b0ced)
+
+== 2. pft-patch run
+  before sentry: boot=6ab7ec5c dpkg=bc6f95091488 started=2026-11-26T21:44:27.343558185Z state=full
+  before validator: boot=4aa9ea11 dpkg=2165673a24bd started=2026-11-24T16:08:15.907959686Z state=full
+
+$ sudo PFT_PATCH_INJECT=sentry-reboot pft-patch run --yes --hosts sentry (2026-11-27T07:22:49Z)
+[2026-11-27T07:22:50Z] pft-patch run 20261127T072250Z: hosts sentry (in this order), mode security-only, INJECT=sentry-reboot
+[2026-11-27T07:22:53Z] PREFLIGHT sentry: boot=6ab7ec5c-1f86-47ba-9500-1d1c37d4bb35 dpkg=bc6f95091488f535d5e51403dea2a9b43e7eb17dd71cc87fcf24a8b7d419098f reboot=0 StartedAt=2026-11-26T21:44:27.343558185Z
+[2026-11-27T07:22:53Z] === sentry (ssh, container postfiatd-sentry) ===
+[2026-11-27T07:23:05Z] STATUS before sentry: {"result":"WARN","updates":{"security":0,"other":7,"kernel":0},"holds":[],"reboot_required":false,"kernel":"1","services":["dbus.service","fail2ban.service","networkd-dispatcher.service","nginx.service","packagekit.service","pft-budget-sampler.service","pft-logship-dockerlog@postfiatd-sentry.service","pft-valwatch@postfiatd-sentry.service","polkit.service","ssh.service","systemd-journal-upload.service","unattended-upgrades.service"],"exposed":[],"automatic_reboot":"false"}
+[2026-11-27T07:23:06Z] GATE pre sentry node: PASS state=full peers=11 age=2s (+1s)
+[2026-11-27T07:23:36Z] GATE pre sentry integrity: PASS (174 unchanged)
+[2026-11-27T07:23:38Z] GATE pre sentry audittrail: PASS (check exit 0)
+[2026-11-27T07:23:40Z] GATE pre sentry egress: PASS (check exit 0, attempt 1)
+    maint: window started: id m1795764220-873734 until 2026-11-27T08:53:40Z | sentry copy: pushed
+[2026-11-27T07:23:42Z] WINDOW sentry: pft-maint window + Alertmanager silence 5bba29ea until 2026-11-27T08:53:42Z
+[2026-11-27T07:23:44Z] CONTAINERS sentry before: postfiatd-sentry
+    SKIP distro-info other (security-only run; use --all)
+    SKIP libglib2.0-data other (security-only run; use --all)
+    SKIP libglib2.0-bin other (security-only run; use --all)
+    SKIP libglib2.0-0 other (security-only run; use --all)
+    SKIP python3-distro-info other (security-only run; use --all)
+    SKIP snapd other (security-only run; use --all)
+    SKIP xfsprogs other (security-only run; use --all)
+    INSTALLED 0 package(s) (nothing selected)
+    DEFERRED dbus.service (not restarted by pft-patch; picked up at the next planned reboot)
+    RESTARTED fail2ban.service
+    RESTARTED networkd-dispatcher.service
+    RESTARTED nginx.service
+    RESTARTED packagekit.service
+    RESTARTED pft-budget-sampler.service
+    RESTARTED pft-logship-dockerlog@postfiatd-sentry.service
+    RESTARTED pft-valwatch@postfiatd-sentry.service
+    RESTARTED polkit.service
+    RESTARTED ssh.service
+    RESTARTED systemd-journal-upload.service
+    RESTARTED unattended-upgrades.service
+    DECISION restart fail2ban.service networkd-dispatcher.service nginx.service packagekit.service pft-budget-sampler.service pft-logship-dockerlog@postfiatd-sentry.service pft-valwatch@postfiatd-sentry.service polkit.service ssh.service systemd-journal-upload.service unattended-upgrades.service
+[2026-11-27T07:24:28Z] DECISION sentry: host decided 'restart fail2ban.service networkd-dispatcher.service nginx.service packagekit.service pft-budget-sampler.service pft-logship-dockerlog@postfiatd-sentry.service pft-valwatch@postfiatd-sentry.service polkit.service ssh.service systemd-journal-upload.service unattended-upgrades.service'; INJECTED reboot: drill (PFT_PATCH_INJECT=sentry-reboot), proves the reboot path live
+[2026-11-27T07:24:28Z] DECISION sentry: reboot (INJECTED: drill)
+[2026-11-27T07:24:29Z] REBOOT sentry: scheduled (boot id 6ab7ec5c)
+[2026-11-27T07:25:38Z] REBOOT sentry: back after 69s (boot id ef587e0d)
+    post: [2026-11-27T07:25:39Z] reapply: drift found (chain changed, jump missing/moved/duplicated, or container IP now <redacted-ip>) - reloading
+    post: [2026-11-27T07:25:40Z] reapply: done
+[2026-11-27T07:25:40Z] POST sentry: hook ok
+[2026-11-27T07:26:28Z] GATE post sentry node: PASS state=full peers=11 age=2s (+47s)
+[2026-11-27T07:26:49Z] GATE post sentry integrity: PASS (174 unchanged)
+[2026-11-27T07:26:50Z] GATE post sentry audittrail: PASS (check exit 0)
+[2026-11-27T07:26:53Z] GATE post sentry egress: PASS (check exit 0, attempt 1)
+[2026-11-27T07:26:53Z] GATE post sentry containers: PASS (all 1 running again: postfiatd-sentry)
+[2026-11-27T07:26:54Z] GATE post sentry reboot-flag: PASS (no reboot-required left)
+[2026-11-27T07:27:09Z] STATUS after sentry: {"result":"WARN","updates":{"security":0,"other":7,"kernel":0},"holds":[],"reboot_required":false,"kernel":"1","services":[],"exposed":[],"automatic_reboot":"false"}
+    maint: window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+[2026-11-27T07:27:11Z] WINDOW sentry: closed; silence 5bba29ea kept until 2026-11-27T07:42:11Z (restart-related alerts stay true for a while)
+[2026-11-27T07:27:11Z] DONE sentry
+[2026-11-27T07:27:11Z] RESULT: PASS - sentry patched and gated
+exit 0 (2026-11-27T07:27:11Z)
+CHECK ok   pft-patch run exit 0 (got 0)
+
+  after  sentry: boot=ef587e0d dpkg=bc6f95091488 started=2026-11-27T07:25:34.425256078Z state=full
+CHECK ok   sentry server_state full after the run (full)
+  sentry rebooted (boot=6ab7ec5c -> boot=ef587e0d): auditd enabled 2, 41 rules loaded, 41 compiled
+CHECK ok   sentry auditd immutable (-e 2) after the reboot (enabled 2)
+CHECK ok   sentry every compiled audit rule loaded at boot (41/41)
+  after  validator: boot=4aa9ea11 dpkg=2165673a24bd started=2026-11-24T16:08:15.907959686Z state=full
+CHECK ok   validator server_state full after the run (full)
+CHECK ok   sentry DOCKER-USER -> PFT-EGRESS jump present once (1)
+
+== 3. restore, outer silence, read back
+  restored local:/etc/postfiat-monitor.env: sha256 matches pre-drill copy: yes
+  restored local:/etc/pft-integrity.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-watchdog/ntfy.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-integrity.env: sha256 matches pre-drill copy: yes
+  restored relay:/etc/pft-alertpath/ntfy.env: sha256 matches pre-drill copy: yes
+  removed drill-only local:/etc/pft-maint/ntfy.env: yes
+  removed drill-only relay:/etc/pft-maint/ntfy.env: yes
+CHECK ok   notifier env files restored byte-identical, drill-only files removed
+  outer silence kept until 2026-11-27T07:50:34Z (newest container start + 25 min): HTTP 200
+  MAINT topic: 2 message(s)
+    {"time":"2026-11-27T07:23:42Z","title":"[MAINT] start validator","message":"pft-patch 20261127T072250Z sentry | until 2026-11-27T08:53:40Z (ttl 5400s) | sentry copy: pushed"}
+    {"time":"2026-11-27T07:27:11Z","title":"[MAINT] end validator","message":"pft-patch 20261127T072250Z sentry | pft-patch 20261127T072250Z sentry restarted after 210s | suppressed here: watchdog=0 monitor=0 integrity=0 | sentry copy: pushed"}
+  ALERT topic: 0 message(s)
+  operator #1 topic: 0 message(s)
+  operator #2 topic: 0 message(s)
+CHECK ok   operator topics received nothing during the drill (2 topic(s), 0 with messages)
+  $ pft-integrity verify (validator host)
+    pft-integrity verify - 2026-11-27T07:28:09Z
+    OS: Ubuntu 22.04.5 LTS | container: postfiatd | baseline: 2026-11-26T18:53:39Z
+    RESULT: PASS - 299 unchanged, 0 warn, 0 fail -> exit 0
+  $ pft-integrity verify (sentry host)
+    pft-integrity verify - 2026-11-27T07:28:29Z
+    OS: Ubuntu 22.04.5 LTS | container: postfiatd-sentry | baseline: 2026-11-27T07:20:53Z
+    RESULT: PASS - 174 unchanged, 0 warn, 0 fail -> exit 0
+
+live-run done 2026-11-27T07:28:28Z: 0 check(s) failed -> PASS
+live-run pipeline exit=0

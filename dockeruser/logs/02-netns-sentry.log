@@ -1,0 +1,113 @@
+dockeruser 02 netns tests on the sentry - 2026-11-27T07:19:44Z
+extract.tar (from log 01, guide e9d1fc074062ed8e4e6eadd35248ecb041189b5a) sha256 e1d662b3ca8c08e16d63bb78e84e83e8bf9cd3d54b5f821ff938f0b70999702a
+test-netns.sh at f982b02273efb41ce3dcedeea89eb267fda49118 sha256 715326552d27ee58f1f26dd5ec5d1f060b1b8ef1b101287995ae7f524b6ae697 (working copy 715326552d27ee58f1f26dd5ec5d1f060b1b8ef1b101287995ae7f524b6ae697)
+0ebd0e15ebb366c16b782953800097a65f4bdad4d513f5f9213f3d5465d6b38f  x/check.sh
+a94e0c9c4e0eb379f8496585aab9959039de25673b4a7c0b94f846642b881bae  x/install.sh
+23b14063ecfd4c51b99ab04243a531ff1c49012697781a6d78dffc9ab524f400  x/postfiat-docker-user.service
+2acf07a7f03b5900ca1f7bc819814a262b3da1c9c681325abda59cc897e790b0  x/postfiat-docker-user.sh
+2e3d88742169fbebace5f66e24c2bbfe2e25bb12781af978770401bc6b2f2d11  x/section.txt
+host netns DOCKER-USER sha256 before: f06a68c62af29687
+$ ssh relay bash /root/.cache/du-netns-20261127T071944Z/test-netns.sh /root/.cache/du-netns-20261127T071944Z/x   (as root)
+netns: private (net:[4026532337] != host)
+iptables: iptables v1.8.7 (nf_tables)
+sha256 2acf07a7f03b5900ca1f7bc819814a262b3da1c9c681325abda59cc897e790b0 postfiat-docker-user.sh
+sha256 6e3d512419405cc19681a48b4d7f978b639f5635962bd69cb6b4bccbc492e529 check body
+== T01 no DOCKER-USER chain (fresh host before Docker): check must fail
+  check rc=1: iptables v1.8.7 (nf_tables): chain `DOCKER-USER' in table `filter' is incompatible, use 'nft' tool.
+
+FAIL: cannot read the DOCKER-USER chain
+PASS T01-no-chain (check rc=1, 'FAIL: cannot read the DOCKER-USER chain')
+== T02 script on a fresh netns creates the chain and the exact rule set
+  script rc=0
+  rules:
+    -N DOCKER-USER
+    -A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state RELATED,ESTABLISHED -j ACCEPT
+    -A DOCKER-USER -p tcp -m tcp --dport 2559 -m connlimit --connlimit-above 50 --connlimit-mask 32 --connlimit-saddr -j DROP
+    -A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -m limit --limit 100/sec --limit-burst 50 -j ACCEPT
+    -A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -j DROP
+    -A DOCKER-USER -j RETURN
+PASS T02-apply (exact 5 rules, RETURN last)
+  check rc=0: OK: TCP 2559 DOCKER-USER limits present, RETURN last, unit enabled
+PASS T02-check (check rc=0, 'OK: TCP 2559 DOCKER-USER limits present, RETURN last, unit enabled')
+== T03 idempotency: two more runs leave the chain byte-identical
+  script rc=0
+  script rc=0
+  lines 6 6 6 sha 41aa70e59eba72f2 41aa70e59eba72f2 41aa70e59eba72f2
+PASS T03-idempotent (6 lines incl. -N, sha unchanged x2)
+== T04 other DOCKER-USER rules (incl. a quoted comment) are kept, in order, RETURN stays last
+  script rc=0
+  rules:
+    -N DOCKER-USER
+    -A DOCKER-USER -s <redacted-ip>/32 -m comment --comment "operator rule one" -j DROP
+    -A DOCKER-USER -p tcp -m tcp --dport 8080 -j DROP
+    -A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state RELATED,ESTABLISHED -j ACCEPT
+    -A DOCKER-USER -p tcp -m tcp --dport 2559 -m connlimit --connlimit-above 50 --connlimit-mask 32 --connlimit-saddr -j DROP
+    -A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -m limit --limit 100/sec --limit-burst 50 -j ACCEPT
+    -A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -j DROP
+    -A DOCKER-USER -j RETURN
+PASS T04-foreign-kept
+  check rc=0: OK: TCP 2559 DOCKER-USER limits present, RETURN last, unit enabled
+PASS T04-check (check rc=0, 'OK:')
+== T05 host set up with the old guide commands twice (duplicates): script leaves one clean set
+  before: 8 lines
+  check rc=1: FAIL: TCP 2559 rules missing, changed or out of order
+PASS T05-dup-control (check rc=1, 'FAIL: TCP 2559 rules missing, changed or out of order')
+  script rc=0
+PASS T05-dedup
+  check rc=0: OK: TCP 2559 DOCKER-USER limits present, RETURN last, unit enabled
+PASS T05-check (check rc=0, 'OK:')
+== T06 one rule lost (connlimit): check must fail
+  check rc=1: FAIL: TCP 2559 rules missing, changed or out of order
+PASS T06-missing-rule (check rc=1, 'FAIL: TCP 2559 rules missing, changed or out of order')
+  script rc=0
+  check rc=0: OK: TCP 2559 DOCKER-USER limits present, RETURN last, unit enabled
+PASS T06-repaired (check rc=0, 'OK:')
+== T07 weakened limit (100/s -> 1000/s): check must fail, script restores
+  check rc=1: FAIL: TCP 2559 rules missing, changed or out of order
+PASS T07-changed-limit (check rc=1, 'FAIL: TCP 2559 rules missing, changed or out of order')
+  script rc=0
+  check rc=0: OK: TCP 2559 DOCKER-USER limits present, RETURN last, unit enabled
+PASS T07-repaired (check rc=0, 'OK:')
+== T08 RETURN inserted first (all 2559 rules dead): check must fail
+  check rc=1: FAIL: RETURN must appear once, as the last rule
+PASS T08-return-first (check rc=1, 'FAIL: RETURN must appear once, as the last rule')
+  script rc=0
+  check rc=0: OK: TCP 2559 DOCKER-USER limits present, RETURN last, unit enabled
+PASS T08-repaired (check rc=0, 'OK:')
+== T09 a rule appended after RETURN: check must fail, script moves RETURN last again
+  check rc=1: FAIL: RETURN must appear once, as the last rule
+PASS T09-rule-after-return (check rc=1, 'FAIL: RETURN must appear once, as the last rule')
+  script rc=0
+  rules:
+    -N DOCKER-USER
+    -A DOCKER-USER -p tcp -m tcp --dport 8080 -j DROP
+    -A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state RELATED,ESTABLISHED -j ACCEPT
+    -A DOCKER-USER -p tcp -m tcp --dport 2559 -m connlimit --connlimit-above 50 --connlimit-mask 32 --connlimit-saddr -j DROP
+    -A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -m limit --limit 100/sec --limit-burst 50 -j ACCEPT
+    -A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -j DROP
+    -A DOCKER-USER -j RETURN
+  check rc=0: OK: TCP 2559 DOCKER-USER limits present, RETURN last, unit enabled
+PASS T09-repaired (check rc=0, 'OK:')
+== T10 rules fine but the unit is not enabled: check must fail
+  check rc=1: FAIL: postfiat-docker-user.service is not enabled
+PASS T10-unit-disabled
+== T11 rules ordered differently (ESTABLISHED moved below DROP): check must fail
+  check rc=1: FAIL: TCP 2559 rules missing, changed or out of order
+PASS T11-order (check rc=1, 'FAIL: TCP 2559 rules missing, changed or out of order')
+  script rc=0
+  check rc=0: OK: TCP 2559 DOCKER-USER limits present, RETURN last, unit enabled
+PASS T11-repaired (check rc=0, 'OK:')
+== T12 fail-closed apply: an iptables -A error makes the script exit non-zero
+  script rc=4: stub iptables: injected failure on -A
+PASS T12-append-error rc=4
+  check rc=1: FAIL: TCP 2559 rules missing, changed or out of order
+PASS T12-state-is-flagged (check rc=1, 'FAIL:')
+== T13 fail-closed apply: an iptables -D error inside the delete loop makes the script exit non-zero
+  script rc=4: stub iptables: injected failure on -D
+PASS T13-delete-error rc=4
+  script rc=0
+  check rc=0: OK: TCP 2559 DOCKER-USER limits present, RETURN last, unit enabled
+PASS T13-repaired (check rc=0, 'OK:')
+RESULT: 24 passed, 0 failed
+test-netns exit=0
+host netns DOCKER-USER sha256 after:  f06a68c62af29687

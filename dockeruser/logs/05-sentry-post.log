@@ -1,0 +1,61 @@
+dockeruser sentry-proof post - 2026-11-27T07:28:03Z
+sha256: sentry-proof.sh 70ae4058ee1d9fe570cff5ef1352f22bb0800e611ce5babbe0a9bec60db0d3ae
+        install.sh a94e0c9c4e0eb379f8496585aab9959039de25673b4a7c0b94f846642b881bae
+        check.sh 0ebd0e15ebb366c16b782953800097a65f4bdad4d513f5f9213f3d5465d6b38f
+        postfiat-docker-user.sh 2acf07a7f03b5900ca1f7bc819814a262b3da1c9c681325abda59cc897e790b0
+        postfiat-docker-user.service 23b14063ecfd4c51b99ab04243a531ff1c49012697781a6d78dffc9ab524f400
+host: sentry (Ubuntu 22.04.5 LTS 5.15.0-204-generic) | iptables v1.8.7 (nf_tables)
+
+== 2026-11-27T07:28:06Z Q1 the sentry rebooted
+boot_id before 6ab7ec5c now ef587e0d
+CHECK ok   Q1 new boot id
+$ uptime -s; systemctl show postfiat-docker-user.service -p ActiveState -p SubState -p Result -p ExecMainStatus -p ActiveEnterTimestamp
+2026-11-27 07:24:58
+Result=success
+ExecMainStatus=0
+ActiveState=active
+SubState=exited
+ActiveEnterTimestamp=Fri 2026-11-27 07:25:35 UTC
+rc=0
+$ journalctl --utc -b -u postfiat-docker-user.service -o short-iso --no-pager | tail -5
+2026-11-27T07:25:35+0000 <sentry-host> systemd[1]: Starting Post Fiat TCP 2559 DOCKER-USER rate limits...
+2026-11-27T07:25:35+0000 <sentry-host> systemd[1]: Finished Post Fiat TCP 2559 DOCKER-USER rate limits.
+rc=0
+ActiveState=active Result=success
+CHECK ok   Q1 unit ran at boot: active, Result success
+$ systemctl show -p After postfiat-docker-user.service --value | tr ' ' '\n' | grep -x docker.service
+docker.service
+rc=0
+CHECK ok   Q1 unit ordered After=docker.service
+
+== 2026-11-27T07:28:11Z Q2 rules persisted across the reboot
+$ iptables -w -S DOCKER-USER
+-N DOCKER-USER
+-A DOCKER-USER -s <redacted-ip>/32 -i docker0 ! -o docker0 -m comment --comment "pft-egress:postfiatd-sentry" -j PFT-EGRESS
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state RELATED,ESTABLISHED -j ACCEPT
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m connlimit --connlimit-above 50 --connlimit-mask 32 --connlimit-saddr -j DROP
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -m limit --limit 100/sec --limit-burst 50 -j ACCEPT
+-A DOCKER-USER -p tcp -m tcp --dport 2559 -m state --state NEW -j DROP
+-A DOCKER-USER -j RETURN
+rc=0
+TCP 2559 rules: 4
+CHECK ok   Q2 four TCP 2559 rules present
+CHECK ok   Q2 RETURN last
+$ ssh relay bash -s < check.sh   (guide check block, sha256 0ebd0e15ebb366c1)
+OK: TCP 2559 DOCKER-USER limits present, RETURN last, unit enabled
+rc=0
+CHECK ok   Q2 guide check exit 0 after the reboot
+
+== 2026-11-27T07:28:15Z Q3 node state
+server_state full peers=11 complete_ledgers=8405736-8406702
+CHECK ok   Q3 sentry server_state full
+$ pft-egress check --container postfiatd-sentry | tail -1
+RESULT: PASS
+rc=0
+CHECK ok   Q3 pft-egress check
+$ pft-integrity verify | tail -1
+RESULT: PASS - 174 unchanged, 0 warn, 0 fail -> exit 0
+rc=0
+CHECK ok   Q3 integrity PASS
+
+RESULT: PASS - 0 failed check(s) - 2026-11-27T07:28:54Z
