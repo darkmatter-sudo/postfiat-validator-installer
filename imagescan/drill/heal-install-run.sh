@@ -37,7 +37,7 @@ cd "$REPO" || exit 3
 echo "isheal deploy fleet+aptrust+imagescan+upstreamwatch@$TO - $(date -u +%FT%TZ)$([ "$PREFLIGHT_ONLY" = 1 ] && echo ' (PREFLIGHT_ONLY)')"
 x "git cat-file -t $TO && git merge-base --is-ancestor $TO origin/main && echo ancestor-of-origin/main"
 gate "$XRC" "TO is a pushed commit"
-x "git diff --stat ddc18b9692656c8dde98e7a2cca08bfe80d6520f $TO -- alerts | tail -1; grep -rlE 'pft_imagescan_feed_(fetch_outcome|upstream_timestamp|outcome_timestamp)|pft_upstreamwatch_heal_' alerts/ | wc -l"
+x "git diff --stat ddc18b9692656c8dde98e7a2cca08bfe80d6520f $TO -- alerts | tail -1; grep -hE '^ *expr:' alerts/*.yml | grep -cE 'pft_imagescan_feed_(fetch_outcome|upstream_timestamp|outcome_timestamp)|pft_upstreamwatch_heal_'"
 [ "$(tail -1 <<< "$XOUT")" = 0 ] && ! grep -q 'changed' <<< "$XOUT"; gate $? "no alert rule changed and none reads the new series"
 x "sudo -n pft-maint status | head -1"
 grep -q 'no maintenance window' <<< "$XOUT" || { echo "a window is open - stopping"; exit 1; }
