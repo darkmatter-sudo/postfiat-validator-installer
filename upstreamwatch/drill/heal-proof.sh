@@ -123,6 +123,12 @@ wait_prom 'pft_upstreamwatch_feed_lag_seconds{host="sentry",feed="usn-host"}' 0;
 wait_prom 'pft_upstreamwatch_heal_last_result{host="sentry",feed="usn-host",result="healed"}' 1; gate $? "D: Prometheus sentry heal_last_result healed = 1"
 wait_prom 'pft_upstreamwatch_heal_attempts{host="sentry",feed="usn-host"}' 1; gate $? "D: Prometheus sentry heal_attempts = 1"
 wait_prom 'pft_vulnscan_feed_timestamp_seconds{host="sentry"}' "$nts"; gate $? "D: Prometheus sentry vulnscan feed timestamp = healed copy"
+# a pending alert of usn-host only goes away at the rule's next evaluation after the ok sample: wait up to 150 s
+for i in $(seq 1 30); do
+  curl -s -m 10 "$PROM/api/v1/alerts" | jq -e '[.data.alerts[] | select(.labels.host == "sentry" and .labels.feed == "usn-host")] | length == 0' > /dev/null && break
+  sleep 5
+done
+echo "  waited $((i * 5)) s for the rule evaluation after the ok sample"
 x "curl -s -m 10 '$PROM/api/v1/alerts' | jq -r '.data.alerts[] | select(.labels.host == \"sentry\" and (.labels.alertname | test(\"^PFT(Upstream|Vuln)\"))) | \"\(.labels.alertname) feed=\(.labels.feed // \"-\") notify=\(.labels.notify // \"page\") \(.state)\"'"
 ! grep -q 'feed=usn-host ' <<< "$XOUT"; gate $? "D: no PFTUpstream*/PFTVuln* alert for sentry usn-host pending or firing"
 ! grep -q 'notify=page ' <<< "$XOUT"; gate $? "D: no paging (non-digest) PFTUpstream*/PFTVuln* alert for the sentry"
