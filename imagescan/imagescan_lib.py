@@ -466,6 +466,69 @@ def load_feeds(fdir, now, max_age_days, max_content_age_days=30):
     return feeds
 
 
+OUTCOMES = ("fresh", "retried_fresh", "still_behind")
+OUTCOME_KEYS = ("outcome", "upstream_epoch", "upstream_clock", "outcome_note", "outcome_epoch")
+ENTRY_KEYS = ("kind", "file", "sha256", "timestamp_epoch", "fetched_epoch", "url")
+
+
+def feed_merge(fdir, tmp, lines):
+    """Merge fetch results (one JSON object per line) into fdir/feeds.json, atomically.
+
+    action "replace": move tmp/<file> into fdir, then the whole entry is replaced. action "keep" (the download is
+    older than the installed copy): file and entry stay; only the outcome fields change. A replace whose content
+    timestamp is older than the installed entry is refused here as well (second guard behind the shell's)."""
+    p = os.path.join(fdir, "feeds.json")
+    try:
+        with open(p) as f:
+            meta = json.load(f)
+    except (OSError, ValueError):
+        meta = {"feeds": {}}
+    meta.setdefault("feeds", {})
+    for line in lines:
+        if not line.strip():
+            continue
+        e = json.loads(line)
+        if e["outcome"] not in OUTCOMES:
+            raise Bad(f"feed {e['name']}: unknown outcome {e['outcome']}")
+        old = meta["feeds"].get(e["name"])
+        action = e["action"]
+        if action == "replace" and old and int(e["timestamp_epoch"]) < int(old.get("timestamp_epoch", 0)):
+            action = "keep"
+            e["outcome"] = "still_behind"
+            e["outcome_note"] += "; download older than the installed copy, installed copy kept"
+        if action == "replace":
+            os.replace(os.path.join(tmp, e["file"]), os.path.join(fdir, e["file"]))
+            meta["feeds"][e["name"]] = {k: e[k] for k in ENTRY_KEYS + OUTCOME_KEYS}
+        elif action == "keep" and old:
+            old.update({k: e[k] for k in OUTCOME_KEYS})
+        else:
+            raise Bad(f"feed {e['name']}: action {action} without an installed copy")
+    with open(p + ".tmp", "w") as f:
+        json.dump(meta, f, indent=1, sort_keys=True)
+    os.replace(p + ".tmp", p)
+    return meta
+
+
+def fetch_metrics(meta, host):
+    """Fetch-outcome series from feeds.json (entries written before outcomes existed have none)."""
+    h = esc(host)
+    feeds = sorted((k, v) for k, v in meta.get("feeds", {}).items() if v.get("outcome") in OUTCOMES)
+    L = [("# HELP pft_imagescan_feed_fetch_outcome 1 for the last fetch's outcome per feed (fresh retried_fresh "
+          "still_behind)."), "# TYPE pft_imagescan_feed_fetch_outcome gauge"]
+    for k, v in feeds:
+        L += [f'pft_imagescan_feed_fetch_outcome{{host="{h}",feed="{esc(k)}",outcome="{o}"}} '
+              f'{1 if v["outcome"] == o else 0}' for o in OUTCOMES]
+    L += [("# HELP pft_imagescan_feed_upstream_timestamp_seconds Upstream content clock seen by the last fetch "
+           "(0 = unreadable)."), "# TYPE pft_imagescan_feed_upstream_timestamp_seconds gauge"]
+    L += [f'pft_imagescan_feed_upstream_timestamp_seconds{{host="{h}",feed="{esc(k)}"}} {int(v["upstream_epoch"])}'
+          for k, v in feeds]
+    L += ["# HELP pft_imagescan_feed_outcome_timestamp_seconds When the last fetch outcome was recorded.",
+          "# TYPE pft_imagescan_feed_outcome_timestamp_seconds gauge"]
+    L += [f'pft_imagescan_feed_outcome_timestamp_seconds{{host="{h}",feed="{esc(k)}"}} {int(v["outcome_epoch"])}'
+          for k, v in feeds]
+    return "\n".join(L) + "\n"
+
+
 def feed_timestamp(kind, path):
     """The feed's OWN timestamp (not the file mtime) as UTC epoch."""
     if kind == "ubuntu-oval":
@@ -857,8 +920,8 @@ def do_scan(inv_paths, containers_path, feeds_dir, now, max_age_days, max_conten
             drift.append({"container": c["name"], "ref": c["ref"], "kind": "running_image_differs_from_tag",
                           "running": c["image_id"], "tag": cur["image_id"]})
     return {"generated_at": now, "max_feed_age_days": max_age_days, "accept_expired": expired,
-            "feeds": {k: {x: v[x] for x in ("file", "sha256", "url", "timestamp_epoch", "fetched_epoch", "age_seconds")}
-                      for k, v in feeds.items()},
+            "feeds": {k: {x: v[x] for x in ("file", "sha256", "url", "timestamp_epoch", "fetched_epoch", "age_seconds")
+                          + OUTCOME_KEYS if x in v} for k, v in feeds.items()},
             "containers": containers, "drift": drift, "images": images}
 
 
@@ -1029,6 +1092,12 @@ def main(argv=None):
     w = sub.add_parser("withhold")
     w.add_argument("--scan", required=True)
     w.add_argument("--ref", required=True, help="regex on the image ref")
+    fm = sub.add_parser("feedmerge")
+    fm.add_argument("fdir")
+    fm.add_argument("tmp")
+    fx = sub.add_parser("fetchmetrics")
+    fx.add_argument("--feeds", required=True)
+    fx.add_argument("--host", required=True)
     m = sub.add_parser("metrics")
     m.add_argument("--scan", required=True)
     m.add_argument("--host", required=True)
@@ -1067,6 +1136,11 @@ def main(argv=None):
             with open(a.scan) as f:
                 json.dump(withhold(json.load(f), a.ref), sys.stdout, sort_keys=True, indent=1)
             print()
+        elif a.cmd == "feedmerge":
+            feed_merge(a.fdir, a.tmp, sys.stdin.read().splitlines())
+        elif a.cmd == "fetchmetrics":
+            with open(a.feeds) as f:
+                sys.stdout.write(fetch_metrics(json.load(f), a.host))
         elif a.cmd == "metrics":
             with open(a.scan) as f:
                 sys.stdout.write(metrics(json.load(f), a.host))

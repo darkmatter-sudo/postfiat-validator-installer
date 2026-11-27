@@ -26,7 +26,7 @@ Tested on Ubuntu 22.04.5, Docker 29.1.3 (containerd image store), Python 3.10, o
 
 ```
 pft-imagescan scan [--no-fetch] [--textfile-dir DIR] [--bundle DIR]   inventory + scan + report + metrics
-pft-imagescan fetch                                                   refresh the pinned feeds only
+pft-imagescan fetch                                                   refresh the pinned feeds only (+ outcome series)
 pft-imagescan report --bundle DIR [--public] [--before SCAN.json] [--withheld FILE]
                                                                       rebuild a report offline (no docker, no network)
 sudo pft-imagescan pull                                               validator: copy the sentry's textfile
@@ -94,6 +94,40 @@ publishable). `--withheld FILE` (from `imagescan_lib.py withhold --scan S --ref 
 is not published at all, as counts + `findings_sha256` only: the full list can be handed over privately and checked
 against that hash.
 
+## Fetch freshness (cache-busting retry)
+
+On 2026-11-27 the ubuntu OCI feeds on both hosts stayed on 26 Nov copies after `fetch`: a content cache answered the
+plain `Cache-Control: no-cache` GET with its old copy, and nothing compared it with upstream. `fetch` now does, per
+feed, right after the download has passed its full check:
+
+1. **Upstream clock.** ubuntu / debian: the later of this response's `Last-Modified` and a `HEAD` (no-cache)
+   `Last-Modified` (`upstream_clock` `head_last_modified` / `response_last_modified`). go: `index/db.json`
+   `"modified"` (`index_modified`), because `vulndb.zip`'s own `Last-Modified` moves on every rebuild while its content
+   does not.
+2. Own timestamp within `CONTENT_TOLERANCE_SECONDS` (21600, as `../upstreamwatch`) of that clock -> **`fresh`**, no
+   second request.
+3. Otherwise, and also when no upstream clock could be read, **one** retry: the URL with a unique `?pftcb=EPOCH-PID`
+   query, `Cache-Control: no-cache`, `Pragma: no-cache`, and a conditional on the copy just received
+   (`If-None-Match: <its ETag>`, else `If-Modified-Since: <its Last-Modified>`; a 304 means the cache still holds that
+   copy). A retry copy is kept only if it passes the same full check **and** its own timestamp is newer; otherwise the
+   first copy stays.
+4. Within tolerance now -> **`retried_fresh`**; else **`still_behind`** (= not proven fresh: still older than
+   upstream, or no upstream clock).
+5. **Older-copy protection:** a download whose own timestamp is older than the installed copy never replaces it (shell
+   check, and again in `imagescan_lib.py feedmerge`); the installed entry keeps file, sha256 and `fetched_epoch`, only
+   its outcome becomes `still_behind`.
+
+`feeds.json` (and the scan JSON) records per feed `outcome`, `upstream_epoch` (0 = unreadable), `upstream_clock`,
+`outcome_note` (what happened, e.g. `retry HTTP 304 (the cache still holds that copy)`) and `outcome_epoch`. A failed
+or refused download keeps the previous entry, as before. `fetch` run on its own (and `pft-imagescan-heal.service`)
+replaces only the three fetch-outcome series in this host's textfile (validated before the rename; the scan series
+stay as they are); a scan writes them with everything else.
+
+`pft-imagescan-heal.service` (no timer) is that fetch in the scan unit's sandbox with the docker socket made
+inaccessible. `../upstreamwatch` starts it when an imagescan feed has lagged upstream for more than `LAG_HEAL_HOURS`,
+at most once per `HEAL_INTERVAL_HOURS`, never in a pft-maint window or while `pft-imagescan.service` /
+`pft-imagescan-heal.service` runs (see its README, "Bounded heal").
+
 ## Metrics (`/var/lib/pft-exporter/textfile/pft_imagescan_<host>.prom`)
 
 | metric | meaning |
@@ -107,6 +141,8 @@ against that hash.
 | `pft_imagescan_drift` | containers whose running image differs from their tag's image (or was not scanned) |
 | `pft_imagescan_accept_expired` | expired accept lines |
 | `pft_imagescan_feed_timestamp_seconds{feed}` / `_feed_fetched_timestamp_seconds{feed}` | the two feed clocks |
+| `pft_imagescan_feed_fetch_outcome{feed,outcome=fresh\|retried_fresh\|still_behind}` | last fetch outcome (one-hot; absent for entries fetched before 1.1.0) |
+| `pft_imagescan_feed_upstream_timestamp_seconds{feed}` / `_feed_outcome_timestamp_seconds{feed}` | upstream clock seen by the last fetch (0 = unreadable) / when the outcome was recorded |
 
 ## Alerts
 
@@ -161,7 +197,7 @@ against `feeds.json`), comparing with `cmp`.
 
 ## Tests
 
-`cd imagescan && python3 -m pytest -q tests` (55 tests, no root, no network, no docker): synthetic OCI-layout save
+`cd imagescan && python3 -m pytest -q tests` (77 tests, no root, no network, no docker): synthetic OCI-layout save
 streams with gzip layers, whiteouts, opaque dirs, a symlinked os-release, an attestation blob and the canonical empty
 layer around **real Go build-info bytes** cut from `amtool` in `prom/alertmanager:v0.28.1`; dpkg / semver / Go
 version edge tables; Ubuntu OVAL, Debian tracker and OSV controls (installed == fixed, `"0"`, ESM-only, withdrawn,
@@ -172,8 +208,21 @@ without the withheld image's inventory (no drift when the container runs the wit
 withheld (an empty inventory set). Stubs go
 under `TEST_TMPDIR` (default `~/.cache`) because `/tmp` is `noexec` on the hardened hosts.
 
-`python3 -u tests/mutate.py` checks that the suite would notice a broken tool: it applies each of 42 one-line
-mutants to a copy (a `docker pull` / `exec` / `run` / `create` inserted into the script, the feed pin and both age
+`tests/test_fetch.py` (19 tests) runs the real `fetch` with real curl against a local stale-CDN origin (plain GET =
+cached copy, `?pftcb=` GET = origin copy, optional 304 to `If-None-Match`, HEAD = origin `Last-Modified`): fresh on
+the first try (no second request), the tolerance boundary, stale-then-fresh retry (query, `no-cache`, `Pragma`,
+`If-None-Match` / `If-Modified-Since` checked on the wire), retry still behind, retry 304, a truncated first download
+(refused, no retry) and a truncated retry copy (first kept), a failed download keeping the entry, older-copy
+protection in the shell and in `feedmerge`, the debian HEAD clock, the go `index/db.json` clock (the zip's newer
+`Last-Modified` must not count), no upstream clock = `still_behind`, the textfile rewrite (scan series untouched,
+validated, an invalid textfile left alone), the scan textfile/JSON carrying the outcomes, and the heal unit
+(fetch-only `ExecStart`, docker socket inaccessible, no timer, no `[Install]`).
+
+`python3 -u tests/mutate.py` checks that the suite would notice a broken tool: it applies each of 62 one-line
+mutants to a copy (fetch: retry skipped / boundary off by one / no cache-buster / no conditional / retry copy
+kept unverified or when not newer / still_behind or no-clock reported fresh / both older-copy guards removed / go
+zip clock / HEAD clock ignored / outcome series not stripped, unvalidated, not one-hot or missing from scan output;
+heal unit running `scan` or reaching the docker socket; a `docker pull` / `exec` / `run` / `create` inserted into the script, the feed pin and both age
 checks disabled, off-by-one version bounds in all three matchers, ESM or open CVEs counted fixable, accept-file prefix /
 expiry / 90-day rules dropped, medium, unfixable or not-in-use findings alerting, whiteouts and missing layers ignored,
 drift not reported, public reports printing details, feed age not clamped / fetch-ahead accepted, withheld images

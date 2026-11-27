@@ -7,8 +7,8 @@ Stdlib only. Called by pft-upstreamwatch.sh:
                                                  headers, registry digest, foundation build_version, docker inspect)
   render  --obs OBS.json --format text|json|prom evaluate + render; pure function of OBS.json (offline re-render)
   validate FILE HOST                             check a textfile before it is served
-  heal-plan --obs OBS.json --now T --maint 0|1 --running 0|1
-                                                 which lagging feeds to heal now (one JSON line each; pure)
+  heal-plan --obs OBS.json --now T --maint 0|1 [--busy vulnscan,imagescan]
+                                                 which fetchers to heal now (one JSON line each; pure)
   heal-record --state S.json --feed F --now T --result R --rc N [--obs OBS.json]
                                                  persist one heal attempt/result in the state file (atomic)
 
@@ -21,8 +21,9 @@ Feed states (one per feed):
                   QUIET_AGE_HOURS (nothing is wrong locally; never paged, daily digest only)
   local_lagging   upstream has published newer content that the local copy lacks, but for no longer than
                   STALE_GRACE_HOURS (a CDN served our fetcher an old copy, or the daily fetch ran before upstream
-                  published); never paged, digest only. For usn-host, pft-upstreamwatch heals it with one bounded
-                  ../vulnscan refetch (heal_plan below) once the lag exceeds LAG_HEAL_HOURS
+                  published); never paged, digest only. pft-upstreamwatch heals it with one bounded refetch by
+                  its fetcher (usn-host: ../vulnscan heal unit; ubuntu-*/debian/go: ../imagescan heal unit;
+                  heal_plan below) once the lag exceeds LAG_HEAL_HOURS
   local_stale     upstream has published newer content more than STALE_GRACE_HOURS ago and the local copy still
                   lacks it, or the local copy is missing/truncated/corrupt (sha256 or format check fails)
   fetch_failing   the local fetcher has not completed a download/revalidation for FETCH_MAX_AGE_HOURS
@@ -588,36 +589,49 @@ def evaluate(obs):
 # ----------------------------------------------------------------------------------------------------------------
 # bounded heal (pure decision; pft-upstreamwatch.sh observes the guards and starts pft-vulnscan-heal.service)
 
-HEALABLE = {"vulnscan"}  # local fetchers that have a heal unit (../vulnscan: pft-vulnscan-heal.service)
+# fetcher -> heal-state key. One heal unit per fetcher refreshes ALL of its feeds, so the decision, the lock and the
+# HEAL_INTERVAL_HOURS cooldown are per fetcher: three lagging imagescan feeds cause one pft-imagescan-heal start, not
+# three. vulnscan keeps the key of its only feed ("usn-host", as before), so an existing heal-state.json carries over.
+HEALABLE = {"vulnscan": "usn-host", "imagescan": "imagescan"}
 
 
-def heal_plan(res, now, cfg, maint, running):
-    """-> one decision per feed whose lag exceeds LAG_HEAL_HOURS: {feed, action heal|skip, reason, lag}.
+def heal_plan(res, now, cfg, maint, busy):
+    """-> one decision per fetcher with a feed whose lag exceeds LAG_HEAL_HOURS:
+    {fetcher, feed (= heal-state key), feeds [names], action heal|skip, reason, lag (max), state (worst)}.
 
-    Order of checks: disabled (LAG_HEAL_HOURS 0), rate limit (one attempt per feed per HEAL_INTERVAL_HOURS, counted
-    from the last START, whatever its result), maintenance window active, vulnscan already running. The lock is
-    taken by the shell after this (a held lock is journaled as skip/locked)."""
+    busy: the fetchers whose units are active (shell: HEAL_BUSY_UNITS / IMAGESCAN_HEAL_BUSY_UNITS). Order of checks:
+    disabled (LAG_HEAL_HOURS 0), rate limit (one attempt per fetcher per HEAL_INTERVAL_HOURS, counted from the last
+    START, whatever its result), maintenance window active, the fetcher already running. The lock is taken by the
+    shell after this (a held lock is journaled as skip/locked)."""
     out = []
     lag_max, interval = int(cfg["lag_heal_hours"]) * 3600, int(cfg["heal_interval_hours"]) * 3600
+    groups = {}
     for f in res["feeds"]:
         if f.get("local") not in HEALABLE or f["state"] not in ("local_lagging", "local_stale"):
             continue
         if f.get("lag") is None or f["lag"] <= lag_max:
             continue
-        d = {"feed": f["name"], "lag": f["lag"], "state": f["state"], "action": "skip"}
-        last = int(res.get("heal", {}).get(f["name"], {}).get("last_attempt_epoch", 0))
+        groups.setdefault(f["local"], []).append(f)
+    for fetcher in sorted(groups):
+        fs = groups[fetcher]
+        key = HEALABLE[fetcher]
+        d = {"fetcher": fetcher, "feed": key, "feeds": [f["name"] for f in fs], "lag": max(f["lag"] for f in fs),
+             "state": "local_stale" if any(f["state"] == "local_stale" for f in fs) else "local_lagging",
+             "action": "skip"}
+        last = int(res.get("heal", {}).get(key, {}).get("last_attempt_epoch", 0))
         if lag_max == 0:
             d["reason"] = "disabled (LAG_HEAL_HOURS=0)"
         elif last and now - last < interval:
-            d["reason"] = (f"rate_limited: last attempt {hours(now - last)} ago "
+            d["reason"] = (f"rate_limited: last {fetcher} attempt {hours(now - last)} ago "
                            f"(< HEAL_INTERVAL_HOURS {cfg['heal_interval_hours']} h)")
         elif maint:
             d["reason"] = "maint_window: a pft-maint window is active"
-        elif running:
-            d["reason"] = "vulnscan_running: pft-vulnscan.service or pft-vulnscan-heal.service is active"
+        elif fetcher in busy:
+            d["reason"] = f"{fetcher}_running: a pft-{fetcher} unit (scan or heal) is active"
         else:
             d["action"] = "heal"
-            d["reason"] = f"lag {hours(f['lag'])} > LAG_HEAL_HOURS {cfg['lag_heal_hours']} h"
+            d["reason"] = (f"{', '.join(d['feeds'])}: lag {hours(d['lag'])} > LAG_HEAL_HOURS "
+                           f"{cfg['lag_heal_hours']} h")
         out.append(d)
     return out
 
@@ -717,7 +731,8 @@ def render_prom(res):
                 L.append(f'pft_upstreamwatch_{metric}{{{h},feed="{label(f["name"])}"}} {f[key]}')
     heal = res["heal"]
     if heal:
-        L += ["# HELP pft_upstreamwatch_heal_attempts bounded ../vulnscan heal refetches started for the feed (all time)",
+        L += [("# HELP pft_upstreamwatch_heal_attempts bounded heal refetches started (feed = heal key: usn-host for "
+               "../vulnscan, imagescan for ../imagescan; all time)"),
               "# TYPE pft_upstreamwatch_heal_attempts gauge"]
         L += [f'pft_upstreamwatch_heal_attempts{{{h},feed="{label(n)}"}} {int(v.get("attempts", 0))}'
               for n, v in sorted(heal.items())]
@@ -836,7 +851,7 @@ def main(argv=None):
     hp.add_argument("--obs", required=True)
     hp.add_argument("--now", type=int, required=True)
     hp.add_argument("--maint", type=int, choices=(0, 1), required=True)
-    hp.add_argument("--running", type=int, choices=(0, 1), required=True)
+    hp.add_argument("--busy", default="", help="comma-separated fetchers whose units are active")
     hr = sub.add_parser("heal-record")
     hr.add_argument("--state", required=True)
     hr.add_argument("--feed", required=True)
@@ -863,7 +878,11 @@ def main(argv=None):
             with open(a.obs, encoding="utf-8") as f:
                 obs = json.load(f)
             res = evaluate(obs)
-            for d in heal_plan(res, a.now, {**DEFAULTS, **obs["config"]}, a.maint == 1, a.running == 1):
+            busy = {b for b in a.busy.split(",") if b}
+            unknown = busy - set(HEALABLE)
+            if unknown:
+                raise ValueError(f"--busy: unknown fetchers {sorted(unknown)}")
+            for d in heal_plan(res, a.now, {**DEFAULTS, **obs["config"]}, a.maint == 1, busy):
                 print(json.dumps(d, sort_keys=True))
             return 0
         if a.cmd == "heal-record":

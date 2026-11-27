@@ -15,7 +15,7 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-FILES = {"sh": "pft-imagescan.sh", "lib": "imagescan_lib.py"}
+FILES = {"sh": "pft-imagescan.sh", "lib": "imagescan_lib.py", "unit": "systemd/pft-imagescan-heal.service"}
 
 # (id, target, description, old text, new text)
 MUTANTS = [
@@ -41,6 +41,48 @@ MUTANTS = [
      "printf 'RESULT: ERROR - %s: up 0 -> exit 2\\n' \"$1\"\n    exit 0"),
     ("S10", "sh", "report: unmatched inventory glob passed as a literal path (every image withheld)",
      '  shopt -s nullglob; invs=("$b"/inv/*.json); shopt -u nullglob\n', '  invs=("$b"/inv/*.json)\n'),
+    # fetch: upstream clock, one cache-busting conditional retry, outcomes, older-copy protection, textfile series
+    ("F01", "sh", "fetch: never retries a behind copy",
+     '[ $((ref - ts)) -le "$CONTENT_TOLERANCE_SECONDS" ]; then\n      outcome=fresh',
+     'true; then\n      outcome=fresh'),
+    ("F02", "sh", "fetch: tolerance boundary -le -> -lt",
+     '[ $((ref - ts)) -le "$CONTENT_TOLERANCE_SECONDS" ]; then\n      outcome=fresh',
+     '[ $((ref - ts)) -lt "$CONTENT_TOLERANCE_SECONDS" ]; then\n      outcome=fresh'),
+    ("F03", "sh", "fetch: retry without the cache-busting query", 'ru="$url?pftcb=$t-$$"', 'ru="$url"'),
+    ("F04", "sh", "fetch: retry without the conditional header", 'cond=(-H "If-None-Match: $etag")', "cond=()"),
+    ("F05", "sh", "fetch: retry copy kept even when not newer", 'elif [ "$rts" -gt "$ts" ]; then', "elif true; then"),
+    ("F06", "sh", "fetch: retry copy not verified",
+     'if ! rts="$(check_feed "$kind" "$tmp/$file.retry" "$rlm")"; then', 'rts=$((ts + 1)); if false; then'),
+    ("F07", "sh", "fetch: still behind after the retry reported retried_fresh",
+     'elif [ -n "$ref" ]; then\n        outcome=still_behind', 'elif [ -n "$ref" ]; then\n        outcome=retried_fresh'),
+    ("F08", "sh", "fetch: no upstream clock reported fresh", 'outcome=still_behind; note+="; no upstream clock',
+     'outcome=fresh; note+="; no upstream clock'),
+    ("F09", "sh", "fetch: older-copy protection removed (shell)",
+     'if [[ "$old" =~ ^[0-9]+$ ]] && [ "$ts" -lt "$old" ]; then', "if false; then"),
+    ("F10", "lib", "fetch: older-copy protection removed (feedmerge)",
+     'if action == "replace" and old and int(e["timestamp_epoch"]) < int(old.get("timestamp_epoch", 0)):',
+     "if False:"),
+    ("F11", "lib", "feedmerge: unknown outcome accepted", 'if e["outcome"] not in OUTCOMES:', "if False:"),
+    ("F12", "sh", "fetch: go clock = the zip's Last-Modified (moves on every rebuild)",
+     'if [ "$1" = go-osv ]; then', "if false; then"),
+    ("F13", "sh", "fetch: HEAD Last-Modified ignored (only the cached response's)",
+     'if [ -n "$e1" ] && { [ -z "$e2" ] || [ "$e1" -ge "$e2" ]; }; then', "if false; then"),
+    ("F14", "sh", "fetch textfile: old outcome series not stripped",
+     "pft_imagescan_feed_(fetch_outcome|upstream_timestamp_seconds|outcome_timestamp_seconds)[{ ]",
+     "pft_imagescan_feed_(fetch_outcomeX|upstream_timestamp_secondsX|outcome_timestamp_secondsX)[{ ]"),
+    ("F15", "sh", "fetch textfile: written without validation",
+     'if ! why="$(validate "$t" "$HOST_LABEL")"; then rm -f "$t"; echo "textfile: invalid ($why)"; return 1; fi',
+     "true"),
+    ("F16", "lib", "fetch metrics not one-hot", """f'{1 if v["outcome"] == o else 0}' for o in OUTCOMES]""",
+     """f'{1}' for o in OUTCOMES]"""),
+    ("F17", "sh", "scan textfile without the fetch-outcome series",
+     '    python3 -I "$LIB" fetchmetrics --feeds "$CACHE_DIR/feeds/feeds.json" --host "$HOST_LABEL" >> "$w/m.prom"',
+     '    true || python3 -I "$LIB" fetchmetrics --feeds "$CACHE_DIR/feeds/feeds.json" --host "$HOST_LABEL" >> "$w/m.prom"'),
+    ("F18", "lib", "scan JSON drops the outcome fields", "\n                          + OUTCOME_KEYS if x in v}", " if x in v}"),
+    ("U01", "unit", "heal unit runs a full scan (docker) instead of fetch",
+     "ExecStart=/usr/local/bin/pft-imagescan fetch", "ExecStart=/usr/local/bin/pft-imagescan scan"),
+    ("U02", "unit", "heal unit can reach the docker socket",
+     "InaccessiblePaths=-/run/docker.sock -/var/run/docker.sock -/run/containerd\n", ""),
     ("L01", "lib", "feed sha256 pin ignored", 'if got != m["sha256"]:', "if False:"),
     ("L02", "lib", "feed fetch age ignored", "if age > max_age_days * 86400:", "if False:"),
     ("L03", "lib", "feed own-timestamp age ignored", "if now - ts > max_content_age_days * 86400:", "if False:"),
@@ -104,7 +146,8 @@ def suite(tmp, timeout):
 def copy_module(base):
     d = tempfile.mkdtemp(prefix="imagescan-mut-", dir=base)
     for f in FILES.values():
-        shutil.copy2(os.path.join(ROOT, f), d)
+        os.makedirs(os.path.dirname(os.path.join(d, f)), exist_ok=True)
+        shutil.copy2(os.path.join(ROOT, f), os.path.join(d, f))
     shutil.copytree(os.path.join(HERE), os.path.join(d, "tests"),
                     ignore=shutil.ignore_patterns("__pycache__", "mutate.py"))
     return d

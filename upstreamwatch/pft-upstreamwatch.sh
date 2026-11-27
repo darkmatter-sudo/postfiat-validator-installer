@@ -30,6 +30,12 @@
 # HEAL_BUSY_UNITS is active, and only with HEAL_LOCK held (flock -n). Every decision of an eligible feed and every
 # result (healed | still_lagging | failed) is appended to HEAL_JOURNAL (JSON lines) and printed (systemd journal).
 # The run then collects again, so the textfile shows the state after the heal.
+# The same bounded heal covers the ../imagescan feeds (ubuntu-*, debian, go; 2026-11-27: the ubuntu OCI feeds sat on
+# an older CDN copy on both hosts): IMAGESCAN_HEAL_UNIT (pft-imagescan-heal.service = `pft-imagescan fetch`,
+# fetch-only, with its own cache-busting retry) never while one of IMAGESCAN_HEAL_BUSY_UNITS is active. Decisions,
+# lock and cooldown are per FETCHER (heal-state key usn-host for vulnscan, imagescan for imagescan): any number of
+# lagging imagescan feeds cause at most one start per HEAL_INTERVAL_HOURS; the result is healed only if every one of
+# them is back at lag 0.
 #
 # Feeds (FEEDS): usn-host (../vulnscan, jammy host USN OVAL), ubuntu-<codename> / debian / go (../imagescan feed
 # cache), debian-oval-<codename> (Debian OVAL; upstream clock only, no host consumes a local copy).
@@ -45,14 +51,15 @@
 #   (/var/lib/pft-exporter/textfile), PULL_SSH, PULL_TIMEOUT (30), PROM_URL (http://127.0.0.1:9090),
 #   NTFY_ENV (/etc/postfiat-monitor.env), DIGEST_STAMP (DATA_DIR/digest-last), LAG_HEAL_HOURS (2, 0 = off),
 #   HEAL_INTERVAL_HOURS (6), HEAL_TIMEOUT (1500 s), HEAL_UNIT (pft-vulnscan-heal.service), HEAL_BUSY_UNITS
-#   (pft-vulnscan.service pft-vulnscan-heal.service), MAINT_CMD (pft-maint active), HEAL_STATE
+#   (pft-vulnscan.service pft-vulnscan-heal.service), IMAGESCAN_HEAL_UNIT (pft-imagescan-heal.service),
+#   IMAGESCAN_HEAL_BUSY_UNITS (pft-imagescan.service pft-imagescan-heal.service), MAINT_CMD (pft-maint active), HEAL_STATE
 #   (DATA_DIR/heal-state.json), HEAL_LOCK (DATA_DIR/heal.lock), HEAL_JOURNAL (DATA_DIR/heal.jsonl, last 1000 lines).
 # Test hooks: PFT_UW_LIB, PFT_UW_DOCKER, PFT_UW_SYSTEMCTL, PFT_UW_NOW (epoch), PFT_UW_UBUNTU_BASE PFT_UW_DEBIAN_TRACKER_URL
 #   PFT_UW_DEBIAN_OVAL_BASE PFT_UW_GO_BASE (fixture servers).
 # Exit: run 0 = no paged state, 1 = local_stale/fetch_failing present, 2 = collect error (textfile up 0).
 set -uo pipefail
 umask 022
-VERSION=1.1.0
+VERSION=1.2.0
 
 HOST_LABEL=validator; PEER_LABEL=sentry; FEEDS="usn-host ubuntu-jammy ubuntu-noble debian go debian-oval-bookworm"
 CONTAINER=postfiatd; BUILD_TEXTFILE=""; QUIET_AGE_HOURS=72; STALE_GRACE_HOURS=30; FETCH_MAX_AGE_HOURS=50
@@ -63,6 +70,7 @@ TEXTFILE_DIR=/var/lib/pft-exporter/textfile; REMOTE_DIR=/var/lib/pft-exporter/te
 PROM_URL=http://127.0.0.1:9090; NTFY_ENV=/etc/postfiat-monitor.env; DIGEST_STAMP=""
 LAG_HEAL_HOURS=2; HEAL_INTERVAL_HOURS=6; HEAL_TIMEOUT=1500; HEAL_UNIT=pft-vulnscan-heal.service
 HEAL_BUSY_UNITS="pft-vulnscan.service pft-vulnscan-heal.service"; MAINT_CMD="pft-maint active"
+IMAGESCAN_HEAL_UNIT=pft-imagescan-heal.service; IMAGESCAN_HEAL_BUSY_UNITS="pft-imagescan.service pft-imagescan-heal.service"
 HEAL_STATE=""; HEAL_LOCK=""; HEAL_JOURNAL=""
 MAX_BYTES=32768
 
@@ -79,7 +87,8 @@ if [ -f "$CONF" ]; then
       HOST_LABEL|PEER_LABEL|FEEDS|CONTAINER|BUILD_TEXTFILE|QUIET_AGE_HOURS|STALE_GRACE_HOURS|FETCH_MAX_AGE_HOURS|\
 CONTENT_TOLERANCE_SECONDS|SKEW_MAX_SECONDS|RETRIES|BACKOFF_SECONDS|HTTP_TIMEOUT|FOUNDATION_RPC|REGISTRY_URL|\
 VULNSCAN_CACHE|IMAGESCAN_CACHE|DATA_DIR|TEXTFILE_DIR|REMOTE_DIR|PULL_SSH|PULL_TIMEOUT|PROM_URL|NTFY_ENV|DIGEST_STAMP|\
-LAG_HEAL_HOURS|HEAL_INTERVAL_HOURS|HEAL_TIMEOUT|HEAL_UNIT|HEAL_BUSY_UNITS|MAINT_CMD|HEAL_STATE|HEAL_LOCK|HEAL_JOURNAL)
+LAG_HEAL_HOURS|HEAL_INTERVAL_HOURS|HEAL_TIMEOUT|HEAL_UNIT|HEAL_BUSY_UNITS|MAINT_CMD|HEAL_STATE|HEAL_LOCK|HEAL_JOURNAL|\
+IMAGESCAN_HEAL_UNIT|IMAGESCAN_HEAL_BUSY_UNITS)
         printf -v "$k" '%s' "$v" ;;
       *) die "unknown key in $CONF: $k" ;;
     esac
@@ -91,6 +100,7 @@ for n in QUIET_AGE_HOURS STALE_GRACE_HOURS FETCH_MAX_AGE_HOURS CONTENT_TOLERANCE
 done
 [[ "$LAG_HEAL_HOURS" =~ ^[0-9]{1,4}$ ]] || die "LAG_HEAL_HOURS must be a whole number (got: $LAG_HEAL_HOURS)"
 [[ "$HEAL_UNIT" =~ ^[a-zA-Z0-9@_.-]+\.service$ ]] || die "bad HEAL_UNIT"
+[[ "$IMAGESCAN_HEAL_UNIT" =~ ^[a-zA-Z0-9@_.-]+\.service$ ]] || die "bad IMAGESCAN_HEAL_UNIT"
 [[ "$SKEW_MAX_SECONDS" =~ ^[0-9]{1,6}$ ]] || die "SKEW_MAX_SECONDS must be a whole number (got: $SKEW_MAX_SECONDS)"
 [[ "$BACKOFF_SECONDS" =~ ^[0-9]{1,3}(\.[0-9]+)?$ ]] || die "BACKOFF_SECONDS must be a number (got: $BACKOFF_SECONDS)"
 valid_label "$HOST_LABEL" || die "bad HOST_LABEL"
@@ -163,36 +173,47 @@ heal_log() {
 
 # heal TEXTFILE_DIR T0 -> rc 0 if nothing was started, 10 if a heal ran (the caller re-renders from $OBS)
 heal() {
-  local maint=0 running=0 plan d feed action reason u out hrc lag result ran=0 mrc
-  # shellcheck disable=SC2086 # MAINT_CMD / HEAL_BUSY_UNITS are word lists from the root-owned conf
+  local maint=0 busy="" plan d key fetcher feeds action reason u unit out hrc lags result ran=0 mrc
+  # shellcheck disable=SC2086 # MAINT_CMD / *_BUSY_UNITS are word lists from the root-owned conf
   $MAINT_CMD > /dev/null 2>&1; mrc=$?
   [ "$mrc" -eq 1 ] || maint=1  # 0 active, 2 malformed flag, anything else unknown: all block the heal
-  for u in $HEAL_BUSY_UNITS; do "$SYSTEMCTL" is-active --quiet "$u" && running=1; done
-  plan="$(python3 -I "$LIB" heal-plan --obs "$OBS" --now "$(now)" --maint "$maint" --running "$running")" \
+  # shellcheck disable=SC2086
+  for u in $HEAL_BUSY_UNITS; do "$SYSTEMCTL" is-active --quiet "$u" && busy+="vulnscan,"; done
+  # shellcheck disable=SC2086
+  for u in $IMAGESCAN_HEAL_BUSY_UNITS; do "$SYSTEMCTL" is-active --quiet "$u" && busy+="imagescan,"; done
+  plan="$(python3 -I "$LIB" heal-plan --obs "$OBS" --now "$(now)" --maint "$maint" --busy "${busy%,}")" \
     || { echo "heal: planning failed"; return 0; }
   [ -n "$plan" ] || return 0
   while IFS= read -r d; do
-    feed="$(jq -r .feed <<< "$d")"; action="$(jq -r .action <<< "$d")"; reason="$(jq -r .reason <<< "$d")"
-    if [ "$action" != heal ]; then heal_log "$feed" skip "$reason"; continue; fi
-    exec 8> "$HEAL_LOCK" || { heal_log "$feed" skip "locked: cannot open $HEAL_LOCK"; continue; }
-    if ! flock -n 8; then heal_log "$feed" skip "locked: another heal holds $HEAL_LOCK"; exec 8>&-; continue; fi
+    key="$(jq -r .feed <<< "$d")"; fetcher="$(jq -r .fetcher <<< "$d")"; feeds="$(jq -c .feeds <<< "$d")"
+    action="$(jq -r .action <<< "$d")"; reason="$(jq -r .reason <<< "$d")"
+    if [ "$action" != heal ]; then heal_log "$key" skip "$reason"; continue; fi
+    case "$fetcher" in
+      vulnscan) unit="$HEAL_UNIT" ;;
+      imagescan) unit="$IMAGESCAN_HEAL_UNIT" ;;
+      *) heal_log "$key" skip "no heal unit for fetcher $fetcher"; continue ;;
+    esac
+    exec 8> "$HEAL_LOCK" || { heal_log "$key" skip "locked: cannot open $HEAL_LOCK"; continue; }
+    if ! flock -n 8; then heal_log "$key" skip "locked: another heal holds $HEAL_LOCK"; exec 8>&-; continue; fi
     # the start is persisted BEFORE the unit runs: a crash or timeout still counts against the rate limit
-    python3 -I "$LIB" heal-record --state "$HEAL_STATE" --feed "$feed" --now "$(now)" --result started \
-      --note "$reason" > /dev/null || { heal_log "$feed" skip "cannot write $HEAL_STATE"; exec 8>&-; continue; }
-    heal_log "$feed" start "$reason; systemctl start $HEAL_UNIT"
-    out="$(timeout "$HEAL_TIMEOUT" "$SYSTEMCTL" start "$HEAL_UNIT" 2>&1)"; hrc=$?
+    python3 -I "$LIB" heal-record --state "$HEAL_STATE" --feed "$key" --now "$(now)" --result started \
+      --note "$reason" > /dev/null || { heal_log "$key" skip "cannot write $HEAL_STATE"; exec 8>&-; continue; }
+    heal_log "$key" start "$reason; systemctl start $unit"
+    out="$(timeout "$HEAL_TIMEOUT" "$SYSTEMCTL" start "$unit" 2>&1)"; hrc=$?
     ran=1
     collect_obs "$1" "$2"
     if [ "$hrc" -ne 0 ]; then
-      result=failed; reason="systemctl start $HEAL_UNIT failed: $(head -c 150 <<< "$out" | tr '\n' ' ')"
+      result=failed; reason="systemctl start $unit failed: $(head -c 150 <<< "$out" | tr '\n' ' ')"
     else
-      lag="$(python3 -I "$LIB" render --obs "$OBS" --format json | jq -r --arg f "$feed" '.feeds[] | select(.name == $f) | .lag')"
-      if [ "$lag" = 0 ]; then result=healed; reason="lag 0 after the refetch"
-      else result=still_lagging; reason="lag ${lag:-unknown} s after the refetch (upstream cache still old?)"; fi
+      # healed only if EVERY feed of this decision is back at lag 0
+      lags="$(python3 -I "$LIB" render --obs "$OBS" --format json \
+        | jq -r --argjson fs "$feeds" '[.feeds[] | select(.name as $n | $fs | index($n)) | "\(.name)=\(.lag)"] | join(" ")')"
+      if [ -n "$lags" ] && ! grep -qvE '=0$' <<< "${lags// /$'\n'}"; then result=healed; reason="lag 0 after the refetch ($lags)"
+      else result=still_lagging; reason="lag after the refetch: ${lags:-unknown} s (upstream cache still old?)"; fi
     fi
-    python3 -I "$LIB" heal-record --state "$HEAL_STATE" --feed "$feed" --now "$(now)" --result "$result" \
+    python3 -I "$LIB" heal-record --state "$HEAL_STATE" --feed "$key" --now "$(now)" --result "$result" \
       --rc "$hrc" --note "$reason" --obs "$OBS" > /dev/null || echo "heal: cannot record the result"
-    heal_log "$feed" "$result" "$reason" "$hrc"
+    heal_log "$key" "$result" "$reason" "$hrc"
     exec 8>&-
   done <<< "$plan"
   [ "$ran" = 0 ] || return 10

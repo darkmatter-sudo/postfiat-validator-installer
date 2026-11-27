@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Mutation harness for upstreamwatch local_lagging + bounded heal (task: lagging feed detection and bounded vulnscan
-healing). Each mutant changes exactly one text match in a COPY and runs that copy's checks:
+"""Mutation harness for upstreamwatch local_lagging + bounded heal (tasks: lagging feed detection and bounded vulnscan
+healing; bounded imagescan feed healing, per-fetcher decisions/cooldown/busy guard). Each mutant changes exactly one text match in a COPY and runs that copy's checks:
   P* upstreamwatch_lib.py, S* pft-upstreamwatch.sh  -> the copy's full pytest suite (upstreamwatch/tests)
   R* ../alerts/upstreamwatch.rules.yml               -> `promtool test rules upstreamwatch.tests.yml vulnscan.tests.yml`
                                                         (prom/prometheus:v3.16.0, already on the host, --network none)
@@ -55,8 +55,8 @@ MUTANTS = [
      "elif last and now - last <= interval:"),
     ("P07", P, "no rate limit", "elif last and now - last < interval:", "elif False:"),
     ("P08", P, "maintenance guard removed", "        elif maint:\n", "        elif False:\n"),
-    ("P09", P, "running-unit guard removed", "        elif running:\n", "        elif False:\n"),
-    ("P10", P, "imagescan/reference feeds healed too",
+    ("P09", P, "running-unit guard removed", "        elif fetcher in busy:\n", "        elif False:\n"),
+    ("P10", P, "reference feeds / unknown fetchers healed too",
      'if f.get("local") not in HEALABLE or f["state"] not in ("local_lagging", "local_stale"):',
      'if f["state"] not in ("local_lagging", "local_stale"):'),
     ("P11", P, "local_stale (lag beyond grace) not healed",
@@ -72,17 +72,35 @@ MUTANTS = [
      'obs["heal"] = {}'),
     ("P19", P, "unknown heal result accepted", "    if result not in HEAL_RESULTS:\n", "    if False:\n"),
     ("S01", S, "malformed/unknown maint state no longer blocks", '[ "$mrc" -eq 1 ] || maint=1', '[ "$mrc" -eq 0 ] && maint=1'),
-    ("S02", S, "busy units ignored", '"$SYSTEMCTL" is-active --quiet "$u" && running=1', 'true'),
+    ("S02", S, "vulnscan busy units ignored", '"$SYSTEMCTL" is-active --quiet "$u" && busy+="vulnscan,"', 'true'),
     ("S03", S, "heal lock not taken", "if ! flock -n 8; then", "if false; then"),
     ("S04", S, "start not persisted before the unit runs", "--result started \\\n      --note", "--result healed \\\n      --note"),
     ("S05", S, "no re-collect after the heal", '    ran=1\n    collect_obs "$1" "$2"\n', "    ran=1\n"),
-    ("S06", S, "every heal reported healed", 'if [ "$lag" = 0 ]; then result=healed', "if true; then result=healed"),
+    ("S06", S, "every heal reported healed", """if [ -n "$lags" ] && ! grep -qvE '=0$' <<< "${lags// /$'\\n'}"; then result=healed""",
+     "if true; then result=healed"),
     ("S07", S, "failed unit start treated as success", 'if [ "$hrc" -ne 0 ]; then', "if false; then"),
     ("S08", S, "--no-heal ignored", "--no-heal) doheal=0 ;;", "--no-heal) ;;"),
     ("S09", S, "LAG_HEAL_HOURS not validated", '[[ "$LAG_HEAL_HOURS" =~ ^[0-9]{1,4}$ ]] || die', "true || die"),
     ("S10", S, "HEAL_UNIT not validated", '[[ "$HEAL_UNIT" =~ ^[a-zA-Z0-9@_.-]+\\.service$ ]] || die "bad HEAL_UNIT"', "true"),
     ("S11", S, "heal journal not written", '> "$HEAL_JOURNAL.tmp" && mv -f "$HEAL_JOURNAL.tmp" "$HEAL_JOURNAL"', "> /dev/null"),
     ("S12", S, "heal started without a decision", 'if [ "$action" != heal ]; then heal_log', 'if false; then heal_log'),
+    ("P20", P, "cooldown keyed by the first feed, not the fetcher",
+     'last = int(res.get("heal", {}).get(key, {}).get("last_attempt_epoch", 0))',
+     'last = int(res.get("heal", {}).get(fs[0]["name"], {}).get("last_attempt_epoch", 0))'),
+    ("P21", P, "any busy fetcher blocks every heal", "        elif fetcher in busy:\n", "        elif busy:\n"),
+    ("P22", P, "decision lag = first feed's, not the max", '"lag": max(f["lag"] for f in fs),', '"lag": fs[0]["lag"],'),
+    ("P23", P, "decision state ignores a local_stale member",
+     '"state": "local_stale" if any(f["state"] == "local_stale" for f in fs) else "local_lagging",',
+     '"state": fs[0]["state"],'),
+    ("P24", P, "unknown --busy fetcher accepted", "            if unknown:\n", "            if False:\n"),
+    ("P25", P, "imagescan not healable", 'HEALABLE = {"vulnscan": "usn-host", "imagescan": "imagescan"}',
+     'HEALABLE = {"vulnscan": "usn-host"}'),
+    ("S13", S, "imagescan busy units ignored", '"$SYSTEMCTL" is-active --quiet "$u" && busy+="imagescan,"', 'true'),
+    ("S14", S, "imagescan heal starts the vulnscan unit", 'imagescan) unit="$IMAGESCAN_HEAL_UNIT" ;;',
+     'imagescan) unit="$HEAL_UNIT" ;;'),
+    ("S15", S, "healed when ANY feed of the decision is back at lag 0", "! grep -qvE '=0$'", "grep -qE '=0$'"),
+    ("S16", S, "IMAGESCAN_HEAL_UNIT not validated",
+     '[[ "$IMAGESCAN_HEAL_UNIT" =~ ^[a-zA-Z0-9@_.-]+\\.service$ ]] || die "bad IMAGESCAN_HEAL_UNIT"', "true"),
     ("R01", R, "PFTUpstreamFeedLagging pages (notify digest dropped)",
      '        for: 3h\n        labels:\n          severity: info\n          notify: digest\n',
      '        for: 3h\n        labels:\n          severity: info\n'),

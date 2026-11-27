@@ -4,7 +4,8 @@
 #       /usr/local/lib/pft-imagescan/imagescan_lib.py, pft-imagescan.service/.timer, writes HOST_LABEL into
 #       /etc/pft-imagescan.env (validator by default; use --host sentry on a sentry), runs one scan through the
 #       sandboxed unit (must give up 1; the first run reads every local image once, minutes for a large image), then
-#       enables pft-imagescan.timer (daily 05:10 UTC + up to 30 min random delay, Persistent).
+#       enables pft-imagescan.timer (daily 05:10 UTC + up to 30 min random delay, Persistent). Also installs
+#       pft-imagescan-heal.service (fetch-only, no timer; ../upstreamwatch starts it for a lagging feed).
 #   sudo ./install.sh --pull           on the host that runs ../alerts: pft-imagescan-pull.service/.timer; needs
 #       PULL_SSH (and PEER_LABEL, default sentry) in /etc/pft-imagescan.env. Runs one pull (must exit 0), then enables
 #       pft-imagescan-pull.timer (every 15 min).
@@ -86,11 +87,12 @@ fi
 host="${label:-$(conf_get HOST_LABEL)}"; host="${host:-validator}"
 if $uninstall; then
   systemctl disable --now pft-imagescan.timer 2>/dev/null || true
+  rm -f /etc/systemd/system/pft-imagescan-heal.service; systemctl daemon-reload
   rm -f "$TEXTDIR/pft_imagescan_$host.prom"; rc_del "$host"
   log "disabled pft-imagescan.timer, removed its textfile (kept /var/cache/pft-imagescan and the script)"
   exit 0
 fi
-for c in python3 docker curl; do command -v "$c" >/dev/null || { echo "$c missing" >&2; exit 3; }; done
+for c in python3 docker curl jq; do command -v "$c" >/dev/null || { echo "$c missing" >&2; exit 3; }; done
 install_bin
 if [ -f "$CONF" ]; then
   if grep -q '^HOST_LABEL=' "$CONF"; then sed -i "s/^HOST_LABEL=.*/HOST_LABEL=$host/" "$CONF"; else echo "HOST_LABEL=$host" >> "$CONF"; fi
@@ -98,7 +100,8 @@ else
   printf '# pft-imagescan config (see pft-imagescan.env.example)\nHOST_LABEL=%s\n' "$host" > "$CONF"
 fi
 chown root:root "$CONF"; chmod 600 "$CONF"
-install -m 644 "$HERE/systemd/pft-imagescan.service" "$HERE/systemd/pft-imagescan.timer" /etc/systemd/system/
+install -m 644 "$HERE/systemd/pft-imagescan.service" "$HERE/systemd/pft-imagescan.timer" \
+  "$HERE/systemd/pft-imagescan-heal.service" /etc/systemd/system/
 systemctl daemon-reload
 rc_add "$RC_LINE"; rc_add "require pft_imagescan_$host.prom"
 log "first scan (through the sandboxed unit, HOST_LABEL=$host):"

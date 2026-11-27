@@ -40,7 +40,7 @@ docker or clock.
 |---|---|---|
 | `ok` | our copy is upstream's latest and younger than `QUIET_AGE_HOURS` (72) | none |
 | `upstream_quiet` | our copy is upstream's latest (304 to our ETag, equal ETag, or upstream content clock within `CONTENT_TOLERANCE_SECONDS` of ours), but upstream has not published for 72 h | `PFTUpstreamFeedQuiet`, `notify="digest"`, **never paged** |
-| `local_lagging` | upstream published newer content that our copy lacks, **no longer than** `STALE_GRACE_HOURS` (30) ago: a cache served our fetcher an old copy, or the daily fetch ran before upstream published. `lag` = upstream `Date` minus upstream content clock (`pft_upstreamwatch_feed_lag_seconds`, LAG column). For `usn-host` the [bounded heal](#bounded-heal) refetches once the lag exceeds `LAG_HEAL_HOURS` | `PFTUpstreamFeedLagging`, `notify="digest"`, `for: 3h`, **never paged** |
+| `local_lagging` | upstream published newer content that our copy lacks, **no longer than** `STALE_GRACE_HOURS` (30) ago: a cache served our fetcher an old copy, or the daily fetch ran before upstream published. `lag` = upstream `Date` minus upstream content clock (`pft_upstreamwatch_feed_lag_seconds`, LAG column). For `usn-host` and the `../imagescan` feeds the [bounded heal](#bounded-heal) refetches once the lag exceeds `LAG_HEAL_HOURS` | `PFTUpstreamFeedLagging`, `notify="digest"`, `for: 3h`, **never paged** |
 | `local_stale` | upstream published newer content more than `STALE_GRACE_HOURS` (30) ago and we still lack it, **or** our copy is missing, truncated or replaced (sha256 differs from the fetcher's record, bz2 stream incomplete, zip unreadable, JSON cut off) | `PFTUpstreamFeedLocalStale` (**pages**) |
 | `fetch_failing` | the fetcher has not downloaded or revalidated for `FETCH_MAX_AGE_HOURS` (50 h, two missed daily runs); this check comes before any upstream answer | `PFTUpstreamFeedFetchFailing` (**pages**) |
 | `unreachable` | upstream could not be asked: network error, 5xx or 429 after `RETRIES` (3) with backoff (2 s, 4 s; `Retry-After` honoured up to 30 s), 4xx, a 200 without Last-Modified, or a Last-Modified in the future of upstream's own `Date` (> `SKEW_MAX_SECONDS`) | none: if it persists, the fetcher goes overdue and `fetch_failing` pages |
@@ -63,37 +63,52 @@ content cache. On 11-27 it fetched at 04:29Z, received the 26 Nov 08:55Z copy, a
 26 Nov 16:51Z twelve hours earlier. The copy was younger than `REFETCH_AGE_HOURS` (24), so vulnscan's own stale-copy
 refetch did not trigger. upstreamwatch saw upstream's newer Last-Modified but called it `ok` ("within grace"), and the
 next fetch was a day away (live capture: `tests/fixtures/obs-live-validator-20261127.json`). `local_lagging` makes the
-lag visible. The heal fixes it without waiting for the next daily run:
+lag visible. The heal fixes it without waiting for the next daily run. The same happened to the `../imagescan`
+feeds on 2026-11-27 (the ubuntu OCI feeds on both hosts held 26 Nov copies while upstream had newer ones), so the
+heal covers both fetchers:
 
-1. `heal_plan` (pure, `upstreamwatch_lib.py`) picks every feed whose fetcher has a heal unit (`usn-host` ->
-   `../vulnscan`) in `local_lagging` or `local_stale` with `lag > LAG_HEAL_HOURS`. In this order it then skips
-   `disabled` (`LAG_HEAL_HOURS=0`), `rate_limited` (the last start for this feed was less than `HEAL_INTERVAL_HOURS`
-   ago, whatever its result), `maint_window` (`pft-maint active` exits 0 or 2; only exit 1 = no window allows a heal,
-   so a missing `pft-maint` also blocks) and `vulnscan_running` (`pft-vulnscan.service` or
-   `pft-vulnscan-heal.service` active).
-2. The shell takes `HEAL_LOCK` with `flock -n` (held -> `skip locked`). It records the start in `HEAL_STATE` **before**
-   the unit runs, so a crash or timeout still counts against the rate limit. Then it runs
-   `systemctl start pft-vulnscan-heal.service` (timeout `HEAL_TIMEOUT`).
+| fetcher | feeds | heal unit | heal-state key | busy units |
+|---|---|---|---|---|
+| `../vulnscan` | `usn-host` | `HEAL_UNIT` = `pft-vulnscan-heal.service` (`pft-vulnscan scan --force-fetch`) | `usn-host` | `HEAL_BUSY_UNITS` |
+| `../imagescan` | `ubuntu-<codename>`, `debian`, `go` | `IMAGESCAN_HEAL_UNIT` = `pft-imagescan-heal.service` (`pft-imagescan fetch`, fetch only) | `imagescan` | `IMAGESCAN_HEAL_BUSY_UNITS` |
+
+1. `heal_plan` (pure, `upstreamwatch_lib.py`) collects the feeds in `local_lagging` or `local_stale` with
+   `lag > LAG_HEAL_HOURS` whose fetcher has a heal unit, and makes **one decision per fetcher** (its feeds, the
+   largest lag, the worst state): one heal unit refreshes all of a fetcher's feeds, so three lagging imagescan feeds
+   cause one start. In this order it then skips `disabled` (`LAG_HEAL_HOURS=0`), `rate_limited` (the last start for
+   this fetcher was less than `HEAL_INTERVAL_HOURS` ago, whatever its result), `maint_window` (`pft-maint active`
+   exits 0 or 2; only exit 1 = no window allows a heal, so a missing `pft-maint` also blocks) and
+   `vulnscan_running` / `imagescan_running` (one of that fetcher's busy units is active; a busy vulnscan never blocks
+   the imagescan heal or the other way round).
+2. The shell takes `HEAL_LOCK` with `flock -n` (held -> `skip locked`; one heal at a time on a host). It records the
+   start in `HEAL_STATE` **before** the unit runs, so a crash or timeout still counts against the rate limit. Then it
+   runs `systemctl start <heal unit>` (timeout `HEAL_TIMEOUT`).
 3. `pft-vulnscan-heal.service` (same sandbox as `pft-vulnscan.service`, no timer) runs `pft-vulnscan scan --force-fetch`:
    one unconditional GET with no ETag, `Cache-Control: no-cache` and the cache-busting `?pft-vulnscan-nocache=EPOCH`
    query, then a full scan, so `pft_vulnscan_feed_timestamp_seconds` moves too. It holds vulnscan's cache lock
-   (`CACHE_DIR/.lock`), like every other scan/fetch.
-4. upstreamwatch collects again. The result is `healed` (lag 0), `still_lagging` (the refetch got an old copy again;
-   the next try is `HEAL_INTERVAL_HOURS` later) or `failed` (the unit start failed). The result is written to
-   `HEAL_STATE` and to the observation file, so `report --obs` re-renders it.
+   (`CACHE_DIR/.lock`), like every other scan/fetch. `pft-imagescan-heal.service` (the scan unit's sandbox, the
+   docker socket made inaccessible, no timer) runs `pft-imagescan fetch`: every feed is compared with upstream's
+   clock and retried once past the cache when behind (`../imagescan` README, "Fetch freshness"), then only the
+   fetch-outcome series of the imagescan textfile are rewritten. Findings move at the next daily scan.
+4. upstreamwatch collects again. The result is `healed` (**every** feed of the decision at lag 0), `still_lagging`
+   (at least one is not; the reason lists `feed=lag` for each; the next try is `HEAL_INTERVAL_HOURS` later) or
+   `failed` (the unit start failed). The result is written to `HEAL_STATE` and to the observation file, so
+   `report --obs` re-renders it.
 
-Every decision for an eligible feed (`skip` + reason, `start`) and every result is appended to `HEAL_JOURNAL` as one
+Every decision of an eligible fetcher (`skip` + reason, `start`) and every result is appended to `HEAL_JOURNAL` as one
 JSON line (the last 1000 are kept) and printed to the unit's journal. At most `24 / HEAL_INTERVAL_HOURS` (4) refetches
-per feed per day can reach Canonical. A lag that outlives `STALE_GRACE_HOURS` still turns into `local_stale` and
+per fetcher per day can reach the feed publishers. A lag that outlives `STALE_GRACE_HOURS` still turns into `local_stale` and
 pages, so the heal can delay a page but never hide one.
 
 | setting (`/etc/pft-upstreamwatch.env`) | default | meaning |
 |---|---|---|
 | `LAG_HEAL_HOURS` | `2` | heal a feed whose lag is **more** than this; `0` = never heal |
-| `HEAL_INTERVAL_HOURS` | `6` | at most one heal start per feed in this many hours (counted from the last start) |
+| `HEAL_INTERVAL_HOURS` | `6` | at most one heal start per fetcher in this many hours (counted from the last start) |
 | `HEAL_TIMEOUT` | `1500` | seconds `systemctl start` may take (the heal unit's own `TimeoutStartSec` is 20 min; `pft-upstreamwatch.service` allows 40 min) |
 | `HEAL_UNIT` | `pft-vulnscan-heal.service` | unit to start (`*.service` names only) |
-| `HEAL_BUSY_UNITS` | `pft-vulnscan.service pft-vulnscan-heal.service` | an active one blocks the heal |
+| `HEAL_BUSY_UNITS` | `pft-vulnscan.service pft-vulnscan-heal.service` | an active one blocks the vulnscan heal |
+| `IMAGESCAN_HEAL_UNIT` | `pft-imagescan-heal.service` | imagescan heal unit (`*.service` names only) |
+| `IMAGESCAN_HEAL_BUSY_UNITS` | `pft-imagescan.service pft-imagescan-heal.service` | an active one blocks the imagescan heal |
 | `MAINT_CMD` | `pft-maint active` | exit 1 = no maintenance window; anything else blocks |
 | `HEAL_STATE` / `HEAL_LOCK` / `HEAL_JOURNAL` | `DATA_DIR/heal-state.json` / `heal.lock` / `heal.jsonl` | persisted attempts + results / flock / JSON-lines journal |
 
@@ -102,7 +117,8 @@ pages, so the heal can delay a page but never hide one.
 Metrics: `pft_upstreamwatch_feed_lag_seconds{feed}` (0 when our copy is the latest; absent when unknown),
 `pft_upstreamwatch_heal_attempts{feed}`, `pft_upstreamwatch_heal_last_attempt_timestamp_seconds{feed}`, and
 `pft_upstreamwatch_heal_last_result{feed,result=started|healed|still_lagging|failed}` (one-hot; heal series appear
-once a feed has been healed).
+once a fetcher has been healed). Their `feed` label is the heal-state key: `usn-host` (vulnscan, unchanged) or
+`imagescan`. No alert rule reads them.
 
 ## Feeds (`FEEDS`)
 
@@ -203,6 +219,7 @@ All runs are recorded with `tee` on the validator; logs are redacted (home path,
 | (inline) | the sandbox of `pft-upstreamwatch.service` allows `pft-maint active` (rc 1), `systemctl is-active`/`start` over D-Bus and the heal flock | `logs/10-sandbox-probe.log` |
 | (inline) | shellcheck, ruff, full pytest (84), `../vulnscan` run-tests.sh (153), generated promtool tests unchanged, `promtool check` + `test` | `logs/11-tests.log` |
 | `tests/mutate.py` | 41 mutants (lib P01-P19, wrapper S01-S12, rules R01-R03, `../vulnscan` V01-V07) all caught, with baseline/hang/orphan controls | `logs/12-mutants.log` |
+| `tests/mutate.py` | task_cb7b (imagescan heal): 51 mutants (lib P01-P25 incl. per-fetcher cooldown/busy/grouping, wrapper S01-S16 incl. imagescan busy units / unit choice / all-feeds-healed, rules R01-R03, `../vulnscan` V01-V07) all caught; development run, the recorded one follows with the live runs | (pending) |
 | `drill/heal-install-run.sh` | install on both hosts through `../fleet` in one pft-maint window ([MAINT] to a throwaway topic). 13 is the install itself: every sync gate passed, but the skew gate failed because `../aptrust` keeps a copy of the fleet manifest. 14 synced it. 17 re-ran the whole install as a verification: every file kept, all gates PASS, 0 messages on both operator topics | `logs/13-install.log`, `logs/14-install-aptrust.log`, `logs/17-install-verify.log` |
 | `drill/heal-proof.sh` | sentry, against the committed older feed `drill/fixtures/usn-jammy-20261126T0855Z.xml.bz2`: `local_lagging`, `pft_upstreamwatch_feed_lag_seconds` in the textfile and in Prometheus, exactly one heal through the real units (journal start + healed, attempts 1), the cache now holds upstream's copy (feed timestamp = upstream Last-Modified), back to `ok`/lag 0, a second run heals nothing, no paging alert, 0 messages on both operator topics | `logs/15-heal-proof.log` |
 | (inline) | self-caused `PFTRuleDead` at the install: the new rule was loaded before any `local_lagging` series existed. Fixed by one `run --no-heal` (rule LIVE); its [RESOLVED] was silenced | `logs/16-ruledead-fix.log` |

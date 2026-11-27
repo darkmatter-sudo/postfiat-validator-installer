@@ -1,0 +1,45 @@
+[Unit]
+Description=pft-imagescan heal: one fetch-only refresh of the image feeds (cache-busting retry when behind; started by pft-upstreamwatch, no timer)
+Documentation=https://github.com/darkmatter-sudo/postfiat-validator-installer/tree/main/imagescan
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Started only by ../upstreamwatch (bounded heal: an imagescan feed lags upstream > LAG_HEAL_HOURS, once per
+# HEAL_INTERVAL_HOURS, never in a pft-maint window or while pft-imagescan(.service|-heal.service) runs). FETCH ONLY:
+# no docker, no scan; it rewrites feeds.json and the fetch-outcome series of the textfile. exit 1 = a feed failed
+# or was refused (the previous copy stays): a unit failure, so upstreamwatch records it as failed
+ExecStart=/usr/local/bin/pft-imagescan fetch
+# root only to own CACHE_DIR (0700) like pft-imagescan.service; the docker socket is made inaccessible: fetch never
+# talks to docker
+CacheDirectory=pft-imagescan
+CacheDirectoryMode=0700
+ReadWritePaths=/var/lib/pft-exporter/textfile
+InaccessiblePaths=-/run/docker.sock -/var/run/docker.sock -/run/containerd
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+# measured peak of pft-imagescan.service: ~325 MB (Debian tracker JSON; fetch parses it once to check it)
+MemoryMax=768M
+Nice=10
+IOSchedulingClass=idle
+UMask=0077
+TimeoutStartSec=20min

@@ -18,9 +18,19 @@
 # content), so the 8 GB postfiatd image is read once per image change, not once per day.
 #
 #  fetch  for each feed in FEEDS: GET (Cache-Control: no-cache) into a temp file, check it fully (bzip2 stream /
-#         zip CRCs + index/db.json / JSON with > 1000 source packages), read its own timestamp, and only then move
-#         it into CACHE_DIR/feeds and record file, sha256, url, timestamp_epoch, fetched_epoch in feeds.json
-#         (atomic). A failed feed keeps its previous entry; the scan's age check decides whether it is still usable.
+#         zip CRCs + index/db.json / JSON with > 1000 source packages), read its own timestamp, then compare it with
+#         the UPSTREAM clock (ubuntu/debian: the later of this response's Last-Modified and a no-cache HEAD's;
+#         go: index/db.json "modified"). Within CONTENT_TOLERANCE_SECONDS -> outcome fresh. Otherwise (or when no
+#         upstream clock can be read) ONE retry: cache-busting query (?pftcb=...), Cache-Control/Pragma no-cache and
+#         a conditional on the copy just received (If-None-Match its ETag, else If-Modified-Since its Last-Modified;
+#         304 = the cache still holds that copy). The newer complete copy is kept; outcome retried_fresh if it is
+#         within tolerance of upstream, else still_behind ("not proven fresh"). A download older than the installed
+#         copy never replaces it (the installed entry stays, only its outcome is updated). Only then is the file
+#         moved into CACHE_DIR/feeds and file, sha256, url, timestamp_epoch, fetched_epoch, outcome, upstream_epoch,
+#         upstream_clock, outcome_epoch, outcome_note recorded in feeds.json (atomic). A failed feed keeps its
+#         previous entry; the scan's age check decides whether it is still usable. Standalone `fetch` (and
+#         pft-imagescan-heal.service, which ../upstreamwatch starts) also refreshes the fetch-outcome series in this
+#         host's textfile, leaving the scan series as they are.
 #  scan   1. fetch (unless --no-fetch; a failed fetch is reported, not fatal).
 #         2. inventory: running containers (name, configured ref, running image ID) and every local image.
 #         3. imagescan_lib.py scan: refuses (exit 2) a feed whose sha256 differs from feeds.json, a feed fetched more
@@ -36,18 +46,21 @@
 # Config: /etc/pft-imagescan.env (KEY=VALUE, root-owned; PFT_IS_CONF overrides): HOST_LABEL (validator), PEER_LABEL
 #   (sentry), FEEDS ("ubuntu-jammy ubuntu-noble debian go"), MAX_FEED_AGE_DAYS (7), MAX_CONTENT_AGE_DAYS (30),
 #   CACHE_DIR (/var/cache/pft-imagescan), TEXTFILE_DIR / REMOTE_DIR (/var/lib/pft-exporter/textfile), FETCH_TIMEOUT
-#   (300), SAVE_TIMEOUT (1800), PULL_SSH, PULL_TIMEOUT (30), ACCEPT_FILE (/etc/pft-imagescan.accept).
-# Test hooks: PFT_IS_DOCKER PFT_IS_CURL PFT_IS_LIB (commands/paths), PFT_IS_NOW (epoch).
+#   (300), SAVE_TIMEOUT (1800), PULL_SSH, PULL_TIMEOUT (30), ACCEPT_FILE (/etc/pft-imagescan.accept),
+#   CONTENT_TOLERANCE_SECONDS (21600, as ../upstreamwatch).
+# Test hooks: PFT_IS_DOCKER PFT_IS_CURL PFT_IS_LIB (commands/paths), PFT_IS_NOW (epoch), PFT_IS_UBUNTU_BASE
+#   PFT_IS_DEBIAN_URL PFT_IS_GO_BASE (fixture HTTP servers).
 # shellcheck disable=SC2016
 set -uo pipefail
 umask 022
-VERSION=1.0.0
+VERSION=1.1.0
 EXTRACT_VERSION=e1
 
 HOST_LABEL=validator; PEER_LABEL=sentry; FEEDS="ubuntu-jammy ubuntu-noble debian go"
 MAX_FEED_AGE_DAYS=7; MAX_CONTENT_AGE_DAYS=30; CACHE_DIR=/var/cache/pft-imagescan
 TEXTFILE_DIR=/var/lib/pft-exporter/textfile; REMOTE_DIR=/var/lib/pft-exporter/textfile
 FETCH_TIMEOUT=300; SAVE_TIMEOUT=1800; PULL_SSH=""; PULL_TIMEOUT=30; ACCEPT_FILE=/etc/pft-imagescan.accept
+CONTENT_TOLERANCE_SECONDS=21600
 MAX_BYTES=262144
 
 die() { printf 'pft-imagescan: %s\n' "$1" >&2; exit "${2:-2}"; }
@@ -59,23 +72,27 @@ CONF="${PFT_IS_CONF:-/etc/pft-imagescan.env}"
 if [ -f "$CONF" ]; then
   while IFS='=' read -r k v; do
     case "$k" in
-      HOST_LABEL|PEER_LABEL|FEEDS|MAX_FEED_AGE_DAYS|MAX_CONTENT_AGE_DAYS|CACHE_DIR|TEXTFILE_DIR|REMOTE_DIR|FETCH_TIMEOUT|SAVE_TIMEOUT|PULL_SSH|PULL_TIMEOUT|ACCEPT_FILE)
+      HOST_LABEL|PEER_LABEL|FEEDS|MAX_FEED_AGE_DAYS|MAX_CONTENT_AGE_DAYS|CACHE_DIR|TEXTFILE_DIR|REMOTE_DIR|FETCH_TIMEOUT|SAVE_TIMEOUT|PULL_SSH|PULL_TIMEOUT|ACCEPT_FILE|\
+CONTENT_TOLERANCE_SECONDS)
         v="${v%\"}"; v="${v#\"}"; printf -v "$k" '%s' "$v" ;;
     esac
   done < <(grep -E '^[A-Z_]+=' "$CONF")
 fi
-for n in MAX_FEED_AGE_DAYS MAX_CONTENT_AGE_DAYS FETCH_TIMEOUT SAVE_TIMEOUT PULL_TIMEOUT; do
-  [[ "${!n}" =~ ^[1-9][0-9]{0,5}$ ]] || die "$n must be a positive whole number (got: ${!n})"
+for n in MAX_FEED_AGE_DAYS MAX_CONTENT_AGE_DAYS FETCH_TIMEOUT SAVE_TIMEOUT PULL_TIMEOUT CONTENT_TOLERANCE_SECONDS; do
+  [[ "${!n}" =~ ^[1-9][0-9]{0,6}$ ]] || die "$n must be a positive whole number (got: ${!n})"
 done
 DOCKER="${PFT_IS_DOCKER:-docker}"
 CURL="${PFT_IS_CURL:-curl}"
 LIB="${PFT_IS_LIB:-/usr/local/lib/pft-imagescan/imagescan_lib.py}"
+UBUNTU_BASE="${PFT_IS_UBUNTU_BASE:-https://security-metadata.canonical.com/oval}"
+DEBIAN_URL="${PFT_IS_DEBIAN_URL:-https://security-tracker.debian.org/tracker/data/json}"
+GO_BASE="${PFT_IS_GO_BASE:-https://vuln.go.dev}"
 
 feed_def() { # NAME -> "KIND URL FILE" (rc 1: unknown feed name)
   case "$1" in
-    ubuntu-[a-z]*) echo "ubuntu-oval https://security-metadata.canonical.com/oval/oci.com.ubuntu.${1#ubuntu-}.usn.oval.xml.bz2 oci.com.ubuntu.${1#ubuntu-}.usn.oval.xml.bz2" ;;
-    debian) echo "debian-tracker https://security-tracker.debian.org/tracker/data/json debian-tracker.json" ;;
-    go) echo "go-osv https://vuln.go.dev/vulndb.zip vulndb.zip" ;;
+    ubuntu-[a-z]*) echo "ubuntu-oval $UBUNTU_BASE/oci.com.ubuntu.${1#ubuntu-}.usn.oval.xml.bz2 oci.com.ubuntu.${1#ubuntu-}.usn.oval.xml.bz2" ;;
+    debian) echo "debian-tracker $DEBIAN_URL debian-tracker.json" ;;
+    go) echo "go-osv $GO_BASE/vulndb.zip vulndb.zip" ;;
     *) return 1 ;;
   esac
 }
@@ -117,50 +134,134 @@ PY
   python3 -I "$LIB" feedts "$1" "$2" 2>&1 || return 1
 }
 
+# get URL DEST [CURL ARGS...] -> HTTP code on stdout (body DEST, headers DEST.hdr, curl errors DEST.err)
+get() {
+  local u="$1" d="$2"; shift 2
+  "$CURL" -sS -L --compressed --max-time "$FETCH_TIMEOUT" -H 'Cache-Control: no-cache' "$@" -D "$d.hdr" -o "$d" \
+    -w '%{http_code}' "$u" 2> "$d.err"
+}
+# hdr FILE NAME -> the last value of header NAME (case-insensitive; with -L the final response's)
+hdr() { tr -d '\r' < "$1" 2>/dev/null | sed -n "s/^$2: //Ip" | tail -1; }
+http_epoch() { [ -n "$1" ] && date -u -d "$1" +%s 2>/dev/null; }
+
+# upstream_clock KIND URL RESPONSE_LAST_MODIFIED -> "EPOCH SOURCE" (rc 1: no upstream clock readable)
+upstream_clock() {
+  local e1 e2 h m
+  if [ "$1" = go-osv ]; then
+    # vulndb.zip's Last-Modified moves on every rebuild; the content clock is index/db.json "modified"
+    m="$("$CURL" -sS -L --max-time 60 -H 'Cache-Control: no-cache' "$GO_BASE/index/db.json" 2>/dev/null \
+         | jq -r '.modified // empty' 2>/dev/null)"
+    e1="$(http_epoch "$m")" || return 1
+    echo "$e1 index_modified"; return 0
+  fi
+  h="$("$CURL" -sS -I -L --max-time 60 -H 'Cache-Control: no-cache' "$2" 2>/dev/null | tr -d '\r' \
+       | sed -n 's/^last-modified: //Ip' | tail -1)"
+  e1="$(http_epoch "$h")" || e1=""
+  e2="$(http_epoch "$3")" || e2=""
+  if [ -n "$e1" ] && { [ -z "$e2" ] || [ "$e1" -ge "$e2" ]; }; then echo "$e1 head_last_modified"; return 0; fi
+  [ -n "$e2" ] || return 1
+  echo "$e2 response_last_modified"
+}
+
+# installed_ts NAME -> timestamp_epoch of the installed copy (empty if none)
+installed_ts() {
+  python3 -I -c 'import json, sys
+try:
+    print(json.load(open(sys.argv[1]))["feeds"][sys.argv[2]]["timestamp_epoch"])
+except (OSError, ValueError, KeyError, TypeError):
+    pass' "$CACHE_DIR/feeds/feeds.json" "$1" 2>/dev/null
+}
+
 fetch() {
-  local fdir="$CACHE_DIR/feeds" name kind url file tmp code ts lm out="" fails=0 entries="" t
+  local fdir="$CACHE_DIR/feeds" name kind url file tmp code ts lm etag out="" fails=0 entries="" t
+  local ref refsrc r outcome note ru rcode rlm rts old action
+  local -a cond
   mkdir -p "$fdir" || { echo "cannot create $fdir"; return 1; }
   tmp="$(mktemp -d "$fdir/.fetch.XXXXXX")" || { echo "cannot create a temp dir"; return 1; }
   for name in $FEEDS; do
     read -r kind url file <<< "$(feed_def "$name")" || { out+="$name: unknown feed; "; fails=$((fails + 1)); continue; }
     t="$(now)"
-    code="$("$CURL" -sS -L --compressed --max-time "$FETCH_TIMEOUT" -H 'Cache-Control: no-cache' -D "$tmp/$file.hdr" \
-            -o "$tmp/$file" -w '%{http_code}' "$url" 2> "$tmp/err")"
+    code="$(get "$url" "$tmp/$file")"
     if [ "$code" != 200 ]; then
-      out+="$name: FAILED (HTTP ${code:-none}: $(head -c 120 "$tmp/err")); "; fails=$((fails + 1)); continue
+      out+="$name: FAILED (HTTP ${code:-none}: $(head -c 120 "$tmp/$file.err")); "; fails=$((fails + 1)); continue
     fi
-    lm="$(tr -d '\r' < "$tmp/$file.hdr" | sed -n 's/^[Ll]ast-[Mm]odified: //p' | tail -1)"
+    lm="$(hdr "$tmp/$file.hdr" last-modified)"; etag="$(hdr "$tmp/$file.hdr" etag)"
     if ! ts="$(check_feed "$kind" "$tmp/$file" "$lm")"; then
       out+="$name: REFUSED ($ts); "; fails=$((fails + 1)); continue
     fi
-    entries+="$name $kind $file $(sha "$tmp/$file") $ts $t $url"$'\n'
-    out+="$name: fetched (own timestamp $(date -u -d "@$ts" +%FT%TZ)); "
+    ref=""; refsrc=""; note=""
+    if r="$(upstream_clock "$kind" "$url" "$lm")"; then read -r ref refsrc <<< "$r"; fi
+    if [ -n "$ref" ] && [ $((ref - ts)) -le "$CONTENT_TOLERANCE_SECONDS" ]; then
+      outcome=fresh; note="own timestamp within $CONTENT_TOLERANCE_SECONDS s of $refsrc"
+    else
+      # ONE retry past the cache: unique query string, no-cache, conditional on the copy we were just given
+      case "$url" in *\?*) ru="$url&pftcb=$t-$$" ;; *) ru="$url?pftcb=$t-$$" ;; esac
+      cond=()
+      if [ -n "$etag" ]; then cond=(-H "If-None-Match: $etag"); elif [ -n "$lm" ]; then cond=(-H "If-Modified-Since: $lm"); fi
+      rcode="$(get "$ru" "$tmp/$file.retry" -H 'Pragma: no-cache' "${cond[@]}")"
+      if [ "$rcode" = 304 ]; then
+        note="retry HTTP 304 (the cache still holds that copy)"
+      elif [ "$rcode" != 200 ]; then
+        note="retry HTTP ${rcode:-none}"
+      else
+        rlm="$(hdr "$tmp/$file.retry.hdr" last-modified)"
+        if ! rts="$(check_feed "$kind" "$tmp/$file.retry" "$rlm")"; then
+          note="retry copy refused ($rts)"
+        elif [ "$rts" -gt "$ts" ]; then
+          mv -f "$tmp/$file.retry" "$tmp/$file"; ts="$rts"; lm="$rlm"; note="retry copy is newer, kept"
+        else
+          note="retry copy is not newer, first copy kept"
+        fi
+      fi
+      if [ -z "$ref" ] && r="$(upstream_clock "$kind" "$url" "$lm")"; then read -r ref refsrc <<< "$r"; fi
+      if [ -n "$ref" ] && [ $((ref - ts)) -le "$CONTENT_TOLERANCE_SECONDS" ]; then
+        outcome=retried_fresh; note+="; own timestamp within $CONTENT_TOLERANCE_SECONDS s of $refsrc"
+      elif [ -n "$ref" ]; then
+        outcome=still_behind; note+="; own timestamp $((ref - ts)) s behind $refsrc"
+      else
+        outcome=still_behind; note+="; no upstream clock readable (not proven fresh)"
+      fi
+    fi
+    # older-copy protection: a download older than the installed copy never replaces it
+    action=replace; old="$(installed_ts "$name")"
+    if [[ "$old" =~ ^[0-9]+$ ]] && [ "$ts" -lt "$old" ]; then
+      action=keep; outcome=still_behind; note+="; download older than the installed copy, installed copy kept"
+    fi
+    entries+="$(jq -cn --arg n "$name" --arg k "$kind" --arg f "$file" --arg s "$(sha "$tmp/$file")" \
+      --argjson ts "$ts" --argjson t "$t" --arg u "$url" --arg o "$outcome" --argjson ref "${ref:-0}" \
+      --arg rs "${refsrc:-none}" --arg note "$note" --arg a "$action" --argjson oe "$(now)" \
+      '{name: $n, kind: $k, file: $f, sha256: $s, timestamp_epoch: $ts, fetched_epoch: $t, url: $u, outcome: $o,
+        upstream_epoch: $ref, upstream_clock: $rs, outcome_note: $note, outcome_epoch: $oe, action: $a}')"$'\n'
+    if [ "$action" = keep ]; then
+      out+="$name: $outcome (download own timestamp $(date -u -d "@$ts" +%FT%TZ) is older than the installed copy, kept installed); "
+    else
+      out+="$name: $outcome (own timestamp $(date -u -d "@$ts" +%FT%TZ)); "
+    fi
   done
   if [ -n "$entries" ]; then
-    # merge: new entries replace old ones; files are moved in before feeds.json is replaced
-    if ! printf '%s' "$entries" | python3 -I -c '
-import json, os, sys
-fdir, tmp = sys.argv[1], sys.argv[2]
-p = os.path.join(fdir, "feeds.json")
-try:
-    with open(p) as f:
-        meta = json.load(f)
-except (OSError, ValueError):
-    meta = {"feeds": {}}
-for line in sys.stdin.read().splitlines():
-    name, kind, file, sha, ts, fetched, url = line.split(" ")
-    os.replace(os.path.join(tmp, file), os.path.join(fdir, file))
-    meta["feeds"][name] = {"kind": kind, "file": file, "sha256": sha, "timestamp_epoch": int(ts),
-                           "fetched_epoch": int(fetched), "url": url}
-with open(p + ".tmp", "w") as f:
-    json.dump(meta, f, indent=1, sort_keys=True)
-os.replace(p + ".tmp", p)' "$fdir" "$tmp"; then
+    # merge: new entries replace old ones (action keep: outcome fields only); files move in before feeds.json
+    if ! printf '%s' "$entries" | python3 -I "$LIB" feedmerge "$fdir" "$tmp"; then
       rm -rf "$tmp"; echo "${out}feeds.json update FAILED"; return 1
     fi
   fi
   rm -rf "$tmp"
   echo "${out%; }"
   [ "$fails" -eq 0 ]
+}
+
+# fetch_textfile: replace the fetch-outcome series in this host's textfile (scan series untouched). No textfile yet
+# (never scanned) = nothing to do: the first scan writes them.
+fetch_textfile() {
+  local f="$TEXTFILE_DIR/pft_imagescan_$HOST_LABEL.prom" body why t
+  [ -f "$f" ] || { echo "textfile: $f absent (written by the first scan)"; return 0; }
+  body="$(grep -v -E '^(# (HELP|TYPE) )?pft_imagescan_feed_(fetch_outcome|upstream_timestamp_seconds|outcome_timestamp_seconds)[{ ]' "$f"
+          python3 -I "$LIB" fetchmetrics --feeds "$CACHE_DIR/feeds/feeds.json" --host "$HOST_LABEL")" \
+    || { echo "textfile: fetchmetrics failed"; return 1; }
+  t="$(mktemp "$TEXTFILE_DIR/.pft_imagescan_$HOST_LABEL.prom.XXXXXX")" || { echo "textfile: cannot write $TEXTFILE_DIR"; return 1; }
+  printf '%s\n' "$body" > "$t" || { rm -f "$t"; echo "textfile: cannot write $t"; return 1; }
+  if ! why="$(validate "$t" "$HOST_LABEL")"; then rm -f "$t"; echo "textfile: invalid ($why)"; return 1; fi
+  if ! { chmod 644 "$t" && mv -f "$t" "$f"; }; then rm -f "$t"; echo "textfile: rename failed"; return 1; fi
+  echo "textfile: fetch outcome series updated in $f"
 }
 
 # inventory WORK -> WORK/containers.json + WORK/inv/*.json; rc 1 + reason on stdout
@@ -279,6 +380,10 @@ scan() {
   rc=$?
   [ "$rc" -le 1 ] || fail "render failed"
   python3 -I "$LIB" metrics --scan "$w/scan.json" --host "$HOST_LABEL" > "$w/m.prom" || fail "metrics failed"
+  if [ -f "$CACHE_DIR/feeds/feeds.json" ]; then
+    python3 -I "$LIB" fetchmetrics --feeds "$CACHE_DIR/feeds/feeds.json" --host "$HOST_LABEL" >> "$w/m.prom" \
+      || fail "fetch metrics failed"
+  fi
   write_atomic "$TEXTFILE_DIR" "pft_imagescan_$HOST_LABEL.prom" \
     "$(base_metrics 1 "$t0" $(($(now) - t0)); cat "$w/m.prom")"$'\n' || fail "cannot write $TEXTFILE_DIR"
   cp -f "$w/scan.json" "$CACHE_DIR/last-scan.json.tmp" && mv -f "$CACHE_DIR/last-scan.json.tmp" "$CACHE_DIR/last-scan.json"
@@ -363,7 +468,10 @@ pull() {
 cmd="${1:-}"; [ $# -gt 0 ] && shift
 case "$cmd" in
   scan) scan "$@" ;;
-  fetch) msg="$(fetch)"; rc=$?; echo "$msg"; exit $(( rc == 0 ? 0 : 1 )) ;;
+  fetch) valid_label "$HOST_LABEL" || die "bad HOST_LABEL"
+         msg="$(fetch)"; rc=$?; echo "$msg"
+         fetch_textfile || rc=1
+         exit $(( rc == 0 ? 0 : 1 )) ;;
   report) report "$@" ;;
   pull) pull "$@" ;;
   validate) [ $# -eq 2 ] || die "usage: pft-imagescan validate FILE HOST"; valid_label "$2" || die "bad host label"

@@ -834,8 +834,14 @@ def lag_res(lag, state=None, local="vulnscan", name="usn-host", heal=None):
     return {"feeds": [{"name": name, "local": local, "state": st, "lag": lag}], "heal": heal or {}}
 
 
-def plan(res, now=NOW, maint=False, running=False, **kw):
-    return uw.heal_plan(res, now, cfg(**kw), maint, running)
+def plan(res, now=NOW, maint=False, busy=(), **kw):
+    return uw.heal_plan(res, now, cfg(**kw), maint, set(busy))
+
+
+def multi_res(feeds, heal=None):
+    """feeds: [(name, local, lag)] -> evaluate()-shaped result (state from the lag, as lag_res)."""
+    return {"feeds": [{"name": n, "local": loc, "lag": lag, "state": "local_lagging" if lag <= 30 * H else "local_stale"}
+                      for n, loc, lag in feeds], "heal": heal or {}}
 
 
 def test_heal_plan_lag_threshold():
@@ -846,9 +852,12 @@ def test_heal_plan_lag_threshold():
     assert plan(lag_res(40 * H))[0]["action"] == "heal"  # local_stale (beyond grace) is healed too
 
 
-def test_heal_plan_only_vulnscan_feeds_and_lagging_states():
-    assert plan(lag_res(5 * H, local="imagescan", name="ubuntu-jammy")) == []
-    assert plan(lag_res(5 * H, local="")) == []
+def test_heal_plan_only_healable_fetchers_and_lagging_states():
+    d = plan(lag_res(5 * H, local="imagescan", name="ubuntu-jammy"))
+    assert [(x["fetcher"], x["feed"], x["feeds"], x["action"]) for x in d] == [
+        ("imagescan", "imagescan", ["ubuntu-jammy"], "heal")]
+    assert plan(lag_res(5 * H, local="")) == []  # reference feed (debian-oval-*): no local copy, nothing to heal
+    assert plan(lag_res(5 * H, local="other")) == []
     for st in ("ok", "upstream_quiet", "fetch_failing", "unreachable"):
         assert plan(lag_res(5 * H, state=st)) == []
     assert plan({"feeds": [{"name": "usn-host", "local": "vulnscan", "state": "local_stale", "lag": None}], "heal": {}}) == []
@@ -868,13 +877,66 @@ def test_heal_plan_rate_limit_boundary():
 
 def test_heal_plan_guards_and_order():
     assert plan(lag_res(5 * H), maint=True)[0]["reason"].startswith("maint_window")
-    assert plan(lag_res(5 * H), running=True)[0]["reason"].startswith("vulnscan_running")
-    assert plan(lag_res(5 * H), maint=True, running=True)[0]["reason"].startswith("maint_window")
+    assert plan(lag_res(5 * H), busy={"vulnscan"})[0]["reason"].startswith("vulnscan_running")
+    assert plan(lag_res(5 * H), maint=True, busy={"vulnscan"})[0]["reason"].startswith("maint_window")
     recent = {"usn-host": {"last_attempt_epoch": NOW - H}}
     assert plan(lag_res(5 * H, heal=recent), maint=True)[0]["reason"].startswith("rate_limited")
     d = plan(lag_res(5 * H), lag_heal_hours=0)
     assert d[0]["action"] == "skip" and d[0]["reason"].startswith("disabled")
-    assert all(x["action"] == "skip" for x in plan(lag_res(5 * H), maint=True, running=True))
+    assert all(x["action"] == "skip" for x in plan(lag_res(5 * H), maint=True, busy={"vulnscan"}))
+
+
+def test_heal_plan_one_decision_per_fetcher():
+    res = multi_res([("usn-host", "vulnscan", 5 * H), ("ubuntu-jammy", "imagescan", 3 * H),
+                     ("ubuntu-noble", "imagescan", 40 * H), ("debian", "imagescan", H), ("go", "imagescan", 0)])
+    d = plan(res)
+    assert [(x["fetcher"], x["feed"], x["action"]) for x in d] == [("imagescan", "imagescan", "heal"),
+                                                                   ("vulnscan", "usn-host", "heal")]
+    im = d[0]
+    # debian (lag 1 h <= LAG_HEAL_HOURS) and go (lag 0) are not part of the decision; lag = max, state = worst
+    assert im["feeds"] == ["ubuntu-jammy", "ubuntu-noble"] and im["lag"] == 40 * H and im["state"] == "local_stale"
+    assert im["reason"].startswith("ubuntu-jammy, ubuntu-noble: lag 40.0 h > LAG_HEAL_HOURS 2 h")
+
+
+def test_heal_plan_cooldown_is_per_fetcher():
+    feeds = [("usn-host", "vulnscan", 5 * H), ("ubuntu-jammy", "imagescan", 5 * H)]
+    d = plan(multi_res(feeds, heal={"imagescan": {"last_attempt_epoch": NOW - H}}))
+    assert [(x["fetcher"], x["action"], x["reason"].split(":")[0]) for x in d] == [
+        ("imagescan", "skip", "rate_limited"), ("vulnscan", "heal", "usn-host")]
+    d = plan(multi_res(feeds, heal={"usn-host": {"last_attempt_epoch": NOW - H}}))
+    assert [(x["fetcher"], x["action"]) for x in d] == [("imagescan", "heal"), ("vulnscan", "skip")]
+    # a per-FEED key is not the imagescan cooldown (the unit refreshes every imagescan feed at once)
+    d = plan(multi_res(feeds, heal={"ubuntu-jammy": {"last_attempt_epoch": NOW - H}}))
+    assert [x["action"] for x in d] == ["heal", "heal"]
+    # boundary: exactly HEAL_INTERVAL_HOURS after the last imagescan start heals again
+    d = plan(multi_res(feeds[1:], heal={"imagescan": {"last_attempt_epoch": NOW - 6 * H}}))
+    assert d[0]["action"] == "heal"
+    d = plan(multi_res(feeds[1:], heal={"imagescan": {"last_attempt_epoch": NOW - 6 * H + 1}}))
+    assert d[0]["action"] == "skip" and "last imagescan attempt" in d[0]["reason"]
+
+
+def test_heal_plan_busy_is_per_fetcher():
+    feeds = [("usn-host", "vulnscan", 5 * H), ("ubuntu-jammy", "imagescan", 5 * H)]
+    d = plan(multi_res(feeds), busy={"imagescan"})
+    assert [(x["fetcher"], x["action"], x["reason"].split(":")[0]) for x in d] == [
+        ("imagescan", "skip", "imagescan_running"), ("vulnscan", "heal", "usn-host")]
+    d = plan(multi_res(feeds), busy={"vulnscan"})
+    assert [(x["fetcher"], x["action"]) for x in d] == [("imagescan", "heal"), ("vulnscan", "skip")]
+    d = plan(multi_res(feeds), maint=True)
+    assert [x["reason"].split(":")[0] for x in d] == ["maint_window", "maint_window"]
+    d = plan(multi_res(feeds), lag_heal_hours=0)
+    assert [(x["action"], x["reason"].split(" ")[0]) for x in d] == [("skip", "disabled"), ("skip", "disabled")]
+
+
+def test_heal_plan_cli_busy_validation(tmp_path):
+    o = tmp_path / "obs.json"
+    o.write_text(json.dumps(LIVE))
+    r = subprocess.run([sys.executable, "-I", str(LIB), "heal-plan", "--obs", str(o), "--now", str(NOW), "--maint", "0",
+                        "--busy", "vulnscan,bogus"], capture_output=True, text=True)
+    assert r.returncode == 2 and "unknown fetchers ['bogus']" in r.stderr
+    r = subprocess.run([sys.executable, "-I", str(LIB), "heal-plan", "--obs", str(o), "--now", str(NOW), "--maint", "0",
+                        "--busy", ""], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
 
 
 def test_heal_record_persists_attempts_and_results(tmp_path):
@@ -930,6 +992,11 @@ with open(os.environ["SC_LOG"], "a") as f:
     f.write(" ".join(a) + "\n")
 if a[:2] == ["is-active", "--quiet"]:
     sys.exit(0 if a[2] in os.environ.get("SC_ACTIVE", "").split() else 3)
+if a[0] == "start" and a[1] == "pft-imagescan-heal.service":
+    src = os.environ.get("SC_IS_SRC", "")
+    if src:  # what pft-imagescan fetch would leave behind: the origin's feeds + feeds.json
+        shutil.copytree(os.path.join(src, "feeds"), os.path.join(os.environ["SC_IS"], "feeds"), dirs_exist_ok=True)
+    sys.exit(int(os.environ.get("SC_START_RC", "0")))
 if a[0] == "start":
     src = os.environ.get("SC_HEAL_SRC", "")
     if src:  # what pft-vulnscan scan --force-fetch would leave behind: the origin's newer feed
@@ -974,9 +1041,10 @@ def test_shell_heal_heals_once_and_returns_to_ok(henv):
     r = sh(henv, "run")
     assert r.returncode == 0, r.stdout + r.stderr
     assert sc_calls(henv) == ["is-active --quiet pft-vulnscan.service", "is-active --quiet pft-vulnscan-heal.service",
+                              "is-active --quiet pft-imagescan.service", "is-active --quiet pft-imagescan-heal.service",
                               "start pft-vulnscan-heal.service"]
     assert [e["event"] for e in journal(henv)] == ["start", "healed"]
-    assert "heal: usn-host healed - lag 0 after the refetch (rc 0)" in r.stdout
+    assert "heal: usn-host healed - lag 0 after the refetch (usn-host=0) (rc 0)" in r.stdout
     row = next(ln for ln in r.stdout.splitlines() if ln.startswith("usn-host"))
     assert " ok " in row and "upstream ETag equals ours" in row
     prom = (henv["tf"] / "pft_upstreamwatch_validator.prom").read_text()
@@ -1078,3 +1146,116 @@ def test_shell_heal_below_threshold_no_decision(henv):
     r = sh(henv, "run")
     assert r.returncode == 0 and "heal:" not in r.stdout and journal(henv) == []
     assert not any(c.startswith("start") for c in sc_calls(henv))
+
+
+# ------------------------------------------------------------------------------------------------ imagescan heal
+
+
+@pytest.fixture
+def ihenv(henv):
+    """ubuntu-jammy + ubuntu-noble (../imagescan) lag 5 h: upstream published NOW-5h, our copies are from NOW-30h.
+    usn-host is upstream_quiet (304, the env default) and never part of these heals."""
+    t, now = henv["tmp"], NOW
+    write_vulnscan(henv["vs"], now - 80 * H - 10, now - 20 * H, etag='"usn"')
+    henv["srv"].routes["/oval/com.ubuntu.jammy.usn.oval.xml.bz2"] = [
+        (304, {"ETag": '"usn"', "Date": hdate(now), "Last-Modified": hdate(now - 80 * H)}, b"")]
+    old = {n: (f"{n}.bz2", "ubuntu-oval", oval_bytes(now - 30 * H), now - 30 * H, now - H)
+           for n in ("ubuntu-jammy", "ubuntu-noble")}
+    write_imagescan(t / "is", old)
+    write_imagescan(t / "isorigin", {n: (f"{n}.bz2", "ubuntu-oval", oval_bytes(now - 5 * H), now - 5 * H, now)
+                                     for n in ("ubuntu-jammy", "ubuntu-noble")})
+    for c in ("jammy", "noble"):
+        henv["srv"].routes[f"/oval/oci.com.ubuntu.{c}.usn.oval.xml.bz2"] = [
+            (200, {"ETag": f'"{c}"', "Date": hdate(now), "Last-Modified": hdate(now - 5 * H)}, b"")]
+    henv["conf"].write_text(henv["conf"].read_text().replace("FEEDS=usn-host ubuntu-jammy\n",
+                                                             "FEEDS=usn-host ubuntu-jammy ubuntu-noble\n"))
+    henv["env"].update(SC_HEAL_SRC="", SC_IS=str(t / "is"), SC_IS_SRC=str(t / "isorigin"))
+    henv["is"] = t / "is"
+    return henv
+
+
+def test_shell_imagescan_heal_once_for_all_its_feeds(ihenv):
+    r = sh(ihenv, "run")
+    assert r.returncode == 0, r.stdout + r.stderr
+    starts = [c for c in sc_calls(ihenv) if c.startswith("start")]
+    assert starts == ["start pft-imagescan-heal.service"]  # ONE start for both lagging feeds, vulnscan untouched
+    assert [(e["feed"], e["event"]) for e in journal(ihenv)] == [("imagescan", "start"), ("imagescan", "healed")]
+    assert "heal: imagescan start - ubuntu-jammy, ubuntu-noble: lag 5.0 h > LAG_HEAL_HOURS 2 h" in r.stdout
+    assert "heal: imagescan healed - lag 0 after the refetch (ubuntu-jammy=0 ubuntu-noble=0) (rc 0)" in r.stdout
+    for n in ("ubuntu-jammy", "ubuntu-noble"):
+        row = next(ln for ln in r.stdout.splitlines() if ln.startswith(n))
+        assert " ok " in row, row
+    prom = (ihenv["tf"] / "pft_upstreamwatch_validator.prom").read_text()
+    assert 'pft_upstreamwatch_heal_last_result{host="validator",feed="imagescan",result="healed"} 1' in prom
+    assert 'pft_upstreamwatch_heal_attempts{host="validator",feed="imagescan"} 1' in prom
+    assert 'feed="usn-host",state="upstream_quiet"} 1' in prom
+    st = json.loads((ihenv["data"] / "heal-state.json").read_text())
+    assert list(st) == ["imagescan"] and st["imagescan"]["attempts"] == 1
+    r2 = sh(ihenv, "run")
+    assert r2.returncode == 0 and sc_calls(ihenv).count("start pft-imagescan-heal.service") == 1
+    assert len(journal(ihenv)) == 2
+
+
+def test_shell_imagescan_partial_heal_is_still_lagging_then_cooldown(ihenv):
+    # the refetch fixes jammy only (noble: the cache served the old copy again): not healed while noble still lags
+    write_imagescan(ihenv["tmp"] / "isorigin", {
+        "ubuntu-jammy": ("ubuntu-jammy.bz2", "ubuntu-oval", oval_bytes(NOW - 5 * H), NOW - 5 * H, NOW),
+        "ubuntu-noble": ("ubuntu-noble.bz2", "ubuntu-oval", oval_bytes(NOW - 30 * H), NOW - 30 * H, NOW)})
+    r = sh(ihenv, "run")
+    assert "heal: imagescan still_lagging - lag after the refetch: ubuntu-jammy=0 ubuntu-noble=18000 s" in r.stdout
+    assert 'feed="imagescan",result="still_lagging"} 1' in (ihenv["tf"] / "pft_upstreamwatch_validator.prom").read_text()
+    ihenv["env"]["PFT_UW_NOW"] = str(NOW + 6 * H - 1)
+    r = sh(ihenv, "run")
+    assert "heal: imagescan skip - rate_limited: last imagescan attempt" in r.stdout
+    assert sc_calls(ihenv).count("start pft-imagescan-heal.service") == 1
+    ihenv["env"]["PFT_UW_NOW"] = str(NOW + 6 * H)
+    r = sh(ihenv, "run")
+    assert sc_calls(ihenv).count("start pft-imagescan-heal.service") == 2
+    assert [e["event"] for e in journal(ihenv)] == ["start", "still_lagging", "skip", "start", "still_lagging"]
+
+
+def test_shell_imagescan_heal_guards(ihenv):
+    for u in ("pft-imagescan.service", "pft-imagescan-heal.service"):
+        ihenv["env"]["SC_ACTIVE"] = u
+        r = sh(ihenv, "run")
+        assert "heal: imagescan skip - imagescan_running" in r.stdout, u
+    ihenv["env"]["SC_ACTIVE"] = "pft-vulnscan.service"  # a busy vulnscan does not block the imagescan heal
+    ihenv["env"]["MAINT_RC"] = "0"
+    r = sh(ihenv, "run")
+    assert "heal: imagescan skip - maint_window" in r.stdout
+    assert "start pft-imagescan-heal.service" not in sc_calls(ihenv)
+    ihenv["env"]["MAINT_RC"] = "1"
+    r = sh(ihenv, "run")
+    assert "heal: imagescan healed" in r.stdout
+
+
+def test_shell_imagescan_heal_lock_held_blocks(ihenv):
+    ihenv["data"].mkdir(exist_ok=True)
+    holder = subprocess.Popen(["flock", str(ihenv["data"] / "heal.lock"), "sleep", "20"])
+    try:
+        import time
+
+        time.sleep(0.5)
+        r = sh(ihenv, "run")
+    finally:
+        holder.kill()
+        holder.wait()
+    assert "heal: imagescan skip - locked" in r.stdout and "start pft-imagescan-heal.service" not in sc_calls(ihenv)
+    assert not (ihenv["data"] / "heal-state.json").exists()
+
+
+def test_shell_imagescan_heal_unit_failure_recorded(ihenv):
+    ihenv["env"].update(SC_START_RC="1", SC_IS_SRC="")
+    r = sh(ihenv, "run")
+    assert "heal: imagescan failed - systemctl start pft-imagescan-heal.service failed" in r.stdout
+    assert journal(ihenv)[-1]["event"] == "failed" and journal(ihenv)[-1]["rc"] == 1
+
+
+def test_shell_imagescan_heal_unit_validated(ihenv):
+    base = ihenv["conf"].read_text()
+    ihenv["conf"].write_text(base + "IMAGESCAN_HEAL_UNIT=evil;rm.service\n")
+    r = sh(ihenv, "run")
+    assert r.returncode == 2 and "IMAGESCAN_HEAL_UNIT" in r.stderr
+    ihenv["conf"].write_text(base + "IMAGESCAN_HEAL_UNIT=pft-other-heal.service\n")
+    r = sh(ihenv, "run")
+    assert "start pft-other-heal.service" in sc_calls(ihenv)
