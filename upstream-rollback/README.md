@@ -54,7 +54,7 @@ tag, and the container runs on FIXED; shellcheck passes on every block; cleanup 
 before the test.
 
 Around the test: an Alertmanager silence on `host="sentry"`, a `pft-maint` window whose `[MAINT]` messages go to a
-throwaway ntfy topic, and the sentry's `pft-integrity.timer` paused, with a transient re-arm unit as failsafe. Before
+throwaway ntfy topic, and the sentry's `pft-integrity.timer` paused. The failsafe that re-arms it is a sleeping transient service, not a timer, because `pft-schedaudit` reports a transient timer as an unexpected scheduled entry. At the end the runner collects `pft-schedaudit` and `pft-jobwatch` on the sentry and requires them clean. It expires the silence only when no new sentry alert is active, then watches 3 more minutes. Before
 and after the test, the runner records the ID, StartedAt and `server_state` of both real containers (validator
 `postfiatd`, sentry `postfiatd-sentry`) and runs `pft-integrity verify` on both hosts. At the end it reads back the
 throwaway topic and every operator topic.

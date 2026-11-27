@@ -33,8 +33,11 @@
 #  S9 shellcheck    every extracted block: clean with -e SC2164; without it the only findings are SC2164 on the
 #                   `cd "$POSTFIATD_DIR"` lines
 #  S10 cleanup      compose down, NEW/FIXED and the local tag removed, dir removed; image inventory = S0
-#  S11 end          both real containers: same ID + StartedAt, full; integrity timer re-armed; integrity PASS both;
-#                   window ended, real pft-maint target restored; throwaway got the 2 [MAINT]; operator topics 0
+#  S11 end          both real containers: same ID + StartedAt, full; integrity timer re-armed; sentry schedaudit clean;
+#                   integrity PASS both; window ended, real pft-maint target restored; silence expired once no new
+#                   sentry alert is active, then 3 minutes without one; throwaway got the 2 [MAINT]; operator topics 0
+# The integrity failsafe is a sleeping transient SERVICE, not a timer: pft-schedaudit reports a transient timer as an
+# unexpected scheduled entry (dry run, 2026-11-27).
 # Every command is printed with its output and exit code; CHECK lines carry the verdict. Exit 0 = every CHECK ok.
 # Env: RELAY (relay)  SIL_MIN (45)  TASK (task_8ab4d4e6)
 set -uo pipefail
@@ -92,8 +95,8 @@ restore() {
     PROJ=0
   fi
   if [ "$PAUSED" = 1 ]; then
-    echo "\$ (restore) sentry: systemctl start pft-integrity.timer; stop $REARM.timer"
-    R "systemctl start pft-integrity.timer; systemctl stop $REARM.timer 2>/dev/null; systemctl is-active pft-integrity.timer" | sed 's/^/  /'
+    echo "\$ (restore) sentry: systemctl start pft-integrity.timer; stop $REARM.service"
+    R "systemctl start pft-integrity.timer; systemctl stop $REARM.service 2>/dev/null; systemctl is-active pft-integrity.timer" | sed 's/^/  /'
     PAUSED=0
   fi
   if [ "$MAINT" = 1 ]; then echo "\$ sudo -n pft-maint end"; sudo -n pft-maint end 2>&1 | red | sed 's/^/  /'; MAINT=0; fi
@@ -116,6 +119,11 @@ unsilence() { # expire the run's silence once nothing for the sentry is active (
   if [ -z "$p" ]; then x "curl -s -m 10 -XDELETE '$AM/api/v2/silence/$SIL' -o /dev/null -w 'expire silence http %{http_code}'"
   else echo "silence ${SIL:0:8} kept until $ends (something active)"; fi
   SIL=""
+  local late=""
+  for _ in $(seq 1 9); do
+    sleep 20; late="$(sentry_alerts | grep -vxF -e "${PRE:-@none@}" | paste -sd, -)"; [ -z "$late" ] || break
+  done
+  check "no new sentry alert in the 3 minutes after the silence ended" "$(ok '[ -z "$late" ]')" "${late:-none}"
 }
 trap 'restore; unsilence; rm -rf "$W" "$OPS"' EXIT
 
@@ -134,6 +142,9 @@ x "sudo -n pft-integrity verify | tail -1"; check "S0 validator integrity PASS" 
 x "R 'pft-integrity verify | tail -1'"; check "S0 sentry integrity PASS" "$(ok 'grep -q "RESULT: PASS" <<<"$XOUT"')"
 x "R 'docker ps -a --format {{.Names}} | grep -cx postfiatd; docker images --format {{.Repository}} | grep -c pftrb; ls -d /var/tmp/pftrb-* 2>/dev/null | wc -l'"
 check "S0 sentry has no postfiatd container, pftrb image or pftrb dir" "$(ok '[ "$(paste -sd, <<<"$XOUT")" = 0,0,0 ]')"
+x "curl -s -m 10 '$AM/api/v2/alerts?active=true' | jq -r '[.[] | select(.labels.host == \"sentry\" and .labels.severity != \"info\") | .labels.alertname] | length'"
+check "S0 no sentry alert above severity info active" "$(ok '[ "$(tail -1 <<<"$XOUT")" = 0 ]')"
+x "R 'pft-schedaudit audit | tail -1'"; check "S0 sentry schedaudit: 0 unexpected" "$(ok 'grep -q "unexpected_findings=0 new=0 removed=0" <<<"$XOUT"')"
 PRE="$(sentry_alerts)"; echo "sentry alerts already active before the run (left alone): $(paste -sd, - <<<"${PRE:-none}")"
 INV0="$(inventory)"; echo "image + container inventory (sentry):"; red <<<"$INV0" | sed 's/^/  /'
 OLD="$(R "docker inspect -f '{{.Image}}' postfiatd-sentry")"
@@ -165,7 +176,7 @@ x "sudo -n pft-maint start --ttl 45m --reason '$TASK upgrade-rollback throwaway 
 [ "$XRC" = 0 ] && MAINT=1; check "S1 pft-maint window open" "$XRC"
 for _ in $(seq 1 12); do R 'pft-maint active' >/dev/null 2>&1 && break; sleep 10; done
 x "R 'pft-maint active && echo sentry window active'"; check "S1 sentry has the window" "$XRC"
-x "R 'systemd-run --unit $REARM --on-active=50m /bin/systemctl start pft-integrity.timer 2>&1 && systemctl stop pft-integrity.timer && systemctl is-active pft-integrity.timer; systemctl is-active $REARM.timer'"
+x "R 'systemd-run --collect --unit $REARM /bin/sh -c \"sleep 3000; systemctl start pft-integrity.timer\" 2>&1 && systemctl stop pft-integrity.timer && systemctl is-active pft-integrity.timer; systemctl is-active $REARM.service'"
 PAUSED=1; check "S1 sentry pft-integrity.timer inactive, re-arm failsafe active" "$(ok '[ "$(paste -sd, <<<"$(tail -2 <<<"$XOUT")")" = inactive,active ]')"
 [ "$FAILS" = 0 ] || { echo "RESULT: quiet setup failed ($FAILS)"; exit 1; }
 
@@ -260,9 +271,10 @@ check "S10 image + container inventory = S0" "$(ok '[ "$(inventory)" = "$INV0" ]
 x "R 'docker image inspect -f \"{{json .RepoTags}} {{json .RepoDigests}}\" $OLD'"
 
 step "S11 end state"
-x "R 'systemctl start pft-integrity.timer && systemctl stop $REARM.timer; systemctl is-active pft-integrity.timer; systemctl is-active $REARM.timer'"
+x "R 'systemctl start pft-integrity.timer && systemctl stop $REARM.service; systemctl is-active pft-integrity.timer; systemctl is-active $REARM.service'"
 PAUSED=0; check "S11 sentry pft-integrity.timer re-armed, failsafe gone" "$(ok '[ "$(paste -sd, <<<"$(tail -2 <<<"$XOUT")")" = active,inactive ]')"
-x "R 'pft-jobwatch collect >/dev/null 2>&1; echo jobwatch collect \$?'"
+x "R 'pft-jobwatch collect >/dev/null 2>&1; echo jobwatch collect \$?; pft-schedaudit collect >/dev/null 2>&1; echo schedaudit collect \$?; pft-schedaudit audit | tail -1'"
+check "S11 sentry schedaudit: 0 unexpected, 0 new, 0 removed" "$(ok 'grep -q "unexpected_findings=0 new=0 removed=0" <<<"$XOUT"')"
 V1="$(real validator)"; S1="$(real sentry)"; echo "$V1"; echo "$S1"
 check "S11 validator postfiatd: same ID + StartedAt, full or proposing" "$(ok '[ "${V1% *}" = "${V0% *}" ] && [[ "$V1" =~ (full|proposing)$ ]]')"
 check "S11 sentry postfiatd-sentry: same ID + StartedAt, full" "$(ok '[ "${S1% *}" = "${S0% *}" ] && [[ "$S1" =~ full$ ]]')"
