@@ -284,8 +284,8 @@ Recorded runs in [`logs/`](logs/) (redacted: user, home path, IPs, topics):
 | `22-heal-proof-sentry.log` | `drill/heal-proof.sh sentry` | the same on the sentry, then the validator pulls its textfiles into Prometheus | PASS, same gates |
 | `23-mutate.log` | `tests/mutate.py` | recorded mutation run: 62 one-line mutants (fetch retry/clock/older-copy/outcome series, heal unit, earlier scan/accept/report mutants) | control 77 passed; 62/62 caught, 0 survived, 0 not applied |
 | `../upstreamwatch/logs/23-mutants-imagescan-heal.log` | `../upstreamwatch/tests/mutate.py` | recorded mutation run: 51 mutants (lib P01-P25, wrapper S01-S16, rules R01-R03, `../vulnscan` V01-V07) | baselines 94 passed / promtool SUCCESS / vulnscan 153/153, hang + orphan controls ok; 51 caught, 0 survived |
-| `24-fresh-clone-heal.log` | `drill/fresh-clone-heal.sh SHA` | anonymous public clone at SHA: 8 key files (incl. both installed manifest copies) sha256 = installed on both hosts, shellcheck, ruff, both pytest suites, promtool | see the submission |
+| `24-fresh-clone-heal.log` | `drill/fresh-clone-heal.sh SHA` | anonymous public clone at SHA: key files sha256 = installed on both hosts (8 on the validator incl. both installed manifest copies, 7 on the sentry, which has no pft-fleet), shellcheck, ruff, both pytest suites, promtool | see the submission |
 
 The proof run before 21 stopped at one gate of its own: `journalctl` without `sudo -n` cannot read the system
 journal as the agent user, so the upstreamwatch state lines it greps were empty (every other gate passed). Fixed in
-`drill/heal-proof.sh` (no tool code changed) before 21 and 22.
+`drill/heal-proof.sh` (no tool code changed) before 21 and 22. The first fresh clone (at 4606640) passed every check except the sentry hashes: the script asked the sentry for pft-fleet's manifest copy, which only the validator has; the script now compares per host.

@@ -21,22 +21,26 @@ cd repo || exit 3
 must "git checkout -q $SHA && git rev-parse HEAD"
 must "git status --short | wc -l"
 echo "== key files: clone vs installed on both hosts (pft-fleet manifest destinations)"
-MAP="imagescan/pft-imagescan.sh=/usr/local/bin/pft-imagescan
-imagescan/imagescan_lib.py=/usr/local/lib/pft-imagescan/imagescan_lib.py
-imagescan/systemd/pft-imagescan.service=/etc/systemd/system/pft-imagescan.service
-imagescan/systemd/pft-imagescan-heal.service=/etc/systemd/system/pft-imagescan-heal.service
-upstreamwatch/pft-upstreamwatch.sh=/usr/local/bin/pft-upstreamwatch
-upstreamwatch/upstreamwatch_lib.py=/usr/local/lib/pft-upstreamwatch/upstreamwatch_lib.py
-fleet/manifest.tsv=/usr/local/lib/pft-fleet/manifest.tsv
-fleet/manifest.tsv=/usr/local/lib/pft-aptrust/manifest.tsv"
-REPO_FILES="$(echo "$MAP" | cut -d= -f1 | tr '\n' ' ')"
-DEST_FILES="$(echo "$MAP" | cut -d= -f2 | tr '\n' ' ')"
-N="$(echo "$MAP" | wc -l)"
-must "sha256sum $REPO_FILES > $W/clone.full && cat $W/clone.full && cut -c1-64 $W/clone.full > $W/clone.txt"
-must "sudo -n sha256sum $DEST_FILES > $W/validator.full && cat $W/validator.full && cut -c1-64 $W/validator.full > $W/validator.txt"
-must "ssh -o BatchMode=yes relay 'sudo -n sha256sum $DEST_FILES' </dev/null > $W/sentry.full && cat $W/sentry.full && cut -c1-64 $W/sentry.full > $W/sentry.txt"
+# repo path=installed path=hosts (pft-fleet itself runs on the validator only, so only it has the fleet copy)
+MAP="imagescan/pft-imagescan.sh=/usr/local/bin/pft-imagescan=both
+imagescan/imagescan_lib.py=/usr/local/lib/pft-imagescan/imagescan_lib.py=both
+imagescan/systemd/pft-imagescan.service=/etc/systemd/system/pft-imagescan.service=both
+imagescan/systemd/pft-imagescan-heal.service=/etc/systemd/system/pft-imagescan-heal.service=both
+upstreamwatch/pft-upstreamwatch.sh=/usr/local/bin/pft-upstreamwatch=both
+upstreamwatch/upstreamwatch_lib.py=/usr/local/lib/pft-upstreamwatch/upstreamwatch_lib.py=both
+fleet/manifest.tsv=/usr/local/lib/pft-aptrust/manifest.tsv=both
+fleet/manifest.tsv=/usr/local/lib/pft-fleet/manifest.tsv=validator"
 for h in validator sentry; do
-  must "[ \$(wc -l < $W/$h.txt) = $N ] && diff $W/clone.txt $W/$h.txt && echo 'identical: $N/$N sha256 clone = installed on $h'"
+  rows="$(echo "$MAP" | grep -E "=(both|$h)\$")"
+  n="$(echo "$rows" | wc -l)"
+  must "sha256sum $(echo "$rows" | cut -d= -f1 | tr '\n' ' ')> $W/clone-$h.full && cat $W/clone-$h.full && cut -c1-64 $W/clone-$h.full > $W/clone-$h.txt"
+  dest="$(echo "$rows" | cut -d= -f2 | tr '\n' ' ')"
+  if [ "$h" = validator ]; then
+    must "sudo -n sha256sum $dest> $W/$h.full && cat $W/$h.full && cut -c1-64 $W/$h.full > $W/$h.txt"
+  else
+    must "ssh -o BatchMode=yes relay 'sudo -n sha256sum $dest' </dev/null > $W/$h.full && cat $W/$h.full && cut -c1-64 $W/$h.full > $W/$h.txt"
+  fi
+  must "[ \$(wc -l < $W/$h.txt) = $n ] && diff $W/clone-$h.txt $W/$h.txt && echo 'identical: $n/$n sha256 clone = installed on $h'"
 done
 must "grep -n 'pft-imagescan-heal.service' fleet/manifest.tsv"
 must "sha256sum imagescan/tests/test_fetch.py imagescan/tests/mutate.py upstreamwatch/tests/test_upstreamwatch.py upstreamwatch/tests/mutate.py imagescan/drill/heal-proof.sh imagescan/README.md upstreamwatch/README.md"
