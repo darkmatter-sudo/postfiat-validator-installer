@@ -1,0 +1,134 @@
+OS: Ubuntu 22.04.5 LTS | 2026-11-28T00:48:15Z | imagescan heal fresh-clone verification at b5b3cbd9f3d432bb47118d48cb69e014409fc3dc | shellcheck 0.8.0 | Python 3.10.12 | ruff 0.17.1
+(work dir: a new mktemp dir under ~/.cache, mode 755; /tmp is noexec on this host)
+$ env -u GH_TOKEN -u GITHUB_TOKEN GIT_TERMINAL_PROMPT=0 git -c credential.helper= clone -q https://github.com/darkmatter-sudo/postfiat-validator-installer.git repo
+(exit 0)
+$ git checkout -q b5b3cbd9f3d432bb47118d48cb69e014409fc3dc && git rev-parse HEAD
+b5b3cbd9f3d432bb47118d48cb69e014409fc3dc
+(exit 0)
+$ git status --short | wc -l
+0
+(exit 0)
+== key files: clone vs installed on both hosts (pft-fleet manifest destinations)
+$ sha256sum imagescan/pft-imagescan.sh imagescan/imagescan_lib.py imagescan/systemd/pft-imagescan.service imagescan/systemd/pft-imagescan-heal.service upstreamwatch/pft-upstreamwatch.sh upstreamwatch/upstreamwatch_lib.py fleet/manifest.tsv fleet/manifest.tsv > ~/.cache/tmp.m1k7u55Dm0/clone-validator.full && cat ~/.cache/tmp.m1k7u55Dm0/clone-validator.full && cut -c1-64 ~/.cache/tmp.m1k7u55Dm0/clone-validator.full > ~/.cache/tmp.m1k7u55Dm0/clone-validator.txt
+bb027a0db8f88b75964ec34b2210d8feaecf66c8a818226a99aafccf6984af20  imagescan/pft-imagescan.sh
+9e81c51341c4e6afaa3dc1490c2b0ba962075c6cf947f576ea4495bbb84f2612  imagescan/imagescan_lib.py
+f593113a92b1bac480230916bfc6263fd9286ac553d4d27ca0ea827936794792  imagescan/systemd/pft-imagescan.service
+b875cce11f24c0e68faa23e66245185f1e851c23ede5bfd2cd25b82ca0b025f6  imagescan/systemd/pft-imagescan-heal.service
+d9b5d76451763a2428bab3087a2d007572aea4aae52bc0496d312c9bb220d6f6  upstreamwatch/pft-upstreamwatch.sh
+d415cd9a9e30739fe2e7ee7bb6a94ed020926c9c6de8801afe99e31ca633d303  upstreamwatch/upstreamwatch_lib.py
+0682af62ad6af3544f7ea09cafa9e1109f1003759ccedf14577dec4cd417f810  fleet/manifest.tsv
+0682af62ad6af3544f7ea09cafa9e1109f1003759ccedf14577dec4cd417f810  fleet/manifest.tsv
+(exit 0)
+$ sudo -n sha256sum /usr/local/bin/pft-imagescan /usr/local/lib/pft-imagescan/imagescan_lib.py /etc/systemd/system/pft-imagescan.service /etc/systemd/system/pft-imagescan-heal.service /usr/local/bin/pft-upstreamwatch /usr/local/lib/pft-upstreamwatch/upstreamwatch_lib.py /usr/local/lib/pft-aptrust/manifest.tsv /usr/local/lib/pft-fleet/manifest.tsv > ~/.cache/tmp.m1k7u55Dm0/validator.full && cat ~/.cache/tmp.m1k7u55Dm0/validator.full && cut -c1-64 ~/.cache/tmp.m1k7u55Dm0/validator.full > ~/.cache/tmp.m1k7u55Dm0/validator.txt
+bb027a0db8f88b75964ec34b2210d8feaecf66c8a818226a99aafccf6984af20  /usr/local/bin/pft-imagescan
+9e81c51341c4e6afaa3dc1490c2b0ba962075c6cf947f576ea4495bbb84f2612  /usr/local/lib/pft-imagescan/imagescan_lib.py
+f593113a92b1bac480230916bfc6263fd9286ac553d4d27ca0ea827936794792  /etc/systemd/system/pft-imagescan.service
+b875cce11f24c0e68faa23e66245185f1e851c23ede5bfd2cd25b82ca0b025f6  /etc/systemd/system/pft-imagescan-heal.service
+d9b5d76451763a2428bab3087a2d007572aea4aae52bc0496d312c9bb220d6f6  /usr/local/bin/pft-upstreamwatch
+d415cd9a9e30739fe2e7ee7bb6a94ed020926c9c6de8801afe99e31ca633d303  /usr/local/lib/pft-upstreamwatch/upstreamwatch_lib.py
+0682af62ad6af3544f7ea09cafa9e1109f1003759ccedf14577dec4cd417f810  /usr/local/lib/pft-aptrust/manifest.tsv
+0682af62ad6af3544f7ea09cafa9e1109f1003759ccedf14577dec4cd417f810  /usr/local/lib/pft-fleet/manifest.tsv
+(exit 0)
+$ [ $(wc -l < ~/.cache/tmp.m1k7u55Dm0/validator.txt) = 8 ] && diff ~/.cache/tmp.m1k7u55Dm0/clone-validator.txt ~/.cache/tmp.m1k7u55Dm0/validator.txt && echo 'identical: 8/8 sha256 clone = installed on validator'
+identical: 8/8 sha256 clone = installed on validator
+(exit 0)
+$ sha256sum imagescan/pft-imagescan.sh imagescan/imagescan_lib.py imagescan/systemd/pft-imagescan.service imagescan/systemd/pft-imagescan-heal.service upstreamwatch/pft-upstreamwatch.sh upstreamwatch/upstreamwatch_lib.py fleet/manifest.tsv > ~/.cache/tmp.m1k7u55Dm0/clone-sentry.full && cat ~/.cache/tmp.m1k7u55Dm0/clone-sentry.full && cut -c1-64 ~/.cache/tmp.m1k7u55Dm0/clone-sentry.full > ~/.cache/tmp.m1k7u55Dm0/clone-sentry.txt
+bb027a0db8f88b75964ec34b2210d8feaecf66c8a818226a99aafccf6984af20  imagescan/pft-imagescan.sh
+9e81c51341c4e6afaa3dc1490c2b0ba962075c6cf947f576ea4495bbb84f2612  imagescan/imagescan_lib.py
+f593113a92b1bac480230916bfc6263fd9286ac553d4d27ca0ea827936794792  imagescan/systemd/pft-imagescan.service
+b875cce11f24c0e68faa23e66245185f1e851c23ede5bfd2cd25b82ca0b025f6  imagescan/systemd/pft-imagescan-heal.service
+d9b5d76451763a2428bab3087a2d007572aea4aae52bc0496d312c9bb220d6f6  upstreamwatch/pft-upstreamwatch.sh
+d415cd9a9e30739fe2e7ee7bb6a94ed020926c9c6de8801afe99e31ca633d303  upstreamwatch/upstreamwatch_lib.py
+0682af62ad6af3544f7ea09cafa9e1109f1003759ccedf14577dec4cd417f810  fleet/manifest.tsv
+(exit 0)
+$ ssh -o BatchMode=yes relay 'sudo -n sha256sum /usr/local/bin/pft-imagescan /usr/local/lib/pft-imagescan/imagescan_lib.py /etc/systemd/system/pft-imagescan.service /etc/systemd/system/pft-imagescan-heal.service /usr/local/bin/pft-upstreamwatch /usr/local/lib/pft-upstreamwatch/upstreamwatch_lib.py /usr/local/lib/pft-aptrust/manifest.tsv ' </dev/null > ~/.cache/tmp.m1k7u55Dm0/sentry.full && cat ~/.cache/tmp.m1k7u55Dm0/sentry.full && cut -c1-64 ~/.cache/tmp.m1k7u55Dm0/sentry.full > ~/.cache/tmp.m1k7u55Dm0/sentry.txt
+bb027a0db8f88b75964ec34b2210d8feaecf66c8a818226a99aafccf6984af20  /usr/local/bin/pft-imagescan
+9e81c51341c4e6afaa3dc1490c2b0ba962075c6cf947f576ea4495bbb84f2612  /usr/local/lib/pft-imagescan/imagescan_lib.py
+f593113a92b1bac480230916bfc6263fd9286ac553d4d27ca0ea827936794792  /etc/systemd/system/pft-imagescan.service
+b875cce11f24c0e68faa23e66245185f1e851c23ede5bfd2cd25b82ca0b025f6  /etc/systemd/system/pft-imagescan-heal.service
+d9b5d76451763a2428bab3087a2d007572aea4aae52bc0496d312c9bb220d6f6  /usr/local/bin/pft-upstreamwatch
+d415cd9a9e30739fe2e7ee7bb6a94ed020926c9c6de8801afe99e31ca633d303  /usr/local/lib/pft-upstreamwatch/upstreamwatch_lib.py
+0682af62ad6af3544f7ea09cafa9e1109f1003759ccedf14577dec4cd417f810  /usr/local/lib/pft-aptrust/manifest.tsv
+(exit 0)
+$ [ $(wc -l < ~/.cache/tmp.m1k7u55Dm0/sentry.txt) = 7 ] && diff ~/.cache/tmp.m1k7u55Dm0/clone-sentry.txt ~/.cache/tmp.m1k7u55Dm0/sentry.txt && echo 'identical: 7/7 sha256 clone = installed on sentry'
+identical: 7/7 sha256 clone = installed on sentry
+(exit 0)
+$ grep -n 'pft-imagescan-heal.service' fleet/manifest.tsv
+256:imagescan   imagescan/systemd/pft-imagescan-heal.service      /etc/systemd/system/pft-imagescan-heal.service      0644 both
+(exit 0)
+$ sha256sum imagescan/tests/test_fetch.py imagescan/tests/mutate.py upstreamwatch/tests/test_upstreamwatch.py upstreamwatch/tests/mutate.py imagescan/drill/heal-proof.sh imagescan/README.md upstreamwatch/README.md
+b3e09a1d4dcd7c268e8b9eedd3213239dd807db94c8732f666cf85c4a5aea5bf  imagescan/tests/test_fetch.py
+4e3004dd161c8443ad7ca798c311140c68f917207a90d57febb9e9228a1d6f60  imagescan/tests/mutate.py
+3de649b25ecd4cc73f105817b253feabdd91dd8ae44b0b73b7be7dff65fac913  upstreamwatch/tests/test_upstreamwatch.py
+0e855871d968cbc1a65b5ca95673590145efd098712f2f3767847420a0c64b63  upstreamwatch/tests/mutate.py
+bad534f195b2987ffa36ae6b1e0d5df011b9232930becdd78451a9e2f2fb5500  imagescan/drill/heal-proof.sh
+ab3fff405b8fc4a28b3998c84bd1e5e644c8d1e01370a00b48f352c465b56b74  imagescan/README.md
+9b65b95395cc4ec29b19a3b84127b83955af4fc2768bfdac18ab12074b84ce03  upstreamwatch/README.md
+(exit 0)
+== static checks
+$ shellcheck imagescan/pft-imagescan.sh imagescan/install.sh imagescan/drill/*.sh upstreamwatch/pft-upstreamwatch.sh upstreamwatch/install.sh upstreamwatch/drill/*.sh && echo 'shellcheck: 0 findings'
+shellcheck: 0 findings
+(exit 0)
+$ cd imagescan && ruff check .
+All checks passed!
+(exit 0)
+$ cd upstreamwatch && ruff check .
+All checks passed!
+(exit 0)
+== tests
+$ cd imagescan && TMPDIR=~/.cache/tmp.m1k7u55Dm0 TEST_TMPDIR=~/.cache/tmp.m1k7u55Dm0 timeout 900 python3 -m pytest -q -p no:cacheprovider tests </dev/null 2>&1 | tail -n 2
+.....                                                                    [100%]
+77 passed in 22.44s
+(exit 0)
+$ cd upstreamwatch && TMPDIR=~/.cache/tmp.m1k7u55Dm0 TEST_TMPDIR=~/.cache/tmp.m1k7u55Dm0 timeout 900 python3 -m pytest -q -p no:cacheprovider tests </dev/null 2>&1 | tail -n 2
+......................                                                   [100%]
+94 passed in 99.97s (0:01:39)
+(exit 0)
+$ python3 upstreamwatch/tests/gen_rule_tests.py | cmp - alerts/upstreamwatch.tests.yml && echo 'generated promtool tests unchanged'
+generated promtool tests unchanged
+(exit 0)
+== promtool (pinned image already on the host)
+$ docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /w prom/prometheus:v3.16.0 check rules imagescan.rules.yml upstreamwatch.rules.yml
+Checking imagescan.rules.yml
+  SUCCESS: 6 rules found
+
+Checking upstreamwatch.rules.yml
+  SUCCESS: 7 rules found
+
+(exit 0)
+$ docker run --rm --network none --entrypoint promtool -v "$PWD/alerts":/w:ro -w /w prom/prometheus:v3.16.0 test rules imagescan.tests.yml upstreamwatch.tests.yml
+Processing test file: imagescan.tests.yml
+  SUCCESS
+
+Processing test file: upstreamwatch.tests.yml
+  SUCCESS
+
+(exit 0)
+$ git diff --name-only ddc18b9 HEAD -- alerts/ | wc -l
+0
+(exit 0)
+== README sections
+$ grep -n -E 'retried_fresh|still_behind|pft-imagescan-heal.service' imagescan/README.md | head -n 12
+114:4. Within tolerance now -> **`retried_fresh`**; else **`still_behind`** (= not proven fresh: still older than
+118:   its outcome becomes `still_behind`.
+122:or refused download keeps the previous entry, as before. `fetch` run on its own (and `pft-imagescan-heal.service`)
+126:`pft-imagescan-heal.service` (no timer) is that fetch in the scan unit's sandbox with the docker socket made
+129:`pft-imagescan-heal.service` runs (see its README, "Bounded heal").
+144:| `pft_imagescan_feed_fetch_outcome{feed,outcome=fresh\|retried_fresh\|still_behind}` | last fetch outcome (one-hot; absent for entries fetched before 1.1.0) |
+217:`Last-Modified` must not count), no upstream clock = `still_behind`, the textfile rewrite (scan series untouched,
+223:kept unverified or when not newer / still_behind or no-clock reported fresh / both older-copy guards removed / go
+283:| `21-heal-proof-validator.log` | `drill/heal-proof.sh validator` | `pft-imagescan-heal.service` once (fetch only), then the real `pft-upstreamwatch.service` (heal-or-noop) | PASS: all 4 feeds `fresh`, upstreamwatch ok/upstream_quiet, NOOP, integrity PASS, IDs unchanged, no new alert, 0 operator messages |
+(exit 0)
+$ grep -n -E 'imagescan' upstreamwatch/README.md | grep -n -E 'HEALABLE|heal|LAG_HEAL_HOURS|HEAL_INTERVAL_HOURS' | head -n 12
+2:43:| `local_lagging` | upstream published newer content that our copy lacks, **no longer than** `STALE_GRACE_HOURS` (30) ago: a cache served our fetcher an old copy, or the daily fetch ran before upstream published. `lag` = upstream `Date` minus upstream content clock (`pft_upstreamwatch_feed_lag_seconds`, LAG column). For `usn-host` and the `../imagescan` feeds the [bounded heal](#bounded-heal) refetches once the lag exceeds `LAG_HEAL_HOURS` | `PFTUpstreamFeedLagging`, `notify="digest"`, `for: 3h`, **never paged** |
+3:66:lag visible. The heal fixes it without waiting for the next daily run. The same happened to the `../imagescan`
+4:73:| `../imagescan` | `ubuntu-<codename>`, `debian`, `go` | `IMAGESCAN_HEAL_UNIT` = `pft-imagescan-heal.service` (`pft-imagescan fetch`, fetch only) | `imagescan` | `IMAGESCAN_HEAL_BUSY_UNITS` |
+5:77:   largest lag, the worst state): one heal unit refreshes all of a fetcher's feeds, so three lagging imagescan feeds
+7:82:   the imagescan heal or the other way round).
+8:89:   (`CACHE_DIR/.lock`), like every other scan/fetch. `pft-imagescan-heal.service` (the scan unit's sandbox, the
+12:110:| `IMAGESCAN_HEAL_UNIT` | `pft-imagescan-heal.service` | imagescan heal unit (`*.service` names only) |
+13:111:| `IMAGESCAN_HEAL_BUSY_UNITS` | `pft-imagescan.service pft-imagescan-heal.service` | an active one blocks the imagescan heal |
+20:222:| `tests/mutate.py` | task_cb7b (imagescan heal): 51 mutants (lib P01-P25 incl. per-fetcher cooldown/busy/grouping, wrapper S01-S16 incl. imagescan busy units / unit choice / all-feeds-healed, rules R01-R03, `../vulnscan` V01-V07) all caught (recorded run at 83cd722, baselines + hang/orphan controls ok); live install and heal-or-noop proofs on both hosts are in `../imagescan/logs/20`-`22` | `logs/23-mutants-imagescan-heal.log` |
+(exit 0)
+
+fresh-clone done 2026-11-28T00:51:33Z: 0 check(s) failed -> PASS
