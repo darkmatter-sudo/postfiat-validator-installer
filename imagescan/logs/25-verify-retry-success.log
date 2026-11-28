@@ -1,0 +1,94 @@
+# task_cb7b verification evt_2eac1768: retry-success test at PIN b5b3cbd9f3d432bb47118d48cb69e014409fc3dc — 2026-11-28T01:08:51Z on pft-agent-01
+$ git clone -q https://github.com/darkmatter-sudo/postfiat-validator-installer.git clone && git -C clone checkout -q b5b3cbd9f3d432bb47118d48cb69e014409fc3dc
+b5b3cbd9f3d432bb47118d48cb69e014409fc3dc
+$ sha256sum imagescan/tests/test_fetch.py imagescan/pft-imagescan.sh imagescan/imagescan_lib.py
+b3e09a1d4dcd7c268e8b9eedd3213239dd807db94c8732f666cf85c4a5aea5bf  imagescan/tests/test_fetch.py
+bb027a0db8f88b75964ec34b2210d8feaecf66c8a818226a99aafccf6984af20  imagescan/pft-imagescan.sh
+9e81c51341c4e6afaa3dc1490c2b0ba962075c6cf947f576ea4495bbb84f2612  imagescan/imagescan_lib.py
+$ grep -n '' imagescan/tests/test_fetch.py | sed -n '187,199p'
+187:def test_stale_then_fresh_retry_keeps_the_fresh_copy(fenv):
+188:    noble(fenv["o"], T - 30 * H, origin_e=T)
+189:    r = fetch(fenv)
+190:    assert r.returncode == 0, r.stdout + r.stderr
+191:    assert "ubuntu-noble: retried_fresh (own timestamp 2026-11-26T13:33:20Z)" in r.stdout
+192:    g = fenv["o"].gets(NOBLE)
+193:    assert len(g) == 2 and g[0]["query"] == "" and g[1]["query"].startswith("pftcb=")
+194:    h = g[1]["headers"]
+195:    assert h["cache-control"] == "no-cache" and h["pragma"] == "no-cache" and h["if-none-match"] == '"c-noble"'
+196:    m = meta(fenv)["ubuntu-noble"]
+197:    assert m["outcome"] == "retried_fresh" and m["timestamp_epoch"] == T and m["sha256"] == sha(oval(T))
+198:    assert (fenv["cache"] / "feeds" / m["file"]).read_bytes() == oval(T)
+199:    assert "retry copy is newer, kept" in m["outcome_note"]
+$ cd imagescan && python3 -m pytest -v -p no:cacheprovider tests/test_fetch.py::test_stale_then_fresh_retry_keeps_the_fresh_copy
+============================= test session starts ==============================
+platform linux -- Python 3.10.12, pytest-9.1.1, pluggy-1.7.0 -- /usr/bin/python3
+rootdir: ~/.cache/cb7b-verify.dEGibe/clone/imagescan
+collecting ... collected 1 item
+
+tests/test_fetch.py::test_stale_then_fresh_retry_keeps_the_fresh_copy PASSED [100%]
+
+============================== 1 passed in 1.78s ===============================
+rc=0
+$ PYTHONPATH=<scratch> python3 -m pytest -v -s -p no:cacheprovider -p cb7b_trace tests/test_fetch.py::test_stale_then_fresh_retry_keeps_the_fresh_copy   # out-of-tree trace plugin, test body unchanged
+============================= test session starts ==============================
+platform linux -- Python 3.10.12, pytest-9.1.1, pluggy-1.7.0 -- /usr/bin/python3
+rootdir: ~/.cache/cb7b-verify.dEGibe/clone/imagescan
+collecting ... collected 1 item
+
+tests/test_fetch.py::test_stale_then_fresh_retry_keeps_the_fresh_copy 
+--- fake origin request log (this fetch) ---
+1. GET /oval/oci.com.ubuntu.noble.usn.oval.xml.bz2 -> served cached (STALE) copy; headers {"cache-control": "no-cache"}
+2. HEAD /oval/oci.com.ubuntu.noble.usn.oval.xml.bz2 -> served HEAD (Last-Modified only); headers {"cache-control": "no-cache"}
+3. GET /oval/oci.com.ubuntu.noble.usn.oval.xml.bz2?pftcb=1795736000-3613977 -> served origin (fresh) copy; headers {"cache-control": "no-cache", "if-none-match": "\"c-noble\"", "pragma": "no-cache"}
+--- pft-imagescan fetch stdout ---
+ubuntu-noble: retried_fresh (own timestamp 2026-11-26T13:33:20Z)
+textfile: ~/.cache/cb7b-verify.dEGibe/pytest-of-<user>/pytest-1/test_stale_then_fresh_retry_ke0/tf/pft_imagescan_validator.prom absent (written by the first scan)
+--- feeds.json ubuntu-noble ---
+{"outcome": "retried_fresh", "outcome_note": "retry copy is newer, kept; own timestamp within 3600 s of head_last_modified", "timestamp_epoch": 1795700000, "upstream_clock": "head_last_modified", "upstream_epoch": 1795700019}
+PASSED
+
+============================== 1 passed in 3.01s ===============================
+rc=0
+$ cat <scratch>/cb7b_trace.py   # the out-of-tree trace plugin used above
+"""Read-only trace plugin: wraps tests/test_fetch.py's module-level fetch() to print the fake origin's
+request log, what it served for each request, and the script's stdout. The test body itself is unchanged."""
+import json
+
+
+def pytest_runtest_setup(item):
+    mod = item.module
+    if getattr(mod, "_cb7b_traced", False) or not hasattr(mod, "fetch"):
+        return
+    orig = mod.fetch
+
+    def traced(fe):
+        o = fe["o"]
+        n0 = len(o.log)
+        r = orig(fe)
+        print("\n--- fake origin request log (this fetch) ---")
+        for i, x in enumerate(o.log[n0:], 1):
+            route = o.routes.get(x["path"], {})
+            busted = "pftcb=" in x["query"]
+            served = "origin (fresh) copy" if busted else "cached (STALE) copy"
+            if x["method"] == "HEAD":
+                served = "HEAD (Last-Modified only)"
+            elif route.get("on_304") and busted:
+                served += " or 304"
+            hdr = {k: v for k, v in x["headers"].items()
+                   if k in ("cache-control", "pragma", "if-none-match", "if-modified-since")}
+            print(f"{i}. {x['method']} {x['path']}{'?' + x['query'] if x['query'] else ''} -> served {served}; "
+                  f"headers {json.dumps(hdr, sort_keys=True)}")
+        print("--- pft-imagescan fetch stdout ---")
+        print(r.stdout.rstrip())
+        try:
+            m = mod.meta(fe)
+            print("--- feeds.json ubuntu-noble ---")
+            print(json.dumps({k: m["ubuntu-noble"].get(k) for k in
+                              ("outcome", "timestamp_epoch", "upstream_epoch", "upstream_clock", "outcome_note")},
+                             sort_keys=True))
+        except Exception as e:  # noqa: BLE001
+            print(f"(feeds.json not readable: {e})")
+        return r
+
+    mod.fetch = traced
+    mod._cb7b_traced = True
