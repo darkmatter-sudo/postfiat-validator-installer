@@ -33,12 +33,12 @@ x "on \"sudo -n jq -c '.feeds | to_entries[] | {feed: .key, own: (.value.timesta
 T1="$(date -u +%s)"
 x "on 'sudo -n systemctl start pft-imagescan-heal.service; echo rc=\$?; systemctl show -p Result,ExecMainStatus --value pft-imagescan-heal.service'"
 grep -q '^rc=0$' <<< "$XOUT"; gate $? "pft-imagescan-heal.service ran (fetch only, sandboxed) and succeeded"
-x "on \"journalctl -u pft-imagescan-heal.service --since @$T1 --no-pager -o cat | grep -E '^(ubuntu|debian|go)|^textfile:|fresh|behind|FAILED|REFUSED'\""
+x "on \"sudo -n journalctl -u pft-imagescan-heal.service --since @$T1 --no-pager -o cat | grep -E '^(ubuntu|debian|go)|^textfile:|fresh|behind|FAILED|REFUSED'\""
 x "on \"sudo -n jq -r '.feeds | to_entries[] | \\\"\\(.key) \\(.value.outcome) own=\\(.value.timestamp_epoch | todate) upstream=\\(.value.upstream_epoch) clock=\\(.value.upstream_clock) note=\\(.value.outcome_note)\\\"' /var/cache/pft-imagescan/feeds/feeds.json\""
 OUTC="$XOUT"
 [ "$(grep -cE '^(ubuntu-jammy|ubuntu-noble|debian|go) (fresh|retried_fresh) ' <<< "$OUTC")" = 4 ]
 gate $? "all 4 imagescan feeds fresh or retried_fresh"
-x "on \"grep -E '^pft_imagescan_feed_(fetch_outcome|upstream_timestamp_seconds)' $TF/pft_imagescan_$H.prom; pft-imagescan validate $TF/pft_imagescan_$H.prom $H && echo valid\""
+x "on \"grep -E '^pft_imagescan_feed_(fetch_outcome|upstream_timestamp_seconds)' $TF/pft_imagescan_$H.prom; sudo -n pft-imagescan validate $TF/pft_imagescan_$H.prom $H && echo valid\""
 [ "$(grep -cE 'outcome=\"(fresh|retried_fresh)\"\} 1$' <<< "$XOUT")" = 4 ] && grep -q '^valid$' <<< "$XOUT"
 gate $? "textfile valid, outcome series = 1 for fresh/retried_fresh on all 4 feeds"
 # 2. the real hourly upstreamwatch unit: heal-or-noop
@@ -46,7 +46,7 @@ T2="$(date -u +%s)"
 x "on 'sudo -n tail -n 1 /var/lib/pft-upstreamwatch/heal.jsonl 2>/dev/null | wc -l; sudo -n wc -l < /var/lib/pft-upstreamwatch/heal.jsonl 2>/dev/null || echo 0'"
 x "on 'sudo -n systemctl start pft-upstreamwatch.service; echo rc=\$?'"
 grep -q '^rc=0$' <<< "$XOUT"; gate $? "pft-upstreamwatch.service ran"
-x "on \"journalctl -u pft-upstreamwatch.service --since @$T2 --no-pager -o cat | grep -E '^heal:|^(usn-host|ubuntu|debian|go)|^RESULT'\""
+x "on \"sudo -n journalctl -u pft-upstreamwatch.service --since @$T2 --no-pager -o cat | grep -E '^heal:|^(usn-host|ubuntu|debian|go)|^RESULT'\""
 UW="$XOUT"
 if grep -q '^heal: ' <<< "$UW"; then echo "decision: HEAL (see heal: lines)"; else echo "decision: NOOP (no feed lagged > LAG_HEAL_HOURS)"; fi
 ! grep -qE '^heal: .* (failed|still_lagging) ' <<< "$UW"; gate $? "no failed / still_lagging heal"

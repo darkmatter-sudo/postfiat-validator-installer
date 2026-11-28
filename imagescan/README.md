@@ -271,3 +271,21 @@ upgrade is outside this module).
 
 Reproduce from a public clone: `bash imagescan/drill/fresh-clone.sh <SHA>` (key-file hashes vs `logs/17`, lint,
 tests, promtool, feed sha256 vs `feeds.json`, offline public report rebuild + `cmp` for both hosts).
+
+## Results (task_cb7b8dac, 2026-11-27, fetch retry + bounded imagescan heal, validator + sentry)
+
+Monitoring tooling only: no postfiatd change, stop or restart, and no alert rule added (the new series feed no rule).
+Recorded runs in [`logs/`](logs/) (redacted: user, home path, IPs, topics):
+
+| log | script | what | result |
+|---|---|---|---|
+| `20-heal-install.log` | `drill/heal-install-run.sh` | install at 83cd722 on both hosts through `../fleet` in the order fleet, aptrust, imagescan, upstreamwatch, `pft-integrity accept` in the same step, one pft-maint window ([MAINT] to a throwaway topic); heal unit loaded, no timer (schedaudit clean), fleet skew 0, no rule reads the new series | 16/16 gates PASS, postfiatd IDs + StartedAt unchanged, 0 messages on both operator topics |
+| `21-heal-proof-validator.log` | `drill/heal-proof.sh validator` | `pft-imagescan-heal.service` once (fetch only), then the real `pft-upstreamwatch.service` (heal-or-noop) | PASS: all 4 feeds `fresh`, upstreamwatch ok/upstream_quiet, NOOP, integrity PASS, IDs unchanged, no new alert, 0 operator messages |
+| `22-heal-proof-sentry.log` | `drill/heal-proof.sh sentry` | the same on the sentry, then the validator pulls its textfiles into Prometheus | PASS, same gates |
+| `23-mutate.log` | `tests/mutate.py` | recorded mutation run: 62 one-line mutants (fetch retry/clock/older-copy/outcome series, heal unit, earlier scan/accept/report mutants) | control 77 passed; 62/62 caught, 0 survived, 0 not applied |
+| `../upstreamwatch/logs/23-mutants-imagescan-heal.log` | `../upstreamwatch/tests/mutate.py` | recorded mutation run: 51 mutants (lib P01-P25, wrapper S01-S16, rules R01-R03, `../vulnscan` V01-V07) | baselines 94 passed / promtool SUCCESS / vulnscan 153/153, hang + orphan controls ok; 51 caught, 0 survived |
+| `24-fresh-clone-heal.log` | `drill/fresh-clone-heal.sh SHA` | anonymous public clone at SHA: 8 key files (incl. both installed manifest copies) sha256 = installed on both hosts, shellcheck, ruff, both pytest suites, promtool | see the submission |
+
+The proof run before 21 stopped at one gate of its own: `journalctl` without `sudo -n` cannot read the system
+journal as the agent user, so the upstreamwatch state lines it greps were empty (every other gate passed). Fixed in
+`drill/heal-proof.sh` (no tool code changed) before 21 and 22.

@@ -1,0 +1,67 @@
+imagescan mutants - 2026-11-27T23:53:08Z - repo HEAD 83cd72256d3d9bfb164f2936d871fb8e61ca4e4d (code under test unchanged since 8e60341; uncommitted: drill/ only)
+$ cd imagescan && TEST_TMPDIR=$HOME/.cache python3 -u tests/mutate.py
+CONTROL unmutated suite: rc=0 77 passed in 22.45s
+S01 CAUGHT rc=1 sh: docker pull before inspect | 1 failed, 70 passed in 19.08s
+S02 CAUGHT rc=1 sh: docker exec into each running container | 1 failed, 70 passed in 20.45s
+S03 CAUGHT rc=1 sh: docker run of each image before save | 1 failed, 70 passed in 19.03s
+S04 CAUGHT rc=1 sh: docker create (no start) before save | 1 failed, 70 passed in 17.27s
+S05 CAUGHT rc=1 sh: per-image-ID inventory cache ignored | 1 failed, 70 passed in 25.75s
+S06 CAUGHT rc=1 sh: scan error exported as up 1 | 1 failed, 71 passed in 21.69s
+S07 CAUGHT rc=1 sh: validate: foreign samples accepted | 1 failed, 14 passed in 14.42s
+S08 CAUGHT rc=1 sh: fetch: unverified download accepted | 1 failed in 1.02s
+S09 CAUGHT rc=1 sh: scan error exits 0 | 1 failed, 71 passed in 22.71s
+S10 CAUGHT rc=1 sh: report: unmatched inventory glob passed as a literal path (every image withheld) | 1 failed, 74 passed in 22.32s
+F01 CAUGHT rc=1 sh: fetch: never retries a behind copy | 1 failed, 1 passed in 2.43s
+F02 CAUGHT rc=1 sh: fetch: tolerance boundary -le -> -lt | 1 failed, 1 passed in 1.98s
+F03 CAUGHT rc=1 sh: fetch: retry without the cache-busting query | 1 failed, 2 passed in 3.07s
+F04 CAUGHT rc=1 sh: fetch: retry without the conditional header | 1 failed, 2 passed in 3.02s
+F05 CAUGHT rc=1 sh: fetch: retry copy kept even when not newer | 1 failed, 3 passed in 3.88s
+F06 CAUGHT rc=1 sh: fetch: retry copy not verified | 1 failed, 1 passed in 2.24s
+F07 CAUGHT rc=1 sh: fetch: still behind after the retry reported retried_fresh | 1 failed, 1 passed in 5.05s
+F08 CAUGHT rc=1 sh: fetch: no upstream clock reported fresh | 1 failed, 13 passed in 11.91s
+F09 CAUGHT rc=1 sh: fetch: older-copy protection removed (shell) | 1 failed, 9 passed in 10.36s
+F10 CAUGHT rc=1 lib: fetch: older-copy protection removed (feedmerge) | 1 failed, 10 passed in 9.66s
+F11 CAUGHT rc=1 lib: feedmerge: unknown outcome accepted | 1 failed, 10 passed in 10.05s
+F12 CAUGHT rc=1 sh: fetch: go clock = the zip's Last-Modified (moves on every rebuild) | 1 failed, 12 passed in 10.74s
+F13 CAUGHT rc=1 sh: fetch: HEAD Last-Modified ignored (only the cached response's) | 1 failed in 2.27s
+F14 CAUGHT rc=1 sh: fetch textfile: old outcome series not stripped | 1 failed, 14 passed in 14.70s
+F15 CAUGHT rc=1 sh: fetch textfile: written without validation | 1 failed, 17 passed in 15.40s
+F16 CAUGHT rc=1 lib: fetch metrics not one-hot | 1 failed, 14 passed in 15.03s
+F17 CAUGHT rc=1 sh: scan textfile without the fetch-outcome series | 1 failed, 18 passed in 19.20s
+F18 CAUGHT rc=1 lib: scan JSON drops the outcome fields | 1 failed, 18 passed in 17.38s
+U01 CAUGHT rc=1 unit: heal unit runs a full scan (docker) instead of fetch | 1 failed, 16 passed in 13.77s
+U02 CAUGHT rc=1 unit: heal unit can reach the docker socket | 1 failed, 16 passed in 14.78s
+L01 CAUGHT rc=1 lib: feed sha256 pin ignored | 1 failed, 67 passed in 39.38s
+L02 CAUGHT rc=1 lib: feed fetch age ignored | 1 failed, 60 passed in 26.51s
+L03 CAUGHT rc=1 lib: feed own-timestamp age ignored | 1 failed, 61 passed in 24.05s
+L04 CAUGHT rc=1 lib: own timestamp after fetch accepted | 1 failed, 62 passed in 22.60s
+L05 CAUGHT rc=1 lib: OVAL: installed == fixed counted vulnerable | 1 failed, 45 passed in 23.00s
+L06 CAUGHT rc=1 lib: OVAL: ESM-only fixes counted fixable | 1 failed, 45 passed in 20.48s
+L07 CAUGHT rc=1 lib: Debian: installed == fixed counted vulnerable | 1 failed, 46 passed in 20.51s
+L08 CAUGHT rc=1 lib: Debian: open (no fix) counted fixable | 1 failed, 46 passed in 21.76s
+L09 CAUGHT rc=1 lib: Go: fixed version counted vulnerable | 1 failed, 47 passed in 16.97s
+L10 CAUGHT rc=1 lib: Go: introduced bound ignored | 1 failed, 47 passed in 18.34s
+L11 CAUGHT rc=1 lib: alert: accepted findings still alert | 1 failed, 48 passed in 17.94s
+L12 CAUGHT rc=1 lib: alert: unfixable findings alert | 1 failed, 49 passed in 18.50s
+L13 CAUGHT rc=1 lib: alert: medium findings alert | 1 failed, 49 passed in 17.20s
+L14 CAUGHT rc=1 lib: accept: image prefix ignored | 1 failed, 50 passed in 23.16s
+L15 CAUGHT rc=1 lib: accept: expiry ignored | 1 failed, 48 passed in 22.34s
+L16 CAUGHT rc=1 lib: accept: 90-day limit ignored | 1 failed, 48 passed in 24.72s
+L17 CAUGHT rc=1 lib: public render prints finding details | 1 failed, 56 passed in 20.91s
+L18 CAUGHT rc=1 lib: alert: images not in use alert | 1 failed, 51 passed in 20.16s
+L19 CAUGHT rc=1 lib: whiteouts ignored | 1 failed, 40 passed in 17.96s
+L20 CAUGHT rc=1 lib: dpkg: tilde sorts like a letter | 1 failed, 22 passed in 17.47s
+L21 CAUGHT rc=1 lib: missing layer silently skipped | 1 failed, 44 passed in 16.86s
+L22 CAUGHT rc=1 lib: drift: running image differs from tag not reported | 1 failed, 52 passed in 17.57s
+L23 CAUGHT rc=1 lib: drift: unscanned image not reported | 1 failed, 52 passed in 21.22s
+L24 CAUGHT rc=1 lib: render: drift does not set exit 1 | 1 failed, 52 passed in 18.27s
+L25 CAUGHT rc=1 lib: missing feed for an OS tolerated | 1 failed, 68 passed in 17.79s
+L26 CAUGHT rc=1 lib: feed age not clamped at 0 (fetched during this scan renders -1 h) | 1 failed, 64 passed in 19.79s
+L27 CAUGHT rc=1 lib: fetch time far after the scan time accepted (bad clock) | 1 failed, 63 passed in 17.36s
+L28 CAUGHT rc=1 lib: public rebuild: withheld image's container reported as unscanned drift | 1 failed, 54 passed in 18.71s
+L29 CAUGHT rc=1 lib: public rebuild: container running another image than the withheld tag hidden | 1 failed, 55 passed in 24.57s
+L30 CAUGHT rc=1 lib: drift: digest-pinned container running an UNSCANNED image skipped | 1 failed, 53 passed in 19.32s
+L31 CAUGHT rc=1 lib: drift: digest-pinned ref not stripped to its tag | 1 failed, 53 passed in 18.42s
+L32 CAUGHT rc=1 lib: drift: digest-pinned container with a scanned image ID still reported | 1 failed, 53 passed in 19.56s
+RESULT: PASS - 62/62 mutants caught, 0 survived, 0 not applied
+exit 0

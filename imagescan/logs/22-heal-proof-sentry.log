@@ -1,0 +1,117 @@
+isheal proof on sentry - 2026-11-27T23:49:32Z
+$ on "docker inspect -f '{{.Name}} {{.Id}} {{.State.StartedAt}} {{.State.Status}}' postfiatd-sentry"
+  /postfiatd-sentry 923fcdc30430224fde8fb159bcdd1f4b925b6a5067761cfc1010e9839148db6e 2026-11-27T07:25:34.425256078Z running
+  (exit 0)
+$ alerts
+  firing PFTAlertPipelineWatchdog - 
+  firing PFTUpstreamFeedQuiet sentry go
+  firing PFTUpstreamFeedQuiet validator go
+  (exit 0)
+$ on 'pft-imagescan version; pft-upstreamwatch version; systemctl show -p LoadState,ActiveState --value pft-imagescan-heal.service'
+  pft-imagescan 1.1.0 (extract e1)
+  pft-upstreamwatch 1.2.0
+  loaded
+  inactive
+  (exit 0)
+$ on "sudo -n jq -c '.feeds | to_entries[] | {feed: .key, own: (.value.timestamp_epoch | todate), fetched: (.value.fetched_epoch | todate), outcome: (.value.outcome // \"none\")}' /var/cache/pft-imagescan/feeds/feeds.json"
+  {"feed":"debian","own":"2026-11-27T21:10:22Z","fetched":"2026-11-27T21:39:22Z","outcome":"none"}
+  {"feed":"go","own":"2026-11-24T15:56:00Z","fetched":"2026-11-27T21:39:30Z","outcome":"none"}
+  {"feed":"ubuntu-jammy","own":"2026-11-26T16:51:19Z","fetched":"2026-11-27T21:39:13Z","outcome":"none"}
+  {"feed":"ubuntu-noble","own":"2026-11-26T16:50:17Z","fetched":"2026-11-27T21:39:18Z","outcome":"none"}
+  (exit 0)
+$ on 'sudo -n systemctl start pft-imagescan-heal.service; echo rc=$?; systemctl show -p Result,ExecMainStatus --value pft-imagescan-heal.service'
+  rc=0
+  success
+  0
+  (exit 0)
+GATE PASS pft-imagescan-heal.service ran (fetch only, sandboxed) and succeeded
+$ on "sudo -n journalctl -u pft-imagescan-heal.service --since @1795823375 --no-pager -o cat | grep -E '^(ubuntu|debian|go)|^textfile:|fresh|behind|FAILED|REFUSED'"
+  Starting pft-imagescan heal: one fetch-only refresh of the image feeds (cache-busting retry when behind; started by pft-upstreamwatch, no timer)...
+  ubuntu-jammy: fresh (own timestamp 2026-11-26T16:51:19Z); ubuntu-noble: fresh (own timestamp 2026-11-26T16:50:17Z); debian: fresh (own timestamp 2026-11-27T23:26:17Z); go: fresh (own timestamp 2026-11-24T15:56:00Z)
+  textfile: fetch outcome series updated in /var/lib/pft-exporter/textfile/pft_imagescan_sentry.prom
+  Finished pft-imagescan heal: one fetch-only refresh of the image feeds (cache-busting retry when behind; started by pft-upstreamwatch, no timer).
+  (exit 0)
+$ on "sudo -n jq -r '.feeds | to_entries[] | \"\(.key) \(.value.outcome) own=\(.value.timestamp_epoch | todate) upstream=\(.value.upstream_epoch) clock=\(.value.upstream_clock) note=\(.value.outcome_note)\"' /var/cache/pft-imagescan/feeds/feeds.json"
+  debian fresh own=2026-11-27T23:26:17Z upstream=1795822500 clock=head_last_modified note=own timestamp within 21600 s of head_last_modified
+  go fresh own=2026-11-24T15:56:00Z upstream=1795535760 clock=index_modified note=own timestamp within 21600 s of index_modified
+  ubuntu-jammy fresh own=2026-11-26T16:51:19Z upstream=1795711898 clock=head_last_modified note=own timestamp within 21600 s of head_last_modified
+  ubuntu-noble fresh own=2026-11-26T16:50:17Z upstream=1795711830 clock=head_last_modified note=own timestamp within 21600 s of head_last_modified
+  (exit 0)
+GATE PASS all 4 imagescan feeds fresh or retried_fresh
+$ on "grep -E '^pft_imagescan_feed_(fetch_outcome|upstream_timestamp_seconds)' /var/lib/pft-exporter/textfile/pft_imagescan_sentry.prom; sudo -n pft-imagescan validate /var/lib/pft-exporter/textfile/pft_imagescan_sentry.prom sentry && echo valid"
+  pft_imagescan_feed_fetch_outcome{host="sentry",feed="debian",outcome="fresh"} 1
+  pft_imagescan_feed_fetch_outcome{host="sentry",feed="debian",outcome="retried_fresh"} 0
+  pft_imagescan_feed_fetch_outcome{host="sentry",feed="debian",outcome="still_behind"} 0
+  pft_imagescan_feed_fetch_outcome{host="sentry",feed="go",outcome="fresh"} 1
+  pft_imagescan_feed_fetch_outcome{host="sentry",feed="go",outcome="retried_fresh"} 0
+  pft_imagescan_feed_fetch_outcome{host="sentry",feed="go",outcome="still_behind"} 0
+  pft_imagescan_feed_fetch_outcome{host="sentry",feed="ubuntu-jammy",outcome="fresh"} 1
+  pft_imagescan_feed_fetch_outcome{host="sentry",feed="ubuntu-jammy",outcome="retried_fresh"} 0
+  pft_imagescan_feed_fetch_outcome{host="sentry",feed="ubuntu-jammy",outcome="still_behind"} 0
+  pft_imagescan_feed_fetch_outcome{host="sentry",feed="ubuntu-noble",outcome="fresh"} 1
+  pft_imagescan_feed_fetch_outcome{host="sentry",feed="ubuntu-noble",outcome="retried_fresh"} 0
+  pft_imagescan_feed_fetch_outcome{host="sentry",feed="ubuntu-noble",outcome="still_behind"} 0
+  pft_imagescan_feed_upstream_timestamp_seconds{host="sentry",feed="debian"} 1795822500
+  pft_imagescan_feed_upstream_timestamp_seconds{host="sentry",feed="go"} 1795535760
+  pft_imagescan_feed_upstream_timestamp_seconds{host="sentry",feed="ubuntu-jammy"} 1795711898
+  pft_imagescan_feed_upstream_timestamp_seconds{host="sentry",feed="ubuntu-noble"} 1795711830
+  valid
+  (exit 0)
+GATE PASS textfile valid, outcome series = 1 for fresh/retried_fresh on all 4 feeds
+$ on 'sudo -n tail -n 1 /var/lib/pft-upstreamwatch/heal.jsonl 2>/dev/null | wc -l; sudo -n wc -l < /var/lib/pft-upstreamwatch/heal.jsonl 2>/dev/null || echo 0'
+  1
+  11
+  (exit 0)
+$ on 'sudo -n systemctl start pft-upstreamwatch.service; echo rc=$?'
+  rc=0
+  (exit 0)
+GATE PASS pft-upstreamwatch.service ran
+$ on "sudo -n journalctl -u pft-upstreamwatch.service --since @1795823423 --no-pager -o cat | grep -E '^heal:|^(usn-host|ubuntu|debian|go)|^RESULT'"
+  usn-host               ok                   1.1 h       23.0 h    0.0 h  local copy is upstream's latest (upstream answered 304 to our ETag); content 23.0 h old
+  ubuntu-jammy           ok                   0.0 h       31.0 h    0.0 h  local copy is upstream's latest (upstream content clock is 0.0 h after ours (tolerance 6.0 h)); content 31.0 h old
+  ubuntu-noble           ok                   0.0 h       31.0 h    0.0 h  local copy is upstream's latest (upstream content clock is 0.0 h after ours (tolerance 6.0 h)); content 31.0 h old
+  debian                 ok                   0.0 h        0.4 h    0.0 h  local copy is upstream's latest (upstream content clock is 0.1 h after ours (tolerance 6.0 h)); content 0.4 h old
+  go                     upstream_quiet       0.0 h       79.8 h    0.0 h  local copy is upstream's latest (upstream content clock is 0.0 h after ours (tolerance 6.0 h)); upstream has not published for 79.8 h
+  debian-oval-bookworm   ok                       -        0.4 h        -  upstream last published 0.4 h ago (no local copy)
+  RESULT: ok=5 upstream_quiet=1 local_lagging=0 local_stale=0 fetch_failing=0 unreachable=0 release=current
+  (exit 0)
+decision: NOOP (no feed lagged > LAG_HEAL_HOURS)
+GATE PASS no failed / still_lagging heal
+GATE PASS upstreamwatch: every imagescan feed ok/upstream_quiet (local copy = upstream's latest), nothing paged
+$ on "sudo -n jq -c 'select(.epoch >= 1795823423)' /var/lib/pft-upstreamwatch/heal.jsonl 2>/dev/null; sudo -n jq -c . /var/lib/pft-upstreamwatch/heal-state.json 2>/dev/null"
+  {"usn-host":{"attempts":2,"last_attempt_epoch":1795819391,"last_rc":0,"last_result":"healed","last_result_epoch":1795819459,"note":"lag 0 after the refetch"}}
+  (exit 0)
+$ sudo -n systemctl start pft-imagescan-pull.service pft-upstreamwatch-pull.service; echo rc=$?
+  rc=0
+  (exit 0)
+$ curl -s -m 10 http://<redacted-ip>:9090/api/v1/query --data-urlencode 'query=pft_imagescan_feed_fetch_outcome{host="sentry"} == 1' | jq -r '.data.result[] | "\(.metric.feed) \(.metric.outcome)"' | sort
+  debian fresh
+  go fresh
+  ubuntu-jammy fresh
+  ubuntu-noble fresh
+  (exit 0)
+GATE PASS Prometheus has the outcome series for sentry
+$ on 'sudo -n pft-integrity verify | tail -1'
+  RESULT: PASS - 179 unchanged, 0 warn, 0 fail -> exit 0
+  (exit 0)
+GATE PASS pft-integrity PASS on sentry
+$ on "docker inspect -f '{{.Name}} {{.Id}} {{.State.StartedAt}} {{.State.Status}}' postfiatd-sentry"
+  /postfiatd-sentry 923fcdc30430224fde8fb159bcdd1f4b925b6a5067761cfc1010e9839148db6e 2026-11-27T07:25:34.425256078Z running
+  (exit 0)
+GATE PASS postfiatd-sentry container ID + StartedAt unchanged
+$ alerts
+  firing PFTAlertPipelineWatchdog - 
+  firing PFTUpstreamFeedQuiet sentry go
+  firing PFTUpstreamFeedQuiet validator go
+  (exit 0)
+new pending/firing alerts: none
+GATE PASS no new pending/firing alert (Prometheus /api/v1/alerts)
+$ curl -s -m 15 'https://ntfy.sh/<redacted>/json?poll=1&since=1795823372' | jq -r 'select(.event == "message") | .title' | wc -l
+  0
+  (exit 0)
+GATE PASS operator monitor topic: 0 messages since the run started
+$ curl -s -m 15 'https://ntfy.sh/<redacted>/json?poll=1&since=1795823372' | jq -r 'select(.event == "message") | .title' | wc -l
+  0
+  (exit 0)
+GATE PASS operator alert-bridge topic: 0 messages since the run started
+RESULT: 0 gate(s) failed -> PASS
