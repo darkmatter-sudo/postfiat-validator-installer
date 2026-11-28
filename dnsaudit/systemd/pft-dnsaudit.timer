@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the pft-dnsaudit DNS dependency audit every 15 minutes
+
+[Timer]
+OnCalendar=*-*-* *:04/15:00
+RandomizedDelaySec=60
+Persistent=true
+
+[Install]
+WantedBy=timers.target

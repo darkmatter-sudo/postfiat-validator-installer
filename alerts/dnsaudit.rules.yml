@@ -1,0 +1,22 @@
+# Alert rule for pft-dnsaudit (../dnsaudit). pft-dnsaudit.timer audits every 15 minutes and writes
+# pft_dnsaudit_*{host="..."} to the textfile dir (validator: local; the validator's run also pulls the sentry's file);
+# the pft exporter serves it. One digest-only rule: DNS findings never page (they are posture, not outages: a name
+# that stops resolving shows up first in the node/peer/apt/ntfy alerts that already page). Staleness of the
+# textfile is ../rulecheck's job (`textfile pft_dnsaudit_*.prom 45m pft_dnsaudit_last_run_timestamp_seconds`).
+# The sentry runs no Prometheus: every host="sentry" alert is evaluated here.
+# Tests: dnsaudit.tests.yml (promtool test rules dnsaudit.tests.yml).
+groups:
+  - name: pft-dnsaudit
+    rules:
+      - alert: PFTDNSAuditFinding
+        expr: >-
+          max by (host) (pft_dnsaudit_check_status) >= 2
+          or max by (host) (pft_dnsaudit_up) == 0
+        for: 30m
+        labels:
+          severity: info
+          notify: digest
+        annotations:
+          summary: "{{ $labels.host }}: DNS dependency audit has a WARN/FAIL check or cannot run"
+          description: "The 15-minute pft-dnsaudit audit reports a WARN or FAIL check (a critical name does not resolve on the host or container path, fewer than 2 upstream resolvers, a resolver or path that does not reject DNSSEC-bogus answers, an LLMNR/mDNS listener, or an unexpected stub/container resolv.conf), or it wrote up 0 (dig/getent/resolvectl missing). Run `sudo pft-dnsaudit audit` and read the WARN/FAIL lines; pft_dnsaudit_check_status{check=...} names the check (daily digest only)."
+          runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/dnsaudit/README.md#alerts"

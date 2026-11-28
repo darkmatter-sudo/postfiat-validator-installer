@@ -1,0 +1,96 @@
+# promtool unit tests for dnsaudit.rules.yml. Run: promtool test rules dnsaudit.tests.yml (by hand, from the live
+# textfile shape: one pft_dnsaudit_check_status{host,check} series per check, 0 PASS 1 INFO 2 WARN 3 FAIL; 1m input
+# intervals: 'vxN' is N+1 samples).
+rule_files:
+  - dnsaudit.rules.yml
+evaluation_interval: 1m
+tests:
+  - name: "a FAIL check on the validator: pending at once, fires after 30m, resolves once the check passes; the clean sentry never fires"
+    interval: 1m
+    input_series:
+      - series: 'pft_dnsaudit_check_status{host="validator",check="dnssec:stub"}'
+        values: '3x44 0x15'
+      - series: 'pft_dnsaudit_check_status{host="validator",check="stub"}'
+        values: '0x59'
+      - series: 'pft_dnsaudit_up{host="validator"}'
+        values: '1x59'
+      - series: 'pft_dnsaudit_check_status{host="sentry",check="dnssec:stub"}'
+        values: '0x59'
+      - series: 'pft_dnsaudit_check_status{host="sentry",check="dnssec:signed"}'
+        values: '1x59'
+      - series: 'pft_dnsaudit_up{host="sentry"}'
+        values: '1x59'
+    promql_expr_test:
+      - expr: ALERTS{alertname="PFTDNSAuditFinding"}
+        eval_time: 15m
+        exp_samples:
+          - labels: 'ALERTS{alertname="PFTDNSAuditFinding",alertstate="pending",host="validator",severity="info",notify="digest"}'
+            value: 1
+    alert_rule_test:
+      - eval_time: 29m
+        alertname: PFTDNSAuditFinding
+        exp_alerts: []
+      - eval_time: 31m
+        alertname: PFTDNSAuditFinding
+        exp_alerts:
+          - exp_labels: {severity: info, notify: digest, host: validator}
+            exp_annotations:
+              summary: "validator: DNS dependency audit has a WARN/FAIL check or cannot run"
+              description: "The 15-minute pft-dnsaudit audit reports a WARN or FAIL check (a critical name does not resolve on the host or container path, fewer than 2 upstream resolvers, a resolver or path that does not reject DNSSEC-bogus answers, an LLMNR/mDNS listener, or an unexpected stub/container resolv.conf), or it wrote up 0 (dig/getent/resolvectl missing). Run `sudo pft-dnsaudit audit` and read the WARN/FAIL lines; pft_dnsaudit_check_status{check=...} names the check (daily digest only)."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/dnsaudit/README.md#alerts"
+      - eval_time: 44m
+        alertname: PFTDNSAuditFinding
+        exp_alerts:
+          - exp_labels: {severity: info, notify: digest, host: validator}
+            exp_annotations:
+              summary: "validator: DNS dependency audit has a WARN/FAIL check or cannot run"
+              description: "The 15-minute pft-dnsaudit audit reports a WARN or FAIL check (a critical name does not resolve on the host or container path, fewer than 2 upstream resolvers, a resolver or path that does not reject DNSSEC-bogus answers, an LLMNR/mDNS listener, or an unexpected stub/container resolv.conf), or it wrote up 0 (dig/getent/resolvectl missing). Run `sudo pft-dnsaudit audit` and read the WARN/FAIL lines; pft_dnsaudit_check_status{check=...} names the check (daily digest only)."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/dnsaudit/README.md#alerts"
+      - eval_time: 45m
+        alertname: PFTDNSAuditFinding
+        exp_alerts: []
+      - eval_time: 59m
+        alertname: PFTDNSAuditFinding
+        exp_alerts: []
+  - name: "a WARN check fires like a FAIL; INFO (accepted or informational) never fires"
+    interval: 1m
+    input_series:
+      - series: 'pft_dnsaudit_check_status{host="sentry",check="redundancy"}'
+        values: '2x40'
+      - series: 'pft_dnsaudit_up{host="sentry"}'
+        values: '1x40'
+      - series: 'pft_dnsaudit_check_status{host="validator",check="dnssec:stub"}'
+        values: '1x40'
+      - series: 'pft_dnsaudit_up{host="validator"}'
+        values: '1x40'
+    alert_rule_test:
+      - eval_time: 31m
+        alertname: PFTDNSAuditFinding
+        exp_alerts:
+          - exp_labels: {severity: info, notify: digest, host: sentry}
+            exp_annotations:
+              summary: "sentry: DNS dependency audit has a WARN/FAIL check or cannot run"
+              description: "The 15-minute pft-dnsaudit audit reports a WARN or FAIL check (a critical name does not resolve on the host or container path, fewer than 2 upstream resolvers, a resolver or path that does not reject DNSSEC-bogus answers, an LLMNR/mDNS listener, or an unexpected stub/container resolv.conf), or it wrote up 0 (dig/getent/resolvectl missing). Run `sudo pft-dnsaudit audit` and read the WARN/FAIL lines; pft_dnsaudit_check_status{check=...} names the check (daily digest only)."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/dnsaudit/README.md#alerts"
+  - name: "an audit that cannot run (up 0, no check series) fires after 30m and resolves when it runs again"
+    interval: 1m
+    input_series:
+      - series: 'pft_dnsaudit_up{host="sentry"}'
+        values: '0x34 1x10'
+      - series: 'pft_dnsaudit_check_status{host="sentry",check="stub"}'
+        values: '_x34 0x10'
+    alert_rule_test:
+      - eval_time: 29m
+        alertname: PFTDNSAuditFinding
+        exp_alerts: []
+      - eval_time: 31m
+        alertname: PFTDNSAuditFinding
+        exp_alerts:
+          - exp_labels: {severity: info, notify: digest, host: sentry}
+            exp_annotations:
+              summary: "sentry: DNS dependency audit has a WARN/FAIL check or cannot run"
+              description: "The 15-minute pft-dnsaudit audit reports a WARN or FAIL check (a critical name does not resolve on the host or container path, fewer than 2 upstream resolvers, a resolver or path that does not reject DNSSEC-bogus answers, an LLMNR/mDNS listener, or an unexpected stub/container resolv.conf), or it wrote up 0 (dig/getent/resolvectl missing). Run `sudo pft-dnsaudit audit` and read the WARN/FAIL lines; pft_dnsaudit_check_status{check=...} names the check (daily digest only)."
+              runbook_url: "https://github.com/darkmatter-sudo/postfiat-validator-installer/blob/main/dnsaudit/README.md#alerts"
+      - eval_time: 36m
+        alertname: PFTDNSAuditFinding
+        exp_alerts: []

@@ -63,3 +63,6 @@ require pft_imagescan_sentry.prom
 # pft-upstreamwatch (hourly at :41 + up to 4 min)
 textfile pft_upstreamwatch_*.prom   3h   pft_upstreamwatch_last_run_timestamp_seconds
 require pft_upstreamwatch_sentry.prom
+# pft-dnsaudit (15-minute audit)
+textfile pft_dnsaudit_*.prom   45m  pft_dnsaudit_last_run_timestamp_seconds
+require pft_dnsaudit_sentry.prom
