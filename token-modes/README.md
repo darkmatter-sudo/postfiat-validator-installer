@@ -59,3 +59,10 @@ throwaway ntfy topic, a preflight gate that the sentry's next hourly `pft-integr
 and at the end: both live nodes have the same container ID and `StartedAt` and are `full`, `pft-integrity` PASS on both
 hosts, schedaudit clean, the silence expired only once no new sentry alert is pending or firing, 3 minutes without one,
 and every operator ntfy topic polled with 0 messages. Neither live `postfiatd` is stopped, restarted or changed.
+
+## Logs
+
+| log | what it is |
+|---|---|
+| `logs/01-main.log` | `token-test.sh` on upstream main `ac8b944` with `EXPECT=fail`: `MODES FAIL` for `set-domain-output.txt`, `postfiatd.cfg.new` and the container `postfiatd.cfg` (all `644`), harness clean, 0 operator messages |
+| `logs/02-branch.log` | `token-test.sh` on the PR branch with `EXPECT=pass`: every token-bearing file `600` on the first run and on the rerun over `644` leftovers, node up with the new `pubkey_validator`, uid 65534 cannot read the config, both config copies removed, 0 operator messages |
