@@ -1,0 +1,1153 @@
+token-modes fresh-clone - 2026-11-28T03:19:57Z - PIN 74901458676f1831a6198821bd6309ef3bf8c04d PRSHA 3bbe70383cfecc88d6200e7a2e1c3a802ff298c5
+tools: git version 2.34.1, Python 3.10.12, shellcheck 0.8.0
+
+== F1 fresh public clones
+$ git clone -q https://github.com/darkmatter-sudo/postfiat-validator-installer.git kit && git -C kit checkout -q 74901458676f1831a6198821bd6309ef3bf8c04d && git -C kit rev-parse HEAD
+  74901458676f1831a6198821bd6309ef3bf8c04d
+  (exit 0)
+CHECK ok   F1 kit at PIN
+$ git -C kit log -1 --format='%H %ad %an %s' --date=iso-strict
+  74901458676f1831a6198821bd6309ef3bf8c04d 2026-11-28T03:19:19+00:00 darkmatter-sudo token-modes: recorded runs on upstream main (expected fail) and the PR branch (pass)
+  (exit 0)
+$ git clone -q https://github.com/darkmatter-sudo/postfiatorg.github.io.git guide && git -C guide checkout -q 3bbe70383cfecc88d6200e7a2e1c3a802ff298c5 && git -C guide rev-parse HEAD
+  3bbe70383cfecc88d6200e7a2e1c3a802ff298c5
+  (exit 0)
+CHECK ok   F1 guide at PRSHA
+$ git -C guide fetch -q https://github.com/postfiatorg/postfiatorg.github.io.git main && git -C guide rev-parse FETCH_HEAD && git -C guide merge-base --is-ancestor ac8b9443c3e785158934162d80bf68ebde294b88 3bbe70383cfecc88d6200e7a2e1c3a802ff298c5 && echo 'PRSHA descends from ac8b9443c3e785158934162d80bf68ebde294b88'
+  ac8b9443c3e785158934162d80bf68ebde294b88
+  PRSHA descends from ac8b9443c3e785158934162d80bf68ebde294b88
+  (exit 0)
+CHECK ok   F1 PRSHA descends from upstream main ac8b944
+$ git -C guide log --format='%h %ad %s' --date=iso-strict ac8b9443c3e785158934162d80bf68ebde294b88..3bbe70383cfecc88d6200e7a2e1c3a802ff298c5
+  3bbe703 2026-11-28T02:47:24+00:00 Validator guide: owner-only validator token files in sections 6-7
+  (exit 0)
+$ git -C guide diff --stat ac8b9443c3e785158934162d80bf68ebde294b88 3bbe70383cfecc88d6200e7a2e1c3a802ff298c5
+   content/validator-setup.md        | 83 ++++++++++++++++++++++++++++++---------
+   static/agents/validator-setup.md  | 83 ++++++++++++++++++++++++++++++---------
+   static/agents/validator-setup.txt | 83 ++++++++++++++++++++++++++++++---------
+   3 files changed, 195 insertions(+), 54 deletions(-)
+  (exit 0)
+$ git -C guide diff --name-only ac8b9443c3e785158934162d80bf68ebde294b88 3bbe70383cfecc88d6200e7a2e1c3a802ff298c5
+  content/validator-setup.md
+  static/agents/validator-setup.md
+  static/agents/validator-setup.txt
+  (exit 0)
+CHECK ok   F1 the PR changes exactly the three guide copies
+
+== F2 hashes
+$ git -C guide show ac8b9443c3e785158934162d80bf68ebde294b88:content/validator-setup.md > main.md && sha256sum main.md
+  2572a7f22304659bc1f6497053d42058eae47789f7be8e4438da30b066625bbe  main.md
+  (exit 0)
+$ cd guide && sha256sum content/validator-setup.md static/agents/validator-setup.md static/agents/validator-setup.txt > ../guide.sha256; cd .. && cat guide.sha256
+  725c02c3d58bd17cd199b2af38604d9d6941c11bd44d05e29200a12b192714eb  content/validator-setup.md
+  5b46221c6ed5ad697895b5ee31c1bdeab4540653aefe31ae55960280f7a31b83  static/agents/validator-setup.md
+  5b46221c6ed5ad697895b5ee31c1bdeab4540653aefe31ae55960280f7a31b83  static/agents/validator-setup.txt
+  (exit 0)
+$ cd kit/token-modes && sha256sum extract_token.py token-test.sh fresh-clone.sh README.md > ../../kit.sha256; cd ../.. && cat kit.sha256
+  0f83937f3838be0f6a1decc83ca3849b5ccb75ed69bec6a599e71b2d53de0941  extract_token.py
+  5fed352120b07c35304833b6172c9fdf45d5c2b98ac96ac6091f376beb5dc25b  token-test.sh
+  1dd9747a93f23bcc70d49c8d55f29a41d386b8fd52f2da77eb68c3540445eb06  fresh-clone.sh
+  b5955aa23b0fa8da39577c6db468f2837780874431721c4c5c760b4ca4e7b1c6  README.md
+  (exit 0)
+
+== F3 three-copy diff
+$ diff <(sec guide/content/validator-setup.md) <(sec guide/static/agents/validator-setup.md) && echo 'sections 5-7 identical: content/validator-setup.md = static/agents/validator-setup.md'
+  sections 5-7 identical: content/validator-setup.md = static/agents/validator-setup.md
+  (exit 0)
+CHECK ok   F3 sections 5-7 of static/agents/validator-setup.md = content/validator-setup.md
+$ diff <(sec guide/content/validator-setup.md) <(sec guide/static/agents/validator-setup.txt) && echo 'sections 5-7 identical: content/validator-setup.md = static/agents/validator-setup.txt'
+  sections 5-7 identical: content/validator-setup.md = static/agents/validator-setup.txt
+  (exit 0)
+CHECK ok   F3 sections 5-7 of static/agents/validator-setup.txt = content/validator-setup.md
+$ sec guide/content/validator-setup.md | sha256sum; sec guide/static/agents/validator-setup.md | sha256sum; sec guide/static/agents/validator-setup.txt | sha256sum
+  f06bd52a8a2d107b9c15f423adda3686887de050c94b101390c561f7f2476949  -
+  f06bd52a8a2d107b9c15f423adda3686887de050c94b101390c561f7f2476949  -
+  f06bd52a8a2d107b9c15f423adda3686887de050c94b101390c561f7f2476949  -
+  (exit 0)
+CHECK ok   F3 one sections-5-7 hash for all three copies
+$ diff <(hunks content/validator-setup.md) <(hunks static/agents/validator-setup.md) && echo 'PR hunks identical: content/validator-setup.md = static/agents/validator-setup.md'
+  PR hunks identical: content/validator-setup.md = static/agents/validator-setup.md
+  (exit 0)
+CHECK ok   F3 PR diff hunks of static/agents/validator-setup.md = content/validator-setup.md
+$ diff <(hunks content/validator-setup.md) <(hunks static/agents/validator-setup.txt) && echo 'PR hunks identical: content/validator-setup.md = static/agents/validator-setup.txt'
+  PR hunks identical: content/validator-setup.md = static/agents/validator-setup.txt
+  (exit 0)
+CHECK ok   F3 PR diff hunks of static/agents/validator-setup.txt = content/validator-setup.md
+$ git -C guide diff ac8b9443c3e785158934162d80bf68ebde294b88 3bbe70383cfecc88d6200e7a2e1c3a802ff298c5 -- content/validator-setup.md
+  diff --git a/content/validator-setup.md b/content/validator-setup.md
+  index c0e3d2a..2fe1789 100644
+  --- a/content/validator-setup.md
+  +++ b/content/validator-setup.md
+  @@ -304,13 +304,18 @@ export VALIDATOR_DOMAIN="example.com"
+   Run `set_domain` using the fresh master key file. Copy the host backup into the container first so this works even if the container has been recreated or `/root/.ripple` has already been cleaned:
+   
+   ```bash
+  -docker exec postfiatd mkdir -p /root/.ripple
+  -docker cp ./validator-keys.json postfiatd:/root/.ripple/validator-keys.json
+  -docker exec postfiatd validator-keys set_domain "$VALIDATOR_DOMAIN" | tee ./set-domain-output.txt
+  -docker cp postfiatd:/root/.ripple/validator-keys.json ./validator-keys.domain.json
+  -chmod 600 ./validator-keys.domain.json
+  +(
+  +  umask 077
+  +  docker exec postfiatd mkdir -p /root/.ripple
+  +  docker cp ./validator-keys.json postfiatd:/root/.ripple/validator-keys.json
+  +  docker exec postfiatd validator-keys set_domain "$VALIDATOR_DOMAIN" | tee ./set-domain-output.txt
+  +  docker cp postfiatd:/root/.ripple/validator-keys.json ./validator-keys.domain.json
+  +)
+  +chmod 600 ./set-domain-output.txt ./validator-keys.domain.json
+   ```
+   
+  +`set-domain-output.txt` contains the validator token. The `umask 077` subshell creates new files readable by the owner only, and `chmod 600` also tightens files left by an earlier run, because `tee` and `docker cp` keep or copy the existing file mode instead.
+  +
+   The output contains three important values:
+   
+   - `public_key`: shown after `# validator public key:`
+  @@ -328,7 +333,10 @@ printf 'PUBLIC_KEY=%s\nATTESTATION=%s\n' "$PUBLIC_KEY" "$ATTESTATION"
+   Extract the token block into a local file. Treat this file as secret:
+   
+   ```bash
+  -sed -n '/^\[validator_token\]/,$p' ./set-domain-output.txt | sed '/^$/d' > ./validator-token.block
+  +(
+  +  umask 077
+  +  sed -n '/^\[validator_token\]/,$p' ./set-domain-output.txt | sed '/^$/d' > ./validator-token.block
+  +)
+   chmod 600 ./validator-token.block
+   grep -q '^\[validator_token\]$' ./validator-token.block
+   ```
+  @@ -337,21 +345,28 @@ Do not inline the token through a shell variable. Multi-line validator tokens ar
+   
+   ## 7. Inject the Validator Token into `postfiatd.cfg`
+   
+  -Use a file-based replace so there is exactly one `[validator_token]` section:
+  +Use a file-based replace so there is exactly one `[validator_token]` section. Both config copies hold the token once it is injected, so they are created owner-only too; the copied-in `postfiatd.cfg` keeps mode `600` inside the container, which the node (running as root, `user: "0:0"` in the compose file) can still read:
+   
+   ```bash
+   cd "$POSTFIATD_DIR"
+  -docker cp postfiatd:/etc/postfiatd/postfiatd.cfg ./postfiatd.cfg
+  -
+  -awk '
+  -  /^\[validator_token\]$/ {skip=1; next}
+  -  /^\[[^]]+\]$/ {skip=0}
+  -  !skip {print}
+  -' ./postfiatd.cfg > ./postfiatd.cfg.new
+  -
+  -printf '\n' >> ./postfiatd.cfg.new
+  -cat ./validator-token.block >> ./postfiatd.cfg.new
+  -printf '\n' >> ./postfiatd.cfg.new
+  +(
+  +  umask 077
+  +  docker cp postfiatd:/etc/postfiatd/postfiatd.cfg ./postfiatd.cfg
+  +  chmod 600 ./postfiatd.cfg
+  +
+  +  awk '
+  +    /^\[validator_token\]$/ {skip=1; next}
+  +    /^\[[^]]+\]$/ {skip=0}
+  +    !skip {print}
+  +  ' ./postfiatd.cfg > ./postfiatd.cfg.new
+  +
+  +  {
+  +    printf '\n'
+  +    cat ./validator-token.block
+  +    printf '\n'
+  +  } >> ./postfiatd.cfg.new
+  +)
+  +chmod 600 ./postfiatd.cfg.new
+   
+   test "$(grep -c '^\[validator_token\]$' ./postfiatd.cfg.new)" -eq 1
+   docker cp ./postfiatd.cfg.new postfiatd:/etc/postfiatd/postfiatd.cfg
+  @@ -364,12 +379,44 @@ After restart, remove master key material from the container:
+   docker exec postfiatd rm -rf /root/.ripple
+   ```
+   
+  +Check the mode and owner of every token-bearing file on the host and of the config inside the container. This only reads; it prints one line per file and `token file modes OK` when every file is `600` and owned by you (host) or root (container):
+  +
+  +```bash
+  +cd "$POSTFIATD_DIR"
+  +bad=0
+  +for f in validator-keys.json validator-keys.domain.json validator-token.block set-domain-output.txt postfiatd.cfg postfiatd.cfg.new; do
+  +  [ -e "$f" ] || continue
+  +  stat -c 'host      %a %U:%G %n' "$f"
+  +  [ "$(stat -c '%a %U' "$f")" = "600 $(id -un)" ] || bad=1
+  +done
+  +docker exec postfiatd stat -c 'container %a %U:%G %n' /etc/postfiatd/postfiatd.cfg
+  +[ "$(docker exec postfiatd stat -c '%a %U' /etc/postfiatd/postfiatd.cfg)" = "600 root" ] || bad=1
+  +if [ "$bad" = 0 ]; then echo "token file modes OK"; else echo "token file modes NOT OK: chmod 600 the host files listed above; re-run the injection step for the container file"; fi
+  +```
+  +
+  +Once the node is back up with your key, delete the two config copies (re-run this if the node is still starting and nothing is removed):
+  +
+  +```bash
+  +cd "$POSTFIATD_DIR"
+  +docker exec postfiatd curl -s http://localhost:5005/ -X POST \
+  +  -H "Content-Type: application/json" \
+  +  -d '{"method": "server_info", "params": [{}]}' \
+  +  | PUBLIC_KEY="$PUBLIC_KEY" python3 -c '
+  +import json, os, sys
+  +
+  +info = json.load(sys.stdin)["result"]["info"]
+  +if info.get("pubkey_validator") != os.environ["PUBLIC_KEY"]:
+  +    raise SystemExit("pubkey_validator does not match yet: config copies kept")
+  +' && rm -f ./postfiatd.cfg ./postfiatd.cfg.new && echo "config copies removed"
+  +```
+  +
+   Keep these files secure and private:
+   
+   - `$POSTFIATD_DIR/validator-keys.json`
+   - `$POSTFIATD_DIR/validator-keys.domain.json`
+   - `$POSTFIATD_DIR/validator-token.block`
+   - `$POSTFIATD_DIR/set-domain-output.txt`
+  +- `$POSTFIATD_DIR/postfiatd.cfg` and `$POSTFIATD_DIR/postfiatd.cfg.new` until the step above removes them
+   
+   Prefer moving private key/token files off the validator host after configuration.
+   
+  (exit 0)
+
+== F4 extraction, with a control
+$ python3 -I kit/token-modes/extract_token.py out guide/content/validator-setup.md guide/static/agents/validator-setup.md guide/static/agents/validator-setup.txt
+  section.txt 141 lines sha256 f10b63aa7a73c28c1ef49f6628a7c3ea9c68587c3914e4321fa8e93ae6853d83
+  05-keys.sh 5 lines sha256 ff638194e441f4829a7e67ebf02254588f57f04df17d997ec3e46b34b3f37b0c
+  06a-domain.sh 1 lines sha256 4efe5412c322a46e5bd0e564980507c1f51059e292367f9bf347f191e1a0f893
+  06b-setdomain.sh 8 lines sha256 403fcd983eae85efbafc812bd199432ad84ad137009e1f6e8670e9081a842624
+  06c-proof.sh 3 lines sha256 22b5b4c4b573520b39e7c6dd1a0d74e99e2dfc61e6af0c37952fb510535ec315
+  06d-token.sh 6 lines sha256 fba96a20aff8b3c2fd8c3426ca37683eef346db537572d8ee9c1d6910100c4f5
+  07a-inject.sh 23 lines sha256 90bdbbf03fdcde2aafedc0c4fa9b632a377604a68fe3699e7abe40ca002d818f
+  07b-cleanup.sh 1 lines sha256 9d5de45da12fb74efc285e807d3e134843e5019f044e2e1ead303951273a3710
+  07c-verify.sh 10 lines sha256 d1991b15163d1136eba1cb3c48106d5d20e6dbe63945c9ecbf9a5eb35df1b157
+  07d-remove.sh 11 lines sha256 6062663a41c8403b2114fa7ff0a6c787894b1a88ce5dba1823a44975ba3abda3
+  blocks.txt 9 lines sha256 fe4b0e4601becadecbd8e99b19b8a975c791d4fbdf37835b48809a09c171880a
+  copies with identical sections 5-7: 3
+  (exit 0)
+CHECK ok   F4 PR branch: nine blocks, three identical copies
+$ python3 -I kit/token-modes/extract_token.py out-main main.md
+  section.txt 94 lines sha256 10057bd104da99f839b9f3626b1d083eaa3830cc5b8cace324dfad3a01533c90
+  05-keys.sh 5 lines sha256 ff638194e441f4829a7e67ebf02254588f57f04df17d997ec3e46b34b3f37b0c
+  06a-domain.sh 1 lines sha256 4efe5412c322a46e5bd0e564980507c1f51059e292367f9bf347f191e1a0f893
+  06b-setdomain.sh 5 lines sha256 c07ae11d3f3018a3852e4e7eb4d9fe72d5ca5fae6e59cf03f91763378eab3c21
+  06c-proof.sh 3 lines sha256 22b5b4c4b573520b39e7c6dd1a0d74e99e2dfc61e6af0c37952fb510535ec315
+  06d-token.sh 3 lines sha256 e1a5e7af7c49a53e254cc4886449ac5453d74f5e59e84e519ad2aaf32c065cb4
+  07a-inject.sh 16 lines sha256 df6ae8e4be1a8b14085977f873ac3f5d3d50547030ce4004f99987059f55235c
+  07b-cleanup.sh 1 lines sha256 9d5de45da12fb74efc285e807d3e134843e5019f044e2e1ead303951273a3710
+  blocks.txt 7 lines sha256 7f5958c400e892a1a6e78341419edec4d649b7246ad57f36e68b3f55c346ddfa
+  copies with identical sections 5-7: 1
+  (exit 0)
+CHECK ok   F4 upstream main: seven blocks, no verifier and no removal block
+$ python3 -I kit/token-modes/extract_token.py ctl-mix guide/content/validator-setup.md main.md
+  extract: main.md: sections 5-7 differ from guide/content/validator-setup.md
+  (exit 1)
+CHECK ok   F4 control: a copy with different sections 5-7 is rejected
+
+== F5 shellcheck
+$ cd out && shellcheck -s bash -e SC2164 $(cat blocks.txt) && echo 'blocks clean'; cd ..
+  blocks clean
+  (exit 0)
+CHECK ok   F5 shellcheck -e SC2164 clean on the nine PR-branch blocks
+$ cd out && shellcheck -s bash -f gcc $(cat blocks.txt); cd ..
+  05-keys.sh:1:1: warning: Use 'cd ... || exit' or 'cd ... || return' in case cd fails. [SC2164]
+  07a-inject.sh:1:1: warning: Use 'cd ... || exit' or 'cd ... || return' in case cd fails. [SC2164]
+  07c-verify.sh:1:1: warning: Use 'cd ... || exit' or 'cd ... || return' in case cd fails. [SC2164]
+  07d-remove.sh:1:1: warning: Use 'cd ... || exit' or 'cd ... || return' in case cd fails. [SC2164]
+  (exit 0)
+CHECK ok   F5 without the exclusion only SC2164 on the four cd lines
+$ shellcheck kit/token-modes/token-test.sh kit/token-modes/fresh-clone.sh && echo 'kit scripts clean'
+  kit scripts clean
+  (exit 0)
+CHECK ok   F5 shellcheck clean on the kit scripts
+
+== F6 live test from the clone: upstream main (sentry throwaway project)
+$ EXPECT=fail bash kit/token-modes/token-test.sh main.md
+  | token-modes token-test - 2026-11-28T03:20:32Z - repo HEAD 74901458676f1831a6198821bd6309ef3bf8c04d (clean: yes) - EXPECT=fail
+  | sha256: token-test.sh 5fed352120b07c35304833b6172c9fdf45d5c2b98ac96ac6091f376beb5dc25b
+  |         extract_token.py 0f83937f3838be0f6a1decc83ca3849b5ccb75ed69bec6a599e71b2d53de0941
+  |         guide 2572a7f22304659bc1f6497053d42058eae47789f7be8e4438da30b066625bbe
+  | sentry: Ubuntu 22.04.5 LTS Docker version 29.1.3, build 29.1.3-0ubuntu3~22.04.2 Docker Compose version 2.40.3+ds1-0ubuntu1~22.04.1
+  | throwaway project: /var/tmp/pfttok-eb6b03ca (project pfttok-eb6b03ca, container test-pfttok-eb6b03ca, network none)
+  | 
+  | == 2026-11-28T03:20:34Z extract sections 5-7
+  | $ python3 -I '~/.cache/tokclone.Po6PnF/kit/token-modes/extract_token.py' '~/.cache/tmp.v3wjjeZ1cO/x' 'main.md'
+  |   section.txt 94 lines sha256 10057bd104da99f839b9f3626b1d083eaa3830cc5b8cace324dfad3a01533c90
+  |   05-keys.sh 5 lines sha256 ff638194e441f4829a7e67ebf02254588f57f04df17d997ec3e46b34b3f37b0c
+  |   06a-domain.sh 1 lines sha256 4efe5412c322a46e5bd0e564980507c1f51059e292367f9bf347f191e1a0f893
+  |   06b-setdomain.sh 5 lines sha256 c07ae11d3f3018a3852e4e7eb4d9fe72d5ca5fae6e59cf03f91763378eab3c21
+  |   06c-proof.sh 3 lines sha256 22b5b4c4b573520b39e7c6dd1a0d74e99e2dfc61e6af0c37952fb510535ec315
+  |   06d-token.sh 3 lines sha256 e1a5e7af7c49a53e254cc4886449ac5453d74f5e59e84e519ad2aaf32c065cb4
+  |   07a-inject.sh 16 lines sha256 df6ae8e4be1a8b14085977f873ac3f5d3d50547030ce4004f99987059f55235c
+  |   07b-cleanup.sh 1 lines sha256 9d5de45da12fb74efc285e807d3e134843e5019f044e2e1ead303951273a3710
+  |   blocks.txt 7 lines sha256 7f5958c400e892a1a6e78341419edec4d649b7246ad57f36e68b3f55c346ddfa
+  |   copies with identical sections 5-7: 1
+  |   (exit 0)
+  | CHECK ok   extract sections 5-7
+  | blocks: 05-keys.sh 06a-domain.sh 06b-setdomain.sh 06c-proof.sh 06d-token.sh 07a-inject.sh 07b-cleanup.sh
+  | container-name edit (diff guide -> run):
+  |   05-keys.sh:
+  |     2,4c2,4
+  |     < docker exec postfiatd mkdir -p /root/.ripple
+  |     < docker exec postfiatd validator-keys create_keys
+  |     < docker cp postfiatd:/root/.ripple/validator-keys.json ./validator-keys.json
+  |     ---
+  |     > docker exec test-pfttok-eb6b03ca mkdir -p /root/.ripple
+  |     > docker exec test-pfttok-eb6b03ca validator-keys create_keys
+  |     > docker cp test-pfttok-eb6b03ca:/root/.ripple/validator-keys.json ./validator-keys.json
+  |   06b-setdomain.sh:
+  |     1,4c1,4
+  |     < docker exec postfiatd mkdir -p /root/.ripple
+  |     < docker cp ./validator-keys.json postfiatd:/root/.ripple/validator-keys.json
+  |     < docker exec postfiatd validator-keys set_domain "$VALIDATOR_DOMAIN" | tee ./set-domain-output.txt
+  |     < docker cp postfiatd:/root/.ripple/validator-keys.json ./validator-keys.domain.json
+  |     ---
+  |     > docker exec test-pfttok-eb6b03ca mkdir -p /root/.ripple
+  |     > docker cp ./validator-keys.json test-pfttok-eb6b03ca:/root/.ripple/validator-keys.json
+  |     > docker exec test-pfttok-eb6b03ca validator-keys set_domain "$VALIDATOR_DOMAIN" | tee ./set-domain-output.txt
+  |     > docker cp test-pfttok-eb6b03ca:/root/.ripple/validator-keys.json ./validator-keys.domain.json
+  |   07a-inject.sh:
+  |     2c2
+  |     < docker cp postfiatd:/etc/postfiatd/postfiatd.cfg ./postfiatd.cfg
+  |     ---
+  |     > docker cp test-pfttok-eb6b03ca:/etc/postfiatd/postfiatd.cfg ./postfiatd.cfg
+  |     15c15
+  |     < docker cp ./postfiatd.cfg.new postfiatd:/etc/postfiatd/postfiatd.cfg
+  |     ---
+  |     > docker cp ./postfiatd.cfg.new test-pfttok-eb6b03ca:/etc/postfiatd/postfiatd.cfg
+  |   07b-cleanup.sh:
+  |     1c1
+  |     < docker exec postfiatd rm -rf /root/.ripple
+  |     ---
+  |     > docker exec test-pfttok-eb6b03ca rm -rf /root/.ripple
+  | $ cd '~/.cache/tmp.v3wjjeZ1cO/run' && grep -c postfiatd 05-keys.sh 06a-domain.sh 06b-setdomain.sh 06c-proof.sh 06d-token.sh 07a-inject.sh 07b-cleanup.sh | paste -sd' ' -; grep -h -o 'docker [a-z]* [^ ]*postfiatd[^ ]*' 05-keys.sh 06a-domain.sh 06b-setdomain.sh 06c-proof.sh 06d-token.sh 07a-inject.sh 07b-cleanup.sh | sort -u
+  |   05-keys.sh:0 06a-domain.sh:0 06b-setdomain.sh:0 06c-proof.sh:0 06d-token.sh:0 07a-inject.sh:7 07b-cleanup.sh:0
+  |   docker cp ./postfiatd.cfg.new
+  |   docker cp test-pfttok-eb6b03ca:/etc/postfiatd/postfiatd.cfg
+  |   (exit 0)
+  | CHECK ok   no block still names the container postfiatd (only paths and file names)
+  | $ cd '~/.cache/tmp.v3wjjeZ1cO/run' && shellcheck --version | sed -n 's/^version: //p' && shellcheck -s bash -e SC2164 05-keys.sh 06a-domain.sh 06b-setdomain.sh 06c-proof.sh 06d-token.sh 07a-inject.sh 07b-cleanup.sh
+  |   0.8.0
+  |   
+  |   In 07a-inject.sh line 10:
+  |   printf '\n' >> ./postfiatd.cfg.new
+  |   ^-- SC2129 (style): Consider using { cmd1; cmd2; } >> file instead of individual redirects.
+  |   
+  |   For more information:
+  |     https://www.shellcheck.net/wiki/SC2129 -- Consider using { cmd1; cmd2; } >>...
+  |   (exit 1)
+  |   (shellcheck of the edited run copies; SC2164 = the guide's bare cd "$POSTFIATD_DIR" lines)
+  | 
+  | == 2026-11-28T03:20:34Z S0 preflight
+  | validator postfiatd d658ad69a7a8af86db3ed05635909c0dd32c1da85d15bd6cd6e1b8b13c453267 2026-11-24T16:08:15.907959686Z full
+  | sentry postfiatd-sentry 923fcdc30430224fde8fb159bcdd1f4b925b6a5067761cfc1010e9839148db6e 2026-11-27T07:25:34.425256078Z full
+  | CHECK ok   S0 validator postfiatd full or proposing
+  | CHECK ok   S0 sentry postfiatd-sentry full
+  | $ sudo -n pft-integrity verify | tail -1
+  |   RESULT: PASS - 301 unchanged, 0 warn, 0 fail -> exit 0
+  |   (exit 0)
+  | CHECK ok   S0 validator integrity PASS
+  | $ R 'pft-integrity verify | tail -1'
+  |   RESULT: PASS - 179 unchanged, 0 warn, 0 fail -> exit 0
+  |   (exit 0)
+  | CHECK ok   S0 sentry integrity PASS
+  | $ R 'docker ps -a --format {{.Names}} | grep -cE "^(postfiatd|test-pfttok-.*)$"; docker volume ls -q | grep -c pfttok; ls -d /var/tmp/pfttok-* 2>/dev/null | wc -l'
+  |   0
+  |   0
+  |   0
+  |   (exit 0)
+  | CHECK ok   S0 sentry has no postfiatd or test-pfttok container, no pfttok volume or dir
+  | $ curl -s -m 10 'http://127.0.0.1:9090/api/v1/alerts' | jq -r '[.data.alerts[] | select(.labels.host == "sentry" and .labels.severity != "info") | .labels.alertname] | length'
+  |   0
+  |   (exit 0)
+  | CHECK ok   S0 no sentry alert above severity info pending or firing
+  | $ R 'pft-schedaudit audit | tail -1'
+  |   SUMMARY entries=79 enabled=66 findings=0 allowed=0 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+  |   (exit 0)
+  | CHECK ok   S0 sentry schedaudit: 0 unexpected
+  | $ R 'systemctl show -p NextElapseUSecRealtime --value pft-integrity.timer'
+  |   Sat 2026-11-28 04:00:16 UTC
+  |   (exit 0)
+  | CHECK ok   S0 next sentry pft-integrity run >= 15 min away (38 min)
+  | sentry alerts already active before the run (left alone): PFTUpstreamFeedQuiet
+  | container names + volume list md5 (sentry):
+  |   postfiatd-sentry
+  |   postfiatd-sentry-preaa-20261103T121134Z
+  |   postfiatd-sentry-preconfine-20261024T222524Z
+  |   postfiatd-sentry-presc-20261106T083724Z
+  |   28363f5937b1b7bed1dcd5be034f1d56  -
+  | image of postfiatd-sentry (used as is, no pull): sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+  | operator topics to read back: 2 (not printed)
+  | CHECK ok   S0 operator topics found
+  | 
+  | == 2026-11-28T03:21:35Z S1 quiet: silence host=sentry, pft-maint window to a throwaway topic
+  | silence 6c08286e host=sentry until 2026-11-28T04:01:35Z
+  | CHECK ok   S1 silence created
+  | real /etc/pft-maint/ntfy.env present before: 0
+  | $ { [ $HAD = 0 ] || sudo -n cp -p $NE $BK; } && printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' "$TT" | sudo -n tee $NE >/dev/null && sudo -n chmod 600 $NE && sudo -n stat -c '%a %U' $NE
+  |   600 root
+  |   (exit 0)
+  | CHECK ok   S1 throwaway pft-maint target installed
+  | $ sudo -n pft-maint start --ttl 40m --reason 'task_6d3b1e0f token-modes throwaway node on the sentry'
+  |   window started: id m1795836095-3898022 until 2026-11-28T04:01:35Z | sentry copy: pushed
+  |   (exit 0)
+  | CHECK ok   S1 pft-maint window open
+  | $ R 'pft-maint active && echo sentry window active'
+  |   sentry window active
+  |   (exit 0)
+  | CHECK ok   S1 sentry has the window
+  | 
+  | == 2026-11-28T03:22:12Z S2 throwaway compose project (the guide compose file's mounts and user, no ports, network none)
+  | $ printf '%s\n' "$COMPOSE" | RS 'mkdir -m 755 /var/tmp/pfttok-eb6b03ca && mkdir /var/tmp/pfttok-eb6b03ca/logs && cat > /var/tmp/pfttok-eb6b03ca/docker-compose.yml && cat /var/tmp/pfttok-eb6b03ca/docker-compose.yml'
+  |   services:
+  |     postfiatd:
+  |       image: sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+  |       container_name: test-pfttok-eb6b03ca
+  |       network_mode: none
+  |       volumes:
+  |         - postfiatd-config:/etc/postfiatd
+  |         - postfiatd-data:/var/lib/postfiatd/db
+  |         - ./logs:/var/log/postfiatd
+  |       user: "0:0"
+  |       restart: "no"
+  |       labels:
+  |         org.postfiat.test: token-modes
+  |   volumes:
+  |     postfiatd-config:
+  |     postfiatd-data:
+  |   (exit 0)
+  | $ R 'cd /var/tmp/pfttok-eb6b03ca && docker compose up -d 2>&1 && docker inspect -f "{{.Name}} {{.Config.User}} {{.HostConfig.NetworkMode}} {{.State.Status}}" test-pfttok-eb6b03ca && docker inspect -f "{{range .Mounts}}{{.Destination}}={{.Type}}:{{.Name}} {{end}}" test-pfttok-eb6b03ca'
+  |    Volume pfttok-eb6b03ca_postfiatd-config  Creating
+  |    Volume pfttok-eb6b03ca_postfiatd-config  Created
+  |    Volume pfttok-eb6b03ca_postfiatd-data  Creating
+  |    Volume pfttok-eb6b03ca_postfiatd-data  Created
+  |    Container test-pfttok-eb6b03ca  Creating
+  |    Container test-pfttok-eb6b03ca  Created
+  |    Container test-pfttok-eb6b03ca  Starting
+  |    Container test-pfttok-eb6b03ca  Started
+  |   /test-pfttok-eb6b03ca 0:0 none running
+  |   /etc/postfiatd=volume:pfttok-eb6b03ca_postfiatd-config /var/lib/postfiatd/db=volume:pfttok-eb6b03ca_postfiatd-data /var/log/postfiatd=bind: 
+  |   (exit 0)
+  | CHECK ok   S2 throwaway container running, user 0:0, network none
+  |   server_info before keys: server_state=disconnected pubkey_validator=none
+  | CHECK ok   S2 server_info answers before any key exists
+  | 
+  | == 2026-11-28T03:22:20Z S3 guide sections 5-7 (one paste session)
+  | $ ssh relay bash -s   <<< umask 022 + POSTFIATD_DIR=/var/tmp/pfttok-eb6b03ca + cd + 05-keys.sh 06a-domain.sh 06b-setdomain.sh 06c-proof.sh 06d-token.sh 07a-inject.sh 07b-cleanup.sh
+  |   --- 05-keys.sh sha256 b462daa5652cd826
+  |   | cd "$POSTFIATD_DIR"
+  |   | docker exec test-pfttok-eb6b03ca mkdir -p /root/.ripple
+  |   | docker exec test-pfttok-eb6b03ca validator-keys create_keys
+  |   | docker cp test-pfttok-eb6b03ca:/root/.ripple/validator-keys.json ./validator-keys.json
+  |   | chmod 600 ./validator-keys.json
+  |   --- 06a-domain.sh sha256 4efe5412c322a46e
+  |   | export VALIDATOR_DOMAIN="example.com"
+  |   --- 06b-setdomain.sh sha256 4f0c8e157cbcc4d5
+  |   | docker exec test-pfttok-eb6b03ca mkdir -p /root/.ripple
+  |   | docker cp ./validator-keys.json test-pfttok-eb6b03ca:/root/.ripple/validator-keys.json
+  |   | docker exec test-pfttok-eb6b03ca validator-keys set_domain "$VALIDATOR_DOMAIN" | tee ./set-domain-output.txt
+  |   | docker cp test-pfttok-eb6b03ca:/root/.ripple/validator-keys.json ./validator-keys.domain.json
+  |   | chmod 600 ./validator-keys.domain.json
+  |   --- 06c-proof.sh sha256 22b5b4c4b573520b
+  |   | PUBLIC_KEY="$(sed -n 's/^# validator public key: //p' ./set-domain-output.txt | head -n 1)"
+  |   | ATTESTATION="$(sed -n 's/^attestation="\([0-9A-Fa-f]*\)".*/\1/p' ./set-domain-output.txt | head -n 1)"
+  |   | printf 'PUBLIC_KEY=%s\nATTESTATION=%s\n' "$PUBLIC_KEY" "$ATTESTATION"
+  |   --- 06d-token.sh sha256 e1a5e7af7c49a53e
+  |   | sed -n '/^\[validator_token\]/,$p' ./set-domain-output.txt | sed '/^$/d' > ./validator-token.block
+  |   | chmod 600 ./validator-token.block
+  |   | grep -q '^\[validator_token\]$' ./validator-token.block
+  |   --- 07a-inject.sh sha256 77b20a67227e50b5
+  |   | cd "$POSTFIATD_DIR"
+  |   | docker cp test-pfttok-eb6b03ca:/etc/postfiatd/postfiatd.cfg ./postfiatd.cfg
+  |   | 
+  |   | awk '
+  |   |   /^\[validator_token\]$/ {skip=1; next}
+  |   |   /^\[[^]]+\]$/ {skip=0}
+  |   |   !skip {print}
+  |   | ' ./postfiatd.cfg > ./postfiatd.cfg.new
+  |   | 
+  |   | printf '\n' >> ./postfiatd.cfg.new
+  |   | cat ./validator-token.block >> ./postfiatd.cfg.new
+  |   | printf '\n' >> ./postfiatd.cfg.new
+  |   | 
+  |   | test "$(grep -c '^\[validator_token\]$' ./postfiatd.cfg.new)" -eq 1
+  |   | docker cp ./postfiatd.cfg.new test-pfttok-eb6b03ca:/etc/postfiatd/postfiatd.cfg
+  |   | docker compose restart
+  |   --- 07b-cleanup.sh sha256 f246c2882e0e65f1
+  |   | docker exec test-pfttok-eb6b03ca rm -rf /root/.ripple
+  |   shell umask 0022
+  |   Validator keys stored in /root/.ripple/validator-keys.json
+  |   
+  |   This file should be stored securely and not shared.
+  |   
+  |   The domain name has been set to: example.com
+  |   
+  |   The domain attestation for validator nHUF61aNrp2dWRLspBejgAhKBf8frns5xb5AUbajh3s4sKCeZ1kD is:
+  |   
+  |   attestation="729F2FBD35DA1741992A794EA3D890ECA8B7F926C6F429148053E57596BB5392606420E5037A458AA71183070BB964EEDC032DC87E5E143514A71E8C9173EC01"
+  |   
+  |   You should include it in your xrp-ledger.toml file in the
+  |   section for this validator.
+  |   
+  |   You also need to update the rippled.cfg file to add a new
+  |   validator token and restart rippled:
+  |   
+  |   # validator public key: nHUF61aNrp2dWRLspBejgAhKBf8frns5xb5AUbajh3s4sKCeZ1kD
+  |   
+  |   [validator_token]
+  |   <validator_token line withheld>
+  |   <validator_token line withheld>
+  |   <validator_token line withheld>
+  |   <validator_token line withheld>
+  |   <validator_token line withheld>
+  |   <validator_token line withheld>
+  |   <validator_token line withheld>
+  |   <validator_token line withheld>
+  |   
+  |   PUBLIC_KEY=nHUF61aNrp2dWRLspBejgAhKBf8frns5xb5AUbajh3s4sKCeZ1kD
+  |   ATTESTATION=729F2FBD35DA1741992A794EA3D890ECA8B7F926C6F429148053E57596BB5392606420E5037A458AA71183070BB964EEDC032DC87E5E143514A71E8C9173EC01
+  |    Container test-pfttok-eb6b03ca  Restarting
+  |    Container test-pfttok-eb6b03ca  Started
+  |   (exit 0)
+  | CHECK ok   S3 guide blocks exit 0
+  |   set_domain public key: nHUF61aNrp2dWRLspBejgAhKBf8frns5xb5AUbajh3s4sKCeZ1kD
+  | CHECK ok   S3 set_domain produced a public key
+  | 
+  | == 2026-11-28T03:22:24Z S4 modes after sections 5-7
+  |   [first] MODE host validator-keys.json 600 root:root token=key
+  |   [first] MODE host validator-keys.domain.json 600 root:root token=key
+  |   [first] MODE host validator-token.block 600 root:root token=yes
+  |   [first] MODE host set-domain-output.txt 644 root:root token=yes
+  |   [first] MODE host postfiatd.cfg 644 root:root token=no
+  |   [first] MODE host postfiatd.cfg.new 644 root:root token=yes
+  |   [first] MODE container /etc/postfiatd/postfiatd.cfg 644 root:root token=yes
+  |   [first] MODE container /root/.ripple absent
+  | 
+  | == 2026-11-28T03:22:26Z S5 startup with the injected config
+  |   [S5] server_info after 1 poll(s): server_state=disconnected build_version=1.0.9 pubkey_validator=nHUF61aNrp2dWRLspBejgAhKBf8frns5xb5AUbajh3s4sKCeZ1kD
+  | CHECK ok   S5 throwaway node started and server_info answers with pubkey_validator = set_domain public key
+  | $ R 'docker inspect -f "config user {{.Config.User}}" test-pfttok-eb6b03ca; docker top test-pfttok-eb6b03ca -o user,pid,comm | sed 1d | head -3'
+  |   config user 0:0
+  |   root                3288550             postfiatd
+  |   root                3288566             cron
+  |   (exit 0)
+  | $ R 'docker exec -u 0:0 test-pfttok-eb6b03ca test -r /etc/postfiatd/postfiatd.cfg && echo "readable for 0:0 (the node user)"; docker exec -u 65534:65534 test-pfttok-eb6b03ca test -r /etc/postfiatd/postfiatd.cfg && echo "readable for 65534" || echo "not readable for 65534"'
+  |   readable for 0:0 (the node user)
+  |   readable for 65534
+  |   (exit 0)
+  | CHECK ok   S5 config readable for the container user 0:0
+  |   uid 65534: readable for 65534
+  | 
+  | == 2026-11-28T03:22:29Z S8 verdict
+  | MODES FAIL: token-bearing files not 600: first:host:set-domain-output.txt:644 first:host:postfiatd.cfg.new:644 first:container:/etc/postfiatd/postfiatd.cfg:644
+  |   config readable for uid 65534 in the container: readable for 65534
+  | 
+  | == 2026-11-28T03:22:29Z S9 cleanup of the throwaway project
+  | $ R 'cd /var/tmp/pfttok-eb6b03ca && docker compose down -v -t 10 2>&1; rm -rf /var/tmp/pfttok-eb6b03ca; ls -d /var/tmp/pfttok-eb6b03ca 2>&1'
+  |    Container test-pfttok-eb6b03ca  Stopping
+  |    Container test-pfttok-eb6b03ca  Stopped
+  |    Container test-pfttok-eb6b03ca  Removing
+  |    Container test-pfttok-eb6b03ca  Removed
+  |    Volume pfttok-eb6b03ca_postfiatd-config  Removing
+  |    Volume pfttok-eb6b03ca_postfiatd-data  Removing
+  |    Volume pfttok-eb6b03ca_postfiatd-config  Removed
+  |    Volume pfttok-eb6b03ca_postfiatd-data  Removed
+  |   ls: cannot access '/var/tmp/pfttok-eb6b03ca': No such file or directory
+  |   (exit 2)
+  | CHECK ok   S9 sentry containers + volumes = S0
+  | 
+  | == 2026-11-28T03:22:31Z S10 end state
+  | $ R 'pft-jobwatch collect >/dev/null 2>&1; echo jobwatch collect $?; pft-schedaudit collect >/dev/null 2>&1; echo schedaudit collect $?; pft-schedaudit audit | tail -1'
+  |   jobwatch collect 0
+  |   schedaudit collect 0
+  |   SUMMARY entries=79 enabled=66 findings=0 allowed=0 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+  |   (exit 0)
+  | CHECK ok   S10 sentry schedaudit: 0 unexpected, 0 new, 0 removed
+  | validator postfiatd d658ad69a7a8af86db3ed05635909c0dd32c1da85d15bd6cd6e1b8b13c453267 2026-11-24T16:08:15.907959686Z full
+  | sentry postfiatd-sentry 923fcdc30430224fde8fb159bcdd1f4b925b6a5067761cfc1010e9839148db6e 2026-11-27T07:25:34.425256078Z full
+  | CHECK ok   S10 validator postfiatd: same ID + StartedAt, full or proposing
+  | CHECK ok   S10 sentry postfiatd-sentry: same ID + StartedAt, full
+  | $ sudo -n pft-integrity verify | tail -1
+  |   RESULT: PASS - 301 unchanged, 0 warn, 0 fail -> exit 0
+  |   (exit 0)
+  | CHECK ok   S10 validator integrity PASS
+  | $ R 'pft-integrity verify | tail -1'
+  |   RESULT: PASS - 179 unchanged, 0 warn, 0 fail -> exit 0
+  |   (exit 0)
+  | CHECK ok   S10 sentry integrity PASS
+  | $ sudo -n pft-maint end
+  |   window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+  | $ sudo -n rm -f $NE   (no ntfy.env before: pft-maint falls back to the real monitor target again)
+  | CHECK ok   S10 pft-maint target back to its pre-run state
+  | CHECK ok   no sentry alert pending or firing before the silence ends, other than those active at S0 (none)
+  | $ curl -s -m 10 -XDELETE 'http://127.0.0.1:9093/api/v2/silence/6c08286e-c190-4b9d-9aaa-7a57252f890a' -o /dev/null -w 'expire silence http %{http_code}'
+  |   expire silence http 200
+  |   (exit 0)
+  | CHECK ok   no new sentry alert in the 3 minutes after the silence ended (none)
+  | $ sleep 5; curl -s -m 15 "https://ntfy.sh/$TT/json?poll=1&since=1795836032" | jq -r 'select(.event == "message") | .title'
+  |   [MAINT] start validator
+  |   [MAINT] end validator
+  |   (exit 0)
+  | CHECK ok   S10 throwaway topic got the [MAINT] start and end messages
+  |   operator topic #1: 0 message(s)
+  |   operator topic #2: 0 message(s)
+  | CHECK ok   S10 operator topics received nothing during the run (2 topic(s), 0 with messages)
+  | 
+  | token-test done 2026-11-28T03:26:37Z: harness checks failed: 0; MODES FAIL (expected FAIL)
+  | RESULT: PASS (harness clean, mode verdict as expected)
+  (exit 0)
+CHECK ok   F6 token-test on upstream main: MODES FAIL as expected, harness clean (exit 0)
+
+== F7 live test from the clone: PR branch (sentry throwaway project)
+$ EXPECT=pass bash kit/token-modes/token-test.sh guide/content/validator-setup.md
+  | token-modes token-test - 2026-11-28T03:26:39Z - repo HEAD 74901458676f1831a6198821bd6309ef3bf8c04d (clean: yes) - EXPECT=pass
+  | sha256: token-test.sh 5fed352120b07c35304833b6172c9fdf45d5c2b98ac96ac6091f376beb5dc25b
+  |         extract_token.py 0f83937f3838be0f6a1decc83ca3849b5ccb75ed69bec6a599e71b2d53de0941
+  |         guide 725c02c3d58bd17cd199b2af38604d9d6941c11bd44d05e29200a12b192714eb
+  | sentry: Ubuntu 22.04.5 LTS Docker version 29.1.3, build 29.1.3-0ubuntu3~22.04.2 Docker Compose version 2.40.3+ds1-0ubuntu1~22.04.1
+  | throwaway project: /var/tmp/pfttok-d9bba443 (project pfttok-d9bba443, container test-pfttok-d9bba443, network none)
+  | 
+  | == 2026-11-28T03:26:40Z extract sections 5-7
+  | $ python3 -I '~/.cache/tokclone.Po6PnF/kit/token-modes/extract_token.py' '~/.cache/tmp.xhMB3ru2AA/x' 'guide/content/validator-setup.md'
+  |   section.txt 141 lines sha256 f10b63aa7a73c28c1ef49f6628a7c3ea9c68587c3914e4321fa8e93ae6853d83
+  |   05-keys.sh 5 lines sha256 ff638194e441f4829a7e67ebf02254588f57f04df17d997ec3e46b34b3f37b0c
+  |   06a-domain.sh 1 lines sha256 4efe5412c322a46e5bd0e564980507c1f51059e292367f9bf347f191e1a0f893
+  |   06b-setdomain.sh 8 lines sha256 403fcd983eae85efbafc812bd199432ad84ad137009e1f6e8670e9081a842624
+  |   06c-proof.sh 3 lines sha256 22b5b4c4b573520b39e7c6dd1a0d74e99e2dfc61e6af0c37952fb510535ec315
+  |   06d-token.sh 6 lines sha256 fba96a20aff8b3c2fd8c3426ca37683eef346db537572d8ee9c1d6910100c4f5
+  |   07a-inject.sh 23 lines sha256 90bdbbf03fdcde2aafedc0c4fa9b632a377604a68fe3699e7abe40ca002d818f
+  |   07b-cleanup.sh 1 lines sha256 9d5de45da12fb74efc285e807d3e134843e5019f044e2e1ead303951273a3710
+  |   07c-verify.sh 10 lines sha256 d1991b15163d1136eba1cb3c48106d5d20e6dbe63945c9ecbf9a5eb35df1b157
+  |   07d-remove.sh 11 lines sha256 6062663a41c8403b2114fa7ff0a6c787894b1a88ce5dba1823a44975ba3abda3
+  |   blocks.txt 9 lines sha256 fe4b0e4601becadecbd8e99b19b8a975c791d4fbdf37835b48809a09c171880a
+  |   copies with identical sections 5-7: 1
+  |   (exit 0)
+  | CHECK ok   extract sections 5-7
+  | blocks: 05-keys.sh 06a-domain.sh 06b-setdomain.sh 06c-proof.sh 06d-token.sh 07a-inject.sh 07b-cleanup.sh 07c-verify.sh 07d-remove.sh
+  | container-name edit (diff guide -> run):
+  |   05-keys.sh:
+  |     2,4c2,4
+  |     < docker exec postfiatd mkdir -p /root/.ripple
+  |     < docker exec postfiatd validator-keys create_keys
+  |     < docker cp postfiatd:/root/.ripple/validator-keys.json ./validator-keys.json
+  |     ---
+  |     > docker exec test-pfttok-d9bba443 mkdir -p /root/.ripple
+  |     > docker exec test-pfttok-d9bba443 validator-keys create_keys
+  |     > docker cp test-pfttok-d9bba443:/root/.ripple/validator-keys.json ./validator-keys.json
+  |   06b-setdomain.sh:
+  |     3,6c3,6
+  |     <   docker exec postfiatd mkdir -p /root/.ripple
+  |     <   docker cp ./validator-keys.json postfiatd:/root/.ripple/validator-keys.json
+  |     <   docker exec postfiatd validator-keys set_domain "$VALIDATOR_DOMAIN" | tee ./set-domain-output.txt
+  |     <   docker cp postfiatd:/root/.ripple/validator-keys.json ./validator-keys.domain.json
+  |     ---
+  |     >   docker exec test-pfttok-d9bba443 mkdir -p /root/.ripple
+  |     >   docker cp ./validator-keys.json test-pfttok-d9bba443:/root/.ripple/validator-keys.json
+  |     >   docker exec test-pfttok-d9bba443 validator-keys set_domain "$VALIDATOR_DOMAIN" | tee ./set-domain-output.txt
+  |     >   docker cp test-pfttok-d9bba443:/root/.ripple/validator-keys.json ./validator-keys.domain.json
+  |   07a-inject.sh:
+  |     4c4
+  |     <   docker cp postfiatd:/etc/postfiatd/postfiatd.cfg ./postfiatd.cfg
+  |     ---
+  |     >   docker cp test-pfttok-d9bba443:/etc/postfiatd/postfiatd.cfg ./postfiatd.cfg
+  |     22c22
+  |     < docker cp ./postfiatd.cfg.new postfiatd:/etc/postfiatd/postfiatd.cfg
+  |     ---
+  |     > docker cp ./postfiatd.cfg.new test-pfttok-d9bba443:/etc/postfiatd/postfiatd.cfg
+  |   07b-cleanup.sh:
+  |     1c1
+  |     < docker exec postfiatd rm -rf /root/.ripple
+  |     ---
+  |     > docker exec test-pfttok-d9bba443 rm -rf /root/.ripple
+  |   07c-verify.sh:
+  |     8,9c8,9
+  |     < docker exec postfiatd stat -c 'container %a %U:%G %n' /etc/postfiatd/postfiatd.cfg
+  |     < [ "$(docker exec postfiatd stat -c '%a %U' /etc/postfiatd/postfiatd.cfg)" = "600 root" ] || bad=1
+  |     ---
+  |     > docker exec test-pfttok-d9bba443 stat -c 'container %a %U:%G %n' /etc/postfiatd/postfiatd.cfg
+  |     > [ "$(docker exec test-pfttok-d9bba443 stat -c '%a %U' /etc/postfiatd/postfiatd.cfg)" = "600 root" ] || bad=1
+  |   07d-remove.sh:
+  |     2c2
+  |     < docker exec postfiatd curl -s http://localhost:5005/ -X POST \
+  |     ---
+  |     > docker exec test-pfttok-d9bba443 curl -s http://localhost:5005/ -X POST \
+  | $ cd '~/.cache/tmp.xhMB3ru2AA/run' && grep -c postfiatd 05-keys.sh 06a-domain.sh 06b-setdomain.sh 06c-proof.sh 06d-token.sh 07a-inject.sh 07b-cleanup.sh 07c-verify.sh 07d-remove.sh | paste -sd' ' -; grep -h -o 'docker [a-z]* [^ ]*postfiatd[^ ]*' 05-keys.sh 06a-domain.sh 06b-setdomain.sh 06c-proof.sh 06d-token.sh 07a-inject.sh 07b-cleanup.sh 07c-verify.sh 07d-remove.sh | sort -u
+  |   05-keys.sh:0 06a-domain.sh:0 06b-setdomain.sh:0 06c-proof.sh:0 06d-token.sh:0 07a-inject.sh:7 07b-cleanup.sh:0 07c-verify.sh:3 07d-remove.sh:1
+  |   docker cp ./postfiatd.cfg.new
+  |   docker cp test-pfttok-d9bba443:/etc/postfiatd/postfiatd.cfg
+  |   (exit 0)
+  | CHECK ok   no block still names the container postfiatd (only paths and file names)
+  | $ cd '~/.cache/tmp.xhMB3ru2AA/run' && shellcheck --version | sed -n 's/^version: //p' && shellcheck -s bash -e SC2164 05-keys.sh 06a-domain.sh 06b-setdomain.sh 06c-proof.sh 06d-token.sh 07a-inject.sh 07b-cleanup.sh 07c-verify.sh 07d-remove.sh
+  |   0.8.0
+  |   (exit 0)
+  |   (shellcheck of the edited run copies; SC2164 = the guide's bare cd "$POSTFIATD_DIR" lines)
+  | 
+  | == 2026-11-28T03:26:41Z S0 preflight
+  | validator postfiatd d658ad69a7a8af86db3ed05635909c0dd32c1da85d15bd6cd6e1b8b13c453267 2026-11-24T16:08:15.907959686Z full
+  | sentry postfiatd-sentry 923fcdc30430224fde8fb159bcdd1f4b925b6a5067761cfc1010e9839148db6e 2026-11-27T07:25:34.425256078Z full
+  | CHECK ok   S0 validator postfiatd full or proposing
+  | CHECK ok   S0 sentry postfiatd-sentry full
+  | $ sudo -n pft-integrity verify | tail -1
+  |   RESULT: PASS - 301 unchanged, 0 warn, 0 fail -> exit 0
+  |   (exit 0)
+  | CHECK ok   S0 validator integrity PASS
+  | $ R 'pft-integrity verify | tail -1'
+  |   RESULT: PASS - 179 unchanged, 0 warn, 0 fail -> exit 0
+  |   (exit 0)
+  | CHECK ok   S0 sentry integrity PASS
+  | $ R 'docker ps -a --format {{.Names}} | grep -cE "^(postfiatd|test-pfttok-.*)$"; docker volume ls -q | grep -c pfttok; ls -d /var/tmp/pfttok-* 2>/dev/null | wc -l'
+  |   0
+  |   0
+  |   0
+  |   (exit 0)
+  | CHECK ok   S0 sentry has no postfiatd or test-pfttok container, no pfttok volume or dir
+  | $ curl -s -m 10 'http://127.0.0.1:9090/api/v1/alerts' | jq -r '[.data.alerts[] | select(.labels.host == "sentry" and .labels.severity != "info") | .labels.alertname] | length'
+  |   0
+  |   (exit 0)
+  | CHECK ok   S0 no sentry alert above severity info pending or firing
+  | $ R 'pft-schedaudit audit | tail -1'
+  |   SUMMARY entries=79 enabled=66 findings=0 allowed=0 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+  |   (exit 0)
+  | CHECK ok   S0 sentry schedaudit: 0 unexpected
+  | $ R 'systemctl show -p NextElapseUSecRealtime --value pft-integrity.timer'
+  |   Sat 2026-11-28 04:00:16 UTC
+  |   (exit 0)
+  | CHECK ok   S0 next sentry pft-integrity run >= 15 min away (32 min)
+  | sentry alerts already active before the run (left alone): PFTUpstreamFeedQuiet
+  | container names + volume list md5 (sentry):
+  |   postfiatd-sentry
+  |   postfiatd-sentry-preaa-20261103T121134Z
+  |   postfiatd-sentry-preconfine-20261024T222524Z
+  |   postfiatd-sentry-presc-20261106T083724Z
+  |   28363f5937b1b7bed1dcd5be034f1d56  -
+  | image of postfiatd-sentry (used as is, no pull): sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+  | operator topics to read back: 2 (not printed)
+  | CHECK ok   S0 operator topics found
+  | 
+  | == 2026-11-28T03:27:40Z S1 quiet: silence host=sentry, pft-maint window to a throwaway topic
+  | silence c7f529f5 host=sentry until 2026-11-28T04:07:40Z
+  | CHECK ok   S1 silence created
+  | real /etc/pft-maint/ntfy.env present before: 0
+  | $ { [ $HAD = 0 ] || sudo -n cp -p $NE $BK; } && printf 'NTFY_SERVER=https://ntfy.sh\nNTFY_TOPIC=%s\n' "$TT" | sudo -n tee $NE >/dev/null && sudo -n chmod 600 $NE && sudo -n stat -c '%a %U' $NE
+  |   600 root
+  |   (exit 0)
+  | CHECK ok   S1 throwaway pft-maint target installed
+  | $ sudo -n pft-maint start --ttl 40m --reason 'task_6d3b1e0f token-modes throwaway node on the sentry'
+  |   window started: id m1795836460-3916060 until 2026-11-28T04:07:40Z | sentry copy: pushed
+  |   (exit 0)
+  | CHECK ok   S1 pft-maint window open
+  | $ R 'pft-maint active && echo sentry window active'
+  |   sentry window active
+  |   (exit 0)
+  | CHECK ok   S1 sentry has the window
+  | 
+  | == 2026-11-28T03:28:17Z S2 throwaway compose project (the guide compose file's mounts and user, no ports, network none)
+  | $ printf '%s\n' "$COMPOSE" | RS 'mkdir -m 755 /var/tmp/pfttok-d9bba443 && mkdir /var/tmp/pfttok-d9bba443/logs && cat > /var/tmp/pfttok-d9bba443/docker-compose.yml && cat /var/tmp/pfttok-d9bba443/docker-compose.yml'
+  |   services:
+  |     postfiatd:
+  |       image: sha256:cc139becfe5033fe9dadcbe94124a030d8d0c4c31de50ea01b18ba0bb638d97e
+  |       container_name: test-pfttok-d9bba443
+  |       network_mode: none
+  |       volumes:
+  |         - postfiatd-config:/etc/postfiatd
+  |         - postfiatd-data:/var/lib/postfiatd/db
+  |         - ./logs:/var/log/postfiatd
+  |       user: "0:0"
+  |       restart: "no"
+  |       labels:
+  |         org.postfiat.test: token-modes
+  |   volumes:
+  |     postfiatd-config:
+  |     postfiatd-data:
+  |   (exit 0)
+  | $ R 'cd /var/tmp/pfttok-d9bba443 && docker compose up -d 2>&1 && docker inspect -f "{{.Name}} {{.Config.User}} {{.HostConfig.NetworkMode}} {{.State.Status}}" test-pfttok-d9bba443 && docker inspect -f "{{range .Mounts}}{{.Destination}}={{.Type}}:{{.Name}} {{end}}" test-pfttok-d9bba443'
+  |    Volume pfttok-d9bba443_postfiatd-config  Creating
+  |    Volume pfttok-d9bba443_postfiatd-config  Created
+  |    Volume pfttok-d9bba443_postfiatd-data  Creating
+  |    Volume pfttok-d9bba443_postfiatd-data  Created
+  |    Container test-pfttok-d9bba443  Creating
+  |    Container test-pfttok-d9bba443  Created
+  |    Container test-pfttok-d9bba443  Starting
+  |    Container test-pfttok-d9bba443  Started
+  |   /test-pfttok-d9bba443 0:0 none running
+  |   /var/lib/postfiatd/db=volume:pfttok-d9bba443_postfiatd-data /var/log/postfiatd=bind: /etc/postfiatd=volume:pfttok-d9bba443_postfiatd-config 
+  |   (exit 0)
+  | CHECK ok   S2 throwaway container running, user 0:0, network none
+  |   server_info before keys: server_state=disconnected pubkey_validator=none
+  | CHECK ok   S2 server_info answers before any key exists
+  | 
+  | == 2026-11-28T03:28:23Z S3 guide sections 5-7 (one paste session)
+  | $ ssh relay bash -s   <<< umask 022 + POSTFIATD_DIR=/var/tmp/pfttok-d9bba443 + cd + 05-keys.sh 06a-domain.sh 06b-setdomain.sh 06c-proof.sh 06d-token.sh 07a-inject.sh 07b-cleanup.sh 07c-verify.sh
+  |   --- 05-keys.sh sha256 1f6280222e2be79b
+  |   | cd "$POSTFIATD_DIR"
+  |   | docker exec test-pfttok-d9bba443 mkdir -p /root/.ripple
+  |   | docker exec test-pfttok-d9bba443 validator-keys create_keys
+  |   | docker cp test-pfttok-d9bba443:/root/.ripple/validator-keys.json ./validator-keys.json
+  |   | chmod 600 ./validator-keys.json
+  |   --- 06a-domain.sh sha256 4efe5412c322a46e
+  |   | export VALIDATOR_DOMAIN="example.com"
+  |   --- 06b-setdomain.sh sha256 2028097c461f026a
+  |   | (
+  |   |   umask 077
+  |   |   docker exec test-pfttok-d9bba443 mkdir -p /root/.ripple
+  |   |   docker cp ./validator-keys.json test-pfttok-d9bba443:/root/.ripple/validator-keys.json
+  |   |   docker exec test-pfttok-d9bba443 validator-keys set_domain "$VALIDATOR_DOMAIN" | tee ./set-domain-output.txt
+  |   |   docker cp test-pfttok-d9bba443:/root/.ripple/validator-keys.json ./validator-keys.domain.json
+  |   | )
+  |   | chmod 600 ./set-domain-output.txt ./validator-keys.domain.json
+  |   --- 06c-proof.sh sha256 22b5b4c4b573520b
+  |   | PUBLIC_KEY="$(sed -n 's/^# validator public key: //p' ./set-domain-output.txt | head -n 1)"
+  |   | ATTESTATION="$(sed -n 's/^attestation="\([0-9A-Fa-f]*\)".*/\1/p' ./set-domain-output.txt | head -n 1)"
+  |   | printf 'PUBLIC_KEY=%s\nATTESTATION=%s\n' "$PUBLIC_KEY" "$ATTESTATION"
+  |   --- 06d-token.sh sha256 fba96a20aff8b3c2
+  |   | (
+  |   |   umask 077
+  |   |   sed -n '/^\[validator_token\]/,$p' ./set-domain-output.txt | sed '/^$/d' > ./validator-token.block
+  |   | )
+  |   | chmod 600 ./validator-token.block
+  |   | grep -q '^\[validator_token\]$' ./validator-token.block
+  |   --- 07a-inject.sh sha256 950e13ff0213dce7
+  |   | cd "$POSTFIATD_DIR"
+  |   | (
+  |   |   umask 077
+  |   |   docker cp test-pfttok-d9bba443:/etc/postfiatd/postfiatd.cfg ./postfiatd.cfg
+  |   |   chmod 600 ./postfiatd.cfg
+  |   | 
+  |   |   awk '
+  |   |     /^\[validator_token\]$/ {skip=1; next}
+  |   |     /^\[[^]]+\]$/ {skip=0}
+  |   |     !skip {print}
+  |   |   ' ./postfiatd.cfg > ./postfiatd.cfg.new
+  |   | 
+  |   |   {
+  |   |     printf '\n'
+  |   |     cat ./validator-token.block
+  |   |     printf '\n'
+  |   |   } >> ./postfiatd.cfg.new
+  |   | )
+  |   | chmod 600 ./postfiatd.cfg.new
+  |   | 
+  |   | test "$(grep -c '^\[validator_token\]$' ./postfiatd.cfg.new)" -eq 1
+  |   | docker cp ./postfiatd.cfg.new test-pfttok-d9bba443:/etc/postfiatd/postfiatd.cfg
+  |   | docker compose restart
+  |   --- 07b-cleanup.sh sha256 a45910d6bd39d4d5
+  |   | docker exec test-pfttok-d9bba443 rm -rf /root/.ripple
+  |   --- 07c-verify.sh sha256 68b28bb20ed2f966
+  |   | cd "$POSTFIATD_DIR"
+  |   | bad=0
+  |   | for f in validator-keys.json validator-keys.domain.json validator-token.block set-domain-output.txt postfiatd.cfg postfiatd.cfg.new; do
+  |   |   [ -e "$f" ] || continue
+  |   |   stat -c 'host      %a %U:%G %n' "$f"
+  |   |   [ "$(stat -c '%a %U' "$f")" = "600 $(id -un)" ] || bad=1
+  |   | done
+  |   | docker exec test-pfttok-d9bba443 stat -c 'container %a %U:%G %n' /etc/postfiatd/postfiatd.cfg
+  |   | [ "$(docker exec test-pfttok-d9bba443 stat -c '%a %U' /etc/postfiatd/postfiatd.cfg)" = "600 root" ] || bad=1
+  |   | if [ "$bad" = 0 ]; then echo "token file modes OK"; else echo "token file modes NOT OK: chmod 600 the host files listed above; re-run the injection step for the container file"; fi
+  |   shell umask 0022
+  |   Validator keys stored in /root/.ripple/validator-keys.json
+  |   
+  |   This file should be stored securely and not shared.
+  |   
+  |   The domain name has been set to: example.com
+  |   
+  |   The domain attestation for validator nHBtcd3GqsjPocMe9GSVHtmLiagpdQbrttxqvrrZxWREyAWrH58H is:
+  |   
+  |   attestation="E587F26371D44AA63D17605C86960D278812604A31EB5AAFD2B0ACE121D001B4C459FD80A6AE03EB1E2004A9A7B3BC14590B419EAFD08AAE1D51884B74C45806"
+  |   
+  |   You should include it in your xrp-ledger.toml file in the
+  |   section for this validator.
+  |   
+  |   You also need to update the rippled.cfg file to add a new
+  |   validator token and restart rippled:
+  |   
+  |   # validator public key: nHBtcd3GqsjPocMe9GSVHtmLiagpdQbrttxqvrrZxWREyAWrH58H
+  |   
+  |   [validator_token]
+  |   <validator_token line withheld>
+  |   <validator_token line withheld>
+  |   <validator_token line withheld>
+  |   <validator_token line withheld>
+  |   <validator_token line withheld>
+  |   <validator_token line withheld>
+  |   <validator_token line withheld>
+  |   <validator_token line withheld>
+  |   
+  |   PUBLIC_KEY=nHBtcd3GqsjPocMe9GSVHtmLiagpdQbrttxqvrrZxWREyAWrH58H
+  |   ATTESTATION=E587F26371D44AA63D17605C86960D278812604A31EB5AAFD2B0ACE121D001B4C459FD80A6AE03EB1E2004A9A7B3BC14590B419EAFD08AAE1D51884B74C45806
+  |    Container test-pfttok-d9bba443  Restarting
+  |    Container test-pfttok-d9bba443  Started
+  |   host      600 root:root validator-keys.json
+  |   host      600 root:root validator-keys.domain.json
+  |   host      600 root:root validator-token.block
+  |   host      600 root:root set-domain-output.txt
+  |   host      600 root:root postfiatd.cfg
+  |   host      600 root:root postfiatd.cfg.new
+  |   container 600 root:root /etc/postfiatd/postfiatd.cfg
+  |   token file modes OK
+  |   (exit 0)
+  | CHECK ok   S3 guide blocks exit 0
+  |   set_domain public key: nHBtcd3GqsjPocMe9GSVHtmLiagpdQbrttxqvrrZxWREyAWrH58H
+  | CHECK ok   S3 set_domain produced a public key
+  | CHECK ok   S3 guide verifier printed 'token file modes OK'
+  | 
+  | == 2026-11-28T03:28:28Z S4 modes after sections 5-7
+  |   [first] MODE host validator-keys.json 600 root:root token=key
+  |   [first] MODE host validator-keys.domain.json 600 root:root token=key
+  |   [first] MODE host validator-token.block 600 root:root token=yes
+  |   [first] MODE host set-domain-output.txt 600 root:root token=yes
+  |   [first] MODE host postfiatd.cfg 600 root:root token=no
+  |   [first] MODE host postfiatd.cfg.new 600 root:root token=yes
+  |   [first] MODE container /etc/postfiatd/postfiatd.cfg 600 root:root token=yes
+  |   [first] MODE container /root/.ripple absent
+  | 
+  | == 2026-11-28T03:28:30Z S5 startup with the injected config
+  |   [S5] server_info after 1 poll(s): server_state=disconnected build_version=1.0.9 pubkey_validator=nHBtcd3GqsjPocMe9GSVHtmLiagpdQbrttxqvrrZxWREyAWrH58H
+  | CHECK ok   S5 throwaway node started and server_info answers with pubkey_validator = set_domain public key
+  | $ R 'docker inspect -f "config user {{.Config.User}}" test-pfttok-d9bba443; docker top test-pfttok-d9bba443 -o user,pid,comm | sed 1d | head -3'
+  |   config user 0:0
+  |   root                3310700             postfiatd
+  |   root                3310778             cron
+  |   (exit 0)
+  | $ R 'docker exec -u 0:0 test-pfttok-d9bba443 test -r /etc/postfiatd/postfiatd.cfg && echo "readable for 0:0 (the node user)"; docker exec -u 65534:65534 test-pfttok-d9bba443 test -r /etc/postfiatd/postfiatd.cfg && echo "readable for 65534" || echo "not readable for 65534"'
+  |   readable for 0:0 (the node user)
+  |   not readable for 65534
+  |   (exit 0)
+  | CHECK ok   S5 config readable for the container user 0:0
+  |   uid 65534: not readable for 65534
+  | 
+  | == 2026-11-28T03:28:32Z S6 removal of the config copies (blocks 06c for PUBLIC_KEY + 07d)
+  | $ ssh relay bash -s   <<< umask 022 + POSTFIATD_DIR=/var/tmp/pfttok-d9bba443 + cd + 06c-proof.sh 07d-remove.sh
+  |   --- 06c-proof.sh sha256 22b5b4c4b573520b
+  |   | PUBLIC_KEY="$(sed -n 's/^# validator public key: //p' ./set-domain-output.txt | head -n 1)"
+  |   | ATTESTATION="$(sed -n 's/^attestation="\([0-9A-Fa-f]*\)".*/\1/p' ./set-domain-output.txt | head -n 1)"
+  |   | printf 'PUBLIC_KEY=%s\nATTESTATION=%s\n' "$PUBLIC_KEY" "$ATTESTATION"
+  |   --- 07d-remove.sh sha256 e140c8c5ab2f0936
+  |   | cd "$POSTFIATD_DIR"
+  |   | docker exec test-pfttok-d9bba443 curl -s http://localhost:5005/ -X POST \
+  |   |   -H "Content-Type: application/json" \
+  |   |   -d '{"method": "server_info", "params": [{}]}' \
+  |   |   | PUBLIC_KEY="$PUBLIC_KEY" python3 -c '
+  |   | import json, os, sys
+  |   | 
+  |   | info = json.load(sys.stdin)["result"]["info"]
+  |   | if info.get("pubkey_validator") != os.environ["PUBLIC_KEY"]:
+  |   |     raise SystemExit("pubkey_validator does not match yet: config copies kept")
+  |   | ' && rm -f ./postfiatd.cfg ./postfiatd.cfg.new && echo "config copies removed"
+  |   shell umask 0022
+  |   PUBLIC_KEY=nHBtcd3GqsjPocMe9GSVHtmLiagpdQbrttxqvrrZxWREyAWrH58H
+  |   ATTESTATION=E587F26371D44AA63D17605C86960D278812604A31EB5AAFD2B0ACE121D001B4C459FD80A6AE03EB1E2004A9A7B3BC14590B419EAFD08AAE1D51884B74C45806
+  |   config copies removed
+  |   (exit 0)
+  | CHECK ok   S6 'config copies removed' printed, both copies gone
+  | 
+  | == 2026-11-28T03:28:34Z S7 rerun of sections 5-7 (new identity) over files an older guide left at 644
+  | $ R 'cd /var/tmp/pfttok-d9bba443 && touch postfiatd.cfg postfiatd.cfg.new && chmod 644 validator-keys.json validator-keys.domain.json validator-token.block set-domain-output.txt postfiatd.cfg postfiatd.cfg.new && stat -c "%a %n" validator-keys.json validator-keys.domain.json validator-token.block set-domain-output.txt postfiatd.cfg postfiatd.cfg.new'
+  |   644 validator-keys.json
+  |   644 validator-keys.domain.json
+  |   644 validator-token.block
+  |   644 set-domain-output.txt
+  |   644 postfiatd.cfg
+  |   644 postfiatd.cfg.new
+  |   (exit 0)
+  | CHECK ok   S7 six leftover host files at 644
+  | $ ssh relay bash -s   <<< umask 022 + POSTFIATD_DIR=/var/tmp/pfttok-d9bba443 + cd + 05-keys.sh 06a-domain.sh 06b-setdomain.sh 06c-proof.sh 06d-token.sh 07a-inject.sh 07b-cleanup.sh 07c-verify.sh
+  |   --- 05-keys.sh sha256 1f6280222e2be79b
+  |   | cd "$POSTFIATD_DIR"
+  |   | docker exec test-pfttok-d9bba443 mkdir -p /root/.ripple
+  |   | docker exec test-pfttok-d9bba443 validator-keys create_keys
+  |   | docker cp test-pfttok-d9bba443:/root/.ripple/validator-keys.json ./validator-keys.json
+  |   | chmod 600 ./validator-keys.json
+  |   --- 06a-domain.sh sha256 4efe5412c322a46e
+  |   | export VALIDATOR_DOMAIN="example.com"
+  |   --- 06b-setdomain.sh sha256 2028097c461f026a
+  |   | (
+  |   |   umask 077
+  |   |   docker exec test-pfttok-d9bba443 mkdir -p /root/.ripple
+  |   |   docker cp ./validator-keys.json test-pfttok-d9bba443:/root/.ripple/validator-keys.json
+  |   |   docker exec test-pfttok-d9bba443 validator-keys set_domain "$VALIDATOR_DOMAIN" | tee ./set-domain-output.txt
+  |   |   docker cp test-pfttok-d9bba443:/root/.ripple/validator-keys.json ./validator-keys.domain.json
+  |   | )
+  |   | chmod 600 ./set-domain-output.txt ./validator-keys.domain.json
+  |   --- 06c-proof.sh sha256 22b5b4c4b573520b
+  |   | PUBLIC_KEY="$(sed -n 's/^# validator public key: //p' ./set-domain-output.txt | head -n 1)"
+  |   | ATTESTATION="$(sed -n 's/^attestation="\([0-9A-Fa-f]*\)".*/\1/p' ./set-domain-output.txt | head -n 1)"
+  |   | printf 'PUBLIC_KEY=%s\nATTESTATION=%s\n' "$PUBLIC_KEY" "$ATTESTATION"
+  |   --- 06d-token.sh sha256 fba96a20aff8b3c2
+  |   | (
+  |   |   umask 077
+  |   |   sed -n '/^\[validator_token\]/,$p' ./set-domain-output.txt | sed '/^$/d' > ./validator-token.block
+  |   | )
+  |   | chmod 600 ./validator-token.block
+  |   | grep -q '^\[validator_token\]$' ./validator-token.block
+  |   --- 07a-inject.sh sha256 950e13ff0213dce7
+  |   | cd "$POSTFIATD_DIR"
+  |   | (
+  |   |   umask 077
+  |   |   docker cp test-pfttok-d9bba443:/etc/postfiatd/postfiatd.cfg ./postfiatd.cfg
+  |   |   chmod 600 ./postfiatd.cfg
+  |   | 
+  |   |   awk '
+  |   |     /^\[validator_token\]$/ {skip=1; next}
+  |   |     /^\[[^]]+\]$/ {skip=0}
+  |   |     !skip {print}
+  |   |   ' ./postfiatd.cfg > ./postfiatd.cfg.new
+  |   | 
+  |   |   {
+  |   |     printf '\n'
+  |   |     cat ./validator-token.block
+  |   |     printf '\n'
+  |   |   } >> ./postfiatd.cfg.new
+  |   | )
+  |   | chmod 600 ./postfiatd.cfg.new
+  |   | 
+  |   | test "$(grep -c '^\[validator_token\]$' ./postfiatd.cfg.new)" -eq 1
+  |   | docker cp ./postfiatd.cfg.new test-pfttok-d9bba443:/etc/postfiatd/postfiatd.cfg
+  |   | docker compose restart
+  |   --- 07b-cleanup.sh sha256 a45910d6bd39d4d5
+  |   | docker exec test-pfttok-d9bba443 rm -rf /root/.ripple
+  |   --- 07c-verify.sh sha256 68b28bb20ed2f966
+  |   | cd "$POSTFIATD_DIR"
+  |   | bad=0
+  |   | for f in validator-keys.json validator-keys.domain.json validator-token.block set-domain-output.txt postfiatd.cfg postfiatd.cfg.new; do
+  |   |   [ -e "$f" ] || continue
+  |   |   stat -c 'host      %a %U:%G %n' "$f"
+  |   |   [ "$(stat -c '%a %U' "$f")" = "600 $(id -un)" ] || bad=1
+  |   | done
+  |   | docker exec test-pfttok-d9bba443 stat -c 'container %a %U:%G %n' /etc/postfiatd/postfiatd.cfg
+  |   | [ "$(docker exec test-pfttok-d9bba443 stat -c '%a %U' /etc/postfiatd/postfiatd.cfg)" = "600 root" ] || bad=1
+  |   | if [ "$bad" = 0 ]; then echo "token file modes OK"; else echo "token file modes NOT OK: chmod 600 the host files listed above; re-run the injection step for the container file"; fi
+  |   shell umask 0022
+  |   Validator keys stored in /root/.ripple/validator-keys.json
+  |   
+  |   This file should be stored securely and not shared.
+  |   
+  |   The domain name has been set to: example.com
+  |   
+  |   The domain attestation for validator nHBkSQKgboN5JGkbWVWk69mpUE8CsUaAMyYQ1wXaGNnLXjRqyYDn is:
+  |   
+  |   attestation="FF359FB192770C088CC20E1DA1D264B0B0492DD12466D5662ADCB377270C33F7B8CC5F03082681AF821A434051E07259F2F0EB82334735CCA3D746C9ED7A670F"
+  |   
+  |   You should include it in your xrp-ledger.toml file in the
+  |   section for this validator.
+  |   
+  |   You also need to update the rippled.cfg file to add a new
+  |   validator token and restart rippled:
+  |   
+  |   # validator public key: nHBkSQKgboN5JGkbWVWk69mpUE8CsUaAMyYQ1wXaGNnLXjRqyYDn
+  |   
+  |   [validator_token]
+  |   <validator_token line withheld>
+  |   <validator_token line withheld>
+  |   <validator_token line withheld>
+  |   <validator_token line withheld>
+  |   <validator_token line withheld>
+  |   <validator_token line withheld>
+  |   <validator_token line withheld>
+  |   <validator_token line withheld>
+  |   
+  |   PUBLIC_KEY=nHBkSQKgboN5JGkbWVWk69mpUE8CsUaAMyYQ1wXaGNnLXjRqyYDn
+  |   ATTESTATION=FF359FB192770C088CC20E1DA1D264B0B0492DD12466D5662ADCB377270C33F7B8CC5F03082681AF821A434051E07259F2F0EB82334735CCA3D746C9ED7A670F
+  |    Container test-pfttok-d9bba443  Restarting
+  |    Container test-pfttok-d9bba443  Started
+  |   host      600 root:root validator-keys.json
+  |   host      600 root:root validator-keys.domain.json
+  |   host      600 root:root validator-token.block
+  |   host      600 root:root set-domain-output.txt
+  |   host      600 root:root postfiatd.cfg
+  |   host      600 root:root postfiatd.cfg.new
+  |   container 600 root:root /etc/postfiatd/postfiatd.cfg
+  |   token file modes OK
+  |   (exit 0)
+  | CHECK ok   S7 guide blocks exit 0
+  |   set_domain public key (new identity): nHBkSQKgboN5JGkbWVWk69mpUE8CsUaAMyYQ1wXaGNnLXjRqyYDn
+  | CHECK ok   S7 new public key, different from S3
+  | CHECK ok   S7 guide verifier printed 'token file modes OK'
+  |   [rerun] MODE host validator-keys.json 600 root:root token=key
+  |   [rerun] MODE host validator-keys.domain.json 600 root:root token=key
+  |   [rerun] MODE host validator-token.block 600 root:root token=yes
+  |   [rerun] MODE host set-domain-output.txt 600 root:root token=yes
+  |   [rerun] MODE host postfiatd.cfg 600 root:root token=yes
+  |   [rerun] MODE host postfiatd.cfg.new 600 root:root token=yes
+  |   [rerun] MODE container /etc/postfiatd/postfiatd.cfg 600 root:root token=yes
+  |   [rerun] MODE container /root/.ripple absent
+  | CHECK ok   S7 rerun: host postfiatd.cfg now carries the token (copied from the injected container config)
+  |   [S7] server_info after 1 poll(s): server_state=disconnected build_version=1.0.9 pubkey_validator=nHBkSQKgboN5JGkbWVWk69mpUE8CsUaAMyYQ1wXaGNnLXjRqyYDn
+  | CHECK ok   S7 throwaway node started and server_info answers with pubkey_validator = set_domain public key
+  | $ ssh relay bash -s   <<< umask 022 + POSTFIATD_DIR=/var/tmp/pfttok-d9bba443 + cd + 06c-proof.sh 07d-remove.sh
+  |   --- 06c-proof.sh sha256 22b5b4c4b573520b
+  |   | PUBLIC_KEY="$(sed -n 's/^# validator public key: //p' ./set-domain-output.txt | head -n 1)"
+  |   | ATTESTATION="$(sed -n 's/^attestation="\([0-9A-Fa-f]*\)".*/\1/p' ./set-domain-output.txt | head -n 1)"
+  |   | printf 'PUBLIC_KEY=%s\nATTESTATION=%s\n' "$PUBLIC_KEY" "$ATTESTATION"
+  |   --- 07d-remove.sh sha256 e140c8c5ab2f0936
+  |   | cd "$POSTFIATD_DIR"
+  |   | docker exec test-pfttok-d9bba443 curl -s http://localhost:5005/ -X POST \
+  |   |   -H "Content-Type: application/json" \
+  |   |   -d '{"method": "server_info", "params": [{}]}' \
+  |   |   | PUBLIC_KEY="$PUBLIC_KEY" python3 -c '
+  |   | import json, os, sys
+  |   | 
+  |   | info = json.load(sys.stdin)["result"]["info"]
+  |   | if info.get("pubkey_validator") != os.environ["PUBLIC_KEY"]:
+  |   |     raise SystemExit("pubkey_validator does not match yet: config copies kept")
+  |   | ' && rm -f ./postfiatd.cfg ./postfiatd.cfg.new && echo "config copies removed"
+  |   shell umask 0022
+  |   PUBLIC_KEY=nHBkSQKgboN5JGkbWVWk69mpUE8CsUaAMyYQ1wXaGNnLXjRqyYDn
+  |   ATTESTATION=FF359FB192770C088CC20E1DA1D264B0B0492DD12466D5662ADCB377270C33F7B8CC5F03082681AF821A434051E07259F2F0EB82334735CCA3D746C9ED7A670F
+  |   config copies removed
+  |   (exit 0)
+  | CHECK ok   S7 'config copies removed' printed, both copies gone
+  | 
+  | == 2026-11-28T03:28:43Z S8 verdict
+  | MODES PASS: every token-bearing file is 600
+  |   config readable for uid 65534 in the container: not readable for 65534
+  | 
+  | == 2026-11-28T03:28:43Z S9 cleanup of the throwaway project
+  | $ R 'cd /var/tmp/pfttok-d9bba443 && docker compose down -v -t 10 2>&1; rm -rf /var/tmp/pfttok-d9bba443; ls -d /var/tmp/pfttok-d9bba443 2>&1'
+  |    Container test-pfttok-d9bba443  Stopping
+  |    Container test-pfttok-d9bba443  Stopped
+  |    Container test-pfttok-d9bba443  Removing
+  |    Container test-pfttok-d9bba443  Removed
+  |    Volume pfttok-d9bba443_postfiatd-config  Removing
+  |    Volume pfttok-d9bba443_postfiatd-data  Removing
+  |    Volume pfttok-d9bba443_postfiatd-config  Removed
+  |    Volume pfttok-d9bba443_postfiatd-data  Removed
+  |   ls: cannot access '/var/tmp/pfttok-d9bba443': No such file or directory
+  |   (exit 2)
+  | CHECK ok   S9 sentry containers + volumes = S0
+  | 
+  | == 2026-11-28T03:28:46Z S10 end state
+  | $ R 'pft-jobwatch collect >/dev/null 2>&1; echo jobwatch collect $?; pft-schedaudit collect >/dev/null 2>&1; echo schedaudit collect $?; pft-schedaudit audit | tail -1'
+  |   jobwatch collect 0
+  |   schedaudit collect 0
+  |   SUMMARY entries=79 enabled=66 findings=0 allowed=0 unexpected_findings=0 new=0 removed=0 baseline=yes unused_allow=0
+  |   (exit 0)
+  | CHECK ok   S10 sentry schedaudit: 0 unexpected, 0 new, 0 removed
+  | validator postfiatd d658ad69a7a8af86db3ed05635909c0dd32c1da85d15bd6cd6e1b8b13c453267 2026-11-24T16:08:15.907959686Z full
+  | sentry postfiatd-sentry 923fcdc30430224fde8fb159bcdd1f4b925b6a5067761cfc1010e9839148db6e 2026-11-27T07:25:34.425256078Z full
+  | CHECK ok   S10 validator postfiatd: same ID + StartedAt, full or proposing
+  | CHECK ok   S10 sentry postfiatd-sentry: same ID + StartedAt, full
+  | $ sudo -n pft-integrity verify | tail -1
+  |   RESULT: PASS - 301 unchanged, 0 warn, 0 fail -> exit 0
+  |   (exit 0)
+  | CHECK ok   S10 validator integrity PASS
+  | $ R 'pft-integrity verify | tail -1'
+  |   RESULT: PASS - 179 unchanged, 0 warn, 0 fail -> exit 0
+  |   (exit 0)
+  | CHECK ok   S10 sentry integrity PASS
+  | $ sudo -n pft-maint end
+  |   window ended (end): suppressed watchdog=0 monitor=0 integrity=0 | sentry copy: pushed
+  | $ sudo -n rm -f $NE   (no ntfy.env before: pft-maint falls back to the real monitor target again)
+  | CHECK ok   S10 pft-maint target back to its pre-run state
+  | CHECK ok   no sentry alert pending or firing before the silence ends, other than those active at S0 (none)
+  | $ curl -s -m 10 -XDELETE 'http://127.0.0.1:9093/api/v2/silence/c7f529f5-ece2-4009-99f0-174ef944b2b7' -o /dev/null -w 'expire silence http %{http_code}'
+  |   expire silence http 200
+  |   (exit 0)
+  | CHECK ok   no new sentry alert in the 3 minutes after the silence ended (none)
+  | $ sleep 5; curl -s -m 15 "https://ntfy.sh/$TT/json?poll=1&since=1795836399" | jq -r 'select(.event == "message") | .title'
+  |   [MAINT] start validator
+  |   [MAINT] end validator
+  |   (exit 0)
+  | CHECK ok   S10 throwaway topic got the [MAINT] start and end messages
+  |   operator topic #1: 0 message(s)
+  |   operator topic #2: 0 message(s)
+  | CHECK ok   S10 operator topics received nothing during the run (2 topic(s), 0 with messages)
+  | 
+  | token-test done 2026-11-28T03:32:50Z: harness checks failed: 0; MODES PASS (expected PASS)
+  | RESULT: PASS (harness clean, mode verdict as expected)
+  (exit 0)
+CHECK ok   F7 token-test on the PR branch: MODES PASS, harness clean (exit 0)
+
+fresh-clone done 2026-11-28T03:32:50Z: 0 check(s) failed -> PASS
+fresh-clone exit 0
